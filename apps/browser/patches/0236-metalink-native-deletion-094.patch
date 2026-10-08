@@ -1,4 +1,4 @@
-From ff1d29a49e89f571fc6288a3ef48dbc79ed2c82b Mon Sep 17 00:00:00 2001
+From 0439b0c783fe385b7149ebce86af9de0454f95e7 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 21:33:35 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=90=8C=E6=AD=A5=E6=A0=A1=E9=AA=8C=E5=A4=B1?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 12 insertions(+), 16 deletions(-)
 
 diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
-index 6243ef6b12..f26340d470 100644
+index 6243ef6b1286a87c0425325507a17d3b17c10fd6..f26340d4709c5662b9167c05654be05190d68667 100644
 --- a/chrome/browser/aegis/metalink_download_verifier.cc
 +++ b/chrome/browser/aegis/metalink_download_verifier.cc
 @@ -13,7 +13,6 @@
@@ -79,7 +79,7 @@ index 6243ef6b12..f26340d470 100644
                         weak_factory_.GetWeakPtr()));
    }
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 5fa057a82c..9f98bcb409 100644
+index 5fa057a82c6b82c2cc1d188c2d526c98ef7101c2..9f98bcb40923019c032d2d5e0d792e23df0da589 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

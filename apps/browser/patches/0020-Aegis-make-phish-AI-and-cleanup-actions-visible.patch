@@ -1,4 +1,4 @@
-From 4ea54673022afbcf5e99546f9800f632ce25211a Mon Sep 17 00:00:00 2001
+From 29303e615ca43ecb1ed1297eb24a66cc8b828ed4 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:56:23 +0800
 Subject: [PATCH] Aegis: make phish, AI, and cleanup actions visible
@@ -24,7 +24,7 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  12 files changed, 313 insertions(+), 32 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
-index 8a964067ed..9d569541b1 100644
+index 8a964067ed6f90ffceca9ab689ea65d919aa08cb..9d569541b182d82199874bfe3e8f4bfc7f5de560 100644
 --- a/chrome/browser/aegis/aegis_cookie_janitor.cc
 +++ b/chrome/browser/aegis/aegis_cookie_janitor.cc
 @@ -93,6 +93,8 @@ void CookieJanitor::MaybeDelete(const net::CanonicalCookie& cookie) {
@@ -37,7 +37,7 @@ index 8a964067ed..9d569541b1 100644
  }
  
 diff --git a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
-index a607440cd1..6c6b3c3bf4 100644
+index a607440cd1e9a20d0aff13cc285cf9c09cef4f8b..6c6b3c3bf4aecd782ed928a25d59829471e6f103 100644
 --- a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
 +++ b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
 @@ -4,6 +4,8 @@
@@ -66,7 +66,7 @@ index a607440cd1..6c6b3c3bf4 100644
    content::WebContents* web_contents = handle->GetWebContents();
    if (!web_contents) {
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
-index 9cf31add42..a35ca50943 100644
+index 9cf31add42355a40e4a5b568dae5ca258c4711d5..a35ca50943dc90775181d8c18038c72984ddd112 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 @@ -24,47 +24,96 @@ bool IsChineseLocale(const std::string& locale) {
@@ -223,7 +223,7 @@ index 9cf31add42..a35ca50943 100644
    load_time_data.Set("explanationParagraph", FormatReasons(assessment_, zh));
    load_time_data.Set("primaryButtonText",
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index fbd22ac225..9ac6debafd 100644
+index fbd22ac225a258a1f25f9d87286a4b959a48a655..9ac6debafddfd14afdb0107d3258981df96ac8cd 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -10,6 +10,7 @@
@@ -318,7 +318,7 @@ index fbd22ac225..9ac6debafd 100644
 +
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 0357ea5c4b..f70862e27c 100644
+index 0357ea5c4bd40c0a1e87921179889a9e3f80717f..f70862e27c1ba4cdd2845ccf16dfa93797e38635 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -5,6 +5,7 @@
@@ -377,7 +377,7 @@ index 0357ea5c4b..f70862e27c 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index b51d859ac0..ebbe4c8159 100644
+index b51d859ac0270ba779f193e8924d3568604c8722..ebbe4c815957d71f4cbcc4a06e271c667bdc304e 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -101,12 +101,40 @@ h1 {
@@ -423,7 +423,7 @@ index b51d859ac0..ebbe4c8159 100644
    margin: 0 0 1rem;
    color: var(--muted);
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index bf46813897..3b4bc1ccf9 100644
+index bf46813897e53f80a4a9c5c515336ae57e68dee5..3b4bc1ccf91d971d4ffdcba9f5096a204d0ed9e1 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -74,6 +74,12 @@
@@ -440,7 +440,7 @@ index bf46813897..3b4bc1ccf9 100644
          <h2>$i18n{filterListTitle}</h2>
          <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 98fd69f668..f53afe98ab 100644
+index 98fd69f6685e4970f1a46f0f01aad0e94cdaf2ff..f53afe98abfee1c526556146ef12f49c679dfd45 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -4,6 +4,12 @@ import {sendWithPromise} from 'chrome://resources/js/cr.js';
@@ -568,7 +568,7 @@ index 98fd69f668..f53afe98ab 100644
      showResult(formatSummary(result));
      const prompt =
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 56dd6b1152..56426b38fb 100644
+index 56dd6b1152a685c0e3129d130f6173e8ccc92298..56426b38fb4ccade002740dab1ff0370fdb01353 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -51,6 +51,9 @@ struct AegisStrings {
@@ -625,7 +625,7 @@ index 56dd6b1152..56426b38fb 100644
  
    webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 1b404d276f..fcab89c4e6 100644
+index 1b404d276fa3ce3a7d894140f1f7446d4a5a8e41..fcab89c4e6f1bcd844edc69af6b38520c54b1af6 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -64,6 +64,10 @@ base::DictValue SummarizeToDict(const aegis::SummarizeResult& result) {
@@ -656,7 +656,7 @@ index 1b404d276f..fcab89c4e6 100644
  }
  
 diff --git a/chrome/common/aegis/cookie_classify.cc b/chrome/common/aegis/cookie_classify.cc
-index cebffddd25..9a76f38269 100644
+index cebffddd25b0ee1b123313c82e46e2f3b501bb73..9a76f382690d6e4e55ba13ab8c0c3fdd873d3c93 100644
 --- a/chrome/common/aegis/cookie_classify.cc
 +++ b/chrome/common/aegis/cookie_classify.cc
 @@ -97,4 +97,20 @@ bool ShouldRejectCookie(CookieCategory category) {
@@ -681,7 +681,7 @@ index cebffddd25..9a76f38269 100644
 +
  }  // namespace aegis
 diff --git a/chrome/common/aegis/cookie_classify.h b/chrome/common/aegis/cookie_classify.h
-index 05d0aac23c..0e89a6783c 100644
+index 05d0aac23cef494add2ea6597dbe73c205bf5aab..0e89a6783cc9750e8a2b06978fb1ff6612c7ca2b 100644
 --- a/chrome/common/aegis/cookie_classify.h
 +++ b/chrome/common/aegis/cookie_classify.h
 @@ -28,6 +28,8 @@ CookieCategory ClassifyCookie(std::string_view name,

@@ -1,4 +1,4 @@
-From 11fce2118c8dd0b52e1bae9c39d4c65880800d7e Mon Sep 17 00:00:00 2001
+From e7ff113c2f3506063f4d767c08c046915ec882c5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 01:30:31 +0800
 Subject: [PATCH] fix(aegis): route goals through model before browsing
@@ -28,7 +28,7 @@ Subject: [PATCH] fix(aegis): route goals through model before browsing
  21 files changed, 718 insertions(+), 100 deletions(-)
 
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.cc b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
-index af72dd4200..c91f34e01b 100644
+index af72dd4200b7a6e551f30e7698f674a466057a17..c91f34e01b4d1f7eedb49cea8c99d057c3a1a09c 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.cc
 @@ -15,6 +15,8 @@
@@ -76,7 +76,7 @@ index af72dd4200..c91f34e01b 100644
  // and onto contents container, investigate removing debouncing on the tab
  // controller side and handle it on the ui component side.
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller.h b/chrome/browser/actor/ui/actor_ui_tab_controller.h
-index a848b2a62c..3834b4f368 100644
+index a848b2a62cc4d85b40a21a83da8d75c07f147b8e..3834b4f368b176f03e084e91220f1f31e222406c 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller.h
 @@ -34,6 +34,7 @@ class ActorUiTabController : public ActorUiTabControllerInterface {
@@ -88,7 +88,7 @@ index a848b2a62c..3834b4f368 100644
    void OnViewBoundsChanged() override;
    void OnOverlayHoverStatusChanged(bool is_hovering) override;
 diff --git a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
-index 7ca7ad87ac..a6cab85cc0 100644
+index 7ca7ad87ac0bcf2ddbb7b195c28755b174152cfa..a6cab85cc0307161bcceccd76354ecd8114864e0 100644
 --- a/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
 +++ b/chrome/browser/actor/ui/actor_ui_tab_controller_interface.h
 @@ -80,6 +80,10 @@ class ActorUiTabControllerInterface {
@@ -103,7 +103,7 @@ index 7ca7ad87ac..a6cab85cc0 100644
    virtual void OnWebContentsAttached() = 0;
  
 diff --git a/chrome/browser/actor/ui/handoff_button_controller.cc b/chrome/browser/actor/ui/handoff_button_controller.cc
-index f7f9ab96eb..e5c0742d1e 100644
+index f7f9ab96ebfb210a630e9fdb8e4726d258f20eb9..e5c0742d1e586b1b06457e4c4397ef7c0fd7dd1d 100644
 --- a/chrome/browser/actor/ui/handoff_button_controller.cc
 +++ b/chrome/browser/actor/ui/handoff_button_controller.cc
 @@ -12,8 +12,6 @@
@@ -133,7 +133,7 @@ index f7f9ab96eb..e5c0742d1e 100644
        tab_controller->SetActorTaskResume();
      }
 diff --git a/chrome/browser/actor/ui/handoff_button_controller_unittest.cc b/chrome/browser/actor/ui/handoff_button_controller_unittest.cc
-index 9cc786427f..d510854f19 100644
+index 9cc786427fc9ea52a7c12a0b51268a4ae2f7bef6..d510854f1908a9950fd28bb26425e477b602cf29 100644
 --- a/chrome/browser/actor/ui/handoff_button_controller_unittest.cc
 +++ b/chrome/browser/actor/ui/handoff_button_controller_unittest.cc
 @@ -223,6 +223,7 @@ TEST_F(HandoffButtonControllerTest,
@@ -145,7 +145,7 @@ index 9cc786427f..d510854f19 100644
    controller_->PressButton();
  
 diff --git a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
-index 8951b21d11..a711539299 100644
+index 8951b21d116671bda0eb50623ae7e5e794328c04..a7115392992538f70ea61717fea130513bd663e1 100644
 --- a/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
 +++ b/chrome/browser/actor/ui/test_support/mock_actor_ui_tab_controller.h
 @@ -43,6 +43,7 @@ class MockActorUiTabController : public ActorUiTabControllerInterface {
@@ -157,7 +157,7 @@ index 8951b21d11..a711539299 100644
    MOCK_METHOD(void, OnViewBoundsChanged, (), (override));
  
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 54e3e57bce..eb3e5270f4 100644
+index 54e3e57bcecd12cf11e54932d45680e59515ea78..eb3e5270f40d703908e19310d61160a9f1dcd9e4 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -374,7 +374,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
@@ -242,7 +242,7 @@ index 54e3e57bce..eb3e5270f4 100644
                         V2SpikeRoutesEntryOwnsTabAndRejectsStaleDocument) {
    ASSERT_TRUE(embedded_test_server()->Start());
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 63f15effc2..9b4c906629 100644
+index 63f15effc21255bddb45176c61f0eb2213c2e64f..9b4c906629e11b1bce135cb72d91c952a0e25582 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -352,6 +352,7 @@ struct AegisAgentService::ExecutionRuntime {
@@ -400,7 +400,7 @@ index 63f15effc2..9b4c906629 100644
    action_results_.clear();
    action_tools_.clear();
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index f42280e4c2..5aa5144787 100644
+index f42280e4c26eb6933cb3fd4d9dbcd372067e7c18..5aa51447876bb4597cc4dd2f498e71abb8636c5c 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -48,6 +48,10 @@ class AegisAgentService : public KeyedService {
@@ -447,7 +447,7 @@ index f42280e4c2..5aa5144787 100644
    std::map<std::string, AgentModelCapabilityTracker> model_capabilities_;
    std::map<std::string, ActionResults> action_results_;
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index ed0d887bc5..7cf40ec660 100644
+index ed0d887bc5a3d39ec2e57122453e029b54f91ed4..7cf40ec660ed8e9e5ff2e10f1143a71728382a8a 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -228,6 +228,15 @@ TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
@@ -467,7 +467,7 @@ index ed0d887bc5..7cf40ec660 100644
  
  TEST(AegisAgentToolRegistryTest, SelectRequiresExactActionApproval) {
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index cc5a3b0858..aa00d32c22 100644
+index cc5a3b0858da027545ff36a8a288230f2c513659..aa00d32c22ad7be909e9c57be69d691abd7801a0 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -209,6 +209,7 @@ The browser has already validated the user's immutable goal, exact origin and ta
@@ -502,7 +502,7 @@ index cc5a3b0858..aa00d32c22 100644
      const AgentPlanStep& step = plan.steps[next_step];
      base::DictValue step_value;
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index 16c7212305..05a54d919e 100644
+index 16c72123053d1d6b9591a053f6052448f57ecad8..05a54d919eb95b4bacf1c193add2cabec289160f 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -6,6 +6,7 @@
@@ -524,7 +524,7 @@ index 16c7212305..05a54d919e 100644
  // A model turn may contain text for the timeline, but it must contain exactly
  // one native tool call and a completed event. The requested tool must match the
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index ae1d65d6f1..fcb399e686 100644
+index ae1d65d6f1139410ed6d3bc7e92e766caaa8eb46..fcb399e686fe44c85986fe95c337ba36075804d3 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -155,6 +155,8 @@ TEST(AegisAgentExecutionTest, PromptLabelsAndBoundsCumulativeEvidence) {
@@ -551,7 +551,7 @@ index ae1d65d6f1..fcb399e686 100644
  
  TEST(AegisAgentExecutionTest, CompletionIsStructuredAndUsesSafeSourceUrls) {
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 204933e30a..857f4fe933 100644
+index 204933e30af2006e43bf17cec12900a7b134cd70..857f4fe93374427bad665897e14914b8acb92fbd 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -20,14 +20,24 @@ constexpr size_t kMaxPlanSteps = 50;
@@ -792,7 +792,7 @@ index 204933e30a..857f4fe933 100644
    for (AgentDataClass data_class : maximum_scope.allowed_data_classes) {
      data_classes.Append(DataClassName(data_class));
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index 9238d38ffc..dd4a6595d0 100644
+index 9238d38ffc3f3aecaedd21a928ce736ef97a3e1b..dd4a6595d0f61686035d07b38437cb0ed1b957bc 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -10,6 +10,7 @@
@@ -845,7 +845,7 @@ index 9238d38ffc..dd4a6595d0 100644
  std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
      const AgentModelEvent& event,
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index ad3ff10238..3265991673 100644
+index ad3ff10238db6dcb4e62a3927cd979eed53cf37a..3265991673b3a60c7d52789b42bf3dc85a52575d 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -52,6 +52,76 @@ AgentModelEvent ValidPlanEvent() {
@@ -959,7 +959,7 @@ index ad3ff10238..3265991673 100644
  
  }  // namespace
 diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
-index c2b985d34a..fab61c7c3e 100644
+index c2b985d34a3421d1ec726daee7abc3629dd2540d..fab61c7c3edfb9f123f9175d78fd4c5c7b9d13b5 100644
 --- a/chrome/browser/aegis/agent/agent_workflow.cc
 +++ b/chrome/browser/aegis/agent/agent_workflow.cc
 @@ -3,6 +3,7 @@
@@ -989,7 +989,7 @@ index c2b985d34a..fab61c7c3e 100644
    scope.budgets = workflow.budgets;
    scope.model_destination = std::move(destination);
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 706df7a21d..5b9e11616f 100644
+index 706df7a21d83bc035198e471d16a8ecf08284976..5b9e11616ff857f7be4d4b481eec6b92ba266600 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -248,6 +248,9 @@ function renderTimeline(events: TimelineEvent[]) {
@@ -1070,7 +1070,7 @@ index 706df7a21d..5b9e11616f 100644
  
    const approval = element('approval-card');
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 33a6f76e9f..590a07db21 100644
+index 33a6f76e9f30526f12f544a5123bcdba173f79e1..590a07db21bc6e37a613e10d7943b8c742199d9a 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -227,18 +227,15 @@ std::vector<url::Origin> AutomaticTaskOrigins(const GURL& task_url) {
@@ -1280,7 +1280,7 @@ index 33a6f76e9f..590a07db21 100644
  }
  
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
-index a550ba9c61..40f2223104 100644
+index a550ba9c613cb914b800cb07c4437e148767937d..40f22231048c87504c4a07d3fa83b49bbc747037 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 @@ -3,6 +3,7 @@
@@ -1331,7 +1331,7 @@ index a550ba9c61..40f2223104 100644
    void OnModelConfigured(ConfigureModelCallback callback,
                           bool ok,
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 84703e6166..053858df2c 100644
+index 84703e61665077c1cdb6b34a49e11a40ad492b60..053858df2c5126e9a730a2f98f9f93051c45d972 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -63,9 +63,9 @@ void AddStrings(content::WebUIDataSource* source) {

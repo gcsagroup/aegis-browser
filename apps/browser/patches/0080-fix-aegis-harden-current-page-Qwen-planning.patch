@@ -1,4 +1,4 @@
-From a7139478083597fb2d25e331b12c50dfc24a1e4a Mon Sep 17 00:00:00 2001
+From 2ccc368786134b4a48bfa9f7bf9912cf640f1ed3 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 16:56:03 +0800
 Subject: [PATCH] fix(aegis): harden current-page Qwen planning
@@ -13,7 +13,7 @@ Subject: [PATCH] fix(aegis): harden current-page Qwen planning
  6 files changed, 67 insertions(+), 9 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 96339101da..98934585e4 100644
+index 96339101da59b6332733dc6af641822faba7b62d..98934585e4bae1d5dd3ed7e07a87314a9adf1202 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -690,6 +690,47 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
@@ -65,7 +65,7 @@ index 96339101da..98934585e4 100644
                         AutomationScheduleIsBrowserOwnedAndBoundToTask) {
    ASSERT_TRUE(embedded_test_server()->Start());
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 84433194bb..cbe61a017f 100644
+index 84433194bb8dde01b4cd8ff27f8aa64f16296c3d..cbe61a017f0d1a955662ebe3f2c266f964d9ede5 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -71,6 +71,7 @@ constexpr size_t kMaxInvocationDisplayBytes = 2048;
@@ -104,7 +104,7 @@ index 84433194bb..cbe61a017f 100644
    std::optional<AgentModelClient::RequestId> request_id =
        client_it->second->Start(
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index aa00d32c22..020afc13ab 100644
+index aa00d32c22ad7be909e9c57be69d691abd7801a0..020afc13abd9b4064570a9b9bce9067cf9a225d8 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -207,6 +207,7 @@ std::string BuildAgentExecutionSystemContract() {
@@ -116,7 +116,7 @@ index aa00d32c22..020afc13ab 100644
  Never request or repeat passwords, OTP values, cookies, authorization tokens, API keys, payment-card values, arbitrary code execution, remote debugging, or final transaction submission.
  Write the final summary and unfinished items in the same primary language as the user's goal.
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 57cf10b160..133c54032c 100644
+index 57cf10b160f5c7437bc6ae14fbcd7c516eea9278..133c54032c31f2ffb198d07849aafacf19255be8 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -286,7 +286,7 @@ AgentModelToolDefinition BuildRouteGoalToolDefinition() {
@@ -148,7 +148,7 @@ index 57cf10b160..133c54032c 100644
  Every tool result is returned to you automatically, and agent.complete presents the final answer after the listed steps. Never add tab, window, navigation, or write actions merely to display a preview or answer to the user.
  Use each tool only for the purpose in the supplied tool catalog. A tool marked requires_authorized_origin cannot be used when maximum_origins is empty.
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index c4c62a5cc9..924c523f01 100644
+index c4c62a5cc963cd855f92c4b3aae93c35be65ca48..924c523f016852af95ba5ee1b21cc845a4623b10 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -76,6 +76,12 @@ TEST(AegisAgentPlannerTest, GoalRouterChoosesNativeUrlOrSearchEntry) {
@@ -180,7 +180,7 @@ index c4c62a5cc9..924c523f01 100644
        "整理并检查失效收藏夹", AgentWorkflowKind::kResearch);
    ASSERT_TRUE(prompt);
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 738f2448db..5daa9c0068 100644
+index 738f2448dbb3e53e24ea3578b3eb43d0e056143d..5daa9c00688fc12921c19827502e75926935beee 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -562,9 +562,14 @@ void AegisAgentPageHandler::OnGoalRouted(

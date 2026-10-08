@@ -1,4 +1,4 @@
-From 05036c24887c5e68901cf13ebedee1273bf29d39 Mon Sep 17 00:00:00 2001
+From 92ee102e6ec787e3673e60405d74d551129834a8 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 02:05:36 +0800
 Subject: [PATCH] fix(aegis): tolerate redundant browser-only targets
@@ -9,7 +9,7 @@ Subject: [PATCH] fix(aegis): tolerate redundant browser-only targets
  2 files changed, 13 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index b76deec8c1..60bfc4ea25 100644
+index b76deec8c1688581de89a8d236d6ff439828a7e4..60bfc4ea25ae28bffc41331c1d51864beaf8406b 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -391,10 +391,11 @@ std::optional<AgentGoalRoute> ParseAndValidateGoalRoute(
@@ -29,7 +29,7 @@ index b76deec8c1..60bfc4ea25 100644
      route.entry_kind = AgentGoalEntryKind::kOpenUrl;
      const GURL url(route.target);
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 4a7c166fd4..e97e4ee951 100644
+index 4a7c166fd432fdf731b39fac1c4d78b1cbc50800..e97e4ee951b80a33028dd8653dbbfa1426b0b74e 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -82,6 +82,14 @@ TEST(AegisAgentPlannerTest, GoalRouterChoosesNativeUrlOrSearchEntry) {

@@ -39,6 +39,8 @@ import XCTest
     func testDownloadQueuePauseLowSpaceAndReconnect() async throws {
         let directory = try temporaryDirectory()
         let manager = DownloadManager(directory: directory, background: false, maximumConcurrentDownloads: 1)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         try await waitUntil { !manager.hasActiveDownloads }
         let first = try manager.start("http://127.0.0.1:8768/slow.bin")
         let second = try manager.start("http://127.0.0.1:8768/download.bin")
@@ -56,9 +58,42 @@ import XCTest
         manager.cancel(first)
     }
 
+    func testQueueWaitsForDurableCompletionAndResumesAfterStorageRecovery() async throws {
+        let directory = try temporaryDirectory()
+        var blockCompletion = true
+        let storage = DownloadManifestStorage(write: { records, url in
+            if blockCompletion && records.contains(where: { $0.state == .completed }) {
+                throw CocoaError(.fileWriteNoPermission)
+            }
+            try JSONEncoder().encode(records).write(to: url, options: .atomic)
+        })
+        let manager = DownloadManager(directory: directory, background: false, storage: storage,
+                                      maximumConcurrentDownloads: 1)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
+        let first = try manager.start("http://127.0.0.1:8768/slow.bin")
+        let second = try manager.start("http://127.0.0.1:8768/download.bin")
+        XCTAssertEqual(manager.items.first { $0.id == second }?.state, .queued)
+        try await waitUntil { manager.storageError != nil }
+        XCTAssertFalse(manager.isReady)
+        XCTAssertNotEqual(manager.items.first { $0.id == first }?.state, .completed)
+        XCTAssertEqual(manager.items.first { $0.id == second }?.state, .queued)
+        XCTAssertEqual(manager.items.first { $0.id == second }?.received, 0)
+        XCTAssertThrowsError(try manager.start("http://127.0.0.1:8768/download.bin"))
+        blockCompletion = false
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady && manager.items.allSatisfy { $0.state == .completed } }
+        XCTAssertEqual(manager.items.count, 2)
+        for item in manager.items {
+            XCTAssertEqual(try DownloadManager.hashFile(manager.fileURL(item)), item.sha256)
+        }
+    }
+
     func testCompletedReceiptRecoversAfterManifestWriteFailureAndRemovalIsReversible() async throws {
         let directory = try temporaryDirectory()
         let manager = DownloadManager(directory: directory, background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         try await waitUntil { !manager.hasActiveDownloads }
         let id = try manager.start("http://127.0.0.1:8768/slow.bin")
         try await waitUntil { manager.items.first?.received ?? 0 > 0 }
@@ -66,8 +101,14 @@ import XCTest
         // 用目录占住清单路径，模拟文件已完成但清单无法原子写入。
         try FileManager.default.removeItem(at: manager.recordFileURL)
         try FileManager.default.createDirectory(at: manager.recordFileURL, withIntermediateDirectories: false)
-        try await waitUntil { manager.items.first?.state == .completed }
-        XCTAssertNotNil(manager.storageError)
+        try await waitUntil { manager.storageError != nil }
+        let receiptURL = directory.appendingPathComponent(id.uuidString).appendingPathComponent("download-record.json")
+        try await waitUntil { FileManager.default.fileExists(atPath: receiptURL.path) }
+        let receipt = try JSONDecoder().decode(BrowserDownload.self, from: Data(contentsOf: receiptURL))
+        XCTAssertEqual(receipt.state, .completed)
+        XCTAssertEqual(try DownloadManager.hashFile(manager.fileURL(receipt)), receipt.sha256)
+        XCTAssertNotEqual(manager.items.first?.state, .completed)
+        XCTAssertFalse(manager.isReady)
         try FileManager.default.removeItem(at: manager.recordFileURL)
         try beforeCompletion.write(to: manager.recordFileURL)
         let restarted = DownloadManager(directory: directory, background: false)
@@ -93,10 +134,12 @@ import XCTest
 
     func testPausedDownloadRestoresFromTrashAndContinues() async throws {
         let manager = DownloadManager(directory: try temporaryDirectory(), background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         let id = try manager.start("http://127.0.0.1:8768/slow.bin")
         try await waitUntil { (manager.items.first?.received ?? 0) > 0 }
         manager.pause(id)
-        try await waitUntil { manager.items.first?.state == .paused }
+        try await waitUntil { manager.items.first?.state == .paused && manager.isReady && !manager.hasActiveDownloads }
         try manager.removeDownloads([id], includingFiles: true)
         XCTAssertTrue(manager.items.isEmpty)
         let count = try await manager.restoreRecycledFiles()
@@ -111,9 +154,15 @@ import XCTest
 
     func testInterruptedHTTPDownloadCanResumeWithMatchingFile() async throws {
         let manager = DownloadManager(directory: try temporaryDirectory(), background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         let id = try manager.start("http://127.0.0.1:8768/drop.bin?case=\(UUID())")
-        try await waitUntil { [.paused, .completed].contains(manager.items.first { $0.id == id }!.state) }
-        if manager.items.first?.state == .paused { try manager.resume(id) }
+        try await waitUntil { manager.isReady && [.paused, .completed].contains(manager.items.first { $0.id == id }!.state) }
+        if manager.items.first?.state == .paused {
+            XCTAssertEqual(manager.items.first?.resumeDataUsable, true)
+            XCTAssertFalse(try Data(contentsOf: manager.directory.appendingPathComponent("\(id).resume")).isEmpty)
+            try manager.resume(id)
+        }
         try await waitUntil { manager.items.first?.state == .completed }
         let item = try XCTUnwrap(manager.items.first)
         XCTAssertEqual(item.received, Int64("GCSA Aegis simulator download verification\n".utf8.count * 1024 * 32))

@@ -1,4 +1,4 @@
-From 7a16c41210f4297fa6b4967f9ec4880ac7285429 Mon Sep 17 00:00:00 2001
+From 19875c5a26b8b58d8ca1b4b1d65793e04754323d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 22 Sep 2026 17:35:49 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
@@ -23,7 +23,7 @@ Content-Transfer-Encoding: 8bit
  10 files changed, 317 insertions(+), 35 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 8397898dda..674639c2ce 100644
+index 8397898ddae9cf47fbac8e3c8e46b6c40a54b5be..674639c2ce46929deb8b46406db60fb5892ee071 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1756,6 +1756,16 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
@@ -69,7 +69,7 @@ index 8397898dda..674639c2ce 100644
          AgentResearchCompletionClaimsSave(*completion)) {
        validation_error =
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 73dcf8af4f..09df57e8af 100644
+index 73dcf8af4fcc80203a439bb542f40533a31349a4..09df57e8af4f7981ef446d4919c64574d9c8e981 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -914,7 +914,12 @@ std::string BuildAgentExecutionSystemContractForTask(
@@ -205,7 +205,7 @@ index 73dcf8af4f..09df57e8af 100644
      AgentCompletionSummary* completion,
      const AgentTask& task,
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index daa0e7488a..e10bdd8470 100644
+index daa0e7488ae8839307c77881113198a9ea98efc5..e10bdd84706d6a9861b3a972f920208450ea8198 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -66,6 +66,15 @@ void UpdateAgentResearchSaveCompletion(AgentCompletionSummary* completion,
@@ -225,7 +225,7 @@ index daa0e7488a..e10bdd8470 100644
  void NormalizeAgentDownloadCompletion(
      AgentCompletionSummary* completion,
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 75ab28ebab..22e1163efa 100644
+index 75ab28ebabf4055551e3a3cee8595b8210f2a6de..22e1163efa43b0d0ba24b496db895727f0902e8f 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -27,6 +27,74 @@ AgentTaskScope ExecutionScope() {
@@ -304,7 +304,7 @@ index 75ab28ebab..22e1163efa 100644
    AgentToolRegistry registry;
    auto tool = registry.ModelToolForName("page.extract");
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 9bdd9f0065..bf643d3295 100644
+index 9bdd9f006500ddc434c35ecebbaf18d2a732b08c..bf643d3295d599552b0fb9fb84567ac88cab331b 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -14,6 +14,7 @@
@@ -365,7 +365,7 @@ index 9bdd9f0065..bf643d3295 100644
      return std::ranges::any_of(plan.steps, [&](const AgentPlanStep& step) {
        return step.tool_name == tool_name;
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index 179c443869..68964d5ae0 100644
+index 179c4438691f9063495ce10169e28097d86683c0..68964d5ae0317b24197038bc8fecc4a1544cc8ee 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -80,6 +80,10 @@ bool AgentGoalRequiresPageEvidence(std::string_view user_goal);
@@ -380,7 +380,7 @@ index 179c443869..68964d5ae0 100644
  // 与计划解析共用来源、标签页及 page.observe 绑定判断，不增加任何授权。
  bool AgentTaskRequiresPageEvidence(std::string_view user_goal,
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index a625175c29..c09f090af8 100644
+index a625175c29d09bada94f519ad473b0c4160e9d1c..c09f090af88108c7fdb7709e3f7d91ded9f10dac 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -68,6 +68,15 @@ AgentModelEvent GoalRouteEvent(std::string workflow,
@@ -400,7 +400,7 @@ index a625175c29..c09f090af8 100644
    for (const char* goal :
         {"列出这个任务打开的标签页。", "列出本任务的标签页",
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index aaaec57206..b46bb9cd7a 100644
+index aaaec572068b93945f83b6b4de127d9a143713f2..b46bb9cd7aea4e03afdbb1fb5e0cd7bfbdccb4fd 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -582,6 +582,53 @@ function renderDownloadEvidence(next: TaskSnapshot) {
@@ -523,7 +523,7 @@ index aaaec57206..b46bb9cd7a 100644
        'click', () => withBusy(async () => {
          const goal =
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 9f98b407dd..f9dfbbbdc8 100644
+index 9f98b407dd15b8b89f89613325348ce61207fda5..f9dfbbbdc8ce2bb3b34f5acd9d3705f7ad9397bc 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -177,6 +177,11 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -554,7 +554,7 @@ index 9f98b407dd..f9dfbbbdc8 100644
        "正在理解任務");
    add("timelinePlanningDetail", "Identifying the target and planning steps",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 7d742f517c..c156b1a2fd 100644
+index 7d742f517c800880dfd076105cd476abf6fa83d7..c156b1a2fdc55e937968d459228258cd8c179b2f 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

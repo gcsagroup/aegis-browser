@@ -1,4 +1,4 @@
-From e05a1182707701b52187d944276c5791e5cf2687 Mon Sep 17 00:00:00 2001
+From 59b3a7f315cd46482f63a2f114e4feb80f67adb4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 29 Sep 2026 19:50:29 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=B8=85=E7=90=86=E5=93=81=E7=89=8C=E6=8F=92?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 4 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/notifications/android/java/res/values-night/colors.xml b/chrome/browser/notifications/android/java/res/values-night/colors.xml
-index 93ba522c1e..25ea4ae39d 100644
+index 93ba522c1e90d23c0cd5ae7f33aeb91a364f83b5..25ea4ae39d968a4a4d78ffbea5b39bd0f4d60f6d 100644
 --- a/chrome/browser/notifications/android/java/res/values-night/colors.xml
 +++ b/chrome/browser/notifications/android/java/res/values-night/colors.xml
 @@ -5,6 +5,4 @@ Use of this source code is governed by a BSD-style license that can be
@@ -29,7 +29,7 @@ index 93ba522c1e..25ea4ae39d 100644
 \ No newline at end of file
 +</resources>
 diff --git a/chrome/browser/notifications/android/java/res/values/colors.xml b/chrome/browser/notifications/android/java/res/values/colors.xml
-index 022991aae1..25ea4ae39d 100644
+index 022991aae14f0c4c7465809ad8cf40b22863d0e3..25ea4ae39d968a4a4d78ffbea5b39bd0f4d60f6d 100644
 --- a/chrome/browser/notifications/android/java/res/values/colors.xml
 +++ b/chrome/browser/notifications/android/java/res/values/colors.xml
 @@ -5,6 +5,4 @@ Use of this source code is governed by a BSD-style license that can be
@@ -42,7 +42,7 @@ index 022991aae1..25ea4ae39d 100644
 \ No newline at end of file
 +</resources>
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 9ec2c354b1..4c0dd4ee97 100644
+index 9ec2c354b137e0bcdfbd576be4bea92d38f4446c..4c0dd4ee97ea7d511faea6a991d8b99642339290 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

@@ -1,4 +1,4 @@
-From 18bae59063ad16517c42ee9f8b30a73f3447b60d Mon Sep 17 00:00:00 2001
+From dcb10d915f959599a3a96d68ab5df7ce18ae63a1 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 17:24:05 +0800
 Subject: [PATCH] Aegis: add phishing interstitial for built-in seed hosts
@@ -30,7 +30,7 @@ that match the Aegis phishing seed list, gated by module prefs.
  create mode 100644 chrome/common/aegis/builtin_phish_hosts.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 1ef0295be6..76ca9ea201 100644
+index 1ef0295be6d24892fddd752b94959d08b16ff45c..76ca9ea201cb15e7db52afbab1347c18e5e79063 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -3,6 +3,12 @@
@@ -67,7 +67,7 @@ index 1ef0295be6..76ca9ea201 100644
  }
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 new file mode 100644
-index 0000000000..c9f06c47b8
+index 0000000000000000000000000000000000000000..c9f06c47b83eec969976a03193f8bb6071a712f7
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 @@ -0,0 +1,133 @@
@@ -206,7 +206,7 @@ index 0000000000..c9f06c47b8
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.h b/chrome/browser/aegis/aegis_phish_blocking_page.h
 new file mode 100644
-index 0000000000..1176e52409
+index 0000000000000000000000000000000000000000..1176e52409730bdc042260bd62bd2883be60cf0d
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.h
 @@ -0,0 +1,53 @@
@@ -265,7 +265,7 @@ index 0000000000..1176e52409
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_BLOCKING_PAGE_H_
 diff --git a/chrome/browser/aegis/aegis_phish_controller_client.cc b/chrome/browser/aegis/aegis_phish_controller_client.cc
 new file mode 100644
-index 0000000000..4f7d440f9d
+index 0000000000000000000000000000000000000000..4f7d440f9d84626aadf4c5bd8bae1f17b6ab3f4c
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_controller_client.cc
 @@ -0,0 +1,53 @@
@@ -324,7 +324,7 @@ index 0000000000..4f7d440f9d
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_phish_controller_client.h b/chrome/browser/aegis/aegis_phish_controller_client.h
 new file mode 100644
-index 0000000000..948152d953
+index 0000000000000000000000000000000000000000..948152d953a2b20a9578aec5bffe5b774799cdb9
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_controller_client.h
 @@ -0,0 +1,41 @@
@@ -371,7 +371,7 @@ index 0000000000..948152d953
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_CONTROLLER_CLIENT_H_
 diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 new file mode 100644
-index 0000000000..58354b8151
+index 0000000000000000000000000000000000000000..58354b8151ec4176f284c90b0c67e0bdac8f6c18
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 @@ -0,0 +1,103 @@
@@ -480,7 +480,7 @@ index 0000000000..58354b8151
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.h b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
 new file mode 100644
-index 0000000000..574459db4d
+index 0000000000000000000000000000000000000000..574459db4d0352d5b49a7b83b22f0c9fb79ed470
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
 @@ -0,0 +1,42 @@
@@ -527,7 +527,7 @@ index 0000000000..574459db4d
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_NAVIGATION_THROTTLE_H_
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index d1ef3720cd..dbb575ae3e 100644
+index d1ef3720cdea8d3b7564e00e16459b348dcb652d..dbb575ae3e2469f195b5b6d75edfbbe9355dbbad 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -5,7 +5,9 @@
@@ -574,7 +574,7 @@ index d1ef3720cd..dbb575ae3e 100644
 +
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 5d2e3d6bc1..33028ff532 100644
+index 5d2e3d6bc1608e66041def4266079802b691899e..33028ff5323d4655a87331a7a441dff18594bf1f 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -4,6 +4,9 @@
@@ -608,10 +608,10 @@ index 5d2e3d6bc1..33028ff532 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index 14dbe4670d..bc16e524a1 100644
+index cba0d32176eb2bfd1f36c9dcb336122195099d31..9887304d76b3b9325e0561d86ed48c81c5d560b2 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-@@ -20,6 +20,7 @@
+@@ -21,6 +21,7 @@
  #include "chrome/browser/history/history_service_factory.h"
  #include "chrome/browser/interstitials/enterprise_util.h"
  #include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
@@ -619,7 +619,7 @@ index 14dbe4670d..bc16e524a1 100644
  #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
  #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
  #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
-@@ -407,6 +408,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -409,6 +410,7 @@ void CreateAndAddChromeThrottlesForNavigation(
    }
  
    LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);
@@ -628,7 +628,7 @@ index 14dbe4670d..bc16e524a1 100644
    PDFIFrameNavigationThrottle::MaybeCreateAndAdd(registry);
  
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 8a39ff200a..4ad8a9ce67 100644
+index 8a39ff200ac1b815fb94288141b522a3f4f4b228..4ad8a9ce677b02ebc8154828ff2b08a83d09d702 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -5,6 +5,8 @@ source_set("aegis") {
@@ -642,7 +642,7 @@ index 8a39ff200a..4ad8a9ce67 100644
      "features.cc",
 diff --git a/chrome/common/aegis/builtin_phish_hosts.cc b/chrome/common/aegis/builtin_phish_hosts.cc
 new file mode 100644
-index 0000000000..09dc3adb6f
+index 0000000000000000000000000000000000000000..09dc3adb6f46cf3f04fa466597033e9d3591a390
 --- /dev/null
 +++ b/chrome/common/aegis/builtin_phish_hosts.cc
 @@ -0,0 +1,58 @@
@@ -706,7 +706,7 @@ index 0000000000..09dc3adb6f
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/builtin_phish_hosts.h b/chrome/common/aegis/builtin_phish_hosts.h
 new file mode 100644
-index 0000000000..dc7a0bb3d2
+index 0000000000000000000000000000000000000000..dc7a0bb3d2b7c6cb4c337160b191a6a75dd8b53b
 --- /dev/null
 +++ b/chrome/common/aegis/builtin_phish_hosts.h
 @@ -0,0 +1,18 @@

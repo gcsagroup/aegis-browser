@@ -4,25 +4,23 @@
 
 [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml)
 
-GCSA-aegis Browser is a Chromium fork that integrates privacy and security controls in the browser and engine layers. It is not an Electron shell and does not treat an extension as the product.
+GCSA-aegis Browser integrates privacy and security controls into Chromium and its engine.
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
-> **2026-09-22 当前本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
+> **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](../../docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
 
-> 历史 057 验收记录：The installed macOS candidate is Ver 2.0 (057), Chromium 153.0.8010.53, with 198 Chromium patches and 3 V8 patches. All 535 native checks passed. The unified task result is 75/90, with 2 failures, 9 prerequisite blocks and 4 insufficient-evidence results; the 90% gate is not met. The 100 security cases, input/performance measurements, language checks and release limitations have separate conclusions. See the [final batch record](../../docs/audit/integration-final-batch-2026-09-22.zh-CN.md).
+> **Historical evidence (2026-09-22):** The macOS Ver 2.0 (061) results, including 539 native regressions, belong only to the candidate identified in the [audit record](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md). They do not establish acceptance of the current source.
 
-## 历史基线（2026-09-16）
+macOS is the current focus; runtime, real-network and distribution validation remain open. Other platforms follow the [roadmap](../../docs/roadmap.md).
 
-Ver 1.1 (044)的已验收基线为153.0.8010.37，包含140个Chromium补丁与3个V8补丁。完整重放树为`6f6294dfabbb9bfcf69a5a612bad3b2c41334ce5`。Ver 1.1 (044)在固定macOS测试App完成211项原生回归及版本、设置、摘要、Agent、原生下载、无痕和冷重启验收。
-
-[044本地验收](../../docs/audit/m1-local-acceptance-044-2026-09-16.zh-CN.md)列明源码、清单、签名、恢复与限制；[9月10日记录](../../docs/audit/main-consolidation-2026-09-10.md)只保留为历史。当时完整90/100评测及M2/M3尚未完成；最新候选状态见上文。Android/Windows当前版本实机和公开发行仍未验收。
+The [2026-09-10 audit](../../docs/audit/main-consolidation-2026-09-10.md) records historical replay and test results, not qualification of the current source.
 
 ## Pinned Chromium base
 
 | File | Meaning |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | Pinned Mac Stable version, currently `153.0.8010.53` |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `155.0.8059.40`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | Exact Chromium commit used as the patch base |
 
 The pin is a fixed snapshot. It does not track newer Stable releases automatically.
@@ -36,8 +34,6 @@ The pin is a fixed snapshot. It does not track newer Stable releases automatical
 - [Overlay synchronization rules](./docs/overlay.md)
 - [Chromium tree layout](./docs/tree-layout.md)
 - [Patch maintenance notes](./patches/README.md)
-
-For operational truth, use `patches/series`, `patches/v8/series`, and the scripts under `scripts/`. A historical status note is not a substitute for a fresh replay, build, or runtime check.
 
 ## Repository layout
 
@@ -64,7 +60,7 @@ Keep platform workspaces under one sibling `GCSA-aegis-build` directory: `macos`
 
 ## Local workflow
 
-Run commands from the repository root. Bootstrap, fetch, sync, and dependency downloads use the network.
+Complete the [workspace setup](../../README.md#getting-started) first. Run commands from the repository root with the mise toolchain active (`mise exec -- <command>` if needed). Bootstrap, fetch, sync and dependency downloads use the network.
 
 ```bash
 # Prepare depot_tools.
@@ -81,7 +77,7 @@ pnpm --filter @gcsa-aegis/browser bootstrap:libtorrent
 
 # Build and run the component development app.
 pnpm --filter @gcsa-aegis/browser build
-pnpm --filter @gcsa-aegis/browser run
+pnpm run browser:run
 
 # Produce a non-component Release build-tree input.
 pnpm --filter @gcsa-aegis/browser build:release
@@ -117,16 +113,9 @@ Build success alone does not promote an output to RC or release status.
 
 ## Patch and overlay model
 
-`overlay/` records the expected Aegis integration source. It is neither a standalone product nor the applied source of record. Changes must be exported into the ordered patch series and replayed on the exact pinned Chromium base.
+`overlay/` holds the expected integration source. Export changes into the ordered [Chromium](./patches/series) and [V8](./patches/v8/series) patch lists, then replay them on the pinned bases. Those lists define the current inventory; historical counts and tree hashes belong in [audit records](../../docs/audit/README.md).
 
-The current source accounting is:
-
-- 152 top-level patches listed for Chromium, including the M2 candidate awaiting acceptance.
-- 3 additional patches applied inside the nested V8 checkout.
-- The 57-, 65-, 67-, 95-, and 97-patch identities are historical and do not cover the current v2 candidate.
-- Patches 0079–0095 passed an exact isolated-index replay on the previously verified 78-patch tree; patch 0096 independently produced the exact 96-patch tree; patch 0097 produced the exact 97-patch tree; patch 0098 produced the exact 98-patch tree `7069e2b065466bbab3e3007e5866a3790e85ed47`; patch 0099 produced the exact 99-patch tree `915676bbfbd340b8b8feb15aecacc70dfd53861b`; patch 0100 produced the exact 100-patch tree `b8285fda53d21dff5ee56c39be1455ad3e5c3c82`; patch 0101 produced the exact 101-patch tree `451b3148d12fc2cff2df293cb0f1bb0d6242a908`; and patch 0102 produced the exact 102-patch tree `4546f1afcabf38013ba9bef7e9e5d078ffd3ca77`. Artifact identity and runtime qualification remain platform-specific.
-
-“Present in the series” means only that a patch file is listed. It does not prove successful replay, build reproducibility, platform acceptance, signing, packaging, or publication.
+A listed patch is not proof of successful replay, build or runtime validation.
 
 ## Product boundaries
 
@@ -160,8 +149,6 @@ Before any desktop publication, the same candidate must have:
 4. product identity, signing, notarization, and packaging;
 5. fresh-install and upgrade acceptance on representative systems; and
 6. an explicit release decision.
-
-044本地候选的140/3补丁重放、211项原生回归及关键实机验收已通过；这不替代完整任务/安全评测、跨平台实机、正式发行签名、公证和发布决定。
 
 ## Android
 

@@ -88,6 +88,7 @@ final class StorageReliabilityTests: XCTestCase {
         for original in cases {
             try original.write(to: file)
             let manager = DownloadManager(directory: directory, background: false)
+            await manager.retryStorage()
             XCTAssertNotNil(manager.storageError)
             XCTAssertThrowsError(try manager.start("http://127.0.0.1:8768/download.bin"))
             await Task.yield()
@@ -104,6 +105,8 @@ final class StorageReliabilityTests: XCTestCase {
         let original = try JSONEncoder().encode([item])
         try original.write(to: file)
         let manager = DownloadManager(directory: directory, background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         // 在测试专用清单位置放置目录，模拟无法原子写入；不修改真实用户目录。
         try FileManager.default.removeItem(at: file)
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
@@ -112,6 +115,8 @@ final class StorageReliabilityTests: XCTestCase {
         XCTAssertNotNil(manager.storageError)
         try FileManager.default.removeItem(at: file)
         try original.write(to: file)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         try manager.resume(item.id)
         try await waitUntil { manager.items.first?.state == .completed }
         XCTAssertNil(manager.storageError)
@@ -126,17 +131,24 @@ final class StorageReliabilityTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("downloads.json")
         let manager = DownloadManager(directory: directory, background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         let id = try manager.start("http://127.0.0.1:8768/slow.bin")
         try await waitUntil { (manager.items.first?.received ?? 0) > 0 }
         try FileManager.default.removeItem(at: file)
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
-        try await waitUntil { manager.items.first?.state == .completed }
-        XCTAssertNotNil(manager.storageError)
-        let item = try XCTUnwrap(manager.items.first { $0.id == id })
-        XCTAssertEqual(try DownloadManager.hashFile(manager.fileURL(item)), item.sha256)
+        try await waitUntil { manager.storageError != nil }
+        let receiptURL = directory.appendingPathComponent(id.uuidString).appendingPathComponent("download-record.json")
+        try await waitUntil { FileManager.default.fileExists(atPath: receiptURL.path) }
+        let receipt = try JSONDecoder().decode(BrowserDownload.self, from: Data(contentsOf: receiptURL))
+        XCTAssertEqual(receipt.state, .completed)
+        XCTAssertEqual(try DownloadManager.hashFile(manager.fileURL(receipt)), receipt.sha256)
+        XCTAssertNotEqual(manager.items.first?.state, .completed)
+        XCTAssertFalse(manager.isReady)
+        XCTAssertEqual(receipt.id, id)
     }
 
-    func testFailedRetryWriteFailureKeepsMirrorAndRecoveryData() throws {
+    func testFailedRetryWriteFailureKeepsMirrorAndRecoveryData() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("downloads.json")
@@ -148,6 +160,8 @@ final class StorageReliabilityTests: XCTestCase {
         let recovery = Data("保留恢复资料".utf8)
         try recovery.write(to: resumeFile)
         let manager = DownloadManager(directory: directory, background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         try FileManager.default.removeItem(at: file)
         try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
         XCTAssertThrowsError(try manager.resume(item.id))
@@ -155,7 +169,7 @@ final class StorageReliabilityTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: resumeFile), recovery)
     }
 
-    func testOversizedDownloadWriteKeepsExistingRecords() throws {
+    func testOversizedDownloadWriteKeepsExistingRecords() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("downloads.json")
@@ -163,6 +177,8 @@ final class StorageReliabilityTests: XCTestCase {
         let original = try JSONEncoder().encode([item])
         try original.write(to: file)
         let manager = DownloadManager(directory: directory, background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         let plan = DownloadPlan(urls: [URL(string: "http://127.0.0.1:8768/download.bin")!], filename: String(repeating: "a", count: 2_000_001))
         XCTAssertThrowsError(try manager.start(plan))
         XCTAssertEqual(manager.items, [item])

@@ -1,4 +1,4 @@
-From 758666368e06e6a3b12dcab862a3b9a814359365 Mon Sep 17 00:00:00 2001
+From 07a9e4b570b0f05033da8e434daf0d30be620021 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 22:17:13 +0800
 Subject: [PATCH] feat(aegis): add site summary shortcut
@@ -28,7 +28,7 @@ Subject: [PATCH] feat(aegis): add site summary shortcut
  create mode 100644 chrome/browser/aegis/summary_session_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 8f8c5cbee2..69006853b4 100644
+index 8f8c5cbee25d00c87528ada36a2518f528e93c02..69006853b4825193588c54ac6badde30ca42bde1 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -72,6 +72,12 @@ source_set("aegis") {
@@ -53,7 +53,7 @@ index 8f8c5cbee2..69006853b4 100644
 +  }
  }
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 65f0bbb738..c18ce8b681 100644
+index 65f0bbb738797bbe88b8e5e9c0ce160d1f9e49b0..c18ce8b68181bc41611a4504c624393c0216da4d 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -232,6 +232,11 @@ AegisService::~AegisService() {
@@ -187,7 +187,7 @@ index 65f0bbb738..c18ce8b681 100644
                                 SummarizeResult fallback,
                                 base::OnceCallback<void(SummarizeResult)> done,
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index ac6cba5bb7..bbe9f64e45 100644
+index ac6cba5bb76bfeef618ee0f9235033d30f2aabfc..bbe9f64e45c8b0802e3d3d20a408af39c4389738 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -102,6 +102,11 @@ class AegisService : public chrome::mojom::AegisHost, public ProfileObserver {
@@ -227,7 +227,7 @@ index ac6cba5bb7..bbe9f64e45 100644
    std::string ConfiguredModelBaseUrl() const;
    std::string ConfiguredModelName() const;
 diff --git a/chrome/browser/aegis/aegis_service_unittest.cc b/chrome/browser/aegis/aegis_service_unittest.cc
-index 84e60603fe..10e7af02e9 100644
+index 84e60603fe566d84c90bcc74f3193c7bb6e36a47..10e7af02e92ff15572c79a89d72c39f8ea1e47d0 100644
 --- a/chrome/browser/aegis/aegis_service_unittest.cc
 +++ b/chrome/browser/aegis/aegis_service_unittest.cc
 @@ -95,6 +95,24 @@ TEST_F(AegisServiceModelSettingsTest,
@@ -373,7 +373,7 @@ index 84e60603fe..10e7af02e9 100644
   protected:
    void SetUp() override {
 diff --git a/chrome/browser/aegis/model_provider_client.cc b/chrome/browser/aegis/model_provider_client.cc
-index 9e930cb875..bc070f7a40 100644
+index 9e930cb8754b7f008692bee654655bbdb972f9ed..bc070f7a40814e3e64cda4983d31993c854c6e7a 100644
 --- a/chrome/browser/aegis/model_provider_client.cc
 +++ b/chrome/browser/aegis/model_provider_client.cc
 @@ -16,6 +16,7 @@
@@ -560,7 +560,7 @@ index 9e930cb875..bc070f7a40 100644
    }
    std::optional<std::string> content = ParseChatContent(provider, *body);
 diff --git a/chrome/browser/aegis/model_provider_client.h b/chrome/browser/aegis/model_provider_client.h
-index a5c3ec19f7..87c69915c8 100644
+index a5c3ec19f7c0cb9395a2dfb7ef77ebdd80f9dcee..87c69915c812880325b7f0a19f4dbbd29f04ed21 100644
 --- a/chrome/browser/aegis/model_provider_client.h
 +++ b/chrome/browser/aegis/model_provider_client.h
 @@ -12,6 +12,7 @@
@@ -616,7 +616,7 @@ index a5c3ec19f7..87c69915c8 100644
  };
  
 diff --git a/chrome/browser/aegis/model_provider_client_unittest.cc b/chrome/browser/aegis/model_provider_client_unittest.cc
-index b4d6cdfa3c..acd5d7559e 100644
+index b4d6cdfa3cb68470b84cffd71414bbca450fb22e..acd5d7559ec30d317d40a9fc39695026aa95d52d 100644
 --- a/chrome/browser/aegis/model_provider_client_unittest.cc
 +++ b/chrome/browser/aegis/model_provider_client_unittest.cc
 @@ -19,6 +19,7 @@
@@ -698,7 +698,7 @@ index b4d6cdfa3c..acd5d7559e 100644
  }  // namespace
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
-index b1fd69b4c4..bc15431571 100644
+index b1fd69b4c45721abc806d627baf23e7b9f61e862..bc1543157102b42f4e8d79131fb5fbed6a7daeb3 100644
 --- a/chrome/browser/aegis/summary_policy.cc
 +++ b/chrome/browser/aegis/summary_policy.cc
 @@ -96,7 +96,7 @@ const re2::RE2& AwsKeyPattern() {
@@ -971,7 +971,7 @@ index b1fd69b4c4..bc15431571 100644
                               const PreparedSummary& prepared,
                               std::string* error) {
 diff --git a/chrome/browser/aegis/summary_policy.h b/chrome/browser/aegis/summary_policy.h
-index 7c43f930aa..bad367adc4 100644
+index 7c43f930aa7edfe10bae9aca5a644eb3a611e36c..bad367adc4bd90e0b7068befe6bfb4f476d97530 100644
 --- a/chrome/browser/aegis/summary_policy.h
 +++ b/chrome/browser/aegis/summary_policy.h
 @@ -36,9 +36,16 @@ struct ModelPrompt {
@@ -995,7 +995,7 @@ index 7c43f930aa..bad367adc4 100644
  // 校验 renderer 返回的安全快照与本地启发式结果。失败时不应 Probe 或
  // 调用任何兼容模型 API。
 diff --git a/chrome/browser/aegis/summary_policy_unittest.cc b/chrome/browser/aegis/summary_policy_unittest.cc
-index 913d178549..51713ca163 100644
+index 913d17854997c69a5623cedf1aa3225ec79a22d7..68f34fb0db9106319d5472d1154ed3992363e488 100644
 --- a/chrome/browser/aegis/summary_policy_unittest.cc
 +++ b/chrome/browser/aegis/summary_policy_unittest.cc
 @@ -4,9 +4,11 @@
@@ -1164,7 +1164,7 @@ index 913d178549..51713ca163 100644
  }
 diff --git a/chrome/browser/aegis/summary_session.cc b/chrome/browser/aegis/summary_session.cc
 new file mode 100644
-index 0000000000..bdd52b3bfb
+index 0000000000000000000000000000000000000000..bdd52b3bfbd90048086ddcbc367b7674e0c5bd43
 --- /dev/null
 +++ b/chrome/browser/aegis/summary_session.cc
 @@ -0,0 +1,285 @@
@@ -1455,7 +1455,7 @@ index 0000000000..bdd52b3bfb
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/summary_session.h b/chrome/browser/aegis/summary_session.h
 new file mode 100644
-index 0000000000..72b7e65660
+index 0000000000000000000000000000000000000000..72b7e65660197b63b41f1596d888690e59cd0d69
 --- /dev/null
 +++ b/chrome/browser/aegis/summary_session.h
 @@ -0,0 +1,104 @@
@@ -1565,7 +1565,7 @@ index 0000000000..72b7e65660
 +#endif  // CHROME_BROWSER_AEGIS_SUMMARY_SESSION_H_
 diff --git a/chrome/browser/aegis/summary_session_unittest.cc b/chrome/browser/aegis/summary_session_unittest.cc
 new file mode 100644
-index 0000000000..ed5bc9d7f3
+index 0000000000000000000000000000000000000000..ed5bc9d7f31dc90ab0d8f855c5cdbc7b6866b454
 --- /dev/null
 +++ b/chrome/browser/aegis/summary_session_unittest.cc
 @@ -0,0 +1,59 @@
@@ -1629,7 +1629,7 @@ index 0000000000..ed5bc9d7f3
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index fa5d232202..406d0ef0a5 100644
+index fa5d232202d50dd63238743702426e0c936e04ee..406d0ef0a53863f167a4916c825af4c86db203de 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -75,6 +75,9 @@ interface CapturedSummary {
@@ -1830,7 +1830,7 @@ index fa5d232202..406d0ef0a5 100644
  }
  
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-index 8b6b8fa6ec..5c7388ca19 100644
+index 8b6b8fa6ece2ee22c4f5dfff9ee103efa7db7239..5c7388ca19dd5eee2891c2d5a753afae198b6b51 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 @@ -6,13 +6,16 @@
@@ -2380,7 +2380,7 @@ index 8b6b8fa6ec..5c7388ca19 100644
        service->GetPageSummary(web_contents_);
  
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
-index 5322188f74..495286cd52 100644
+index 5322188f74a9b092df1b6eae86b8469850520b37..495286cd52da255dbdbd55a2ec74a53a28b90aca 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
 @@ -40,6 +40,7 @@ class AegisToolbarButton : public ToolbarButton,
@@ -2392,7 +2392,7 @@ index 5322188f74..495286cd52 100644
    base::OneShotTimer intro_timer_;
  };
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 3604708f74..b333c5a34e 100644
+index 3604708f74bbd31749233c568ab20b9aa50c5bf5..b333c5a34ef33fb110fb8ec21c66606493edc46a 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -54,6 +54,8 @@ constexpr size_t kMaxCaptureUrlBytes = 8192;
@@ -2836,7 +2836,7 @@ index 3604708f74..b333c5a34e 100644
    for (const std::string& name : models) {
      list.Append(name);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index a7eaeed5f7..50a99e097d 100644
+index a7eaeed5f7a9309fbf6ded53963670c3e83c2462..50a99e097d4b30170c9f9c3ae2976222e18b39eb 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -49,6 +49,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,

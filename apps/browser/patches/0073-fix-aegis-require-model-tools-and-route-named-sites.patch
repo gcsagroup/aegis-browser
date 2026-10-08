@@ -1,4 +1,4 @@
-From a255cffeb7ab72039877cf8be680297583b91cdf Mon Sep 17 00:00:00 2001
+From 9df88998b28df1091e0a5c2bdef36b3290f431ee Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 09:10:23 +0800
 Subject: [PATCH] fix(aegis): require model tools and route named sites
@@ -15,7 +15,7 @@ Subject: [PATCH] fix(aegis): require model tools and route named sites
  8 files changed, 121 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 9b4c906629..f988264fde 100644
+index 9b4c906629e11b1bce135cb72d91c952a0e25582..f988264fdefff9b9eba89a84debe05cee8b04a1e 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -568,7 +568,9 @@ void AegisAgentService::RouteGoal(std::string goal,
@@ -65,7 +65,7 @@ index 9b4c906629..f988264fde 100644
    }
    runtime.model_failures = 0;
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol.cc b/chrome/browser/aegis/agent/agent_model_protocol.cc
-index dae4845cb2..6e00a84329 100644
+index dae4845cb270c833e9ed5260df50405a983cfbf9..6e00a84329ee1114178412187fd9f94a72a258cb 100644
 --- a/chrome/browser/aegis/agent/agent_model_protocol.cc
 +++ b/chrome/browser/aegis/agent/agent_model_protocol.cc
 @@ -889,7 +889,15 @@ bool ValidateRequest(const AgentModelRequest& request, std::string* error) {
@@ -151,7 +151,7 @@ index dae4845cb2..6e00a84329 100644
        generation_config.Set("maxOutputTokens", request.max_output_tokens);
        payload.Set("generationConfig", std::move(generation_config));
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol.h b/chrome/browser/aegis/agent/agent_model_protocol.h
-index 0b6ec10683..ac3641177b 100644
+index 0b6ec10683865d6b06160debf48df5779e3f093f..ac3641177bd7e27993ee0a3da8c98a1d54d623f2 100644
 --- a/chrome/browser/aegis/agent/agent_model_protocol.h
 +++ b/chrome/browser/aegis/agent/agent_model_protocol.h
 @@ -39,6 +39,12 @@ struct AgentModelRequest {
@@ -168,7 +168,7 @@ index 0b6ec10683..ac3641177b 100644
    bool stream = true;
  };
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
-index 942d7bab29..5e9af70734 100644
+index 942d7bab290ad3d0444d1216a6b7485d355b8c20..5e9af707343bd60fdb84d9ba988a8392b97ad65c 100644
 --- a/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
 @@ -42,6 +42,8 @@ AgentModelRequest Request(AgentModelProvider provider, bool stream) {
@@ -221,7 +221,7 @@ index 942d7bab29..5e9af70734 100644
    const std::vector<AgentModelToolDefinition> tools = Tools();
    const std::string openai = R"({
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 857f4fe933..c552e73b42 100644
+index 857f4fe93374427bad665897e14914b8acb92fbd..c552e73b42a7a4efaeeaf7d1dcf454ed9c7ecaf5 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -146,8 +146,10 @@ Understand the user's complete goal before choosing how the browser should begin
@@ -236,7 +236,7 @@ index 857f4fe933..c552e73b42 100644
  The browser independently validates the route, creates tabs, grants scope, and enforces approvals.)";
  }
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 3265991673..ad86f5a62b 100644
+index 3265991673b3a60c7d52789b42bf3dc85a52575d..ad86f5a62b597dd4ba6495a9ac9ae817647fe5fa 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -111,6 +111,10 @@ TEST(AegisAgentPlannerTest, GoalRouterPromptRequiresIntentBeforeEntry) {
@@ -251,7 +251,7 @@ index 3265991673..ad86f5a62b 100644
    const std::optional<std::string> prompt = BuildAgentGoalRoutingPrompt(
        "整理并检查失效收藏夹", AgentWorkflowKind::kResearch);
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 5b9e11616f..fc0fef6e29 100644
+index 5b9e11616ff857f7be4d4b481eec6b92ba266600..fc0fef6e29d95fdd8918aee2fc802871e1293edc 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -236,6 +236,12 @@ function renderTimeline(events: TimelineEvent[]) {
@@ -280,7 +280,7 @@ index 5b9e11616f..fc0fef6e29 100644
        (error.includes('structured-tool contract') ||
         error.includes('tool argument') ||
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 053858df2c..d9b854fefe 100644
+index 053858df2c5126e9a730a2f98f9f93051c45d972..d9b854fefe20c5b6a892460bd69744c97b4fe2f6 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -189,6 +189,10 @@ void AddStrings(content::WebUIDataSource* source) {

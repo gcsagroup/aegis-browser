@@ -1,4 +1,4 @@
-From 8901fc957502633924bc329d88ec124fab6a7a05 Mon Sep 17 00:00:00 2001
+From 8612819b81878bb7252d50831ac1cb309865cb5a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 00:59:03 +0800
 Subject: [PATCH] fix: disable Google AIM eligibility requests
@@ -7,15 +7,15 @@ Subject: [PATCH] fix: disable Google AIM eligibility requests
  .../aim_eligibility_service_factory.cc        | 15 ++++++---
  .../aim_eligibility_service_factory.h         |  3 +-
  .../browser/aim_eligibility_service.cc        |  8 +++++
- .../omnibox/browser/aim_eligibility_service.h |  4 +++
+ .../omnibox/browser/aim_eligibility_service.h |  3 ++
  .../aim_eligibility_service_unittest.cc       | 32 ++++++++++++++++++-
- 5 files changed, 56 insertions(+), 6 deletions(-)
+ 5 files changed, 55 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/autocomplete/aim_eligibility_service_factory.cc b/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
-index 6433ed2d46..477a1a7be8 100644
+index db99292ecd82008b1d6f067f3b99f2f8516eee10..50fee56f066c1404d5b8d86f4fbe11dca4e53437 100644
 --- a/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
 +++ b/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
-@@ -24,9 +24,11 @@
+@@ -29,11 +29,13 @@
  namespace {
  
  AimEligibilityService::Configuration CreateConfiguration(
@@ -24,11 +24,13 @@ index 6433ed2d46..477a1a7be8 100644
 +    bool allow_server_requests) {
    AimEligibilityService::Configuration config;
    config.is_off_the_record = is_off_the_record;
+   config.full_version_list =
+       embedder_support::GetUserAgentMetadata().SerializeBrandFullVersionList();
 +  config.allow_server_requests = allow_server_requests;
    if (!contextual_tasks::IsContextualTasksUIEnabled()) {
      return config;
    }
-@@ -40,6 +42,7 @@ AimEligibilityService::Configuration CreateConfiguration(
+@@ -58,6 +60,7 @@ AimEligibilityService::Configuration CreateConfiguration(
  }
  
  std::unique_ptr<KeyedService> BuildServiceInstance(
@@ -36,7 +38,7 @@ index 6433ed2d46..477a1a7be8 100644
      content::BrowserContext* context) {
    Profile* profile = Profile::FromBrowserContext(context);
    return std::make_unique<ChromeAimEligibilityService>(
-@@ -48,7 +51,7 @@ std::unique_ptr<KeyedService> BuildServiceInstance(
+@@ -66,7 +69,7 @@ std::unique_ptr<KeyedService> BuildServiceInstance(
        profile->GetDefaultStoragePartition()
            ->GetURLLoaderFactoryForBrowserProcess(),
        IdentityManagerFactory::GetForProfile(profile),
@@ -45,7 +47,7 @@ index 6433ed2d46..477a1a7be8 100644
  }
  
  }  // namespace
-@@ -70,7 +73,8 @@ AimEligibilityServiceFactory* AimEligibilityServiceFactory::GetInstance() {
+@@ -88,7 +91,8 @@ AimEligibilityServiceFactory* AimEligibilityServiceFactory::GetInstance() {
  BrowserContextKeyedServiceFactory::TestingFactory
  AimEligibilityServiceFactory::GetDefaultFactory() {
    CHECK_IS_TEST();
@@ -55,7 +57,7 @@ index 6433ed2d46..477a1a7be8 100644
  }
  
  AimEligibilityServiceFactory::AimEligibilityServiceFactory()
-@@ -92,7 +96,10 @@ AimEligibilityServiceFactory::~AimEligibilityServiceFactory() = default;
+@@ -110,7 +114,10 @@ AimEligibilityServiceFactory::~AimEligibilityServiceFactory() = default;
  std::unique_ptr<KeyedService>
  AimEligibilityServiceFactory::BuildServiceInstanceForBrowserContext(
      content::BrowserContext* context) const {
@@ -68,7 +70,7 @@ index 6433ed2d46..477a1a7be8 100644
  
  bool AimEligibilityServiceFactory::ServiceIsCreatedWithBrowserContext() const {
 diff --git a/chrome/browser/autocomplete/aim_eligibility_service_factory.h b/chrome/browser/autocomplete/aim_eligibility_service_factory.h
-index 3d0a0989c8..1582e867ad 100644
+index 3d0a0989c8ccafcf5820edadc86e0187440c37b2..1582e867adf6b4db47b2107b3a34335c52470440 100644
 --- a/chrome/browser/autocomplete/aim_eligibility_service_factory.h
 +++ b/chrome/browser/autocomplete/aim_eligibility_service_factory.h
 @@ -21,7 +21,8 @@ class AimEligibilityServiceFactory : public ProfileKeyedServiceFactory {
@@ -82,7 +84,7 @@ index 3d0a0989c8..1582e867ad 100644
  
    AimEligibilityServiceFactory(const AimEligibilityServiceFactory&) = delete;
 diff --git a/components/omnibox/browser/aim_eligibility_service.cc b/components/omnibox/browser/aim_eligibility_service.cc
-index 5e1a8533f2..433190c44e 100644
+index 3b6b5eba6438a9886b1081f23ba2eeb466b8247a..9dbb220aeb0d0d13a723cbbf5d41627a187b3c72 100644
 --- a/components/omnibox/browser/aim_eligibility_service.cc
 +++ b/components/omnibox/browser/aim_eligibility_service.cc
 @@ -350,6 +350,10 @@ AimEligibilityService::AimEligibilityService(
@@ -96,7 +98,7 @@ index 5e1a8533f2..433190c44e 100644
    if (IsManualOverrideActive()) {
      base::Time override_time =
          pref_service_->GetTime(kManualOverrideTimestampPrefName);
-@@ -1091,6 +1095,10 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
+@@ -1101,6 +1105,10 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
  void AimEligibilityService::StartServerEligibilityRequest(
      RequestSource request_source,
      const std::string& locale) {
@@ -108,14 +110,13 @@ index 5e1a8533f2..433190c44e 100644
      return;
    }
 diff --git a/components/omnibox/browser/aim_eligibility_service.h b/components/omnibox/browser/aim_eligibility_service.h
-index 62ce20d505..c3673e572e 100644
+index a550dc7c27dfb2c28bf1e562ad6f4b55dbe43c16..88c4a9b292a392aacfbe84a54d74c7b82eda529c 100644
 --- a/components/omnibox/browser/aim_eligibility_service.h
 +++ b/components/omnibox/browser/aim_eligibility_service.h
-@@ -116,6 +116,10 @@ class AimEligibilityService
-     // The value for the `Sec-CH-UA-Full-Version-List` HTTP Header. The header
-     // is skipped if it is empty.
-     std::string full_version_list;
-+
+@@ -121,6 +121,9 @@ class AimEligibilityService
+     // The value for the `Chrome-Search-Capabilities-Version` HTTP Header. The
+     // header is skipped if it is empty.
+     std::string search_capabilities_version;
 +    // 产品嵌入方必须显式允许，服务才能发送 Google AIM eligibility 请求。
 +    // 关闭后仍保留本地 eligibility 状态与缓存响应处理。
 +    bool allow_server_requests = false;
@@ -123,10 +124,10 @@ index 62ce20d505..c3673e572e 100644
  
    // Returns the current server eligibility request mode based on the feature
 diff --git a/components/omnibox/browser/aim_eligibility_service_unittest.cc b/components/omnibox/browser/aim_eligibility_service_unittest.cc
-index dd1dc30533..6fe12a0c13 100644
+index ce051ec98a3f01f4eef0707a149f95fb9ef014f9..ea296e6c6d539ca0c6933bb020871a4257be142a 100644
 --- a/components/omnibox/browser/aim_eligibility_service_unittest.cc
 +++ b/components/omnibox/browser/aim_eligibility_service_unittest.cc
-@@ -54,6 +54,10 @@ class AimEligibilityServiceFriend {
+@@ -55,6 +55,10 @@ class AimEligibilityServiceFriend {
    static bool IsIetfBcp47(const std::string& locale) {
      return AimEligibilityService::IsIetfBcp47(locale);
    }
@@ -137,7 +138,7 @@ index dd1dc30533..6fe12a0c13 100644
  };
  
  namespace {
-@@ -103,7 +107,9 @@ class AimEligibilityServiceTest : public testing::Test {
+@@ -104,7 +108,9 @@ class AimEligibilityServiceTest : public testing::Test {
    void SetUp() override {
      AimEligibilityService::RegisterProfilePrefs(
          search_engines_test_environment_.pref_service().registry());
@@ -148,7 +149,7 @@ index dd1dc30533..6fe12a0c13 100644
    }
  
    void CreateService(
-@@ -376,6 +382,27 @@ TEST_F(AimEligibilityServiceTest, ClientLocaleParam) {
+@@ -410,6 +416,27 @@ TEST_F(AimEligibilityServiceTest, ClientLocaleParam) {
    EXPECT_EQ(value, "es-419");
  }
  
@@ -176,7 +177,7 @@ index dd1dc30533..6fe12a0c13 100644
  TEST_F(AimEligibilityServiceTest, ClientCountryParam_Enabled) {
    base::test::ScopedFeatureList feature_list;
    feature_list.InitAndEnableFeature(
-@@ -700,6 +727,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader) {
+@@ -734,6 +761,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader) {
        omnibox::kAimServerEligibilitySendFullVersionListEnabled);
  
    AimEligibilityService::Configuration config;
@@ -184,7 +185,7 @@ index dd1dc30533..6fe12a0c13 100644
    config.full_version_list = "Test Brand List";
    CreateService(config);
  
-@@ -723,6 +751,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader_Disabled) {
+@@ -757,6 +785,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader_Disabled) {
        omnibox::kAimServerEligibilitySendFullVersionListEnabled);
  
    AimEligibilityService::Configuration config;
@@ -192,7 +193,7 @@ index dd1dc30533..6fe12a0c13 100644
    config.full_version_list = "Test Brand List";
    CreateService(config);
  
-@@ -743,6 +772,7 @@ TEST_F(AimEligibilityServiceTest, CoBrowseUserAgentSuffix) {
+@@ -777,6 +806,7 @@ TEST_F(AimEligibilityServiceTest, CoBrowseUserAgentSuffix) {
        omnibox::kAimServerEligibilitySendCoBrowseUserAgentSuffixEnabled);
  
    AimEligibilityService::Configuration config;

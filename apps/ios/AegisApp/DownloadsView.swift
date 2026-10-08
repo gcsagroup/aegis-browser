@@ -76,6 +76,8 @@ struct DownloadsView: View {
             List(selection: $selection) {
                 if let error = downloads.storageError {
                     Text(error).foregroundStyle(.red).accessibilityIdentifier("download-storage-error")
+                    Button("重试恢复下载记录") { Task { await downloads.retryStorage() } }
+                        .accessibilityIdentifier("retry-download-storage")
                 }
                 newDownloadSection
                 if let plan = importedPlan { metalinkSection(plan) }
@@ -181,7 +183,7 @@ struct DownloadsView: View {
                     requestDownload(DownloadPlan(urls: urls, sha256: expectedHash))
                 } catch { self.error = error.localizedDescription }
             } label: { Text("开始下载").frame(maxWidth: .infinity) }
-            .buttonStyle(.borderedProminent).disabled(address.isEmpty).accessibilityIdentifier("start-download")
+            .buttonStyle(.borderedProminent).disabled(address.isEmpty || !downloads.isReady).accessibilityIdentifier("start-download")
             Text("仅下载你指定的文件，不会执行或安装。登录后才能访问的文件可能需要网站提供直接下载链接。")
                 .font(.footnote).foregroundStyle(.secondary)
         }
@@ -195,7 +197,7 @@ struct DownloadsView: View {
             Text(plan.sha256 != nil ? "包含 SHA-256 校验值" : "包含 SHA-512 校验值").font(.caption)
             Button("确认并开始下载") {
                 requestDownload(plan)
-            }.accessibilityIdentifier("confirm-metalink")
+            }.disabled(!downloads.isReady).accessibilityIdentifier("confirm-metalink")
             Button("取消", role: .cancel) { importedPlan = nil }
         }
     }
@@ -273,7 +275,7 @@ struct DownloadsView: View {
             } else {
                 Button(item.state == .paused ? "继续下载" : "重新下载") {
                     do { try downloads.resume(item.id) } catch { self.error = error.localizedDescription }
-                }
+                }.disabled(!downloads.isReady)
             }
         }.padding(.vertical, 8).buttonStyle(.bordered).accessibilityElement(children: .contain)
     }

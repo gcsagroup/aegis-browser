@@ -1,4 +1,4 @@
-From 312b2e3458ba66a8fa704dfc08c1123c9c46b42d Mon Sep 17 00:00:00 2001
+From 529160df0eb01035081e0077a055cd74f5441002 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 00:59:48 +0800
 Subject: [PATCH] Aegis: add stub service and feature flags
@@ -23,10 +23,10 @@ browser-process service once the startup Profile is ready.
  create mode 100644 chrome/common/aegis/features.h
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index eaa7929a31..e7d5317c6b 100644
+index b58905ddb371f96377320c2948fe64bb17257663..34959a155979e60aa3c040f4b8a2cc61e8786052 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -405,6 +405,7 @@ source_set("chrome_browser_main") {
+@@ -404,6 +404,7 @@ source_set("chrome_browser_main") {
    public = [ "chrome_browser_main.h" ]
    deps = [
      ":after_startup_task_utils",
@@ -36,7 +36,7 @@ index eaa7929a31..e7d5317c6b 100644
      "//build:buildflag_header_h",
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 new file mode 100644
-index 0000000000..cdc61302ba
+index 0000000000000000000000000000000000000000..cdc61302baab5e79eff1a8934869a7994c080a9f
 --- /dev/null
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -0,0 +1,13 @@
@@ -55,7 +55,7 @@ index 0000000000..cdc61302ba
 +}
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
 new file mode 100644
-index 0000000000..6e2ccb30ce
+index 0000000000000000000000000000000000000000..6e2ccb30ce4adc445af3f6eda14f0b1ef078e82e
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -0,0 +1,35 @@
@@ -96,7 +96,7 @@ index 0000000000..6e2ccb30ce
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
 new file mode 100644
-index 0000000000..fb76c457df
+index 0000000000000000000000000000000000000000..fb76c457df3ea6db3ee3447c1ebe149fc9d83ef4
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -0,0 +1,36 @@
@@ -137,7 +137,7 @@ index 0000000000..fb76c457df
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 86f985f073..8dd9857db0 100644
+index cbf3b6c563090a64c427e1b0ce8cbf7118aa82d2..bf35530a0f98fc0774eee7bba7ea747b2161523f 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -3,6 +3,7 @@
@@ -148,7 +148,7 @@ index 86f985f073..8dd9857db0 100644
  
  #include <memory>
  #include <string>
-@@ -1943,6 +1944,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1975,6 +1976,10 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
    // Call `PostProfileInit()`and set it up for profiles created later.
    profile_init_manager_ = std::make_unique<ProfileInitManager>(this, profile);
  
@@ -161,7 +161,7 @@ index 86f985f073..8dd9857db0 100644
    // and preferences have been registered since some of the import code depends
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
 new file mode 100644
-index 0000000000..c79bd53317
+index 0000000000000000000000000000000000000000..c79bd5331745a8b1179051083aa0cd178d733128
 --- /dev/null
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -0,0 +1,10 @@
@@ -177,7 +177,7 @@ index 0000000000..c79bd53317
 +}
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
 new file mode 100644
-index 0000000000..0199b4faaa
+index 0000000000000000000000000000000000000000..0199b4faaac74ded63a0c8d743e25f488c0ff5b8
 --- /dev/null
 +++ b/chrome/common/aegis/features.cc
 @@ -0,0 +1,14 @@
@@ -197,7 +197,7 @@ index 0000000000..0199b4faaa
 +}  // namespace aegis::features
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
 new file mode 100644
-index 0000000000..42366027db
+index 0000000000000000000000000000000000000000..42366027dbd58705add92e40496b9237fdfb1698
 --- /dev/null
 +++ b/chrome/common/aegis/features.h
 @@ -0,0 +1,19 @@

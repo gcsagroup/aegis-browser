@@ -1,4 +1,4 @@
-From 11604666392dd43119cea041cbaf010bdf2de980 Mon Sep 17 00:00:00 2001
+From 37fb50c68d92700bf2b20e68faccf1ff65fb0867 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 17:19:59 +0800
 Subject: [PATCH] Aegis: show a CDP agent banner that opens chrome://aegis
@@ -18,7 +18,7 @@ connection is visible, and send the action to chrome://aegis.
  create mode 100644 chrome/common/aegis/cdp_infobar_copy_unittest.cc
 
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
-index 041fefd3e8..8fe7094943 100644
+index 041fefd3e8ee6df651c44b24cafa6dcc86111074..8fe70949435a80bda2f20f263e7fc1ef9247046d 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 @@ -65,7 +65,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,
@@ -40,10 +40,10 @@ index 041fefd3e8..8fe7094943 100644
                  ->GetActiveWebContents()
                  ->GetVisibleURL());
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
-index 0747ae2e67..dfac0332d7 100644
+index c6ec25a0006847274faead59d785ca249542955d..c496409d0aa8b4061c22d72a586eeb82a45ece11 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
-@@ -19,12 +19,12 @@
+@@ -19,14 +19,14 @@
  #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
  #include "chrome/browser/ui/navigator/browser_navigator.h"
  #include "chrome/browser/ui/navigator/browser_navigator_params.h"
@@ -53,12 +53,14 @@ index 0747ae2e67..dfac0332d7 100644
  #include "components/infobars/core/confirm_infobar_delegate.h"
  #include "components/infobars/core/infobar_delegate.h"
  #include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/page_transition_types.h"
+ #include "ui/base/window_open_disposition.h"
  #include "ui/gfx/text_constants.h"
 -#include "ui/strings/grit/ui_strings.h"
  
  DevToolsRemoteServerInfobarDelegate::DevToolsRemoteServerInfobarDelegate() =
      default;
-@@ -43,7 +43,9 @@ bool DevToolsRemoteServerInfobarDelegate::ShouldExpire(
+@@ -45,7 +45,9 @@ bool DevToolsRemoteServerInfobarDelegate::ShouldExpire(
  }
  
  std::u16string DevToolsRemoteServerInfobarDelegate::GetMessageText() const {
@@ -69,7 +71,7 @@ index 0747ae2e67..dfac0332d7 100644
  }
  
  int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
-@@ -58,8 +60,8 @@ int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
+@@ -60,8 +62,8 @@ int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
  
  std::u16string DevToolsRemoteServerInfobarDelegate::GetButtonLabel(
      InfoBarButton button) const {
@@ -80,7 +82,7 @@ index 0747ae2e67..dfac0332d7 100644
  }
  
  bool DevToolsRemoteServerInfobarDelegate::Accept() {
-@@ -69,7 +71,7 @@ bool DevToolsRemoteServerInfobarDelegate::Accept() {
+@@ -71,7 +73,7 @@ bool DevToolsRemoteServerInfobarDelegate::Accept() {
    if (!browser) {
      return ConfirmInfoBarDelegate::Accept();
    }
@@ -90,7 +92,7 @@ index 0747ae2e67..dfac0332d7 100644
    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
    Navigate(&params);
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 6704252420..de071f16de 100644
+index 67042524205c677ac895a1edb4bc082e50e21e4d..de071f16de2bb07a2ec33174f5f0913bc9183fba 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -15,6 +15,8 @@ source_set("aegis") {
@@ -116,7 +118,7 @@ index 6704252420..de071f16de 100644
      "//base/test:run_all_unittests",
 diff --git a/chrome/common/aegis/cdp_infobar_copy.cc b/chrome/common/aegis/cdp_infobar_copy.cc
 new file mode 100644
-index 0000000000..a94abaed8a
+index 0000000000000000000000000000000000000000..a94abaed8acf14082329598d8436fb83fb84d7e4
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_infobar_copy.cc
 @@ -0,0 +1,29 @@
@@ -151,7 +153,7 @@ index 0000000000..a94abaed8a
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/cdp_infobar_copy.h b/chrome/common/aegis/cdp_infobar_copy.h
 new file mode 100644
-index 0000000000..6a570e99b3
+index 0000000000000000000000000000000000000000..6a570e99b31f611415b4e4cf240f6e7d726bdabd
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_infobar_copy.h
 @@ -0,0 +1,18 @@
@@ -175,7 +177,7 @@ index 0000000000..6a570e99b3
 +#endif  // CHROME_COMMON_AEGIS_CDP_INFOBAR_COPY_H_
 diff --git a/chrome/common/aegis/cdp_infobar_copy_unittest.cc b/chrome/common/aegis/cdp_infobar_copy_unittest.cc
 new file mode 100644
-index 0000000000..7e9b99290c
+index 0000000000000000000000000000000000000000..7e9b99290c87c44668fb09d059579922c305fd2c
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_infobar_copy_unittest.cc
 @@ -0,0 +1,30 @@

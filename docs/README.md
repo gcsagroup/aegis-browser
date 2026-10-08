@@ -1,5 +1,7 @@
 # Documentation
 
+
+> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
 This directory contains the public product architecture, roadmap, research boundaries, product page, and dated local audit records for GCSA-aegis.
@@ -22,6 +24,7 @@ This directory contains the public product architecture, roadmap, research bound
 - [Trilingual product page](product.html)
 - [Browser build and verification guide](../apps/browser/README.md)
 - [Native iOS engineering guide](../apps/ios/README.md)
+- [iOS 3.2 main integration validation](audit/ios-main-merge-2026-10-09.zh-CN.md)
 - [iOS 3.2 private browsing validation](audit/ios-private-mode-2026-10-05.zh-CN.md)
 - [iOS 3.1 compact interface validation](audit/ios-compact-ui-2026-10-05.zh-CN.md)
 - [Browser Agent v2 user guide](aegis-browser-agent-v2-user-guide.md)

@@ -1,9 +1,8 @@
-From 9eeb92a6c3482cc3c4837ec60c7b442738d944b7 Mon Sep 17 00:00:00 2001
+From 4ef07cafff863d2f9b8a6ea51b2a61cd03374b38 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
-Date: Sun, 20 Sep 2026 00:50:59 +0800
-Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D153.0.8010.53=E5=AE=89?=
- =?UTF-8?q?=E5=85=A8=E5=80=99=E9=80=89=EF=BC=9A0001-feat-aegis-add-bytecod?=
- =?UTF-8?q?e-shadow-observation.patch?=
+Date: Wed, 7 Oct 2026 02:06:28 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Chromium=20155=EF=BC=9A000?=
+ =?UTF-8?q?1-feat-aegis-add-bytecode-shadow-observation.patch?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -22,10 +21,10 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
 
 diff --git a/BUILD.gn b/BUILD.gn
-index 0c48f1e9b27..bdc3132056b 100644
+index c6132807ff6c488543b4df1f3ba8793d9dea98d5..f8163829f3df1151257c6b8e13301876065d3235 100644
 --- a/BUILD.gn
 +++ b/BUILD.gn
-@@ -4304,6 +4304,7 @@ v8_header_set("v8_internal_headers") {
+@@ -4528,6 +4528,7 @@ v8_header_set("v8_internal_headers") {
      "src/init/setup-isolate.h",
      "src/init/startup-data-util.h",
      "src/init/v8.h",
@@ -33,7 +32,7 @@ index 0c48f1e9b27..bdc3132056b 100644
      "src/interpreter/block-coverage-builder.h",
      "src/interpreter/bytecode-array-builder.h",
      "src/interpreter/bytecode-array-iterator.h",
-@@ -6173,6 +6174,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
+@@ -6399,6 +6400,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
      "src/init/isolate-group.cc",
      "src/init/startup-data-util.cc",
      "src/init/v8.cc",
@@ -42,10 +41,10 @@ index 0c48f1e9b27..bdc3132056b 100644
      "src/interpreter/bytecode-array-iterator.cc",
      "src/interpreter/bytecode-array-random-iterator.cc",
 diff --git a/src/flags/flag-definitions.h b/src/flags/flag-definitions.h
-index 070772ee86d..6c30e3f2dbf 100644
+index a64f1b5e7b397190030598f39b0d27c6613c27b0..066460e72226ff44cb808977007dac16b7122a7b 100644
 --- a/src/flags/flag-definitions.h
 +++ b/src/flags/flag-definitions.h
-@@ -1259,6 +1259,13 @@ DEFINE_BOOL(lazy_feedback_allocation, true, "Allocate feedback vectors lazily")
+@@ -1132,6 +1132,13 @@ DEFINE_BOOL(lazy_feedback_allocation, true, "Allocate feedback vectors lazily")
  DEFINE_BOOL(stress_ic, false, "exercise interesting paths in ICs more often")
  
  // Flags for Ignition.
@@ -61,7 +60,7 @@ index 070772ee86d..6c30e3f2dbf 100644
  DEFINE_BOOL(ignition_reo, true, "use ignition register equivalence optimizer")
 diff --git a/src/interpreter/aegis-bytecode-shadow.cc b/src/interpreter/aegis-bytecode-shadow.cc
 new file mode 100644
-index 00000000000..fd1933dccf8
+index 0000000000000000000000000000000000000000..fd1933dccf8fd3aef36f2e9349bc01fdb9590bce
 --- /dev/null
 +++ b/src/interpreter/aegis-bytecode-shadow.cc
 @@ -0,0 +1,109 @@
@@ -176,7 +175,7 @@ index 00000000000..fd1933dccf8
 +}  // namespace v8
 diff --git a/src/interpreter/aegis-bytecode-shadow.h b/src/interpreter/aegis-bytecode-shadow.h
 new file mode 100644
-index 00000000000..d42637ce3a9
+index 0000000000000000000000000000000000000000..d42637ce3a94129e4166a17db69daa4ead71df9b
 --- /dev/null
 +++ b/src/interpreter/aegis-bytecode-shadow.h
 @@ -0,0 +1,43 @@
@@ -224,7 +223,7 @@ index 00000000000..d42637ce3a9
 +
 +#endif  // V8_INTERPRETER_AEGIS_BYTECODE_SHADOW_H_
 diff --git a/src/interpreter/interpreter.cc b/src/interpreter/interpreter.cc
-index 0278e8f05d6..f58cdc8c92c 100644
+index 3c3bcbaacada8ee140bc1f40d8966feddd85be69..12619f0577ba058df5671005637d798961deb453 100644
 --- a/src/interpreter/interpreter.cc
 +++ b/src/interpreter/interpreter.cc
 @@ -16,6 +16,7 @@
@@ -235,7 +234,7 @@ index 0278e8f05d6..f58cdc8c92c 100644
  #include "src/interpreter/bytecode-generator.h"
  #include "src/interpreter/bytecodes.h"
  #include "src/logging/runtime-call-stats-scope.h"
-@@ -289,6 +290,8 @@ InterpreterCompilationJob::Status InterpreterCompilationJob::DoFinalizeJobImpl(
+@@ -272,6 +273,8 @@ InterpreterCompilationJob::Status InterpreterCompilationJob::DoFinalizeJobImpl(
      bytecodes->set_source_position_table(*source_position_table, kReleaseStore);
    }
  
@@ -245,10 +244,10 @@ index 0278e8f05d6..f58cdc8c92c 100644
      StdoutStream os;
      std::unique_ptr<char[]> name =
 diff --git a/test/unittests/BUILD.gn b/test/unittests/BUILD.gn
-index 652ed91d16d..542e69faf10 100644
+index 06428824029565445641d0f22ed48086e3a537b2..2aec3605c9d41c5a1f27790d16de4d1d7309edff 100644
 --- a/test/unittests/BUILD.gn
 +++ b/test/unittests/BUILD.gn
-@@ -418,6 +418,7 @@ v8_cluster_source_set("v8_unittests_sources") {
+@@ -413,6 +413,7 @@ v8_cluster_source_set("v8_unittests_sources") {
      "heap/spaces-unittest.cc",
      "heap/strong-root-allocator-unittest.cc",
      "heap/write-barrier-unittest.cc",
@@ -258,7 +257,7 @@ index 652ed91d16d..542e69faf10 100644
      "interpreter/bytecode-array-random-iterator-unittest.cc",
 diff --git a/test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc b/test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
 new file mode 100644
-index 00000000000..1fa1cbf8933
+index 0000000000000000000000000000000000000000..1fa1cbf893327e6a6c77194f61a1450b8128a16c
 --- /dev/null
 +++ b/test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
 @@ -0,0 +1,41 @@

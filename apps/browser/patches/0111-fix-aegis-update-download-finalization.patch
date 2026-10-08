@@ -1,4 +1,4 @@
-From c640f7d5fa36ad79569eac7fd78eb68b3d815195 Mon Sep 17 00:00:00 2001
+From 282196b55f57f00c346308b399ee5ced641fdaeb Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:35:12 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E9=A1=B5=E9=9D=A2=E5=85=B3?=
@@ -19,7 +19,7 @@ Content-Transfer-Encoding: 8bit
  7 files changed, 139 insertions(+), 67 deletions(-)
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
-index 4d057cee65..ea07226701 100644
+index 4d057cee650d317cc7a6ef516c6ac19697c3afcb..ea07226701fcbfc96be924deebd668d678abb626 100644
 --- a/chrome/app/app-Info.plist
 +++ b/chrome/app/app-Info.plist
 @@ -4,9 +4,9 @@
@@ -35,7 +35,7 @@ index 4d057cee65..ea07226701 100644
  	<string>en</string>
  	<key>CFBundleDisplayName</key>
 diff --git a/chrome/browser/resources/settings/about_page/about_page.html.ts b/chrome/browser/resources/settings/about_page/about_page.html.ts
-index 565719769d..ba9fc8d0fe 100644
+index 565719769dde457fbde34d08987506ef555db902..ba9fc8d0fe39721b331b4a897cf088099b4af0e9 100644
 --- a/chrome/browser/resources/settings/about_page/about_page.html.ts
 +++ b/chrome/browser/resources/settings/about_page/about_page.html.ts
 @@ -77,7 +77,7 @@ export function getHtml(this: SettingsAboutPageElement) {
@@ -48,7 +48,7 @@ index 565719769d..ba9fc8d0fe 100644
            ?hidden="${!this.shouldShowAegisUpdate_()}">$i18n{aegisShowUpdate}</cr-button>
        <a id="aegisReleases" href="https://github.com/gcsagroup/aegis-browser/releases"
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.cc b/chrome/browser/ui/webui/help/aegis_github_update.cc
-index ea7b244350..73712be433 100644
+index ea7b244350a7392b291aa1bbd7df5ecb189969b7..73712be43364d9ab09350235eb0d27402a205172 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.cc
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.cc
 @@ -30,6 +30,10 @@
@@ -228,7 +228,7 @@ index ea7b244350..73712be433 100644
 +}
  }  // namespace aegis
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index b04dccbfa8..614bc20d4c 100644
+index b04dccbfa8c76ba8aab1fbe663a52cb4358b2aa3..614bc20d4c33f2d8a12948d1e5830d0e64d66c99 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -19,9 +19,9 @@ class SimpleURLLoader;
@@ -257,7 +257,7 @@ index b04dccbfa8..614bc20d4c 100644
                                      const base::FilePath& downloads);
  
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
-index 26a997a9d2..1885112f1b 100644
+index 26a997a9d23e464143857dbb9c71bac3cc73ed5b..1885112f1be706388b2c9cff3ffeb587d591c12f 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 +++ b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 @@ -1,12 +1,14 @@
@@ -377,7 +377,7 @@ index 26a997a9d2..1885112f1b 100644
    auto release = Release();
    factory_.AddResponse(kReleaseAPI, JSON(release));
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index dd01c711e9..b21fd3bd6a 100644
+index ab07496994758aaf0a23107916641d210a1e650b..75bf73dd1a90bca0eac649038df925460e964caf 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
@@ -390,7 +390,7 @@ index dd01c711e9..b21fd3bd6a 100644
  #endif
  
 diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
-index bbb7cd263a..0a469f77da 100644
+index bbb7cd263ac6601045cf3d9dc2787e0162d98c02..0a469f77da5c2072cee79b91ae7e39db7d6faad9 100644
 --- a/chrome/test/data/webui/settings/about_page_test.ts
 +++ b/chrome/test/data/webui/settings/about_page_test.ts
 @@ -169,7 +169,7 @@ suite('AllBuilds', function() {

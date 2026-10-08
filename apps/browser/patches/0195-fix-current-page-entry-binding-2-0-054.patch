@@ -1,4 +1,4 @@
-From 119925ad319cd1e54ab23e94b0a84b928c060f3d Mon Sep 17 00:00:00 2001
+From b06c0149c07c43017b721884f9b58a633255c643 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 21 Sep 2026 18:27:51 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E7=BB=91=E5=AE=9A?=
@@ -18,7 +18,7 @@ Content-Transfer-Encoding: 8bit
  6 files changed, 171 insertions(+), 21 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 42fd4ebbcb..2b92e7dc9a 100644
+index 42fd4ebbcb46bbfdc48a8e59d821c9bb9e049125..2b92e7dc9a37ae2b983f61c683963260d83e5f38 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -2910,6 +2910,45 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
@@ -68,7 +68,7 @@ index 42fd4ebbcb..2b92e7dc9a 100644
                         CurrentPageDownloadReviewCannotTransferOrReadBookmarks) {
    ASSERT_TRUE(embedded_test_server()->Start());
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 3f1c1d7274..731c4eaa70 100644
+index 3f1c1d7274c82d85ac3c3146123685f06d96ec5b..731c4eaa702fdd50af805dc887a7096542edee02 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -787,6 +787,77 @@ bool GoalRequestsCurrentPageClick(std::string_view user_goal) {
@@ -165,7 +165,7 @@ index 3f1c1d7274..731c4eaa70 100644
      route.target.clear();
      return route;
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index 58e9b6f15b..179c443869 100644
+index 58e9b6f15bc1e78bb44ffb39a8f5f3c6de27b71a..179c4438691f9063495ce10169e28097d86683c0 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -64,6 +64,9 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
@@ -179,7 +179,7 @@ index 58e9b6f15b..179c443869 100644
  bool AgentGoalRequestsWindowTabMetadata(std::string_view goal);
  
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index eb95f4a4af..987fd74907 100644
+index eb95f4a4affb9b7c36a5ccee2063dafa259e7266..987fd74907d4012dab6cb5ec911a2e2cc1118b70 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -507,6 +507,54 @@ TEST(AegisAgentPlannerTest, WindowMetadataBindingComesOnlyFromBrowserScope) {
@@ -238,7 +238,7 @@ index eb95f4a4af..987fd74907 100644
    std::string error;
    std::optional<AgentGoalRoute> native = ParseAndValidateGoalRoute(
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 39e5c1fc98..0aba3d4a4f 100644
+index 39e5c1fc98607b0c6df537f4fd3f7992b9232ef1..0aba3d4a4fdf2c8c7a5b3706a7717eaa6e480e07 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -160,23 +160,6 @@ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
@@ -275,7 +275,7 @@ index 39e5c1fc98..0aba3d4a4f 100644
      const bool browser_only = !requested_origins && !explicit_url &&
                                !use_current_page &&
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index f954688672..aa9c7b2be1 100644
+index f95468867211ac9377cd6ee91f761e3cce162033..aa9c7b2be1c8b65118db63aded06cd0b8b788c91 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

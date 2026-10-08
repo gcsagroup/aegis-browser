@@ -1,4 +1,4 @@
-From f3ca40fecea5830d93f2f81317d4031f9d5911e7 Mon Sep 17 00:00:00 2001
+From 84dc7d281379d31acaa7b5509acf6e8a16e42ffb Mon Sep 17 00:00:00 2001
 From: Aegis integration <aegis-integration@users.noreply.github.com>
 Date: Sat, 3 Oct 2026 04:15:39 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=90=88=E5=B9=B6=E4=B8=BB=E5=88=86=E6=94=AF?=
@@ -12,7 +12,7 @@ Content-Transfer-Encoding: 8bit
 ---
  .../browser/aw_content_browser_client.cc      |    3 +-
  .../browser/aw_content_browser_client.h       |    4 +-
- chrome/browser/BUILD.gn                       |    3 +
+ chrome/browser/BUILD.gn                       |    2 +
  chrome/browser/actor/BUILD.gn                 |    2 +
  chrome/browser/aegis/BUILD.gn                 |   66 +-
  chrome/browser/aegis/access/BUILD.gn          |  292 ++
@@ -188,8 +188,8 @@ Content-Transfer-Encoding: 8bit
  .../browser/loader/prefetch_browsertest.cc    |  507 ++-
  .../prefetch_url_loader_service_context.cc    |  176 +-
  .../prefetch_url_loader_service_context.h     |   23 +-
- ...subresource_proxying_url_loader_service.cc |   79 +-
- .../subresource_proxying_url_loader_service.h |   48 +-
+ ...subresource_proxying_url_loader_service.cc |   76 +-
+ .../subresource_proxying_url_loader_service.h |   47 +-
  .../loader/url_loader_factory_utils.cc        |   16 +-
  .../browser/loader/url_loader_factory_utils.h |   11 +-
  .../prefetch/nav_prefetch_browsertest.cc      |    6 +-
@@ -209,7 +209,7 @@ Content-Transfer-Encoding: 8bit
  ...network_service_proxy_delegate_unittest.cc |  105 +
  .../public/mojom/network_context.mojom        |   20 +-
  .../histograms/metadata/sql/histograms.xml    |    1 +
- 199 files changed, 31266 insertions(+), 366 deletions(-)
+ 199 files changed, 31262 insertions(+), 365 deletions(-)
  create mode 100644 chrome/browser/aegis/access/BUILD.gn
  create mode 100644 chrome/browser/aegis/access/access_browser_request_adapter.cc
  create mode 100644 chrome/browser/aegis/access/access_browser_request_adapter.h
@@ -321,10 +321,10 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 components/aegis_access/testdata/route_planner_vectors.json
 
 diff --git a/android_webview/browser/aw_content_browser_client.cc b/android_webview/browser/aw_content_browser_client.cc
-index 7d00a65f732d7116f69fd6b506dacc33e40c126b..e0349678656149c7511324b25d01c1ab832f72d2 100644
+index 45180a699f8a4b7115409980af8b58944cadaa0b..37334116e40a1d5957ee68457a57a4563a7da085 100644
 --- a/android_webview/browser/aw_content_browser_client.cc
 +++ b/android_webview/browser/aw_content_browser_client.cc
-@@ -1200,7 +1200,8 @@ void AwContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -1183,7 +1183,8 @@ void AwContentBrowserClient::WillCreateURLLoaderFactory(
      bool* disable_secure_dns,
      network::mojom::URLLoaderFactoryOverridePtr* factory_override,
      scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
@@ -335,7 +335,7 @@ index 7d00a65f732d7116f69fd6b506dacc33e40c126b..e0349678656149c7511324b25d01c1ab
                 "AwContentBrowserClient::WillCreateURLLoaderFactory");
    DCHECK_CURRENTLY_ON(BrowserThread::UI);
 diff --git a/android_webview/browser/aw_content_browser_client.h b/android_webview/browser/aw_content_browser_client.h
-index 6b36e5239842fda071cee3bf84f6024715eeb722..8b15dccfd0542d3a38ce7224edaf6c213a9d0ad8 100644
+index 60e0e0bca90f2e0285f2b4a9bda66ec5adee3691..ce1876c1148fc17815c91f59b522a4f77a80376d 100644
 --- a/android_webview/browser/aw_content_browser_client.h
 +++ b/android_webview/browser/aw_content_browser_client.h
 @@ -248,7 +248,9 @@ class AwContentBrowserClient : public content::ContentBrowserClient {
@@ -350,10 +350,10 @@ index 6b36e5239842fda071cee3bf84f6024715eeb722..8b15dccfd0542d3a38ce7224edaf6c21
        content::RenderFrameHost* frame) override;
    bool WillCreateRestrictedCookieManager(
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 1ac092bf3347ef62c62f70fb932c42afd22434f1..da8afe497411cf7ea350be00ad021128804d60ad 100644
+index b0d12b5c8e1cc7c98248d166315c810c8d107464..f8a6fd0cff7e565425af61367ae4fde974ce8e8e 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
-@@ -409,6 +409,7 @@ source_set("chrome_browser_main") {
+@@ -408,6 +408,7 @@ source_set("chrome_browser_main") {
      "//base",
      "//build:buildflag_header_h",
      "//chrome/browser/aegis",
@@ -361,20 +361,19 @@ index 1ac092bf3347ef62c62f70fb932c42afd22434f1..da8afe497411cf7ea350be00ad021128
      "//chrome/browser/first_run",
      "//chrome/browser/lifetime",
      "//chrome/browser/ui/startup",
-@@ -1970,6 +1971,8 @@ source_set("core") {
-   if (safe_browsing_mode == 1) {
-     deps += [ "//chrome/browser/ui/webui/reset_password" ]
+@@ -1990,6 +1991,7 @@ source_set("core") {
+       "//chrome/common/request_header_integrity",
+     ]
    }
-+
 +  deps += [ "//chrome/browser/aegis/access:access_proxying_url_loader_factory" ]
  }
  
  # This target no longer has any sources of its own; it only aggregates
 diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
-index 36cb97936910a802170c0b674d72b53a3b4e4ac6..768f324b36381d8687d0a95d4daa5573258caaac 100644
+index c41b224bd767dcd21b38b07c31e2c6052d5869e8..4a5a6eaacd691d680163a9c30a7e7e6dba6ca558 100644
 --- a/chrome/browser/actor/BUILD.gn
 +++ b/chrome/browser/actor/BUILD.gn
-@@ -397,6 +397,8 @@ source_set("unit_tests") {
+@@ -437,6 +437,8 @@ source_set("unit_tests") {
      "//third_party/fuzztest",
    ]
    data = [ "//tools/metrics/histograms/metadata/actor/histograms.xml" ]
@@ -21526,18 +21525,18 @@ index 0000000000000000000000000000000000000000..87be75be0f33e04a4846fe71827b3799
 +}  // namespace
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 90b624bce4d4d1a82b45b4d56d643ea85c9cd6b3..4c7d07c8fd1d2c9a58dddd60b9844106566b9e6b 100644
+index 972ae28f70c4817d60b59eb5b49db70b3109020e..d208310a9b446fbbc60d107f0c946f823ab54828 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -169,6 +169,7 @@
- #include "chrome/browser/sensor/chrome_sensor_delegate.h"
- #include "chrome/browser/serial/chrome_serial_delegate.h"
+@@ -179,6 +179,7 @@
+ #include "chrome/browser/service_worker/service_worker_prewarm.h"
+ #include "chrome/browser/service_worker/service_worker_synthetic_response.h"
  #include "chrome/browser/sharing/sms/sms_remote_fetcher.h"
 +#include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
  #include "chrome/browser/signin/chrome_signin_proxying_url_loader_factory.h"
  #include "chrome/browser/signin/chrome_signin_url_loader_throttle.h"
  #include "chrome/browser/signin/header_modification_delegate_impl.h"
-@@ -6700,7 +6701,8 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6766,7 +6767,8 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
      bool* disable_secure_dns,
      network::mojom::URLLoaderFactoryOverridePtr* factory_override,
      scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
@@ -21547,7 +21546,7 @@ index 90b624bce4d4d1a82b45b4d56d643ea85c9cd6b3..4c7d07c8fd1d2c9a58dddd60b9844106
  #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
    auto* web_request_api =
        extensions::BrowserContextKeyedAPIFactory<extensions::WebRequestAPI>::Get(
-@@ -6709,10 +6711,17 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6775,10 +6777,17 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
    // NOTE: Some unit test environments do not initialize
    // BrowserContextKeyedAPI factories for e.g. WebRequest.
    if (web_request_api) {
@@ -21566,7 +21565,7 @@ index 90b624bce4d4d1a82b45b4d56d643ea85c9cd6b3..4c7d07c8fd1d2c9a58dddd60b9844106
              header_client, navigation_response_task_runner, request_initiator);
      if (bypass_redirect_checks) {
        *bypass_redirect_checks = use_proxy_for_web_request;
-@@ -6732,6 +6741,48 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6798,6 +6807,48 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
        frame, type == URLLoaderFactoryType::kNavigation, request_initiator,
        isolation_info, factory_builder);
  
@@ -21615,7 +21614,7 @@ index 90b624bce4d4d1a82b45b4d56d643ea85c9cd6b3..4c7d07c8fd1d2c9a58dddd60b9844106
  #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
    if (disable_secure_dns) {
      WebContents* web_contents = WebContents::FromRenderFrameHost(frame);
-@@ -6779,6 +6830,16 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -6845,6 +6896,16 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
          // BUILDFLAG(IS_CHROMEOS)
  }
  
@@ -21633,10 +21632,10 @@ index 90b624bce4d4d1a82b45b4d56d643ea85c9cd6b3..4c7d07c8fd1d2c9a58dddd60b9844106
  ChromeContentBrowserClient::WillCreateURLLoaderRequestInterceptors(
      content::NavigationUIData* navigation_ui_data,
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index 7f6b6ed51e748093d1f1428f2adc75f698787bf8..b3d720512323c85398dfd620d4d8f9f667800d02 100644
+index d6a46ff72136d73d93cf6874ff09d69dbb14a77f..c720086b5c3ebc4c74aeea2a67d6d142310f28a5 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -694,7 +694,14 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+@@ -696,7 +696,14 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
        bool* disable_secure_dns,
        network::mojom::URLLoaderFactoryOverridePtr* factory_override,
        scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
@@ -21653,10 +21652,10 @@ index 7f6b6ed51e748093d1f1428f2adc75f698787bf8..b3d720512323c85398dfd620d4d8f9f6
    WillCreateURLLoaderRequestInterceptors(
        content::NavigationUIData* navigation_ui_data,
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index eb4cdcf06d108a67e8c05da62ea158409bfecddf..7cf6d0a11b832f327d0f35a45c6f80085655b6d0 100644
+index 65f744e31f46680099833ae41f0c90dce051b2c3..beac45087a399ed98699fccc3a5a03e32ffc679b 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -681,6 +681,10 @@ if (enable_devtools_frontend) {
+@@ -691,6 +691,10 @@ if (enable_devtools_frontend) {
      if (!is_android || enable_desktop_android_extensions) {
        sources += [ "global_confirm_info_bar_browsertest.cc" ]
      }
@@ -21668,7 +21667,7 @@ index eb4cdcf06d108a67e8c05da62ea158409bfecddf..7cf6d0a11b832f327d0f35a45c6f8008
  }
  
 diff --git a/chrome/browser/download/BUILD.gn b/chrome/browser/download/BUILD.gn
-index 54f3f78439f4c7375e63d6437cab5e17af53ec83..7a61f148fd9a9e3e06f907dba96e7a67ebb67db3 100644
+index cab9d6ba6d0c2d9173410c80948939dedbda4a89..26e7c95848fb5d866c817ac02bd099e4d050538f 100644
 --- a/chrome/browser/download/BUILD.gn
 +++ b/chrome/browser/download/BUILD.gn
 @@ -401,6 +401,8 @@ source_set("impl") {
@@ -21681,7 +21680,7 @@ index 54f3f78439f4c7375e63d6437cab5e17af53ec83..7a61f148fd9a9e3e06f907dba96e7a67
  
  source_set("status_text_builder_utils") {
 diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
-index 4a897b9c814b785cf26a574c8a79bb883f8c7145..1c0fdf8dcf06f68fc3a99134555e3ed3a8c2f9e3 100644
+index 89629210b970e4dd0e60e0a9db3f71397bf77582..9cf122bd0ee300d0ed772a0f698bf87b0ffef0c6 100644
 --- a/chrome/browser/download/download_ui_model.cc
 +++ b/chrome/browser/download/download_ui_model.cc
 @@ -31,6 +31,7 @@
@@ -21693,7 +21692,7 @@ index 4a897b9c814b785cf26a574c8a79bb883f8c7145..1c0fdf8dcf06f68fc3a99134555e3ed3
  #include "components/download/public/common/download_danger_type.h"
  #include "components/enterprise/common/proto/connectors.pb.h"
 diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
-index 04ca8424ae65cbd228cb445e36b86eb23271173d..01a6369ed8a6a742dd2fd0b11ea4879e202f7763 100644
+index b52ae71dfce9fcf84dacb98b8d3f826ca7a48e93..30290bab2c41815b3cb5a0a34f06c4f1d48230d2 100644
 --- a/chrome/browser/net/BUILD.gn
 +++ b/chrome/browser/net/BUILD.gn
 @@ -126,6 +126,9 @@ source_set("net") {
@@ -21715,10 +21714,10 @@ index 04ca8424ae65cbd228cb445e36b86eb23271173d..01a6369ed8a6a742dd2fd0b11ea4879e
      "//chrome/browser/component_updater",
      "//chrome/browser/content_settings:content_settings_factory",
 diff --git a/chrome/browser/net/profile_network_context_service.cc b/chrome/browser/net/profile_network_context_service.cc
-index c9ae7f58abdc9e650501363db9da48231ffecc15..4294e0b169cf4686c4b0e1f2a126f9174c94bf92 100644
+index 67be696b30045eb76c78cfaefec83bdf9ba580d3..5df214f095a9ab6198f68a23193185d531b09eee 100644
 --- a/chrome/browser/net/profile_network_context_service.cc
 +++ b/chrome/browser/net/profile_network_context_service.cc
-@@ -35,6 +35,7 @@
+@@ -36,6 +36,7 @@
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/content_settings/cookie_settings_factory.h"
  #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -21740,7 +21739,7 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..4294e0b169cf4686c4b0e1f2a126f917
  void ProfileNetworkContextService::SetDiscardDomainReliabilityUploadsForTesting(
      bool value) {
    g_discard_domain_reliability_uploads_for_testing = new bool(value);
-@@ -1476,6 +1484,9 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
+@@ -1479,6 +1487,9 @@ void ProfileNetworkContextService::ConfigureNetworkContextParamsInternal(
  
    proxy_config_monitor_->AddToNetworkContextParams(network_context_params);
  
@@ -21751,7 +21750,7 @@ index c9ae7f58abdc9e650501363db9da48231ffecc15..4294e0b169cf4686c4b0e1f2a126f917
  
    SCTReportingService* sct_reporting_service =
 diff --git a/chrome/browser/net/profile_network_context_service.h b/chrome/browser/net/profile_network_context_service.h
-index 042b06278c2252d981103d416837579b1155bf97..597bab4c562b1cc3512082232f23dd6f204773a2 100644
+index be142dab5a8246c0d3b244e686015c6c4ed6bde6..35242d3e4e9e7ec224ae2f0dbe8c98755e4825f4 100644
 --- a/chrome/browser/net/profile_network_context_service.h
 +++ b/chrome/browser/net/profile_network_context_service.h
 @@ -5,6 +5,7 @@
@@ -21762,7 +21761,7 @@ index 042b06278c2252d981103d416837579b1155bf97..597bab4c562b1cc3512082232f23dd6f
  #include <memory>
  #include <string>
  #include <utility>
-@@ -131,6 +132,9 @@ class ProfileNetworkContextService
+@@ -130,6 +131,9 @@ class ProfileNetworkContextService
    // Flushes all pending proxy configuration changes.
    void FlushProxyConfigMonitorForTesting();
  
@@ -21773,10 +21772,10 @@ index 042b06278c2252d981103d416837579b1155bf97..597bab4c562b1cc3512082232f23dd6f
  
    void set_client_cert_store_factory_for_testing(
 diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
-index 5a5b5fe8124119db0b2be53b249ba7975ad2aa7b..df65f55507e5341439d7a73242f7089f201e1535 100644
+index 0874f5e29440471706f847a9212cdfa2b2eba2a3..6eba2b4105749079c85502c6a7134527b8683d30 100644
 --- a/chrome/browser/net/proxy_config_monitor.cc
 +++ b/chrome/browser/net/proxy_config_monitor.cc
-@@ -112,8 +112,10 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
+@@ -113,8 +113,10 @@ void ProxyConfigMonitor::AddToNetworkContextParams(
    net::ProxyConfigWithAnnotation proxy_config;
    net::ProxyConfigService::ConfigAvailability availability =
        proxy_config_service_->GetLatestProxyConfig(&proxy_config);
@@ -21788,7 +21787,7 @@ index 5a5b5fe8124119db0b2be53b249ba7975ad2aa7b..df65f55507e5341439d7a73242f7089f
  }
  
  void ProxyConfigMonitor::FlushForTesting() {
-@@ -125,6 +127,9 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
+@@ -126,6 +128,9 @@ void ProxyConfigMonitor::OnProxyConfigChanged(
      net::ProxyConfigService::ConfigAvailability availability) {
    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
           !BrowserThread::IsThreadInitialized(BrowserThread::UI));
@@ -21838,7 +21837,7 @@ index 6c060b52d25799c6a7c4e4ee86ed7490060560d6..e4796f7ac5e591694cbbecbf131df633
    // Monitors global and Profile prefs related to proxy configuration.
    std::unique_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
 diff --git a/chrome/browser/predictors/BUILD.gn b/chrome/browser/predictors/BUILD.gn
-index f6377bb030f9fcd34ac03a083f694e8cf9342405..6f3323eb3223d37927d4702377f6ceef6102f25f 100644
+index cc771a480cd03380ec188bff0275580ba3c12012..461b9567aa9f25c8ef5401dfdd1ef111c9aa9723 100644
 --- a/chrome/browser/predictors/BUILD.gn
 +++ b/chrome/browser/predictors/BUILD.gn
 @@ -90,6 +90,8 @@ source_set("impl") {
@@ -21851,7 +21850,7 @@ index f6377bb030f9fcd34ac03a083f694e8cf9342405..6f3323eb3223d37927d4702377f6ceef
      "//chrome/browser:browser_features",
      "//chrome/browser:browser_process",
 diff --git a/chrome/browser/predictors/prefetch_manager.cc b/chrome/browser/predictors/prefetch_manager.cc
-index cb25a2581d2be3dd68df92acca6ddc088e04882b..1ebd6334bdd58790465cd59b0fbb59ce5abc11f6 100644
+index d53bd178633cff8949b8c618fc13bcb6027fde76..e69219daf97dda9ee178d5a9102fb0b0555db314 100644
 --- a/chrome/browser/predictors/prefetch_manager.cc
 +++ b/chrome/browser/predictors/prefetch_manager.cc
 @@ -14,6 +14,8 @@
@@ -21863,7 +21862,7 @@ index cb25a2581d2be3dd68df92acca6ddc088e04882b..1ebd6334bdd58790465cd59b0fbb59ce
  #include "chrome/browser/predictors/perform_network_context_prefetch.h"
  #include "chrome/browser/predictors/predictors_features.h"
  #include "chrome/browser/predictors/predictors_switches.h"
-@@ -169,8 +171,10 @@ PrefetchManager::PrefetchManager(base::WeakPtr<Delegate> delegate,
+@@ -170,8 +172,10 @@ PrefetchManager::PrefetchManager(base::WeakPtr<Delegate> delegate,
                                   Profile* profile)
      : delegate_(std::move(delegate)),
        profile_(profile),
@@ -21876,7 +21875,7 @@ index cb25a2581d2be3dd68df92acca6ddc088e04882b..1ebd6334bdd58790465cd59b0fbb59ce
    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
    DCHECK(profile_);
  }
-@@ -258,8 +262,10 @@ bool PrefetchManager::IsAvailableForPrefetch(
+@@ -259,8 +263,10 @@ bool PrefetchManager::IsAvailableForPrefetch(
  // occurs in PrefetchManager::Start.
  void PrefetchManager::PrefetchUrl(
      std::unique_ptr<PrefetchJob> job,
@@ -21887,7 +21886,7 @@ index cb25a2581d2be3dd68df92acca6ddc088e04882b..1ebd6334bdd58790465cd59b0fbb59ce
    DCHECK(job);
    DCHECK(job->info);
  
-@@ -306,8 +312,8 @@ void PrefetchManager::PrefetchUrl(
+@@ -307,8 +313,8 @@ void PrefetchManager::PrefetchUrl(
        net::IsolationInfo::RequestType::kOther, top_frame_origin, frame_origin,
        net::SiteForCookies::FromUrl(info.url));
  
@@ -21897,7 +21896,7 @@ index cb25a2581d2be3dd68df92acca6ddc088e04882b..1ebd6334bdd58790465cd59b0fbb59ce
    auto* web_request_api =
        extensions::BrowserContextKeyedAPIFactory<extensions::WebRequestAPI>::Get(
            profile_);
-@@ -320,8 +326,11 @@ void PrefetchManager::PrefetchUrl(
+@@ -321,8 +327,11 @@ void PrefetchManager::PrefetchUrl(
          /*navigation_response_task_runner=*/nullptr,
          /*request_initiator=*/url::Origin());
    }
@@ -21910,7 +21909,7 @@ index cb25a2581d2be3dd68df92acca6ddc088e04882b..1ebd6334bdd58790465cd59b0fbb59ce
  
    // Set up throttles. Use null values for frame/navigation-related params, for
    // now, since this is just the browser prefetching resources and the requests
-@@ -447,8 +456,10 @@ void PrefetchManager::TryToLaunchPrefetchJobs() {
+@@ -448,8 +457,10 @@ void PrefetchManager::TryToLaunchPrefetchJobs() {
      UMA_HISTOGRAM_TIMES("Navigation.Prefetch.PrefetchJobQueueingTime",
                          base::TimeTicks::Now() - job->creation_time);
  
@@ -21997,10 +21996,10 @@ index 49dedc88bf960391a8e2dd87155c60a133e8e179..adc1f56e6ae337618434f83512bede12
  TEST_P(PrefetchManagerTest, OneMainFrameUrlOnePrefetch) {
    GURL main_frame_url("https://abc.invalid");
 diff --git a/chrome/browser/prefs/BUILD.gn b/chrome/browser/prefs/BUILD.gn
-index 2f122ba8c7117fef47496ad093fa832a2e16500c..12ee0f7d71b750f50e562e49b66fc7edc26fd457 100644
+index 174d144fd8a911a714502d7a48c80655cae7fd73..952b74ad6a17153375d7357851343034cd5fc841 100644
 --- a/chrome/browser/prefs/BUILD.gn
 +++ b/chrome/browser/prefs/BUILD.gn
-@@ -490,6 +490,11 @@ source_set("impl") {
+@@ -495,6 +495,11 @@ source_set("impl") {
    if (!is_android) {
      deps += [ "//chrome/browser/ui:browser_view_prefs" ]
    }
@@ -22013,10 +22012,10 @@ index 2f122ba8c7117fef47496ad093fa832a2e16500c..12ee0f7d71b750f50e562e49b66fc7ed
  
  # There are users of this util such as //c/b/ash/app_restore. If it's part of
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index f22d0976518a5b9f1836331875b904e1374ae1cb..c4aabbecb5695f49fb34a2caef9db232bca91241 100644
+index 3fccb386f2989240a9ae14e60844cf2ed11a8c7a..1a19ee07d1d5e2dbcdc2fc000fa0ad7932dca59b 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -1072,6 +1072,8 @@ source_set("profiles_extra_parts_impl") {
+@@ -1076,6 +1076,8 @@ source_set("profiles_extra_parts_impl") {
    if (enable_offline_pages) {
      deps += [ "//chrome/browser/offline_pages" ]
    }
@@ -22550,10 +22549,10 @@ index 653b95fb709cbf2f86105f54bd7f100ce673b33b..4c4970a564768b717cebce39b8352f31
      proxy.handler.pause(snapshot?.taskId || '')));
    element('resume-button').addEventListener('click', () => withBusy(() =>
 diff --git a/chrome/browser/ui/toolbar/BUILD.gn b/chrome/browser/ui/toolbar/BUILD.gn
-index 36b5d5720f353ae2beba9c50a4f493327081a23e..5ce42cf8c748eceba286e818e13ba4f5c853f318 100644
+index a7339e636aa973cc19ae602a5bcbe539a70a9a0c..09bd207962983a8c99b8cf2bd20e09017f854784 100644
 --- a/chrome/browser/ui/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/toolbar/BUILD.gn
-@@ -98,6 +98,10 @@ source_set("toolbar") {
+@@ -99,6 +99,10 @@ source_set("toolbar") {
      ]
      deps += [ "//extensions/common:common_constants" ]
    }
@@ -22565,7 +22564,7 @@ index 36b5d5720f353ae2beba9c50a4f493327081a23e..5ce42cf8c748eceba286e818e13ba4f5
  
  source_set("impl") {
 diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
-index 51deaf97ad79fa147a85bee2d635996805fe873e..6089fe45f2377949ad6c948cd352221114ecd1d0 100644
+index 6e2294d2180015b4652ff91ae20c973d974eb926..196c1c1575919aa94e775e81a01e9289f57874fb 100644
 --- a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
 +++ b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
 @@ -54,6 +54,10 @@ source_set("impl") {
@@ -23490,7 +23489,7 @@ index 12950a01ae37c25739be6f72b34a0896c18ca305..3282785708eacbf7debf48fe5672d0c9
        "Aegis could not reach the model service. Make sure it is running, then "
        "try Detect models again.",
 diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
-index f601717eb33abf92dccf4a68f21dc598db64992f..6950093b987b929c93eba092e72c0799b0d02f55 100644
+index e7ea0a5878bb1098afd177cccaf7afcbc27460c3..e9cde056be3300af2e34adfcab6410dd8f244116 100644
 --- a/chrome/browser/ui/webui/downloads/BUILD.gn
 +++ b/chrome/browser/ui/webui/downloads/BUILD.gn
 @@ -80,6 +80,11 @@ source_set("downloads") {
@@ -23505,7 +23504,7 @@ index f601717eb33abf92dccf4a68f21dc598db64992f..6950093b987b929c93eba092e72c0799
  }
  
  source_set("unit_tests") {
-@@ -105,6 +110,8 @@ source_set("unit_tests") {
+@@ -104,6 +109,8 @@ source_set("unit_tests") {
      "//testing/gmock",
      "//testing/gtest",
    ]
@@ -23577,10 +23576,10 @@ index a3e7fba5b34257449b5b39ffd4b692da9db1a06e..b99bae409f3c5d425b4c627f59475c80
  inline constexpr char kOllamaBaseUrl[] = "aegis.ollama_base_url";
  inline constexpr char kOllamaModel[] = "aegis.ollama_model";
 diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
-index fcfd0c3f984084c65ac64e7773c61861723c41c8..17ed450c3b661eaa98f877ab46729f6e8e4b531d 100644
+index 5ec121b4b3b35d36887aeadfea77b427ab23e1c2..92c117c35269d9099f92097fe47fcc45782ed752 100644
 --- a/chrome/test/BUILD.gn
 +++ b/chrome/test/BUILD.gn
-@@ -7958,6 +7958,11 @@ test("unit_tests") {
+@@ -7596,6 +7596,11 @@ test("unit_tests") {
    if (!is_android) {
      deps += [ "//chrome/browser/ui:accelerator_table" ]
    }
@@ -33788,7 +33787,7 @@ index 1be713fcc61c38b4c78c79670eba064af4a32790..eae3899cdae55369deddecb342dbdaa4
  // experiment group that needs other parameters, such as min_slice_size, but
  // don't want to actually do parallel download.
 diff --git a/content/browser/loader/navigation_url_loader_impl.cc b/content/browser/loader/navigation_url_loader_impl.cc
-index 4c39b48f500e6c9156a9316b634e5812e43408dc..f0c120234cedb067fecf001ab9ff7c6fc7d2eb23 100644
+index ac9efb69bac1a5ee3d494ab96066caf7466b406b..185c49c92d53e24b12570099c9265bd80cabd099 100644
 --- a/content/browser/loader/navigation_url_loader_impl.cc
 +++ b/content/browser/loader/navigation_url_loader_impl.cc
 @@ -1250,10 +1250,11 @@ NavigationURLLoaderImpl::CreateNonNetworkLoaderFactory(
@@ -33819,7 +33818,7 @@ index 4c39b48f500e6c9156a9316b634e5812e43408dc..f0c120234cedb067fecf001ab9ff7c6f
              devtools_params));
    }
  
-@@ -2205,7 +2212,10 @@ NavigationURLLoaderImpl::CreateTerminalNonNetworkLoaderFactory(
+@@ -2211,7 +2218,10 @@ NavigationURLLoaderImpl::CreateTerminalNonNetworkLoaderFactory(
      BrowserContext* browser_context,
      StoragePartitionImpl* storage_partition,
      FrameTreeNode* frame_tree_node,
@@ -33831,7 +33830,7 @@ index 4c39b48f500e6c9156a9316b634e5812e43408dc..f0c120234cedb067fecf001ab9ff7c6f
    // Use `ContentBrowserClient`-supplied factory if non-null, to allow the
    // embedder to override the default factories below.
    if (auto factory_from_client =
-@@ -2250,6 +2260,7 @@ NavigationURLLoaderImpl::CreateTerminalNonNetworkLoaderFactory(
+@@ -2256,6 +2266,7 @@ NavigationURLLoaderImpl::CreateTerminalNonNetworkLoaderFactory(
      return AboutURLLoaderFactory::Create();
    }
    if (url.GetScheme() == url::kDataScheme) {
@@ -33840,10 +33839,10 @@ index 4c39b48f500e6c9156a9316b634e5812e43408dc..f0c120234cedb067fecf001ab9ff7c6f
    }
  
 diff --git a/content/browser/loader/navigation_url_loader_impl.h b/content/browser/loader/navigation_url_loader_impl.h
-index de138f57de0dc690ead65762338e64ee88d22495..f58577cda9ceaf3b5e321ba12daf29ac98f87609 100644
+index e72a51653445084f718363bdfdcea87d99ee2e8b..cd5c12ea5923bb146d1abb8f0514d8a359bc700a 100644
 --- a/content/browser/loader/navigation_url_loader_impl.h
 +++ b/content/browser/loader/navigation_url_loader_impl.h
-@@ -134,7 +134,8 @@ class CONTENT_EXPORT NavigationURLLoaderImpl
+@@ -135,7 +135,8 @@ class CONTENT_EXPORT NavigationURLLoaderImpl
    CreateTerminalNonNetworkLoaderFactory(BrowserContext* browser_context,
                                          StoragePartitionImpl* storage_partition,
                                          FrameTreeNode* frame_tree_node,
@@ -33854,7 +33853,7 @@ index de138f57de0dc690ead65762338e64ee88d22495..f58577cda9ceaf3b5e321ba12daf29ac
    // Unlike `CreateTerminalNonNetworkLoaderFactory()`, this supports
    // ContentBrowserClient/DevTools interception, external protocols, and unknown
 diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
-index 977527e89d26b7f536029ba4b413cb40409e3f2b..9ced3e986ec32cbef25d3125e2d67d418c700b79 100644
+index 899f11cf9d2ebf5a3071826397cbb2d107f7d249..3049711cd1611fcd0ded5d8b9b813ccd6b9e95f8 100644
 --- a/content/browser/loader/prefetch_browsertest.cc
 +++ b/content/browser/loader/prefetch_browsertest.cc
 @@ -2,6 +2,7 @@
@@ -33865,19 +33864,21 @@ index 977527e89d26b7f536029ba4b413cb40409e3f2b..9ced3e986ec32cbef25d3125e2d67d41
  #include <string>
  #include <vector>
  
-@@ -10,21 +11,27 @@
+@@ -10,23 +11,29 @@
  #include "base/files/scoped_temp_dir.h"
  #include "base/run_loop.h"
  #include "base/strings/string_number_conversions.h"
 +#include "base/strings/string_util.h"
  #include "base/strings/stringprintf.h"
  #include "base/test/bind.h"
+ #include "base/test/metrics/histogram_tester.h"
  #include "base/test/scoped_feature_list.h"
  #include "base/test/test_future.h"
  #include "base/threading/thread_restrictions.h"
 +#include "base/unguessable_token.h"
  #include "build/build_config.h"
  #include "content/browser/loader/prefetch_browsertest_base.h"
+ #include "content/browser/loader/prefetch_url_loader_service_context.h"
  #include "content/browser/loader/subresource_proxying_url_loader_service.h"
 +#include "content/browser/renderer_host/frame_tree_node.h"
 +#include "content/browser/renderer_host/navigation_request.h"
@@ -33893,7 +33894,7 @@ index 977527e89d26b7f536029ba4b413cb40409e3f2b..9ced3e986ec32cbef25d3125e2d67d41
  #include "content/public/test/browser_test.h"
  #include "content/public/test/browser_test_utils.h"
  #include "content/public/test/content_browser_test.h"
-@@ -33,21 +40,30 @@
+@@ -35,21 +42,30 @@
  #include "content/public/test/test_frame_navigation_observer.h"
  #include "content/public/test/url_loader_monitor.h"
  #include "content/shell/browser/shell.h"
@@ -33926,7 +33927,7 @@ index 977527e89d26b7f536029ba4b413cb40409e3f2b..9ced3e986ec32cbef25d3125e2d67d41
  
  namespace content {
  
-@@ -68,6 +84,493 @@ const struct {
+@@ -70,6 +86,493 @@ const struct {
  
  }  // namespace
  
@@ -34421,18 +34422,18 @@ index 977527e89d26b7f536029ba4b413cb40409e3f2b..9ced3e986ec32cbef25d3125e2d67d41
      : public PrefetchBrowserTestBase,
        public testing::WithParamInterface<SplitCacheTestCase> {
 diff --git a/content/browser/loader/prefetch_url_loader_service_context.cc b/content/browser/loader/prefetch_url_loader_service_context.cc
-index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb199934fe26 100644
+index c2bda1096fb207cd9fa743e0f09021ffb2d1e431..9ae7682b842917e4c819fd67bcaa3b295a6e54af 100644
 --- a/content/browser/loader/prefetch_url_loader_service_context.cc
 +++ b/content/browser/loader/prefetch_url_loader_service_context.cc
-@@ -4,6 +4,7 @@
+@@ -6,6 +6,7 @@
  
- #include "content/browser/loader/prefetch_url_loader_service_context.h"
- 
+ #include "base/metrics/histogram_functions.h"
+ #include "base/unguessable_token.h"
 +#include "base/functional/bind.h"
  #include "content/browser/loader/prefetch_url_loader.h"
  #include "content/browser/renderer_host/frame_tree_node.h"
  #include "content/browser/renderer_host/render_frame_host_impl.h"
-@@ -12,6 +13,7 @@
+@@ -14,6 +15,7 @@
  #include "content/public/browser/url_loader_throttles.h"
  #include "content/public/browser/web_contents.h"
  #include "content/public/common/content_client.h"
@@ -34440,7 +34441,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
  #include "third_party/blink/public/common/loader/url_loader_throttle.h"
  #include "third_party/blink/public/common/renderer_preferences/renderer_preferences.h"
  
-@@ -43,23 +45,8 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
+@@ -90,23 +92,8 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
                "PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart");
    CHECK(IsPrefetchRequest(resource_request_in));
  
@@ -34465,7 +34466,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
      loader_factory_receivers_->ReportBadMessage(
          "Prefetch/CreatePrefetchLoaderAndStart: trusted params");
      mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
-@@ -72,7 +59,7 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
+@@ -119,7 +106,7 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
    // prefetches it is forwarded to a trusted network loader factory which does
    // not validate `load_flags`. Apply the same allowlist that
    // `CorsURLLoaderFactory::IsValidRequest()` applies to untrusted callers.
@@ -34474,7 +34475,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
        ~network::GetAllowedLoadFlagsForUntrustedRequests()) {
      loader_factory_receivers_->ReportBadMessage(
          "Prefetch/CreatePrefetchLoaderAndStart: restricted load flag");
-@@ -82,6 +69,92 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
+@@ -129,6 +116,92 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
      return;
    }
  
@@ -34566,8 +34567,8 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
 +
    if (resource_request.load_flags &
        net::LOAD_RESTRICTED_PREFETCH_FOR_MAIN_FRAME) {
-     CHECK(!resource_request.recursive_prefetch_token);
-@@ -89,13 +162,14 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
+     if (resource_request.recursive_prefetch_token) {
+@@ -144,13 +217,14 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
      // cross-origin prefetch intended for top-level navigation reuse. We must
      // verify that the request meets the necessary security requirements, and
      // populate `resource_request`'s IsolationInfo appropriately.
@@ -34584,7 +34585,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
        mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
            ->OnComplete(
                network::URLLoaderCompletionStatus(net::ERR_INVALID_ARGUMENT));
-@@ -157,6 +231,37 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
+@@ -265,6 +339,37 @@ void PrefetchURLLoaderServiceContext::CreatePrefetchLoaderAndStart(
      resource_request.trusted_params->isolation_info =
          isolation_info_iterator->second;
      network_loader_factory_to_use = current_context.cross_origin_factory;
@@ -34622,7 +34623,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
    }
  
    if (prefetch_load_callback_for_testing_) {
-@@ -198,11 +303,15 @@ PrefetchURLLoaderServiceContext::~PrefetchURLLoaderServiceContext() = default;
+@@ -305,11 +410,15 @@ PrefetchURLLoaderServiceContext::~PrefetchURLLoaderServiceContext() = default;
  // of a cross-origin prefetch request coming from the renderer, so that it can
  // be cached correctly.
  bool PrefetchURLLoaderServiceContext::IsValidCrossOriginPrefetch(
@@ -34641,7 +34642,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
      return false;
    }
  
-@@ -211,22 +320,25 @@ bool PrefetchURLLoaderServiceContext::IsValidCrossOriginPrefetch(
+@@ -318,22 +427,25 @@ bool PrefetchURLLoaderServiceContext::IsValidCrossOriginPrefetch(
    // restricted use.
    if (resource_request.request_initiator->IsSameOriginWith(
            resource_request.url)) {
@@ -34672,7 +34673,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
      return false;
    }
  
-@@ -236,16 +348,18 @@ bool PrefetchURLLoaderServiceContext::IsValidCrossOriginPrefetch(
+@@ -343,16 +455,18 @@ bool PrefetchURLLoaderServiceContext::IsValidCrossOriginPrefetch(
    // navigations.
    if (resource_request.load_flags &
        net::LOAD_CAN_USE_RESTRICTED_PREFETCH_FOR_MAIN_FRAME) {
@@ -34696,7 +34697,7 @@ index 779902a6d7778ef3f849c24b35282145a2a904cf..aa07116bc325b73c143197c6b171eb19
    if (current_context.cross_origin_factory) {
      return;
 diff --git a/content/browser/loader/prefetch_url_loader_service_context.h b/content/browser/loader/prefetch_url_loader_service_context.h
-index 7f32b5df37e9ea76776013dc196e4e2dcf15d20d..711163c7a69fd9e0ee6a26375e9f9c6c2c89ab09 100644
+index 79cb11713d40037884e75f51561cc754ac62a2d8..8f3e06e2f6f1f991e830b21f65866d883c8576f0 100644
 --- a/content/browser/loader/prefetch_url_loader_service_context.h
 +++ b/content/browser/loader/prefetch_url_loader_service_context.h
 @@ -6,6 +6,7 @@
@@ -34707,7 +34708,7 @@ index 7f32b5df37e9ea76776013dc196e4e2dcf15d20d..711163c7a69fd9e0ee6a26375e9f9c6c
  #include "content/browser/loader/subresource_proxying_url_loader_service.h"
  #include "content/common/content_export.h"
  #include "content/public/browser/frame_tree_node_id.h"
-@@ -64,12 +65,24 @@ class CONTENT_EXPORT PrefetchURLLoaderServiceContext final
+@@ -76,12 +77,24 @@ class CONTENT_EXPORT PrefetchURLLoaderServiceContext final
    }
  
   private:
@@ -34732,9 +34733,9 @@ index 7f32b5df37e9ea76776013dc196e4e2dcf15d20d..711163c7a69fd9e0ee6a26375e9f9c6c
 +      const BindContext& context,
 +      bool can_report_bad_message);
  
-   base::UnguessableToken GenerateRecursivePrefetchToken(
-       base::WeakPtr<BindContext> bind_context,
-@@ -83,10 +96,6 @@ class CONTENT_EXPORT PrefetchURLLoaderServiceContext final
+   // blink::mojom::RendererPreferenceWatcher.
+   void NotifyUpdate(const blink::RendererPreferences& new_prefs) override;
+@@ -91,10 +104,6 @@ class CONTENT_EXPORT PrefetchURLLoaderServiceContext final
    CreateURLLoaderThrottles(const network::ResourceRequest& request,
                             FrameTreeNodeId frame_tree_node_id);
  
@@ -34745,7 +34746,7 @@ index 7f32b5df37e9ea76776013dc196e4e2dcf15d20d..711163c7a69fd9e0ee6a26375e9f9c6c
    raw_ptr<BrowserContext> browser_context_ = nullptr;
  
    raw_ref<mojo::ReceiverSet<network::mojom::URLLoaderFactory,
-@@ -104,6 +113,8 @@ class CONTENT_EXPORT PrefetchURLLoaderServiceContext final
+@@ -112,6 +121,8 @@ class CONTENT_EXPORT PrefetchURLLoaderServiceContext final
    base::RepeatingClosure prefetch_load_callback_for_testing_;
  
    std::string accept_langs_;
@@ -34755,10 +34756,10 @@ index 7f32b5df37e9ea76776013dc196e4e2dcf15d20d..711163c7a69fd9e0ee6a26375e9f9c6c
  
  }  // namespace content
 diff --git a/content/browser/loader/subresource_proxying_url_loader_service.cc b/content/browser/loader/subresource_proxying_url_loader_service.cc
-index 1a9e2723f4d2abbf924c35a1a360f415a9e3a6bd..1f01c8c1a4a26d569267238b71e92bc47d101160 100644
+index 4c436a8056980a087b5b549c1d368a66afeb69d6..0be782896f6f98afc88141f30ad9df3f4deb177e 100644
 --- a/content/browser/loader/subresource_proxying_url_loader_service.cc
 +++ b/content/browser/loader/subresource_proxying_url_loader_service.cc
-@@ -28,20 +28,65 @@ SubresourceProxyingURLLoaderService::BindContext::BindContext(
+@@ -30,21 +30,65 @@ SubresourceProxyingURLLoaderService::BindContext::BindContext(
      scoped_refptr<network::SharedURLLoaderFactory> factory,
      base::WeakPtr<RenderFrameHostImpl> render_frame_host,
      scoped_refptr<PrefetchedSignedExchangeCache>
@@ -34768,7 +34769,7 @@ index 1a9e2723f4d2abbf924c35a1a360f415a9e3a6bd..1f01c8c1a4a26d569267238b71e92bc4
 +        document_prefetch_pending_bundle,
 +    DocumentDefaultFactoryKind document_default_factory_kind)
      : frame_tree_node_id(frame_tree_node_id),
-       factory(factory),
+       factory(std::move(factory)),
        render_frame_host(std::move(render_frame_host)),
        cross_origin_factory(nullptr),
 +      document_prefetch_pending_bundle(
@@ -34803,9 +34804,8 @@ index 1a9e2723f4d2abbf924c35a1a360f415a9e3a6bd..1f01c8c1a4a26d569267238b71e92bc4
 +  for (auto& callback : pending_prefetches) {
 +    std::move(callback).Run(false);
 +  }
- }
- 
--SubresourceProxyingURLLoaderService::BindContext::~BindContext() = default;
++}
++
 +bool SubresourceProxyingURLLoaderService::BindContext::QueuePendingPrefetch(
 +    base::OnceCallback<void(bool)> callback) {
 +  // A renderer must not be able to retain an unbounded number of pending
@@ -34818,15 +34818,15 @@ index 1a9e2723f4d2abbf924c35a1a360f415a9e3a6bd..1f01c8c1a4a26d569267238b71e92bc4
 +  }
 +  pending_prefetches_.push_back(std::move(callback));
 +  return true;
-+}
-+
-+SubresourceProxyingURLLoaderService::BindContext::~BindContext() {
-+  OnNavigationCancelled();
-+}
+ }
  
- SubresourceProxyingURLLoaderService::SubresourceProxyingURLLoaderService(
-     BrowserContext* browser_context)
-@@ -60,13 +105,18 @@ SubresourceProxyingURLLoaderService::GetFactory(
+ SubresourceProxyingURLLoaderService::BindContext::~BindContext() {
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
++  OnNavigationCancelled();
+   if (total_tokens_generated > 0) {
+     base::UmaHistogramCounts100(
+         "Prefetch.RecursivePrefetch.TokensPerDocument",
+@@ -69,13 +113,18 @@ SubresourceProxyingURLLoaderService::GetFactory(
          subresource_proxying_factory_bundle,
      base::WeakPtr<RenderFrameHostImpl> render_frame_host,
      scoped_refptr<PrefetchedSignedExchangeCache>
@@ -34847,7 +34847,7 @@ index 1a9e2723f4d2abbf924c35a1a360f415a9e3a6bd..1f01c8c1a4a26d569267238b71e92bc4
  
    base::WeakPtr<BindContext> weak_bind_context =
        bind_context->weak_ptr_factory.GetWeakPtr();
-@@ -77,6 +127,27 @@ SubresourceProxyingURLLoaderService::GetFactory(
+@@ -86,6 +135,27 @@ SubresourceProxyingURLLoaderService::GetFactory(
    return weak_bind_context;
  }
  
@@ -34876,10 +34876,10 @@ index 1a9e2723f4d2abbf924c35a1a360f415a9e3a6bd..1f01c8c1a4a26d569267238b71e92bc4
      mojo::PendingReceiver<network::mojom::URLLoader> receiver,
      int32_t request_id,
 diff --git a/content/browser/loader/subresource_proxying_url_loader_service.h b/content/browser/loader/subresource_proxying_url_loader_service.h
-index c7648ebef32beb10a602f4f03448d159abee07e8..2d3467f29bbc13a227e03a656e7a0fbdc53bc03d 100644
+index dabb87384bacdc4b02f4fa90b5a6b200325f0ab5..51d4f57b6523c4fdc89a62cc5c71b50f016cd570 100644
 --- a/content/browser/loader/subresource_proxying_url_loader_service.h
 +++ b/content/browser/loader/subresource_proxying_url_loader_service.h
-@@ -5,8 +5,12 @@
+@@ -5,9 +5,13 @@
  #ifndef CONTENT_BROWSER_LOADER_SUBRESOURCE_PROXYING_URL_LOADER_SERVICE_H_
  #define CONTENT_BROWSER_LOADER_SUBRESOURCE_PROXYING_URL_LOADER_SERVICE_H_
  
@@ -34888,11 +34888,12 @@ index c7648ebef32beb10a602f4f03448d159abee07e8..2d3467f29bbc13a227e03a656e7a0fbd
  #include <string>
 +#include <vector>
  
+ #include "base/containers/hashing_lru_cache.h"
 +#include "base/functional/callback.h"
  #include "base/memory/raw_ptr.h"
  #include "base/memory/ref_counted.h"
- #include "content/public/browser/browser_thread.h"
-@@ -35,6 +39,11 @@ class RenderFrameHostImpl;
+ #include "base/unguessable_token.h"
+@@ -37,6 +41,11 @@ class RenderFrameHostImpl;
  class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
      : public network::mojom::URLLoaderFactory {
   public:
@@ -34902,9 +34903,9 @@ index c7648ebef32beb10a602f4f03448d159abee07e8..2d3467f29bbc13a227e03a656e7a0fbd
 +  enum class DocumentDefaultFactoryKind { kPreserve, kNetworkService };
 +
    struct CONTENT_EXPORT BindContext : public base::RefCounted<BindContext> {
-     // `factory` is a clone of the default factory bundle for document
-     // subresource requests.
-@@ -42,10 +51,18 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
+     static constexpr size_t kMaxPrefetchIsolationInfoEntries = 16;
+ 
+@@ -46,10 +55,18 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
                  scoped_refptr<network::SharedURLLoaderFactory> factory,
                  base::WeakPtr<RenderFrameHostImpl> render_frame_host,
                  scoped_refptr<PrefetchedSignedExchangeCache>
@@ -34925,7 +34926,7 @@ index c7648ebef32beb10a602f4f03448d159abee07e8..2d3467f29bbc13a227e03a656e7a0fbd
  
      const FrameTreeNodeId frame_tree_node_id;
      scoped_refptr<network::SharedURLLoaderFactory> factory;
-@@ -54,6 +71,17 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
+@@ -58,6 +75,17 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
      // This member is lazily initialized by EnsureCrossOriginFactory().
      scoped_refptr<network::SharedURLLoaderFactory> cross_origin_factory;
  
@@ -34943,17 +34944,16 @@ index c7648ebef32beb10a602f4f03448d159abee07e8..2d3467f29bbc13a227e03a656e7a0fbd
      scoped_refptr<PrefetchedSignedExchangeCache>
          prefetched_signed_exchange_cache;
  
-@@ -67,6 +95,9 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
-     // null whenever the document navigates away.
-     WeakDocumentPtr document;
+@@ -75,6 +103,8 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
  
+     // Total number of recursive prefetch tokens generated for this document.
+     size_t total_tokens_generated = 0;
 +    DocumentState document_state_ = DocumentState::kPending;
 +    std::vector<base::OnceCallback<void(bool)>> pending_prefetches_;
-+
+ 
      // This must be the last member.
      base::WeakPtrFactory<SubresourceProxyingURLLoaderService::BindContext>
-         weak_ptr_factory{this};
-@@ -91,7 +122,18 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
+@@ -100,7 +130,18 @@ class CONTENT_EXPORT SubresourceProxyingURLLoaderService final
            subresource_proxying_factory_bundle,
        base::WeakPtr<RenderFrameHostImpl> render_frame_host,
        scoped_refptr<PrefetchedSignedExchangeCache>
@@ -35068,10 +35068,10 @@ index 064590cf25641983c079d89734fd058de77615f0..d64f730841c900e247026312542594b4
  
    void OnRequest(const GURL& url) { intercepted_urls_.push_back(url); }
 diff --git a/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc b/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
-index 62216a8c2ebbfc79786ca4d22f5d5fc35589eaac..b49c469755bcda27e1eebc58c6ab37e356ba4eb7 100644
+index 156c9ae2edb3d369a954b30aa26f7e0a72e2f432..f67c1aa994f9bd11477c773ed509ba9aa4fabec2 100644
 --- a/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
 +++ b/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
-@@ -76,7 +76,7 @@ TEST_F(PrefetchNetworkContextTest, CreateIsolatedURLLoaderFactory) {
+@@ -77,7 +77,7 @@ TEST_F(PrefetchNetworkContextTest, CreateIsolatedURLLoaderFactory) {
                    ukm::SourceIdObj::FromInt64(main_rfh()->GetPageUkmSourceId()),
                    testing::_, testing::NotNull(), testing::NotNull(),
                    testing::IsNull(), testing::IsNull(), testing::IsNull(),
@@ -35080,7 +35080,7 @@ index 62216a8c2ebbfc79786ca4d22f5d5fc35589eaac..b49c469755bcda27e1eebc58c6ab37e3
  
    // Unused fields are marked as `{}`.
    auto prefetch_request = PrefetchRequest::CreateRendererInitiated(
-@@ -115,7 +115,7 @@ TEST_F(PrefetchNetworkContextTest,
+@@ -116,7 +116,7 @@ TEST_F(PrefetchNetworkContextTest,
                    ukm::SourceIdObj::FromInt64(main_rfh()->GetPageUkmSourceId()),
                    testing::_, testing::NotNull(), testing::NotNull(),
                    testing::IsNull(), testing::IsNull(), testing::IsNull(),
@@ -35089,7 +35089,7 @@ index 62216a8c2ebbfc79786ca4d22f5d5fc35589eaac..b49c469755bcda27e1eebc58c6ab37e3
  
    // Unused fields are marked as `{}`.
    auto prefetch_request = PrefetchRequest::CreateRendererInitiated(
-@@ -152,7 +152,7 @@ TEST_F(PrefetchNetworkContextTest,
+@@ -153,7 +153,7 @@ TEST_F(PrefetchNetworkContextTest,
            testing::Eq(std::nullopt), testing::Eq(ukm::kInvalidSourceIdObj),
            testing::_, testing::NotNull(), testing::NotNull(), testing::IsNull(),
            testing::IsNull(), testing::IsNull(),
@@ -35209,10 +35209,10 @@ index 24de643a006c5bca6b77c0b41d58cf81ad5e9689..0869545e07f96d3eaed00828f4b15dca
  
    auto prefetch_container = CreateSpeculationRulesPrefetchContainer(
 diff --git a/content/browser/renderer_host/navigation_request.cc b/content/browser/renderer_host/navigation_request.cc
-index ec85f0265b0b8384985a514c7e99b172733dd13f..5f2087c1bd3704eaa7ee8373b39fead8b649c363 100644
+index d0a8f2f8528b149f88cea810274ca0d0f24c75a9..a297cda700e3d77bc4ba1e4fe27e8e5b3a9af5ac 100644
 --- a/content/browser/renderer_host/navigation_request.cc
 +++ b/content/browser/renderer_host/navigation_request.cc
-@@ -2249,6 +2249,11 @@ NavigationRequest::~NavigationRequest() {
+@@ -2253,6 +2253,11 @@ NavigationRequest::~NavigationRequest() {
                perfetto::TerminatingFlow::FromPointer(this));
    is_destructing_ = true;
  
@@ -35225,10 +35225,10 @@ index ec85f0265b0b8384985a514c7e99b172733dd13f..5f2087c1bd3704eaa7ee8373b39fead8
    // If |is_safe_to_delete_| is false, it means |this| is being deleted at an
    // unexpected time, more specifically a time that is likely to lead to
 diff --git a/content/browser/renderer_host/render_frame_host_impl.cc b/content/browser/renderer_host/render_frame_host_impl.cc
-index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c4832ef54 100644
+index 2a4625eebc4830065dac7d681ebd310be3097189..f55419e2f44f69d1646b2644b410b577f8cdf89f 100644
 --- a/content/browser/renderer_host/render_frame_host_impl.cc
 +++ b/content/browser/renderer_host/render_frame_host_impl.cc
-@@ -2032,6 +2032,7 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
+@@ -2077,6 +2077,7 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
    static SubresourceLoaderFactoriesConfig ForLastCommittedNavigation(
        RenderFrameHostImpl& frame) {
      SubresourceLoaderFactoriesConfig result;
@@ -35236,7 +35236,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
      result.origin_ = frame.GetLastCommittedOrigin();
      result.isolation_info_ = frame.GetIsolationInfoForSubresources();
      result.client_security_state_ = frame.BuildClientSecurityState();
-@@ -2083,6 +2084,9 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
+@@ -2132,6 +2133,9 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
    static SubresourceLoaderFactoriesConfig ForPendingNavigation(
        NavigationRequest& navigation_request) {
      SubresourceLoaderFactoriesConfig result;
@@ -35246,7 +35246,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
      result.origin_ = navigation_request.GetOriginToCommit().value();
      result.client_security_state_ =
          navigation_request.BuildClientSecurityStateForCommittedDocument();
-@@ -2186,6 +2190,10 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
+@@ -2239,6 +2243,10 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
        const SubresourceLoaderFactoriesConfig&) = delete;
  
    const url::Origin& origin() const { return origin_; }
@@ -35257,7 +35257,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
    const net::IsolationInfo& isolation_info() const { return isolation_info_; }
  
    network::mojom::ClientSecurityStatePtr GetClientSecurityState() const {
-@@ -2235,6 +2243,7 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
+@@ -2292,6 +2300,7 @@ class RenderFrameHostImpl::SubresourceLoaderFactoriesConfig {
    SubresourceLoaderFactoriesConfig() = default;
  
    url::Origin origin_;
@@ -35265,7 +35265,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
    net::IsolationInfo isolation_info_;
    network::mojom::ClientSecurityStatePtr client_security_state_;
    mojo::Remote<network::mojom::CrossOriginEmbedderPolicyReporter>
-@@ -3737,7 +3746,8 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactory(
+@@ -3738,7 +3747,8 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactory(
            subresource_loader_factories_config,
            "RFHI::CreateNetworkServiceDefaultFactory"),
        subresource_loader_factories_config.ukm_source_id(),
@@ -35275,7 +35275,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
  }
  
  std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
-@@ -3852,7 +3862,8 @@ RenderFrameHostImpl::CreateURLLoaderFactoriesForIsolatedWorlds(
+@@ -3853,7 +3863,8 @@ RenderFrameHostImpl::CreateURLLoaderFactoriesForIsolatedWorlds(
      CreateNetworkServiceDefaultFactoryAndObserve(
          std::move(factory_params),
          ukm::kInvalidSourceIdObj, /* isolated from page */
@@ -35285,7 +35285,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
      result[isolated_world_origin] = std::move(factory_remote);
    }
    return result;
-@@ -8452,7 +8463,8 @@ void RenderFrameHostImpl::UpdateSubresourceLoaderFactories() {
+@@ -8450,7 +8461,8 @@ void RenderFrameHostImpl::UpdateSubresourceLoaderFactories() {
              subresource_loader_factories_config,
              "RFHI::UpdateSubresourceLoaderFactories"),
          subresource_loader_factories_config.ukm_source_id(),
@@ -35295,7 +35295,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
    }
  
    std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
-@@ -10486,7 +10498,8 @@ RenderFrameHostImpl::CreateCrossOriginPrefetchLoaderFactoryBundle() {
+@@ -10531,7 +10543,8 @@ RenderFrameHostImpl::CreateCrossOriginPrefetchLoaderFactoryBundle() {
    bypass_redirect_checks = CreateNetworkServiceDefaultFactoryAndObserve(
        std::move(factory_params),
        subresource_loader_factories_config.ukm_source_id(),
@@ -35305,7 +35305,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
  
    return std::make_unique<blink::PendingURLLoaderFactoryBundle>(
        std::move(pending_default_factory),
-@@ -13097,6 +13110,9 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13192,6 +13205,9 @@ void RenderFrameHostImpl::CommitNavigation(
  
    std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
        subresource_loader_factories;
@@ -35315,7 +35315,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
    if (!is_same_document || is_first_navigation) {
      recreate_default_url_loader_factory_after_network_service_crash_ = false;
      subresource_loader_factories =
-@@ -13136,7 +13152,11 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13231,7 +13247,11 @@ void RenderFrameHostImpl::CommitNavigation(
                    browser_context, this, GetProcess()->GetDeprecatedID(),
                    subresource_loader_factories_config.origin(),
                    net::IsolationInfo(),
@@ -35328,7 +35328,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
  
        // If the renderer has webui bindings, then don't give it access to
        // network loader for security reasons.
-@@ -13174,6 +13194,9 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13269,6 +13289,9 @@ void RenderFrameHostImpl::CommitNavigation(
        // Otherwise default to a Network Service-backed loader from the
        // appropriate NetworkContext.
        recreate_default_url_loader_factory_after_network_service_crash_ = true;
@@ -35338,7 +35338,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
  
        // Otherwise default to a Network Service-backed loader from the
        // appropriate NetworkContext.
-@@ -13183,7 +13206,8 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13278,7 +13301,8 @@ void RenderFrameHostImpl::CommitNavigation(
                    subresource_loader_factories_config,
                    "RFHI::CommitNavigation"),
                subresource_loader_factories_config.ukm_source_id(),
@@ -35348,7 +35348,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
        subresource_loader_factories->set_bypass_redirect_checks(
            bypass_redirect_checks);
      }
-@@ -13257,7 +13281,11 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13352,7 +13376,11 @@ void RenderFrameHostImpl::CommitNavigation(
                GetBrowserContext(), this, GetProcess()->GetDeprecatedID(),
                subresource_loader_factories_config.origin(),
                net::IsolationInfo(),
@@ -35361,7 +35361,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
            devtools_instrumentation::WillCreateURLLoaderFactoryParams::ForFrame(
                this));
        subresource_loader_factories->pending_scheme_specific_factories().emplace(
-@@ -13310,6 +13338,8 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13405,6 +13433,8 @@ void RenderFrameHostImpl::CommitNavigation(
      // memory, this is intentionally shared for prefetch and keep-alive.
      scoped_refptr<network::SharedURLLoaderFactory>
          subresource_proxying_factory_bundle;
@@ -35370,7 +35370,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
      if (subresource_loader_factories) {
        base::ElapsedTimer subresource_proxying_timer;
        // Clone the factory bundle for prefetch.
-@@ -13338,6 +13368,7 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13433,6 +13463,7 @@ void RenderFrameHostImpl::CommitNavigation(
        base::UmaHistogramMicrosecondsTimes(
            "Navigation.CreateSubresourceProxyingURLLoaderFactoryBundle.Duration",
            subresource_proxying_timer.Elapsed());
@@ -35378,7 +35378,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
      }
  
      // Set up the subresource loader factory to be passed to the renderer. It is
-@@ -13367,7 +13398,9 @@ void RenderFrameHostImpl::CommitNavigation(
+@@ -13462,7 +13493,9 @@ void RenderFrameHostImpl::CommitNavigation(
                                     ->frame_tree_node_id(),
                                 subresource_proxying_factory_bundle,
                                 weak_ptr_factory_.GetWeakPtr(),
@@ -35389,7 +35389,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
  
        navigation_request
            ->set_subresource_proxying_url_loader_service_bind_context(
-@@ -13510,13 +13543,16 @@ void RenderFrameHostImpl::FailedNavigation(
+@@ -13605,13 +13638,16 @@ void RenderFrameHostImpl::FailedNavigation(
    std::unique_ptr<blink::PendingURLLoaderFactoryBundle>
        subresource_loader_factories;
    mojo::PendingRemote<network::mojom::URLLoaderFactory> default_factory_remote;
@@ -35409,7 +35409,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
    subresource_loader_factories =
        std::make_unique<blink::PendingURLLoaderFactoryBundle>(
            std::move(default_factory_remote),
-@@ -14434,9 +14470,12 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryAndObserve(
+@@ -14541,9 +14577,12 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryAndObserve(
      network::mojom::URLLoaderFactoryParamsPtr params,
      ukm::SourceIdObj ukm_source_id,
      mojo::PendingReceiver<network::mojom::URLLoaderFactory>
@@ -35424,7 +35424,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
  
    // Add a disconnect handler when Network Service is running
    // out-of-process.
-@@ -14474,7 +14513,9 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
+@@ -14581,7 +14620,9 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
      network::mojom::URLLoaderFactoryParamsPtr params,
      ukm::SourceIdObj ukm_source_id,
      mojo::PendingReceiver<network::mojom::URLLoaderFactory>
@@ -35435,7 +35435,7 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
    CHECK(params->request_initiator_origin_lock.has_value());
    const url::Origin request_initiator =
        params->request_initiator_origin_lock.value();
-@@ -14492,7 +14533,9 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
+@@ -14599,7 +14640,9 @@ bool RenderFrameHostImpl::CreateNetworkServiceDefaultFactoryInternal(
        url_loader_factory::ContentClientParams(
            GetBrowserContext(), this, GetProcess()->GetDeprecatedID(),
            request_initiator, isolation_info, ukm_source_id,
@@ -35447,10 +35447,10 @@ index 6f3a89c6adfcaca3713cb1c485dff688650c6f90..2105faf19e0ca3b2f924a5fe81fd4e1c
            this));
    return bypass_redirect_checks;
 diff --git a/content/browser/renderer_host/render_frame_host_impl.h b/content/browser/renderer_host/render_frame_host_impl.h
-index 9a80df89e7f53d7640f0a7648b1ee2097071860a..91157851a1e748f6c926fa0e2fb54de23345a63a 100644
+index 7e846e4f47d8016a0fdbf08201a2baf593704678..c80678aff9a24bbdcac07ae074a9b38ecaff95a3 100644
 --- a/content/browser/renderer_host/render_frame_host_impl.h
 +++ b/content/browser/renderer_host/render_frame_host_impl.h
-@@ -3845,7 +3845,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
+@@ -3672,7 +3672,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
        network::mojom::URLLoaderFactoryParamsPtr params,
        ukm::SourceIdObj ukm_source_id,
        mojo::PendingReceiver<network::mojom::URLLoaderFactory>
@@ -35461,7 +35461,7 @@ index 9a80df89e7f53d7640f0a7648b1ee2097071860a..91157851a1e748f6c926fa0e2fb54de2
  
    // Asks an appropriate `NetworkService` to create a new URLLoaderFactory with
    // the given `params` and binds the factory to the `default_factory_receiver`.
-@@ -3862,7 +3864,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
+@@ -3689,7 +3691,9 @@ class CONTENT_EXPORT RenderFrameHostImpl
        network::mojom::URLLoaderFactoryParamsPtr params,
        ukm::SourceIdObj ukm_source_id,
        mojo::PendingReceiver<network::mojom::URLLoaderFactory>
@@ -35473,10 +35473,10 @@ index 9a80df89e7f53d7640f0a7648b1ee2097071860a..91157851a1e748f6c926fa0e2fb54de2
    // Returns true if the ExecuteJavaScript() API can be used on this host.
    // The checks do not apply to ExecuteJavaScriptInIsolatedWorld, nor to
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index df995fdda8369c94c20b103719ccf129807bf0ef..bd88462bbbabf362ba5a946fea28cf0c80e9a21a 100644
+index 5c129bc0962d5749e4da7d6ac62796ee8ab08a68..2141c12e1ac6fd69c86f24e5a25df7a72df4e7da 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1085,10 +1085,17 @@ void ContentBrowserClient::WillCreateURLLoaderFactory(
+@@ -1091,10 +1091,17 @@ void ContentBrowserClient::WillCreateURLLoaderFactory(
      bool* disable_secure_dns,
      network::mojom::URLLoaderFactoryOverridePtr* factory_override,
      scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
@@ -35496,7 +35496,7 @@ index df995fdda8369c94c20b103719ccf129807bf0ef..bd88462bbbabf362ba5a946fea28cf0c
    return false;
  }
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 40a90ff9f0e38e44d72ee8532d6729b0c91dac9f..5777a3758ab6f28166165706a0ffa555f79238b8 100644
+index 4eb19faf14b31ea0c26ca2a81e83fbda80220c3f..bc992e01dd981deba42ac70de10c4b6961db389a 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
 @@ -92,6 +92,7 @@
@@ -35507,7 +35507,7 @@ index 40a90ff9f0e38e44d72ee8532d6729b0c91dac9f..5777a3758ab6f28166165706a0ffa555
  #include "third_party/blink/public/mojom/worker/shared_worker_info.mojom.h"
  #include "ui/base/clipboard/clipboard_metadata.h"
  #include "ui/base/page_transition_types.h"
-@@ -1852,6 +1853,22 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1859,6 +1860,22 @@ class CONTENT_EXPORT ContentBrowserClient {
      kEarlyHints,
    };
  
@@ -35530,7 +35530,7 @@ index 40a90ff9f0e38e44d72ee8532d6729b0c91dac9f..5777a3758ab6f28166165706a0ffa555
    // Allows the embedder to intercept URLLoaderFactory interfaces used by the
    // content layer to request resources from (usually) the network service.
    //
-@@ -1966,7 +1983,17 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -1973,7 +1990,17 @@ class CONTENT_EXPORT ContentBrowserClient {
        bool* disable_secure_dns,
        network::mojom::URLLoaderFactoryOverridePtr* factory_override,
        scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
@@ -35787,7 +35787,7 @@ index 105c49784d907fe4c3a8f961a8082044680b1fdd..b9567323881c927e652c1c1fa8811232
    mojo::Remote<mojom::CustomProxyConfigClient> client;
    auto delegate = std::make_unique<NetworkServiceProxyDelegate>(
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 6ea8a820d0866d25b773c4fce136f9730ebf6e2e..bc2d706785de430b8012ea699dc643a184ec86e1 100644
+index 1470ee8a8056d90e269d0b01b409d37548455b07..6f055a39f12f2711c15eb07d361e61b529f6f6f7 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -177,9 +177,27 @@ interface CookieStoreReadyCallback {
@@ -35820,12 +35820,12 @@ index 6ea8a820d0866d25b773c4fce136f9730ebf6e2e..bc2d706785de430b8012ea699dc643a1
  
  // Sent by TrustedURLLoaderHeaderClient to perform modifications for a request.
 diff --git a/tools/metrics/histograms/metadata/sql/histograms.xml b/tools/metrics/histograms/metadata/sql/histograms.xml
-index 9f08f206499aa4ba3d0cbb87c1f4d2720b67baa2..4ae8750cb0e59c32087e6668de61d9d87ca20d1d 100644
+index c65ec08cb74edf3598a3ed08d7e4f23f65d9341b..8bef539ebc349367195452e2c670bb7ca598dae2 100644
 --- a/tools/metrics/histograms/metadata/sql/histograms.xml
 +++ b/tools/metrics/histograms/metadata/sql/histograms.xml
-@@ -32,6 +32,7 @@ chromium-metrics-reviews@google.com.
- <variants name="DatabaseTag">
-   <variant name="AccessibilityAnnotator" summary="AccessibilityAnnotator"/>
+@@ -33,6 +33,7 @@ chromium-metrics-reviews@google.com.
+   <variant name="AccessibilityAnnotator"
+       summary="AccessibilityAnnotator (deprecated 08/2026)"/>
    <variant name="Activity" summary="Activity"/>
 +  <variant name="AegisAccess" summary="Aegis access rule storage"/>
    <variant name="AegisAgent" summary="Aegis Browser Agent task storage"/>

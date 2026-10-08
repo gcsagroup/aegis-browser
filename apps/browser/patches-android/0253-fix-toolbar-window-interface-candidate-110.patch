@@ -1,0 +1,186 @@
+From ce821c402e868c69655dc63ccdd0312f45323379 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 16:46:30 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Chromium=20154=20=E5=B7=A5?=
+ =?UTF-8?q?=E5=85=B7=E6=A0=8F=E7=AA=97=E5=8F=A3=E6=8E=A5=E5=8F=A3=E5=B9=B6?=
+ =?UTF-8?q?=E4=BF=9D=E7=95=99=E9=A1=B5=E9=9D=A2=E7=94=9F=E5=91=BD=E5=91=A8?=
+ =?UTF-8?q?=E6=9C=9F=E5=9B=9E=E5=BD=92?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    |  4 ++-
+ .../ui/views/toolbar/aegis_toolbar_button.cc  | 29 ++++++++++---------
+ .../ui/views/toolbar/aegis_toolbar_button.h   |  6 ++--
+ 3 files changed, 22 insertions(+), 17 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 2b92e7dc9a37ae2b983f61c683963260d83e5f38..b9f0acfebe6d8c36b90e9182027c4dc8a2bf53aa 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -56,6 +56,7 @@
+ #include "chrome/browser/ui/browser_actions.h"
+ #include "chrome/browser/ui/browser_command_controller.h"
+ #include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_tabstrip.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+ #include "chrome/browser/ui/side_panel/side_panel_action_callback.h"
+@@ -5720,8 +5721,9 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+ 
+ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+                        ToolbarSurvivesObservedPageDestroyedBeforeButton) {
++  BrowserWindowInterface* browser_window = browser();
+   for (bool refresh_before_destroy : {false, true}) {
+-    auto button = std::make_unique<AegisToolbarButton>(browser());
++    auto button = std::make_unique<AegisToolbarButton>(browser_window);
+     auto page = content::WebContents::Create(
+         content::WebContents::CreateParams(browser()->GetProfile()));
+     auto page_lifetime = page->GetWeakPtr();
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 8980d063f5bd63351ad174b8fd26638897718d8e..6e6a70d349122c40079db4185d22e37a9bf89a52 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -17,8 +17,9 @@
+ #include "chrome/browser/aegis/summary_session.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/views/location_bar/location_bar_bubble_delegate_view.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "components/vector_icons/vector_icons.h"
+@@ -50,15 +51,16 @@ constexpr int kBubbleWidth = 440;
+ constexpr int kResultMaxHeight = 300;
+ constexpr base::TimeDelta kIntroDuration = base::Seconds(4);
+ 
+-aegis::AegisService* ServiceForBrowser(Browser* browser) {
++aegis::AegisService* ServiceForBrowser(BrowserWindowInterface* browser) {
+   if (!browser) {
+     return nullptr;
+   }
+   return aegis::AegisServiceFactory::GetForProfile(browser->GetProfile());
+ }
+ 
+-aegis::AegisService* ServiceForWebContents(Browser* browser,
+-                                           content::WebContents* web_contents) {
++aegis::AegisService* ServiceForWebContents(
++    BrowserWindowInterface* browser,
++    content::WebContents* web_contents) {
+   aegis::AegisService* service = ServiceForBrowser(browser);
+   if (!service || !web_contents) {
+     return nullptr;
+@@ -155,11 +157,11 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+ 
+  public:
+   AegisPageBubble(AegisToolbarButton* anchor,
+-                  Browser* browser,
++                  BrowserWindowInterface* browser,
+                   aegis::PagePrivacySummary summary)
+       : LocationBarBubbleDelegateView(
+             views::BubbleAnchor(anchor),
+-            browser->tab_strip_model()->GetActiveWebContents(),
++            browser->GetTabStripModel()->GetActiveWebContents(),
+             /*autosize=*/true),
+         browser_(browser),
+         summary_(std::move(summary)) {
+@@ -387,7 +389,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+ 
+   void TogglePause() {
+     content::WebContents* source =
+-        browser_->tab_strip_model()->GetActiveWebContents();
++        browser_->GetTabStripModel()->GetActiveWebContents();
+     aegis::AegisService* service = ServiceForWebContents(browser_, source);
+     if (!service || summary_.site_key.empty()) {
+       return;
+@@ -402,14 +404,14 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+ 
+   bool CanSummarizeCurrentPage() const {
+     content::WebContents* source =
+-        browser_->tab_strip_model()->GetActiveWebContents();
++        browser_->GetTabStripModel()->GetActiveWebContents();
+     return ServiceForWebContents(browser_, source) &&
+            source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS();
+   }
+ 
+   void OpenSummary() {
+     content::WebContents* source =
+-        browser_->tab_strip_model()->GetActiveWebContents();
++        browser_->GetTabStripModel()->GetActiveWebContents();
+     if (!ServiceForWebContents(browser_, source) ||
+         !source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+       return;
+@@ -568,7 +570,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     }
+   }
+ 
+-  const raw_ptr<Browser> browser_;
++  const raw_ptr<BrowserWindowInterface> browser_;
+   const aegis::PagePrivacySummary summary_;
+   raw_ptr<views::View> protection_panel_ = nullptr;
+   raw_ptr<views::View> progress_panel_ = nullptr;
+@@ -592,7 +594,8 @@ END_METADATA
+ 
+ }  // namespace
+ 
+-AegisToolbarButton::AegisToolbarButton(Browser* browser)
++AegisToolbarButton::AegisToolbarButton(
++    BrowserWindowInterface* browser)
+     : ToolbarButton(base::BindRepeating(&AegisToolbarButton::OnPressed,
+                                         base::Unretained(this))),
+       browser_(browser) {
+@@ -604,7 +607,7 @@ AegisToolbarButton::AegisToolbarButton(Browser* browser)
+     service->AddObserver(this);
+     observed_service_ = service;
+   }
+-  Update(browser_->tab_strip_model()->GetActiveWebContents());
++  Update(browser_->GetTabStripModel()->GetActiveWebContents());
+ }
+ 
+ AegisToolbarButton::~AegisToolbarButton() {
+@@ -623,7 +626,7 @@ void AegisToolbarButton::Update(content::WebContents* web_contents) {
+ }
+ 
+ void AegisToolbarButton::OnAegisStateChanged() {
+-  Update(browser_->tab_strip_model()->GetActiveWebContents());
++  Update(browser_->GetTabStripModel()->GetActiveWebContents());
+ }
+ 
+ void AegisToolbarButton::OnPressed() {
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
+index cf6aa3125d18310669e1d11a6d4c2829c195dde8..b2c99912fd9640351280afd88d7018625c44f869 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
+@@ -11,7 +11,7 @@
+ #include "ui/base/metadata/metadata_header_macros.h"
+ #include "ui/views/view_tracker.h"
+ 
+-class Browser;
++class BrowserWindowInterface;
+ 
+ namespace content {
+ class WebContents;
+@@ -24,7 +24,7 @@ class AegisToolbarButton : public ToolbarButton,
+   METADATA_HEADER(AegisToolbarButton, ToolbarButton)
+ 
+  public:
+-  explicit AegisToolbarButton(Browser* browser);
++  explicit AegisToolbarButton(BrowserWindowInterface* browser);
+   AegisToolbarButton(const AegisToolbarButton&) = delete;
+   AegisToolbarButton& operator=(const AegisToolbarButton&) = delete;
+   ~AegisToolbarButton() override;
+@@ -39,7 +39,7 @@ class AegisToolbarButton : public ToolbarButton,
+   void Refresh();
+   void ClearIntroHighlight();
+ 
+-  const raw_ptr<Browser> browser_;
++  const raw_ptr<BrowserWindowInterface> browser_;
+   // 页面可先于窗口及工具栏销毁；缓存引用必须随页面生命周期自动失效。
+   base::WeakPtr<content::WebContents> web_contents_;
+   raw_ptr<aegis::AegisService> observed_service_ = nullptr;
+-- 
+2.52.0
+

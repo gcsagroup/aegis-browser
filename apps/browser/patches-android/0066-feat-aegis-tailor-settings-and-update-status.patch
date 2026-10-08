@@ -1,0 +1,2268 @@
+From f9acba468908f50c481790b107e6568238e140d4 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Sat, 29 Aug 2026 17:20:12 +0800
+Subject: [PATCH] feat(aegis): tailor settings and update status
+
+---
+ .../resources/generated_resources_zh-CN.xtb   |  5 +-
+ .../resources/generated_resources_zh-HK.xtb   |  5 +-
+ .../resources/generated_resources_zh-TW.xtb   |  5 +-
+ chrome/app/settings_strings.grdp              |  9 +++
+ .../settings/about_page/about_page.css        |  7 ++
+ .../settings/about_page/about_page.html.ts    | 22 ++++++-
+ .../settings/about_page/about_page.ts         |  8 ++-
+ .../settings/autofill_page/autofill_page.html | 45 +++++++------
+ .../settings/autofill_page/autofill_page.ts   | 13 +++-
+ .../autofill_page/autofill_page_index.ts      |  3 +-
+ .../identity_docs/identity_docs_page.ts       |  3 +-
+ .../autofill_page/shopping/shopping_page.ts   |  3 +-
+ .../autofill_page/travel/travel_page.ts       |  3 +-
+ .../settings/people_page/people_page.html.ts  | 14 ++--
+ .../settings/people_page/people_page.ts       | 27 +++++---
+ .../people_page/people_page_index.html.ts     |  5 +-
+ .../settings/people_page/people_page_index.ts |  3 +
+ .../privacy_page/privacy_page_index.ts        | 35 +++++-----
+ chrome/browser/resources/settings/route.ts    | 27 +++++---
+ .../settings/settings_menu/settings_menu.html |  9 ++-
+ .../settings/settings_menu/settings_menu.ts   | 11 ++++
+ .../ui/views/profiles/profile_menu_view.cc    | 21 +++---
+ .../profiles/profile_menu_view_browsertest.cc | 64 +++++++++++++++++++
+ chrome/browser/ui/webui/help/BUILD.gn         | 29 +++++----
+ .../ui/webui/help/version_updater_basic.cc    | 18 +++++-
+ .../settings_localized_strings_provider.cc    | 29 ++++++++-
+ .../browser/ui/webui/settings/settings_ui.cc  | 45 +++++++++++--
+ .../webui/settings/settings_ui_browsertest.cc | 31 +++++++++
+ .../data/webui/settings/about_page_test.ts    | 40 +++++++++++-
+ .../data/webui/settings/account_page_test.ts  |  1 +
+ .../webui/settings/autofill_account_test.ts   |  3 +
+ .../settings/autofill_page_index_test.ts      | 21 ++++++
+ .../data/webui/settings/autofill_page_test.ts | 31 +++++++--
+ .../settings/google_services_page_test.ts     |  2 +
+ .../webui/settings/identity_docs_page_test.ts | 14 ++++
+ .../webui/settings/people_page_index_test.ts  | 32 ++++++++++
+ .../people_page_sync_controls_test.ts         |  6 +-
+ .../people_page_sync_page_interactive_test.ts |  5 +-
+ .../settings/people_page_sync_page_test.ts    |  8 ++-
+ .../data/webui/settings/people_page_test.ts   | 46 +++++++++++++
+ .../webui/settings/privacy_page_index_test.ts | 16 ++++-
+ chrome/test/data/webui/settings/route_test.ts | 54 ++++++++++++++--
+ .../settings/settings_main_plugins_test.ts    | 10 ++-
+ .../settings_menu_interactive_ui_test.ts      |  1 +
+ .../data/webui/settings/settings_menu_test.ts |  9 +++
+ .../data/webui/settings/shopping_page_test.ts | 14 ++++
+ .../settings/sync_account_control_test.ts     |  4 ++
+ .../data/webui/settings/travel_page_test.ts   | 14 ++++
+ tools/grit/grit_args.gni                      |  1 +
+ 49 files changed, 708 insertions(+), 123 deletions(-)
+
+diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
+index 9dde0488ac56f167ef10399dd3fa619c86c3373e..cdd5ce11308fa7ad5f92281d8afac489c543ddd2 100644
+--- a/chrome/app/resources/generated_resources_zh-CN.xtb
++++ b/chrome/app/resources/generated_resources_zh-CN.xtb
+@@ -1167,6 +1167,7 @@
+ <translation id="1896353439080510710">对话内容会经过人工审核，并用于改进 Google AI。Gemini 是一款 AI 工具，可能会出错。您可以<ph name="BEGIN_LINK_MANAGE_ACTIVITY" />管理活动记录<ph name="END_LINK_MANAGE_ACTIVITY" />，包括您的位置信息。<ph name="BEGIN_LINK_LEARN_MORE" />详细了解您有哪些选择<ph name="END_LINK_LEARN_MORE" /></translation>
+ <translation id="1897120393475391208">使用安全系数高的密码</translation>
+ <translation id="1897860317037652061">扫描失败</translation>
++<translation id="1898779803408102033">关于 GCSA-aegis</translation>
+ <translation id="1898804291554630487">询问与此页面有关的问题</translation>
+ <translation id="1899172684246105747">使用主题和深色模式等选项，定制专属于您的浏览器。</translation>
+ <translation id="1900305421498694955">Google Play 中的应用可能需要获得完整的文件系统访问权限，才能在外部存储设备上读取和写入文件。任何使用外部驱动器的人员都能看到在此设备上创建的文件和文件夹。<ph name="LINK_BEGIN" />了解详情<ph name="LINK_END" /></translation>
+@@ -5150,6 +5151,7 @@
+ <translation id="4913209098186576320">这可能是个危险文件<ph name="LINE_BREAK" />此项检查的用时比平时长…</translation>
+ <translation id="4913573660390710463">访问功能更强大的封装版 Web 应用。<ph name="BEGIN_LINK_LEARN_MORE" />了解详情<ph name="END_LINK_LEARN_MORE" /></translation>
+ <translation id="4913695564084524048">找不到应用数据</translation>
++<translation id="4915859253175465204">GCSA-aegis 尚未配置可信发布通道，当前版本无法自动检查或安装更新。</translation>
+ <translation id="4915961947098019832">允许显示图片</translation>
+ <translation id="4916140032692201190">翻译所选内容(&amp;T)</translation>
+ <translation id="491779113051926205">ChromeOS 流量计数器</translation>
+@@ -9037,6 +9039,7 @@
+ <translation id="7947964080535614577">网站通常会显示广告，以便能够免费提供内容或服务。但是，我们已知某些网站会展示侵扰性或误导性广告。</translation>
+ <translation id="7948407723851303488"><ph name="DOMAIN_NAME" /> 的所有网页</translation>
+ <translation id="7948579849190819732">当前标签页</translation>
++<translation id="7948694940396231078">一款基于 Chromium 构建的 GCSA 隐私与安全浏览器。</translation>
+ <translation id="7949038991703929816">未能加载历史记录。请确保文件包含有效的更新程序日志。</translation>
+ <translation id="7950629216186736592">原因：LBS 仅支持 http://、https:// 和 file:// 网址。</translation>
+ <translation id="7950814699499457511">已开启 • 此扩展程序尚未发布隐私权规范，例如如何收集和使用数据</translation>
+@@ -10800,4 +10803,4 @@
+ <translation id="998347228911661591">同步标签页分组</translation>
+ <translation id="998747458861718449">检查(&amp;N)</translation>
+ <translation id="998852291477823323">配置的政策不允许执行此操作。</translation>
+-</translationbundle>
+\ No newline at end of file
++</translationbundle>
+diff --git a/chrome/app/resources/generated_resources_zh-HK.xtb b/chrome/app/resources/generated_resources_zh-HK.xtb
+index be968d516fcfbb829b03232fb7498dbec0d4888b..f234f524af57a56047cf3779d53506b1efd2741e 100644
+--- a/chrome/app/resources/generated_resources_zh-HK.xtb
++++ b/chrome/app/resources/generated_resources_zh-HK.xtb
+@@ -1176,6 +1176,7 @@
+ <translation id="1896353439080510710">我們會檢查並使用對話內容來改善 Google AI。Gemini 是 AI，可能會出錯。你可以<ph name="BEGIN_LINK_MANAGE_ACTIVITY" />管理活動<ph name="END_LINK_MANAGE_ACTIVITY" />，包括位置資訊。<ph name="BEGIN_LINK_LEARN_MORE" />進一步瞭解你的選項<ph name="END_LINK_LEARN_MORE" /></translation>
+ <translation id="1897120393475391208">使用安全性強的密碼</translation>
+ <translation id="1897860317037652061">掃瞄失敗</translation>
++<translation id="1898779803408102033">關於 GCSA-aegis</translation>
+ <translation id="1898804291554630487">提出關於此頁的問題</translation>
+ <translation id="1899172684246105747">透過主題和深色模式等選項自訂瀏覽器。</translation>
+ <translation id="1900305421498694955">Google Play 應用程式可能會要求取得檔案系統的完整存取權，以讀取和寫入外部儲存裝置上的檔案。外置磁碟的任何使用者都能見到在此裝置上建立的檔案和資料夾。<ph name="LINK_BEGIN" />瞭解詳情<ph name="LINK_END" /></translation>
+@@ -5163,6 +5164,7 @@
+ <translation id="4913209098186576320">此檔案可能不安全<ph name="LINE_BREAK" />此檢查所需時間比一般長…</translation>
+ <translation id="4913573660390710463">使用具備進階功能的套裝網絡軟件。<ph name="BEGIN_LINK_LEARN_MORE" />瞭解詳情<ph name="END_LINK_LEARN_MORE" /></translation>
+ <translation id="4913695564084524048">無法尋找應用程式資料</translation>
++<translation id="4915859253175465204">GCSA-aegis 尚未設定可信任的發佈渠道，目前版本無法自動檢查或安裝更新。</translation>
+ <translation id="4915961947098019832">已允許顯示圖片</translation>
+ <translation id="4916140032692201190">翻譯所選內容(&amp;T)</translation>
+ <translation id="491779113051926205">ChromeOS 流量計數器</translation>
+@@ -9047,6 +9049,7 @@
+ <translation id="7947964080535614577">網站通常要顯示廣告，才能免費提供內容或服務。不過，部分網站會顯示滋擾性或誤導廣告。</translation>
+ <translation id="7948407723851303488"><ph name="DOMAIN_NAME" /> 的所有頁面</translation>
+ <translation id="7948579849190819732">目前分頁</translation>
++<translation id="7948694940396231078">一款建基於 Chromium 的 GCSA 私隱與安全瀏覽器。</translation>
+ <translation id="7949038991703929816">無法載入記錄，請確保檔案包含有效的更新工具記錄。</translation>
+ <translation id="7950629216186736592">原因：LBS 只支援 http://、https:// 和 file:// 網址。</translation>
+ <translation id="7950814699499457511">已開啟 • 此擴充程式尚未發佈私隱守則，例如擴充程式如何收集和使用資料</translation>
+@@ -10808,4 +10811,4 @@
+ <translation id="998347228911661591">同步分頁群組</translation>
+ <translation id="998747458861718449">檢查(&amp;N)</translation>
+ <translation id="998852291477823323">所設定的政策不允許此操作。</translation>
+-</translationbundle>
+\ No newline at end of file
++</translationbundle>
+diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
+index 6ca522f4c8cb7b278600ad9517d9355e729f2a80..80f51727a6a0ba6ab2e4cc5a7a6a414158a79ab5 100644
+--- a/chrome/app/resources/generated_resources_zh-TW.xtb
++++ b/chrome/app/resources/generated_resources_zh-TW.xtb
+@@ -1167,6 +1167,7 @@
+ <translation id="1896353439080510710">我們會查看及使用對話內容來改良 Google AI。Gemini 是 AI，可能會出錯。你可以<ph name="BEGIN_LINK_MANAGE_ACTIVITY" />管理活動記錄<ph name="END_LINK_MANAGE_ACTIVITY" />，包括位置資訊。<ph name="BEGIN_LINK_LEARN_MORE" />進一步瞭解可用選項<ph name="END_LINK_LEARN_MORE" /></translation>
+ <translation id="1897120393475391208">使用高強度密碼</translation>
+ <translation id="1897860317037652061">掃描失敗</translation>
++<translation id="1898779803408102033">關於 GCSA-aegis</translation>
+ <translation id="1898804291554630487">詢問這個網頁的內容</translation>
+ <translation id="1899172684246105747">使用主題和深色模式等選項自訂瀏覽器。</translation>
+ <translation id="1900305421498694955">透過 Google Play 下載的應用程式可能會要求取得檔案系統的完整存取權，以讀取和寫入外部儲存裝置上的檔案。外接式磁碟的任何使用者都能看見在此裝置上建立的檔案和資料夾。<ph name="LINK_BEGIN" />瞭解詳情<ph name="LINK_END" /></translation>
+@@ -5146,6 +5147,7 @@
+ <translation id="4913209098186576320">這個檔案可能含有危險內容<ph name="LINE_BREAK" />這項檢查超出正常所需時間...</translation>
+ <translation id="4913573660390710463">存取具備進階功能的封裝網頁應用程式。<ph name="BEGIN_LINK_LEARN_MORE" />瞭解詳情<ph name="END_LINK_LEARN_MORE" /></translation>
+ <translation id="4913695564084524048">找不到應用程式資料</translation>
++<translation id="4915859253175465204">GCSA-aegis 尚未設定可信任的發佈管道，目前版本無法自動檢查或安裝更新。</translation>
+ <translation id="4915961947098019832">可以顯示圖片</translation>
+ <translation id="4916140032692201190">翻譯所選內容(&amp;T)</translation>
+ <translation id="491779113051926205">ChromeOS 流量計數器</translation>
+@@ -9032,6 +9034,7 @@
+ <translation id="7947964080535614577">為了提供免付費的內容或服務，網站通常會放送廣告。不過，某些網站會放送干擾性或誤導性的廣告。</translation>
+ <translation id="7948407723851303488"><ph name="DOMAIN_NAME" /> 的所有頁面</translation>
+ <translation id="7948579849190819732">目前分頁</translation>
++<translation id="7948694940396231078">一款以 Chromium 打造的 GCSA 隱私與安全瀏覽器。</translation>
+ <translation id="7949038991703929816">記錄無法載入，請確認檔案內含有效的更新工具記錄。</translation>
+ <translation id="7950629216186736592">原因：LBS 只支援 http://、https:// 和 file:// 網址。</translation>
+ <translation id="7950814699499457511">已開啟 • 這項擴充功能尚未發布隱私權實務規範，例如擴充功能如何收集和使用資料</translation>
+@@ -10795,4 +10798,4 @@
+ <translation id="998347228911661591">同步處理分頁群組</translation>
+ <translation id="998747458861718449">檢查(&amp;N)</translation>
+ <translation id="998852291477823323">已設定的政策禁止執行這項動作。</translation>
+-</translationbundle>
+\ No newline at end of file
++</translationbundle>
+diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
+index fd33e2d45112ae63250867128773f95765906632..89bc033e6d5e1b89255764e202acc91fd299465e 100644
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -1385,6 +1385,15 @@
+     <message name="IDS_AEGIS_SETTINGS_ROW_SUBLABEL" desc="Sublabel of the row on the Privacy and security settings page that opens chrome://aegis.">
+       Tracker blocking, fingerprint guard, and Privacy AI
+     </message>
++    <message name="IDS_AEGIS_SETTINGS_ABOUT_PROGRAM" desc="Menu title for the About GCSA-aegis page.">
++      About GCSA-aegis
++    </message>
++    <message name="IDS_AEGIS_SETTINGS_ABOUT_DESCRIPTION" desc="Short product description on the About GCSA-aegis page.">
++      A GCSA privacy and security browser built on Chromium.
++    </message>
++    <message name="IDS_AEGIS_UPDATE_CHANNEL_UNAVAILABLE" desc="Update status shown when this GCSA-aegis build has no trusted product release channel.">
++      GCSA-aegis cannot automatically check for or install updates because a trusted release channel is not configured.
++    </message>
+     <message name="IDS_SETTINGS_PRIVACY" desc="Name of the settings page which allows users to modify privacy and security settings.">
+       Privacy and security
+     </message>
+diff --git a/chrome/browser/resources/settings/about_page/about_page.css b/chrome/browser/resources/settings/about_page/about_page.css
+index 2987e61a89e98daf3271f9b5af84b3aa7424ea2a..88fe05c1aebe2cc3ac2454a4fcbf157b60a8fb71 100644
+--- a/chrome/browser/resources/settings/about_page/about_page.css
++++ b/chrome/browser/resources/settings/about_page/about_page.css
+@@ -28,8 +28,15 @@
+   margin-top: auto;
+ }
+ 
++.product-heading {
++  min-width: 0;
++}
++
+ #productLogo {
++  fill: var(--cr-link-color);
++  height: 32px;
+   margin-inline-end: var(--about-page-image-space);
++  width: 32px;
+ }
+ 
+ .icon-container {
+diff --git a/chrome/browser/resources/settings/about_page/about_page.html.ts b/chrome/browser/resources/settings/about_page/about_page.html.ts
+index b9ac4e634feddf9e14a6da7c36fcb49fa143c032..41c3308183b4805bf7fb6f0a3a65b23316d6d1e6 100644
+--- a/chrome/browser/resources/settings/about_page/about_page.html.ts
++++ b/chrome/browser/resources/settings/about_page/about_page.html.ts
+@@ -13,12 +13,24 @@ export function getHtml(this: SettingsAboutPageElement) {
+   return html`<!--_html_template_start_-->
+ <settings-section page-title="$i18n{aboutPageTitle}">
+   <div class="cr-row two-line first">
++<if expr="_google_chrome or _is_chrome_for_testing">
+     <img id="productLogo" @click="${this.onProductLogoClick_}"
+         srcset="chrome://theme/current-channel-logo@1x 1x,
+                 chrome://theme/current-channel-logo@2x 2x"
+         alt="$i18n{aboutProductLogoAlt}"
+         role="presentation">
+-    <div class="product-title">$i18n{aboutProductTitle}</div>
++</if>
++<if expr="not _google_chrome and not _is_chrome_for_testing">
++    <cr-icon id="productLogo" icon="settings:security"
++        @click="${this.onProductLogoClick_}"
++        aria-label="$i18n{aboutProductTitle}" role="img"></cr-icon>
++</if>
++    <div class="product-heading">
++      <div class="product-title">$i18n{aboutProductTitle}</div>
++<if expr="not _google_chrome and not _is_chrome_for_testing">
++      <div class="secondary">$i18n{aboutProductDescription}</div>
++</if>
++    </div>
+   </div>
+   <div class="cr-row two-line">
+     <!-- Set the icon from the iconset (when it's obsolete/EOL and
+@@ -26,7 +38,7 @@ export function getHtml(this: SettingsAboutPageElement) {
+ <if expr="not is_chromeos">
+     <div class="icon-container"
+         ?hidden="${!this.shouldShowIcons_()}">
+-      <cr-icon
++      <cr-icon id="updateStatusIcon"
+           ?hidden="${this.shouldShowThrobber_()}"
+           icon="${this.getUpdateStatusIcon_()}">
+       </cr-icon>
+@@ -40,19 +52,23 @@ export function getHtml(this: SettingsAboutPageElement) {
+         <div role="alert" aria-live="polite"
+             .innerHTML="${this.getUpdateStatusMessage_()}">
+         </div>
++<if expr="_google_chrome or _is_chrome_for_testing">
+         <a ?hidden="${!this.shouldShowLearnMoreLink_()}" target="_blank"
+             href="https://support.google.com/chrome?p=update_error"
+             aria-label="$i18nPolymer{aboutLearnMoreUpdatingErrors}">
+           $i18n{learnMore}
+         </a>
++</if>
+       </div>
+       <span id="deprecationWarning"
+           ?hidden="${!this.obsoleteSystemInfo_.obsolete}">
+         $i18n{aboutObsoleteSystem}
++<if expr="_google_chrome or _is_chrome_for_testing">
+         <a href="$i18n{aboutObsoleteSystemURL}" target="_blank"
+             aria-label="$i18nPolymer{aboutLearnMoreSystemRequirements}">
+           $i18n{learnMore}
+         </a>
++</if>
+       </span>
+ </if>
+       <div class="secondary">$i18n{aboutBrowserVersion}</div>
+@@ -89,8 +105,10 @@ export function getHtml(this: SettingsAboutPageElement) {
+     </div>
+   ` : ''}
+ </if>
++<if expr="_google_chrome or _is_chrome_for_testing">
+   <cr-link-row class="hr" id="help" @click="${this.onHelpClick_}"
+       label="$i18n{aboutGetHelpUsingChrome}" external></cr-link-row>
++</if>
+ <if expr="_google_chrome">
+   <cr-link-row class="hr" id="reportIssue" @click="${this.onReportIssueClick_}"
+       ?hidden="${!this.feedbackAllowedPref_?.value}"
+diff --git a/chrome/browser/resources/settings/about_page/about_page.ts b/chrome/browser/resources/settings/about_page/about_page.ts
+index aaaf8c6e7e535ae5a7682891ce8f20a27eb795a3..2f474183de0902f77a3fc6aaa56a4fdd8af0215e 100644
+--- a/chrome/browser/resources/settings/about_page/about_page.ts
++++ b/chrome/browser/resources/settings/about_page/about_page.ts
+@@ -11,6 +11,7 @@ import '/shared/settings/prefs/prefs.js';
+ // <if expr="not is_chromeos">
+ import '../relaunch_confirmation_dialog.js';
+ // </if>
++import '../icons.html.js';
+ import '../settings_page/settings_section.js';
+ import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+ import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+@@ -50,7 +51,7 @@ export const ABOUT_PAGE_PRIVACY_POLICY_URL: string =
+ 
+ export interface SettingsAboutPageElement {
+   $: {
+-    productLogo: HTMLImageElement,
++    productLogo: HTMLElement,
+     // <if expr="not is_chromeos">
+     deprecationWarning: HTMLElement,
+     updateStatusMessage: HTMLElement,
+@@ -236,7 +237,8 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
+       return;
+     }
+     this.showUpdateStatus_ =
+-        this.currentUpdateStatusEvent_!.status !== UpdateStatus.DISABLED;
++        this.currentUpdateStatusEvent_!.status !== UpdateStatus.DISABLED ||
++        !!this.currentUpdateStatusEvent_!.message;
+   }
+ 
+   protected shouldShowLearnMoreLink_(): boolean {
+@@ -292,6 +294,8 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
+     switch (this.currentUpdateStatusEvent_!.status) {
+       case UpdateStatus.DISABLED_BY_ADMIN:
+         return 'cr20:domain';
++      case UpdateStatus.DISABLED:
++        return this.currentUpdateStatusEvent_!.message ? 'cr:info-outline' : '';
+       case UpdateStatus.FAILED:
+         return 'cr:error-filled';
+       case UpdateStatus.UPDATED:
+diff --git a/chrome/browser/resources/settings/autofill_page/autofill_page.html b/chrome/browser/resources/settings/autofill_page/autofill_page.html
+index e502f1c29b4abb4dcb1c220c5baf634b8cdb6874..62e67b82079d623f316cd46d3ac2050b111acd96 100644
+--- a/chrome/browser/resources/settings/autofill_page/autofill_page.html
++++ b/chrome/browser/resources/settings/autofill_page/autofill_page.html
+@@ -65,15 +65,18 @@
+ 
+ <h1 id="title">$i18n{autofillPageTitle}</h1>
+ <div id="subtitle" class="secondary">$i18n{yourSavedInfoPageDescription}</div>
+-<settings-account-card prefs="{{prefs}}">
+-</settings-account-card>
++<template is="dom-if" if="[[showGoogleServicesSettings_]]">
++  <settings-account-card prefs="{{prefs}}">
++  </settings-account-card>
++</template>
+ 
+ <h2 id="autofillPageTitle" class="section-header">
+   $i18n{autofillPageTitle}
+ </h2>
+ <div class="card-container" on-data-category-click="onDataCategoryClick_"
+     on-data-chip-click="onDataChipClick_">
+-  <category-reference-card card-title="$i18n{localPasswordManager}"
++  <category-reference-card id="passwordManagerCard"
++      card-title="$i18n{localPasswordManager}"
+       is-external
+       category-id="[[hierarchy_.passwordManager.id]]"
+       chips="[[getVisibleChips_(hierarchy_.passwordManager.chips)]]">
+@@ -125,19 +128,23 @@
+   </collapsible-autofill-settings-card>
+ </settings-section>
+ 
+-<settings-section page-title="$i18n{yourSavedInfoRelatedServicesTitle}">
+-  <div route-path="default">
+-    <cr-link-row id="passwordManagerButton" label="$i18n{localPasswordManager}"
+-        on-click="onPasswordManagerRelatedServiceClick_"
+-        start-icon="cr20:password-manager" external>
+-    </cr-link-row>
+-    <cr-link-row id="googleWalletButton" label="$i18n{googleWalletTitle}"
+-        on-click="onGoogleWalletRelatedServiceClick_"
+-        start-icon="settings20:wallet" external>
+-    </cr-link-row>
+-    <cr-link-row id="googleAccountButton" label="$i18n{googleAccount}"
+-        on-click="onGoogleAccountRelatedServiceClick_"
+-        start-icon="settings20:google" external>
+-    </cr-link-row>
+-  </div>
+-</settings-section>
++<template is="dom-if" if="[[showGoogleServicesSettings_]]">
++  <settings-section id="relatedServicesSection"
++      page-title="$i18n{yourSavedInfoRelatedServicesTitle}">
++    <div route-path="default">
++      <cr-link-row id="passwordManagerButton"
++          label="$i18n{localPasswordManager}"
++          on-click="onPasswordManagerRelatedServiceClick_"
++          start-icon="cr20:password-manager" external>
++      </cr-link-row>
++      <cr-link-row id="googleWalletButton" label="$i18n{googleWalletTitle}"
++          on-click="onGoogleWalletRelatedServiceClick_"
++          start-icon="settings20:wallet" external>
++      </cr-link-row>
++      <cr-link-row id="googleAccountButton" label="$i18n{googleAccount}"
++          on-click="onGoogleAccountRelatedServiceClick_"
++          start-icon="settings20:google" external>
++      </cr-link-row>
++    </div>
++  </settings-section>
++</template>
+diff --git a/chrome/browser/resources/settings/autofill_page/autofill_page.ts b/chrome/browser/resources/settings/autofill_page/autofill_page.ts
+index 01d53832ca38bb8b8cf98f33a418f95c9397c281..0c6075dc7f4a457145aacbf7413ea6b8cec70b1e 100644
+--- a/chrome/browser/resources/settings/autofill_page/autofill_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/autofill_page.ts
+@@ -119,7 +119,15 @@ export class SettingsAutofillPageElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++        },
++      },
++
++      showGoogleServicesSettings_: {
++        type: Boolean,
++        value() {
++          return loadTimeData.getBoolean('showGoogleServicesSettings');
+         },
+       },
+       spark_: {
+@@ -142,6 +150,7 @@ export class SettingsAutofillPageElement extends
+   declare private hierarchy_: DataTypeHierarchy;
+   declare private isShoppingEnabled_: boolean;
+   declare private showSuggestionsFromGeminiSettings_: boolean;
++  declare private showGoogleServicesSettings_: boolean;
+ 
+   private dataChipIdToChip_: Map<YourSavedInfoDataChip, DataChip> = new Map();
+   private dataChipIdToCategory_: Map<YourSavedInfoDataChip, DataCategory> =
+@@ -487,7 +496,7 @@ export class SettingsAutofillPageElement extends
+         break;
+       // <if expr="is_win or is_macosx">
+       case 'passkeys':
+-        triggerId = 'passwordManagerButton';
++        triggerId = 'passwordManagerCard';
+         break;
+       // </if>
+       case 'payments':
+diff --git a/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts b/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts
+index b685362a0534aac80b007499c3893b2931d5be02..557966083299e4ff42aac9e82c1a4cbb796c3153 100644
+--- a/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts
++++ b/chrome/browser/resources/settings/autofill_page/autofill_page_index.ts
+@@ -60,7 +60,8 @@ export class SettingsAutofillPageIndexElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
+diff --git a/chrome/browser/resources/settings/autofill_page/identity_docs/identity_docs_page.ts b/chrome/browser/resources/settings/autofill_page/identity_docs/identity_docs_page.ts
+index 88fd33bd9f9dda47e1a20e4a5e6be8498bafa937..1110ca2ac97d455a9b0e7d8eee48d761ecc7245b 100644
+--- a/chrome/browser/resources/settings/autofill_page/identity_docs/identity_docs_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/identity_docs/identity_docs_page.ts
+@@ -107,7 +107,8 @@ export class SettingsIdentityDocsPageElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
+diff --git a/chrome/browser/resources/settings/autofill_page/shopping/shopping_page.ts b/chrome/browser/resources/settings/autofill_page/shopping/shopping_page.ts
+index 32557d58f96c954ba4d624605f6c6d69ef5d6b94..abbb25aea2f4e8b597640bff163f0a291ff8b8a1 100644
+--- a/chrome/browser/resources/settings/autofill_page/shopping/shopping_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/shopping/shopping_page.ts
+@@ -104,7 +104,8 @@ export class SettingsShoppingPageElement extends
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
+diff --git a/chrome/browser/resources/settings/autofill_page/travel/travel_page.ts b/chrome/browser/resources/settings/autofill_page/travel/travel_page.ts
+index a21ca97c536992237764759b6207878cbb9df410..76c7a2fe4f09b56b4b192146d589f90ddaeffbdc 100644
+--- a/chrome/browser/resources/settings/autofill_page/travel/travel_page.ts
++++ b/chrome/browser/resources/settings/autofill_page/travel/travel_page.ts
+@@ -104,7 +104,8 @@ export class SettingsTravelPageElement extends SettingsTravelPageElementBase {
+       showSuggestionsFromGeminiSettings_: {
+         type: Boolean,
+         value() {
+-          return loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
++          return loadTimeData.getBoolean('showGoogleServicesSettings') &&
++              loadTimeData.getBoolean('showSuggestionsFromGeminiSettings');
+         },
+       },
+     };
+diff --git a/chrome/browser/resources/settings/people_page/people_page.html.ts b/chrome/browser/resources/settings/people_page/people_page.html.ts
+index b3303085acf6938014d55d22a3f15ea1b873af80..6bb6610265aefbbc922f27ce79024d1a4a30523e 100644
+--- a/chrome/browser/resources/settings/people_page/people_page.html.ts
++++ b/chrome/browser/resources/settings/people_page/people_page.html.ts
+@@ -14,7 +14,7 @@ export function getHtml(this: SettingsPeoplePageElement) {
+       <div>
+ 
+ <if expr="not is_chromeos">
+-        ${this.shouldShowSyncAccountControl_() ? html`
++        ${this.showGoogleServicesSettings_ && this.shouldShowSyncAccountControl_() ? html`
+           <settings-sync-account-control
+               .syncStatus="${this.syncStatus!}"
+               promo-label-with-account="$i18n{peopleSignInPrompt}"
+@@ -76,6 +76,7 @@ export function getHtml(this: SettingsPeoplePageElement) {
+         ` : ''}
+ </if>
+ 
++        ${this.showGoogleServicesSettings_ ? html`
+         <!-- Shared Elements -->
+         <cr-link-row id="account-subpage-row" class="cr-row first"
+             @click="${this.onAccountClick_}"
+@@ -104,15 +105,19 @@ export function getHtml(this: SettingsPeoplePageElement) {
+             role-description="$i18n{subpageArrowRoleDescription}"
+             ?hidden="${!this.shouldHideSyncSetupLinkRow_()}">
+         </cr-link-row>
++        ` : ''}
+ 
+ <if expr="not is_chromeos">
+-        ${this.signinAllowed_ ? html`
++        ${this.showGoogleServicesSettings_ && this.signinAllowed_ ? html`
+           <cr-link-row id="manage-google-account"
+               label="$i18n{manageGoogleAccount}"
+               ?hidden="${!this.shouldShowGoogleAccount_}"
+               @click="${this.onGoogleAccountClick_}" external>
+           </cr-link-row>
+ 
++        ` : ''}
++
++        ${!this.showGoogleServicesSettings_ || this.signinAllowed_ ? html`
+           <cr-link-row id="edit-profile"
+               label="$i18n{profileNameAndPicture}"
+               @click="${this.onProfileClick_}">
+@@ -124,7 +129,7 @@ export function getHtml(this: SettingsPeoplePageElement) {
+             @click="${this.onImportDataClick_}">
+         </cr-link-row>
+ 
+-        ${this.isDasherlessProfile_ ? html`
++        ${this.showGoogleServicesSettings_ && this.isDasherlessProfile_ ? html`
+           <div id="sync-not-allowed" class="cr-row continuation">
+             <cr-icon id="info-icon" icon="cr:info"></cr-icon>
+             <div id="sync-not-allowed-text" class="flex cr-padded-text">
+@@ -150,7 +155,8 @@ export function getHtml(this: SettingsPeoplePageElement) {
+       </settings-import-data-dialog>
+     ` : ''}
+ </if>
+-    <cr-toast duration="3000" id="toast">
++    <cr-toast duration="3000" id="toast"
++        ?hidden="${!this.showGoogleServicesSettings_}">
+       <span>$i18n{syncSettingsSavedToast}</span>
+     </cr-toast>
+ <!--_html_template_end_-->`;
+diff --git a/chrome/browser/resources/settings/people_page/people_page.ts b/chrome/browser/resources/settings/people_page/people_page.ts
+index 0dcc177daa1ad84d453a5c0bc27ea2b137bf25f9..0d92503179e6ff1f86d99fe2066ee53a670cbeb2 100644
+--- a/chrome/browser/resources/settings/people_page/people_page.ts
++++ b/chrome/browser/resources/settings/people_page/people_page.ts
+@@ -133,6 +133,7 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+       primaryAccountIconUrl_: {type: String},
+ 
+       replaceSyncPromosWithSignInPromos_: {type: Boolean},
++      showGoogleServicesSettings_: {type: Boolean},
+ 
+       // <if expr="not is_chromeos">
+       shouldShowGoogleAccount_: {type: Boolean},
+@@ -152,6 +153,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+   protected accessor isProfileActionable_: boolean =
+       !isChromeOS || loadTimeData.getBoolean('isAccountManagerEnabled');
+   protected accessor profileName_: string = '';
++  protected accessor showGoogleServicesSettings_: boolean =
++      loadTimeData.getBoolean('showGoogleServicesSettings');
+   protected accessor replaceSyncPromosWithSignInPromos_: boolean =
+       loadTimeData.getBoolean('replaceSyncPromosWithSignInPromos');
+   protected accessor primaryAccountName_: string = '';
+@@ -200,9 +203,11 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+     this.addWebUiListener(
+         'stored-accounts-updated', this.handleStoredAccounts_.bind(this));
+ 
+-    this.addWebUiListener('sync-settings-saved', () => {
+-      this.$.toast.show();
+-    });
++    if (this.showGoogleServicesSettings_) {
++      this.addWebUiListener('sync-settings-saved', () => {
++        this.$.toast.show();
++      });
++    }
+     // </if>
+   }
+ 
+@@ -211,7 +216,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+     super.willUpdate(changedProperties);
+ 
+     if (changedProperties.has('storedAccounts') ||
+-        changedProperties.has('syncStatus')) {
++        changedProperties.has('syncStatus') ||
++        changedProperties.has('showGoogleServicesSettings_')) {
+       this.shouldShowGoogleAccount_ = this.computeShouldShowGoogleAccount_();
+     }
+   }
+@@ -284,7 +290,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+ 
+   // <if expr="not is_chromeos">
+   private computeShouldShowGoogleAccount_(): boolean {
+-    if (!this.storedAccounts || !this.syncStatus) {
++    if (!this.showGoogleServicesSettings_ ||
++        !this.storedAccounts || !this.syncStatus) {
+       return false;
+     }
+ 
+@@ -336,7 +343,8 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+   }
+ 
+   protected shouldLinkToAccountSettingsPage_(): boolean {
+-    return this.replaceSyncPromosWithSignInPromos_ && !!this.syncStatus &&
++    return this.showGoogleServicesSettings_ &&
++        this.replaceSyncPromosWithSignInPromos_ && !!this.syncStatus &&
+         this.syncStatus.signedInState === SignedInState.SIGNED_IN;
+   }
+ 
+@@ -351,12 +359,13 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+   }
+ 
+   protected shouldLinkToProfileRow_(): boolean {
+-    return !this.shouldShowSyncAccountControl_() &&
+-        !this.shouldLinkToAccountSettingsPage_();
++    return !this.showGoogleServicesSettings_ ||
++        (!this.shouldShowSyncAccountControl_() &&
++         !this.shouldLinkToAccountSettingsPage_());
+   }
+ 
+   protected shouldShowSyncAccountControl_(): boolean {
+-    if (!this.syncStatus) {
++    if (!this.showGoogleServicesSettings_ || !this.syncStatus) {
+       return false;
+     }
+     return !!this.syncStatus.syncSystemEnabled && this.signinAllowed_ &&
+diff --git a/chrome/browser/resources/settings/people_page/people_page_index.html.ts b/chrome/browser/resources/settings/people_page/people_page_index.html.ts
+index 06356e33789142252d22d95c0f6ba5849b3e86a5..38d571d0bdf4fae442bfa1003ff98ef9ce496055 100644
+--- a/chrome/browser/resources/settings/people_page/people_page_index.html.ts
++++ b/chrome/browser/resources/settings/people_page/people_page_index.html.ts
+@@ -14,6 +14,7 @@ export function getHtml(this: SettingsPeoplePageIndexElement) {
+       route-path="${this.routes_.PEOPLE.path}">
+   </settings-people-page>
+ 
++  ${this.showGoogleServicesSettings_ ? html`
+   <settings-sync-page slot="view" id="sync"
+       data-parent-view-id="parent"
+       route-path="${this.routes_.SYNC.path}">
+@@ -23,6 +24,7 @@ export function getHtml(this: SettingsPeoplePageIndexElement) {
+       data-parent-view-id="parent"
+       route-path="${this.routes_.SYNC_ADVANCED.path}">
+   </settings-sync-controls-page>
++  ` : ''}
+ 
+ <if expr="not is_chromeos">
+    <settings-manage-profile slot="view" id="manageProfile"
+@@ -31,7 +33,8 @@ export function getHtml(this: SettingsPeoplePageIndexElement) {
+    </settings-manage-profile>
+ </if>
+ 
+-  ${this.replaceSyncPromosWithSignInPromos_ ? html`
++  ${this.showGoogleServicesSettings_ &&
++    this.replaceSyncPromosWithSignInPromos_ ? html`
+     <settings-account-page slot="view" id="account"
+         data-parent-view-id="parent"
+         route-path="${this.routes_.ACCOUNT.path}">
+diff --git a/chrome/browser/resources/settings/people_page/people_page_index.ts b/chrome/browser/resources/settings/people_page/people_page_index.ts
+index ad543e787c463eaba97480c59cf1d902056ab3cd..97c793dcb23e2a7434fbfcd7bad0ca9319cc779e 100644
+--- a/chrome/browser/resources/settings/people_page/people_page_index.ts
++++ b/chrome/browser/resources/settings/people_page/people_page_index.ts
+@@ -47,10 +47,13 @@ export class SettingsPeoplePageIndexElement extends
+     return {
+       routes_: {type: Object},
+       replaceSyncPromosWithSignInPromos_: {type: Boolean},
++      showGoogleServicesSettings_: {type: Boolean},
+     };
+   }
+ 
+   protected accessor routes_: SettingsRoutes = routes;
++  protected accessor showGoogleServicesSettings_: boolean =
++      loadTimeData.getBoolean('showGoogleServicesSettings');
+   protected accessor replaceSyncPromosWithSignInPromos_: boolean =
+       loadTimeData.getBoolean('replaceSyncPromosWithSignInPromos');
+ 
+diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts b/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts
+index 9d895e784e6284388ff829e55023d2ab4aeed4ad..b108d464be94e25774ab9d245dc838e67ee7a956 100644
+--- a/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts
++++ b/chrome/browser/resources/settings/privacy_page/privacy_page_index.ts
+@@ -19,7 +19,7 @@ import {beforeNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/
+ import {loadTimeData} from '../i18n_setup.js';
+ import {pageVisibility} from '../page_visibility.js';
+ import type {PageVisibility} from '../page_visibility.js';
+-import {routes} from '../route.js';
++import {getTopLevelRoute, routes} from '../route.js';
+ import {RouteObserverMixin} from '../router.js';
+ import type {Route, SettingsRoutes} from '../router.js';
+ import type {SettingsPlugin} from '../settings_main/settings_plugin.js';
+@@ -30,13 +30,6 @@ import type {PrivacyGuideBrowserProxy} from './privacy_guide/privacy_guide_brows
+ import {MAX_PRIVACY_GUIDE_PROMO_IMPRESSION, PrivacyGuideBrowserProxyImpl} from './privacy_guide/privacy_guide_browser_proxy.js';
+ import {getTemplate} from './privacy_page_index.html.js';
+ 
+-// clang-format off
+-// <if expr="is_chromeos">
+-import {getTopLevelRoute} from '../route.js';
+-// </if>
+-// clang-format on
+-
+-
+ export interface SettingsPrivacyPageIndexElement {
+   $: {
+     viewManager: CrViewManagerElement,
+@@ -244,13 +237,11 @@ export class SettingsPrivacyPageIndexElement extends
+       case routes.PRIVACY:
+         return this.getDefaultViews_();
+       case routes.BASIC:
+-        // <if expr="is_chromeos">
+         if (getTopLevelRoute() === routes.PRIVACY) {
+-          // On CrOS guest mode the "Privacy" section should be displayed when
+-          // on chrome://settings/.
++          // Privacy can be the effective top-level section for guest mode or
++          // for builds that do not expose an account settings section.
+           return this.getDefaultViews_();
+         }
+-        // </if>
+ 
+         // Display the default views if in search mode, since they could be part
+         // of search results.
+@@ -279,7 +270,9 @@ export class SettingsPrivacyPageIndexElement extends
+   override currentRouteChanged(newRoute: Route, oldRoute?: Route) {
+     super.currentRouteChanged(newRoute, oldRoute);
+ 
+-    if (newRoute === routes.PRIVACY) {
++    if (newRoute === routes.PRIVACY ||
++        (newRoute === routes.BASIC &&
++         getTopLevelRoute() === routes.PRIVACY)) {
+       this.updatePrivacyGuidePromoVisibility_();
+     }
+ 
+@@ -334,19 +327,19 @@ export class SettingsPrivacyPageIndexElement extends
+   }
+ 
+   private renderView_(route: Route): boolean {
+-    return this.inSearchMode ||
+-        (!!this.currentRoute && this.currentRoute === route);
++    const effectiveCurrentRoute = this.currentRoute === routes.BASIC ?
++        getTopLevelRoute() :
++        this.currentRoute;
++    return this.inSearchMode || effectiveCurrentRoute === route;
+   }
+ 
+   private renderPrivacyView_(): boolean {
+-    // <if expr="is_chromeos">
+     if (getTopLevelRoute() === routes.PRIVACY &&
+         this.currentRoute === routes.BASIC) {
+-      // On CrOS guest mode the "Privacy" section should be displayed when
+-      // on chrome://settings/.
++      // Privacy can be the effective top-level section for guest mode or for
++      // builds that do not expose an account settings section.
+       return true;
+     }
+-    // </if>
+ 
+     return this.inSearchMode ||
+         (!!this.currentRoute &&
+@@ -359,7 +352,9 @@ export class SettingsPrivacyPageIndexElement extends
+         this.getPref('privacy_guide.viewed').value ||
+         this.privacyGuideBrowserProxy_.getPromoImpressionCount() >=
+             MAX_PRIVACY_GUIDE_PROMO_IMPRESSION ||
+-        this.currentRoute !== routes.PRIVACY) {
++        (this.currentRoute !== routes.PRIVACY &&
++         !(this.currentRoute === routes.BASIC &&
++           getTopLevelRoute() === routes.PRIVACY))) {
+       this.showPrivacyGuidePromo_ = false;
+       return;
+     }
+diff --git a/chrome/browser/resources/settings/route.ts b/chrome/browser/resources/settings/route.ts
+index 2aaa938c7e14a03b6528aa087ff6109f8ac335eb..aff0d534fdcfdb4cdc02901d2ae177a59f44d9a9 100644
+--- a/chrome/browser/resources/settings/route.ts
++++ b/chrome/browser/resources/settings/route.ts
+@@ -158,20 +158,27 @@ function createRoutes(): SettingsRoutes {
+   if (visibility.people !== false) {
+     r.PEOPLE = r.BASIC.createSection(
+         '/people', 'people', loadTimeData.getString('peoplePageTitle'));
+-    if (loadTimeData.getBoolean('replaceSyncPromosWithSignInPromos')) {
++    const showGoogleServicesSettings =
++        loadTimeData.getBoolean('showGoogleServicesSettings');
++    if (showGoogleServicesSettings &&
++        loadTimeData.getBoolean('replaceSyncPromosWithSignInPromos')) {
+       r.ACCOUNT = r.PEOPLE.createChild('/account');
+       r.GOOGLE_SERVICES = r.PEOPLE.createChild('/googleServices');
+     }
+     // <if expr="not is_chromeos">
+-    r.SIGN_OUT = r.PEOPLE.createChild('/signOut');
+-    r.SIGN_OUT.isNavigableDialog = true;
++    if (showGoogleServicesSettings) {
++      r.SIGN_OUT = r.PEOPLE.createChild('/signOut');
++      r.SIGN_OUT.isNavigableDialog = true;
++    }
+     r.IMPORT_DATA = r.PEOPLE.createChild('/importData');
+     r.IMPORT_DATA.isNavigableDialog = true;
+     r.MANAGE_PROFILE = r.PEOPLE.createChild('/manageProfile');
+     // </if>
+ 
+-    r.SYNC = r.PEOPLE.createChild('/syncSetup');
+-    r.SYNC_ADVANCED = r.SYNC.createChild('/syncSetup/advanced');
++    if (showGoogleServicesSettings) {
++      r.SYNC = r.PEOPLE.createChild('/syncSetup');
++      r.SYNC_ADVANCED = r.SYNC.createChild('/syncSetup/advanced');
++    }
+   }
+ 
+   if (visibility.ai !== false && loadTimeData.getBoolean('showAiPage')) {
+@@ -227,7 +234,8 @@ function createRoutes(): SettingsRoutes {
+     if (loadTimeData.getBoolean('shoppingIntegrationEnabled')) {
+       r.SHOPPING = r.AUTOFILL.createChild('/shopping');
+     }
+-    if (loadTimeData.getBoolean('showSuggestionsFromGeminiSettings')) {
++    if (loadTimeData.getBoolean('showGoogleServicesSettings') &&
++        loadTimeData.getBoolean('showSuggestionsFromGeminiSettings')) {
+       r.SUGGESTIONS_FROM_GEMINI =
+           r.AUTOFILL.createChild('/enhancedAutofill');
+     }
+@@ -338,11 +346,14 @@ export let routes: SettingsRoutes = Router.getInstance().getRoutes();
+ 
+ // Returns the "effective" route when at chrome://settings/.
+ export function getTopLevelRoute(): Route {
+-  if (!loadTimeData.getBoolean('isGuest')) {
++  if (!loadTimeData.getBoolean('isGuest') &&
++      loadTimeData.getBoolean('showPeopleSettings')) {
+     return routes.PEOPLE;
+   }
+ 
+-  let guestTopLevelRoute = routes.SEARCH;
++  let guestTopLevelRoute = loadTimeData.getBoolean('isGuest') ?
++      routes.SEARCH :
++      routes.PRIVACY;
+   // <if expr="is_chromeos">
+   guestTopLevelRoute = routes.PRIVACY;
+   // </if>
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+index 4a7bd7d746c199f242359280d4ada68862435d5a..a1fd7102ed08696b076a2cd28bc792939cd22cd0 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+@@ -76,7 +76,9 @@
+           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
+           on-click="onLinkClick_" selected-attribute="selected">
+         <a role="menuitem"
+-            id="people" href="/people" hidden="[[!pageVisibility_.people]]"
++            id="people" href="/people"
++            hidden="[[!showPeopleMenuItem_(
++                showPeopleSettings_, pageVisibility_.people)]]"
+             class="cr-nav-menu-item">
+ <if expr="not _google_chrome">
+           <cr-icon icon="settings:person"></cr-icon>
+@@ -194,7 +196,12 @@
+         </a>
+         <a role="menuitem" id="about-menu" href="/help"
+             class="cr-nav-menu-item">
++<if expr="not _google_chrome and not _is_chrome_for_testing">
++          <cr-icon icon="settings:security"></cr-icon>
++</if>
++<if expr="_google_chrome or _is_chrome_for_testing">
+           <cr-icon icon="cr:chrome-product"></cr-icon>
++</if>
+           $i18n{aboutPageTitle}
+           <cr-ripple></cr-ripple>
+         </a>
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.ts b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+index 564554a675e1b9c16ecbd9414f14083ed1d024a3..fe7a43eb35c17da999b19e9b0864d5ee07948168 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.ts
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
+@@ -87,11 +87,17 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+         type: Boolean,
+         value: () => loadTimeData.getBoolean('showAiPage'),
+       },
++
++      showPeopleSettings_: {
++        type: Boolean,
++        value: () => loadTimeData.getBoolean('showPeopleSettings'),
++      },
+     };
+   }
+ 
+   declare private pageVisibility_?: PageVisibility;
+   declare private showAiPage_: boolean;
++  declare private showPeopleSettings_: boolean;
+   private metricsBrowserProxy_: MetricsBrowserProxy =
+       MetricsBrowserProxyImpl.getInstance();
+ 
+@@ -100,6 +106,11 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+         (!this.pageVisibility_ || this.pageVisibility_.ai !== false);
+   }
+ 
++  private showPeopleMenuItem_(): boolean {
++    return this.showPeopleSettings_ &&
++        (!this.pageVisibility_ || this.pageVisibility_.people !== false);
++  }
++
+   override currentRouteChanged(newRoute: Route) {
+     // Focus the initially selected path.
+     const anchors = this.shadowRoot!.querySelectorAll('a');
+diff --git a/chrome/browser/ui/views/profiles/profile_menu_view.cc b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+index bf179e0a15c8a5f1fd51d6e95b6a05ad74c8bbaf..45cc8a3a2354b3087f408976f3a92b2fc6f8ca32 100644
+--- a/chrome/browser/ui/views/profiles/profile_menu_view.cc
++++ b/chrome/browser/ui/views/profiles/profile_menu_view.cc
+@@ -1245,20 +1245,23 @@ void ProfileMenuView::BuildFeatureButtons() {
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+   MaybeBuildCrossDeviceSigninButton();
+ #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+-  signin::IdentityManager* identity_manager =
+-      IdentityManagerFactory::GetForProfile(&profile());
+   // May add the button asynchronously, order is not be guaranteed.
+   MaybeBuildBatchUploadButton();
+   BuildAutofillSettingsButton();
+   MaybeBuildManageGoogleAccountButton();
+   BuildCustomizeProfileButton();
+-  (syncer::IsReplaceSyncPromosWithSignInPromosEnabled() &&
+-   (!identity_manager ||
+-    !identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)))
+-      ? MaybeBuildChromeAccountSettingsButton()
+-      : MaybeBuildChromeAccountSettingsButtonWithSync();
+-  if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
+-    MaybeBuildGoogleServicesSettingsButton();
++  if constexpr (BUILDFLAG(GOOGLE_CHROME_BRANDING) ||
++                BUILDFLAG(CHROME_FOR_TESTING)) {
++    signin::IdentityManager* identity_manager =
++        IdentityManagerFactory::GetForProfile(&profile());
++    (syncer::IsReplaceSyncPromosWithSignInPromosEnabled() &&
++     (!identity_manager ||
++      !identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)))
++        ? MaybeBuildChromeAccountSettingsButton()
++        : MaybeBuildChromeAccountSettingsButtonWithSync();
++    if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
++      MaybeBuildGoogleServicesSettingsButton();
++    }
+   }
+   MaybeBuildCloseBrowsersButton();
+   MaybeBuildSignoutButton();
+diff --git a/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc b/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc
+index 7cdce2d493c4bf834202c2d33a1cf8dca9fd4436..0bcd51bd71c6bbddc8351940695b9c3dadb69d61 100644
+--- a/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc
++++ b/chrome/browser/ui/views/profiles/profile_menu_view_browsertest.cc
+@@ -28,6 +28,7 @@
+ #include "base/time/time.h"
+ #include "base/version.h"
+ #include "base/version_info/version_info.h"
++#include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/browser_process.h"
+@@ -1602,7 +1603,10 @@ constexpr std::array kActionableItems_SingleProfileWithCrossDevicePromo = {
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kSignoutButton,
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -1724,7 +1728,10 @@ constexpr std::array kActionableItems_WebOnly_ReplaceSyncPromosDisabled = {
+     ProfileMenuViewBase::ActionableItem::kSigninAccountButton,
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+     ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -1763,7 +1770,10 @@ constexpr std::array kActionableItems_SyncEnabled = {
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+     ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -1785,7 +1795,10 @@ constexpr std::array kActionableItems_SyncError = {
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+     ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -1810,7 +1823,10 @@ constexpr std::array kActionableItems_SyncPaused = {
+     ProfileMenuViewBase::ActionableItem::kSyncErrorButton,
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+     ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -1838,7 +1854,10 @@ constexpr std::array
+     kActionableItems_SigninDisallowed_ReplaceSyncPromosEnabled = {
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kGoogleServicesSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+         ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -1872,7 +1891,10 @@ constexpr std::array
+     kActionableItems_SigninDisallowed_ReplaceSyncPromosDisabled = {
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+         ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -1970,7 +1992,10 @@ constexpr std::array
+         ProfileMenuViewBase::ActionableItem::kSigninButton,
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+         ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -2106,7 +2131,10 @@ constexpr std::array
+             ProfileMenuViewBase::ActionableItem::kSigninAccountButton,
+             ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+             ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+             ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+             ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+             ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+             ProfileMenuViewBase::ActionableItem::kManageProfilesButton,
+@@ -2179,7 +2207,10 @@ constexpr std::array kActionableItems_SignedIn_ReplaceSyncPromosEnabled = {
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kSignoutButton,
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2205,7 +2236,10 @@ constexpr std::array
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kSignoutButton,
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2234,7 +2268,10 @@ constexpr std::array kActionableItems_WithBatchUploadPromoButton = {
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kSignoutButton,
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2267,7 +2304,10 @@ constexpr std::array kActionableItems_WithBatchUploadPrimaryPromoButton = {
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kSignoutButton,
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2336,7 +2376,10 @@ constexpr std::array
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kSignoutButton,
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2372,7 +2415,10 @@ constexpr std::array
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kSignoutButton,
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2411,7 +2457,10 @@ constexpr std::array
+         ProfileMenuViewBase::ActionableItem::kSigninReauthButton,
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kSignoutButton,
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2440,7 +2489,10 @@ constexpr std::array
+         ProfileMenuViewBase::ActionableItem::kSigninReauthButton,
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kSignoutButton,
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2473,7 +2525,10 @@ constexpr std::array
+             ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+             ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+             ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+             ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+             ProfileMenuViewBase::ActionableItem::kSignoutButton,
+             ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+             // The kGuestProfileButton entry is not present.
+@@ -2509,7 +2564,10 @@ constexpr std::array
+             ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+             ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+             ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+             ProfileMenuViewBase::ActionableItem::kSyncSettingsButton,
++#endif
+             ProfileMenuViewBase::ActionableItem::kSignoutButton,
+             ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+             // The kGuestProfileButton entry is not present.
+@@ -2652,7 +2710,10 @@ constexpr std::array kActionableItems_PasskeyUnlockError = {
+     ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+     ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+     ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+     ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+     ProfileMenuViewBase::ActionableItem::kSignoutButton,
+     ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+     ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+@@ -2689,7 +2750,10 @@ constexpr std::array
+         ProfileMenuViewBase::ActionableItem::kAutofillSettingsButton,
+         ProfileMenuViewBase::ActionableItem::kManageGoogleAccountButton,
+         ProfileMenuViewBase::ActionableItem::kEditProfileButton,
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+         ProfileMenuViewBase::ActionableItem::kAccountSettingsButton,
++#endif
+         ProfileMenuViewBase::ActionableItem::kSignoutButton,
+         ProfileMenuViewBase::ActionableItem::kAddNewProfileButton,
+         ProfileMenuViewBase::ActionableItem::kGuestProfileButton,
+diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
+index 17d8d3e2832c4d572054a7c866690703e9fe87a2..232867c13042d1f25f5374bc3b33282c41b42366 100644
+--- a/chrome/browser/ui/webui/help/BUILD.gn
++++ b/chrome/browser/ui/webui/help/BUILD.gn
+@@ -2,12 +2,17 @@
+ # Use of this source code is governed by a BSD-style license that can be
+ # found in the LICENSE file.
+ 
++import("//chrome/browser/buildflags.gni")
+ import("//chrome/common/features.gni")
+ 
+ source_set("help") {
+   public = [ "version_updater.h" ]
+   public_deps = [ "//base" ]
+-  deps = [ "//chrome/browser/upgrade_detector" ]
++  deps = [
++    "//chrome/app:generated_resources_grit",
++    "//chrome/browser/upgrade_detector",
++    "//ui/base",
++  ]
+ 
+   if (is_chromeos) {
+     sources = [
+@@ -36,16 +41,18 @@ source_set("help") {
+   }
+ 
+   if (is_mac) {
+-    sources = [ "version_updater_mac.mm" ]
+-    deps += [
+-      "//base:i18n",
+-      "//chrome/app:branded_strings",
+-      "//chrome/app:generated_resources_grit",
+-      "//chrome/browser/updater",
+-      "//chrome/updater:browser_sources",
+-      "//ui/base",
+-    ]
+-    frameworks = [ "Foundation.framework" ]
++    if (enable_updater) {
++      sources = [ "version_updater_mac.mm" ]
++      deps += [
++        "//base:i18n",
++        "//chrome/app:branded_strings",
++        "//chrome/browser/updater",
++        "//chrome/updater:browser_sources",
++      ]
++      frameworks = [ "Foundation.framework" ]
++    } else {
++      sources = [ "version_updater_basic.cc" ]
++    }
+   }
+ 
+   if (is_win) {
+diff --git a/chrome/browser/ui/webui/help/version_updater_basic.cc b/chrome/browser/ui/webui/help/version_updater_basic.cc
+index ebcef5637b150bae26ed47e46fafd6b8fa39f128..891cc395c269e6e05bffb76104d12199ab17a725 100644
+--- a/chrome/browser/ui/webui/help/version_updater_basic.cc
++++ b/chrome/browser/ui/webui/help/version_updater_basic.cc
+@@ -5,8 +5,12 @@
+ #include <memory>
+ #include <string>
+ 
++#include "build/branding_buildflags.h"
++#include "build/build_config.h"
+ #include "chrome/browser/ui/webui/help/version_updater.h"
+ #include "chrome/browser/upgrade_detector/upgrade_detector.h"
++#include "chrome/grit/generated_resources.h"
++#include "ui/base/l10n/l10n_util.h"
+ 
+ namespace {
+ 
+@@ -23,8 +27,20 @@ class VersionUpdaterBasic : public VersionUpdater {
+     const Status status = UpgradeDetector::GetInstance()->is_upgrade_available()
+                               ? NEARLY_UPDATED
+                               : DISABLED;
+-    callback.Run(status, 0, false, false, std::string(), 0, std::u16string());
++    std::u16string message;
++#if !BUILDFLAG(GOOGLE_CHROME_BRANDING) && \
++    !BUILDFLAG(CHROME_FOR_TESTING)
++    if (status == DISABLED) {
++      message =
++          l10n_util::GetStringUTF16(IDS_AEGIS_UPDATE_CHANNEL_UNAVAILABLE);
++    }
++#endif
++    callback.Run(status, 0, false, false, std::string(), 0, message);
+   }
++
++#if BUILDFLAG(IS_MAC)
++  void PromoteUpdater() override {}
++#endif
+ };
+ 
+ }  // namespace
+diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+index 39cfcded4ad914e7a403e15dc8ba0e06aaaefde8..89d3e438529423331285fb337ce9439ef385cde9 100644
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -12,6 +12,7 @@
+ #include "base/i18n/number_formatting.h"
+ #include "base/json/json_writer.h"
+ #include "base/strings/escape.h"
++#include "base/strings/strcat.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/branding_buildflags.h"
+@@ -114,6 +115,7 @@
+ #include "components/sync/service/sync_service_utils.h"
+ #include "components/sync/service/sync_user_settings.h"
+ #include "components/translate/core/common/translate_features.h"
++#include "components/version_info/version_info.h"
+ #include "components/wallet/core/browser/walletable_permission_utils.h"
+ #include "components/wallet/core/common/wallet_features.h"
+ #include "components/zoom/page_zoom_constants.h"
+@@ -319,8 +321,15 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+       {"aboutUpgradeUpdating", IDS_SETTINGS_UPGRADE_UPDATING},
+       {"aboutUpgradeUpdatingPercent", IDS_SETTINGS_UPGRADE_UPDATING_PERCENT},
+       {"aboutGetHelpUsingChrome", IDS_SETTINGS_GET_HELP_USING_CHROME},
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+       {"aboutPageTitle", IDS_SETTINGS_ABOUT_PROGRAM},
+       {"aboutProductTitle", IDS_PRODUCT_NAME},
++#else
++      {"aboutPageTitle", IDS_AEGIS_SETTINGS_ABOUT_PROGRAM},
++      {"aboutProductTitle", IDS_AEGIS_SETTINGS_MENU},
++      {"aboutProductDescription", IDS_AEGIS_SETTINGS_ABOUT_DESCRIPTION},
++#endif
+       {"aboutLearnMoreUpdatingErrors",
+        IDS_SETTINGS_ABOUT_PAGE_LEARN_MORE_UPDATE_ERRORS},
+       {"aboutLearnMoreSystemRequirements",
+@@ -341,7 +350,15 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+       l10n_util::GetStringUTF16(IDS_SETTINGS_UPGRADE_UP_TO_DATE));
+ #endif
+ 
+-  std::u16string browser_version = VersionUI::GetAnnotatedVersionStringForUi();
++  std::u16string browser_version;
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
++  browser_version = VersionUI::GetAnnotatedVersionStringForUi();
++#else
++  browser_version = base::StrCat(
++      {u"Chromium ", base::UTF8ToUTF16(version_info::GetVersionNumber()), u" ",
++       l10n_util::GetStringUTF16(VersionUI::VersionProcessorVariation())});
++#endif
+ 
+   html_source->AddString("aboutBrowserVersion", browser_version);
+   html_source->AddString(
+@@ -2422,11 +2439,21 @@ void AddSyncControlsStrings(content::WebUIDataSource* html_source) {
+ void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
+   static constexpr webui::LocalizedString kLocalizedStrings[] = {
+       // Top level people strings:
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+       {"peoplePageTitle", IDS_SETTINGS_PEOPLE},
++#else
++      {"peoplePageTitle", IDS_SETTINGS_CUSTOMIZE_PROFILE},
++#endif
+       {"syncSettingsSavedToast", IDS_SETTINGS_SYNC_SETTINGS_SAVED_TOAST_LABEL},
+       {"manageGoogleAccount", IDS_SETTINGS_MANAGE_GOOGLE_ACCOUNT},
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(GOOGLE_CHROME_FOR_TESTING_BRANDING)
+       {"syncAndNonPersonalizedServices",
+        IDS_SETTINGS_SYNC_SYNC_AND_NON_PERSONALIZED_SERVICES},
++#else
++      {"syncAndNonPersonalizedServices", IDS_SETTINGS_SYNC},
++#endif
+       {"syncUnavailableForNonGoogleAccount",
+        IDS_SYNC_UNAVAILABLE_FOR_NON_GOOGLE_ACCOUNT},
+       {"accountPageTitle", IDS_SETTINGS_ACCOUNT_PAGE_TITLE},
+diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
+index 781744f9cfdb691b41299d8b07c984888605366a..b3202099e1e1bb9c9fc8ae3ca9568c24fa716b65 100644
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -316,6 +316,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+   html_source->AddBoolean("signinAllowed", !profile->IsGuestSession() &&
+                                                profile->GetPrefs()->GetBoolean(
+                                                    prefs::kSigninAllowed));
++  html_source->AddBoolean("showPeopleSettings",
++                          BUILDFLAG(GOOGLE_CHROME_BRANDING) ||
++                              BUILDFLAG(CHROME_FOR_TESTING));
++  html_source->AddBoolean("showGoogleServicesSettings",
++                          BUILDFLAG(GOOGLE_CHROME_BRANDING) ||
++                              BUILDFLAG(CHROME_FOR_TESTING));
+ 
+   html_source->AddBoolean("shouldUseMetricsConsentRestructure",
+                           metrics::MetricsReportingChoiceService::
+@@ -567,6 +573,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+   bool show_glic_section = false;
+   bool glic_disallowed_by_admin = false;
+ 
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+   auto glic_enablement = glic::GlicEnabling::EnablementForProfile(profile);
+   show_glic_section = glic_enablement.ShouldShowSettingsPage();
+   glic_disallowed_by_admin = glic_enablement.DisallowedByAdmin();
+@@ -584,6 +592,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+             base::BindRepeating(&SettingsUI::UpdateShowGlicState,
+                                 base::Unretained(this)));
+   }
++#endif
+ 
+   html_source->AddBoolean("showGlicSettings", show_glic_section);
+   html_source->AddBoolean("glicDisallowedByAdmin", glic_disallowed_by_admin);
+@@ -658,14 +667,25 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+   // Within the AI subpage are separate sections for Glic and for all other AI
+   // features, the visibility of these are separately controlled but we want to
+   // show the subpage if any of the AI features or Glic are enabled.
+-  html_source->AddBoolean("showAiPage", show_glic_section ||
+-                                            show_ai_features_section ||
+-                                            enable_ai_mode_search);
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
++  html_source->AddBoolean(
++      "showAiPage", show_glic_section || show_ai_features_section ||
++                        enable_ai_mode_search);
++#else
++  html_source->AddBoolean("showAiPage", false);
++#endif
+   html_source->AddBoolean("showAiPageAiFeatureSection",
+                           show_ai_features_section);
+ 
+-  html_source->AddBoolean("replaceSyncPromosWithSignInPromos",
+-                          syncer::IsReplaceSyncPromosWithSignInPromosEnabled());
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
++  html_source->AddBoolean(
++      "replaceSyncPromosWithSignInPromos",
++      syncer::IsReplaceSyncPromosWithSignInPromosEnabled());
++#else
++  html_source->AddBoolean("replaceSyncPromosWithSignInPromos", false);
++#endif
+ 
+ #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+   html_source->AddBoolean("unoPhase2FollowUp", base::FeatureList::IsEnabled(
+@@ -680,6 +700,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+       "settingsRefresh2026",
+       features::IsSettingsRefresh2026Enabled() ? "settings-refresh-2026" : "");
+ 
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || BUILDFLAG(CHROME_FOR_TESTING)
+   personal_context::PersonalContextEligibilityService* eligibility_service =
+       PersonalContextEligibilityServiceFactory::GetForProfile(profile);
+   html_source->AddBoolean("showSuggestionsFromGeminiSettings",
+@@ -695,6 +716,11 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+       autofill::MayPerformAtMemoryAction(
+           autofill::AtMemoryAction::kAllowCustomizeAtMemoryShortcut,
+           autofill_client));
++#else
++  html_source->AddBoolean("showSuggestionsFromGeminiSettings", false);
++  html_source->AddBoolean("isAtMemoryEnabled", false);
++  html_source->AddBoolean("isAtMemoryTriggerCustomizationAllowed", false);
++#endif
+ 
+   html_source->AddBoolean("isAtMemoryDoubleCtrlEnabled",
+                           base::FeatureList::IsEnabled(
+@@ -907,16 +933,23 @@ void SettingsUI::UpdateShowGlicState() {
+   // The visibility of the Glic page can change based on the user accepting the
+   // FRE. Propagate this state to the WebUI value used to display the settings
+   // page.
++  base::DictValue update;
++#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || \
++    BUILDFLAG(CHROME_FOR_TESTING)
+   Profile* profile = Profile::FromWebUI(web_ui());
+   auto enablement = glic::GlicEnabling::EnablementForProfile(profile);
+   const bool show_glic = enablement.ShouldShowSettingsPage();
+ 
+-  base::DictValue update;
+   update.Set("showGlicSettings", show_glic);
+   update.Set("glicDisallowedByAdmin", enablement.DisallowedByAdmin());
+   if (show_glic) {
+     update.Set("showAiPage", true);
+   }
++#else
++  update.Set("showGlicSettings", false);
++  update.Set("glicDisallowedByAdmin", false);
++  update.Set("showAiPage", false);
++#endif
+ 
+   content::WebUIDataSource::Update(
+       web_ui()->GetWebContents()->GetBrowserContext(),
+diff --git a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
+index 1dc97c2518864bdd7388d83447e9633d5677b85c..c13fec82ba2a5bb1dadd3ff923b329788608b252 100644
+--- a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
+@@ -7,7 +7,9 @@
+ #include <string>
+ 
+ #include "base/strings/utf_string_conversions.h"
++#include "base/strings/strcat.h"
+ #include "base/test/scoped_feature_list.h"
++#include "build/branding_buildflags.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/glic/glic_enums.h"
+ #include "chrome/browser/glic/glic_pref_names.h"
+@@ -52,6 +54,35 @@ IN_PROC_BROWSER_TEST_F(SettingsUITest, ViewSourceDoesntCrash) {
+            chrome::kChromeUISettingsURL + std::string("strings.js"))));
+ }
+ 
++#if !BUILDFLAG(GOOGLE_CHROME_BRANDING) && \
++    !BUILDFLAG(CHROME_FOR_TESTING)
++IN_PROC_BROWSER_TEST_F(SettingsUITest, AegisHidesUpstreamAiAndGoogleSettings) {
++  ASSERT_TRUE(NavigateToURL(browser(), GURL(chrome::kChromeUISettingsURL)));
++
++  content::WebContents* web_contents =
++      browser()->tab_strip_model()->GetActiveWebContents();
++  ASSERT_TRUE(content::ExecJs(web_contents,
++                              "customElements.whenDefined('settings-ui');"));
++
++  for (const char* key : {"showAiPage", "showPeopleSettings",
++                          "showGoogleServicesSettings",
++                          "replaceSyncPromosWithSignInPromos",
++                          "showSuggestionsFromGeminiSettings",
++                          "showPersonalContextSettingsLink",
++                          "isAtMemoryEnabled"}) {
++    EXPECT_FALSE(
++        content::EvalJs(
++            web_contents,
++            base::StrCat(
++                {"import('chrome://resources/js/load_time_data.js').then(m => "
++                 "m.loadTimeData.getBoolean('",
++                 key, "'))"}))
++            .ExtractBool())
++        << key;
++  }
++}
++#endif
++
+ // Catch lifetime issues in message handlers. There was previously a problem
+ // with PrefMember calling Init again after Destroy.
+ IN_PROC_BROWSER_TEST_F(SettingsUITest, ToggleJavaScript) {
+diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
+index 72633b9e55541dd7868d033efdf20dbf5143f939..6bd195aaec963da8945940563378279f2e987ea5 100644
+--- a/chrome/test/data/webui/settings/about_page_test.ts
++++ b/chrome/test/data/webui/settings/about_page_test.ts
+@@ -5,6 +5,7 @@
+ // clang-format off
+ import type {SettingsAboutPageElement} from 'chrome://settings/settings.js';
+ import {AboutPageBrowserProxyImpl, LifetimeBrowserProxyImpl, loadTimeData, Router, routes} from 'chrome://settings/settings.js';
++import type {CrIconElement} from 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
+ import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+ import {microtasksFinished} from 'chrome://webui-test/test_util.js';
+ 
+@@ -101,7 +102,8 @@ suite('AllBuilds', function() {
+    * incoming 'update-status-changed' events.
+    */
+   test('IconAndMessageUpdates', async function() {
+-    const icon = page.shadowRoot.querySelector('cr-icon')!;
++    const icon =
++        page.shadowRoot.querySelector<CrIconElement>('#updateStatusIcon')!;
+     assertTrue(!!icon);
+     const statusMessageEl =
+         page.shadowRoot.querySelector('#updateStatusMessage div')!;
+@@ -163,6 +165,25 @@ suite('AllBuilds', function() {
+     assertEquals(htmlError, statusMessageEl!.innerHTML);
+   });
+ 
++  // <if expr="not _google_chrome and not _is_chrome_for_testing">
++  test('DisabledWithMessage', async function() {
++    fireStatusChanged(
++        UpdateStatus.DISABLED,
++        {message: 'GCSA-aegis update channel is not configured.'});
++    await microtasksFinished();
++
++    assertFalse(page.$.updateStatusMessage.hidden);
++    assertEquals(
++        'GCSA-aegis update channel is not configured.',
++        page.$.updateStatusMessage.textContent.trim());
++    assertEquals(
++        'cr:info-outline',
++        page.shadowRoot.querySelector<CrIconElement>('#updateStatusIcon')!
++            .icon);
++  });
++  // </if>
++
++  // <if expr="_google_chrome or _is_chrome_for_testing">
+   test('FailedLearnMoreLink', async function() {
+     // Check that link is shown when update failed.
+     fireStatusChanged(UpdateStatus.FAILED, {message: 'foo'});
+@@ -176,6 +197,7 @@ suite('AllBuilds', function() {
+     assertTrue(
+         !!page.shadowRoot.querySelector('#updateStatusMessage a[hidden]'));
+   });
++  // </if>
+ 
+   /**
+    * Test that when the current platform has been marked as deprecated
+@@ -189,7 +211,8 @@ suite('AllBuilds', function() {
+     });
+ 
+     await initNewPage();
+-    const icon = page.shadowRoot.querySelector('cr-icon')!;
++    const icon =
++        page.shadowRoot.querySelector<CrIconElement>('#updateStatusIcon')!;
+     assertTrue(!!icon);
+     assertTrue(!!page.$.updateStatusMessage);
+     assertTrue(!!page.$.deprecationWarning);
+@@ -228,7 +251,8 @@ suite('AllBuilds', function() {
+     });
+ 
+     await initNewPage();
+-    const icon = page.shadowRoot.querySelector('cr-icon')!;
++    const icon =
++        page.shadowRoot.querySelector<CrIconElement>('#updateStatusIcon')!;
+     assertTrue(!!icon);
+     assertTrue(!!page.$.deprecationWarning);
+     assertTrue(!!page.$.updateStatusMessage);
+@@ -322,11 +346,21 @@ suite('AllBuilds', function() {
+   // </if>
+ 
+   // </if>
++  // <if expr="_google_chrome or _is_chrome_for_testing">
+   test('GetHelp', function() {
+     assertTrue(!!page.shadowRoot.querySelector('#help'));
+     page.shadowRoot.querySelector<HTMLElement>('#help')!.click();
+     return aboutBrowserProxy.whenCalled('openHelpPage');
+   });
++  // </if>
++
++  // <if expr="not _google_chrome and not _is_chrome_for_testing">
++  test('NoGoogleLinks', function() {
++    assertFalse(!!page.shadowRoot.querySelector('#help'));
++    assertFalse(!!page.shadowRoot.querySelector(
++        'a[href^="https://support.google.com/"]'));
++  });
++  // </if>
+ 
+   test('searchContents', async function() {
+     let result = await page.searchContents('foo');
+diff --git a/chrome/test/data/webui/settings/account_page_test.ts b/chrome/test/data/webui/settings/account_page_test.ts
+index c408a6645babb98b6c2e09b13b57e158ce42131a..0395180fb04ba75670b5bd4a5177ae9f676b24f5 100644
+--- a/chrome/test/data/webui/settings/account_page_test.ts
++++ b/chrome/test/data/webui/settings/account_page_test.ts
+@@ -26,6 +26,7 @@ suite('AccountPage', function() {
+ 
+     loadTimeData.overrideValues({
+       isEeaChoiceCountry: false,
++      showGoogleServicesSettings: true,
+       // <if expr="is_chromeos">
+       replaceSyncPromosWithSignInPromos: true,
+       osSettingsAccountsPageUrl: 'chrome://os-settings/osPeople',
+diff --git a/chrome/test/data/webui/settings/autofill_account_test.ts b/chrome/test/data/webui/settings/autofill_account_test.ts
+index 2f3514c532acbef69a52285200e8f93698065805..fc212c3a2592361021df23db4e55e2c6d3f6a2b6 100644
+--- a/chrome/test/data/webui/settings/autofill_account_test.ts
++++ b/chrome/test/data/webui/settings/autofill_account_test.ts
+@@ -32,6 +32,9 @@ suite('AutofillAccount', function() {
+   let syncBrowserProxy: TestSyncBrowserProxy;
+ 
+   setup(async function() {
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
++    resetRouterForTesting();
++
+     profileInfoBrowserProxy = new TestProfileInfoBrowserProxy();
+     ProfileInfoBrowserProxyImpl.setInstance(profileInfoBrowserProxy);
+ 
+diff --git a/chrome/test/data/webui/settings/autofill_page_index_test.ts b/chrome/test/data/webui/settings/autofill_page_index_test.ts
+index b24a8409b1b8643f1611154791d30e190f507e79..45125dad2560643ab491635614163fb9b5b5c1fd 100644
+--- a/chrome/test/data/webui/settings/autofill_page_index_test.ts
++++ b/chrome/test/data/webui/settings/autofill_page_index_test.ts
+@@ -26,6 +26,7 @@ suite('AutofillPageIndex', function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+ 
+     loadTimeData.overrideValues({
++      showGoogleServicesSettings: true,
+       showSuggestionsFromGeminiSettings: true,
+       shoppingIntegrationEnabled: true,
+     });
+@@ -90,6 +91,7 @@ suite('AutofillPageIndex', function() {
+   test('GeminiRouteDisabled', async function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     loadTimeData.overrideValues({
++      showGoogleServicesSettings: true,
+       showSuggestionsFromGeminiSettings: false,
+     });
+     resetRouterForTesting();
+@@ -104,6 +106,25 @@ suite('AutofillPageIndex', function() {
+     assertFalse(!!subpage);
+   });
+ 
++  test('GeminiViewDisabledWhenGoogleServicesHidden', async function() {
++    document.body.innerHTML = window.trustedTypes!.emptyHTML;
++    loadTimeData.overrideValues({
++      showGoogleServicesSettings: false,
++      showSuggestionsFromGeminiSettings: true,
++    });
++    resetRouterForTesting();
++    index = document.createElement('settings-autofill-page-index');
++    index.prefs = settingsPrefs.prefs!;
++    document.body.appendChild(index);
++    await flushTasks();
++    assertEquals(undefined, routes.SUGGESTIONS_FROM_GEMINI);
++    assertEquals(null, Router.getInstance().getRouteForPath('/enhancedAutofill'));
++    assertFalse(!!index.$.viewManager.querySelector('#suggestionsFromGemini'));
++    const result = await index.searchContents('Passkeys');
++    assertGT(result.matchCount, 0);
++    assertFalse(result.canceled);
++  });
++
+   test('ShoppingRouteDisabled', async function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     loadTimeData.overrideValues({
+diff --git a/chrome/test/data/webui/settings/autofill_page_test.ts b/chrome/test/data/webui/settings/autofill_page_test.ts
+index 28e48b1f16f5a4716c9fe50c92d0614eb7967d5f..a208401ccb585f0eb0758ce4b352e1590f4cba5b 100644
+--- a/chrome/test/data/webui/settings/autofill_page_test.ts
++++ b/chrome/test/data/webui/settings/autofill_page_test.ts
+@@ -58,6 +58,7 @@ suite('AutofillPage', function() {
+       showIbansSettings: true,
+       shouldShowPayOverTimeSettings: true,
+       shoppingIntegrationEnabled: true,
++      showGoogleServicesSettings: true,
+       showSuggestionsFromGeminiSettings: true,
+     });
+   });
+@@ -292,6 +293,28 @@ suite('AutofillPage', function() {
+     assertFalse(!!geminiCard);
+   });
+ 
++  test('AegisHidesGoogleServices', async function() {
++    await setupPage({
++      showGoogleServicesSettings: false,
++      showSuggestionsFromGeminiSettings: true,
++    });
++
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        'settings-account-card'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#googleWalletButton'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#googleAccountButton'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#suggestionsFromGeminiCard'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#passwordManagerButton'));
++    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++        '#relatedServicesSection'));
++    assertTrue(!!autofillPage.shadowRoot!.querySelector(
++        '#passwordManagerCard'));
++  });
++
+   test('SuggestionsFromGeminiCardNavigates', async function() {
+     const geminiCard = autofillPage.shadowRoot!.querySelector<HTMLElement>(
+         '#suggestionsFromGeminiCard');
+@@ -577,7 +600,8 @@ suite('RelatedServices', function() {
+     return CrSettingsPrefs.initialized;
+   });
+ 
+-  setup(function() {
++  setup(async function() {
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
+     resetRouterForTesting();
+ 
+     openWindowProxy = new TestOpenWindowProxy();
+@@ -594,6 +618,7 @@ suite('RelatedServices', function() {
+     setDefaultPrefs(settingsPrefs);
+     autofillPage.prefs = settingsPrefs.prefs!;
+     document.body.appendChild(autofillPage);
++    await flushTasks();
+   });
+ 
+   teardown(function() {
+@@ -612,9 +637,7 @@ suite('RelatedServices', function() {
+   test('CardRendersCorrectly', function() {
+     const relatedServicesCard =
+         autofillPage.shadowRoot!.querySelector<HTMLElement>(
+-            `settings-section[page-title="${
+-                loadTimeData.getString(
+-                    'yourSavedInfoRelatedServicesTitle')}"]`);
++            '#relatedServicesSection');
+     assertTrue(!!relatedServicesCard);
+ 
+     assertTrue(
+diff --git a/chrome/test/data/webui/settings/google_services_page_test.ts b/chrome/test/data/webui/settings/google_services_page_test.ts
+index 9a99b8db687ceff9a50ce8e33ff0dd14d27b2f83..d7d9c0f0ac2d4a11a754696d43d9166b4d539de0 100644
+--- a/chrome/test/data/webui/settings/google_services_page_test.ts
++++ b/chrome/test/data/webui/settings/google_services_page_test.ts
+@@ -24,6 +24,8 @@ suite('GoogleServicesPage', function() {
+   setup(async function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+ 
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
++    resetRouterForTesting();
+     // <if expr="is_chromeos">
+     loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: true});
+     resetRouterForTesting();
+diff --git a/chrome/test/data/webui/settings/identity_docs_page_test.ts b/chrome/test/data/webui/settings/identity_docs_page_test.ts
+index 6f3983c98f20a8c86a663af01c2a1946b5e8de99..da1ee9952e3567a5bbfd7e5be52d60bedd9a1706 100644
+--- a/chrome/test/data/webui/settings/identity_docs_page_test.ts
++++ b/chrome/test/data/webui/settings/identity_docs_page_test.ts
+@@ -384,6 +384,7 @@ suite('IdentityDocsPage', function() {
+       metricsBrowserProxy = new TestMetricsBrowserProxy();
+       MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
+       loadTimeData.overrideValues({
++        showGoogleServicesSettings: true,
+         showSuggestionsFromGeminiSettings: false,
+       });
+       resetRouterForTesting();
+@@ -428,5 +429,18 @@ suite('IdentityDocsPage', function() {
+           '#suggestionsFromGeminiLinkRow');
+       assertFalse(!!button);
+     });
++
++    test('row is hidden when Google services are disabled', async function() {
++      loadTimeData.overrideValues({
++        showGoogleServicesSettings: false,
++        showSuggestionsFromGeminiSettings: true,
++      });
++      resetRouterForTesting();
++
++      const page = await setupPage();
++      const button = page.shadowRoot!.querySelector<HTMLElement>(
++          '#suggestionsFromGeminiLinkRow');
++      assertFalse(!!button);
++    });
+   });
+ });
+diff --git a/chrome/test/data/webui/settings/people_page_index_test.ts b/chrome/test/data/webui/settings/people_page_index_test.ts
+index 5c7423eadd3a7776bfca3524bea8a38ae9b8a720..6fedf2a1ec5b40c5c538955a37d6c245678f6570 100644
+--- a/chrome/test/data/webui/settings/people_page_index_test.ts
++++ b/chrome/test/data/webui/settings/people_page_index_test.ts
+@@ -94,6 +94,7 @@ suite('PeoplePageIndex', function() {
+     // <if expr="is_chromeos">
+     loadTimeData.overrideValues({
+       replaceSyncPromosWithSignInPromos: false,
++      showGoogleServicesSettings: true,
+     });
+     resetRouterForTesting();
+     // </if>
+@@ -226,6 +227,37 @@ suite('PeoplePageIndex', function() {
+     assertFalse(result.wasClearSearch);
+   });
+ 
++  test('AegisOmitsGoogleViewsRoutesAndSearchResults', async function() {
++    // Detach the existing sync view while its routes are still available.
++    document.body.innerHTML = window.trustedTypes!.emptyHTML;
++    loadTimeData.overrideValues({
++      replaceSyncPromosWithSignInPromos: true,
++      showGoogleServicesSettings: false,
++    });
++    resetRouterForTesting();
++    await createPeoplePageIndex();
++
++    for (const id of ['sync', 'syncControls', 'account', 'googleServices']) {
++      assertFalse(!!index.$.viewManager.querySelector(`#${id}`), id);
++    }
++    assertFalse(!!routes.SYNC);
++    assertFalse(!!routes.SYNC_ADVANCED);
++    assertFalse(!!routes.ACCOUNT);
++    assertFalse(!!routes.GOOGLE_SERVICES);
++    assertFalse(!!routes.SIGN_OUT);
++    assertEquals(
++        null, Router.getInstance().getRouteForPath('/syncSetup'));
++    assertEquals(
++        null, Router.getInstance().getRouteForPath('/googleServices'));
++
++    for (const query of ['Google', 'Sync']) {
++      const result = await index.searchContents(query);
++      assertFalse(result.canceled);
++      assertEquals(0, result.matchCount, query);
++      assertFalse(result.wasClearSearch);
++    }
++  });
++
+   // Regression test for crbug.com/443268152.
+   test(
+       'SearchUnavailablePageReplaceSyncPromosWithSigninPromos',
+diff --git a/chrome/test/data/webui/settings/people_page_sync_controls_test.ts b/chrome/test/data/webui/settings/people_page_sync_controls_test.ts
+index f8ddfc99e0a92c2890d86a1046bf2b81d10673fa..0c3e30b8066f10c32a274e83eb7adea3ed76347e 100644
+--- a/chrome/test/data/webui/settings/people_page_sync_controls_test.ts
++++ b/chrome/test/data/webui/settings/people_page_sync_controls_test.ts
+@@ -257,7 +257,10 @@ suite('SyncControlsSubpageTest', function() {
+     browserProxy = new TestSyncBrowserProxy();
+     SyncBrowserProxyImpl.setInstance(browserProxy);
+ 
+-    loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: false});
++    loadTimeData.overrideValues({
++      replaceSyncPromosWithSignInPromos: false,
++      showGoogleServicesSettings: true,
++    });
+     resetRouterForTesting();
+ 
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+@@ -352,6 +355,7 @@ suite('SyncControlsAccountSettingsTest', function() {
+     pluralStringProxy = new TestPluralStringProxy();
+     PluralStringProxyImpl.setInstance(pluralStringProxy);
+ 
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
+     // <if expr="is_chromeos">
+     loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: true});
+     // </if>
+diff --git a/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts b/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts
+index 12944709e5c67baf2d6ac27d01dea7d43dc4ba7f..6c001c57db269d108631a704e6fd15b3416d1609 100644
+--- a/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts
++++ b/chrome/test/data/webui/settings/people_page_sync_page_interactive_test.ts
+@@ -7,7 +7,7 @@ import 'chrome://settings/lazy_load.js';
+ 
+ import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
+ import type {CrInputElement, SettingsSyncPageElement} from 'chrome://settings/lazy_load.js';
+-import {Router, SignedInState, StatusAction, SyncBrowserProxyImpl} from 'chrome://settings/settings.js';
++import {loadTimeData, resetRouterForTesting, Router, SignedInState, StatusAction, SyncBrowserProxyImpl} from 'chrome://settings/settings.js';
+ import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+ import {microtasksFinished} from 'chrome://webui-test/test_util.js';
+ 
+@@ -19,6 +19,9 @@ suite('sync-page-test', function() {
+   let syncPage: SettingsSyncPageElement;
+ 
+   setup(function() {
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
++    resetRouterForTesting();
++
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     const browserProxy = new TestSyncBrowserProxy();
+     browserProxy.testSyncStatus = {
+diff --git a/chrome/test/data/webui/settings/people_page_sync_page_test.ts b/chrome/test/data/webui/settings/people_page_sync_page_test.ts
+index 1a61b1aafd9e376839cb4b074756860d2f31ff93..a0b77ee8022ef7f51da7310ce753b6f0d75b064f 100644
+--- a/chrome/test/data/webui/settings/people_page_sync_page_test.ts
++++ b/chrome/test/data/webui/settings/people_page_sync_page_test.ts
+@@ -116,7 +116,11 @@ suite('SyncSettings', function() {
+   }
+ 
+   suiteSetup(function() {
+-    loadTimeData.overrideValues({signinAllowed: true});
++    loadTimeData.overrideValues({
++      showGoogleServicesSettings: true,
++      signinAllowed: true,
++    });
++    resetRouterForTesting();
+   });
+ 
+   setup(async function() {
+@@ -833,6 +837,7 @@ suite('SyncSettingsWithReplaceSyncPromosWithSignInPromos', function() {
+   suiteSetup(function() {
+     loadTimeData.overrideValues({
+       replaceSyncPromosWithSignInPromos: true,
++      showGoogleServicesSettings: true,
+     });
+     resetRouterForTesting();
+   });
+@@ -956,4 +961,3 @@ suite('EEAChoiceCountry', function() {
+     assertEquals(loadTimeData.getString('linkedServicesUrl'), url);
+   });
+ });
+-
+diff --git a/chrome/test/data/webui/settings/people_page_test.ts b/chrome/test/data/webui/settings/people_page_test.ts
+index f0872d6f38941f4737132ff9042380e44d800d18..f7fceaafb645919f55fd7bd02e3e908bd5fd970d 100644
+--- a/chrome/test/data/webui/settings/people_page_test.ts
++++ b/chrome/test/data/webui/settings/people_page_test.ts
+@@ -68,10 +68,14 @@ let peoplePage: SettingsPeoplePageElement;
+ let profileInfoBrowserProxy: TestProfileInfoBrowserProxy;
+ let syncBrowserProxy: TestSyncBrowserProxy;
+ 
++loadTimeData.overrideValues({showGoogleServicesSettings: true});
++resetRouterForTesting();
++
+ function reset() {
+   peoplePage.remove();
+   loadTimeData.overrideValues({
+     signinAllowed: true,
++    showGoogleServicesSettings: true,
+   });
+   resetRouterForTesting();
+   Router.getInstance().navigateTo(routes.BASIC);
+@@ -494,6 +498,48 @@ suite('SyncSettings', function() {
+   });
+ });
+ 
++// <if expr="not is_chromeos">
++suite('AegisLocalProfileOnly', function() {
++  setup(async function() {
++    loadTimeData.overrideValues({
++      replaceSyncPromosWithSignInPromos: true,
++      showGoogleServicesSettings: false,
++    });
++    resetRouterForTesting();
++
++    syncBrowserProxy = new TestSyncBrowserProxy();
++    SyncBrowserProxyImpl.setInstance(syncBrowserProxy);
++    profileInfoBrowserProxy = new TestProfileInfoBrowserProxy();
++    ProfileInfoBrowserProxyImpl.setInstance(profileInfoBrowserProxy);
++
++    document.body.innerHTML = window.trustedTypes!.emptyHTML;
++    peoplePage = document.createElement('settings-people-page');
++    document.body.appendChild(peoplePage);
++
++    await syncBrowserProxy.whenCalled('getSyncStatus');
++    await profileInfoBrowserProxy.whenCalled('getProfileInfo');
++    flush();
++  });
++
++  teardown(function() {
++    reset();
++  });
++
++  test('HidesGoogleAndKeepsLocalProfileActions', function() {
++    assertTrue(isChildVisible(peoplePage, '#profile-row'));
++    assertTrue(isChildVisible(peoplePage, '#edit-profile'));
++    assertTrue(isChildVisible(peoplePage, '#importDataDialogTrigger'));
++
++    for (const selector of [
++           'settings-sync-account-control', '#account-subpage-row',
++           '#sync-setup', '#google-services', '#manage-google-account',
++         ]) {
++      assertFalse(!!peoplePage.shadowRoot!.querySelector(selector), selector);
++    }
++  });
++});
++// </if>
++
+ suite('PeoplePageAccountSettings', function() {
+   setup(async function() {
+     // <if expr="is_chromeos">
+diff --git a/chrome/test/data/webui/settings/privacy_page_index_test.ts b/chrome/test/data/webui/settings/privacy_page_index_test.ts
+index af655f7fa0a498caabf1b32d28cbd4ce4952591f..43dfba84e37d2c9038818f81f32aca7155c682c6 100644
+--- a/chrome/test/data/webui/settings/privacy_page_index_test.ts
++++ b/chrome/test/data/webui/settings/privacy_page_index_test.ts
+@@ -126,7 +126,21 @@ suite('PrivacyPageIndex', function() {
+       assertEquals(routes.BASIC, Router.getInstance().getCurrentRoute());
+       await flushTasks();
+       await waitBeforeNextRender(index);
+-      assertFalse(!!index.$.viewManager.querySelector('#privacy'));
++      let privacyIsTopLevel =
++          !loadTimeData.getBoolean('showPeopleSettings');
++      // <if expr="is_chromeos">
++      privacyIsTopLevel = true;
++      // </if>
++      assertEquals(
++          privacyIsTopLevel,
++          !!index.$.viewManager.querySelector('#privacy'));
++      if (privacyIsTopLevel) {
++        for (const id of
++                 ['privacy', 'privacyGuidePromo', 'safetyHubEntryPoint']) {
++          assertTrue(!!index.$.viewManager.querySelector(
++              `#${id}.active[slot=view]`));
++        }
++      }
+       await testViewsForRoute(routes.PRIVACY, ['privacy']);
+     });
+ 
+diff --git a/chrome/test/data/webui/settings/route_test.ts b/chrome/test/data/webui/settings/route_test.ts
+index 1736ddcc04a8738777c12d336c4b4a61d986878d..0ea4e60990dff3083ef4dea8da59d8a050e10a6d 100644
+--- a/chrome/test/data/webui/settings/route_test.ts
++++ b/chrome/test/data/webui/settings/route_test.ts
+@@ -10,6 +10,9 @@ import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+ 
+ // clang-format on
+ 
++const defaultShowGoogleServicesSettings =
++    loadTimeData.getBoolean('showGoogleServicesSettings');
++
+ suite('Basic', function() {
+   /**
+    * Returns a new promise that resolves after a window 'popstate' event.
+@@ -28,6 +31,11 @@ suite('Basic', function() {
+ 
+   teardown(function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
++    loadTimeData.overrideValues({
++      showGoogleServicesSettings: defaultShowGoogleServicesSettings,
++    });
++    resetPageVisibilityForTesting();
++    resetRouterForTesting();
+   });
+ 
+   /**
+@@ -173,8 +181,8 @@ suite('Basic', function() {
+   });
+ 
+   test('navigate back to parent when previous route is deeper', function() {
+-    Router.getInstance().navigateTo(routes.SYNC);
+-    Router.getInstance().navigateTo(routes.PEOPLE);
++    Router.getInstance().navigateTo(routes.FONTS);
++    Router.getInstance().navigateTo(routes.APPEARANCE);
+     Router.getInstance().navigateToPreviousRoute();
+     assertEquals(routes.BASIC, Router.getInstance().getCurrentRoute());
+   });
+@@ -266,8 +274,12 @@ suite('Basic', function() {
+     // </if>
+ 
+     // <if expr="not is_chromeos">
+-    assertTrue(routes.SIGN_OUT.isNavigableDialog);
+-    assertTrue(routes.SIGN_OUT.parent === routes.PEOPLE);
++    if (loadTimeData.getBoolean('showGoogleServicesSettings')) {
++      assertTrue(routes.SIGN_OUT.isNavigableDialog);
++      assertTrue(routes.SIGN_OUT.parent === routes.PEOPLE);
++    } else {
++      assertFalse('SIGN_OUT' in routes);
++    }
+     assertTrue(routes.IMPORT_DATA.isNavigableDialog);
+     assertTrue(routes.IMPORT_DATA.parent === routes.PEOPLE);
+     // </if>
+@@ -337,25 +349,55 @@ suite('Basic', function() {
+   test('account route existence', function() {
+     resetPageVisibilityForTesting({people: true});
+ 
+-    loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: false});
++    loadTimeData.overrideValues({
++      replaceSyncPromosWithSignInPromos: false,
++      showGoogleServicesSettings: true,
++    });
+     resetRouterForTesting();
+     assertFalse(!!routes.ACCOUNT);
+ 
+     loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: true});
+     resetRouterForTesting();
+     assertTrue(!!routes.ACCOUNT);
++
++    loadTimeData.overrideValues({showGoogleServicesSettings: false});
++    resetRouterForTesting();
++    assertFalse(!!routes.ACCOUNT);
+   });
+ 
+   test('google services route existence', function() {
+     resetPageVisibilityForTesting({people: true});
+ 
+-    loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: false});
++    loadTimeData.overrideValues({
++      replaceSyncPromosWithSignInPromos: false,
++      showGoogleServicesSettings: true,
++    });
+     resetRouterForTesting();
+     assertFalse(!!routes.GOOGLE_SERVICES);
+ 
+     loadTimeData.overrideValues({replaceSyncPromosWithSignInPromos: true});
+     resetRouterForTesting();
+     assertTrue(!!routes.GOOGLE_SERVICES);
++
++    loadTimeData.overrideValues({showGoogleServicesSettings: false});
++    resetRouterForTesting();
++    assertFalse(!!routes.GOOGLE_SERVICES);
++  });
++
++  test('sync routes existence', function() {
++    resetPageVisibilityForTesting({people: true});
++
++    loadTimeData.overrideValues({showGoogleServicesSettings: true});
++    resetRouterForTesting();
++    assertTrue(!!routes.SYNC);
++    assertTrue(!!routes.SYNC_ADVANCED);
++    assertTrue(!!routes.SIGN_OUT);
++
++    loadTimeData.overrideValues({showGoogleServicesSettings: false});
++    resetRouterForTesting();
++    assertFalse(!!routes.SYNC);
++    assertFalse(!!routes.SYNC_ADVANCED);
++    assertFalse(!!routes.SIGN_OUT);
+   });
+   // </if>
+ 
+diff --git a/chrome/test/data/webui/settings/settings_main_plugins_test.ts b/chrome/test/data/webui/settings/settings_main_plugins_test.ts
+index 00150f9244ca849b0e83ea229d5ec96445c1ffe2..0c1dd848737962fe91993bcd8a39e9ff14b6eb52 100644
+--- a/chrome/test/data/webui/settings/settings_main_plugins_test.ts
++++ b/chrome/test/data/webui/settings/settings_main_plugins_test.ts
+@@ -60,9 +60,13 @@ suite('SettingsMain', function() {
+           `.active[slot=view] > :not(${pluginTag}, dom-if)`));
+     }
+ 
++    const topLevelPluginTag =
++        loadTimeData.getBoolean('showPeopleSettings') ?
++        'settings-people-page-index' :
++        'settings-privacy-page-index';
+     const routesToVisit: Array<{route: Route, pluginTag: string}> = [
+       {route: routes.PEOPLE, pluginTag: 'settings-people-page-index'},
+-      {route: routes.BASIC, pluginTag: 'settings-people-page-index'},
++      {route: routes.BASIC, pluginTag: topLevelPluginTag},
+       {route: routes.PRIVACY, pluginTag: 'settings-privacy-page-index'},
+       {
+         route: routes.AUTOFILL,
+@@ -183,7 +187,9 @@ suite('SettingsMain', function() {
+     let active = settingsMain.$.switcher.querySelector<HTMLElement>(
+         '.active[slot=view]');
+     assertTrue(!!active);
+-    assertEquals('people', active.id);
++    assertEquals(
++        loadTimeData.getBoolean('showPeopleSettings') ? 'people' : 'privacy',
++        active.id);
+ 
+     // Case2: Guest mode.
+     createSettingsMain({isGuest: true});
+diff --git a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
+index ac7c1713fb2187ab2df37216dba81e720a9dd0f7..f06e4eb92cf10c6e81377ce6dffc9ed9f27fe4e0 100644
+--- a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
++++ b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
+@@ -21,6 +21,7 @@ suite('SettingsMenuInteractiveUITest', () => {
+       yourSavedInfo: true,
+     });
+ 
++    loadTimeData.overrideValues({showPeopleSettings: true});
+     createMenu();
+     settingsMenu.focusFirstItem();
+     assertEquals(settingsMenu.$.people, settingsMenu.shadowRoot!.activeElement);
+diff --git a/chrome/test/data/webui/settings/settings_menu_test.ts b/chrome/test/data/webui/settings/settings_menu_test.ts
+index 390355c8d8c8a24f7ac97728be2a104b58c699f6..748afe2debf1c25249d8ca85f67c082ba6f7da9b 100644
+--- a/chrome/test/data/webui/settings/settings_menu_test.ts
++++ b/chrome/test/data/webui/settings/settings_menu_test.ts
+@@ -31,6 +31,7 @@ suite('SettingsMenu', function() {
+   }
+ 
+   setup(function() {
++    loadTimeData.overrideValues({showPeopleSettings: true});
+     metricsBrowserProxy = new TestMetricsBrowserProxy();
+     MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
+     createSettingsMenu();
+@@ -105,6 +106,14 @@ suite('SettingsMenu', function() {
+     assertFalse(isVisible(entry));
+   });
+ 
++  test('aegisHidesPeopleSettings', async function() {
++    loadTimeData.overrideValues({showPeopleSettings: false});
++    createSettingsMenu();
++    await microtasksFinished();
++
++    assertFalse(isVisible(settingsMenu.$.people));
++  });
++
+   test('navigateToExperimental', async function() {
+     loadTimeData.overrideValues({showAiPage: true});
+     resetRouterForTesting();
+diff --git a/chrome/test/data/webui/settings/shopping_page_test.ts b/chrome/test/data/webui/settings/shopping_page_test.ts
+index 6fb87bc274b61e8d93bf763143548bdfe0303ea6..ae3eb2e5547b1f90bf1e5aa8d79790d8734fbbd5 100644
+--- a/chrome/test/data/webui/settings/shopping_page_test.ts
++++ b/chrome/test/data/webui/settings/shopping_page_test.ts
+@@ -384,6 +384,7 @@ suite('ShoppingPage', function() {
+       metricsBrowserProxy = new TestMetricsBrowserProxy();
+       MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
+       loadTimeData.overrideValues({
++        showGoogleServicesSettings: true,
+         showSuggestionsFromGeminiSettings: false,
+       });
+       resetRouterForTesting();
+@@ -427,5 +428,18 @@ suite('ShoppingPage', function() {
+           '#suggestionsFromGeminiLinkRow');
+       assertFalse(!!button);
+     });
++
++    test('row is hidden when Google services are disabled', async function() {
++      loadTimeData.overrideValues({
++        showGoogleServicesSettings: false,
++        showSuggestionsFromGeminiSettings: true,
++      });
++      resetRouterForTesting();
++
++      const page = await setupPage();
++      const button = page.shadowRoot!.querySelector<HTMLElement>(
++          '#suggestionsFromGeminiLinkRow');
++      assertFalse(!!button);
++    });
+   });
+ });
+diff --git a/chrome/test/data/webui/settings/sync_account_control_test.ts b/chrome/test/data/webui/settings/sync_account_control_test.ts
+index 85705dfef5f05c4ad5791e3f7dfb13c011c142da..51ed2bfda2292ae602b0d7b33a4cd1ec40cbf733 100644
+--- a/chrome/test/data/webui/settings/sync_account_control_test.ts
++++ b/chrome/test/data/webui/settings/sync_account_control_test.ts
+@@ -41,6 +41,10 @@ suite('SyncAccountControl', function() {
+     PrefService.resetInstanceForTesting();
+     await PrefService.getInstance().whenInitialized();
+ 
++    loadTimeData.overrideValues({
++      showGoogleServicesSettings: true,
++    });
++    resetRouterForTesting();
+     browserProxy = new TestSyncBrowserProxy();
+     SyncBrowserProxyImpl.setInstance(browserProxy);
+ 
+diff --git a/chrome/test/data/webui/settings/travel_page_test.ts b/chrome/test/data/webui/settings/travel_page_test.ts
+index 1e94149b6d6672b5c92715164b03bc2e47daf653..410d09041cee794640f610df0f0ca22208560d5d 100644
+--- a/chrome/test/data/webui/settings/travel_page_test.ts
++++ b/chrome/test/data/webui/settings/travel_page_test.ts
+@@ -382,6 +382,7 @@ suite('TravelPage', function() {
+       metricsBrowserProxy = new TestMetricsBrowserProxy();
+       MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
+       loadTimeData.overrideValues({
++        showGoogleServicesSettings: true,
+         showSuggestionsFromGeminiSettings: false,
+       });
+       resetRouterForTesting();
+@@ -425,5 +426,18 @@ suite('TravelPage', function() {
+           '#suggestionsFromGeminiLinkRow');
+       assertFalse(!!button);
+     });
++
++    test('row is hidden when Google services are disabled', async function() {
++      loadTimeData.overrideValues({
++        showGoogleServicesSettings: false,
++        showSuggestionsFromGeminiSettings: true,
++      });
++      resetRouterForTesting();
++
++      const page = await setupPage();
++      const button = page.shadowRoot!.querySelector<HTMLElement>(
++          '#suggestionsFromGeminiLinkRow');
++      assertFalse(!!button);
++    });
+   });
+ });
+diff --git a/tools/grit/grit_args.gni b/tools/grit/grit_args.gni
+index cd2b6b933766377a959291da317d38508463e34e..5e32bd5ba10b45f34bda92e71b71fd77043b5970 100644
+--- a/tools/grit/grit_args.gni
++++ b/tools/grit/grit_args.gni
+@@ -22,6 +22,7 @@ _grit_defines = [
+   "DEVTOOLS_GRD_PATH=" + devtools_grd_path_no_ext,
+   "SHARED_INTERMEDIATE_DIR=" + shared_intermediate_dir,
+   "_google_chrome=${is_chrome_branded}",
++  "_is_chrome_for_testing=${is_chrome_for_testing}",
+   "_is_chrome_for_testing_branded=${is_chrome_for_testing_branded}",
+ 
+   # This is related to Chrome OS.
+-- 
+2.52.0
+

@@ -1,4 +1,4 @@
-From aee92796baeda4068b23446c43cc475003a729da Mon Sep 17 00:00:00 2001
+From 070be68efc55c2f8fe4c6d6acfc8bbcb4f34e2a4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 28 Aug 2026 18:20:52 +0800
 Subject: [PATCH] build(aegis): pin bytecode shadow V8 revision
@@ -8,12 +8,12 @@ Subject: [PATCH] build(aegis): pin bytecode shadow V8 revision
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/v8 b/v8
-index d1fed5cd7e..87f5cfd0cc 160000
+index 56832c166a78bd1eb61068ac69876d6880eaabdf..a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c 160000
 --- a/v8
 +++ b/v8
 @@ -1 +1 @@
--Subproject commit d1fed5cd7e3b114dea70f18b20d26f816322833d
-+Subproject commit 87f5cfd0cc7a8de9d596de51b518c407de4b6fd8
+-Subproject commit 56832c166a78bd1eb61068ac69876d6880eaabdf
++Subproject commit a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c
 -- 
 2.52.0
 

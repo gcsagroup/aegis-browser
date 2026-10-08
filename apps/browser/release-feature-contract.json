@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "description": "本文件是必须验收的行为清单，不是通过记录。开关在各平台的启用和关闭语义均需验证；实验功能不得被升级自动开启。新增功能必须补充稳定ID及真实回归，保留既有ID。",
+  "features": [
+    {
+      "id": "kAegisEnabled",
+      "name": "总开关与设置持久化",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisTrackerBlocking",
+      "name": "跟踪器拦截",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisPhishInterstitial",
+      "name": "钓鱼警告页",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisFingerprintGuard",
+      "name": "指纹防护",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisMinerGuard",
+      "name": "挖矿防护",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisBytecodeShadow",
+      "name": "字节码检查",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisFilterListUpdater",
+      "name": "过滤列表更新",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisLinkSanitize",
+      "name": "链接清理",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisCookieJanitor",
+      "name": "Cookie清理",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisCnameUncloak",
+      "name": "CNAME识别",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisBounceTracking",
+      "name": "跳转跟踪防护",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisPolicyWorker",
+      "name": "策略执行",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisPrivacyAi",
+      "name": "隐私AI",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisAiControl",
+      "name": "AI权限控制",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisAgent",
+      "name": "浏览器Agent及隐私资料隔离",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisAgentPageActions",
+      "name": "Agent页面操作",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisAgentBrowserTools",
+      "name": "Agent浏览器工具",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisAgentWebMcp",
+      "name": "WebMCP实验开关保持关闭",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisAgentWorkflows",
+      "name": "Agent工作流",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "kAegisAgentTransactionPilot",
+      "name": "交易实验开关保持关闭",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "aegis-access",
+      "name": "网络访问规则和权限",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "profile-compatibility",
+      "name": "旧资料、隐私模式和重启兼容",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "release-update",
+      "name": "已有更新入口、摘要校验和失败恢复",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ]
+    },
+    {
+      "id": "MouseGestures",
+      "name": "桌面右键手势、配置持久化、练习区与PDF动作",
+      "platforms": [
+        "mac-arm64",
+        "win-x64"
+      ],
+      "testFilters": [
+        "AegisGestureRecognizerTest.*",
+        "AegisGestureSettingsTest.*",
+        "AegisGestureBrowserTest.*",
+        "*AegisGesturePdfTest.*"
+      ]
+    }
+  ]
+}

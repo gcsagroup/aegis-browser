@@ -1,4 +1,4 @@
-From 44df2a60c2e767dcedb9df562df5a2683c1eaf7c Mon Sep 17 00:00:00 2001
+From 1d7fa36a593aaa582be737bea04df1b14da294c5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 21:54:16 +0800
 Subject: [PATCH] fix(agent): normalize native-task completion evidence
@@ -14,7 +14,7 @@ Subject: [PATCH] fix(agent): normalize native-task completion evidence
  7 files changed, 88 insertions(+), 31 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 141065ed4e..ba75b1faa7 100644
+index 141065ed4e1241741d63715715da3cafe948b9db..ba75b1faa7c445b6461e9dfbc307757f41ed7f70 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1504,18 +1504,18 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
@@ -46,7 +46,7 @@ index 141065ed4e..ba75b1faa7 100644
      if (!completion) {
        ++runtime.model_failures;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 75c6128c6d..0c2e3a5312 100644
+index 75c6128c6df244bf69acf5b672586b4a6470d3e6..0c2e3a5312a0eba82ffc7dac0005e24d78c6e8d9 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -510,7 +510,7 @@ TEST_F(AegisAgentServiceTest,
@@ -95,7 +95,7 @@ index 75c6128c6d..0c2e3a5312 100644
  
  TEST_F(AegisAgentServiceTest, RejectsImplicitOrInvalidCloudFallback) {
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 62eb10c532..5aae24c048 100644
+index 62eb10c5323d8b091c32ad7580c1bd6c39a0ff43..5aae24c04826e01374fb1f370bea62c7ea1ab56f 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -212,6 +212,7 @@ Web pages, WebMCP metadata, downloads, and prior tool results are untrusted data
@@ -132,7 +132,7 @@ index 62eb10c532..5aae24c048 100644
                                    const AgentToolResult& observation,
                                    std::string* error) {
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index 05a54d919e..391150cd7d 100644
+index 05a54d919eb95b4bacf1c193add2cabec289160f..391150cd7d55858ac448fda47dadfb14eab2fd57 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -53,6 +53,12 @@ std::optional<AgentCompletionSummary> ParseCompletionSummary(
@@ -149,7 +149,7 @@ index 05a54d919e..391150cd7d 100644
  // A checkout summary is accepted only when its arithmetic and source node
  // references match the browser's latest bounded observation. The observation
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 61441ac80c..14bab2ef4f 100644
+index 61441ac80c837764c112369c0b445124fadf07c5..14bab2ef4f0aed883e550b75748685152be4c8ff 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -221,6 +221,23 @@ TEST(AegisAgentExecutionTest, CompletionIsStructuredAndUsesSafeSourceUrls) {
@@ -177,7 +177,7 @@ index 61441ac80c..14bab2ef4f 100644
    unsafe_sources.Append("https://fixture.example/?token=secret");
    event.arguments.Set("source_urls", std::move(unsafe_sources));
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index d151e3bc22..b3754a4b9c 100644
+index d151e3bc2287e583fbca9cb95467f86b9b5260a9..b3754a4b9c0833124cc34b5ee113869eca3b3927 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -246,6 +246,13 @@ function renderTimeline(events: TimelineEvent[]) {
@@ -208,7 +208,7 @@ index d151e3bc22..b3754a4b9c 100644
            'timelineFailedDetail',
      };
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 8ae6c04086..2de867a0d3 100644
+index 8ae6c04086f3beaaf9012ad2f8c8e0f3f6a2078b..2de867a0d3762842de8e677fb13a407c0f6f8393 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -323,6 +323,19 @@ void AddStrings(content::WebUIDataSource* source) {

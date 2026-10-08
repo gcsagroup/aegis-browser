@@ -1,4 +1,4 @@
-From e3ea14cfe3815677e3669b857c9e6e4b18671d91 Mon Sep 17 00:00:00 2001
+From dbe8e04c20a4d5fb3dce193b9b1f6720090bb518 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 15:47:05 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 11 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index a52155dfbf..37163fba43 100644
+index a52155dfbfe1ae3bd10ab382a9c3701bb076bf5b..37163fba4334574c5637c04a9dae6870d98f7b3c 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -2594,7 +2594,9 @@ TEST(AegisAgentExecutionTest, BookmarkPreviewAndNegativeGoalsRemainReadOnly) {
@@ -40,7 +40,7 @@ index a52155dfbf..37163fba43 100644
    }
  }
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index d9db1df7df..03d944ec4b 100644
+index d9db1df7df10d013c0afcb972ccd350ad2a0a709..03d944ec4bc8283c2f03e13287bee89fab5989c0 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -1265,7 +1265,8 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
@@ -64,7 +64,7 @@ index d9db1df7df..03d944ec4b 100644
      }
    }
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index dce2f5e834..6585196776 100644
+index dce2f5e8345a9f40a523c2f0bc84af2bd51447dd..6585196776c76f48506900836beb593ce76e7c72 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

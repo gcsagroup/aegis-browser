@@ -14,12 +14,23 @@ spec.loader.exec_module(ci)
 
 
 class CandidateTests(unittest.TestCase):
-    def test_build_number_monotonically_increases(self):
-        text = 'kProductVersion[] = "1.1.0.22"; // Ver 1.1 (022)'
-        changed, version, number = ci.bump_header(text, 30)
-        self.assertEqual((version, number), ('1.1.0.31', 31))
-        self.assertIn('(031)', changed)
-        self.assertNotIn('1.1.0.22', changed)
+    def test_workflow_output_is_not_mistaken_for_dirty_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            def git(*args):
+                return ci.git(root, *args)
+            git('init', '-q'); git('config', 'user.name', 'test')
+            git('config', 'user.email', 'test@example.invalid')
+            (root / 'source.txt').write_text('产品输入')
+            git('add', 'source.txt'); git('commit', '-qm', '初始输入')
+            (root / 'ci-evidence').mkdir()
+            (root / 'ci-evidence/result.json').write_text('{}')
+            self.assertEqual(ci.product_status(root), '')
+            (root / 'new-feature.txt').write_text('新增功能')
+            self.assertIn('new-feature.txt', ci.product_status(root))
+            git('add', 'ci-evidence/result.json')
+            with self.assertRaisesRegex(ValueError, '已跟踪'):
+                ci.product_status(root)
 
     def test_receipt_rejects_other_artifact_or_run(self):
         value = {'artifactSha256': 'aaa', 'runId': '1',

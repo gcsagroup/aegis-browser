@@ -81,6 +81,8 @@ final class WorkspaceAndDownloadTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let manager = DownloadManager(directory: directory, background: false)
+        await manager.retryStorage()
+        try await waitUntil { manager.isReady }
         let id = try manager.start("http://127.0.0.1:8768/slow.bin")
         try await waitUntil { manager.items.first { $0.id == id }!.received > 0 }
         manager.pause(id)
