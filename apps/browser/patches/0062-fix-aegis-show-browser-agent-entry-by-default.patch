@@ -1,4 +1,4 @@
-From 35381759d90a120568b7d36bf39eb1f05b14a4d4 Mon Sep 17 00:00:00 2001
+From 0ea1f46763eb9a1b6df7449d29b5c15e315427e5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 29 Aug 2026 01:24:21 +0800
 Subject: [PATCH] fix(aegis): show browser agent entry by default
@@ -12,7 +12,7 @@ Subject: [PATCH] fix(aegis): show browser agent entry by default
  5 files changed, 66 insertions(+), 15 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 55c647e1db..dd30ca14c9 100644
+index 55c647e1db8d1103ce2e7006ea903a90be92d304..dd30ca14c91a25fc2aecae6d30d362858cf75eb1 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -15,12 +15,15 @@
@@ -97,7 +97,7 @@ index 55c647e1db..dd30ca14c9 100644
           features::kAegisFilterListUpdater, features::kAegisPhishInterstitial});
    }
 diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
-index f839a98fbc..22c0b99d91 100644
+index f839a98fbca6658de6340a6357f6e32b951d13f2..22c0b99d9157b816bf64f4327a3f9e1af799eb93 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 @@ -39,9 +39,7 @@ class AegisAgentInteractiveUiTest : public InteractiveBrowserTest {
@@ -112,7 +112,7 @@ index f839a98fbc..22c0b99d91 100644
           features::kAegisFilterListUpdater, features::kAegisPhishInterstitial});
    }
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
-index bfda4caa75..6bd0c902d5 100644
+index bfda4caa750be2f65fb681617390ab8a2d7bd2d9..6bd0c902d587a17c2b46cc3d3c7628c3207951a6 100644
 --- a/chrome/common/aegis/features.cc
 +++ b/chrome/common/aegis/features.cc
 @@ -21,11 +21,11 @@ BASE_FEATURE(kAegisBounceTracking, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -132,7 +132,7 @@ index bfda4caa75..6bd0c902d5 100644
  
  bool IsFingerprintGuardGloballyEnabled(bool pref_enabled) {
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
-index 2a633871d2..7c975cdb0f 100644
+index 2a633871d223c3bd3f731451a520b5695fcabbe1..7c975cdb0f54fd562a3f16bc9b5ca4de0a022b66 100644
 --- a/chrome/common/aegis/features.h
 +++ b/chrome/common/aegis/features.h
 @@ -23,12 +23,12 @@ BASE_DECLARE_FEATURE(kAegisBounceTracking);
@@ -154,7 +154,7 @@ index 2a633871d2..7c975cdb0f 100644
  BASE_DECLARE_FEATURE(kAegisAgentBrowserTools);
  BASE_DECLARE_FEATURE(kAegisAgentWebMcp);
 diff --git a/chrome/common/aegis/features_unittest.cc b/chrome/common/aegis/features_unittest.cc
-index aca728b64d..4abecc9adf 100644
+index aca728b64d53d743e2f93c44248e097d7362e00b..4abecc9adf43e8b4960b5f1f5f89e9402cf11fcb 100644
 --- a/chrome/common/aegis/features_unittest.cc
 +++ b/chrome/common/aegis/features_unittest.cc
 @@ -78,5 +78,14 @@ TEST(AegisFeaturesTest, BytecodeShadowIsDefaultOffAndRequiresMasterGate) {

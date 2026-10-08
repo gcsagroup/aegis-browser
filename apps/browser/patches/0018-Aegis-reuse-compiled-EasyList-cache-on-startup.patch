@@ -1,4 +1,4 @@
-From 99c9c4a5eef0deb5f8fe83b9de6c9a3b40eaf31d Mon Sep 17 00:00:00 2001
+From 146f92f2f2cceebe634a3c396b4dc420b8533992 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:18:01 +0800
 Subject: [PATCH] Aegis: reuse compiled EasyList cache on startup
@@ -16,7 +16,7 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  5 files changed, 68 insertions(+), 25 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 2869561d87..7cd380f95e 100644
+index 2869561d87c586fbd6c2616c004f966ee8b08c14..7cd380f95e48e546e216c433960a7132d6b5e3b1 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -46,8 +46,8 @@ void AegisService::InitializeForProfile(Profile* profile) {
@@ -30,7 +30,7 @@ index 2869561d87..7cd380f95e 100644
    if (base::FeatureList::IsEnabled(features::kAegisCookieJanitor) &&
        IsCookieJanitorEnabled()) {
 diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
-index 12d45c372d..85fe9f0053 100644
+index 12d45c372d211b9c60685c82218e130ec3832509..85fe9f005366fca13bee631a26455a63b5573b87 100644
 --- a/chrome/browser/aegis/filter_list_updater.cc
 +++ b/chrome/browser/aegis/filter_list_updater.cc
 @@ -6,6 +6,7 @@
@@ -166,7 +166,7 @@ index 12d45c372d..85fe9f0053 100644
  
  void FilterListUpdater::BumpGeneration() {
 diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
-index 1d92d45069..fdbb9db36a 100644
+index 1d92d45069c3f2881855a28dcda712ca4752882b..fdbb9db36a33998d87ba7e892d74b7438fc50a27 100644
 --- a/chrome/browser/aegis/filter_list_updater.h
 +++ b/chrome/browser/aegis/filter_list_updater.h
 @@ -4,6 +4,7 @@
@@ -211,7 +211,7 @@ index 1d92d45069..fdbb9db36a 100644
    void Finish(bool ok, const std::string& error);
    void ApplyList(CompiledFilterList list);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 692f3c1a5e..f553893e8f 100644
+index 692f3c1a5ed9357bb049d95ecd44cafc9bf7fd74..f553893e8fcfb7086c19471153792fb85c0cbe9b 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -71,7 +71,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -244,7 +244,7 @@ index 692f3c1a5e..f553893e8f 100644
        .filter_list_meta =
            "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
 diff --git a/chrome/common/aegis/filter_list.cc b/chrome/common/aegis/filter_list.cc
-index 0f77dd29d8..bed097884f 100644
+index 0f77dd29d82e5ea664e6144f9479342a9b283061..bed097884f8d577acde8f7b7caf4cac4449897c7 100644
 --- a/chrome/common/aegis/filter_list.cc
 +++ b/chrome/common/aegis/filter_list.cc
 @@ -209,8 +209,8 @@ std::string CompiledFilterListToJson(const CompiledFilterList& list) {

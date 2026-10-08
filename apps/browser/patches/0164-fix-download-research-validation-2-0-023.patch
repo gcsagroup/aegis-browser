@@ -1,4 +1,4 @@
-From 0ece54b43dbc61bf0678c2b9c6f21baa70f12472 Mon Sep 17 00:00:00 2001
+From caa289f88c20b3ff0578f449f263742dbe5f0018 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 16:20:45 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E4=B8=8B=E8=BD=BD?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  4 files changed, 33 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 2b7884ff0d..c4113257e5 100644
+index 2b7884ff0d44ee3293e8b15b7d0b5e21cc615133..c4113257e5d514249c61e9f468a2fc9b683fcddd 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -2495,6 +2495,12 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
@@ -33,7 +33,7 @@ index 2b7884ff0d..c4113257e5 100644
                                          .result = CloneToolResult(result)});
      if (runtime.evidence_history.size() > kMaxRuntimeEvidenceItems) {
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index e874db7794..9f67ca57a3 100644
+index e874db779481c6cbbcb32fdb0df0752ae8b7c7ff..9f67ca57a3a2ee634856a865a19cb66aa35d5a8d 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -350,6 +350,8 @@ class AegisAgentServiceTest : public testing::Test {
@@ -76,7 +76,7 @@ index e874db7794..9f67ca57a3 100644
      base::DictValue value;
      value.Set("download_id", "fixture-download");
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index ade8740a71..2fb45b3070 100644
+index ade8740a711ddf75431bd21be7c996bde487403c..2fb45b30708021f35bfdb0093d7868f0b0665001 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -1339,8 +1339,9 @@ bool AgentCompletionHasRequiredPageEvidence(
@@ -92,7 +92,7 @@ index ade8740a71..2fb45b3070 100644
      }
    }
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 090751bd07..aabc99beb1 100644
+index 090751bd070c652eb2d80a1ca6b7acccd8573195..aabc99beb11ffc89377708d1e044a79e077fd958 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -1571,6 +1571,12 @@ TEST(AegisAgentExecutionTest, ResearchNeedsEverySelectedTabWithActualContent) {

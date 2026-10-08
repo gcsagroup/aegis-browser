@@ -165,9 +165,11 @@ try {
     'apps/browser/scripts/ci/candidate.py',
     'apps/browser/scripts/local-pypi-proxy.py',
     'apps/browser/scripts/measure-browser-processes.py',
+    'apps/browser/scripts/release-assets.py',
+    'apps/browser/scripts/release-github.py',
     'apps/browser/scripts/verify-build-source.py',
   ];
-  if (JSON.stringify(Object.keys(pythonJson.files ?? {}).sort()) !== JSON.stringify(pythonFiles)) fail('Python coverage scope does not match the nine production tools');
+  if (JSON.stringify(Object.keys(pythonJson.files ?? {}).sort()) !== JSON.stringify(pythonFiles)) fail('Python coverage scope does not match the declared production tools');
   const pythonLcovPath = join(coverageRoot, 'python/lcov.info');
   const pythonLcov = parseLcov(freshFile(pythonLcovPath, notBefore), repoRoot);
   requireExactFiles(pythonLcov.files, pythonFiles, 'Python LCOV');

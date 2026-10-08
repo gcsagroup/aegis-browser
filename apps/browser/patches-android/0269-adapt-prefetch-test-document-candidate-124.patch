@@ -1,0 +1,85 @@
+From fe3ad9a2b6f21da7a3cc56c827907280a85d0be6 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 7 Oct 2026 08:06:58 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=9D=E6=8C=81Android155.39=E7=8B=AC?=
+ =?UTF-8?q?=E7=AB=8B=E5=9F=BA=E7=BA=BF=E5=B9=B6=E9=80=92=E5=A2=9E=E5=80=99?=
+ =?UTF-8?q?=E9=80=89124?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../ui/webui/help/aegis_github_update.h       |  4 +--
+ .../browser/loader/prefetch_browsertest.cc    | 32 +++++++++++++++++--
+ 2 files changed, 31 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index f2243cbcc17c749ac567d023ff31233cf0f565e3..e0bdc6a8c06fb263b69771a08cded2a497b8f0e0 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.123";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (123)";
++inline constexpr char kProductVersion[] = "2.1.0.124";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (124)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
+index b38b75d1a854f2e1fb7b9eefd9b532082a8371b7..a91ad42b87a7132786f5f996dcc9e7cbccac0011 100644
+--- a/content/browser/loader/prefetch_browsertest.cc
++++ b/content/browser/loader/prefetch_browsertest.cc
+@@ -1670,10 +1670,23 @@ class PrefetchLoadFlagsBrowserTest : public PrefetchBrowserTestBase {
+     StoragePartitionImpl* partition =
+         static_cast<StoragePartitionImpl*>(rfh->GetStoragePartition());
+     mojo::Remote<network::mojom::URLLoaderFactory> remote;
+-    partition->GetSubresourceProxyingURLLoaderService()->GetFactory(
++    auto context = partition->GetSubresourceProxyingURLLoaderService()->GetFactory(
+         remote.BindNewPipeAndPassReceiver(), rfh->GetFrameTreeNodeId(),
+         proxied_factory_.GetSafeWeakWrapper(), rfh->GetWeakPtr(),
+-        /*prefetched_signed_exchange_cache=*/nullptr);
++        /*prefetched_signed_exchange_cache=*/nullptr,
++            /*document_prefetch_pending_bundle=*/nullptr,
++            SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++                kNetworkService);
++    // 直接创建的测试工厂需要补齐真实HTTP导航的文档提交步骤。
++    CHECK(rfh->GetLastCommittedURL().SchemeIsHTTPOrHTTPS());
++    CHECK(context);
++    EXPECT_EQ(context->document_state(),
++              SubresourceProxyingURLLoaderService::BindContext::DocumentState::
++                  kPending);
++    context->OnDidCommitNavigation(rfh->GetWeakDocumentPtr());
++    EXPECT_EQ(context->document_state(),
++              SubresourceProxyingURLLoaderService::BindContext::DocumentState::
++                  kCommitted);
+     return remote;
+   }
+ 
+@@ -1814,7 +1827,20 @@ class PrefetchRecursiveBrowserTest : public PrefetchBrowserTestBase {
+         partition->GetSubresourceProxyingURLLoaderService()->GetFactory(
+             remote.BindNewPipeAndPassReceiver(), rfh->GetFrameTreeNodeId(),
+             proxied_factory_.GetSafeWeakWrapper(), rfh->GetWeakPtr(),
+-            /*prefetched_signed_exchange_cache=*/nullptr);
++            /*prefetched_signed_exchange_cache=*/nullptr,
++            /*document_prefetch_pending_bundle=*/nullptr,
++            SubresourceProxyingURLLoaderService::DocumentDefaultFactoryKind::
++                kNetworkService);
++    // 直接创建的测试工厂需要补齐真实HTTP导航的文档提交步骤。
++    CHECK(rfh->GetLastCommittedURL().SchemeIsHTTPOrHTTPS());
++    CHECK(bind_context_);
++    EXPECT_EQ(bind_context_->document_state(),
++              SubresourceProxyingURLLoaderService::BindContext::DocumentState::
++                  kPending);
++    bind_context_->OnDidCommitNavigation(rfh->GetWeakDocumentPtr());
++    EXPECT_EQ(bind_context_->document_state(),
++              SubresourceProxyingURLLoaderService::BindContext::DocumentState::
++                  kCommitted);
+     return remote;
+   }
+ 
+-- 
+2.52.0
+

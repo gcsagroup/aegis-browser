@@ -1,0 +1,220 @@
+From 98abfad6b3cddc98c9b74d13f6603e3abc5a9f3a Mon Sep 17 00:00:00 2001
+From: GCSA-aegis <aegis@gcsa.local>
+Date: Thu, 13 Aug 2026 17:34:58 +0800
+Subject: [PATCH] Aegis: add chrome://aegis entries in Settings and menus
+
+Expose GCSA-aegis from Privacy and security, the app menu, and the
+macOS Chromium menu so users do not have to type the URL.
+---
+ chrome/app/chrome_command_ids.h               |  1 +
+ chrome/app/settings_strings.grdp              |  9 +++++++++
+ .../settings/privacy_page/privacy_page.html   |  7 +++++++
+ .../settings/privacy_page/privacy_page.ts     |  6 ++++++
+ .../browser/ui/browser_command_controller.cc  |  6 ++++++
+ chrome/browser/ui/chrome_pages.cc             |  5 +++++
+ chrome/browser/ui/chrome_pages.h              |  1 +
+ chrome/browser/ui/cocoa/main_menu_builder.mm  |  3 +++
+ chrome/browser/ui/toolbar/app_menu_model.cc   |  3 +++
+ .../settings_localized_strings_provider.cc    | 19 +++++++++++++++++++
+ 10 files changed, 60 insertions(+)
+
+diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
+index 67f37eafaa58de562f7930cde137812301b086b3..cd916ee954a1d3d49cf6f5c3ad5ba9271ff359b9 100644
+--- a/chrome/app/chrome_command_ids.h
++++ b/chrome/app/chrome_command_ids.h
+@@ -292,6 +292,7 @@
+ #define IDC_SHOW_READING_MODE_KEYBOARD 40303
+ #define IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL 40304
+ #define IDC_CHROME_ENTERPRISE_RELEASE_NOTES 40305
++#define IDC_SHOW_AEGIS                  40310
+ 
+ // Spell-check
+ #define IDC_SPELLCHECK_SUGGESTION_0     41000
+diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
+index caae29834c2cf5fd07bbfb05dc1f98be09e34470..fd33e2d45112ae63250867128773f95765906632 100644
+--- a/chrome/app/settings_strings.grdp
++++ b/chrome/app/settings_strings.grdp
+@@ -1376,6 +1376,15 @@
+     </message>
+ 
+     <!-- Privacy Page -->
++    <message name="IDS_AEGIS_SETTINGS_MENU" desc="Menu item that opens chrome://aegis privacy modules.">
++      GCSA-aegis
++    </message>
++    <message name="IDS_AEGIS_SETTINGS_ROW_LABEL" desc="Label of the row on the Privacy and security settings page that opens chrome://aegis.">
++      GCSA-aegis
++    </message>
++    <message name="IDS_AEGIS_SETTINGS_ROW_SUBLABEL" desc="Sublabel of the row on the Privacy and security settings page that opens chrome://aegis.">
++      Tracker blocking, fingerprint guard, and Privacy AI
++    </message>
+     <message name="IDS_SETTINGS_PRIVACY" desc="Name of the settings page which allows users to modify privacy and security settings.">
+       Privacy and security
+     </message>
+diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
+index 4d5030096f13459107589eb49bab52e37a1c3dda..591870805ef317288dd05f65d0ce3e4a47337bf8 100644
+--- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
++++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
+@@ -1,5 +1,11 @@
+   <style include="cr-shared-style cr-hidden-style settings-shared"></style>
+   <settings-section page-title="$i18n{privacyPageTitle}">
++    <cr-link-row id="aegisLinkRow"
++        start-icon="privacy:lock"
++        label="$i18n{aegisSettingsRowLabel}"
++        sub-label="$i18n{aegisSettingsRowSublabel}"
++        on-click="onAegisSettingsClick_"
++        external></cr-link-row>
+     <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
+       <settings-clear-browsing-data-dialog
+           on-close="onCbdDialogClosed_"
+@@ -12,6 +18,7 @@
+       </settings-privacy-guide-dialog>
+     </template>
+     <cr-link-row id="clearBrowsingData"
++        class="hr"
+         start-icon="cr:delete"
+         label="$i18n{clearBrowsingData}"
+         sub-label="$i18n{clearBrowsingDataDescription}"
+diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.ts b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
+index c1fb233a132181d8a5f75228264c8e44dd1e34ea..08f191188e266d673ea56286e775c00d21aaa2a8 100644
+--- a/chrome/browser/resources/settings/privacy_page/privacy_page.ts
++++ b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
+@@ -24,6 +24,7 @@ import type {CrToastElement} from 'chrome://resources/cr_elements/cr_toast/cr_to
+ import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
+ import {assert, assertNotReached} from 'chrome://resources/js/assert.js';
+ import {focusWithoutInk} from 'chrome://resources/js/focus_without_ink.js';
++import {OpenWindowProxyImpl} from 'chrome://resources/js/open_window_proxy.js';
+ import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+ 
+ import {loadTimeData} from '../i18n_setup.js';
+@@ -124,6 +125,11 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
+     Router.getInstance().navigateTo(routes.CLEAR_BROWSER_DATA);
+   }
+ 
++  private onAegisSettingsClick_() {
++    this.interactedWithPage_();
++    OpenWindowProxyImpl.getInstance().openUrl('chrome://aegis');
++  }
++
+   private onCookiesClick_() {
+     this.interactedWithPage_();
+ 
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index 3741ba7671d225e307800a48c23c4c4bd1fd121c..a3167649881e1fe5a3d43be1f37c7b597f082b24 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -1291,6 +1291,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
+     case IDC_OPTIONS:
+       ShowSettings(webui::GetBrowserForOpeningWebUi(browser_));
+       break;
++    case IDC_SHOW_AEGIS:
++      ShowAegisPage(browser_->GetBrowserForOpeningWebUi());
++      break;
+     case IDC_EDIT_SEARCH_ENGINES:
+       ShowSearchEngineSettings(webui::GetBrowserForOpeningWebUi(browser_));
+       break;
+@@ -2084,6 +2087,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+                                         !forced_incognito && !is_guest);
+   command_updater->UpdateCommandEnabled(IDC_OPTIONS,
+                                         !forced_incognito || is_guest);
++  command_updater->UpdateCommandEnabled(IDC_SHOW_AEGIS,
++                                        !forced_incognito || is_guest);
+   command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
+                                         !forced_incognito && !is_guest);
+ }
+@@ -2404,6 +2409,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+   command_updater_->UpdateCommandEnabled(IDC_EDIT_SEARCH_ENGINES, show_main_ui);
+   command_updater_->UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
+   command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
++  command_updater_->UpdateCommandEnabled(IDC_SHOW_AEGIS, show_main_ui);
+ #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+   command_updater_->UpdateCommandEnabled(IDC_CHROME_TIPS, show_main_ui);
+   command_updater_->UpdateCommandEnabled(IDC_CHROME_WHATS_NEW, show_main_ui);
+diff --git a/chrome/browser/ui/chrome_pages.cc b/chrome/browser/ui/chrome_pages.cc
+index 7d078c2241af9d14827e6b5d59967702508d676b..6644e985b4b304085071beefb6fc83b2e39bf6a6 100644
+--- a/chrome/browser/ui/chrome_pages.cc
++++ b/chrome/browser/ui/chrome_pages.cc
+@@ -467,6 +467,11 @@ void ShowSettings(BrowserWindowInterface* browser) {
+   ShowSettingsSubPage(browser, std::string());
+ }
+ 
++void ShowAegisPage(BrowserWindowInterface* browser) {
++  FocusWebContents(browser);
++  ShowSingletonTabIgnorePathOverwriteNTP(browser, GURL(kChromeUIAegisURL));
++}
++
+ void ShowSettingsSubPage(BrowserWindowInterface* browser,
+                          std::string_view sub_page) {
+ #if BUILDFLAG(IS_CHROMEOS)
+diff --git a/chrome/browser/ui/chrome_pages.h b/chrome/browser/ui/chrome_pages.h
+index e736f58a09a0181a9e23732aa2ab02487fad0e5f..d10b796b77ec13210903a999110e02f91731e819 100644
+--- a/chrome/browser/ui/chrome_pages.h
++++ b/chrome/browser/ui/chrome_pages.h
+@@ -105,6 +105,7 @@ bool IsTrustedPopupWindowWithScheme(const BrowserWindowInterface* browser,
+ // Various things that open in a settings UI.
+ // NOTE: For Chrome OS settings, use SettingsWindowManager::ShowOSSettings().
+ void ShowSettings(BrowserWindowInterface* browser);
++void ShowAegisPage(BrowserWindowInterface* browser);
+ void ShowSettingsSubPage(BrowserWindowInterface* browser,
+                          std::string_view sub_page);
+ void ShowSettingsSubPageForProfile(Profile* profile, std::string_view sub_page);
+diff --git a/chrome/browser/ui/cocoa/main_menu_builder.mm b/chrome/browser/ui/cocoa/main_menu_builder.mm
+index 4a178fc76a14d7fe6550ef2332dd610648ce3d93..e761467da1e6332595d970f6654dc519985b8611 100644
+--- a/chrome/browser/ui/cocoa/main_menu_builder.mm
++++ b/chrome/browser/ui/cocoa/main_menu_builder.mm
+@@ -78,6 +78,9 @@ NSMenuItem* BuildAppMenu(NSApplication* nsapp,
+                   .target(app_delegate)
+                   .action(@selector(showPreferences:))
+                   .remove_if(is_pwa),
++              Item(IDS_AEGIS_SETTINGS_MENU)
++                  .command_id(IDC_SHOW_AEGIS)
++                  .remove_if(is_pwa),
+               Item(IDS_PREFERENCES)
+                   .command_id(IDC_WEB_APP_SETTINGS)
+                   .remove_if(!is_pwa),
+diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
+index f8f6a64f35600ba2a3805ca0fef1291dff8871cf..ccf31ed6e5a9cdc0a9e9eee64b509aec618ee0bf 100644
+--- a/chrome/browser/ui/toolbar/app_menu_model.cc
++++ b/chrome/browser/ui/toolbar/app_menu_model.cc
+@@ -2332,6 +2332,9 @@ void AppMenuModel::Build() {
+   AddItemWithStringIdAndVectorIcon(
+       this, IDC_OPTIONS, IDS_SETTINGS,
+       features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
++  AddItemWithStringIdAndVectorIcon(
++      this, IDC_SHOW_AEGIS, IDS_AEGIS_SETTINGS_MENU,
++      features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
+ 
+   if (browser_defaults::kShowExitMenuItem) {
+     AddItemWithStringIdAndVectorIcon(
+diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+index 774e32188161b70bd96fddd794c652cd7c1067e9..39cfcded4ad914e7a403e15dc8ba0e06aaaefde8 100644
+--- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
++++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
+@@ -2852,6 +2852,25 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+        IDS_SETTINGS_SECURITY_JAVASCRIPT_GUARDRAILS_MANAGE_SITE_EXCEPTIONS_DESCRIPTION}};
+   html_source->AddLocalizedStrings(kLocalizedStrings);
+ 
++  html_source->AddLocalizedString("aegisSettingsRowLabel",
++                                  IDS_AEGIS_SETTINGS_ROW_LABEL);
++  {
++    const std::string locale =
++        l10n_util::GetApplicationLocale(std::string());
++    if (locale.starts_with("zh-TW") || locale.starts_with("zh-HK")) {
++      html_source->AddString(
++          "aegisSettingsRowSublabel",
++          "追蹤器攔截、指紋防護與本地隱私摘要");
++    } else if (locale.starts_with("zh")) {
++      html_source->AddString(
++          "aegisSettingsRowSublabel",
++          "跟踪器拦截、指纹防护与本地隐私摘要");
++    } else {
++      html_source->AddLocalizedString("aegisSettingsRowSublabel",
++                                      IDS_AEGIS_SETTINGS_ROW_SUBLABEL);
++    }
++  }
++
+   html_source->AddString("cookiesSettingsHelpCenterURL",
+                          chrome::kCookiesSettingsHelpCenterURL);
+ 
+-- 
+2.52.0
+

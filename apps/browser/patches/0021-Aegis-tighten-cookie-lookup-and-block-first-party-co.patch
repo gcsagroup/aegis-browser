@@ -1,4 +1,4 @@
-From 8c288f43ea63c15e485075f60cdf11175b4a09d8 Mon Sep 17 00:00:00 2001
+From d15290a0da7ca1ad0bd1424fbde8db9fc5e3a84e Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 01:27:39 +0800
 Subject: [PATCH] Aegis: tighten cookie lookup and block first-party collect
@@ -23,7 +23,7 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  create mode 100644 chrome/common/aegis/generated/first_party_collect_paths.inc
 
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 56426b38fb..7b11bd3bae 100644
+index 56426b38fb4ccade002740dab1ff0370fdb01353..7b11bd3bae06f524b8516b6d77b4d84d969d68af 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -64,7 +64,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -83,7 +83,7 @@ index 56426b38fb..7b11bd3bae 100644
        .cname_uncloak_hint =
            "Resolves subresource CNAMEs and blocks aliases of tracker hosts.",
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 16950a65cc..e7fa5da4ce 100644
+index 16950a65cc61461aa1f3b6e34f84b7069c5eb2d8..e7fa5da4ce15251d07152f43a09069a6044a5231 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -19,6 +19,8 @@ source_set("aegis") {
@@ -96,7 +96,7 @@ index 16950a65cc..e7fa5da4ce 100644
      "phish_score.h",
      "pref_names.h",
 diff --git a/chrome/common/aegis/cookie_classify.cc b/chrome/common/aegis/cookie_classify.cc
-index 9a76f38269..ff7f8a039c 100644
+index 9a76f382690d6e4e55ba13ab8c0c3fdd873d3c93..ff7f8a039c601e6b94486b965bc52a03b07955f9 100644
 --- a/chrome/common/aegis/cookie_classify.cc
 +++ b/chrome/common/aegis/cookie_classify.cc
 @@ -11,15 +11,68 @@
@@ -269,7 +269,7 @@ index 9a76f38269..ff7f8a039c 100644
    }
    return best;
 diff --git a/chrome/common/aegis/filter_list_matcher.cc b/chrome/common/aegis/filter_list_matcher.cc
-index 81c033a544..2d64414486 100644
+index 81c033a54425776502c35142ddf9a8e63014456b..2d644144867db2a5b43ee5c8ad508a851ed6d9b0 100644
 --- a/chrome/common/aegis/filter_list_matcher.cc
 +++ b/chrome/common/aegis/filter_list_matcher.cc
 @@ -5,6 +5,7 @@
@@ -292,7 +292,7 @@ index 81c033a544..2d64414486 100644
    base::AutoLock lock(lock_);
 diff --git a/chrome/common/aegis/first_party_collect.cc b/chrome/common/aegis/first_party_collect.cc
 new file mode 100644
-index 0000000000..f3eeb289fd
+index 0000000000000000000000000000000000000000..f3eeb289fd8c0b567d9f6854935db2c858f1b0b8
 --- /dev/null
 +++ b/chrome/common/aegis/first_party_collect.cc
 @@ -0,0 +1,43 @@
@@ -341,7 +341,7 @@ index 0000000000..f3eeb289fd
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/first_party_collect.h b/chrome/common/aegis/first_party_collect.h
 new file mode 100644
-index 0000000000..07c6fc57b3
+index 0000000000000000000000000000000000000000..07c6fc57b3da05c1ad4d6fa519155a24195f0e8d
 --- /dev/null
 +++ b/chrome/common/aegis/first_party_collect.h
 @@ -0,0 +1,19 @@
@@ -366,7 +366,7 @@ index 0000000000..07c6fc57b3
 +#endif  // CHROME_COMMON_AEGIS_FIRST_PARTY_COLLECT_H_
 diff --git a/chrome/common/aegis/generated/first_party_collect_paths.inc b/chrome/common/aegis/generated/first_party_collect_paths.inc
 new file mode 100644
-index 0000000000..31409d2044
+index 0000000000000000000000000000000000000000..31409d204483719c8750787f8a584ae38ee83a5c
 --- /dev/null
 +++ b/chrome/common/aegis/generated/first_party_collect_paths.inc
 @@ -0,0 +1,15 @@
@@ -386,7 +386,7 @@ index 0000000000..31409d2044
 +    "/fbevents.php",
 +};
 diff --git a/chrome/common/aegis/generated/tracking_query_params.inc b/chrome/common/aegis/generated/tracking_query_params.inc
-index fa11c1803c..6d304db53f 100644
+index fa11c1803c0b99d05376577e352779ca62c26ee7..6d304db53f00552c452e3a5f1d9089eca7bbcaff 100644
 --- a/chrome/common/aegis/generated/tracking_query_params.inc
 +++ b/chrome/common/aegis/generated/tracking_query_params.inc
 @@ -25,4 +25,13 @@ constexpr std::string_view kTrackingQueryParams[] = {
@@ -404,7 +404,7 @@ index fa11c1803c..6d304db53f 100644
 +    "mkt_tok",
  };
 diff --git a/third_party/aegis_policy/policy_snapshot.json b/third_party/aegis_policy/policy_snapshot.json
-index f0ff867c34..397444673f 100644
+index f0ff867c3445f94d9db64eb894e1ecd91bbc6d92..397444673f8857b8d4f34622ac711671f142a634 100644
 --- a/third_party/aegis_policy/policy_snapshot.json
 +++ b/third_party/aegis_policy/policy_snapshot.json
 @@ -1,6 +1,6 @@

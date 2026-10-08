@@ -1,4 +1,4 @@
-From 6ffe23d340dcce571a387e615d455a5e3bff4b3d Mon Sep 17 00:00:00 2001
+From 050a6c80d2629b248e44e45835e37f9cce031e1d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 12:43:06 +0800
 Subject: [PATCH] aegis: bind model browser capabilities to live task context
@@ -12,7 +12,7 @@ Subject: [PATCH] aegis: bind model browser capabilities to live task context
  5 files changed, 117 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index e6b3660253..48e6bd1629 100644
+index e6b3660253e2391b4505d49d62038162a9551591..48e6bd16294d6e52e94b07af33d571760e7fbd06 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1586,9 +1586,9 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
@@ -96,7 +96,7 @@ index e6b3660253..48e6bd1629 100644
      }
    } else if (const std::string* target = call.arguments.FindString("url")) {
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index d109ec61b4..eea716f040 100644
+index d109ec61b45d440598ccef42b09cf9d1abd73200..eea716f040b6d774eeef7b7e4318633ae66aa9ed 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -252,6 +252,7 @@ class AegisAgentService : public KeyedService {
@@ -108,7 +108,7 @@ index d109ec61b4..eea716f040 100644
        const AgentModelEvent& event,
        std::string* error) const;
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 5aae24c048..c50fffea0c 100644
+index 5aae24c04826e01374fb1f370bea62c7ea1ab56f..c50fffea0c9ff2037839b7675efee4c2084bbba0 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -263,6 +263,14 @@ std::string BuildAgentExecutionPrompt(
@@ -162,7 +162,7 @@ index 5aae24c048..c50fffea0c 100644
      const AgentModelParseResult& result,
      std::string_view expected_tool,
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index 391150cd7d..d1e352f3a0 100644
+index 391150cd7d55858ac448fda47dadfb14eab2fd57..d1e352f3a0a681f71aa7e2e48ab44b38d3dd50d0 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -38,6 +38,15 @@ std::string BuildAgentExecutionPrompt(
@@ -182,7 +182,7 @@ index 391150cd7d..d1e352f3a0 100644
  // one native tool call and a completed event. The requested tool must match the
  // browser-selected plan step; model prose or JSON text can never become an
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 14bab2ef4f..543d1e6ec4 100644
+index 14bab2ef4f0aed883e550b75748685152be4c8ff..543d1e6ec40e976c61aafd1cbd3bdd73308118c9 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -101,6 +101,20 @@ TEST(AegisAgentExecutionTest, SelectsOnlyExactBrowserChosenTool) {

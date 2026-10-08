@@ -1,4 +1,4 @@
-From b29397bc749e96246bc753e60ac32b11ed291b4d Mon Sep 17 00:00:00 2001
+From eea01ec27ab609a0fd299d71ff617b91a6c9c0c2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 05:30:45 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E6=8E=A5=E7=AE=A1=E5=90=8E=E6=92=A4?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  4 files changed, 85 insertions(+), 22 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 43ae7696a5..df3a1af1d2 100644
+index 43ae7696a55f6cb79c24c47910cc7c0f1d3aaf20..df3a1af1d235227a6da980cbcac756d99fa14998 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1198,6 +1198,11 @@ bool AegisAgentService::BeginUserTakeover(const std::string& task_id) {
@@ -59,7 +59,7 @@ index 43ae7696a5..df3a1af1d2 100644
      return false;
    }
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index ed00df842f..7cba1b2fd8 100644
+index ed00df842fa313efce5415e34951b6dd1ae4d26c..7cba1b2fd8902b330158a04a005563dac545d35c 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -89,6 +89,25 @@ class AegisAgentServiceTestPeer {
@@ -123,7 +123,7 @@ index ed00df842f..7cba1b2fd8 100644
    network::TestURLLoaderFactory factory;
    base::test::TestFuture<bool, std::string,
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 706a407156..69847c4012 100644
+index 706a4071567ceb25cde3b950b9eeda219e9ec96f..69847c4012fc1eaabd4d015835179af4c99a7f5f 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -665,31 +665,36 @@ function render(next: TaskSnapshot) {
@@ -188,7 +188,7 @@ index 706a407156..69847c4012 100644
        busy || !next.undoAvailable;
    element<HTMLButtonElement>('stop-button').disabled =
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 2d84b010fb..c581aee523 100644
+index 2d84b010fba3738e3c35c9f547e72362f523dc81..c581aee5234905d0c8b5dc299c97abccc41258d2 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

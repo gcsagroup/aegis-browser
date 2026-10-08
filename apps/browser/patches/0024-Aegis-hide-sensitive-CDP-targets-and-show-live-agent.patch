@@ -1,4 +1,4 @@
-From ee850f80ffe7078dce96ef3577c46893ad0c25c7 Mon Sep 17 00:00:00 2001
+From 89d4cb5049cce7ff37911752c96e296774f32882 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 16:59:10 +0800
 Subject: [PATCH] Aegis: hide sensitive CDP targets and show live agent
@@ -30,7 +30,7 @@ agent WebSocket counts appear on chrome://aegis.
  create mode 100644 chrome/common/aegis/cdp_ws_hook.h
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 9c6887281a..0f0b0db49a 100644
+index 9c6887281abe883a19fba50e7249a0d810543e09..0f0b0db49a5b8dfdefc3c2799b937f0f29576038 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -11,6 +11,7 @@
@@ -113,7 +113,7 @@ index 9c6887281a..0f0b0db49a 100644
  
  bool AegisService::IsPolicyWorkerReady() const {
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 8a64464ded..03b752f493 100644
+index 8a64464ded3606fbdd968ebedef9c8c767d3c1e7..03b752f4937e9be578915a9e0202e4e836152267 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -119,6 +119,8 @@ class AegisService : public chrome::mojom::AegisHost {
@@ -134,10 +134,10 @@ index 8a64464ded..03b752f493 100644
    void InstallReporterCallbacks();
    void OnHeuristicSummary(PageSnapshot snapshot,
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index 92b4d3289f..77937b8a1e 100644
+index 2e694986c7617565320e7259f4548ba6e75561b4..a05f0ab7b122da5dd38ea0b34e7150e4063f4af9 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -290,6 +290,7 @@ static_library("devtools") {
+@@ -292,6 +292,7 @@ static_library("devtools") {
        "//chrome/browser/user_education",
        "//chrome/browser/web_applications",
        "//chrome/common",
@@ -146,7 +146,7 @@ index 92b4d3289f..77937b8a1e 100644
        "//components/input",
        "//components/keep_alive_registry",
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-index d1b45e8064..8b50dc530f 100644
+index 37a83372cec45117a84b810f9b4667bcc8a26a74..7c753799d17b823c90d79583a2cde5a8286dea53 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 @@ -43,6 +43,8 @@
@@ -158,7 +158,7 @@ index d1b45e8064..8b50dc530f 100644
  #include "chrome/common/chrome_switches.h"
  #include "chrome/grit/browser_resources.h"
  #include "components/guest_view/browser/guest_view_base.h"
-@@ -418,6 +420,22 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
+@@ -421,6 +423,22 @@ bool ChromeDevToolsManagerDelegate::AllowInspectingTarget(
    return IsInspectionAllowed(profile, agent_host);
  }
  
@@ -181,7 +181,7 @@ index d1b45e8064..8b50dc530f 100644
  void ChromeDevToolsManagerDelegate::ClientAttached(
      content::DevToolsAgentHostClientChannel* channel) {
    DCHECK(sessions_.find(channel) == sessions_.end());
-@@ -544,6 +562,7 @@ void ChromeDevToolsManagerDelegate::AcceptDebugging(AcceptCallback callback) {
+@@ -550,6 +568,7 @@ void ChromeDevToolsManagerDelegate::AcceptDebugging(AcceptCallback callback) {
  
  void ChromeDevToolsManagerDelegate::SetActiveWebSocketConnections(
      size_t count) {
@@ -190,7 +190,7 @@ index d1b45e8064..8b50dc530f 100644
      // We need to reset the pointer to the infobar before closing it because
      // closing the infobar deletes it.
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.h b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
-index 5a1fb503d2..61de40316c 100644
+index 5a1fb503d2ce171289b6ac406fdaff303f76a28c..61de40316ca1b9930e41c9ff138935feb1a14f30 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.h
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.h
 @@ -90,6 +90,8 @@ class ChromeDevToolsManagerDelegate : public content::DevToolsManagerDelegate,
@@ -203,7 +203,7 @@ index 5a1fb503d2..61de40316c 100644
        content::DevToolsAgentHostClientChannel* channel) override;
    void ClientDetached(
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index d3e154780c..daad9a4c8f 100644
+index d3e154780ced22f64db8dd291687112a6b17a0d0..daad9a4c8feee8343b11c414aab90d5e4e4617a5 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -33,6 +33,7 @@ interface AegisStatus {
@@ -251,7 +251,7 @@ index d3e154780c..daad9a4c8f 100644
    if (on) {
      connectEl.textContent =
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 391f974cf6..8e10165872 100644
+index 391f974cf6aa771bf4aed31fc56020542213b1f2..8e10165872ec3b88a21565c08898c62991fd37b6 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -120,18 +120,20 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -329,7 +329,7 @@ index 391f974cf6..8e10165872 100644
            "Changes apply immediately. Filter lists refresh about once a day.",
    };
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 31e3eda2bd..04a45b1a41 100644
+index 31e3eda2bd78347f158fc9083576ebe00a4feb57..04a45b1a418902b3196a4c0f9d42cf64e889394c 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -147,6 +147,8 @@ base::DictValue AegisUIHandler::BuildStatus() const {
@@ -342,7 +342,7 @@ index 31e3eda2bd..04a45b1a41 100644
    status.Set("ollamaModel", service->OllamaModel());
    base::ListValue events;
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 15a47fc245..6704252420 100644
+index 15a47fc24538d82bf2a8080ae5d96a05aa3577d2..67042524205c677ac895a1edb4bc082e50e21e4d 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -1,6 +1,8 @@
@@ -381,7 +381,7 @@ index 15a47fc245..6704252420 100644
 +}
 diff --git a/chrome/common/aegis/cdp_target_filter.cc b/chrome/common/aegis/cdp_target_filter.cc
 new file mode 100644
-index 0000000000..1b0e31324a
+index 0000000000000000000000000000000000000000..1b0e31324a362f637a27a2ac689a12cd6eb1d4a0
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_target_filter.cc
 @@ -0,0 +1,19 @@
@@ -406,7 +406,7 @@ index 0000000000..1b0e31324a
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/cdp_target_filter.h b/chrome/common/aegis/cdp_target_filter.h
 new file mode 100644
-index 0000000000..9b474a1ba5
+index 0000000000000000000000000000000000000000..9b474a1ba590f496d9aa3c858e3f341ec057f577
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_target_filter.h
 @@ -0,0 +1,20 @@
@@ -432,7 +432,7 @@ index 0000000000..9b474a1ba5
 +#endif  // CHROME_COMMON_AEGIS_CDP_TARGET_FILTER_H_
 diff --git a/chrome/common/aegis/cdp_target_filter_unittest.cc b/chrome/common/aegis/cdp_target_filter_unittest.cc
 new file mode 100644
-index 0000000000..c117fd63e6
+index 0000000000000000000000000000000000000000..c117fd63e6c75250958b06e201561022cfe05cf4
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_target_filter_unittest.cc
 @@ -0,0 +1,37 @@
@@ -475,7 +475,7 @@ index 0000000000..c117fd63e6
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/cdp_ws_hook.cc b/chrome/common/aegis/cdp_ws_hook.cc
 new file mode 100644
-index 0000000000..5eb46d006e
+index 0000000000000000000000000000000000000000..5eb46d006e30348ef22b6838762bfeae4dca290e
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_ws_hook.cc
 @@ -0,0 +1,44 @@
@@ -525,7 +525,7 @@ index 0000000000..5eb46d006e
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/cdp_ws_hook.h b/chrome/common/aegis/cdp_ws_hook.h
 new file mode 100644
-index 0000000000..8407761169
+index 0000000000000000000000000000000000000000..8407761169ac4dc0fe4a53142ccc710b14695f81
 --- /dev/null
 +++ b/chrome/common/aegis/cdp_ws_hook.h
 @@ -0,0 +1,25 @@
@@ -555,10 +555,10 @@ index 0000000000..8407761169
 +
 +#endif  // CHROME_COMMON_AEGIS_CDP_WS_HOOK_H_
 diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
-index fbfe1abebb..2827a0ec55 100644
+index e63f76cf8447df74b8a2e24769e524843d8be49f..42d1fb5b93b36b03f216b851c7217fe32b7c4007 100644
 --- a/content/browser/devtools/devtools_http_handler.cc
 +++ b/content/browser/devtools/devtools_http_handler.cc
-@@ -403,9 +403,7 @@ net::IPEndPoint DevToolsHttpHandler::GetServerIpAddress() const {
+@@ -402,9 +402,7 @@ net::IPEndPoint DevToolsHttpHandler::GetServerIpAddress() const {
  }
  
  DevToolsHttpHandler::~DevToolsHttpHandler() {
@@ -569,7 +569,7 @@ index fbfe1abebb..2827a0ec55 100644
      delegate_->SetActiveWebSocketConnections(0);
    }
    // Disconnecting sessions might lead to the last minute messages generated
-@@ -892,9 +890,7 @@ void DevToolsHttpHandler::OnWebSocketMessage(int connection_id,
+@@ -891,9 +889,7 @@ void DevToolsHttpHandler::OnWebSocketMessage(int connection_id,
  
  void DevToolsHttpHandler::OnClose(int connection_id) {
    auto removed_count = connection_to_client_.erase(connection_id);
@@ -580,7 +580,7 @@ index fbfe1abebb..2827a0ec55 100644
      delegate_->SetActiveWebSocketConnections(connection_to_client_.size());
    }
  }
-@@ -1021,8 +1017,7 @@ void DevToolsHttpHandler::AcceptWebSocket(
+@@ -1020,8 +1016,7 @@ void DevToolsHttpHandler::AcceptWebSocket(
      const net::HttpServerRequestInfo& request) {
    if (!thread_)
      return;

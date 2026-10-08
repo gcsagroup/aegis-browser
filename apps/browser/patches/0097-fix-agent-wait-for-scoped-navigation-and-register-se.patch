@@ -1,4 +1,4 @@
-From 7126a2b2c6a1dec70e39f5109d896f355fc7faaa Mon Sep 17 00:00:00 2001
+From 2de550eca2ba0a449e8eea43549a72a1082cfbaa Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 14:58:47 +0800
 Subject: [PATCH] fix(agent): wait for scoped navigation and register services
@@ -10,7 +10,7 @@ Subject: [PATCH] fix(agent): wait for scoped navigation and register services
  2 files changed, 44 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 48e6bd1629..f00307ab85 100644
+index 48e6bd16294d6e52e94b07af33d571760e7fbd06..f00307ab854bb4a210523e485f9bc4241b89e907 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -72,6 +72,9 @@ constexpr size_t kMaxSuggestedGoalBytes = 4096;
@@ -95,11 +95,11 @@ index 48e6bd1629..f00307ab85 100644
    if (!tab) {
      Transition(task_id, AgentTaskState::kFailed,
 diff --git a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-index de5cbeb641..95dcd11ec6 100644
+index f594d3b3abceae50b957730efce76a3855cbd059..ca2b84f6293a6358c07ad263d21cf2ebeee82174 100644
 --- a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
 +++ b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-@@ -16,6 +16,8 @@
- #include "chrome/browser/accessibility_annotator/accessibility_annotator_backend_factory.h"
+@@ -15,6 +15,8 @@
+ #include "chrome/browser/accessibility/page_colors_controller_factory.h"
  #include "chrome/browser/account_settings/account_setting_service_factory.h"
  #include "chrome/browser/actor/actor_keyed_service_factory.h"
 +#include "chrome/browser/aegis/aegis_service_factory.h"
@@ -107,7 +107,7 @@ index de5cbeb641..95dcd11ec6 100644
  #include "chrome/browser/affiliations/affiliation_service_factory.h"
  #include "chrome/browser/ai/ai_data_keyed_service_factory.h"
  #include "chrome/browser/autocomplete/aim_eligibility_service_factory.h"
-@@ -753,6 +755,8 @@ void ChromeBrowserMainExtraPartsProfiles::
+@@ -747,6 +749,8 @@ void ChromeBrowserMainExtraPartsProfiles::
    search_integrity::SearchIntegrityFactory::GetInstance();
  #endif
    actor::ActorKeyedServiceFactory::GetInstance();

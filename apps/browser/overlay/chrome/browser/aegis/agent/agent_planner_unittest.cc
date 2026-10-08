@@ -194,8 +194,10 @@ TEST(AegisAgentGoalRegressionTest, NegatedHintKeepsPageBoundReadRequirement) {
 }
 
 TEST(AegisAgentGoalRegressionTest, BoundPageRequirementSurvivesScopeNarrowing) {
-  const std::string_view goal = "不要整理书签，总结当前页。";
-  // 文本本身仍有禁止范围歧义；统一门槛必须依赖浏览器范围补足。
+  const std::string_view goal = "帮我看看。";
+  const std::string_view explicit_goal = "不要整理书签，总结当前页。";
+  // 独立总结请求已能识别；缺少页面词的请求仍须依赖已绑定的浏览器范围。
+  EXPECT_TRUE(AgentGoalRequiresPageEvidence(explicit_goal));
   EXPECT_FALSE(AgentGoalRequiresPageEvidence(goal));
   AgentTaskScope scope = MaximumScope();
   EXPECT_TRUE(AgentTaskRequiresPageEvidence(goal, scope));
@@ -217,6 +219,10 @@ TEST(AegisAgentGoalRegressionTest, BoundPageRequirementSurvivesScopeNarrowing) {
   // 此范围无法形成合法的已绑定页面计划；不能把 extract 当作 observe 授权。
   EXPECT_FALSE(AgentTaskRequiresPageEvidence(goal, scope));
   EXPECT_FALSE(BuildBrowserReadOnlyRecoveryPlan(goal, scope, registry));
+  // 明确要求总结时，缩小工具范围不能取消证据要求，也不能凭空补授 observe。
+  EXPECT_TRUE(AgentTaskRequiresPageEvidence(explicit_goal, scope));
+  EXPECT_FALSE(
+      BuildBrowserReadOnlyRecoveryPlan(explicit_goal, scope, registry));
 
   scope.allowed_tools = {"page.observe", "tab.list"};
   scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
@@ -1535,6 +1541,37 @@ TEST(AegisAgentPlannerTest, InstallerSourceGoalRequiresNativeCandidateCheck) {
   }
 }
 
+
+TEST(AegisAgentPlannerTest, TaskTabReferencesDoNotBindTheCurrentPage) {
+  for (std::string_view goal :
+       {"列出这个任务打开的标签页。", "列出本任務開啟的標籤頁。",
+        "List open tabs for this task.", "列出当前窗口中本任务的标签页。",
+        "读取当前标签信息，无法读取的部分请说明", "讀取目前標籤資訊"}) {
+    SCOPED_TRACE(goal);
+    EXPECT_FALSE(AgentGoalRefersToCurrentPage(goal));
+    EXPECT_FALSE(AgentGoalRequestsWindowTabMetadata(goal));
+    EXPECT_FALSE(AgentBrowserGoalNeedsClarification(
+        goal, AgentWorkflowKind::kBrowserSteward));
+  }
+}
+
+TEST(AegisAgentPlannerTest, PageRequestAfterNegatedClauseKeepsItsOwnScope) {
+  for (std::string_view goal :
+       {"不要整理书签，总结当前页。", "不要整理書籤，總結目前網頁。",
+        "Do not organize bookmarks, summarize this page."}) {
+    SCOPED_TRACE(goal);
+    EXPECT_TRUE(AgentGoalRefersToCurrentPage(goal));
+    EXPECT_EQ(AgentWorkflowKind::kResearch,
+              ConstrainWorkflowToUserIntent(
+                  goal, AgentWorkflowKind::kBrowserSteward));
+  }
+  for (std::string_view goal :
+       {"不要整理书签、总结当前页。", "不要整理書籤、翻譯目前網頁。",
+        "Do not organize bookmarks or summarize this page."}) {
+    SCOPED_TRACE(goal);
+    EXPECT_FALSE(AgentGoalRefersToCurrentPage(goal));
+  }
+}
 
 TEST(AegisAgentPlannerTest, CloseRequiresExplicitActionNotStatusOrQuestion) {
   for (const char* goal : {"其他尚未关闭的条件", "列出尚未关闭的标签页", "关闭标签页了吗？",

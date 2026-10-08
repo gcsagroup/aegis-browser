@@ -1,0 +1,89 @@
+From 882881e698017609fa5f97c25187ac37ddc6758c Mon Sep 17 00:00:00 2001
+From: Aegis integration <aegis-integration@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 05:13:42 +0800
+Subject: [PATCH] =?UTF-8?q?=E7=BB=9F=E4=B8=80=E7=9B=91=E6=8E=A7=E5=9B=9E?=
+ =?UTF-8?q?=E8=B0=83=E9=A3=8E=E6=A0=BC=E4=B8=8E=E8=B7=A8=E5=B9=B3=E5=8F=B0?=
+ =?UTF-8?q?=E7=89=88=E6=9C=AC=EF=BC=8C=E5=80=99=E9=80=89=20102?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/resources/aegis_agent/agent.ts | 21 +++++++++++--------
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ 2 files changed, 14 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 3180a488511149b7d0e52b37e90e5a5142e9183c..1599e8118d9ceedd1b164f86ecaebe1b044e8cbc 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -911,23 +911,28 @@ function renderMonitors(monitors: MonitorSummary[]) {
+         }
+       });
+     };
+-    toggle.addEventListener('click', () => runMonitorAction(() =>
+-      proxy.handler.setMonitorPaused(
+-          monitor.taskId, monitor.monitorId, !monitor.paused)));
++    toggle.addEventListener('click', () => {
++      runMonitorAction(() => proxy.handler.setMonitorPaused(
++          monitor.taskId, monitor.monitorId, !monitor.paused));
++    });
+     const remove = document.createElement('button');
+     remove.type = 'button';
+     remove.dataset['monitorAction'] = 'delete';
+     remove.textContent = loadTimeData.getString('deleteMonitor');
+     remove.disabled = busy;
+-    remove.addEventListener('click', () => runMonitorAction(() =>
+-      proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
++    remove.addEventListener('click', () => {
++      runMonitorAction(() =>
++          proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId));
++    });
+     const check = document.createElement('button');
+     check.type = 'button';
+     check.dataset['monitorAction'] = 'check';
+     check.textContent = loadTimeData.getString('checkMonitorNow');
+     check.disabled = busy || monitor.paused;
+-    check.addEventListener('click', () => runMonitorAction(() =>
+-      proxy.handler.checkMonitorNow(monitor.taskId, monitor.monitorId)));
++    check.addEventListener('click', () => {
++      runMonitorAction(() =>
++          proxy.handler.checkMonitorNow(monitor.taskId, monitor.monitorId));
++    });
+     actions.append(check, toggle, remove, actionStatus);
+     li.append(title, origin, retention, nextRun, outcome, summary, failures, actions);
+     list.append(li);
+@@ -1840,7 +1845,6 @@ function bindActions() {
+     }, true);
+   });
+   element('plan-button').addEventListener('click', () => {
+-
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+     if (isDownloadedFileReviewGoal(goal)) {
+       void reviewCurrentDownload();
+@@ -1868,7 +1872,6 @@ function bindActions() {
+       autoRunTaskId = created.snapshot.taskId;
+       return proxy.handler.requestPlan(created.snapshot.taskId);
+     }, true);
+-
+   });
+   element('review-download').addEventListener('click', () => {
+     void reviewCurrentDownload();
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 08915bfdb86c83c83ad6bfcd39bd900f97f94e01..efa9eca3be99a18cebe8257ee3a45ea41dd34001 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.101";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (101)";
++inline constexpr char kProductVersion[] = "2.0.0.102";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (102)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

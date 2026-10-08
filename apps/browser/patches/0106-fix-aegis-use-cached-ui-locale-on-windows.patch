@@ -1,4 +1,4 @@
-From 79eba5cc5bb73380911625e0eedabdd166d962d4 Mon Sep 17 00:00:00 2001
+From 03882c7e2e68d236ca46ffef651f9c3278da1b16 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 17:34:38 +0800
 Subject: [PATCH] =?UTF-8?q?fix(aegis):=20=E4=BD=BF=E7=94=A8=E7=BC=93?=
@@ -18,7 +18,7 @@ Content-Transfer-Encoding: 8bit
  5 files changed, 37 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
-index 8fe7094943..9ca1741708 100644
+index 8fe70949435a80bda2f20f263e7fc1ef9247046d..9ca1741708f602ea8bb8a4c9276e0e1bd8bde4d2 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 @@ -3,14 +3,20 @@
@@ -72,7 +72,7 @@ index 8fe7094943..9ca1741708 100644
                         NoCrashWhenAllBrowsersClosedBeforeDisconnect) {
    ChromeDevToolsManagerDelegate* delegate =
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
-index dfac0332d7..18c991d9b7 100644
+index c496409d0aa8b4061c22d72a586eeb82a45ece11..475be99fd03080e0481bb1a501c879bebe1ffe0b 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_delegate.cc
 @@ -14,6 +14,7 @@
@@ -88,10 +88,10 @@ index dfac0332d7..18c991d9b7 100644
  #include "components/infobars/core/confirm_infobar_delegate.h"
  #include "components/infobars/core/infobar_delegate.h"
 -#include "ui/base/l10n/l10n_util.h"
+ #include "ui/base/page_transition_types.h"
+ #include "ui/base/window_open_disposition.h"
  #include "ui/gfx/text_constants.h"
- 
- DevToolsRemoteServerInfobarDelegate::DevToolsRemoteServerInfobarDelegate() =
-@@ -43,9 +43,8 @@ bool DevToolsRemoteServerInfobarDelegate::ShouldExpire(
+@@ -45,9 +45,8 @@ bool DevToolsRemoteServerInfobarDelegate::ShouldExpire(
  }
  
  std::u16string DevToolsRemoteServerInfobarDelegate::GetMessageText() const {
@@ -103,7 +103,7 @@ index dfac0332d7..18c991d9b7 100644
  }
  
  int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
-@@ -60,8 +59,7 @@ int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
+@@ -62,8 +61,7 @@ int DevToolsRemoteServerInfobarDelegate::GetButtons() const {
  
  std::u16string DevToolsRemoteServerInfobarDelegate::GetButtonLabel(
      InfoBarButton button) const {
@@ -114,7 +114,7 @@ index dfac0332d7..18c991d9b7 100644
  
  bool DevToolsRemoteServerInfobarDelegate::Accept() {
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 700c477220..39eecefdf5 100644
+index 700c477220bc3c751a9dec32d29c936655a67a74..39eecefdf587c528431af62d3988017ad27903a6 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -7,6 +7,7 @@
@@ -143,7 +143,7 @@ index 700c477220..39eecefdf5 100644
    source->AddString("subtitle", strings.subtitle);
    source->AddString("overviewTitle", strings.overview_title);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index b7c2900fe3..333d5473c4 100644
+index b7c2900fe376ded75e0f772353219be58c2d3ef6..333d5473c4f27c4505d80d049d07c247dc59656f 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -27,6 +27,7 @@
@@ -172,10 +172,10 @@ index b7c2900fe3..333d5473c4 100644
      aegis::SummarizeResult result;
      result.error = "model request already in progress";
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 51b00b4f98..a1dd52cbf5 100644
+index 89d3e438529423331285fb337ce9439ef385cde9..c88da50a589cd9b20f714950a7a875682469cae3 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -2830,8 +2830,7 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+@@ -2882,8 +2882,7 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
    html_source->AddLocalizedString("aegisSettingsRowLabel",
                                    IDS_AEGIS_SETTINGS_ROW_LABEL);
    {
