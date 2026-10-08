@@ -39,5 +39,5 @@ use_siso = false
 v8_enable_memory_corruption_api = false
 
 # 产品版本独立于 Chromium 内核版本；版本码高于既有 151 内测包并逐次递增。
-android_override_version_name = "Ver 2.2 (143)"
-android_override_version_code = "2002000143"
+android_override_version_name = "Ver 2.2 (144)"
+android_override_version_code = "2002000144"
