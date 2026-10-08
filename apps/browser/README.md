@@ -8,7 +8,7 @@ GCSA-aegis Browser integrates privacy and security controls into Chromium and it
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
-> **2026-10-09 · 桌面鼠标手势候选：** Ver 2.2 (141) 基于 Chromium `155.0.8059.40`，支持网页、设置页和内置 PDF 的原生右键手势。Mac ARM64 的 33 项测试及跨框架额外 5 次复测通过；Windows 构建与实机验收尚未完成。[使用指南](docs/mouse-gestures.zh-CN.md) · [验收记录](../../docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。代码位于依赖 [#32](https://github.com/gcsagroup/aegis-browser/pull/32) 的 [#33](https://github.com/gcsagroup/aegis-browser/pull/33) 草稿 PR；记录时 main 尚未升级，未正式发行。
+> **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](../../docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
 
 > **Historical evidence (2026-09-22):** The macOS Ver 2.0 (061) results, including 539 native regressions, belong only to the candidate identified in the [audit record](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md). They do not establish acceptance of the current source.
 
