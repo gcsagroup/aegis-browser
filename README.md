@@ -20,6 +20,8 @@
 
 Aegis is under active development. **Release No-Go:** neither the macOS browser nor the native iOS/iPadOS app has a qualified distributable build.
 
+> **2026-10-09 · 桌面鼠标手势候选：** Ver 2.2 (141) 基于 Chromium `155.0.8059.40`，支持网页、设置页和内置 PDF 的原生右键手势。Mac ARM64 的 33 项测试及跨框架额外 5 次复测通过；Windows 构建与实机验收尚未完成。[使用指南](apps/browser/docs/mouse-gestures.zh-CN.md) · [验收记录](docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。代码位于依赖 [#32](https://github.com/gcsagroup/aegis-browser/pull/32) 的 [#33](https://github.com/gcsagroup/aegis-browser/pull/33) 草稿 PR；记录时 main 尚未升级，未正式发行。
+
 > **2026-10-03 · iOS 2.2.0 source prerelease:** page assistance, filtering, downloads, workspaces, tab groups and independent iPad windows are integrated. See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for validation and usage. No installable signed IPA is available.
 
 ## Core capabilities
