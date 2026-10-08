@@ -23,7 +23,7 @@ struct AgentTranslationSegment {
 
 // 同一维度使用相同原文前后缀；浏览器据此核对值，再自行分组。
 struct AgentResearchComparisonValue {
-  std::string source_url;
+  int source_id = 0;
   std::string value;
 };
 struct AgentResearchComparison {
@@ -45,7 +45,16 @@ struct AgentCompletionSummary {
 struct AgentExecutionEvidence {
   std::string tool_name;
   AgentToolResult result;
+  // Native-only binding. Never infer this capability from result JSON or URLs.
+  int research_source_id = 0;
+  std::optional<AgentDocumentRef> research_document;
 };
+
+// Selected research retains the latest native-bound attempt per source, including
+// a failed read that invalidates earlier text. Raw action receipts remain separate.
+void RetainLatestAgentResearchObservation(
+    std::vector<AgentExecutionEvidence>& history,
+    AgentExecutionEvidence observation);
 
 // 仅对疑似重复汉字追加一次短校对；不让校对修改事实、数字、网址或引文。
 bool AgentSummaryNeedsTextReview(std::string_view summary);

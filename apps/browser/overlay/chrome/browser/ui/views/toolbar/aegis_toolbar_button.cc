@@ -17,8 +17,9 @@
 #include "chrome/browser/aegis/summary_session.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_bubble_delegate_view.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/vector_icons/vector_icons.h"
@@ -50,15 +51,16 @@ constexpr int kBubbleWidth = 440;
 constexpr int kResultMaxHeight = 300;
 constexpr base::TimeDelta kIntroDuration = base::Seconds(4);
 
-aegis::AegisService* ServiceForBrowser(Browser* browser) {
+aegis::AegisService* ServiceForBrowser(BrowserWindowInterface* browser) {
   if (!browser) {
     return nullptr;
   }
   return aegis::AegisServiceFactory::GetForProfile(browser->GetProfile());
 }
 
-aegis::AegisService* ServiceForWebContents(Browser* browser,
-                                           content::WebContents* web_contents) {
+aegis::AegisService* ServiceForWebContents(
+    BrowserWindowInterface* browser,
+    content::WebContents* web_contents) {
   aegis::AegisService* service = ServiceForBrowser(browser);
   if (!service || !web_contents) {
     return nullptr;
@@ -155,11 +157,11 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
 
  public:
   AegisPageBubble(AegisToolbarButton* anchor,
-                  Browser* browser,
+                  BrowserWindowInterface* browser,
                   aegis::PagePrivacySummary summary)
       : LocationBarBubbleDelegateView(
             views::BubbleAnchor(anchor),
-            browser->tab_strip_model()->GetActiveWebContents(),
+            browser->GetTabStripModel()->GetActiveWebContents(),
             /*autosize=*/true),
         browser_(browser),
         summary_(std::move(summary)) {
@@ -387,7 +389,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
 
   void TogglePause() {
     content::WebContents* source =
-        browser_->tab_strip_model()->GetActiveWebContents();
+        browser_->GetTabStripModel()->GetActiveWebContents();
     aegis::AegisService* service = ServiceForWebContents(browser_, source);
     if (!service || summary_.site_key.empty()) {
       return;
@@ -402,14 +404,14 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
 
   bool CanSummarizeCurrentPage() const {
     content::WebContents* source =
-        browser_->tab_strip_model()->GetActiveWebContents();
+        browser_->GetTabStripModel()->GetActiveWebContents();
     return ServiceForWebContents(browser_, source) &&
            source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS();
   }
 
   void OpenSummary() {
     content::WebContents* source =
-        browser_->tab_strip_model()->GetActiveWebContents();
+        browser_->GetTabStripModel()->GetActiveWebContents();
     if (!ServiceForWebContents(browser_, source) ||
         !source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
       return;
@@ -568,7 +570,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     }
   }
 
-  const raw_ptr<Browser> browser_;
+  const raw_ptr<BrowserWindowInterface> browser_;
   const aegis::PagePrivacySummary summary_;
   raw_ptr<views::View> protection_panel_ = nullptr;
   raw_ptr<views::View> progress_panel_ = nullptr;
@@ -592,7 +594,8 @@ END_METADATA
 
 }  // namespace
 
-AegisToolbarButton::AegisToolbarButton(Browser* browser)
+AegisToolbarButton::AegisToolbarButton(
+    BrowserWindowInterface* browser)
     : ToolbarButton(base::BindRepeating(&AegisToolbarButton::OnPressed,
                                         base::Unretained(this))),
       browser_(browser) {
@@ -604,7 +607,7 @@ AegisToolbarButton::AegisToolbarButton(Browser* browser)
     service->AddObserver(this);
     observed_service_ = service;
   }
-  Update(browser_->tab_strip_model()->GetActiveWebContents());
+  Update(browser_->GetTabStripModel()->GetActiveWebContents());
 }
 
 AegisToolbarButton::~AegisToolbarButton() {
@@ -623,7 +626,7 @@ void AegisToolbarButton::Update(content::WebContents* web_contents) {
 }
 
 void AegisToolbarButton::OnAegisStateChanged() {
-  Update(browser_->tab_strip_model()->GetActiveWebContents());
+  Update(browser_->GetTabStripModel()->GetActiveWebContents());
 }
 
 void AegisToolbarButton::OnPressed() {

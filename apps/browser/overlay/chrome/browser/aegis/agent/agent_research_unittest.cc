@@ -22,6 +22,15 @@ AgentToolResult Observation(int id,
           base::DictValue().Set("node_id", 1).Set("text", std::move(text))));
   return result;
 }
+AgentExecutionEvidence BoundObservation(int id, AgentToolResult result) {
+  return {.tool_name = "page.observe",
+          .result = std::move(result),
+          .research_source_id = id,
+          .research_document = AgentDocumentRef{
+              .tab_id = id, .frame_token = "frame", .document_token = "doc",
+              .committed_url = GURL("https://fixture.example/" +
+                                   base::NumberToString(id))}};
+}
 AgentTaskScope ResearchScope() {
   AgentTaskScope scope;
   scope.selected_pages_research = true;
@@ -45,7 +54,7 @@ std::optional<base::DictValue> Record(bool partial = false) {
       continue;
     }
     evidence.push_back(
-        {.tool_name = "page.observe", .result = Observation(id)});
+        BoundObservation(id, Observation(id)));
   }
   AgentTask task("research-fixture", "比较三篇文章", AgentMode::kAct, scope);
   AgentCompletionSummary completion;
@@ -198,8 +207,8 @@ TEST(AegisAgentResearchTest, PartialExcerptRetainsSplitInlineValuesAndBounds) {
                                .Append(base::DictValue().Set(
                                    "text", "。方法：固定输入、三次测量。")));
   std::vector<AgentExecutionEvidence> evidence;
-  evidence.push_back({.tool_name = "page.observe", .result = std::move(first)});
-  evidence.push_back({.tool_name = "page.observe", .result = Observation(2)});
+  evidence.push_back(BoundObservation(1, std::move(first)));
+  evidence.push_back(BoundObservation(2, Observation(2)));
   auto record = BuildAgentResearchRecord(task, completion, evidence, urls);
   ASSERT_TRUE(record);
   auto partial = BuildPartialResearchCompletion(*record);
@@ -221,7 +230,7 @@ TEST(AegisAgentResearchTest, PartialExcerptRetainsSplitInlineValuesAndBounds) {
   headings.value.FindList("nodes")->front().GetDict().Set("text_is_heading",
                                                           true);
   evidence.push_back(
-      {.tool_name = "page.observe", .result = std::move(headings)});
+      BoundObservation(1, std::move(headings)));
   record = BuildAgentResearchRecord(task, completion, evidence, urls);
   ASSERT_TRUE(record);
   EXPECT_TRUE(record->FindList("sources")
@@ -276,8 +285,8 @@ struct ComparisonFixture {
           Observation(id, "延迟：" + value + "。使用相同测量方法。");
       observed.value.Set("url", url.spec());
       evidence.push_back(
-          {.tool_name = "page.observe", .result = std::move(observed)});
-      dimension.values.push_back({.source_url = url.spec(), .value = value});
+          BoundObservation(id, std::move(observed)));
+      dimension.values.push_back({.source_id = id, .value = value});
       completion.source_urls.push_back(url.spec());
     }
     completion.research_comparisons.push_back(std::move(dimension));
@@ -401,7 +410,7 @@ TEST(AegisAgentResearchTest,
     if (scenario == 1)
       std::swap(dimension.values[0].value, dimension.values[1].value);
     if (scenario == 2)
-      dimension.values[0].source_url = dimension.values[1].source_url;
+      dimension.values[0].source_id = dimension.values[1].source_id;
     if (scenario == 3)
       dimension.values.pop_back();
     if (scenario == 4)
@@ -432,7 +441,8 @@ TEST(AegisAgentResearchTest, MissingOrStaleSourcesAreNotExceptions) {
     if (scenario == 1)
       result.value.Set("truncated", true);
     if (scenario == 2)
-      result.value.Set("url", "https://fixture.example/changed");
+      fixture.evidence.back().research_document->committed_url =
+          GURL("https://fixture.example/changed");
     if (scenario == 3)
       fixture.completion.research_comparisons[0].values.back().value.clear();
     if (scenario == 4) {
@@ -440,7 +450,7 @@ TEST(AegisAgentResearchTest, MissingOrStaleSourcesAreNotExceptions) {
       stale.value.Set("url", "https://fixture.example/3");
       stale.ok = false;
       fixture.evidence.push_back(
-          {.tool_name = "page.observe", .result = std::move(stale)});
+          BoundObservation(3, std::move(stale)));
     }
     fixture.Run();
     EXPECT_EQ(fixture.completion.outcome, "partial");
@@ -495,5 +505,65 @@ TEST(AegisAgentResearchTest,
   EXPECT_EQ(*record->FindString("summary"), fixture.completion.summary);
 }
 
+}  // namespace
+}  // namespace aegis::agent
+
+namespace aegis::agent {
+namespace {
+TEST(AegisAgentResearchTest, QueryDistinctSourcesUseNativeBindingsAndRedactedDisplay) {
+  ComparisonFixture fixture({"18 ms", "21 ms", "18 ms"});
+  for (int id = 1; id <= 3; ++id) {
+    const GURL exact("https://fixture.example/article?secret=" +
+                     base::NumberToString(id) + "#part");
+    fixture.urls[id] = exact;
+    fixture.evidence[id - 1].research_document->committed_url = exact;
+    fixture.evidence[id - 1].result.value.Set("url", "https://fixture.example/article");
+  }
+  fixture.Run();
+  EXPECT_EQ(fixture.completion.outcome, "completed");
+  EXPECT_EQ(fixture.completion.summary.find("secret="), std::string::npos);
+  EXPECT_EQ(fixture.completion.summary.find("#part"), std::string::npos);
+  EXPECT_NE(fixture.completion.summary.find("[2]"), std::string::npos);
+  auto scope = fixture.scope;
+  AgentTask task("query", "compare", AgentMode::kAct, scope);
+  auto record = BuildAgentResearchRecord(task, fixture.completion,
+                                         fixture.evidence, fixture.urls);
+  ASSERT_TRUE(record);
+  const auto* sources = record->FindList("sources");
+  ASSERT_TRUE(sources);
+  ASSERT_GE(sources->size(), 2u);
+  EXPECT_EQ(*(*sources)[1].GetDict().FindString("url"),
+            fixture.urls.at(2).spec());
+  EXPECT_EQ((*sources)[1].GetDict().FindBool("available"), true);
+}
+
+TEST(AegisAgentResearchTest, SwappedNativeBindingCannotAuthorizeRedactedQueryTwin) {
+  ComparisonFixture fixture({"18 ms", "21 ms", "18 ms"});
+  for (int id = 1; id <= 3; ++id) {
+    fixture.urls[id] = GURL("https://fixture.example/article?q=" + base::NumberToString(id));
+    fixture.evidence[id - 1].research_document->committed_url = fixture.urls[id];
+    fixture.evidence[id - 1].result.value.Set("url", "https://fixture.example/article");
+  }
+  std::swap(fixture.evidence[0].research_document, fixture.evidence[1].research_document);
+  fixture.Run();
+  EXPECT_EQ(fixture.completion.outcome, "partial");
+}
+
+TEST(AegisAgentResearchTest, LatestFailedReadInvalidatesSavedSource) {
+  ComparisonFixture fixture({"18 ms", "18 ms", "18 ms"});
+  auto failed = Observation(2);
+  failed.ok = false;
+  fixture.evidence.push_back(BoundObservation(2, std::move(failed)));
+  fixture.Run();
+  AgentTask task("latest", "compare", AgentMode::kAct, fixture.scope);
+  auto record = BuildAgentResearchRecord(task, fixture.completion,
+                                         fixture.evidence, fixture.urls);
+  ASSERT_TRUE(record);
+  const auto* sources = record->FindList("sources");
+  ASSERT_TRUE(sources);
+  ASSERT_GE(sources->size(), 2u);
+  EXPECT_EQ((*sources)[1].GetDict().FindBool("available"), false);
+  EXPECT_TRUE((*sources)[1].GetDict().FindString("excerpt")->empty());
+}
 }  // namespace
 }  // namespace aegis::agent

@@ -1,4 +1,4 @@
-From 26427aa2e5378f8abdf12794adf28edbb9d59dc0 Mon Sep 17 00:00:00 2001
+From 45f2ba248367b3abfa8a9a9fddbc6522e1a121b1 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 03:43:59 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=8E=A5=E9=80=9A=E5=85=B1=E4=BA=AB=E4=B8=8B?=
@@ -22,7 +22,7 @@ Content-Transfer-Encoding: 8bit
  9 files changed, 77 insertions(+), 15 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index a9369ceb84..648574e83b 100644
+index a9369ceb8423480a6eed5be96cad9c600cf5a6c0..648574e83b7f724503196427d9e78eca2e9cab30 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -272,6 +272,15 @@ CompactExecutionEvidence(const AgentExecutionEvidence &evidence) {
@@ -42,7 +42,7 @@ index a9369ceb84..648574e83b 100644
         {"url", "title", "revision", "snapshot_hash", "plan_id", "download_id",
          "state", "frame_token", "document_token", "observation_fingerprint",
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 8486334b55..69f266045c 100644
+index 8486334b553bc358abb22a37744e0cd6de9c7a80..69f266045c6238dec2519acf3d02c6b62af8a754 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -2119,6 +2119,32 @@ TEST(AegisAgentExecutionTest, PromptRestoresBodyWhenFullPreviousExceedsBudget) {
@@ -79,7 +79,7 @@ index 8486334b55..69f266045c 100644
    AgentTask task("prompt-translation", "将页面完整翻译成英文", AgentMode::kAsk,
                   ExecutionScope());
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 6b0a72f221..99754f9402 100644
+index 6b0a72f221d2c2a359acb819e48f82bef2dbf73b..99754f9402c1b044ec515f308ec3c34659aa896f 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -4,6 +4,8 @@ import '/strings.m.js';
@@ -100,7 +100,7 @@ index 6b0a72f221..99754f9402 100644
    void init();
  });
 diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
-index 5870a5b463..3b79c29857 100644
+index 5870a5b463e18ba32fb9bd4322cf6166469d275f..3b79c2985771d1a9f14f0d5b4c185e1860afb7de 100644
 --- a/chrome/browser/resources/downloads/manager.ts
 +++ b/chrome/browser/resources/downloads/manager.ts
 @@ -16,6 +16,8 @@ import {getInstance as getAnnouncerInstance} from 'chrome://resources/cr_element
@@ -122,7 +122,7 @@ index 5870a5b463..3b79c29857 100644
    }
  
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 8868dbcbd5..7b324111c4 100644
+index 8868dbcbd5f590d4c92d91bb036603dd45243c9e..7b324111c4e83fe41689e9e813556a8dbf519eba 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -137,19 +137,19 @@ index 8868dbcbd5..7b324111c4 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/third_party/lit/v3_0/BUILD.gn b/third_party/lit/v3_0/BUILD.gn
-index 595b377b50..5a1bc1d386 100644
+index 512a9736831262654d1fb8d6f46e10ad1fcf5776..39144d48f89066d45ce28ac9f7843096ecc682ef 100644
 --- a/third_party/lit/v3_0/BUILD.gn
 +++ b/third_party/lit/v3_0/BUILD.gn
-@@ -163,6 +163,7 @@ ts_library("build_ts") {
+@@ -167,6 +167,7 @@ ts_library("build_ts") {
      "//content/browser/resources/service_worker:build_ts",
      "//content/browser/resources/traces_internals:build_ts",
      "//ios/chrome/app/resources/profile_internals:build_ts",
 +    "//ui/webui/resources/cr_components/aegis_downloads:build_ts",
      "//ui/webui/resources/cr_components/composebox:build_ts",
+     "//ui/webui/resources/cr_components/cr_lottie:build_ts",
      "//ui/webui/resources/cr_components/cr_shortcut_input:build_ts",
-     "//ui/webui/resources/cr_components/customize_color_scheme_mode:build_ts",
 diff --git a/tools/typescript/path_mappings.py b/tools/typescript/path_mappings.py
-index 3288e6e35c..81fe305da6 100644
+index 32c9f41ee3adfc45eee27fd1016012a62462739c..a6f5d161699768eec84e023bdd50b4371d602c61 100644
 --- a/tools/typescript/path_mappings.py
 +++ b/tools/typescript/path_mappings.py
 @@ -20,6 +20,7 @@ def _add_ui_webui_resources_mappings(path_mappings, root_gen_dir):
@@ -161,7 +161,7 @@ index 3288e6e35c..81fe305da6 100644
      "cr_components/color_change_listener",
      "cr_components/commerce",
 diff --git a/ui/webui/resources/BUILD.gn b/ui/webui/resources/BUILD.gn
-index bc8cd33fa8..c4c5a70b1c 100644
+index 53a8f4e755dc6933324280aa2c6303c8505f329b..6889d4b9a22612b3995265b31a3d16c8df3866a3 100644
 --- a/ui/webui/resources/BUILD.gn
 +++ b/ui/webui/resources/BUILD.gn
 @@ -43,7 +43,6 @@ generate_grd("build_grd") {
@@ -172,7 +172,7 @@ index bc8cd33fa8..c4c5a70b1c 100644
      "$root_gen_dir/third_party/lit/v3_0/resources.grdp",
      "$target_gen_dir/cr_components/commerce/resources.grdp",
      "$target_gen_dir/cr_elements/resources.grdp",
-@@ -128,6 +127,8 @@ generate_grd("build_grd") {
+@@ -130,6 +129,8 @@ generate_grd("build_grd") {
      public_deps += [ "cr_components/signin:build_grdp" ]
      grdp_files += [ "$target_gen_dir/cr_components/signin/resources.grdp" ]
    }
@@ -182,7 +182,7 @@ index bc8cd33fa8..c4c5a70b1c 100644
  
  if (is_chromeos) {
 diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
-index 9d23c6e93c..1ffade2ac9 100644
+index 9d23c6e93c8e67695558f51c2f2f828676bd8579..1ffade2ac9efa930db3c02ad840f71aa81c6e845 100644
 --- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
 +++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
 @@ -1,8 +1,7 @@

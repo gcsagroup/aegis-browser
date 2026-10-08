@@ -1,4 +1,4 @@
-From 355cf1a441557d1a2bbd9182f80b34ec19894e1f Mon Sep 17 00:00:00 2001
+From 3edf7fc9c9fda494b95244f5fcbcf1cdf25d4905 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 04:29:50 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E9=80=90=E6=AC=A1=E5=AE=A1=E6=89=B9?=
@@ -31,7 +31,7 @@ Content-Transfer-Encoding: 8bit
  18 files changed, 382 insertions(+), 28 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
-index 2203c3f880..6dccd20f88 100644
+index 2203c3f880081838275f8ae555e6da7b9f02a257..6dccd20f88cb129a7255534d780fefff2e0e609d 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 @@ -624,13 +624,15 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
@@ -125,7 +125,7 @@ index 2203c3f880..6dccd20f88 100644
                                     std::string action_id,
                                     int32_t tab_id,
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
-index b1c1b79041..5e04827de8 100644
+index b1c1b790418ad161e13fb228aebd3ae5d632fc93..5e04827de85c39a06ce2cbdbdb86a4e2c4f9306a 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
 @@ -66,6 +66,9 @@ class AegisActorBridge {
@@ -139,7 +139,7 @@ index b1c1b79041..5e04827de8 100644
    struct WebMcpToolMetadata {
      std::string revision;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index b0d93b846d..bac2973c94 100644
+index b0d93b846d2d3c10007cbeed0a6fc46568f9315c..bac2973c9418383a03bac68ce4ba75eea0c9379e 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -2600,6 +2600,12 @@ AgentRiskLevel AegisAgentService::ToolCallRisk(
@@ -174,7 +174,7 @@ index b0d93b846d..bac2973c94 100644
    if (decision.disposition != AgentPolicyDisposition::kAllow) {
      if (decision.disposition ==
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 79c52d967f..4702df99b8 100644
+index 79c52d967ff231be43a64b2b208b0d4595de34ed..4702df99b84c2279322dbc5678a3a92379cc03d0 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -139,6 +139,8 @@ class AegisAgentService : public KeyedService {
@@ -187,7 +187,7 @@ index 79c52d967f..4702df99b8 100644
        const std::string& task_id) const;
    void ExecuteTool(
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 0a8c30aba9..07cf1da8d4 100644
+index 0a8c30aba9e581b7212db0bca2946dfe771c900d..07cf1da8d49198f7542d73c10f23aaf5ae6cb9f3 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -105,6 +105,64 @@ void ConsentTask(AgentTask* task) {
@@ -256,7 +256,7 @@ index 0a8c30aba9..07cf1da8d4 100644
    AgentTaskScope parent = TestScope();
    ASSERT_TRUE(parent.IsValid());
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 91905f5fa4..18aa9937b2 100644
+index 91905f5fa4ec651f99cecd99d42c6fde2b40cbf1..18aa9937b2777a1bd1b7e934d317f4e0239cd363 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -216,6 +216,8 @@ std::string_view WorkflowName(AgentWorkflowKind workflow) {
@@ -417,7 +417,7 @@ index 91905f5fa4..18aa9937b2 100644
      return true;
    }
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index b0c1e16cfb..94187493f6 100644
+index b0c1e16cfbfec22d03f550653ca2663c8f09a873..94187493f6c1e67db89fd32e9b4b3be3fe725cf0 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -1106,5 +1106,65 @@ TEST(AegisAgentPlannerTest, TaskModeOwnsScheduledMonitorLifecycle) {
@@ -487,7 +487,7 @@ index b0c1e16cfb..94187493f6 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
-index c000baa9f2..31694b6ac1 100644
+index c000baa9f2df8340ee7a45eadb8e9257a9da5c89..31694b6ac1b16086c8df68f2e7e782274830e084 100644
 --- a/chrome/browser/aegis/agent/agent_policy_broker.cc
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
 @@ -285,6 +285,9 @@ AgentRiskLevel AgentPolicyBroker::EffectiveRisk(
@@ -501,7 +501,7 @@ index c000baa9f2..31694b6ac1 100644
    // candidate_url只用于本机下载来源比对，不发起网络请求。
    for (const char* key : {"url"}) {
 diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
-index 6631324425..b93fdc06a3 100644
+index 6631324425d7da607a825561af6cafdf5757031a..b93fdc06a32b6f2595fe436431bcd16a39306aa1 100644
 --- a/chrome/browser/aegis/agent/agent_task_store.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store.cc
 @@ -475,11 +475,13 @@ std::optional<StoredAgentPlan> AgentTaskStore::LoadPlan(
@@ -554,7 +554,7 @@ index 6631324425..b93fdc06a3 100644
      value.Set("tab_metadata_window_id", scope.tab_metadata_window_id);
    }
 diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
-index f1e5687b44..e5fa9d77a5 100644
+index f1e5687b44722fb01375270afb2e7c68f8d836e3..e5fa9d77a5b630a01967782932b56ff7213f8afe 100644
 --- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 @@ -127,6 +127,48 @@ TEST(AegisAgentTaskStoreTest, RoundTripsBrowserBoundWindowMetadataScope) {
@@ -607,7 +607,7 @@ index f1e5687b44..e5fa9d77a5 100644
    EXPECT_FALSE(AgentTaskStore::DeserializeScope("not-json"));
    EXPECT_FALSE(AgentTaskStore::DeserializeScope(R"({})"));
 diff --git a/chrome/browser/aegis/agent/agent_types.cc b/chrome/browser/aegis/agent/agent_types.cc
-index c519c331eb..dfffa2522f 100644
+index c519c331ebe04f28b790d6b3153091ae7731374d..dfffa2522fba5b82aa7446fcf02aff72f3ff5122 100644
 --- a/chrome/browser/aegis/agent/agent_types.cc
 +++ b/chrome/browser/aegis/agent/agent_types.cc
 @@ -69,6 +69,8 @@ bool AgentTaskScope::IsValid() const {
@@ -643,7 +643,7 @@ index c519c331eb..dfffa2522f 100644
        (tab_metadata_window_id != 0 &&
         tab_metadata_window_id != other.tab_metadata_window_id) ||
 diff --git a/chrome/browser/aegis/agent/agent_types.h b/chrome/browser/aegis/agent/agent_types.h
-index 56e532b901..52435af401 100644
+index 56e532b901cdd56ceb630f96252a178f23a9bb9b..52435af4017c5e8ea87a00d37e48e0b286091ead 100644
 --- a/chrome/browser/aegis/agent/agent_types.h
 +++ b/chrome/browser/aegis/agent/agent_types.h
 @@ -105,6 +105,8 @@ struct AgentTaskScope {
@@ -665,7 +665,7 @@ index 56e532b901..52435af401 100644
    bool AllowsTool(const std::string& tool_name) const;
    bool AllowsDataClass(AgentDataClass data_class) const;
 diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
-index 16d8ea3309..74cd63f067 100644
+index 16d8ea33094ccc8ff4bcad231bdcff6266e3717a..74cd63f06742cc23ff4dd50fcf23972012eec3ba 100644
 --- a/chrome/browser/aegis/agent/agent_workflow.cc
 +++ b/chrome/browser/aegis/agent/agent_workflow.cc
 @@ -42,6 +42,24 @@ AgentWorkflowTemplate ResearchTemplate() {
@@ -726,7 +726,7 @@ index 16d8ea3309..74cd63f067 100644
        kind, std::move(origins), std::move(tab_ids), std::move(destination));
    if (!scope) {
 diff --git a/chrome/browser/aegis/agent/agent_workflow.h b/chrome/browser/aegis/agent/agent_workflow.h
-index ca69105086..22431e5db6 100644
+index ca69105086ba879d658012cbc57abc0e228fcdf4..22431e5db66182b3601b50a7ca328585f810ebc4 100644
 --- a/chrome/browser/aegis/agent/agent_workflow.h
 +++ b/chrome/browser/aegis/agent/agent_workflow.h
 @@ -18,6 +18,7 @@ enum class AgentWorkflowKind {
@@ -738,7 +738,7 @@ index ca69105086..22431e5db6 100644
  
  struct AgentWorkflowTemplate {
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index a3877a8b7e..706a407156 100644
+index a3877a8b7e2829bd144dff25858d6e00679399d0..706a4071567ceb25cde3b950b9eeda219e9ec96f 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -680,10 +680,10 @@ function render(next: TaskSnapshot) {
@@ -757,7 +757,7 @@ index a3877a8b7e..706a407156 100644
      element('approval-arguments').textContent =
          next.pendingApproval.argumentSummary;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index f40df2c653..c605cf08f1 100644
+index f40df2c6531e0270ec18f46863b0f878751b03ba..c605cf08f18ef31d2cb30b543b0d2f984f7a16e9 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -64,6 +64,7 @@ struct PendingApproval {
@@ -769,7 +769,7 @@ index f40df2c653..c605cf08f1 100644
    bool requires_user_takeover;
    CheckoutSummary? checkout;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 5a2adfaf9e..ddeae6ae7a 100644
+index 5a2adfaf9ec1777e5240c492a45d18595f238306..ddeae6ae7a97ff626f33891a68b4549d86cdfddb 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -529,8 +529,10 @@ void AegisAgentPageHandler::CreateTask(
@@ -800,7 +800,7 @@ index 5a2adfaf9e..ddeae6ae7a 100644
           pending->tool_name == "page.webmcp.invoke" ||
           pending->tool_name == "form.fill");
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index a7b48f251d..27d131ffca 100644
+index a7b48f251d614df3bc391aca3a7dbcb17eecfa30..27d131ffca3519353ce3bae89e1b29bcbcb73003 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
