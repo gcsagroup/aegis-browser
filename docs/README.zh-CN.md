@@ -12,6 +12,8 @@
 
 ## 从这里开始
 
+- [桌面鼠标手势使用指南](../apps/browser/docs/mouse-gestures.zh-CN.md)
+- [141 鼠标手势验收与上游同步状态（2026-10-09）](audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)
 - [访问服务 V1.0 设计总览](plans/access-service-v1.0/overview.zh-CN.md)
 - [访问服务 P0 实现与证据](plans/access-service-v1.0/p0-implementation.zh-CN.md)
 - [项目概览](../README.zh-CN.md)

@@ -208,6 +208,20 @@
         "win-x64",
         "android-arm64"
       ]
+    },
+    {
+      "id": "MouseGestures",
+      "name": "桌面右键手势、配置持久化、练习区与PDF动作",
+      "platforms": [
+        "mac-arm64",
+        "win-x64"
+      ],
+      "testFilters": [
+        "AegisGestureRecognizerTest.*",
+        "AegisGestureSettingsTest.*",
+        "AegisGestureBrowserTest.*",
+        "*AegisGesturePdfTest.*"
+      ]
     }
   ]
 }
