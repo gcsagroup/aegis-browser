@@ -14,7 +14,9 @@ public struct SavedWorkspace: Codable, Identifiable, Equatable, Sendable {
 public final class WorkspaceStore: ObservableObject {
     @Published public private(set) var workspaces: [SavedWorkspace] = []
     @Published public private(set) var sessionURLs: [URL] = []
+    @Published public private(set) var storageError: String?
     private let persistenceURL: URL?
+    private var unreadable = false
 
     private struct Payload: Codable {
         var workspaces: [SavedWorkspace]
@@ -23,14 +25,59 @@ public final class WorkspaceStore: ObservableObject {
 
     public init(persistenceURL: URL? = nil) {
         self.persistenceURL = persistenceURL
-        if let persistenceURL, let data = try? Data(contentsOf: persistenceURL),
-           data.count <= 2_000_000, let value = try? JSONDecoder().decode(Payload.self, from: data) {
-            workspaces = Array(value.workspaces.prefix(100)).map {
-                SavedWorkspace(id: $0.id, name: String($0.name.prefix(80)),
-                               urls: Self.persistableURLs($0.urls), savedAt: $0.savedAt)
-            }
-            sessionURLs = Self.persistableURLs(value.sessionURLs)
+        do { try reloadRecords() } catch { }
+    }
+
+    public var recordFileURL: URL? { persistenceURL }
+    public var backups: [RecordBackup] { persistenceURL.map { RecordBackups.list(for: $0) } ?? [] }
+
+    public func reloadRecords() throws {
+        guard let persistenceURL else { return }
+        do {
+            let value = try Self.decode(RecordBackups.read(persistenceURL))
+            workspaces = value.workspaces
+            sessionURLs = value.sessionURLs
+            unreadable = false; storageError = nil
+        } catch CocoaError.fileReadNoSuchFile {
+            workspaces = []; sessionURLs = []; unreadable = false; storageError = nil
+        } catch {
+            unreadable = true
+            storageError = WorkspaceError.unreadableRecords.localizedDescription
+            throw WorkspaceError.unreadableRecords
         }
+    }
+
+    private static func decode(_ data: Data) throws -> Payload {
+        guard data.count <= 2_000_000 else { throw WorkspaceError.unreadableRecords }
+        let value = try JSONDecoder().decode(Payload.self, from: data)
+        guard value.workspaces.count <= 100, Set(value.workspaces.map(\.id)).count == value.workspaces.count else {
+            throw WorkspaceError.unreadableRecords
+        }
+        return Payload(workspaces: value.workspaces.map {
+            SavedWorkspace(id: $0.id, name: String($0.name.prefix(80)),
+                           urls: Self.persistableURLs($0.urls), savedAt: $0.savedAt)
+        }, sessionURLs: Self.persistableURLs(value.sessionURLs))
+    }
+
+    public func restoreBackup(_ backup: RecordBackup) throws {
+        guard let persistenceURL else { throw RecordRecoveryError.noFile }
+        let data = try RecordBackups.readBackup(backup, for: persistenceURL)
+        let value = try Self.decode(data)
+        try replaceRecords(value)
+    }
+
+    public func resetRecords() throws {
+        try replaceRecords(Payload(workspaces: [], sessionURLs: []))
+    }
+
+    private func replaceRecords(_ value: Payload) throws {
+        guard let persistenceURL else { throw RecordRecoveryError.noFile }
+        let data = try JSONEncoder().encode(value)
+        try RecordBackups.retainOriginal(persistenceURL)
+        try FileManager.default.createDirectory(at: persistenceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: persistenceURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        workspaces = value.workspaces; sessionURLs = value.sessionURLs
+        unreadable = false; storageError = nil
     }
 
     public static var defaultURL: URL {
@@ -40,12 +87,13 @@ public final class WorkspaceStore: ObservableObject {
 
     @discardableResult
     public func save(name: String, urls: [URL]) throws -> SavedWorkspace {
+        guard workspaces.count < 100 else { throw WorkspaceError.capacity }
         let urls = Self.persistableURLs(urls)
         guard !urls.isEmpty else { throw WorkspaceError.noPages }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let value = SavedWorkspace(id: UUID(), name: String((trimmed.isEmpty ? "工作区" : trimmed).prefix(80)),
                                    urls: urls, savedAt: Date())
-        let next = Array(([value] + workspaces).prefix(100))
+        let next = [value] + workspaces
         try persist(workspaces: next, sessionURLs: sessionURLs)
         workspaces = next
         return value
@@ -114,19 +162,28 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     private func persist(workspaces: [SavedWorkspace], sessionURLs: [URL]) throws {
+        guard !unreadable else { throw WorkspaceError.unreadableRecords }
         guard let persistenceURL else { return }
         let data = try JSONEncoder().encode(Payload(workspaces: workspaces, sessionURLs: sessionURLs))
+        guard data.count <= 2_000_000 else { throw WorkspaceError.capacity }
         try FileManager.default.createDirectory(at: persistenceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: persistenceURL.path) {
+            let previous = try RecordBackups.read(persistenceURL)
+            _ = try Self.decode(previous)
+            try RecordBackups.preserveLastGood(previous, for: persistenceURL)
+        }
         try data.write(to: persistenceURL, options: [.atomic, .completeFileProtectionUnlessOpen])
     }
 }
 
 public enum WorkspaceError: LocalizedError {
-    case noPages, invalidImport
+    case noPages, invalidImport, unreadableRecords, capacity
     public var errorDescription: String? {
         switch self {
         case .noPages: String(localized: "请先打开普通网页，再保存工作区。")
         case .invalidImport: String(localized: "工作区文件无效或超出容量：最多 100 个工作区，每组 50 个页面。")
+        case .unreadableRecords: String(localized: "工作区记录无法读取，原文件已保留，暂时无法保存更改。")
+        case .capacity: String(localized: "工作区存储已满，请先导出并删除不需要的工作区，或减少页面数量。")
         }
     }
 }
