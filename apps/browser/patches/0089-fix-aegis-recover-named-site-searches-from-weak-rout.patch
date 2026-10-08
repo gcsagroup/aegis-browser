@@ -1,4 +1,4 @@
-From 27488b109ae14ff7d4c0f5fd441bc092afc91ca1 Mon Sep 17 00:00:00 2001
+From 41f621c5a7547e13837acf9d3a1678c8babe1bab Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:46:40 +0800
 Subject: [PATCH] fix(aegis): recover named-site searches from weak routing
@@ -9,7 +9,7 @@ Subject: [PATCH] fix(aegis): recover named-site searches from weak routing
  2 files changed, 19 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index a8d4774a3c..ef716ddfff 100644
+index a8d4774a3ce803005e647e6a5b570576926bbb28..ef716ddfff6f54f854b883ea73f8b72d935bccfb 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -410,13 +410,19 @@ AgentGoalRoute ConstrainGoalRouteToUserIntent(std::string_view user_goal,
@@ -36,7 +36,7 @@ index a8d4774a3c..ef716ddfff 100644
        route.target =
            BrowserOwnedNamedSiteTarget(user_goal, proposed_query, *site);
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index b795469f1b..1189d48036 100644
+index b795469f1b39952ee5f4b08c86f07722ee401ee7..1189d48036d0898cc9b00ba86f826ea532a35d5b 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -195,6 +195,16 @@ TEST(AegisAgentPlannerTest, BrowserNarrowsShoppingAndNamedSiteRoutes) {

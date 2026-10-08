@@ -1,4 +1,4 @@
-From 16d4ae73d4335d9f367f857cfcecb09c8a78d3b1 Mon Sep 17 00:00:00 2001
+From a1a77bf583f26034e9202308aaa4b23a41e1c547 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 13 Sep 2026 05:01:21 +0800
 Subject: [PATCH] Fix GitHub updater Chromium style and bump Ver 1.1 (003)
@@ -15,7 +15,7 @@ Subject: [PATCH] Fix GitHub updater Chromium style and bump Ver 1.1 (003)
  create mode 100644 chrome/browser/ui/webui/help/version_updater.cc
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
-index ea07226701..77fcd36f3a 100644
+index ea07226701fcbfc96be924deebd668d678abb626..77fcd36f3abec402d7adb0e02edc1ce26e5bc727 100644
 --- a/chrome/app/app-Info.plist
 +++ b/chrome/app/app-Info.plist
 @@ -4,9 +4,9 @@
@@ -31,7 +31,7 @@ index ea07226701..77fcd36f3a 100644
  	<string>en</string>
  	<key>CFBundleDisplayName</key>
 diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
-index 641db50d1b..05d287abde 100644
+index 641db50d1b50e0324a393d626600aa2f908d016b..05d287abde33425ac3f84244e758e4e9ece96df3 100644
 --- a/chrome/browser/ui/webui/help/BUILD.gn
 +++ b/chrome/browser/ui/webui/help/BUILD.gn
 @@ -8,6 +8,7 @@ import("//testing/test.gni")
@@ -97,7 +97,7 @@ index 641db50d1b..05d287abde 100644
        ":aegis_github_update",
        "//chrome/common",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 614bc20d4c..019bbdea70 100644
+index 614bc20d4c33f2d8a12948d1e5830d0e64d66c99..019bbdea7046ac312be2b915ac134b06f5f4ebb2 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -19,9 +19,9 @@ class SimpleURLLoader;
@@ -114,7 +114,7 @@ index 614bc20d4c..019bbdea70 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
-index 1885112f1b..3adf78a965 100644
+index 1885112f1be706388b2c9cff3ffeb587d591c12f..3adf78a965544664fd99971497e7649ff85a328e 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 +++ b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 @@ -23,7 +23,7 @@ namespace {
@@ -128,7 +128,7 @@ index 1885112f1b..3adf78a965 100644
    asset.Set("name", name);
 diff --git a/chrome/browser/ui/webui/help/version_updater.cc b/chrome/browser/ui/webui/help/version_updater.cc
 new file mode 100644
-index 0000000000..470dac6e96
+index 0000000000000000000000000000000000000000..470dac6e968ad37a7b9e468805235154f3549352
 --- /dev/null
 +++ b/chrome/browser/ui/webui/help/version_updater.cc
 @@ -0,0 +1,6 @@
@@ -139,7 +139,7 @@ index 0000000000..470dac6e96
 +  return {};
 +}
 diff --git a/chrome/browser/ui/webui/help/version_updater.h b/chrome/browser/ui/webui/help/version_updater.h
-index 43b2888344..f4878215ca 100644
+index 43b288834478d3acaeb2089dc598b6c29b486bfb..f4878215cabe7a95b82d49fe4313671a2b4baa84 100644
 --- a/chrome/browser/ui/webui/help/version_updater.h
 +++ b/chrome/browser/ui/webui/help/version_updater.h
 @@ -87,7 +87,7 @@ class VersionUpdater {
@@ -152,7 +152,7 @@ index 43b2888344..f4878215ca 100644
    // Sub-classes must implement this method to create the respective
    // specialization. |web_contents| may be null, in which case any required UX
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index b21fd3bd6a..a9c42556ed 100644
+index 75bf73dd1a90bca0eac649038df925460e964caf..9c0f94b8658ae7dcdba025580f0887ee77e1a3f9 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {

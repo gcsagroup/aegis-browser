@@ -1,0 +1,30 @@
+From b1dc9a4b578769324b81001058b40581fa8d3f01 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 14 Sep 2026 08:02:07 +0800
+Subject: [PATCH] fix(build): declare reset uploader network dependency for
+ M153
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index c38e45656c873352909b1e6519d903586be81e2a..08264057b69968a70c3f4fbbf25283ed4a1bf1d0 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@ class SimpleURLLoader;
+ }  // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.20。
+-inline constexpr char kProductVersion[] = "1.1.0.20";
+-inline constexpr char kProductVersionLabel[] = "Ver 1.1 (020)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v1.1.0.21。
++inline constexpr char kProductVersion[] = "1.1.0.21";
++inline constexpr char kProductVersionLabel[] = "Ver 1.1 (021)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

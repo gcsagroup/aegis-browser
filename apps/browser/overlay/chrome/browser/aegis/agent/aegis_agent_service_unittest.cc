@@ -44,6 +44,7 @@
 #include "components/undo/undo_manager.h"
 #include "components/tabs/public/mock_tab_interface.h"
 #include "content/public/test/browser_task_environment.h"
+#include "content/public/browser/web_contents.h"
 #include "crypto/sha2.h"
 #include "net/http/http_status_code.h"
 #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
@@ -181,6 +182,32 @@ class AegisAgentServiceTestPeer {
     result.message = "原生测试回调";
     result.value = std::move(value);
     service->OnRuntimeToolResult(id, std::move(call), std::move(result));
+  }
+  static void SeedFinalPlanCursor(AegisAgentService* service,
+                                  const std::string& id) {
+    service->plan_progress_[id] = {service->plans_.at(id).steps.size() - 1, 0};
+  }
+  static void DispatchFinalDownloadOpen(AegisAgentService* service,
+                                        const std::string& id,
+                                        bool actual_dispatch) {
+    if (auto request = service->model_request_ids_.find(id);
+        request != service->model_request_ids_.end()) {
+      const auto request_id = request->second;
+      service->model_request_ids_.erase(request);
+      service->model_clients_.at(id)->Cancel(request_id);
+    }
+    AgentToolCall call;
+    call.action_id = "final-download-open";
+    call.tool_name = "download.open";
+    call.arguments.Set("download_id", "completed-native-fixture");
+    if (actual_dispatch) {
+      service->ExecuteRuntimeTool(id, std::move(call), std::nullopt);
+    } else {
+      AgentToolResult late;
+      late.action_id = call.action_id;
+      late.error = AgentErrorCode::kApprovalRequired;
+      service->OnRuntimeToolResult(id, std::move(call), std::move(late));
+    }
   }
   static void DeliverPendingApproval(AegisAgentService* service,
                                      const std::string& id) {
@@ -446,6 +473,7 @@ class AegisAgentServiceTest : public testing::Test {
   TestingProfileManager& profile_manager() { return profile_manager_; }
   // SequenceBound 的析构异步关闭数据库；重启对照必须等待旧进程资源全部释放。
   void DrainTaskRunners() { task_environment_.RunUntilIdle(); }
+  void AdvanceClock() { task_environment_.AdvanceClock(base::Milliseconds(1)); }
   AgentTask* StartHeldRuntime(network::TestURLLoaderFactory* factory,
                               AegisAgentService::RunCallback callback,
                               const std::string& second_tool = "page.observe") {
@@ -460,6 +488,7 @@ class AegisAgentServiceTest : public testing::Test {
       scope.allowed_data_classes.insert(AgentDataClass::kDownloads);
       scope.allowed_tools.insert("download.find_official");
       scope.allowed_tools.insert("download.start");
+      scope.allowed_tools.insert("download.verify");
     }
     scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
     scope.model_destination.kind = AgentModelDestination::Kind::kLoopback;
@@ -482,7 +511,7 @@ class AegisAgentServiceTest : public testing::Test {
                                                 .Set("id", "page")
                                                 .Set("title", "页面操作")
                                                 .Set("tool", second_tool)));
-    if (second_tool == "download.verify") {
+    if (second_tool == "download.verify" || second_tool == "download.open") {
       // 下载核验必须先有来源检查和原生下载，不绕过产品的计划依赖校验。
       base::ListValue steps;
       for (const auto* tool : {"tab.list", "download.find_official",
@@ -491,6 +520,10 @@ class AegisAgentServiceTest : public testing::Test {
                          .Set("id", tool)
                          .Set("title", tool)
                          .Set("tool", tool));
+      }
+      if (second_tool == "download.open") {
+        steps.Append(base::DictValue().Set("id", "open").Set("title", "用户打开")
+                         .Set("tool", "download.open"));
       }
       plan.arguments.Set("steps", std::move(steps));
     }
@@ -503,6 +536,9 @@ class AegisAgentServiceTest : public testing::Test {
     service->SetTaskModelClientForTesting(
         task->id(),
         std::make_unique<AgentModelClient>(factory->GetSafeWeakWrapper()));
+    if (second_tool == "download.open") {
+      AegisAgentServiceTestPeer::SeedFinalPlanCursor(service, task->id());
+    }
     service->RunTask(task->id(), std::move(callback));
     if (!AegisAgentServiceTestPeer::HasRuntime(service, task->id())) {
       ADD_FAILURE() << "运行未启动，不能等待不存在的模型请求";
@@ -537,10 +573,14 @@ TEST_F(AegisAgentServiceTest, SelectedTasksFreezeAutomaticModelPoolRoute) {
   testing::NiceMock<MockBrowserWindowInterface> window;
   ON_CALL(window, GetType()).WillByDefault(
       testing::Return(BrowserWindowInterface::TYPE_NORMAL));
+  std::vector<std::unique_ptr<content::WebContents>> contents;
   std::vector<std::unique_ptr<tabs::MockTabInterface>> tabs;
   std::vector<int32_t> ids;
   for (int index = 0; index < 3; ++index) {
+    contents.push_back(content::WebContents::Create(
+        content::WebContents::CreateParams(profile_)));
     auto tab = std::make_unique<tabs::MockTabInterface>();
+    ON_CALL(*tab, GetContents()).WillByDefault(testing::Return(contents.back().get()));
     ON_CALL(*tab, GetProfile()).WillByDefault(testing::Return(profile_.get()));
     ON_CALL(*tab, GetURL()).WillByDefault(testing::Return(
         GURL("https://fixture.example/" + base::NumberToString(index))));
@@ -3413,5 +3453,102 @@ TEST_F(AegisAgentServiceTest,
   recovered.Shutdown();
 }
 
+}  // namespace
+}  // namespace aegis::agent
+
+namespace aegis::agent {
+namespace {
+TEST_F(AegisAgentServiceTest, FinalPolicyTakeoverAcceptsActualSynchronousReceipt) {
+  network::TestURLLoaderFactory factory;
+  base::test::TestFuture<bool, std::string, std::optional<AgentCompletionSummary>> done;
+  auto* task = StartHeldRuntime(&factory, done.GetCallback(), "download.open");
+  ASSERT_TRUE(task);
+  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
+  AegisAgentServiceTestPeer::DispatchFinalDownloadOpen(service, task->id(), true);
+  EXPECT_EQ(task->state(), AgentTaskState::kUserTakeover);
+  ASSERT_TRUE(service->PendingAction(task->id()));
+  EXPECT_EQ(service->PendingAction(task->id())->tool_name, "download.open");
+  EXPECT_TRUE(service->CompleteFinalUserTakeover(task->id(), true));
+  EXPECT_TRUE(done.Get<0>());
+  EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
+}
+
+TEST_F(AegisAgentServiceTest, ManualTakeoverRejectsUnsolicitedFinalPolicyReceipt) {
+  network::TestURLLoaderFactory factory;
+  base::test::TestFuture<bool, std::string, std::optional<AgentCompletionSummary>> done;
+  auto* task = StartHeldRuntime(&factory, done.GetCallback(), "download.open");
+  ASSERT_TRUE(task);
+  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
+  ASSERT_TRUE(service->BeginUserTakeover(task->id()));
+  AegisAgentServiceTestPeer::DispatchFinalDownloadOpen(service, task->id(), false);
+  EXPECT_FALSE(service->PendingAction(task->id()));
+  EXPECT_FALSE(service->CompleteFinalUserTakeover(task->id(), true));
+  EXPECT_FALSE(done.IsReady());
+  ASSERT_TRUE(service->CancelTask(task->id()));
+}
+
+class MonitorSnapshotPage : public aegis_agent::mojom::Page {
+ public:
+  void OnSnapshotChanged(aegis_agent::mojom::TaskSnapshotPtr snapshot) override {
+    snapshots.push_back(std::move(snapshot));
+  }
+  mojo::Receiver<aegis_agent::mojom::Page> receiver{this};
+  std::vector<aegis_agent::mojom::TaskSnapshotPtr> snapshots;
+};
+
+TEST_F(AegisAgentServiceTest, HistoricalMonitorOperationsKeepCurrentTaskSubscription) {
+  auto* service = AegisAgentServiceFactory::GetForProfile(profile_);
+  auto scope = ServiceTestScope();
+  scope.allowed_tools.insert("monitor.create");
+  auto* history = service->CreateTask("历史监控", AgentMode::kAutomate, scope);
+  ASSERT_TRUE(history);
+  ASSERT_TRUE(service->BeginPlanning(history->id()));
+  std::string error;
+  ASSERT_TRUE(service->AcceptModelPlan(history->id(), ServiceAutomationPlanEvent(), &error)) << error;
+  ASSERT_TRUE(service->GrantTaskConsent(history->id()));
+  AgentMonitorDefinition monitor;
+  monitor.monitor_id = "history-monitor";
+  monitor.task_id = history->id();
+  monitor.origin = url::Origin::Create(GURL("https://fixture.example/path"));
+  monitor.target_url = GURL("https://fixture.example/path");
+  monitor.target_hash = "sha256:history";
+  monitor.session_only = true;
+  monitor.interval = base::Hours(1);
+  monitor.next_run = base::Time::Now() + monitor.interval;
+  ASSERT_TRUE(service->UpsertMonitor(monitor));
+  AdvanceClock();
+  auto* current = service->CreateTask("当前任务", AgentMode::kAct, ServiceTestScope());
+  ASSERT_TRUE(current);
+  ASSERT_EQ(service->MostRecentTask(), current);
+  MonitorSnapshotPage page;
+  AegisAgentPageHandler handler(profile_, nullptr, nullptr,
+      page.receiver.BindNewPipeAndPassRemote(),
+      mojo::PendingReceiver<aegis_agent::mojom::PageHandler>());
+  for (bool paused : {true, false}) {
+    base::test::TestFuture<aegis_agent::mojom::TaskSnapshotPtr> changed;
+    handler.SetMonitorPaused(history->id(), monitor.monitor_id, paused, changed.GetCallback());
+    EXPECT_EQ(changed.Get()->task_id, current->id());
+    ASSERT_FALSE(service->GetMonitors(history->id()).empty());
+    EXPECT_EQ(service->GetMonitors(history->id())[0].enabled, !paused);
+  }
+  base::test::TestFuture<aegis_agent::mojom::TaskSnapshotPtr> check;
+  handler.CheckMonitorNow(history->id(), monitor.monitor_id, check.GetCallback());
+  EXPECT_EQ(check.Get()->task_id, current->id());
+  EXPECT_EQ(history->network_requests_used(), 1);
+  base::test::TestFuture<aegis_agent::mojom::TaskSnapshotPtr> removed;
+  handler.DeleteMonitor(history->id(), monitor.monitor_id, removed.GetCallback());
+  EXPECT_EQ(removed.Get()->task_id, current->id());
+  EXPECT_TRUE(service->GetMonitors(history->id()).empty());
+  base::test::TestFuture<aegis_agent::mojom::TaskSnapshotPtr> missing;
+  handler.DeleteMonitor(history->id(), monitor.monitor_id, missing.GetCallback());
+  EXPECT_EQ(missing.Get()->task_id, current->id());
+  DrainTaskRunners();
+  page.snapshots.clear();
+  ASSERT_TRUE(service->BeginPlanning(current->id()));
+  DrainTaskRunners();
+  ASSERT_FALSE(page.snapshots.empty());
+  EXPECT_EQ(page.snapshots.back()->task_id, current->id());
+  EXPECT_EQ(page.snapshots.back()->state, "planning");
+}
 }  // namespace
 }  // namespace aegis::agent

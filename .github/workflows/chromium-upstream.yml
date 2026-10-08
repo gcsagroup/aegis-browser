@@ -6,6 +6,8 @@ on:
       - '.github/workflows/chromium-upstream.yml'
       - 'apps/browser/scripts/check-chromium-upstream*.py'
       - 'apps/browser/scripts/ci/**'
+      - 'apps/browser/scripts/release-*.py'
+      - 'apps/browser/release-feature-contract.json'
       - 'apps/browser/CHROMIUM_*'
   schedule:
     - cron: '17 1 * * *'
@@ -44,6 +46,9 @@ jobs:
       - name: 运行监控回归
         run: |
           python apps/browser/scripts/check-chromium-upstream_test.py
+          python apps/browser/scripts/release-contract_test.py
+          python apps/browser/scripts/release-github_test.py
+          python apps/browser/scripts/release-assets_test.py
           python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
       - name: 分平台核对官方来源
         run: python apps/browser/scripts/check-chromium-upstream.py --output ci-evidence/upstream

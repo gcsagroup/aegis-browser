@@ -1,4 +1,4 @@
-From c8a3d9404b1f3938330f8641be451f0923f512da Mon Sep 17 00:00:00 2001
+From 654e1a64b6e200b67c64863536a12f9f76f8a285 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 19:11:41 +0800
 Subject: [PATCH] feat(aegis): simplify tasks and add scheduled automations
@@ -17,7 +17,7 @@ Subject: [PATCH] feat(aegis): simplify tasks and add scheduled automations
  10 files changed, 597 insertions(+), 404 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index bd55a7abef..07fcf5669a 100644
+index bd55a7abefe4b1f65a98a5034110592fbd4ecf88..07fcf5669ab166e327f48bd360a2c4068c222e1e 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -190,15 +190,15 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
@@ -283,7 +283,7 @@ index bd55a7abef..07fcf5669a 100644
      })()
    )JS")
 diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
-index 9fe6513b99..95cb0a2f65 100644
+index 9fe6513b99ce2b090f63d66008c1954df852d445..95cb0a2f65d8de6800b0f45fc56f148db10407b2 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 @@ -98,24 +98,27 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
@@ -410,7 +410,7 @@ index 9fe6513b99..95cb0a2f65 100644
      return side_panel->IsSidePanelEntryShowing(
          SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index f988264fde..bb330b411d 100644
+index f988264fdefff9b9eba89a84debe05cee8b04a1e..bb330b411d5d1dda490fd15e6e27551e68db752c 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -48,6 +48,25 @@ constexpr base::TimeDelta kCompletedTaskRetention = base::Days(30);
@@ -497,7 +497,7 @@ index f988264fde..bb330b411d 100644
        !encryptor->EncryptString(target.spec(), &ciphertext)) {
      std::move(callback).Run(
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index 021e586b8c..61031189f6 100644
+index 021e586b8c83892e46cec8128db08e67c77dfc01..61031189f6a97a4db80bce2ccdf70fd4fb57aa5e 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -250,7 +250,6 @@ button:disabled {
@@ -661,7 +661,7 @@ index 021e586b8c..61031189f6 100644
  
  @media (prefers-reduced-motion: no-preference) {
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index 9126232961..de935e2f24 100644
+index 91262329618baf7846c2cecb88516f4b3caaa614..de935e2f247748982499e362be4a68c4853bfad1 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -20,32 +20,46 @@
@@ -748,7 +748,7 @@ index 9126232961..de935e2f24 100644
      <script type="module" src="agent.js"></script>
    </body>
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 2152d90bd6..6fd3b3f5c7 100644
+index 2152d90bd60c0ca7076e584e1be81be157be246d..6fd3b3f5c71b1831bf78257b0e9c3b069e42d14c 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -16,16 +16,14 @@ import {BrowserProxy} from './browser_proxy.js';
@@ -1112,7 +1112,7 @@ index 2152d90bd6..6fd3b3f5c7 100644
    element('save-model-button').addEventListener('click', saveModel);
    element('pause-button').addEventListener('click', () => withBusy(() =>
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index efaa61f68e..c8145fe775 100644
+index efaa61f68eea7a444eddf98cb6eeab734c115a72..c8145fe775070708021b8e1b448107b4f4ad296f 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -132,7 +132,8 @@ interface PageHandler {
@@ -1126,7 +1126,7 @@ index efaa61f68e..c8145fe775 100644
    RequestPlan(string task_id) => (TaskSnapshot snapshot);
  
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index a9479dbd27..d374c40b61 100644
+index a9479dbd272ebf218618443c6d64863c74599d05..d374c40b61dfc158f33a448b67e545ba6691f56e 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -140,15 +140,38 @@ bool WorkflowNeedsWebTarget(AgentWorkflowKind workflow) {
@@ -1395,7 +1395,7 @@ index a9479dbd27..d374c40b61 100644
  }
  
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
-index cda67f3e8a..205f1a5117 100644
+index cda67f3e8a61aff6f2c5f9a09df71bb4c63d8159..205f1a5117356792ac585d53b765b8e664453612 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 @@ -60,6 +60,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
@@ -1429,7 +1429,7 @@ index cda67f3e8a..205f1a5117 100644
        std::string goal,
        aegis::agent::AgentMode mode,
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index a4f18d6170..eef03f0f8e 100644
+index a4f18d61703ddfb00701670416e3da98a6ebd3dd..eef03f0f8e13bc78c9ca999e1271bb7f67fd7b21 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -66,35 +66,23 @@ void AddStrings(content::WebUIDataSource* source) {

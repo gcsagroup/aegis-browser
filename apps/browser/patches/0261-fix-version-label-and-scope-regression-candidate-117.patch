@@ -1,0 +1,62 @@
+From 0cc3ed61e4226aee1eba25f0d903d3230917986a Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 19:54:40 +0800
+Subject: [PATCH] =?UTF-8?q?=E7=BB=9F=E4=B8=80117=E4=BA=A7=E5=93=81?=
+ =?UTF-8?q?=E7=89=88=E6=9C=AC=E6=A0=87=E7=AD=BE=E5=B9=B6=E4=BF=9D=E7=95=99?=
+ =?UTF-8?q?=E9=A1=B5=E9=9D=A2=E8=8C=83=E5=9B=B4=E6=94=B6=E7=AA=84=E5=9B=9E?=
+ =?UTF-8?q?=E5=BD=92?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_planner_unittest.cc | 10 ++++++++--
+ chrome/browser/ui/webui/help/aegis_github_update.h   |  4 ++--
+ 2 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index a8ff29911ae7e97bc02f9ed26e8f73ae5c3ad11c..a9da72ddc88d9623f2b53f3a976056d2e4c982c1 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -194,8 +194,10 @@ TEST(AegisAgentGoalRegressionTest, NegatedHintKeepsPageBoundReadRequirement) {
+ }
+ 
+ TEST(AegisAgentGoalRegressionTest, BoundPageRequirementSurvivesScopeNarrowing) {
+-  const std::string_view goal = "不要整理书签，总结当前页。";
+-  // 文本本身仍有禁止范围歧义；统一门槛必须依赖浏览器范围补足。
++  const std::string_view goal = "帮我看看。";
++  const std::string_view explicit_goal = "不要整理书签，总结当前页。";
++  // 独立总结请求已能识别；缺少页面词的请求仍须依赖已绑定的浏览器范围。
++  EXPECT_TRUE(AgentGoalRequiresPageEvidence(explicit_goal));
+   EXPECT_FALSE(AgentGoalRequiresPageEvidence(goal));
+   AgentTaskScope scope = MaximumScope();
+   EXPECT_TRUE(AgentTaskRequiresPageEvidence(goal, scope));
+@@ -217,6 +219,10 @@ TEST(AegisAgentGoalRegressionTest, BoundPageRequirementSurvivesScopeNarrowing) {
+   // 此范围无法形成合法的已绑定页面计划；不能把 extract 当作 observe 授权。
+   EXPECT_FALSE(AgentTaskRequiresPageEvidence(goal, scope));
+   EXPECT_FALSE(BuildBrowserReadOnlyRecoveryPlan(goal, scope, registry));
++  // 明确要求总结时，缩小工具范围不能取消证据要求，也不能凭空补授 observe。
++  EXPECT_TRUE(AgentTaskRequiresPageEvidence(explicit_goal, scope));
++  EXPECT_FALSE(
++      BuildBrowserReadOnlyRecoveryPlan(explicit_goal, scope, registry));
+ 
+   scope.allowed_tools = {"page.observe", "tab.list"};
+   scope.allowed_data_classes.insert(AgentDataClass::kBrowserMetadata);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index b52d254f01fad01ae768f259e348864de604e1a8..703cb667f8e5832760cbff57b7fdc248ee7637cc 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.116";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (115)";
++inline constexpr char kProductVersion[] = "2.1.0.117";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (117)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

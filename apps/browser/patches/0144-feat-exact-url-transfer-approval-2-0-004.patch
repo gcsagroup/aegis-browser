@@ -1,4 +1,4 @@
-From 8e39f6202e5a818484722a39070d8a2331fad7f0 Mon Sep 17 00:00:00 2001
+From 1087adaaa3606e92cd86161cd4ff2c4e04b26fc9 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 02:55:04 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E5=AF=B9=E6=A8=A1=E5=9E=8B=E7=94=9F?=
@@ -25,7 +25,7 @@ Content-Transfer-Encoding: 8bit
  12 files changed, 360 insertions(+), 28 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 0c8da8e5e6..63c6b1f989 100644
+index 0c8da8e5e63154c805c6384cf423a1f309438f1a..63c6b1f98947c7f739d2a62c0a52555cd4f776a0 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -17,8 +17,8 @@
@@ -159,7 +159,7 @@ index 0c8da8e5e6..63c6b1f989 100644
    task_has_external_side_effect_.clear();
    bookmark_undo_tokens_.clear();
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 8b433c9926..d84a20918e 100644
+index 8b433c9926c6f1dd1529468c58ead8d4cae39257..d84a20918e83ea5f44067df51dcb4638f61bb2fd 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -136,6 +136,10 @@ class AegisAgentService : public KeyedService {
@@ -182,7 +182,7 @@ index 8b433c9926..d84a20918e 100644
    std::map<std::string, bool> task_has_external_side_effect_;
    std::map<std::string, std::string> bookmark_undo_tokens_;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 4e887c61b2..5b28efbed1 100644
+index 4e887c61b26b3bd31e2656f9155381c4e440a57e..5b28efbed18b95090b5bc9d5ee7e6a0b9f7c4303 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -294,8 +294,9 @@ class AegisAgentServiceTest : public testing::Test {
@@ -322,7 +322,7 @@ index 4e887c61b2..5b28efbed1 100644
          ASSERT_TRUE(encryptor->EncryptString("not-json", &monitor.last_observation_ciphertext));
        }
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 7255b73325..9fec58b44c 100644
+index 7255b733259572597f9e75efde41b05e99bfa9fc..9fec58b44ce4a792158a34419068e79ea8312624 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -764,6 +764,124 @@ TEST(AegisAgentPolicyTest, FinalCheckoutAlwaysRequiresUserTakeover) {
@@ -451,7 +451,7 @@ index 7255b73325..9fec58b44c 100644
    AgentToolRegistry registry;
    AgentPolicyBroker broker(&registry);
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
-index befa203f42..c000baa9f2 100644
+index befa203f42bccd837cecedf25eb3d4cc334e99e3..c000baa9f2df8340ee7a45eadb8e9257a9da5c89 100644
 --- a/chrome/browser/aegis/agent/agent_policy_broker.cc
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
 @@ -158,7 +158,8 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
@@ -577,7 +577,7 @@ index befa203f42..c000baa9f2 100644
  std::string AgentPolicyBroker::ActionHash(const AgentToolCall& call) {
    std::string arguments;
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.h b/chrome/browser/aegis/agent/agent_policy_broker.h
-index 8a90b3fa26..bab0b4d94f 100644
+index 8a90b3fa26b2ee3f4e6211dba18ffee84994384e..bab0b4d94f03d459cfd3e95c7261b935fb11e3d4 100644
 --- a/chrome/browser/aegis/agent/agent_policy_broker.h
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.h
 @@ -6,10 +6,13 @@
@@ -615,7 +615,7 @@ index 8a90b3fa26..bab0b4d94f 100644
  
  }  // namespace aegis::agent
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index 112c334c83..bdb2430e9e 100644
+index 112c334c83ad08f9a04aa65741dc8cd81d7819d6..bdb2430e9e165b1e142cd94f8f5890eafccb65c2 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -136,6 +136,8 @@
@@ -628,7 +628,7 @@ index 112c334c83..bdb2430e9e 100644
          <details class="exact-action">
            <summary id="approval-arguments-label"></summary>
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index fd0f74590e..177d820c29 100644
+index fd0f74590e0918d284f445634d9c591798599e82..177d820c292269b5cec22d4713c98b8e04bd8ed5 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -675,6 +675,15 @@ function render(next: TaskSnapshot) {
@@ -648,7 +648,7 @@ index fd0f74590e..177d820c29 100644
      element('approval-arguments').textContent =
          next.pendingApproval.argumentSummary;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index 845e09d644..f40df2c653 100644
+index 845e09d6442499f0570ccdc2e5354f7d93200ddf..f40df2c6531e0270ec18f46863b0f878751b03ba 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -62,6 +62,9 @@ struct PendingApproval {
@@ -662,7 +662,7 @@ index 845e09d644..f40df2c653 100644
    CheckoutSummary? checkout;
  };
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index caba66fc96..0e1ffefb27 100644
+index caba66fc9678136a1fdda3e043fcc64937007360..0e1ffefb27d1d8e6dc6f4e994b4b5b560c71c0d8 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -18,8 +18,8 @@
@@ -697,7 +697,7 @@ index caba66fc96..0e1ffefb27 100644
                                   &approval->argument_summary)) {
        approval->argument_summary = "{}";
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index dabeefae93..a44acbe537 100644
+index dabeefae93f85906149a90e2787e7ba9aab6efb3..a44acbe53700fde521f28c6c289bc45d60d73f2d 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -532,6 +532,11 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -713,7 +713,7 @@ index dabeefae93..a44acbe537 100644
        "最終步驟由你完成");
    add("takeoverNotice",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 809a70295b..e695b067a1 100644
+index 809a70295b681ef08a54b3b8698b7a67fdb95d61..e695b067a198cff49ec0d72849ada6ea638ae430 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

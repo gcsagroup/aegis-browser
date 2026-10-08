@@ -1,4 +1,4 @@
-From e0f3cb4d5fe5b502a0c29aa1bb794fbc111a809d Mon Sep 17 00:00:00 2001
+From ca02bcaf2e0fca6f18c5c87aaf72c7676d376bda Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 22:05:44 +0800
 Subject: [PATCH] feat(aegis): simplify browser agent v2 onboarding
@@ -28,7 +28,7 @@ Subject: [PATCH] feat(aegis): simplify browser agent v2 onboarding
  21 files changed, 1350 insertions(+), 395 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service_fake.cc b/chrome/browser/actor/actor_keyed_service_fake.cc
-index 75175eb1d3..7fd9646bdd 100644
+index 0ed9a1420eebd18d1489531acc71f484a2c843e2..5b938ce514c105b830bc255a59027e959ecc41f9 100644
 --- a/chrome/browser/actor/actor_keyed_service_fake.cc
 +++ b/chrome/browser/actor/actor_keyed_service_fake.cc
 @@ -27,31 +27,40 @@ ActorKeyedServiceFake::~ActorKeyedServiceFake() = default;
@@ -76,18 +76,18 @@ index 75175eb1d3..7fd9646bdd 100644
 +        const TaskSourceInfo& source_info) {
    std::unique_ptr<ui::UiEventDispatcher> ui_event_dispatcher =
        ui::NewMockUiEventDispatcher();
-   std::unique_ptr<ui::UiEventDispatcher> task_ui_event_dispatcher =
-@@ -90,7 +99,7 @@ TaskId ActorKeyedServiceFake::
+   auto* mock_ui_dispatcher =
+@@ -74,7 +83,7 @@ TaskId ActorKeyedServiceFake::
    task_options->duration = duration;
    task_options->feature_mode = feature_mode;
    return ActorKeyedService::CreateTaskForTesting(  // IN-TEST
--      std::move(task_ui_event_dispatcher), TestTaskSourceInfo(),
-+      std::move(task_ui_event_dispatcher), source_info,
+-      std::move(ui_event_dispatcher), TestTaskSourceInfo(),
++      std::move(ui_event_dispatcher), source_info,
        &no_enterprise_policy_checker_, std::move(task_options),
        /*delegate=*/nullptr);
  }
 diff --git a/chrome/browser/actor/actor_keyed_service_fake.h b/chrome/browser/actor/actor_keyed_service_fake.h
-index 19cbe8423a..490d0a6259 100644
+index 19cbe8423a0106d8219949402389d5b15abf8e1d..490d0a62592ed7f34ba9d9ee7701f290596afcbd 100644
 --- a/chrome/browser/actor/actor_keyed_service_fake.h
 +++ b/chrome/browser/actor/actor_keyed_service_fake.h
 @@ -20,6 +20,7 @@ class ActorKeyedServiceFake : public ActorKeyedService {
@@ -109,7 +109,7 @@ index 19cbe8423a..490d0a6259 100644
    TaskId CreateTaskWithDurationForTesting(
        actor::webui::mojom::TaskDuration duration);
 diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
-index 2309fad3c1..ef28c49d58 100644
+index ff0fdd4ab62fa89d686eb30a994aa1bda5b43c88..c2571bbab176081231ec0a27da68f85598d6d4d2 100644
 --- a/chrome/browser/actor/actor_task.cc
 +++ b/chrome/browser/actor/actor_task.cc
 @@ -500,7 +500,8 @@ void ActorTask::Stop(StoppedReason stop_reason) {
@@ -123,7 +123,7 @@ index 2309fad3c1..ef28c49d58 100644
  
  void ActorTask::Pause(bool from_actor, bool cancel_existing_action) {
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index 7e64496a20..b7294385bb 100644
+index 7151c0e440794da57cf0fd058466551431e93121..8d061ce8a1a4c7c62ced9eb89129b463bb632753 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
 @@ -163,19 +163,37 @@ ActorTask::TaskDuration ActorUiStateManager::GetDuration(
@@ -223,7 +223,7 @@ index 7e64496a20..b7294385bb 100644
    actor_task_removed_callback_list_.Notify(task_id);
  }
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.h b/chrome/browser/actor/ui/actor_ui_state_manager.h
-index 4da2c48f4c..7b6b98fb01 100644
+index 4da2c48f4c3f6ea6ed8a25cddb8722ac52910406..7b6b98fb01085401088e7c77bca76fbe66e1d4d1 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.h
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.h
 @@ -10,6 +10,7 @@
@@ -255,10 +255,10 @@ index 4da2c48f4c..7b6b98fb01 100644
  
    // Tracks tabs currently in a pending actuation state prior to an ActorTask
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
-index 4b25025b3b..4d3f046556 100644
+index 74a66e71b4dac1310a9cfcc213be81d2921282b2..4e5bc54cf6a83ba0d256cbaa5d5ba787d3a2e8e1 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
-@@ -203,6 +203,46 @@ TEST_F(ActorUiStateManagerTest, SingleTask_RapidTaskStateChanges_Debounced) {
+@@ -204,6 +204,46 @@ TEST_F(ActorUiStateManagerTest, SingleTask_RapidTaskStateChanges_Debounced) {
    EXPECT_EQ(callback_count, 1);
  }
  
@@ -305,7 +305,7 @@ index 4b25025b3b..4d3f046556 100644
  TEST_F(ActorUiStateManagerTest, OnActorTaskState_kCreatedNewStateCrashes) {
    EXPECT_DEATH(actor_ui_state_manager()->OnUiEvent(
                     TaskStateChanged(TaskId(123), ActorTask::State::kCreated)),
-@@ -333,6 +373,20 @@ TEST_F(ActorUiStateManagerUiEventUiTabScopedTest,
+@@ -334,6 +374,20 @@ TEST_F(ActorUiStateManagerUiEventUiTabScopedTest,
                  expected_ui_tab_state);
  }
  
@@ -327,10 +327,10 @@ index 4b25025b3b..4d3f046556 100644
         OnStoppedActingOnTab_UpdatesUiCorrectly) {
    UiTabState expected_ui_tab_state{
 diff --git a/chrome/browser/actor/ui/event_dispatcher.cc b/chrome/browser/actor/ui/event_dispatcher.cc
-index 1df1e161ba..03d2d081c7 100644
+index 87169779c7a53267d346ce525818f44eae89bc53..34adbafe2a87823b6e4fe3d52d27aac6893c627b 100644
 --- a/chrome/browser/actor/ui/event_dispatcher.cc
 +++ b/chrome/browser/actor/ui/event_dispatcher.cc
-@@ -155,7 +155,8 @@ constexpr absl::Overload ActorTaskSyncChangeFn{
+@@ -168,7 +168,8 @@ constexpr absl::Overload ActorTaskSyncChangeFn{
      [](const UiEventDispatcher::StopTask& c) {
        return EventSequence<SyncUiEvent>{
            StopTask(c.task_id, c.final_state, c.title,
@@ -341,7 +341,7 @@ index 1df1e161ba..03d2d081c7 100644
      [](const UiEventDispatcher::RemoveTab& c) {
        return EventSequence<SyncUiEvent>{StoppedActingOnTab(c.handle)};
 diff --git a/chrome/browser/actor/ui/event_dispatcher.h b/chrome/browser/actor/ui/event_dispatcher.h
-index e8cc60078e..3e3be6f1e6 100644
+index e8cc60078e22ebf5dda0b832b57d9543d261be85..3e3be6f1e646c739ac03f80f92540fcb7ec3846f 100644
 --- a/chrome/browser/actor/ui/event_dispatcher.h
 +++ b/chrome/browser/actor/ui/event_dispatcher.h
 @@ -47,6 +47,7 @@ class UiEventDispatcher {
@@ -353,7 +353,7 @@ index e8cc60078e..3e3be6f1e6 100644
  
    struct RemoveTab {
 diff --git a/chrome/browser/actor/ui/ui_event.cc b/chrome/browser/actor/ui/ui_event.cc
-index 2883ee7c54..69f32e6a88 100644
+index 2883ee7c5407ea389572c8ed4322285e19d2bde2..69f32e6a88fd3b8bab895a8ad869db8d48457b94 100644
 --- a/chrome/browser/actor/ui/ui_event.cc
 +++ b/chrome/browser/actor/ui/ui_event.cc
 @@ -17,13 +17,15 @@ StopTask::StopTask(actor::TaskId id,
@@ -375,7 +375,7 @@ index 2883ee7c54..69f32e6a88 100644
  }
  StopTask::~StopTask() = default;
 diff --git a/chrome/browser/actor/ui/ui_event.h b/chrome/browser/actor/ui/ui_event.h
-index 7df9638947..190c1029cf 100644
+index 7df963894756301630430842f61963dd4f27753d..190c1029cf2114a4664be3681519bc4fd4eac206 100644
 --- a/chrome/browser/actor/ui/ui_event.h
 +++ b/chrome/browser/actor/ui/ui_event.h
 @@ -52,13 +52,15 @@ struct StopTask {
@@ -396,7 +396,7 @@ index 7df9638947..190c1029cf 100644
    ~StopTask();
  };
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 7935550fdb..829ec1aba6 100644
+index 7935550fdbb19f8e3cdc1237333394de0d3f6773..829ec1aba6b449e98fb1f8530f1042912771bc46 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -173,6 +173,36 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
@@ -551,7 +551,7 @@ index 7935550fdb..829ec1aba6 100644
                         BrowserStewardStartsWithoutOpeningWebPage) {
    ConfigureAgentModel(browser()->profile());
 diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
-index 22c0b99d91..9fe6513b99 100644
+index 22c0b99d9157b816bf64f4327a3f9e1af799eb93..9fe6513b99ce2b090f63d66008c1954df852d445 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 @@ -99,21 +99,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
@@ -582,7 +582,7 @@ index 22c0b99d91..9fe6513b99 100644
            (() => {
              const modes = [...document.querySelectorAll('#mode-group button')];
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 226b4a62ec..f7759a80e8 100644
+index 226b4a62ec9d1fa44548ac7adfb5ca6c84c1ea82..f7759a80e8808268ad06832bd202ea18543647e4 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1605,11 +1605,22 @@ void AegisAgentService::FinishRuntime(
@@ -609,7 +609,7 @@ index 226b4a62ec..f7759a80e8 100644
      const std::string& task_id,
      const AgentToolCall& call,
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 7aa3042004..bc8e112a60 100644
+index 7aa3042004bc5c1d8d14c1b0c6314c831e05fba2..bc8e112a60d5ced3035ad09fe835eb824909bb37 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -82,6 +82,8 @@ class AegisAgentService : public KeyedService {
@@ -630,7 +630,7 @@ index 7aa3042004..bc8e112a60 100644
    std::map<std::string, std::unique_ptr<AgentModelClient>> model_clients_;
    std::map<std::string, std::string> model_request_ids_;
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index cfed9da43b..e0998723be 100644
+index cfed9da43be2e0d6547e99943cf8768942c2b1aa..e0998723bef3087428696f18dba22d8a2aa2991b 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -1,91 +1,112 @@
@@ -1384,7 +1384,7 @@ index cfed9da43b..e0998723be 100644
 +  }
  }
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index 4a0095a981..e2a119351f 100644
+index 4a0095a9811a8c9b432df2d538eb13b0ef325ef9..e2a119351fe31504007ab11604bb2d379bc95c4f 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -1,5 +1,5 @@
@@ -1544,7 +1544,7 @@ index 4a0095a981..e2a119351f 100644
        <p id="error" class="error" role="alert"></p>
      </main>
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index f8f41b70e2..30370214f7 100644
+index f8f41b70e2607ac686920aace2466841df9cf93a..30370214f7c8c4dc1aaffc875be2d93cb35d5143 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -16,11 +16,16 @@ import {BrowserProxy} from './browser_proxy.js';
@@ -2116,7 +2116,7 @@ index f8f41b70e2..30370214f7 100644
  
  initializeLabels();
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index 3c454d22ec..efaa61f68e 100644
+index 3c454d22ec3768a9e622b3f6a5986e7f98504f26..efaa61f68eea7a444eddf98cb6eeab734c115a72 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -88,6 +88,10 @@ struct MonitorSummary {
@@ -2157,7 +2157,7 @@ index 3c454d22ec..efaa61f68e 100644
               AgentMode mode,
               Workflow workflow,
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index e8d72426f3..3557855497 100644
+index e8d72426f363af8cec1da88391f3e1d31563cb23..3557855497c1c6dd226ba80e75464fed0e7b5530 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -13,10 +13,12 @@
@@ -2481,7 +2481,7 @@ index e8d72426f3..3557855497 100644
            service_->PendingAction(task->id())) {
      auto approval = aegis_agent::mojom::PendingApproval::New();
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
-index d854755bfb..a550ba9c61 100644
+index d854755bfb6b7d47af5f5e51002abd7a8f3254be..a550ba9c613cb914b800cb07c4437e148767937d 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
 @@ -42,6 +42,16 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
@@ -2516,7 +2516,7 @@ index d854755bfb..a550ba9c61 100644
        const std::string& task_id,
        bool ok,
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 0b03d6a49e..90d9a7f3dc 100644
+index 0b03d6a49e229f4c82076bc908e182f89c774cea..90d9a7f3dc8a01b973c639f7d59d70d9b9c5312e 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -63,31 +63,35 @@ void AddStrings(content::WebUIDataSource* source) {

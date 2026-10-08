@@ -1,0 +1,206 @@
+From 2b32922cbdeb14fedee5d73dcdae884351802d6b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Tue, 25 Aug 2026 00:59:03 +0800
+Subject: [PATCH] fix: disable Google AIM eligibility requests
+
+---
+ .../aim_eligibility_service_factory.cc        | 15 ++++++---
+ .../aim_eligibility_service_factory.h         |  3 +-
+ .../browser/aim_eligibility_service.cc        |  8 +++++
+ .../omnibox/browser/aim_eligibility_service.h |  3 ++
+ .../aim_eligibility_service_unittest.cc       | 32 ++++++++++++++++++-
+ 5 files changed, 55 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/autocomplete/aim_eligibility_service_factory.cc b/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
+index db99292ecd82008b1d6f067f3b99f2f8516eee10..50fee56f066c1404d5b8d86f4fbe11dca4e53437 100644
+--- a/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
++++ b/chrome/browser/autocomplete/aim_eligibility_service_factory.cc
+@@ -29,11 +29,13 @@
+ namespace {
+ 
+ AimEligibilityService::Configuration CreateConfiguration(
+-    bool is_off_the_record) {
++    bool is_off_the_record,
++    bool allow_server_requests) {
+   AimEligibilityService::Configuration config;
+   config.is_off_the_record = is_off_the_record;
+   config.full_version_list =
+       embedder_support::GetUserAgentMetadata().SerializeBrandFullVersionList();
++  config.allow_server_requests = allow_server_requests;
+   if (!contextual_tasks::IsContextualTasksUIEnabled()) {
+     return config;
+   }
+@@ -58,6 +60,7 @@ AimEligibilityService::Configuration CreateConfiguration(
+ }
+ 
+ std::unique_ptr<KeyedService> BuildServiceInstance(
++    bool allow_server_requests,
+     content::BrowserContext* context) {
+   Profile* profile = Profile::FromBrowserContext(context);
+   return std::make_unique<ChromeAimEligibilityService>(
+@@ -66,7 +69,7 @@ std::unique_ptr<KeyedService> BuildServiceInstance(
+       profile->GetDefaultStoragePartition()
+           ->GetURLLoaderFactoryForBrowserProcess(),
+       IdentityManagerFactory::GetForProfile(profile),
+-      CreateConfiguration(profile->IsOffTheRecord()));
++      CreateConfiguration(profile->IsOffTheRecord(), allow_server_requests));
+ }
+ 
+ }  // namespace
+@@ -88,7 +91,8 @@ AimEligibilityServiceFactory* AimEligibilityServiceFactory::GetInstance() {
+ BrowserContextKeyedServiceFactory::TestingFactory
+ AimEligibilityServiceFactory::GetDefaultFactory() {
+   CHECK_IS_TEST();
+-  return base::BindRepeating(&BuildServiceInstance);
++  return base::BindRepeating(&BuildServiceInstance,
++                             /*allow_server_requests=*/true);
+ }
+ 
+ AimEligibilityServiceFactory::AimEligibilityServiceFactory()
+@@ -110,7 +114,10 @@ AimEligibilityServiceFactory::~AimEligibilityServiceFactory() = default;
+ std::unique_ptr<KeyedService>
+ AimEligibilityServiceFactory::BuildServiceInstanceForBrowserContext(
+     content::BrowserContext* context) const {
+-  return BuildServiceInstance(context);
++  // GCSA-aegis 使用自己的本地 AI 界面。生产 Profile 保留 Chromium AIM 的
++  // 本地状态，但不向 Google 发送 eligibility 请求；测试可通过
++  // GetDefaultFactory() 显式启用请求。
++  return BuildServiceInstance(/*allow_server_requests=*/false, context);
+ }
+ 
+ bool AimEligibilityServiceFactory::ServiceIsCreatedWithBrowserContext() const {
+diff --git a/chrome/browser/autocomplete/aim_eligibility_service_factory.h b/chrome/browser/autocomplete/aim_eligibility_service_factory.h
+index 3d0a0989c8ccafcf5820edadc86e0187440c37b2..1582e867adf6b4db47b2107b3a34335c52470440 100644
+--- a/chrome/browser/autocomplete/aim_eligibility_service_factory.h
++++ b/chrome/browser/autocomplete/aim_eligibility_service_factory.h
+@@ -21,7 +21,8 @@ class AimEligibilityServiceFactory : public ProfileKeyedServiceFactory {
+   static AimEligibilityService* GetForProfile(Profile* profile);
+   static AimEligibilityServiceFactory* GetInstance();
+ 
+-  // Returns the default factory to pass to `SetTestingFactory()` for testing.
++  // 返回供 `SetTestingFactory()` 使用的测试 factory；该 factory 会显式
++  // 启用 server request，以保留请求路径的正向测试覆盖。
+   static TestingFactory GetDefaultFactory();
+ 
+   AimEligibilityServiceFactory(const AimEligibilityServiceFactory&) = delete;
+diff --git a/components/omnibox/browser/aim_eligibility_service.cc b/components/omnibox/browser/aim_eligibility_service.cc
+index 3b6b5eba6438a9886b1081f23ba2eeb466b8247a..9dbb220aeb0d0d13a723cbbf5d41627a187b3c72 100644
+--- a/components/omnibox/browser/aim_eligibility_service.cc
++++ b/components/omnibox/browser/aim_eligibility_service.cc
+@@ -350,6 +350,10 @@ AimEligibilityService::AimEligibilityService(
+ 
+   LoadMostRecentResponse();
+ 
++  if (!configuration_.allow_server_requests) {
++    return;
++  }
++
+   if (IsManualOverrideActive()) {
+     base::Time override_time =
+         pref_service_->GetTime(kManualOverrideTimestampPrefName);
+@@ -1101,6 +1105,10 @@ void AimEligibilityService::ScheduleServerEligibilityRequest(
+ void AimEligibilityService::StartServerEligibilityRequest(
+     RequestSource request_source,
+     const std::string& locale) {
++  if (!configuration_.allow_server_requests) {
++    return;
++  }
++
+   if (IsManualOverrideActive() && request_source != RequestSource::kUser) {
+     return;
+   }
+diff --git a/components/omnibox/browser/aim_eligibility_service.h b/components/omnibox/browser/aim_eligibility_service.h
+index a550dc7c27dfb2c28bf1e562ad6f4b55dbe43c16..88c4a9b292a392aacfbe84a54d74c7b82eda529c 100644
+--- a/components/omnibox/browser/aim_eligibility_service.h
++++ b/components/omnibox/browser/aim_eligibility_service.h
+@@ -121,6 +121,9 @@ class AimEligibilityService
+     // The value for the `Chrome-Search-Capabilities-Version` HTTP Header. The
+     // header is skipped if it is empty.
+     std::string search_capabilities_version;
++    // 产品嵌入方必须显式允许，服务才能发送 Google AIM eligibility 请求。
++    // 关闭后仍保留本地 eligibility 状态与缓存响应处理。
++    bool allow_server_requests = false;
+   };
+ 
+   // Returns the current server eligibility request mode based on the feature
+diff --git a/components/omnibox/browser/aim_eligibility_service_unittest.cc b/components/omnibox/browser/aim_eligibility_service_unittest.cc
+index ce051ec98a3f01f4eef0707a149f95fb9ef014f9..ea296e6c6d539ca0c6933bb020871a4257be142a 100644
+--- a/components/omnibox/browser/aim_eligibility_service_unittest.cc
++++ b/components/omnibox/browser/aim_eligibility_service_unittest.cc
+@@ -55,6 +55,10 @@ class AimEligibilityServiceFriend {
+   static bool IsIetfBcp47(const std::string& locale) {
+     return AimEligibilityService::IsIetfBcp47(locale);
+   }
++
++  static bool IsServerRequestScheduled(AimEligibilityService* service) {
++    return service->request_debounce_timer_.IsRunning();
++  }
+ };
+ 
+ namespace {
+@@ -104,7 +108,9 @@ class AimEligibilityServiceTest : public testing::Test {
+   void SetUp() override {
+     AimEligibilityService::RegisterProfilePrefs(
+         search_engines_test_environment_.pref_service().registry());
+-    CreateService();
++    AimEligibilityService::Configuration configuration;
++    configuration.allow_server_requests = true;
++    CreateService(configuration);
+   }
+ 
+   void CreateService(
+@@ -410,6 +416,27 @@ TEST_F(AimEligibilityServiceTest, ClientLocaleParam) {
+   EXPECT_EQ(value, "es-419");
+ }
+ 
++TEST_F(AimEligibilityServiceTest,
++       ServerRequestsDisabledBlocksStartupAndExplicitFetch) {
++  aim_eligibility_service_.reset();
++  test_url_loader_factory_.pending_requests()->clear();
++  AimEligibilityService::Configuration config;
++  config.allow_server_requests = false;
++  CreateService(config);
++  task_environment_.RunUntilIdle();
++  EXPECT_FALSE(AimEligibilityServiceFriend::IsServerRequestScheduled(
++      aim_eligibility_service_.get()));
++  EXPECT_EQ(0, test_url_loader_factory_.NumPending());
++
++  aim_eligibility_service_->StartServerEligibilityRequestForDebugging();
++  aim_eligibility_service_->FetchEligibility(
++      AimEligibilityService::RequestSource::kUser);
++  task_environment_.RunUntilIdle();
++  EXPECT_FALSE(AimEligibilityServiceFriend::IsServerRequestScheduled(
++      aim_eligibility_service_.get()));
++  EXPECT_EQ(0, test_url_loader_factory_.NumPending());
++}
++
+ TEST_F(AimEligibilityServiceTest, ClientCountryParam_Enabled) {
+   base::test::ScopedFeatureList feature_list;
+   feature_list.InitAndEnableFeature(
+@@ -734,6 +761,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader) {
+       omnibox::kAimServerEligibilitySendFullVersionListEnabled);
+ 
+   AimEligibilityService::Configuration config;
++  config.allow_server_requests = true;
+   config.full_version_list = "Test Brand List";
+   CreateService(config);
+ 
+@@ -757,6 +785,7 @@ TEST_F(AimEligibilityServiceTest, FullVersionListHeader_Disabled) {
+       omnibox::kAimServerEligibilitySendFullVersionListEnabled);
+ 
+   AimEligibilityService::Configuration config;
++  config.allow_server_requests = true;
+   config.full_version_list = "Test Brand List";
+   CreateService(config);
+ 
+@@ -777,6 +806,7 @@ TEST_F(AimEligibilityServiceTest, CoBrowseUserAgentSuffix) {
+       omnibox::kAimServerEligibilitySendCoBrowseUserAgentSuffixEnabled);
+ 
+   AimEligibilityService::Configuration config;
++  config.allow_server_requests = true;
+   config.user_agent_with_cobrowse_suffix = "UA with Suffix";
+   CreateService(config);
+ 
+-- 
+2.52.0
+
