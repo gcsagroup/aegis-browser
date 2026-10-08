@@ -5804,5 +5804,124 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                                     "checking page text")));
 }
 
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                       SelectedResearchBindsQueryTwinsThroughRealObservations) {
+  embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
+      [](const net::test_server::HttpRequest& request)
+          -> std::unique_ptr<net::test_server::HttpResponse> {
+        if (!request.relative_url.starts_with("/research?"))
+          return nullptr;
+        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+        response->set_content_type("text/html; charset=utf-8");
+        response->set_content("<title>研究来源</title><main><p>延迟：18 ms。</p>"
+                              "<p>这是可核对的公开来源正文。</p></main>");
+        return response;
+      }));
+  ASSERT_TRUE(embedded_test_server()->Start());
+  Profile* profile = browser()->GetProfile();
+  ConfigureAgentModel(profile);
+  profile->GetPrefs()->SetString(prefs::kModelBaseUrl, "http://127.0.0.1:8765/v1");
+  profile->GetPrefs()->SetString(prefs::kModelName, "fixture-model");
+  auto* tabs = TabListInterface::From(browser());
+  ASSERT_TRUE(tabs);
+  std::vector<int32_t> ids;
+  std::map<int32_t, GURL> original;
+  for (int source = 1; source <= 3; ++source) {
+    const GURL url = embedded_test_server()->GetURL(
+        "/research?secret_query_" + base::NumberToString(source) + "=value#private");
+    auto* tab = tabs->OpenTab(url, tabs->GetTabCount(), true);
+    ASSERT_TRUE(tab);
+    ASSERT_TRUE(content::WaitForLoadStop(tab->GetContents()));
+    const int32_t id = tab->GetHandle().raw_value();
+    ids.push_back(id);
+    original.emplace(id, url);
+  }
+  std::sort(ids.begin(), ids.end());
+  auto* service = AegisAgentServiceFactory::GetForProfile(profile);
+  ASSERT_TRUE(service);
+  base::test::TestFuture<bool> storage;
+  service->FlushTaskStoreForTesting(storage.GetCallback());
+  ASSERT_TRUE(storage.Get());
+  const GURL endpoint("http://127.0.0.1:8765/v1/responses");
+  // The second run navigates after real observations, while the model is pending.
+  for (bool replace_document : {false, true}) {
+    SCOPED_TRACE(replace_document);
+    AgentTask* task = service->CreateSelectedResearchTask("比较所选来源的延迟", ids);
+    ASSERT_TRUE(task);
+    const std::string task_id = task->id();
+    network::TestURLLoaderFactory factory;
+    service->SetTaskModelClientForTesting(
+        task_id, std::make_unique<AgentModelClient>(factory.GetSafeWeakWrapper()));
+    ASSERT_TRUE(service->GrantTaskConsent(task_id));
+    base::test::TestFuture<bool, std::string,
+                           std::optional<AgentCompletionSummary>> finished;
+    service->RunTask(task_id, finished.GetCallback());
+    ASSERT_TRUE(base::test::RunUntil([&] {
+      return !factory.pending_requests()->empty() || finished.IsReady();
+    }));
+    ASSERT_FALSE(finished.IsReady());
+    const std::string upload = network::GetUploadData(factory.GetPendingRequest(0)->request);
+    EXPECT_EQ(upload.find("secret_query_"), std::string::npos);
+    EXPECT_EQ(upload.find("#private"), std::string::npos);
+    for (int source = 1; source <= 3; ++source) {
+      EXPECT_NE(upload.find("source_id"), std::string::npos);
+      const auto* observed = service->FindRecordedResult(
+          task_id, task_id + ":selected-page-" + base::NumberToString(ids[source - 1]) + ":1");
+      ASSERT_TRUE(observed);
+      EXPECT_TRUE(observed->ok);
+    }
+    if (replace_document) {
+      auto* changed = tabs::TabHandle(ids.front()).Get();
+      ASSERT_TRUE(changed);
+      // Same URL, fresh primary document: URL equality cannot authorize reuse.
+      ASSERT_TRUE(content::NavigateToURL(changed->GetContents(), original.at(ids.front())));
+    }
+    base::ListValue cells;
+    for (int source = 1; source <= 3; ++source)
+      cells.Append(base::DictValue().Set("source_id", source).Set("value", "18 ms"));
+    base::DictValue dimension;
+    dimension.Set("label", "延迟");
+    dimension.Set("prefix", "延迟：");
+    dimension.Set("suffix", "。");
+    dimension.Set("values", std::move(cells));
+    base::DictValue arguments;
+    arguments.Set("outcome", "completed");
+    arguments.Set("summary", "待浏览器核对");
+    arguments.Set("source_urls", base::ListValue().Append(
+        embedded_test_server()->GetURL("/research").spec()));
+    arguments.Set("unfinished_items", base::ListValue());
+    arguments.Set("research_comparisons", base::ListValue().Append(std::move(dimension)));
+    base::DictValue call;
+    call.Set("type", "function_call");
+    call.Set("call_id", "fixture-complete");
+    call.Set("name", "agent.complete");
+    call.Set("arguments", *base::WriteJson(arguments));
+    base::DictValue response;
+    response.Set("status", "completed");
+    response.Set("output", base::ListValue().Append(std::move(call)));
+    ASSERT_TRUE(factory.SimulateResponseForPendingRequest(endpoint.spec(), *base::WriteJson(response)));
+    EXPECT_EQ(finished.Get<0>(), !replace_document);
+    if (replace_document) {
+      EXPECT_FALSE(service->GetCompletionSummary(task_id));
+      continue;
+    }
+    const auto* completion = service->GetCompletionSummary(task_id);
+    ASSERT_TRUE(completion);
+    EXPECT_EQ(completion->outcome, "completed");
+    EXPECT_NE(completion->summary.find("3 个来源"), std::string::npos);
+    EXPECT_EQ(completion->summary.find("secret_query_"), std::string::npos);
+    // FinishRuntime consumes trusted evidence even after CompleteTask stops Actor.
+    const auto* record = service->GetResearchRecord(task_id);
+    ASSERT_TRUE(record);
+    const auto* sources = record->FindList("sources");
+    ASSERT_TRUE(sources);
+    ASSERT_EQ(sources->size(), 3u);
+    for (size_t source = 0; source < ids.size(); ++source) {
+      EXPECT_EQ(*(*sources)[source].GetDict().FindString("url"), original.at(ids[source]).spec());
+      EXPECT_EQ((*sources)[source].GetDict().FindBool("available"), true);
+    }
+  }
+}
+
 }  // namespace
 }  // namespace aegis::agent
