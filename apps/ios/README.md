@@ -8,7 +8,7 @@ A native SwiftUI and system WebKit browser for iOS 18.4 and later, developed for
 
 Private browsing now supports the library, bookmarks, workspaces, downloads and AI. History, private sessions and AI tasks are not saved automatically. Explicit bookmark, workspace, download and report save/export actions explain what remains stored. AI reads only selected tabs from the current browsing mode; each send shows the service and scope for confirmation. Closing the assistant discards the temporary analysis. Explicitly saved reports remain in task history.
 
-Current candidate: **Ver 3.2 (63)**. All 162 distinct checks in the private-browsing validation passed on iPhone and iPad after fixes and targeted reruns. The full compact-interface run is recorded separately. See [private browsing validation](../../docs/audit/ios-private-mode-2026-10-05.zh-CN.md) and [interface validation](../../docs/audit/ios-compact-ui-2026-10-05.zh-CN.md). This is simulator acceptance; the published source preview remains 2.2.
+Current candidate: **Ver 3.2 (69)**. After integration with main and corrective reruns, iPhone completed 194 checks with 1 iPad-only check skipped; iPad passed 195. Each device ran 185 native tests plus interface flows for downloads, recovery and private confirmations. See the [main integration validation](../../docs/audit/ios-main-merge-2026-10-09.zh-CN.md); the earlier [private browsing validation](../../docs/audit/ios-private-mode-2026-10-05.zh-CN.md) and [interface validation](../../docs/audit/ios-compact-ui-2026-10-05.zh-CN.md) remain historical records. This is Simulator acceptance only. The published source preview remains 2.2.
 
 ## Ver 3.1 interface candidate
 

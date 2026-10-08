@@ -1,4 +1,4 @@
-From e35f414946677a7ff47793b0c7da689e0c6de795 Mon Sep 17 00:00:00 2001
+From f5e29a108fe1e83397e92d358f27394c2d587ad2 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Mon, 31 Aug 2026 00:34:20 +0800
 Subject: [PATCH] fix(aegis): harden browser agent planning flow
@@ -18,7 +18,7 @@ Subject: [PATCH] fix(aegis): harden browser agent planning flow
  11 files changed, 256 insertions(+), 195 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 829ec1aba6..54e3e57bce 100644
+index 829ec1aba6b449e98fb1f8530f1042912771bc46..54e3e57bcecd12cf11e54932d45680e59515ea78 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -464,6 +464,38 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
@@ -61,7 +61,7 @@ index 829ec1aba6..54e3e57bce 100644
                         BrowserStewardStartsWithoutOpeningWebPage) {
    ConfigureAgentModel(browser()->profile());
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index f7759a80e8..63f15effc2 100644
+index f7759a80e8808268ad06832bd202ea18543647e4..63f15effc21255bddb45176c61f0eb2213c2e64f 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -583,8 +583,9 @@ void AegisAgentService::RequestPlan(const std::string& task_id,
@@ -150,7 +150,7 @@ index f7759a80e8..63f15effc2 100644
    auto it = task_has_external_side_effect_.find(task.id());
    return storage_ready_ &&
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index bc8e112a60..f42280e4c2 100644
+index bc8e112a60d5ced3035ad09fe835eb824909bb37..f42280e4c26eb6933cb3fd4d9dbcd372067e7c18 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -153,6 +153,9 @@ class AegisAgentService : public KeyedService {
@@ -164,7 +164,7 @@ index bc8e112a60..f42280e4c2 100644
    bool PersistPlanProgress(const std::string& task_id,
                             size_t next_step,
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 9fe3869684..67ddf4eb1c 100644
+index 9fe3869684f3d5adeed3fad89b1cf732f418b0f8..67ddf4eb1c9a87e2150585ea776c77f5ee6ba38f 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -79,32 +79,13 @@ AgentTaskScope ServiceTestScope() {
@@ -219,7 +219,7 @@ index 9fe3869684..67ddf4eb1c 100644
    profile_->GetPrefs()->SetString(aegis::prefs::kModelProvider, "openai");
    profile_->GetPrefs()->SetString(aegis::prefs::kModelBaseUrl,
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 5d7e6c21b4..204933e30a 100644
+index 5d7e6c21b47c6faf088b12afc0cd198706ee1832..204933e30af2006e43bf17cec12900a7b134cd70 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -36,14 +36,6 @@ base::DictValue IntegerSchema(int minimum, int maximum) {
@@ -444,7 +444,7 @@ index 5d7e6c21b4..204933e30a 100644
      const size_t checkout_steps = std::ranges::count(
          plan.steps, "shopping.prepare_checkout", &AgentPlanStep::tool_name);
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 069f50e8b6..ad3ff10238 100644
+index 069f50e8b68a2d7a5a2bbf030a455e449ae1e52f..ad3ff10238db6dcb4e62a3927cd979eed53cf37a 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -42,24 +42,6 @@ AgentModelEvent ValidPlanEvent() {
@@ -550,7 +550,7 @@ index 069f50e8b6..ad3ff10238 100644
    const std::optional<std::string> prompt =
        BuildAgentPlanningPrompt("Compare approved sources", MaximumScope());
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index e0998723be..021e586b8c 100644
+index e0998723bef3087428696f18dba22d8a2aa2991b..021e586b8c83892e46cec8128db08e67c77dfc01 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -529,9 +529,16 @@ summary {
@@ -572,7 +572,7 @@ index e0998723be..021e586b8c 100644
  
  @media (max-width: 360px) {
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index e2a119351f..9126232961 100644
+index e2a119351fe31504007ab11604bb2d379bc95c4f..91262329618baf7846c2cecb88516f4b3caaa614 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -84,6 +84,8 @@
@@ -593,7 +593,7 @@ index e2a119351f..9126232961 100644
      <script type="module" src="agent.js"></script>
    </body>
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 30370214f7..706df7a21d 100644
+index 30370214f7c8c4dc1aaffc875be2d93cb35d5143..706df7a21d83bc035198e471d16a8ecf08284976 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -160,7 +160,7 @@ function renderCheckoutSummary(checkout: CheckoutSummary|null) {
@@ -691,7 +691,7 @@ index 30370214f7..706df7a21d 100644
    const approval = element('approval-card');
    approval.hidden = !next.pendingApproval;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 3557855497..33a6f76e9f 100644
+index 3557855497c1c6dd226ba80e75464fed0e7b5530..33a6f76e9f30526f12f544a5123bcdba173f79e1 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -30,6 +30,7 @@
@@ -797,7 +797,7 @@ index 3557855497..33a6f76e9f 100644
      }
  
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 90d9a7f3dc..84703e6166 100644
+index 90d9a7f3dc8a01b973c639f7d59d70d9b9c5312e..84703e61665077c1cdb6b34a49e11a40ad492b60 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -165,6 +165,42 @@ void AddStrings(content::WebUIDataSource* source) {

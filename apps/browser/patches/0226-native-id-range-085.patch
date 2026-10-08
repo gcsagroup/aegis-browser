@@ -1,4 +1,4 @@
-From d92ca97ae90d1da84b203b8791c1823d0555d5dc Mon Sep 17 00:00:00 2001
+From 61d2d7e10546d67aef6d9a44238ed67be3f6f565 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 05:40:56 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=E7=AA=97?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 74 insertions(+), 29 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 1d222f6dd1..da413f7494 100644
+index 1d222f6dd127d79453aee3b8898ed55d20a1dc95..da413f749410b49c27bf5905f55ae03952bd73fb 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -1126,6 +1126,46 @@ TEST(AegisAgentToolRegistryTest, ExposesOnlyScopedFixedSchemas) {
@@ -66,7 +66,7 @@ index 1d222f6dd1..da413f7494 100644
    AgentToolRegistry registry;
    AgentPolicyBroker broker(&registry);
 diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
-index d9fe4052a8..f4ba883462 100644
+index d9fe4052a8c2759c9e0a274c3a32e866ab255077..f4ba88346205acc3901b8c936bdb1587b0104d4e 100644
 --- a/chrome/browser/aegis/agent/agent_tool_registry.cc
 +++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
 @@ -3,7 +3,9 @@
@@ -311,7 +311,7 @@ index d9fe4052a8..f4ba883462 100644
      properties.Set("merchant", StringSchema(512));
      properties.Set("product", StringSchema(1024));
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 0ae4093851..784891a2da 100644
+index 0ae40938516dc653b37a3d7a784e1d8b6ded50f2..784891a2da9a76abd7b99acad1070b3c31f21a1a 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

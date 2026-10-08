@@ -1,4 +1,4 @@
-From faf5fba1179b094d8a09db1773a8cca54338d304 Mon Sep 17 00:00:00 2001
+From 4e8096e785aaddba7224401fc1921e1ae6e0eb9c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 10 Sep 2026 19:59:36 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=90=8C=E6=AD=A5=E5=BD=93=E5=89=8D=20Agent=20?=
@@ -69,10 +69,10 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/common/aegis/security_text.h
 
 diff --git a/chrome/browser/actor/actor_navigation_throttle.cc b/chrome/browser/actor/actor_navigation_throttle.cc
-index b5cfce84a2..b67d1d945c 100644
+index 9fbb9a63498fabbbaaf1f6443a173015f26c0152..da714dcebc884ceb8d30c668a9aeb28aa4cc8e42 100644
 --- a/chrome/browser/actor/actor_navigation_throttle.cc
 +++ b/chrome/browser/actor/actor_navigation_throttle.cc
-@@ -46,11 +46,8 @@ bool IsDangerousMimeType(std::string_view mime_type) {
+@@ -30,11 +30,8 @@ namespace actor {
  // static
  void ActorNavigationThrottle::MaybeCreateAndAdd(
      content::NavigationThrottleRegistry& registry) {
@@ -87,7 +87,7 @@ index b5cfce84a2..b67d1d945c 100644
    content::NavigationHandle& navigation_handle = registry.GetNavigationHandle();
  
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index 368585db72..ef3d2c5640 100644
+index 14175162c83e05fc6f419b952084fbedf962dd0f..a88816276de71a83c2ebf994f76b6b8300ec6ac0 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
 @@ -337,6 +337,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,
@@ -105,7 +105,7 @@ index 368585db72..ef3d2c5640 100644
        base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
            FROM_HERE,
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index c2ab010ccb..5543d5affb 100644
+index c2ab010ccbc21a7b7a16e77ed819f2ab7967213a..5543d5affb08d914e41616bf4df1b5ca31a9ba15 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -24,6 +24,8 @@ source_set("agent_core") {
@@ -163,7 +163,7 @@ index c2ab010ccb..5543d5affb 100644
      "agent/agent_task_store_unittest.cc",
      "agent/v2_runtime_spike_unittest.cc",
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
-index 945f85d14a..c05c89ad3b 100644
+index 945f85d14afcb23380b3acceda62b5e968e67427..c05c89ad3b2ea49f7445d4c30bc21d23364d161c 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 @@ -124,6 +124,12 @@ std::u16string ReasonLabel(const PhishReason& reason, bool zh) {
@@ -180,7 +180,7 @@ index 945f85d14a..c05c89ad3b 100644
      return WithoutTechnicalWeight(
          zh ? u"在可疑网站上出现了密码框" : u"Password field on a risky site",
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
-index c23a93b5b3..45938ca0eb 100644
+index c23a93b5b33b9d915dfb3110a0cb8c1720c39e93..45938ca0eb3f905ccd45e77c656cf3e83dc859db 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 @@ -44,6 +44,7 @@
@@ -489,7 +489,7 @@ index c23a93b5b3..45938ca0eb 100644
    }
  
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
-index c5d79e76df..901d31c242 100644
+index c5d79e76df077b76fb3b5d55845d1a822e51b661..901d31c242074a889be3ceb4dd485ca66226b728 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
 @@ -51,6 +51,10 @@ class AegisActorBridge {
@@ -504,7 +504,7 @@ index c5d79e76df..901d31c242 100644
                         const AgentToolCall& call,
                         ToolResultCallback callback);
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 2ff6b57165..217eabb6de 100644
+index 2ff6b57165c2ba8c2ceacc88d533be07cf6adf1f..217eabb6de40f2355974b2f086852228d4cb9fbf 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -2,19 +2,30 @@
@@ -4675,7 +4675,7 @@ index 2ff6b57165..217eabb6de 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 5d4815fb5e..40472f083f 100644
+index 5d4815fb5e808e27237889815ceba084ac8c2ff5..40472f083f5ec5f8be60936047d3c63586d20853 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -12,11 +12,13 @@
@@ -6529,7 +6529,7 @@ index 5d4815fb5e..40472f083f 100644
    if (goal_router_client_ && !goal_router_request_id_.empty()) {
      goal_router_client_->Cancel(goal_router_request_id_);
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 060449dd28..1c1c3324b0 100644
+index 060449dd28b6afa74f5f113a010ed61a202cdb6e..1c1c3324b055a4680af8e1a41c203013a8c04d93 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -28,6 +28,15 @@
@@ -6670,7 +6670,7 @@ index 060449dd28..1c1c3324b0 100644
    std::map<std::string, AgentTaskPlan> plans_;
    std::map<std::string, AgentCompletionSummary> completion_summaries_;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 2c08bd2cd6..4c2d81fbf4 100644
+index 2c08bd2cd6fa1eb67a9172a49c3946075ae8aec7..4c2d81fbf4eaa2eeb0d089132182ea4925c3f536 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -2,15 +2,20 @@
@@ -7281,7 +7281,7 @@ index 2c08bd2cd6..4c2d81fbf4 100644
         RunsSessionOnlyMonitorWithoutPersistingItsTarget) {
    std::string task_id;
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index 58dec9ae0f..0eba891c09 100644
+index 58dec9ae0fbca81769a5b99e8ef266f236bf6c6d..0eba891c092479d4003b12fcc4a7dc2656d3f9bd 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -206,6 +206,54 @@ std::vector<LocatedTab> TaskTabs(Profile* profile, const AgentTask& task) {
@@ -7599,7 +7599,7 @@ index 58dec9ae0f..0eba891c09 100644
    batch.active_origins.insert(url::Origin::Create(entry.url).Serialize());
    std::unique_ptr<network::SimpleURLLoader> loader =
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
-index ab08e5508d..7a32ad18c3 100644
+index ab08e5508d4c98be373162e663e03c3d824f964e..7a32ad18c3cc4bc736d8791f0021fdbd819677d7 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.h
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
 @@ -97,6 +97,14 @@ class AegisBrowserTools : public UndoManagerObserver {
@@ -7626,7 +7626,7 @@ index ab08e5508d..7a32ad18c3 100644
    std::map<std::string, std::unique_ptr<UrlCheckBatch>> url_check_batches_;
    std::map<std::string, base::flat_set<std::string>> owned_downloads_;
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 91058eb090..8ea1bbbce3 100644
+index 91058eb09063b0272462e49dd23ede044fd2de45..8ea1bbbce35d0fc56f3fe8880d122280b2e2cca3 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -17,6 +17,16 @@
@@ -8099,7 +8099,7 @@ index 91058eb090..8ea1bbbce3 100644
    AgentToolRegistry registry;
    AgentTaskScope scope = TestScope();
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index c50fffea0c..8c82a87d54 100644
+index c50fffea0c9ff2037839b7675efee4c2084bbba0..8c82a87d5451f816d2ec8e685d9c57290396006a 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -13,6 +13,7 @@
@@ -9199,7 +9199,7 @@ index c50fffea0c..8c82a87d54 100644
                                    const AgentToolResult& observation,
                                    std::string* error) {
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index d1e352f3a0..3194cdc4bd 100644
+index d1e352f3a0a681f71aa7e2e48ab44b38d3dd50d0..3194cdc4bd53ea9afd6003c576351a72d23db8dd 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -15,11 +15,18 @@
@@ -9315,7 +9315,7 @@ index d1e352f3a0..3194cdc4bd 100644
  // references match the browser's latest bounded observation. The observation
  // fingerprint is checked again immediately before control is handed to the
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 543d1e6ec4..941ca5f0ef 100644
+index 543d1e6ec40e976c61aafd1cbd3bdd73308118c9..941ca5f0ef88db85046f4d8ca7a7d15b3518a96c 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -5,6 +5,7 @@
@@ -10825,7 +10825,7 @@ index 543d1e6ec4..941ca5f0ef 100644
    AgentToolResult observation = CheckoutObservation("fresh-1", "115.00");
    AgentToolCall call = CheckoutSummary(11500, "fresh-1");
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol.cc b/chrome/browser/aegis/agent/agent_model_protocol.cc
-index acee013c98..7d76297b04 100644
+index acee013c984238dec30957cf87cc5e5046d67ccd..7d76297b047c1d6bf2e4b52b8239843e929ed328 100644
 --- a/chrome/browser/aegis/agent/agent_model_protocol.cc
 +++ b/chrome/browser/aegis/agent/agent_model_protocol.cc
 @@ -16,8 +16,36 @@
@@ -10911,7 +10911,7 @@ index acee013c98..7d76297b04 100644
        user_parts.Append(std::move(user_part));
        base::DictValue content;
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol.h b/chrome/browser/aegis/agent/agent_model_protocol.h
-index 39fd452162..0c5ca2ee3d 100644
+index 39fd452162ab658b4cabcf6fbc253c6853864a0d..0c5ca2ee3d6f658e630bd3fcb2a4daee6fd83798 100644
 --- a/chrome/browser/aegis/agent/agent_model_protocol.h
 +++ b/chrome/browser/aegis/agent/agent_model_protocol.h
 @@ -7,6 +7,7 @@
@@ -10936,7 +10936,7 @@ index 39fd452162..0c5ca2ee3d 100644
    int64_t input_tokens = 0;
    int64_t output_tokens = 0;
 diff --git a/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
-index 6ea94c2c09..15c43d04fa 100644
+index 6ea94c2c09932071359188e438d1ccc93502e4b1..15c43d04fad127a8be233377b6a337e9e79ad547 100644
 --- a/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_model_protocol_unittest.cc
 @@ -7,6 +7,7 @@
@@ -11057,7 +11057,7 @@ index 6ea94c2c09..15c43d04fa 100644
       DisablesThinkingOnlyForOpenAICompatibleRequests) {
    AgentModelRequest request =
 diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.cc b/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
-index b500aafd77..398eb65510 100644
+index b500aafd77e25e6cde1ce86268e39fe104a719d7..398eb65510577dd2c80dafbf5de69af1006adc65 100644
 --- a/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
 +++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.cc
 @@ -3,12 +3,328 @@
@@ -11452,7 +11452,7 @@ index b500aafd77..398eb65510 100644
    if (success) {
      monitor.consecutive_failures = 0;
 diff --git a/chrome/browser/aegis/agent/agent_monitor_scheduler.h b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
-index f8990a0156..e2c8218b9d 100644
+index f8990a0156c171f17b684d95ae8df235c55d459f..e2c8218b9d0c48ce62d446e964d4b783b5f60f44 100644
 --- a/chrome/browser/aegis/agent/agent_monitor_scheduler.h
 +++ b/chrome/browser/aegis/agent/agent_monitor_scheduler.h
 @@ -5,11 +5,13 @@
@@ -11553,7 +11553,7 @@ index f8990a0156..e2c8218b9d 100644
   private:
 diff --git a/chrome/browser/aegis/agent/agent_monitor_summary.cc b/chrome/browser/aegis/agent/agent_monitor_summary.cc
 new file mode 100644
-index 0000000000..5db80ee749
+index 0000000000000000000000000000000000000000..5db80ee74943d91a477a25acb66a059553c1a5fc
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_monitor_summary.cc
 @@ -0,0 +1,311 @@
@@ -11870,7 +11870,7 @@ index 0000000000..5db80ee749
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_monitor_summary.h b/chrome/browser/aegis/agent/agent_monitor_summary.h
 new file mode 100644
-index 0000000000..12efc72c0c
+index 0000000000000000000000000000000000000000..12efc72c0c1836f53547adcb3574cbdfcc88d91b
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_monitor_summary.h
 @@ -0,0 +1,47 @@
@@ -11923,7 +11923,7 @@ index 0000000000..12efc72c0c
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_MONITOR_SUMMARY_H_
 diff --git a/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc b/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
 new file mode 100644
-index 0000000000..3b34f0d4b9
+index 0000000000000000000000000000000000000000..3b34f0d4b93cc45deb045521102874b641d566cb
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
 @@ -0,0 +1,182 @@
@@ -12110,7 +12110,7 @@ index 0000000000..3b34f0d4b9
 +}  // namespace
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 34bda5e718..91905f5fa4 100644
+index 34bda5e718c8ac9b295453ee6679782a871eed49..91905f5fa4ec651f99cecd99d42c6fde2b40cbf1 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -100,19 +100,99 @@ bool GoalContainsAny(std::string_view goal,
@@ -12488,7 +12488,7 @@ index 34bda5e718..91905f5fa4 100644
  }
  
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index 5ec774c07e..26a7ebc949 100644
+index 5ec774c07efa99c760320937cb27ee7d1404519a..26a7ebc94953f8082c97bbd6381cdfe027f530fd 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -60,6 +60,22 @@ std::optional<AgentGoalRoute> ParseAndValidateGoalRoute(
@@ -12515,7 +12515,7 @@ index 5ec774c07e..26a7ebc949 100644
  
  // Fixed contract placed before the user goal. Page text and prior tool results
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 1665b1fe93..b0c1e16cfb 100644
+index 1665b1fe93b81103291423243cfa95fd9a0c5abd..b0c1e16cfbfec22d03f550653ca2663c8f09a873 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -68,6 +68,282 @@ AgentModelEvent GoalRouteEvent(std::string workflow,
@@ -13000,7 +13000,7 @@ index 1665b1fe93..b0c1e16cfb 100644
  
  TEST(AegisAgentPlannerTest, TaskModeOwnsScheduledMonitorLifecycle) {
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
-index 90c0a07248..befa203f42 100644
+index 90c0a0724822ef831a6897b0c5d5349b000c8324..befa203f42bccd837cecedf25eb3d4cc334e99e3 100644
 --- a/chrome/browser/aegis/agent/agent_policy_broker.cc
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
 @@ -105,6 +105,14 @@ AgentPolicyDecision AgentPolicyBroker::Evaluate(
@@ -13019,7 +13019,7 @@ index 90c0a07248..befa203f42 100644
        input_json && ContainsForbiddenSecretJson(*input_json)) {
      return Deny(AgentErrorCode::kScopeViolation,
 diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
-index bc21a7ad18..cfe30b2ad2 100644
+index bc21a7ad18e7d593b27e477442975b2ec0680b4e..cfe30b2ad2cf95b9d3c0102c7f07542260039b6f 100644
 --- a/chrome/browser/aegis/agent/agent_result_verifier.cc
 +++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
 @@ -7,6 +7,7 @@
@@ -13106,7 +13106,7 @@ index bc21a7ad18..cfe30b2ad2 100644
      return Accept(true, "URL classifications are deterministic");
    }
 diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
-index aecfa12d94..6631324425 100644
+index aecfa12d94dfc0d6fcafa4e103f01052e213fd6f..6631324425d7da607a825561af6cafdf5757031a 100644
 --- a/chrome/browser/aegis/agent/agent_task_store.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store.cc
 @@ -19,8 +19,9 @@ namespace aegis::agent {
@@ -13254,7 +13254,7 @@ index aecfa12d94..6631324425 100644
    for (const std::string& tool : scope.allowed_tools) {
      tools.Append(tool);
 diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
-index a4b30c69ee..f1e5687b44 100644
+index a4b30c69eee10cff2830012080582f50a80667ef..f1e5687b44722fb01375270afb2e7c68f8d836e3 100644
 --- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 @@ -8,6 +8,8 @@
@@ -13562,7 +13562,7 @@ index a4b30c69ee..f1e5687b44 100644
       LoadsCompletedAutomateOwnerOnlyWhileMonitorExists) {
    base::ScopedTempDir temp_dir;
 diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
-index cb7f584242..7670ce7ee8 100644
+index cb7f58424225845ffcfe6bfbe9976237944036f6..7670ce7ee8982c9abb8a857ab759f2478d01790e 100644
 --- a/chrome/browser/aegis/agent/agent_tool_registry.cc
 +++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
 @@ -374,7 +374,8 @@ base::DictValue ToolSchema(std::string_view name) {
@@ -13598,7 +13598,7 @@ index cb7f584242..7670ce7ee8 100644
    if (name == "bookmark.apply") {
      return "Apply an approved bookmark plan with undo.";
 diff --git a/chrome/browser/aegis/agent/agent_types.cc b/chrome/browser/aegis/agent/agent_types.cc
-index 2c5deab6d8..c519c331eb 100644
+index 2c5deab6d8967b8bcf18069b1e57f44769082a87..c519c331ebe04f28b790d6b3153091ae7731374d 100644
 --- a/chrome/browser/aegis/agent/agent_types.cc
 +++ b/chrome/browser/aegis/agent/agent_types.cc
 @@ -67,7 +67,11 @@ bool AgentTaskScope::IsValid() const {
@@ -13624,7 +13624,7 @@ index 2c5deab6d8..c519c331eb 100644
        !IsSubset(allowed_data_classes, other.allowed_data_classes)) {
      return false;
 diff --git a/chrome/browser/aegis/agent/agent_types.h b/chrome/browser/aegis/agent/agent_types.h
-index 0b8e1f709c..56e532b901 100644
+index 0b8e1f709c9e68f8aa6459ef7b8f9c1b99a54108..56e532b901cdd56ceb630f96252a178f23a9bb9b 100644
 --- a/chrome/browser/aegis/agent/agent_types.h
 +++ b/chrome/browser/aegis/agent/agent_types.h
 @@ -103,6 +103,8 @@ struct AgentModelDestination {
@@ -13637,7 +13637,7 @@ index 0b8e1f709c..56e532b901 100644
    base::flat_set<AgentDataClass> allowed_data_classes;
    AgentBudgets budgets;
 diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
-index 49d4205fc8..16d8ea3309 100644
+index 49d4205fc8be8fd751eecfe0b34f2106aab4ff34..16d8ea33094ccc8ff4bcad231bdcff6266e3717a 100644
 --- a/chrome/browser/aegis/agent/agent_workflow.cc
 +++ b/chrome/browser/aegis/agent/agent_workflow.cc
 @@ -61,7 +61,8 @@ AgentWorkflowTemplate BrowserStewardTemplate() {
@@ -13693,7 +13693,7 @@ index 49d4205fc8..16d8ea3309 100644
 +
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_workflow.h b/chrome/browser/aegis/agent/agent_workflow.h
-index 7e2ba72d52..ca69105086 100644
+index 7e2ba72d528fe97c63abc1c2a28cea79405613d0..ca69105086ba879d658012cbc57abc0e228fcdf4 100644
 --- a/chrome/browser/aegis/agent/agent_workflow.h
 +++ b/chrome/browser/aegis/agent/agent_workflow.h
 @@ -43,6 +43,13 @@ std::optional<AgentTaskScope> BuildAgentWorkflowScope(
@@ -13711,7 +13711,7 @@ index 7e2ba72d52..ca69105086 100644
  
  #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_WORKFLOW_H_
 diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
-index bc15431571..096e527eaa 100644
+index bc1543157102b42f4e8d79131fb5fbed6a7daeb3..096e527eaa141bf912ff2e4206317bbdf3d6a52a 100644
 --- a/chrome/browser/aegis/summary_policy.cc
 +++ b/chrome/browser/aegis/summary_policy.cc
 @@ -12,6 +12,7 @@
@@ -13748,7 +13748,7 @@ index bc15431571..096e527eaa 100644
      return Reject(error, "prepared summary still contains sensitive data");
    }
 diff --git a/chrome/browser/aegis/summary_policy_unittest.cc b/chrome/browser/aegis/summary_policy_unittest.cc
-index 51713ca163..c65cfc4a1d 100644
+index 68f34fb0db9106319d5472d1154ed3992363e488..c343d15ef57070c6b8a4dfb139ad0bcea83cb701 100644
 --- a/chrome/browser/aegis/summary_policy_unittest.cc
 +++ b/chrome/browser/aegis/summary_policy_unittest.cc
 @@ -65,6 +65,29 @@ PageSnapshot CloudSnapshot(std::string url) {
@@ -13782,7 +13782,7 @@ index 51713ca163..c65cfc4a1d 100644
    PageSnapshot snapshot;
    snapshot.url =
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index b4f2a1a701..f2b9f8fda2 100644
+index b4f2a1a7018e99eabadd2dd2f569e1f7a13fca22..f2b9f8fda28a04cddc7d804790dadaa492aac444 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -50,9 +50,11 @@ body {
@@ -13887,7 +13887,7 @@ index b4f2a1a701..f2b9f8fda2 100644
  
    .scenario-grid {
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index 4797f0e166..254e1b99db 100644
+index 4797f0e1661364807cfdb3c5e49ace48e6739ea3..254e1b99db9849c50b932256be78b2424c248607 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -79,8 +79,9 @@
@@ -13911,7 +13911,7 @@ index 4797f0e166..254e1b99db 100644
          <div id="result-sources-group" hidden>
            <strong id="result-sources-label"></strong>
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 77dd38eab6..3fbb281a83 100644
+index 77dd38eab626ef68aba8286baa367c817b0308d1..3fbb281a830948f68ee7b87080e0683d5cc42b8b 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -9,7 +9,6 @@ import type {
@@ -14253,7 +14253,7 @@ index 77dd38eab6..3fbb281a83 100644
  }
  
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-index ab31399c15..f853acbc03 100644
+index ab31399c155eacaf4f2166807023d11247f8702a..f853acbc037d41560346b6e395cdf108dba7de91 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 @@ -548,13 +548,12 @@ AegisToolbarButton::~AegisToolbarButton() {
@@ -14310,7 +14310,7 @@ index ab31399c15..f853acbc03 100644
    std::u16string label;
    if (summary.paused) {
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
-index 11f9533a00..cf6aa3125d 100644
+index 11f9533a0091aefe4a2591f1acbc86bf0f593f69..cf6aa3125d18310669e1d11a6d4c2829c195dde8 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.h
 @@ -4,6 +4,7 @@
@@ -14332,7 +14332,7 @@ index 11f9533a00..cf6aa3125d 100644
    views::ViewTracker bubble_tracker_;
    base::OneShotTimer intro_timer_;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
-index 251541b4bf..845e09d644 100644
+index 251541b4bf6241dc39ea66e84f0ca65892899e39..845e09d6442499f0570ccdc2e5354f7d93200ddf 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom
 @@ -84,6 +84,10 @@ struct MonitorSummary {
@@ -14355,7 +14355,7 @@ index 251541b4bf..845e09d644 100644
    array<string> unfinished_items;
    PendingApproval? pending_approval;
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index edea9ecf40..caba66fc96 100644
+index edea9ecf40abc5e18403f6a5be1a80e9e6a5adaa..caba66fc9678136a1fdda3e043fcc64937007360 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -19,6 +19,7 @@
@@ -14530,7 +14530,7 @@ index edea9ecf40..caba66fc96 100644
      snapshot->unfinished_items = completion->unfinished_items;
    }
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index e33c1dfb3f..fb53d89167 100644
+index e33c1dfb3fa6b6ea466b48ed7fae91c2914636c3..fb53d8916751690b47fd45e7c9b1145715e191a2 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -129,10 +129,22 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -14658,7 +14658,7 @@ index e33c1dfb3f..fb53d89167 100644
    add("timelineRestartedDetail",
        "The browser restarted. Saved automations were restored; previous web "
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 90c5c4ac1a..64a0aec122 100644
+index 90c5c4ac1aa079d755d05e628e749f576f471c4c..64a0aec12210b770cd5229298db9782d1c8b2dcb 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -3,6 +3,14 @@
@@ -14693,7 +14693,7 @@ index 90c5c4ac1a..64a0aec122 100644
      "//base/test:test_support",
      "//net",
 diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
-index 7c2fde31cc..75928b7656 100644
+index 7c2fde31cccbbf9359d4bb37c5160ba580700681..75928b765648b7c3299785acf927181521b84a71 100644
 --- a/chrome/common/aegis/phish_score.cc
 +++ b/chrome/common/aegis/phish_score.cc
 @@ -15,6 +15,7 @@
@@ -14721,7 +14721,7 @@ index 7c2fde31cc..75928b7656 100644
    for (std::string_view phrase : kUrgencyPhrases) {
      if (haystack.find(base::ToLowerASCII(phrase)) != std::string::npos) {
 diff --git a/chrome/common/aegis/phish_score_unittest.cc b/chrome/common/aegis/phish_score_unittest.cc
-index a7c1ae12e3..e39d3b6cba 100644
+index a7c1ae12e366ce8f9392114ff6262075d7ab3b13..e39d3b6cbaf1618cd5dc9672ad1e350d91d2a8b2 100644
 --- a/chrome/common/aegis/phish_score_unittest.cc
 +++ b/chrome/common/aegis/phish_score_unittest.cc
 @@ -5,7 +5,9 @@
@@ -14805,7 +14805,7 @@ index a7c1ae12e3..e39d3b6cba 100644
        AssessPhishingUrl(GURL("http://paypal-secure-login.tk/signin"));
 diff --git a/chrome/common/aegis/security_text.cc b/chrome/common/aegis/security_text.cc
 new file mode 100644
-index 0000000000..1d837dfd18
+index 0000000000000000000000000000000000000000..1d837dfd1871824e3f747c5e5bb54c766b6df286
 --- /dev/null
 +++ b/chrome/common/aegis/security_text.cc
 @@ -0,0 +1,55 @@
@@ -14866,7 +14866,7 @@ index 0000000000..1d837dfd18
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/security_text.h b/chrome/common/aegis/security_text.h
 new file mode 100644
-index 0000000000..7b3da751d2
+index 0000000000000000000000000000000000000000..7b3da751d26735046c909bb089919187565d1e5c
 --- /dev/null
 +++ b/chrome/common/aegis/security_text.h
 @@ -0,0 +1,24 @@

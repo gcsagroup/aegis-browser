@@ -507,6 +507,29 @@
         }
       }
     },
+    "下载文件保存被中断，可重试下载。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载文件保存被中断，可重试下载。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving the download was interrupted. You can retry it."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載檔案儲存中斷，可重試下載。"
+          }
+        }
+      }
+    },
     "下载文件已不可用，请重新下载。": {
       "extractionState": "manual",
       "localizations": {
@@ -622,6 +645,52 @@
         }
       }
     },
+    "下载记录保存或恢复失败：%@": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载记录保存或恢复失败：%@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to save or restore download records: %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載記錄儲存或復原失敗：%@"
+          }
+        }
+      }
+    },
+    "下载记录尚未恢复，请稍后重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载记录尚未恢复，请稍后重试。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download records have not been restored yet. Try again later."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載記錄尚未復原，請稍後重試。"
+          }
+        }
+      }
+    },
     "下载记录已备份并移除。": {
       "extractionState": "manual",
       "localizations": {
@@ -641,6 +710,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "下載記錄已備份並移除。"
+          }
+        }
+      }
+    },
+    "下载记录无法读取，原始记录已保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载记录无法读取，原始记录已保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download records could not be read. The original records have been preserved."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法讀取下載記錄，原始記錄已保留。"
           }
         }
       }
@@ -3102,6 +3194,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "完成回执未保存，文件已保留，请重试下载。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成回执未保存，文件已保留，请重试下载。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The completion record was not saved. The file has been preserved. Retry the download."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成記錄未儲存，檔案已保留，請重試下載。"
           }
         }
       }
@@ -6460,6 +6575,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Last updated"
+          }
+        }
+      }
+    },
+    "有下载文件缺少完成回执，原始文件已保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有下载文件缺少完成回执，原始文件已保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some downloads are missing completion records. The original files have been preserved."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分下載檔案缺少完成記錄，原始檔案已保留。"
           }
         }
       }
@@ -11106,6 +11244,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "重試"
+          }
+        }
+      }
+    },
+    "重试恢复下载记录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试恢复下载记录"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry restoring download records"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重試復原下載記錄"
           }
         }
       }

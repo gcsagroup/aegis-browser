@@ -961,11 +961,24 @@ final class AegisUITests: XCTestCase {
     }
 
     private func scrollUntilVisible(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        func isVisible() -> Bool {
+            guard element.exists else { return false }
+            // 空列表提示可能没有点击点。文字只检查显示范围，按钮仍须可点击。
+            if element.elementType == .staticText {
+                let frame = element.frame
+                let list = app.collectionViews.firstMatch
+                let scroll = app.scrollViews["assistant-scroll"].firstMatch
+                let viewport = list.exists ? list.frame : (scroll.exists ? scroll.frame : app.frame)
+                return !frame.isEmpty && !frame.isInfinite &&
+                    !frame.intersection(viewport.intersection(app.frame)).isEmpty
+            }
+            return element.isHittable
+        }
         for _ in 0..<6 {
-            if element.exists && element.isHittable { return true }
+            if isVisible() { return true }
             app.swipeUp()
         }
-        return element.exists && element.isHittable
+        return isVisible()
     }
 }
 

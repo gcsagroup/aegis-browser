@@ -1,0 +1,307 @@
+From b6845b7d55c22be67371b4d05fd0bb305a36c94d Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Wed, 7 Oct 2026 02:06:28 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Chromium=20155=EF=BC=9A000?=
+ =?UTF-8?q?1-feat-aegis-add-bytecode-shadow-observation.patch?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ BUILD.gn                                      |   2 +
+ src/flags/flag-definitions.h                  |   7 ++
+ src/interpreter/aegis-bytecode-shadow.cc      | 109 ++++++++++++++++++
+ src/interpreter/aegis-bytecode-shadow.h       |  43 +++++++
+ src/interpreter/interpreter.cc                |   3 +
+ test/unittests/BUILD.gn                       |   1 +
+ .../aegis-bytecode-shadow-unittest.cc         |  41 +++++++
+ 7 files changed, 206 insertions(+)
+ create mode 100644 src/interpreter/aegis-bytecode-shadow.cc
+ create mode 100644 src/interpreter/aegis-bytecode-shadow.h
+ create mode 100644 test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
+
+diff --git a/BUILD.gn b/BUILD.gn
+index c6132807ff6c488543b4df1f3ba8793d9dea98d5..f8163829f3df1151257c6b8e13301876065d3235 100644
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -4528,6 +4528,7 @@ v8_header_set("v8_internal_headers") {
+     "src/init/setup-isolate.h",
+     "src/init/startup-data-util.h",
+     "src/init/v8.h",
++    "src/interpreter/aegis-bytecode-shadow.h",
+     "src/interpreter/block-coverage-builder.h",
+     "src/interpreter/bytecode-array-builder.h",
+     "src/interpreter/bytecode-array-iterator.h",
+@@ -6399,6 +6400,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
+     "src/init/isolate-group.cc",
+     "src/init/startup-data-util.cc",
+     "src/init/v8.cc",
++    "src/interpreter/aegis-bytecode-shadow.cc",
+     "src/interpreter/bytecode-array-builder.cc",
+     "src/interpreter/bytecode-array-iterator.cc",
+     "src/interpreter/bytecode-array-random-iterator.cc",
+diff --git a/src/flags/flag-definitions.h b/src/flags/flag-definitions.h
+index a64f1b5e7b397190030598f39b0d27c6613c27b0..066460e72226ff44cb808977007dac16b7122a7b 100644
+--- a/src/flags/flag-definitions.h
++++ b/src/flags/flag-definitions.h
+@@ -1132,6 +1132,13 @@ DEFINE_BOOL(lazy_feedback_allocation, true, "Allocate feedback vectors lazily")
+ DEFINE_BOOL(stress_ic, false, "exercise interesting paths in ICs more often")
+ 
+ // Flags for Ignition.
++DEFINE_BOOL(aegis_bytecode_shadow, false,
++            "emit bounded, source-free Aegis function bytecode signatures")
++DEFINE_UINT(aegis_bytecode_shadow_max_bytes, 64 * KB,
++            "maximum bytecode bytes inspected per Aegis shadow record (hard "
++            "cap: 64 KiB)")
++DEFINE_UINT(aegis_bytecode_shadow_max_records, 1000,
++            "maximum Aegis bytecode shadow records per process (hard cap: 1000)")
+ DEFINE_BOOL(ignition_elide_noneffectful_bytecodes, true,
+             "elide bytecodes which won't have any external effect")
+ DEFINE_BOOL(ignition_reo, true, "use ignition register equivalence optimizer")
+diff --git a/src/interpreter/aegis-bytecode-shadow.cc b/src/interpreter/aegis-bytecode-shadow.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..fd1933dccf8fd3aef36f2e9349bc01fdb9590bce
+--- /dev/null
++++ b/src/interpreter/aegis-bytecode-shadow.cc
+@@ -0,0 +1,109 @@
++// Copyright 2026 GCSA
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "src/interpreter/aegis-bytecode-shadow.h"
++
++#include <algorithm>
++#include <atomic>
++#include <cinttypes>
++
++#include "src/flags/flags.h"
++#include "src/heap/parked-scope-inl.h"
++#include "src/interpreter/bytecode-array-iterator.h"
++#include "src/interpreter/bytecodes.h"
++#include "src/objects/bytecode-array-inl.h"
++#include "src/utils/utils.h"
++
++namespace v8 {
++namespace internal {
++namespace interpreter {
++namespace {
++
++constexpr uint64_t kFnvOffsetBasis = 14695981039346656037ULL;
++constexpr uint64_t kFnvPrime = 1099511628211ULL;
++constexpr uint8_t kSignatureSchemaVersion = 1;
++constexpr unsigned int kHardMaxBytes = 64 * 1024;
++constexpr unsigned int kHardMaxRecords = 1000;
++
++std::atomic<unsigned int> g_aegis_shadow_records{0};
++
++uint64_t HashByte(uint64_t hash, uint8_t value) {
++  return (hash ^ value) * kFnvPrime;
++}
++
++uint64_t FinalizeSignature(uint64_t hash, uint64_t opcode_count) {
++  for (int shift = 0; shift < 64; shift += 8) {
++    hash = HashByte(hash, static_cast<uint8_t>(opcode_count >> shift));
++  }
++  return hash;
++}
++
++bool TryReserveRecord(unsigned int requested_limit) {
++  const unsigned int limit = std::min(requested_limit, kHardMaxRecords);
++  unsigned int current = g_aegis_shadow_records.load(std::memory_order_relaxed);
++  while (current < limit) {
++    if (g_aegis_shadow_records.compare_exchange_weak(
++            current, current + 1, std::memory_order_relaxed,
++            std::memory_order_relaxed)) {
++      return true;
++    }
++  }
++  return false;
++}
++
++}  // namespace
++
++uint64_t AegisOpcodeSequenceSignature(base::Vector<const uint8_t> opcodes) {
++  uint64_t hash = HashByte(kFnvOffsetBasis, kSignatureSchemaVersion);
++  for (uint8_t opcode : opcodes) {
++    hash = HashByte(hash, opcode);
++  }
++  // Domain-separate a sequence from a same-prefix sequence with a different
++  // length without incorporating bytecode operands or source metadata.
++  return FinalizeSignature(hash, opcodes.size());
++}
++
++AegisBytecodeShadowSummary SummarizeAegisBytecode(
++    Handle<BytecodeArray> bytecodes, unsigned int max_bytes) {
++  AegisBytecodeShadowSummary summary;
++  summary.byte_length = bytecodes->length();
++  if (summary.byte_length < 0 ||
++      static_cast<unsigned int>(summary.byte_length) > max_bytes) {
++    summary.skipped_too_large = true;
++    return summary;
++  }
++
++  uint64_t hash = HashByte(kFnvOffsetBasis, kSignatureSchemaVersion);
++  {
++    DisallowGarbageCollection no_gc;
++    for (BytecodeArrayIterator iterator(bytecodes, 0, no_gc); !iterator.done();
++         iterator.Advance()) {
++      hash = HashByte(hash, Bytecodes::ToByte(iterator.current_bytecode()));
++      summary.opcode_count += 1;
++    }
++  }
++  summary.signature = FinalizeSignature(hash, summary.opcode_count);
++  return summary;
++}
++
++void MaybeObserveAegisBytecode(Handle<BytecodeArray> bytecodes) {
++  if (!v8_flags.aegis_bytecode_shadow) return;
++  const unsigned int configured_max_records =
++      v8_flags.aegis_bytecode_shadow_max_records;
++  if (!TryReserveRecord(configured_max_records)) return;
++
++  const unsigned int configured_max_bytes =
++      v8_flags.aegis_bytecode_shadow_max_bytes;
++  const AegisBytecodeShadowSummary summary = SummarizeAegisBytecode(
++      bytecodes, std::min(configured_max_bytes, kHardMaxBytes));
++  PrintF(stderr,
++         "[AEGIS_BYTECODE_SHADOW] schema=1 mode=observe-only status=%s "
++         "bytes=%d opcodes=%d signature=%016" PRIx64 " would_block=0\n",
++         summary.skipped_too_large ? "skipped-too-large" : "observed",
++         summary.byte_length, summary.opcode_count, summary.signature);
++}
++
++}  // namespace interpreter
++}  // namespace internal
++}  // namespace v8
+diff --git a/src/interpreter/aegis-bytecode-shadow.h b/src/interpreter/aegis-bytecode-shadow.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..d42637ce3a94129e4166a17db69daa4ead71df9b
+--- /dev/null
++++ b/src/interpreter/aegis-bytecode-shadow.h
+@@ -0,0 +1,43 @@
++// Copyright 2026 GCSA
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef V8_INTERPRETER_AEGIS_BYTECODE_SHADOW_H_
++#define V8_INTERPRETER_AEGIS_BYTECODE_SHADOW_H_
++
++#include <cstdint>
++
++#include "src/base/vector.h"
++#include "src/handles/handles.h"
++
++namespace v8 {
++namespace internal {
++
++class BytecodeArray;
++
++namespace interpreter {
++
++struct AegisBytecodeShadowSummary {
++  uint64_t signature = 0;
++  int byte_length = 0;
++  int opcode_count = 0;
++  bool skipped_too_large = false;
++};
++
++// Hashes opcode identity only. Operands, constants, source, names, URLs, and
++// source positions are deliberately excluded from the signature.
++V8_EXPORT_PRIVATE uint64_t
++AegisOpcodeSequenceSignature(base::Vector<const uint8_t> opcodes);
++
++V8_EXPORT_PRIVATE AegisBytecodeShadowSummary
++SummarizeAegisBytecode(Handle<BytecodeArray> bytecodes, unsigned int max_bytes);
++
++// Default-off, bounded, observe-only diagnostic hook. It emits categorical
++// metadata to stderr and never changes the BytecodeArray or execution result.
++void MaybeObserveAegisBytecode(Handle<BytecodeArray> bytecodes);
++
++}  // namespace interpreter
++}  // namespace internal
++}  // namespace v8
++
++#endif  // V8_INTERPRETER_AEGIS_BYTECODE_SHADOW_H_
+diff --git a/src/interpreter/interpreter.cc b/src/interpreter/interpreter.cc
+index 3c3bcbaacada8ee140bc1f40d8966feddd85be69..12619f0577ba058df5671005637d798961deb453 100644
+--- a/src/interpreter/interpreter.cc
++++ b/src/interpreter/interpreter.cc
+@@ -16,6 +16,7 @@
+ #include "src/execution/local-isolate.h"
+ #include "src/heap/local-heap-inl.h"
+ #include "src/init/setup-isolate.h"
++#include "src/interpreter/aegis-bytecode-shadow.h"
+ #include "src/interpreter/bytecode-generator.h"
+ #include "src/interpreter/bytecodes.h"
+ #include "src/logging/runtime-call-stats-scope.h"
+@@ -272,6 +273,8 @@ InterpreterCompilationJob::Status InterpreterCompilationJob::DoFinalizeJobImpl(
+     bytecodes->set_source_position_table(*source_position_table, kReleaseStore);
+   }
+ 
++  MaybeObserveAegisBytecode(bytecodes);
++
+   if (ShouldPrintBytecode(shared_info)) {
+     StdoutStream os;
+     std::unique_ptr<char[]> name =
+diff --git a/test/unittests/BUILD.gn b/test/unittests/BUILD.gn
+index 06428824029565445641d0f22ed48086e3a537b2..2aec3605c9d41c5a1f27790d16de4d1d7309edff 100644
+--- a/test/unittests/BUILD.gn
++++ b/test/unittests/BUILD.gn
+@@ -413,6 +413,7 @@ v8_cluster_source_set("v8_unittests_sources") {
+     "heap/spaces-unittest.cc",
+     "heap/strong-root-allocator-unittest.cc",
+     "heap/write-barrier-unittest.cc",
++    "interpreter/aegis-bytecode-shadow-unittest.cc",
+     "interpreter/bytecode-array-builder-unittest.cc",
+     "interpreter/bytecode-array-iterator-unittest.cc",
+     "interpreter/bytecode-array-random-iterator-unittest.cc",
+diff --git a/test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc b/test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..1fa1cbf893327e6a6c77194f61a1450b8128a16c
+--- /dev/null
++++ b/test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
+@@ -0,0 +1,41 @@
++// Copyright 2026 GCSA
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "src/interpreter/aegis-bytecode-shadow.h"
++
++#include <array>
++
++#include "src/base/vector.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace v8 {
++namespace internal {
++namespace interpreter {
++namespace {
++
++TEST(AegisBytecodeShadowTest, SignatureIsDeterministicAndOrderSensitive) {
++  constexpr std::array<uint8_t, 4> kFirst = {1, 4, 9, 16};
++  constexpr std::array<uint8_t, 4> kSame = {1, 4, 9, 16};
++  constexpr std::array<uint8_t, 4> kReordered = {1, 9, 4, 16};
++  EXPECT_EQ(AegisOpcodeSequenceSignature(base::VectorOf(kFirst)),
++            AegisOpcodeSequenceSignature(base::VectorOf(kSame)));
++  EXPECT_NE(AegisOpcodeSequenceSignature(base::VectorOf(kFirst)),
++            AegisOpcodeSequenceSignature(base::VectorOf(kReordered)));
++}
++
++TEST(AegisBytecodeShadowTest, SignatureSeparatesDifferentLengths) {
++  constexpr std::array<uint8_t, 2> kShort = {7, 8};
++  constexpr std::array<uint8_t, 3> kLong = {7, 8, 0};
++  EXPECT_NE(AegisOpcodeSequenceSignature(base::VectorOf(kShort)),
++            AegisOpcodeSequenceSignature(base::VectorOf(kLong)));
++}
++
++TEST(AegisBytecodeShadowTest, EmptySequenceStillHasVersionedSignature) {
++  EXPECT_NE(0u, AegisOpcodeSequenceSignature(base::Vector<const uint8_t>()));
++}
++
++}  // namespace
++}  // namespace interpreter
++}  // namespace internal
++}  // namespace v8
+-- 
+2.52.0
+

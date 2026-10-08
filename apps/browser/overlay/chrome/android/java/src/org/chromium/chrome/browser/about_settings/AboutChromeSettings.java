@@ -60,6 +60,7 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
     private int mDeveloperHitCountdown =
             DeveloperSettings.shouldShowDeveloperSettings() ? -1 : TAPS_FOR_DEVELOPER_SETTINGS;
     private @Nullable Toast mToast;
+    private @Nullable AegisUpdatePreference mAegisUpdate;
     private final SettableMonotonicObservableSupplier<String> mPageTitle =
             ObservableSuppliers.createMonotonic();
 
@@ -82,6 +83,17 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
         calendar.setTimeInMillis(System.currentTimeMillis());
         int currentYear = calendar.get(Calendar.YEAR);
         p.setSummary(getString(R.string.legal_information_summary, currentYear));
+
+        Preference update = new Preference(requireContext());
+        update.setOrder(1);
+        mAegisUpdate = new AegisUpdatePreference(requireActivity(), update, this::isResumed);
+        assumeNonNull(getPreferenceScreen()).addPreference(update);
+    }
+
+    @Override
+    public void onDestroy() {
+        if (mAegisUpdate != null) mAegisUpdate.close();
+        super.onDestroy();
     }
 
     @Override
@@ -95,9 +107,16 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
      */
     public static String getApplicationVersion(Context context, String version) {
         try {
-            PackageInfo product = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+            PackageInfo product =
+                    context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             if (product.versionName != null) {
-                version = product.versionName + " · Chromium " + VersionInfo.getProductVersion();
+                String label = product.versionName;
+                try {
+                    label = AegisUpdatePolicy.displayLabel(label);
+                } catch (AegisUpdatePolicy.Failure ignored) {
+                    // 旧包使用其他显示格式时仍展示原始版本；更新检查继续严格校验。
+                }
+                version = label + " · Chromium " + VersionInfo.getProductVersion();
             }
         } catch (NameNotFoundException ignored) {
             // 保留原内核信息，避免关于页因包信息异常崩溃。

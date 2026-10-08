@@ -1,4 +1,4 @@
-From c65aaf3772ae674145f9c32ae4cb158676f38dd1 Mon Sep 17 00:00:00 2001
+From 9cce1b03b8cc63d78ba4a8d7c08e62f690056790 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 18:41:38 +0800
 Subject: [PATCH] Aegis: farble WebGPU numeric limits per site
@@ -15,7 +15,7 @@ power-of-two subgroup sizes.
  5 files changed, 109 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index ff1be2266e..9568aa43b5 100644
+index ff1be2266edc2ad1d0caa1c243357c2c1122c894..9568aa43b5b5887343d1e8e075c8307d1a1b6679 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -440,9 +440,26 @@ async function probeWebGPU(): Promise<{line: string, marked: boolean}> {
@@ -47,7 +47,7 @@ index ff1be2266e..9568aa43b5 100644
    };
  }
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 650951eb57..1d2a5f959a 100644
+index 650951eb5745632862b4634167c642e8a7223304..1d2a5f959adf2ef12aefe51e1059d04572b44125 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -79,7 +79,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -79,7 +79,7 @@ index 650951eb57..1d2a5f959a 100644
        .filter_list_title = "EasyList rules",
        .filter_list_auto_update = "Auto-update filter lists",
 diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
-index 23c1976aff..4bf5bfe3b3 100644
+index 23c1976aff346210573a885ea618dd59bffc9485..4bf5bfe3b325361962e96252a92ff3c0d53f0e10 100644
 --- a/third_party/blink/renderer/core/aegis/farbling.cc
 +++ b/third_party/blink/renderer/core/aegis/farbling.cc
 @@ -181,5 +181,76 @@ void MaybeFarbleWebGPUAdapterStrings(ExecutionContext* context,
@@ -160,7 +160,7 @@ index 23c1976aff..4bf5bfe3b3 100644
  }  // namespace aegis
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
-index e51cf04fe1..6a84f03cb1 100644
+index e51cf04fe1196fbf9056c711b3cae9a8964828a1..6a84f03cb1d5ac5638e8af80bfbd3cacc5e70d6a 100644
 --- a/third_party/blink/renderer/core/aegis/farbling.h
 +++ b/third_party/blink/renderer/core/aegis/farbling.h
 @@ -4,6 +4,8 @@
@@ -188,7 +188,7 @@ index e51cf04fe1..6a84f03cb1 100644
  }  // namespace blink
  
 diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
-index 6533e0dbcd..20dc4c663e 100644
+index 6533e0dbcd9392cc2eb2b42c2c829ca665f12745..20dc4c663e8858eb09fe50f07529f4bd9683512b 100644
 --- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
 +++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
 @@ -119,6 +119,12 @@ GPUAdapter::GPUAdapter(

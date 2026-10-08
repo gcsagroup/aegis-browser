@@ -1,4 +1,4 @@
-From abf62632edf8589a878e6937a461987f9c55440c Mon Sep 17 00:00:00 2001
+From 41d4858d92675b798033f44855e6a64ba7e9313c Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 03:24:44 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E4=B8=89=E7=AB=AF=E5=B7=A5?=
@@ -33,10 +33,10 @@ Content-Transfer-Encoding: 8bit
  20 files changed, 472 insertions(+), 253 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index e3b92f5e65..66892161a8 100644
+index 0172c4fa2d37de7a1fe31381718677d2f83e32b8..04e5a01e818ee4c3680386dc2b8f4478bc5f2b62 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -4226,7 +4226,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4368,7 +4368,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
          if (autoStart) url.appendQueryParameter("autostart", "1");
          LoadUrlParams params =
                  new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);
@@ -46,10 +46,10 @@ index e3b92f5e65..66892161a8 100644
      }
  
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index a8e673a661..35dcf6deea 100644
+index 2f1caae456a9ff50434f31398bb1da7a478dc43c..25af9f34b55ef27873d8c4a0bbb2017cbb1d5ee6 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-@@ -554,12 +554,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -543,12 +543,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -65,7 +65,7 @@ index a8e673a661..35dcf6deea 100644
  
          // Settings
          modelList.add(buildSettingsItem());
-@@ -753,12 +751,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -742,12 +740,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -81,7 +81,7 @@ index a8e673a661..35dcf6deea 100644
  
          // Settings
          modelList.add(buildSettingsItem());
-@@ -820,7 +816,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -809,7 +805,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          modelList.add(buildCloseAllTabsItem());
          if (shouldShowSelectTabsItem()) modelList.add(buildSelectTabsItem());
          if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
@@ -90,7 +90,7 @@ index a8e673a661..35dcf6deea 100644
          modelList.add(buildSettingsItem());
      }
  
-@@ -836,7 +832,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -825,7 +821,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          } else {
              modelList.add(buildNewIncognitoTabItem());
          }
@@ -99,7 +99,7 @@ index a8e673a661..35dcf6deea 100644
          modelList.add(buildSettingsItem());
          if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
      }
-@@ -1495,7 +1491,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -1413,7 +1409,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
      }
  
      private boolean shouldShowAegisCurrentPageItem(@Nullable Tab currentTab) {
@@ -109,7 +109,7 @@ index a8e673a661..35dcf6deea 100644
          return "http".equals(scheme) || "https".equals(scheme);
      }
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index bd333bf58d..a39799b17e 100644
+index bd333bf58db57e616174d149355aa3c1ec9a5b5b..a39799b17edd8773c3cad51bc9698fbe53ab6ab0 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -200,6 +200,7 @@ source_set("aegis") {
@@ -121,7 +121,7 @@ index bd333bf58d..a39799b17e 100644
      "//components/actor/core",
      "//components/bookmarks/browser",
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-index 98f9095b51..11ee95e32a 100644
+index 98f9095b51a262009256d898725e5280a911d08b..11ee95e32a0b25d910d53212a63d15301ce3c863 100644
 --- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 @@ -6,17 +6,26 @@
@@ -295,7 +295,7 @@ index 98f9095b51..11ee95e32a 100644
    Profile* auxiliary_otr = profile()->GetOffTheRecordProfile(
        Profile::OTRProfileID::CreateUniqueForTesting(),
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index fdc7986171..e3eba80b82 100644
+index fdc7986171fe78e49cb0cb730e03985ea5d914db..e3eba80b82544f5f214d3e3e73c5d1052f281c2b 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -27,7 +27,6 @@
@@ -792,7 +792,7 @@ index fdc7986171..e3eba80b82 100644
  
  void AegisBrowserTools::ExecuteHistoryTool(AgentTask* task,
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
-index a3f3519dc0..b641fd37a3 100644
+index a3f3519dc018eef6f27c700d88ab8a5dd4eaf1c3..b641fd37a3efbab9be40f3c6c9598dec40d7c757 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.h
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
 @@ -120,6 +120,12 @@ class AegisBrowserTools : public UndoManagerObserver {
@@ -809,7 +809,7 @@ index a3f3519dc0..b641fd37a3 100644
                              const AgentToolCall& call,
                              ToolResultCallback callback);
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index cd126b4c71..1d222f6dd1 100644
+index cd126b4c7168630310a1119c1d6b2ca26a891d72..1d222f6dd127d79453aee3b8898ed55d20a1dc95 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -1415,6 +1415,39 @@ TEST(AegisAgentResultVerifierTest, VerifiesDynamicTabAndWorkspaceOwnership) {
@@ -853,7 +853,7 @@ index cd126b4c71..1d222f6dd1 100644
    AgentToolRegistry registry;
    AgentResultVerifier verifier;
 diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
-index ce50ee9a94..81dd91eba2 100644
+index ce50ee9a9406abc92f8865f7d72230b999a63b0c..81dd91eba27ec87fa69272c1910ca2a6459c0e32 100644
 --- a/chrome/browser/aegis/agent/agent_result_verifier.cc
 +++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
 @@ -202,6 +202,11 @@ AgentToolCall AgentResultVerifier::RetainVerificationContext(
@@ -893,7 +893,7 @@ index ce50ee9a94..81dd91eba2 100644
    }
    if (call.tool_name == "workspace.save") {
 diff --git a/chrome/browser/aegis/agent/agent_task.h b/chrome/browser/aegis/agent/agent_task.h
-index 60979dfc73..b9a75c1add 100644
+index 60979dfc73821dfd9587edbdd4a6a172a7d8116b..b9a75c1addfb656e392985e26af50d4e0e857bd5 100644
 --- a/chrome/browser/aegis/agent/agent_task.h
 +++ b/chrome/browser/aegis/agent/agent_task.h
 @@ -8,6 +8,7 @@
@@ -922,7 +922,7 @@ index 60979dfc73..b9a75c1add 100644
  
  }  // namespace aegis::agent
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 2cd71f64e7..6acd186b19 100644
+index 2cd71f64e788c5d8870e29ea492404860f2533fe..6acd186b1938e528193c11564503a5f5325ef2a9 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -158,7 +158,6 @@ let modelListRequestSerial = 0;
@@ -1026,7 +1026,7 @@ index 2cd71f64e7..6acd186b19 100644
  }
  
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 42cc3a7baf..653b95fb70 100644
+index 42cc3a7baf1e265ed953d85b88e642a03825f77d..653b95fb709cbf2f86105f54bd7f100ce673b33b 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -32,9 +32,28 @@ let activeView: 'task'|'automation'|'research' = 'task';
@@ -1072,10 +1072,10 @@ index 42cc3a7baf..653b95fb70 100644
        element<HTMLButtonElement>('plan-button').click();
      }
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index 9c16378581..079e1b4fd5 100644
+index b5efc8558f4818e59de638ba7b352728f54c55d5..6590f929f43923fc869ef61c33fe7dfd22d14969 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-@@ -319,7 +319,7 @@ CHAR_LIMIT guidelines:
+@@ -325,7 +325,7 @@ CHAR_LIMIT guidelines:
          You and Google
        </message>
        <message name="IDS_SIGN_IN_TO_CHROME" meaning="Button" desc="Title for the button to sign in to Chrome using one's Google account. [CHAR_LIMIT=27]">
@@ -1084,7 +1084,7 @@ index 9c16378581..079e1b4fd5 100644
        </message>
        <message name="IDS_SIGN_IN_PERSONALIZE_GOOGLE_SERVICES_TITLE" desc="This is the title of a setting that directs users to other settings where they can control how Chrome history can be used to personalize other Google services. It appears in Chrome’s Advanced Sync settings and is before the “Control how browsing history is used with your other data across Google services” string. [CHAR_LIMIT=30]">
          Personalization
-@@ -348,10 +348,10 @@ CHAR_LIMIT guidelines:
+@@ -354,10 +354,10 @@ CHAR_LIMIT guidelines:
          Google services
        </message>
        <message name="IDS_ALLOW_CHROME_SIGNIN_TITLE" desc="Title for a checkbox in Google services that controls sign-in and sync prompts.">
@@ -1097,7 +1097,7 @@ index 9c16378581..079e1b4fd5 100644
        </message>
        <message name="IDS_IMPROVE_SEARCH_SUGGESTIONS_TITLE" desc="Title for a checkbox in Settings that controls URL and search autocompletion and informs the user about the data shared by this feature.">
          Improve search suggestions
-@@ -877,7 +877,7 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
+@@ -880,7 +880,7 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
          Some of your passwords aren’t accessible
        </message>
        <message name="IDS_GPM_STOPPED_WORKING_SUBTITLE" desc="Subtitle shown under the Google Password Manager entry point, when the password manager is not available for the user. Among other reasons, this can happen when Google Play services is not updated.">
@@ -1106,7 +1106,7 @@ index 9c16378581..079e1b4fd5 100644
        </message>
        <message name="IDS_PWD_ACCESS_LOSS_WARNING_CONTENT_DESCRIPTION" desc="Accessibility string read when the password access loss warning sheet opens.">
          Google Password Manager update opened
-@@ -886,10 +886,10 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
+@@ -889,10 +889,10 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
          Google Password Manager update closed
        </message>
        <message name="IDS_PWM_DISABLED_NO_GMS_DIALOG_TITLE" desc="Title for the dialog shown to users without saved passwords for whom the password manager is unavailble because they don't have Google Play services.">
@@ -1119,7 +1119,7 @@ index 9c16378581..079e1b4fd5 100644
        </message>
        <message name="IDS_PWM_DISABLED_NO_GMS_DIALOG_DESCRIPTION_PARAGRAPH2" desc="Second paragraph of the description text for dialog shown to users without saved passowrds for whom the password manager is unavailble because they don't have access to Google Play services.">
          If you previously exported passwords, look for a CSV file on your device and import them to your preferred password manager.
-@@ -3579,7 +3579,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3595,7 +3595,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Welcome to GCSA Aegis
        </message>
        <message name="IDS_SIGNIN_FRE_SUBTITLE" desc="This string is the body of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account. The tone should be informative and lightweight.">
@@ -1128,7 +1128,7 @@ index 9c16378581..079e1b4fd5 100644
        </message>
        <message name="IDS_SIGNED_IN_FRE_TITLE" desc="Title welcoming signed-in user to Chrome.">
          Welcome back, <ph name="USER_NAME">%s<ex>Alice</ex></ph>!
-@@ -3588,10 +3588,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3604,10 +3604,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Sign in to your Google Account
        </message>
        <message name="IDS_SIGNIN_FRE_TITLE_SIGNIN_FORCED_BY_POLICY" meaning="Title" desc="Title of a dialog to sign in to Chrome when sign-in is required because of an enterprise policy.">
@@ -1141,7 +1141,7 @@ index 9c16378581..079e1b4fd5 100644
        </message>
        <message name="IDS_FRE_SIGNING_IN" desc="Text to show below a progress spinner in the signin FRE to notify the user that signing in is in progress and that the user's data is being fetched.">
          Getting your stuff\u2026
-@@ -3706,22 +3706,22 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3722,22 +3722,22 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          <ph name="NAME">%1$s<ex>John Doe</ex></ph>, <ph name="EMAIL">%2$s<ex>john.doe@example.com</ex></ph>.
        </message>
        <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_TITLE_FOR_SEND_TAB_TO_SELF" meaning="Title" desc="The title for the bottom sheet that shows the list of accounts on the device and asks the user to select one of these accounts, when send-tab-to-self triggered the UI. [CHAR_LIMIT=27]">
@@ -1171,10 +1171,10 @@ index 9c16378581..079e1b4fd5 100644
        <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_SIGNIN_TITLE" desc="The title of the account picker bottom sheet tells that the user is in the process of signing in with their Google Account">
          Signing in...
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index be4c07e93c..90caae0506 100644
+index 0bc9201fc6a154339b17b82063f51c7e7492afbd..7b6f417de8b60b14b9dd5f0d75729cdc88d17c49 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -2129,4 +2129,17 @@
+@@ -2179,4 +2179,17 @@
  <translation id="760705049427473785">欢迎使用 GCSA Aegis</translation>
  <translation id="238675389546312674">登录你的 Google 账号</translation>
  <translation id="7491982752760169795">GCSA Aegis 通知</translation>
@@ -1193,10 +1193,10 @@ index be4c07e93c..90caae0506 100644
 +<translation id="5354352846738712842">Google 密码管理工具需要兼容的 Google Play 服务和浏览器支持，当前版本无法使用该服务。</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-index 897b1222ff..50b0b04992 100644
+index e885e61ea09ef51faa7e01827270dae697cb7896..3b342650dd26eda0f748caa11a99f997fd30d873 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -2131,4 +2131,17 @@
+@@ -2181,4 +2181,17 @@
  <translation id="760705049427473785">歡迎使用 GCSA Aegis</translation>
  <translation id="238675389546312674">登入你的 Google 帳戶</translation>
  <translation id="7491982752760169795">GCSA Aegis 通知</translation>
@@ -1215,7 +1215,7 @@ index 897b1222ff..50b0b04992 100644
 +<translation id="5354352846738712842">Google 密碼管理工具需要相容的 Google Play 服務和瀏覽器支援，目前版本無法使用該服務。</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
-index b7c19fea59..eb1b8fc414 100644
+index b7c19fea5964c163f1baf7f335f6d1e790071ec1..eb1b8fc4141d01b3357abea8bdfa4ed7d3a41380 100644
 --- a/chrome/browser/ui/webui/aegis/BUILD.gn
 +++ b/chrome/browser/ui/webui/aegis/BUILD.gn
 @@ -14,6 +14,8 @@ source_set("aegis") {
@@ -1236,7 +1236,7 @@ index b7c19fea59..eb1b8fc414 100644
        "//chrome/browser/ui/tabs:tab_strip",
      ]
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 85780a4d97..c190fec768 100644
+index 85780a4d9760114498b2e30a8141eb306843066d..c190fec7682e67030b0265bb3c5eb123d13d8325 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -549,11 +549,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -1252,7 +1252,7 @@ index 85780a4d97..c190fec768 100644
  
  AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index ae0340b4a0..3381a17428 100644
+index ae0340b4a07e0204bb3c8eebf12795e21e5023eb..3381a174281b0d76139cdccc78c799f25b63bbf3 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -30,11 +30,13 @@
@@ -1427,7 +1427,7 @@ index ae0340b4a0..3381a17428 100644
        !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
      status.Set("ok", false);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index 5288560323..6f4235582e 100644
+index 5288560323e98c999b0c85db01202f4b1fa99220..6f4235582e4e4568d03ec3dffd8184e574830419 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -21,7 +21,7 @@
@@ -1453,7 +1453,7 @@ index 5288560323..6f4235582e 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index a9ad659234..203f11834e 100644
+index a9ad659234fcbbd7a6dcd8053e8a5388aef28f68..203f11834e155501c83e15e5d861f3c83229c412 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -880,11 +880,7 @@ bool AegisAgentUIConfig::IsWebUIEnabled(
@@ -1469,7 +1469,7 @@ index a9ad659234..203f11834e 100644
  
  AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 3744afe5ac..9c12cebab3 100644
+index 3744afe5ac326ee4e0eb3e72133b560ea359e2bc..9c12cebab32dbff2189cbe5df809892cf75a6978 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
