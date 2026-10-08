@@ -18,7 +18,7 @@ Subject: [PATCH] Fix PR203 review regressions in task receipts and research
  10 files changed, 628 insertions(+), 51 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 2b92e7d..b4dccc6 100644
+index 2b92e7dc9a37ae2b983f61c683963260d83e5f38..b4dccc6fc71eb82b0650c7b248bcacb660cdc0de 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -5804,5 +5804,124 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
@@ -147,7 +147,7 @@ index 2b92e7d..b4dccc6 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index fd30b40..ea8dd1f 100644
+index fd30b40608c039b355551384ef4c00525fc97501..ea8dd1f1d62d5db4802d42602197192e7c9eaea8 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -55,6 +55,7 @@
@@ -372,7 +372,7 @@ index fd30b40..ea8dd1f 100644
      std::move(callback).Run(
          AgentToolResult{.action_id = call.action_id,
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 1a8efa1..1314433 100644
+index 1a8efa178a14217c65db53949fcd9d9da320ae74..13144330fef5d3645a35ee5a357c329c3dd8f1f1 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -28,6 +28,7 @@
@@ -404,7 +404,7 @@ index 1a8efa1..1314433 100644
    std::map<std::string, std::unique_ptr<AgentModelClient>> model_clients_;
    std::map<std::string, std::string> model_request_ids_;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 6d4636b..4d45dfa 100644
+index 6d4636b196fd68a0608d72aff951114161016d13..4d45dfaa4e68d92cc968f577e8e2b7c6cd403ab1 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -44,6 +44,7 @@
@@ -611,7 +611,7 @@ index 6d4636b..4d45dfa 100644
 +}  // namespace
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 73711dd..1d70297 100644
+index 73711dd9dea5e42ebccd757d09d7e50d59ec001e..1d702977e315f32760a90f261e17cebe5d68c09d 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -262,6 +262,9 @@ CompactExecutionEvidence(const AgentExecutionEvidence &evidence) {
@@ -680,7 +680,7 @@ index 73711dd..1d70297 100644
        }
        completion.research_comparisons.push_back(std::move(comparison));
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index 04c6aa2..5cf0f81 100644
+index 04c6aa208bc3a2384279580a2e0877f6a3ca130f..5cf0f81ac487d9883a142a6a64be3aba46807602 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -23,7 +23,7 @@ struct AgentTranslationSegment {
@@ -711,7 +711,7 @@ index 04c6aa2..5cf0f81 100644
  bool AgentSummaryNeedsTextReview(std::string_view summary);
  AgentModelToolDefinition BuildReviewSummaryToolDefinition();
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 3a1129a..5796503 100644
+index 3a1129a2937234ff5108cac557fd7282d0a030bd..579650307de6c0a8910fa01c1b8b2b5ec37279ea 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -3031,16 +3031,119 @@ TEST(AegisAgentExecutionTest, ResearchCompletionRequiresStructuredComparisons) {
@@ -836,7 +836,7 @@ index 3a1129a..5796503 100644
    auto scope = ExecutionScope();
    scope.allowed_tab_ids = {7};
 diff --git a/chrome/browser/aegis/agent/agent_research.cc b/chrome/browser/aegis/agent/agent_research.cc
-index ba7cc9c..25ab6ac 100644
+index ba7cc9cc0249edf636f4d1647652868864795057..25ab6ac8652c6a4185d1641b1e556ae2a5f09693 100644
 --- a/chrome/browser/aegis/agent/agent_research.cc
 +++ b/chrome/browser/aegis/agent/agent_research.cc
 @@ -20,6 +20,24 @@ bool Text(const base::DictValue& value,
@@ -972,7 +972,7 @@ index ba7cc9c..25ab6ac 100644
        const auto* captured = item.result.value.FindString("captured_at_ms");
        if (!hash || !captured) {
 diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
-index 99785a8..5190ec8 100644
+index 99785a8fd96e0354fc110a8aebdc0311606f0a68..5190ec803828bce8659fc8f39ecb6bb0f289e352 100644
 --- a/chrome/browser/aegis/agent/agent_research_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
 @@ -22,6 +22,15 @@ AgentToolResult Observation(int id,
@@ -1118,7 +1118,7 @@ index 99785a8..5190ec8 100644
 +}  // namespace
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 7f090de..980d33e 100644
+index 7f090de05aa1f1583d8139a75806f887c42f6a55..980d33eabb5d959220bf71b03ce6e3ef94efeb32 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -1337,10 +1337,7 @@ void AegisAgentPageHandler::SetMonitorPaused(
