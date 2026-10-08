@@ -45,7 +45,7 @@ struct DownloadsView: View {
                         }
                         catch { self.error = error.localizedDescription }
                     } label: { Text("开始下载").frame(maxWidth: .infinity) }
-                    .buttonStyle(.borderedProminent).disabled(address.isEmpty).accessibilityIdentifier("start-download")
+                    .buttonStyle(.borderedProminent).disabled(address.isEmpty || !downloads.isReady).accessibilityIdentifier("start-download")
                     Text("仅下载你指定的文件，不会执行或安装。登录后才能访问的文件可能需要网站提供直接下载链接。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
@@ -58,13 +58,17 @@ struct DownloadsView: View {
                         Button("确认并开始下载") {
                             do { _ = try downloads.start(plan); importedPlan = nil; error = nil }
                             catch { self.error = error.localizedDescription }
-                        }.accessibilityIdentifier("confirm-metalink")
+                        }.disabled(!downloads.isReady).accessibilityIdentifier("confirm-metalink")
                         Button("取消", role: .cancel) { importedPlan = nil }
                     }
                 }
                 if let error { Text(error).foregroundStyle(.red) }
                 if let savedMessage { Text(savedMessage).accessibilityIdentifier("download-export-result") }
-                if let error = downloads.storageError { Text(error).foregroundStyle(.red) }
+                if let error = downloads.storageError {
+                    Text(error).foregroundStyle(.red)
+                    Button("重试恢复下载记录") { Task { await downloads.retryStorage() } }
+                        .accessibilityIdentifier("retry-download-storage")
+                }
                 Section("下载记录") {
                     if downloads.items.isEmpty { ContentUnavailableView("暂无下载", systemImage: "arrow.down.circle") }
                     ForEach(downloads.items) { item in
@@ -101,7 +105,7 @@ struct DownloadsView: View {
                                 if let message = item.message { Text(message).font(.caption).foregroundStyle(.secondary) }
                                 Button(item.state == .paused ? "继续下载" : "重新下载") {
                                     do { try downloads.resume(item.id) } catch { self.error = error.localizedDescription }
-                                }
+                                }.disabled(!downloads.isReady)
                             }
                         }.padding(.vertical, 8).buttonStyle(.bordered)
                     }

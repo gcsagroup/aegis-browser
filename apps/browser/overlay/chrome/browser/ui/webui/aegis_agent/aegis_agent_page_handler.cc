@@ -1337,10 +1337,7 @@ void AegisAgentPageHandler::SetMonitorPaused(
                   service_->SetMonitorPaused(task_id, monitor_id, paused);
   last_error_ =
       ok ? std::string() : "Task-owned monitor state could not be changed";
-  if (ok) {
-    active_task_id_ = task_id;
-    ObserveTask(task);
-  }
+  // Global monitor controls do not change the selected task subscription.
   std::move(callback).Run(BuildSnapshot());
 }
 
@@ -1350,10 +1347,7 @@ void AegisAgentPageHandler::CheckMonitorNow(const std::string& task_id,
   AgentTask* task = service_ ? service_->GetTask(task_id) : nullptr;
   const bool ok = task && service_->CheckMonitorNow(task_id, monitor_id);
   last_error_ = ok ? std::string() : "monitor immediate check unavailable";
-  if (ok) {
-    active_task_id_ = task_id;
-    ObserveTask(task);
-  }
+  // Global monitor controls do not change the selected task subscription.
   std::move(callback).Run(BuildSnapshot());
 }
 
@@ -1364,10 +1358,7 @@ void AegisAgentPageHandler::DeleteMonitor(const std::string& task_id,
   const bool ok = task && task->mode() == AgentMode::kAutomate &&
                   service_->RemoveMonitor(task_id, monitor_id);
   last_error_ = ok ? std::string() : "Task-owned monitor could not be deleted";
-  if (ok) {
-    active_task_id_ = task_id;
-    ObserveTask(task);
-  }
+  // Global monitor controls do not change the selected task subscription.
   std::move(callback).Run(BuildSnapshot());
 }
 

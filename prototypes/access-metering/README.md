@@ -1,6 +1,6 @@
 # W2 local isolated metering fixture
 
-This prototype exercises one local TCP relay, an independent loopback origin, and a central SQLite byte-permit ledger. It is a **local fixture only**. It does not implement or validate Xray, VLESS/REALITY/Vision, Linux splice, browser integration, authenticated accounts, remote nodes, a hosted accounting service, or production quotas.
+This prototype exercises one local TCP relay, an independent loopback origin, and a central SQLite byte-permit ledger. A separate two-logical-node model exercises durable byte leases and independent node journals. Both are **local fixtures only**. They do not implement or validate Xray, VLESS/REALITY/Vision, Linux splice, browser integration, authenticated accounts, remote nodes, a hosted accounting service, or production quotas.
 
 ## Run
 
@@ -11,6 +11,35 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s prototypes/access-mete
 ```
 
 The same command is exposed as `pnpm run test:access-metering` and included in `quality:fast`. Tests bind only `127.0.0.1`, create temporary SQLite files, use no credentials or external network, and kill only their own relay subprocesses. Every socket, process readiness, marker, and settlement wait in the tests has a timeout.
+
+## Synthetic SM-00 manifest preflight
+
+[`sm00_preflight.py`](sm00_preflight.py) is a **check-only, offline** preparation for the [P3c/A118 SM-00 design](../../docs/plans/access-service-v1.0/W2-SERVER-METERING-DESIGN-20260928.zh-CN.md). It reads a bounded local JSON file and emits `LOCAL_PREFLIGHT_ONLY` plus its SHA-256. It has no endpoint, socket, process, API, deployment, or resource-discovery action. Run the committed synthetic example from the repository root:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 prototypes/access-metering/sm00_preflight.py \
+  --check-only --manifest prototypes/access-metering/sm00_synthetic_manifest.json
+```
+
+The example contains invented `synthetic-*` identities and fingerprints, including a fabricated 40-character source value. None identifies a real Xray build, operator, server, credential, or origin. The validator accepts only schema `sm00-synthetic-v1` with `SYNTHETIC_ONLY` classification, synthetic resource and identity references, six fixed-format build digests, explicit target-byte boundaries, and evidence fields for every declared writer and both synthetic fast directions. It requires finite byte, time, concurrency, failure, retry, storage, and stop budgets, plus a durable request/recovery contract. Missing fields, extra endpoint/credential fields, placeholders such as `TBD`, duplicate JSON keys, invalid numeric types, broken account/realm mappings, omitted path evidence, symlinked manifest files, and oversized/nonregular input fail closed. Error output does not print manifest values.
+
+Static hash shape and `synthetic-all-paths-enumerated` are **input checks**, not proof that a real binary has those hashes or that an actual Xray path has been found. This schema intentionally rejects real deployment identities. A future production manifest needs separately reviewed code locations, authenticated resource binding, owners, frozen thresholds, a runtime watchdog, and independent evidence. Passing this command is neither a runnable SM-00 service result nor A118/PF04/PF09 acceptance. The supplied WS+TLS candidate stays a development-complete retest TODO.
+
+## Two logical nodes and central leases
+
+`lease_ledger.py` and `lease_node.py` are separate from the TCP relay. Tests create the central SQLite file and each node's journal explicitly with `create=True`; reopening uses the default `create=False`, so a missing file fails closed instead of silently starting a new balance. Two logical nodes share one finite account quota. A central grant reserves a bounded byte lease in a durable transaction. Repeating the same boot or grant request key returns its original result, including partial grants and denials; a changed request with the same key fails.
+
+Each node persists a chunk PREPARE before invoking a test sink. Immediately before the sink, the journal checks lease expiry and any **known** epoch fence again. A durable local COMPLETE advances that node's two-direction cumulative counters. The center accepts only bound, monotonic reports and moves accepted bytes from `held` to `actual` without increasing available quota. Latest identical reports are idempotent; older reports return STALE and do not debit again. `uncertain` is the remaining held portion of leases whose node restart or expiry is known to the center. Unknown crashes may leave held bytes without an uncertain flag until that notification; read-only snapshots never perform recovery. Expiry and epoch changes do not automatically release reservations.
+
+An offline old node may continue within its already issued, unexpired lease until it learns of a newer epoch; the center keeps that old lease reserved while a new session uses only the remaining account budget. This models quota conservation, **not** instantaneous remote revocation. A failed adoption of a newer session stops the active local scope. A valid fence that cannot be stored for an inactive scope stops all sends in that process; rejected invalid identifiers are not retained. The node journals simulated sends, not authoritative origin receipt; a sink callback is useful for the controlled tests but is not Xray's target-connection byte counter. These tests do not demonstrate real two-server independence, RateLease, physical rate/burst limits, server authentication, power-loss durability, Vision/splice accounting, UI latency, or A118/PF04/PF09 acceptance. The [design boundary](../../docs/plans/access-service-v1.0/W2-MULTINODE-PREP-20260928.zh-CN.md) lists the fixed fixture caps and pending real-resource inputs.
+
+## Two independent loopback relay processes
+
+`lease_relay.py` joins the central lease and node journal to one local TCP data path. `test_lease_relay.py` creates one temporary central database, two node journals, two relay subprocesses, and two independently counted loopback origin subprocesses. A relay replays durable old cumulative reports before adopting a fresh session and one finite lease; it handles one client connection at a time. The center SQLite file stands in for a shared service and has no network protocol or real authentication.
+
+Each forwarded block has a durable full-size PREPARE. The journal commits `SENDING`, rechecks expiry and persisted fences, then performs exactly one nonblocking `socket.send` while holding a short journal write lock. It never waits for socket writability or calls `sendall` under that lock. Only the returned byte count enters a durable COMPLETE and cumulative report; a short write closes the connection and leaves the unsent part reserved. A returned send count means local OS enqueue, so the separately sampled origin/client count can differ during a crash or disconnect. No old PREPARED/SENDING block is replayed after restart.
+
+Test-only files inject an integer clock, temporary center unavailability, fatal report conflict, and four bounded pause stages. Only the explicit temporary-unavailability marker permits a live process to spend an already held, unexpired lease while retaining its pending report; semantic ledger, journal integrity, or ACK errors stop its future sends. Idle report retries have a 100 ms minimum interval and a 32-attempt process cap that includes successful retries and old-journal replay, without resetting after success. These controls never use the supplied WS+TLS candidate, and they do not prove Linux/Xray, a remote center, real node independence, physical rate control, or PF04/PF09. [The relay design and test inputs](../../docs/plans/access-service-v1.0/W2-LOCAL-RELAY-PREP-20260928.zh-CN.md) state the exact fault windows and resource boundary.
 
 The subprocess launcher trusts the test interpreter, repository checkout and inherited environment. It executes `sys.executable` with this checkout's `relay.py`, an argv list of fixture values, and explicit `shell=False`; external request data never supplies launch arguments. Database and fault-marker paths come from the test's temporary directory. The import and this one launcher carry narrowly scoped exceptions for Bandit `B404`/`B603` and Semgrep `python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit`, documenting the audited test-code use. Other calls and rules remain enabled. Re-audit these exceptions if the launcher begins accepting external inputs; the separate process is required to preserve the real kill/restart tests.
 
