@@ -1,0 +1,56 @@
+From 54f07a43cd269449dbecb0993e3ec686e02a378b Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Fri, 9 Oct 2026 02:40:12 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E5=AF=B9=E9=BD=90=20Chromium=20155=20?=
+ =?UTF-8?q?=E8=AE=BE=E7=BD=AE=E9=A1=B9=E5=90=8D=E7=A7=B0=E5=B9=B6=E4=BF=9D?=
+ =?UTF-8?q?=E7=95=99=E5=A4=B1=E8=B4=A5=E8=AF=8A=E6=96=AD?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h       | 4 ++--
+ .../browser/ui/webui/settings/settings_ui_browsertest.cc | 9 +++++----
+ 2 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 713f8f925b408f579b1a323c060dc86dba002dbf..97feebf5d76d82bf75f4a5570e77e6d0618749b4 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.2.0.140";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.2 (140)";
++inline constexpr char kProductVersion[] = "2.2.0.141";
++inline constexpr char kProductVersionLabel[] = "Ver 2.2 (141)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
+index c13fec82ba2a5bb1dadd3ff923b329788608b252..c486029ec5f5aeaa5f0581f6c2d8743a72ea00de 100644
+--- a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
+@@ -68,16 +68,17 @@ IN_PROC_BROWSER_TEST_F(SettingsUITest, AegisHidesUpstreamAiAndGoogleSettings) {
+                           "showGoogleServicesSettings",
+                           "replaceSyncPromosWithSignInPromos",
+                           "showSuggestionsFromGeminiSettings",
+-                          "showPersonalContextSettingsLink",
++                          "showGeminiPersonalContextLink",
++                          "isAtMemoryTriggerCustomizationAllowed",
+                           "isAtMemoryEnabled"}) {
+-    EXPECT_FALSE(
++    // 直接比较结果，取值失败时保留脚本错误，避免强制转换使进程崩溃。
++    EXPECT_EQ(false,
+         content::EvalJs(
+             web_contents,
+             base::StrCat(
+                 {"import('chrome://resources/js/load_time_data.js').then(m => "
+                  "m.loadTimeData.getBoolean('",
+-                 key, "'))"}))
+-            .ExtractBool())
++                 key, "'))"})))
+         << key;
+   }
+ }
