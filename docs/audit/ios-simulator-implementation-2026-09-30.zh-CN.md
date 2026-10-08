@@ -4,7 +4,7 @@
 
 本轮在既有 `apps/ios` 工程上实施，目标是 iPhone / iPad Simulator。沿用 `com.gcsa.aegis.ios.app` 和固定构建路径。真机、正式签名和公开分发按用户要求不在本轮范围内。
 
-当前版本与最终测试数字以文末的最终验收记录为准。早期失败结果保留，不用历史通过数替代本轮结果。
+本次历史验收的版本与测试数字以文末的最终验收记录为准。早期失败结果保留，不用历史通过数替代本轮结果。
 
 ## 已实现
 
@@ -66,17 +66,20 @@
 
 `e05bc4162ba70780d59dc6831e0981cf70e317c6ee9825afa5c6915e3a77126c`
 
-固定 App：Aegis.app（本地证据：`<build>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app`）。Bundle ID 保持 `com.gcsa.aegis.ios.app`。源代码保留在当前工作区，本轮没有提交、推送或分发。
+固定 App：Aegis.app（本地路径：`<build>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app`）。Bundle ID 保持 `com.gcsa.aegis.ios.app`。源代码保留在当前工作区，本轮没有提交、推送或分发。
 
 ### 本机证据
 
-- 验收与安装读回清单（本地证据：`.artifacts/ios-simulator-20260930/final-evidence-016.json`）
-- 构建与源码摘要（本地证据：`.artifacts/ios-simulator-20260930/build-manifest-016.json`）：77 个 App 文件、85 个源码/工程/资源文件，可核对当前产物。
-- iPhone 原始测试摘要（本地证据：`.artifacts/ios-simulator-20260930/final-016/iPhone-summary.json`）、iPad 原始测试摘要（本地证据：`.artifacts/ios-simulator-20260930/final-016/iPad-summary.json`）。同目录保留两份完整 `.xcresult`、构建日志和运行元数据。
-- iPhone 下载画面（本地证据：`.artifacts/ios-simulator-20260930/screenshots-016/iphone-download.png`）、iPad 助手与引用（本地证据：`.artifacts/ios-simulator-20260930/screenshots-016/ipad-assistant.png`）、iPhone 横屏与极大字体（本地证据：`.artifacts/ios-simulator-20260930/screenshots-016/iphone-landscape.png`）、iPad 横屏与侧栏（本地证据：`.artifacts/ios-simulator-20260930/screenshots-016/ipad-landscape.png`）。均为最终版本原始整屏截图，已检查可见结果与布局。
+以下为 2026-09-30 的本地证据路径，不是可随仓库分发的下载链接。`.artifacts/` 相对于当时的主工作区根目录，受 Git 忽略；`<build>` 表示该工作区同级的 `GCSA-aegis-build` 目录。独立工作树或 GitHub 源码副本通常不包含这些文件。
+
+2026-10-09 复核：下列 8 份历史清单、测试摘要和截图仍存在，JSON 可解析、PNG 完整性检查通过；两份清单均记录版本 2.0、构建号 16，测试摘要与本页数字一致。固定路径中的 App 也存在，但已为 2.2 (64)，会随后续构建被替换，不能作为旧 016 安装包使用。这次仅修复证据引用，不构成重新运行模拟器验收。
+
+- 验收与安装读回清单（本地路径：`.artifacts/ios-simulator-20260930/final-evidence-016.json`）
+- 构建与源码摘要（本地路径：`.artifacts/ios-simulator-20260930/build-manifest-016.json`）：记录当时 77 个 App 文件、85 个源码/工程/资源文件的哈希，用于核对 Ver 2.0 (16) 历史产物，不能证明当前构建与其一致。
+- iPhone 原始测试摘要（本地路径：`.artifacts/ios-simulator-20260930/final-016/iPhone-summary.json`）、iPad 原始测试摘要（本地路径：`.artifacts/ios-simulator-20260930/final-016/iPad-summary.json`）。同目录保留两份完整 `.xcresult`、构建日志和运行元数据。
+- iPhone 下载画面（本地路径：`.artifacts/ios-simulator-20260930/screenshots-016/iphone-download.png`）、iPad 助手与引用（本地路径：`.artifacts/ios-simulator-20260930/screenshots-016/ipad-assistant.png`）、iPhone 横屏与极大字体（本地路径：`.artifacts/ios-simulator-20260930/screenshots-016/iphone-landscape.png`）、iPad 横屏与侧栏（本地路径：`.artifacts/ios-simulator-20260930/screenshots-016/ipad-landscape.png`）。均为最终版本原始整屏截图，已检查可见结果与布局。
 - 早期第 13/14 轮的公共站点超时、第 15 轮测试截图 API 编译错误保留于 `.artifacts/ios-simulator-20260930/runs/`。第 16 轮采用可达的官方公开页面，并使用当前 SDK 的 `XCUIScreen.main.screenshot()`，两台重新运行全套通过。
 
 可复现步骤与合成服务手动体验方法见 [简体中文使用说明](../../apps/ios/README.zh-CN.md)。后续验收应逐项补齐上文列出的系统宿主、真实模型与生命周期范围。
-
 
 2026-10-03 的源码预发布与公开验证摘要见[发布说明](../releases/ios-2.2.0-preview.1.zh-CN.md)。上述本地证据路径不随 GitHub 分发。
