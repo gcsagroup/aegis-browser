@@ -78,7 +78,8 @@ class LeaseRelayProcessTests(unittest.TestCase):
         return process
 
     def _ready(self, process: subprocess.Popen[str], script: str) -> int:
-        assert process.stdout is not None
+        if process.stdout is None:
+            self.fail("子进程没有提供标准输出管道")
         readable, _, _ = select.select([process.stdout], [], [], 4)
         if not readable:
             self.fail(f"{script} did not become ready; exit={process.poll()}")
