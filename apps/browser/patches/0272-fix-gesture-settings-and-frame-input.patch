@@ -1,0 +1,177 @@
+From 83362f280de815151d916d43e2bb1f2aab39633f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Fri, 9 Oct 2026 02:30:27 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E6=98=8E=E7=A1=AE=E6=89=8B=E5=8A=BF?=
+ =?UTF-8?q?=E8=AE=BE=E7=BD=AE=E5=85=83=E7=B4=A0=E6=A0=A1=E9=AA=8C=E5=B9=B6?=
+ =?UTF-8?q?=E7=AD=89=E5=BE=85=E5=AD=90=E6=A1=86=E6=9E=B6=E8=BE=93=E5=85=A5?=
+ =?UTF-8?q?=E5=8C=BA=E5=9F=9F?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../gestures/gesture_interactive_uitest.cc    |  3 ++
+ chrome/browser/resources/aegis/gestures.css   |  4 +-
+ chrome/browser/resources/aegis/gestures.ts    | 39 ++++++++++++-------
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 4 files changed, 32 insertions(+), 18 deletions(-)
+
+diff --git a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+index 060b69fc2062e8076e3a233417e0c78353e28b8c..c2636fea396efd8039de53052d66d165fa33fa2a 100644
+--- a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
++++ b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+@@ -18,6 +18,7 @@
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "content/public/test/context_menu_interceptor.h"
++#include "content/public/test/hit_test_region_observer.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+ #include "third_party/blink/public/common/input/web_mouse_event.h"
+ #include "ui/base/base_window.h"
+@@ -385,6 +386,8 @@ IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
+   ASSERT_TRUE(frame);
+   ASSERT_NE(frame->GetProcess(),
+             contents()->GetPrimaryMainFrame()->GetProcess());
++  // 子框架加载完成时，合成器尚可能未发布它的输入命中区域。
++  content::WaitForHitTestData(frame);
+   Gesture(frame->GetRenderWidgetHost(), "L");
+   ASSERT_TRUE(base::test::RunUntil([&] {
+     return contents()->GetLastCommittedURL() ==
+diff --git a/chrome/browser/resources/aegis/gestures.css b/chrome/browser/resources/aegis/gestures.css
+index b29317ad37cd66344c399857e2826200ab0563b1..bab639f67ad0ca45931ee62c44e1ccc625444b0f 100644
+--- a/chrome/browser/resources/aegis/gestures.css
++++ b/chrome/browser/resources/aegis/gestures.css
+@@ -208,7 +208,7 @@ polyline {
+ }
+ 
+ button,
+-input:not([type=range]):not([type=checkbox]),
++input:not([type=range], [type=checkbox]),
+ select,
+ textarea {
+   font:inherit;
+@@ -309,7 +309,7 @@ footer {
+     width:100%;
+   }
+   button,
+-input:not([type=range]):not([type=checkbox]),
++input:not([type=range], [type=checkbox]),
+ select {
+     padding:8px;
+   }
+diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
+index e4409d7f55d22d4cf1c0a89884cd9ee2bf67f1b5..a5e2466d496ca59cc8a42d08ad6be61d5738ee1c 100644
+--- a/chrome/browser/resources/aegis/gestures.ts
++++ b/chrome/browser/resources/aegis/gestures.ts
+@@ -11,12 +11,12 @@ type Settings = {
+ type Action = {id: string, label: string, pdfOnly: boolean};
+ type Snapshot = {settings: Settings, actions: Action[]};
+ 
+-function element<T extends HTMLElement>(id: string): T {
+-  const value = document.getElementById(id);
++function element<T extends Element = HTMLElement>(id: string): T {
++  const value = document.querySelector<T>(`#${id}`);
+   if (!value) {
+     throw new Error(`缺少设置元素：${id}`);
+   }
+-  return value as T;
++  return value;
+ }
+ const enabled = element<HTMLInputElement>('enabled');
+ const trail = element<HTMLInputElement>('showTrail');
+@@ -28,14 +28,14 @@ const status = element('status');
+ const practice = element('practice');
+ const patternLabel = element('practicePattern');
+ const resultLabel = element('practiceResult');
+-const line = document.querySelector<SVGPolylineElement>('#practiceLine')!;
++const line = element<SVGPolylineElement>('practiceLine');
+ let actions: Action[] = [];
+ let lastPattern = '';
+ let busy = false;
+ 
+ function arrows(pattern: string): string {
+-  const map: Record<string, string> = {L: '←', R: '→', U: '↑', D: '↓'};
+-  return Array.from(pattern, c => map[c] || c).join(' ');
++  const map = new Map([['L', '←'], ['R', '→'], ['U', '↑'], ['D', '↓']]);
++  return Array.from(pattern, c => map.get(c) || c).join(' ');
+ }
+ function normalize(pattern: string): string {
+   return pattern.trim().toUpperCase().replaceAll('←', 'L').replaceAll('→', 'R')
+@@ -101,22 +101,28 @@ function render(snapshot: Snapshot) {
+   updateRegion();
+ }
+ function readSettings(): Settings {
+-  const mapping: Record<string, string> = {};
++  const mapping = new Map<string, string>();
+   for (const row of bindings.querySelectorAll('.binding')) {
+-    const pattern = normalize(row.querySelector('input')!.value);
++    const input = row.querySelector('input');
++    const select = row.querySelector('select');
++    if (!input || !select) {
++      throw new Error('手势配置控件缺失，请重新打开此页面。');
++    }
++    const pattern = normalize(input.value);
+     if (!/^[LRUD]{1,8}$/.test(pattern) || /(.)\1/.test(pattern)) {
+       throw new Error('每条手势需包含 1–8 个方向，且相邻方向不能相同。');
+     }
+-    if (Object.hasOwn(mapping, pattern)) {
++    if (mapping.has(pattern)) {
+       throw new Error(`手势 ${arrows(pattern)} 已重复，请为它只保留一个动作。`);
+     }
+-    mapping[pattern] = row.querySelector('select')!.value;
++    mapping.set(pattern, select.value);
+   }
+   const disabledSites = sites.value.split('\n').map(s => s.trim().toLowerCase())
+                             .filter(Boolean);
+   return {
+     enabled: enabled.checked, showTrail: trail.checked,
+-    threshold: Number(threshold.value), bindings: mapping, disabledSites,
++    threshold: Number(threshold.value),
++    bindings: Object.fromEntries(mapping), disabledSites,
+   };
+ }
+ async function persist(reset: boolean) {
+@@ -189,7 +195,9 @@ function cancelPractice() {
+     resultLabel.textContent = '没有执行任何操作';
+   }
+ }
+-practice.addEventListener('contextmenu', event => event.preventDefault());
++practice.addEventListener('contextmenu', event => {
++  event.preventDefault();
++});
+ practice.addEventListener('pointerdown', event => {
+   if (event.button !== 2) {
+     return;
+@@ -265,7 +273,8 @@ practice.addEventListener('pointerup', event => {
+   }
+   lastPattern = pattern;
+   try {
+-    const action = actions.find(item => item.id === readSettings().bindings[pattern]);
++    const mapping = new Map(Object.entries(readSettings().bindings));
++    const action = actions.find(item => item.id === mapping.get(pattern));
+     patternLabel.textContent = arrows(pattern);
+     resultLabel.textContent = action ? `匹配：${action.label}（练习不执行）` :
+         '尚未绑定；点击“添加手势”可使用这次方向。';
+@@ -284,4 +293,6 @@ void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
+   render(snapshot);
+   save.disabled = false;
+   message('设置已加载');
+-}).catch(() => message('设置加载失败，请重新打开此页面。', true));
++}).catch(() => {
++  message('设置加载失败，请重新打开此页面。', true);
++});
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index e65a9d76a46ccbb15083684f3ee2b94a4c73e765..713f8f925b408f579b1a323c060dc86dba002dbf 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.2.0.139";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.2 (139)";
++inline constexpr char kProductVersion[] = "2.2.0.140";
++inline constexpr char kProductVersionLabel[] = "Ver 2.2 (140)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
