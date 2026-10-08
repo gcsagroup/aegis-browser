@@ -6,7 +6,7 @@ from unittest import mock
 import importlib.util
 import json
 from pathlib import Path
-import subprocess
+import subprocess  # nosec B404 - 固定测试解释器与仓库脚本，不启用 shell。
 import sys
 import tempfile
 import unittest
@@ -52,7 +52,11 @@ class ReleaseAssetsTests(unittest.TestCase):
     def test_cli_representative_input(self):
         manifest = self.root / 'manifest.json'
         manifest.write_text(json.dumps(self.manifest))
-        result = subprocess.run([sys.executable, str(SCRIPT), '--manifest', str(manifest), '--asset-dir', str(self.root)], capture_output=True, text=True)
+        # 当前解释器、固定仓库脚本和临时夹具独立传参，不接收外部命令文本。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python_exec_rule-subprocess-call-array
+        result = subprocess.run([str(Path(sys.executable).resolve(strict=True)), str(SCRIPT.resolve()),  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
+                                 '--manifest', str(manifest), '--asset-dir', str(self.root)],
+                                capture_output=True, text=True, timeout=30, shell=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(json.loads(result.stdout)['assets']), 3)
 

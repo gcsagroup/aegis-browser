@@ -3,7 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404 - 只读 Git 参数数组，不启用 shell。
 
 PLATFORMS = {'mac-arm64', 'win-x64', 'android-arm64'}
 
@@ -40,11 +41,18 @@ def load(browser, enforce_history=False):
     if enforce_history:
         root = Path(browser).resolve().parents[1]
         relative = path.resolve().relative_to(root).as_posix()
-        revisions = subprocess.check_output(
-            ['git', '-C', str(root), 'log', '-2', '--format=%H', '--', relative], text=True).splitlines()
+        executable = shutil.which('git')
+        if not executable:
+            raise ValueError('缺少用于核对功能历史的 Git')
+        executable = str(Path(executable).resolve(strict=True))
+        # 固定 log/show 子命令；路径独立传参，历史修订只来自 Git 自身。
+        revisions = subprocess.check_output(  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
+            [executable, '-C', str(root), 'log', '-2', '--format=%H', '--', relative],
+            text=True, timeout=30, shell=False).splitlines()
         if len(revisions) == 2:
-            previous = subprocess.check_output(
-                ['git', '-C', str(root), 'show', revisions[1] + ':' + relative], text=True)
+            previous = subprocess.check_output(  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
+                [executable, '-C', str(root), 'show', revisions[1] + ':' + relative],
+                text=True, timeout=30, shell=False)
             validate_evolution(contract, json.loads(previous))
     return contract, digest(path)
 

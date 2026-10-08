@@ -28,6 +28,7 @@
 #include "chrome/browser/aegis/agent/agent_task_store.h"
 #include "chrome/browser/aegis/agent/typesafe_goal_response_parser.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "content/public/browser/weak_document_ptr.h"
 
 class Profile;
 
@@ -471,6 +472,10 @@ class AegisAgentService : public KeyedService {
   void ExecuteRuntimeTool(const std::string& task_id,
                           AgentToolCall call,
                           const std::optional<std::string>& approval_id);
+  void OnDispatchedRuntimeToolResult(const std::string& task_id,
+                                     uint64_t generation,
+                                     AgentToolCall attempted_call,
+                                     AgentToolResult result);
   void OnRuntimeToolResult(const std::string& task_id,
                            AgentToolCall attempted_call,
                            AgentToolResult result);
@@ -510,6 +515,8 @@ class AegisAgentService : public KeyedService {
   std::map<std::string, base::DictValue> saved_research_;
   // 浏览器持有逐标签的完整地址，不能用另一个已选地址替换原来源。
   std::map<std::string, std::map<int32_t, GURL>> research_selections_;
+  std::map<std::string, std::map<int32_t, content::WeakDocumentPtr>>
+      research_selection_documents_;
   std::map<std::string, std::pair<size_t, int>> plan_progress_;
   std::map<std::string, std::unique_ptr<AgentModelClient>> model_clients_;
   std::map<std::string, std::string> model_request_ids_;

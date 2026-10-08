@@ -30,6 +30,8 @@ Content 6 项包含 `PrefetchBrowserTestBase.HttpMhtmlSubframePrefetchKeepsRestr
 
 每个实验实施后补实际测试名、产品/Chromium/Xray/配置身份、原始日志及 unit/browser/service 的执行结果；新增预期场景不得复用历史 S 项的局部 PASS。
 
+[2026-09-28 单执行点计量适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)提供 SM-00–SM-07 的拟议验收输入，关联 A36/A37、A84 与 A118 的服务端子场景。本增量新增[合成 SM-00 离线清单校验器](../../../prototypes/access-metering/sm00_preflight.py)及[可复现命令](../../../prototypes/access-metering/README.md)：它只检查合成输入并输出 `LOCAL_PREFLIGHT_ONLY`，不属于这些主行的真实服务执行映射。SM 场景仍无受控负载/故障 runner 或真实运行结果；本次不改变 A36/A37、A84、A118 及其他 A/PF 主行的实现、测试映射、执行与结果列。PF04/PF09 的实现与完整验收仍独立待办，预检通过不等于 A118 完成。
+
 ## 状态与证据约定
 
 一行分别跟踪**实现、测试映射、执行、结果、覆盖与证据**，不得把任一列当成其他列。`UNVERIFIED` 表示尚未逐场景盘点，**不表示没有代码**；`NOT_MAPPED` 表示尚未找到可追溯测试，**不表示没有测试**；`NOT_RUN` 表示没有绑定该固定候选的实际执行记录；`NOT_EVALUATED` 表示主行尚未按冻结断言判定。`PARTIAL_SOURCE` 只说明下面列明的源码存在；`DOC_ONLY` 只说明文档预览；`EXECUTED_BOUNDED` 仅记录明确的局部合同或预览执行。覆盖的 `PARTIAL` 不能使主行变成 `PASS`。未映射行的“待盘点”不得计入已覆盖或未实现数量。若某场景不适用，先按规范第 14 节记录原因与版本，不能自行删行。

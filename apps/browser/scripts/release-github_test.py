@@ -5,8 +5,9 @@ import importlib.util
 import io
 import json
 from pathlib import Path
-import subprocess
+import subprocess  # nosec B404 - 固定解释器的本地 CLI 回归，不调用远端发布。
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -231,16 +232,30 @@ class ReleaseGitHubTests(unittest.TestCase):
         self.assertNotIn('edit', [c[0] for c in self.gh.calls])
 
     def test_git_cli_failure_cannot_be_treated_as_no_release(self):
-        result = subprocess.CompletedProcess([], 1, '', 'sensitive diagnostic')
-        with mock.patch.object(module.subprocess, 'run', return_value=result):
+        result = SimpleNamespace(returncode=1, stdout='', stderr='sensitive diagnostic')
+        with mock.patch.object(module.shutil, 'which', return_value=sys.executable), \
+                mock.patch.object(module.subprocess, 'run', return_value=result) as run:
             with self.assertRaises(ValueError) as error:
                 module.GitHub().releases()
             self.assertNotIn('sensitive', str(error.exception))
+            self.assertEqual(run.call_args.args[0][0], str(Path(sys.executable).resolve()))
+            self.assertFalse(run.call_args.kwargs['shell'])
+            self.assertEqual(run.call_args.kwargs['timeout'], 600)
+
+    def test_missing_git_cli_cannot_start_remote_operations(self):
+        with mock.patch.object(module.shutil, 'which', return_value=None), \
+                mock.patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, '缺少 GitHub CLI'):
+                module.GitHub().releases()
+            run.assert_not_called()
 
     def test_real_cli_rejects_missing_inputs_before_network(self):
-        result = subprocess.run([sys.executable, str(Path(module.__file__)), '--manifest', str(self.root / 'missing'),
+        # 固定解释器和被测脚本；缺失输入必须在任何远端调用之前失败。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python_exec_rule-subprocess-call-array
+        result = subprocess.run([str(Path(sys.executable).resolve(strict=True)), str(Path(module.__file__).resolve()), '--manifest', str(self.root / 'missing'),  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
                                  '--asset-dir', str(self.root), '--qualification', str(self.root / 'missing'),
-                                 '--notes', str(self.root / 'missing'), '--output', str(self.root / 'result.json')], capture_output=True, text=True)
+                                 '--notes', str(self.root / 'missing'), '--output', str(self.root / 'result.json')],
+                                capture_output=True, text=True, timeout=30, shell=False)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(json.loads((self.root / 'result.json').read_text())['status'], 'blocked')
 
