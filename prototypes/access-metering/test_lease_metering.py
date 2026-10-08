@@ -38,6 +38,14 @@ class LeaseLedgerTests(unittest.TestCase):
     def session(self, node: str, boot: str | None = None):
         return self.center.start_session("acct", "p1", node, boot or f"boot-{node}")
 
+    def test_count_rejects_unlisted_table_without_modifying_data(self) -> None:
+        with self.center._connection() as connection:
+            self.assertEqual(self.center._count(connection, "accounts"), 1)
+            for table in ("missing", "accounts; DROP TABLE accounts; --"):
+                with self.assertRaisesRegex(LeaseError, "unknown count table"):
+                    self.center._count(connection, table)
+            self.assertEqual(self.center._count(connection, "accounts"), 1)
+
     def test_lost_grant_reply_and_partial_grant_retry_preserve_budget(self) -> None:
         a = self.session("A")
         b = self.session("B")
