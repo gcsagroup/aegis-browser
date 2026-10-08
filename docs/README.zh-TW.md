@@ -1,5 +1,7 @@
 # 文件
 
+
+> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
 本目錄保存 GCSA-aegis 的公開產品架構、路線圖、研究邊界、產品頁，以及帶日期的本機稽核記錄。
@@ -22,6 +24,7 @@
 - [三語產品頁](product.html)
 - [Browser 構建與驗證指南](../apps/browser/README.zh-TW.md)
 - [原生 iOS 工程指南](../apps/ios/README.zh-TW.md)
+- [iOS 3.2 主線整合驗證](audit/ios-main-merge-2026-10-09.zh-CN.md)
 - [iOS 3.2 私密模式驗證](audit/ios-private-mode-2026-10-05.zh-CN.md)
 - [iOS 3.1 精簡介面驗證](audit/ios-compact-ui-2026-10-05.zh-CN.md)
 - [Browser Agent v2 使用者指南](aegis-browser-agent-v2-user-guide.zh-TW.md)

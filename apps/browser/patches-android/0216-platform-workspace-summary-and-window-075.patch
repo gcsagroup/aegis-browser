@@ -1,0 +1,1488 @@
+From 6f7c8b323717128781ef76b6402a103e3f318d53 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 03:24:44 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E4=B8=89=E7=AB=AF=E5=B7=A5?=
+ =?UTF-8?q?=E4=BD=9C=E5=8C=BA=E3=80=81=E6=91=98=E8=A6=81=E3=80=81=E7=AA=97?=
+ =?UTF-8?q?=E5=8F=A3=E5=9B=9E=E8=AF=BB=E4=B8=8E=E7=A7=BB=E5=8A=A8=E7=AB=AF?=
+ =?UTF-8?q?=E6=9C=8D=E5=8A=A1=E6=8F=90=E7=A4=BA=20075?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../chrome/browser/ChromeTabbedActivity.java  |   2 +-
+ .../TabbedAppMenuPropertiesDelegate.java      |  22 +-
+ chrome/browser/aegis/BUILD.gn                 |   1 +
+ .../aegis/aegis_ui_handler_unittest.cc        | 126 +++++++-
+ .../aegis/agent/aegis_browser_tools.cc        | 290 +++++++++++-------
+ .../browser/aegis/agent/aegis_browser_tools.h |   6 +
+ .../aegis/agent/agent_core_unittest.cc        |  33 ++
+ .../aegis/agent/agent_result_verifier.cc      |  17 +-
+ chrome/browser/aegis/agent/agent_task.h       |   4 +
+ chrome/browser/resources/aegis/aegis.ts       |  30 +-
+ chrome/browser/resources/aegis_agent/agent.ts |  28 +-
+ .../strings/android_chrome_strings.grd        |  30 +-
+ .../android_chrome_strings_zh-CN.xtb          |  13 +
+ .../android_chrome_strings_zh-TW.xtb          |  13 +
+ chrome/browser/ui/webui/aegis/BUILD.gn        |   3 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc     |   4 -
+ .../ui/webui/aegis/aegis_ui_handler.cc        |  87 +++---
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |   8 +-
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |   4 -
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ 20 files changed, 472 insertions(+), 253 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+index 0172c4fa2d37de7a1fe31381718677d2f83e32b8..04e5a01e818ee4c3680386dc2b8f4478bc5f2b62 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -4368,7 +4368,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+         if (autoStart) url.appendQueryParameter("autostart", "1");
+         LoadUrlParams params =
+                 new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);
+-        getTabCreator(/* incognito= */ false)
++        getTabCreator(/* incognito= */ isIncognitoShowing())
+                 .createNewTab(params, TabLaunchType.FROM_CHROME_UI, getActivityTab());
+     }
+ 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+index 2f1caae456a9ff50434f31398bb1da7a478dc43c..25af9f34b55ef27873d8c4a0bbb2017cbb1d5ee6 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+@@ -543,12 +543,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         // Divider Line
+         AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
+ 
+-        if (!isIncognitoShowing()) {
+-            if (shouldShowAegisCurrentPageItem(currentTab)) {
+-                modelList.add(buildAegisCurrentPageItem());
+-            }
+-            modelList.add(buildAegisAgentItem());
++        if (shouldShowAegisCurrentPageItem(currentTab)) {
++            modelList.add(buildAegisCurrentPageItem());
+         }
++        modelList.add(buildAegisAgentItem());
+ 
+         // Settings
+         modelList.add(buildSettingsItem());
+@@ -742,12 +740,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         // Divider Line
+         AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
+ 
+-        if (!isIncognitoShowing()) {
+-            if (shouldShowAegisCurrentPageItem(currentTab)) {
+-                modelList.add(buildAegisCurrentPageItem());
+-            }
+-            modelList.add(buildAegisAgentItem());
++        if (shouldShowAegisCurrentPageItem(currentTab)) {
++            modelList.add(buildAegisCurrentPageItem());
+         }
++        modelList.add(buildAegisAgentItem());
+ 
+         // Settings
+         modelList.add(buildSettingsItem());
+@@ -809,7 +805,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         modelList.add(buildCloseAllTabsItem());
+         if (shouldShowSelectTabsItem()) modelList.add(buildSelectTabsItem());
+         if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
+-        if (!isIncognitoShowing()) modelList.add(buildAegisAgentItem());
++        modelList.add(buildAegisAgentItem());
+         modelList.add(buildSettingsItem());
+     }
+ 
+@@ -825,7 +821,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         } else {
+             modelList.add(buildNewIncognitoTabItem());
+         }
+-        if (!isIncognitoShowing()) modelList.add(buildAegisAgentItem());
++        modelList.add(buildAegisAgentItem());
+         modelList.add(buildSettingsItem());
+         if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
+     }
+@@ -1413,7 +1409,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+     }
+ 
+     private boolean shouldShowAegisCurrentPageItem(@Nullable Tab currentTab) {
+-        if (currentTab == null || isIncognitoShowing()) return false;
++        if (currentTab == null) return false;
+         String scheme = currentTab.getUrl().getScheme();
+         return "http".equals(scheme) || "https".equals(scheme);
+     }
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index bd333bf58db57e616174d149355aa3c1ec9a5b5b..a39799b17edd8773c3cad51bc9698fbe53ab6ab0 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -200,6 +200,7 @@ source_set("aegis") {
+     "//chrome/browser/notifications",
+     "//chrome/browser/tab_list",
+     "//chrome/browser/ui/browser_window",
++    "//chrome/browser/ui/browser_window:create_browser_window",
+     "//chrome/browser/undo",
+     "//components/actor/core",
+     "//components/bookmarks/browser",
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 98f9095b51a262009256d898725e5280a911d08b..11ee95e32a0b25d910d53212a63d15301ce3c863 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -6,17 +6,26 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/test/test_future.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/agent/aegis_browser_tools.h"
++#include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
++#include "chrome/common/aegis/pref_names.h"
+ #include "chrome/test/base/browser_with_test_window_test.h"
+ #include "chrome/test/base/testing_profile_manager.h"
++#include "components/prefs/pref_service.h"
++#include "components/tab_groups/tab_group_color.h"
++#include "components/tab_groups/tab_group_visual_data.h"
++#include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/test_web_ui.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
++#include "url/origin.h"
+ 
+ namespace aegis {
+ namespace {
+@@ -35,15 +44,18 @@ TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
+   TabStripModel* model = browser()->tab_strip_model();
+   content::WebContents* settings = model->GetWebContentsAt(1);
+ 
+-  EXPECT_EQ(model->GetWebContentsAt(0),
+-            FindSummarySourceTabInModel(model, settings));
++  EXPECT_EQ(
++      model->GetWebContentsAt(0),
++      FindSummarySourceTabInList(TabListInterface::From(browser()), settings));
+ 
+   NavigateAndCommit(model->GetWebContentsAt(0), GURL("about:blank"));
+-  EXPECT_EQ(model->GetWebContentsAt(2),
+-            FindSummarySourceTabInModel(model, settings));
++  EXPECT_EQ(
++      model->GetWebContentsAt(2),
++      FindSummarySourceTabInList(TabListInterface::From(browser()), settings));
+ 
+   NavigateAndCommit(model->GetWebContentsAt(2), GURL("about:blank"));
+-  EXPECT_EQ(nullptr, FindSummarySourceTabInModel(model, settings));
++  EXPECT_EQ(nullptr, FindSummarySourceTabInList(
++                         TabListInterface::From(browser()), settings));
+ }
+ 
+ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
+@@ -52,7 +64,105 @@ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
+   auto foreign = content::WebContents::Create(
+       content::WebContents::CreateParams(profile()));
+ 
+-  EXPECT_EQ(nullptr, FindSummarySourceTabInModel(model, foreign.get()));
++  EXPECT_EQ(nullptr, FindSummarySourceTabInList(
++                         TabListInterface::From(browser()), foreign.get()));
++}
++
++TEST_F(AegisUIHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
++  using namespace aegis::agent;
++  AddTab(browser(), GURL("https://workspace.example/first"));
++  AddTab(browser(), GURL("https://workspace.example/second"));
++  TabListInterface* list = TabListInterface::From(browser());
++  ASSERT_TRUE(list);
++  tabs::TabInterface* first = list->GetTab(0);
++  tabs::TabInterface* second = list->GetTab(1);
++  const auto group =
++      list->CreateTabGroup({first->GetHandle(), second->GetHandle()});
++  ASSERT_TRUE(group);
++  list->SetTabGroupVisualData(
++      *group, tab_groups::TabGroupVisualData(
++                  u"研究集合", tab_groups::TabGroupColorId::kBlue));
++  AgentTaskScope scope;
++  scope.allowed_origins = {
++      url::Origin::Create(GURL("https://workspace.example/"))};
++  scope.allowed_tab_ids = {first->GetHandle().raw_value(),
++                           second->GetHandle().raw_value()};
++  scope.allowed_tools = {"tab.list", "workspace.save", "workspace.restore"};
++  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
++  scope.model_destination.provider = "aegis-local";
++  scope.model_destination.model = "fixture";
++  scope.budgets.max_tabs = 8;
++  AgentTask task("workspace-round-trip", "保存并恢复研究集合", AgentMode::kAct,
++                 scope);
++  AegisBrowserTools tools(profile());
++  ASSERT_TRUE(tools.CanHandle("workspace.save"));
++  ASSERT_TRUE(tools.CanHandle("workspace.restore"));
++  auto execute = [&](std::string name, base::DictValue arguments) {
++    AgentToolCall call;
++    call.action_id = name;
++    call.tool_name = name;
++    call.arguments = std::move(arguments);
++    base::test::TestFuture<AgentToolResult> future;
++    tools.Execute(&task, call, future.GetCallback());
++    return future.Take();
++  };
++  auto listed = execute("tab.list", {});
++  ASSERT_TRUE(listed.ok);
++  auto saved =
++      execute("workspace.save",
++              base::DictValue()
++                  .Set("name", "研究集合")
++                  .Set("revision", *listed.value.FindString("revision")));
++  ASSERT_TRUE(saved.ok) << saved.message;
++  const std::string id = *saved.value.FindString("workspace_id");
++  const std::string revision = *saved.value.FindString("workspace_revision");
++  const auto* entry =
++      profile()->GetPrefs()->GetDict(prefs::kAgentWorkspaces).FindDict(id);
++  ASSERT_TRUE(entry);
++  ASSERT_EQ(entry->FindList("tabs")->size(), 2u);
++  EXPECT_EQ(
++      *entry->FindList("tabs")->front().GetDict().FindString("group_title"),
++      "研究集合");
++  const auto stale =
++      execute("workspace.restore", base::DictValue()
++                                       .Set("workspace_id", id)
++                                       .Set("workspace_revision", "stale"));
++  EXPECT_FALSE(stale.ok);
++  EXPECT_EQ(list->GetTabCount(), 2);
++  auto restored =
++      execute("workspace.restore", base::DictValue()
++                                       .Set("workspace_id", id)
++                                       .Set("workspace_revision", revision));
++  ASSERT_TRUE(restored.ok) << restored.message;
++  ASSERT_EQ(list->GetTabCount(), 4);
++  const auto* restored_ids = restored.value.FindList("tab_ids");
++  ASSERT_TRUE(restored_ids);
++  ASSERT_EQ(restored_ids->size(), 2u);
++  auto* restored_first = tabs::TabHandle((*restored_ids)[0].GetInt()).Get();
++  auto* restored_second = tabs::TabHandle((*restored_ids)[1].GetInt()).Get();
++  ASSERT_TRUE(restored_first && restored_second);
++  ASSERT_TRUE(restored_first->GetGroup());
++  EXPECT_EQ(restored_first->GetGroup(), restored_second->GetGroup());
++  EXPECT_NE(restored_first->GetGroup(), group);
++  auto visual = list->GetTabGroupVisualData(*restored_first->GetGroup());
++  ASSERT_TRUE(visual);
++  EXPECT_EQ(visual->title(), u"研究集合");
++  EXPECT_EQ(visual->color(), tab_groups::TabGroupColorId::kBlue);
++  EXPECT_TRUE(
++      task.owned_tab_ids().contains(restored_first->GetHandle().raw_value()));
++
++  scope.allowed_origins = {url::Origin::Create(GURL("https://other.example/"))};
++  AgentTask foreign_task("workspace-other-origin", "恢复另一个来源",
++                         AgentMode::kAct, scope);
++  AgentToolCall forbidden;
++  forbidden.action_id = "restore-foreign";
++  forbidden.tool_name = "workspace.restore";
++  forbidden.arguments.Set("workspace_id", id);
++  forbidden.arguments.Set("workspace_revision", revision);
++  base::test::TestFuture<AgentToolResult> rejected;
++  tools.Execute(&foreign_task, forbidden, rejected.GetCallback());
++  EXPECT_FALSE(rejected.Take().ok);
++  EXPECT_EQ(list->GetTabCount(), 4);
+ }
+ 
+ TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
+@@ -62,11 +172,7 @@ TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
+   Profile* primary_otr =
+       profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+   ASSERT_TRUE(primary_otr);
+-#if BUILDFLAG(IS_ANDROID)
+-  EXPECT_FALSE(config.IsWebUIEnabled(primary_otr));
+-#else
+   EXPECT_TRUE(config.IsWebUIEnabled(primary_otr));
+-#endif
+ 
+   Profile* auxiliary_otr = profile()->GetOffTheRecordProfile(
+       Profile::OTRProfileID::CreateUniqueForTesting(),
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index fdc7986171fe78e49cb0cb730e03985ea5d914db..e3eba80b82544f5f214d3e3e73c5d1052f281c2b 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -27,7 +27,6 @@
+ #include "base/time/time.h"
+ #include "base/timer/timer.h"
+ #include "base/uuid.h"
+-#include "build/build_config.h"
+ #include "chrome/browser/aegis/agent/agent_planner.h"
+ #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+ #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+@@ -35,15 +34,9 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
+ #include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+ #include "chrome/browser/undo/bookmark_undo_service_factory.h"
+-#if !BUILDFLAG(IS_ANDROID)
+-#include "chrome/browser/ui/navigator/browser_navigator.h"
+-// GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
+-#include "chrome/browser/ui/navigator/browser_navigator_params.h"  // nogncheck
+-#include "chrome/browser/ui/tabs/tab_group_model.h"
+-#include "chrome/browser/ui/tabs/tab_strip_model.h"
+-#endif
+ #include "chrome/common/aegis/pref_names.h"
+ #include "components/bookmarks/browser/bookmark_model.h"
+ #include "components/bookmarks/browser/bookmark_node.h"
+@@ -60,7 +53,6 @@
+ #include "components/tab_groups/tab_group_color.h"
+ #include "components/tab_groups/tab_group_info.h"
+ #include "components/tab_groups/tab_group_visual_data.h"
+-#include "components/tabs/public/tab_group.h"
+ #include "components/tabs/public/tab_handle_factory.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "components/undo/bookmark_undo_service.h"
+@@ -90,10 +82,6 @@
+ #include "services/network/public/mojom/url_loader_factory.mojom.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "ui/base/base_window.h"
+-#include "ui/base/page_transition_types.h"
+-#if !BUILDFLAG(IS_ANDROID)
+-#include "ui/base/window_open_disposition.h"
+-#endif
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
+@@ -260,7 +248,6 @@ std::optional<WindowTabMetadata> ReadWindowTabMetadata(Profile* profile,
+   return result;
+ }
+ 
+-#if !BUILDFLAG(IS_ANDROID)
+ std::vector<BrowserWindowInterface*> TaskWindows(Profile* profile,
+                                                  const AgentTask& task) {
+   std::vector<BrowserWindowInterface*> windows;
+@@ -310,7 +297,6 @@ size_t NormalWindowCount(Profile* profile) {
+       });
+   return count;
+ }
+-#endif
+ 
+ struct OffTheRecordHistoryResult {
+   GURL url;
+@@ -422,7 +408,6 @@ AgentToolResult SearchOffTheRecordSessionHistory(Profile* profile,
+   return result;
+ }
+ 
+-#if !BUILDFLAG(IS_ANDROID)
+ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+   std::string material;
+   for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
+@@ -430,9 +415,9 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+     material.push_back('\n');
+     material.append(browser->IsActive() ? "active" : "inactive");
+     material.push_back('\n');
+-    TabStripModel* model = browser->GetTabStripModel();
+-    for (int index = 0; model && index < model->count(); ++index) {
+-      tabs::TabInterface* tab = model->GetTabAtIndex(index);
++    TabListInterface* model = TabListInterface::From(browser);
++    for (int index = 0; model && index < model->GetTabCount(); ++index) {
++      tabs::TabInterface* tab = model->GetTab(index);
+       if (!tab || !task.AllowsTab(tab->GetHandle().raw_value())) {
+         continue;
+       }
+@@ -440,7 +425,7 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+       material.push_back(':');
+       material.append(tab->GetURL().spec());
+       material.push_back(':');
+-      material.append(model->IsTabPinned(index) ? "pinned" : "unpinned");
++      material.append(tab->IsPinned() ? "pinned" : "unpinned");
+       material.push_back('\n');
+     }
+   }
+@@ -458,7 +443,6 @@ bool HasActiveDownload(Profile* profile) {
+     return item && item->GetState() == download::DownloadItem::IN_PROGRESS;
+   });
+ }
+-#endif
+ 
+ const char* ContentSettingString(ContentSetting setting) {
+   switch (setting) {
+@@ -1004,10 +988,8 @@ AegisBrowserTools::~AegisBrowserTools() {
+ 
+ bool AegisBrowserTools::CanHandle(std::string_view tool_name) const {
+   return base::StartsWith(tool_name, "tab.") ||
+-#if !BUILDFLAG(IS_ANDROID)
+          base::StartsWith(tool_name, "window.") ||
+          base::StartsWith(tool_name, "workspace.") ||
+-#endif
+          base::StartsWith(tool_name, "bookmark.") ||
+          base::StartsWith(tool_name, "download.") ||
+          tool_name == "history.search" || tool_name == "permissions.inspect";
+@@ -1363,12 +1345,6 @@ void AegisBrowserTools::ExecuteTabTool(AgentTask* task,
+ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+                                           const AgentToolCall& call,
+                                           ToolResultCallback callback) {
+-#if BUILDFLAG(IS_ANDROID)
+-  std::move(callback).Run(
+-      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
+-                  "window tools are unavailable on Android"));
+-  return;
+-#else
+   if (call.tool_name == "window.list") {
+     AgentToolResult result = SuccessResult(call.action_id, "windows listed");
+     base::ListValue windows;
+@@ -1377,9 +1353,9 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+       value.Set("window_id", browser->GetSessionID().id());
+       value.Set("active", browser->IsActive());
+       base::ListValue tab_ids;
+-      TabStripModel* model = browser->GetTabStripModel();
+-      for (int index = 0; model && index < model->count(); ++index) {
+-        tabs::TabInterface* tab = model->GetTabAtIndex(index);
++      TabListInterface* model = TabListInterface::From(browser);
++      for (int index = 0; model && index < model->GetTabCount(); ++index) {
++        tabs::TabInterface* tab = model->GetTab(index);
+         if (tab && task->AllowsTab(tab->GetHandle().raw_value())) {
+           tab_ids.Append(tab->GetHandle().raw_value());
+         }
+@@ -1405,31 +1381,60 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+                       "approved URL or source window is unavailable"));
+       return;
+     }
+-    NavigateParams params(source, url, ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+-    params.disposition = WindowOpenDisposition::NEW_WINDOW;
+-    Navigate(&params);
+-    tabs::TabInterface* tab = params.navigated_or_inserted_contents
+-                                  ? tabs::TabInterface::GetFromContents(
+-                                        params.navigated_or_inserted_contents)
+-                                  : nullptr;
+-    BrowserWindowInterface* created =
+-        tab ? tab->GetBrowserWindowInterface() : nullptr;
+-    const int32_t tab_id = tab ? tab->GetHandle().raw_value() : 0;
+-    if (!tab || !created || created->GetProfile() != profile_ ||
+-        !task->AdoptOwnedTab(tab_id)) {
+-      if (tab && tab->GetProfile() == profile_) {
+-        tab->Close();
+-      }
++    if (GetBrowserWindowCreationStatusForProfile(*profile_) !=
++        BrowserWindowInterface::CreationStatus::kOk) {
+       std::move(callback).Run(
+-          ErrorResult(call.action_id, AgentErrorCode::kBudgetExhausted,
+-                      "new window tab could not be adopted"));
++          ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
++                      "the system cannot create another browser window"));
+       return;
+     }
+-    AgentToolResult result = SuccessResult(call.action_id, "window created");
+-    result.value.Set("window_id", created->GetSessionID().id());
+-    result.value.Set("tab_id", tab_id);
+-    result.value.Set("revision", WindowRevision(profile_, *task));
+-    std::move(callback).Run(std::move(result));
++    CreateBrowserWindow(
++        BrowserWindowCreateParams(profile_, /*from_user_gesture=*/true),
++        base::BindOnce(
++            [](base::WeakPtr<AegisBrowserTools> self,
++               base::WeakPtr<AgentTask> current_task, GURL target,
++               std::string action_id, ToolResultCallback done,
++               BrowserWindowInterface* created) {
++              TabListInterface* list =
++                  created ? TabListInterface::From(created) : nullptr;
++              // 窗口建立是异步操作；任务已取消或资料已关闭时不能补做导航。
++              if (!self || !current_task ||
++                  current_task->state() != AgentTaskState::kRunning ||
++                  current_task->HasExpired(base::Time::Now()) || !list ||
++                  created->GetProfile() != self->profile_) {
++                if (list && list->GetTabCount() == 0) {
++                  created->GetWindow()->Close();
++                }
++                std::move(done).Run(
++                    ErrorResult(action_id, AgentErrorCode::kToolUnavailable,
++                                "window creation cancelled or unavailable"));
++                return;
++              }
++              tabs::TabInterface* tab = list->OpenTab(
++                  target, list->GetTabCount(), /*foreground=*/true);
++              const int32_t id = tab ? tab->GetHandle().raw_value() : 0;
++              if (!tab || tab->GetProfile() != self->profile_ ||
++                  !current_task->AdoptOwnedTab(id)) {
++                if (tab && tab->GetProfile() == self->profile_) {
++                  tab->Close();
++                }
++                std::move(done).Run(
++                    ErrorResult(action_id, AgentErrorCode::kBudgetExhausted,
++                                "new window tab could not be adopted"));
++                return;
++              }
++              created->GetWindow()->Show();
++              AgentToolResult result =
++                  SuccessResult(action_id, "window created");
++              result.value.Set("window_id", created->GetSessionID().id());
++              result.value.Set("tab_id", id);
++              result.value.Set("revision",
++                               WindowRevision(self->profile_, *current_task));
++              std::move(done).Run(std::move(result));
++            },
++            weak_ptr_factory_.GetWeakPtr(), task->GetWeakPtr(), url,
++            call.action_id, std::move(callback)));
++
+     return;
+   }
+ 
+@@ -1444,15 +1449,14 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+   }
+   if (call.tool_name == "window.activate") {
+     browser->GetWindow()->Activate();
+-    AgentToolResult result = SuccessResult(call.action_id, "window activated");
+-    result.value.Set("window_id", *window_id);
+-    result.value.Set("active", true);
+-    std::move(callback).Run(std::move(result));
++    VerifyWindowAction(task->GetWeakPtr(), *window_id, /*closing=*/false,
++                       base::TimeTicks::Now() + base::Seconds(3),
++                       call.action_id, std::move(callback));
+     return;
+   }
+   if (call.tool_name == "window.close") {
+     const std::string* revision = call.arguments.FindString("revision");
+-    TabStripModel* model = browser->GetTabStripModel();
++    TabListInterface* model = TabListInterface::From(browser);
+     if (!revision || *revision != WindowRevision(profile_, *task) || !model) {
+       std::move(callback).Run(ErrorResult(call.action_id,
+                                           AgentErrorCode::kStaleDocument,
+@@ -1465,12 +1469,12 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+                       "last window or active download prevents close"));
+       return;
+     }
+-    for (int index = 0; index < model->count(); ++index) {
+-      tabs::TabInterface* tab = model->GetTabAtIndex(index);
++    for (int index = 0; index < model->GetTabCount(); ++index) {
++      tabs::TabInterface* tab = model->GetTab(index);
+       content::WebContents* contents = tab ? tab->GetContents() : nullptr;
+       if (!tab ||
+           !task->owned_tab_ids().contains(tab->GetHandle().raw_value()) ||
+-          model->IsTabPinned(index) ||
++          tab->IsPinned() ||
+           (contents && contents->NeedToFireBeforeUnloadOrUnloadEvents())) {
+         std::move(callback).Run(
+             ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
+@@ -1479,28 +1483,65 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+       }
+     }
+     browser->GetWindow()->Close();
+-    AgentToolResult result =
+-        SuccessResult(call.action_id, "safe window close requested");
+-    result.value.Set("window_id", *window_id);
+-    result.value.Set("close_requested", true);
+-    std::move(callback).Run(std::move(result));
++    VerifyWindowAction(task->GetWeakPtr(), *window_id, /*closing=*/true,
++                       base::TimeTicks::Now() + base::Seconds(3),
++                       call.action_id, std::move(callback));
+     return;
+   }
+   std::move(callback).Run(ErrorResult(call.action_id,
+                                       AgentErrorCode::kToolUnavailable,
+                                       "window tool is not implemented"));
+-#endif
++}
++
++void AegisBrowserTools::VerifyWindowAction(base::WeakPtr<AgentTask> task,
++                                           int window_id,
++                                           bool closing,
++                                           base::TimeTicks deadline,
++                                           std::string action_id,
++                                           ToolResultCallback callback) {
++  if (!task || task->HasExpired(base::Time::Now())) {
++    std::move(callback).Run(
++        ErrorResult(action_id, AgentErrorCode::kVerificationFailed,
++                    "window action could not be verified after task ended"));
++    return;
++  }
++  // 系统窗口操作可能异步生效；回读资料下的真实窗口，不以发出请求代替完成。
++  BrowserWindowInterface* observed = nullptr;
++  ProfileBrowserCollection::GetForProfile(profile_)->ForEach(
++      [&](BrowserWindowInterface* candidate) {
++        if (candidate->GetProfile() == profile_ &&
++            candidate->GetSessionID().id() == window_id) {
++          observed = candidate;
++          return false;
++        }
++        return true;
++      });
++  if (closing ? !observed : (observed && observed->IsActive())) {
++    AgentToolResult result = SuccessResult(
++        action_id, closing ? "window closed" : "window activated");
++    result.value.Set("window_id", window_id);
++    result.value.Set(closing ? "closed" : "active", true);
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  if (base::TimeTicks::Now() >= deadline) {
++    std::move(callback).Run(
++        ErrorResult(action_id, AgentErrorCode::kVerificationFailed,
++                    closing ? "the system has not closed the window"
++                            : "the system has not activated the window"));
++    return;
++  }
++  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
++      FROM_HERE,
++      base::BindOnce(&AegisBrowserTools::VerifyWindowAction,
++                     weak_ptr_factory_.GetWeakPtr(), task, window_id, closing,
++                     deadline, std::move(action_id), std::move(callback)),
++      base::Milliseconds(100));
+ }
+ 
+ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+                                              const AgentToolCall& call,
+                                              ToolResultCallback callback) {
+-#if BUILDFLAG(IS_ANDROID)
+-  std::move(callback).Run(
+-      ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
+-                  "workspace tools are unavailable on Android"));
+-  return;
+-#else
+   if (call.tool_name == "workspace.save") {
+     const std::string* name = call.arguments.FindString("name");
+     const std::string* revision = call.arguments.FindString("revision");
+@@ -1517,15 +1558,12 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+       value.Set("pinned", located.tab->IsPinned());
+       if (std::optional<tab_groups::TabGroupId> group_id =
+               located.tab->GetGroup()) {
+-        TabStripModel* model = located.browser->GetTabStripModel();
+-        TabGroup* group =
+-            model ? model->group_model()->GetTabGroup(*group_id) : nullptr;
+-        if (group && group->visual_data()) {
++        const auto visual = located.tab_list->GetTabGroupVisualData(*group_id);
++        if (visual) {
+           value.Set("group_key", group_id->ToString());
+-          value.Set("group_title",
+-                    base::UTF16ToUTF8(group->visual_data()->title()));
+-          value.Set("group_color", tab_groups::TabGroupColorToString(
+-                                       group->visual_data()->color()));
++          value.Set("group_title", base::UTF16ToUTF8(visual->title()));
++          value.Set("group_color",
++                    tab_groups::TabGroupColorToString(visual->color()));
+         }
+       }
+       tabs.Append(std::move(value));
+@@ -1588,14 +1626,19 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+     }
+     BrowserWindowInterface* browser =
+         ProfileBrowserCollection::GetForProfile(profile_)->FindTabbedBrowser();
+-    if (!browser || browser->GetProfile() != profile_) {
++    TabListInterface* tab_list = browser && browser->GetProfile() == profile_
++                                     ? TabListInterface::From(browser)
++                                     : nullptr;
++    if (!tab_list || !TabListInterface::CanEditTabList(*profile_)) {
+       std::move(callback).Run(
+           ErrorResult(call.action_id, AgentErrorCode::kToolUnavailable,
+                       "normal browser window is unavailable"));
+       return;
+     }
+     for (const base::Value& value : *tabs) {
+-      const std::string* url_value = value.GetDict().FindString("url");
++      const base::DictValue* saved_tab = value.GetIfDict();
++      const std::string* url_value =
++          saved_tab ? saved_tab->FindString("url") : nullptr;
+       if (!url_value || !task->scope().AllowsOrigin(GURL(*url_value))) {
+         std::move(callback).Run(
+             ErrorResult(call.action_id, AgentErrorCode::kScopeViolation,
+@@ -1605,25 +1648,25 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+     }
+ 
+     std::vector<tabs::TabInterface*> created_tabs;
++    // 任何一步未生效都撤销本次新建标签，避免把部分恢复报告为完成。
++    const auto rollback = [&]() {
++      for (tabs::TabInterface* created : created_tabs) {
++        task->ReleaseOwnedTab(created->GetHandle().raw_value());
++        created->Close();
++      }
++    };
+     std::map<std::string, std::vector<tabs::TabInterface*>> group_tabs;
+     std::map<std::string, std::pair<std::string, std::string>> group_visuals;
+     for (const base::Value& value : *tabs) {
+       const base::DictValue& tab_value = value.GetDict();
+-      NavigateParams params(browser, GURL(*tab_value.FindString("url")),
+-                            ui::PAGE_TRANSITION_AUTO_TOPLEVEL);
+-      params.disposition = WindowOpenDisposition::NEW_BACKGROUND_TAB;
+-      Navigate(&params);
+-      tabs::TabInterface* tab = params.navigated_or_inserted_contents
+-                                    ? tabs::TabInterface::GetFromContents(
+-                                          params.navigated_or_inserted_contents)
+-                                    : nullptr;
++      tabs::TabInterface* tab = tab_list->OpenTab(
++          GURL(*tab_value.FindString("url")), tab_list->GetTabCount(),
++          /*foreground=*/false);
+       const int32_t tab_id = tab ? tab->GetHandle().raw_value() : 0;
+-      if (!tab || !task->AdoptOwnedTab(tab_id)) {
+-        for (tabs::TabInterface* created : created_tabs) {
+-          task->ReleaseOwnedTab(created->GetHandle().raw_value());
+-          created->Close();
+-        }
+-        if (tab) {
++      if (!tab || tab->GetProfile() != profile_ ||
++          !task->AdoptOwnedTab(tab_id)) {
++        rollback();
++        if (tab && tab->GetProfile() == profile_) {
+           tab->Close();
+         }
+         std::move(callback).Run(
+@@ -1632,10 +1675,15 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+         return;
+       }
+       created_tabs.push_back(tab);
+-      TabStripModel* model = browser->GetTabStripModel();
+-      const int index = model->GetIndexOfTab(tab);
+       if (tab_value.FindBool("pinned").value_or(false)) {
+-        model->SetTabPinned(index, true);
++        tab_list->PinTab(tab->GetHandle());
++        if (!tab->IsPinned()) {
++          rollback();
++          std::move(callback).Run(
++              ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
++                          "workspace restore rolled back after pin failure"));
++          return;
++        }
+       }
+       if (const std::string* group_key = tab_value.FindString("group_key")) {
+         group_tabs[*group_key].push_back(tab);
+@@ -1647,25 +1695,36 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+                                          : std::string("grey")};
+       }
+     }
+-    TabStripModel* model = browser->GetTabStripModel();
+     for (auto& [group_key, tabs_in_group] : group_tabs) {
+-      std::vector<int> indices;
++      std::vector<tabs::TabHandle> handles;
+       for (tabs::TabInterface* tab : tabs_in_group) {
+-        const int index = model->GetIndexOfTab(tab);
+-        if (index != TabStripModel::kNoTab) {
+-          indices.push_back(index);
+-        }
++        handles.push_back(tab->GetHandle());
+       }
+-      if (indices.empty()) {
+-        continue;
++      const auto group_id = tab_list->CreateTabGroup(handles);
++      if (!group_id) {
++        rollback();
++        std::move(callback).Run(
++            ErrorResult(call.action_id, AgentErrorCode::kVerificationFailed,
++                        "workspace restore rolled back after group failure"));
++        return;
+       }
+-      std::ranges::sort(indices);
+-      const tab_groups::TabGroupId group_id = model->AddToNewGroup(indices);
+       const auto& visual = group_visuals[group_key];
+-      model->ChangeTabGroupVisuals(group_id,
+-                                   tab_groups::TabGroupVisualData(
+-                                       base::UTF8ToUTF16(visual.first),
+-                                       ParseGroupColor(&visual.second), false));
++      const tab_groups::TabGroupVisualData expected_visual(
++          base::UTF8ToUTF16(visual.first), ParseGroupColor(&visual.second),
++          false);
++      tab_list->SetTabGroupVisualData(*group_id, expected_visual);
++      const auto actual_visual = tab_list->GetTabGroupVisualData(*group_id);
++      if (!actual_visual || actual_visual->title() != expected_visual.title() ||
++          actual_visual->color() != expected_visual.color() ||
++          !std::ranges::all_of(tabs_in_group, [&](tabs::TabInterface* tab) {
++            return tab->GetGroup() == group_id;
++          })) {
++        rollback();
++        std::move(callback).Run(ErrorResult(
++            call.action_id, AgentErrorCode::kVerificationFailed,
++            "workspace restore rolled back after group verification"));
++        return;
++      }
+     }
+     AgentToolResult result =
+         SuccessResult(call.action_id, "workspace restored");
+@@ -1682,7 +1741,6 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+   std::move(callback).Run(ErrorResult(call.action_id,
+                                       AgentErrorCode::kToolUnavailable,
+                                       "workspace tool is not implemented"));
+-#endif
+ }
+ 
+ void AegisBrowserTools::ExecuteHistoryTool(AgentTask* task,
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
+index a3f3519dc018eef6f27c700d88ab8a5dd4eaf1c3..b641fd37a3efbab9be40f3c6c9598dec40d7c757 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.h
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
+@@ -120,6 +120,12 @@ class AegisBrowserTools : public UndoManagerObserver {
+   void ExecuteWindowTool(AgentTask* task,
+                          const AgentToolCall& call,
+                          ToolResultCallback callback);
++  void VerifyWindowAction(base::WeakPtr<AgentTask> task,
++                          int window_id,
++                          bool closing,
++                          base::TimeTicks deadline,
++                          std::string action_id,
++                          ToolResultCallback callback);
+   void ExecuteWorkspaceTool(AgentTask* task,
+                             const AgentToolCall& call,
+                             ToolResultCallback callback);
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index cd126b4c7168630310a1119c1d6b2ca26a891d72..1d222f6dd127d79453aee3b8898ed55d20a1dc95 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -1415,6 +1415,39 @@ TEST(AegisAgentResultVerifierTest, VerifiesDynamicTabAndWorkspaceOwnership) {
+           .accepted);
+ }
+ 
++TEST(AegisAgentResultVerifierTest, WindowCloseRequiresObservedClosure) {
++  AgentToolRegistry registry;
++  AgentResultVerifier verifier;
++  AgentTask task("window-close", "关闭已批准的窗口", AgentMode::kAct,
++                 TestScope());
++  AgentToolCall call;
++  call.action_id = "close-window";
++  call.tool_name = "window.close";
++  call.arguments.Set("window_id", 3);
++  call = AgentResultVerifier::RetainVerificationContext(call);
++  AgentToolResult result;
++  result.action_id = call.action_id;
++  result.ok = true;
++  result.message = "window operation";
++  result.value.Set("window_id", 3);
++  result.value.Set("close_requested", true);
++  EXPECT_FALSE(
++      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
++          .accepted);
++  result.value.Set("closed", false);
++  EXPECT_FALSE(
++      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
++          .accepted);
++  result.value.Set("closed", true);
++  EXPECT_TRUE(
++      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
++          .accepted);
++  result.value.Set("window_id", 4);
++  EXPECT_FALSE(
++      verifier.Verify(task, call, *registry.Find(call.tool_name), result)
++          .accepted);
++}
++
+ TEST(AegisAgentResultVerifierTest, GroupVerificationSurvivesAsyncMinimization) {
+   AgentToolRegistry registry;
+   AgentResultVerifier verifier;
+diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
+index ce50ee9a9406abc92f8865f7d72230b999a63b0c..81dd91eba27ec87fa69272c1910ca2a6459c0e32 100644
+--- a/chrome/browser/aegis/agent/agent_result_verifier.cc
++++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
+@@ -202,6 +202,11 @@ AgentToolCall AgentResultVerifier::RetainVerificationContext(
+     if (const auto* ids = call.arguments.FindList("tab_ids")) {
+       context.arguments.Set("tab_ids", ids->Clone());
+     }
++  } else if (call.tool_name == "window.activate" ||
++             call.tool_name == "window.close") {
++    if (const auto id = call.arguments.FindInt("window_id")) {
++      context.arguments.Set("window_id", *id);
++    }
+   } else if (call.tool_name == "download.find_official") {
+     context.document = call.document;
+     context.committed_url = call.committed_url;
+@@ -372,15 +377,19 @@ AgentVerificationDecision AgentResultVerifier::Verify(
+                : Reject("created window was not adopted by the task");
+   }
+   if (call.tool_name == "window.activate") {
+-    return value.FindInt("window_id").has_value() &&
++    return call.arguments.FindInt("window_id").has_value() &&
++                   value.FindInt("window_id") ==
++                       call.arguments.FindInt("window_id") &&
+                    value.FindBool("active") == true
+                ? Accept(true, "window activation was acknowledged")
+                : Reject("window activation lacks browser state");
+   }
+   if (call.tool_name == "window.close") {
+-    return value.FindInt("window_id").has_value() &&
+-                   value.FindBool("close_requested") == true
+-               ? Accept(true, "safe window close was requested")
++    return call.arguments.FindInt("window_id").has_value() &&
++                   value.FindInt("window_id") ==
++                       call.arguments.FindInt("window_id") &&
++                   value.FindBool("closed") == true
++               ? Accept(true, "window closure was observed")
+                : Reject("window close lacks browser acknowledgement");
+   }
+   if (call.tool_name == "workspace.save") {
+diff --git a/chrome/browser/aegis/agent/agent_task.h b/chrome/browser/aegis/agent/agent_task.h
+index 60979dfc73821dfd9587edbdd4a6a172a7d8116b..b9a75c1addfb656e392985e26af50d4e0e857bd5 100644
+--- a/chrome/browser/aegis/agent/agent_task.h
++++ b/chrome/browser/aegis/agent/agent_task.h
+@@ -8,6 +8,7 @@
+ #include <vector>
+ 
+ #include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/observer_list.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/aegis/agent/agent_types.h"
+@@ -59,6 +60,8 @@ class AgentTask {
+       int network_requests_used,
+       base::Time created_at);
+ 
++  base::WeakPtr<AgentTask> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
++
+   const std::string& id() const { return task_id_; }
+   const std::string& goal() const { return goal_; }
+   AgentMode mode() const { return mode_; }
+@@ -118,6 +121,7 @@ class AgentTask {
+   const base::Time created_at_;
+   std::vector<AgentTaskEvent> events_;
+   base::ObserverList<AgentTaskObserver> observers_;
++  base::WeakPtrFactory<AgentTask> weak_factory_{this};
+ };
+ 
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 2cd71f64e788c5d8870e29ea492404860f2533fe..6acd186b1938e528193c11564503a5f5325ef2a9 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -158,7 +158,6 @@ let modelListRequestSerial = 0;
+ let modelSettingsRequestSerial = 0;
+ let lastModelStatusSignature = '';
+ let modelControlsEnabled = false;
+-let modelControlsAndroid = false;
+ let summaryRequestRunning = false;
+ 
+ function checkbox(id: string): HTMLInputElement {
+@@ -293,12 +292,6 @@ function formatMeta(status: AegisStatus): string {
+ }
+ 
+ function formatPrivacyMeta(status: AegisStatus): string {
+-  if (status.isAndroid) {
+-    const lang = localeCode();
+-    return lang === 'zh-CN' ? 'Android 保护中心暂不支持直接总结其他标签页。请在目标网页菜单中选择“使用 Aegis 处理此页面”。' :
+-        lang === 'zh-TW' ? 'Android 防護中心暫不支援直接總結其他分頁。請在目標網頁選單中選擇「使用 Aegis 處理此頁面」。' :
+-        'Direct summaries from this protection page are not available on Android. Open the target page menu and choose Use Aegis on this page.';
+-  }
+   const lang = document.documentElement.lang || 'zh-CN';
+   const zh = lang.startsWith('zh');
+   if (!status.privacyAi) {
+@@ -554,7 +547,7 @@ function updateModelFormatPresentation() {
+   endpoint.readOnly = false;
+   endpoint.placeholder = MODEL_ENDPOINTS[activeModelFormat];
+   getRequiredElement('model-api-key-field').hidden = false;
+-  actionButton('model-key-clear').hidden = modelControlsAndroid;
++  actionButton('model-key-clear').hidden = false;
+   const note = getRequiredElement('model-data-note');
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+   note.textContent = local ?
+@@ -573,7 +566,7 @@ function updateModelFormatPresentation() {
+ }
+ 
+ function updateModelControlAvailability() {
+-  const available = modelControlsEnabled && !modelControlsAndroid;
++  const available = modelControlsEnabled;
+   selectField('model-provider').disabled = !available;
+   textField('model-endpoint').disabled = !available;
+   textField('model-api-key').disabled = !available;
+@@ -684,18 +677,17 @@ function applyStatus(status: AegisStatus) {
+   checkbox('privacy-ai').checked = status.privacyAi;
+   const android = !!status.isAndroid;
+   modelControlsEnabled = status.privacyAi;
+-  modelControlsAndroid = android;
+   const modelFields = document.getElementById('model-fields');
+   if (modelFields instanceof HTMLElement) {
+-    modelFields.hidden = android;
++    modelFields.hidden = false;
+   }
+   const aiSection = document.getElementById('ai-control-section');
+   if (aiSection instanceof HTMLElement) {
+     aiSection.hidden = android;
+   }
+-  actionButton('model-load').hidden = android;
+-  actionButton('model-save').hidden = android;
+-  actionButton('model-key-clear').hidden = android;
++  actionButton('model-load').hidden = false;
++  actionButton('model-save').hidden = false;
++  actionButton('model-key-clear').hidden = false;
+   applyModelStatus(status);
+   updateModelFormatPresentation();
+   updateModelControlAvailability();
+@@ -710,7 +702,7 @@ function applyStatus(status: AegisStatus) {
+   fillActivityLog(status.recentEvents || []);
+   actionButton('filter-update').disabled = status.filterListUpdating;
+   actionButton('summarize').disabled =
+-      android || summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
++      summaryRequestRunning || !status.privacyAi || !status.policyWorkerReady;
+   if (status.profileAvailable === false) {
+     document
+         .querySelectorAll<HTMLInputElement|HTMLButtonElement|
+@@ -1373,9 +1365,6 @@ function bindModelControls() {
+ }
+ 
+ async function loadModels() {
+-  if (modelControlsAndroid) {
+-    return;
+-  }
+   const snapshot = captureModelFormSnapshot();
+   const apiKey = textField('model-api-key').value.trim();
+   const serial = ++modelListRequestSerial;
+@@ -1421,9 +1410,6 @@ async function loadModels() {
+ }
+ 
+ async function saveModelSettings(clearKey: boolean) {
+-  if (modelControlsAndroid) {
+-    return;
+-  }
+   const snapshot = captureModelFormSnapshot();
+   const apiKey = clearKey ? '' : textField('model-api-key').value.trim();
+   const serial = ++modelSettingsRequestSerial;
+@@ -1524,7 +1510,7 @@ async function init() {
+     getRequiredElement('filter-meta').textContent = formatMeta(next);
+     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);
+     actionButton('summarize').disabled =
+-        !!next.isAndroid || summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
++        summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
+   });
+ }
+ 
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 42cc3a7baf1e265ed953d85b88e642a03825f77d..653b95fb709cbf2f86105f54bd7f100ce673b33b 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -32,9 +32,28 @@ let activeView: 'task'|'automation'|'research' = 'task';
+ let researchTabs: ResearchTab[] = [];
+ const selectedResearchTabs = new Set<number>();
+ const launchParameters = new URLSearchParams(window.location.search);
+-const launchGoal = (launchParameters.get('goal') || '').trim().slice(0, 4096);
+-const launchAutoStart =
+-    launchParameters.get('autostart') === '1' && launchGoal.length > 0;
++const launchRequest = consumeLaunchRequest();
++const launchGoal = launchRequest.goal;
++const launchAutoStart = launchRequest.autoStart;
++
++function consumeLaunchRequest(): {goal: string, autoStart: boolean} {
++  const url = new URL(window.location.href);
++  const goal = (url.searchParams.get('goal') || '').trim().slice(0, 4096);
++  const autoStart = url.searchParams.get('autostart') === '1' && goal.length > 0;
++  // 原生入口只提交一次请求。先消费历史记录中的参数，再开始异步规划，
++  // 使返回、刷新和进程恢复都只能查看已有任务，不能重放启动动作。
++  if (url.searchParams.has('autostart') || url.searchParams.has('goal')) {
++    url.searchParams.delete('autostart');
++    url.searchParams.delete('goal');
++    try {
++      window.history.replaceState(window.history.state, '', url.href);
++    } catch {
++      // 无法消费启动参数时仅填入目标，由用户手动开始。
++      return {goal, autoStart: false};
++    }
++  }
++  return {goal, autoStart};
++}
+ 
+ function element<T extends HTMLElement>(id: string): T {
+   const value = document.getElementById(id);
+@@ -1632,8 +1651,7 @@ try {
+   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
+     render(initial);
+     proxy.handler.showUI();
+-    // A launcher invocation always represents a new user request. Do not let a
+-    // completed (or otherwise retained) previous task silently suppress it.
++    // 只有已消费的一次性原生启动请求才创建新任务。
+     if (launchAutoStart && initial.modelConfigured) {
+       element<HTMLButtonElement>('plan-button').click();
+     }
+diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+index b5efc8558f4818e59de638ba7b352728f54c55d5..6590f929f43923fc869ef61c33fe7dfd22d14969 100644
+--- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
++++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
+@@ -325,7 +325,7 @@ CHAR_LIMIT guidelines:
+         You and Google
+       </message>
+       <message name="IDS_SIGN_IN_TO_CHROME" meaning="Button" desc="Title for the button to sign in to Chrome using one's Google account. [CHAR_LIMIT=27]">
+-        Sign in to Chrome
++        Use a Google Account
+       </message>
+       <message name="IDS_SIGN_IN_PERSONALIZE_GOOGLE_SERVICES_TITLE" desc="This is the title of a setting that directs users to other settings where they can control how Chrome history can be used to personalize other Google services. It appears in Chrome’s Advanced Sync settings and is before the “Control how browsing history is used with your other data across Google services” string. [CHAR_LIMIT=30]">
+         Personalization
+@@ -354,10 +354,10 @@ CHAR_LIMIT guidelines:
+         Google services
+       </message>
+       <message name="IDS_ALLOW_CHROME_SIGNIN_TITLE" desc="Title for a checkbox in Google services that controls sign-in and sync prompts.">
+-        Allow Chrome sign-in
++        Allow Google Account sign-in
+       </message>
+       <message name="IDS_ALLOW_CHROME_SIGNIN_SUMMARY" desc="Summary for a checkbox in Google services that controls sign-in and sync prompts.">
+-        Shows prompts to sign in to Chrome
++        Show prompts for supported Google Account services
+       </message>
+       <message name="IDS_IMPROVE_SEARCH_SUGGESTIONS_TITLE" desc="Title for a checkbox in Settings that controls URL and search autocompletion and informs the user about the data shared by this feature.">
+         Improve search suggestions
+@@ -880,7 +880,7 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
+         Some of your passwords aren’t accessible
+       </message>
+       <message name="IDS_GPM_STOPPED_WORKING_SUBTITLE" desc="Subtitle shown under the Google Password Manager entry point, when the password manager is not available for the user. Among other reasons, this can happen when Google Play services is not updated.">
+-        Stopped working on this device
++        Google password service unavailable on this device
+       </message>
+       <message name="IDS_PWD_ACCESS_LOSS_WARNING_CONTENT_DESCRIPTION" desc="Accessibility string read when the password access loss warning sheet opens.">
+         Google Password Manager update opened
+@@ -889,10 +889,10 @@ For more settings that use data to improve your Chrome experience, go to <ph nam
+         Google Password Manager update closed
+       </message>
+       <message name="IDS_PWM_DISABLED_NO_GMS_DIALOG_TITLE" desc="Title for the dialog shown to users without saved passwords for whom the password manager is unavailble because they don't have Google Play services.">
+-        Google Password Manager stopped working
++        Google password service unavailable
+       </message>
+       <message name="IDS_PWM_DISABLED_NO_GMS_DIALOG_DESCRIPTION_PARAGRAPH1" desc="First paragraph of the description text for the dialog shown to users without saved passwords for whom the password manager is unavailble because they don't have access to Google Play services.">
+-        You don’t have passwords saved in Google Password Manager.
++        Google Password Manager requires compatible Google Play services and browser support. This build cannot currently use that service.
+       </message>
+       <message name="IDS_PWM_DISABLED_NO_GMS_DIALOG_DESCRIPTION_PARAGRAPH2" desc="Second paragraph of the description text for dialog shown to users without saved passowrds for whom the password manager is unavailble because they don't have access to Google Play services.">
+         If you previously exported passwords, look for a CSV file on your device and import them to your preferred password manager.
+@@ -3595,7 +3595,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+         Welcome to GCSA Aegis
+       </message>
+       <message name="IDS_SIGNIN_FRE_SUBTITLE" desc="This string is the body of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account. The tone should be informative and lightweight.">
+-        Sign in to get your bookmarks, passwords, and more on all your devices
++        Browse with GCSA Aegis. Optional Google Account services depend on device and browser support.
+       </message>
+       <message name="IDS_SIGNED_IN_FRE_TITLE" desc="Title welcoming signed-in user to Chrome.">
+         Welcome back, <ph name="USER_NAME">%s<ex>Alice</ex></ph>!
+@@ -3604,10 +3604,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+         Sign in to your Google Account
+       </message>
+       <message name="IDS_SIGNIN_FRE_TITLE_SIGNIN_FORCED_BY_POLICY" meaning="Title" desc="Title of a dialog to sign in to Chrome when sign-in is required because of an enterprise policy.">
+-        Sign in to Chrome
++        Use a Google Account
+       </message>
+       <message name="IDS_SIGNIN_FRE_SUBTITLE_SIGNIN_FORCED_BY_POLICY" desc="Subtitle of a dialog to sign in to Chrome when sign-in is required because of an enterprise policy.">
+-        Your organization requires you to sign in to use Chrome.
++        Your organization requires a supported Google Account to use this browser.
+       </message>
+       <message name="IDS_FRE_SIGNING_IN" desc="Text to show below a progress spinner in the signin FRE to notify the user that signing in is in progress and that the user's data is being fetched.">
+         Getting your stuff\u2026
+@@ -3722,22 +3722,22 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+         <ph name="NAME">%1$s<ex>John Doe</ex></ph>, <ph name="EMAIL">%2$s<ex>john.doe@example.com</ex></ph>.
+       </message>
+       <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_TITLE_FOR_SEND_TAB_TO_SELF" meaning="Title" desc="The title for the bottom sheet that shows the list of accounts on the device and asks the user to select one of these accounts, when send-tab-to-self triggered the UI. [CHAR_LIMIT=27]">
+-        Sign in to Chrome
++        Use a Google Account
+       </message>
+       <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_TITLE" meaning="Title" desc="The default title for the sign-in bottom sheet that shows the list of accounts on the device and asks the user to select one of these accounts. [CHAR_LIMIT=27]">
+-        Sign in to Chrome
++        Use a Google Account
+       </message>
+       <message name="IDS_ACCOUNT_PICKER_BOTTOM_SHEET_ACCESSIBILITY_OPENED" is_accessibility_with_no_ui="true" desc="The accessibility text to read when account picker bottom sheet is opened.">
+-        Sign in to Chrome, opened.
++        Google Account sign-in opened.
+       </message>
+       <message name="IDS_ACCOUNT_PICKER_BOTTOM_SHEET_ACCESSIBILITY_CLOSED" is_accessibility_with_no_ui="true" desc="The accessibility text to read when account picker bottom sheet is closed.">
+-        Sign in to Chrome, closed.
++        Google Account sign-in closed.
+       </message>
+       <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_SUBTITLE" desc="The subtitle for the account picker bottom sheet that tells the user what happens if the button 'Continue as John Doe' is clicked">
+-        Sign in to this site and Chrome
++        Google provides these account services. Availability depends on device services and this browser build.
+       </message>
+       <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_SUBTITLE_FOR_SEND_TAB_TO_SELF" desc="The subtitle for the account picker bottom sheet that tells the user what happens if the button 'Continue as John Doe' is clicked, when send-tab-to-self triggered the UI.">
+-        To send this tab to another device, sign in to Chrome on both devices
++        Sending tabs requires supported Google Account and tab sync services on both devices.
+       </message>
+       <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_SIGNIN_TITLE" desc="The title of the account picker bottom sheet tells that the user is in the process of signing in with their Google Account">
+         Signing in...
+diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
+index 0bc9201fc6a154339b17b82063f51c7e7492afbd..7b6f417de8b60b14b9dd5f0d75729cdc88d17c49 100644
+--- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
++++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
+@@ -2179,4 +2179,17 @@
+ <translation id="760705049427473785">欢迎使用 GCSA Aegis</translation>
+ <translation id="238675389546312674">登录你的 Google 账号</translation>
+ <translation id="7491982752760169795">GCSA Aegis 通知</translation>
++<translation id="1688340566136927032">使用 Google 账号</translation>
++<translation id="5134364026107972146">使用 Google 账号</translation>
++<translation id="8150962133588269870">允许 Google 账号登录</translation>
++<translation id="3105187476208202780">显示受支持的 Google 账号服务登录提示</translation>
++<translation id="2680512323557135137">已打开 Google 账号登录。</translation>
++<translation id="318367508751485602">已关闭 Google 账号登录。</translation>
++<translation id="1359657460482033355">账号服务由 Google 提供，是否可用取决于设备服务和当前浏览器版本。</translation>
++<translation id="5611682697265820958">发送标签页需要两台设备均支持 Google 账号和标签同步服务。</translation>
++<translation id="4930473423104209036">使用 GCSA Aegis 浏览网页。可选的 Google 账号服务需要设备和浏览器支持。</translation>
++<translation id="8751752083951272406">你的组织要求使用受支持的 Google 账号登录此浏览器。</translation>
++<translation id="2010249988484453277">此设备上的 Google 密码服务不可用</translation>
++<translation id="2958045851801017868">Google 密码服务不可用</translation>
++<translation id="5354352846738712842">Google 密码管理工具需要兼容的 Google Play 服务和浏览器支持，当前版本无法使用该服务。</translation>
+ </translationbundle>
+diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
+index e885e61ea09ef51faa7e01827270dae697cb7896..3b342650dd26eda0f748caa11a99f997fd30d873 100644
+--- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
++++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
+@@ -2181,4 +2181,17 @@
+ <translation id="760705049427473785">歡迎使用 GCSA Aegis</translation>
+ <translation id="238675389546312674">登入你的 Google 帳戶</translation>
+ <translation id="7491982752760169795">GCSA Aegis 通知</translation>
++<translation id="1688340566136927032">使用 Google 帳戶</translation>
++<translation id="5134364026107972146">使用 Google 帳戶</translation>
++<translation id="8150962133588269870">允許 Google 帳戶登入</translation>
++<translation id="3105187476208202780">顯示受支援的 Google 帳戶服務登入提示</translation>
++<translation id="2680512323557135137">已開啟 Google 帳戶登入。</translation>
++<translation id="318367508751485602">已關閉 Google 帳戶登入。</translation>
++<translation id="1359657460482033355">帳戶服務由 Google 提供，是否可用取決於裝置服務和目前瀏覽器版本。</translation>
++<translation id="5611682697265820958">傳送分頁需要兩台裝置均支援 Google 帳戶和分頁同步服務。</translation>
++<translation id="4930473423104209036">使用 GCSA Aegis 瀏覽網頁。選用的 Google 帳戶服務需要裝置和瀏覽器支援。</translation>
++<translation id="8751752083951272406">你的機構要求使用受支援的 Google 帳戶登入此瀏覽器。</translation>
++<translation id="2010249988484453277">此裝置上的 Google 密碼服務無法使用</translation>
++<translation id="2958045851801017868">Google 密碼服務無法使用</translation>
++<translation id="5354352846738712842">Google 密碼管理工具需要相容的 Google Play 服務和瀏覽器支援，目前版本無法使用該服務。</translation>
+ </translationbundle>
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index b7c19fea5964c163f1baf7f335f6d1e790071ec1..eb1b8fc4141d01b3357abea8bdfa4ed7d3a41380 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -14,6 +14,8 @@ source_set("aegis") {
+     "//chrome/browser/aegis:agent_core",
+     "//chrome/browser/download",
+     "//chrome/browser/profiles:profile",
++    "//chrome/browser/tab_list",
++    "//chrome/browser/ui/browser_window",
+     "//chrome/browser/resources/aegis:resources",
+     "//chrome/browser/ui/side_panel",
+     "//chrome/common",
+@@ -27,7 +29,6 @@ source_set("aegis") {
+   ]
+   if (!is_android) {
+     deps += [
+-      "//chrome/browser/ui/browser_window",
+       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+       "//chrome/browser/ui/tabs:tab_strip",
+     ]
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 85780a4d9760114498b2e30a8141eb306843066d..c190fec7682e67030b0265bb3c5eb123d13d8325 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -549,11 +549,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+ 
+ bool AegisUIConfig::IsWebUIEnabled(content::BrowserContext* browser_context) {
+   Profile* profile = Profile::FromBrowserContext(browser_context);
+-#if BUILDFLAG(IS_ANDROID)
+-  return profile && profile->IsRegularProfile();
+-#else
+   return aegis::IsAegisProfileSupported(profile);
+-#endif
+ }
+ 
+ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index ae0340b4a07e0204bb3c8eebf12795e21e5023eb..3381a174281b0d76139cdccc78c799f25b63bbf3 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -30,11 +30,13 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/download/download_prefs.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/tab_list/tab_list_interface.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
+ #include "chrome/common/aegis/pref_names.h"
+ #include "chrome/common/webui_url_constants.h"
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
+-#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+ // GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"  // nogncheck
+@@ -74,11 +76,7 @@ constexpr char kProfileUnavailableError[] =
+     "Aegis is unavailable for this profile";
+ 
+ bool IsAegisWebUIProfileSupported(const Profile* profile) {
+-#if BUILDFLAG(IS_ANDROID)
+-  return profile && profile->IsRegularProfile();
+-#else
+   return aegis::IsAegisProfileSupported(profile);
+-#endif
+ }
+ 
+ std::optional<int> ReadInteger(const base::DictValue& dict, const char* key) {
+@@ -157,30 +155,34 @@ std::optional<aegis::PreparedSummary> ParsePreparedSummary(
+ 
+ namespace aegis {
+ 
+-content::WebContents* FindSummarySourceTabInModel(
+-    TabStripModel* model,
++content::WebContents* FindSummarySourceTabInList(
++    TabListInterface* list,
+     content::WebContents* settings_tab) {
+-#if BUILDFLAG(IS_ANDROID)
+-  (void)model;
+-  (void)settings_tab;
+-  return nullptr;
+-#else
+-  if (!model || !settings_tab) {
++  if (!list || !settings_tab) {
+     return nullptr;
+   }
+-  const int settings_index = model->GetIndexOfWebContents(settings_tab);
+-  if (settings_index == TabStripModel::kNoTab) {
++  int settings_index = -1;
++  for (int index = 0; index < list->GetTabCount(); ++index) {
++    tabs::TabInterface* tab = list->GetTab(index);
++    if (tab && tab->GetContents() == settings_tab) {
++      settings_index = index;
++      break;
++    }
++  }
++  if (settings_index < 0) {
+     return nullptr;
+   }
+-  auto candidate_at = [model, settings_tab](int index) {
+-    content::WebContents* contents = model->GetWebContentsAt(index);
+-    if (!contents || contents == settings_tab) {
++  auto candidate_at = [list, settings_tab](int index) {
++    tabs::TabInterface* tab = list->GetTab(index);
++    content::WebContents* contents = tab ? tab->GetContents() : nullptr;
++    if (!contents || contents == settings_tab ||
++        contents->GetBrowserContext() != settings_tab->GetBrowserContext()) {
+       return static_cast<content::WebContents*>(nullptr);
+     }
+-    const GURL& url = contents->GetLastCommittedURL();
+-    return url.SchemeIsHTTPOrHTTPS() ? contents : nullptr;
++    return contents->GetLastCommittedURL().SchemeIsHTTPOrHTTPS() ? contents
++                                                                 : nullptr;
+   };
+-  for (int distance = 1; distance < model->count(); ++distance) {
++  for (int distance = 1; distance < list->GetTabCount(); ++distance) {
+     const int left = settings_index - distance;
+     if (left >= 0) {
+       if (content::WebContents* candidate = candidate_at(left)) {
+@@ -188,14 +190,13 @@ content::WebContents* FindSummarySourceTabInModel(
+       }
+     }
+     const int right = settings_index + distance;
+-    if (right < model->count()) {
++    if (right < list->GetTabCount()) {
+       if (content::WebContents* candidate = candidate_at(right)) {
+         return candidate;
+       }
+     }
+   }
+   return nullptr;
+-#endif
+ }
+ 
+ }  // namespace aegis
+@@ -203,32 +204,22 @@ content::WebContents* FindSummarySourceTabInModel(
+ namespace {
+ 
+ content::WebContents* FindHttpTab(content::WebContents* skip) {
+-#if BUILDFLAG(IS_ANDROID)
+-  // Android 没有桌面 TabStrip。摘要/截图先只用当前 WebUI 页；设置页本身不是
+-  // http。
+-  (void)skip;
+-  return nullptr;
+-#else
+-  content::WebContents* found = nullptr;
+-  GlobalBrowserCollection* collection = GlobalBrowserCollection::GetInstance();
+-  if (!collection) {
++  if (!skip) {
+     return nullptr;
+   }
+-  collection->ForEach(
++  Profile* profile = Profile::FromBrowserContext(skip->GetBrowserContext());
++  content::WebContents* found = nullptr;
++  ProfileBrowserCollection::GetForProfile(profile)->ForEach(
+       [&](BrowserWindowInterface* browser) {
+-        TabStripModel* model = browser->GetTabStripModel();
+-        if (!model) {
++        if (!browser || browser->GetProfile() != profile ||
++            browser->IsDeleteScheduled()) {
+           return true;
+         }
+-        if (model->GetIndexOfWebContents(skip) == TabStripModel::kNoTab) {
+-          return true;
+-        }
+-        found = aegis::FindSummarySourceTabInModel(model, skip);
+-        return false;
+-      },
+-      BrowserCollection::Order::kActivation);
++        found = aegis::FindSummarySourceTabInList(
++            TabListInterface::From(browser), skip);
++        return !found;
++      });
+   return found;
+-#endif
+ }
+ 
+ #if !BUILDFLAG(IS_ANDROID)
+@@ -487,11 +478,7 @@ base::DictValue AegisUIHandler::BuildStatus() {
+   status.Set("privacyAi", service && service->IsPrivacyAiEnabled());
+   status.Set("isAndroid", BUILDFLAG(IS_ANDROID));
+   const bool browser_agent_available =
+-#if BUILDFLAG(IS_ANDROID)
+-      profile && profile->IsRegularProfile() &&
+-#else
+       supported_profile &&
+-#endif
+       base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
+   status.Set("browserAgentAvailable", browser_agent_available);
+   status.Set("browserAgentEnabled",
+@@ -627,12 +614,8 @@ void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
+     service->SetAiControlEnabled(enabled);
+   } else if (module == "browserAgent") {
+     Profile* profile = Profile::FromWebUI(web_ui());
+-#if BUILDFLAG(IS_ANDROID)
+-    const bool agent_profile_supported = profile && profile->IsRegularProfile();
+-#else
+     const bool agent_profile_supported =
+         aegis::IsAegisProfileSupported(profile);
+-#endif
+     if (!agent_profile_supported ||
+         !base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
+       base::DictValue status = BuildStatus();
+@@ -666,7 +649,7 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
+   base::DictValue status = BuildStatus();
+ #if BUILDFLAG(IS_ANDROID)
+   Profile* profile = Profile::FromWebUI(web_ui());
+-  if (!profile || !profile->IsRegularProfile() ||
++  if (!aegis::IsAegisProfileSupported(profile) ||
+       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
+       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
+     status.Set("ok", false);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 5288560323e98c999b0c85db01202f4b1fa99220..6f4235582e4e4568d03ec3dffd8184e574830419 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -21,7 +21,7 @@
+ #include "content/public/browser/global_routing_id.h"
+ #include "content/public/browser/web_ui_message_handler.h"
+ 
+-class TabStripModel;
++class TabListInterface;
+ 
+ namespace content {
+ class WebContents;
+@@ -30,9 +30,9 @@ class WebContents;
+ namespace aegis {
+ 
+ // 只在设置页所在窗口内选择最近的 HTTP(S) 标签，避免跨窗口、Profile 或
+-// 无痕会话读取页面。桌面实现供选择器回归测试直接验证。
+-content::WebContents* FindSummarySourceTabInModel(
+-    TabStripModel* model,
++// 无痕会话读取页面。三端共用同一选择规则。
++content::WebContents* FindSummarySourceTabInList(
++    TabListInterface* list,
+     content::WebContents* settings_tab);
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index a9ad659234fcbbd7a6dcd8053e8a5388aef28f68..203f11834e155501c83e15e5d861f3c83229c412 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -880,11 +880,7 @@ bool AegisAgentUIConfig::IsWebUIEnabled(
+       !aegis::IsAegisProfileSupported(profile)) {
+     return false;
+   }
+-#if BUILDFLAG(IS_ANDROID)
+-  return !profile->IsOffTheRecord();
+-#else
+   return true;
+-#endif
+ }
+ 
+ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 3744afe5ac326ee4e0eb3e72133b560ea359e2bc..9c12cebab32dbff2189cbe5df809892cf75a6978 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.74";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (074)";
++inline constexpr char kProductVersion[] = "2.0.0.75";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (075)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

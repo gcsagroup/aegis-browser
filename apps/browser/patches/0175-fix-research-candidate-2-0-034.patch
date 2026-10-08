@@ -1,4 +1,4 @@
-From 30d5a7eb0acd77723d1b72f5ae52cc9c85727d51 Mon Sep 17 00:00:00 2001
+From fd20a9badd39dfd101ab4f3261ca9f49ecd9cd5e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 21:57:53 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 24 insertions(+), 22 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index c1b99ec192..183c97dac1 100644
+index c1b99ec192557b34c8b14a88f860dc10e0e2692d..183c97dac1ca8b0d9060f7f8c28f5eeacfc1238b 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -113,7 +113,7 @@
@@ -115,7 +115,7 @@ index c1b99ec192..183c97dac1 100644
  
  IN_PROC_BROWSER_TEST_F(
 diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
-index a69ac5f882..d7347943c5 100644
+index a69ac5f88254cfa17a28f38c21f7b9075f8df9a2..d7347943c541d3053f33c378e94e9cc10555849f 100644
 --- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 @@ -258,7 +258,13 @@ TEST(AegisAgentTaskStoreTest, RoundTripsSelectedTabGroupAndRejectsFlagType) {
@@ -134,7 +134,7 @@ index a69ac5f882..d7347943c5 100644
    ASSERT_TRUE(restored);
    EXPECT_TRUE(restored->selected_tab_group);
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 13510f53ab..963f8ba024 100644
+index 13510f53ab31a0f339d0ffb0257b05892d694c04..963f8ba02492ec7416690f8a121f4fa11fea2fc9 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

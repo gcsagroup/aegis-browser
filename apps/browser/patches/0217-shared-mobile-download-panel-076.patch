@@ -1,4 +1,4 @@
-From 164c36d32e266ffe8dce97cf18024d632b8f426f Mon Sep 17 00:00:00 2001
+From 350bc2a98c31a7aa2841956832b1fb17ec5a239e Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 03:34:34 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=A4=8D=E7=94=A8=E4=B8=89=E7=AB=AF=E5=A2=9E?=
@@ -30,7 +30,7 @@ Content-Transfer-Encoding: 8bit
  rename {chrome/browser/resources/downloads => ui/webui/resources/cr_components/aegis_downloads}/aegis_download_panel.ts (98%)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-index 11ee95e32a..b68e3318d4 100644
+index 11ee95e32a0b25d910d53212a63d15301ce3c863..b68e3318d40efc4ded713d9eb2eef4288c7b892f 100644
 --- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 @@ -60,7 +60,6 @@ TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
@@ -42,7 +42,7 @@ index 11ee95e32a..b68e3318d4 100644
        content::WebContents::CreateParams(profile()));
  
 diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
-index 58be490b21..fc36af9137 100644
+index 58be490b2103826f6a8adc19614ef16030837f5e..fc36af9137f65dd2722a0e401078bf6e4d34b5e2 100644
 --- a/chrome/browser/resources/aegis/BUILD.gn
 +++ b/chrome/browser/resources/aegis/BUILD.gn
 @@ -15,7 +15,10 @@ build_webui("build") {
@@ -58,7 +58,7 @@ index 58be490b21..fc36af9137 100644
    webui_context_type = "trusted"
  }
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 7e383cc43a..221bd4d7f1 100644
+index 7e383cc43aa5832c6de8b01270d3bb6d4c9661fa..221bd4d7f15816967e77b20b77c2f389427e2908 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -138,9 +138,10 @@
@@ -74,7 +74,7 @@ index 7e383cc43a..221bd4d7f1 100644
          <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
        </section>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 6acd186b19..6b0a72f221 100644
+index 6acd186b1938e528193c11564503a5f5325ef2a9..6b0a72f221d2c2a359acb819e48f82bef2dbf73b 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -1,6 +1,8 @@
@@ -87,7 +87,7 @@ index 6acd186b19..6b0a72f221 100644
  import {addWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
  import {getRequiredElement} from 'chrome://resources/js/util.js';
 diff --git a/chrome/browser/resources/downloads/BUILD.gn b/chrome/browser/resources/downloads/BUILD.gn
-index b8bd13809e..9450110275 100644
+index b8bd13809e04c113d7ccd5313240f8972d5855ac..9450110275a684b95d81de133fc7a628a6d6a299 100644
 --- a/chrome/browser/resources/downloads/BUILD.gn
 +++ b/chrome/browser/resources/downloads/BUILD.gn
 @@ -17,8 +17,6 @@ build_webui("build") {
@@ -116,7 +116,7 @@ index b8bd13809e..9450110275 100644
      "//ui/webui/resources/cr_components/color_change_listener:build_ts",
      "//ui/webui/resources/cr_components/managed_footnote:build_ts",
 diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
-index f1d280d1bf..5870a5b463 100644
+index f1d280d1bf3bc2a635657c8a6aeb6916b70aff48..5870a5b463e18ba32fb9bd4322cf6166469d275f 100644
 --- a/chrome/browser/resources/downloads/manager.ts
 +++ b/chrome/browser/resources/downloads/manager.ts
 @@ -3,7 +3,7 @@
@@ -129,7 +129,7 @@ index f1d280d1bf..5870a5b463 100644
  import './item.js';
  import './toolbar.js';
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index c190fec768..c7a51e47f9 100644
+index c190fec7682e67030b0265bb3c5eb123d13d8325..c7a51e47f9c2f98dc300eaa0a1db69f88e98d68b 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -6,6 +6,7 @@
@@ -157,7 +157,7 @@ index c190fec768..c7a51e47f9 100644
    source->AddString("aegisLocale", g_browser_process->GetApplicationLocale());
  
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 203f11834e..12950a01ae 100644
+index 203f11834e155501c83e15e5d861f3c83229c412..12950a01ae37c25739be6f72b34a0896c18ca305 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -848,9 +848,15 @@ void AddStrings(content::WebUIDataSource *source) {
@@ -180,7 +180,7 @@ index 203f11834e..12950a01ae 100644
    add("product", "Product", "商品", "商品");
    add("quantity", "Quantity", "数量", "數量");
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 9c12cebab3..8868dbcbd5 100644
+index 9c12cebab32dbff2189cbe5df809892cf75a6978..8868dbcbd5f590d4c92d91bb036603dd45243c9e 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -195,7 +195,7 @@ index 9c12cebab3..8868dbcbd5 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/ui/webui/resources/BUILD.gn b/ui/webui/resources/BUILD.gn
-index e395a144cb..bc8cd33fa8 100644
+index 44b39cda6816b726d1414fb0c5490956f7a78909..53a8f4e755dc6933324280aa2c6303c8505f329b 100644
 --- a/ui/webui/resources/BUILD.gn
 +++ b/ui/webui/resources/BUILD.gn
 @@ -33,6 +33,7 @@ generate_grd("build_grd") {
@@ -216,7 +216,7 @@ index e395a144cb..bc8cd33fa8 100644
      "$target_gen_dir/cr_elements/resources.grdp",
 diff --git a/ui/webui/resources/cr_components/aegis_downloads/BUILD.gn b/ui/webui/resources/cr_components/aegis_downloads/BUILD.gn
 new file mode 100644
-index 0000000000..e0932bdf4a
+index 0000000000000000000000000000000000000000..e0932bdf4ab2fcb0ab8488bed8abb6be215910b1
 --- /dev/null
 +++ b/ui/webui/resources/cr_components/aegis_downloads/BUILD.gn
 @@ -0,0 +1,22 @@
@@ -246,7 +246,7 @@ diff --git a/chrome/browser/resources/downloads/aegis_download_panel.css b/ui/we
 similarity index 60%
 rename from chrome/browser/resources/downloads/aegis_download_panel.css
 rename to ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
-index e29ab8c0ce..98ceb272b4 100644
+index e29ab8c0ce68ec83b83d7ffe8cdb0182d2c9ee5b..98ceb272b4978b795d61b2b273edaabcc89c071e 100644
 --- a/chrome/browser/resources/downloads/aegis_download_panel.css
 +++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
 @@ -6,17 +6,19 @@
@@ -407,7 +407,7 @@ diff --git a/chrome/browser/resources/downloads/aegis_download_panel.html.ts b/u
 similarity index 95%
 rename from chrome/browser/resources/downloads/aegis_download_panel.html.ts
 rename to ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
-index 246a93b69c..ee13904693 100644
+index 246a93b69c03a98a748aa26b1fcd989ca0035526..ee139046932a06e0cffa40e6369af6c6ddd6c6d6 100644
 --- a/chrome/browser/resources/downloads/aegis_download_panel.html.ts
 +++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts
 @@ -12,8 +12,8 @@ export function getHtml(this: AegisDownloadPanelElement) {
@@ -434,7 +434,7 @@ diff --git a/chrome/browser/resources/downloads/aegis_download_panel.ts b/ui/web
 similarity index 98%
 rename from chrome/browser/resources/downloads/aegis_download_panel.ts
 rename to ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
-index 3e36418579..9d23c6e93c 100644
+index 3e3641857947994ab774cf77fe7ee39560f0a68c..9d23c6e93c8e67695558f51c2f2f828676bd8579 100644
 --- a/chrome/browser/resources/downloads/aegis_download_panel.ts
 +++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
 @@ -376,8 +376,8 @@ export class AegisDownloadPanelElement extends CrLitElement {

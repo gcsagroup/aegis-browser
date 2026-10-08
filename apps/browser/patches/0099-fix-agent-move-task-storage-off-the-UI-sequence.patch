@@ -1,4 +1,4 @@
-From e9933cc6abf93e3d0e05ecbae5d3664696fa6ec5 Mon Sep 17 00:00:00 2001
+From b4287799c616cc52ec446fdb02239de4952fa611 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 17:44:13 +0800
 Subject: [PATCH] fix(agent): move task storage off the UI sequence
@@ -12,7 +12,7 @@ Subject: [PATCH] fix(agent): move task storage off the UI sequence
  5 files changed, 373 insertions(+), 90 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index f00307ab85..8baa30f811 100644
+index f00307ab854bb4a210523e485f9bc4241b89e907..8baa30f81180007d8163e46574d54d93fddff6f8 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -16,6 +16,8 @@
@@ -523,7 +523,7 @@ index f00307ab85..8baa30f811 100644
    ScheduleMonitorTimer();
  }
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index eea716f040..060449dd28 100644
+index eea716f040b6d774eeef7b7e4318633ae66aa9ed..060449dd28b6afa74f5f113a010ed61a202cdb6e 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -14,6 +14,7 @@
@@ -603,7 +603,7 @@ index eea716f040..060449dd28 100644
    base::WeakPtrFactory<AegisAgentService> weak_ptr_factory_{this};
  };
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 8d20ca0103..62f3143673 100644
+index 8d20ca0103be665ce1d224c53b54a81b69cfa1b2..62f314367303f846e2a7620f9023dc85ed70a86f 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -11,6 +11,7 @@
@@ -685,7 +685,7 @@ index 8d20ca0103..62f3143673 100644
    ASSERT_TRUE(task);
    EXPECT_EQ(task->state(), AgentTaskState::kCompleted);
 diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
-index 66d479eb5b..aecfa12d94 100644
+index 66d479eb5b31d84a58caa91fbd463acb0767896b..aecfa12d94dfc0d6fcafa4e103f01052e213fd6f 100644
 --- a/chrome/browser/aegis/agent/agent_task_store.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store.cc
 @@ -187,13 +187,59 @@ bool AgentTaskStore::Initialize() {
@@ -802,7 +802,7 @@ index 66d479eb5b..aecfa12d94 100644
    return insert.Run() && transaction.Commit();
  }
 diff --git a/chrome/browser/aegis/agent/agent_task_store.h b/chrome/browser/aegis/agent/agent_task_store.h
-index c9c28c46d7..750dea9505 100644
+index c9c28c46d79c577d6821afe3be63476ceb431b9f..750dea9505911ea5ff8b4134880cd2cdf1c8c5b3 100644
 --- a/chrome/browser/aegis/agent/agent_task_store.h
 +++ b/chrome/browser/aegis/agent/agent_task_store.h
 @@ -46,6 +46,33 @@ struct StoredAgentPlan {

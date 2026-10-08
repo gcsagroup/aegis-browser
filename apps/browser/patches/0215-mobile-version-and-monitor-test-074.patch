@@ -1,4 +1,4 @@
-From ebc1ec25e1a5bc8222278c9e3a4f6814f2cb2f46 Mon Sep 17 00:00:00 2001
+From 2c6225d85c44406b3ada22fb96c64fe530f104a5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 29 Sep 2026 20:36:40 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=94=B6=E6=95=9B=E7=A7=BB=E5=8A=A8=E7=AB=AF?=
@@ -17,7 +17,7 @@ Content-Transfer-Encoding: 8bit
  4 files changed, 6 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
-index ae026a7273..2c93e793f3 100644
+index ae026a7273b8b18225c0084364b91acec6d6bdd4..2c93e793f3e1fbf967029d21c9da6a2f7318bbc8 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
 @@ -97,7 +97,7 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
@@ -30,7 +30,7 @@ index ae026a7273..2c93e793f3 100644
          } catch (NameNotFoundException ignored) {
              // 保留原内核信息，避免关于页因包信息异常崩溃。
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index bb70afb199..7bdd114451 100644
+index bb70afb19950535c5bb26281906d1aa7b6fe32a7..7bdd114451f2534100ef281948cfddb087c9d713 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -2210,6 +2210,8 @@ TEST_F(AegisAgentServiceTest,
@@ -43,7 +43,7 @@ index bb70afb199..7bdd114451 100644
    AegisAgentService recovered(profile_);
    FlushTaskStore(&recovered);
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 4c0dd4ee97..3744afe5ac 100644
+index 4c0dd4ee97ea7d511faea6a991d8b99642339290..3744afe5ac326ee4e0eb3e72133b560ea359e2bc 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -58,7 +58,7 @@ index 4c0dd4ee97..3744afe5ac 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/components/webui/version/resources/about_version_mobile.css b/components/webui/version/resources/about_version_mobile.css
-index 4711b2b46c..55eea97185 100644
+index 4711b2b46cedc419d1d278fb6ce561c60ad3bc7f..55eea97185a3f62ff7105923b26c05016ab8ba11 100644
 --- a/components/webui/version/resources/about_version_mobile.css
 +++ b/components/webui/version/resources/about_version_mobile.css
 @@ -56,6 +56,7 @@

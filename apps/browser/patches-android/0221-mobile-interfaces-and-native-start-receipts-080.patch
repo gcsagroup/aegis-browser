@@ -1,0 +1,517 @@
+From 60987046831f8644f491fb7e90b03984aed68c63 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 04:24:46 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=89=8B=E6=9C=BA=E5=B9=B3?=
+ =?UTF-8?q?=E5=8F=B0=E6=8E=A5=E5=8F=A3=E3=80=81=E9=95=9C=E5=83=8F=E5=9B=9E?=
+ =?UTF-8?q?=E6=89=A7=E4=B8=8E=E5=B7=A5=E4=BD=9C=E5=8C=BA=E6=9D=A5=E6=BA=90?=
+ =?UTF-8?q?=E6=8E=88=E6=9D=83=20080?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../chrome/browser/ChromeTabbedActivity.java  |  2 +-
+ .../aegis/aegis_ui_handler_unittest.cc        | 31 ++++++++++
+ .../aegis/agent/aegis_browser_tools.cc        | 43 ++++++++++++-
+ .../browser/aegis/agent/aegis_browser_tools.h |  8 +++
+ chrome/browser/aegis/agent/agent_planner.cc   | 11 ++++
+ chrome/browser/aegis/agent/agent_planner.h    |  3 +
+ .../aegis/agent/agent_planner_unittest.cc     | 12 ++++
+ .../aegis/metalink_download_verifier.cc       | 61 ++++++++++++++++---
+ .../aegis/metalink_download_verifier.h        |  8 ++-
+ .../ui/webui/aegis/aegis_ui_handler.cc        | 21 +++++--
+ .../browser/ui/webui/aegis/aegis_ui_handler.h |  1 +
+ .../aegis_agent/aegis_agent_page_handler.cc   |  8 +++
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ .../aegis_downloads/aegis_download_panel.ts   |  8 +++
+ 14 files changed, 201 insertions(+), 20 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+index 04e5a01e818ee4c3680386dc2b8f4478bc5f2b62..b234a1de08ad81f8beb65862d14a14884dd6f0a3 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -4368,7 +4368,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+         if (autoStart) url.appendQueryParameter("autostart", "1");
+         LoadUrlParams params =
+                 new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);
+-        getTabCreator(/* incognito= */ isIncognitoShowing())
++        getTabCreator(/* incognito= */ getTabModelSelector().isIncognitoSelected())
+                 .createNewTab(params, TabLaunchType.FROM_CHROME_UI, getActivityTab());
+     }
+ 
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 0f4d3bef8374acd40f820ab3bb1727a914ae82ae..d27908ebd258b9a0fd001da3be8b04df175a6979 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -10,6 +10,7 @@
+ #include "base/values.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
++#include "chrome/browser/aegis/metalink_download_verifier.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+@@ -191,6 +192,36 @@ INSTANTIATE_TEST_SUITE_P(AllGroupColors,
+                                          tab_groups::TabGroupColorId::kCyan,
+                                          tab_groups::TabGroupColorId::kOrange));
+ 
++TEST_F(AegisUIHandlerTest, WorkspaceOriginsStayWithinSelectedNativeTabs) {
++  AddTab(browser(), GURL("https://docs.example/first"));
++  AddTab(browser(), GURL("https://other.example/second"));
++  AddTab(browser(), GURL("chrome://aegis/"));
++  auto* list = TabListInterface::From(browser());
++  const int32_t selected = list->GetTab(0)->GetHandle().raw_value();
++  const auto one =
++      agent::WorkspaceRestoreOrigins(profile(), browser(), selected, false);
++  ASSERT_EQ(one.size(), 1u);
++  EXPECT_EQ(one.front(), url::Origin::Create(list->GetTab(0)->GetURL()));
++  const auto window =
++      agent::WorkspaceRestoreOrigins(profile(), browser(), selected, true);
++  EXPECT_EQ(window.size(), 2u);
++  EXPECT_TRUE(
++      agent::WorkspaceRestoreOrigins(profile(), browser(), -1, false).empty());
++  EXPECT_TRUE(
++      agent::WorkspaceRestoreOrigins(profile()->GetPrimaryOTRProfile(true),
++                                     browser(), selected, true)
++          .empty());
++}
++
++TEST_F(AegisUIHandlerTest, InvalidMetalinkCannotReportTaskCreated) {
++  base::test::TestFuture<bool, std::string> result;
++  MetalinkParseResult invalid;
++  StartVerifiedMetalinkDownload(profile(), std::move(invalid),
++                                result.GetCallback());
++  EXPECT_FALSE(result.Get<0>());
++  EXPECT_FALSE(result.Get<1>().empty());
++}
++
+ TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
+   AegisUIConfig config;
+   EXPECT_TRUE(config.IsWebUIEnabled(profile()));
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index adb899901b404a750423dd2fd91562421ebfbb8b..309c79cfc81aae81ba288aafefc4489357b47b09 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -413,7 +413,9 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+   for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
+     material.append(std::to_string(browser->GetSessionID().id()));
+     material.push_back('\n');
+-    material.append(browser->IsActive() ? "active" : "inactive");
++    material.append((browser->GetWindow() && browser->GetWindow()->IsActive())
++                        ? "active"
++                        : "inactive");
+     material.push_back('\n');
+     TabListInterface* model = TabListInterface::From(browser);
+     for (int index = 0; model && index < model->GetTabCount(); ++index) {
+@@ -1005,6 +1007,38 @@ struct AegisBrowserTools::UrlCheckBatch {
+   ToolResultCallback callback;
+ };
+ 
++std::vector<url::Origin> WorkspaceRestoreOrigins(
++    Profile* profile,
++    BrowserWindowInterface* browser,
++    int32_t selected_tab_id,
++    bool include_window_tabs) {
++  std::vector<url::Origin> origins;
++  if (!profile || !browser || browser->GetProfile() != profile ||
++      browser->GetType() != BrowserWindowInterface::TYPE_NORMAL ||
++      browser->IsDeleteScheduled()) {
++    return origins;
++  }
++  TabListInterface* list = TabListInterface::From(browser);
++  if (!list) {
++    return origins;
++  }
++  base::flat_set<std::string> seen;
++  for (tabs::TabInterface* tab : list->GetAllTabs()) {
++    const GURL url = tab->GetURL();
++    if (tab->GetProfile() != profile || !url.is_valid() ||
++        !url.SchemeIsHTTPOrHTTPS() ||
++        (!include_window_tabs &&
++         tab->GetHandle().raw_value() != selected_tab_id)) {
++      continue;
++    }
++    const url::Origin origin = url::Origin::Create(url);
++    if (!origin.opaque() && seen.insert(origin.Serialize()).second) {
++      origins.push_back(origin);
++    }
++  }
++  return origins;
++}
++
+ AegisBrowserTools::AegisBrowserTools(Profile* profile) : profile_(profile) {
+   CHECK(profile_);
+ }
+@@ -1378,7 +1412,8 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+     for (BrowserWindowInterface* browser : TaskWindows(profile_, *task)) {
+       base::DictValue value;
+       value.Set("window_id", browser->GetSessionID().id());
+-      value.Set("active", browser->IsActive());
++      value.Set("active",
++                (browser->GetWindow() && browser->GetWindow()->IsActive()));
+       base::ListValue tab_ids;
+       TabListInterface* model = TabListInterface::From(browser);
+       for (int index = 0; model && index < model->GetTabCount(); ++index) {
+@@ -1543,7 +1578,9 @@ void AegisBrowserTools::VerifyWindowAction(base::WeakPtr<AgentTask> task,
+         }
+         return true;
+       });
+-  if (closing ? !observed : (observed && observed->IsActive())) {
++  if (closing ? !observed
++              : (observed && (observed->GetWindow() &&
++                              observed->GetWindow()->IsActive()))) {
+     AgentToolResult result = SuccessResult(
+         action_id, closing ? "window closed" : "window activated");
+     result.value.Set("window_id", window_id);
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
+index b641fd37a3efbab9be40f3c6c9598dec40d7c757..8a634261636a0f9747212da0de1e0319f10ab0ba 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.h
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
+@@ -22,6 +22,7 @@
+ #include "components/undo/undo_manager_observer.h"
+ 
+ class Profile;
++class BrowserWindowInterface;
+ 
+ template <class T>
+ class scoped_refptr;
+@@ -47,6 +48,13 @@ class QueryResults;
+ 
+ namespace aegis::agent {
+ 
++// 仅从同资料、同窗口的现有标签取精确来源，不添加兄弟域名或跨窗口来源。
++std::vector<url::Origin> WorkspaceRestoreOrigins(
++    Profile* profile,
++    BrowserWindowInterface* browser,
++    int32_t selected_tab_id,
++    bool include_window_tabs);
++
+ bool IsAegisBookmarkUrlCheckTargetAllowed(const AgentTaskScope& scope,
+                                           const GURL& selected_bookmark_url,
+                                           const GURL& target,
+diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
+index 33b6353a4f734d109b951f850bef823d2e33a307..07ddf0d54097c94248ec20fa814c3196e5abe172 100644
+--- a/chrome/browser/aegis/agent/agent_planner.cc
++++ b/chrome/browser/aegis/agent/agent_planner.cc
+@@ -692,6 +692,17 @@ bool AgentGoalRequestsWindowTabMetadata(std::string_view goal) {
+   });
+ }
+ 
++bool AgentGoalRequestsWorkspaceRestore(std::string_view goal) {
++  return !BookmarkGoalIsReadOnly(goal) &&
++         !GoalContainsAny(
++             goal, {"不要恢复", "不要还原", "不恢复", "不还原", "不要恢復",
++                    "不要還原", "不恢復", "不還原", "do not restore",
++                    "don't restore", "without restoring", "do not reopen"}) &&
++         GoalContainsAny(goal, {"工作区", "工作區", "workspace"}) &&
++         GoalContainsAny(goal,
++                         {"恢复", "还原", "恢復", "還原", "restore", "reopen"});
++}
++
+ bool AgentBrowserGoalNeedsClarification(std::string_view goal,
+                                        AgentWorkflowKind workflow) {
+   return workflow == AgentWorkflowKind::kBrowserSteward &&
+diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
+index c4386c4db34269cd5d50539ca81424e5036a60a4..f89ae77680fe158d22e40d51f5c39b9688ed6857 100644
+--- a/chrome/browser/aegis/agent/agent_planner.h
++++ b/chrome/browser/aegis/agent/agent_planner.h
+@@ -70,6 +70,9 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal);
+ // 本任务限定优先于窗口元数据入口，冲突目标取较小范围。
+ bool AgentGoalRequestsWindowTabMetadata(std::string_view goal);
+ 
++// 只有原始目标明确要求恢复工作区，才允许申请现有标签来源的导航范围。
++bool AgentGoalRequestsWorkspaceRestore(std::string_view goal);
++
+ // 关闭只接受明确的标签操作请求；描述未关闭状态或询问不能成为写入授权。
+ bool AgentGoalRequestsTabClose(std::string_view goal);
+ bool AgentBrowserGoalNeedsClarification(std::string_view goal,
+diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+index c0081784cc4d357094c3d41fbbd1a1faf7bdd7ce..bd37c5b02f6a2a0628fa874187b57463ffe7857c 100644
+--- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
+@@ -15,6 +15,18 @@
+ namespace aegis::agent {
+ namespace {
+ 
++TEST(AgentPlannerTest, WorkspaceRestoreRequiresExplicitWriteIntent) {
++  for (const char* goal : {"保存并恢复当前工作区中的研究标签页",
++                           "還原目前工作區", "Restore my workspace"}) {
++    EXPECT_TRUE(AgentGoalRequestsWorkspaceRestore(goal)) << goal;
++  }
++  for (const char* goal : {"仅保存工作区，不恢复", "不要還原工作區",
++                           "Save workspace without restoring it", "查看工作区",
++                           "整理收藏夹", "恢复当前页面"}) {
++    EXPECT_FALSE(AgentGoalRequestsWorkspaceRestore(goal)) << goal;
++  }
++}
++
+ AgentTaskScope MaximumScope() {
+   AgentTaskScope scope;
+   scope.allowed_origins = {
+diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
+index d7c4b6d845c4e6044e799c1859a21eec3a7028bc..db764f3915c1b9c27b12d26a4390340de0b94204 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.cc
++++ b/chrome/browser/aegis/metalink_download_verifier.cc
+@@ -21,7 +21,9 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "base/supports_user_data.h"
+ #include "base/task/thread_pool.h"
++#include "base/timer/timer.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/browser/profiles/profile_observer.h"
+ #include "components/download/public/common/download_interrupt_reasons.h"
+ #include "components/download/public/common/download_item.h"
+ #include "components/download/public/common/download_url_parameters.h"
+@@ -89,19 +91,30 @@ class MetalinkVerificationData : public base::SupportsUserData::Data {
+ const char kMetalinkVerificationDataKey[] =
+     "Aegis Metalink verification status";
+ 
+-class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
++class MetalinkDownloadVerifier : public download::DownloadItem::Observer,
++                                 public ProfileObserver {
+  public:
+-  MetalinkDownloadVerifier(Profile* profile, MetalinkParseResult result)
++  MetalinkDownloadVerifier(Profile* profile,
++                           MetalinkParseResult result,
++                           base::OnceCallback<void(bool, std::string)> callback)
+       : profile_(profile),
++        started_callback_(std::move(callback)),
+         result_(std::move(result)),
+         host_resolver_(network::SimpleHostResolver::Create(base::BindRepeating(
+             [](Profile* profile) {
+               return profile->GetDefaultStoragePartition()->GetNetworkContext();
+             },
+-            profile))) {}
++            profile))) {
++    profile_->AddObserver(this);
++  }
+ 
+   void Start() { StartNextMirror(); }
+ 
++  void OnProfileWillBeDestroyed(Profile* profile) override {
++    CompleteStart(false, "Metalink profile closed before download started");
++    delete this;
++  }
++
+   void OnDownloadUpdated(download::DownloadItem* item) override {
+     if (item != current_item_) {
+       return;
+@@ -144,13 +157,36 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
+   }
+ 
+  private:
+-  ~MetalinkDownloadVerifier() override { StopObserving(); }
++  ~MetalinkDownloadVerifier() override {
++    StopObserving();
++    profile_->RemoveObserver(this);
++    CompleteStart(false, "Metalink download stopped before task creation");
++  }
++
++  void CompleteStart(bool ok, std::string error) {
++    if (started_callback_) {
++      start_timeout_.Stop();
++      std::move(started_callback_).Run(ok, std::move(error));
++    }
++  }
++
++  void OnStartTimeout() {
++    CompleteStart(false, "Metalink download start timed out");
++    delete this;
++  }
+ 
+   void StartNextMirror() {
+     if (next_mirror_ >= result_.mirrors.size()) {
++      CompleteStart(false, "Metalink download has no available public mirror");
+       delete this;
+       return;
+     }
++    if (started_callback_ && !start_timeout_.IsRunning()) {
++      start_timeout_.Start(
++          FROM_HERE, base::Seconds(30),
++          base::BindOnce(&MetalinkDownloadVerifier::OnStartTimeout,
++                         weak_factory_.GetWeakPtr()));
++    }
+     const GURL url = result_.mirrors[next_mirror_++].url;
+     host_resolver_->ResolveHost(
+         network::mojom::HostResolverHost::NewHostPortPair(
+@@ -199,6 +235,8 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
+     parameters->set_callback(
+         base::BindOnce(&MetalinkDownloadVerifier::OnDownloadStarted,
+                        weak_factory_.GetWeakPtr()));
++    // 下载管理器接手后以它的实际回调为准，不能超时销毁校验器后留下无人校验的任务。
++    start_timeout_.Stop();
+     profile_->GetDownloadManager()->DownloadUrl(std::move(parameters));
+   }
+ 
+@@ -212,6 +250,8 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
+     SetMetalinkVerificationStatus(*current_item_,
+                                   MetalinkVerificationStatus::kPending);
+     current_item_->AddObserver(this);
++    CompleteStart(true, "");
++    OnDownloadUpdated(current_item_);
+   }
+ 
+   void StopObserving() {
+@@ -270,6 +310,8 @@ class MetalinkDownloadVerifier : public download::DownloadItem::Observer {
+   }
+ 
+   raw_ptr<Profile> profile_;
++  base::OnceCallback<void(bool, std::string)> started_callback_;
++  base::OneShotTimer start_timeout_;
+   MetalinkParseResult result_;
+   std::unique_ptr<network::SimpleHostResolver> host_resolver_;
+   size_t next_mirror_ = 0;
+@@ -294,12 +336,17 @@ void SetMetalinkVerificationStatus(download::DownloadItem& item,
+   item.UpdateObservers();
+ }
+ 
+-void StartVerifiedMetalinkDownload(Profile* profile,
+-                                   MetalinkParseResult result) {
++void StartVerifiedMetalinkDownload(
++    Profile* profile,
++    MetalinkParseResult result,
++    base::OnceCallback<void(bool, std::string)> started_callback) {
+   if (!profile || !result.ok || result.mirrors.empty()) {
++    std::move(started_callback).Run(false, "invalid Metalink download request");
+     return;
+   }
+-  (new MetalinkDownloadVerifier(profile, std::move(result)))->Start();
++  (new MetalinkDownloadVerifier(profile, std::move(result),
++                                std::move(started_callback)))
++      ->Start();
+ }
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/metalink_download_verifier.h b/chrome/browser/aegis/metalink_download_verifier.h
+index 91db37263227dca21a8836a1aace038b45317da4..9da24db872a41845c88ac3e25a6c8fd787b6cc07 100644
+--- a/chrome/browser/aegis/metalink_download_verifier.h
++++ b/chrome/browser/aegis/metalink_download_verifier.h
+@@ -3,6 +3,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
+ #define CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
+ 
++#include "base/functional/callback_forward.h"
+ #include "chrome/browser/aegis/metalink_parser.h"
+ 
+ class Profile;
+@@ -28,8 +29,11 @@ void SetMetalinkVerificationStatus(download::DownloadItem& item,
+ 
+ // Starts a Browser-native, credential-free mirror download. The verifier owns
+ // itself until the file hash matches or all mirrors fail.
+-void StartVerifiedMetalinkDownload(Profile* profile,
+-                                   MetalinkParseResult result);
++// 仅在下载管理器实际创建任务后返回成功；地址校验失败必须回传错误。
++void StartVerifiedMetalinkDownload(
++    Profile* profile,
++    MetalinkParseResult result,
++    base::OnceCallback<void(bool, std::string)> started_callback);
+ 
+ }  // namespace aegis
+ 
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index 3381a174281b0d76139cdccc78c799f25b63bbf3..1271e41dc5c1d292389129f19d148b343178f969 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -1128,11 +1128,22 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
+     ResolveJavascriptCallback(callback_id, response);
+     return;
+   }
+-  aegis::StartVerifiedMetalinkDownload(Profile::FromWebUI(web_ui()),
+-                                       std::move(pending.result));
+-  response.Set("ok", true);
+-  response.Set("error", "");
+-  ResolveJavascriptCallback(callback_id, response);
++  aegis::StartVerifiedMetalinkDownload(
++      Profile::FromWebUI(web_ui()), std::move(pending.result),
++      base::BindOnce(&AegisUIHandler::OnMetalinkStarted,
++                     weak_factory_.GetWeakPtr(), callback_id.GetString()));
++}
++
++void AegisUIHandler::OnMetalinkStarted(std::string callback_id,
++                                       bool ok,
++                                       std::string error) {
++  if (!IsJavascriptAllowed()) {
++    return;
++  }
++  base::DictValue response;
++  response.Set("ok", ok);
++  response.Set("error", std::move(error));
++  ResolveJavascriptCallback(base::Value(callback_id), response);
+ }
+ 
+ #if BUILDFLAG(IS_MAC)
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+index 6f4235582e4e4568d03ec3dffd8184e574830419..7d53f3d9f245a70bfe3eb3f0ceffa4a7724e646a 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
+@@ -92,6 +92,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
+                       bool ok,
+                       std::string error,
+                       std::vector<std::string> models);
++  void OnMetalinkStarted(std::string callback_id, bool ok, std::string error);
+   void OnMetalinkParsed(std::string callback_id,
+                         aegis::MetalinkParseResult result);
+ #if BUILDFLAG(IS_MAC)
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index cc245114b3866469095e43bbafbb0ef19819aa7f..4b5c70827133d59124010da6c0ca5a88967f7728 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -19,6 +19,7 @@
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
++#include "chrome/browser/aegis/agent/aegis_browser_tools.h"
+ #include "chrome/browser/aegis/agent/agent_monitor_summary.h"
+ #include "chrome/browser/aegis/agent/agent_observation.h"
+ #include "chrome/browser/aegis/agent/agent_policy_broker.h"
+@@ -839,6 +840,13 @@ void AegisAgentPageHandler::CreateResolvedTask(
+     origins = AutomaticTaskOrigins(task_url);
+   } else if (browser_only) {
+     origins.emplace();
++    if (tab && aegis::agent::AgentGoalRequestsWorkspaceRestore(goal)) {
++      // 恢复会重新导航；范围来自浏览器已有标签，不接受模型发明来源。
++      *origins = aegis::agent::WorkspaceRestoreOrigins(
++          profile_, browser_, tab->GetHandle().raw_value(),
++          aegis::agent::AgentGoalRequestsWindowTabMetadata(goal) &&
++              !profile_->IsOffTheRecord());
++    }
+   } else {
+     const bool use_approved_current_page =
+         tab && requested_origins &&
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index d855121a2e2d1d069a5f4021bef947ed240f4264..89d7410429e38f3d6e7e81ecc41d5a9a8bee38e7 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.79";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (079)";
++inline constexpr char kProductVersion[] = "2.0.0.80";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (080)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+index 1ffade2ac9efa930db3c02ad840f71aa81c6e845..93668af976d88baf015cf113d45a2fb9ccd21c95 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+@@ -202,6 +202,14 @@ export class AegisDownloadPanelElement extends CrLitElement {
+       return detail;
+     }
+     const tw = /^zh-(?:TW|HK|Hant)/i.test(locale);
++    if (detail.includes('Metalink download has no available public mirror')) {
++      return tw ? '沒有可用的公開鏡像地址，下載未開始。請檢查網路或更換描述檔案。' :
++                  '没有可用的公开镜像地址，下载未开始。请检查网络或更换描述文件。';
++    }
++    if (detail.includes('Metalink download start timed out')) {
++      return tw ? '建立下載工作逾時，請檢查網路後重試。' :
++                  '创建下载任务超时，请检查网络后重试。';
++    }
+     if (detail.includes('magnet link is invalid or too large')) {
+       return tw ? '磁力連結無效或過長，請檢查後重試。' :
+                   '磁力链接无效或过长，请检查后重试。';
+-- 
+2.52.0
+

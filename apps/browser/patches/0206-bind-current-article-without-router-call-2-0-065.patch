@@ -1,4 +1,4 @@
-From cc33d34ead4702dd9f354c9942259682c04b202c Mon Sep 17 00:00:00 2001
+From 47ececba023ffd823e7b821033bf98f3c737f6f6 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 23 Sep 2026 05:32:40 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=98=8E=E7=A1=AE=E5=BD=93=E5=89=8D=E6=96=87?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  4 files changed, 11 insertions(+), 9 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 231345b8c8..33b6353a4f 100644
+index 231345b8c8ae1f9b7c21a894e43dd7c610bcdda6..33b6353a4f734d109b951f850bef823d2e33a307 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -864,8 +864,8 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal) {
@@ -49,7 +49,7 @@ index 231345b8c8..33b6353a4f 100644
          if (end == std::string_view::npos || end > 72u) {
            continue;
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index a995e40d9a..c0081784cc 100644
+index a995e40d9ac57024ecc8371593b2146bc6772f62..c0081784cc4d357094c3d41fbbd1a1faf7bdd7ce 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -529,7 +529,8 @@ TEST(AegisAgentPlannerTest, WindowMetadataBindingComesOnlyFromBrowserScope) {
@@ -73,7 +73,7 @@ index a995e40d9a..c0081784cc 100644
          "不要读取当前官方发布页；请搜索浏览器论文",
          "当前版本的官方发布页是什么", "当前时间是多少，搜索官方发布页",
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 39a512d8ad..62e6845ac6 100644
+index 39a512d8ad8d84a305c13c8c24ecaba98313b150..62e6845ac6c3db9f27e9726136df91db0899eb5e 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -80,7 +80,7 @@ function inferWorkflow(goal: string): Workflow {
@@ -86,7 +86,7 @@ index 39a512d8ad..62e6845ac6 100644
  }
  
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index ec8db1914a..4a0e8967b4 100644
+index ec8db1914a71763a71c69fb3c57caa10c2556ed7..4a0e8967b485a0b018c5c84d094d9f7065821a27 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
