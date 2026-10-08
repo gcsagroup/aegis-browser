@@ -8,7 +8,9 @@ GCSA-aegis Browser is a Chromium fork that integrates privacy and security contr
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
-> **2026-10-07 隔离安全候选：** 桌面基线 Chromium `155.0.8059.40`，Android独立基线`155.0.8059.39`。Ver 2.1 (125)包含桌面270项、Android270项Chromium补丁及各3项V8补丁。124完整编译、987次原生回归、27次V8安全回归及实际App的440项行为断言通过；网页安全测试因缺少image_diff尚未执行。125补齐构建目标并重新验证，124原始证据保留。正式签名、三平台安装验收及发布尚待完成。
+> **2026-10-09 · 桌面鼠标手势候选：** Ver 2.2 (141) 基于 Chromium `155.0.8059.40`，支持网页、设置页和内置 PDF 的原生右键手势。Mac ARM64 的 33 项测试及跨框架额外 5 次复测通过；Windows 构建与实机验收尚未完成。[使用指南](docs/mouse-gestures.zh-CN.md) · [验收记录](../../docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。代码位于依赖 [#32](https://github.com/gcsagroup/aegis-browser/pull/32) 的 [#33](https://github.com/gcsagroup/aegis-browser/pull/33) 草稿 PR；记录时 main 尚未升级，未正式发行。
+
+> **2026-10-07 历史隔离安全候选：** 桌面基线 Chromium `155.0.8059.40`，Android独立基线`155.0.8059.39`。Ver 2.1 (125)包含桌面270项、Android270项Chromium补丁及各3项V8补丁。124完整编译、987次原生回归、27次V8安全回归及实际App的440项行为断言通过；网页安全测试因缺少image_diff尚未执行。125补齐构建目标并重新验证，124原始证据保留。正式签名、三平台安装验收及发布尚待完成。
 
 > **2026-09-22 历史本地候选：** macOS Ver 2.0 (061)，Chromium 153.0.8010.53，202+3 补丁；已处理已知 P1、P2，539 项原生回归及本批定向实机验收完成。整体门槛未重测关闭，后续文案、性能及远端适配等待决定。[修复与后续范围](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)
 
@@ -24,7 +26,7 @@ Ver 1.1 (044)的已验收基线为153.0.8010.37，包含140个Chromium补丁与3
 
 | File | Meaning |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 隔离候选桌面基线 `155.0.8059.40`，尚未正式发布 |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `155.0.8059.40`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | Exact Chromium commit used as the patch base |
 
 The pin is a fixed snapshot. It does not track newer Stable releases automatically.
