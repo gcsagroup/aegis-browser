@@ -72,9 +72,14 @@
     </style>
 
     <div role="navigation">
-      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
+      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink):not(#aegisGesturesLink)"
           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
           on-click="onLinkClick_" selected-attribute="selected">
+        <a role="menuitem" id="aegisGesturesLink"
+            class="cr-nav-menu-item" href="chrome://aegis/gestures.html">
+          <cr-icon icon="settings:touchpad-mouse"></cr-icon>
+          鼠标手势
+        </a>
         <a role="menuitem"
             id="people" href="/people"
             hidden="[[!showPeopleMenuItem_(
