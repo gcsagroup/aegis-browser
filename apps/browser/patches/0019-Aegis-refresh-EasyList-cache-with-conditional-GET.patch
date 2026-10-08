@@ -1,4 +1,4 @@
-From 5a62bb15c6994dd1ecfde33489a55e4b3727c506 Mon Sep 17 00:00:00 2001
+From b86b59333f7936cc0c977eb416e89354b9add7fa Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 00:37:31 +0800
 Subject: [PATCH] Aegis: refresh EasyList cache with conditional GET
@@ -20,7 +20,7 @@ Co-authored-by: Cursor <cursoragent@cursor.com>
  8 files changed, 251 insertions(+), 34 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index fc5fb366a0..b857da29cb 100644
+index fc5fb366a02f748954c7792ad4c9dc7e96c63fef..b857da29cb2f634c8eee45a3690d98dfe1fd19ae 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -21,6 +21,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -33,7 +33,7 @@ index fc5fb366a0..b857da29cb 100644
    registry->RegisterBooleanPref(prefs::kCookieJanitorEnabled, true);
    registry->RegisterBooleanPref(prefs::kCnameUncloakEnabled, true);
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 7cd380f95e..fbd22ac225 100644
+index 7cd380f95e48e546e216c433960a7132d6b5e3b1..fbd22ac225a258a1f25f9d87286a4b959a48a655 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -167,6 +167,9 @@ void AegisService::SetFilterListAutoUpdateEnabled(bool enabled) {
@@ -47,7 +47,7 @@ index 7cd380f95e..fbd22ac225 100644
  
  bool AegisService::IsLinkSanitizeEnabled() const {
 diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
-index 85fe9f0053..99912aef6b 100644
+index 85fe9f005366fca13bee631a26455a63b5573b87..99912aef6bfb2f7c72dd2441d5d59083188c843c 100644
 --- a/chrome/browser/aegis/filter_list_updater.cc
 +++ b/chrome/browser/aegis/filter_list_updater.cc
 @@ -8,12 +8,14 @@
@@ -435,7 +435,7 @@ index 85fe9f0053..99912aef6b 100644
            path, list));
  }
 diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
-index fdbb9db36a..9bc9be8116 100644
+index fdbb9db36a33998d87ba7e892d74b7438fc50a27..9bc9be81160e1f94ba0046a95e8def1094f96600 100644
 --- a/chrome/browser/aegis/filter_list_updater.h
 +++ b/chrome/browser/aegis/filter_list_updater.h
 @@ -12,20 +12,32 @@
@@ -512,7 +512,7 @@ index fdbb9db36a..9bc9be8116 100644
  };
  
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index f553893e8f..56dd6b1152 100644
+index f553893e8fcfb7086c19471153792fb85c0cbe9b..56dd6b1152a685c0e3129d130f6173e8ccc92298 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -71,7 +71,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -545,7 +545,7 @@ index f553893e8f..56dd6b1152 100644
        .filter_list_meta =
            "No compiled filter list yet. Update to compile EasyList / EasyPrivacy.",
 diff --git a/chrome/common/aegis/filter_list.cc b/chrome/common/aegis/filter_list.cc
-index bed097884f..62e85a2f75 100644
+index bed097884f8d577acde8f7b7caf4cac4449897c7..62e85a2f75b9e0a50b01683cd30c44031c9ec7a2 100644
 --- a/chrome/common/aegis/filter_list.cc
 +++ b/chrome/common/aegis/filter_list.cc
 @@ -184,6 +184,7 @@ CompiledFilterList MergeCompiledFilterLists(
@@ -568,7 +568,7 @@ index bed097884f..62e85a2f75 100644
    list->source = dict.FindString("source") ? *dict.FindString("source") : "";
    list->generated_at =
 diff --git a/chrome/common/aegis/filter_list.h b/chrome/common/aegis/filter_list.h
-index f67a013494..4b1c4d3994 100644
+index f67a01349417bcb8a9044545362851228a6af589..4b1c4d3994d14078e7a3d85623ffe933a9510568 100644
 --- a/chrome/common/aegis/filter_list.h
 +++ b/chrome/common/aegis/filter_list.h
 @@ -11,6 +11,9 @@
@@ -582,7 +582,7 @@ index f67a013494..4b1c4d3994 100644
    int version = 1;
    std::string source;
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index 78be0b3a4d..94972c1f14 100644
+index 78be0b3a4d1b6ec31b15b995eacca3d68ce6bc8b..94972c1f14296a68944083a4a7a8395acac23f03 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -20,6 +20,10 @@ inline constexpr char kFilterListLastUpdated[] =

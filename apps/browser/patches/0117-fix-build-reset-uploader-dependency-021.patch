@@ -1,28 +1,15 @@
-From 5ca02aa1fff24675b09cb6ea20e098579eaf4854 Mon Sep 17 00:00:00 2001
+From 9b0e1938836d8bb65f1193f618e8dd291d34a196 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 14 Sep 2026 08:02:07 +0800
 Subject: [PATCH] fix(build): declare reset uploader network dependency for
  M153
 
 ---
- chrome/browser/profile_resetter/reset_report_uploader.cc | 1 +
- chrome/browser/ui/webui/help/aegis_github_update.h       | 6 +++---
- 2 files changed, 4 insertions(+), 3 deletions(-)
+ chrome/browser/ui/webui/help/aegis_github_update.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
 
-diff --git a/chrome/browser/profile_resetter/reset_report_uploader.cc b/chrome/browser/profile_resetter/reset_report_uploader.cc
-index 9c591b1fa9..30350b6e0b 100644
---- a/chrome/browser/profile_resetter/reset_report_uploader.cc
-+++ b/chrome/browser/profile_resetter/reset_report_uploader.cc
-@@ -17,6 +17,7 @@
- #include "net/http/http_response_headers.h"
- #include "net/traffic_annotation/network_traffic_annotation.h"
- #include "services/network/public/cpp/resource_request.h"
-+#include "services/network/public/cpp/shared_url_loader_factory.h"
- #include "services/network/public/cpp/simple_url_loader.h"
- #include "services/network/public/mojom/url_loader_factory.mojom.h"
- 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index c38e45656c..08264057b6 100644
+index c38e45656c873352909b1e6519d903586be81e2a..08264057b69968a70c3f4fbbf25283ed4a1bf1d0 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

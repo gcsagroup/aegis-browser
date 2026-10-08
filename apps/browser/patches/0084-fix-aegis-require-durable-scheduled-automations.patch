@@ -1,4 +1,4 @@
-From 1c3887d7b689b285f23cec5aa9952f0b5098f90e Mon Sep 17 00:00:00 2001
+From 2d89dbfe6144344e9659794d859f1df70eb359b6 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 23:41:37 +0800
 Subject: [PATCH] fix(aegis): require durable scheduled automations
@@ -13,7 +13,7 @@ Subject: [PATCH] fix(aegis): require durable scheduled automations
  6 files changed, 94 insertions(+), 13 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index efa25d47da..ac258eee1d 100644
+index efa25d47da2c985e56f137ec3a8254841804de29..ac258eee1d3f0db996aad0b8d911d65d9ab72015 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -756,6 +756,9 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
@@ -27,7 +27,7 @@ index efa25d47da..ac258eee1d 100644
      if (!IsToolAvailable(step.tool_name) ||
          (task->mode() == AgentMode::kAsk &&
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 626183ab8c..b22f4ac3e2 100644
+index 626183ab8c46e2a2eef1cbbdf402f0e75cc96586..b22f4ac3e25df829b4a55199eeff976956f84b35 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -463,6 +463,7 @@ Honor negative constraints in the goal. If the user asks for a preview, report,
@@ -79,7 +79,7 @@ index 626183ab8c..b22f4ac3e2 100644
 +
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index ea66963418..d0848738ca 100644
+index ea66963418d8316ed84403b76a7a6309f883a599..d0848738ca71799633876503fe60ece56681bb3a 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -84,6 +84,13 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
@@ -97,7 +97,7 @@ index ea66963418..d0848738ca 100644
  
  #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_PLANNER_H_
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 27af268719..a82bfcb225 100644
+index 27af268719d0b31b0b19b31eab614cb787f329f9..a82bfcb225338446a6a4eb61b0b18e88e3e7f8d8 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -417,7 +417,7 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {
@@ -147,7 +147,7 @@ index 27af268719..a82bfcb225 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index c2d08b4231..b333c7d744 100644
+index c2d08b4231e093d2120ae0abbae3fa4da07bca01..b333c7d74465e5a9248328f5d1694facb639ad63 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -381,6 +381,10 @@ function friendlyError(error: string, hasPlan: boolean): string {
@@ -162,7 +162,7 @@ index c2d08b4231..b333c7d744 100644
        error.includes('browser goal') ||
        error.includes('goal is being understood') ||
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 64d9856ea1..8a1bb5a17a 100644
+index 64d9856ea10c59ec96f9aea3b363fc4561b704c8..8a1bb5a17a658807795692d6e344b8a551ef9d40 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -198,25 +198,25 @@ void AddStrings(content::WebUIDataSource* source) {

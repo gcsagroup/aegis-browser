@@ -36,7 +36,6 @@
 #include "chrome/common/aegis/pref_names.h"
 #include "chrome/common/webui_url_constants.h"
 #if !BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 // GN 不解析上方的平台条件；此桌面头文件不会参与 Android 编译。
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"  // nogncheck
@@ -665,7 +664,7 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
   BrowserWindowInterface* browser =
       FindOwningBrowser(web_ui()->GetWebContents());
   SidePanelUI* side_panel =
-      browser ? browser->GetFeatures().side_panel_ui() : nullptr;
+      browser ? SidePanelUI::From(browser) : nullptr;
   if (!aegis::IsAegisProfileSupported(profile) || !browser || !side_panel ||
       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {

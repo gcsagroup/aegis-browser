@@ -1,5 +1,7 @@
 # 文件
 
+
+> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
 
 本目錄保存 GCSA-aegis 的公開產品架構、路線圖、研究邊界、產品頁，以及帶日期的本機稽核記錄。

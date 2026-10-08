@@ -1,4 +1,4 @@
-From 90d978da7b9a544ea13954028de114868cc8a680 Mon Sep 17 00:00:00 2001
+From 62c2112d257aff2b6a7ff4e298778f4f32bbd8de Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Fri, 14 Aug 2026 17:47:47 +0800
 Subject: [PATCH] Aegis: probe Canvas, WebGL, Audio, and WebGPU on
@@ -13,7 +13,7 @@ see Aegis-stable WebGL/WebGPU strings when the guard is on.
  3 files changed, 136 insertions(+), 17 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index 0bc988854e..5c12744442 100644
+index 0bc988854e87f5af934943b05e5091fbb702d79b..5c1274444258eb2483a30b5817030d44bfa74a02 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -157,6 +157,10 @@ h1 {
@@ -28,7 +28,7 @@ index 0bc988854e..5c12744442 100644
    margin: 0 0 1rem;
    color: var(--muted);
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index daad9a4c8f..f8f6eb21c3 100644
+index daad9a4c8feee8343b11c414aab90d5e4e4617a5..f8f6eb21c3cf858c305aad151aa7d6515d4d42fc 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -346,33 +346,148 @@ function hashText(text: string): string {
@@ -203,7 +203,7 @@ index daad9a4c8f..f8f6eb21c3 100644
    if (status.privacyAi) {
      void probeOllama();
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 8e10165872..a52a292dfe 100644
+index 8e10165872ec3b88a21565c08898c62991fd37b6..a52a292dfeedd2ca0d5e976e125c8123160dfba0 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -79,7 +79,7 @@ AegisStrings StringsForLocale(const std::string& locale) {

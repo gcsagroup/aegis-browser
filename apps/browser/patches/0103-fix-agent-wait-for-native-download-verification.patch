@@ -1,4 +1,4 @@
-From 749479eede44f2cd5f00a1223a880418846bded2 Mon Sep 17 00:00:00 2001
+From 91669119daee13c129e48a0f75306b97111d12a5 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 03:45:16 +0800
 Subject: [PATCH] fix(agent): wait for native download verification
@@ -11,7 +11,7 @@ Subject: [PATCH] fix(agent): wait for native download verification
  4 files changed, 140 insertions(+), 42 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 54b0a614d7..c1f5e8a259 100644
+index 54b0a614d71628f1ce1db23fb4a2b15bf65b256b..c1f5e8a259296c0b37b11ee2f9eb0f55d72eb735 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -59,6 +59,10 @@ class AegisBrowserToolsTestPeer {
@@ -57,7 +57,7 @@ index 54b0a614d7..c1f5e8a259 100644
    AegisAgentService* service =
        AegisAgentServiceFactory::GetForProfile(profile_);
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index d57992b418..85d16e2a24 100644
+index d57992b418750e94cd14ef689fc8a4d973610bf2..85d16e2a2460058f1a1e5730cdef11fa4aa62e58 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -16,9 +16,11 @@
@@ -235,7 +235,7 @@ index d57992b418..85d16e2a24 100644
      std::string pending_token,
      const std::string& task_id,
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
-index a7cd386def..ab08e5508d 100644
+index a7cd386def84cc6abd1484bd523c32202734b827..ab08e5508d4c98be373162e663e03c3d824f964e 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.h
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
 @@ -15,6 +15,7 @@
@@ -261,7 +261,7 @@ index a7cd386def..ab08e5508d 100644
    void StartUrlCheckRequest(const std::string& batch_key, size_t index);
    void OnUrlCheckRedirect(const std::string& batch_key,
 diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
-index 42f248dbe3..cb7f584242 100644
+index 42f248dbe325b82e2d39aafdfe606cb5d80f232e..cb7f58424225845ffcfe6bfbe9976237944036f6 100644
 --- a/chrome/browser/aegis/agent/agent_tool_registry.cc
 +++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
 @@ -598,7 +598,8 @@ std::string_view ToolDescription(std::string_view name) {

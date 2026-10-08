@@ -1,0 +1,122 @@
+From f9308afc54d3cdbc209aa2d06eeb2a8e8b7d8a79 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 05:51:17 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E8=BF=94=E5=9B=9E=E5=AE=A1?=
+ =?UTF-8?q?=E6=89=B9=E6=97=B6=E7=AA=97=E5=8F=A3=E7=BB=93=E6=9E=84=E8=AF=AF?=
+ =?UTF-8?q?=E5=88=A4=20086?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/aegis_ui_handler_unittest.cc        | 52 +++++++++++++++++++
+ .../aegis/agent/aegis_browser_tools.cc        | 12 +++--
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 3 files changed, 61 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index 5989d395640d3e9976463b8baef8c6ad5fb754e5..b769ecde82e960ac1eea6310aefa21220e0efdbb 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -84,6 +84,58 @@ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
+                          TabListInterface::From(browser()), foreign.get()));
+ }
+ 
++TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
++  using namespace aegis::agent;
++  AddTab(browser(), GURL("https://workspace.example/first"));
++  TabListInterface* list = TabListInterface::From(browser());
++  ASSERT_TRUE(list);
++  AgentTaskScope scope;
++  scope.allowed_tab_ids = {list->GetTab(0)->GetHandle().raw_value()};
++  scope.allowed_tools = {"window.list"};
++  scope.allowed_data_classes = {AgentDataClass::kBrowserMetadata};
++  AgentTask task("window-focus", "核对窗口审批期间的结构", AgentMode::kAct,
++                 scope);
++  AegisBrowserTools tools(profile());
++  auto read = [&]() {
++    AgentToolCall call;
++    call.action_id = "window-list";
++    call.tool_name = "window.list";
++    base::test::TestFuture<AgentToolResult> future;
++    tools.Execute(&task, call, future.GetCallback());
++    return future.Take();
++  };
++  auto before = read();
++  ASSERT_TRUE(before.ok);
++  ASSERT_TRUE(before.value.FindString("revision"));
++  auto* test_window = static_cast<TestBrowserWindow*>(window());
++  test_window->set_is_active(true);
++  auto focused = read();
++  ASSERT_TRUE(focused.ok);
++  const auto* windows = focused.value.FindList("windows");
++  ASSERT_TRUE(windows);
++  ASSERT_EQ(windows->size(), 1u);
++  EXPECT_EQ(windows->front().GetDict().FindBool("active"), true);
++  EXPECT_EQ(*before.value.FindString("revision"),
++            *focused.value.FindString("revision"));
++  test_window->set_is_active(false);
++  auto unfocused = read();
++  ASSERT_TRUE(unfocused.ok);
++  EXPECT_EQ(*before.value.FindString("revision"),
++            *unfocused.value.FindString("revision"));
++  // URL 或固定状态变化仍使旧审批版本失效。
++  NavigateAndCommit(list->GetTab(0)->GetContents(),
++                    GURL("https://workspace.example/changed"));
++  auto navigated = read();
++  ASSERT_TRUE(navigated.ok);
++  EXPECT_NE(*before.value.FindString("revision"),
++            *navigated.value.FindString("revision"));
++  browser()->tab_strip_model()->SetTabPinned(0, true);
++  auto pinned = read();
++  ASSERT_TRUE(pinned.ok);
++  EXPECT_NE(*navigated.value.FindString("revision"),
++            *pinned.value.FindString("revision"));
++}
++
+ TEST_P(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+   using namespace aegis::agent;
+   AddTab(browser(), GURL("https://workspace.example/first"));
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 309c79cfc81aae81ba288aafefc4489357b47b09..44e69beb2d6621beae392b42f7afa6740236781b 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -410,13 +410,15 @@ AgentToolResult SearchOffTheRecordSessionHistory(Profile* profile,
+ 
+ std::string WindowRevision(Profile* profile, const AgentTask& task) {
+   std::string material;
+-  for (BrowserWindowInterface* browser : TaskWindows(profile, task)) {
++  auto windows = TaskWindows(profile, task);
++  std::ranges::sort(windows, {}, [](BrowserWindowInterface* window) {
++    return window->GetSessionID().id();
++  });
++  // 用户必须切回助手窗口批准关闭；焦点及激活顺序不改变待关闭内容。
++  // 版本只描述窗口和标签结构，关闭时仍检查归属、固定与未保存内容。
++  for (BrowserWindowInterface* browser : windows) {
+     material.append(std::to_string(browser->GetSessionID().id()));
+     material.push_back('\n');
+-    material.append((browser->GetWindow() && browser->GetWindow()->IsActive())
+-                        ? "active"
+-                        : "inactive");
+-    material.push_back('\n');
+     TabListInterface* model = TabListInterface::From(browser);
+     for (int index = 0; model && index < model->GetTabCount(); ++index) {
+       tabs::TabInterface* tab = model->GetTab(index);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 784891a2da9a76abd7b99acad1070b3c31f21a1a..da164cdbc698e56da631e9efbe5cc7e7074d1055 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.85";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (085)";
++inline constexpr char kProductVersion[] = "2.0.0.86";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (086)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -55,6 +55,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/storage_partition.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "crypto/sha2.h"
@@ -667,6 +668,8 @@ struct AegisAgentService::ExecutionRuntime {
   bool selected_read_failed = false;
   std::vector<AgentExecutionEvidence> download_history;
   bool final_user_takeover = false;
+  std::optional<std::string> active_tool_action;
+  std::optional<std::string> policy_takeover_action;
   bool needs_fresh_observation = false;
   base::OneShotTimer entry_navigation_timer;
   std::optional<int32_t> last_tab_id;
@@ -915,7 +918,8 @@ AgentTask* AegisAgentService::CreateSelectedResearchTask(
   base::flat_set<std::string> urls;
   for (int32_t id : selected) {
     auto* tab = tabs::TabHandle(id).Get();
-    if (!tab || tab->GetProfile() != profile_ ||
+    if (!tab || tab->GetProfile() != profile_ || !tab->GetContents() ||
+        !tab->GetContents()->GetPrimaryMainFrame() ||
         !tab->GetURL().SchemeIsHTTPOrHTTPS() || tab->GetURL().has_username() ||
         tab->GetURL().has_password() ||
         !urls.insert(tab->GetURL().spec()).second) {
@@ -958,7 +962,10 @@ AgentTask* AegisAgentService::CreateSelectedResearchTask(
     return nullptr;
   }
   for (int32_t id : selected) {
-    research_selections_[task->id()][id] = tabs::TabHandle(id).Get()->GetURL();
+    auto* tab = tabs::TabHandle(id).Get();
+    research_selections_[task->id()][id] = tab->GetURL();
+    research_selection_documents_[task->id()].emplace(
+        id, tab->GetContents()->GetPrimaryMainFrame()->GetWeakDocumentPtr());
   }
   if (!BeginPlanning(task->id())) {
     return nullptr;
@@ -1969,9 +1976,16 @@ bool AegisAgentService::CurrentPageMatchesSelection(
              return true;
            }
            const auto selection = research_selections_.find(task.id());
+           const auto documents = research_selection_documents_.find(task.id());
            return selection != research_selections_.end() &&
                   selection->second.contains(id) &&
-                  selection->second.at(id) == tab->GetURL();
+                  selection->second.at(id) == tab->GetURL() &&
+                  documents != research_selection_documents_.end() &&
+                  documents->second.contains(id) &&
+                  documents->second.at(id).AsRenderFrameHostIfValid() &&
+                  tab->GetContents() &&
+                  documents->second.at(id).AsRenderFrameHostIfValid() ==
+                      tab->GetContents()->GetPrimaryMainFrame();
          });
 }
 
@@ -2055,6 +2069,8 @@ bool AegisAgentService::BeginUserTakeover(const std::string& task_id) {
   if (auto runtime = executions_.find(task_id); runtime != executions_.end()) {
     // 中途接管撤销尚未执行的操作；后续必须重新观察和授权。
     runtime->second->pending_action.reset();
+    runtime->second->policy_takeover_action.reset();
+    runtime->second->final_user_takeover = false;
     runtime->second->needs_fresh_observation = TaskUsesActor(*task);
   }
   return Transition(task_id, AgentTaskState::kUserTakeover,
@@ -2194,6 +2210,13 @@ void AegisAgentService::ResumeMonitorsAfterEnable() {
 bool AegisAgentService::CompleteTask(const std::string& task_id) {
   AgentTask* task = GetTask(task_id);
   if (!task || task->state() != AgentTaskState::kVerifying) {
+    return false;
+  }
+  // Freeze evidence validity while Actor still owns the observed documents.
+  // FinishRuntime only consumes these native bindings after Actor teardown.
+  if (task->scope().selected_pages_research &&
+      (!CurrentPageMatchesSelection(*task) ||
+       !EnsureRuntimePageEvidenceCurrent(task_id))) {
     return false;
   }
   if (!Transition(task_id, AgentTaskState::kCompleted,
@@ -3422,12 +3445,39 @@ void AegisAgentService::ExecuteRuntimeTool(
     const std::string& task_id,
     AgentToolCall call,
     const std::optional<std::string>& approval_id) {
+  auto runtime = executions_.find(task_id);
+  if (runtime == executions_.end()) {
+    return;
+  }
+  runtime->second->active_tool_action = call.action_id;
   AgentToolCall callback_call = CloneToolCall(call);
   ExecuteTool(task_id, call,
-              base::BindOnce(&AegisAgentService::OnRuntimeToolResult,
+              base::BindOnce(&AegisAgentService::OnDispatchedRuntimeToolResult,
                              weak_ptr_factory_.GetWeakPtr(), task_id,
+                             task_dispatch_generations_[task_id],
                              std::move(callback_call)),
               approval_id);
+}
+
+void AegisAgentService::OnDispatchedRuntimeToolResult(
+    const std::string& task_id,
+    uint64_t generation,
+    AgentToolCall call,
+    AgentToolResult result) {
+  auto runtime = executions_.find(task_id);
+  if (runtime == executions_.end() ||
+      runtime->second->active_tool_action != call.action_id ||
+      result.action_id != call.action_id) {
+    return;
+  }
+  // The only generation transition accepted here is the synchronous policy
+  // takeover produced by this exact dispatch, never a user/Actor takeover.
+  if (generation != task_dispatch_generations_[task_id] &&
+      runtime->second->policy_takeover_action != call.action_id) {
+    return;
+  }
+  runtime->second->active_tool_action.reset();
+  OnRuntimeToolResult(task_id, std::move(call), std::move(result));
 }
 
 void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
@@ -3439,8 +3489,14 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
   if (!task || !plan || runtime_it == executions_.end()) {
     return;
   }
+  const bool policy_takeover =
+      task->state() == AgentTaskState::kUserTakeover &&
+      runtime_it->second->policy_takeover_action == attempted_call.action_id &&
+      result.action_id == attempted_call.action_id && !result.ok &&
+      result.error == AgentErrorCode::kApprovalRequired;
+  runtime_it->second->policy_takeover_action.reset();
   if (task->state() != AgentTaskState::kRunning &&
-      task->state() != AgentTaskState::kReflecting &&
+      task->state() != AgentTaskState::kReflecting && !policy_takeover &&
       !(task->state() == AgentTaskState::kAwaitingActionApproval &&
         !result.ok && result.error == AgentErrorCode::kApprovalRequired)) {
     return;
@@ -3474,6 +3530,45 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
     return;
   }
 
+  int research_source_id = 0;
+  std::optional<AgentDocumentRef> research_document;
+  if (task->scope().selected_pages_research &&
+      attempted_call.tool_name == "page.observe") {
+    const auto tab = attempted_call.arguments.FindInt("tab_id");
+    const auto selected = research_selections_.find(task_id);
+    if (!tab || selected == research_selections_.end() ||
+        !selected->second.contains(*tab) || !CurrentPageMatchesSelection(*task)) {
+      Transition(task_id, AgentTaskState::kFailed, "研究来源文档已改变");
+      FinishRuntime(task_id, false, "研究来源绑定失效", std::nullopt);
+      return;
+    }
+    research_source_id = 1 + std::distance(
+        selected->second.begin(), selected->second.find(*tab));
+    if (result.ok) {
+      const auto document = actor_bridge_.LastDocument(task_id, *tab);
+      const auto* frame = result.value.FindString("frame_token");
+      const auto* token = result.value.FindString("document_token");
+      if (result.value.FindInt("tab_id") != tab || !document || !frame ||
+          !token || document->tab_id != *tab || document->frame_token != *frame ||
+          document->document_token != *token ||
+          document->committed_url != selected->second.at(*tab) ||
+          !actor_bridge_.IsObservedDocumentCurrent(task_id, *tab, *token)) {
+        Transition(task_id, AgentTaskState::kFailed, "研究观察身份不匹配");
+        FinishRuntime(task_id, false, "研究观察绑定失效", std::nullopt);
+        return;
+      }
+      research_document = document;
+    }
+    result.value.Set("tab_id", *tab);
+    result.value.Set("source_id", research_source_id);
+    // Retain the last attempted read, including failures, so earlier successful
+    // text cannot stand in for a later unusable observation.
+    RetainLatestAgentResearchObservation(runtime.evidence_history,
+        {.tool_name = attempted_call.tool_name,
+         .result = CloneToolResult(result),
+         .research_source_id = research_source_id,
+         .research_document = research_document});
+  }
   runtime.pending_action.reset();
   runtime.pending_page_observer.reset();
   runtime.previous_result = CloneToolResult(result);
@@ -3498,8 +3593,10 @@ void AegisAgentService::OnRuntimeToolResult(const std::string& task_id,
       runtime.selected_read_failed = true;
     }
 
-    runtime.evidence_history.push_back({.tool_name = attempted_call.tool_name,
-                                        .result = CloneToolResult(result)});
+    if (research_source_id == 0) {
+      runtime.evidence_history.push_back({.tool_name = attempted_call.tool_name,
+                                          .result = CloneToolResult(result)});
+    }
     if (runtime.evidence_history.size() > kMaxRuntimeEvidenceItems) {
       const auto& removed = runtime.evidence_history.front();
       if (removed.tool_name == "page.observe" ||
@@ -3773,6 +3870,7 @@ void AegisAgentService::FinishRuntime(
     }
   }
   research_selections_.erase(task_id);
+  research_selection_documents_.erase(task_id);
   RunCallback callback = std::move(it->second->callback);
   executions_.erase(it);
   // 回调先失效，再释放Actor；StopTask可能同步通知观察者。
@@ -4331,7 +4429,13 @@ void AegisAgentService::ExecuteTool(
       }
     } else if (decision.disposition ==
                AgentPolicyDisposition::kRequireUserTakeover) {
-      BeginUserTakeover(task_id);
+      if (BeginUserTakeover(task_id)) {
+        auto runtime = executions_.find(task_id);
+        if (runtime != executions_.end() &&
+            runtime->second->active_tool_action == call.action_id) {
+          runtime->second->policy_takeover_action = call.action_id;
+        }
+      }
     }
     std::move(callback).Run(
         AgentToolResult{.action_id = call.action_id,

@@ -7,7 +7,7 @@
 - `.github/workflows/chromium-upstream.yml`：`main` 变更、每天北京时间 09:17（UTC 01:17）及手动触发，运行监控回归，独立核对三平台正式 Stable、公告和源码提交，保存结果。定时 job 只允许规范上游仓库 `gcsagroup/aegis-browser` 执行；Fork 即使默认分支也包含该 workflow，schedule 只会跳过 job，避免重复消耗托管 runner，仍可用手动/PR 入口验证。使用 GitHub 托管 Linux，不读取本机安装状态；云端报告没有本机 App 证据时，不能解除本机漏洞状态。GitHub 定时调度可能延迟，不能承诺严格一小时 SLA。同一监控组只保留最新运行，避免多个 run 并发更新同一份状态；跨 run cache 只保存 `latest.json`、`last-success.json` 和 `state.json`，完整来源与历史证据只进入当次 artifact，避免每小时重复缓存整个证据树。首次切换会兼容恢复旧 `chromium-upstream-*` cache，再立即丢弃其中的 `runs/`、`sources/` 等历史体积数据，仅迁移必要状态，避免丢失 45 天窗口外仍需持续保留的漏洞记录。
 - `.github/workflows/chromium-candidate.yml`：在三台专用 runner 尚未验收并显式启用前只允许手动触发，不因候选分支 push 自动消耗 GitHub 托管 runner。前置官方检查通过后，同时执行三个构建任务，一个失败不取消其他平台。每台机器沿用自己的固定源码与输出目录，不重新检出、清理或覆盖其他开发工作区。
 
-候选执行顺序：核对该平台官方版本与候选双 pin → 对干净基线应用完整补丁 → 临时索引复现整个 Chromium/V8 源码树 → 递增产品构建号 → GN 检查 → 编译 → 原生测试 → 生成候选包 → 运行机器配置的实际验收程序 → 校验本次产物哈希与验收记录 → 上传日志与产物。
+候选执行顺序：核对该平台官方版本与候选双 pin → 对干净基线应用完整补丁 → 临时索引复现整个 Chromium/V8 源码树 → 核对已递增且提交的完整产品版本 → GN 检查 → 编译 → 原生测试 → 生成候选包 → 运行机器配置的实际验收程序 → 校验本次产物哈希与验收记录 → 上传日志与产物。
 
 工作流只读仓库，不创建 Release、不合并 PR、不正式签名公证、不替换现用 App。不会绕过源码冲突或测试失败；失败时保留补丁名、Git 现场、日志及旧产物。上游检测不具备自动进行语义适配的能力；新版本仍需生成并修正候选分支，修复提交后构建自动继续。当前未接入自动写代码的代理。
 
@@ -79,7 +79,7 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 
 这只是格式示例，不能仅新增 pin 冒充源码已经适配；`patchDirectory` 必须包含该平台真实的完整 `series` 和 `v8/series`。Mac/Windows 可用同名平台 JSON 独立配置。版本、提交必须同时匹配本次官方检查，当前正式仓库的 151 pin 不会被当成 153 候选编译。
 
-每次真实构建在机器固定 out 的 `.aegis-ci/build-number.json` 递增编号，并记录实际产品版本。源码产品版本头在本次构建期间修改、结束时恢复；生成包的版本、源码 HEAD、两棵源码树和包 SHA-256 写入结果。该流水线不修改仓库正式版本文件，也不将候选编号提交到主分支。
+每次真实构建前，升级执行器必须先同步修改并提交源码/overlay产品版本头、package.sh默认版本和Android的versionName/versionCode，并导出对应补丁。候选脚本只验证完整版本一致性，编号必须高于固定out中的既有构建号及Mac实际App版本；不再临时只改一处头文件。已完成125且无源码或实际失败变化时不重复构建。跨平台发行使用同一个已准备的产品版本，各平台官方Chromium pin可以不同。
 
 ## 真实验收接口
 
@@ -88,6 +88,7 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 ```text
 --artifact <本次ZIP/EXE/APK> --source <src> --out <out>
 --evidence <本次证据目录> --receipt <acceptance.json> --run-id <本次运行ID>
+--baseline <feature-baseline.json>
 ```
 
 该程序必须实际执行平台验收，输出本次产物的记录：
@@ -136,3 +137,19 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 ## 已知平台回归差异
 
 153 候选在 Mac 的 regress-crbug-542403045 已通过。sandbox/regress/regress-543557673 使用 --sandbox-testing；该版本 V8 在 SandboxTesting::Enable 对非 Linux 平台直接 FATAL，因此需要 Linux 上的 d8 执行。不能在 Mac/Windows 跳过后填写通过；平台验收应明确区分本平台原生测试和相同 V8 源码在 Linux 的共享安全回归证据，保存源码树、编译配置与日志。
+
+## 2026-10-08：每日执行与持续功能基线
+
+本地任务每天北京时间09:00执行一次，GitHub补充监控计划为每天09:17（UTC 01:17）。本地任务已通过计划任务工具修改；GitHub文件必须合入默认分支才改变云端计划。每日执行不承诺一小时内发现漏洞；发现后按严重程度优先验证，记录真实检查缺口。
+
+完整发布是持续目标，候选工作流本身仍不能代替正式签名和三平台验收。当前发行前置项未满足时保持就绪开关关闭，保留125，不进行无意义重复Mac编译。
+
+`apps/browser/release-feature-contract.json`维护需要保留的行为ID与平台范围。所有公开Aegis功能开关必须登记；没有开关的新功能也必须新增行为ID。稳定ID不得因上游冲突删除，平台差异必须有明确设计依据。当前清单是验收要求，不是23项均已完成三平台验收的声明。
+
+后续新功能合入或上游pin/补丁变化后，候选脚本生成`feature-baseline.json`，绑定产品提交、产品版本、Chromium/V8源码树和功能清单摘要。真实验收程序必须读取`--baseline`，按当前功能清单执行并返回`productCommit`、`productVersion`、`sourceTree`、`v8Tree`、`featureContractSha256`，以及每个功能ID的`featureChecks`。每项至少包括`status: passed`、正整数`executed`、相对日志路径`file`及日志`sha256`。不能用零项、跳过或手工填写通过替代真实运行；同一真实回归日志可支持其实际覆盖的多个行为。验收包装器未支持此接口时应明确失败，不得通过自动生成通过记录来适配。
+
+正式发行资格文件同样保存顶层`featureContractSha256`，并在每个平台记录相同摘要和该平台全部`featureChecks`。发布预检、准备及公开阶段都会核验；功能清单变化后，旧验收不能复用。源码有任何变化时，产品提交及源码树绑定也要求更新验收。新增功能须提交功能ID、测试入口、实际日志及平台适用说明，升级执行器对比上次已验证基线，补齐回归后再发布。
+
+现有签名身份、仓库写权限、Windows安全阻断解除、Linux x64构建机与Android原签名/设备属于外部条件。应使用真实回读接入；开发证书、临时签名、ARM仿真或runner在线状态都不能代替正式发行资格。
+
+功能清单的最近两次已提交版本会比较稳定ID和平台范围，自动流程拒绝删除旧行为。公开Release前还要求远端默认分支与本次被测产品提交完全一致；默认分支新增功能或任何提交后，应重新集成和验证，而非发布旧候选覆盖最新功能。

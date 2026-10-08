@@ -1,4 +1,4 @@
-From aa8ee1f4a7a736b702658beabd2f4386ca93a16d Mon Sep 17 00:00:00 2001
+From bf6e47976446d953b4f924f202289950a30482d3 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 20:06:41 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Android=20=E5=B7=A5?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index da413f7494..cc16f0fbca 100644
+index da413f749410b49c27bf5905f55ae03952bd73fb..cc16f0fbca769a1148cb946a75f0d5102e3331ee 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -396,6 +396,8 @@ TEST(AegisAgentWorkflowTest, BuiltInsUseBoundedPurposeSpecificScopes) {
@@ -28,7 +28,7 @@ index da413f7494..cc16f0fbca 100644
    EXPECT_FALSE(browser_only->allowed_tools.contains("window.create"));
  }
 diff --git a/chrome/browser/aegis/agent/agent_workflow.cc b/chrome/browser/aegis/agent/agent_workflow.cc
-index 74cd63f067..b0229eac00 100644
+index 74cd63f06742cc23ff4dd50fcf23972012eec3ba..b0229eac00f4a0c0d613dd6b4c3630fe25f39956 100644
 --- a/chrome/browser/aegis/agent/agent_workflow.cc
 +++ b/chrome/browser/aegis/agent/agent_workflow.cc
 @@ -12,8 +12,7 @@ namespace {
@@ -42,7 +42,7 @@ index 74cd63f067..b0229eac00 100644
    return true;
  #endif
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 9e9728714c..e4b22650d9 100644
+index 9e9728714c380620adcc92d0b550382a66ad8b75..e4b22650d9db52df7be131546f99d93d83d27cb9 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

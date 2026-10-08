@@ -11,7 +11,7 @@
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/view_tracker.h"
 
-class Browser;
+class BrowserWindowInterface;
 
 namespace content {
 class WebContents;
@@ -24,7 +24,7 @@ class AegisToolbarButton : public ToolbarButton,
   METADATA_HEADER(AegisToolbarButton, ToolbarButton)
 
  public:
-  explicit AegisToolbarButton(Browser* browser);
+  explicit AegisToolbarButton(BrowserWindowInterface* browser);
   AegisToolbarButton(const AegisToolbarButton&) = delete;
   AegisToolbarButton& operator=(const AegisToolbarButton&) = delete;
   ~AegisToolbarButton() override;
@@ -39,7 +39,7 @@ class AegisToolbarButton : public ToolbarButton,
   void Refresh();
   void ClearIntroHighlight();
 
-  const raw_ptr<Browser> browser_;
+  const raw_ptr<BrowserWindowInterface> browser_;
   // 页面可先于窗口及工具栏销毁；缓存引用必须随页面生命周期自动失效。
   base::WeakPtr<content::WebContents> web_contents_;
   raw_ptr<aegis::AegisService> observed_service_ = nullptr;

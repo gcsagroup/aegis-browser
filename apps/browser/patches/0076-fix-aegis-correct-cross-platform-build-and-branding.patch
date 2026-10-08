@@ -1,4 +1,4 @@
-From fefbfcb4d612e05ff379f476bee68205cc1087d3 Mon Sep 17 00:00:00 2001
+From 96578118242f6440b78e3575657914d504044b0a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 1 Sep 2026 21:42:39 +0800
 Subject: [PATCH] fix(aegis): correct cross-platform build and branding
@@ -12,7 +12,7 @@ Subject: [PATCH] fix(aegis): correct cross-platform build and branding
  5 files changed, 46 insertions(+), 17 deletions(-)
 
 diff --git a/chrome/app/theme/gcsa_aegis/BRANDING b/chrome/app/theme/gcsa_aegis/BRANDING
-index f8363d5b29..dfebe2211b 100644
+index f8363d5b294fe210ebfdd18374e95b54d6ff5c17..dfebe2211b3594ef813399d73355509976c0140e 100644
 --- a/chrome/app/theme/gcsa_aegis/BRANDING
 +++ b/chrome/app/theme/gcsa_aegis/BRANDING
 @@ -1,10 +1,10 @@
@@ -35,7 +35,7 @@ index f8363d5b29..dfebe2211b 100644
  MAC_CREATOR_CODE=Cr24
  MAC_TEAM_ID=
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index ef968aa958..dec8d061b6 100644
+index ef968aa958d0520ec51fb6344c913ab7ea639c8f..dec8d061b6adba1a58c4fcb0b0ea155a2eb5f270 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -302,7 +302,6 @@ test("aegis_browser_unittests") {
@@ -73,7 +73,7 @@ index ef968aa958..dec8d061b6 100644
        "//components/actor/core",
        "//components/download/public/common:public",
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 68e13c56a5..c5b7021b7a 100644
+index 68e13c56a59aaca2b732f302755acf4f267a9a27..c5b7021b7ae9a1c1d63542d29e287e22d625e322 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -19,7 +19,9 @@
@@ -145,7 +145,7 @@ index 68e13c56a5..c5b7021b7a 100644
  }
 +#endif
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index b639fe12cb..794fd54639 100644
+index b639fe12cbd473439df67727c25dcc999fa3323b..794fd54639b91317f1d1602acd1a752166f08748 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -12,9 +12,12 @@
@@ -214,7 +214,7 @@ index b639fe12cb..794fd54639 100644
        service_observation_{this};
  
 diff --git a/chrome/services/aegis_torrent/public/mojom/BUILD.gn b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
-index 2bf88013bc..5a3c54c3c0 100644
+index 2bf88013bcc456ffa92742ed78e7958ccb09c6c4..5a3c54c3c0246fc6931c4eb44c4e095815c9c4d5 100644
 --- a/chrome/services/aegis_torrent/public/mojom/BUILD.gn
 +++ b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
 @@ -4,10 +4,18 @@ import("//mojo/public/tools/bindings/mojom.gni")

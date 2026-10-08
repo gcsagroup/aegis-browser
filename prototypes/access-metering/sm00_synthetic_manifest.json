@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "sm00-synthetic-v1",
+  "classification": "SYNTHETIC_ONLY",
+  "resources": {
+    "nodeId": "synthetic-node-a",
+    "centerId": "synthetic-center-a",
+    "originId": "synthetic-origin-a",
+    "deploymentId": "synthetic-deployment-a",
+    "capacityGroupId": "synthetic-capacity-a",
+    "trafficPoolId": "synthetic-pool-a",
+    "failureDomainId": "synthetic-domain-a",
+    "serviceEnvironment": "synthetic-environment-a",
+    "serviceRealm": "synthetic-realm-a",
+    "operatorRole": "synthetic-operator-a",
+    "adapterOwnerRole": "synthetic-adapter-owner-a",
+    "ledgerOwnerRole": "synthetic-ledger-owner-a"
+  },
+  "identity": {
+    "accounts": [
+      {"accountId": "synthetic-account-a", "periodId": "synthetic-period-a"},
+      {"accountId": "synthetic-account-b", "periodId": "synthetic-period-a"}
+    ],
+    "profiles": [
+      {"profileId": "synthetic-profile-a", "principalId": "synthetic-principal-a", "accountId": "synthetic-account-a", "credentialRef": "synthetic-credential-a", "serviceEnvironment": "synthetic-environment-a", "serviceRealm": "synthetic-realm-a"},
+      {"profileId": "synthetic-profile-b", "principalId": "synthetic-principal-b", "accountId": "synthetic-account-a", "credentialRef": "synthetic-credential-b", "serviceEnvironment": "synthetic-environment-a", "serviceRealm": "synthetic-realm-a"},
+      {"profileId": "synthetic-profile-c", "principalId": "synthetic-principal-c", "accountId": "synthetic-account-b", "credentialRef": "synthetic-credential-c", "serviceEnvironment": "synthetic-environment-a", "serviceRealm": "synthetic-realm-a"}
+    ],
+    "nodeAllowedAccountIds": ["synthetic-account-a", "synthetic-account-b"]
+  },
+  "build": {
+    "sourceCommit": "b3187069399a545d9e6e580c981396ecafc20f2b",
+    "xrayBinarySha256": "ca71368a8eb5ecbb1cf6214106bc7429b1b666528871c8f29e8ed5da6c709312",
+    "serverConfigSha256": "e1a7752b75b9f90a82601fc96f121b28df89183151b74028729165717d5e4ed8",
+    "adapterSha256": "4e607789c8653dd99fa4d51315c8997c948cc642f3a257228f6545da5f9d984c",
+    "originSha256": "858547119ea7d0f1328ed264a1f7e3321aae6568772e3d927f804c631c7919b0",
+    "clientSha256": "f203f0deed4844aa44624a357fa4cf1a6615ea36fe46e40ef7a1703da55d03f3",
+    "kernelRelease": "synthetic-kernel-a",
+    "architecture": "amd64",
+    "provenance": "synthetic-build-fixture-a"
+  },
+  "bytes": {
+    "accountingVersion": "synthetic-target-bytes-v1",
+    "unit": "target_connection_bytes",
+    "aggregation": "uplink_plus_downlink",
+    "uplinkBoundary": "decapsulated_payload_confirmed_target_write",
+    "downlinkBoundary": "target_payload_confirmed_client_forward",
+    "writerResultUnit": "target_connection_bytes"
+  },
+  "paths": {
+    "coverageDeclaration": "synthetic-all-paths-enumerated",
+    "applicableWriterIds": ["synthetic-up-buffered", "synthetic-down-buffered", "synthetic-up-fast", "synthetic-down-fast"],
+    "applicableFastPathIds": ["synthetic-up-fast", "synthetic-down-fast"],
+    "writerEvidence": [
+      {
+        "writerId": "synthetic-up-buffered",
+        "direction": "uplink",
+        "mode": "bounded_chunk",
+        "syntheticSourceRef": "synthetic-up-buffered-source",
+        "identityProofSha256": "6ed2103fdf6341626bd002c804dad00764dbf4f1cfec92b84bb8112f97f61ece",
+        "permitProofSha256": "7582ba969533320653e8ffa66c3b69a24de192bd04406acbc749ff8805810311",
+        "progressProofSha256": "5e4db6f36f9b3a385efe78d3ed644348c6d7d62391994575acdc86d300207ac6",
+        "cutoffProofSha256": "7a98a4289cb6e86e41e65c0deaa7a3696b04e25f407fd9e8ce8a64a7893c68ff",
+        "bufferBoundBytes": 64
+      },
+      {
+        "writerId": "synthetic-down-buffered",
+        "direction": "downlink",
+        "mode": "bounded_chunk",
+        "syntheticSourceRef": "synthetic-down-buffered-source",
+        "identityProofSha256": "1abbd148bb001bd996adbf17c0cb12bea9d883b892c69aa800b401ab47dbc274",
+        "permitProofSha256": "9a6beecf111b4f15bc5fbfbfa514e0fd1acce81d3f652745dc1461f1ca2ad05f",
+        "progressProofSha256": "9cd9a4121db24fab887ff47bf4e6695159599d1a3559f87820a81cf271f45903",
+        "cutoffProofSha256": "fdf55419d08f0dccbaac13e12f259673e85a5a7a6164a846d1915872c520039d",
+        "bufferBoundBytes": 64
+      },
+      {
+        "writerId": "synthetic-up-fast",
+        "direction": "uplink",
+        "mode": "optimized_fast",
+        "syntheticSourceRef": "synthetic-up-fast-source",
+        "identityProofSha256": "a652056d87745e479fd0954d462be0002d457b424dc3c0c291ae722a4b2e3df6",
+        "permitProofSha256": "3c3a520c011875e3181248b877bce08f5ad339bf60b03bc620273107c10b6034",
+        "progressProofSha256": "49a1976ecf2f3abaa6113175694dfaf3971f3db12c7876f03152ae4a4c1270ae",
+        "cutoffProofSha256": "3eade0e656883d0d238dd40ebbbaf5a1078f5e0b59a0e1209fa3e558b9223399",
+        "bufferBoundBytes": 128
+      },
+      {
+        "writerId": "synthetic-down-fast",
+        "direction": "downlink",
+        "mode": "optimized_fast",
+        "syntheticSourceRef": "synthetic-down-fast-source",
+        "identityProofSha256": "da1fb22bd92e713d3bf49986148f600deec3b46071ad91e8119c027f3b5c68c2",
+        "permitProofSha256": "c93b1a2f142eb4aad1ad96650e55b26cdddcc3133e9baa4bafb8eeeff9763c35",
+        "progressProofSha256": "7d9b4c8c9cd44ec55f01fa34ac85c6e63b523e63297abccaf8743d59e141a424",
+        "cutoffProofSha256": "c60ca79bf259f59d7edb836265af958e2bafa8f80f64bed6b891f23740a741fe",
+        "bufferBoundBytes": 128
+      }
+    ]
+  },
+  "budgets": {
+    "quotaBytes": 1024,
+    "leaseBytes": 512,
+    "maxChunkBytes": 128,
+    "maxUnsettledBytes": 512,
+    "maxBufferedBytes": 256,
+    "maxQueueBytes": 128,
+    "maxWireBytes": 2048,
+    "maxLogBytes": 1048576,
+    "maxQuotaOvershootBytes": 0,
+    "maxAfterStopBytes": 128,
+    "maxReconcileErrorBytes": 128,
+    "maxInflightAttempts": 4,
+    "maxConcurrentConnections": 4,
+    "maxFaults": 4,
+    "maxRetries": 8,
+    "maxDurationSeconds": 60
+  },
+  "durability": {
+    "nodeCommit": "durable_before_write",
+    "centerCommit": "durable_before_reply",
+    "journalRecovery": "reopen_or_stop",
+    "bootKey": "persist_before_request",
+    "grantKey": "persist_before_request",
+    "reportAck": "persist_after_validation",
+    "exclusiveOwner": "required",
+    "failureModels": ["synthetic-kill", "synthetic-disk-full", "synthetic-journal-corrupt", "synthetic-center-unavailable"],
+    "maxJournalBytes": 1048576,
+    "maxOutboxEntries": 16
+  },
+  "time": {
+    "clockSource": "synthetic-monotonic-calibrated",
+    "pauseDetection": "stop-and-recalibrate",
+    "maxSkewMs": 100,
+    "leaseTtlMs": 10000,
+    "credentialTtlMs": 20000,
+    "writeTimeoutMs": 2000,
+    "retryDeadlineMs": 5000,
+    "stopDeadlineMs": 3000,
+    "eventResolutionMs": 10,
+    "samplingIntervalMs": 1000
+  },
+  "execution": {
+    "checkOnly": true,
+    "allowNetwork": false,
+    "syntheticOnly": true,
+    "stopOnObserverFailure": true,
+    "cleanupPolicy": "owned-processes-only"
+  }
+}

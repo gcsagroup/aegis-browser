@@ -1,4 +1,4 @@
-From 2e9be443763ef564c2e98df4096f347ef18560e9 Mon Sep 17 00:00:00 2001
+From f418bb16a2b67ba964bb127a88b61a1a81579aba Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 17:06:36 +0800
 Subject: [PATCH] Aegis: add chrome://aegis WebUI and module prefs
@@ -53,7 +53,7 @@ prefs, and sync tracker blocking to renderers through DynamicParams.
  create mode 100644 chrome/common/aegis/pref_names.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 7af9ba3664..1ef0295be6 100644
+index 7af9ba36640c49a22bc39f73f53cfac7f0860c72..1ef0295be6d24892fddd752b94959d08b16ff45c 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -3,12 +3,17 @@
@@ -76,7 +76,7 @@ index 7af9ba3664..1ef0295be6 100644
  }
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
 new file mode 100644
-index 0000000000..66ed177ba7
+index 0000000000000000000000000000000000000000..66ed177ba75c75474809a1ff8dac8f359ea4fc20
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -0,0 +1,19 @@
@@ -101,7 +101,7 @@ index 0000000000..66ed177ba7
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_prefs.h b/chrome/browser/aegis/aegis_prefs.h
 new file mode 100644
-index 0000000000..b29d5cbaf9
+index 0000000000000000000000000000000000000000..b29d5cbaf9b1dd82113c61e3bdc06286462271f4
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_prefs.h
 @@ -0,0 +1,19 @@
@@ -125,7 +125,7 @@ index 0000000000..b29d5cbaf9
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_PREFS_H_
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 91cf7c4ddf..d1ef3720cd 100644
+index 91cf7c4ddf3c1ec6feb64dcaf93b6f0975d658d9..d1ef3720cdea8d3b7564e00e16459b348dcb652d 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -5,8 +5,11 @@
@@ -212,7 +212,7 @@ index 91cf7c4ddf..d1ef3720cd 100644
  
  bool AegisService::ShouldBlockUrl(const GURL& url) const {
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 1cb917885c..5d2e3d6bc1 100644
+index 1cb917885cbc483fae2d7c8b3c8b54bc28e95492..5d2e3d6bc1608e66041def4266079802b691899e 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -1,13 +1,14 @@
@@ -259,10 +259,10 @@ index 1cb917885c..5d2e3d6bc1 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 0215347649..db7d4a48d8 100644
+index 72fbf97e140f2a39c03c0512d9dbd8ba8414b8f0..d1b1ff7512a74098359f7a1286eb80661784dec9 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -219,6 +219,7 @@
+@@ -230,6 +230,7 @@
  #include "chrome/common/google_url_loader_throttle.h"
  #include "chrome/common/logging_chrome.h"
  #include "chrome/common/pref_names.h"
@@ -270,7 +270,7 @@ index 0215347649..db7d4a48d8 100644
  #include "chrome/common/profiler/main_thread_stack_sampling_profiler.h"
  #include "chrome/common/profiler/process_type.h"
  #include "chrome/common/profiler/thread_profiler_configuration.h"
-@@ -5962,7 +5963,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -5986,7 +5987,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
                policy::policy_prefs::kForceGoogleSafeSearch),
            profile->GetPrefs()->GetInteger(
                policy::policy_prefs::kForceYouTubeRestrict),
@@ -281,9 +281,9 @@ index 0215347649..db7d4a48d8 100644
    return std::make_unique<GoogleURLLoaderThrottle>(
  #if BUILDFLAG(IS_ANDROID)
        client_data_header,
-@@ -6067,7 +6070,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+@@ -6112,7 +6115,10 @@ ChromeContentBrowserClient::CreateURLLoaderThrottles(
+     result.push_back(std::move(contextual_tasks_throttle));
    }
- 
  
 -  if (auto aegis_throttle = aegis::AegisNetThrottle::MaybeCreate();
 +  const bool aegis_tracker_blocking =
@@ -294,7 +294,7 @@ index 0215347649..db7d4a48d8 100644
      result.push_back(std::move(aegis_throttle));
    }
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index 6ccdf1e52f..295ce51e4d 100644
+index 2653e37becbfa113d92456139d86c321f09ed8b5..e1cec7748c984533211ac94f3e3e73dcb46fdcf8 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -19,6 +19,7 @@
@@ -305,19 +305,19 @@ index 6ccdf1e52f..295ce51e4d 100644
  #include "chrome/browser/accessibility/accessibility_labels_service.h"
  #include "chrome/browser/accessibility/invert_bubble_prefs.h"
  #include "chrome/browser/accessibility/page_colors_controller.h"
-@@ -1755,6 +1756,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
-   TRACE_EVENT0("browser", "chrome::RegisterProfilePrefs");
+@@ -1749,6 +1750,7 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
    // User prefs. Please keep this list alphabetized.
    AccessibilityLabelsService::RegisterProfilePrefs(registry);
+   registry->RegisterBooleanPref(prefs::kRendererAccessibilityEnabled, true);
 +  aegis::RegisterProfilePrefs(registry);
    AccessibilityUIMessageHandler::RegisterProfilePrefs(registry);
-   accessibility_annotator::prefs::RegisterProfilePrefs(registry);
-   AimEligibilityService::RegisterProfilePrefs(registry);
+ #if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_DESKTOP_ANDROID)  // nocheck
+   ttc::AiOverlayDialogController::RegisterProfilePrefs(registry);
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index f01dcbb6ab..af28128eeb 100644
+index 56192632d304bdeccd3758726c57e7e8efac7b53..4a24b73d76902f0bf2fea915becbdfd5aa3cdd8c 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
-@@ -119,6 +119,7 @@ source_set("misc") {
+@@ -121,6 +121,7 @@ source_set("misc") {
      "//chrome/browser/ui/zoom",
      "//chrome/browser/updates/announcement_notification",
      "//chrome/browser/webid",
@@ -326,7 +326,7 @@ index f01dcbb6ab..af28128eeb 100644
      "//chrome/common:buildflags",
      "//chrome/common:constants",
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index 78a14905c7..e0dd3d9bf2 100644
+index 78a14905c7b75dae4ee0e2f30aef264e0d44e5c9..e0dd3d9bf2928007b27ac30890d08b5b53e6f597 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
 @@ -14,6 +14,7 @@
@@ -366,7 +366,7 @@ index 78a14905c7..e0dd3d9bf2 100644
 +      aegis_tracker_blocking_.GetValue());
  }
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index fcf8832d21..b24bf26ca3 100644
+index fcf8832d21232e9a8e00b0307a04fc3a97391ce7..b24bf26ca3c90e8cdbb43e952ef5e526fe63a76e 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
 @@ -104,6 +104,7 @@ class RendererUpdater : public KeyedService
@@ -378,10 +378,10 @@ index fcf8832d21..b24bf26ca3 100644
  
  #endif  // CHROME_BROWSER_PROFILES_RENDERER_UPDATER_H_
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index e66dc00a9a..2c50f4f82a 100644
+index c76bba135901cf2ff205e59ffe58a74a4031eae3..1e1fa8225c446e7393fc7200839924b2ca1a4023 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
-@@ -478,6 +478,7 @@ group("dev_ui_resources") {
+@@ -480,6 +480,7 @@ group("dev_ui_resources") {
        "user_education_internals:resources",
        "webnn_internals:resources",
        "webui_js_error:resources",
@@ -389,8 +389,8 @@ index e66dc00a9a..2c50f4f82a 100644
      ]
    }
  
-@@ -568,6 +569,7 @@ repack("dev_ui_paks") {
-       "$root_gen_dir/chrome/on_device_internals_resources.pak",
+@@ -572,6 +573,7 @@ repack("dev_ui_paks") {
+       "$root_gen_dir/chrome/page_action_internals_resources.pak",
        "$root_gen_dir/chrome/user_education_internals_resources.pak",
        "$root_gen_dir/chrome/webui_js_error_resources.pak",
 +      "$root_gen_dir/chrome/aegis_resources.pak",
@@ -399,7 +399,7 @@ index e66dc00a9a..2c50f4f82a 100644
  
 diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
 new file mode 100644
-index 0000000000..b3adfd7999
+index 0000000000000000000000000000000000000000..b3adfd79994d76f494bde454eaaa17ed3d7eaa87
 --- /dev/null
 +++ b/chrome/browser/resources/aegis/BUILD.gn
 @@ -0,0 +1,19 @@
@@ -424,7 +424,7 @@ index 0000000000..b3adfd7999
 +}
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
 new file mode 100644
-index 0000000000..f3e830b6d2
+index 0000000000000000000000000000000000000000..f3e830b6d2ba053e3bbdd55d62a80f66e74ee0ff
 --- /dev/null
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -0,0 +1,74 @@
@@ -504,7 +504,7 @@ index 0000000000..f3e830b6d2
 +}
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
 new file mode 100644
-index 0000000000..2ecc152911
+index 0000000000000000000000000000000000000000..2ecc1529113602e3fe1f4e27d65c2a609f4da2d7
 --- /dev/null
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -0,0 +1,30 @@
@@ -540,7 +540,7 @@ index 0000000000..2ecc152911
 +</html>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
 new file mode 100644
-index 0000000000..b74beb6519
+index 0000000000000000000000000000000000000000..b74beb6519a3dc8805082d34ed03145ee3ae24b1
 --- /dev/null
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -0,0 +1,54 @@
@@ -599,10 +599,10 @@ index 0000000000..b74beb6519
 +  void init();
 +});
 diff --git a/chrome/browser/ui/webui/BUILD.gn b/chrome/browser/ui/webui/BUILD.gn
-index 9ba5323722..d8b1cdff4b 100644
+index 2a4eae8943e6a1f1ad56a6f9891250ef126632cb..ad845ba36555edecd4c203647efd86f87ab47a3e 100644
 --- a/chrome/browser/ui/webui/BUILD.gn
 +++ b/chrome/browser/ui/webui/BUILD.gn
-@@ -62,6 +62,7 @@ source_set("configs") {
+@@ -60,6 +60,7 @@ source_set("configs") {
      "//chrome/browser/ui",
      "//chrome/browser/ui/webui/about",
      "//chrome/browser/ui/webui/accessibility",
@@ -612,7 +612,7 @@ index 9ba5323722..d8b1cdff4b 100644
      "//chrome/browser/ui/webui/bluetooth_internals",
 diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
 new file mode 100644
-index 0000000000..59d20f368a
+index 0000000000000000000000000000000000000000..59d20f368aecb218606944bde1cb42bd845f79fb
 --- /dev/null
 +++ b/chrome/browser/ui/webui/aegis/BUILD.gn
 @@ -0,0 +1,21 @@
@@ -639,7 +639,7 @@ index 0000000000..59d20f368a
 +}
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 new file mode 100644
-index 0000000000..cf45fccc24
+index 0000000000000000000000000000000000000000..cf45fccc24f24a5a6bbc97ef24e8589d8f83cdee
 --- /dev/null
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -0,0 +1,63 @@
@@ -708,7 +708,7 @@ index 0000000000..cf45fccc24
 +WEB_UI_CONTROLLER_TYPE_IMPL(AegisUI)
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.h b/chrome/browser/ui/webui/aegis/aegis_ui.h
 new file mode 100644
-index 0000000000..f31cbff396
+index 0000000000000000000000000000000000000000..f31cbff39655ca0351ea5629c1f6f3e6b716559d
 --- /dev/null
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.h
 @@ -0,0 +1,37 @@
@@ -751,7 +751,7 @@ index 0000000000..f31cbff396
 +#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_H_
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 new file mode 100644
-index 0000000000..b98282f33d
+index 0000000000000000000000000000000000000000..b98282f33d0db3792c9d97e2e05aa1d6307dfa8c
 --- /dev/null
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -0,0 +1,63 @@
@@ -820,7 +820,7 @@ index 0000000000..b98282f33d
 +}
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 new file mode 100644
-index 0000000000..2a26d77cd2
+index 0000000000000000000000000000000000000000..2a26d77cd2f0aaf51c7a4e224d595e727cd86876
 --- /dev/null
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -0,0 +1,25 @@
@@ -850,7 +850,7 @@ index 0000000000..2a26d77cd2
 +
 +#endif  // CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_HANDLER_H_
 diff --git a/chrome/browser/ui/webui/chrome_web_ui_configs.cc b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
-index 8e1786d0f6..0fc0797616 100644
+index 62b07dca0834562cb0393b09e4754a7d40af68a2..18b06b86433e94abfc396faa75f9921fb5d91485 100644
 --- a/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 +++ b/chrome/browser/ui/webui/chrome_web_ui_configs.cc
 @@ -3,6 +3,7 @@
@@ -861,7 +861,7 @@ index 8e1786d0f6..0fc0797616 100644
  
  #include "build/android_buildflags.h"
  #include "build/branding_buildflags.h"
-@@ -252,6 +253,7 @@ void RegisterChromeWebUIConfigs() {
+@@ -264,6 +265,7 @@ void RegisterChromeWebUIConfigs() {
  
    auto& map = content::WebUIConfigMap::GetInstance();
    map.AddWebUIConfig(std::make_unique<AccessibilityUIConfig>());
@@ -870,7 +870,7 @@ index 8e1786d0f6..0fc0797616 100644
    map.AddWebUIConfig(std::make_unique<BluetoothInternalsUIConfig>());
    map.AddWebUIConfig(
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index c568ce8ade..8a39ff200a 100644
+index c568ce8ade6caecf0dff4a1a6519a39760fb0320..8a39ff200ac1b815fb94288141b522a3f4f4b228 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -9,6 +9,7 @@ source_set("aegis") {
@@ -882,7 +882,7 @@ index c568ce8ade..8a39ff200a 100644
    deps = [
      "//base",
 diff --git a/chrome/common/aegis/aegis_net_throttle.cc b/chrome/common/aegis/aegis_net_throttle.cc
-index d910e6fcc0..fa99c9916e 100644
+index d910e6fcc09f9b874da034b898813dbcc55887c2..fa99c9916e12493f199cfb39b42458571942fb27 100644
 --- a/chrome/common/aegis/aegis_net_throttle.cc
 +++ b/chrome/common/aegis/aegis_net_throttle.cc
 @@ -17,13 +17,11 @@ namespace {
@@ -932,7 +932,7 @@ index d910e6fcc0..fa99c9916e 100644
    }
    delegate_->CancelWithError(net::ERR_BLOCKED_BY_CLIENT, kCancelReason);
 diff --git a/chrome/common/aegis/aegis_net_throttle.h b/chrome/common/aegis/aegis_net_throttle.h
-index 1e66344881..9b5b5565cf 100644
+index 1e663448810943c931d620c1f2debe481312bc8f..9b5b5565cf8da26360c6951f11ebb8fbee83df95 100644
 --- a/chrome/common/aegis/aegis_net_throttle.h
 +++ b/chrome/common/aegis/aegis_net_throttle.h
 @@ -16,9 +16,12 @@ namespace aegis {
@@ -961,7 +961,7 @@ index 1e66344881..9b5b5565cf 100644
  }  // namespace aegis
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
 new file mode 100644
-index 0000000000..77d70a5d62
+index 0000000000000000000000000000000000000000..77d70a5d628036c294811e38ce8b2a0ff28bdac6
 --- /dev/null
 +++ b/chrome/common/aegis/pref_names.h
 @@ -0,0 +1,19 @@
@@ -985,7 +985,7 @@ index 0000000000..77d70a5d62
 +
 +#endif  // CHROME_COMMON_AEGIS_PREF_NAMES_H_
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index 94e265c86a..94a8d402ce 100644
+index 94e265c86ae7a78b750eb8a54ae26f6ea73b6d75..94a8d402ce66e7154712a0e0ea9d87002eefe222 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
 @@ -30,6 +30,7 @@ struct DynamicParams {
@@ -997,7 +997,7 @@ index 94e265c86a..94a8d402ce 100644
  
  // The renderer configuration parameters are set during the process lock update
 diff --git a/chrome/common/webui_url_constants.cc b/chrome/common/webui_url_constants.cc
-index 9c32ebdbbd..a0fa9d6461 100644
+index 17100eb74d54ccb2b0a69ead43667b901cca9c76..4a635e96b8b63c93defac2079e6e47ab06690a05 100644
 --- a/chrome/common/webui_url_constants.cc
 +++ b/chrome/common/webui_url_constants.cc
 @@ -121,6 +121,7 @@ bool IsSystemWebUIHost(std::string_view host) {
@@ -1009,10 +1009,10 @@ index 9c32ebdbbd..a0fa9d6461 100644
        kChromeUIActorInternalsHost,
  #if !BUILDFLAG(IS_ANDROID)
 diff --git a/chrome/common/webui_url_constants.h b/chrome/common/webui_url_constants.h
-index 329de0b6b5..1fbcb08421 100644
+index 47c543c844b3348c0360fb2a38c214aeab41944f..88a267008caa2b2ded768d9bf1c85902205f03b8 100644
 --- a/chrome/common/webui_url_constants.h
 +++ b/chrome/common/webui_url_constants.h
-@@ -358,6 +358,8 @@ inline constexpr char kChromeUIUserEducationInternalsHost[] =
+@@ -362,6 +362,8 @@ inline constexpr char kChromeUIUserEducationInternalsHost[] =
  inline constexpr char kChromeUIUserEducationInternalsURL[] =
      "chrome://user-education-internals";
  inline constexpr char kChromeUIVersionHost[] = "version";
@@ -1022,10 +1022,10 @@ index 329de0b6b5..1fbcb08421 100644
  inline constexpr char16_t kChromeUIVersionURL16[] = u"chrome://version/";
  inline constexpr char kChromeUIWebRtcLogsHost[] = "webrtc-logs";
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 42d9531110..8b183c88cd 100644
+index 4c42c7c195d6252ef7fc31e25a6c3490ad2ff46a..32204a6cd863ec4f3dac92e221724d3708c82524 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
-@@ -263,7 +263,14 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
+@@ -264,7 +264,14 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
            ->GetDynamicParams()));
  
  
@@ -1042,10 +1042,10 @@ index 42d9531110..8b183c88cd 100644
      throttles.emplace_back(std::move(aegis_throttle));
    }
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 322591a3aa..41d41d5568 100644
+index c90c7c5e5521e0355bc2df9c3435b500a6613118..b4368dbb04c8cf44afb7a30aa963ff599aabc90a 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -872,6 +872,10 @@
+@@ -887,6 +887,10 @@
     "META": {"sizes": {"includes": [10],}},
     "includes": [5160],
    },
@@ -1057,7 +1057,7 @@ index 322591a3aa..41d41d5568 100644
      "META": {"sizes": {"includes": [10]}},
      "includes": [5200],
 diff --git a/ui/webui/resources/tools/build_webui.gni b/ui/webui/resources/tools/build_webui.gni
-index 341c2953d0..446c9dd21d 100644
+index eee5ac59c4f17fdb492fe1b7fdf886b0abb9c7c6..9c94ef8e54990518c1cc643d71620f4a22e09c81 100644
 --- a/ui/webui/resources/tools/build_webui.gni
 +++ b/ui/webui/resources/tools/build_webui.gni
 @@ -584,6 +584,7 @@ template("build_webui") {

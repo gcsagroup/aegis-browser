@@ -1,0 +1,132 @@
+From 5737fa2c6ac18bfb2d72bbbd532b29259c1a4e28 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 5 Oct 2026 00:08:49 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E9=94=81=E5=AE=9A=E5=8C=BA?=
+ =?UTF-8?q?=E5=9F=9F=E7=AE=80=E5=8C=96=E5=B8=83=E5=B1=80=E4=BE=9D=E8=B5=96?=
+ =?UTF-8?q?=E4=B8=A2=E5=A4=B1=E4=B8=8E=E5=90=8E=E7=BB=AD=E5=AD=90=E8=8A=82?=
+ =?UTF-8?q?=E7=82=B9=E9=81=97=E6=BC=8F=EF=BC=8C=E5=80=99=E9=80=89=20105?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ .../display_lock/display_lock_context_test.cc | 53 +++++++++++++++++++
+ .../layout/simplified_layout_algorithm.cc     |  9 +++-
+ 3 files changed, 63 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 0f4a4b1781ddc97e3af7d80b0413c6d7fb64f629..da6f74662902498e22e1aa34187b5a6619ece20a 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.104";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (104)";
++inline constexpr char kProductVersion[] = "2.0.0.105";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (105)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc b/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
+index ef54a336c685829435d4a6e9fc88afb920db8bfe..8686900b3ec2cae93123ed1b5e1852c7be76c8b0 100644
+--- a/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
++++ b/third_party/blink/renderer/core/display_lock/display_lock_context_test.cc
+@@ -37,6 +37,7 @@
+ #include "third_party/blink/renderer/core/html/html_plugin_element.h"
+ #include "third_party/blink/renderer/core/html/html_template_element.h"
+ #include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
++#include "third_party/blink/renderer/core/layout/layout_result.h"
+ #include "third_party/blink/renderer/core/paint/paint_layer.h"
+ #include "third_party/blink/renderer/core/paint/timing/container_timing.h"
+ #include "third_party/blink/renderer/core/paint/timing/container_timing_paint_attribution_tracker.h"
+@@ -4406,4 +4407,56 @@ TEST_F(DisplayLockContextRenderingTest, VisualOverflowUpdateAfterUnlock) {
+             PhysicalRect(0, 0, 120, 120));
+ }
+ 
++// 强制布局结束后，仍锁定的区域可能再次执行简化布局。
++TEST_F(DisplayLockContextRenderingTest,
++       LockedSimplifiedLayoutPreservesPercentageDependency) {
++  SetHtmlInnerHTML(R"HTML(
++    <div id="target" style="content-visibility: hidden; width: 200px; height: 200px">
++      <div style="height: 50%"></div>
++    </div>
++  )HTML");
++  auto* target = GetElementById("target");
++  {
++    auto scope = GetScopedForcedUpdate(
++        target, DisplayLockContext::ForcedPhase::kLayout, true);
++    UpdateAllLifecyclePhasesForTest();
++    auto* box = target->GetLayoutBox();
++    ASSERT_TRUE(box->GetLayoutResult(0)
++                    ->HasDescendantThatDependsOnPercentageBlockSize());
++    box->SetNeedsSimplifiedLayout();
++  }
++  auto* box = target->GetLayoutBox();
++  ASSERT_TRUE(box->ChildLayoutBlockedByDisplayLock());
++  ASSERT_TRUE(box->NeedsSimplifiedLayoutOnly());
++  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
++  EXPECT_TRUE(box->GetLayoutResult(0)
++                  ->HasDescendantThatDependsOnPercentageBlockSize());
++}
++
++// 锁定期间的简化布局不能让下一次强制提取遗漏仍需布局的子节点。
++TEST_F(DisplayLockContextRenderingTest,
++       ForcedLayoutVisitsChildrenAfterLockedSimplifiedLayout) {
++  SetHtmlInnerHTML(R"HTML(
++    <div id="target" style="content-visibility: hidden; width: 200px; height: 200px">
++      <div id="child" style="height: 20px">text</div>
++    </div>
++  )HTML");
++  auto* target = GetElementById("target");
++  {
++    auto scope = GetScopedForcedUpdate(
++        target, DisplayLockContext::ForcedPhase::kLayout, true);
++    UpdateAllLifecyclePhasesForTest();
++    GetLayoutObjectByElementId("child")->SetNeedsSimplifiedLayout();
++  }
++  ASSERT_TRUE(target->GetLayoutObject()->NeedsSimplifiedLayoutOnly());
++  GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
++  ASSERT_TRUE(GetLayoutObjectByElementId("child")->NeedsLayout());
++  {
++    auto scope = GetScopedForcedUpdate(
++        target, DisplayLockContext::ForcedPhase::kLayout, true);
++    GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kTest);
++    EXPECT_FALSE(GetLayoutObjectByElementId("child")->NeedsLayout());
++  }
++}
++
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc b/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
+index 5e327ba860b27b58e8dc8bd83aedb15a5c67a753..9d0c5eadd38403a57b1382d3c67657ddf98b3284 100644
+--- a/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
++++ b/third_party/blink/renderer/core/layout/simplified_layout_algorithm.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "third_party/blink/renderer/core/layout/simplified_layout_algorithm.h"
+ 
++#include "third_party/blink/renderer/core/display_lock/display_lock_context.h"
+ #include "third_party/blink/renderer/core/layout/block_break_token.h"
+ #include "third_party/blink/renderer/core/layout/constraint_space.h"
+ #include "third_party/blink/renderer/core/layout/constraint_space_builder.h"
+@@ -218,8 +219,14 @@ void SimplifiedLayoutAlgorithm::AppendNewChildFragment(
+ const LayoutResult* SimplifiedLayoutAlgorithm::Layout() {
+   // Since simplified layout's |Layout()| function deals with laying out
+   // children, we can early out if we are display-locked.
+-  if (Node().ChildLayoutBlockedByDisplayLock())
++  if (Node().ChildLayoutBlockedByDisplayLock()) {
++    // 子树仍沿用旧布局，百分比尺寸依赖也必须保留。
++    container_builder_.SetHasDescendantThatDependsOnPercentageBlockSize(
++        previous_result_.HasDescendantThatDependsOnPercentageBlockSize());
++    // 本次不保留子片段，下一次强制更新必须完整遍历子节点。
++    Node().GetLayoutBox()->GetDisplayLockContext()->NotifyChildLayoutWasBlocked();
+     return container_builder_.ToBoxFragment();
++  }
+ 
+   const auto& previous_fragment =
+       To<PhysicalBoxFragment>(previous_result_.GetPhysicalFragment());
+-- 
+2.52.0
+

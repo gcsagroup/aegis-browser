@@ -1,4 +1,4 @@
-From b375192cd42736bac7e98a7d20cf44cb53dde0d8 Mon Sep 17 00:00:00 2001
+From e50f8a0ef7bcf61c93ef48ca6fda40ea67a5ee2e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 04:59:19 +0800
 Subject: [PATCH] fix: route Aegis reports to owner sequence
@@ -16,7 +16,7 @@ Subject: [PATCH] fix: route Aegis reports to owner sequence
  create mode 100644 chrome/common/aegis/aegis_block_reporter_unittest.cc
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index d8dae036f1..34866941a4 100644
+index d8dae036f17386fff3dcc05d4735147cbddc95ce..34866941a49c89df06f68db06f268ad70ac637dd 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -440,21 +440,31 @@ void AegisService::ReportStrippedParams(
@@ -78,7 +78,7 @@ index d8dae036f1..34866941a4 100644
  }
  
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index 2ccc9fc511..43e9cd83b3 100644
+index 2ccc9fc511924d7e3ec64476a2d9675f0ddf1734..43e9cd83b3bc74b079a88933776d00a6ad1b12a0 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -14,6 +14,7 @@
@@ -110,7 +110,7 @@ index 2ccc9fc511..43e9cd83b3 100644
  
  }  // namespace aegis
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 43fb86eeec..8e0504125c 100644
+index 43fb86eeecb7f14be63bba33e80f061f3e5f4873..8e0504125c706dc51a6fdce76ba8980db388d98e 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -49,6 +49,7 @@ source_set("aegis") {
@@ -130,7 +130,7 @@ index 43fb86eeec..8e0504125c 100644
      "//net",
      "//services/network/public/cpp",
 diff --git a/chrome/common/aegis/aegis_block_reporter.cc b/chrome/common/aegis/aegis_block_reporter.cc
-index da917040aa..1e090efd32 100644
+index da917040aa96c97b6649907c4b7defddebd26b88..1e090efd329cc37d48f462a777800f6ea634b905 100644
 --- a/chrome/common/aegis/aegis_block_reporter.cc
 +++ b/chrome/common/aegis/aegis_block_reporter.cc
 @@ -3,9 +3,11 @@
@@ -192,7 +192,7 @@ index da917040aa..1e090efd32 100644
  
  // static
 diff --git a/chrome/common/aegis/aegis_block_reporter.h b/chrome/common/aegis/aegis_block_reporter.h
-index 9bc3d4d9e2..6aea9b1198 100644
+index 9bc3d4d9e2135172d2f36c03d52c1da738a737da..6aea9b1198c4ea6c4e1d75868de603dc1800f197 100644
 --- a/chrome/common/aegis/aegis_block_reporter.h
 +++ b/chrome/common/aegis/aegis_block_reporter.h
 @@ -8,8 +8,12 @@
@@ -239,7 +239,7 @@ index 9bc3d4d9e2..6aea9b1198 100644
                              const std::string& reason,
 diff --git a/chrome/common/aegis/aegis_block_reporter_unittest.cc b/chrome/common/aegis/aegis_block_reporter_unittest.cc
 new file mode 100644
-index 0000000000..7cb6801b7a
+index 0000000000000000000000000000000000000000..7cb6801b7ac24337934f78e0be2b662435475425
 --- /dev/null
 +++ b/chrome/common/aegis/aegis_block_reporter_unittest.cc
 @@ -0,0 +1,176 @@
@@ -420,7 +420,7 @@ index 0000000000..7cb6801b7a
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
-index 402aaab440..fc1d917b8f 100644
+index 402aaab44076e6f74595ff7a3bfafa07deb9ff9a..fc1d917b8f7c9dff16ab1e93fe923341474df474 100644
 --- a/chrome/renderer/chrome_render_thread_observer.cc
 +++ b/chrome/renderer/chrome_render_thread_observer.cc
 @@ -147,10 +147,10 @@ ChromeRenderThreadObserver::ChromeRenderThreadObserver()
@@ -516,7 +516,7 @@ index 402aaab440..fc1d917b8f 100644
  
  #if !BUILDFLAG(IS_ANDROID)
 diff --git a/chrome/renderer/chrome_render_thread_observer.h b/chrome/renderer/chrome_render_thread_observer.h
-index 0ece297556..7bfe87b202 100644
+index 0ece297556232fb27614c6e07f70db7d2c9d3dd0..7bfe87b202e489f26483675dbb76f899fde0a898 100644
 --- a/chrome/renderer/chrome_render_thread_observer.h
 +++ b/chrome/renderer/chrome_render_thread_observer.h
 @@ -7,8 +7,10 @@

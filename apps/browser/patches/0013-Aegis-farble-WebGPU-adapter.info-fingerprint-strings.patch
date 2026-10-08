@@ -1,4 +1,4 @@
-From 3ae4c469d9704c6c9ac676924e2be8c55b02cae4 Mon Sep 17 00:00:00 2001
+From d88a93ff5c8e4e23c1941e2065b54fac6a799b3d Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 07:15:38 +0800
 Subject: [PATCH] Aegis: farble WebGPU adapter.info fingerprint strings
@@ -13,7 +13,7 @@ cannot.
  3 files changed, 57 insertions(+), 3 deletions(-)
 
 diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
-index 5a282beeab..6b89d058e9 100644
+index 5a282beeab2cec026fd71c900135862f159ad289..6b89d058e92f19ce29bb3558d783c3179d623c23 100644
 --- a/third_party/blink/renderer/core/aegis/farbling.cc
 +++ b/third_party/blink/renderer/core/aegis/farbling.cc
 @@ -147,5 +147,39 @@ String FarbledWebGLRenderer(ExecutionContext* context) {
@@ -57,7 +57,7 @@ index 5a282beeab..6b89d058e9 100644
  }  // namespace aegis
  }  // namespace blink
 diff --git a/third_party/blink/renderer/core/aegis/farbling.h b/third_party/blink/renderer/core/aegis/farbling.h
-index b50851081f..3bf4619784 100644
+index b50851081fa1094717b12265b3ad8703a537e261..3bf461978489443d7900fabea748af8520a3b78c 100644
 --- a/third_party/blink/renderer/core/aegis/farbling.h
 +++ b/third_party/blink/renderer/core/aegis/farbling.h
 @@ -34,6 +34,14 @@ CORE_EXPORT void MaybeFarbleAudioChannel(ExecutionContext* context,
@@ -76,7 +76,7 @@ index b50851081f..3bf4619784 100644
  }  // namespace blink
  
 diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
-index 5d35a355c7..6533e0dbcd 100644
+index 5d35a355c7743111841128548855e86338bbd7c2..6533e0dbcd9392cc2eb2b42c2c829ca665f12745 100644
 --- a/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
 +++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
 @@ -10,6 +10,7 @@

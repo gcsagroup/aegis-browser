@@ -1,4 +1,4 @@
-From d72019543be4981f5c270919fe7905a1c423aef6 Mon Sep 17 00:00:00 2001
+From b9bc3ff8c0a5d7d20b4a9f34b7875eda44440882 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 01:49:48 +0800
 Subject: [PATCH] =?UTF-8?q?feat:=20=E6=8C=89=E4=BB=BB=E5=8A=A1=E8=A3=81?=
@@ -25,7 +25,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/browser/aegis/agent/agent_observation_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index c4475d01cf..d53733123f 100644
+index c4475d01cfa88d4ebddf0b4bda2e25c73aad4d72..d53733123f750026c4e4c13252cf228ab3575257 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -184,6 +184,8 @@ source_set("aegis") {
@@ -46,7 +46,7 @@ index c4475d01cf..d53733123f 100644
        "summary_session_unittest.cc",
      ]
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
-index 7a49030cc9..5f39475ce3 100644
+index 7a49030cc909508241cf9767e433b1805f1e80fd..5f39475ce3a9f8e92a11e1243ad7bb1fe6c6edd9 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 @@ -11,6 +11,7 @@
@@ -265,7 +265,7 @@ index 7a49030cc9..5f39475ce3 100644
      std::move(callback).Run(
 diff --git a/chrome/browser/aegis/agent/agent_observation.cc b/chrome/browser/aegis/agent/agent_observation.cc
 new file mode 100644
-index 0000000000..d7242b3ef7
+index 0000000000000000000000000000000000000000..d7242b3ef7453d7b4a14b19b07476b7ca49d56dd
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_observation.cc
 @@ -0,0 +1,196 @@
@@ -467,7 +467,7 @@ index 0000000000..d7242b3ef7
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_observation.h b/chrome/browser/aegis/agent/agent_observation.h
 new file mode 100644
-index 0000000000..a745068cd8
+index 0000000000000000000000000000000000000000..a745068cd8c4088edc1862a053b27e391620e1c6
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_observation.h
 @@ -0,0 +1,25 @@
@@ -498,7 +498,7 @@ index 0000000000..a745068cd8
 +#endif
 diff --git a/chrome/browser/aegis/agent/agent_observation_unittest.cc b/chrome/browser/aegis/agent/agent_observation_unittest.cc
 new file mode 100644
-index 0000000000..f990d00ffe
+index 0000000000000000000000000000000000000000..f990d00ffef2a215e71930c0f06a8e801763ae3c
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/agent_observation_unittest.cc
 @@ -0,0 +1,169 @@
@@ -672,7 +672,7 @@ index 0000000000..f990d00ffe
 +}  // namespace
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/summary_policy.cc b/chrome/browser/aegis/summary_policy.cc
-index 096e527eaa..670f307621 100644
+index 096e527eaa141bf912ff2e4206317bbdf3d6a52a..670f307621963aa64245cf764df51199289f457e 100644
 --- a/chrome/browser/aegis/summary_policy.cc
 +++ b/chrome/browser/aegis/summary_policy.cc
 @@ -553,6 +553,10 @@ bool ValidatePromptFields(const ModelPrompt& prompt, std::string* error) {
@@ -687,7 +687,7 @@ index 096e527eaa..670f307621 100644
    if (reason) {
      reason->clear();
 diff --git a/chrome/browser/aegis/summary_policy.h b/chrome/browser/aegis/summary_policy.h
-index bad367adc4..98be85721e 100644
+index bad367adc4bd90e0b7068befe6bfb4f476d97530..98be85721e1d47c501d98e31084be9d6366b00de 100644
 --- a/chrome/browser/aegis/summary_policy.h
 +++ b/chrome/browser/aegis/summary_policy.h
 @@ -6,6 +6,7 @@
@@ -709,7 +709,7 @@ index bad367adc4..98be85721e 100644
  // 也不能绕过敏感页的启发式摘要边界。拒绝时 reason 包含可展示的原因。
  bool IsModelSummaryAllowed(const PageSnapshot& snapshot, std::string* reason);
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 62f96823a4..fd302f48cb 100644
+index 62f96823a4825c17e8df8838f50344ff20243e17..fd302f48cb495dee1a9580955afae8762b76438b 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -18,6 +18,7 @@ let snapshot: TaskSnapshot|null = null;
@@ -754,7 +754,7 @@ index 62f96823a4..fd302f48cb 100644
      busy = false;
      if (snapshot) {
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 1fda803b65..681cca94d9 100644
+index 1fda803b655e69d431cc82c57ad4faa2d4e2ab03..681cca94d91a5182f8c52d142b142022a60ebbfa 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;
@@ -771,7 +771,7 @@ index 1fda803b65..681cca94d9 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
-index edb92f0af0..eed6c5e07f 100644
+index edb92f0af0b6a368f08938af852cfa7552e6bad0..eed6c5e07fcbf5e3fe6798ec21da5c8bd64d1183 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 +++ b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 @@ -11,6 +11,7 @@

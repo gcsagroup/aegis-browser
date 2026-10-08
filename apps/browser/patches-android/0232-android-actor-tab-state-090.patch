@@ -1,0 +1,53 @@
+From c1c5613fb95fafa5639583b4ee1a67abcec38ad4 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 19:43:44 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Android=20=E9=A1=B5?=
+ =?UTF-8?q?=E9=9D=A2=E8=A7=82=E5=AF=9F=E7=8A=B6=E6=80=81=E5=88=9D=E5=A7=8B?=
+ =?UTF-8?q?=E5=8C=96=20090?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/android/tab_features.cc             | 5 +++--
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/android/tab_features.cc b/chrome/browser/android/tab_features.cc
+index a476210c78b3947e38cc1b7e6e86e1c518a0e0d1..7aeae3b168fd8e5c10877451db3889f764abe302 100644
+--- a/chrome/browser/android/tab_features.cc
++++ b/chrome/browser/android/tab_features.cc
+@@ -151,12 +151,13 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+     }
+   }
+ 
+-  if (base::FeatureList::IsEnabled(features::kGlicActor)) {
++  auto* actor_service = actor::ActorKeyedService::Get(profile);
++  // Aegis 的页面工具独立于 Glic 开关；可用的 Actor 服务必须有同寿命的标签状态。
++  if (actor_service || base::FeatureList::IsEnabled(features::kGlicActor)) {
+     actor_tab_data_ =
+         GetUserDataFactory().CreateInstance<actor::ActorTabData>(*tab, tab);
+   }
+ 
+-  auto* actor_service = actor::ActorKeyedService::Get(profile);
+   if (glic::GlicEnabling::IsProfileEligible(profile) && actor_service) {
+     actor_ui_tab_controller_ =
+         GetUserDataFactory()
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 83d7fe74523d6efeb37fd1f2e3b23e0e29b92913..9e9728714c380620adcc92d0b550382a66ad8b75 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.89";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (089)";
++inline constexpr char kProductVersion[] = "2.0.0.90";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (090)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

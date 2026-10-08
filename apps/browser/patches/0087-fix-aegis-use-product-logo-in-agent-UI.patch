@@ -1,4 +1,4 @@
-From 3b163ac0e3639cedf1e3ecb79c5d0edccc509cfd Mon Sep 17 00:00:00 2001
+From 840b99004a303fa9963854b84314b599da04fbb0 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:15:29 +0800
 Subject: [PATCH] fix(aegis): use product logo in agent UI
@@ -13,7 +13,7 @@ Subject: [PATCH] fix(aegis): use product logo in agent UI
  create mode 100644 chrome/browser/resources/aegis_agent/product_logo.svg
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
-index 95cb0a2f65..1d4a929ca4 100644
+index 95cb0a2f65d8de6800b0f45fc56f148db10407b2..1d4a929ca49e3b431abfa932b6dd19fcefcedab1 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
 @@ -104,7 +104,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
@@ -29,7 +29,7 @@ index 95cb0a2f65..1d4a929ca4 100644
                return false;
              }
 diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn
-index a91d6a6905..8bd7062437 100644
+index a91d6a6905d79bb323f117eeb5936bc3f400c3c1..8bd70624372157632c3de173f883bd3ada21cbb5 100644
 --- a/chrome/browser/resources/aegis_agent/BUILD.gn
 +++ b/chrome/browser/resources/aegis_agent/BUILD.gn
 @@ -15,6 +15,7 @@ build_webui("build") {
@@ -41,7 +41,7 @@ index a91d6a6905..8bd7062437 100644
    ts_files = [
      "agent.ts",
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index 61031189f6..8178801d27 100644
+index 61031189f6a97a4db80bce2ccdf70fd4fb57aa5e..8178801d276b8f7e1206f2037dc6a5a5f4e5f91e 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -63,17 +63,10 @@ main {
@@ -65,7 +65,7 @@ index 61031189f6..8178801d27 100644
  
  .hero-copy {
 diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
-index de935e2f24..b9288ef2e2 100644
+index de935e2f247748982499e362be4a68c4853bfad1..b9288ef2e2f5e0bb94540cb87b11bb9566e10837 100644
 --- a/chrome/browser/resources/aegis_agent/agent.html
 +++ b/chrome/browser/resources/aegis_agent/agent.html
 @@ -10,7 +10,7 @@
@@ -79,7 +79,7 @@ index de935e2f24..b9288ef2e2 100644
            <p id="subtitle"></p>
 diff --git a/chrome/browser/resources/aegis_agent/product_logo.svg b/chrome/browser/resources/aegis_agent/product_logo.svg
 new file mode 100644
-index 0000000000..4bb68d7322
+index 0000000000000000000000000000000000000000..4bb68d7322f63c4e274ca3dd8833663f51121a73
 --- /dev/null
 +++ b/chrome/browser/resources/aegis_agent/product_logo.svg
 @@ -0,0 +1,27 @@

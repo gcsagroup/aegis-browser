@@ -1,4 +1,4 @@
-From 2bd22c150d1cff85802cad2f853bd72104e23c5f Mon Sep 17 00:00:00 2001
+From 4fc60c34edd29bcc8d7f1943f4d0bf410805542a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 04:02:53 +0800
 Subject: [PATCH] fix(aegis): migrate profile access in menu and toolbar (029)
@@ -10,10 +10,10 @@ Subject: [PATCH] fix(aegis): migrate profile access in menu and toolbar (029)
  3 files changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index 4a6890f7fe..c5d72c569c 100644
+index 061dd8aa5a910b18052c059384290bad9910d3cf..d980c3cbef4ea3cc8860bfb14ed513b487d93260 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2488,7 +2488,7 @@ void AppMenuModel::Build() {
+@@ -2349,7 +2349,7 @@ void AppMenuModel::Build() {
    AddItemWithStringIdAndVectorIcon(
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
@@ -23,7 +23,7 @@ index 4a6890f7fe..c5d72c569c 100644
          this, IDC_SHOW_AEGIS, IDS_AEGIS_SETTINGS_MENU,
          features::IsRoundedIconsEnabled() ? kSettingsIcon
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-index db42189a64..7fb8ff71cb 100644
+index db42189a6412fcc309f803273f11dc9209acdcdf..7fb8ff71cbcbdd533c3c845bd0a8500b171ce322 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 @@ -54,7 +54,7 @@ aegis::AegisService* ServiceForBrowser(Browser* browser) {
@@ -63,7 +63,7 @@ index db42189a64..7fb8ff71cb 100644
    SetEnabled(profile_supported);
    if (!profile_supported) {
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index ce14883c5b..89f68e35de 100644
+index ce14883c5b99d99fba6074882c9b82c1974c4e7b..89f68e35de5fa9c1359acea7b6c0b879f1b8ea13 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

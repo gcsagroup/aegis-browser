@@ -1,0 +1,48 @@
+From 87866c2fa7e38fb3d9fc16aca1226a3250066506 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 19:29:47 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=E7=89=88=E6=9C=AC=E9=A1=B5?=
+ =?UTF-8?q?=E6=9B=B4=E6=96=B0=E6=A8=A1=E5=9D=97=E6=9E=84=E5=BB=BA=E4=BE=9D?=
+ =?UTF-8?q?=E8=B5=96=20089?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ chrome/browser/ui/webui/version/BUILD.gn           | 4 ++++
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 20dadd0051e3c1774a0f3f85faafc9d8e4098d2c..83d7fe74523d6efeb37fd1f2e3b23e0e29b92913 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.88";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (088)";
++inline constexpr char kProductVersion[] = "2.0.0.89";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (089)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/version/BUILD.gn b/chrome/browser/ui/webui/version/BUILD.gn
+index 8c207f69b19c3c55ce8163d1271f28ab16959669..7fa96369f554919e6db3c13fbdd7da7f3fe9e944 100644
+--- a/chrome/browser/ui/webui/version/BUILD.gn
++++ b/chrome/browser/ui/webui/version/BUILD.gn
+@@ -34,6 +34,10 @@ source_set("version") {
+     "//v8:v8_version",
+   ]
+ 
++  if (!is_android && !is_chromeos) {
++    deps += [ "//chrome/browser/ui/webui/help:aegis_github_update" ]
++  }
++
+   if (is_mac) {
+     if (use_lld) {
+       defines = [ "CHROMIUM_LINKER_NAME=\"lld\"" ]
+-- 
+2.52.0
+
