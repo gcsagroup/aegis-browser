@@ -5,7 +5,8 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
+import shutil
+import subprocess  # nosec B404 - 固定 gh 工具及参数数组，不经过 shell。
 import sys
 from urllib.parse import quote
 
@@ -60,7 +61,13 @@ def qualification(local, receipt_path):
 class GitHub:
     def run(self, args):
         # 参数数组不经过 shell；不打印环境、凭据或原始错误响应。
-        result = subprocess.run(['gh', *args], capture_output=True, text=True, timeout=600)
+        executable = shutil.which('gh')
+        require(executable is not None, '缺少 GitHub CLI，未执行远端操作')
+        executable = str(Path(executable).resolve(strict=True))
+        # args 仅由下方 api/releases/mutate 生成，绝不解释成命令文本。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        result = subprocess.run([executable, *args], capture_output=True, text=True,  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
+                                timeout=600, shell=False)
         require(result.returncode == 0, f'GitHub操作失败：{args[0]}；退出码{result.returncode}，保留草稿后重试')
         return result.stdout
 

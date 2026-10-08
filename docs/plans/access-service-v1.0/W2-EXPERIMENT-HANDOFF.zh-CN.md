@@ -35,3 +35,19 @@
 本地实验入口为 [`prototypes/access-metering/README.md`](../../../prototypes/access-metering/README.md)，可用 `pnpm run test:access-metering` 执行；它接入 `quality:fast`。SQLite 账本记录 `actual_bytes`、`held_bytes`、`uncertain_bytes`，loopback relay 在转发前取得有限许可；测试包含连接未关闭时的用量、独立 origin 字节、双向共享额度截断和两个 kill/restart 窗口。fixture 没有未确认 byte 的自动结算机制，旧许可会继续占用额度。
 
 本地 fixture 通过时只给 `LOCAL_FIXTURE_PASS`，精确结果绑定对应提交与测试报告。真实 W2 的 A118、PF04/PF09、适用 Vision/splice 快路径、权威字节对账、生产额度执行和恢复仍为 `BLOCKED_RESOURCE` / `NOT_RUN`；G0–G3 不因本记录改变。
+
+## 2026-09-28 本地双逻辑节点增量
+
+[双节点设计与边界](W2-MULTINODE-PREP-20260928.zh-CN.md)在现有单 relay 之外准备中心 byte lease、两个独立节点 journal、幂等授权、累计上报、epoch/周期隔离和保守崩溃恢复。它只使用本机临时 SQLite、可控时钟和模拟发送；原 loopback relay 及其原有验收口径保持独立。新增代码与测试结果须绑定交付时的最终 HEAD，设计审查结论不替代代码审查、CI 或真实服务证据。
+
+指定管理页的 VLESS + WS + TLS 候选依用户要求保留为**相关开发完成后回测 TODO**，本地双节点夹具不向该节点发流量，也不能代替 Linux REALITY/Vision 实验。A36/A37 的跨节点/上报子场景仅获得本地状态机准备；真实账户身份、多物理节点、A118、PF04/PF09 仍须另行绑定受控节点、权威计数点与冻结预算后执行，台账状态暂不升级。
+
+## 本地两进程数据路径增量
+
+[两进程设计与测试输入](W2-LOCAL-RELAY-PREP-20260928.zh-CN.md)将中心 lease 与节点 journal 接到两个独立 loopback relay/origin 子进程。新测试观察真实本机 socket 的单次非阻塞发送、短写保守预留、双向累计、四个 kill/restart 窗口、到期/围栏与模拟中心失联；origin 收/发量和账本 `actual/held/uncertain` 分开保存。它仍是本地测试进程与共享临时 SQLite，不具备真实 Linux/Xray/Vision、服务端鉴权、跨 VPS 或物理速率的证据。最终结果须绑定实现提交的本地门、独立复审与托管 CI；WS+TLS 回测 TODO 和真实 W2 的 `BLOCKED_RESOURCE` / `NOT_RUN` 保持。
+
+## 单执行点服务端适配设计输入
+
+[P3c/A118 适配设计](W2-SERVER-METERING-DESIGN-20260928.zh-CN.md)基于 `develop@93b0deb4c6ecdd8009755cda02fb627d5eff6cea` 盘点已有符号，定义拟议的鉴权归属、双向目标 byte、许可/write/完成边界、缓冲及故障上界、持久重试和 SM-00–SM-07 验收场景。本增量在设计之外新增[合成 SM-00 离线清单校验器](../../../prototypes/access-metering/sm00_preflight.py)；真实 Xray 代码位置、服务端/账本负责人、受控资源与实验阈值待绑定，尤其下行 writer 的准确目标字节完成语义仍待证明。RateLease/PF09、PF04 UI 采样及真实服务端实现另行交付；A118 整体状态不变。
+
+从仓库根目录运行 `PYTHONDONTWRITEBYTECODE=1 python3 prototypes/access-metering/sm00_preflight.py --check-only --manifest prototypes/access-metering/sm00_synthetic_manifest.json`。输入及拒绝规则见[原型说明](../../../prototypes/access-metering/README.md)；输出的 `LOCAL_PREFLIGHT_ONLY` 只确认合成清单格式和字段约束，不核对真实构建 hash、实际 writer 路径、鉴权资源、物理预算或观测有效性。SM-00 的受控健康负载、故障 runner、看门狗及清理回执尚未实现，SM-00–SM-07 没有真实运行结果；WS+TLS 仍是开发完成后的回测 TODO。

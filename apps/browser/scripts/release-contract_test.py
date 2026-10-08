@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 import tempfile
 import shutil
-import subprocess
+import subprocess  # nosec B404 - 临时测试仓库的固定 Git 参数，不启用 shell。
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('contract', Path(__file__).with_name('release-contract.py'))
 contract = importlib.util.module_from_spec(spec)
@@ -130,7 +131,11 @@ class ContractTests(unittest.TestCase):
         browser = repo / 'apps/browser'
         shutil.copytree(self.browser, browser)
         def git(*args):
-            return subprocess.check_output(['git', '-C', str(repo), *args], text=True)
+            executable = shutil.which('git')
+            self.assertIsNotNone(executable)
+            # 仅此测试定义的命令与临时路径，不接收外部命令文本。
+            return subprocess.check_output([str(Path(executable).resolve(strict=True)),  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
+                '-C', str(repo), *args], text=True, timeout=30, shell=False)
         git('init', '-q')
         git('config', 'user.name', 'test')
         git('config', 'user.email', 'test@example.invalid')
@@ -145,9 +150,14 @@ class ContractTests(unittest.TestCase):
 
     def test_feature_log_cannot_escape_evidence_directory(self):
         receipt = self.receipt()
-        receipt['featureChecks']['kAegisEnabled']['file'] = '/tmp/external.log'
+        receipt['featureChecks']['kAegisEnabled']['file'] = str(self.root.parent / 'external.log')
         with self.assertRaisesRegex(ValueError, '路径无效'):
             self.validate(receipt)
+
+    def test_history_requires_git_and_never_skips_missing_tool(self):
+        with mock.patch.object(contract.shutil, 'which', return_value=None):
+            with self.assertRaisesRegex(ValueError, '缺少.*Git'):
+                contract.load(self.browser, enforce_history=True)
 
 
 if __name__ == '__main__':
