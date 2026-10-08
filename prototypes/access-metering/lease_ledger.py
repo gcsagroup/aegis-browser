@@ -149,8 +149,8 @@ class LeaseLedger:
                             last_digest TEXT NOT NULL DEFAULT '', uncertain INTEGER NOT NULL DEFAULT 0);
                         CREATE TABLE audit (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL);
                     """)
-                    connection.execute(f"PRAGMA application_id={APPLICATION_ID}")
-                    connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                    connection.execute("PRAGMA application_id=0x57324C53")
+                    connection.execute("PRAGMA user_version=1")
                     connection.commit()
                 self._check_database(connection)
         except sqlite3.Error as error:
@@ -176,9 +176,14 @@ class LeaseLedger:
             raise LeaseError("unknown center application id")
         if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
             raise LeaseError("unknown center schema version")
-        for table in ("accounts", "periods", "epochs", "sessions", "boot_keys",
-                      "grant_keys", "leases", "audit"):
-            connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+        connection.execute("""SELECT COUNT(*) FROM accounts
+            UNION ALL SELECT COUNT(*) FROM periods
+            UNION ALL SELECT COUNT(*) FROM epochs
+            UNION ALL SELECT COUNT(*) FROM sessions
+            UNION ALL SELECT COUNT(*) FROM boot_keys
+            UNION ALL SELECT COUNT(*) FROM grant_keys
+            UNION ALL SELECT COUNT(*) FROM leases
+            UNION ALL SELECT COUNT(*) FROM audit""").fetchall()
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:
@@ -200,7 +205,20 @@ class LeaseLedger:
 
     @staticmethod
     def _count(connection: sqlite3.Connection, table: str) -> int:
-        return connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        # 表名不能绑定为 SQL 参数，只允许这里列出的固定查询。
+        queries = {
+            "accounts": "SELECT COUNT(*) FROM accounts",
+            "periods": "SELECT COUNT(*) FROM periods",
+            "epochs": "SELECT COUNT(*) FROM epochs",
+            "sessions": "SELECT COUNT(*) FROM sessions",
+            "boot_keys": "SELECT COUNT(*) FROM boot_keys",
+            "grant_keys": "SELECT COUNT(*) FROM grant_keys",
+            "leases": "SELECT COUNT(*) FROM leases",
+            "audit": "SELECT COUNT(*) FROM audit",
+        }
+        if table not in queries:
+            raise LeaseError("unknown count table")
+        return connection.execute(queries[table]).fetchone()[0]
 
     @classmethod
     def _audit(cls, connection: sqlite3.Connection, kind: str, ref: str) -> None:

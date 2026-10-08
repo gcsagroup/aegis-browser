@@ -134,6 +134,7 @@ class ContractTests(unittest.TestCase):
             executable = shutil.which('git')
             self.assertIsNotNone(executable)
             # 仅此测试定义的命令与临时路径，不接收外部命令文本。
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
             return subprocess.check_output([str(Path(executable).resolve(strict=True)),  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
                 '-C', str(repo), *args], text=True, timeout=30, shell=False)
         git('init', '-q')

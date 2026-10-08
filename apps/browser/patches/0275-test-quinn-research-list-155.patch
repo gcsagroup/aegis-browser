@@ -1,0 +1,66 @@
+From fdac764380a2c5acc47a3fa89c96d75cb570758f Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Fri, 9 Oct 2026 04:17:20 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=20Chromium=20155=20?=
+ =?UTF-8?q?=E7=A0=94=E7=A9=B6=E8=AE=B0=E5=BD=95=E5=88=97=E8=A1=A8=E6=8E=A5?=
+ =?UTF-8?q?=E5=8F=A3=EF=BC=8C=E5=80=99=E9=80=89=20143?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/agent_research_unittest.cc | 14 ++++++++++----
+ chrome/browser/ui/webui/help/aegis_github_update.h |  4 ++--
+ 2 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
+index 5190ec803828bce8659fc8f39ecb6bb0f289e352..925060594dd3c10df4161804404a145dba7f0ec9 100644
+--- a/chrome/browser/aegis/agent/agent_research_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
+@@ -529,9 +529,12 @@ TEST(AegisAgentResearchTest, QueryDistinctSourcesUseNativeBindingsAndRedactedDis
+   auto record = BuildAgentResearchRecord(task, fixture.completion,
+                                          fixture.evidence, fixture.urls);
+   ASSERT_TRUE(record);
+-  EXPECT_EQ(*record->FindList("sources")->at(1).GetDict().FindString("url"),
++  const auto* sources = record->FindList("sources");
++  ASSERT_TRUE(sources);
++  ASSERT_GE(sources->size(), 2u);
++  EXPECT_EQ(*(*sources)[1].GetDict().FindString("url"),
+             fixture.urls.at(2).spec());
+-  EXPECT_TRUE(record->FindList("sources")->at(1).GetDict().FindBool("available").value());
++  EXPECT_EQ((*sources)[1].GetDict().FindBool("available"), true);
+ }
+ 
+ TEST(AegisAgentResearchTest, SwappedNativeBindingCannotAuthorizeRedactedQueryTwin) {
+@@ -556,8 +559,11 @@ TEST(AegisAgentResearchTest, LatestFailedReadInvalidatesSavedSource) {
+   auto record = BuildAgentResearchRecord(task, fixture.completion,
+                                          fixture.evidence, fixture.urls);
+   ASSERT_TRUE(record);
+-  EXPECT_FALSE(record->FindList("sources")->at(1).GetDict().FindBool("available").value());
+-  EXPECT_TRUE(record->FindList("sources")->at(1).GetDict().FindString("excerpt")->empty());
++  const auto* sources = record->FindList("sources");
++  ASSERT_TRUE(sources);
++  ASSERT_GE(sources->size(), 2u);
++  EXPECT_EQ((*sources)[1].GetDict().FindBool("available"), false);
++  EXPECT_TRUE((*sources)[1].GetDict().FindString("excerpt")->empty());
+ }
+ }  // namespace
+ }  // namespace aegis::agent
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 360fa87e5dd834e37999c0a199f581734185898b..6c4fd76dd6d828e04273a62e295f32528a8fd5cf 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.2.0.142";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.2 (142)";
++inline constexpr char kProductVersion[] = "2.2.0.143";
++inline constexpr char kProductVersionLabel[] = "Ver 2.2 (143)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -46,10 +46,12 @@ def load(browser, enforce_history=False):
             raise ValueError('缺少用于核对功能历史的 Git')
         executable = str(Path(executable).resolve(strict=True))
         # 固定 log/show 子命令；路径独立传参，历史修订只来自 Git 自身。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         revisions = subprocess.check_output(  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
             [executable, '-C', str(root), 'log', '-2', '--format=%H', '--', relative],
             text=True, timeout=30, shell=False).splitlines()
         if len(revisions) == 2:
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
             previous = subprocess.check_output(  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
                 [executable, '-C', str(root), 'show', revisions[1] + ':' + relative],
                 text=True, timeout=30, shell=False)
