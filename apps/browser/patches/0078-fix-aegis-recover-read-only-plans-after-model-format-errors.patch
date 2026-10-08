@@ -1,4 +1,4 @@
-From 81c72a8379abc26ce36732c6b6846b9921237c92 Mon Sep 17 00:00:00 2001
+From 0f5b1459b0ab5c40d6a3ccf2567ef6793bd107ff Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 05:12:10 +0800
 Subject: [PATCH] fix(aegis): recover read-only plans after model format errors
@@ -13,7 +13,7 @@ Subject: [PATCH] fix(aegis): recover read-only plans after model format errors
  6 files changed, 221 insertions(+), 10 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index deb8e92fc7..9566d0160f 100644
+index deb8e92fc73f3c090d8d56cc10a6d785e0b70f82..9566d0160f08ece875fd39e33a23babd4484938d 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -776,16 +776,6 @@ void AegisAgentService::RequestPlanAttempt(const std::string& task_id,
@@ -88,7 +88,7 @@ index deb8e92fc7..9566d0160f 100644
    auto it = task_has_external_side_effect_.find(task.id());
    return storage_ready_ &&
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 430839ece4..99895912b6 100644
+index 430839ece4e9c4ee58be58f5e4133be9a783b487..99895912b646ea006b609809ad6fd3afb35cbf4c 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -165,6 +165,8 @@ class AegisAgentService : public KeyedService {
@@ -101,7 +101,7 @@ index 430839ece4..99895912b6 100644
    bool PersistPlanProgress(const std::string& task_id,
                             size_t next_step,
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index de960cad74..87d7c31416 100644
+index de960cad748ea7837dd688e3e6f8c0187909bd10..87d7c3141624ebc7446c8f1dd19ca92105ac256b 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -8,6 +8,7 @@
@@ -167,7 +167,7 @@ index de960cad74..87d7c31416 100644
         RepairsOneMalformedExecutionTurnAndCompletesTheTask) {
    constexpr std::string_view kBaseUrl = "http://127.0.0.1:8765/v1";
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 4102a7e2a7..57cf10b160 100644
+index 4102a7e2a7fc225e964916687b06189afbae7e2c..57cf10b160f5c7437bc6ae14fbcd7c516eea9278 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -3,6 +3,7 @@
@@ -288,7 +288,7 @@ index 4102a7e2a7..57cf10b160 100644
      const AgentModelEvent& event,
      const AgentTaskScope& maximum_scope,
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index a3fb6b669b..ea66963418 100644
+index a3fb6b669bda27f7d278eb74c516ff7bdbdb55f8..ea66963418d8316ed84403b76a7a6309f883a599 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -70,6 +70,14 @@ std::optional<std::string> BuildAgentPlanningPrompt(
@@ -307,7 +307,7 @@ index a3fb6b669b..ea66963418 100644
      const AgentModelEvent& event,
      const AgentTaskScope& maximum_scope,
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 7b1737acd1..c4c62a5cc9 100644
+index 7b1737acd12f7b4cc3df16f1a6b1782e57fbacde..c4c62a5cc963cd855f92c4b3aae93c35be65ca48 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -327,5 +327,46 @@ TEST(AegisAgentPlannerTest, ContractMarksExternalContentUntrusted) {

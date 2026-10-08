@@ -1,4 +1,4 @@
-From c7e4f390f621f0f2ab88c54766a3de15be97d2d8 Mon Sep 17 00:00:00 2001
+From bcf836114556d122dd51d570098c46e237a2c3cd Mon Sep 17 00:00:00 2001
 From: GCSA <aegis@gcsa.local>
 Date: Sun, 13 Sep 2026 03:03:47 +0800
 Subject: [PATCH] =?UTF-8?q?feat(aegis):=20=E4=BB=8E=20GitHub=20=E6=A3=80?=
@@ -28,7 +28,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
-index 6fada0a2b1..4d057cee65 100644
+index 6fada0a2b1a1f4b5675fc657a3a7b2337e43c4a1..4d057cee650d317cc7a6ef516c6ac19697c3afcb 100644
 --- a/chrome/app/app-Info.plist
 +++ b/chrome/app/app-Info.plist
 @@ -2,6 +2,11 @@
@@ -44,7 +44,7 @@ index 6fada0a2b1..4d057cee65 100644
  	<string>en</string>
  	<key>CFBundleDisplayName</key>
 diff --git a/chrome/browser/resources/settings/about_page/about_page.html.ts b/chrome/browser/resources/settings/about_page/about_page.html.ts
-index 41d9a627b0..565719769d 100644
+index 41d9a627b014317aedf17b02b82fd2e49075971c..565719769dde457fbde34d08987506ef555db902 100644
 --- a/chrome/browser/resources/settings/about_page/about_page.html.ts
 +++ b/chrome/browser/resources/settings/about_page/about_page.html.ts
 @@ -74,6 +74,15 @@ export function getHtml(this: SettingsAboutPageElement) {
@@ -64,7 +64,7 @@ index 41d9a627b0..565719769d 100644
  <if expr="not is_chromeos">
      <div class="separator" ?hidden="${!this.showButtonContainer_}"></div>
 diff --git a/chrome/browser/resources/settings/about_page/about_page.ts b/chrome/browser/resources/settings/about_page/about_page.ts
-index 2f474183de..154ea1ed24 100644
+index 2f474183de0902f77a3fc6aaa56a4fdd8af0215e..154ea1ed24fcb07ac854acdeb86d970eb383aedb 100644
 --- a/chrome/browser/resources/settings/about_page/about_page.ts
 +++ b/chrome/browser/resources/settings/about_page/about_page.ts
 @@ -226,6 +226,18 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase
@@ -102,7 +102,7 @@ index 2f474183de..154ea1ed24 100644
        case UpdateStatus.CHECKING:
        case UpdateStatus.NEED_PERMISSION_TO_UPDATE:
 diff --git a/chrome/browser/resources/settings/about_page/about_page_browser_proxy.ts b/chrome/browser/resources/settings/about_page/about_page_browser_proxy.ts
-index 10bea4664a..1f9ef23491 100644
+index 10bea4664af533ce109211c0ce8ec71f1fbc6ae2..1f9ef2349186371017067cf9730e7669ff3cf641 100644
 --- a/chrome/browser/resources/settings/about_page/about_page_browser_proxy.ts
 +++ b/chrome/browser/resources/settings/about_page/about_page_browser_proxy.ts
 @@ -35,6 +35,7 @@ export interface PromoteUpdaterStatus {
@@ -114,7 +114,7 @@ index 10bea4664a..1f9ef23491 100644
    progress?: number;
    message?: string;
 diff --git a/chrome/browser/ui/webui/help/BUILD.gn b/chrome/browser/ui/webui/help/BUILD.gn
-index 232867c130..641db50d1b 100644
+index 232867c13042d1f25f5374bc3b33282c41b42366..641db50d1b50e0324a393d626600aa2f908d016b 100644
 --- a/chrome/browser/ui/webui/help/BUILD.gn
 +++ b/chrome/browser/ui/webui/help/BUILD.gn
 @@ -4,6 +4,7 @@
@@ -216,7 +216,7 @@ index 232867c130..641db50d1b 100644
 +}
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.cc b/chrome/browser/ui/webui/help/aegis_github_update.cc
 new file mode 100644
-index 0000000000..ea7b244350
+index 0000000000000000000000000000000000000000..ea7b244350a7392b291aa1bbd7df5ecb189969b7
 --- /dev/null
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.cc
 @@ -0,0 +1,377 @@
@@ -599,7 +599,7 @@ index 0000000000..ea7b244350
 +}  // namespace aegis
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
 new file mode 100644
-index 0000000000..b04dccbfa8
+index 0000000000000000000000000000000000000000..b04dccbfa8c76ba8aab1fbe663a52cb4358b2aa3
 --- /dev/null
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -0,0 +1,94 @@
@@ -699,7 +699,7 @@ index 0000000000..b04dccbfa8
 +#endif  // CHROME_BROWSER_UI_WEBUI_HELP_AEGIS_GITHUB_UPDATE_H_
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 new file mode 100644
-index 0000000000..26a997a9d2
+index 0000000000000000000000000000000000000000..26a997a9d23e464143857dbb9c71bac3cc73ed5b
 --- /dev/null
 +++ b/chrome/browser/ui/webui/help/aegis_github_update_unittest.cc
 @@ -0,0 +1,217 @@
@@ -921,7 +921,7 @@ index 0000000000..26a997a9d2
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/ui/webui/help/version_updater.h b/chrome/browser/ui/webui/help/version_updater.h
-index 4181d4e0d5..43b2888344 100644
+index 4181d4e0d567f7aedebe29d2d2df7c3e2b04c874..43b288834478d3acaeb2089dc598b6c29b486bfb 100644
 --- a/chrome/browser/ui/webui/help/version_updater.h
 +++ b/chrome/browser/ui/webui/help/version_updater.h
 @@ -8,6 +8,7 @@
@@ -942,7 +942,7 @@ index 4181d4e0d5..43b2888344 100644
    // Sub-classes must implement this method to create the respective
    // specialization. |web_contents| may be null, in which case any required UX
 diff --git a/chrome/browser/ui/webui/help/version_updater_basic.cc b/chrome/browser/ui/webui/help/version_updater_basic.cc
-index 891cc395c2..d4ada4774a 100644
+index 891cc395c269e6e05bffb76104d12199ab17a725..d4ada4774a7876adfd0f69f607b83d2e55f8ba0a 100644
 --- a/chrome/browser/ui/webui/help/version_updater_basic.cc
 +++ b/chrome/browser/ui/webui/help/version_updater_basic.cc
 @@ -5,47 +5,84 @@
@@ -1051,7 +1051,7 @@ index 891cc395c2..d4ada4774a 100644
 +  return std::make_unique<VersionUpdaterBasic>(web_contents);
  }
 diff --git a/chrome/browser/ui/webui/settings/about_handler.cc b/chrome/browser/ui/webui/settings/about_handler.cc
-index 2352aa8bee..e04cd34f97 100644
+index 2352aa8beeab40fa07ffddb280304b1777144f42..e04cd34f97d32271e943951ce7ec4a6fe8aacd8e 100644
 --- a/chrome/browser/ui/webui/settings/about_handler.cc
 +++ b/chrome/browser/ui/webui/settings/about_handler.cc
 @@ -28,6 +28,7 @@
@@ -1100,10 +1100,10 @@ index 2352aa8bee..e04cd34f97 100644
    event.Set("rollback", rollback);
    event.Set("powerwash", powerwash);
 diff --git a/chrome/browser/ui/webui/settings/about_handler.h b/chrome/browser/ui/webui/settings/about_handler.h
-index f3bcddd212..798908ff5f 100644
+index d9b2085047ed09ed8f717f093919b1f472808e1f..108e87dfe7da6448141ad5dd8419b292e76f4fb9 100644
 --- a/chrome/browser/ui/webui/settings/about_handler.h
 +++ b/chrome/browser/ui/webui/settings/about_handler.h
-@@ -68,6 +68,7 @@ class AboutHandler : public settings::SettingsPageUIHandler,
+@@ -67,6 +67,7 @@ class AboutHandler : public settings::SettingsPageUIHandler,
    // (if one is available).
    void HandleRefreshUpdateStatus(const base::ListValue& args);
    void RefreshUpdateStatus();
@@ -1112,7 +1112,7 @@ index f3bcddd212..798908ff5f 100644
  #if BUILDFLAG(IS_MAC)
    // Promotes the updater for all users.
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index a1dd52cbf5..dd01c711e9 100644
+index c88da50a589cd9b20f714950a7a875682469cae3..ab07496994758aaf0a23107916641d210a1e650b 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -356,11 +356,16 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
@@ -1134,7 +1134,7 @@ index a1dd52cbf5..dd01c711e9 100644
        "aboutProductCopyright",
        base::i18n::MessageFormatter::FormatWithNumberedArgs(
 diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
-index 6bd195aaec..bbb7cd263a 100644
+index 6bd195aaec963da8945940563378279f2e987ea5..bbb7cd263ac6601045cf3d9dc2787e0162d98c02 100644
 --- a/chrome/test/data/webui/settings/about_page_test.ts
 +++ b/chrome/test/data/webui/settings/about_page_test.ts
 @@ -31,10 +31,11 @@ import {isVisible, eventToPromise} from 'chrome://webui-test/test_util.js';

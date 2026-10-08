@@ -3,10 +3,12 @@
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import platform
+import plistlib
 import re
 import shutil
 import subprocess
@@ -21,8 +23,11 @@ PLATFORMS = {
     'windows': ('Windows', 'Windows', {'amd64', 'x86_64'}, 'aegis-windows.gn', 'AegisRelease'),
     'android': ('Android', 'Linux', {'amd64', 'x86_64'}, 'aegis-android.gn', 'AegisAndroid'),
 }
-HEADER = Path('chrome/browser/ui/webui/help/aegis_github_update.h')
 REQUIRED_CHECKS = {'native_tests', 'browser_smoke', 'actor_permissions', 'v8_security_regressions'}
+
+spec = importlib.util.spec_from_file_location('release_contract', BROWSER / 'scripts/release-contract.py')
+contract = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(contract)
 
 
 def now():
@@ -54,6 +59,13 @@ def system_tool(name):
 def git(src, *args, env=None):
     return subprocess.check_output(
         [system_tool('git'), '-C', str(src), *args], env=env, text=True).strip()
+
+
+def product_status(root):
+    # 工作流先下载当次证据；只排除此固定输出目录，不能排除构建输入。
+    if git(root, 'ls-files', '--', 'ci-evidence'):
+        raise ValueError('ci-evidence不得包含已跟踪的产品文件')
+    return git(root, 'status', '--porcelain', '--', '.', ':(exclude)ci-evidence')
 
 
 def series(directory):
@@ -127,16 +139,6 @@ def candidate_pin(name, report, browser=BROWSER):
     if not re.fullmatch('[0-9a-f]{40}', pin['commit']):
         raise ValueError('无效的 Chromium 提交')
     return pin, patch_dir
-
-
-def bump_header(text, previous=0):
-    match = re.search(r'kProductVersion\[\] = "(\d+\.\d+\.\d+)\.(\d+)"', text)
-    if not match:
-        raise ValueError('产品构建号不存在')
-    old = match.group(0).split('"')[1]
-    number = max(int(match[2]), previous) + 1
-    new = f'{match[1]}.{number}'
-    return text.replace(old, new).replace(f'({int(match[2]):03d})', f'({number:03d})'), new, number
 
 
 def validate_receipt(receipt, artifact_hash, run_id):
@@ -213,6 +215,13 @@ def build(name, evidence):
         if not config_path:
             raise ValueError('缺少构建机环境 AEGIS_CI_CONFIG，参见接入文档')
         config = json.loads(Path(config_path).read_text(encoding='utf-8'))
+        if product_status(ROOT):
+            raise ValueError('产品仓库存在未提交改动，不能绑定发行基线')
+        product_commit = git(ROOT, 'rev-parse', 'HEAD')
+        if os.environ.get('GITHUB_SHA', product_commit) != product_commit:
+            raise ValueError('运行提交与产品仓库不一致')
+        features, feature_hash = contract.load(BROWSER, enforce_history=True)
+        result.update(productCommit=product_commit, featureContractSha256=feature_hash)
         _, host, arch, args_name, out_name = PLATFORMS[name]
         if platform.system() != host or platform.machine().lower() not in arch:
             raise ValueError(f'{name} 构建机系统或架构不匹配')
@@ -224,6 +233,8 @@ def build(name, evidence):
         minimum = max(30, int(config.get('minFreeGiB', 100)))
         if shutil.disk_usage(src).free < minimum * 1024**3:
             raise ValueError('可用空间不足；不会自动清理源码、缓存或旧产物')
+        if (src / 'out' / out_name / '.aegis/build.lock').exists():
+            raise ValueError('本地构建仍占用固定输出目录，禁止并行编译')
         lock = src.parent / '.aegis-ci-lock'
         lock.mkdir()  # 已存在时停止，不删除其他运行留下的锁。
         try:
@@ -238,16 +249,23 @@ def build(name, evidence):
             tracking.mkdir(exist_ok=True)
             counter = tracking / 'build-number.json'
             previous = json.loads(counter.read_text())['number'] if counter.exists() else 0
-            original = (src / HEADER).read_bytes()
-            updated, version, number = bump_header(original.decode(), previous)
+            app_info = out / 'GCSA Aegis.app/Contents/Info.plist'
+            if name == 'mac' and app_info.exists():
+                built = plistlib.loads(app_info.read_bytes()).get('AegisProductVersion', '')
+                if re.fullmatch(r'\d+\.\d+\.\d+\.\d+', built):
+                    previous = max(previous, int(built.rsplit('.', 1)[1]))
+            version, number = contract.validate_version(src, BROWSER, previous)
             write_json(counter, {'number': number, 'version': version, 'runId': run_id})
             result.update(chromium=pin, sourceHead=git(src, 'rev-parse', 'HEAD'), sourceTree=source_tree,
                           v8Tree=v8_tree, productVersion=version, status='building')
             write_json(state, result)
+            baseline = {'productCommit': product_commit, 'productVersion': version,
+                        'sourceTree': source_tree, 'v8Tree': v8_tree,
+                        'featureContractSha256': feature_hash, 'features': features['features']}
+            write_json(evidence / 'feature-baseline.json', baseline)
             args_file = out / 'args.gn'
             old_args = args_file.read_bytes() if args_file.exists() else None
             try:
-                (src / HEADER).write_text(updated, encoding='utf-8')
                 gn_args = (BROWSER / 'args' / args_name).read_text()
                 gn_args = re.sub(r'^use_siso\s*=.*$', '', gn_args, flags=re.M)
                 args_file.write_text(gn_args + '\nuse_siso = false\nv8_enable_memory_corruption_api = false\n', encoding='utf-8')
@@ -284,22 +302,32 @@ def build(name, evidence):
                 acceptance = command_argv(acceptance, allow_path_lookup=False)
                 receipt = evidence / 'acceptance.json'
                 run([*acceptance, '--artifact', artifact, '--source', src, '--out', out, '--evidence', evidence,
-                     '--receipt', receipt, '--run-id', run_id], src, evidence / 'acceptance.log', src, minimum,
+                     '--receipt', receipt, '--run-id', run_id,
+                     '--baseline', evidence / 'feature-baseline.json'], src, evidence / 'acceptance.log', src, minimum,
                     allow_path_lookup=False)
                 accepted = json.loads(receipt.read_text())
                 validate_receipt(accepted, result['artifactSha256'], run_id)
+                for key in ('productCommit', 'productVersion', 'sourceTree', 'v8Tree'):
+                    if accepted.get(key) != baseline[key]:
+                        raise ValueError('验收记录的源码或产品基线不一致：' + key)
+                contract.validate_features(accepted, features, feature_hash,
+                    {'mac': 'mac-arm64', 'windows': 'win-x64', 'android': 'android-arm64'}[name], evidence)
                 for item in accepted['evidenceFiles']:
                     path = (evidence / item).resolve()
                     if not path.is_relative_to(evidence.resolve()) or not path.is_file() or not path.stat().st_size:
                         raise ValueError('验收日志缺失或超出本次证据目录')
+                if git(ROOT, 'rev-parse', 'HEAD') != product_commit or product_status(ROOT):
+                    raise ValueError('验收期间产品提交或文件发生变化')
+                for checkout, expected in [(src, source_tree), (src / 'v8', v8_tree)]:
+                    if (git(checkout, 'rev-parse', 'HEAD^{tree}') != expected
+                            or git(checkout, 'status', '--porcelain', '--ignore-submodules=all')):
+                        raise ValueError('验收期间Chromium或V8源码发生变化')
                 result.update(status='candidate_validated', nativeTests='passed', runtimeAcceptance='passed')
             finally:
-                (src / HEADER).write_bytes(original)
                 if old_args is None:
                     args_file.unlink(missing_ok=True)
                 else:
                     args_file.write_bytes(old_args)
-                result['sourceHeaderRestored'] = (src / HEADER).read_bytes() == original
         finally:
             lock.rmdir()
     except Exception as error:

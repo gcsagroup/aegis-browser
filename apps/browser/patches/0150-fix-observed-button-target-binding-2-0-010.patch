@@ -1,4 +1,4 @@
-From 31c84b62c1bfb343dd1536b3022bf3c051b4d93d Mon Sep 17 00:00:00 2001
+From f541a8919d58061dcd01d48813fe9376072891c9 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 04:48:49 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E7=BB=91=E5=AE=9A=E5=AE=9E=E9=99=85?=
@@ -24,7 +24,7 @@ Content-Transfer-Encoding: 8bit
  12 files changed, 221 insertions(+), 9 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
-index 6dccd20f88..244dc9b7f4 100644
+index 6dccd20f88cb129a7255534d780fefff2e0e609d..244dc9b7f46cb2c74f9a8936fddf84d298492757 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
 @@ -1079,6 +1079,21 @@ std::optional<AgentDocumentRef> AegisActorBridge::LastDocument(
@@ -93,7 +93,7 @@ index 6dccd20f88..244dc9b7f4 100644
    result.action_id = std::move(action_id);
    result.ok = true;
 diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.h b/chrome/browser/aegis/agent/aegis_actor_bridge.h
-index 5e04827de8..56fb073065 100644
+index 5e04827de85c39a06ce2cbdbdb86a4e2c4f9306a..56fb073065fccc3ac8b7395cd22bea588bc62942 100644
 --- a/chrome/browser/aegis/agent/aegis_actor_bridge.h
 +++ b/chrome/browser/aegis/agent/aegis_actor_bridge.h
 @@ -68,8 +68,12 @@ class AegisActorBridge {
@@ -118,7 +118,7 @@ index 5e04827de8..56fb073065 100644
      bool is_sensitive_control = false;
    };
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index bac2973c94..43ae7696a5 100644
+index bac2973c9418383a03bac68ce4ba75eea0c9379e..43ae7696a55f6cb79c24c47910cc7c0f1d3aaf20 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1107,11 +1107,30 @@ const AgentTaskPlan* AegisAgentService::GetPlan(
@@ -195,7 +195,7 @@ index bac2973c94..43ae7696a5 100644
          .action_id = call.action_id,
          .ok = false,
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.h b/chrome/browser/aegis/agent/aegis_agent_service.h
-index 4702df99b8..e30a4011e9 100644
+index 4702df99b84c2279322dbc5678a3a92379cc03d0..e30a4011e9e5c40ffee21a6358e1ffdeb0604470 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.h
 @@ -185,6 +185,7 @@ class AegisAgentService : public KeyedService {
@@ -207,7 +207,7 @@ index 4702df99b8..e30a4011e9 100644
    struct ExecutionRuntime;
    struct MonitorUrlCheck;
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 934bc9d65e..236c3245f6 100644
+index 934bc9d65e4ca9922a1cd8c1b0d918e8add496f3..236c3245f6982e27171f894825436da21258c4de 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -49,6 +49,17 @@ namespace aegis::agent {
@@ -291,7 +291,7 @@ index 934bc9d65e..236c3245f6 100644
    AegisAgentService* service =
        AegisAgentServiceFactory::GetForProfile(profile_);
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index 07cf1da8d4..bc680858fb 100644
+index 07cf1da8d49198f7542d73c10f23aaf5ae6cb9f3..bc680858fb908db97bcf5e78ea4f70f99f926989 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -834,6 +834,9 @@ TEST(AegisAgentPolicyTest, SelectedReadUrlsDoNotAuthorizeDerivedUrls) {
@@ -313,7 +313,7 @@ index 07cf1da8d4..bc680858fb 100644
        EXPECT_EQ(decision.disposition,
                  AgentPolicyDisposition::kRequireActionApproval);
 diff --git a/chrome/browser/aegis/agent/agent_observation.cc b/chrome/browser/aegis/agent/agent_observation.cc
-index d7242b3ef7..afa708a929 100644
+index d7242b3ef7453d7b4a14b19b07476b7ca49d56dd..afa708a9296bee62d2bf74da0109202cf4023c7d 100644
 --- a/chrome/browser/aegis/agent/agent_observation.cc
 +++ b/chrome/browser/aegis/agent/agent_observation.cc
 @@ -30,7 +30,8 @@ void AppendMainFrameNodes(
@@ -368,7 +368,7 @@ index d7242b3ef7..afa708a929 100644
        return;
      }
 diff --git a/chrome/browser/aegis/agent/agent_observation_unittest.cc b/chrome/browser/aegis/agent/agent_observation_unittest.cc
-index f990d00ffe..039fb048c3 100644
+index f990d00ffef2a215e71930c0f06a8e801763ae3c..039fb048c386a6f4d7287b24348538a73baf2d0f 100644
 --- a/chrome/browser/aegis/agent/agent_observation_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_observation_unittest.cc
 @@ -62,6 +62,44 @@ TEST(AgentObservationTest, ReadOnlyKeepsBodyAndTableWithoutNavigationOrForms) {
@@ -417,7 +417,7 @@ index f990d00ffe..039fb048c3 100644
    proto::ContentNode root;
    AddText(&root, 1, "没有main角色的普通正文");
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.cc b/chrome/browser/aegis/agent/agent_policy_broker.cc
-index 31694b6ac1..b02a30d2e3 100644
+index 31694b6ac1b16086c8df68f2e7e782274830e084..b02a30d2e316ccefb6beff9bfb918283d7e4fc62 100644
 --- a/chrome/browser/aegis/agent/agent_policy_broker.cc
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.cc
 @@ -275,6 +275,14 @@ bool AgentPolicyBroker::BindSelectedReadUrls(const AgentTask& task,
@@ -436,7 +436,7 @@ index 31694b6ac1..b02a30d2e3 100644
      const AgentTask& task,
      const AgentToolCall& call) const {
 diff --git a/chrome/browser/aegis/agent/agent_policy_broker.h b/chrome/browser/aegis/agent/agent_policy_broker.h
-index bab0b4d94f..dcf1ab103b 100644
+index bab0b4d94f03d459cfd3e95c7261b935fb11e3d4..dcf1ab103b6d407dd875e845db1904b05bdd220d 100644
 --- a/chrome/browser/aegis/agent/agent_policy_broker.h
 +++ b/chrome/browser/aegis/agent/agent_policy_broker.h
 @@ -63,6 +63,7 @@ class AgentPolicyBroker {
@@ -448,7 +448,7 @@ index bab0b4d94f..dcf1ab103b 100644
                                 const AgentToolCall& call) const;
    // Stable fingerprint shown to the user and consumed by the one-use approval
 diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
-index 5f1639a1cb..b81e460614 100644
+index 5f1639a1cbe470a67f9f47e5fb3486cc325a7d0e..b81e46061408beea640afd46f97128c1ea407304 100644
 --- a/chrome/browser/aegis/agent/agent_tool_registry.cc
 +++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
 @@ -499,7 +499,8 @@ std::string_view ToolDescription(std::string_view name) {
@@ -462,7 +462,7 @@ index 5f1639a1cb..b81e460614 100644
    if (name == "page.type") {
      return "Type non-secret text into an approved field.";
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 27d131ffca..54987f0eb2 100644
+index 27d131ffca3519353ce3bae89e1b29bcbcb73003..54987f0eb20ccee0823b19a7ec81ff40818f78f2 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

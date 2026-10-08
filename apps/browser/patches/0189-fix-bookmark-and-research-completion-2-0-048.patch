@@ -1,4 +1,4 @@
-From 7b6ca2bee3453985435ae5b2113014cdc3e50154 Mon Sep 17 00:00:00 2001
+From 5cb1e3682ad3fcffd29d6a3a9f344a9601305813 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 15:42:07 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
@@ -23,7 +23,7 @@ Content-Transfer-Encoding: 8bit
  10 files changed, 579 insertions(+), 15 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 2734a44062..ea8897f673 100644
+index 2734a440629556fdb219b079deff6c1eeec099f9..ea8897f6732be19a0ab0fcdd06fd1f5dfcab7ab5 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1765,7 +1765,8 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
@@ -62,7 +62,7 @@ index 2734a44062..ea8897f673 100644
                                         it->second->evidence_history);
        NormalizeAgentDownloadCompletion(&*completion, task->goal(),
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 3e26fba923..4f4f450870 100644
+index 3e26fba9239e31b52181972c088b31cac0623317..4f4f4508706334f6bf9cbb97f04cac2533494513 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -587,7 +587,8 @@ std::optional<AgentTranslationSelection> ParseAgentTranslationSelection(
@@ -235,7 +235,7 @@ index 3e26fba923..4f4f450870 100644
      AgentCompletionSummary* completion,
      base::span<const AgentExecutionEvidence> evidence_history,
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index e3e984757f..24b7c4a1e2 100644
+index e3e984757fac87f58d9d7133523a29743737799e..24b7c4a1e240493babc6cc65c0c6862b48418cf1 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -21,12 +21,25 @@ struct AgentTranslationSegment {
@@ -296,7 +296,7 @@ index e3e984757f..24b7c4a1e2 100644
      const AgentCompletionSummary& completion,
      base::span<const AgentExecutionEvidence> evidence_history);
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index f39c1bce68..a52155dfbf 100644
+index f39c1bce688be4ff1c75ff923e800767f100479f..a52155dfbfe1ae3bd10ab382a9c3701bb076bf5b 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -2559,5 +2559,86 @@ TEST(AegisAgentExecutionTest, BlocksSubmitAndFinalTransactionControls) {
@@ -387,7 +387,7 @@ index f39c1bce68..a52155dfbf 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index c7d1b1eaeb..d9db1df7df 100644
+index c7d1b1eaebd13570ec46bc4d95efd3a4625f4f52..d9db1df7df10d013c0afcb972ccd350ad2a0a709 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -1263,6 +1263,24 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
@@ -416,7 +416,7 @@ index c7d1b1eaeb..d9db1df7df 100644
                               std::string_view user_goal,
                               std::string* error) {
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index 57ad692975..58e9b6f15b 100644
+index 57ad6929759fc3bff39eb787edf52724c7af5bdc..58e9b6f15bc1e78bb44ffb39a8f5f3c6de27b71a 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -127,6 +127,9 @@ bool ValidateTaskPlanForGoal(const AgentTaskPlan& plan,
@@ -430,7 +430,7 @@ index 57ad692975..58e9b6f15b 100644
  
  #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_PLANNER_H_
 diff --git a/chrome/browser/aegis/agent/agent_research.cc b/chrome/browser/aegis/agent/agent_research.cc
-index 5a0b7712dd..af217c87b1 100644
+index 5a0b7712dd627e515ed2e46dc5eff22adf76ce57..af217c87b15e43871a749f842abe5a1449715ce6 100644
 --- a/chrome/browser/aegis/agent/agent_research.cc
 +++ b/chrome/browser/aegis/agent/agent_research.cc
 @@ -54,6 +54,182 @@ std::optional<std::string> AgentResearchContentHash(
@@ -617,7 +617,7 @@ index 5a0b7712dd..af217c87b1 100644
                                       const AgentToolCall& call,
                                       const AgentToolResult& result,
 diff --git a/chrome/browser/aegis/agent/agent_research.h b/chrome/browser/aegis/agent/agent_research.h
-index 4d5d32e1c3..b710eaa22e 100644
+index 4d5d32e1c33f7c0fb607e4725ce574d2ba5c44e1..b710eaa22e048151b4f53721c2fd6de3238ee23c 100644
 --- a/chrome/browser/aegis/agent/agent_research.h
 +++ b/chrome/browser/aegis/agent/agent_research.h
 @@ -16,6 +16,12 @@ namespace aegis::agent {
@@ -634,7 +634,7 @@ index 4d5d32e1c3..b710eaa22e 100644
      const AgentTask& task,
      const AgentCompletionSummary& completion,
 diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
-index 36b1627a1c..44fe86b6d4 100644
+index 36b1627a1c59662e7536d317ecdcae095b9bded6..44fe86b6d49f509db192f9d6c3a8f94420a316be 100644
 --- a/chrome/browser/aegis/agent/agent_research_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
 @@ -253,5 +253,159 @@ TEST(AegisAgentResearchTest, RejectsExpandedSchemaDuplicatesAndInvalidHash) {
@@ -798,7 +798,7 @@ index 36b1627a1c..44fe86b6d4 100644
  }  // namespace
  }  // namespace aegis::agent
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 04d285a853..dce2f5e834 100644
+index 04d285a853d335167293bb6b9b4df7fbd4d934ed..dce2f5e8345a9f40a523c2f0bc84af2bd51447dd 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

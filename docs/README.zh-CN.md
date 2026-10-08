@@ -1,5 +1,7 @@
 # 文档
 
+
+> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
 本目录保存 GCSA-aegis 的公开产品架构、路线图、研究边界、产品页，以及带日期的本地审计记录。
@@ -12,6 +14,8 @@
 
 ## 从这里开始
 
+- [桌面鼠标手势使用指南](../apps/browser/docs/mouse-gestures.zh-CN.md)
+- [141 鼠标手势验收与上游同步状态（2026-10-09）](audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)
 - [访问服务 V1.0 设计总览](plans/access-service-v1.0/overview.zh-CN.md)
 - [访问服务 P0 实现与证据](plans/access-service-v1.0/p0-implementation.zh-CN.md)
 - [项目概览](../README.zh-CN.md)

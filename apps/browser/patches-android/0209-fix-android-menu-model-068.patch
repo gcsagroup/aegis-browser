@@ -1,0 +1,71 @@
+From 22f103e2aebaae7b35f539b5942ca84474cf9ffd Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 29 Sep 2026 17:56:18 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Android=20=E8=8F=9C?=
+ =?UTF-8?q?=E5=8D=95=E6=9E=84=E9=80=A0=E6=8E=A5=E5=8F=A3=E5=B9=B6=E9=80=92?=
+ =?UTF-8?q?=E5=A2=9E=E5=86=85=E9=83=A8=E7=89=88=E6=9C=AC=20068?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../TabbedAppMenuPropertiesDelegate.java           | 14 ++++++++++----
+ chrome/browser/ui/webui/help/aegis_github_update.h |  4 ++--
+ 2 files changed, 12 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+index 9d6a43a1caf39ae8550aab6bcd60cc2ca2bf51bc..2f1caae456a9ff50434f31398bb1da7a478dc43c 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+@@ -1387,23 +1387,29 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+     private ListItem buildAegisAgentItem() {
+         return new ListItem(
+                 AppMenuHandler.AppMenuItemType.STANDARD,
+-                buildModelForStandardMenuItem(
++                AppMenuItemUtils.buildModelForStandardMenuItem(
++                        mContext,
++                        getAppMenuItemTheme(),
+                         R.id.aegis_agent_menu_id,
+                         R.string.menu_aegis_agent,
+                         shouldShowIconBeforeItem()
+                                 ? R.drawable.draft_spark_24dp
+-                                : Resources.ID_NULL));
++                                : Resources.ID_NULL,
++                        isMenuIconAtStart()));
+     }
+ 
+     private ListItem buildAegisCurrentPageItem() {
+         return new ListItem(
+                 AppMenuHandler.AppMenuItemType.STANDARD,
+-                buildModelForStandardMenuItem(
++                AppMenuItemUtils.buildModelForStandardMenuItem(
++                        mContext,
++                        getAppMenuItemTheme(),
+                         R.id.aegis_agent_current_page_menu_id,
+                         R.string.menu_aegis_agent_current_page,
+                         shouldShowIconBeforeItem()
+                                 ? R.drawable.draft_spark_24dp
+-                                : Resources.ID_NULL));
++                                : Resources.ID_NULL,
++                        isMenuIconAtStart()));
+     }
+ 
+     private boolean shouldShowAegisCurrentPageItem(@Nullable Tab currentTab) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index a5272990254085cfa4d265b0d702d4fa5ad53b96..382df0b89530c2de085d2b0214a6a36fdb1f4759 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.67";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (067)";
++inline constexpr char kProductVersion[] = "2.0.0.68";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (068)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

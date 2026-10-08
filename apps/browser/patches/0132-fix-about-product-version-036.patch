@@ -1,4 +1,4 @@
-From 07aac082c1a655da3be1f8b0be321477a71006fe Mon Sep 17 00:00:00 2001
+From 4f895c4d96ad9e622259e6807e2c9a5af01c3449 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 06:57:08 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=85=B3=E4=BA=8E=E9=A1=B5?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 16 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 01055db27c..a60236d17b 100644
+index 01055db27cd7a93a8a463b586168a35367030903..a60236d17b01137ba9676df602ef2b146584e9bb 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;
@@ -33,10 +33,10 @@ index 01055db27c..a60236d17b 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/BUILD.gn b/chrome/browser/ui/webui/settings/BUILD.gn
-index 669e204697..0843ef36bd 100644
+index 3d0cf68f1c3107c67ca2772bcbc8c1c848cf3eb4..1c325bb1e2d39aa72e7452a926ce63b4d7add1e7 100644
 --- a/chrome/browser/ui/webui/settings/BUILD.gn
 +++ b/chrome/browser/ui/webui/settings/BUILD.gn
-@@ -360,6 +360,10 @@ source_set("impl") {
+@@ -368,6 +368,10 @@ source_set("impl") {
      ]
    }
  
@@ -48,7 +48,7 @@ index 669e204697..0843ef36bd 100644
      deps += [
        "//ash/webui/eche_app_ui",
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 40edd09beb..c5fd89c78b 100644
+index cb808124570aa78b5b1332c209cb70220987cd77..0f17f60432e09348744c7ca87573316481031450 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -18,6 +18,9 @@

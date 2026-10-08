@@ -1,4 +1,4 @@
-From 1ced47ffffdc0a3de40a2f10fdabc9b07d7c75dd Mon Sep 17 00:00:00 2001
+From ddc51d5902da68c47441bc349c0210ecfe21a21b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 04:13:24 +0800
 Subject: [PATCH] fix(aegis): validate bookmark goal coverage
@@ -13,7 +13,7 @@ Subject: [PATCH] fix(aegis): validate bookmark goal coverage
  6 files changed, 232 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 95ac4e7a3d..141065ed4e 100644
+index 95ac4e7a3dd8607c398e683e8ae45c23ad2cbcba..141065ed4e1241741d63715715da3cafe948b9db 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -759,6 +759,9 @@ bool AegisAgentService::AcceptModelPlan(const std::string& task_id,
@@ -27,7 +27,7 @@ index 95ac4e7a3d..141065ed4e 100644
      if (!IsToolAvailable(step.tool_name) ||
          (task->mode() == AgentMode::kAsk &&
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 638f382770..4553f860ae 100644
+index 638f38277096abf37eeec7ff9bd80cb7e2bac025..4553f860ae8df914b40fe0e6e343956e332cb961 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -106,6 +106,16 @@ AgentModelEvent ServicePlanEvent() {
@@ -136,7 +136,7 @@ index 638f382770..4553f860ae 100644
  
    const base::Time now = base::Time::Now();
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 60bfc4ea25..119c542607 100644
+index 60bfc4ea25ae28bffc41331c1d51864beaf8406b..119c54260720b12ac040d6d2c06dae9883f1b36b 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -100,6 +100,32 @@ bool GoalContainsAny(std::string_view goal,
@@ -239,7 +239,7 @@ index 60bfc4ea25..119c542607 100644
 +
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index d0848738ca..5ec774c07e 100644
+index d0848738ca71799633876503fe60ece56681bb3a..5ec774c07efa99c760320937cb27ee7d1404519a 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -91,6 +91,13 @@ bool ValidateTaskPlanForMode(const AgentTaskPlan& plan,
@@ -257,7 +257,7 @@ index d0848738ca..5ec774c07e 100644
  
  #endif  // CHROME_BROWSER_AEGIS_AGENT_AGENT_PLANNER_H_
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index e97e4ee951..89ce65e2a7 100644
+index e97e4ee951b80a33028dd8653dbbfa1426b0b74e..89ce65e2a746ae15d456da92259107672d1a9463 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -512,6 +512,74 @@ TEST(AegisAgentPlannerTest,
@@ -336,7 +336,7 @@ index e97e4ee951..89ce65e2a7 100644
    AgentTaskPlan one_shot;
    one_shot.steps.push_back({.step_id = "step-1",
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index b333c7d744..135ac52779 100644
+index b333c7d74465e5a9248328f5d1694facb639ad63..135ac52779be917ac3d62ddc4439414a05b20967 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -49,13 +49,13 @@ function option(value: string, label: string): HTMLOptionElement {

@@ -1,0 +1,963 @@
+From edf15d832e8ae9c16b9bfa2ec45e6db22b78ca73 Mon Sep 17 00:00:00 2001
+From: Aegis integration <aegis-integration@users.noreply.github.com>
+Date: Sat, 3 Oct 2026 05:13:41 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=20Mock=20?=
+ =?UTF-8?q?=E6=8E=A5=E5=8F=A3=E5=8F=8A=E9=9D=99=E6=80=81=E5=AE=A1=E6=9F=A5?=
+ =?UTF-8?q?=E9=97=AE=E9=A2=98=EF=BC=8C=E5=80=99=E9=80=89=20101?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/aegis_ui_handler_unittest.cc        |  12 +-
+ .../aegis/agent/aegis_browser_tools.cc        |   2 +-
+ .../browser/aegis/agent/agent_task_store.cc   |  12 +-
+ chrome/browser/resources/aegis_agent/agent.ts | 213 ++++++++++--------
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ chrome/browser/ui/webui/version/version_ui.cc |   4 +
+ .../product_install_details_unittest.cc       |   2 +-
+ .../webui/history/history_routing_test.ts     |   6 +
+ .../data/webui/settings/about_page_test.ts    |   4 +
+ .../policy/tools/generate_policy_source.py    |  71 +++---
+ .../writers/reg_writer_unittest.py            |   8 +-
+ .../prefetch_network_context_unittest.cc      |   6 +-
+ .../prefetch/prefetch_test_util_internal.h    |  31 ++-
+ ...refetch_url_loader_interceptor_unittest.cc |  16 +-
+ 14 files changed, 241 insertions(+), 150 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index f51e80dc247061d925c5c013a4f727d2f3203d2d..c3003bc190f0b9dd82cb754499ea032e032eb7ff 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -100,7 +100,7 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
+   AgentTask task("window-focus", "核对窗口审批期间的结构", AgentMode::kAct,
+                  scope);
+   AegisBrowserTools tools(profile());
+-  auto read = [&]() {
++  auto read_state = [&]() {
+     AgentToolCall call;
+     call.action_id = "window-list";
+     call.tool_name = "window.list";
+@@ -108,12 +108,12 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
+     tools.Execute(&task, call, future.GetCallback());
+     return future.Take();
+   };
+-  auto before = read();
++  auto before = read_state();
+   ASSERT_TRUE(before.ok);
+   ASSERT_TRUE(before.value.FindString("revision"));
+   auto* test_window = static_cast<TestBrowserWindow*>(window());
+   test_window->set_is_active(true);
+-  auto focused = read();
++  auto focused = read_state();
+   ASSERT_TRUE(focused.ok);
+   const auto* windows = focused.value.FindList("windows");
+   ASSERT_TRUE(windows);
+@@ -122,19 +122,19 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
+   EXPECT_EQ(*before.value.FindString("revision"),
+             *focused.value.FindString("revision"));
+   test_window->set_is_active(false);
+-  auto unfocused = read();
++  auto unfocused = read_state();
+   ASSERT_TRUE(unfocused.ok);
+   EXPECT_EQ(*before.value.FindString("revision"),
+             *unfocused.value.FindString("revision"));
+   // URL 或固定状态变化仍使旧审批版本失效。
+   NavigateAndCommit(list->GetTab(0)->GetContents(),
+                     GURL("https://workspace.example/changed"));
+-  auto navigated = read();
++  auto navigated = read_state();
+   ASSERT_TRUE(navigated.ok);
+   EXPECT_NE(*before.value.FindString("revision"),
+             *navigated.value.FindString("revision"));
+   browser()->tab_strip_model()->SetTabPinned(0, true);
+-  auto pinned = read();
++  auto pinned = read_state();
+   ASSERT_TRUE(pinned.ok);
+   EXPECT_NE(*navigated.value.FindString("revision"),
+             *pinned.value.FindString("revision"));
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index 44e69beb2d6621beae392b42f7afa6740236781b..c0d9fb54685a36f1d097ca4f44fc590ecce628e7 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -1457,7 +1457,7 @@ void AegisBrowserTools::ExecuteWindowTool(AgentTask* task,
+         base::BindOnce(
+             [](base::WeakPtr<AegisBrowserTools> self,
+                base::WeakPtr<AgentTask> current_task, GURL target,
+-               std::string action_id, ToolResultCallback done,
++               const std::string& action_id, ToolResultCallback done,
+                BrowserWindowInterface* created) {
+               TabListInterface* list =
+                   created ? TabListInterface::From(created) : nullptr;
+diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
+index d35e4358956c726225572301103116cc2b2b88ce..e7198f34312099b52a1a5164a40aa005e767d771 100644
+--- a/chrome/browser/aegis/agent/agent_task_store.cc
++++ b/chrome/browser/aegis/agent/agent_task_store.cc
+@@ -888,22 +888,22 @@ std::optional<std::vector<StoredAgentResearch>> AgentTaskStore::LoadResearch() {
+   if (!initialized_) {
+     return std::nullopt;
+   }
+-  sql::Statement read(database_.GetCachedStatement(
++  sql::Statement research_query(database_.GetCachedStatement(
+       SQL_FROM_HERE,
+       "SELECT id,ciphertext,saved_us FROM agent_saved_research ORDER BY "
+       "saved_us DESC LIMIT 20"));
+-  while (read.Step()) {
+-    auto id = read.ColumnString(0);
+-    auto ciphertext = read.ColumnBlobAsString(1);
++  while (research_query.Step()) {
++    auto id = research_query.ColumnString(0);
++    auto ciphertext = research_query.ColumnBlobAsString(1);
+     if (id.empty() || id.size() > 64u || ciphertext.empty() ||
+         ciphertext.size() > 69632u) {
+       return std::nullopt;
+     }
+     result.push_back({.id = std::move(id),
+                       .ciphertext = std::move(ciphertext),
+-                      .saved_at = DeserializeTime(read.ColumnInt64(2))});
++                      .saved_at = DeserializeTime(research_query.ColumnInt64(2))});
+   }
+-  if (!read.Succeeded()) {
++  if (!research_query.Succeeded()) {
+     return std::nullopt;
+   }
+   return result;
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 4c4970a564768b717cebce39b8352f315a383a2a..3180a488511149b7d0e52b37e90e5a5142e9183c 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -108,7 +108,7 @@ function inferWorkflow(goal: string): Workflow {
+ }
+ 
+ function refersToCurrentPage(goal: string): boolean {
+-  return /这篇文章|這篇文章|this\s+article|当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|(?:the\s+)?page\s+content/iu
++  return /这篇文章|這篇文章|this\s+article|当前页|当前页面|当前网页|目前頁|目前頁面|目前網頁|这个页面|这个网页|這個頁面|這個網頁|本页面|本网页|本頁面|本網頁|页面内容|网页内容|頁面內容|網頁內容|this\s+page|current\s+page|page\s+content/iu
+       .test(goal);
+ }
+ 
+@@ -123,7 +123,7 @@ function inferAutomationSchedule(goal: string): string|null {
+   }
+   const schedules: Array<[RegExp, string]> = [
+     [/每(?:隔)?\s*15\s*分钟|每(?:隔)?\s*15\s*分鐘|every\s+15\s+minutes?/iu, '15'],
+-    [/每(?:隔)?\s*(?:1\s*|一)?小时|每(?:隔)?\s*(?:1\s*|一)?小時|hourly|every\s+(?:1\s+|one\s+)?hour\b/iu, '60'],
++    [/每\s*小时|每\s*小時|每隔\s*小时|每隔\s*小時|每\s*1\s*小时|每\s*1\s*小時|每隔\s*1\s*小时|每隔\s*1\s*小時|每\s*一小时|每\s*一小時|每隔\s*一小时|每隔\s*一小時|hourly|every\s+hour\b|every\s+1\s+hour\b|every\s+one\s+hour\b/iu, '60'],
+     [/每(?:隔)?\s*6\s*小时|每(?:隔)?\s*6\s*小時|every\s+6\s+hours?/iu, '360'],
+     [/每天|每日|daily|every\s+day/iu, '1440'],
+     [/每周|每週|weekly|every\s+week/iu, '10080'],
+@@ -264,33 +264,37 @@ function renderSavedResearch(records: SavedResearch[]) {
+       }
+       const open = document.createElement('button');
+       open.textContent = loadTimeData.getString('researchOpenSource');
+-      open.addEventListener('click', async () => {
+-        try {
+-          const result = await proxy.handler.openResearchSource(record.id, index);
+-          status.textContent = loadTimeData.getString(result.ok ?
++      open.addEventListener('click', () => {
++        void (async () => {
++          try {
++            const result = await proxy.handler.openResearchSource(record.id, index);
++            status.textContent = loadTimeData.getString(result.ok ?
+               'researchSourceOpened' : 'researchSourceUnavailable');
+-        } catch {
+-          status.textContent = loadTimeData.getString('researchSourceUnavailable');
+-        }
++          } catch {
++            status.textContent = loadTimeData.getString('researchSourceUnavailable');
++          }
++        })();
+       });
+       const check = document.createElement('button');
+       check.textContent = loadTimeData.getString('researchCheckSource');
+       check.disabled = !source.available;
+-      check.addEventListener('click', async () => {
+-        check.disabled = true;
+-        status.textContent = loadTimeData.getString('researchChecking');
+-        try {
+-          const result = await proxy.handler.reviewResearchSource(record.id, index);
+-          const key = result.status === 'matched' ? 'researchSourceMatched' :
++      check.addEventListener('click', () => {
++        void (async () => {
++          check.disabled = true;
++          status.textContent = loadTimeData.getString('researchChecking');
++          try {
++            const result = await proxy.handler.reviewResearchSource(record.id, index);
++            const key = result.status === 'matched' ? 'researchSourceMatched' :
+               result.status === 'changed' ? 'researchSourceChanged' :
+-              result.status === 'position_unavailable' ? 'researchPositionUnavailable' :
+-              'researchSourceUnavailable';
+-          status.textContent = loadTimeData.getString(key);
+-        } catch {
+-          status.textContent = loadTimeData.getString('researchSourceUnavailable');
+-        } finally {
+-          check.disabled = !source.available;
+-        }
++                result.status === 'position_unavailable' ? 'researchPositionUnavailable' :
++                  'researchSourceUnavailable';
++            status.textContent = loadTimeData.getString(key);
++          } catch {
++            status.textContent = loadTimeData.getString('researchSourceUnavailable');
++          } finally {
++            check.disabled = !source.available;
++          }
++        })();
+       });
+       const monitor = document.createElement('button');
+       monitor.textContent = loadTimeData.getString('researchMonitorSource');
+@@ -309,20 +313,22 @@ function renderSavedResearch(records: SavedResearch[]) {
+     }
+     const remove = document.createElement('button');
+     remove.textContent = loadTimeData.getString('researchDelete');
+-    remove.addEventListener('click', async () => {
+-      remove.disabled = true;
+-      try {
+-        const result = await proxy.handler.deleteSavedResearch(record.id);
+-        if (result.error) {
+-          element('saved-research-status').textContent = researchMessage(result.error);
+-        } else {
+-          await refreshSavedResearch();
++    remove.addEventListener('click', () => {
++      void (async () => {
++        remove.disabled = true;
++        try {
++          const result = await proxy.handler.deleteSavedResearch(record.id);
++          if (result.error) {
++            element('saved-research-status').textContent = researchMessage(result.error);
++          } else {
++            await refreshSavedResearch();
++          }
++        } catch {
++          element('saved-research-status').textContent = researchMessage('failed');
++        } finally {
++          remove.disabled = false;
+         }
+-      } catch {
+-        element('saved-research-status').textContent = researchMessage('failed');
+-      } finally {
+-        remove.disabled = false;
+-      }
++      })();
+     });
+     details.append(remove);
+     list.append(details);
+@@ -581,7 +587,7 @@ function renderResult(next: TaskSnapshot) {
+       if (listId === 'result-sources') {
+         const button = document.createElement('button');
+         button.className = 'source-link';
+-        const title = next.resultSourceTitles?.[index];
++        const title = next.resultSourceTitles?.at(index);
+         button.textContent = title ? `${title} · ${item}` : item;
+         button.addEventListener('click', () => {
+           void proxy.handler.openVerifiedSource(next.taskId, index);
+@@ -659,7 +665,7 @@ function isDownloadedFileReviewGoal(goal: string): boolean {
+     return false;
+   }
+   const permittedReview = text.replace(
+-      /(?:不要|别|別)\s*(?:执行|執行|运行|運行|安装|安裝|下载|下載)|(?:do not|don't)\s*(?:run|execute|install|download)(?:\s+(?:it|this|the file))?/g, '');
++      /(?:不要|别|別)\s*(?:执行|執行|运行|運行|安装|安裝|下载|下載)|(?:do not|don't)\s*(?:run|execute|install|download)/g, '');
+   const command = /(?:重新|再|并|並|然后|然後)(?:下载|下載|安装|安裝)|(?:download|install) (?:it|this|the file)/.test(permittedReview);
+   return reference && question && state && !command;
+ }
+@@ -891,7 +897,21 @@ function renderMonitors(monitors: MonitorSummary[]) {
+     toggle.textContent = loadTimeData.getString(
+         monitor.paused ? 'resumeMonitor' : 'pauseMonitor');
+     toggle.disabled = busy;
+-    toggle.addEventListener('click', () => withBusy(() =>
++    const actionStatus = document.createElement('p');
++    const statusId = `monitor-action-${monitor.taskId}-${monitor.monitorId}`;
++    actionStatus.id = statusId;
++    actionStatus.setAttribute('role', 'status');
++    const runMonitorAction = (action: () => Promise<{snapshot: TaskSnapshot}>) => {
++      actionStatus.textContent = '';
++      void withBusy(action).catch(() => {
++        // withBusy 会重绘列表，失败提示必须写入当前可见的状态节点。
++        const currentStatus = document.getElementById(statusId);
++        if (currentStatus) {
++          currentStatus.textContent = loadTimeData.getString('planningGenericError');
++        }
++      });
++    };
++    toggle.addEventListener('click', () => runMonitorAction(() =>
+       proxy.handler.setMonitorPaused(
+           monitor.taskId, monitor.monitorId, !monitor.paused)));
+     const remove = document.createElement('button');
+@@ -899,16 +919,16 @@ function renderMonitors(monitors: MonitorSummary[]) {
+     remove.dataset['monitorAction'] = 'delete';
+     remove.textContent = loadTimeData.getString('deleteMonitor');
+     remove.disabled = busy;
+-    remove.addEventListener('click', () => withBusy(() =>
++    remove.addEventListener('click', () => runMonitorAction(() =>
+       proxy.handler.deleteMonitor(monitor.taskId, monitor.monitorId)));
+     const check = document.createElement('button');
+     check.type = 'button';
+     check.dataset['monitorAction'] = 'check';
+     check.textContent = loadTimeData.getString('checkMonitorNow');
+     check.disabled = busy || monitor.paused;
+-    check.addEventListener('click', () => withBusy(() =>
++    check.addEventListener('click', () => runMonitorAction(() =>
+       proxy.handler.checkMonitorNow(monitor.taskId, monitor.monitorId)));
+-    actions.append(check, toggle, remove);
++    actions.append(check, toggle, remove, actionStatus);
+     li.append(title, origin, retention, nextRun, outcome, summary, failures, actions);
+     list.append(li);
+   }
+@@ -962,7 +982,7 @@ function renderModel(next: TaskSnapshot) {
+     remove.disabled = modelRoutingBusy;
+     remove.addEventListener('click', () => {
+       void saveModelRouting(
+-          next.modelPool.filter(candidate => candidate.id !== entry.id));
++        next.modelPool.filter(candidate => candidate.id !== entry.id));
+     });
+     item.append(label, detail, remove);
+     pool.append(item);
+@@ -1340,31 +1360,33 @@ function initializeLabels() {
+   element('saved-research-refresh').addEventListener('click', () => {
+     void refreshSavedResearch();
+   });
+-  element('save-research').addEventListener('click', async () => {
+-    if (!snapshot?.researchSaveAvailable) {
+-      return;
+-    }
+-    const taskId = snapshot.taskId;
+-    const save = element<HTMLButtonElement>('save-research');
+-    save.disabled = true;
+-    try {
+-      const result = await proxy.handler.saveResearch(taskId);
+-      if (!result.error) {
+-        const response = await proxy.handler.getSnapshot();
+-        if (snapshot?.taskId === taskId) {
+-          render(response.snapshot);
+-        }
+-      }
+-      if (snapshot?.taskId !== taskId) {
++  element('save-research').addEventListener('click', () => {
++    void (async () => {
++      if (!snapshot?.researchSaveAvailable) {
+         return;
+       }
+-      element('save-research-status').textContent = result.error ?
++      const taskId = snapshot.taskId;
++      const save = element<HTMLButtonElement>('save-research');
++      save.disabled = true;
++      try {
++        const result = await proxy.handler.saveResearch(taskId);
++        if (!result.error) {
++          const response = await proxy.handler.getSnapshot();
++          if (snapshot?.taskId === taskId) {
++            render(response.snapshot);
++          }
++        }
++        if (snapshot?.taskId !== taskId) {
++          return;
++        }
++        element('save-research-status').textContent = result.error ?
+           researchMessage(result.error) : loadTimeData.getString('researchSaved');
+-    } catch {
+-      element('save-research-status').textContent = researchMessage('failed');
+-    } finally {
+-      save.disabled = false;
+-    }
++      } catch {
++        element('save-research-status').textContent = researchMessage('failed');
++      } finally {
++        save.disabled = false;
++      }
++    })();
+   });
+   element<HTMLTextAreaElement>('research-goal').value =
+       loadTimeData.getString('researchDefaultGoal');
+@@ -1794,29 +1816,35 @@ function bindActions() {
+   element('research-refresh').addEventListener('click', () => {
+     void refreshResearchTabs();
+   });
+-  element('research-start').addEventListener('click', () => withBusy(async () => {
+-    const goal = element<HTMLTextAreaElement>('research-goal').value.trim();
+-    const created = await proxy.handler.createResearchTask(
++  element('research-start').addEventListener('click', () => {
++    void withBusy(async () => {
++      const goal = element<HTMLTextAreaElement>('research-goal').value.trim();
++      const created = await proxy.handler.createResearchTask(
+         goal, [...selectedResearchTabs]);
+-    activeView = 'task';
+-    showCreatedTask(created.snapshot);
+-    autoRunTaskId = created.snapshot.taskId;
+-    return created;
+-  }, true));
+-  element('research-group').addEventListener('click', () => withBusy(async () => {
+-    const goal = loadTimeData.getStringF(
++      activeView = 'task';
++      showCreatedTask(created.snapshot);
++      autoRunTaskId = created.snapshot.taskId;
++      return created;
++    }, true);
++  });
++  element('research-group').addEventListener('click', () => {
++    void withBusy(async () => {
++      const goal = loadTimeData.getStringF(
+         'researchGroupGoal', String(selectedResearchTabs.size));
+-    const created = await proxy.handler.createTabGroupTask(
++      const created = await proxy.handler.createTabGroupTask(
+         goal, [...selectedResearchTabs]);
+-    activeView = 'task';
+-    showCreatedTask(created.snapshot);
+-    autoRunTaskId = created.snapshot.taskId;
+-    return created;
+-  }, true));
++      activeView = 'task';
++      showCreatedTask(created.snapshot);
++      autoRunTaskId = created.snapshot.taskId;
++      return created;
++    }, true);
++  });
+   element('plan-button').addEventListener('click', () => {
++
+     const goal = element<HTMLTextAreaElement>('goal').value.trim();
+     if (isDownloadedFileReviewGoal(goal)) {
+-      return reviewCurrentDownload();
++      void reviewCurrentDownload();
++      return;
+     }
+     const schedule = inferAutomationSchedule(goal);
+     if (schedule !== null) {
+@@ -1829,10 +1857,10 @@ function bindActions() {
+       element<HTMLSelectElement>('automation-schedule').focus();
+       return;
+     }
+-    return withBusy(async () => {
++    void withBusy(async () => {
+       const workflow = selectedWorkflow ?? inferWorkflow(goal);
+       const created = await proxy.handler.createTask(
+-          goal, AgentMode.kAct, workflow, [], 0);
++        goal, AgentMode.kAct, workflow, [], 0);
+       showCreatedTask(created.snapshot);
+       if (!created.snapshot.taskId) {
+         return created;
+@@ -1840,25 +1868,30 @@ function bindActions() {
+       autoRunTaskId = created.snapshot.taskId;
+       return proxy.handler.requestPlan(created.snapshot.taskId);
+     }, true);
++
++  });
++  element('review-download').addEventListener('click', () => {
++    void reviewCurrentDownload();
+   });
+-  element('review-download').addEventListener('click', reviewCurrentDownload);
+   element('create-automation-button').addEventListener(
+-      'click', () => withBusy(async () => {
++    'click', () => {
++      void withBusy(async () => {
+         const goal =
+-            element<HTMLTextAreaElement>('automation-goal').value.trim();
++          element<HTMLTextAreaElement>('automation-goal').value.trim();
+         const interval =
+-            Number(element<HTMLSelectElement>('automation-schedule').value);
++          Number(element<HTMLSelectElement>('automation-schedule').value);
+         // 自动化从读取目标开始；禁止下载、购物等语句不能选择一次性操作模板。
+         // 缺少明确来源时仍由模型理解目标，最终权限由原生自动化范围约束。
+         const created = await proxy.handler.createTask(
+-            goal, AgentMode.kAutomate, Workflow.kResearch, [], interval);
++          goal, AgentMode.kAutomate, Workflow.kResearch, [], interval);
+         showCreatedTask(created.snapshot);
+         if (!created.snapshot.taskId) {
+           return created;
+         }
+         autoRunTaskId = created.snapshot.taskId;
+         return proxy.handler.requestPlan(created.snapshot.taskId);
+-      }, true));
++      }, true);
++    });
+   element('detect-models-button').addEventListener('click', detectModels);
+   element('model-options').addEventListener('change', selectDetectedModel);
+   element('model-name').addEventListener('input', syncDetectedModel);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 768cfa92c419ba35e18c4c63794b4068ab3390eb..08915bfdb86c83c83ad6bfcd39bd900f97f94e01 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.100";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (100)";
++inline constexpr char kProductVersion[] = "2.0.0.101";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (101)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/version/version_ui.cc b/chrome/browser/ui/webui/version/version_ui.cc
+index ac96419abce972375536bb168c864d46ab19a713..0d0326ed0f51072c1efe25deddea6febe45c7ea7 100644
+--- a/chrome/browser/ui/webui/version/version_ui.cc
++++ b/chrome/browser/ui/webui/version/version_ui.cc
+@@ -220,6 +220,8 @@ int VersionUI::VersionProcessorVariation() {
+ #elif defined(ARCH_CPU_32_BITS)
+   return IDS_VERSION_UI_32BIT;
+ #else
++// 编译时仍须拒绝未知架构；静态扫描没有 GN 提供的架构宏。
++// cppcheck-suppress preprocessorErrorDirective
+ #error Update for a processor that is neither 32-bit nor 64-bit.
+ #endif
+ #elif defined(ARCH_CPU_64_BITS)
+@@ -227,6 +229,8 @@ int VersionUI::VersionProcessorVariation() {
+ #elif defined(ARCH_CPU_32_BITS)
+   return IDS_VERSION_UI_32BIT;
+ #else
++// 编译时仍须拒绝未知架构；静态扫描没有 GN 提供的架构宏。
++// cppcheck-suppress preprocessorErrorDirective
+ #error Update for a processor that is neither 32-bit nor 64-bit.
+ #endif
+ }
+diff --git a/chrome/install_static/product_install_details_unittest.cc b/chrome/install_static/product_install_details_unittest.cc
+index 524806957c3d4df57084660cd7029bfd6f02a727..71fa8895be3ff65fce4f55fc20b5223d3397fe25 100644
+--- a/chrome/install_static/product_install_details_unittest.cc
++++ b/chrome/install_static/product_install_details_unittest.cc
+@@ -124,7 +124,7 @@ TEST(ProductInstallDetailsTest, GetInstallSuffix) {
+   };
+   for (const auto& data : kData) {
+     const std::wstring path =
+-        base::StrCat({data.path_prefix, kProductPathName, data.path_suffix});
++        std::wstring(data.path_prefix) + kProductPathName + data.path_suffix;
+     EXPECT_EQ(data.install_suffix, GetInstallSuffix(path)) << path;
+   }
+ }
+diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
+index b8c4eeb49ff2815f691598a0a84aeb80dc4c14a7..5bf940992671d1adf88e986091ab56a7b296445c 100644
+--- a/chrome/test/data/webui/history/history_routing_test.ts
++++ b/chrome/test/data/webui/history/history_routing_test.ts
+@@ -45,6 +45,8 @@ import {navigateTo} from './test_util.js';
+ 
+     setup(function() {
+       window.history.replaceState({}, '', '/');
++      // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
++      // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+       document.body.innerHTML = window.trustedTypes!.emptyHTML;
+       CrRouter.resetForTesting();
+       const clustersHandler =
+@@ -301,6 +303,8 @@ suite(`routing-test-with-history-clusters-pref-set`, () => {
+ 
+   setup(function() {
+     window.history.replaceState({}, '', '/');
++    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
++    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     CrRouter.resetForTesting();
+     testProxy = new TestHistoryBrowserProxy();
+@@ -363,6 +367,8 @@ suite(`routing-test-with-history-embeddings-enabled`, () => {
+ 
+   setup(() => {
+     window.history.replaceState({}, '', '/');
++    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
++    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     CrRouter.resetForTesting();
+ 
+diff --git a/chrome/test/data/webui/settings/about_page_test.ts b/chrome/test/data/webui/settings/about_page_test.ts
+index 3fe0f5bcf9c83d2e098089c4bc2328c913278d03..151c9573b1917441636a9ed8a9a40f0dcd916b9d 100644
+--- a/chrome/test/data/webui/settings/about_page_test.ts
++++ b/chrome/test/data/webui/settings/about_page_test.ts
+@@ -67,6 +67,8 @@ suite('AllBuilds', function() {
+   async function initNewPage(): Promise<void> {
+     aboutBrowserProxy.reset();
+     lifetimeBrowserProxy.reset();
++    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
++    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     page = document.createElement('settings-about-page');
+     Router.getInstance().navigateTo(routes.ABOUT);
+@@ -414,6 +416,8 @@ suite('OfficialBuild', function() {
+     AboutPageBrowserProxyImpl.setInstance(browserProxy);
+     openWindowProxy = new TestOpenWindowProxy();
+     OpenWindowProxyImpl.setInstance(openWindowProxy);
++    // TrustedTypes.emptyHTML 是浏览器提供的空值，不接收网页或用户输入。
++    // nosemgrep: javascript.browser.security.insecure-innerhtml.insecure-innerhtml, javascript.browser.security.insecure-document-method.insecure-document-method
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     page = document.createElement('settings-about-page');
+     Router.getInstance().navigateTo(routes.ABOUT);
+diff --git a/components/policy/tools/generate_policy_source.py b/components/policy/tools/generate_policy_source.py
+index e899b4f9694aa1b9a18bd2556630801dec64c908..da4787e0f5dcaa956f67c444ce37fe9928ae3bd6 100755
+--- a/components/policy/tools/generate_policy_source.py
++++ b/components/policy/tools/generate_policy_source.py
+@@ -17,14 +17,17 @@ from collections import namedtuple
+ from collections import OrderedDict
+ from functools import cmp_to_key
+ from functools import partial
+-import ast
+ import json
+-import os
+ import re
+ import sys
+ import textwrap
+ 
+-from xml.sax.saxutils import escape as xml_escape
++from html import escape
++
++
++def xml_escape(value):
++  """只转义 XML 文本的 &、<、>，不解析 XML，也不改写引号。"""
++  return escape(value, quote=False)
+ 
+ CHROME_POLICY_KEY = 'SOFTWARE\\\\Policies\\\\Google\\\\Chrome'
+ CHROME_FOR_TESTING_POLICY_KEY = CHROME_POLICY_KEY + ' for Testing'
+@@ -358,29 +361,31 @@ def main():
+       policy_atomic_groups, key=lambda group: group.name)
+ 
+ 
+-  def GenerateFile(path, writer, sorted=False, xml=False, mutable=False):
++  def GenerateFile(path, writer, sort_by_name=False, xml=False, mutable=False):
+     if path:
+       with open(path, 'w', encoding='utf-8') as f:
+         _OutputGeneratedWarningHeader(f, template_file_name, xml)
+-        writer(sorted and sorted_policy_details or policy_details,
+-               sorted and sorted_policy_atomic_groups or policy_atomic_groups,
++        writer(sort_by_name and sorted_policy_details or policy_details,
++               sort_by_name and sorted_policy_atomic_groups or policy_atomic_groups,
+                target_platform, f, risk_tags, args.chunking, mutable)
+ 
+   if args.header_path:
+-    GenerateFile(args.header_path, _WritePolicyConstantHeader, sorted=True)
++    GenerateFile(args.header_path, _WritePolicyConstantHeader, sort_by_name=True)
+     # Also write a version of the header with get_proto_mutable() functions.
+-    assert args.header_path.endswith('.h')
++    if not (args.header_path.endswith('.h')):
++      raise AssertionError("政策定义不满足生成约束")
+     GenerateFile(args.header_path.replace('.h', '_mutable.h'),
+                  _WritePolicyConstantHeader,
+-                 sorted=True,
++                 sort_by_name=True,
+                  mutable=True)
+   if args.source_path:
+-    GenerateFile(args.source_path, _WritePolicyConstantSource, sorted=True)
++    GenerateFile(args.source_path, _WritePolicyConstantSource, sort_by_name=True)
+     # Also write a version of the source with get_proto_mutable() functions.
+-    assert args.source_path.endswith('.cc')
++    if not (args.source_path.endswith('.cc')):
++      raise AssertionError("政策定义不满足生成约束")
+     GenerateFile(args.source_path.replace('.cc', '_mutable.cc'),
+                  _WritePolicyConstantSource,
+-                 sorted=True,
++                 sort_by_name=True,
+                  mutable=True)
+   if args.risk_header_path:
+     GenerateFile(args.risk_header_path, _WritePolicyRiskTagHeader)
+@@ -389,7 +394,7 @@ def main():
+   if args.chrome_settings_proto_path:
+     GenerateFile(args.chrome_settings_proto_path,
+                  _WriteChromeSettingsProtobuf,
+-                 sorted=True)
++                 sort_by_name=True)
+ 
+   if target_platform == 'android' and args.app_restrictions_path:
+     GenerateFile(args.app_restrictions_path, _WriteAppRestrictions, xml=True)
+@@ -723,7 +728,8 @@ class SchemaNodesGenerator:
+         sortedSeq[i] + 1 == sortedSeq[i + 1] for i in range(len(sortedSeq) - 1))
+ 
+   def GetEnumIntegerType(self, schema, is_sensitive_value, name):
+-    assert all(type(x) == int for x in schema['enum'])
++    if not (all(type(x) == int for x in schema['enum'])):
++      raise AssertionError("政策定义不满足生成约束")
+     possible_values = schema['enum']
+     if self.IsConsecutiveInterval(possible_values):
+       index = self.AppendRestriction(max(possible_values), min(possible_values))
+@@ -739,7 +745,8 @@ class SchemaNodesGenerator:
+                              'integer with enumeration restriction: %s' % name)
+ 
+   def GetEnumStringType(self, schema, is_sensitive_value, name):
+-    assert all(type(x) == str for x in schema['enum'])
++    if not (all(type(x) == str for x in schema['enum'])):
++      raise AssertionError("政策定义不满足生成约束")
+     offset_begin = len(self.string_enums)
+     self.string_enums += schema['enum']
+     offset_end = len(self.string_enums)
+@@ -803,7 +810,8 @@ class SchemaNodesGenerator:
+       return schema['$ref']
+ 
+     is_sensitive_value = schema.get('sensitiveValue', False)
+-    assert type(is_sensitive_value) is bool
++    if not (type(is_sensitive_value) is bool):
++      raise AssertionError("政策定义不满足生成约束")
+ 
+     if schema['type'] in SIMPLE_SCHEMA_NAME_MAP:
+       if not self.SchemaHaveRestriction(schema):
+@@ -870,15 +878,18 @@ class SchemaNodesGenerator:
+ 
+       required_begin = len(self.required_properties)
+       required_properties = schema.get('required', [])
+-      assert type(required_properties) is list
+-      assert all(type(x) == str for x in required_properties)
++      if not (type(required_properties) is list):
++        raise AssertionError("政策定义不满足生成约束")
++      if not (all(type(x) == str for x in required_properties)):
++        raise AssertionError("政策定义不满足生成约束")
+       self.required_properties += required_properties
+       required_end = len(self.required_properties)
+ 
+       # Check that each string in |required_properties| is in |properties|.
+       properties = schema.get('properties', {})
+       for name in required_properties:
+-        assert name in properties
++        if not (name in properties):
++          raise AssertionError("政策定义不满足生成约束")
+ 
+       case_insensitive_lookup_begin = len(self.case_insensitive_lookup)
+       indices = list(range(begin, end))
+@@ -897,7 +908,8 @@ class SchemaNodesGenerator:
+       self.schema_nodes[index] = self.schema_nodes[index]._replace(extra=extra)
+       return index
+     else:
+-      assert False
++      if not (False):
++        raise AssertionError("政策定义不满足生成约束")
+ 
+   def GenerateAndCollectID(self, schema, name):
+     """A wrapper of Generate(), will take the return value, check and add 'id'
+@@ -921,7 +933,8 @@ class SchemaNodesGenerator:
+             '//  Type' + ' ' * 27 +
+             'Extra  IsSensitiveValue HasSensitiveChildren\n')
+     for schema_node in self.schema_nodes:
+-      assert schema_node.extra >= MIN_INDEX and schema_node.extra <= MAX_INDEX
++      if not (schema_node.extra >= MIN_INDEX and schema_node.extra <= MAX_INDEX):
++        raise AssertionError("政策定义不满足生成约束")
+       comment = ('\n' + ' ' * 69 + '// ').join(sorted(schema_node.comments))
+       f.write('  { base::Value::%-19s %4s %-16s %-5s },  // %s\n' %
+               (schema_node.schema_type + ',', str(schema_node.extra) + ',',
+@@ -944,8 +957,9 @@ class SchemaNodesGenerator:
+           '  Additional CaseInsensitiveLookupBegin CaseInsensitiveLookupEnd\n')
+       for properties_node in self.properties_nodes:
+         for i in range(0, len(properties_node) - 1):
+-          assert (properties_node[i] >= MIN_INDEX and
+-                  properties_node[i] <= MAX_INDEX)
++          if not (properties_node[i] >= MIN_INDEX and
++                  properties_node[i] <= MAX_INDEX):
++            raise AssertionError("政策定义不满足生成约束")
+         f.write('  { %5d, %5d, %5d, %5d, %10d, %5d, %5d, %5d },  // %s\n' %
+                 properties_node)
+       f.write('};\n\n')
+@@ -1159,9 +1173,11 @@ namespace {namespace} {{
+ ''')
+   for policy in policies:
+     if policy.is_supported:
+-      assert policy.id >= MIN_POLICY_ID and policy.id <= MAX_POLICY_ID
+-      assert (policy.max_size >= MIN_EXTERNAL_DATA_SIZE and
+-              policy.max_size <= MAX_EXTERNAL_DATA_SIZE)
++      if not (policy.id >= MIN_POLICY_ID and policy.id <= MAX_POLICY_ID):
++        raise AssertionError("政策定义不满足生成约束")
++      if not (policy.max_size >= MIN_EXTERNAL_DATA_SIZE and
++              policy.max_size <= MAX_EXTERNAL_DATA_SIZE):
++        raise AssertionError("政策定义不满足生成约束")
+       f.write('  // %s\n' % policy.name)
+       source_restriction = 'kSourceRestrictionNone'
+       if policy.cloud_only:
+@@ -1722,7 +1738,8 @@ def _GetProtobufTypes():
+ #------------------ app restrictions -------------------------------#
+ 
+ 
+-ENROLLMENT_TOKEN_POLICY_NAME = 'CloudManagementEnrollmentToken'
++# 政策标识符，不含注册凭据的值。
++ENROLLMENT_TOKEN_POLICY_NAME = 'CloudManagementEnrollmentToken'  # nosec B105
+ 
+ 
+ def _FormatDefaultValue(default_value):
+diff --git a/components/policy/tools/template_writers/writers/reg_writer_unittest.py b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
+index d1cc9c6a129658fa78acd7097492c828faf3a943..3b36201e2589f12a7343e340bdbd76ecebb656d8 100755
+--- a/components/policy/tools/template_writers/writers/reg_writer_unittest.py
++++ b/components/policy/tools/template_writers/writers/reg_writer_unittest.py
+@@ -29,7 +29,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+     Raises:
+       AssertionError: if the two strings are not equivalent.
+     '''
+-    self.assertEquals(output.strip(), expected_output.strip())
++    self.assertEqual(output.strip(), expected_output.strip())
+ 
+   def testEmpty(self):
+     # Test the handling of an empty policy list.
+@@ -244,7 +244,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+               "type": "list",
+               "caption": "",
+               "desc": "",
+-              "supported_on": ["chrome.linux:8-"],
++              "supported_on": ["chrome.win:8-"],
+               "example_value": ["foo", "bar"]
+             },
+           ],
+@@ -258,6 +258,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
+         '"1"="foo"', '"2"="bar"'
+     ])
++    self.CompareOutputs(output, expected_output)
+ 
+   def testStringEnumListPolicy(self):
+     # Tests a policy group with a single policy of type 'string-enum-list'.
+@@ -273,7 +274,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+                 {"name": "ProxyServerDisabled", "value": "foo", "caption": ""},
+                 {"name": "ProxyServerAutoDetect", "value": "bar","caption": ""},
+               ],
+-              "supported_on": ["chrome.linux:8-"],
++              "supported_on": ["chrome.win:8-"],
+               "example_value": ["foo", "bar"]
+             },
+           ],
+@@ -287,6 +288,7 @@ class RegWriterUnittest(writer_unittest_common.WriterUnittestCommon):
+         '[HKEY_LOCAL_MACHINE\\Software\\Policies\\GCSA Aegis\\ListPolicy]',
+         '"1"="foo"', '"2"="bar"'
+     ])
++    self.CompareOutputs(output, expected_output)
+ 
+   def testDictionaryPolicy(self):
+     # Tests a policy group with a single policy of type 'dict'.
+diff --git a/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc b/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
+index f67c1aa994f9bd11477c773ed509ba9aa4fabec2..156c9ae2edb3d369a954b30aa26f7e0a72e2f432 100644
+--- a/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
++++ b/content/browser/preloading/prefetch/prefetch_network_context_unittest.cc
+@@ -77,7 +77,7 @@ TEST_F(PrefetchNetworkContextTest, CreateIsolatedURLLoaderFactory) {
+                   ukm::SourceIdObj::FromInt64(main_rfh()->GetPageUkmSourceId()),
+                   testing::_, testing::NotNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/true, testing::_));
++                  /*is_for_network_service=*/true));
+ 
+   // Unused fields are marked as `{}`.
+   auto prefetch_request = PrefetchRequest::CreateRendererInitiated(
+@@ -116,7 +116,7 @@ TEST_F(PrefetchNetworkContextTest,
+                   ukm::SourceIdObj::FromInt64(main_rfh()->GetPageUkmSourceId()),
+                   testing::_, testing::NotNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/true, testing::_));
++                  /*is_for_network_service=*/true));
+ 
+   // Unused fields are marked as `{}`.
+   auto prefetch_request = PrefetchRequest::CreateRendererInitiated(
+@@ -153,7 +153,7 @@ TEST_F(PrefetchNetworkContextTest,
+           testing::Eq(std::nullopt), testing::Eq(ukm::kInvalidSourceIdObj),
+           testing::_, testing::NotNull(), testing::NotNull(), testing::IsNull(),
+           testing::IsNull(), testing::IsNull(),
+-          /*is_for_network_service=*/true, testing::_));
++          /*is_for_network_service=*/true));
+ 
+   // Unused fields are marked as `{}`.
+   auto prefetch_request =
+diff --git a/content/browser/preloading/prefetch/prefetch_test_util_internal.h b/content/browser/preloading/prefetch/prefetch_test_util_internal.h
+index 7b2eb3707f6929c1adc6ce8ee488074bdc64693a..7b2639289dc808a47141d8ef5bf826fed07d9780 100644
+--- a/content/browser/preloading/prefetch/prefetch_test_util_internal.h
++++ b/content/browser/preloading/prefetch/prefetch_test_util_internal.h
+@@ -183,6 +183,33 @@ class ScopedMockContentBrowserClient : public TestContentBrowserClient {
+   ScopedMockContentBrowserClient();
+   ~ScopedMockContentBrowserClient() override;
+ 
++  // gMock 最多接受 15 个参数；保留上游预取断言，来源分类由实际浏览器验证。
++  void WillCreateURLLoaderFactory(
++      BrowserContext* browser_context,
++      RenderFrameHost* frame,
++      int render_process_id,
++      URLLoaderFactoryType type,
++      const url::Origin& request_initiator,
++      const net::IsolationInfo& isolation_info,
++      std::optional<int64_t> navigation_id,
++      ukm::SourceIdObj ukm_source_id,
++      network::URLLoaderFactoryBuilder& factory_builder,
++      mojo::PendingRemote<network::mojom::TrustedURLLoaderHeaderClient>*
++          header_client,
++      bool* bypass_redirect_checks,
++      bool* disable_secure_dns,
++      network::mojom::URLLoaderFactoryOverridePtr* factory_override,
++      scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
++      bool is_for_network_service,
++      NavigationFactorySource /*navigation_factory_source*/) override {
++    WillCreateURLLoaderFactory(
++        browser_context, frame, render_process_id, type, request_initiator,
++        isolation_info, navigation_id, ukm_source_id, factory_builder,
++        header_client, bypass_redirect_checks, disable_secure_dns,
++        factory_override, std::move(navigation_response_task_runner),
++        is_for_network_service);
++  }
++
+   MOCK_METHOD(
+       void,
+       WillCreateURLLoaderFactory,
+@@ -202,9 +229,7 @@ class ScopedMockContentBrowserClient : public TestContentBrowserClient {
+        network::mojom::URLLoaderFactoryOverridePtr* factory_override,
+        scoped_refptr<base::SequencedTaskRunner>
+            navigation_response_task_runner,
+-       bool is_for_network_service,
+-       NavigationFactorySource navigation_factory_source),
+-      (override));
++       bool is_for_network_service));
+ 
+  private:
+   raw_ptr<ContentBrowserClient> old_browser_client_;
+diff --git a/content/browser/preloading/prefetch/prefetch_url_loader_interceptor_unittest.cc b/content/browser/preloading/prefetch/prefetch_url_loader_interceptor_unittest.cc
+index 0869545e07f96d3eaed00828f4b15dca377712e4..24de643a006c5bca6b77c0b41d58cf81ad5e9689 100644
+--- a/content/browser/preloading/prefetch/prefetch_url_loader_interceptor_unittest.cc
++++ b/content/browser/preloading/prefetch/prefetch_url_loader_interceptor_unittest.cc
+@@ -386,7 +386,7 @@ class PrefetchURLLoaderInterceptorTestBase : public PrefetchingMetricsTestBase {
+         *test_content_browser_client(),
+         WillCreateURLLoaderFactory(
+             _, _, _, ContentBrowserClient::URLLoaderFactoryType::kNavigation, _,
+-            _, _, _, _, _, _, _, _, _, _, _))
++            _, _, _, _, _, _, _, _, _, _))
+         .Times(::testing::AtMost(1));
+   }
+ 
+@@ -431,7 +431,7 @@ TEST_F(PrefetchURLLoaderInterceptorTest,
+                       navigation_request()->GetNextPageUkmSourceId()),
+                   testing::_, testing::IsNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/false, testing::_ ));
++                  /*is_for_network_service=*/false));
+ 
+   auto prefetch_container = CreateSpeculationRulesPrefetchContainer(
+       kTestUrl, PrefetchType(PreloadingTriggerType::kSpeculationRule,
+@@ -484,7 +484,7 @@ TEST_F(PrefetchURLLoaderInterceptorTest,
+                       navigation_request()->GetNextPageUkmSourceId()),
+                   testing::_, testing::IsNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/false, testing::_ ));
++                  /*is_for_network_service=*/false));
+ 
+   auto prefetch_container = CreateSpeculationRulesPrefetchContainer(
+       kTestUrl, PrefetchType(PreloadingTriggerType::kSpeculationRule,
+@@ -546,7 +546,7 @@ TEST_F(PrefetchURLLoaderInterceptorTest,
+                       navigation_request()->GetNextPageUkmSourceId()),
+                   testing::_, testing::IsNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/false, testing::_ ));
++                  /*is_for_network_service=*/false));
+ 
+   // No cookies are copied for prefetches where |use_isolated_network_context|
+   // is false (i.e. same origin prefetches).
+@@ -595,7 +595,7 @@ TEST_F(PrefetchURLLoaderInterceptorTest,
+                       navigation_request()->GetNextPageUkmSourceId()),
+                   testing::_, testing::IsNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/false, testing::_ ));
++                  /*is_for_network_service=*/false));
+ 
+   // Creates a same-origin embedder prefetch, which means cookie copy is not
+   // needed.
+@@ -872,7 +872,7 @@ TEST_F(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(ProbeSuccess)) {
+                       navigation_request()->GetNextPageUkmSourceId()),
+                   testing::_, testing::IsNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/false, testing::_ ));
++                  /*is_for_network_service=*/false));
+ 
+   auto prefetch_container = CreateSpeculationRulesPrefetchContainer(
+       kTestUrl, PrefetchType(PreloadingTriggerType::kSpeculationRule,
+@@ -1126,7 +1126,7 @@ TEST_F(PrefetchURLLoaderInterceptorTest, DISABLE_ASAN(HandleRedirects)) {
+                       navigation_request()->GetNextPageUkmSourceId()),
+                   testing::_, testing::IsNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/false, testing::_ ))
++                  /*is_for_network_service=*/false))
+       .Times(2);
+ 
+   auto prefetch_container = CreateSpeculationRulesPrefetchContainer(
+@@ -1199,7 +1199,7 @@ TEST_F(PrefetchURLLoaderInterceptorTest,
+                       navigation_request()->GetNextPageUkmSourceId()),
+                   testing::_, testing::IsNull(), testing::NotNull(),
+                   testing::IsNull(), testing::IsNull(), testing::IsNull(),
+-                  /*is_for_network_service=*/false, testing::_ ))
++                  /*is_for_network_service=*/false))
+       .Times(2);
+ 
+   auto prefetch_container = CreateSpeculationRulesPrefetchContainer(
+-- 
+2.52.0
+

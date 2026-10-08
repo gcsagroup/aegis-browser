@@ -1,4 +1,4 @@
-From b3e073027048ade4090bec42a12044c1f69a8d03 Mon Sep 17 00:00:00 2001
+From 1674853470fa40a5debce5e66a2a8d49fd13a5e8 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 27 Aug 2026 06:34:27 +0800
 Subject: [PATCH] feat(aegis): add V8 bytecode shadow observation
@@ -12,10 +12,10 @@ Subject: [PATCH] feat(aegis): add V8 bytecode shadow observation
  5 files changed, 49 insertions(+)
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index c89b2c3771..d08dfdb4f9 100644
+index 1bfb5169e5327e0ac2497c13136121739a918e62..6e9e272dc6307fa17963de69492d27e322a67574 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -2960,6 +2960,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
+@@ -2965,6 +2965,17 @@ void ChromeContentBrowserClient::AppendExtraCommandLineSwitches(
  #endif
  
    if (process_type == switches::kRendererProcess) {
@@ -34,7 +34,7 @@ index c89b2c3771..d08dfdb4f9 100644
          content::RenderProcessHost::FromID(child_process_id);
      if (process) {
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
-index cd9248cc7f..b134264097 100644
+index cd9248cc7fc046e93a4e76082304669f0bf8ffd1..b1342640973e447ee8efb1138115175d38bce75f 100644
 --- a/chrome/common/aegis/features.cc
 +++ b/chrome/common/aegis/features.cc
 @@ -12,6 +12,7 @@ BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -56,7 +56,7 @@ index cd9248cc7f..b134264097 100644
 +
  }  // namespace aegis::features
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
-index 81bef9fcd2..41f5a6b8fe 100644
+index 81bef9fcd23f3abee3b8a4463d5aba06c314e4c5..41f5a6b8feb09d0268a162e4fb77c51d3dba2019 100644
 --- a/chrome/common/aegis/features.h
 +++ b/chrome/common/aegis/features.h
 @@ -14,6 +14,7 @@ BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
@@ -76,7 +76,7 @@ index 81bef9fcd2..41f5a6b8fe 100644
  }  // namespace aegis::features
  
 diff --git a/chrome/common/aegis/features_unittest.cc b/chrome/common/aegis/features_unittest.cc
-index f9fa295f44..aca728b64d 100644
+index f9fa295f440500af44fbd48b343c0a45de95cddd..aca728b64d53d743e2f93c44248e097d7362e00b 100644
 --- a/chrome/common/aegis/features_unittest.cc
 +++ b/chrome/common/aegis/features_unittest.cc
 @@ -64,5 +64,19 @@ TEST(AegisFeaturesTest, MinerGuardRequiresEveryGlobalGate) {
@@ -100,10 +100,10 @@ index f9fa295f44..aca728b64d 100644
  }  // namespace
  }  // namespace aegis::features
 diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
-index 0bdd753a19..c79991a592 100644
+index b8d41ae535d8a8cbfdaf3a252975d612bf7a3df4..7547b4df634058d1ee036b23ae760a8d612cb1d5 100644
 --- a/content/browser/renderer_host/render_process_host_impl.cc
 +++ b/content/browser/renderer_host/render_process_host_impl.cc
-@@ -4015,7 +4015,23 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+@@ -4038,7 +4038,23 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
        switches::kSchedulerBoostUrgent,
  #endif
    };
