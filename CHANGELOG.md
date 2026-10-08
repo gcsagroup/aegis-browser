@@ -4,7 +4,25 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/).
 
-The workspace package remains `0.1.0`; the iOS product line uses `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+The workspace package remains `0.1.0`; the current iOS development candidate uses `3.2` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+
+## iOS 3.2 — 2026-10-09 · main integration
+
+iOS Ver 3.2 (69) main integration: The compact interface, private confirmations and download management now work with main’s background recovery safeguards. iPhone: 194 passed and 1 iPad-only check skipped; iPad: 195 passed. See the [integration record](docs/audit/ios-main-merge-2026-10-09.zh-CN.md) for scope and evidence. No signed installation package was released.
+
+## iOS 3.2 — 2026-10-05
+
+Private browsing now supports the library, bookmarks, workspaces, downloads and AI. History, private sessions and tasks are not saved automatically. Explicit persistent saves explain what remains stored and require confirmation. Private AI sends only after confirmation; closing the assistant discards unsaved analysis.
+
+Bookmark and download confirmations show the full URL and retention notice. Ver 3.2 (63) has completed simulator checks on both devices and manual UI verification; see [private browsing validation](docs/audit/ios-private-mode-2026-10-05.zh-CN.md).
+
+## iOS 3.1 — 2026-10-05
+
+A single bottom address bar on iPhone and a single top toolbar on wide iPad windows. Pages use the available width, the shield opens ad filtering directly, and other actions move into the menu. Scrolling long pages reduces auxiliary controls; accessibility text sizes and VoiceOver keep them expanded. See the [interface validation record](docs/audit/ios-compact-ui-2026-10-05.zh-CN.md).
+
+## iOS 3.0 — 2026-10-04
+
+iOS Ver 3.0 development candidate: record backup and recovery, lazy tab loading and memory release, download and library management, streaming for three model protocols, and keyboard controls. Unreleased; see the [Ver 3.0 validation record](docs/audit/ios-3-0-2026-10-04.zh-CN.md).
 
 ## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
 
@@ -38,6 +56,13 @@ The workspace package remains `0.1.0`; the iOS product line uses `2.2`. The iOS 
 - Mac ARM64 验收版 Ver 2.2 (141)：33 项测试及跨框架额外 5 次复测通过；273 个桌面补丁完整重放，506 项 overlay 核对通过，并完成实际 App 设置保存回读。具体版本和证据范围见[验收记录](docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。
 - 上游同步改为分别跟踪源码 PR、主线兼容验收和正式发行；鼠标手势纳入持续功能回归。代码位于依赖 [#32](https://github.com/gcsagroup/aegis-browser/pull/32) 的 [#33](https://github.com/gcsagroup/aegis-browser/pull/33) 草稿 PR，记录时 main 尚未升级。Windows/Android 兼容验收、上游 PR 扫描问题及正式签名、公证仍待完成。
 - [鼠标手势使用指南](apps/browser/docs/mouse-gestures.zh-CN.md)。本次补充文档不重新编译 App，验收收据仍绑定原构建提交。
+
+### 2026-10-04 iOS storage reliability
+
+- Preserve unreadable, oversized, or duplicate-ID workspace/download records and show a visible error instead of overwriting them.
+- Reject a 101st workspace or an oversized write without dropping earlier saved workspaces.
+- Keep download state and recovery data when retry metadata cannot be saved; report metadata failures after a file finishes downloading.
+- Add regression tests using real loopback HTTP, disk write failures, and iPhone/iPad UI interactions, with three-language error messages. This development update is separate from the published source preview.
 
 ### 2026-09-14 source update: UI corrections and browser updates
 

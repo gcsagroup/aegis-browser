@@ -4,6 +4,26 @@ import XCTest
 @testable import AgentKit
 
 @MainActor final class AssistantTaskStoreTests: XCTestCase {
+    func testExplicitPrivateReportSaveIsAtomicAndEncrypted() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("tasks.aes"), key = SymmetricKey(size: .bits256)
+        let store = AssistantTaskStore(url: file, key: key)
+        XCTAssertTrue(store.records.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        let id = try store.saveCompletedReport(goal: "用户确认保存", sources: [URL(string: "https://example.com/private?token=secret")!], report: "主动保留的私密分析")
+        let restored = AssistantTaskStore(url: file, key: key)
+        XCTAssertEqual(restored.records.count, 1)
+        XCTAssertEqual(restored.records.first?.id, id)
+        XCTAssertEqual(restored.records.first?.state, .completed)
+        XCTAssertEqual(restored.records.first?.savedReport, "主动保留的私密分析")
+        XCTAssertEqual(restored.records.first?.sources.first?.absoluteString, "https://example.com/private")
+        let before = try Data(contentsOf: file)
+        XCTAssertNil(before.range(of: Data("主动保留的私密分析".utf8)))
+        XCTAssertThrowsError(try store.saveCompletedReport(goal: "超出范围", sources: [], report: String(repeating: "x", count: 200_001)))
+        XCTAssertEqual(try Data(contentsOf: file), before)
+    }
+
     func testKeyIdentitySurvivesChangedContainerPath() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let account = "aegis-task-key-test-" + UUID().uuidString
