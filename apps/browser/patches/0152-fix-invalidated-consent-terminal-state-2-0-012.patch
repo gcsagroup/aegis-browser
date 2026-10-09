@@ -1,4 +1,4 @@
-From aa528bac24d82abd4d58d925fe6f4bafdbb3a8ff Mon Sep 17 00:00:00 2001
+From 1859e3c8b1c8d92e8fd278b9d086a4bc7599fd09 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 05:04:38 +0800
 Subject: [PATCH] =?UTF-8?q?fix:=20=E6=8E=88=E6=9D=83=E5=89=8D=E9=A1=B5?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 12 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index bc680858fb..ab63bc1fac 100644
+index bc680858fb908db97bcf5e78ea4f70f99f926989..ab63bc1fac96c07ec36a6370a7e29588fb95a7dd 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -235,6 +235,15 @@ TEST(AegisAgentTaskTest, EnforcesTransitionsTerminalStateAndBudgets) {
@@ -35,7 +35,7 @@ index bc680858fb..ab63bc1fac 100644
  
  TEST(AegisAgentTaskTest, RecordsTimelineFactWithoutChangingState) {
 diff --git a/chrome/browser/aegis/agent/agent_task.cc b/chrome/browser/aegis/agent/agent_task.cc
-index b50916692b..fe7234c205 100644
+index b50916692b92f35247aa1d71b8579cb94de02cdd..fe7234c205c50710392d7b889333ae2b3a13aaf2 100644
 --- a/chrome/browser/aegis/agent/agent_task.cc
 +++ b/chrome/browser/aegis/agent/agent_task.cc
 @@ -205,7 +205,7 @@ bool AgentTask::IsAllowedTransition(AgentTaskState from, AgentTaskState to) {
@@ -48,7 +48,7 @@ index b50916692b..fe7234c205 100644
      case State::kReflecting:
        return to == State::kRunning || to == State::kReflecting ||
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index c652b8326a..2d84b010fb 100644
+index c652b8326a29bd9fad50c6362fb7610f324b2d82..2d84b010fba3738e3c35c9f547e72362f523dc81 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

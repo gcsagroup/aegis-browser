@@ -1,4 +1,4 @@
-From ab3aafdafcd2fba95286385cd3571459a723aeca Mon Sep 17 00:00:00 2001
+From df852bc6fafdf75aa2906d826058513f1486562d Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 05:26:26 +0800
 Subject: [PATCH] =?UTF-8?q?=E7=A7=BB=E9=99=A4=E4=B8=8B=E8=BD=BD=E9=A1=B5?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index b75faad465..7848b31bea 100644
+index b75faad465f20c36f5f95e15cb16f888ecf6b595..7848b31beaee67c82c56ae2418b8125cf612bf8f 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;
@@ -31,10 +31,10 @@ index b75faad465..7848b31bea 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/test/data/webui/settings/downloads_page_test.ts b/chrome/test/data/webui/settings/downloads_page_test.ts
-index 5c6a39bab7..9fce3ecca1 100644
+index f9688c6b0079cc6c508cc54bc257f6c9fbf762a9..6fcdc298044de8205b3ab91716fcdce2c5972f68 100644
 --- a/chrome/test/data/webui/settings/downloads_page_test.ts
 +++ b/chrome/test/data/webui/settings/downloads_page_test.ts
-@@ -166,7 +166,7 @@ suite('DownloadsHandler', function() {
+@@ -163,7 +163,7 @@ suite('DownloadsHandler', function() {
    test('aegis download settings are shown and saved', async function() {
      await downloadsBrowserProxy.whenCalled('getAegisDownloadSettings');
      await microtasksFinished();

@@ -4,16 +4,36 @@
 
 A native SwiftUI and system WebKit browser for iOS 18.4 and later, developed for worldwide App Store technical requirements, including mainland China. Functionality and testing come first; submission materials will be supplied later. Simulator results do not establish release qualification.
 
+## Ver 3.2 private browsing candidate
+
+Private browsing now supports the library, bookmarks, workspaces, downloads and AI. History, private sessions and AI tasks are not saved automatically. Explicit bookmark, workspace, download and report save/export actions explain what remains stored. AI reads only selected tabs from the current browsing mode; each send shows the service and scope for confirmation. Closing the assistant discards the temporary analysis. Explicitly saved reports remain in task history.
+
+Current candidate: **Ver 3.2 (69)**. After integration with main and corrective reruns, iPhone completed 194 checks with 1 iPad-only check skipped; iPad passed 195. Each device ran 185 native tests plus interface flows for downloads, recovery and private confirmations. See the [main integration validation](../../docs/audit/ios-main-merge-2026-10-09.zh-CN.md); the earlier [private browsing validation](../../docs/audit/ios-private-mode-2026-10-05.zh-CN.md) and [interface validation](../../docs/audit/ios-compact-ui-2026-10-05.zh-CN.md) remain historical records. This is Simulator acceptance only. The published source preview remains 2.2.
+
+## Ver 3.1 interface candidate
+
+iPhone uses a single bottom address bar; wide iPad windows use a single top toolbar. The persistent status row and page card margins are removed. The shield opens ad filtering directly, and the More menu keeps tabs, library, downloads, AI assistance, and page actions. On iPhone, dragging down a long page reduces the controls; scrolling back or editing the address restores them. Automatic reduction is disabled for accessibility text sizes and VoiceOver. The address displays the hostname while browsing and retains the full URL for editing and accessibility.
+
+## Ver 3.0 development candidate
+
+- Recover download and workspace records by exporting originals, reloading, restoring a backup, or backing up before reset. Completed files have separate receipts and checksum recovery. Local backups are retained.
+- Restore only the selected tab initially. Idle ordinary pages can release memory; edited forms, playing media, frames, navigation history and assistant sources stay loaded. Repeated content-process failures stop automatic reload.
+- Search and sort bookmarks, history and workspaces. Downloads add search, filters, sorting, batch management, system preview, storage usage, 1–4 concurrent tasks, low-storage errors and recoverable trash.
+- Stream all three model protocols with draft and validated-result states. Cancelled, truncated, incomplete or invalidly cited output cannot be saved as a completed result. Connection, quota, permission and service errors have separate messages.
+- Large-text layouts and iPad shortcuts: Command-L/T/W/F/R, Command-[/], and Escape. Background transfers are system-scheduled; force quitting stops them, and reopening allows review and resume.
+
+See the [Ver 3.0 validation record](../../docs/audit/ios-3-0-2026-10-04.zh-CN.md) for implementation and test results. Simulator fixtures establish protocol and interaction behavior only. Real model, physical-device lock-screen transfer, energy use and Safari-host acceptance require separate evidence.
+
 ## Features
 
 - Tabs and windows: create, rename, move and ungroup tabs while keeping pages open. Regular groups persist; private groups stay in memory. iPad windows save their own tabs and groups, sharing bookmarks, downloads and settings. Pages use the full window with no permanent sidebar.
 
 - Browsing: search, tabs, regular session recovery, private browsing, bookmarks, history, find, system sharing/printing and workspaces with rename, delete, import preview and JSON export.
-- Page assistant: explicitly select up to five pages, read visible text, review redaction and confirm the model destination. Summarize, translate, ask questions or compare sources/products. Open cited pages and export the report. Task metadata is encrypted; reports are saved only on request. Restored tasks require a fresh page read and confirmation.
+- Page assistant: explicitly select up to five pages, read visible text, review redaction and confirm the model destination. Summarize, translate, ask questions or compare sources/products. Open cited pages and export the report. Regular-mode task metadata is encrypted. Private mode creates a record only after explicit report-save confirmation; reports are saved only on request. Restored tasks require a fresh page read and confirmation.
 - Model settings: OpenAI-compatible, Anthropic and Gemini APIs; model discovery and manual entry. Service-specific keys are kept in Keychain. Model requests do not follow redirects.
 - Bookmark management: preview, confirm, deduplicate and undo, including recovery after relaunch. Link checking is explicit and never automatically deletes bookmarks.
 - Downloads: HTTP(S), progress, pause, resume where supported, cancel, retry, system background transfer, up to 16 fallback mirrors, Metalink import with confirmation, SHA-256/SHA-512 and size verification, and sharing to Files. The per-file limit is 1 GB. HTTPS and loopback HTTP are supported; remote cleartext HTTP remains subject to system transport policy.
-- Protection: bundled EasyList/EasyPrivacy, manual updates, network blocking, element hiding and site exceptions, tracking-parameter removal, URL risk checks and history/website-data clearing. Private browsing disables the assistant and persistent data/download operations.
+- Protection: bundled EasyList/EasyPrivacy, manual updates, network blocking, element hiding and site exceptions, tracking-parameter removal, URL risk checks and history/website-data clearing. Private browsing does not automatically save history or sessions; persistent saves and model sends require explicit actions and confirmation.
 - Interface: Simplified Chinese, Traditional Chinese and English, iPhone controls, iPad full-window browser, light/dark appearance, large text and landscape layouts.
 - Extensions: the share extension transfers only short-lived HTTP(S) links. The Safari extension retains its bounded read authorization and hands a URL to the app for a separate open confirmation.
 
@@ -43,6 +63,8 @@ For a manual demonstration, run `python3 apps/ios/scripts/simulator-fixture-serv
 See the [verification record](../../docs/audit/ios-feature-parity-2026-10-01.zh-CN.md). Filter data retains upstream attribution and licensing.
 
 ## Boundaries
+
+Unreadable download or workspace records are preserved, with a visible error and further writes blocked. Workspaces are limited to 100 entries and manifests to 2 MB; rejected saves preserve existing data. A failed save during download recovery retains the previous state and resume data. A failed manifest write after file completion is also reported. See the [storage reliability report](../../docs/audit/ios-stability-2026-10-04.zh-CN.md).
 
 Pages are limited to 24,000 characters with an explicit truncation notice. Cross-origin frames, input values, passwords and cookies are excluded. Detected sensitive forms or secrets stop model submission. Models return text only; they cannot purchase, sign in, modify pages or invoke tools. Citation numbers are range-checked; conclusions still need source review.
 

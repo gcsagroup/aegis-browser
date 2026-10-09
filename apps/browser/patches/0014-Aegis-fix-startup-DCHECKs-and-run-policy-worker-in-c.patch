@@ -1,4 +1,4 @@
-From 99f8d3fd5d9e870c9de8760a158d4250c06112a4 Mon Sep 17 00:00:00 2001
+From 2b83b92ed52b00f89c6e855885e15df03a0b55f4 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 17:03:00 +0800
 Subject: [PATCH] Aegis: fix startup DCHECKs and run policy worker in
@@ -22,7 +22,7 @@ disk IO off the UI thread and cap EasyList downloads at 5 MiB.
  create mode 100644 chrome/browser/resources/aegis/policy_worker.ts
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index fd97df38b0..3836e1bff3 100644
+index fd97df38b0dd63d7c8a6154a081e6d8620c995ad..3836e1bff3df9f22a4907e60ff288ec80e4a85b0 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -61,6 +61,8 @@ void AegisService::InitializeForProfile(Profile* profile) {
@@ -72,7 +72,7 @@ index fd97df38b0..3836e1bff3 100644
    if (!filter_list_updater_) {
      std::move(done).Run(false);
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index e1b622b6fe..22d8ed9129 100644
+index e1b622b6fe5eb228c8da56b09a64a69237ee8a5e..22d8ed91291a300e7d93b567549f528758d457e3 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -90,6 +90,10 @@ class AegisService {
@@ -87,7 +87,7 @@ index e1b622b6fe..22d8ed9129 100644
    std::string PolicyWorkerError() const;
  
 diff --git a/chrome/browser/aegis/filter_list_updater.cc b/chrome/browser/aegis/filter_list_updater.cc
-index 50a378ffce..266884ca7a 100644
+index 50a378ffcef9f50f974e88085e388dfbef56dac3..266884ca7a7159cb9a7de68f6425ce40bd03d05c 100644
 --- a/chrome/browser/aegis/filter_list_updater.cc
 +++ b/chrome/browser/aegis/filter_list_updater.cc
 @@ -10,6 +10,7 @@
@@ -164,7 +164,7 @@ index 50a378ffce..266884ca7a 100644
  
  void FilterListUpdater::BumpGeneration() {
 diff --git a/chrome/browser/aegis/filter_list_updater.h b/chrome/browser/aegis/filter_list_updater.h
-index e40894e24e..a66e8f96cd 100644
+index e40894e24e8ec3225153f2c4257b12175a37a055..a66e8f96cd6b5ca32c6d83dc9a85072fda825996 100644
 --- a/chrome/browser/aegis/filter_list_updater.h
 +++ b/chrome/browser/aegis/filter_list_updater.h
 @@ -4,7 +4,7 @@
@@ -185,7 +185,7 @@ index e40894e24e..a66e8f96cd 100644
    void ApplyList(CompiledFilterList list);
    void Persist(const CompiledFilterList& list);
 diff --git a/chrome/browser/aegis/policy_worker.cc b/chrome/browser/aegis/policy_worker.cc
-index a4a7bebcff..b3a794efa8 100644
+index a4a7bebcff68281cab741e3cbebaff0cc41635b2..b3a794efa84a2c973bac493856c158a586a85fae 100644
 --- a/chrome/browser/aegis/policy_worker.cc
 +++ b/chrome/browser/aegis/policy_worker.cc
 @@ -8,18 +8,13 @@
@@ -263,7 +263,7 @@ index a4a7bebcff..b3a794efa8 100644
      last_error_ = "gin isolate holder not initialized";
      LOG(ERROR) << "Aegis: " << last_error_;
 diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
-index b3adfd7999..cc5e116333 100644
+index b3adfd79994d76f494bde454eaaa17ed3d7eaa87..cc5e11633375b121896fdc1fddb25adc14e1b5aa 100644
 --- a/chrome/browser/resources/aegis/BUILD.gn
 +++ b/chrome/browser/resources/aegis/BUILD.gn
 @@ -11,7 +11,10 @@ build_webui("build") {
@@ -279,7 +279,7 @@ index b3adfd7999..cc5e116333 100644
    ts_deps = [ "//ui/webui/resources/js:build_ts" ]
    ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 209d9698b1..4bcb943b2e 100644
+index 209d9698b1956bd49fa284a3847bc554cf800ad0..4bcb943b2e3659e87a49c65a5ffd5504ad9580ac 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -2,6 +2,7 @@
@@ -401,7 +401,7 @@ index 209d9698b1..4bcb943b2e 100644
        }
 diff --git a/chrome/browser/resources/aegis/policy_worker.ts b/chrome/browser/resources/aegis/policy_worker.ts
 new file mode 100644
-index 0000000000..a361b82723
+index 0000000000000000000000000000000000000000..a361b82723f540eb3ac4fc350b45cfaeef026da2
 --- /dev/null
 +++ b/chrome/browser/resources/aegis/policy_worker.ts
 @@ -0,0 +1,7 @@
@@ -413,7 +413,7 @@ index 0000000000..a361b82723
 +
 +export {};
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 77f5aeb8ad..d44565668c 100644
+index 77f5aeb8ad8a45ddfaff97aefee5134f85db93eb..d44565668c04441bbde6d989af01a99e133b418d 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -99,6 +99,14 @@ void AegisUIHandler::RegisterMessages() {
@@ -518,7 +518,7 @@ index 77f5aeb8ad..d44565668c 100644
 +
 +
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index 7e2f2aedbc..a18deb434d 100644
+index 7e2f2aedbc7e511df38004c4e6f42236d3d915f2..a18deb434dc573ad3dd49bb92dc441772354124b 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -28,6 +28,8 @@ class AegisUIHandler : public content::WebUIMessageHandler {

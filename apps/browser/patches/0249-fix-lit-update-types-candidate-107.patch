@@ -1,0 +1,53 @@
+From 6298249601381fc27d0a3e155ddbba95d26f15eb Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 5 Oct 2026 19:11:14 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=20Lit=20=E5=9F=BA=E7=B1=BB?=
+ =?UTF-8?q?=E6=9B=B4=E6=96=B0=E5=8F=82=E6=95=B0=E7=B1=BB=E5=9E=8B=E5=B9=B6?=
+ =?UTF-8?q?=E9=80=92=E5=A2=9E=E5=80=99=E9=80=89=E8=87=B3=20Ver=202.0=20(10?=
+ =?UTF-8?q?7)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/resources/settings/people_page/people_page.ts | 4 ++--
+ chrome/browser/ui/webui/help/aegis_github_update.h           | 4 ++--
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/resources/settings/people_page/people_page.ts b/chrome/browser/resources/settings/people_page/people_page.ts
+index 7870a07a1f0286fbd43bf9bcdd0a21f2e5ceb8a4..b8579a9589d8fd8269221148cd81e5e5a90ff718 100644
+--- a/chrome/browser/resources/settings/people_page/people_page.ts
++++ b/chrome/browser/resources/settings/people_page/people_page.ts
+@@ -212,12 +212,12 @@ export class SettingsPeoplePageElement extends SettingsPeoplePageElementBase {
+   }
+ 
+   // <if expr="not is_chromeos">
+-  override willUpdate(changedProperties: PropertyValues) {
++  override willUpdate(changedProperties: PropertyValues<this>) {
+     super.willUpdate(changedProperties);
+ 
+     if (changedProperties.has('storedAccounts') ||
+         changedProperties.has('syncStatus') ||
+-        changedProperties.has('showGoogleServicesSettings_')) {
++        (changedProperties as PropertyValues).has('showGoogleServicesSettings_')) {
+       this.shouldShowGoogleAccount_ = this.computeShouldShowGoogleAccount_();
+     }
+   }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index c79bee6d936acb493e49a9b9c1c4cd496c4c707f..3d3e94b4eff93853c9138cd00f21cd1224d269d4 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.106";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (106)";
++inline constexpr char kProductVersion[] = "2.0.0.107";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (107)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,4 +1,4 @@
-From 05f632693c5587e71331b9b75ed97205cf9fdcb4 Mon Sep 17 00:00:00 2001
+From 08447adf8eabd5c4b9fc8434295c80e580b13a28 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 26 Aug 2026 21:39:06 +0800
 Subject: [PATCH] feat(aegis): add native download settings
@@ -31,7 +31,7 @@ Subject: [PATCH] feat(aegis): add native download settings
  create mode 100644 chrome/browser/aegis/aegis_download_prefs_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index da0c389d21..a0f44386ef 100644
+index da0c389d215b785baa7dbe81ae5dfbdee6080902..a0f44386ef68fa674ef1e6f38c538f0ced31c2bb 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -7,6 +7,8 @@ source_set("aegis") {
@@ -53,7 +53,7 @@ index da0c389d21..a0f44386ef 100644
      "aegis_phish_tab_helper_unittest.cc",
 diff --git a/chrome/browser/aegis/aegis_download_prefs.cc b/chrome/browser/aegis/aegis_download_prefs.cc
 new file mode 100644
-index 0000000000..239efb83ba
+index 0000000000000000000000000000000000000000..239efb83ba24fc93d7018b64c4ea4fb45a5d7ff6
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_download_prefs.cc
 @@ -0,0 +1,83 @@
@@ -142,7 +142,7 @@ index 0000000000..239efb83ba
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_download_prefs.h b/chrome/browser/aegis/aegis_download_prefs.h
 new file mode 100644
-index 0000000000..2172dfe704
+index 0000000000000000000000000000000000000000..2172dfe704af4e596b23fc62f500fe2ef2e939c1
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_download_prefs.h
 @@ -0,0 +1,52 @@
@@ -200,7 +200,7 @@ index 0000000000..2172dfe704
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_DOWNLOAD_PREFS_H_
 diff --git a/chrome/browser/aegis/aegis_download_prefs_unittest.cc b/chrome/browser/aegis/aegis_download_prefs_unittest.cc
 new file mode 100644
-index 0000000000..c33796d00d
+index 0000000000000000000000000000000000000000..c33796d00d724c76364e295e4b344059e6fe9e00
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_download_prefs_unittest.cc
 @@ -0,0 +1,85 @@
@@ -290,10 +290,10 @@ index 0000000000..c33796d00d
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrome/browser/download/chrome_download_manager_delegate.cc
-index 66c1e4a132..df3ab01c87 100644
+index 4e9ae04520701706ed95df46c5d0f13a77e4b724..4137b4d77336f1efbc69d8d46b425fb6421eafcc 100644
 --- a/chrome/browser/download/chrome_download_manager_delegate.cc
 +++ b/chrome/browser/download/chrome_download_manager_delegate.cc
-@@ -31,6 +31,7 @@
+@@ -32,6 +32,7 @@
  #include "base/task/thread_pool.h"
  #include "base/time/time.h"
  #include "build/build_config.h"
@@ -301,7 +301,7 @@ index 66c1e4a132..df3ab01c87 100644
  #include "chrome/browser/browser_process.h"
  #include "chrome/browser/download/download_core_service.h"
  #include "chrome/browser/download/download_core_service_factory.h"
-@@ -667,6 +668,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
+@@ -709,6 +710,9 @@ ChromeDownloadManagerDelegate::ChromeDownloadManagerDelegate(Profile* profile)
        download_message_bridge_(std::make_unique<DownloadMessageBridge>()),
  #endif
        download_prefs_(std::make_unique<DownloadPrefs>(profile)) {
@@ -312,7 +312,7 @@ index 66c1e4a132..df3ab01c87 100644
  
  ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index 295ce51e4d..1e9a3aab66 100644
+index e1cec7748c984533211ac94f3e3e73dcb46fdcf8..be678c0f4e678ed26e65a9e228491c88731a6ea4 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -19,6 +19,7 @@
@@ -323,7 +323,7 @@ index 295ce51e4d..1e9a3aab66 100644
  #include "chrome/browser/aegis/aegis_prefs.h"
  #include "chrome/browser/accessibility/accessibility_labels_service.h"
  #include "chrome/browser/accessibility/invert_bubble_prefs.h"
-@@ -1434,6 +1435,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
+@@ -1421,6 +1422,7 @@ void RegisterLocalState(PrefRegistrySimple* registry) {
    accessibility::AccessibilityPrefsController::RegisterLocalStatePrefs(
        registry);
  #endif
@@ -332,7 +332,7 @@ index 295ce51e4d..1e9a3aab66 100644
    breadcrumbs::RegisterPrefs(registry);
    browser_shutdown::RegisterPrefs(registry);
 diff --git a/chrome/browser/resources/downloads/aegis_download_panel.html.ts b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
-index 0f265dd7d3..f924ac5cbc 100644
+index 0f265dd7d36b93c6ade3979d0d5a161d0182752a..f924ac5cbca57eed6beeee13dff8bc9f8cd4c3cf 100644
 --- a/chrome/browser/resources/downloads/aegis_download_panel.html.ts
 +++ b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
 @@ -61,19 +61,21 @@ export function getHtml(this: AegisDownloadPanelElement) {
@@ -362,7 +362,7 @@ index 0f265dd7d3..f924ac5cbc 100644
          </div>
          <label class="disclosure">
 diff --git a/chrome/browser/resources/downloads/aegis_download_panel.ts b/chrome/browser/resources/downloads/aegis_download_panel.ts
-index 808667af3d..2394f2aa6d 100644
+index 808667af3d36a334879cf3207c85a94699fbe93c..2394f2aa6d2da0f320a6b889d3ab408167c0bc61 100644
 --- a/chrome/browser/resources/downloads/aegis_download_panel.ts
 +++ b/chrome/browser/resources/downloads/aegis_download_panel.ts
 @@ -1,6 +1,7 @@
@@ -400,7 +400,7 @@ index 808667af3d..2394f2aa6d 100644
    private selectedFiles_ = new Set<number>();
    private pollTimer_ = 0;
 diff --git a/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts b/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts
-index 0e4a09e1cb..6edea56748 100644
+index 0e4a09e1cbe461d929acbb1e2cc9a28e79cb2d35..6edea567482d9d1b170b232fcc80d6fd4dccf181 100644
 --- a/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts
 +++ b/chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts
 @@ -2,9 +2,17 @@
@@ -452,7 +452,7 @@ index 0e4a09e1cb..6edea56748 100644
    getDownloadLocationText(path: string) {
      return sendWithPromise<string>('getDownloadLocationText', path);
 diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.css b/chrome/browser/resources/settings/downloads_page/downloads_page.css
-index 8ff42c099b..e43d63ce4f 100644
+index 8ff42c099b742a01aa678567d5938053b16c33c3..e43d63ce4f5a83d60dc9be545461946a29243180 100644
 --- a/chrome/browser/resources/settings/downloads_page/downloads_page.css
 +++ b/chrome/browser/resources/settings/downloads_page/downloads_page.css
 @@ -12,3 +12,32 @@
@@ -489,7 +489,7 @@ index 8ff42c099b..e43d63ce4f 100644
 +  padding: 12px 20px;
 +}
 diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
-index ffe4c26ddc..54e9c619ef 100644
+index ffe4c26ddc8de7a492028eb490a7af6f158143c9..54e9c619ef1bcf22990907cfc58b8177066eda5a 100644
 --- a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
 +++ b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
 @@ -56,5 +56,76 @@ export function getHtml(this: SettingsDownloadsPageElement) {
@@ -570,7 +570,7 @@ index ffe4c26ddc..54e9c619ef 100644
  <!--_html_template_end_-->`;
  }
 diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
-index 827395e3c3..609b5efbca 100644
+index 827395e3c36964d8eade628926089916b2ab22c7..609b5efbca307f4dc9e63ff7af001f21522e52f7 100644
 --- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
 +++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
 @@ -8,10 +8,14 @@
@@ -802,7 +802,7 @@ index 827395e3c3..609b5efbca 100644
  
    protected onChangeDownloadsPathClick_() {
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index afffe38723..24c94d17c0 100644
+index afffe387238c18306c52a3745e716e34aab018c6..24c94d17c0cced53dbf5addc5a60001956ca75a9 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
 @@ -13,6 +13,7 @@
@@ -833,7 +833,7 @@ index afffe38723..24c94d17c0 100644
        {"title", IDS_DOWNLOAD_HISTORY_TITLE},
        {"searchResultsPlural", IDS_SEARCH_RESULTS_PLURAL},
 diff --git a/chrome/browser/ui/webui/settings/downloads_handler.cc b/chrome/browser/ui/webui/settings/downloads_handler.cc
-index f220871087..2b4dd9d485 100644
+index f22087108794bb8a9965358a0ebf71d3c5ab1c47..2b4dd9d48545a03d0040a8f2b632e22ceea78795 100644
 --- a/chrome/browser/ui/webui/settings/downloads_handler.cc
 +++ b/chrome/browser/ui/webui/settings/downloads_handler.cc
 @@ -4,9 +4,13 @@
@@ -966,7 +966,7 @@ index f220871087..2b4dd9d485 100644
      const base::ListValue& args) {
    base::RecordAction(UserMetricsAction("Options_ResetAutoOpenFiles"));
 diff --git a/chrome/browser/ui/webui/settings/downloads_handler.h b/chrome/browser/ui/webui/settings/downloads_handler.h
-index 7da3275b2c..f7994087d4 100644
+index 7da3275b2c879e31c48c1dddf8032c094bdd9172..f7994087d4e2151c93f80d2714235bf76491c33b 100644
 --- a/chrome/browser/ui/webui/settings/downloads_handler.h
 +++ b/chrome/browser/ui/webui/settings/downloads_handler.h
 @@ -34,6 +34,7 @@ class DownloadsHandler : public SettingsPageUIHandler,
@@ -988,7 +988,7 @@ index 7da3275b2c..f7994087d4 100644
    void HandleResetAutoOpenFileTypes(const base::ListValue& args);
  
 diff --git a/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc b/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc
-index c33eed4d9f..b09bb44ce4 100644
+index c33eed4d9f564a6086fa1236ac36722c4696851c..b09bb44ce4734fb2bf455dfe5d34cdf127657aa7 100644
 --- a/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc
 +++ b/chrome/browser/ui/webui/settings/downloads_handler_unittest.cc
 @@ -12,6 +12,8 @@
@@ -1063,7 +1063,7 @@ index c33eed4d9f..b09bb44ce4 100644
 +
  }  // namespace settings
 diff --git a/chrome/test/data/webui/settings/downloads_page_test.ts b/chrome/test/data/webui/settings/downloads_page_test.ts
-index 03d90117c8..5c6a39bab7 100644
+index 5aa360ecc42f9e1df0d5c0a1ee24b8d8fefadddc..f9688c6b0079cc6c508cc54bc257f6c9fbf762a9 100644
 --- a/chrome/test/data/webui/settings/downloads_page_test.ts
 +++ b/chrome/test/data/webui/settings/downloads_page_test.ts
 @@ -27,6 +27,8 @@ class TestDownloadsBrowserProxy extends TestBrowserProxy implements
@@ -1108,8 +1108,8 @@ index 03d90117c8..5c6a39bab7 100644
    // <if expr="is_chromeos">
    getDownloadLocationText(path: string) {
      this.methodCalled('getDownloadLocationText', path);
-@@ -135,6 +163,23 @@ suite('DownloadsHandler', function() {
-     assertTrue(!!button.shadowRoot!.querySelector('cr-policy-pref-indicator'));
+@@ -132,6 +160,23 @@ suite('DownloadsHandler', function() {
+     assertTrue(!!button.shadowRoot.querySelector('cr-policy-pref-indicator'));
    });
  
 +  test('aegis download settings are shown and saved', async function() {
@@ -1133,7 +1133,7 @@ index 03d90117c8..5c6a39bab7 100644
      let button = downloadsPage.shadowRoot.querySelector<HTMLElement>(
          '#resetAutoOpenFileTypes');
 diff --git a/components/download/internal/common/parallel_download_utils.cc b/components/download/internal/common/parallel_download_utils.cc
-index 91bfc91ae9..234e52bb6f 100644
+index 91bfc91ae9b18f2398dd063fced512040ed693f6..234e52bb6fb73c6cacb701e9d1bb8fbc34262aa6 100644
 --- a/components/download/internal/common/parallel_download_utils.cc
 +++ b/components/download/internal/common/parallel_download_utils.cc
 @@ -179,10 +179,16 @@ int GetParallelRequestCountConfig() {
@@ -1177,7 +1177,7 @@ index 91bfc91ae9..234e52bb6f 100644
    // false.
    bool enabled_parameter = GetFieldTrialParamByFeatureAsBool(
 diff --git a/components/download/internal/common/parallel_download_utils_unittest.cc b/components/download/internal/common/parallel_download_utils_unittest.cc
-index 94128626ef..852a869588 100644
+index 94128626ef1ef88dc817039e8d05b6e34d9d749b..852a869588a00f85c1d07c2d7d854144ca819850 100644
 --- a/components/download/internal/common/parallel_download_utils_unittest.cc
 +++ b/components/download/internal/common/parallel_download_utils_unittest.cc
 @@ -361,6 +361,22 @@ TEST_F(ParallelDownloadUtilsTest, ParallelRequestCountIsBounded) {
@@ -1204,7 +1204,7 @@ index 94128626ef..852a869588 100644
  // feature.
  TEST_F(ParallelDownloadUtilsTest, FinchConfigDisabled) {
 diff --git a/components/download/public/common/download_features.cc b/components/download/public/common/download_features.cc
-index fc444a4e3b..93ffcfc3c2 100644
+index fcb75d9f4b6cbb0b7a0bea7106d73384d17f9656..3efe51661ad18149daeb1724ab67e465ef8b1679 100644
 --- a/components/download/public/common/download_features.cc
 +++ b/components/download/public/common/download_features.cc
 @@ -4,14 +4,50 @@
@@ -1259,7 +1259,7 @@ index fc444a4e3b..93ffcfc3c2 100644
  BASE_FEATURE(kBackoffInDownloading, base::FEATURE_DISABLED_BY_DEFAULT);
  #endif
 diff --git a/components/download/public/common/download_features.h b/components/download/public/common/download_features.h
-index ea4223087f..6c8a135050 100644
+index 1523fb89e5fec509c5b4b062b9749831a3df45b2..01ee84be65fc124d5860dc0ccf2d548c9c74245a 100644
 --- a/components/download/public/common/download_features.h
 +++ b/components/download/public/common/download_features.h
 @@ -14,6 +14,16 @@ namespace features {

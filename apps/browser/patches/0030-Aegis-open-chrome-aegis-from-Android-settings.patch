@@ -1,4 +1,4 @@
-From 7c669288382f84fd3514e9786fe1c5239d0906de Mon Sep 17 00:00:00 2001
+From 785fa0311e2f1f371518b7d1af44bc22e279f0ef Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Mon, 17 Aug 2026 16:21:36 +0800
 Subject: [PATCH] Aegis: open chrome://aegis from Android settings
@@ -15,25 +15,25 @@ on Android, and keep heuristic summarize available on the phone.
  6 files changed, 72 insertions(+), 15 deletions(-)
 
 diff --git a/chrome/android/java/res/xml/privacy_preferences.xml b/chrome/android/java/res/xml/privacy_preferences.xml
-index b121452ff5..089e343f0a 100644
+index 5c4464c45d620f3aafb2c8d6bb455f11fb649fa0..a0b3086a885d62a845d999405a2c69e2a6aba7b3 100644
 --- a/chrome/android/java/res/xml/privacy_preferences.xml
 +++ b/chrome/android/java/res/xml/privacy_preferences.xml
 @@ -10,6 +10,10 @@ found in the LICENSE file.
-     <PreferenceCategory
+     <org.chromium.components.browser_ui.settings.ChromeBasePreferenceCategory
          android:key="privacy_section"
          android:title="@string/privacy_section_title" />
-+    <Preference
++    <org.chromium.components.browser_ui.settings.ChromeBasePreference
 +        android:key="aegis_modules"
 +        android:title="GCSA-aegis"
 +        android:summary="Tracker blocking, fingerprint guard, and local privacy modules" />
-     <Preference
+     <org.chromium.components.browser_ui.settings.ChromeBasePreference
          android:key="clear_browsing_data"
          android:title="@string/clear_browsing_data_title"
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-index 3aae34cd07..e925baba21 100644
+index 1b5d10dbf1aa097d888a759305fa834cbe4c0686..1f67c06db841f2b7416785e81d06d5041f689ac2 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-@@ -9,6 +9,7 @@ import static org.chromium.components.content_settings.PrefNames.COOKIE_CONTROLS
+@@ -10,6 +10,7 @@ import static org.chromium.components.content_settings.PrefNames.COOKIE_CONTROLS
  
  import android.content.Context;
  import android.content.Intent;
@@ -41,7 +41,7 @@ index 3aae34cd07..e925baba21 100644
  import android.graphics.drawable.Drawable;
  import android.os.Bundle;
  import android.text.SpannableString;
-@@ -33,6 +34,7 @@ import org.chromium.base.supplier.SettableMonotonicObservableSupplier;
+@@ -34,6 +35,7 @@ import org.chromium.base.supplier.SettableMonotonicObservableSupplier;
  import org.chromium.build.annotations.NullMarked;
  import org.chromium.build.annotations.Nullable;
  import org.chromium.chrome.R;
@@ -49,7 +49,7 @@ index 3aae34cd07..e925baba21 100644
  import org.chromium.chrome.browser.enterprise.util.ManagedBrowserUtils;
  import org.chromium.chrome.browser.flags.ChromeFeatureList;
  import org.chromium.chrome.browser.incognito.reauth.IncognitoReauthSettingSwitchPreference;
-@@ -86,6 +88,7 @@ import java.util.function.Consumer;
+@@ -87,6 +89,7 @@ import java.util.function.Consumer;
  public class PrivacySettings extends ChromeBaseSettingsFragment
          implements Preference.OnPreferenceChangeListener {
      private static final String PREF_CAN_MAKE_PAYMENT = "can_make_payment";
@@ -57,7 +57,7 @@ index 3aae34cd07..e925baba21 100644
      private static final String PREF_PRELOAD_PAGES = "preload_pages";
      private static final String PREF_HTTPS_FIRST_MODE = "https_first_mode";
      // TODO(crbug.com/349860796): Remove once new settings are fully rolled out.
-@@ -141,6 +144,24 @@ public class PrivacySettings extends ChromeBaseSettingsFragment
+@@ -143,6 +146,24 @@ public class PrivacySettings extends ChromeBaseSettingsFragment
  
          SettingsUtils.addPreferencesFromResource(this, R.xml.privacy_preferences);
  
@@ -83,7 +83,7 @@ index 3aae34cd07..e925baba21 100644
          // Record the launch of PG from the S&P link-row entry point
          privacyGuidePreference.setOnPreferenceClickListener(
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 0f0b0db49a..ec586b2993 100644
+index 0f0b0db49a5b8dfdefc3c2799b937f0f29576038..ec586b2993e8ab039052ea0126f26d0e746e4d6c 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -15,6 +15,7 @@
@@ -142,7 +142,7 @@ index 0f0b0db49a..ec586b2993 100644
  
  int AegisService::AiControlPort() const {
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index c9dcab2150..16f7e453a4 100644
+index c9dcab21506aa270114047c87821d9ef3c675420..16f7e453a400571b224520f7987b5e5ce734bcf9 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -100,6 +100,7 @@
@@ -171,7 +171,7 @@ index c9dcab2150..16f7e453a4 100644
          <label class="row">
            <span class="copy">
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 9568aa43b5..6c73f87545 100644
+index 9568aa43b5b5887343d1e8e075c8307d1a1b6679..6c73f875458f3f746169330eb6633930d2c3a24a 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -36,6 +36,7 @@ interface AegisStatus {
@@ -233,7 +233,7 @@ index 9568aa43b5..6c73f87545 100644
    actionButton('summarize').disabled = !status.privacyAi;
  }
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 1951137b66..4261451f48 100644
+index 1951137b669b429bb0b9191adeaea042545d1bec..4261451f4838aca8c24a1ed840fc0d2d5f42d4cf 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -151,6 +151,11 @@ base::DictValue AegisUIHandler::BuildStatus() const {

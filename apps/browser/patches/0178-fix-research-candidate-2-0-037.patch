@@ -1,4 +1,4 @@
-From dab274f6227301c5a87d1fe118aa20b4971d5085 Mon Sep 17 00:00:00 2001
+From 74ea0e9cfe7233e48a86a1c853859c3cdeb11d55 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 23:56:07 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
@@ -23,7 +23,7 @@ Content-Transfer-Encoding: 8bit
  11 files changed, 184 insertions(+), 15 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index cfab8e29d6..066ee9835f 100644
+index cfab8e29d6912c55ac718a27835dedd485963adf..066ee9835f847ec73eebf61cdad3119d0c30904b 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1765,7 +1765,7 @@ void AegisAgentService::RequestNextModelTurn(const std::string& task_id) {
@@ -36,7 +36,7 @@ index cfab8e29d6..066ee9835f 100644
    }
    std::string config_error;
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index b7f5de32b4..68543249b5 100644
+index b7f5de32b41fdf4115d65f6e96d8fa99f5d18d07..68543249b5756ed0725256a993557a43b2d84502 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -1997,8 +1997,10 @@ void AegisBrowserTools::ExecuteDownloadTool(AgentTask* task,
@@ -53,7 +53,7 @@ index b7f5de32b4..68543249b5 100644
          !task->scope().AllowsOrigin(call.committed_url)) {
        std::move(callback).Run(
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index e8dfa80d54..70fc666233 100644
+index e8dfa80d54d2a5046347cfc760855397964a17c7..70fc666233ec3c3dfe2218ceec6fedc8a83e65cb 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -1001,6 +1001,12 @@ TEST(AegisAgentPolicyTest, OfflineDownloadAssessmentNeedsNoTransferApproval) {
@@ -127,7 +127,7 @@ index e8dfa80d54..70fc666233 100644
    AgentToolRegistry registry;
    AgentResultVerifier verifier;
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 67da20343c..c259eee9c0 100644
+index 67da20343cab06bc4c253505b4d8810cdb7996f4..c259eee9c03172fd5253c80f4016b406d584a837 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -19,6 +19,15 @@
@@ -178,7 +178,7 @@ index 67da20343c..c259eee9c0 100644
    }
    const auto fields = BuildAgentDownloadEvidence(history);
 diff --git a/chrome/browser/aegis/agent/agent_execution.h b/chrome/browser/aegis/agent/agent_execution.h
-index 91f3d21f1a..8c633f5cb7 100644
+index 91f3d21f1a7cc9dd95b154c55bd47c9cabebd6f9..8c633f5cb7ef4bbddae36035f98686e67fd59b43 100644
 --- a/chrome/browser/aegis/agent/agent_execution.h
 +++ b/chrome/browser/aegis/agent/agent_execution.h
 @@ -59,7 +59,8 @@ struct AgentTranslationSelection {
@@ -192,7 +192,7 @@ index 91f3d21f1a..8c633f5cb7 100644
  AgentModelToolDefinition BuildSelectTranslationToolDefinition();
  std::string BuildAgentTranslationSelectionSystemContract();
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index bcd9f8bc09..0cbf559640 100644
+index bcd9f8bc09628cbc174c89c18ffddb2c3b71bfca..0cbf5596402f17fb6ef129e8f41647e3f1416fa8 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -171,6 +171,27 @@ TEST(AegisAgentExecutionTest, DownloadSummaryPreservesSourceOnlyTask) {
@@ -224,7 +224,7 @@ index bcd9f8bc09..0cbf559640 100644
       DownloadSummaryFollowsNativeCompletionAndCancellation) {
    auto scope = ExecutionScope();
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index ba4cc2ea89..c7d1b1eaeb 100644
+index ba4cc2ea89136137dc45566867379425d0665dca..c7d1b1eaebd13570ec46bc4d95efd3a4625f4f52 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -718,6 +718,15 @@ AgentWorkflowKind ConstrainWorkflowToUserIntent(
@@ -260,7 +260,7 @@ index ba4cc2ea89..c7d1b1eaeb 100644
    if (BookmarkGoalIsReadOnly(user_goal) && has_step("bookmark.apply")) {
      *error = "read-only bookmark goal must not include bookmark.apply";
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 44ac095770..1ffb6bd2ce 100644
+index 44ac0957702381adfb9d7a5c3131532489ee679e..1ffb6bd2ce904846944259556d1d47253c5a86ec 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -298,6 +298,8 @@ TEST(AegisAgentGoalRegressionTest, CheckoutReviewCannotUseTabMetadataOnly) {
@@ -322,7 +322,7 @@ index 44ac095770..1ffb6bd2ce 100644
    for (const char* goal : {
             "下载当前页面提供的 macOS ARM64 测试文件，并核对页面提供的 SHA-256 "
 diff --git a/chrome/browser/aegis/agent/agent_result_verifier.cc b/chrome/browser/aegis/agent/agent_result_verifier.cc
-index 0f26e49bcc..a50439c1d4 100644
+index 0f26e49bcce2fb68d9191fbc8effc3bf4a28ea70..a50439c1d4c13a491db39bb5cc7a73dbaa349074 100644
 --- a/chrome/browser/aegis/agent/agent_result_verifier.cc
 +++ b/chrome/browser/aegis/agent/agent_result_verifier.cc
 @@ -202,6 +202,12 @@ AgentToolCall AgentResultVerifier::RetainVerificationContext(
@@ -362,7 +362,7 @@ index 0f26e49bcc..a50439c1d4 100644
                     value.FindBool("requires_user_review") == true &&
                     value.FindBool("publisher_identity_verified") == false
 diff --git a/chrome/browser/aegis/agent/agent_tool_registry.cc b/chrome/browser/aegis/agent/agent_tool_registry.cc
-index b81e460614..d9fe4052a8 100644
+index b81e46061408beea640afd46f97128c1ea407304..d9fe4052a8c2759c9e0a274c3a32e866ab255077 100644
 --- a/chrome/browser/aegis/agent/agent_tool_registry.cc
 +++ b/chrome/browser/aegis/agent/agent_tool_registry.cc
 @@ -83,7 +83,7 @@ constexpr std::array<AgentToolDescriptor, 49> kTools = {{
@@ -394,7 +394,7 @@ index b81e460614..d9fe4052a8 100644
    if (name == "download.start") {
      properties.Set("url", StringSchema(4096));
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 1f7da61637..7ba6dd9196 100644
+index 1f7da6163751587bd96b99767294b3d589a9dddc..7ba6dd9196fd24439031a55e4e29cf3ab15705ed 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

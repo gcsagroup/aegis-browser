@@ -1,4 +1,4 @@
-From 1f7f05ad895154884dbc3f425a290e42b3bb7864 Mon Sep 17 00:00:00 2001
+From 74fc23bcd2173614d684598ac96c048cea7aacae Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Thu, 17 Sep 2026 05:53:55 +0800
 Subject: [PATCH] =?UTF-8?q?=E5=8E=BB=E9=99=A4=E5=8F=AA=E8=AF=BB=E5=AE=8C?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 156 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index ddb8871d2c..9fa12cdeba 100644
+index ddb8871d2c3adf156561addda128cbf115ae13c1..9fa12cdeba5b3656cea198b1d73556c4dcb93760 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -28,6 +28,20 @@ bool RequiresDownloadEvidence(std::string_view goal,
@@ -119,7 +119,7 @@ index ddb8871d2c..9fa12cdeba 100644
        // 总预算回退会移除原回执，必须恢复正文，不能留下悬空引用。
        envelope.FindList("prior_verified_evidence_untrusted")->back() =
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index c4275e158f..1da2b2d02c 100644
+index c4275e158f404a47515736502351e52dea07c354..1da2b2d02c038666018d17f6fdc5b68b46783382 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -1358,7 +1358,34 @@ TEST(AegisAgentExecutionTest, PromptDeduplicatesOnlyCompleteLatestPageBody) {
@@ -245,7 +245,7 @@ index c4275e158f..1da2b2d02c 100644
    AgentTask task("prompt-boundary", "总结页面", AgentMode::kAsk,
                   ExecutionScope());
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 2b0427c02e..57a2e90933 100644
+index 2b0427c02e0c282cf9ce01e4f8baec5176066bf8..57a2e90933f2826c51c6692db298b67a4226c5cf 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

@@ -52,12 +52,11 @@
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/actions/chrome_action_id.h"
-#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_actions.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/side_panel/side_panel_action_callback.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
@@ -90,10 +89,12 @@
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/devtools_agent_host.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "crypto/sha2.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_status_code.h"
@@ -127,8 +128,8 @@ void ConfigureAgentModel(Profile* profile) {
   pref_service->SetString(prefs::kModelName, "gpt-4.1-mini");
 }
 
-content::WebContents* ShowAgentPanel(Browser* browser) {
-  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
+content::WebContents* ShowAgentPanel(BrowserWindowInterface* browser) {
+  SidePanelUI* side_panel = SidePanelUI::From(browser);
   if (!side_panel) {
     return nullptr;
   }
@@ -143,6 +144,31 @@ content::WebContents* ShowAgentPanel(Browser* browser) {
   content::WebContents* contents =
       side_panel->GetWebContentsForTest(SidePanelEntry::Id::kAegisAgent);
   return contents && content::WaitForLoadStop(contents) ? contents : nullptr;
+}
+
+// 直接调用 Mojo 创建任务的夹具需要通过真实重新打开流程选择任务；
+// 不解除界面隔离旧任务事件的保护，也不伪造完成快照。
+void ReopenAgentPanelForTask(BrowserWindowInterface* browser,
+                            content::WebContents*& panel,
+                            const std::string& task_id) {
+  SidePanelUI* side_panel = SidePanelUI::From(browser);
+  ASSERT_TRUE(side_panel);
+  side_panel->Close();
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return !side_panel->IsSidePanelEntryShowing(
+        SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));
+  }));
+  SidePanelEntry* entry = AgentEntry(browser);
+  ASSERT_TRUE(entry);
+  entry->ClearCachedView();
+  panel = ShowAgentPanel(browser);
+  ASSERT_TRUE(panel);
+  ASSERT_EQ(task_id, content::EvalJs(panel, R"JS(
+    (async () => {
+      const {BrowserProxy} = await import('./browser_proxy.js');
+      return (await BrowserProxy.getInstance().handler.getSnapshot()).snapshot.taskId;
+    })()
+  )JS").ExtractString());
 }
 
 class ProfileDestructionProbe : public ProfileObserver {
@@ -170,7 +196,7 @@ class ProfileDestructionProbe : public ProfileObserver {
 };
 
 std::unique_ptr<TestRenderViewContextMenu> CreateAegisContextMenu(
-    Browser* browser) {
+    BrowserWindowInterface* browser) {
   content::WebContents* contents =
       browser->GetTabStripModel()->GetActiveWebContents();
   content::ContextMenuParams params;
@@ -250,7 +276,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentDefaultEntryBrowserTest,
       kActionSidePanelShowAegisAgent,
       BrowserActions::From(browser())->root_action_item());
   ASSERT_TRUE(action);
-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+  SidePanelUI* side_panel = SidePanelUI::From(browser());
   ASSERT_TRUE(side_panel);
   side_panel->DisableAnimationsForTesting();
 
@@ -536,7 +562,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
   ASSERT_TRUE(profile->IsRegularProfile());
   ASSERT_FALSE(profile->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
   ASSERT_EQ(AegisAgentServiceFactory::GetForProfileIfExists(profile), nullptr);
-  ASSERT_FALSE(browser()->GetFeatures().side_panel_ui()->IsSidePanelEntryShowing(
+  ASSERT_FALSE(SidePanelUI::From(browser())->IsSidePanelEntryShowing(
       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
 
   // 仅 PRE 正文显式启用并创建服务；不通过面板、模型或执行工具准备资料。
@@ -630,7 +656,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentColdStartMonitorBrowserTest,
   ASSERT_TRUE(browser()->GetProfile()->IsRegularProfile());
   ASSERT_TRUE(
       browser()->GetProfile()->GetPrefs()->GetBoolean(prefs::kAgentEnabled));
-  ASSERT_FALSE(browser()->GetFeatures().side_panel_ui()->IsSidePanelEntryShowing(
+  ASSERT_FALSE(SidePanelUI::From(browser())->IsSidePanelEntryShowing(
       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
 
   // 只让真实消息循环与时钟前进；允许启动时已过期的原监控自然立即执行。
@@ -1064,7 +1090,11 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
           return '监控页宽度超出视口：' + root.scrollWidth + '/' + root.clientWidth;
         }
         const buttons = [...document.querySelectorAll('.monitor-actions button')];
-        if (buttons.length !== 2) return '缺少监控操作按钮';
+        if (buttons.length !== 3 ||
+            ['check', 'toggle', 'delete'].some(action =>
+                !buttons.some(button => button.dataset.monitorAction === action))) {
+          return '缺少监控操作按钮';
+        }
         for (const button of buttons) {
           button.focus();
           const bounds = button.getBoundingClientRect();
@@ -1773,13 +1803,14 @@ IN_PROC_BROWSER_TEST_F(
         const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
             '检查我的全部500条书签网址是否可访问，只报告检查结果，不修改书签。',
             0, 1, [], 0);
-        return snapshot.taskId || `ERROR:${snapshot.lastError}`;
+        return snapshot.taskId || ('ERROR:' + snapshot.lastError);
       })()
     )JS").ExtractString();
     ASSERT_FALSE(task_id.empty());
     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
     AgentTask* task = service->GetTask(task_id);
     ASSERT_TRUE(task);
+    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
     EXPECT_EQ(task->scope().budgets.max_model_calls, 20);
     EXPECT_EQ(task->scope().budgets.max_network_requests, 520);
     const int budget = narrowed ? 500 : 520;
@@ -2458,12 +2489,18 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   base::test::TestFuture<AgentToolResult> extracted;
   bridge.ExecutePageTool(task->id(), call, extracted.GetCallback());
   ASSERT_TRUE(extracted.Get().ok) << extracted.Get().message;
+  const auto* observed_nodes = observed.Get().value.FindList("nodes");
+  ASSERT_TRUE(observed_nodes);
   const auto* extracted_nodes = extracted.Get().value.FindList("nodes");
-  ASSERT_TRUE(extracted_nodes);
+  ASSERT_TRUE(extracted_nodes && !extracted_nodes->empty());
+  // 标题样式属于原始观察；字段提取仅回传实际引用的正文，防止附带无关章节。
+  for (const auto& node : *extracted_nodes) {
+    EXPECT_NE(node.GetDict().FindBool("text_is_heading"), true);
+  }
   bool saw_main_heading = false;
   bool saw_section_heading = false;
   bool saw_body = false;
-  for (const auto& node_value : *extracted_nodes) {
+  for (const auto& node_value : *observed_nodes) {
     const auto& node = node_value.GetDict();
     const auto* text = node.FindString("text");
     if (!text)
@@ -2515,7 +2552,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   EXPECT_TRUE(AgentEntry(browser()));
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_SHOW_AEGIS));
 
-  Browser* otr_browser = CreateIncognitoBrowser(regular);
+  BrowserWindowInterface* otr_browser = CreateIncognitoBrowser(regular);
   ASSERT_TRUE(otr_browser);
   EXPECT_TRUE(otr_browser->GetProfile()->IsOffTheRecord());
   EXPECT_TRUE(IsAegisAgentSidePanelSupported(otr_browser->GetProfile()));
@@ -2536,7 +2573,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   Profile* second = &profiles::testing::CreateProfileSync(
       profile_manager, profile_manager->GenerateNextProfileDirectoryPath());
   second->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
-  Browser* second_browser = CreateBrowser(second);
+  BrowserWindowInterface* second_browser = CreateBrowser(second);
   ASSERT_TRUE(second_browser);
   AegisAgentService* second_service =
       AegisAgentServiceFactory::GetForProfile(second);
@@ -2580,7 +2617,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   EXPECT_FALSE(regular_service->task_store_is_in_memory_for_testing());
   const size_t regular_task_count = regular_service->task_count_for_testing();
 
-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
+  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
   Profile* incognito_profile = incognito_browser->GetProfile();
   ASSERT_TRUE(incognito_profile->IsIncognitoProfile());
@@ -2612,7 +2649,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler.createTask(
           'organize my bookmarks with a preview', 1, 1, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -2641,7 +2678,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   EXPECT_TRUE(
       regular_menu->IsItemEnabled(IDC_CONTENT_CONTEXT_SEND_TO_AEGIS_AGENT));
 
-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
+  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
   Profile* incognito_profile = incognito_browser->GetProfile();
   incognito_profile->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
@@ -2676,7 +2713,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
 
-  SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+  SidePanelUI* side_panel = SidePanelUI::From(browser());
   ASSERT_TRUE(side_panel);
   side_panel->SetNoDelaysForTesting(true);
   side_panel->DisableAnimationsForTesting();
@@ -2805,7 +2842,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('compare usb hubs', 1, 0, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -2842,7 +2879,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('帮我在 JD 找几款内存', 1, 3, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -2889,7 +2926,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('帮我总结下页面内容', 1, 0, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -2935,7 +2972,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
           '从当前官方合成发布页下载适合本机 macOS arm64 的测试安装包，核验页面公布的 SHA-256。只下载，不打开、不执行、不安装。',
           1, 0, [], 0);
-      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
+      return snapshot.taskId || ('ERROR:' + snapshot.lastError);
     })()
   )JS").ExtractString();
   const auto* task = service->GetTask(id);
@@ -2962,7 +2999,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler.createTask(
           '在当前页面找到 macOS ARM64 的官方下载，先不要下载。', 1, 0, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                              .ExtractString();
@@ -3053,7 +3090,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
           '总结当前页面内容，并列出重点', 1, 0, [], 0);
-      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
+      return snapshot.taskId || ('ERROR:' + snapshot.lastError);
     })()
   )JS").ExtractString();
   AgentTask* task = service->GetTask(task_id);
@@ -3087,7 +3124,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
           '总结当前页面内容，并列出重点', 1, 0, [], 0);
-      return snapshot.taskId || `ERROR:${snapshot.lastError}`;
+      return snapshot.taskId || ('ERROR:' + snapshot.lastError);
     })()
   )JS").ExtractString();
   auto* service =
@@ -3162,13 +3199,14 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('读取当前标签信息，无法读取的部分请说明', 0, 1, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
   AgentTask* task = service->GetTask(task_id);
   ASSERT_TRUE(task);
+  ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
   ASSERT_TRUE(service->BeginPlanning(task_id));
   AgentModelEvent plan;
   plan.type = AgentModelEventType::kToolCall;
@@ -3261,7 +3299,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       if (!bad.snapshot.lastError) return 'ERROR:duplicate accepted';
       const result = await handler.createTabGroupTask(
           '把本任务的三个研究标签放入一个组。', ids);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                              .ExtractString();
@@ -3386,7 +3424,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
         const {BrowserProxy} = await import('./browser_proxy.js');
         const result = await BrowserProxy.getInstance().handler
             .createTask($1, 0, 0, [], 0);
-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
       })()
     )JS",
                                                                      goal))
@@ -3418,8 +3456,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   for (int index = 1; index < 6; ++index) {
     chrome::AddTabAt(browser(), GURL("about:blank"), -1, false);
   }
-  Browser* other_window = CreateBrowser(browser()->GetProfile());
-  Browser* otr_window = CreateIncognitoBrowser(browser()->GetProfile());
+  BrowserWindowInterface* other_window = CreateBrowser(browser()->GetProfile());
+  BrowserWindowInterface* otr_window = CreateIncognitoBrowser(browser()->GetProfile());
   ASSERT_TRUE(other_window);
   ASSERT_TRUE(otr_window);
   content::WebContents* panel = ShowAgentPanel(browser());
@@ -3437,7 +3475,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('统计当前窗口有几个标签', 0, 0, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -3542,7 +3580,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('帮我概括一下这里讲了什么', 1, 0, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -3572,7 +3610,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler.createTask(
           '监控当前页面内容变化', 2, 0, [], 60);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -3621,7 +3659,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
         const result = await BrowserProxy.getInstance().handler.createTask(
             '监控当前网页内容，每15分钟提醒重要变化；不下载、不购买、不填写表单。',
             2, $1, [], 15);
-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
       })()
     )JS", workflow)).ExtractString();
     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
@@ -3912,7 +3950,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
         const goal = `打开 ${$1} 并总结页面内容。只允许读取这个本地公开测试来源；不要下载、整理书签、提交或购买。`;
         const result = await BrowserProxy.getInstance().handler
             .createTask(goal, 1, $2, [], 0);
-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
       })()
     )JS", target.spec(), workflow_hint)).ExtractString();
     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
@@ -3944,7 +3982,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const goal = `打开 ${$1} 并总结页面内容；不要下载、整理书签或购买。`;
       const result = await BrowserProxy.getInstance().handler
           .createTask(goal, 1, 1, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS", target.spec())).ExtractString();
   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
@@ -4061,13 +4099,14 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
         const {BrowserProxy} = await import('./browser_proxy.js');
         const result = await BrowserProxy.getInstance().handler.createTask(
             $1, 1, 1, [], 0);
-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
       })()
     )JS", malformed_kind == 0 ? "不要整理书签，总结当前页。" :
                                "总结当前页")).ExtractString();
     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
     AgentTask* task = service->GetTask(task_id);
     ASSERT_TRUE(task);
+    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
     ASSERT_TRUE(service->BeginPlanning(task_id));
     AgentModelEvent plan;
     plan.type = AgentModelEventType::kToolCall;
@@ -4271,7 +4310,7 @@ IN_PROC_BROWSER_TEST_F(
         const {BrowserProxy} = await import('./browser_proxy.js');
         const {snapshot} = await BrowserProxy.getInstance().handler.createTask(
             $1, 1, 0, $2 ? [$2] : [], 0);
-        return snapshot.lastError ? `ERROR:${snapshot.lastError}` : snapshot.taskId;
+        return snapshot.lastError ? ('ERROR:' + snapshot.lastError) : snapshot.taskId;
       })()
     )JS",
                                goal,
@@ -4283,6 +4322,7 @@ IN_PROC_BROWSER_TEST_F(
     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
     AgentTask* task = service->GetTask(task_id);
     ASSERT_TRUE(task);
+    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
     EXPECT_EQ(task->goal(), goal);
     ASSERT_TRUE(service->BeginPlanning(task_id));
     AgentTaskScope scope = task->scope();
@@ -4854,12 +4894,13 @@ IN_PROC_BROWSER_TEST_F(
         const result = await BrowserProxy.getInstance().handler.createTask(
             '按标题主题分类我的全部500条书签，给出各类数量和真实代表标题，' +
             '只生成整理预览，不修改书签。', 0, 1, [], 0);
-        return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+        return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
       })()
     )JS").ExtractString();
     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
     AgentTask* task = service->GetTask(task_id);
     ASSERT_TRUE(task);
+    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
     ASSERT_TRUE(service->BeginPlanning(task_id));
     AgentModelEvent plan;
     plan.type = AgentModelEventType::kToolCall;
@@ -5058,7 +5099,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
           const result = await BrowserProxy.getInstance().handler
               .createTask(goal, 1, 0, [], 0);
           return result.snapshot.taskId ||
-              `ERROR:${result.snapshot.lastError}`;
+              ('ERROR:' + result.snapshot.lastError);
         })()
       )JS",
                                                 target_url.spec()))
@@ -5083,7 +5124,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler.createTask(
           '打开www.example.com告诉我最新消息', 1, 0, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -5114,7 +5155,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('organize my bookmarks with a preview', 1, 1, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -5151,7 +5192,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       const {BrowserProxy} = await import('./browser_proxy.js');
       const result = await BrowserProxy.getInstance().handler
           .createTask('把我的收藏夹按主题分类，先给我看预览', 1, 0, [], 0);
-      return result.snapshot.taskId || `ERROR:${result.snapshot.lastError}`;
+      return result.snapshot.taskId || ('ERROR:' + result.snapshot.lastError);
     })()
   )JS")
                                   .ExtractString();
@@ -5245,7 +5286,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
   const int32_t regular_tab_id =
       browser()->GetActiveTabInterface()->GetHandle().raw_value();
 
-  Browser* otr_browser = CreateIncognitoBrowser(browser()->GetProfile());
+  BrowserWindowInterface* otr_browser = CreateIncognitoBrowser(browser()->GetProfile());
   ASSERT_TRUE(otr_browser);
   ASSERT_TRUE(otr_browser->GetProfile()->IsOffTheRecord());
   ASSERT_TRUE(ui_test_utils::NavigateToURL(otr_browser, otr_first_url));
@@ -5467,7 +5508,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
 IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                        IncognitoNavigationEventsStayInIncognitoService) {
   ASSERT_TRUE(embedded_test_server()->Start());
-  Browser* incognito_browser = CreateIncognitoBrowser(browser()->GetProfile());
+  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(browser()->GetProfile());
   ASSERT_TRUE(incognito_browser);
   Profile* incognito_profile = incognito_browser->GetProfile();
   ASSERT_TRUE(incognito_profile->IsIncognitoProfile());
@@ -5509,7 +5550,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
   ASSERT_TRUE(base::test::RunUntil(
       [&]() { return regular_service->AiControlRunning(); }));
 
-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
+  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
   EXPECT_TRUE(IsRemoteCdpBlockedForIncognito());
   EXPECT_FALSE(regular_service->IsAiControlAvailable());
@@ -5563,7 +5604,7 @@ IN_PROC_BROWSER_TEST_F(
   )JS")
                   .ExtractBool());
 
-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
+  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
   Profile* incognito_profile = incognito_browser->GetProfile();
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
@@ -5649,7 +5690,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
   IncognitoModePrefs::SetAvailability(
       regular_profile->GetPrefs(), policy::IncognitoModeAvailability::kForced);
 
-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
+  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
   ASSERT_TRUE(incognito_browser->GetProfile()->IsPrimaryOTRProfile());
   EXPECT_TRUE(chrome::IsCommandEnabled(incognito_browser, IDC_SHOW_AEGIS));
@@ -5671,7 +5712,7 @@ IN_PROC_BROWSER_TEST_F(
   ASSERT_TRUE(
       base::test::RunUntil([&]() { return external_control.running(); }));
 
-  Browser* incognito_browser = CreateIncognitoBrowser(regular_profile);
+  BrowserWindowInterface* incognito_browser = CreateIncognitoBrowser(regular_profile);
   ASSERT_TRUE(incognito_browser);
   EXPECT_TRUE(IsRemoteCdpBlockedForIncognito());
   EXPECT_FALSE(external_control.running());
@@ -5720,8 +5761,9 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                        ToolbarSurvivesObservedPageDestroyedBeforeButton) {
+  BrowserWindowInterface* browser_window = browser();
   for (bool refresh_before_destroy : {false, true}) {
-    auto button = std::make_unique<AegisToolbarButton>(browser());
+    auto button = std::make_unique<AegisToolbarButton>(browser_window);
     auto page = content::WebContents::Create(
         content::WebContents::CreateParams(browser()->GetProfile()));
     auto page_lifetime = page->GetWeakPtr();
@@ -5741,7 +5783,7 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                        ToolbarSurvivesRepeatedBrowserWindowClose) {
   ASSERT_TRUE(embedded_test_server()->Start());
   for (int iteration = 0; iteration < 3; ++iteration) {
-    Browser* extra = CreateBrowser(browser()->GetProfile());
+    BrowserWindowInterface* extra = CreateBrowser(browser()->GetProfile());
     ASSERT_TRUE(ui_test_utils::NavigateToURL(
         extra, embedded_test_server()->GetURL("/title1.html")));
     auto page_lifetime =
@@ -5873,8 +5915,21 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
     if (replace_document) {
       auto* changed = tabs::TabHandle(ids.front()).Get();
       ASSERT_TRUE(changed);
-      // Same URL, fresh primary document: URL equality cannot authorize reuse.
-      ASSERT_TRUE(content::NavigateToURL(changed->GetContents(), original.at(ids.front())));
+      // 带片段的同网址导航可能仍是同一文档；明确刷新并核对旧观察失效。
+      const auto observed = service->actor_bridge_for_testing().LastDocument(
+          task_id, ids.front());
+      ASSERT_TRUE(observed);
+      ASSERT_TRUE(service->actor_bridge_for_testing().IsObservedDocumentCurrent(
+          task_id, ids.front(), observed->document_token));
+      content::TestNavigationObserver reloaded(changed->GetContents());
+      changed->GetContents()->GetController().Reload(content::ReloadType::NORMAL,
+                                                     false);
+      reloaded.Wait();
+      ASSERT_TRUE(reloaded.last_navigation_succeeded());
+      EXPECT_EQ(changed->GetContents()->GetLastCommittedURL(),
+                original.at(ids.front()));
+      ASSERT_FALSE(service->actor_bridge_for_testing().IsObservedDocumentCurrent(
+          task_id, ids.front(), observed->document_token));
     }
     base::ListValue cells;
     for (int source = 1; source <= 3; ++source)

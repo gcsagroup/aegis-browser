@@ -33,11 +33,11 @@ apps/browser：Chromium 分支             apps/ios：原生 iOS App
 
 ## 原生 iOS 运行路径
 
-1. **浏览器外壳：** SwiftUI 为 iPhone 提供紧凑导航，为 iPad 提供侧栏，并承载 WKWebView 标签页、地址/搜索输入、导航控制、历史和收藏。
-2. **配置隔离：** 普通与私密配置使用不同的 WKWebsiteDataStore、WKUserContentController 和扩展运行状态。私密浏览不持久化，并禁用历史、收藏和 Agent。
+1. **浏览器外壳：** SwiftUI 为 iPhone 提供底部地址栏，为 iPad 宽窗口提供顶部工具栏，网页使用完整宽度，并承载 WKWebView 标签页、地址/搜索输入、导航控制、历史和收藏。
+2. **配置隔离：** 普通与私密配置使用不同的 WKWebsiteDataStore、WKUserContentController 和扩展运行状态。私密网页使用非持久存储，不自动保存历史、会话或 AI 任务。收藏、工作区、下载和分析结果可经明确确认后保存；页面读取与模型发送需要用户主动操作，发送前再次确认服务和范围。
 3. **内嵌扩展：** SafariWebExtension 提供由用户手势触发、短租约约束的只读页面快照路径，并以 isolated-world document token、navigation epoch、tab/frame/origin 和 worker instance 绑定授权与结果；ShareExtension 把有界 HTTP(S) URL 写入专用、会过期且只能消费一次的 App Group inbox。真实 Safari 权限和真机 App Group 行为尚未验证。
-4. **策略模块：** BrowserSession 的主框架导航会在网络加载前调用 AegisPolicyKit 的 LinkSanitizer 与 PhishingScorer，分别重写追踪参数和阻止高风险 URL，并显示可见策略提示。PII 扫描与策略快照解析已有源码和测试，但尚未接入真实出站数据链。
-5. **Agent Broker：** AgentKit 实现共享 Agent Contract v1、不可变任务授权、文档租约、资源登记和一次性动作能力。R1/R2 动作需要独立确认：随机批准 ID、最长 60 秒 TTL 与摘要共同绑定完整授权、工具、规范参数、序列、最终目标和风险；恢复校验 ID/摘要/TTL，签发入场先销毁批准，随后 capability 仍只能消费一次。用户同意前只允许本地确定性范围；私密配置拒绝 Agent 使用。
+4. **策略模块：** BrowserSession 的主框架导航会在网络加载前调用 AegisPolicyKit 的 LinkSanitizer 与 PhishingScorer，分别重写追踪参数和阻止高风险 URL，并显示可见策略提示。网页助手通过 PageSnapshot 和 ModelClient 执行页面脱敏、敏感信息检查及发送前确认；这不等同于所有网络请求的统一出站拦截。
+5. **Agent Broker：** AgentKit 实现共享 Agent Contract v1、不可变任务授权、文档租约、资源登记和一次性动作能力。R1/R2 动作需要独立确认：随机批准 ID、最长 60 秒 TTL 与摘要共同绑定完整授权、工具、规范参数、序列、最终目标和风险；恢复校验 ID/摘要/TTL，签发入场先销毁批准，随后 capability 仍只能消费一次。用户同意前只允许本地确定性范围；执行器仍拒绝私密配置的动作能力。私密界面的收藏整理只向普通配置执行器提供已保存的收藏，不传入当前私密页面网址，并保留任务授权和独立动作确认。
 6. **离线工作流：** 四个工作流都可离线验证。浏览器管家在独立 R1 动作确认后执行真实的 Aegis 本地收藏事务；before/after 树哈希、认证加密 journal、崩溃过渡判定和状态漂移检查保护应用与撤销。App 重启后的撤销不会自动执行，必须重新取得任务授权和独立 R1 动作确认。深度研究、安全下载和购物助手仍不执行真实 DOM 抽取、实际下载、远程模型调用、支付或下单。
 7. **Simulator 链路：** 仓库内 Xcode 工程和测试脚本面向专用 iPhone 与 iPad Simulator，只支持 `SIMULATOR_QUALIFIED` 证据。
 

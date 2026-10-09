@@ -1,4 +1,4 @@
-From 8e063fdf98c2cb94faea984eab147166ee5de1da Mon Sep 17 00:00:00 2001
+From cd28525596be8d0280f0cf242c5e52f3d5196074 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Wed, 12 Aug 2026 18:23:06 +0800
 Subject: [PATCH] Aegis: bundle packages/core policy snapshot into the tree
@@ -32,7 +32,7 @@ snapshot under third_party/aegis_policy for a single source of truth.
  create mode 100644 third_party/aegis_policy/policy_snapshot.json
 
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 4ad8a9ce67..8e61fb7d41 100644
+index 4ad8a9ce677b02ebc8154828ff2b08a83d09d702..8e61fb7d411b4cd2a036e9f2971d063b61e1b5f7 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -12,9 +12,12 @@ source_set("aegis") {
@@ -49,7 +49,7 @@ index 4ad8a9ce67..8e61fb7d41 100644
      "//services/network/public/cpp",
      "//third_party/blink/public/common",
 diff --git a/chrome/common/aegis/builtin_phish_hosts.cc b/chrome/common/aegis/builtin_phish_hosts.cc
-index 09dc3adb6f..17a47b2d79 100644
+index 09dc3adb6f46cf3f04fa466597033e9d3591a390..17a47b2d79039b21bf6df6149cfb4f8f9357364d 100644
 --- a/chrome/common/aegis/builtin_phish_hosts.cc
 +++ b/chrome/common/aegis/builtin_phish_hosts.cc
 @@ -11,18 +11,8 @@
@@ -74,7 +74,7 @@ index 09dc3adb6f..17a47b2d79 100644
  bool RuleMatches(std::string_view rule, const GURL& url) {
    if (!url.is_valid() || !url.has_host()) {
 diff --git a/chrome/common/aegis/builtin_tracker_hosts.cc b/chrome/common/aegis/builtin_tracker_hosts.cc
-index 8f6c7cc56e..7b9f0ce829 100644
+index 8f6c7cc56e3aabaf865432d96c5292f656e6e0cc..7b9f0ce829e5a6ac363025e3696205b13ccba234 100644
 --- a/chrome/common/aegis/builtin_tracker_hosts.cc
 +++ b/chrome/common/aegis/builtin_tracker_hosts.cc
 @@ -11,40 +11,8 @@
@@ -122,7 +122,7 @@ index 8f6c7cc56e..7b9f0ce829 100644
    if (!url.is_valid() || !url.has_host()) {
 diff --git a/chrome/common/aegis/generated/phish_brand_keywords.inc b/chrome/common/aegis/generated/phish_brand_keywords.inc
 new file mode 100644
-index 0000000000..98405483d5
+index 0000000000000000000000000000000000000000..98405483d508cc1168bc771f47f8b145cba9757e
 --- /dev/null
 +++ b/chrome/common/aegis/generated/phish_brand_keywords.inc
 @@ -0,0 +1,23 @@
@@ -151,7 +151,7 @@ index 0000000000..98405483d5
 +};
 diff --git a/chrome/common/aegis/generated/phish_hosts.inc b/chrome/common/aegis/generated/phish_hosts.inc
 new file mode 100644
-index 0000000000..a9c0060b61
+index 0000000000000000000000000000000000000000..a9c0060b614d5159024a97ffa0000805d60ca49f
 --- /dev/null
 +++ b/chrome/common/aegis/generated/phish_hosts.inc
 @@ -0,0 +1,11 @@
@@ -168,7 +168,7 @@ index 0000000000..a9c0060b61
 +};
 diff --git a/chrome/common/aegis/generated/suspicious_phish_tlds.inc b/chrome/common/aegis/generated/suspicious_phish_tlds.inc
 new file mode 100644
-index 0000000000..1ddd07f22b
+index 0000000000000000000000000000000000000000..1ddd07f22bf0a6aac479740a32ea20e60bf745cc
 --- /dev/null
 +++ b/chrome/common/aegis/generated/suspicious_phish_tlds.inc
 @@ -0,0 +1,16 @@
@@ -190,7 +190,7 @@ index 0000000000..1ddd07f22b
 +};
 diff --git a/chrome/common/aegis/generated/tracker_hosts.inc b/chrome/common/aegis/generated/tracker_hosts.inc
 new file mode 100644
-index 0000000000..2f0644ddff
+index 0000000000000000000000000000000000000000..2f0644ddff483f664ac977a3b8ba15bb3f3f2ab1
 --- /dev/null
 +++ b/chrome/common/aegis/generated/tracker_hosts.inc
 @@ -0,0 +1,35 @@
@@ -231,7 +231,7 @@ index 0000000000..2f0644ddff
 +};
 diff --git a/chrome/common/aegis/generated/tracking_query_params.inc b/chrome/common/aegis/generated/tracking_query_params.inc
 new file mode 100644
-index 0000000000..fa11c1803c
+index 0000000000000000000000000000000000000000..fa11c1803c0b99d05376577e352779ca62c26ee7
 --- /dev/null
 +++ b/chrome/common/aegis/generated/tracking_query_params.inc
 @@ -0,0 +1,28 @@
@@ -265,7 +265,7 @@ index 0000000000..fa11c1803c
 +};
 diff --git a/chrome/common/aegis/tracking_query_params.cc b/chrome/common/aegis/tracking_query_params.cc
 new file mode 100644
-index 0000000000..78b8eab877
+index 0000000000000000000000000000000000000000..78b8eab87765779cd56c539ffeb612733da6bca7
 --- /dev/null
 +++ b/chrome/common/aegis/tracking_query_params.cc
 @@ -0,0 +1,24 @@
@@ -295,7 +295,7 @@ index 0000000000..78b8eab877
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/tracking_query_params.h b/chrome/common/aegis/tracking_query_params.h
 new file mode 100644
-index 0000000000..ae66c7f38c
+index 0000000000000000000000000000000000000000..ae66c7f38cb1057135bc794d9ce60b66a20fc031
 --- /dev/null
 +++ b/chrome/common/aegis/tracking_query_params.h
 @@ -0,0 +1,17 @@
@@ -318,7 +318,7 @@ index 0000000000..ae66c7f38c
 +#endif  // CHROME_COMMON_AEGIS_TRACKING_QUERY_PARAMS_H_
 diff --git a/third_party/aegis_policy/BUILD.gn b/third_party/aegis_policy/BUILD.gn
 new file mode 100644
-index 0000000000..f43e75194e
+index 0000000000000000000000000000000000000000..f43e75194edd0af1e30b5d2de7ce3fc279dd4b30
 --- /dev/null
 +++ b/third_party/aegis_policy/BUILD.gn
 @@ -0,0 +1,7 @@
@@ -331,7 +331,7 @@ index 0000000000..f43e75194e
 +}
 diff --git a/third_party/aegis_policy/README.md b/third_party/aegis_policy/README.md
 new file mode 100644
-index 0000000000..27ea501d28
+index 0000000000000000000000000000000000000000..27ea501d285376c916f7647465f0a5bdbc58f972
 --- /dev/null
 +++ b/third_party/aegis_policy/README.md
 @@ -0,0 +1,16 @@
@@ -353,7 +353,7 @@ index 0000000000..27ea501d28
 +Do not hand-edit generated `.inc` files — edit TypeScript under `packages/core` instead.
 diff --git a/third_party/aegis_policy/policy_snapshot.json b/third_party/aegis_policy/policy_snapshot.json
 new file mode 100644
-index 0000000000..f0ff867c34
+index 0000000000000000000000000000000000000000..f0ff867c3445f94d9db64eb894e1ecd91bbc6d92
 --- /dev/null
 +++ b/third_party/aegis_policy/policy_snapshot.json
 @@ -0,0 +1,108 @@
