@@ -268,3 +268,9 @@
 0268-restore-ui-test-injection-candidate-123.patch
 0269-adapt-prefetch-test-document-candidate-124.patch
 0270-bump-web-security-tooling-candidate-125.patch
+0271-feat-native-mouse-gestures.patch
+0272-fix-gesture-settings-and-frame-input.patch
+0273-test-align-settings-visibility-with-chromium-155.patch
+0274-fix-quinn-agent-integration-142.patch
+0275-test-quinn-research-list-155.patch
+0276-test-quinn-research-fixtures.patch
