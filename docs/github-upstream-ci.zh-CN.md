@@ -77,9 +77,9 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 }
 ```
 
-这只是格式示例，不能仅新增 pin 冒充源码已经适配；`patchDirectory` 必须包含该平台真实的完整 `series` 和 `v8/series`。Mac/Windows 可用同名平台 JSON 独立配置。版本、提交必须同时匹配本次官方检查，当前正式仓库的 151 pin 不会被当成 153 候选编译。
+这只是格式示例，不能仅新增 pin 冒充源码已经适配；`patchDirectory` 必须包含该平台真实的完整 `series` 和 `v8/series`。Mac/Windows 可用同名平台 JSON 独立配置。版本、提交必须同时匹配本次官方检查，旧 pin 不会被当成新候选编译。
 
-每次真实构建前，升级执行器必须先同步修改并提交源码/overlay产品版本头、package.sh默认版本和Android的versionName/versionCode，并导出对应补丁。候选脚本只验证完整版本一致性，编号必须高于固定out中的既有构建号及Mac实际App版本；不再临时只改一处头文件。已完成125且无源码或实际失败变化时不重复构建。跨平台发行使用同一个已准备的产品版本，各平台官方Chromium pin可以不同。
+每次真实构建前，升级执行器必须先同步修改并提交源码/overlay产品版本头、package.sh默认版本和Android的versionName/versionCode，并导出对应补丁。候选脚本只验证完整版本一致性，编号必须高于固定out中的既有构建号及Mac实际App版本；不再临时只改一处头文件。已完成候选且无相关源码或实际失败变化时不重复构建。跨平台发行使用同一个已准备的产品版本，各平台官方Chromium pin可以不同。
 
 ## 真实验收接口
 
@@ -142,9 +142,9 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 
 本地任务每天北京时间09:00执行一次，GitHub补充监控计划为每天09:17（UTC 01:17）。本地任务已通过计划任务工具修改；GitHub文件必须合入默认分支才改变云端计划。每日执行不承诺一小时内发现漏洞；发现后按严重程度优先验证，记录真实检查缺口。
 
-完整发布是持续目标，候选工作流本身仍不能代替正式签名和三平台验收。当前发行前置项未满足时保持就绪开关关闭，保留125，不进行无意义重复Mac编译。
+完整发布是持续目标，候选工作流本身仍不能代替正式签名和三平台验收。当前发行前置项未满足时保持就绪开关关闭，保留最新已验证候选，不进行无意义重复Mac编译。
 
-`apps/browser/release-feature-contract.json`维护需要保留的行为ID与平台范围。所有公开Aegis功能开关必须登记；没有开关的新功能也必须新增行为ID。稳定ID不得因上游冲突删除，平台差异必须有明确设计依据。当前清单是验收要求，不是23项均已完成三平台验收的声明。
+`apps/browser/release-feature-contract.json`维护需要保留的行为ID与平台范围。所有公开Aegis功能开关必须登记；没有开关的新功能也必须新增行为ID。稳定ID不得因上游冲突删除，平台差异必须有明确设计依据。当前清单是验收要求，不代表所列功能均已完成三平台验收。
 
 后续新功能合入或上游pin/补丁变化后，候选脚本生成`feature-baseline.json`，绑定产品提交、产品版本、Chromium/V8源码树和功能清单摘要。真实验收程序必须读取`--baseline`，按当前功能清单执行并返回`productCommit`、`productVersion`、`sourceTree`、`v8Tree`、`featureContractSha256`，以及每个功能ID的`featureChecks`。每项至少包括`status: passed`、正整数`executed`、相对日志路径`file`及日志`sha256`。不能用零项、跳过或手工填写通过替代真实运行；同一真实回归日志可支持其实际覆盖的多个行为。验收包装器未支持此接口时应明确失败，不得通过自动生成通过记录来适配。
 
