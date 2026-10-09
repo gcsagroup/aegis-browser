@@ -6,9 +6,9 @@
 
 ## 当前证据边界
 
-- Android 与桌面使用同一固定 Chromium `153.0.8010.53` 基线。
+- Android 使用正式 Stable `155.0.8059.39`，桌面使用 `155.0.8059.40`。Android 保留独立的 `ci-pins/android.json` 与 `patches-android/` 输入。
 - 预留 application ID 为 `app.gcsa.aegis`；预留不证明已经形成有效包或 Play 身份。
-- 当前共享源码含140个Chromium补丁与3个V8补丁，重放树为`6f6294dfabbb9bfcf69a5a612bad3b2c41334ce5`；153 Android构建、安装包身份与真机尚未验收，Mac044结果不能转作Android证据。
+- 2026-10-09 源码候选为 Ver 2.2 (144)，versionCode `2002000144`，含276个Chromium补丁与3个V8补丁。完整Chromium重放通过，与已验证桌面源码仅有官方 `chrome/VERSION` 差异；共享Agent修复和桌面手势的平台限制均保留，不会在Android开启桌面手势。APK构建、签名、包身份及真机验收仍待完成。
 - 当前没有绑定身份的 APK 或 AAB。即使存在 `$HOME/Desktop/GCSA-aegis.apk` 之类的历史文件，也不能映射到当前源码，更不是 RC。
 - v2 源码会解析全页 Agent 标签背后的公开网页，并把当前页面任务绑定到该文档。页面采集、脱敏、导航失效和结果仍需真机验收。
 - v2 源码将进程级远程调试 latch 置于 Android DevTools HTTP/socket 启动之前，并覆盖延迟启动。无痕 Profile 一旦触发 latch，本进程内待处理和后续启动都会被拒绝；真机验证仍未完成。
@@ -52,7 +52,7 @@ pnpm --filter @gcsa-aegis/browser package:android
 
 ## 验收条件
 
-1. 在干净的x86-64 Linux源码目录，从固定基线精确重放当前140个Chromium补丁与3个V8补丁。
+1. 在干净的x86-64 Linux源码目录，从固定基线精确重放当前276个Chromium补丁与3个V8补丁。
 2. 构建成功，并由清单绑定根仓库 commit、Chromium commit、两套补丁序列身份、GN 参数和 APK/AAB SHA-256。
 3. 验证最终包名、版本、启动器名称、图标、权限、原生库和签名结构。
 4. 卸载旧版本，在代表设备上安装当前 APK，完成 First Run，打开普通网页和 `chrome://aegis`，实际验证核心保护。
