@@ -1,4 +1,4 @@
-From cbffc01b0bf6ac307ea46bafd34ed1e37127b096 Mon Sep 17 00:00:00 2001
+From dd4fa6e1109b211f59bac8b199debaa3f5309ad4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 07:29:15 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=9B=B4=E6=96=B0V8=E8=B7=A8=E9=85=8D=E7=BD=AE?=
@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index f818303294..105d73ab36 100644
+index f818303294cdfc4346630e167ae0141547670a4c..105d73ab36b63944514ffa3dbcc1010a92b6da4c 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;
@@ -31,12 +31,12 @@ index f818303294..105d73ab36 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/v8 b/v8
-index 87f5cfd0cc..60d94f348a 160000
+index a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c..4090cdb495116ac2227708b50525f4dd16afdbb0 160000
 --- a/v8
 +++ b/v8
 @@ -1 +1 @@
--Subproject commit 87f5cfd0cc7a8de9d596de51b518c407de4b6fd8
-+Subproject commit 60d94f348a6c7f1fc7a69fa05800e74a3a96ca7b
+-Subproject commit a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c
++Subproject commit 4090cdb495116ac2227708b50525f4dd16afdbb0
 -- 
 2.52.0
 

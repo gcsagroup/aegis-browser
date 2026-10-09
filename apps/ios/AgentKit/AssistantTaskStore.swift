@@ -60,6 +60,17 @@ public final class AssistantTaskStore: ObservableObject {
         next[index].savedReport = report
         try commit(next)
     }
+    /// 私密分析不会建立任务记录；只有用户主动确认保存完整结果时一次性写入。
+    @discardableResult public func saveCompletedReport(goal: String, sources: [URL], report: String) throws -> UUID {
+        let scan = PIIScanner.scan(goal)
+        guard !scan.blocked else { throw ModelClientError.sensitiveData }
+        guard report.utf8.count <= 200_000 else { throw CocoaError(.fileWriteOutOfSpace) }
+        let value = AssistantTaskRecord(id: UUID(), goal: String(scan.redacted.prefix(4000)),
+            sources: WorkspaceStore.persistableURLs(sources), state: .completed,
+            updatedAt: Date(), savedReport: report)
+        try commit(Array(([value] + records).prefix(100)))
+        return value.id
+    }
     public func remove(_ id: UUID) throws { try commit(records.filter { $0.id != id }) }
     private func commit(_ next: [AssistantTaskRecord]) throws {
         guard readable else { throw CocoaError(.fileReadCorruptFile) }

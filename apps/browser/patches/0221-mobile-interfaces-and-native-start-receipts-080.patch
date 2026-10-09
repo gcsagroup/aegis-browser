@@ -1,4 +1,4 @@
-From b23d046e558a2fbf6c5e7c27bde93455d5a94a86 Mon Sep 17 00:00:00 2001
+From 9cfcf1698b5809a2bbebba8116ff53c1476ba194 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 04:24:46 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=89=8B=E6=9C=BA=E5=B9=B3?=
@@ -27,10 +27,10 @@ Content-Transfer-Encoding: 8bit
  14 files changed, 201 insertions(+), 20 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 66892161a8..d23a846eee 100644
+index 04e5a01e818ee4c3680386dc2b8f4478bc5f2b62..b234a1de08ad81f8beb65862d14a14884dd6f0a3 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -4226,7 +4226,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4368,7 +4368,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
          if (autoStart) url.appendQueryParameter("autostart", "1");
          LoadUrlParams params =
                  new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);
@@ -40,7 +40,7 @@ index 66892161a8..d23a846eee 100644
      }
  
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-index 0f4d3bef83..d27908ebd2 100644
+index 0f4d3bef8374acd40f820ab3bb1727a914ae82ae..d27908ebd258b9a0fd001da3be8b04df175a6979 100644
 --- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 @@ -10,6 +10,7 @@
@@ -89,7 +89,7 @@ index 0f4d3bef83..d27908ebd2 100644
    AegisUIConfig config;
    EXPECT_TRUE(config.IsWebUIEnabled(profile()));
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index adb899901b..309c79cfc8 100644
+index adb899901b404a750423dd2fd91562421ebfbb8b..309c79cfc81aae81ba288aafefc4489357b47b09 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -413,7 +413,9 @@ std::string WindowRevision(Profile* profile, const AgentTask& task) {
@@ -164,7 +164,7 @@ index adb899901b..309c79cfc8 100644
          action_id, closing ? "window closed" : "window activated");
      result.value.Set("window_id", window_id);
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.h b/chrome/browser/aegis/agent/aegis_browser_tools.h
-index b641fd37a3..8a63426163 100644
+index b641fd37a3efbab9be40f3c6c9598dec40d7c757..8a634261636a0f9747212da0de1e0319f10ab0ba 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.h
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.h
 @@ -22,6 +22,7 @@
@@ -190,7 +190,7 @@ index b641fd37a3..8a63426163 100644
                                            const GURL& selected_bookmark_url,
                                            const GURL& target,
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 33b6353a4f..07ddf0d540 100644
+index 33b6353a4f734d109b951f850bef823d2e33a307..07ddf0d54097c94248ec20fa814c3196e5abe172 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -692,6 +692,17 @@ bool AgentGoalRequestsWindowTabMetadata(std::string_view goal) {
@@ -212,7 +212,7 @@ index 33b6353a4f..07ddf0d540 100644
                                         AgentWorkflowKind workflow) {
    return workflow == AgentWorkflowKind::kBrowserSteward &&
 diff --git a/chrome/browser/aegis/agent/agent_planner.h b/chrome/browser/aegis/agent/agent_planner.h
-index c4386c4db3..f89ae77680 100644
+index c4386c4db34269cd5d50539ca81424e5036a60a4..f89ae77680fe158d22e40d51f5c39b9688ed6857 100644
 --- a/chrome/browser/aegis/agent/agent_planner.h
 +++ b/chrome/browser/aegis/agent/agent_planner.h
 @@ -70,6 +70,9 @@ bool AgentGoalRefersToCurrentPage(std::string_view goal);
@@ -226,7 +226,7 @@ index c4386c4db3..f89ae77680 100644
  bool AgentGoalRequestsTabClose(std::string_view goal);
  bool AgentBrowserGoalNeedsClarification(std::string_view goal,
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index c0081784cc..bd37c5b02f 100644
+index c0081784cc4d357094c3d41fbbd1a1faf7bdd7ce..bd37c5b02f6a2a0628fa874187b57463ffe7857c 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -15,6 +15,18 @@
@@ -249,7 +249,7 @@ index c0081784cc..bd37c5b02f 100644
    AgentTaskScope scope;
    scope.allowed_origins = {
 diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
-index d7c4b6d845..db764f3915 100644
+index d7c4b6d845c4e6044e799c1859a21eec3a7028bc..db764f3915c1b9c27b12d26a4390340de0b94204 100644
 --- a/chrome/browser/aegis/metalink_download_verifier.cc
 +++ b/chrome/browser/aegis/metalink_download_verifier.cc
 @@ -21,7 +21,9 @@
@@ -383,7 +383,7 @@ index d7c4b6d845..db764f3915 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/metalink_download_verifier.h b/chrome/browser/aegis/metalink_download_verifier.h
-index 91db372632..9da24db872 100644
+index 91db37263227dca21a8836a1aace038b45317da4..9da24db872a41845c88ac3e25a6c8fd787b6cc07 100644
 --- a/chrome/browser/aegis/metalink_download_verifier.h
 +++ b/chrome/browser/aegis/metalink_download_verifier.h
 @@ -3,6 +3,7 @@
@@ -409,7 +409,7 @@ index 91db372632..9da24db872 100644
  }  // namespace aegis
  
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 3381a17428..1271e41dc5 100644
+index 3381a174281b0d76139cdccc78c799f25b63bbf3..1271e41dc5c1d292389129f19d148b343178f969 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -1128,11 +1128,22 @@ void AegisUIHandler::HandleStartMetalinkDownload(const base::ListValue& args) {
@@ -441,7 +441,7 @@ index 3381a17428..1271e41dc5 100644
  
  #if BUILDFLAG(IS_MAC)
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index 6f4235582e..7d53f3d9f2 100644
+index 6f4235582e4e4568d03ec3dffd8184e574830419..7d53f3d9f245a70bfe3eb3f0ceffa4a7724e646a 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -92,6 +92,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,
@@ -453,7 +453,7 @@ index 6f4235582e..7d53f3d9f2 100644
                          aegis::MetalinkParseResult result);
  #if BUILDFLAG(IS_MAC)
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index cc245114b3..4b5c708271 100644
+index cc245114b3866469095e43bbafbb0ef19819aa7f..4b5c70827133d59124010da6c0ca5a88967f7728 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -19,6 +19,7 @@
@@ -479,7 +479,7 @@ index cc245114b3..4b5c708271 100644
      const bool use_approved_current_page =
          tab && requested_origins &&
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index d855121a2e..89d7410429 100644
+index d855121a2e2d1d069a5f4021bef947ed240f4264..89d7410429e38f3d6e7e81ecc41d5a9a8bee38e7 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -494,7 +494,7 @@ index d855121a2e..89d7410429 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
-index 1ffade2ac9..93668af976 100644
+index 1ffade2ac9efa930db3c02ad840f71aa81c6e845..93668af976d88baf015cf113d45a2fb9ccd21c95 100644
 --- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
 +++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
 @@ -202,6 +202,14 @@ export class AegisDownloadPanelElement extends CrLitElement {

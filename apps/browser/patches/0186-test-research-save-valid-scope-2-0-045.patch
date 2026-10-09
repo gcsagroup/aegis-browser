@@ -1,4 +1,4 @@
-From 1841261fb9475302c0035993b9fdf763f086652e Mon Sep 17 00:00:00 2001
+From 5d152449d728912f85ee912eed4949c42d05e87a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 03:54:12 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=B5=8B=E8=AF=95=EF=BC=9A=E7=A0=94=E7=A9=B6?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 9 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index b6df6098aa..9257cc0fa3 100644
+index b6df6098aa90ae5d6a1f511ea9f4b123f552c8b3..9257cc0fa3d0fafccabbb101c6714f2b1382ae6f 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -446,6 +446,10 @@ TEST_F(AegisAgentServiceTest, ResearchCompletionWaitsForStorageSuccess) {
@@ -31,7 +31,7 @@ index b6df6098aa..9257cc0fa3 100644
    ASSERT_TRUE(task);
    const std::string id = task->id();
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index e0a2db62a9..c0346459ce 100644
+index e0a2db62a9f266422f21e887e0de74074add38c1..c0346459cecb6c39d0e2b32a324152a0bbefd83b 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -263,6 +263,9 @@ TEST(AegisAgentExecutionTest,
@@ -45,7 +45,7 @@ index e0a2db62a9..c0346459ce 100644
    AgentCompletionSummary completion{.outcome = "completed",
                                      .summary = "来源指标分别为42、43、41。"};
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 144c936a1e..8862b13869 100644
+index 144c936a1ebbc115c89ff2fee8e1730478efff26..8862b138692f3a891dcb515b1c28b7207ddcbdf5 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

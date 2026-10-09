@@ -1,4 +1,4 @@
-From ecf2f365e6becc891f2ab44923ceb2eb01007c1d Mon Sep 17 00:00:00 2001
+From 94626739c8cf140ce7e07ce1137624be7b187e4b Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 22 Sep 2026 18:03:20 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=94=B6=E8=97=8F?=
@@ -18,7 +18,7 @@ Content-Transfer-Encoding: 8bit
  5 files changed, 26 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 3bb3ca8a4f..9794d37409 100644
+index 3bb3ca8a4f5a63a193a8d9f51a07c3dfcc9ef348..9794d3740929d0239580ffa6d076d2110c5f68db 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -1875,7 +1875,7 @@ void NormalizeAgentDownloadCompletion(
@@ -41,7 +41,7 @@ index 3bb3ca8a4f..9794d37409 100644
      // 只读降级保留原生观察中的链接；候选文件不冒充已读取的来源页面。
      base::flat_set<std::string> links;
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 47bba12b74..de1f883a95 100644
+index 47bba12b7466a017f6fdf787a2a8aa80941e5676..de1f883a9526e2d65445dcd67336564ca4c1fe70 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -92,6 +92,11 @@ TEST(AegisAgentExecutionTest, OfficialIdentityQuestionDoesNotOfferAdvertisement)
@@ -57,7 +57,7 @@ index 47bba12b74..de1f883a95 100644
  }
  
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index b46bb9cd7a..6659fbac75 100644
+index b46bb9cd7aea4e03afdbb1fb5e0cd7bfbdccb4fd..6659fbac75e0a5f2d2667414f08190fdf0775421 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -541,7 +541,14 @@ function renderResult(next: TaskSnapshot) {
@@ -96,7 +96,7 @@ index b46bb9cd7a..6659fbac75 100644
        'awaiting_action_approval': 'statusApproval',
        'user_takeover': 'statusTakeover',
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index f9dfbbbdc8..5da6535641 100644
+index f9dfbbbdc8ce2bb3b34f5acd9d3705f7ad9397bc..5da65356417590bf3b4f8f7491d817398af590cb 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -667,6 +667,8 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -109,7 +109,7 @@ index f9dfbbbdc8..5da6535641 100644
        "正在等待你确认这一个操作", "正在等待你確認這一個操作");
    add("timelineActionApprovalConsumed", "This action was approved and started",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index e70a1f5558..7887b9e75a 100644
+index e70a1f5558c1fe111c076b12a2dca81b5a0cb155..7887b9e75a30f8754942ee689261190864257ce3 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

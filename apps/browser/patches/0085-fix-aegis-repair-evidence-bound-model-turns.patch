@@ -1,4 +1,4 @@
-From eb4a925feb27229ee4999ff77649f3e6d534ea93 Mon Sep 17 00:00:00 2001
+From 59e073b12ceaab7a2f3ae4105c5481f25fa5547c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 23:55:49 +0800
 Subject: [PATCH] fix(aegis): repair evidence-bound model turns
@@ -13,7 +13,7 @@ Subject: [PATCH] fix(aegis): repair evidence-bound model turns
  6 files changed, 123 insertions(+), 46 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index ac258eee1d..95ac4e7a3d 100644
+index ac258eee1d3f0db996aad0b8d911d65d9ab72015..95ac4e7a3dd8607c398e683e8ae45c23ad2cbcba 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -1498,29 +1498,45 @@ void AegisAgentService::OnExecutionModelResult(const std::string& task_id,
@@ -84,7 +84,7 @@ index ac258eee1d..95ac4e7a3d 100644
      Transition(task_id, AgentTaskState::kFailed,
                 "model requested an action after the plan ended");
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 1e1ea9158f..638f382770 100644
+index 1e1ea9158fe66307e1882aabf2b4a9506efbbc20..638f38277096abf37eeec7ff9bd80cb7e2bac025 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -509,6 +509,25 @@ TEST_F(AegisAgentServiceTest,
@@ -123,7 +123,7 @@ index 1e1ea9158f..638f382770 100644
  
  TEST_F(AegisAgentServiceTest, RejectsImplicitOrInvalidCloudFallback) {
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 020afc13ab..62eb10c532 100644
+index 020afc13abd9b4064570a9b9bce9067cf9a225d8..62eb10c5323d8b091c32ad7580c1bd6c39a0ff43 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -211,6 +211,7 @@ Do not deliberate, narrate, or explain. Call the exposed function immediately.
@@ -161,7 +161,7 @@ index 020afc13ab..62eb10c532 100644
                                 return verified_urls.contains(source);
                               });
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index fcb399e686..61441ac80c 100644
+index fcb399e686fe44c85986fe95c337ba36075804d3..61441ac80c837764c112369c0b445124fadf07c5 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -214,6 +214,10 @@ TEST(AegisAgentExecutionTest, CompletionIsStructuredAndUsesSafeSourceUrls) {
@@ -176,7 +176,7 @@ index fcb399e686..61441ac80c 100644
    EXPECT_FALSE(AgentCompletionSourcesMatchEvidence(*completion, evidence));
  
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index b22f4ac3e2..d67bef0cba 100644
+index b22f4ac3e25df829b4a55199eeff976956f84b35..d67bef0cba7d7efb800d3c777fb04ce8ff6a0410 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -14,6 +14,8 @@
@@ -310,7 +310,7 @@ index b22f4ac3e2..d67bef0cba 100644
      }
      return true;
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index a82bfcb225..e1a3f59569 100644
+index a82bfcb225338446a6a4eb61b0b18e88e3e7f8d8..e1a3f59569c485984a6c4ace78c28f9c1b9b2e35 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -105,6 +105,20 @@ TEST(AegisAgentPlannerTest, GoalRouterRejectsUnsafeOrInconsistentEntry) {

@@ -529,9 +529,12 @@ TEST(AegisAgentResearchTest, QueryDistinctSourcesUseNativeBindingsAndRedactedDis
   auto record = BuildAgentResearchRecord(task, fixture.completion,
                                          fixture.evidence, fixture.urls);
   ASSERT_TRUE(record);
-  EXPECT_EQ(*record->FindList("sources")->at(1).GetDict().FindString("url"),
+  const auto* sources = record->FindList("sources");
+  ASSERT_TRUE(sources);
+  ASSERT_GE(sources->size(), 2u);
+  EXPECT_EQ(*(*sources)[1].GetDict().FindString("url"),
             fixture.urls.at(2).spec());
-  EXPECT_TRUE(record->FindList("sources")->at(1).GetDict().FindBool("available").value());
+  EXPECT_EQ((*sources)[1].GetDict().FindBool("available"), true);
 }
 
 TEST(AegisAgentResearchTest, SwappedNativeBindingCannotAuthorizeRedactedQueryTwin) {
@@ -556,8 +559,11 @@ TEST(AegisAgentResearchTest, LatestFailedReadInvalidatesSavedSource) {
   auto record = BuildAgentResearchRecord(task, fixture.completion,
                                          fixture.evidence, fixture.urls);
   ASSERT_TRUE(record);
-  EXPECT_FALSE(record->FindList("sources")->at(1).GetDict().FindBool("available").value());
-  EXPECT_TRUE(record->FindList("sources")->at(1).GetDict().FindString("excerpt")->empty());
+  const auto* sources = record->FindList("sources");
+  ASSERT_TRUE(sources);
+  ASSERT_GE(sources->size(), 2u);
+  EXPECT_EQ((*sources)[1].GetDict().FindBool("available"), false);
+  EXPECT_TRUE((*sources)[1].GetDict().FindString("excerpt")->empty());
 }
 }  // namespace
 }  // namespace aegis::agent

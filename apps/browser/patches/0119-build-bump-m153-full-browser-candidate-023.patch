@@ -1,4 +1,4 @@
-From aa9510dcbe8e84373d2ee2355271b38ea39f9833 Mon Sep 17 00:00:00 2001
+From ee10e0cca2b62d08aa2b0b8571430285dacf10dc Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Mon, 14 Sep 2026 21:21:45 +0800
 Subject: [PATCH] build: bump M153 full browser candidate to 023
@@ -8,7 +8,7 @@ Subject: [PATCH] build: bump M153 full browser candidate to 023
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index c05778eed8..f1c39ce3bc 100644
+index c05778eed867665a0a72d0af99f8b18843a6ab55..f1c39ce3bc21f9597e1152e1912d95a5b4e0f4d1 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

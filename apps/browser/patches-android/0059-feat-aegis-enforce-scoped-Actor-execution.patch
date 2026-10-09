@@ -1,0 +1,555 @@
+From f9583e90069247c77153276c3e1fda48a1a022ec Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro.local>
+Date: Fri, 28 Aug 2026 18:30:34 +0800
+Subject: [PATCH] feat(aegis): enforce scoped Actor execution
+
+---
+ chrome/browser/actor/BUILD.gn                 |  1 +
+ chrome/browser/actor/actor_keyed_service.cc   | 34 ++++++--
+ chrome/browser/actor/actor_keyed_service.h    | 10 +++
+ .../actor/actor_keyed_service_factory.cc      |  4 +-
+ .../actor/actor_keyed_service_unittest.cc     | 78 +++++++++++++++++++
+ .../actor/actor_navigation_throttle.cc        |  1 +
+ chrome/browser/actor/actor_task.cc            |  9 ++-
+ chrome/browser/actor/actor_task.h             |  6 +-
+ chrome/browser/actor/actor_util.cc            |  8 ++
+ chrome/browser/actor/actor_util.h             |  5 ++
+ chrome/browser/actor/execution_engine.cc      | 10 ++-
+ .../actor/execution_engine_unittest.cc        | 28 ++++++-
+ chrome/browser/actor/tools/tool_controller.cc |  8 +-
+ components/actor/core/task_source_info.h      |  6 +-
+ 14 files changed, 188 insertions(+), 20 deletions(-)
+
+diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
+index 9f88486ee1c281897c50c9b3e0000b3cbaf90f6f..7408b022b86f0ae6c68437f613044ff0cd242452 100644
+--- a/chrome/browser/actor/BUILD.gn
++++ b/chrome/browser/actor/BUILD.gn
+@@ -235,6 +235,7 @@ source_set("impl") {
+     "//chrome/browser/ui/navigator",
+     "//chrome/browser/ui/tabs:tabs_public",
+     "//chrome/common",
++    "//chrome/common/aegis",
+     "//components/actor/core:journal",
+     "//components/actor/core:logging",
+     "//components/affiliations/core/browser:affiliations",
+diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
+index b0b2754311a5bc825836b85be97fd1f97aa79ff7..b02698ccfb32857bd69b1249a412bd598ff44495 100644
+--- a/chrome/browser/actor/actor_keyed_service.cc
++++ b/chrome/browser/actor/actor_keyed_service.cc
+@@ -51,6 +51,7 @@
+ #include "chrome/browser/ui/navigator/browser_navigator_params.h"
+ #include "chrome/common/actor.mojom.h"
+ #include "chrome/common/actor/action_result.h"
++#include "chrome/common/chrome_features.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "components/actor/core/actor_features.h"
+ #include "components/actor/core/actor_switches.h"
+@@ -153,7 +154,9 @@ using ui::ActorUiStateManagerInterface;
+ ActorKeyedService::ActorKeyedService(Profile* profile) : profile_(profile) {
+   actor_ui_state_manager_ = std::make_unique<ui::ActorUiStateManager>(*this);
+   profile_observation_.Observe(profile_);
+-  actor::InitActionBlocklist(profile_);
++  if (base::FeatureList::IsEnabled(features::kGlicActor)) {
++    actor::InitActionBlocklist(profile_);
++  }
+ 
+   base::FilePath trace_path =
+       base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+@@ -486,8 +489,24 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
+     std::optional<glic::mojom::InvocationSource> initial_invocation_source) {
+   CHECK(ui_state_manager);
+   return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager), source_info,
+-                        policy_checker, std::move(options), std::move(delegate),
+-                        ui_state_manager, initial_invocation_source);
++                        policy_checker, nullptr, std::move(options),
++                        std::move(delegate), ui_state_manager,
++                        initial_invocation_source);
++}
++
++TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
++    const TaskSourceInfo& source_info,
++    std::unique_ptr<EnterprisePolicyChecker> policy_checker,
++    webui::mojom::TaskOptionsPtr options,
++    base::WeakPtr<ActorTaskDelegate> delegate) {
++  CHECK(policy_checker);
++  auto* ui_state_manager = GetActorUiStateManager();
++  CHECK(ui_state_manager);
++  const EnterprisePolicyChecker* policy_checker_ptr = policy_checker.get();
++  return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager),
++                        source_info, policy_checker_ptr,
++                        std::move(policy_checker), std::move(options),
++                        std::move(delegate), ui_state_manager, std::nullopt);
+ }
+ 
+ TaskId ActorKeyedService::CreateTaskForTesting(
+@@ -498,14 +517,16 @@ TaskId ActorKeyedService::CreateTaskForTesting(
+     base::WeakPtr<ActorTaskDelegate> delegate,
+     std::optional<glic::mojom::InvocationSource> initial_invocation_source) {
+   return CreateTaskImpl(std::move(ui_event_dispatcher), source_info,
+-                        policy_checker, std::move(options), std::move(delegate),
+-                        GetActorUiStateManager(), initial_invocation_source);
++                        policy_checker, nullptr, std::move(options),
++                        std::move(delegate), GetActorUiStateManager(),
++                        initial_invocation_source);
+ }
+ 
+ TaskId ActorKeyedService::CreateTaskImpl(
+     std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
+     const TaskSourceInfo& source_info,
+     const EnterprisePolicyChecker* policy_checker,
++    std::unique_ptr<EnterprisePolicyChecker> owned_policy_checker,
+     webui::mojom::TaskOptionsPtr options,
+     base::WeakPtr<ActorTaskDelegate> delegate,
+     actor::ui::ActorUiStateManagerInterface* ui_state_manager,
+@@ -523,7 +544,8 @@ TaskId ActorKeyedService::CreateTaskImpl(
+   auto actor_task = std::make_unique<ActorTask>(
+       base::PassKey<ActorKeyedService>(), *this, task_id,
+       std::move(ui_event_dispatcher), std::move(options), source_info,
+-      policy_checker, std::move(delegate), initial_invocation_source);
++      policy_checker, std::move(owned_policy_checker), std::move(delegate),
++      initial_invocation_source);
+ 
+   if (initial_tab_handle != tabs::TabHandle::Null()) {
+     actor_task->AddTab(initial_tab_handle, /*stop_task_on_detach=*/true,
+diff --git a/chrome/browser/actor/actor_keyed_service.h b/chrome/browser/actor/actor_keyed_service.h
+index 9255e912de9f7d03cbf1e269aa6ab09764bfca6b..24a66091a134aa2be3759eb1c8803cbfa6506cff 100644
+--- a/chrome/browser/actor/actor_keyed_service.h
++++ b/chrome/browser/actor/actor_keyed_service.h
+@@ -93,6 +93,15 @@ class ActorKeyedService : public KeyedService,
+       actor::ui::ActorUiStateManagerInterface* ui_state_manager,
+       std::optional<glic::mojom::InvocationSource> initial_invocation_source =
+           std::nullopt);
++  // Creates a task whose policy checker has exactly the same lifetime as the
++  // ActorTask. This is intended for profile-scoped clients which construct a
++  // task-specific checker and cannot safely keep a raw checker alive through
++  // ActorTask's asynchronous deletion.
++  TaskId CreateTaskWithOwnedPolicyChecker(
++      const TaskSourceInfo& source_info,
++      std::unique_ptr<EnterprisePolicyChecker> policy_checker,
++      webui::mojom::TaskOptionsPtr options,
++      base::WeakPtr<ActorTaskDelegate> delegate);
+   TaskId CreateTaskForTesting(
+       std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
+       const TaskSourceInfo& source_info,
+@@ -251,6 +260,7 @@ class ActorKeyedService : public KeyedService,
+       std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
+       const TaskSourceInfo& source_info,
+       const EnterprisePolicyChecker* policy_checker,
++      std::unique_ptr<EnterprisePolicyChecker> owned_policy_checker,
+       webui::mojom::TaskOptionsPtr options,
+       base::WeakPtr<ActorTaskDelegate> delegate,
+       actor::ui::ActorUiStateManagerInterface* ui_state_manager,
+diff --git a/chrome/browser/actor/actor_keyed_service_factory.cc b/chrome/browser/actor/actor_keyed_service_factory.cc
+index 0d9de1dab819739e99de100841be5463b7b68990..8cf7b183c7628e40a2fc9039c1a0e7040ca7a161 100644
+--- a/chrome/browser/actor/actor_keyed_service_factory.cc
++++ b/chrome/browser/actor/actor_keyed_service_factory.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/signin/identity_manager_factory.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/chrome_features.h"
+ #include "components/actor/core/actor_features.h"
+ #include "content/public/browser/browser_context.h"
+@@ -43,7 +44,8 @@ bool ActorKeyedServiceFactory::ServiceIsCreatedWithBrowserContext() const {
+ std::unique_ptr<KeyedService>
+ ActorKeyedServiceFactory::BuildServiceInstanceForBrowserContext(
+     content::BrowserContext* context) const {
+-  if (!base::FeatureList::IsEnabled(features::kGlicActor)) {
++  if (!base::FeatureList::IsEnabled(features::kGlicActor) &&
++      !base::FeatureList::IsEnabled(aegis::features::kAegisAgent)) {
+     return nullptr;
+   }
+   Profile* profile = Profile::FromBrowserContext(context);
+diff --git a/chrome/browser/actor/actor_keyed_service_unittest.cc b/chrome/browser/actor/actor_keyed_service_unittest.cc
+index 5e46c720cbef7575e578973e8b5cf343ebb7f922..c75037b556a25082400f08533f9b890bc231033a 100644
+--- a/chrome/browser/actor/actor_keyed_service_unittest.cc
++++ b/chrome/browser/actor/actor_keyed_service_unittest.cc
+@@ -16,11 +16,13 @@
+ #include "base/test/scoped_command_line.h"
+ #include "chrome/browser/actor/actor_task.h"
+ #include "chrome/browser/actor/actor_test_util.h"
++#include "chrome/browser/actor/actor_util.h"
+ #include "chrome/browser/actor/enterprise_policy_checker.h"
+ #include "chrome/browser/actor/execution_engine.h"
+ #include "chrome/browser/actor/ui/event_dispatcher.h"
+ #include "chrome/browser/actor/ui/test_support/mock_actor_ui_state_manager.h"
+ #include "chrome/common/actor/action_result.h"
++#include "chrome/common/aegis/features.h"
+ #include "chrome/common/chrome_features.h"
+ #include "chrome/test/base/testing_browser_process.h"
+ #include "chrome/test/base/testing_profile.h"
+@@ -40,6 +42,26 @@ namespace {
+ 
+ using ::testing::_;
+ 
++class OwnedPolicyChecker final : public EnterprisePolicyChecker {
++ public:
++  explicit OwnedPolicyChecker(bool* destroyed) : destroyed_(destroyed) {}
++  ~OwnedPolicyChecker() override { *destroyed_ = true; }
++
++  UrlBlockReason Evaluate(const GURL& url) const override {
++    return UrlBlockReason::kNotBlocked;
++  }
++
++  void ValidateContentSentToRenderer(
++      content::RenderFrameHost* frame,
++      const std::string& content,
++      ContentValidationCallback callback) const override {
++    std::move(callback).Run(ContentValidationReason::kAllowed);
++  }
++
++ private:
++  raw_ptr<bool> destroyed_;
++};
++
+ std::unique_ptr<ui::ActorUiStateManagerInterface> BuildUiStateManagerMock() {
+   std::unique_ptr<ui::MockActorUiStateManager> ui_state_manager =
+       std::make_unique<ui::MockActorUiStateManager>();
+@@ -98,6 +120,48 @@ class ActorKeyedServiceTest : public testing::Test {
+   raw_ptr<TestingProfile> profile_;
+ };
+ 
++class AegisActorRuntimeTest : public testing::Test {
++ public:
++  AegisActorRuntimeTest()
++      : task_environment_(base::test::TaskEnvironment::TimeSource::MOCK_TIME),
++        testing_profile_manager_(TestingBrowserProcess::GetGlobal()) {
++    scoped_feature_list_.InitWithFeatures({aegis::features::kAegisAgent},
++                                          {features::kGlicActor});
++  }
++
++  void SetUp() override {
++    ASSERT_TRUE(testing_profile_manager_.SetUp());
++    profile_ = testing_profile_manager_.CreateTestingProfile("aegis-profile");
++  }
++
++ protected:
++  raw_ptr<TestingProfile> profile_ = nullptr;
++
++ private:
++  base::test::ScopedFeatureList scoped_feature_list_;
++  content::BrowserTaskEnvironment task_environment_;
++  TestingProfileManager testing_profile_manager_;
++};
++
++TEST_F(AegisActorRuntimeTest, CreatesAegisTaskWithoutGlicRuntime) {
++  EXPECT_TRUE(IsActorRuntimeEnabled());
++  ActorKeyedService* actor_service = ActorKeyedService::Get(profile_);
++  ASSERT_TRUE(actor_service);
++
++  bool checker_destroyed = false;
++  TaskId id = actor_service->CreateTaskWithOwnedPolicyChecker(
++      TaskSourceInfo(TaskSourceInfo::Client::kAegis, "aegis-only-task"),
++      std::make_unique<OwnedPolicyChecker>(&checker_destroyed), nullptr,
++      nullptr);
++  EXPECT_FALSE(id.is_null());
++  ASSERT_TRUE(actor_service->GetTask(id));
++  EXPECT_EQ(actor_service->GetTask(id)->source_info().type,
++            TaskSourceInfo::Client::kAegis);
++  actor_service->StopTask(id, ActorTask::StoppedReason::kTaskComplete);
++  WaitForPostedTask();
++  EXPECT_TRUE(checker_destroyed);
++}
++
+ // Adds a task to ActorKeyedService
+ TEST_F(ActorKeyedServiceTest, AddActiveTask) {
+   auto* actor_service = ActorKeyedService::Get(profile());
+@@ -143,6 +207,20 @@ TEST_F(ActorKeyedServiceTest, StopActiveTask) {
+   ASSERT_FALSE(task);
+ }
+ 
++TEST_F(ActorKeyedServiceTest, OwnsTaskSpecificPolicyCheckerUntilTaskDeletion) {
++  bool checker_destroyed = false;
++  auto* actor_service = ActorKeyedService::Get(profile());
++  TaskId id = actor_service->CreateTaskWithOwnedPolicyChecker(
++      TaskSourceInfo(TaskSourceInfo::Client::kAegis, "aegis-task"),
++      std::make_unique<OwnedPolicyChecker>(&checker_destroyed), nullptr,
++      nullptr);
++  EXPECT_FALSE(checker_destroyed);
++  actor_service->StopTask(id, ActorTask::StoppedReason::kTaskComplete);
++  EXPECT_FALSE(checker_destroyed);
++  WaitForPostedTask();
++  EXPECT_TRUE(checker_destroyed);
++}
++
+ TEST_F(ActorKeyedServiceTest, FindTaskIdsInActive_ReturnsSuccessfully) {
+   auto* actor_service = ActorKeyedService::Get(profile());
+   actor_service->CreateTaskWithOptions(
+diff --git a/chrome/browser/actor/actor_navigation_throttle.cc b/chrome/browser/actor/actor_navigation_throttle.cc
+index 397ad25cb88603f57195f44bf7bdb8c5df70ac9a..9fbb9a63498fabbbaaf1f6443a173015f26c0152 100644
+--- a/chrome/browser/actor/actor_navigation_throttle.cc
++++ b/chrome/browser/actor/actor_navigation_throttle.cc
+@@ -26,6 +26,7 @@
+ 
+ namespace actor {
+ 
++
+ // static
+ void ActorNavigationThrottle::MaybeCreateAndAdd(
+     content::NavigationThrottleRegistry& registry) {
+diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
+index 12695b9112e8b53b3bc612c848af94e367ea34fe..ff0fdd4ab62fa89d686eb30a994aa1bda5b43c88 100644
+--- a/chrome/browser/actor/actor_task.cc
++++ b/chrome/browser/actor/actor_task.cc
+@@ -149,6 +149,7 @@ ActorTask::ActorTask(
+     webui::mojom::TaskOptionsPtr options,
+     const TaskSourceInfo& source_info,
+     const EnterprisePolicyChecker* policy_checker,
++    std::unique_ptr<EnterprisePolicyChecker> owned_policy_checker,
+     base::WeakPtr<ActorTaskDelegate> delegate,
+     std::optional<glic::mojom::InvocationSource> initial_invocation_source)
+     : service_(service),
+@@ -169,7 +170,9 @@ ActorTask::ActorTask(
+                         ? options->feature_mode.value()
+                         : glic::mojom::FeatureMode::kUnspecified),
+       initial_invocation_source_(initial_invocation_source),
+-      policy_checker_(*policy_checker),
++      owned_policy_checker_(std::move(owned_policy_checker)),
++      policy_checker_(owned_policy_checker_ ? *owned_policy_checker_
++                                            : *policy_checker),
+       delegate_(std::move(delegate)),
+       ui_weak_ptr_factory_(ui_event_dispatcher_.get()) {
+   CHECK(policy_checker);
+@@ -195,8 +198,8 @@ std::unique_ptr<ActorTask> ActorTask::CreateForTesting(
+     std::optional<glic::mojom::InvocationSource> initial_invocation_source) {
+   return std::make_unique<ActorTask>(
+       base::PassKey<ActorTask>(), service, id, std::move(ui_event_dispatcher),
+-      std::move(options), source_info, policy_checker, std::move(delegate),
+-      initial_invocation_source);
++      std::move(options), source_info, policy_checker, nullptr,
++      std::move(delegate), initial_invocation_source);
+ }
+ 
+ ExecutionEngine& ActorTask::GetExecutionEngine() const {
+diff --git a/chrome/browser/actor/actor_task.h b/chrome/browser/actor/actor_task.h
+index 9e790830e6b72f9b8dafe07af06ff8ad2d2f7116..3b3d46aa155ed23cca8a230d28b5e76a32851f55 100644
+--- a/chrome/browser/actor/actor_task.h
++++ b/chrome/browser/actor/actor_task.h
+@@ -81,6 +81,7 @@ class ActorTask : public base::SupportsUserData {
+             webui::mojom::TaskOptionsPtr options,
+             const TaskSourceInfo& source_info,
+             const EnterprisePolicyChecker* policy_checker,
++            std::unique_ptr<EnterprisePolicyChecker> owned_policy_checker,
+             base::WeakPtr<ActorTaskDelegate> delegate = nullptr,
+             std::optional<glic::mojom::InvocationSource>
+                 initial_invocation_source = std::nullopt);
+@@ -491,7 +492,10 @@ class ActorTask : public base::SupportsUserData {
+ 
+   std::optional<InterruptReason> interrupt_reason_;
+ 
+-  // This is owned by actor keyed service which owns this class.
++  // The checker is either owned by the client or by this task.
++  // Declared before policy_checker_ so a task-specific checker remains alive
++  // for the full lifetime of the raw reference below.
++  std::unique_ptr<EnterprisePolicyChecker> owned_policy_checker_;
+   const raw_ref<const EnterprisePolicyChecker> policy_checker_;
+ 
+   // Delegate for task-related events.
+diff --git a/chrome/browser/actor/actor_util.cc b/chrome/browser/actor/actor_util.cc
+index e85171485d10f3815029a47c1654f01adaceca92..6da824c016560ffacf1e463168183dca6cfb7212 100644
+--- a/chrome/browser/actor/actor_util.cc
++++ b/chrome/browser/actor/actor_util.cc
+@@ -7,11 +7,14 @@
+ #include <optional>
+ #include <vector>
+ 
++#include "base/feature_list.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/execution_engine.h"
+ #include "chrome/browser/glic/public/glic_instance.h"
+ #include "chrome/browser/glic/public/glic_keyed_service.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/common/aegis/features.h"
++#include "chrome/common/chrome_features.h"
+ #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/web_contents.h"
+@@ -25,6 +28,11 @@
+ 
+ namespace actor {
+ 
++bool IsActorRuntimeEnabled() {
++  return base::FeatureList::IsEnabled(features::kGlicActor) ||
++         base::FeatureList::IsEnabled(aegis::features::kAegisAgent);
++}
++
+ bool HaveActiveTaskForContents(content::WebContents* source_contents) {
+   if (!source_contents) {
+     return false;
+diff --git a/chrome/browser/actor/actor_util.h b/chrome/browser/actor/actor_util.h
+index 6df45b82df937cf4c0769ed7abebf19045fe8a04..cf0b05b5efac45569756b04cf23124c104c934ad 100644
+--- a/chrome/browser/actor/actor_util.h
++++ b/chrome/browser/actor/actor_util.h
+@@ -18,6 +18,11 @@ class WebContents;
+ 
+ namespace actor {
+ 
++// The execution engine is shared by Glic and the independently gated Aegis
++// Browser Agent. This helper must not be interpreted as enabling either UI or
++// model client.
++bool IsActorRuntimeEnabled();
++
+ // Returns whether the given WebContents is associated with an actor task.
+ bool HaveActiveTaskForContents(content::WebContents* source_contents);
+ 
+diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
+index fbd59c5358166c316da3494d9c2cee3b0f42de90..d73de80dce009946ecf26539bb401c4f41150ccc 100644
+--- a/chrome/browser/actor/execution_engine.cc
++++ b/chrome/browser/actor/execution_engine.cc
+@@ -39,6 +39,7 @@
+ #include "chrome/browser/actor/actor_metrics.h"
+ #include "chrome/browser/actor/actor_proto_conversion.h"
+ #include "chrome/browser/actor/actor_task.h"
++#include "chrome/browser/actor/actor_util.h"
+ #include "chrome/browser/actor/enterprise_policy_checker.h"
+ #include "chrome/browser/actor/site_policy.h"
+ #include "chrome/browser/actor/tools/attempt_login_tool.h"
+@@ -408,12 +409,13 @@ void BlockSensitiveUrl(
+ }
+ 
+ void BlockSensitiveUrlWhenNavigationGatingDisabled(
++    bool apply_sensitive_origin_check,
+     Profile* profile,
+     origin_gating::GatingDecisionContext* context,
+     const GURL& source,
+     const GURL& destination,
+     base::OnceCallback<void(origin_gating::Decision)> callback) {
+-  if (IsNavigationGatingEnabled()) {
++  if (!apply_sensitive_origin_check || IsNavigationGatingEnabled()) {
+     std::move(callback).Run(origin_gating::Decision::kNoDecision);
+     return;
+   }
+@@ -767,6 +769,7 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
+                   {CustomPredicate(
+                        base::BindRepeating(
+                            &BlockSensitiveUrlWhenNavigationGatingDisabled,
++                           task_->source_info().type != TaskSourceInfo::Client::kAegis,
+                            task_->GetProfile()),
+                        ActorCustomPredicate::kSensitiveUrl),
+                    {GateableEvent::kNavigationRequest}},
+@@ -967,7 +970,8 @@ void ExecutionEngine::DoesOriginRequireUserConfirmation(
+     const GURL& destination,
+     DoesOriginRequireUserConfirmationCallback callback) const {
+   // Navigation requests never prompt the user.
+-  if (event == GateableEvent::kNavigationRequest) {
++  if (event == GateableEvent::kNavigationRequest ||
++      task_->source_info().type == TaskSourceInfo::Client::kAegis) {
+     std::move(callback).Run(/*requires_user_confirmation=*/false);
+     return;
+   }
+@@ -1260,7 +1264,7 @@ void ExecutionEngine::FailCurrentTool(mojom::ActionResultCode reason) {
+ void ExecutionEngine::Act(std::vector<std::unique_ptr<ToolRequest>>&& actions,
+                           ActorTask::ActCallback callback) {
+   TRACE_EVENT0("actor", "ExecutionEngine::Act");
+-  CHECK(base::FeatureList::IsEnabled(features::kGlicActor));
++  CHECK(IsActorRuntimeEnabled());
+   CHECK(!actions.empty());
+   CHECK(deferred_finish_tool_invoke_.is_null());
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
+index afca830054148c9d23c447112eb13b71e2254486..782e6653be283a3b4c687ec824dd96f5a6b000cd 100644
+--- a/chrome/browser/actor/execution_engine_unittest.cc
++++ b/chrome/browser/actor/execution_engine_unittest.cc
+@@ -1172,6 +1172,8 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+   }
+ 
+  protected:
++  virtual TaskSourceInfo TaskSource() const { return TestTaskSourceInfo(); }
++
+   void SetExpectedOptimizationGuideCall(
+       const GURL& url,
+       optimization_guide::OptimizationGuideDecision result) {
+@@ -1248,7 +1250,7 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+       task_ = ActorTask::CreateForTesting(
+           *ActorKeyedService::Get(profile()), TaskId(1),
+           std::move(task_dispatcher),
+-          /*options=*/nullptr, TestTaskSourceInfo(), &task_policy_checker_,
++          /*options=*/nullptr, TaskSource(), &task_policy_checker_,
+           mock_actor_task_delegate_.GetWeakPtr());
+     }
+     return task_->GetExecutionEngine();
+@@ -1273,6 +1275,30 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+   base::ScopedTempDir temp_dir_;
+ };
+ 
++class AegisExecutionEngineUrlGatingTest : public ExecutionEngineUrlGatingTest {
++ protected:
++  TaskSourceInfo TaskSource() const override {
++    return TaskSourceInfo(TaskSourceInfo::Client::kAegis, "aegis-scope-test");
++  }
++};
++
++TEST_F(AegisExecutionEngineUrlGatingTest, SkipsGlicSensitiveOriginService) {
++  EXPECT_CALL(
++      *mock_optimization_guide_keyed_service_,
++      CanApplyOptimization(
++          _, optimization_guide::proto::GLIC_ACTION_PAGE_BLOCK,
++          testing::An<optimization_guide::OptimizationGuideDecisionCallback>()))
++      .Times(0);
++  EXPECT_CALL(mock_actor_task_delegate(),
++              RequestToShowUserConfirmationDialog(_, _, _, _)).Times(0);
++  const GURL url("https://approved.test/");
++  base::test::TestFuture<MayActOnUrlBlockReason> allowed;
++  GetExecutionEngine().IsAcceptableNavigationDestination(url,
++                                                        allowed.GetCallback());
++  EXPECT_EQ(allowed.Get(), MayActOnUrlBlockReason::kAllowed);
++  CheckUrl(url, true);
++}
++
+ // TODO(crbug.com/480230075): Crashing on Android.
+ #if BUILDFLAG(SKIP_ANDROID_UNMIGRATED_ACTOR_FILES)
+ #define MAYBE_LocalhostPromptsForUserConfirmation \
+diff --git a/chrome/browser/actor/tools/tool_controller.cc b/chrome/browser/actor/tools/tool_controller.cc
+index 971b5afb89c292e67a073b20b330349e0aff54c2..4c89f65650e55b4e26309465e471b461e8fe376e 100644
+--- a/chrome/browser/actor/tools/tool_controller.cc
++++ b/chrome/browser/actor/tools/tool_controller.cc
+@@ -13,6 +13,7 @@
+ #include "base/state_transitions.h"
+ #include "chrome/browser/actor/actor_tab_data.h"
+ #include "chrome/browser/actor/actor_task.h"
++#include "chrome/browser/actor/actor_util.h"
+ #include "chrome/browser/actor/tools/tool.h"
+ #include "chrome/browser/actor/tools/tool_callbacks.h"
+ #include "chrome/browser/actor/tools/tool_request.h"
+@@ -45,7 +46,7 @@ ToolController::ActiveState::~ActiveState() = default;
+ 
+ ToolController::ToolController(ActorTask& task, ToolDelegate& tool_delegate)
+     : task_(&task), tool_delegate_(tool_delegate) {
+-  CHECK(base::FeatureList::IsEnabled(features::kGlicActor));
++  CHECK(IsActorRuntimeEnabled());
+ }
+ 
+ ToolController::~ToolController() = default;
+@@ -102,9 +103,8 @@ std::ostream& operator<<(std::ostream& o, const ToolController::State& s) {
+   return o << ToolController::StateToString(s);
+ }
+ 
+-void ToolController::CreateToolAndValidate(
+-    const ToolRequest& request,
+-    ResultCallback result_callback) {
++void ToolController::CreateToolAndValidate(const ToolRequest& request,
++                                           ResultCallback result_callback) {
+   SetState(State::kCreating);
+   ToolRequest::CreateToolResult create_result =
+       request.CreateTool(task_->id(), *tool_delegate_);
+diff --git a/components/actor/core/task_source_info.h b/components/actor/core/task_source_info.h
+index 012fec13b4a419cf4cfcc4d1f65c55f47e902aef..c5f17a7ba2649a67f8238c1aaadce5414ba3a81d 100644
+--- a/components/actor/core/task_source_info.h
++++ b/components/actor/core/task_source_info.h
+@@ -25,7 +25,11 @@ struct TaskSourceInfo {
+     kTest = 1,
+     kExperimentalActor = 2,
+     kGlic = 3,
+-    kContextualTasks = 4,
++    // 保留既有 Aegis 持久化值；新上游客户端使用尚未占用的值。
++    // Aegis Browser Agent. This client does not imply Glic UI or a Google
++    // model connection; it only identifies the owner of the ActorTask.
++    kAegis = 4,
++    kContextualTasks = 5,
+   };
+ 
+   TaskSourceInfo(Client type, std::optional<SourceDefinedId> id);
+-- 
+2.52.0
+

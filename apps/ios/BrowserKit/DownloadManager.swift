@@ -4,7 +4,7 @@ import Foundation
 import UIKit
 
 public struct BrowserDownload: Codable, Identifiable, Equatable, Sendable {
-    public enum State: String, Codable, Sendable { case running, pausing, paused, completed, failed, cancelled }
+    public enum State: String, Codable, Sendable { case queued, running, pausing, paused, completed, failed, cancelled }
     public let id: UUID
     public let url: URL
     public var filename: String
@@ -20,6 +20,7 @@ public struct BrowserDownload: Codable, Identifiable, Equatable, Sendable {
     public var expectedSHA512: String?
     public var sha512: String?
     public var plannedFilename: String?
+    public var createdAt: Date?
     public var transferID: UUID?
     var inferredInterruption: Bool?
     var userStopState: State?
@@ -32,9 +33,12 @@ public struct BrowserDownload: Codable, Identifiable, Equatable, Sendable {
 }
 
 public enum DownloadError: LocalizedError {
-    case invalidURL, invalidHash, http(Int), hashMismatch, tooLarge, missingFile, storageNotReady, invalidManifest
+    case invalidURL, invalidHash, http(Int), hashMismatch, tooLarge, missingFile, storageNotReady, invalidManifest, unreadableRecords, recordsTooLarge, insufficientSpace
     public var errorDescription: String? {
         switch self {
+        case .unreadableRecords: String(localized: "下载记录无法读取，原文件已保留，暂时无法开始或更改下载。")
+        case .recordsTooLarge: String(localized: "下载记录超过存储容量，未保存本次更改。")
+        case .insufficientSpace: String(localized: "可用空间不足，下载已停止。请释放空间后继续。")
         case .storageNotReady: String(localized: "下载记录尚未恢复，请稍后重试。")
         case .invalidManifest: String(localized: "下载记录无法读取，原始记录已保留。")
         case .invalidURL: String(localized: "此下载地址无法安全使用，请输入普通 HTTP 或 HTTPS 文件链接。")
@@ -51,7 +55,14 @@ public enum DownloadError: LocalizedError {
 struct DownloadManifestStorage {
     var read: (URL) throws -> Data = { try Data(contentsOf: $0) }
     var write: ([BrowserDownload], URL) throws -> Void = {
-        try JSONEncoder().encode($0).write(to: $1, options: [.atomic, .completeFileProtectionUnlessOpen])
+        let data = try JSONEncoder().encode($0)
+        guard data.count <= 2_000_000 else { throw DownloadError.recordsTooLarge }
+        if FileManager.default.fileExists(atPath: $1.path) {
+            let previous = try RecordBackups.read($1)
+            _ = try DownloadManager.decodeRecords(previous)
+            try RecordBackups.preserveLastGood(previous, for: $1)
+        }
+        try data.write(to: $1, options: [.atomic, .completeFileProtectionUnlessOpen])
     }
 }
 
@@ -74,6 +85,15 @@ struct PendingDownloadReceipt: Codable {
 public final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @Published public private(set) var items: [BrowserDownload] = []
     @Published public private(set) var storageError: String?
+    @Published public private(set) var maximumConcurrentDownloads: Int
+    @Published public private(set) var storedBytes: Int64 = 0
+    @Published public private(set) var recycleBinBytes: Int64 = 0
+    @Published public private(set) var availableBytes: Int64?
+    @Published public private(set) var isRecovering = false
+    private var recordGeneration = UUID()
+    private var progressDates: [UUID: Date] = [:]
+    private var capacityCheckDates: [UUID: Date] = [:]
+    private let capacity: @Sendable (URL) -> Int64?
     @Published public private(set) var isReady = false
     public nonisolated let directory: URL
     static weak var backgroundManager: DownloadManager?
@@ -127,16 +147,21 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         config.urlCredentialStorage = nil
         config.timeoutIntervalForRequest = 60
         config.timeoutIntervalForResource = 24 * 3600
+        config.waitsForConnectivity = false
         // Delegate ingress is serial on MainActor; event-end cannot overtake a
         // completion that has not yet staged its bytes or counted its work.
         return URLSession(configuration: config, delegate: self, delegateQueue: .main)
     }()
 
-    public convenience init(directory: URL? = nil, background: Bool = true) {
-        self.init(directory: directory, background: background, storage: DownloadManifestStorage())
+    public convenience init(directory: URL? = nil, background: Bool = true, maximumConcurrentDownloads: Int? = nil,
+                            availableBytes: (@Sendable (URL) -> Int64?)? = nil) {
+        self.init(directory: directory, background: background, storage: DownloadManifestStorage(),
+                  maximumConcurrentDownloads: maximumConcurrentDownloads, availableBytes: availableBytes)
     }
 
     init(directory: URL?, background: Bool, storage: DownloadManifestStorage,
+         maximumConcurrentDownloads: Int? = nil,
+         availableBytes: (@Sendable (URL) -> Int64?)? = nil,
          enumerateTasks: ((URLSession) async -> [URLSessionTask])? = nil,
          automaticallyRecover: Bool = true,
          registersBackgroundEvents: Bool? = nil,
@@ -153,6 +178,9 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
          removeReceiptMetadata: @escaping (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }) {
         self.directory = directory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Downloads", isDirectory: true)
+        let savedLimit = background ? UserDefaults.standard.integer(forKey: "downloads.concurrentLimit") : 2
+        self.maximumConcurrentDownloads = min(4, max(1, maximumConcurrentDownloads ?? (savedLimit == 0 ? 2 : savedLimit)))
+        self.capacity = availableBytes ?? { DownloadManager.freeCapacity($0) }
         self.useBackgroundSession = background
         self.storage = storage
         self.enumerateTasks = enumerateTasks
@@ -217,6 +245,8 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         isReady = false
         defer {
             recovering = false
+            refreshStorageUsage()
+            scheduleQueuedDownloads()
             finishBackgroundEventsIfReady()
             if recoveryRequested {
                 recoveryRequested = false
@@ -233,9 +263,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             if !manifestLoaded {
                 do {
                     let data = try storage.read(manifestURL)
-                    guard data.count < 2_000_000 else { throw DownloadError.invalidManifest }
-                    let loaded = try JSONDecoder().decode([BrowserDownload].self, from: data)
-                    guard Set(loaded.map(\.id)).count == loaded.count else { throw DownloadError.invalidManifest }
+                    let loaded = try Self.decodeRecords(data)
                     items = loaded
                     persistedStates = Dictionary(uniqueKeysWithValues: loaded.map { (description($0), $0.state) })
                 } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
@@ -316,6 +344,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
 
     private func persist(_ candidate: [BrowserDownload]) throws {
         guard manifestLoaded else { throw DownloadError.storageNotReady }
+        guard try JSONEncoder().encode(candidate).count <= 2_000_000 else { throw DownloadError.recordsTooLarge }
         try storage.write(candidate, manifestURL)
         persistedStates = Dictionary(uniqueKeysWithValues: candidate.map { (description($0), $0.state) })
         // A committed record also durably disposes its pure stop event; do not
@@ -369,7 +398,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             if stop == .cancelled {
                 candidate[index].state = .cancelled
                 candidate[index].resumeDataUsable = false
-            } else if [.running, .pausing, .paused, .completed].contains(candidate[index].state) {
+            } else if [.queued, .running, .pausing, .paused, .completed].contains(candidate[index].state) {
                 candidate[index].state = pausingTransfers.contains(name) ? .pausing : .paused
             }
         }
@@ -501,6 +530,244 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
     private func saveOrReport() {
         do { try persist(items) } catch { reportStorage(error) }
     }
+    public var recordFileURL: URL { manifestURL }
+    public var backups: [RecordBackup] { RecordBackups.list(for: manifestURL) }
+    public var hasActiveDownloads: Bool { recovering || recoveryScheduled || items.contains { [.queued, .running, .pausing].contains($0.state) } }
+    private var recycleDirectory: URL { directory.appendingPathComponent("Removed", isDirectory: true) }
+
+    public func setConcurrencyLimit(_ value: Int) {
+        maximumConcurrentDownloads = min(4, max(1, value))
+        if useBackgroundSession { UserDefaults.standard.set(maximumConcurrentDownloads, forKey: "downloads.concurrentLimit") }
+        scheduleQueuedDownloads()
+    }
+
+    private func scheduleQueuedDownloads() {
+        guard isReady, !recovering, !isRecovering else { return }
+        for id in items.reversed().filter({ $0.state == .queued }).map(\.id) {
+            guard tasks.count < maximumConcurrentDownloads,
+                  let index = items.firstIndex(where: { $0.id == id }) else { break }
+            var candidate = items
+            candidate[index].state = .running
+            do { try checkCapacity(required: max(0, (candidate[index].expectedSize ?? 0) - candidate[index].received)) }
+            catch { candidate[index].state = .failed; candidate[index].message = error.localizedDescription }
+            do { try persist(candidate) }
+            catch { reportStorage(error); break }
+            items = candidate
+            if items[index].state == .running {
+                begin(items[index], useResumeData: items[index].resumeDataUsable == true)
+            }
+        }
+    }
+
+    nonisolated private static func freeCapacity(_ directory: URL) -> Int64? {
+        let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+        return values?.volumeAvailableCapacityForImportantUsage ?? values?.volumeAvailableCapacity.map(Int64.init)
+    }
+
+    private func checkCapacity(required: Int64) throws {
+        availableBytes = capacity(directory)
+        if let availableBytes, availableBytes < max(0, required) + 32_000_000 { throw DownloadError.insufficientSpace }
+    }
+
+    public func refreshStorageUsage() {
+        availableBytes = capacity(directory)
+        var total: Int64 = 0, removed: Int64 = 0
+        if let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]) {
+            for case let url as URL in files {
+                guard let value = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+                      value.isRegularFile == true, value.isSymbolicLink != true else { continue }
+                let bytes = Int64(value.fileSize ?? 0)
+                total += bytes
+                if url.path.hasPrefix(recycleDirectory.path + "/") { removed += bytes }
+            }
+        }
+        storedBytes = total; recycleBinBytes = removed
+    }
+
+    nonisolated static func decodeRecords(_ data: Data) throws -> [BrowserDownload] {
+        guard data.count <= 2_000_000 else { throw DownloadError.recordsTooLarge }
+        let values = try JSONDecoder().decode([BrowserDownload].self, from: data)
+        guard Set(values.map(\.id)).count == values.count,
+              values.allSatisfy({ $0.filename == Self.safeFilename($0.filename) }) else { throw DownloadError.unreadableRecords }
+        return values
+    }
+
+    public func reloadRecords() async throws {
+        guard !hasActiveDownloads, !isRecovering else { throw RecordRecoveryError.busy }
+        manifestLoaded = false
+        recordGeneration = UUID()
+        await retryStorage()
+        guard isReady else { throw DownloadError.storageNotReady }
+    }
+
+    public func restoreBackup(_ backup: RecordBackup) async throws {
+        guard !hasActiveDownloads, !isRecovering else { throw RecordRecoveryError.busy }
+        try replaceRecords(Self.decodeRecords(RecordBackups.readBackup(backup, for: manifestURL)))
+        await retryStorage()
+        guard isReady else { throw DownloadError.storageNotReady }
+    }
+
+    public func resetRecords() async throws {
+        guard !hasActiveDownloads, !isRecovering else { throw RecordRecoveryError.busy }
+        try replaceRecords([])
+        await retryStorage()
+        guard isReady else { throw DownloadError.storageNotReady }
+    }
+
+    private func replaceRecords(_ values: [BrowserDownload]) throws {
+        let next = values.map { item in
+            var item = item
+            if [.running, .queued, .pausing].contains(item.state) {
+                item.state = .paused
+                item.message = String(localized: "记录已恢复，请确认后继续下载。")
+            }
+            item.transferID = UUID()
+            item.userStopState = nil
+            item.inferredInterruption = nil
+            return item
+        }
+        let data = try JSONEncoder().encode(next)
+        guard data.count <= 2_000_000 else { throw DownloadError.recordsTooLarge }
+        try RecordBackups.retainOriginal(manifestURL)
+        try data.write(to: manifestURL, options: [.atomic, .completeFileProtectionUnlessOpen])
+        recordGeneration = UUID(); items = next; manifestLoaded = true; storageError = nil
+        persistedStates = Dictionary(uniqueKeysWithValues: next.map { (description($0), $0.state) })
+    }
+
+    private func receiptURL(_ id: UUID) -> URL {
+        directory.appendingPathComponent(id.uuidString, isDirectory: true).appendingPathComponent("download-record.json")
+    }
+
+    private func writeReceipt(_ item: BrowserDownload) throws {
+        let file = receiptURL(item.id)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(item).write(to: file, options: [.atomic, .completeFileProtectionUnlessOpen])
+    }
+
+    @discardableResult
+    public func recoverCompletedFiles() async throws -> Int {
+        guard !hasActiveDownloads, !isRecovering else { throw RecordRecoveryError.busy }
+        guard isReady else { throw DownloadError.unreadableRecords }
+        isRecovering = true
+        defer { isRecovering = false; refreshStorageUsage(); scheduleQueuedDownloads() }
+        return try await recoverCompletedFiles(includeUnlisted: true)
+    }
+
+    /// 自动恢复仅修复清单里仍存在的任务；主动移除的记录不会在重启后自行出现。
+    private func recoverCompletedFiles(includeUnlisted: Bool) async throws -> Int {
+        let generation = recordGeneration
+        let folders = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isSymbolicLinkKey])
+        var recovered: [BrowserDownload] = []
+        for folder in folders {
+            guard let id = UUID(uuidString: folder.lastPathComponent), tasks[id] == nil,
+                  (try? folder.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { continue }
+            let existing = items.first { $0.id == id }
+            guard existing?.state != .completed, includeUnlisted || existing != nil else { continue }
+            guard let data = try? RecordBackups.read(receiptURL(id)),
+                  var item = try? JSONDecoder().decode(BrowserDownload.self, from: data),
+                  item.id == id, item.state == .completed, item.filename == Self.safeFilename(item.filename),
+                  let hash = item.sha256, (try? Self.validatedURL(item.url.absoluteString)) != nil else { continue }
+            let file = fileURL(item)
+            guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
+                  values.isRegularFile == true, values.isSymbolicLink != true,
+                  (values.fileSize ?? Int.max) <= 1_000_000_000 else { continue }
+            let expected512 = item.sha512
+            let valid = try await Task.detached(priority: .utility) {
+                guard try Self.hashFile(file) == hash else { return false }
+                if let expected512 { return try Self.hashFile(file, sha512: true) == expected512 }
+                return true
+            }.value
+            try Task.checkCancellation()
+            guard generation == recordGeneration else { throw RecordRecoveryError.busy }
+            if valid, tasks[id] == nil {
+                item.received = Int64(values.fileSize ?? 0)
+                item.message = String(localized: "已按文件校验值恢复记录。")
+                recovered.append(item)
+            }
+        }
+        guard !recovered.isEmpty else { return 0 }
+        let previous = items
+        for item in recovered {
+            if let index = items.firstIndex(where: { $0.id == item.id }) { items[index] = item }
+            else { items.append(item) }
+        }
+        do { try persist(items) } catch { items = previous; throw error }
+        return recovered.count
+    }
+
+    public func removeDownloads(_ ids: Set<UUID>, includingFiles: Bool) throws {
+        guard isReady else { throw DownloadError.storageNotReady }
+        guard !isRecovering, !recovering else { throw RecordRecoveryError.busy }
+        let selected = items.filter { ids.contains($0.id) }
+        guard selected.allSatisfy({ ![.running, .queued, .pausing].contains($0.state) }) else { throw RecordRecoveryError.busy }
+        guard !selected.isEmpty else { return }
+        try RecordBackups.retainOriginal(manifestURL)
+        let previous = items
+        items.removeAll { ids.contains($0.id) }
+        do { try persist(items) } catch { items = previous; throw error }
+        recordGeneration = UUID()
+        defer { refreshStorageUsage() }
+        guard includingFiles else { return }
+        // 清单移除成功后才移动文件。后续失败时，文件仍保留在原位置或回收站。
+        let operation = recycleDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: operation, withIntermediateDirectories: true)
+        try JSONEncoder().encode(selected).write(to: operation.appendingPathComponent("records.json"),
+                                                 options: [.atomic, .completeFileProtectionUnlessOpen])
+        for item in selected {
+            for original in [directory.appendingPathComponent(item.id.uuidString),
+                             directory.appendingPathComponent("\(item.id)-\(item.filename)"), resumeURL(item.id)] {
+                if FileManager.default.fileExists(atPath: original.path) {
+                    try FileManager.default.moveItem(at: original, to: operation.appendingPathComponent(original.lastPathComponent))
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    public func restoreRecycledFiles() async throws -> Int {
+        guard !hasActiveDownloads, !isRecovering else { throw RecordRecoveryError.busy }
+        guard isReady else { throw DownloadError.unreadableRecords }
+        let operations = (try? FileManager.default.contentsOfDirectory(at: recycleDirectory, includingPropertiesForKeys: [.isSymbolicLinkKey])) ?? []
+        var restoredRecords: [BrowserDownload] = []
+        for operation in operations {
+            guard UUID(uuidString: operation.lastPathComponent) != nil,
+                  (try? operation.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) != true else { continue }
+            let records = try Self.decodeRecords(RecordBackups.read(operation.appendingPathComponent("records.json")))
+            for item in records {
+                for name in [item.id.uuidString, "\(item.id)-\(item.filename)", "\(item.id).resume"] {
+                    let original = operation.appendingPathComponent(name)
+                    let target = directory.appendingPathComponent(name)
+                    if FileManager.default.fileExists(atPath: original.path), !FileManager.default.fileExists(atPath: target.path) {
+                        try FileManager.default.moveItem(at: original, to: target)
+                    }
+                }
+                if item.state != .completed,
+                   !items.contains(where: { $0.id == item.id }),
+                   !restoredRecords.contains(where: { $0.id == item.id }) {
+                    var restored = item
+                    if [.queued, .running, .pausing].contains(restored.state) { restored.state = .paused }
+                    restoredRecords.append(restored)
+                }
+            }
+        }
+        if !restoredRecords.isEmpty {
+            let previous = items
+            items.append(contentsOf: restoredRecords)
+            do { try persist(items) } catch { items = previous; throw error }
+            recordGeneration = UUID()
+        }
+        // 未完成任务要连同续传记录一起恢复；完成文件仍须通过哈希核对。
+        return restoredRecords.count + (try await recoverCompletedFiles())
+    }
+
+    public func emptyRecycleBin() throws {
+        guard !isRecovering else { throw RecordRecoveryError.busy }
+        if FileManager.default.fileExists(atPath: recycleDirectory.path) {
+            try FileManager.default.removeItem(at: recycleDirectory)
+        }
+        refreshStorageUsage()
+    }
+
     public static func validatedURL(_ input: String) throws -> URL {
         guard let url = URL(string: input.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(url.scheme ?? ""), url.host != nil,
@@ -510,7 +777,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         return clean
     }
 
-    public static func safeFilename(_ name: String) -> String {
+    nonisolated public static func safeFilename(_ name: String) -> String {
         let last = (name as NSString).lastPathComponent
         let safe = last.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) && $0 != ":" && $0 != "\\" }
         let value = String(String.UnicodeScalarView(safe)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -533,15 +800,17 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         guard hash.isEmpty || hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
               hash512.isEmpty || hash512.range(of: "^[a-f0-9]{128}$", options: .regularExpression) != nil else { throw DownloadError.invalidHash }
         guard plan.size == nil || (0...1_000_000_000).contains(plan.size!) else { throw DownloadError.tooLarge }
-        let item = BrowserDownload(id: UUID(), url: urls[0], filename: Self.safeFilename(plan.filename ?? urls[0].lastPathComponent), state: .running,
+        try checkCapacity(required: plan.size ?? 0)
+        let item = BrowserDownload(id: UUID(), url: urls[0], filename: Self.safeFilename(plan.filename ?? urls[0].lastPathComponent),
+                                   state: tasks.count < maximumConcurrentDownloads ? .running : .queued,
                                    expectedSHA256: hash.isEmpty ? nil : hash, mirrors: urls, mirrorIndex: 0,
                                    expectedSize: plan.size, expectedSHA512: hash512.isEmpty ? nil : hash512,
-                                   plannedFilename: plan.filename, transferID: UUID(), resumeDataUsable: false)
+                                   plannedFilename: plan.filename, createdAt: Date(), transferID: UUID(), resumeDataUsable: false)
         var candidate = items
         candidate.insert(item, at: 0)
         do { try persist(candidate) } catch { reportStorage(error); throw error }
         items = candidate
-        begin(item, useResumeData: false)
+        if item.state == .running { begin(item, useResumeData: false) }
         return item.id
     }
 
@@ -559,6 +828,12 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
     }
 
     public func pause(_ id: UUID) {
+        if let index = items.firstIndex(where: { $0.id == id && $0.state == .queued }) {
+            var candidate = items
+            candidate[index].state = .paused
+            do { try persist(candidate); items = candidate } catch { reportStorage(error) }
+            return
+        }
         guard manifestLoaded, let index = items.firstIndex(where: { $0.id == id }), items[index].state == .running,
               persistedStates[description(items[index])] != .completed else { return }
         let name = description(items[index])
@@ -605,13 +880,14 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
               [.paused, .failed, .cancelled].contains(items[index].state),
               !pausingTransfers.contains(description(items[index])) else { return }
         _ = try Self.validatedURL(items[index].currentURL.absoluteString)
+        try checkCapacity(required: max(0, (items[index].expectedSize ?? 0) - items[index].received))
         let useResumeData = items[index].state == .paused && items[index].resumeDataUsable != false
         var candidate = items
         if !useResumeData { candidate[index].mirrorIndex = 0 }
-        candidate[index].state = .running
+        candidate[index].state = tasks.count < maximumConcurrentDownloads ? .running : .queued
         candidate[index].inferredInterruption = nil
         candidate[index].userStopState = nil
-        candidate[index].resumeDataUsable = false
+        candidate[index].resumeDataUsable = useResumeData
         candidate[index].message = nil
         candidate[index].transferID = UUID()
         do { try persist(candidate) } catch { reportStorage(error); throw error }
@@ -620,7 +896,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         nativePauses[description(items[index])] = nil // The committed new generation retires this tombstone.
         items = candidate
         if !useResumeData { try? FileManager.default.removeItem(at: resumeURL(id)) }
-        begin(items[index], useResumeData: useResumeData)
+        if items[index].state == .running { begin(items[index], useResumeData: useResumeData) }
     }
 
     public func cancel(_ id: UUID) {
@@ -840,6 +1116,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         guard itemIndex(receipt.taskDescription) == index else { throw DownloadError.invalidManifest }
         var candidate = items
         candidate[index] = completed
+        try writeReceipt(completed)
         // Storage commit is outside transport-validation catches. Its failure
         // keeps both the final file and this replayable receipt, never a mirror retry.
         try persist(candidate)
@@ -857,6 +1134,15 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             if totalBytesWritten > 1_000_000_000 || totalBytesExpectedToWrite > 1_000_000_000 { downloadTask.cancel() }
             guard let name = downloadTask.taskDescription, let index = itemIndex(name),
                   tasks[items[index].id]?.taskIdentifier == downloadTask.taskIdentifier else { return }
+            let id = items[index].id
+            let now = Date()
+            if now.timeIntervalSince(capacityCheckDates[id] ?? .distantPast) >= 1 {
+                capacityCheckDates[id] = now
+                do { try checkCapacity(required: 0) }
+                catch { pause(id); items[index].message = error.localizedDescription; return }
+            }
+            guard now.timeIntervalSince(progressDates[id] ?? .distantPast) >= 0.1 || totalBytesWritten == totalBytesExpectedToWrite else { return }
+            progressDates[id] = now
             items[index].received = totalBytesWritten
             items[index].expected = totalBytesExpectedToWrite
         }
@@ -874,6 +1160,29 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             guard let name = task.taskDescription else { return }
             if manifestLoaded && itemIndex(name) == nil { return }
             if durablyTerminal(name) { return }
+            let failure = error as NSError
+            if failure.domain == NSURLErrorDomain,
+               [NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet, NSURLErrorTimedOut].contains(failure.code),
+               let data = failure.userInfo["NSURLSessionDownloadTaskResumeData"] as? Data,
+               let index = itemIndex(name), stopState(name) == nil, items[index].state == .running {
+                // 系统明确提供续传资料时才自动暂停；没有资料的失败仍走镜像回退。
+                isReady = false
+                items[index].state = .paused
+                items[index].userStopState = .paused
+                items[index].resumeDataUsable = false
+                items[index].inferredInterruption = nil
+                items[index].message = String(localized: "网络连接中断。连接恢复后可继续下载。")
+                tasks[items[index].id] = nil
+                recordStop(name, state: .paused)
+                let receiptURL = pendingDirectory.appendingPathComponent(name + "--resume-" + UUID().uuidString + ".json")
+                pendingReceiptWrites[receiptURL] = PendingDownloadReceipt(taskDescription: name, userStopState: .paused,
+                                                                          kind: .resume, resumeDataAvailable: true)
+                pendingResumeWrites[receiptURL.deletingPathExtension().appendingPathExtension("resume")] = data
+                do { try flushPendingEvents(); requestRecovery() }
+                catch { reportStorage(error); if recovering { recoveryRequested = true } }
+                finishBackgroundEventsIfReady()
+                return
+            }
             ingressRevision += 1
             let receiptURL = pendingDirectory.appendingPathComponent(UUID().uuidString + ".json")
             let receipt = PendingDownloadReceipt(taskDescription: name, error: error.localizedDescription, userStopState: stopState(name))
@@ -920,7 +1229,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             candidate[index].mirrorIndex = next
             candidate[index].received = 0; candidate[index].expected = 0
             candidate[index].transferID = UUID()
-            candidate[index].state = .running
+            candidate[index].state = .queued
             candidate[index].message = String(localized: "上个镜像失败，正在尝试备用镜像。")
             try persist(candidate)
             items = candidate
@@ -928,7 +1237,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             nativePauses[name] = nil
             tasks[id] = nil
             try? FileManager.default.removeItem(at: resumeURL(id))
-            begin(items[index], useResumeData: false)
+            scheduleQueuedDownloads()
         } else {
             candidate[index].state = .failed
             candidate[index].message = message

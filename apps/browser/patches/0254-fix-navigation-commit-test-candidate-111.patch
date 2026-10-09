@@ -1,0 +1,53 @@
+From e3d0a38c3bb894b4d513793475023937a4ab26d3 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 17:21:10 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=E5=BC=82=E6=AD=A5=E5=AF=BC?=
+ =?UTF-8?q?=E8=88=AA=E6=8F=90=E4=BA=A4=E5=9B=9E=E5=BD=92=E5=B9=B6=E9=80=92?=
+ =?UTF-8?q?=E5=A2=9E=E5=80=99=E9=80=89111?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/actor/execution_engine_unittest.cc  | 9 +++++----
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 2 files changed, 7 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
+index 41524086a387b05403755dd3bc9735a32e5b1d9e..8e4c31f3e03ee06f517a85ad6c0a78c5d2517216 100644
+--- a/chrome/browser/actor/execution_engine_unittest.cc
++++ b/chrome/browser/actor/execution_engine_unittest.cc
+@@ -1493,10 +1493,11 @@ TEST_F(AegisExecutionEngineUrlGatingTest,
+       url::Origin::Create(destination), /*is_user_confirmed=*/true);
+   SetPolicyReason(EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
+   content::MockNavigationHandle navigation(destination, main_rfh());
+-  base::test::TestFuture<bool> allowed;
+-  EXPECT_EQ(engine.ShouldDeferNavigation(navigation, allowed.GetCallback()),
+-            content::NavigationThrottle::DEFER);
+-  EXPECT_FALSE(allowed.Get());
++  base::test::TestFuture<MayActOnUrlBlockReason> allowed;
++  engine.ShouldNavigationCommit(navigation, allowed.GetCallback());
++  // 新接口异步返回具体拒绝原因，确认缓存不能绕过明确的策略拒绝。
++  EXPECT_FALSE(allowed.IsReady());
++  EXPECT_EQ(allowed.Get(), MayActOnUrlBlockReason::kEnterprisePolicy);
+ }
+ 
+ TEST_F(AegisExecutionEngineUrlGatingTest, ApprovedScopeStillRejectsFileScheme) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 3e2b321481892ff0401f24fe3f4444249b22346b..c1ad5673603e65c68d75fd0c6c4f4b87bfbfbead 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.110";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (110)";
++inline constexpr char kProductVersion[] = "2.1.0.111";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (111)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

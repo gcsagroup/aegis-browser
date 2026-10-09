@@ -1,4 +1,4 @@
-From 3d26d3daec2d17e719bcc0444d3eb63d5ac40a3d Mon Sep 17 00:00:00 2001
+From 5cdc9a39d99836eb63182a5ae6333a6126420209 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sun, 30 Aug 2026 12:59:08 +0800
 Subject: [PATCH] feat(aegis): add v2 native hybrid runtime spike
@@ -15,7 +15,7 @@ Subject: [PATCH] feat(aegis): add v2 native hybrid runtime spike
  create mode 100644 chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index ca2fa97f3d..ef968aa958 100644
+index ca2fa97f3d14adbce483a02d2fe7a7fdb262af1a..ef968aa958d0520ec51fb6344c913ab7ea639c8f 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -41,6 +41,8 @@ source_set("agent_core") {
@@ -36,7 +36,7 @@ index ca2fa97f3d..ef968aa958 100644
    deps = [
      ":agent_core",
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 480c375410..d029138eaf 100644
+index 480c375410c86e4185d6c4eb56dc88fc1ef96b03..d029138eaf33535c3a00b5902eb2a8f29fbe69db 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -1,6 +1,7 @@
@@ -144,7 +144,7 @@ index 480c375410..d029138eaf 100644
  }  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/v2_runtime_spike.cc b/chrome/browser/aegis/agent/v2_runtime_spike.cc
 new file mode 100644
-index 0000000000..0236484ba2
+index 0000000000000000000000000000000000000000..0236484ba2ea436103a03be41a2c60b7870c7f46
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/v2_runtime_spike.cc
 @@ -0,0 +1,143 @@
@@ -293,7 +293,7 @@ index 0000000000..0236484ba2
 +}  // namespace aegis::agent
 diff --git a/chrome/browser/aegis/agent/v2_runtime_spike.h b/chrome/browser/aegis/agent/v2_runtime_spike.h
 new file mode 100644
-index 0000000000..ced589af30
+index 0000000000000000000000000000000000000000..ced589af30fefeab9b4b7f63208cb11771be8fd9
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/v2_runtime_spike.h
 @@ -0,0 +1,102 @@
@@ -401,7 +401,7 @@ index 0000000000..ced589af30
 +#endif  // CHROME_BROWSER_AEGIS_AGENT_V2_RUNTIME_SPIKE_H_
 diff --git a/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc b/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
 new file mode 100644
-index 0000000000..818cb5ab43
+index 0000000000000000000000000000000000000000..818cb5ab434a9cc8e3cfeccb1fe8ab986698b025
 --- /dev/null
 +++ b/chrome/browser/aegis/agent/v2_runtime_spike_unittest.cc
 @@ -0,0 +1,131 @@

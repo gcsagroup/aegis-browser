@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 路径和身份测试使用固定夹具版本，独立于每日递增的真实打包版本。
+export AEGIS_PACKAGE_VERSION=1.1.0.3
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/aegis-build-package-guards.XXXXXX")"
 trap 'rm -rf "$TEST_ROOT"' EXIT

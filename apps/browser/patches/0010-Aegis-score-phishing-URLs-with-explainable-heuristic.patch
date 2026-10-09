@@ -1,4 +1,4 @@
-From b05d34c9e683f3a1239bf12e2c479abcef82d802 Mon Sep 17 00:00:00 2001
+From 874a667cb2417d42d36ba7ee9abcc46724e62582 Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:25:25 +0800
 Subject: [PATCH] Aegis: score phishing URLs with explainable heuristics
@@ -21,7 +21,7 @@ rules, and show reason codes on the warning page.
  create mode 100644 chrome/common/aegis/phish_score.h
 
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
-index c9f06c47b8..73d90e9bea 100644
+index c9f06c47b83eec969976a03193f8bb6071a712f7..73d90e9bea4ce9c5eb1dcde42e289252bc4f4a6e 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 @@ -8,6 +8,7 @@
@@ -139,7 +139,7 @@ index c9f06c47b8..73d90e9bea 100644
  }
  
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.h b/chrome/browser/aegis/aegis_phish_blocking_page.h
-index 1176e52409..f0d45fa38a 100644
+index 1176e52409730bdc042260bd62bd2883be60cf0d..f0d45fa38aabfd56f8ca1a90b168525cfb9b2b26 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page.h
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.h
 @@ -7,6 +7,7 @@
@@ -179,7 +179,7 @@ index 1176e52409..f0d45fa38a 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
-index 58354b8151..a441bef9e4 100644
+index 58354b8151ec4176f284c90b0c67e0bdac8f6c18..a441bef9e4adc8315139dcf486af1c39d429f8f1 100644
 --- a/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 +++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.cc
 @@ -49,23 +49,28 @@ AegisPhishNavigationThrottle::MaybeIntercept() {
@@ -217,7 +217,7 @@ index 58354b8151..a441bef9e4 100644
    std::optional<std::string> error_page_contents =
        blocking_page->GetHTMLContents();
 diff --git a/chrome/browser/aegis/aegis_phish_navigation_throttle.h b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
-index 574459db4d..5275d1007b 100644
+index 574459db4d0352d5b49a7b83b22f0c9fb79ed470..5275d1007b84ef1086638151ce69dc4acf8525b8 100644
 --- a/chrome/browser/aegis/aegis_phish_navigation_throttle.h
 +++ b/chrome/browser/aegis/aegis_phish_navigation_throttle.h
 @@ -4,6 +4,7 @@
@@ -250,7 +250,7 @@ index 574459db4d..5275d1007b 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index a8b3def1a6..bd6f4bb971 100644
+index a8b3def1a6df45dbdc420849edf0b96aff560d82..bd6f4bb971580e1b6f8cf77c2395251a5861c281 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -3,6 +3,8 @@
@@ -308,7 +308,7 @@ index a8b3def1a6..bd6f4bb971 100644
  
  void AegisService::AllowPhishHostForSession(const std::string& host) {
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index ebecb7d954..4a5e37acd9 100644
+index ebecb7d954fd582c742ac69ba85e2b6cc26d8f2c..4a5e37acd981748de4ba82ced403fdaf85c5f18c 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -6,12 +6,14 @@
@@ -338,7 +338,7 @@ index ebecb7d954..4a5e37acd9 100644
    void AllowPhishHostForSession(const std::string& host);
    bool IsPhishHostAllowedForSession(const std::string& host) const;
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index 205d06d0e3..16950a65cc 100644
+index 205d06d0e3dd102b4c0b0f1921e9df633201c799..16950a65cc61461aa1f3b6e34f84b7069c5eb2d8 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -19,6 +19,8 @@ source_set("aegis") {
@@ -352,7 +352,7 @@ index 205d06d0e3..16950a65cc 100644
      "tracking_query_params.h",
 diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
 new file mode 100644
-index 0000000000..91c16aa6ed
+index 0000000000000000000000000000000000000000..91c16aa6ed09666b895ac20e2d266e0ef35e10ed
 --- /dev/null
 +++ b/chrome/common/aegis/phish_score.cc
 @@ -0,0 +1,127 @@
@@ -485,7 +485,7 @@ index 0000000000..91c16aa6ed
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/phish_score.h b/chrome/common/aegis/phish_score.h
 new file mode 100644
-index 0000000000..c4d97a08ac
+index 0000000000000000000000000000000000000000..c4d97a08ac714807e62c8caf941a906a858672f1
 --- /dev/null
 +++ b/chrome/common/aegis/phish_score.h
 @@ -0,0 +1,35 @@

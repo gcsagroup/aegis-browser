@@ -1,4 +1,4 @@
-From be0d5610e42665982e10098c25fc912d6f721184 Mon Sep 17 00:00:00 2001
+From 5d835f40e719eb8bcde80da25606b0479f75c9c7 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 16:52:48 +0800
 Subject: [PATCH] perf(aegis): index filter paths and trim canvas copies
@@ -11,7 +11,7 @@ Subject: [PATCH] perf(aegis): index filter paths and trim canvas copies
  4 files changed, 114 insertions(+), 42 deletions(-)
 
 diff --git a/chrome/common/aegis/filter_list_matcher.cc b/chrome/common/aegis/filter_list_matcher.cc
-index 13bf014155..d24a6c5d9c 100644
+index 13bf01415504b66042464fb373b50481b462e86d..d24a6c5d9cc248f1cf299f5924dd5f2029bc0c48 100644
 --- a/chrome/common/aegis/filter_list_matcher.cc
 +++ b/chrome/common/aegis/filter_list_matcher.cc
 @@ -3,30 +3,15 @@
@@ -180,7 +180,7 @@ index 13bf014155..d24a6c5d9c 100644
    return false;
  }
 diff --git a/chrome/common/aegis/filter_list_matcher.h b/chrome/common/aegis/filter_list_matcher.h
-index 3c6cdb50e2..1aa1a66b24 100644
+index 3c6cdb50e20d83ff444e1fe161c24f952c7607a3..1aa1a66b2400249426ccafb8c4ba56a7144249bd 100644
 --- a/chrome/common/aegis/filter_list_matcher.h
 +++ b/chrome/common/aegis/filter_list_matcher.h
 @@ -8,6 +8,7 @@
@@ -209,7 +209,7 @@ index 3c6cdb50e2..1aa1a66b24 100644
  
  }  // namespace aegis
 diff --git a/chrome/common/aegis/filter_list_matcher_unittest.cc b/chrome/common/aegis/filter_list_matcher_unittest.cc
-index 88d13370d9..8d54edd660 100644
+index 88d13370d93e5cfe2d17436f74d86a8eb7201e99..8d54edd660e3548c8669a671e3241c1fc4ec12d1 100644
 --- a/chrome/common/aegis/filter_list_matcher_unittest.cc
 +++ b/chrome/common/aegis/filter_list_matcher_unittest.cc
 @@ -34,6 +34,12 @@ TEST_F(FilterListMatcherTest, MatchesHostSubdomainsAndExceptionSubdomains) {
@@ -267,7 +267,7 @@ index 88d13370d9..8d54edd660 100644
    CompiledFilterList list;
    list.exceptions = {"google-analytics.com"};
 diff --git a/third_party/blink/renderer/core/aegis/farbling.cc b/third_party/blink/renderer/core/aegis/farbling.cc
-index 4bf5bfe3b3..edaa9e6ae7 100644
+index 4bf5bfe3b325361962e96252a92ff3c0d53f0e10..edaa9e6ae7ca96d1c4a0227b307c4a56dcd58ee2 100644
 --- a/third_party/blink/renderer/core/aegis/farbling.cc
 +++ b/third_party/blink/renderer/core/aegis/farbling.cc
 @@ -5,7 +5,6 @@

@@ -1,0 +1,107 @@
+From 9e782763aaea7e3e68c78fcd2f9e057709553079 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 20:11:25 +0800
+Subject: [PATCH] =?UTF-8?q?=E7=BB=8F=E7=9C=9F=E5=AE=9E=E4=BE=A7=E6=A0=8F?=
+ =?UTF-8?q?=E7=94=9F=E5=91=BD=E5=91=A8=E6=9C=9F=E9=87=8D=E5=BB=BA=E4=BB=BB?=
+ =?UTF-8?q?=E5=8A=A1=E8=A7=86=E5=9B=BE=EF=BC=8C=E5=80=99=E9=80=89=E9=80=92?=
+ =?UTF-8?q?=E5=A2=9E118?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 26 ++++++++++++++-----
+ .../ui/webui/help/aegis_github_update.h       |  4 +--
+ 2 files changed, 21 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 829c5880e4c4b881425c267100c9b5e6400c6719..cc76c9d5721261f26a2c8546d0bec3ce226e6b5b 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -147,9 +147,21 @@ content::WebContents* ShowAgentPanel(BrowserWindowInterface* browser) {
+ 
+ // 直接调用 Mojo 创建任务的夹具需要通过真实重新打开流程选择任务；
+ // 不解除界面隔离旧任务事件的保护，也不伪造完成快照。
+-void ReopenAgentPanelForTask(content::WebContents* panel,
++void ReopenAgentPanelForTask(BrowserWindowInterface* browser,
++                            content::WebContents*& panel,
+                             const std::string& task_id) {
+-  ASSERT_TRUE(content::NavigateToURL(panel, panel->GetLastCommittedURL()));
++  SidePanelUI* side_panel = browser->GetFeatures().side_panel_ui();
++  ASSERT_TRUE(side_panel);
++  side_panel->Close();
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    return !side_panel->IsSidePanelEntryShowing(
++        SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent));
++  }));
++  SidePanelEntry* entry = AgentEntry(browser);
++  ASSERT_TRUE(entry);
++  entry->ClearCachedView();
++  panel = ShowAgentPanel(browser);
++  ASSERT_TRUE(panel);
+   ASSERT_EQ(task_id, content::EvalJs(panel, R"JS(
+     (async () => {
+       const {BrowserProxy} = await import('./browser_proxy.js');
+@@ -1797,7 +1809,7 @@ IN_PROC_BROWSER_TEST_F(
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
+-    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
+     EXPECT_EQ(task->scope().budgets.max_model_calls, 20);
+     EXPECT_EQ(task->scope().budgets.max_network_requests, 520);
+     const int budget = narrowed ? 500 : 520;
+@@ -3193,7 +3205,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+   AgentTask* task = service->GetTask(task_id);
+   ASSERT_TRUE(task);
+-  ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
++  ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
+   ASSERT_TRUE(service->BeginPlanning(task_id));
+   AgentModelEvent plan;
+   plan.type = AgentModelEventType::kToolCall;
+@@ -4093,7 +4105,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
+-    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
+     ASSERT_TRUE(service->BeginPlanning(task_id));
+     AgentModelEvent plan;
+     plan.type = AgentModelEventType::kToolCall;
+@@ -4309,7 +4321,7 @@ IN_PROC_BROWSER_TEST_F(
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
+-    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
+     EXPECT_EQ(task->goal(), goal);
+     ASSERT_TRUE(service->BeginPlanning(task_id));
+     AgentTaskScope scope = task->scope();
+@@ -4887,7 +4899,7 @@ IN_PROC_BROWSER_TEST_F(
+     ASSERT_FALSE(task_id.starts_with("ERROR:")) << task_id;
+     AgentTask* task = service->GetTask(task_id);
+     ASSERT_TRUE(task);
+-    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(panel, task_id));
++    ASSERT_NO_FATAL_FAILURE(ReopenAgentPanelForTask(browser(), panel, task_id));
+     ASSERT_TRUE(service->BeginPlanning(task_id));
+     AgentModelEvent plan;
+     plan.type = AgentModelEventType::kToolCall;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 703cb667f8e5832760cbff57b7fdc248ee7637cc..a5af0dcacd1c5af0ea321d917fff0724b578b452 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.117";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (117)";
++inline constexpr char kProductVersion[] = "2.1.0.118";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (118)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -4,7 +4,25 @@
 
 本文件记录项目的重要变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，项目计划采用[语义化版本](https://semver.org/lang/zh-CN/)。
 
-软件包版本仍为 `0.1.0`；iOS 产品线独立使用 `2.2`。以下新增 iOS 源码预发布记录，未完成签名和商店发行验收。
+软件包版本仍为 `0.1.0`；iOS 当前开发候选为 `3.2`，已发布源码预览仍为 `2.2`。以下新增 iOS 源码预发布记录，未完成签名和商店发行验收。
+
+## iOS 3.2 — 2026-10-09 · 主线整合
+
+iOS Ver 3.2 (69) 主线整合： 紧凑界面、私密确认与下载管理已接入 main 的后台恢复保护；iPhone 194 项通过、1 项 iPad 专属检查跳过；iPad 195 项通过。范围和证据见[整合记录](docs/audit/ios-main-merge-2026-10-09.zh-CN.md)。本次没有发布签名安装包。
+
+## iOS 3.2 — 2026-10-05
+
+私密模式开放资料、收藏、工作区、下载和 AI。保持历史、私密会话和任务不自动保存；为主动持久保存增加说明和确认。私密 AI 仅在明确发送后调用模型，关闭助手即丢弃未保存分析。
+
+保存收藏与下载前显示完整网址和保留说明。Ver 3.2 (63) 已完成双机模拟器检查与实际界面复核，详见 [私密模式验证](docs/audit/ios-private-mode-2026-10-05.zh-CN.md)。
+
+## iOS 3.1 — 2026-10-05
+
+iPhone 底部单行地址栏、iPad 顶部单行工具栏；网页去除卡片留白，地址栏直接打开广告过滤，其他功能集中到菜单。长页面滚动时收起辅助按钮，大字体与 VoiceOver 保持展开。开发候选的模拟器验证见[界面记录](docs/audit/ios-compact-ui-2026-10-05.zh-CN.md)。
+
+## iOS 3.0 — 2026-10-04
+
+iOS Ver 3.0 开发候选：记录备份恢复、标签按需加载和内存释放、下载与资料管理、三种模型接口流式回答及键盘操作。尚未发布；详见 [Ver 3.0 验证记录](docs/audit/ios-3-0-2026-10-04.zh-CN.md)。
 
 ## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
 
@@ -24,6 +42,27 @@
 - 三语界面、隐私清单与模拟器验证记录见[发布说明](docs/releases/ios-2.2.0-preview.1.zh-CN.md)。GitHub 提供源码预发布，无可安装的签名 IPA；真机、VoiceOver 全流程、TestFlight 和 App Store 验收仍待完成。
 
 ## [未发布]
+
+### 2026-10-09 源码整合：Quinn 功能与 Chromium 155 主线
+
+- 在同一源码整合中保留桌面鼠标手势，纳入 Quinn develop 的双节点租约、双 relay、本地 SM-00 预检与工作流文档，并纳入其 PR #203 的 Agent 接管、监控订阅、研究来源绑定及 iOS 下载持久化/恢复修复。
+- 适配新增研究测试到 Chromium 155；固定租约 SQL 查询并增加非法表名拒绝回归。Mac 候选提升为 Ver 2.2 (144)，276 个补丁和 506 项 overlay 完整重放通过；iOS 下载定向测试在 iPhone/iPad 模拟器各通过 43 项。
+- 合入路径统一为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)；[#33](https://github.com/gcsagroup/aegis-browser/pull/33) 已并入该整合分支。下方 141 记录保留为历史证据；最新范围和验证见[整合记录](docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)。本次不创建正式发行，原型与模拟器结果不代表生产接入或实机验收。
+
+### 2026-10-09 源码更新：桌面鼠标手势与 Chromium 155 适配
+
+- 新增原生右键手势、方向绑定、轨迹提示、识别距离、网站排除及不执行真实动作的练习区；普通网页、设置页和内置 PDF 使用一致的通用动作，PDF 另可绑定翻页、适合宽度和整页。
+- 保留右键轻点菜单及左键点击、拖选；Esc、导航、失焦和离开内容区会取消手势。修复跨框架测试的输入时序，以及 Chromium 155 设置项改名后的旧测试取值。
+- Mac ARM64 验收版 Ver 2.2 (141)：33 项测试及跨框架额外 5 次复测通过；273 个桌面补丁完整重放，506 项 overlay 核对通过，并完成实际 App 设置保存回读。具体版本和证据范围见[验收记录](docs/audit/mouse-gestures-acceptance-2026-10-09.zh-CN.md)。
+- 上游同步改为分别跟踪源码 PR、主线兼容验收和正式发行；鼠标手势纳入持续功能回归。代码位于依赖 [#32](https://github.com/gcsagroup/aegis-browser/pull/32) 的 [#33](https://github.com/gcsagroup/aegis-browser/pull/33) 草稿 PR，记录时 main 尚未升级。Windows/Android 兼容验收、上游 PR 扫描问题及正式签名、公证仍待完成。
+- [鼠标手势使用指南](apps/browser/docs/mouse-gestures.zh-CN.md)。本次补充文档不重新编译 App，验收收据仍绑定原构建提交。
+
+### 2026-10-04 iOS 存储稳定性
+
+- 下载和工作区记录损坏、过大或身份重复时保留原文件并显示错误，拒绝覆盖。
+- 工作区达到 100 个或写入体积超限时拒绝本次保存，保留已有工作区。
+- 下载重试保存失败时保持原状态和恢复数据；文件下载完成但记录保存失败时明确提示。
+- 新增本机真实 HTTP、写入故障和 iPhone/iPad 界面回归，并补齐三语错误提示。本次为开发改动，已发布源码预览版的记录单独保留。
 
 ### 2026-09-14 源码更新：界面整改与浏览器更新
 

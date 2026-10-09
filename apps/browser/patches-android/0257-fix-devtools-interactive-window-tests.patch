@@ -1,0 +1,82 @@
+From cbb134d98be1decf5dd068ff1c8cdf0e40e20122 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 17:43:08 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E8=BF=9C=E7=A8=8B?=
+ =?UTF-8?q?=E8=B0=83=E8=AF=95=E4=B8=8E=E5=8E=9F=E7=94=9F=E4=BA=A4=E4=BA=92?=
+ =?UTF-8?q?=E6=B5=8B=E8=AF=95=E7=AA=97=E5=8F=A3=E6=8E=A5=E5=8F=A3?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_agent_interactive_uitest.cc  | 7 ++++---
+ .../devtools/protocol/devtools_protocol_browsertest.cc     | 4 ++--
+ 2 files changed, 6 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index 1d4a929ca49e3b431abfa932b6dd19fcefcedab1..ba932cbb41eea8a4f5151733752952604c385c68 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -11,10 +11,10 @@
+ #include "chrome/browser/aegis/agent/aegis_agent_service.h"
+ #include "chrome/browser/aegis/agent/aegis_agent_service_factory.h"
+ #include "chrome/browser/profiles/profile.h"
+-#include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_element_identifiers.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_features.h"
++#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry.h"
+ #include "chrome/browser/ui/side_panel/side_panel_entry_key.h"
+ #include "chrome/browser/ui/side_panel/side_panel_ui.h"
+@@ -25,6 +25,7 @@
+ #include "chrome/test/base/ui_test_utils.h"
+ #include "chrome/test/interaction/interactive_browser_test.h"
+ #include "components/prefs/pref_service.h"
++#include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+@@ -51,7 +52,7 @@ class AegisAgentInteractiveUiTest : public InteractiveBrowserTest {
+ 
+   void SetUpOnMainThread() override {
+     InteractiveBrowserTest::SetUpOnMainThread();
+-    browser()->profile()->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
++    browser()->GetProfile()->GetPrefs()->SetBoolean(prefs::kAgentEnabled, true);
+     SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+     ASSERT_TRUE(side_panel);
+     side_panel->SetNoDelaysForTesting(true);
+@@ -68,7 +69,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+   const GURL page_url = embedded_test_server()->GetURL("/title1.html");
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+   AegisAgentService* service =
+-      AegisAgentServiceFactory::GetForProfile(browser()->profile());
++      AegisAgentServiceFactory::GetForProfile(browser()->GetProfile());
+   ASSERT_TRUE(service);
+   SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
+   ASSERT_TRUE(side_panel);
+diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+index cf461026822509cd23325090aee49c562bc6f126..ae3d3cc97e28b2731052f49d73fffd1de0c598fa 100644
+--- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
++++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
+@@ -485,7 +485,7 @@ class AegisOtherRemoteDevToolsProtocolClient
+ 
+ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+                        AegisRemoteCreationCanClaimUncommittedInitialDocument) {
+-  content::WebContents::CreateParams create_params(browser()->profile());
++  content::WebContents::CreateParams create_params(browser()->GetProfile());
+   create_params.desired_renderer_state =
+       content::WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
+   auto created_contents_owner = content::WebContents::Create(create_params);
+@@ -544,7 +544,7 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
+   EXPECT_TRUE(found_http_target);
+   EXPECT_FALSE(found_internal_target);
+ 
+-  const int window_id = browser()->session_id().id();
++  const int window_id = browser()->GetSessionID().id();
+   EXPECT_FALSE(SendCommandSync("Browser.getWindowBounds",
+                                base::DictValue().Set("windowId", window_id)));
+   ASSERT_TRUE(error());
+-- 
+2.52.0
+

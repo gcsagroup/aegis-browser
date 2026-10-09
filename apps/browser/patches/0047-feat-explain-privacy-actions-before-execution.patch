@@ -1,4 +1,4 @@
-From 0c41c00f833f3ad8b6cef289ec978338e24f8ace Mon Sep 17 00:00:00 2001
+From f563b81fcd70d5507082bf29118d82a64a18b4aa Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Tue, 25 Aug 2026 20:28:51 +0800
 Subject: [PATCH] feat(aegis): explain privacy actions before execution
@@ -16,7 +16,7 @@ Subject: [PATCH] feat(aegis): explain privacy actions before execution
  9 files changed, 520 insertions(+), 98 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page.cc b/chrome/browser/aegis/aegis_phish_blocking_page.cc
-index d9c6fe52d7..7c9fd77ff1 100644
+index d9c6fe52d7f73fc2229282b5d728347e70a900ad..7c9fd77ff199d4084c63bed8d2841df9d94100c9 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page.cc
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page.cc
 @@ -25,13 +25,7 @@ bool IsChineseLocale(const std::string& locale) {
@@ -183,7 +183,7 @@ index d9c6fe52d7..7c9fd77ff1 100644
    load_time_data.Set("explanationParagraph", std::u16string());
    load_time_data.Set("primaryButtonText",
 diff --git a/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc b/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
-index ae0c3bf664..fdecffd939 100644
+index ae0c3bf6641631408c54d2eb2599a44a9d29b421..fdecffd939eb5585003e8a4a73a5a83b85332681 100644
 --- a/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
 +++ b/chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc
 @@ -53,15 +53,17 @@ TEST_F(AegisPhishBlockingPageTest, ShowsEnglishReasonsOnFirstScreen) {
@@ -225,7 +225,7 @@ index ae0c3bf664..fdecffd939 100644
    ASSERT_TRUE(proceed);
    EXPECT_EQ("仅继续一次", *proceed);
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index fc4229fc8f..b47bf212d2 100644
+index fc4229fc8f6eda3f621cda3db3eff725bb08c268..b47bf212d23a75a0ada7f54a3600b42c30d15d88 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -206,18 +206,21 @@ void AegisService::SetTrackerBlockingEnabled(bool enabled) {
@@ -324,7 +324,7 @@ index fc4229fc8f..b47bf212d2 100644
  }
  
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index 5c12744442..f0b8adf32c 100644
+index 5c1274444258eb2483a30b5817030d44bfa74a02..f0b8adf32cd34ce7e3b22e5732f42cfbc27e6b6d 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -47,9 +47,91 @@ h1 {
@@ -513,7 +513,7 @@ index 5c12744442..f0b8adf32c 100644
 +  }
 +}
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 16f7e453a4..95313817b0 100644
+index 16f7e453a400571b224520f7987b5e5ce734bcf9..95313817b0f700f50dde071d9b12d0f810b033d8 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -9,7 +9,38 @@
@@ -601,7 +601,7 @@ index 16f7e453a4..95313817b0 100644
    </body>
  </html>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index d486797900..b81039ee9e 100644
+index d4867979005612bedf8dc0b79e3964e59d5f6b36..b81039ee9e454dabead41968acbedc7dc6a5bdb8 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -245,6 +245,44 @@ function formatPrivacyMeta(status: AegisStatus): string {
@@ -746,7 +746,7 @@ index d486797900..b81039ee9e 100644
      fillAiControl(next);
      getRequiredElement('filter-meta').textContent = formatMeta(next);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 01409fa07a..eaf671e9dd 100644
+index 01409fa07a1a345114fa7f396c1fd2834a84ba02..eaf671e9dde31b74dde3968518c7109f875bcbf8 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -20,6 +20,12 @@ namespace {
@@ -1070,7 +1070,7 @@ index 01409fa07a..eaf671e9dd 100644
    source->AddString("ollamaModelLabel", strings.ollama_model_label);
    source->AddString("ollamaProbe", strings.ollama_probe);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index 56cfa4fadb..e136e6597b 100644
+index 56cfa4fadbcce6b667e8078180987a671dcb811c..e136e6597bb055beb6093aa395cd5fb2de3fe66f 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -34,7 +34,7 @@
@@ -1118,7 +1118,7 @@ index 56cfa4fadb..e136e6597b 100644
                                    aegis::SummarizeResult result) {
    if (!IsJavascriptAllowed()) {
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index f304cee99d..933f9248d8 100644
+index f304cee99d3122769fe67cbd14ab16a756bdb2a8..933f9248d851b6654a1fa8b697399945cb7d90b6 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -37,6 +37,7 @@ class AegisUIHandler : public content::WebUIMessageHandler,

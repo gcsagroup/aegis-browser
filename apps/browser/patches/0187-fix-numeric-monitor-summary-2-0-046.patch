@@ -1,4 +1,4 @@
-From fa9dfac6f9967a0725cd579082fd957df75e1468 Mon Sep 17 00:00:00 2001
+From f9ff505e2bcd3ac97a211cf2f5a56948f77270c4 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 04:12:26 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E6=95=B0=E5=AD=97?=
@@ -19,7 +19,7 @@ Content-Transfer-Encoding: 8bit
  6 files changed, 152 insertions(+), 19 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index a885cd3370..0037507b5e 100644
+index a885cd3370698999107c0da00a5744dfa924a32d..0037507b5ebc17cbbfb32b8b49a83c86f08c1969 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -4609,6 +4609,15 @@ void AegisAgentService::OnMonitorPageObserved(
@@ -39,7 +39,7 @@ index a885cd3370..0037507b5e 100644
        it->second->pending_observation = std::move(*observation);
        RequestMonitorSummary(monitor_id, request_id);
 diff --git a/chrome/browser/aegis/agent/agent_monitor_summary.cc b/chrome/browser/aegis/agent/agent_monitor_summary.cc
-index 5db80ee749..cca1883ccb 100644
+index 5db80ee74943d91a477a25acb66a059553c1a5fc..cca1883ccb5c9823c12dc75d2bcade1e795f339e 100644
 --- a/chrome/browser/aegis/agent/agent_monitor_summary.cc
 +++ b/chrome/browser/aegis/agent/agent_monitor_summary.cc
 @@ -100,6 +100,35 @@ std::optional<base::DictValue> ValidSummary(std::string_view observation) {
@@ -155,7 +155,7 @@ index 5db80ee749..cca1883ccb 100644
  
  std::string ReadAgentMonitorSummary(std::string_view observation) {
 diff --git a/chrome/browser/aegis/agent/agent_monitor_summary.h b/chrome/browser/aegis/agent/agent_monitor_summary.h
-index 12efc72c0c..e17c1ff2a0 100644
+index 12efc72c0c1836f53547adcb3574cbdfcc88d91b..e17c1ff2a0ee1a67cd0bc6079d3058a9a0b35934 100644
 --- a/chrome/browser/aegis/agent/agent_monitor_summary.h
 +++ b/chrome/browser/aegis/agent/agent_monitor_summary.h
 @@ -30,6 +30,13 @@ std::string BuildAgentMonitorSummaryPrompt(
@@ -173,7 +173,7 @@ index 12efc72c0c..e17c1ff2a0 100644
  std::optional<std::string> AttachAgentMonitorSummary(
      std::string_view current,
 diff --git a/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc b/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
-index 3b34f0d4b9..8450312aee 100644
+index 3b34f0d4b93cc45deb045521102874b641d566cb..8450312aee4a60c6b3b53d2a7da44ce3734c81cf 100644
 --- a/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc
 @@ -117,6 +117,63 @@ TEST(AegisAgentMonitorSummaryTest, AttachesCitedSummaryAndRejectsStalePage) {
@@ -241,7 +241,7 @@ index 3b34f0d4b9..8450312aee 100644
    const std::string current = Observation({"续航24小时"});
    auto input =
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index 6727608317..7c09844670 100644
+index 6727608317d7c32d5308cb2a05680d0e03a901b0..7c09844670ac32ebfae1cd31f3843a9f1d82f867 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -466,8 +466,7 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -255,7 +255,7 @@ index 6727608317..7c09844670 100644
        "Only the observed excerpts are summarized; more changes may exist.",
        "仅总结已读取的变化片段，可能还有其他更新。",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 8862b13869..75a9700439 100644
+index 8862b138692f3a891dcb515b1c28b7207ddcbdf5..75a9700439523d842b0e35ecd6a0f535cb6647df 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

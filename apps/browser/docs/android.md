@@ -1,3 +1,5 @@
+> **2026-10-07 隔离候选：** 桌面正式基线155.0.8059.40；Android独立正式基线155.0.8059.39，Ver 2.1 (125)，versionCode 2001000125；270项Chromium及3项V8补丁待本次独立源码复验，尚无125 APK或设备验收。
+
 [**English**](./android.md) | [简体中文](./android.zh-CN.md) | [繁體中文](./android.zh-TW.md)
 
 # Android status: No-Go
@@ -6,9 +8,9 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 
 ## Current evidence boundary
 
-- Android uses the same pinned Chromium `153.0.8010.53` base as desktop.
+- 2026-10-05：桌面候选固定基线为`154.0.8037.98`；Android正式Stable目标为`154.0.8037.126`，完整248项补丁已独立回放通过。两平台版本不同，不能用桌面pin直接构建并声称Android已更新。
 - The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
-- 当前共享源码含140个Chromium补丁与3个V8补丁，重放树为`6f6294dfabbb9bfcf69a5a612bad3b2c41334ce5`；153 Android构建、安装包身份与真机尚未验收，Mac044结果不能转作Android证据。
+- 当前安全候选为248个Chromium补丁与3个V8补丁；154 Android构建、签名、安装包身份和真机验收未完成，历史Mac/Windows结果不计入Android验收。
 - There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.
 - v2 source resolves the public page behind the full-page Agent tab and binds current-page tasks to that document. Page capture, redaction, navigation invalidation, and results still require physical-device acceptance.
 - v2 source places the process-wide remote-debugging latch in front of Android DevTools HTTP/socket startup, including deferred startup. Once an Incognito Profile trips the latch, pending and later starts are rejected for the rest of the process; physical-device validation remains open.
@@ -52,10 +54,10 @@ An AAB path and Play signing identity must be defined and verified before store 
 
 ## Acceptance criteria
 
-1. 在干净的x86-64 Linux源码目录，从固定基线精确重放当前140个Chromium补丁与3个V8补丁。
+1. 在干净的x86-64 Linux源码目录，从固定基线精确重放当前248个Chromium补丁与3个V8补丁。
 2. Build successfully and create a manifest that binds the repository commit, Chromium commit, both patch-series identities, GN arguments, and APK/AAB SHA-256.
 3. Verify final package ID, version, launcher name, icons, permissions, native libraries, and signing structure.
-4. Uninstall any old build, install the current APK on a representative device, complete First Run, open normal pages and `chrome://aegis`, and exercise core protections.
+4. 在专用实机保留旧版资料，以原包名和签名安装升级包，核对资料兼容、正常网页、`chrome://aegis`与核心保护。首次安装另用隔离设备验证，不通过卸载旧版规避升级兼容问题。
 5. Verify page capture, document binding, redaction, confirmation, navigation invalidation, and result handling on device.
 6. Run startup, background/foreground, crash, storage, update, and network acceptance without residual processes or unexplained outbound traffic, and verify that delayed DevTools startup cannot bypass the Incognito process latch.
 7. Treat a passing internal candidate as separate from Play publication readiness.

@@ -7,7 +7,8 @@
 
 #include "base/functional/bind.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -35,7 +36,7 @@ class AccessBrowserRequestAdapterBrowserTest : public InProcessBrowserTest {
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
     ASSERT_TRUE(embedded_test_server()->Start());
-    ASSERT_NE(AccessNetworkContextTransport::GetOrCreate(browser()->profile()),
+    ASSERT_NE(AccessNetworkContextTransport::GetOrCreate(browser()->GetProfile()),
               nullptr);
   }
 
@@ -63,7 +64,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
   ASSERT_TRUE(primary_frame->GetPage().IsPrimary());
 
   AccessBrowserRequestMetadataResult result = BuildBrowserOwnedRequestMetadata(
-      browser()->profile(), WebContentsGetter(),
+      browser()->GetProfile(), WebContentsGetter(),
       primary_frame->GetFrameTreeNodeId(), std::nullopt);
 
   EXPECT_EQ(result.status, AccessBrowserRequestMetadataStatus::kOk);
@@ -83,7 +84,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
   constexpr int64_t kNavigationId = 42;
   AccessBrowserRequestMetadataResult metadata =
       BuildBrowserOwnedRequestMetadata(
-          browser()->profile(), WebContentsGetter(),
+          browser()->GetProfile(), WebContentsGetter(),
           primary_frame->GetFrameTreeNodeId(), kNavigationId);
 
   ASSERT_EQ(metadata.status, AccessBrowserRequestMetadataStatus::kOk);
@@ -129,7 +130,7 @@ IN_PROC_BROWSER_TEST_F(
   constexpr int64_t kNavigationId = 43;
   AccessBrowserRequestMetadataResult metadata =
       BuildBrowserOwnedRequestMetadata(
-          browser()->profile(), WebContentsGetter(),
+          browser()->GetProfile(), WebContentsGetter(),
           child_frame->GetFrameTreeNodeId(), kNavigationId);
 
   ASSERT_EQ(metadata.status, AccessBrowserRequestMetadataStatus::kOk);
@@ -178,7 +179,7 @@ IN_PROC_BROWSER_TEST_F(
 
   AccessBrowserRequestMetadataResult metadata =
       BuildBrowserOwnedRequestMetadata(
-          browser()->profile(), WebContentsGetter(),
+          browser()->GetProfile(), WebContentsGetter(),
           child_frame->GetFrameTreeNodeId(), /*navigation_id=*/44);
 
   EXPECT_EQ(metadata.status,
@@ -200,7 +201,7 @@ IN_PROC_BROWSER_TEST_F(
 
   AccessBrowserRequestMetadataResult result =
       BuildBrowserOwnedProfileOnlyRequestMetadata(
-          browser()->profile(), process->GetDeprecatedID());
+          browser()->GetProfile(), process->GetDeprecatedID());
 
   EXPECT_EQ(result.status, AccessBrowserRequestMetadataStatus::kOk);
   ASSERT_TRUE(result.metadata.has_value());
@@ -211,7 +212,7 @@ IN_PROC_BROWSER_TEST_F(
   EXPECT_FALSE(result.metadata->top_frame_site.has_value());
 
   AccessNetworkContextTransport* transport =
-      AccessNetworkContextTransport::Get(browser()->profile());
+      AccessNetworkContextTransport::Get(browser()->GetProfile());
   ASSERT_NE(transport, nullptr);
   EXPECT_TRUE(transport->OwnsConfiguredPartition(result.metadata->owner));
 
@@ -229,7 +230,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
                        ProfileOnlyMetadataRejectsUnknownRenderProcess) {
   AccessBrowserRequestMetadataResult result =
       BuildBrowserOwnedProfileOnlyRequestMetadata(
-          browser()->profile(), std::numeric_limits<int>::max());
+          browser()->GetProfile(), std::numeric_limits<int>::max());
 
   EXPECT_EQ(result.status,
             AccessBrowserRequestMetadataStatus::kMissingTrustedProcess);
@@ -250,7 +251,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
   ASSERT_FALSE(prerender_frame->GetPage().IsPrimary());
 
   AccessBrowserRequestMetadataResult result = BuildBrowserOwnedRequestMetadata(
-      browser()->profile(), WebContentsGetter(),
+      browser()->GetProfile(), WebContentsGetter(),
       prerender_frame->GetFrameTreeNodeId(), std::nullopt);
 
   EXPECT_EQ(result.status,
@@ -260,7 +261,7 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
   constexpr int64_t kPrerenderNavigationId = 44;
   AccessBrowserRequestMetadataResult pending_navigation =
       BuildBrowserOwnedRequestMetadata(
-          browser()->profile(), WebContentsGetter(),
+          browser()->GetProfile(), WebContentsGetter(),
           prerender_frame->GetFrameTreeNodeId(), kPrerenderNavigationId);
   EXPECT_EQ(pending_navigation.status,
             AccessBrowserRequestMetadataStatus::kInvalidAttribution);

@@ -1,4 +1,4 @@
-From fdcb95e37b9e09af4b33e06d95d0dad01ea6d981 Mon Sep 17 00:00:00 2001
+From c9cb99e65d2208eb954f0ffe443122af066f416e Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 26 Aug 2026 18:00:16 +0800
 Subject: [PATCH] feat(aegis): integrate accelerated and BT downloads
@@ -81,7 +81,7 @@ Subject: [PATCH] feat(aegis): integrate accelerated and BT downloads
  create mode 100644 third_party/aegis_libtorrent/README.aegis
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index f5938cb5ee..da0c389d21 100644
+index f5938cb5ee7594df39bb399a5eda084af0e0803e..da0c389d215b785baa7dbe81ae5dfbdee6080902 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -27,6 +27,10 @@ source_set("aegis") {
@@ -147,7 +147,7 @@ index f5938cb5ee..da0c389d21 100644
      "//testing/gtest",
      "//url",
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index 2eda0b2fc4..f84c810f20 100644
+index 2eda0b2fc4d1b0e348842d29a531a9c833dce797..f84c810f205d19319c2db43a152dcd4a160bbac9 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -34,6 +34,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -161,7 +161,7 @@ index 2eda0b2fc4..f84c810f20 100644
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_torrent_client.cc b/chrome/browser/aegis/aegis_torrent_client.cc
 new file mode 100644
-index 0000000000..662b4df109
+index 0000000000000000000000000000000000000000..662b4df10933d24ffe865ad44570dc721b68ab36
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_torrent_client.cc
 @@ -0,0 +1,106 @@
@@ -273,7 +273,7 @@ index 0000000000..662b4df109
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_torrent_client.h b/chrome/browser/aegis/aegis_torrent_client.h
 new file mode 100644
-index 0000000000..9b245a8544
+index 0000000000000000000000000000000000000000..9b245a85444d0688ba9841705820350b67d6378f
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_torrent_client.h
 @@ -0,0 +1,61 @@
@@ -340,7 +340,7 @@ index 0000000000..9b245a8544
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_TORRENT_CLIENT_H_
 diff --git a/chrome/browser/aegis/metalink_download_verifier.cc b/chrome/browser/aegis/metalink_download_verifier.cc
 new file mode 100644
-index 0000000000..d7c4b6d845
+index 0000000000000000000000000000000000000000..d7c4b6d845c4e6044e799c1859a21eec3a7028bc
 --- /dev/null
 +++ b/chrome/browser/aegis/metalink_download_verifier.cc
 @@ -0,0 +1,305 @@
@@ -651,7 +651,7 @@ index 0000000000..d7c4b6d845
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/metalink_download_verifier.h b/chrome/browser/aegis/metalink_download_verifier.h
 new file mode 100644
-index 0000000000..91db372632
+index 0000000000000000000000000000000000000000..91db37263227dca21a8836a1aace038b45317da4
 --- /dev/null
 +++ b/chrome/browser/aegis/metalink_download_verifier.h
 @@ -0,0 +1,36 @@
@@ -693,7 +693,7 @@ index 0000000000..91db372632
 +#endif  // CHROME_BROWSER_AEGIS_METALINK_DOWNLOAD_VERIFIER_H_
 diff --git a/chrome/browser/aegis/metalink_parser.cc b/chrome/browser/aegis/metalink_parser.cc
 new file mode 100644
-index 0000000000..12d8a54252
+index 0000000000000000000000000000000000000000..12d8a542522da2ccd15b60bb82d2aadddbb978e7
 --- /dev/null
 +++ b/chrome/browser/aegis/metalink_parser.cc
 @@ -0,0 +1,194 @@
@@ -893,7 +893,7 @@ index 0000000000..12d8a54252
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/metalink_parser.h b/chrome/browser/aegis/metalink_parser.h
 new file mode 100644
-index 0000000000..fa38b2c5fe
+index 0000000000000000000000000000000000000000..fa38b2c5fe12bfcddae145fd1d7ef76d9c530dcd
 --- /dev/null
 +++ b/chrome/browser/aegis/metalink_parser.h
 @@ -0,0 +1,41 @@
@@ -940,7 +940,7 @@ index 0000000000..fa38b2c5fe
 +#endif  // CHROME_BROWSER_AEGIS_METALINK_PARSER_H_
 diff --git a/chrome/browser/aegis/metalink_parser_unittest.cc b/chrome/browser/aegis/metalink_parser_unittest.cc
 new file mode 100644
-index 0000000000..dd900b5e2a
+index 0000000000000000000000000000000000000000..dd900b5e2a72e2820de9b7a6a784425cee2f4b1a
 --- /dev/null
 +++ b/chrome/browser/aegis/metalink_parser_unittest.cc
 @@ -0,0 +1,96 @@
@@ -1041,7 +1041,7 @@ index 0000000000..dd900b5e2a
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/download/download_ui_model.cc b/chrome/browser/download/download_ui_model.cc
-index c90c8536e3..f106de8a01 100644
+index fe9306f5618abf7508cc71dc8e072e582fef6a83..820392cbcf1a31096b325c0fe2bde31ba8bfacc0 100644
 --- a/chrome/browser/download/download_ui_model.cc
 +++ b/chrome/browser/download/download_ui_model.cc
 @@ -10,6 +10,9 @@
@@ -1062,7 +1062,7 @@ index c90c8536e3..f106de8a01 100644
  #include "components/download/public/common/download_danger_type.h"
  #include "components/enterprise/common/proto/connectors.pb.h"
  #include "components/google/core/common/google_util.h"
-@@ -174,8 +178,9 @@ base::WeakPtr<DownloadUIModel> DownloadUIModel::GetWeakPtr() {
+@@ -177,8 +181,9 @@ base::WeakPtr<DownloadUIModel> DownloadUIModel::GetWeakPtr() {
  }
  
  bool DownloadUIModel::HasSupportedImageMimeType() const {
@@ -1073,7 +1073,7 @@ index c90c8536e3..f106de8a01 100644
  
    std::string mime;
    base::FilePath::StringType extension_with_dot =
-@@ -236,18 +241,36 @@ std::u16string DownloadUIModel::GetStatusText() const {
+@@ -239,18 +244,36 @@ std::u16string DownloadUIModel::GetStatusText() const {
  std::u16string DownloadUIModel::GetStatusTextForLabel(
      const gfx::FontList& font_list,
      float available_pixel_width) const {
@@ -1116,7 +1116,7 @@ index c90c8536e3..f106de8a01 100644
  }
  #endif
  
-@@ -823,8 +846,9 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetInProgressStatusText()
+@@ -856,8 +879,9 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetInProgressStatusText()
  
    // A download scheduled to be opened when complete: "Opening in 10 secs"
    if (model_->GetOpenWhenComplete()) {
@@ -1127,7 +1127,7 @@ index c90c8536e3..f106de8a01 100644
  
      return l10n_util::GetStringFUTF16(
          IDS_DOWNLOAD_STATUS_OPEN_IN,
-@@ -934,12 +958,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
+@@ -967,12 +991,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
        return l10n_util::GetStringUTF16(
            IDS_POLICY_ACTION_BLOCKED_BY_ORGANIZATION);
      case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_SCANNING:
@@ -1146,7 +1146,7 @@ index c90c8536e3..f106de8a01 100644
      case download::DOWNLOAD_DANGER_TYPE_PROMPT_FOR_LOCAL_PASSWORD_SCANNING:
        // "Suspicious file blocked • Password needed"
        return l10n_util::GetStringFUTF16(
-@@ -970,12 +994,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
+@@ -1003,12 +1027,12 @@ DownloadUIModel::BubbleStatusTextBuilder::GetBubbleWarningStatusText() const {
        return l10n_util::GetStringUTF16(
            IDS_DOWNLOAD_BUBBLE_STATUS_LOCAL_DECRYPTING);
      case download::DOWNLOAD_DANGER_TYPE_DEEP_SCANNED_FAILED:
@@ -1165,7 +1165,7 @@ index c90c8536e3..f106de8a01 100644
      case download::DOWNLOAD_DANGER_TYPE_BLOCKED_SCAN_FAILED:
        // "Blocked • Scan failed"
        return get_blocked_warning(IDS_DOWNLOAD_BUBBLE_STATUS_SCAN_FAILED);
-@@ -997,8 +1021,9 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
+@@ -1030,8 +1054,9 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
    DCHECK_EQ(DownloadItem::IN_PROGRESS, model_->GetState());
  
    std::u16string warning_status_text = GetBubbleWarningStatusText();
@@ -1176,7 +1176,7 @@ index c90c8536e3..f106de8a01 100644
  
    base::TimeDelta time_remaining;
    // time_remaining is only known if the download isn't paused, and it isn't
-@@ -1053,10 +1078,11 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
+@@ -1086,10 +1111,11 @@ DownloadUIModel::BubbleStatusTextBuilder::GetInProgressStatusText() const {
    // A download scheduled to be opened when complete: "↓ 100/120 MB • Opening in
    // 10 seconds"
    if (model_->GetOpenWhenComplete()) {
@@ -1189,7 +1189,7 @@ index c90c8536e3..f106de8a01 100644
  
      // "↓ 100/120 MB • Opening in 10 seconds..."
      return get_active_download_size_ratio_string(l10n_util::GetStringFUTF16(
-@@ -1112,12 +1138,14 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetCompletedStatusText()
+@@ -1145,12 +1171,14 @@ std::u16string DownloadUIModel::StatusTextBuilder::GetCompletedStatusText()
  std::u16string
  DownloadUIModel::BubbleStatusTextBuilder::GetCompletedStatusText() const {
    std::u16string warning_status_text = GetBubbleWarningStatusText();
@@ -1206,7 +1206,7 @@ index c90c8536e3..f106de8a01 100644
  
    if (model_->GetEndTime().is_null()) {
      // Offline items have these null.
-@@ -1297,8 +1325,9 @@ std::u16string DownloadUIModel::GetInProgressAccessibleAlertText() const {
+@@ -1330,8 +1358,9 @@ std::u16string DownloadUIModel::GetInProgressAccessibleAlertText() const {
    base::TimeDelta remaining;
    if (TimeRemaining(&remaining)) {
      // If complete, skip this round: a completion status update is coming soon.
@@ -1218,7 +1218,7 @@ index c90c8536e3..f106de8a01 100644
      const std::u16string remaining_string =
          ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_REMAINING,
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index f0b8adf32c..4f09c6dfbc 100644
+index f0b8adf32cd34ce7e3b22e5732f42cfbc27e6b6d..4f09c6dfbc0b408e254d6df8a4885dc49485a8d6 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -178,12 +178,28 @@ h1 {
@@ -1349,7 +1349,7 @@ index f0b8adf32c..4f09c6dfbc 100644
 +  }
  }
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 95313817b0..e0bdf773d4 100644
+index 95313817b0f700f50dde071d9b12d0f810b033d8..e0bdf773d45d3ff28994d1d8e8a8e47babdfc538 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -17,7 +17,8 @@
@@ -1376,7 +1376,7 @@ index 95313817b0..e0bdf773d4 100644
          <h2>$i18n{privacyAiTitle}</h2>
          <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index b81039ee9e..77dd735c1b 100644
+index b81039ee9e454dabead41968acbedc7dc6a5bdb8..77dd735c1b5c1c1c898d91b910a5e35e5802c923 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -1,8 +1,9 @@
@@ -1663,7 +1663,7 @@ index b81039ee9e..77dd735c1b 100644
          return;
        }
 diff --git a/chrome/browser/resources/downloads/BUILD.gn b/chrome/browser/resources/downloads/BUILD.gn
-index c6e4405575..b8bd13809e 100644
+index c6e4405575cb9d96241e9047b765882eb62cc462..b8bd13809e04c113d7ccd5313240f8972d5855ac 100644
 --- a/chrome/browser/resources/downloads/BUILD.gn
 +++ b/chrome/browser/resources/downloads/BUILD.gn
 @@ -17,6 +17,8 @@ build_webui("build") {
@@ -1685,7 +1685,7 @@ index c6e4405575..b8bd13809e 100644
      "manager.css",
 diff --git a/chrome/browser/resources/downloads/aegis_download_panel.css b/chrome/browser/resources/downloads/aegis_download_panel.css
 new file mode 100644
-index 0000000000..e29ab8c0ce
+index 0000000000000000000000000000000000000000..e29ab8c0ce68ec83b83d7ffe8cdb0182d2c9ee5b
 --- /dev/null
 +++ b/chrome/browser/resources/downloads/aegis_download_panel.css
 @@ -0,0 +1,185 @@
@@ -1876,7 +1876,7 @@ index 0000000000..e29ab8c0ce
 +}
 diff --git a/chrome/browser/resources/downloads/aegis_download_panel.html.ts b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
 new file mode 100644
-index 0000000000..0f265dd7d3
+index 0000000000000000000000000000000000000000..0f265dd7d36b93c6ade3979d0d5a161d0182752a
 --- /dev/null
 +++ b/chrome/browser/resources/downloads/aegis_download_panel.html.ts
 @@ -0,0 +1,127 @@
@@ -2009,7 +2009,7 @@ index 0000000000..0f265dd7d3
 +}
 diff --git a/chrome/browser/resources/downloads/aegis_download_panel.ts b/chrome/browser/resources/downloads/aegis_download_panel.ts
 new file mode 100644
-index 0000000000..808667af3d
+index 0000000000000000000000000000000000000000..808667af3d36a334879cf3207c85a94699fbe93c
 --- /dev/null
 +++ b/chrome/browser/resources/downloads/aegis_download_panel.ts
 @@ -0,0 +1,517 @@
@@ -2531,7 +2531,7 @@ index 0000000000..808667af3d
 +  }
 +}
 diff --git a/chrome/browser/resources/downloads/item.css b/chrome/browser/resources/downloads/item.css
-index 71ae0c1a76..bfed41ab5a 100644
+index 71ae0c1a7626d31b23bed90f8e22d4a1b6505869..bfed41ab5a2178924fbd09834b7aa45774c6c5ad 100644
 --- a/chrome/browser/resources/downloads/item.css
 +++ b/chrome/browser/resources/downloads/item.css
 @@ -229,6 +229,18 @@ cr-button {
@@ -2554,7 +2554,7 @@ index 71ae0c1a76..bfed41ab5a 100644
    .description[description-color='grey'] {
      color: var(--google-grey-500);
 diff --git a/chrome/browser/resources/downloads/item.html.ts b/chrome/browser/resources/downloads/item.html.ts
-index d07c2cf8f5..7f99fed90e 100644
+index 35465838d549f918b793ed5751b61169b8b453d1..a86ab1abd4c2b27a10aee39b55a784d97a6c2e91 100644
 --- a/chrome/browser/resources/downloads/item.html.ts
 +++ b/chrome/browser/resources/downloads/item.html.ts
 @@ -47,6 +47,11 @@ export function getHtml(this: DownloadsItemElement) {
@@ -2570,7 +2570,7 @@ index d07c2cf8f5..7f99fed90e 100644
            description-color="${this.iconAndDescriptionColor_()}"
            ?hidden="${!this.computeDescriptionVisible_()}">
 diff --git a/chrome/browser/resources/downloads/manager.html.ts b/chrome/browser/resources/downloads/manager.html.ts
-index 56c186f68e..a52d0c12a5 100644
+index 56c186f68ea5140f8fedb11c41098e84208b1c3e..a52d0c12a51b9b74a7355b88c525d69ae4414794 100644
 --- a/chrome/browser/resources/downloads/manager.html.ts
 +++ b/chrome/browser/resources/downloads/manager.html.ts
 @@ -25,6 +25,8 @@ export function getHtml(this: DownloadsManagerElement) {
@@ -2583,7 +2583,7 @@ index 56c186f68e..a52d0c12a5 100644
        aria-rowcount="${this.items_.length}" ?hidden="${!this.hasDownloads_}"
        .scrollTarget="${this.listScrollTarget_}"
 diff --git a/chrome/browser/resources/downloads/manager.ts b/chrome/browser/resources/downloads/manager.ts
-index 15b017b2c4..f1d280d1bf 100644
+index 15b017b2c4ef11a68db51d22653410d315b6ad8c..f1d280d1bf3bc2a635657c8a6aeb6916b70aff48 100644
 --- a/chrome/browser/resources/downloads/manager.ts
 +++ b/chrome/browser/resources/downloads/manager.ts
 @@ -3,6 +3,7 @@
@@ -2595,7 +2595,7 @@ index 15b017b2c4..f1d280d1bf 100644
  import './item.js';
  import './toolbar.js';
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index eaf671e9dd..165e330ec9 100644
+index eaf671e9dde31b74dde3968518c7109f875bcbf8..165e330ec93054e1496b12659427a0da792bb168 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -38,6 +38,27 @@ struct AegisStrings {
@@ -2770,7 +2770,7 @@ index eaf671e9dd..165e330ec9 100644
    source->AddString("linkSanitizeHint", strings.link_sanitize_hint);
    source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index ea38362345..63b4746860 100644
+index ea38362345d62e4628d2ecd66e5fd2fdfa742df4..63b47468606ebfe25f3602e7447955ea69264caa 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -3,12 +3,14 @@
@@ -3278,7 +3278,7 @@ index ea38362345..63b4746860 100644
 +  ResolveJavascriptCallback(base::Value(callback_id), response);
 +}
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
-index 484ddb0c2c..744b0a50d7 100644
+index 484ddb0c2c943cf13e177f805ef05061e299f7f3..744b0a50d72a03e7b1d9f3978cd11b4c8ed57741 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.h
 @@ -13,6 +13,8 @@
@@ -3360,7 +3360,7 @@ index 484ddb0c2c..744b0a50d7 100644
        service_observation_{this};
  
 diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
-index 060bd16ca0..af4a787b5c 100644
+index 501c60c60e1bbbb101591a706183a4f5a81dc736..d91ccec5fd4eff397ace07333aeaf6a13c61f5c1 100644
 --- a/chrome/browser/ui/webui/downloads/BUILD.gn
 +++ b/chrome/browser/ui/webui/downloads/BUILD.gn
 @@ -62,6 +62,7 @@ source_set("downloads") {
@@ -3372,7 +3372,7 @@ index 060bd16ca0..af4a787b5c 100644
      "//components/download/content/public",
      "//components/download/public/common:public",
 diff --git a/chrome/browser/ui/webui/downloads/downloads.mojom b/chrome/browser/ui/webui/downloads/downloads.mojom
-index 3ac6fde31b..d72e0449be 100644
+index 3ac6fde31b1d608eaf5aff83f3401f0385766d37..d72e0449bec7d538669ec2d5911374dd7073fa37 100644
 --- a/chrome/browser/ui/webui/downloads/downloads.mojom
 +++ b/chrome/browser/ui/webui/downloads/downloads.mojom
 @@ -65,6 +65,13 @@ enum SafeBrowsingState {
@@ -3390,7 +3390,7 @@ index 3ac6fde31b..d72e0449be 100644
    bool is_dangerous;
    [RenamedFrom=is_mixed_content]
 diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
-index 3db0daa4c7..c9f2ccc0af 100644
+index 3db0daa4c7ab79603f7c5be9ba3f490d73bb30df..c9f2ccc0af8426007177de959a208a92abca43b3 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.cc
 @@ -18,9 +18,13 @@
@@ -3498,7 +3498,7 @@ index 3db0daa4c7..c9f2ccc0af 100644
        static_cast<int>(download_item->GetStartTime().ToTimeT());
    file_value->since_string = base::UTF16ToUTF8(ui::TimeFormat::RelativeDate(
 diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker.h b/chrome/browser/ui/webui/downloads/downloads_list_tracker.h
-index 907c706c62..c7a7a02b00 100644
+index 907c706c621aa07597260380fd54127e781bb83c..c7a7a02b00c4139148b9a25b89052db7a47e470b 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_list_tracker.h
 +++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker.h
 @@ -101,6 +101,10 @@ class DownloadsListTracker
@@ -3513,7 +3513,7 @@ index 907c706c62..c7a7a02b00 100644
                             CreateDownloadData_InitiatorOriginNotPresent);
    FRIEND_TEST_ALL_PREFIXES(DownloadsListTrackerTest,
 diff --git a/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc b/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc
-index 8ddd0ed3b2..08fdc73b45 100644
+index 8ddd0ed3b2105d9211c3ab101ce871c50dc5347d..08fdc73b45ace7446e346c007388a9c1427117df 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_list_tracker_unittest.cc
 @@ -16,6 +16,7 @@
@@ -3577,7 +3577,7 @@ index 8ddd0ed3b2..08fdc73b45 100644
    MockDownloadItem* item = CreateNextItem();
    ON_CALL(*item, GetRequestInitiator())
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index a613ecb709..afffe38723 100644
+index a613ecb70991eb1a2f7b6681b9ba891170ac1ecc..afffe387238c18306c52a3745e716e34aab018c6 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
 @@ -22,6 +22,7 @@
@@ -3597,7 +3597,7 @@ index a613ecb709..afffe38723 100644
    // Set up the chrome://downloads/ source.
    content::WebUIDataSource* source = CreateAndAddDownloadsUIHTMLSource(profile);
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index 08c1406a64..a550df3940 100644
+index 08c1406a64a3fdd3c92dea329ffc3040c9040020..a550df39400d6123b5136ab2817589348b42946c 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -36,6 +36,9 @@ inline constexpr char kOllamaModel[] = "aegis.ollama_model";
@@ -3612,7 +3612,7 @@ index 08c1406a64..a550df3940 100644
  
 diff --git a/chrome/services/aegis_torrent/BUILD.gn b/chrome/services/aegis_torrent/BUILD.gn
 new file mode 100644
-index 0000000000..a2f5428635
+index 0000000000000000000000000000000000000000..a2f54286358717626fbc26950ef0692c114d994c
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/BUILD.gn
 @@ -0,0 +1,50 @@
@@ -3668,7 +3668,7 @@ index 0000000000..a2f5428635
 +}
 diff --git a/chrome/services/aegis_torrent/aegis_torrent_service.cc b/chrome/services/aegis_torrent/aegis_torrent_service.cc
 new file mode 100644
-index 0000000000..c3a51bf0b2
+index 0000000000000000000000000000000000000000..c3a51bf0b295af493c607d105a7a6845b1fba776
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/aegis_torrent_service.cc
 @@ -0,0 +1,325 @@
@@ -3999,7 +3999,7 @@ index 0000000000..c3a51bf0b2
 +}  // namespace aegis::torrent
 diff --git a/chrome/services/aegis_torrent/aegis_torrent_service.h b/chrome/services/aegis_torrent/aegis_torrent_service.h
 new file mode 100644
-index 0000000000..073207b346
+index 0000000000000000000000000000000000000000..073207b346f85e5a3969efdf4bf199d36f4144e4
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/aegis_torrent_service.h
 @@ -0,0 +1,55 @@
@@ -4060,7 +4060,7 @@ index 0000000000..073207b346
 +#endif  // CHROME_SERVICES_AEGIS_TORRENT_AEGIS_TORRENT_SERVICE_H_
 diff --git a/chrome/services/aegis_torrent/public/mojom/BUILD.gn b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
 new file mode 100644
-index 0000000000..2bf88013bc
+index 0000000000000000000000000000000000000000..2bf88013bcc456ffa92742ed78e7958ccb09c6c4
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/public/mojom/BUILD.gn
 @@ -0,0 +1,13 @@
@@ -4079,7 +4079,7 @@ index 0000000000..2bf88013bc
 +}
 diff --git a/chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom b/chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom
 new file mode 100644
-index 0000000000..e1c29b67cf
+index 0000000000000000000000000000000000000000..e1c29b67cf802013cb44f8842231a6de43c07e31
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom
 @@ -0,0 +1,70 @@
@@ -4155,7 +4155,7 @@ index 0000000000..e1c29b67cf
 +};
 diff --git a/chrome/services/aegis_torrent/torrent_safety.cc b/chrome/services/aegis_torrent/torrent_safety.cc
 new file mode 100644
-index 0000000000..e53be9d914
+index 0000000000000000000000000000000000000000..e53be9d9147e7b2f7934c67c02fb03c94348ebc9
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/torrent_safety.cc
 @@ -0,0 +1,232 @@
@@ -4393,7 +4393,7 @@ index 0000000000..e53be9d914
 +}  // namespace aegis::torrent
 diff --git a/chrome/services/aegis_torrent/torrent_safety.h b/chrome/services/aegis_torrent/torrent_safety.h
 new file mode 100644
-index 0000000000..ffecdd9070
+index 0000000000000000000000000000000000000000..ffecdd9070527c7ffe9c2128011552fe4642597a
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/torrent_safety.h
 @@ -0,0 +1,34 @@
@@ -4433,7 +4433,7 @@ index 0000000000..ffecdd9070
 +#endif  // CHROME_SERVICES_AEGIS_TORRENT_TORRENT_SAFETY_H_
 diff --git a/chrome/services/aegis_torrent/torrent_safety_unittest.cc b/chrome/services/aegis_torrent/torrent_safety_unittest.cc
 new file mode 100644
-index 0000000000..22972225d3
+index 0000000000000000000000000000000000000000..22972225d34e9d88774d41a8e7a96c1b865cd028
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/torrent_safety_unittest.cc
 @@ -0,0 +1,76 @@
@@ -4515,7 +4515,7 @@ index 0000000000..22972225d3
 +}  // namespace aegis::torrent
 diff --git a/chrome/services/aegis_torrent/torrent_transfer_unittest.cc b/chrome/services/aegis_torrent/torrent_transfer_unittest.cc
 new file mode 100644
-index 0000000000..80b9f7438b
+index 0000000000000000000000000000000000000000..80b9f7438b6f47346fdd5cfb1c8456a3015b19c7
 --- /dev/null
 +++ b/chrome/services/aegis_torrent/torrent_transfer_unittest.cc
 @@ -0,0 +1,138 @@
@@ -4658,7 +4658,7 @@ index 0000000000..80b9f7438b
 +}  // namespace
 +}  // namespace aegis::torrent
 diff --git a/chrome/test/data/webui/downloads/test_support.ts b/chrome/test/data/webui/downloads/test_support.ts
-index d016d7fbe3..ce27034f94 100644
+index d016d7fbe3e4b96c308a2aca706d2fbda9c6475a..ce27034f94f2c67c2bf1bf734a0df93f3c81143c 100644
 --- a/chrome/test/data/webui/downloads/test_support.ts
 +++ b/chrome/test/data/webui/downloads/test_support.ts
 @@ -100,6 +100,11 @@ export class TestIconLoader extends TestBrowserProxy implements IconLoader {
@@ -4674,10 +4674,10 @@ index d016d7fbe3..ce27034f94 100644
          byExtName: '',
          dangerType: DangerType.kNoApplicableDangerType,
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
-index 500cbc7ed8..609f4c2ba6 100644
+index b3fa5a032cee9bf422f56a058b53046189c28a25..fb756f798496f5d6583a4c648c4147e2223c921b 100644
 --- a/chrome/utility/BUILD.gn
 +++ b/chrome/utility/BUILD.gn
-@@ -86,6 +86,7 @@ static_library("utility") {
+@@ -88,6 +88,7 @@ static_library("utility") {
  
    if (is_mac) {
      deps += [
@@ -4686,10 +4686,10 @@ index 500cbc7ed8..609f4c2ba6 100644
        "//services/proxy_resolver_mac",
      ]
 diff --git a/chrome/utility/services.cc b/chrome/utility/services.cc
-index 22b15ea3a1..6cf01d901d 100644
+index 5f509ce2d6f0bc2636f328aea054a4ab8fb046d8..4f3eff87dfd7b561972668c61dfb2e602797f77f 100644
 --- a/chrome/utility/services.cc
 +++ b/chrome/utility/services.cc
-@@ -51,6 +51,7 @@
+@@ -52,6 +52,7 @@
  #endif  // BUILDFLAG(IS_WIN)
  
  #if BUILDFLAG(IS_MAC)
@@ -4697,7 +4697,7 @@ index 22b15ea3a1..6cf01d901d 100644
  #include "chrome/services/mac_notifications/mac_notification_provider_impl.h"
  #include "chrome/services/system_signals/mac/mac_system_signals_service.h"
  #include "services/proxy_resolver/public/mojom/proxy_resolver.mojom.h"
-@@ -205,6 +206,12 @@ auto RunWindowsSystemProxyResolver(
+@@ -206,6 +207,12 @@ auto RunWindowsSystemProxyResolver(
  #endif  // BUILDFLAG(IS_WIN)
  
  #if BUILDFLAG(IS_MAC)
@@ -4710,7 +4710,7 @@ index 22b15ea3a1..6cf01d901d 100644
  auto RunMacNotificationService(
      mojo::PendingReceiver<mac_notifications::mojom::MacNotificationProvider>
          receiver) {
-@@ -519,6 +526,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
+@@ -520,6 +527,7 @@ void RegisterMainThreadServices(mojo::ServiceFactory& services) {
  #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
  
  #if BUILDFLAG(IS_MAC)
@@ -4719,7 +4719,7 @@ index 22b15ea3a1..6cf01d901d 100644
  #endif  // BUILDFLAG(IS_MAC)
  
 diff --git a/components/download/internal/common/parallel_download_utils.cc b/components/download/internal/common/parallel_download_utils.cc
-index 28173ff830..91bfc91ae9 100644
+index 28173ff830825586baf6b12d0d321b8d726d7fb8..91bfc91ae9b18f2398dd063fced512040ed693f6 100644
 --- a/components/download/internal/common/parallel_download_utils.cc
 +++ b/components/download/internal/common/parallel_download_utils.cc
 @@ -4,12 +4,16 @@
@@ -4800,7 +4800,7 @@ index 28173ff830..91bfc91ae9 100644
  
  base::TimeDelta GetParallelRequestDelayConfig() {
 diff --git a/components/download/internal/common/parallel_download_utils_unittest.cc b/components/download/internal/common/parallel_download_utils_unittest.cc
-index 4887204625..94128626ef 100644
+index 48872046255b45b1321f0d547fbc887dfe2fb2ae..94128626ef1ef88dc817039e8d05b6e34d9d749b 100644
 --- a/components/download/internal/common/parallel_download_utils_unittest.cc
 +++ b/components/download/internal/common/parallel_download_utils_unittest.cc
 @@ -345,6 +345,22 @@ TEST_F(ParallelDownloadUtilsTest, FinchConfigEnabled) {
@@ -4827,7 +4827,7 @@ index 4887204625..94128626ef 100644
  // feature.
  TEST_F(ParallelDownloadUtilsTest, FinchConfigDisabled) {
 diff --git a/components/download/public/common/download_features.cc b/components/download/public/common/download_features.cc
-index 2f53e3de33..fc444a4e3b 100644
+index c3d158eab25d52be1ebb21d3533e9d9779b470f5..fcb75d9f4b6cbb0b7a0bea7106d73384d17f9656 100644
 --- a/components/download/public/common/download_features.cc
 +++ b/components/download/public/common/download_features.cc
 @@ -10,13 +10,7 @@
@@ -4846,10 +4846,10 @@ index 2f53e3de33..fc444a4e3b 100644
  #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
  BASE_FEATURE(kBackoffInDownloading, base::FEATURE_DISABLED_BY_DEFAULT);
 diff --git a/sandbox/policy/mac/network.sb b/sandbox/policy/mac/network.sb
-index 27144995fe..0cf55d3d71 100644
+index 08904e5047a8994ec3bd44d71e8d3adb6edd01ce..3c00ec7218219b540918eff7b191bcdfb04a9a43 100644
 --- a/sandbox/policy/mac/network.sb
 +++ b/sandbox/policy/mac/network.sb
-@@ -57,6 +57,13 @@
+@@ -51,6 +51,13 @@
    (allow file-read* (subpath (param network-service-test-certs-dir))))
  
  ; Network socket access.
@@ -4865,7 +4865,7 @@ index 27144995fe..0cf55d3d71 100644
    (literal "/private/var/run/mDNSResponder")
 diff --git a/third_party/aegis_libtorrent/.gitignore b/third_party/aegis_libtorrent/.gitignore
 new file mode 100644
-index 0000000000..9b892e4934
+index 0000000000000000000000000000000000000000..9b892e4934868bda240e894bcfe0bf495f11342f
 --- /dev/null
 +++ b/third_party/aegis_libtorrent/.gitignore
 @@ -0,0 +1,7 @@
@@ -4878,7 +4878,7 @@ index 0000000000..9b892e4934
 +/source-staging.*/
 diff --git a/third_party/aegis_libtorrent/BUILD.gn b/third_party/aegis_libtorrent/BUILD.gn
 new file mode 100644
-index 0000000000..6213a70641
+index 0000000000000000000000000000000000000000..6213a706417263c56453e905b0e1a475605c78e1
 --- /dev/null
 +++ b/third_party/aegis_libtorrent/BUILD.gn
 @@ -0,0 +1,230 @@
@@ -5114,7 +5114,7 @@ index 0000000000..6213a70641
 +}
 diff --git a/third_party/aegis_libtorrent/LICENSE b/third_party/aegis_libtorrent/LICENSE
 new file mode 100644
-index 0000000000..b9907cadc7
+index 0000000000000000000000000000000000000000..b9907cadc733fdda4eba0a21ab2bd2f5d373ef74
 --- /dev/null
 +++ b/third_party/aegis_libtorrent/LICENSE
 @@ -0,0 +1,27 @@
@@ -5147,7 +5147,7 @@ index 0000000000..b9907cadc7
 +POSSIBILITY OF SUCH DAMAGE.
 diff --git a/third_party/aegis_libtorrent/README.aegis b/third_party/aegis_libtorrent/README.aegis
 new file mode 100644
-index 0000000000..c93f8f5120
+index 0000000000000000000000000000000000000000..c93f8f512026e85baaf0e91bef6fed6d93b1bda9
 --- /dev/null
 +++ b/third_party/aegis_libtorrent/README.aegis
 @@ -0,0 +1,19 @@

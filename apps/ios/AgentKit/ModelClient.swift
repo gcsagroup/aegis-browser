@@ -41,6 +41,7 @@ public struct ModelConfiguration: Codable, Equatable, Sendable {
 public enum ModelClientError: LocalizedError, Equatable {
     case invalidEndpoint, missingModel, invalidResponse, incompleteResponse, tooLarge, sensitiveData, invalidCitation, keychain(Int32)
     case http(Int)
+    case unauthorized, rateLimited(Int?), timedOut, offline, serviceUnavailable
     public var errorDescription: String? {
         switch self {
         case .invalidEndpoint: String(localized: "请输入不含账号或查询参数的 HTTPS 服务地址。本机测试可使用 localhost 或 127.0.0.1。")
@@ -52,6 +53,13 @@ public enum ModelClientError: LocalizedError, Equatable {
         case .invalidCitation: String(localized: "模型引用了未提供的来源，请重新运行并核对资料。")
         case .keychain: String(localized: "无法安全保存密钥，请解锁设备后重试。")
         case let .http(status): String(localized: "模型服务返回错误（\(status)），请检查连接、密钥和服务额度。")
+        case .unauthorized: String(localized: "模型服务拒绝访问，请检查该服务的密钥和模型权限。")
+        case let .rateLimited(seconds):
+            if let seconds { String(localized: "模型服务限流，请在 \(seconds) 秒后重试。") }
+            else { String(localized: "模型请求过于频繁或额度不足，请稍后重试并检查服务额度。") }
+        case .timedOut: String(localized: "模型服务响应超时，请缩小资料范围或稍后重试。")
+        case .offline: String(localized: "网络连接已中断，请恢复连接后重新确认发送。")
+        case .serviceUnavailable: String(localized: "模型服务暂时不可用，请稍后重试。")
         }
     }
 }
@@ -126,6 +134,42 @@ public struct ModelClient: Sendable {
         return output
     }
 
+    public func streamComplete(goal: String, sources: [String], language: String,
+                               onText: @escaping @MainActor @Sendable (String) -> Void) async throws -> String {
+        let body = try completionRequest(goal: goal, sources: sources, language: language, streaming: true)
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil; config.urlCredentialStorage = nil
+        config.timeoutIntervalForResource = 180
+        let session = URLSession(configuration: config, delegate: ModelRedirectGuard(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        do {
+            let (bytes, response) = try await session.bytes(for: body)
+            guard let http = response as? HTTPURLResponse else { throw ModelClientError.invalidResponse }
+            try Self.validateHTTP(http)
+            let isSSE = http.mimeType?.lowercased() == "text/event-stream"
+            var decoder = ModelStreamDecoder(provider: configuration.provider)
+            var data = Data()
+            var lastEmission = Date.distantPast
+            for try await byte in bytes {
+                try Task.checkCancellation()
+                if isSSE {
+                    if try decoder.consume(byte), Date().timeIntervalSince(lastEmission) >= 0.06 {
+                        await onText(decoder.text); lastEmission = Date()
+                    }
+                    if decoder.terminal { break }
+                } else {
+                    guard data.count < 1_000_000 else { throw ModelClientError.tooLarge }
+                    data.append(byte)
+                }
+            }
+            let text = try (isSSE ? decoder.finish() : Self.decodeCompletion(data, provider: configuration.provider))
+            try Task.checkCancellation()
+            try Self.validateCitations(text, sourceCount: sources.count)
+            await onText(text)
+            return text
+        } catch { throw Self.classify(error) }
+    }
+
     public static func validateCitations(_ output: String, sourceCount: Int) throws {
         let expression = try NSRegularExpression(pattern: #"\[(\d+)\]"#)
         let text = output as NSString
@@ -135,7 +179,7 @@ public struct ModelClient: Sendable {
         }
     }
 
-    public func completionRequest(goal: String, sources: [String], language: String) throws -> URLRequest {
+    public func completionRequest(goal: String, sources: [String], language: String, streaming: Bool = false) throws -> URLRequest {
         let base = try configuration.validatedURL()
         guard !configuration.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ModelClientError.missingModel }
         let text = ([goal] + sources).joined(separator: "\n\n")
@@ -153,21 +197,23 @@ public struct ModelClient: Sendable {
         switch configuration.provider {
         case .compatible:
             url = base.appendingPathComponent("chat/completions")
-            payload = ["model": configuration.model, "stream": false,
+            payload = ["model": configuration.model, "stream": streaming,
                        "messages": [["role": "system", "content": system], ["role": "user", "content": scan.redacted]]]
         case .anthropic:
             url = base.appendingPathComponent("messages")
-            payload = ["model": configuration.model, "max_tokens": 4096, "system": system,
+            payload = ["model": configuration.model, "max_tokens": 4096, "system": system, "stream": streaming,
                        "messages": [["role": "user", "content": scan.redacted]]]
         case .gemini:
             guard configuration.model.range(of: #"^[A-Za-z0-9._-]+$"#, options: .regularExpression) != nil else { throw ModelClientError.missingModel }
-            url = base.appendingPathComponent("models/\(configuration.model):generateContent")
+            url = base.appendingPathComponent("models/\(configuration.model):\(streaming ? "streamGenerateContent" : "generateContent")")
+            if streaming { url.append(queryItems: [URLQueryItem(name: "alt", value: "sse")]) }
             payload = ["systemInstruction": ["parts": [["text": system]]],
                        "contents": [["role": "user", "parts": [["text": scan.redacted]]]]]
         }
         var request = request(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if streaming { request.setValue("text/event-stream", forHTTPHeaderField: "Accept") }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         return request
     }
@@ -215,15 +261,40 @@ public struct ModelClient: Sendable {
         config.urlCredentialStorage = nil
         let session = URLSession(configuration: config, delegate: ModelRedirectGuard(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        let (stream, response) = try await session.bytes(for: request)
-        guard let http = response as? HTTPURLResponse else { throw ModelClientError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else { throw ModelClientError.http(http.statusCode) }
-        var data = Data()
-        for try await byte in stream {
-            try Task.checkCancellation()
-            guard data.count < 1_000_000 else { throw ModelClientError.tooLarge }
-            data.append(byte)
+        do {
+            let (stream, response) = try await session.bytes(for: request)
+            guard let http = response as? HTTPURLResponse else { throw ModelClientError.invalidResponse }
+            try Self.validateHTTP(http)
+            var data = Data()
+            for try await byte in stream {
+                try Task.checkCancellation()
+                guard data.count < 1_000_000 else { throw ModelClientError.tooLarge }
+                data.append(byte)
+            }
+            return data
+        } catch { throw Self.classify(error) }
+    }
+
+    static func validateHTTP(_ response: HTTPURLResponse) throws {
+        switch response.statusCode {
+        case 200..<300: return
+        case 401, 403: throw ModelClientError.unauthorized
+        case 429:
+            let seconds = response.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init).map { min(3600, max(1, $0)) }
+            throw ModelClientError.rateLimited(seconds)
+        case 500...599: throw ModelClientError.serviceUnavailable
+        default: throw ModelClientError.http(response.statusCode)
         }
-        return data
+    }
+
+    static func classify(_ error: any Error) -> any Error {
+        guard let network = error as? URLError else { return error }
+        switch network.code {
+        case .cancelled: return CancellationError()
+        case .timedOut: return ModelClientError.timedOut
+        case .notConnectedToInternet, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed:
+            return ModelClientError.offline
+        default: return error
+        }
     }
 }

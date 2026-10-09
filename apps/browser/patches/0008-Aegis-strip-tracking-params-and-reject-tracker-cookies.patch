@@ -1,4 +1,4 @@
-From f9aeb2e28129cc97933ea7cd42f9396543ca92ef Mon Sep 17 00:00:00 2001
+From 6297d46c8f87c4988bfea3d756159c6c35aa705e Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 05:01:50 +0800
 Subject: [PATCH] Aegis: strip tracking query params and reject tracker cookies
@@ -36,7 +36,7 @@ delete analytics/advertising cookies as they are written.
  create mode 100644 chrome/common/aegis/cookie_classify.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index e311e638e0..77140ce2db 100644
+index e311e638e0c44060adbf5459af9a9e18b6bd59b4..77140ce2db2b1d81867c70894590ae4569195d7c 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -9,6 +9,10 @@ source_set("aegis") {
@@ -63,7 +63,7 @@ index e311e638e0..77140ce2db 100644
  }
 diff --git a/chrome/browser/aegis/aegis_cookie_janitor.cc b/chrome/browser/aegis/aegis_cookie_janitor.cc
 new file mode 100644
-index 0000000000..ede6325bcd
+index 0000000000000000000000000000000000000000..ede6325bcd93942f48268498e9c54d85854abff4
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_cookie_janitor.cc
 @@ -0,0 +1,102 @@
@@ -171,7 +171,7 @@ index 0000000000..ede6325bcd
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_cookie_janitor.h b/chrome/browser/aegis/aegis_cookie_janitor.h
 new file mode 100644
-index 0000000000..ec4b06e272
+index 0000000000000000000000000000000000000000..ec4b06e272d26326ed909b07cce469deb0ee130c
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_cookie_janitor.h
 @@ -0,0 +1,46 @@
@@ -223,7 +223,7 @@ index 0000000000..ec4b06e272
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_COOKIE_JANITOR_H_
 diff --git a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
 new file mode 100644
-index 0000000000..a607440cd1
+index 0000000000000000000000000000000000000000..a607440cd1e9a20d0aff13cc285cf9c09cef4f8b
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc
 @@ -0,0 +1,104 @@
@@ -333,7 +333,7 @@ index 0000000000..a607440cd1
 +}  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h
 new file mode 100644
-index 0000000000..0723cfc1b7
+index 0000000000000000000000000000000000000000..0723cfc1b7f702ea3b4466f435c93ae898b6994a
 --- /dev/null
 +++ b/chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h
 @@ -0,0 +1,39 @@
@@ -377,7 +377,7 @@ index 0000000000..0723cfc1b7
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_LINK_SANITIZE_NAVIGATION_THROTTLE_H_
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
-index 308a3728fa..6fe365a89e 100644
+index 308a3728fad03b9a1dc58cc765104e430178d770..6fe365a89ec8c240d70497cfa834cb34e6da83f0 100644
 --- a/chrome/browser/aegis/aegis_prefs.cc
 +++ b/chrome/browser/aegis/aegis_prefs.cc
 @@ -21,6 +21,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
@@ -390,7 +390,7 @@ index 308a3728fa..6fe365a89e 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 5840fa9063..d86edc09dc 100644
+index 5840fa9063688dd2b5e00e0a9cb35af9cc1beb21..d86edc09dc757df261ef0833427ec8a6f7464b7a 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -7,6 +7,7 @@
@@ -475,7 +475,7 @@ index 5840fa9063..d86edc09dc 100644
    if (!filter_list_updater_) {
      std::move(done).Run(false);
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index ca83ce1882..bcc72edff8 100644
+index ca83ce18824cf67b3bceb7662628a0b13d7cadb1..bcc72edff8768622556baaa0b4ac179789b60f4f 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -20,6 +20,7 @@ class Profile;
@@ -516,10 +516,10 @@ index ca83ce1882..bcc72edff8 100644
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index bc16e524a1..d114a21947 100644
+index 9887304d76b3b9325e0561d86ed48c81c5d560b2..d138e14c70a10956a85eb5c573349feeebf5f982 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-@@ -21,6 +21,7 @@
+@@ -22,6 +22,7 @@
  #include "chrome/browser/interstitials/enterprise_util.h"
  #include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
  #include "chrome/browser/aegis/aegis_phish_navigation_throttle.h"
@@ -527,7 +527,7 @@ index bc16e524a1..d114a21947 100644
  #include "chrome/browser/omnibox/geolocation_navigation_throttle.h"
  #include "chrome/browser/plugins/pdf_iframe_navigation_throttle.h"
  #include "chrome/browser/policy/chrome_policy_blocklist_service_factory.h"
-@@ -409,6 +410,7 @@ void CreateAndAddChromeThrottlesForNavigation(
+@@ -411,6 +412,7 @@ void CreateAndAddChromeThrottlesForNavigation(
  
    LookalikeUrlNavigationThrottle::MaybeCreateAndAdd(registry);
    aegis::AegisPhishNavigationThrottle::MaybeCreateAndAdd(registry);
@@ -536,7 +536,7 @@ index bc16e524a1..d114a21947 100644
    PDFIFrameNavigationThrottle::MaybeCreateAndAdd(registry);
  
 diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
-index 22c97237fa..5456e1ca72 100644
+index 22c97237fa995eb0cb7383dd6ea7a30ed5e5d9c9..5456e1ca729f393c387d0cc47f6b924e37965fec 100644
 --- a/chrome/browser/resources/aegis/aegis.html
 +++ b/chrome/browser/resources/aegis/aegis.html
 @@ -22,6 +22,14 @@
@@ -555,7 +555,7 @@ index 22c97237fa..5456e1ca72 100644
        <section class="filters" aria-label="filter lists">
          <h2>$i18n{filterListTitle}</h2>
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 3303ca085d..2fc5492e0e 100644
+index 3303ca085df833c8da026dc9cd7c16f69de102b0..2fc5492e0e537f24ea5eccd8c84c6595a65aea93 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -13,6 +13,8 @@ interface AegisStatus {
@@ -604,7 +604,7 @@ index 3303ca085d..2fc5492e0e 100644
    actionButton('filter-update').addEventListener('click', () => {
      void (async () => {
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index 09c0c88e8e..9b612e6fb3 100644
+index 09c0c88e8e0b4adf0bf2f2126c9ddb5da698e597..9b612e6fb3953534abf96d9345b399de6b49e3c3 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -27,6 +27,8 @@ struct AegisStrings {
@@ -653,7 +653,7 @@ index 09c0c88e8e..9b612e6fb3 100644
  
    webui::SetupWebUIDataSource(source, kAegisResources, IDR_AEGIS_AEGIS_HTML);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
-index b45dd443e3..151d236858 100644
+index b45dd443e36a0bc197116c2e9fa06ca16fa1ed1e..151d2368585e62a23d8ed4eb43fc980f48b011f6 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
 @@ -41,6 +41,8 @@ base::DictValue AegisUIHandler::BuildStatus() const {
@@ -677,7 +677,7 @@ index b45dd443e3..151d236858 100644
  
    ResolveJavascriptCallback(callback_id, BuildStatus());
 diff --git a/chrome/common/aegis/BUILD.gn b/chrome/common/aegis/BUILD.gn
-index ed4c8aafb8..0378207497 100644
+index ed4c8aafb805908b923264d7005d702d289e3726..03782074974388487bfc7af540261cccc5831532 100644
 --- a/chrome/common/aegis/BUILD.gn
 +++ b/chrome/common/aegis/BUILD.gn
 @@ -15,6 +15,8 @@ source_set("aegis") {
@@ -691,7 +691,7 @@ index ed4c8aafb8..0378207497 100644
      "tracking_query_params.h",
 diff --git a/chrome/common/aegis/cookie_classify.cc b/chrome/common/aegis/cookie_classify.cc
 new file mode 100644
-index 0000000000..cebffddd25
+index 0000000000000000000000000000000000000000..cebffddd25b0ee1b123313c82e46e2f3b501bb73
 --- /dev/null
 +++ b/chrome/common/aegis/cookie_classify.cc
 @@ -0,0 +1,100 @@
@@ -797,7 +797,7 @@ index 0000000000..cebffddd25
 +}  // namespace aegis
 diff --git a/chrome/common/aegis/cookie_classify.h b/chrome/common/aegis/cookie_classify.h
 new file mode 100644
-index 0000000000..05d0aac23c
+index 0000000000000000000000000000000000000000..05d0aac23cef494add2ea6597dbe73c205bf5aab
 --- /dev/null
 +++ b/chrome/common/aegis/cookie_classify.h
 @@ -0,0 +1,33 @@
@@ -835,7 +835,7 @@ index 0000000000..05d0aac23c
 +
 +#endif  // CHROME_COMMON_AEGIS_COOKIE_CLASSIFY_H_
 diff --git a/chrome/common/aegis/features.cc b/chrome/common/aegis/features.cc
-index 5dbc31e768..461df7e4e6 100644
+index 5dbc31e768c541f03bf8dbc5d3394846cf7c25b1..461df7e4e6ab8920ac9a8a16c46e222c3b0d65d3 100644
 --- a/chrome/common/aegis/features.cc
 +++ b/chrome/common/aegis/features.cc
 @@ -11,5 +11,7 @@ BASE_FEATURE(kAegisTrackerBlocking, base::FEATURE_ENABLED_BY_DEFAULT);
@@ -847,7 +847,7 @@ index 5dbc31e768..461df7e4e6 100644
  
  }  // namespace aegis::features
 diff --git a/chrome/common/aegis/features.h b/chrome/common/aegis/features.h
-index f8cbe9a4e6..4e072516cc 100644
+index f8cbe9a4e66c8dadba781a18741dc1aa05dc344d..4e072516cc93ff55dcf7a6e677704b0db4b2f39b 100644
 --- a/chrome/common/aegis/features.h
 +++ b/chrome/common/aegis/features.h
 @@ -14,6 +14,8 @@ BASE_DECLARE_FEATURE(kAegisTrackerBlocking);
@@ -860,7 +860,7 @@ index f8cbe9a4e6..4e072516cc 100644
  }  // namespace aegis::features
  
 diff --git a/chrome/common/aegis/pref_names.h b/chrome/common/aegis/pref_names.h
-index c631daf621..b445aea546 100644
+index c631daf621b242286940170cf944de208126554f..b445aea5465493a473751a68be6f4be4fd7c9e58 100644
 --- a/chrome/common/aegis/pref_names.h
 +++ b/chrome/common/aegis/pref_names.h
 @@ -20,6 +20,8 @@ inline constexpr char kFilterListLastUpdated[] =
@@ -873,7 +873,7 @@ index c631daf621..b445aea546 100644
  }  // namespace aegis::prefs
  
 diff --git a/chrome/common/aegis/tracking_query_params.cc b/chrome/common/aegis/tracking_query_params.cc
-index 78b8eab877..47cdd59fec 100644
+index 78b8eab87765779cd56c539ffeb612733da6bca7..47cdd59feccb7b23f6c3cf036ea6cc2749fe576a 100644
 --- a/chrome/common/aegis/tracking_query_params.cc
 +++ b/chrome/common/aegis/tracking_query_params.cc
 @@ -3,13 +3,28 @@
@@ -961,7 +961,7 @@ index 78b8eab877..47cdd59fec 100644
 +
  }  // namespace aegis
 diff --git a/chrome/common/aegis/tracking_query_params.h b/chrome/common/aegis/tracking_query_params.h
-index ae66c7f38c..cd27c9ac0d 100644
+index ae66c7f38cb1057135bc794d9ce60b66a20fc031..cd27c9ac0d2462189b7da471ab0904ea6c8a6d76 100644
 --- a/chrome/common/aegis/tracking_query_params.h
 +++ b/chrome/common/aegis/tracking_query_params.h
 @@ -4,7 +4,11 @@

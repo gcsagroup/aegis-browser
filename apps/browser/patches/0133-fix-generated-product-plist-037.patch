@@ -1,4 +1,4 @@
-From 0098fd9568ecc07cef35915030acbe171a7ed066 Mon Sep 17 00:00:00 2001
+From 270aaf63ed2f9196a6319d288bba5f78d52aaa82 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 07:08:20 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BB=8E=E7=BB=9F=E4=B8=80=E4=BA=A7=E5=93=81?=
@@ -19,10 +19,10 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/tools/build/aegis_product_plist_test.py
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index c5d7469ead..4afe7dc5a7 100644
+index e0c798080f4bdae7aed228a725d6212db14ba8b7..c6ca74e3a81b332e578e7e3d1d73ba2162310103 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
-@@ -529,8 +529,26 @@ if (is_win) {
+@@ -508,8 +508,26 @@ if (is_win) {
      }
    }
  
@@ -51,7 +51,7 @@ index c5d7469ead..4afe7dc5a7 100644
        "--breakpad=0",
        "--scm=1",
 diff --git a/chrome/app/app-Info.plist b/chrome/app/app-Info.plist
-index 77fcd36f3a..b46a88ce58 100644
+index 77fcd36f3abec402d7adb0e02edc1ce26e5bc727..b46a88ce5805907aa1f327dce733620ed5b28b07 100644
 --- a/chrome/app/app-Info.plist
 +++ b/chrome/app/app-Info.plist
 @@ -2,11 +2,7 @@
@@ -68,7 +68,7 @@ index 77fcd36f3a..b46a88ce58 100644
  	<string>en</string>
  	<key>CFBundleDisplayName</key>
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index a60236d17b..f818303294 100644
+index a60236d17b01137ba9676df602ef2b146584e9bb..f818303294cdfc4346630e167ae0141547670a4c 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;
@@ -86,7 +86,7 @@ index a60236d17b..f818303294 100644
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/tools/build/aegis_product_plist.py b/chrome/tools/build/aegis_product_plist.py
 new file mode 100644
-index 0000000000..0e445c5231
+index 0000000000000000000000000000000000000000..0e445c5231c777570b8e75b713e671f9e6957fb8
 --- /dev/null
 +++ b/chrome/tools/build/aegis_product_plist.py
 @@ -0,0 +1,42 @@
@@ -134,7 +134,7 @@ index 0000000000..0e445c5231
 +    main()
 diff --git a/chrome/tools/build/aegis_product_plist_test.py b/chrome/tools/build/aegis_product_plist_test.py
 new file mode 100644
-index 0000000000..11b6d3c6a5
+index 0000000000000000000000000000000000000000..11b6d3c6a5ed6dc07acc1af9018f367937e89b07
 --- /dev/null
 +++ b/chrome/tools/build/aegis_product_plist_test.py
 @@ -0,0 +1,40 @@

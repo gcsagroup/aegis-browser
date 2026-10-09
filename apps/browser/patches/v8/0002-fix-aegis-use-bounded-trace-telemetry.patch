@@ -1,9 +1,8 @@
-From 87f5cfd0cc7a8de9d596de51b518c407de4b6fd8 Mon Sep 17 00:00:00 2001
+From a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
-Date: Sun, 20 Sep 2026 00:50:59 +0800
-Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D153.0.8010.53=E5=AE=89?=
- =?UTF-8?q?=E5=85=A8=E5=80=99=E9=80=89=EF=BC=9A0002-fix-aegis-use-bounded-?=
- =?UTF-8?q?trace-telemetry.patch?=
+Date: Wed, 7 Oct 2026 02:06:28 +0800
+Subject: [PATCH] =?UTF-8?q?=E9=80=82=E9=85=8D=20Chromium=20155=EF=BC=9A000?=
+ =?UTF-8?q?2-fix-aegis-use-bounded-trace-telemetry.patch?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
@@ -15,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 19 insertions(+), 9 deletions(-)
 
 diff --git a/src/interpreter/aegis-bytecode-shadow.cc b/src/interpreter/aegis-bytecode-shadow.cc
-index fd1933dccf8..5968a0e31be 100644
+index fd1933dccf8fd3aef36f2e9349bc01fdb9590bce..5968a0e31be8f3704c9ee8ba7f62063f5d3340ff 100644
 --- a/src/interpreter/aegis-bytecode-shadow.cc
 +++ b/src/interpreter/aegis-bytecode-shadow.cc
 @@ -6,14 +6,13 @@
@@ -66,7 +65,7 @@ index fd1933dccf8..5968a0e31be 100644
  
  }  // namespace interpreter
 diff --git a/src/interpreter/aegis-bytecode-shadow.h b/src/interpreter/aegis-bytecode-shadow.h
-index d42637ce3a9..103e690a65c 100644
+index d42637ce3a94129e4166a17db69daa4ead71df9b..103e690a65cf109bcf034e199a104f8a20b268d5 100644
 --- a/src/interpreter/aegis-bytecode-shadow.h
 +++ b/src/interpreter/aegis-bytecode-shadow.h
 @@ -32,8 +32,9 @@ AegisOpcodeSequenceSignature(base::Vector<const uint8_t> opcodes);
@@ -82,7 +81,7 @@ index d42637ce3a9..103e690a65c 100644
  
  }  // namespace interpreter
 diff --git a/src/tracing/trace-categories.h b/src/tracing/trace-categories.h
-index 26a89e56755..3730c228fee 100644
+index 26a89e5675537ac4b678e8592a8508d604bd1a68..3730c228feea94e79e42ce015ce98313700060b6 100644
 --- a/src/tracing/trace-categories.h
 +++ b/src/tracing/trace-categories.h
 @@ -34,6 +34,9 @@ PERFETTO_DEFINE_CATEGORIES_IN_NAMESPACE_WITH_ATTRS(
