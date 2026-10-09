@@ -31,7 +31,7 @@ struct BrowserSettingsView: View {
             Form {
                 Section("AI 助手") {
                     NavigationLink("模型服务") { ModelSettingsView() }
-                    Text("读取网页前会确认范围，发送给模型前会再次确认。私密浏览中不启用助手。")
+                    Text("读取网页前会确认范围，发送给模型前会再次确认。私密分析不自动保存任务或回答。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("隐私与保护") {
@@ -69,7 +69,7 @@ struct BrowserSettingsView: View {
 #if DEBUG
                     Text("开发测试版")
 #endif
-                    Text("工作区保存普通标签网址。私密浏览不会保存历史、工作区或助手任务。")
+                    Text("私密浏览不自动保存历史和会话。主动保存的收藏、工作区、下载和分析结果会继续保留。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if let message { Text(message).foregroundStyle(.secondary) }

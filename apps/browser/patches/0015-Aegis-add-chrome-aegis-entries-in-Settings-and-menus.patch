@@ -1,4 +1,4 @@
-From 29324b5301fe1e7ebb0537312b1c7609996cf2de Mon Sep 17 00:00:00 2001
+From b60ff25189d1806b8f458a4e07dae3c6687a130b Mon Sep 17 00:00:00 2001
 From: GCSA-aegis <aegis@gcsa.local>
 Date: Thu, 13 Aug 2026 17:34:58 +0800
 Subject: [PATCH] Aegis: add chrome://aegis entries in Settings and menus
@@ -19,7 +19,7 @@ macOS Chromium menu so users do not have to type the URL.
  10 files changed, 60 insertions(+)
 
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
-index 65b9ce9bc4..7d5c28b148 100644
+index 67f37eafaa58de562f7930cde137812301b086b3..cd916ee954a1d3d49cf6f5c3ad5ba9271ff359b9 100644
 --- a/chrome/app/chrome_command_ids.h
 +++ b/chrome/app/chrome_command_ids.h
 @@ -292,6 +292,7 @@
@@ -31,10 +31,10 @@ index 65b9ce9bc4..7d5c28b148 100644
  // Spell-check
  #define IDC_SPELLCHECK_SUGGESTION_0     41000
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index 63c989a76d..1ac2c48ec8 100644
+index caae29834c2cf5fd07bbfb05dc1f98be09e34470..fd33e2d45112ae63250867128773f95765906632 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
-@@ -1354,6 +1354,15 @@
+@@ -1376,6 +1376,15 @@
      </message>
  
      <!-- Privacy Page -->
@@ -51,7 +51,7 @@ index 63c989a76d..1ac2c48ec8 100644
        Privacy and security
      </message>
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
-index e7b77860d8..fb9ddc575b 100644
+index 4d5030096f13459107589eb49bab52e37a1c3dda..591870805ef317288dd05f65d0ce3e4a47337bf8 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
 @@ -1,5 +1,11 @@
@@ -64,7 +64,7 @@ index e7b77860d8..fb9ddc575b 100644
 +        on-click="onAegisSettingsClick_"
 +        external></cr-link-row>
      <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
-       <settings-clear-browsing-data-dialog prefs="{{prefs}}"
+       <settings-clear-browsing-data-dialog
            on-close="onCbdDialogClosed_"
 @@ -12,6 +18,7 @@
        </settings-privacy-guide-dialog>
@@ -75,7 +75,7 @@ index e7b77860d8..fb9ddc575b 100644
          label="$i18n{clearBrowsingData}"
          sub-label="$i18n{clearBrowsingDataDescription}"
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.ts b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
-index 22c524fdba..3b47dae0e2 100644
+index c1fb233a132181d8a5f75228264c8e44dd1e34ea..08f191188e266d673ea56286e775c00d21aaa2a8 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.ts
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
 @@ -24,6 +24,7 @@ import type {CrToastElement} from 'chrome://resources/cr_elements/cr_toast/cr_to
@@ -85,8 +85,8 @@ index 22c524fdba..3b47dae0e2 100644
 +import {OpenWindowProxyImpl} from 'chrome://resources/js/open_window_proxy.js';
  import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
  
- import type {MetricsBrowserProxy} from '../metrics_browser_proxy.js';
-@@ -102,6 +103,11 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
+ import {loadTimeData} from '../i18n_setup.js';
+@@ -124,6 +125,11 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
      Router.getInstance().navigateTo(routes.CLEAR_BROWSER_DATA);
    }
  
@@ -99,10 +99,10 @@ index 22c524fdba..3b47dae0e2 100644
      this.interactedWithPage_();
  
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 3f62ffd338..206c641112 100644
+index 3741ba7671d225e307800a48c23c4c4bd1fd121c..a3167649881e1fe5a3d43be1f37c7b597f082b24 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1284,6 +1284,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1291,6 +1291,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
      case IDC_OPTIONS:
        ShowSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
@@ -112,7 +112,7 @@ index 3f62ffd338..206c641112 100644
      case IDC_EDIT_SEARCH_ENGINES:
        ShowSearchEngineSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
-@@ -2080,6 +2083,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+@@ -2084,6 +2087,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
                                          !forced_incognito && !is_guest);
    command_updater->UpdateCommandEnabled(IDC_OPTIONS,
                                          !forced_incognito || is_guest);
@@ -121,7 +121,7 @@ index 3f62ffd338..206c641112 100644
    command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
                                          !forced_incognito && !is_guest);
  }
-@@ -2414,6 +2419,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+@@ -2404,6 +2409,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
    command_updater_->UpdateCommandEnabled(IDC_EDIT_SEARCH_ENGINES, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
@@ -130,10 +130,10 @@ index 3f62ffd338..206c641112 100644
    command_updater_->UpdateCommandEnabled(IDC_CHROME_TIPS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_CHROME_WHATS_NEW, show_main_ui);
 diff --git a/chrome/browser/ui/chrome_pages.cc b/chrome/browser/ui/chrome_pages.cc
-index b1897340ac..d5a4d2961a 100644
+index 7d078c2241af9d14827e6b5d59967702508d676b..6644e985b4b304085071beefb6fc83b2e39bf6a6 100644
 --- a/chrome/browser/ui/chrome_pages.cc
 +++ b/chrome/browser/ui/chrome_pages.cc
-@@ -466,6 +466,11 @@ void ShowSettings(BrowserWindowInterface* browser) {
+@@ -467,6 +467,11 @@ void ShowSettings(BrowserWindowInterface* browser) {
    ShowSettingsSubPage(browser, std::string());
  }
  
@@ -146,7 +146,7 @@ index b1897340ac..d5a4d2961a 100644
                           std::string_view sub_page) {
  #if BUILDFLAG(IS_CHROMEOS)
 diff --git a/chrome/browser/ui/chrome_pages.h b/chrome/browser/ui/chrome_pages.h
-index e736f58a09..d10b796b77 100644
+index e736f58a09a0181a9e23732aa2ab02487fad0e5f..d10b796b77ec13210903a999110e02f91731e819 100644
 --- a/chrome/browser/ui/chrome_pages.h
 +++ b/chrome/browser/ui/chrome_pages.h
 @@ -105,6 +105,7 @@ bool IsTrustedPopupWindowWithScheme(const BrowserWindowInterface* browser,
@@ -158,10 +158,10 @@ index e736f58a09..d10b796b77 100644
                           std::string_view sub_page);
  void ShowSettingsSubPageForProfile(Profile* profile, std::string_view sub_page);
 diff --git a/chrome/browser/ui/cocoa/main_menu_builder.mm b/chrome/browser/ui/cocoa/main_menu_builder.mm
-index 1d8c774ed5..cf0e4fafa4 100644
+index 4a178fc76a14d7fe6550ef2332dd610648ce3d93..e761467da1e6332595d970f6654dc519985b8611 100644
 --- a/chrome/browser/ui/cocoa/main_menu_builder.mm
 +++ b/chrome/browser/ui/cocoa/main_menu_builder.mm
-@@ -75,6 +75,9 @@ NSMenuItem* BuildAppMenu(NSApplication* nsapp,
+@@ -78,6 +78,9 @@ NSMenuItem* BuildAppMenu(NSApplication* nsapp,
                    .target(app_delegate)
                    .action(@selector(showPreferences:))
                    .remove_if(is_pwa),
@@ -172,10 +172,10 @@ index 1d8c774ed5..cf0e4fafa4 100644
                    .command_id(IDC_WEB_APP_SETTINGS)
                    .remove_if(!is_pwa),
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index 7c3624d660..d1d1bfe235 100644
+index f8f6a64f35600ba2a3805ca0fef1291dff8871cf..ccf31ed6e5a9cdc0a9e9eee64b509aec618ee0bf 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2471,6 +2471,9 @@ void AppMenuModel::Build() {
+@@ -2332,6 +2332,9 @@ void AppMenuModel::Build() {
    AddItemWithStringIdAndVectorIcon(
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
@@ -186,10 +186,10 @@ index 7c3624d660..d1d1bfe235 100644
    if (browser_defaults::kShowExitMenuItem) {
      AddItemWithStringIdAndVectorIcon(
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 4a53cfbc0e..d4053dafe6 100644
+index 774e32188161b70bd96fddd794c652cd7c1067e9..39cfcded4ad914e7a403e15dc8ba0e06aaaefde8 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -2800,6 +2800,25 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+@@ -2852,6 +2852,25 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
         IDS_SETTINGS_SECURITY_JAVASCRIPT_GUARDRAILS_MANAGE_SITE_EXCEPTIONS_DESCRIPTION}};
    html_source->AddLocalizedStrings(kLocalizedStrings);
  

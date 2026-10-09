@@ -1,4 +1,4 @@
-From ea4dab980b58021ecdbf173b206ee54e641ce273 Mon Sep 17 00:00:00 2001
+From fc2657f8ba43ef03dc10bd9297d642d8a2886289 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Fri, 4 Sep 2026 19:18:26 +0800
 Subject: [PATCH] test(agent): clear profile pointer before teardown
@@ -8,7 +8,7 @@ Subject: [PATCH] test(agent): clear profile pointer before teardown
  1 file changed, 2 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
-index 62f3143673..54b0a614d7 100644
+index 62f314367303f846e2a7620f9023dc85ed70a86f..54b0a614d71628f1ce1db23fb4a2b15bf65b256b 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_unittest.cc
 @@ -147,6 +147,8 @@ class AegisAgentServiceTest : public testing::Test {

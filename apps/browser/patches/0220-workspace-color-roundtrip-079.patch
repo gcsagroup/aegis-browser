@@ -1,4 +1,4 @@
-From 6aa2ecff97c57b0ecff893c8de0fa0dc2bed0606 Mon Sep 17 00:00:00 2001
+From 77620f5f838152ee90dd982150e1ea3dd6cf72ce Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 04:02:52 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=B7=A5=E4=BD=9C=E5=8C=BA?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 59 insertions(+), 20 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
-index d5925a93ec..0f4d3bef83 100644
+index d5925a93ec7fb0e87a6204fdb44acd9b68566d82..0f4d3bef8374acd40f820ab3bb1727a914ae82ae 100644
 --- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 +++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
 @@ -39,7 +39,9 @@ class WorkspaceTestWindow : public TestBrowserWindow {
@@ -78,7 +78,7 @@ index d5925a93ec..0f4d3bef83 100644
    AegisUIConfig config;
    EXPECT_TRUE(config.IsWebUIEnabled(profile()));
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index e3eba80b82..adb899901b 100644
+index e3eba80b82544f5f214d3e3e73c5d1052f281c2b..adb899901b404a750423dd2fd91562421ebfbb8b 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -480,32 +480,59 @@ std::string TabRevision(Profile* profile, const AgentTask& task) {
@@ -163,7 +163,7 @@ index e3eba80b82..adb899901b 100644
        }
        tabs.Append(std::move(value));
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 28c21890cb..d855121a2e 100644
+index 28c21890cba433729e67c1490ed4e1aa3d5423f9..d855121a2e2d1d069a5f4021bef947ed240f4264 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

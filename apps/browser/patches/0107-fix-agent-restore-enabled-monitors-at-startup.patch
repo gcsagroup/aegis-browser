@@ -1,4 +1,4 @@
-From ccd16d104252119b81fbf0337d7d213c826ebe9a Mon Sep 17 00:00:00 2001
+From ecb9e73fc612eead70a3fcda7ecc4fc07e09723f Mon Sep 17 00:00:00 2001
 From: Aegis local development <aegis-local@invalid>
 Date: Tue, 8 Sep 2026 05:05:00 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=B7=B2=E5=90=AF=E7=94=A8?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 18 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_factory.cc b/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
-index a1b39d48bf..94cd00e8f6 100644
+index a1b39d48bf123f1c35d243917a6d013ff12e6dfe..94cd00e8f614220223dccd1cfbb31615e924198c 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_factory.cc
 @@ -21,6 +21,18 @@ AegisAgentServiceFactory* AegisAgentServiceFactory::GetInstance() {
@@ -39,7 +39,7 @@ index a1b39d48bf..94cd00e8f6 100644
  AegisAgentService* AegisAgentServiceFactory::GetForProfile(Profile* profile) {
    if (!profile) {
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service_factory.h b/chrome/browser/aegis/agent/aegis_agent_service_factory.h
-index 3ee9e06d11..766b206aa7 100644
+index 3ee9e06d11164ae8123b92176f32cf4c1b883641..766b206aa7ef4c613750a94a95b9d067002911cf 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service_factory.h
 +++ b/chrome/browser/aegis/agent/aegis_agent_service_factory.h
 @@ -20,6 +20,8 @@ class AegisAgentServiceFactory : public ProfileKeyedServiceFactory {
@@ -52,10 +52,10 @@ index 3ee9e06d11..766b206aa7 100644
    static AegisAgentService* GetForProfileIfExists(Profile* profile);
  
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 02be1bd696..d7fbc9b3e5 100644
+index 7dea82967848d32503025c4a6886715a0964a3d1..8997cd4259c7d3583c90ecf604f3e29d67eb3cb0 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
-@@ -33,6 +33,7 @@
+@@ -31,6 +31,7 @@
  #include "build/build_config.h"
  #include "chrome/browser/active_use_util.h"
  #include "chrome/browser/aegis/aegis_service_factory.h"
@@ -63,7 +63,7 @@ index 02be1bd696..d7fbc9b3e5 100644
  #include "chrome/browser/after_startup_task_utils.h"
  #include "chrome/browser/browser_features.h"
  #include "chrome/browser/browser_process.h"
-@@ -1604,6 +1605,9 @@ void ChromeBrowserMainParts::PostProfileInit(Profile* profile,
+@@ -1635,6 +1636,9 @@ void ChromeBrowserMainParts::PostProfileInit(Profile* profile,
    // renderer request would leave newly loaded Profiles temporarily unguarded.
    aegis::AegisServiceFactory::EnsureIncognitoGuardForProfile(profile);
  

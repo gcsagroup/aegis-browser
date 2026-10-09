@@ -1,8 +1,12 @@
-From a911bafbc0fc34a8453cf17f935349eca4cef115 Mon Sep 17 00:00:00 2001
-From: Aegis integration <aegis-integration@users.noreply.github.com>
-Date: Thu, 8 Oct 2026 20:40:23 +0800
-Subject: [PATCH] Fix PR203 review regressions in task receipts and research
- identity
+From f1807f28885644ba9cbd96fe035bb3246f04cb95 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Fri, 9 Oct 2026 04:07:44 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E5=B0=86=20Quinn=20Agent=20=E4=BF=AE?=
+ =?UTF-8?q?=E5=A4=8D=E6=95=B4=E5=90=88=E5=88=B0=20Chromium=20155=EF=BC=8C?=
+ =?UTF-8?q?=E5=80=99=E9=80=89=20142?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 ---
  .../aegis/agent/aegis_agent_browsertest.cc    | 119 +++++++++++++++
@@ -15,13 +19,14 @@ Subject: [PATCH] Fix PR203 review regressions in task receipts and research
  chrome/browser/aegis/agent/agent_research.cc  |  57 +++++--
  .../aegis/agent/agent_research_unittest.cc    |  82 +++++++++--
  .../aegis_agent/aegis_agent_page_handler.cc   |  15 +-
- 10 files changed, 628 insertions(+), 51 deletions(-)
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ 11 files changed, 630 insertions(+), 53 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 2b92e7dc9a37ae2b983f61c683963260d83e5f38..b4dccc6fc71eb82b0650c7b248bcacb660cdc0de 100644
+index e30ced6e3f6fd6f429c63145f288de49a3a96dc5..89db493b010ce7f9d1f1fe9736778d3e40e44558 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-@@ -5804,5 +5804,124 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
+@@ -5844,5 +5844,124 @@ IN_PROC_BROWSER_TEST_F(AegisPrivacyProtectionBrowserTest,
                                      "checking page text")));
  }
  
@@ -1157,6 +1162,18 @@ index 7f090de05aa1f1583d8139a75806f887c42f6a55..980d33eabb5d959220bf71b03ce6e3ef
    std::move(callback).Run(BuildSnapshot());
  }
  
--- 
-2.54.0 (Apple Git-157)
-
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 97feebf5d76d82bf75f4a5570e77e6d0618749b4..360fa87e5dd834e37999c0a199f581734185898b 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.2.0.141";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.2 (141)";
++inline constexpr char kProductVersion[] = "2.2.0.142";
++inline constexpr char kProductVersionLabel[] = "Ver 2.2 (142)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

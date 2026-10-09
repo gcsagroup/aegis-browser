@@ -1,4 +1,4 @@
-From ef4cebfc476695f47e5346def0fe1f12193010cc Mon Sep 17 00:00:00 2001
+From b455f6249c59ebba4c880d1d9ec46ac59ce17356 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Wed, 2 Sep 2026 17:24:21 +0800
 Subject: [PATCH] fix(aegis): validate model plan ordering
@@ -9,7 +9,7 @@ Subject: [PATCH] fix(aegis): validate model plan ordering
  2 files changed, 112 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 133c54032c..fd62d25837 100644
+index 133c54032c31f2ffb198d07849aafacf19255be8..fd62d25837f0ea90ed38f05da6434805259fc08b 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -500,6 +500,27 @@ std::optional<std::string> BuildAgentPlanningPrompt(
@@ -89,7 +89,7 @@ index 133c54032c..fd62d25837 100644
      *error = "browser could not bind the plan to its approved scope";
      return std::nullopt;
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 924c523f01..f82cfc1870 100644
+index 924c523f016852af95ba5ee1b21cc845a4623b10..f82cfc187055fcd84015d2d40d12ad92132d3863 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -263,6 +263,52 @@ TEST(AegisAgentPlannerTest, RejectsModelDeclaredRiskOrUnapprovedStep) {

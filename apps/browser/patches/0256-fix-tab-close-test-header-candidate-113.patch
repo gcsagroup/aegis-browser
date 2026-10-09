@@ -1,0 +1,45 @@
+From f64b3c86e7d5951eb71efe0369ef3341688c0a55 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 17:42:24 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E6=98=8E=E7=A1=AE=E5=BC=95=E5=85=A5?=
+ =?UTF-8?q?=E6=A0=87=E7=AD=BE=E5=85=B3=E9=97=AD=E6=9E=9A=E4=B8=BE=E5=B9=B6?=
+ =?UTF-8?q?=E9=80=92=E5=A2=9E=E5=80=99=E9=80=89113?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../access/access_proxying_url_loader_factory_browsertest.cc  | 1 +
+ chrome/browser/ui/webui/help/aegis_github_update.h            | 4 ++--
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 13ced5abf1bafe08d9a14edfcd95c2018847ba1c..8612ef233fca03edf1f2d4a48df3bf3601bc604e 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -41,6 +41,7 @@
+ #include "chrome/browser/profiles/profile_manager.h"
+ #include "chrome/browser/profiles/profile_test_util.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "chrome/browser/ui/tabs/tab_enums.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7e0a78863146bdc663732608f0edb045c63c1e82..0e6a1022c65cbfed3ecd7493b47d417daec05863 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.112";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (112)";
++inline constexpr char kProductVersion[] = "2.1.0.113";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (113)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

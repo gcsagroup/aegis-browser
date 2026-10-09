@@ -1,4 +1,4 @@
-From b4f5f0df2e0181b5ac0e1449607e67283c1ef35c Mon Sep 17 00:00:00 2001
+From eeee2e823b85ca63f7ad3180b7b1a09186783f6a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 15:42:52 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
@@ -25,7 +25,7 @@ Content-Transfer-Encoding: 8bit
  13 files changed, 157 insertions(+), 31 deletions(-)
 
 diff --git a/chrome/browser/aegis/aegis_service.cc b/chrome/browser/aegis/aegis_service.cc
-index 36f242ed25..4a4be8518a 100644
+index 36f242ed25ad17304e75e48c272f7b349024deb0..4a4be8518a15e36ed05f71aca637586e6f1a57b2 100644
 --- a/chrome/browser/aegis/aegis_service.cc
 +++ b/chrome/browser/aegis/aegis_service.cc
 @@ -882,7 +882,10 @@ PagePrivacySummary AegisService::GetPageSummary(
@@ -41,7 +41,7 @@ index 36f242ed25..4a4be8518a 100644
      if (event.kind == "miner") {
        summary.miner_alerts += event.count;
 diff --git a/chrome/browser/aegis/aegis_service.h b/chrome/browser/aegis/aegis_service.h
-index f8af292326..4d470fa588 100644
+index f8af292326c4686528c174b12d08d97d4c666138..4d470fa5887fdd0e4342609927feff6089986acf 100644
 --- a/chrome/browser/aegis/aegis_service.h
 +++ b/chrome/browser/aegis/aegis_service.h
 @@ -86,6 +86,9 @@ struct PagePrivacySummary {
@@ -55,7 +55,7 @@ index f8af292326..4d470fa588 100644
  
  class AegisServiceObserver : public base::CheckedObserver {
 diff --git a/chrome/browser/aegis/aegis_service_unittest.cc b/chrome/browser/aegis/aegis_service_unittest.cc
-index bae516a800..6f7207f354 100644
+index bae516a8007b606283e0150624599c21333804fc..6f7207f354c985f746c944759ce4dabdf3eb93ea 100644
 --- a/chrome/browser/aegis/aegis_service_unittest.cc
 +++ b/chrome/browser/aegis/aegis_service_unittest.cc
 @@ -95,6 +95,31 @@ class CountingAegisServiceObserver : public AegisServiceObserver {
@@ -91,7 +91,7 @@ index bae516a800..6f7207f354 100644
         NewProfileDefaultsToOpenAIWithoutMigration) {
    AegisService* service = this->service();
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 0573cde538..c9dc993ce1 100644
+index 0573cde538116f174fd764de87e1f4f668cffc14..c9dc993ce10f45b7010ad92ad672df78c84d03ca 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -1238,7 +1238,16 @@ bool AgentCompletionHasRequiredPageEvidence(
@@ -113,7 +113,7 @@ index 0573cde538..c9dc993ce1 100644
    };
    if (!scope.selected_pages_research) {
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 439a5b222e..351befa8cf 100644
+index 439a5b222eb85e1e3722393129b8acffccb07d3f..351befa8cf85a7a64499b1743e603d5f1bfcb1a2 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -1513,6 +1513,11 @@ TEST(AegisAgentExecutionTest, ResearchNeedsEverySelectedTabWithActualContent) {
@@ -129,7 +129,7 @@ index 439a5b222e..351befa8cf 100644
    EXPECT_FALSE(
        AgentCompletionHasRequiredPageEvidence("compare", scope, evidence));
 diff --git a/chrome/browser/aegis/agent/agent_research.cc b/chrome/browser/aegis/agent/agent_research.cc
-index 810944d23a..453f737c3c 100644
+index 810944d23a03df5ca82f1ef1e9d44d57d5be68b2..453f737c3c89df51694b2b4b96a374d2086293bc 100644
 --- a/chrome/browser/aegis/agent/agent_research.cc
 +++ b/chrome/browser/aegis/agent/agent_research.cc
 @@ -39,7 +39,7 @@ std::optional<std::string> AgentResearchContentHash(
@@ -142,7 +142,7 @@ index 810944d23a..453f737c3c 100644
        content += normalized;
        content += '\n';
 diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
-index 729c62990e..6914910189 100644
+index 729c62990e9441d9683f475bab5e8fbe105ec491..691491018933f674010793fc0dd3120240c98544 100644
 --- a/chrome/browser/aegis/agent/agent_research_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
 @@ -29,6 +29,9 @@ std::optional<base::DictValue> Record(bool partial = false) {
@@ -156,7 +156,7 @@ index 729c62990e..6914910189 100644
    std::vector<AgentExecutionEvidence> evidence;
    for (int id : scope.allowed_tab_ids) {
 diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
-index c5d6522e46..ec77a874d8 100644
+index c5d6522e46e00b046449f0da41068674eb6b317c..ec77a874d81a094c1f048e58ada51507ea20f5cf 100644
 --- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 @@ -449,6 +449,39 @@ TEST(AegisAgentTaskStoreTest, MigratesVersionSixWithoutInventingBaseline) {
@@ -200,7 +200,7 @@ index c5d6522e46..ec77a874d8 100644
    base::ScopedTempDir temp_dir;
    ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
 diff --git a/chrome/browser/aegis/privacy_event_store_unittest.cc b/chrome/browser/aegis/privacy_event_store_unittest.cc
-index cf5b441dcf..ad87bc4b92 100644
+index cf5b441dcf2357f9f342c91a7873bd4b5f78e38d..ad87bc4b92c49ab945a45d35b0f876ea6045bcd3 100644
 --- a/chrome/browser/aegis/privacy_event_store_unittest.cc
 +++ b/chrome/browser/aegis/privacy_event_store_unittest.cc
 @@ -54,6 +54,21 @@ TEST(PrivacyEventStoreTest, FiltersDocumentAndSiteScopedEvents) {
@@ -226,7 +226,7 @@ index cf5b441dcf..ad87bc4b92 100644
    PrivacyEventStore store;
    for (size_t i = 0; i < PrivacyEventStore::kMaxEventsPerDocument + 5; ++i) {
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index 5f795ce5a5..b93a7b8164 100644
+index 5f795ce5a5e98f3d67a4db4a70ebb7a3e9272e83..b93a7b81642d87286cb486a30c74822f9752fce3 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -1196,8 +1196,8 @@ async function probeFingerprint() {
@@ -274,7 +274,7 @@ index 5f795ce5a5..b93a7b8164 100644
      result.textContent = lines.filter(Boolean).join('\n');
    } catch (err) {
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-index 7fb8ff71cb..8980d063f5 100644
+index 7fb8ff71cbcbdd533c3c845bd0a8500b171ce322..8980d063f5bd63351ad174b8fd26638897718d8e 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 @@ -101,7 +101,8 @@ std::u16string EventKind(const std::string& kind) {
@@ -340,7 +340,7 @@ index 7fb8ff71cb..8980d063f5 100644
                   u"Aegis：防護正常");
    SetTooltipText(status);
 diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
-index ee9c74ddb0..85780a4d97 100644
+index ee9c74ddb0ad33b72b8623d416463546809fcd1f..85780a4d9760114498b2e30a8141eb306843066d 100644
 --- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
 +++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
 @@ -137,8 +137,9 @@ AegisStrings StringsForLocale(const std::string& locale) {
@@ -381,7 +381,7 @@ index ee9c74ddb0..85780a4d97 100644
        .fingerprint_probe = "Probe this page fingerprints",
        .miner_guard_label = "Mining script detection (observe-only)",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 2a5a890cfe..296b849bd0 100644
+index 2a5a890cfef6b9784a74b237c7b91fa951e810e9..296b849bd0905b048771bfe8b03c8212e80d32f1 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

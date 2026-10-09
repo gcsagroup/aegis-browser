@@ -1,0 +1,1087 @@
+From de1f240c8a1202bb0842cb2fb5df598efe3f84f7 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 15:22:40 +0800
+Subject: [PATCH] =?UTF-8?q?=E6=B7=BB=E5=8A=A0=20Android=20=E6=AD=A3?=
+ =?UTF-8?q?=E5=BC=8F=E5=8F=91=E8=A1=8C=E6=9B=B4=E6=96=B0=E5=85=A5=E5=8F=A3?=
+ =?UTF-8?q?=E3=80=81=E6=96=87=E4=BB=B6=E4=B8=8E=E5=90=8C=E7=AD=BE=E5=90=8D?=
+ =?UTF-8?q?=E5=8D=87=E7=BA=A7=E6=A0=A1=E9=AA=8C=EF=BC=8C=E9=A2=84=E7=95=99?=
+ =?UTF-8?q?=20Ver=202.1=20(110)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/android/chrome_java_sources.gni        |   3 +
+ .../java/res_template/xml/file_paths.xml      |   2 +
+ .../about_settings/AboutChromeSettings.java   |  23 +-
+ .../about_settings/AegisAndroidUpdate.java    | 189 +++++++++++
+ .../about_settings/AegisUpdatePolicy.java     | 234 ++++++++++++++
+ .../about_settings/AegisUpdatePreference.java | 208 ++++++++++++
+ chrome/android/junit/BUILD.gn                 |   1 +
+ .../about_settings/AegisUpdatePolicyTest.java | 298 ++++++++++++++++++
+ .../ui/webui/help/aegis_github_update.h       |   4 +-
+ 9 files changed, 958 insertions(+), 4 deletions(-)
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicy.java
+ create mode 100644 chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePreference.java
+ create mode 100644 chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java
+
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+index 96db91636b228a1926924669ea8d6b9e8d95bf9c..c6b1a869caa88485b01f44d8bbb1546d38d23835 100644
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -59,6 +59,9 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/about_settings/AboutChromePreferenceOSVersion.java",
+   "java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java",
+   "java/src/org/chromium/chrome/browser/about_settings/AboutSettingsBridge.java",
++  "java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java",
++  "java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicy.java",
++  "java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePreference.java",
+   "java/src/org/chromium/chrome/browser/about_settings/HyperlinkPreference.java",
+   "java/src/org/chromium/chrome/browser/about_settings/LegalInformationSettings.java",
+   "java/src/org/chromium/chrome/browser/about_settings/LongClickCopySummaryPreference.java",
+diff --git a/chrome/android/java/res_template/xml/file_paths.xml b/chrome/android/java/res_template/xml/file_paths.xml
+index 0eb99298ead76d13092a7388c9e8aae815e1e000..ee371e6b7a66b0b972a876b2eff0c0280b3b8eb7 100644
+--- a/chrome/android/java/res_template/xml/file_paths.xml
++++ b/chrome/android/java/res_template/xml/file_paths.xml
+@@ -14,6 +14,8 @@ found in the LICENSE file.
+     <cache-path name="passwords" path="passwords/"/>
+     <cache-path name="pdfs" path="pdfs/"/>
+     <cache-path name="traces" path="traces/"/>
++    <!-- 只向系统安装器开放已校验的更新包目录。 -->
++    <cache-path name="aegis-updates" path="aegis-updates/" />
+     <cache-path name="webapk" path="webapks/" />
+     <cache-path name="offline-cache" path="Offline Pages/archives/" />
+ 
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
+index 2c93e793f3e1fbf967029d21c9da6a2f7318bbc8..65f6b6a56ccf62dab6b3846a2d1dc4aa6fc1d3b5 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java
+@@ -60,6 +60,7 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
+     private int mDeveloperHitCountdown =
+             DeveloperSettings.shouldShowDeveloperSettings() ? -1 : TAPS_FOR_DEVELOPER_SETTINGS;
+     private @Nullable Toast mToast;
++    private @Nullable AegisUpdatePreference mAegisUpdate;
+     private final SettableMonotonicObservableSupplier<String> mPageTitle =
+             ObservableSuppliers.createMonotonic();
+ 
+@@ -82,6 +83,17 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
+         calendar.setTimeInMillis(System.currentTimeMillis());
+         int currentYear = calendar.get(Calendar.YEAR);
+         p.setSummary(getString(R.string.legal_information_summary, currentYear));
++
++        Preference update = new Preference(requireContext());
++        update.setOrder(1);
++        mAegisUpdate = new AegisUpdatePreference(requireActivity(), update, this::isResumed);
++        assumeNonNull(getPreferenceScreen()).addPreference(update);
++    }
++
++    @Override
++    public void onDestroy() {
++        if (mAegisUpdate != null) mAegisUpdate.close();
++        super.onDestroy();
+     }
+ 
+     @Override
+@@ -95,9 +107,16 @@ public class AboutChromeSettings extends ChromeBaseSettingsFragment
+      */
+     public static String getApplicationVersion(Context context, String version) {
+         try {
+-            PackageInfo product = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
++            PackageInfo product =
++                    context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+             if (product.versionName != null) {
+-                version = product.versionName + " · Chromium " + VersionInfo.getProductVersion();
++                String label = product.versionName;
++                try {
++                    label = AegisUpdatePolicy.displayLabel(label);
++                } catch (AegisUpdatePolicy.Failure ignored) {
++                    // 旧包使用其他显示格式时仍展示原始版本；更新检查继续严格校验。
++                }
++                version = label + " · Chromium " + VersionInfo.getProductVersion();
+             }
+         } catch (NameNotFoundException ignored) {
+             // 保留原内核信息，避免关于页因包信息异常崩溃。
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..de7c941ee1a056df210cad6a1a5b4cada2121fa0
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
+@@ -0,0 +1,189 @@
++// Copyright 2026 The GCSA Aegis Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.about_settings;
++
++import android.content.Context;
++import android.content.pm.PackageInfo;
++import android.content.pm.PackageManager;
++import android.content.pm.Signature;
++import android.os.Build;
++
++import org.json.JSONArray;
++import org.json.JSONObject;
++
++import org.chromium.build.annotations.NullMarked;
++
++import java.io.ByteArrayOutputStream;
++import java.io.File;
++import java.io.FileOutputStream;
++import java.io.IOException;
++import java.io.InputStream;
++import java.net.URI;
++import java.net.URL;
++import java.nio.charset.StandardCharsets;
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Objects;
++import java.util.Optional;
++import java.util.Set;
++
++import javax.net.ssl.HttpsURLConnection;
++
++/** 显式检查与下载；调用者负责后台线程及系统安装确认，不自动安装。 */
++@NullMarked
++final class AegisAndroidUpdate {
++    private static final String API =
++            "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
++    private static final int SIGNATURE_FLAGS = PackageManager.GET_SIGNING_CERTIFICATES;
++
++    static Optional<AegisUpdatePolicy.Update> check(Context context) throws Exception {
++        AegisUpdatePolicy.require(
++                Arrays.asList(Build.SUPPORTED_ABIS).contains("arm64-v8a"),
++                "此更新入口仅支持 Android ARM64");
++        PackageInfo installed = installed(context);
++        AegisUpdatePolicy.require(installed.versionName != null, "当前产品版本缺失");
++        String current = AegisUpdatePolicy.fromLabel(Objects.requireNonNull(installed.versionName));
++        HttpsURLConnection connection = connect(URI.create(API).toURL());
++        try {
++            int status = connection.getResponseCode();
++            if (status == 404) throw new AegisUpdatePolicy.Failure("暂无可用的正式版更新");
++            if (status != 200) throw new IOException("更新服务暂不可用，请稍后重试");
++            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
++            try (InputStream input = connection.getInputStream()) {
++                AegisUpdatePolicy.copyBounded(
++                        input, bytes, 1024 * 1024, System.nanoTime() + 30_000_000_000L);
++            }
++            JSONObject release = new JSONObject(bytes.toString(StandardCharsets.UTF_8.name()));
++            JSONArray rows = release.getJSONArray("assets");
++            List<AegisUpdatePolicy.Asset> assets = new ArrayList<>();
++            for (int i = 0; i < rows.length(); i++) {
++                JSONObject row = rows.getJSONObject(i);
++                assets.add(
++                        new AegisUpdatePolicy.Asset(
++                                row.getString("name"),
++                                row.getString("browser_download_url"),
++                                row.optString("digest", ""),
++                                row.getLong("size"),
++                                "uploaded".equals(row.getString("state"))));
++            }
++            return AegisUpdatePolicy.select(
++                    current,
++                    release.getString("tag_name"),
++                    release.getString("html_url"),
++                    release.getBoolean("draft"),
++                    release.getBoolean("prerelease"),
++                    assets);
++        } finally {
++            connection.disconnect();
++        }
++    }
++
++    static File download(Context context, AegisUpdatePolicy.Update update) throws Exception {
++        File directory = new File(context.getCacheDir(), "aegis-updates");
++        if (!directory.isDirectory() && !directory.mkdirs()) {
++            throw new IOException("无法创建安装包目录");
++        }
++        if (directory.getUsableSpace() < update.asset.size + 128L * 1024 * 1024) {
++            throw new IOException("存储空间不足，未开始下载");
++        }
++        File output = File.createTempFile("aegis-", ".apk", directory);
++        boolean verified = false;
++        try {
++            URI uri = URI.create(update.asset.url);
++            long deadline = System.nanoTime() + 600_000_000_000L;
++            for (int redirects = 0; redirects <= 5; redirects++) {
++                AegisUpdatePolicy.require(AegisUpdatePolicy.allowedDownload(uri), "下载来源无效");
++                HttpsURLConnection connection = connect(uri.toURL());
++                try {
++                    int status = connection.getResponseCode();
++                    if (status == 301
++                            || status == 302
++                            || status == 303
++                            || status == 307
++                            || status == 308) {
++                        String location = connection.getHeaderField("Location");
++                        if (location == null) throw new IOException("下载跳转缺少目标");
++                        uri = uri.resolve(location);
++                        continue;
++                    }
++                    if (status != 200) throw new IOException("安装包下载失败，请重试");
++                    long length = connection.getContentLengthLong();
++                    if (length != -1 && length != update.asset.size) {
++                        throw new IOException("安装包大小与发行记录不符");
++                    }
++                    try (InputStream input = connection.getInputStream();
++                            FileOutputStream target = new FileOutputStream(output)) {
++                        long count =
++                                AegisUpdatePolicy.copyBounded(
++                                        input, target, update.asset.size, deadline);
++                        if (count != update.asset.size) throw new IOException("安装包下载不完整");
++                        target.getFD().sync();
++                    }
++                    verify(context, update, output);
++                    verified = true;
++                    return output;
++                } finally {
++                    connection.disconnect();
++                }
++            }
++            throw new IOException("下载跳转次数过多");
++        } finally {
++            // 只删除本次新建且未通过校验的临时包，不触碰旧包或用户资料。
++            if (!verified) output.delete();
++        }
++    }
++
++    static void verify(Context context, AegisUpdatePolicy.Update update, File file)
++            throws Exception {
++        AegisUpdatePolicy.verifyFile(update.asset, file);
++        PackageInfo current = installed(context);
++        PackageInfo candidate =
++                Objects.requireNonNull(
++                        context.getPackageManager()
++                                .getPackageArchiveInfo(file.getAbsolutePath(), SIGNATURE_FLAGS));
++        AegisUpdatePolicy.verifyPackage(
++                new AegisUpdatePolicy.PackageIdentity(
++                        context.getPackageName(),
++                        Objects.requireNonNull(current.versionName),
++                        current.getLongVersionCode(),
++                        signers(current)),
++                new AegisUpdatePolicy.PackageIdentity(
++                        Objects.requireNonNull(candidate.packageName),
++                        Objects.requireNonNull(candidate.versionName),
++                        candidate.getLongVersionCode(),
++                        signers(candidate)),
++                update.version);
++    }
++
++    private static PackageInfo installed(Context context)
++            throws PackageManager.NameNotFoundException {
++        return context.getPackageManager()
++                .getPackageInfo(context.getPackageName(), SIGNATURE_FLAGS);
++    }
++
++    private static Set<String> signers(PackageInfo info) {
++        AegisUpdatePolicy.require(info.signingInfo != null, "安装包没有签名信息");
++        Signature[] signatures =
++                Objects.requireNonNull(
++                        Objects.requireNonNull(info.signingInfo).getApkContentsSigners());
++        AegisUpdatePolicy.require(signatures != null && signatures.length > 0, "安装包没有签名证书");
++        Set<String> result = new HashSet<>();
++        for (Signature signature : signatures) result.add(signature.toCharsString());
++        return result;
++    }
++
++    private static HttpsURLConnection connect(URL url) throws IOException {
++        HttpsURLConnection connection = (HttpsURLConnection) url.openConnection();
++        connection.setConnectTimeout(15_000);
++        connection.setReadTimeout(20_000);
++        connection.setInstanceFollowRedirects(false);
++        connection.setRequestProperty("User-Agent", "Aegis-Android-Updater");
++        connection.setRequestProperty("Accept", "application/vnd.github+json");
++        connection.setRequestProperty("Accept-Encoding", "identity");
++        return connection;
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicy.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicy.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b324ae80b6f22587393857c9ac3a228f9c7c799
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicy.java
+@@ -0,0 +1,234 @@
++// Copyright 2026 The GCSA Aegis Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.about_settings;
++
++import org.chromium.build.annotations.NullMarked;
++
++import java.io.File;
++import java.io.FileInputStream;
++import java.io.IOException;
++import java.io.InputStream;
++import java.net.URI;
++import java.security.MessageDigest;
++import java.security.NoSuchAlgorithmException;
++import java.util.List;
++import java.util.Locale;
++import java.util.Optional;
++import java.util.Set;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++/** Android 独立资产协议；拒绝桌面包、预发行、缺少摘要和版本降级。 */
++@NullMarked
++final class AegisUpdatePolicy {
++    static final class Failure extends IllegalArgumentException {
++        private static final long serialVersionUID = 1L;
++
++        Failure(String message) {
++            super(message);
++        }
++    }
++
++    static final String REPOSITORY = "https://github.com/gcsagroup/aegis-browser";
++    static final long MAX_BYTES = 2L * 1024 * 1024 * 1024;
++    private static final Pattern VERSION =
++            Pattern.compile(
++                    "(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)");
++    private static final Pattern LABEL =
++            Pattern.compile("Ver (0|[1-9][0-9]*)\\.(0|[1-9][0-9]*) \\(([0-9]{1,10})\\)");
++
++    static final class Asset {
++        final String name;
++        final String url;
++        final String digest;
++        final long size;
++        final boolean uploaded;
++
++        Asset(String name, String url, String digest, long size, boolean uploaded) {
++            this.name = name;
++            this.url = url;
++            this.digest = digest;
++            this.size = size;
++            this.uploaded = uploaded;
++        }
++    }
++
++    static final class Update {
++        final String version;
++        final Asset asset;
++
++        Update(String version, Asset asset) {
++            this.version = version;
++            this.asset = asset;
++        }
++    }
++
++    static final class PackageIdentity {
++        final String name;
++        final String version;
++        final long code;
++        final Set<String> signers;
++
++        PackageIdentity(String name, String version, long code, Set<String> signers) {
++            this.name = name;
++            this.version = fromLabel(version);
++            this.code = code;
++            this.signers = signers;
++        }
++    }
++
++    static void verifyPackage(PackageIdentity current, PackageIdentity candidate, String version) {
++        require(current.name.equals(candidate.name), "安装包包名不匹配");
++        require(candidate.code > current.code, "拒绝版本码降级或重复安装");
++        require(candidate.version.equals(version), "安装包产品版本与发行记录不符");
++        require(compare(version, current.version) > 0, "拒绝产品版本降级");
++        require(
++                !current.signers.isEmpty() && current.signers.equals(candidate.signers),
++                "安装包签名与已安装应用不一致");
++    }
++
++    static String fromLabel(String label) {
++        if (VERSION.matcher(label).matches()) {
++            parseVersion(label);
++            return label;
++        }
++        Matcher match = LABEL.matcher(label);
++        require(match.matches(), "当前产品版本无法识别");
++        String result =
++                match.group(1) + "." + match.group(2) + ".0." + Long.parseLong(match.group(3));
++        parseVersion(result);
++        return result;
++    }
++
++    static String displayLabel(String value) {
++        String[] parts = fromLabel(value).split("\\.");
++        String revision = parts[2].equals("0") ? "" : "." + parts[2];
++        return "Ver "
++                + parts[0]
++                + "."
++                + parts[1]
++                + revision
++                + " ("
++                + String.format(Locale.ROOT, "%03d", Long.parseLong(parts[3]))
++                + ")";
++    }
++
++    static int compare(String left, String right) {
++        long[] a = parseVersion(left);
++        long[] b = parseVersion(right);
++        for (int i = 0; i < 4; i++) {
++            int result = Long.compare(a[i], b[i]);
++            if (result != 0) return result;
++        }
++        return 0;
++    }
++
++    static Optional<Update> select(
++            String current,
++            String tag,
++            String page,
++            boolean draft,
++            boolean prerelease,
++            List<Asset> assets) {
++        require(!draft && !prerelease, "不是正式发行");
++        require(tag.startsWith("v"), "发行版本无效");
++        String version = tag.substring(1);
++        parseVersion(version);
++        require(page.equals(REPOSITORY + "/releases/tag/" + tag), "发行来源不匹配");
++        int order = compare(version, current);
++        require(order >= 0, "拒绝版本降级");
++        if (order == 0) return Optional.empty();
++        String prefix = "GCSA-aegis-" + version + "-chromium-";
++        Pattern name =
++                Pattern.compile(
++                        Pattern.quote(prefix)
++                                + "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+-android-arm64\\.apk");
++        Optional<Asset> selected = Optional.empty();
++        for (Asset asset : assets) {
++            if (!name.matcher(asset.name).matches()) continue;
++            require(!selected.isPresent(), "Android 安装包重复");
++            require(asset.uploaded, "安装包尚未上传完成");
++            require(asset.size > 0 && asset.size <= MAX_BYTES, "安装包大小无效");
++            require(asset.digest.matches("sha256:[a-fA-F0-9]{64}"), "安装包缺少有效 SHA-256");
++            require(
++                    asset.url.equals(REPOSITORY + "/releases/download/" + tag + "/" + asset.name),
++                    "安装包来源不匹配");
++            selected = Optional.of(asset);
++        }
++        require(selected.isPresent(), "正式发行缺少 Android ARM64 安装包");
++        return Optional.of(new Update(version, selected.get()));
++    }
++
++    // GitHub 下载仅允许 HTTPS 的官方资产主机；不携带凭据或跳转至任意域名。
++    static boolean allowedDownload(URI uri) {
++        if (!"https".equals(uri.getScheme())
++                || uri.getUserInfo() != null
++                || uri.getFragment() != null
++                || (uri.getPort() != -1 && uri.getPort() != 443)) {
++            return false;
++        }
++        return ("github.com".equals(uri.getHost())
++                        && uri.getPath().startsWith("/gcsagroup/aegis-browser/releases/download/"))
++                || "release-assets.githubusercontent.com".equals(uri.getHost());
++    }
++
++    static void verifyFile(Asset asset, File file) throws IOException, NoSuchAlgorithmException {
++        require(
++                asset.size > 0 && asset.size <= MAX_BYTES && file.length() == asset.size,
++                "安装包大小校验失败");
++        require(asset.digest.matches("sha256:[a-fA-F0-9]{64}"), "安装包摘要格式无效");
++        MessageDigest digest = MessageDigest.getInstance("SHA-256");
++        try (InputStream input = new FileInputStream(file)) {
++            byte[] buffer = new byte[64 * 1024];
++            long total = 0;
++            for (int count; (count = input.read(buffer)) != -1; ) {
++                if (Thread.currentThread().isInterrupted()) throw new IOException("已取消");
++                total += count;
++                require(total <= asset.size, "校验期间安装包大小发生变化");
++                digest.update(buffer, 0, count);
++            }
++            require(total == asset.size, "安装包下载不完整");
++        }
++        StringBuilder hex = new StringBuilder();
++        for (byte value : digest.digest()) {
++            hex.append(String.format(Locale.ROOT, "%02x", value & 255));
++        }
++        require(
++                hex.toString().equals(asset.digest.substring(7).toLowerCase(Locale.ROOT)),
++                "安装包 SHA-256 校验失败");
++    }
++
++    private static long[] parseVersion(String value) {
++        Matcher match = VERSION.matcher(value);
++        require(match.matches(), "产品版本格式无效");
++        long[] result = new long[4];
++        for (int i = 0; i < 4; i++) {
++            require(match.group(i + 1).length() <= 10, "产品版本超出范围");
++            result[i] = Long.parseLong(match.group(i + 1));
++            require(result[i] <= Integer.MAX_VALUE, "产品版本超出范围");
++        }
++        return result;
++    }
++
++    static void require(boolean condition, String message) {
++        if (!condition) throw new Failure(message);
++    }
++
++    static long copyBounded(
++            InputStream input, java.io.OutputStream output, long limit, long deadline)
++            throws IOException {
++        long count = 0;
++        byte[] buffer = new byte[64 * 1024];
++        for (int size; (size = input.read(buffer)) != -1; ) {
++            if (Thread.currentThread().isInterrupted() || System.nanoTime() > deadline) {
++                throw new IOException("下载已取消或超时，请重试");
++            }
++            count += size;
++            if (count > limit) throw new IOException("响应大小超过限制");
++            output.write(buffer, 0, size);
++        }
++        return count;
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePreference.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePreference.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..74bf0ea87c7f878cc1ac5b080a790571164de1c6
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisUpdatePreference.java
+@@ -0,0 +1,208 @@
++// Copyright 2026 The GCSA Aegis Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.about_settings;
++
++import android.app.Activity;
++import android.app.AlertDialog;
++import android.content.ClipData;
++import android.content.Intent;
++import android.net.Uri;
++import android.os.Handler;
++import android.os.Looper;
++import android.provider.Settings;
++
++import androidx.preference.Preference;
++
++import org.chromium.build.annotations.NullMarked;
++import org.chromium.build.annotations.Nullable;
++import org.chromium.chrome.browser.util.ChromeFileProvider;
++
++import java.io.File;
++import java.util.Optional;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import java.util.function.BooleanSupplier;
++
++/** 关于页的显式更新入口；下载和安装分别由用户确认。 */
++@NullMarked
++final class AegisUpdatePreference implements AutoCloseable {
++    private final Activity mActivity;
++    private final BooleanSupplier mPageVisible;
++    private final Preference mPreference;
++    private final Handler mMain = new Handler(Looper.getMainLooper());
++    private final ExecutorService mWorker = Executors.newSingleThreadExecutor();
++    private boolean mClosed;
++    private @Nullable AlertDialog mDialog;
++
++    AegisUpdatePreference(Activity activity, Preference preference, BooleanSupplier pageVisible) {
++        mPageVisible = pageVisible;
++        mActivity = activity;
++        mPreference = preference;
++        preference.setKey("aegis_check_update");
++        preference.setTitle("检查 Aegis 更新");
++        preference.setSummary("检查正式发行；下载后由系统确认安装");
++        preference.setOnPreferenceClickListener(
++                ignored -> {
++                    check();
++                    return true;
++                });
++    }
++
++    private void check() {
++        if (mClosed) return;
++        mPreference.setEnabled(false);
++        mPreference.setSummary("正在检查…");
++        mWorker.execute(
++                () -> {
++                    try {
++                        Optional<AegisUpdatePolicy.Update> update =
++                                AegisAndroidUpdate.check(mActivity);
++                        post(
++                                () -> {
++                                    mPreference.setEnabled(true);
++                                    if (!update.isPresent()) {
++                                        mPreference.setSummary("当前已是最新正式版本");
++                                        return;
++                                    }
++                                    AegisUpdatePolicy.Update next = update.get();
++                                    mPreference.setSummary("发现正式版本 " + next.version);
++                                    showDialog(
++                                            new AlertDialog.Builder(mActivity)
++                                                    .setTitle("下载 Aegis " + next.version)
++                                                    .setMessage(
++                                                            "安装包约 "
++                                                                    + ((next.asset.size + 1048575)
++                                                                            / 1048576)
++                                                                    + " MB。下载完成后核对摘要、包名和签名，再由系统确认安装。")
++                                                    .setNegativeButton("取消", null)
++                                                    .setPositiveButton(
++                                                            "下载", (dialog, which) -> download(next))
++                                                    .create());
++                                });
++                    } catch (Exception error) {
++                        failed(error);
++                    }
++                });
++    }
++
++    private void download(AegisUpdatePolicy.Update update) {
++        if (mClosed) return;
++        mPreference.setEnabled(false);
++        mPreference.setSummary("正在下载并校验安装包…");
++        mWorker.execute(
++                () -> {
++                    try {
++                        File file = AegisAndroidUpdate.download(mActivity, update);
++                        post(
++                                () -> {
++                                    mPreference.setEnabled(true);
++                                    mPreference.setTitle("安装已验证的更新");
++                                    mPreference.setSummary("版本 " + update.version + "；点击进入系统安装确认");
++                                    mPreference.setOnPreferenceClickListener(
++                                            ignored -> {
++                                                install(update, file);
++                                                return true;
++                                            });
++                                    showDialog(
++                                            new AlertDialog.Builder(mActivity)
++                                                    .setTitle("安装包校验通过")
++                                                    .setMessage("继续后由 Android 确认安装。现有应用资料将保留。")
++                                                    .setNegativeButton("稍后", null)
++                                                    .setPositiveButton(
++                                                            "继续",
++                                                            (dialog, which) ->
++                                                                    install(update, file))
++                                                    .create());
++                                });
++                    } catch (Exception error) {
++                        failed(error);
++                    }
++                });
++    }
++
++    private void install(AegisUpdatePolicy.Update update, File file) {
++        if (mClosed) return;
++        // 系统授权只能由用户完成，返回后再次点击即可继续。
++        if (!mActivity.getPackageManager().canRequestPackageInstalls()) {
++            try {
++                mPreference.setSummary("请允许此应用安装更新，返回后再次点击安装");
++                mActivity.startActivity(
++                        new Intent(
++                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
++                                Uri.parse("package:" + mActivity.getPackageName())));
++            } catch (RuntimeException error) {
++                failed(error);
++            }
++            return;
++        }
++        mPreference.setEnabled(false);
++        mWorker.execute(
++                () -> {
++                    try {
++                        // 等待安装期间版本或文件可能变化，进入系统安装器前重新校验。
++                        AegisAndroidUpdate.verify(mActivity, update, file);
++                        post(
++                                () -> {
++                                    mPreference.setEnabled(true);
++                                    try {
++                                        Uri uri = ChromeFileProvider.generateUri(file);
++                                        Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
++                                        intent.setData(uri);
++                                        intent.setClipData(ClipData.newRawUri("Aegis 更新", uri));
++                                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
++                                        mActivity.startActivity(intent);
++                                        mPreference.setSummary("已打开系统安装确认；完成后请重新打开关于页核对版本");
++                                    } catch (RuntimeException error) {
++                                        failed(error);
++                                    }
++                                });
++                    } catch (Exception error) {
++                        failed(error);
++                    }
++                });
++    }
++
++    private void failed(Exception error) {
++        // 不把下载跳转参数、底层异常或凭据展示到界面。
++        String message =
++                error instanceof AegisUpdatePolicy.Failure && error.getMessage() != null
++                        ? error.getMessage()
++                        : "更新未完成，请检查网络、存储和系统安装设置后重试";
++        post(
++                () -> {
++                    mPreference.setEnabled(true);
++                    mPreference.setSummary(message);
++                    mPreference.setTitle("检查 Aegis 更新");
++                    mPreference.setOnPreferenceClickListener(
++                            ignored -> {
++                                check();
++                                return true;
++                            });
++                });
++    }
++
++    private void showDialog(AlertDialog dialog) {
++        if (mPageVisible.getAsBoolean()) {
++            if (mDialog != null) mDialog.dismiss();
++            mDialog = dialog;
++            dialog.show();
++        }
++    }
++
++    private void post(Runnable action) {
++        mMain.post(
++                () -> {
++                    if (!mClosed && !mActivity.isFinishing() && !mActivity.isDestroyed())
++                        action.run();
++                });
++    }
++
++    @Override
++    public void close() {
++        mClosed = true;
++        if (mDialog != null) mDialog.dismiss();
++        mWorker.shutdownNow();
++    }
++}
+diff --git a/chrome/android/junit/BUILD.gn b/chrome/android/junit/BUILD.gn
+index 22bf3f05f5413a638a89e4e9284467a80ddc0b72..2d59d18aad7904fc60e8fba20112c0cd21a52d18 100644
+--- a/chrome/android/junit/BUILD.gn
++++ b/chrome/android/junit/BUILD.gn
+@@ -1660,6 +1660,7 @@ if (is_android) {
+       "//chrome/browser/commerce/subscriptions/test/android/java/src/org/chromium/chrome/browser/subscriptions/CommerceSubscriptionsServiceFactoryUnitTest.java",
+       "//chrome/browser/commerce/subscriptions/test/android/java/src/org/chromium/chrome/browser/subscriptions/CommerceSubscriptionsServiceUnitTest.java",
+       "src/org/chromium/chrome/browser/about_settings/AboutSettingsBridgeTest.java",
++      "src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java",
+       "src/org/chromium/chrome/browser/accessibility/AccessibilityTabHelperTest.java",
+       "src/org/chromium/chrome/browser/accessibility/PageZoomIphControllerTest.java",
+       "src/org/chromium/chrome/browser/accessibility/settings/CaretBrowsingDialogTest.java",
+diff --git a/chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java b/chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a6ab86aad1c373a5fdd827bca4b61f77a47f953c
+--- /dev/null
++++ b/chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java
+@@ -0,0 +1,298 @@
++// Copyright 2026 The GCSA Aegis Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++package org.chromium.chrome.browser.about_settings;
++
++import static org.junit.Assert.assertArrayEquals;
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertThrows;
++import static org.junit.Assert.assertTrue;
++
++import org.junit.Test;
++
++import java.net.URI;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.List;
++import java.util.Set;
++
++/** 真实临时文件与拒绝路径；不替代 Android 安装器及签名实机验收。 */
++public class AegisUpdatePolicyTest {
++    private static final String V = "2.1.0.110";
++    private static final String NAME =
++            "GCSA-aegis-" + V + "-chromium-154.0.8037.126-android-arm64.apk";
++    private static final String PAGE = AegisUpdatePolicy.REPOSITORY + "/releases/tag/v" + V;
++    private static final String URL =
++            AegisUpdatePolicy.REPOSITORY + "/releases/download/v" + V + "/" + NAME;
++    private static final String HASH =
++            "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
++
++    private AegisUpdatePolicy.Asset asset(String url, String hash, long size) {
++        return new AegisUpdatePolicy.Asset(NAME, url, hash, size, true);
++    }
++
++    @Test
++    public void acceptsMatchingAndroidAsset() {
++        assertEquals(
++                V,
++                AegisUpdatePolicy.select(
++                                "2.0.0.109",
++                                "v" + V,
++                                PAGE,
++                                false,
++                                false,
++                                List.of(asset(URL, HASH, 3)))
++                        .get()
++                        .version);
++    }
++
++    @Test
++    public void sameVersionNeedsNoDownload() {
++        assertFalse(
++                AegisUpdatePolicy.select(V, "v" + V, PAGE, false, false, List.of()).isPresent());
++    }
++
++    @Test
++    public void rejectsDowngrade() {
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () -> AegisUpdatePolicy.select("2.2.0.1", "v" + V, PAGE, false, false, List.of()));
++    }
++
++    @Test
++    public void rejectsDraftAndPreview() {
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () -> AegisUpdatePolicy.select("2.0.0.1", "v" + V, PAGE, true, false, List.of()));
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () -> AegisUpdatePolicy.select("2.0.0.1", "v" + V, PAGE, false, true, List.of()));
++    }
++
++    @Test
++    public void rejectsMissingAndDuplicateAssets() {
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () -> AegisUpdatePolicy.select("2.0.0.1", "v" + V, PAGE, false, false, List.of()));
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () ->
++                        AegisUpdatePolicy.select(
++                                "2.0.0.1",
++                                "v" + V,
++                                PAGE,
++                                false,
++                                false,
++                                List.of(asset(URL, HASH, 3), asset(URL, HASH, 3))));
++    }
++
++    @Test
++    public void rejectsInvalidMetadata() {
++        for (AegisUpdatePolicy.Asset row :
++                List.of(
++                        asset(URL, "", 3),
++                        asset(URL, HASH, 0),
++                        asset(URL, HASH, AegisUpdatePolicy.MAX_BYTES + 1),
++                        asset(URL + "?other=1", HASH, 3))) {
++            assertThrows(
++                    AegisUpdatePolicy.Failure.class,
++                    () ->
++                            AegisUpdatePolicy.select(
++                                    "2.0.0.1", "v" + V, PAGE, false, false, List.of(row)));
++        }
++    }
++
++    @Test
++    public void rejectsForeignPageAndDesktopPackage() {
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () ->
++                        AegisUpdatePolicy.select(
++                                "2.0.0.1",
++                                "v" + V,
++                                PAGE + "/other",
++                                false,
++                                false,
++                                List.of(asset(URL, HASH, 3))));
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () ->
++                        AegisUpdatePolicy.select(
++                                "2.0.0.1",
++                                "v" + V,
++                                PAGE,
++                                false,
++                                false,
++                                List.of(
++                                        new AegisUpdatePolicy.Asset(
++                                                "GCSA-aegis-" + V + "-mac-arm64.dmg",
++                                                URL,
++                                                HASH,
++                                                3,
++                                                true))));
++    }
++
++    @Test
++    public void validatesVersionBoundaries() {
++        assertEquals("Ver 2.0 (094)", AegisUpdatePolicy.displayLabel("Ver 2.0 (094)"));
++        assertEquals("Ver 2.1 (110)", AegisUpdatePolicy.displayLabel("2.1.0.110"));
++        assertEquals("Ver 2.1.1 (110)", AegisUpdatePolicy.displayLabel("2.1.1.110"));
++        assertEquals("2.1.1.110", AegisUpdatePolicy.fromLabel("2.1.1.110"));
++        assertEquals("2.0.0.94", AegisUpdatePolicy.fromLabel("Ver 2.0 (094)"));
++        assertEquals("2.1.0.110", AegisUpdatePolicy.fromLabel("Ver 2.1 (110)"));
++        assertTrue(AegisUpdatePolicy.compare("2.1.0.1", "2.0.99.999") > 0);
++        for (String value :
++                List.of(
++                        "02.1.0.1",
++                        "2.1.0.1-preview",
++                        "999999999999999999999.0.0.0",
++                        "2.1.0.2147483648")) {
++            assertThrows(
++                    AegisUpdatePolicy.Failure.class, () -> AegisUpdatePolicy.compare(value, V));
++        }
++    }
++
++    @Test
++    public void constrainsRedirects() {
++        assertTrue(AegisUpdatePolicy.allowedDownload(URI.create(URL)));
++        assertTrue(
++                AegisUpdatePolicy.allowedDownload(
++                        URI.create("https://release-assets.githubusercontent.com/a?token=x")));
++        for (String url :
++                List.of(
++                        "http://github.com/gcsagroup/aegis-browser/releases/download/x",
++                        "https://evil.test/x",
++                        "https://github.com.evil.test/x",
++                        "https://user@release-assets.githubusercontent.com/x",
++                        "https://release-assets.githubusercontent.com:444/x",
++                        "https://github.com/other/repo/x")) {
++            assertFalse(url, AegisUpdatePolicy.allowedDownload(URI.create(url)));
++        }
++    }
++
++    @Test
++    public void checksRealBytesAndCorruption() throws Exception {
++        Path file = Files.createTempFile("aegis-update-test-", ".apk");
++        try {
++            Files.write(file, new byte[] {97, 98, 99});
++            AegisUpdatePolicy.verifyFile(asset(URL, HASH, 3), file.toFile());
++            Files.write(file, new byte[] {97, 98, 100});
++            assertThrows(
++                    AegisUpdatePolicy.Failure.class,
++                    () -> AegisUpdatePolicy.verifyFile(asset(URL, HASH, 3), file.toFile()));
++            Files.write(file, new byte[] {97});
++            assertThrows(
++                    AegisUpdatePolicy.Failure.class,
++                    () -> AegisUpdatePolicy.verifyFile(asset(URL, HASH, 3), file.toFile()));
++        } finally {
++            Files.delete(file);
++        }
++    }
++
++    @Test
++    public void packageIdentityPreservesUpgradePath() {
++        AegisUpdatePolicy.PackageIdentity current =
++                new AegisUpdatePolicy.PackageIdentity(
++                        "app.gcsa.aegis",
++                        "Ver 2.0 (094)",
++                        2000000094L,
++                        Set.of("existing-certificate"));
++        AegisUpdatePolicy.PackageIdentity next =
++                new AegisUpdatePolicy.PackageIdentity(
++                        "app.gcsa.aegis", V, 2000000110L, Set.of("existing-certificate"));
++        AegisUpdatePolicy.verifyPackage(current, next, V);
++        for (AegisUpdatePolicy.PackageIdentity invalid :
++                List.of(
++                        new AegisUpdatePolicy.PackageIdentity(
++                                "other.package", V, next.code, next.signers),
++                        new AegisUpdatePolicy.PackageIdentity(
++                                next.name, V, current.code, next.signers),
++                        new AegisUpdatePolicy.PackageIdentity(
++                                next.name, "2.0.0.93", next.code, next.signers),
++                        new AegisUpdatePolicy.PackageIdentity(
++                                next.name, "2.1.0.111", next.code, next.signers),
++                        new AegisUpdatePolicy.PackageIdentity(
++                                next.name, V, next.code, Set.of("different-certificate")),
++                        new AegisUpdatePolicy.PackageIdentity(next.name, V, next.code, Set.of()))) {
++            assertThrows(
++                    AegisUpdatePolicy.Failure.class,
++                    () -> AegisUpdatePolicy.verifyPackage(current, invalid, V));
++        }
++        assertThrows(
++                AegisUpdatePolicy.Failure.class,
++                () ->
++                        AegisUpdatePolicy.verifyPackage(
++                                new AegisUpdatePolicy.PackageIdentity(
++                                        next.name, "2.0.0.94", current.code, Set.of()),
++                                new AegisUpdatePolicy.PackageIdentity(
++                                        next.name, V, next.code, Set.of()),
++                                V));
++    }
++
++    @Test
++    public void boundsDownloadedBytes() throws Exception {
++        java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
++        assertEquals(
++                3,
++                AegisUpdatePolicy.copyBounded(
++                        new java.io.ByteArrayInputStream(new byte[] {1, 2, 3}),
++                        output,
++                        3,
++                        System.nanoTime() + 1000000000L));
++        assertArrayEquals(new byte[] {1, 2, 3}, output.toByteArray());
++        assertThrows(
++                java.io.IOException.class,
++                () ->
++                        AegisUpdatePolicy.copyBounded(
++                                new java.io.ByteArrayInputStream(new byte[] {1, 2, 3, 4}),
++                                new java.io.ByteArrayOutputStream(),
++                                3,
++                                System.nanoTime() + 1000000000L));
++    }
++
++    @Test
++    public void propagatesNetworkFailureAndDeadline() {
++        java.io.InputStream failed =
++                new java.io.InputStream() {
++                    @Override
++                    public int read() throws java.io.IOException {
++                        throw new java.io.IOException("受控网络失败");
++                    }
++                };
++        assertThrows(
++                java.io.IOException.class,
++                () ->
++                        AegisUpdatePolicy.copyBounded(
++                                failed,
++                                new java.io.ByteArrayOutputStream(),
++                                100,
++                                System.nanoTime() + 1000000000L));
++        assertThrows(
++                java.io.IOException.class,
++                () ->
++                        AegisUpdatePolicy.copyBounded(
++                                new java.io.ByteArrayInputStream(new byte[] {1}),
++                                new java.io.ByteArrayOutputStream(),
++                                100,
++                                System.nanoTime() - 1));
++    }
++
++    @Test
++    public void stopsOnCancellation() {
++        Thread.currentThread().interrupt();
++        try {
++            assertThrows(
++                    java.io.IOException.class,
++                    () ->
++                            AegisUpdatePolicy.copyBounded(
++                                    new java.io.ByteArrayInputStream(new byte[] {1}),
++                                    new java.io.ByteArrayOutputStream(),
++                                    100,
++                                    System.nanoTime() + 1000000000L));
++        } finally {
++            Thread.interrupted();
++        }
++    }
++}
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index bcec3390f53e8bdbb2520b337fedc014e0a076df..3e2b321481892ff0401f24fe3f4444249b22346b 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.109";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (109)";
++inline constexpr char kProductVersion[] = "2.1.0.110";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (110)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
