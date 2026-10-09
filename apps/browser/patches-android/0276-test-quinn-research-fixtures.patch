@@ -1,0 +1,97 @@
+From 8444d99bf2f629d155acef2068a2a6c2c9093f11 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Fri, 9 Oct 2026 04:29:56 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E4=BF=AE=E5=A4=8D=E7=A0=94=E7=A9=B6?=
+ =?UTF-8?q?=E8=8C=83=E5=9B=B4=E9=A2=84=E7=AE=97=E5=B9=B6=E9=AA=8C=E8=AF=81?=
+ =?UTF-8?q?=E5=90=8C=E7=BD=91=E5=9D=80=E5=88=B7=E6=96=B0=E5=90=8E=E7=9A=84?=
+ =?UTF-8?q?=E8=A7=82=E5=AF=9F=E5=A4=B1=E6=95=88?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 19 +++++++++++++++++--
+ .../aegis/agent/agent_execution_unittest.cc   |  3 +++
+ .../ui/webui/help/aegis_github_update.h       |  4 ++--
+ 3 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 89db493b010ce7f9d1f1fe9736778d3e40e44558..de58ac1dd2574ca8cdff0ced84dd12125cbd85f3 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -89,10 +89,12 @@
+ #include "components/tab_groups/tab_group_id.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/devtools_agent_host.h"
++#include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/content_switches.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
++#include "content/public/test/test_navigation_observer.h"
+ #include "crypto/sha2.h"
+ #include "net/dns/mock_host_resolver.h"
+ #include "net/http/http_status_code.h"
+@@ -5913,8 +5915,21 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+     if (replace_document) {
+       auto* changed = tabs::TabHandle(ids.front()).Get();
+       ASSERT_TRUE(changed);
+-      // Same URL, fresh primary document: URL equality cannot authorize reuse.
+-      ASSERT_TRUE(content::NavigateToURL(changed->GetContents(), original.at(ids.front())));
++      // 带片段的同网址导航可能仍是同一文档；明确刷新并核对旧观察失效。
++      const auto observed = service->actor_bridge_for_testing().LastDocument(
++          task_id, ids.front());
++      ASSERT_TRUE(observed);
++      ASSERT_TRUE(service->actor_bridge_for_testing().IsObservedDocumentCurrent(
++          task_id, ids.front(), observed->document_token));
++      content::TestNavigationObserver reloaded(changed->GetContents());
++      changed->GetContents()->GetController().Reload(content::ReloadType::NORMAL,
++                                                     false);
++      reloaded.Wait();
++      ASSERT_TRUE(reloaded.last_navigation_succeeded());
++      EXPECT_EQ(changed->GetContents()->GetLastCommittedURL(),
++                original.at(ids.front()));
++      ASSERT_FALSE(service->actor_bridge_for_testing().IsObservedDocumentCurrent(
++          task_id, ids.front(), observed->document_token));
+     }
+     base::ListValue cells;
+     for (int source = 1; source <= 3; ++source)
+diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+index 579650307de6c0a8910fa01c1b8b2b5ec37279ea..8a31ea1c5bda789582d88b0f6db8be4d24fac278 100644
+--- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
+@@ -3100,6 +3100,8 @@ TEST(AegisAgentExecutionTest, ResearchRetriesKeepEveryLatestSourceInPrompt) {
+   auto scope = ExecutionScope();
+   scope.selected_pages_research = true;
+   scope.allowed_tab_ids.clear();
++  // 九个所选来源需要显式的九标签页预算，不能沿用默认上限。
++  scope.budgets.max_tabs = 9;
+   std::vector<AgentExecutionEvidence> history;
+   for (int source = 1; source <= 9; ++source) {
+     scope.allowed_tab_ids.insert(source);
+@@ -3117,6 +3119,7 @@ TEST(AegisAgentExecutionTest, ResearchRetriesKeepEveryLatestSourceInPrompt) {
+     }
+   }
+   ASSERT_EQ(history.size(), 9u);
++  ASSERT_TRUE(scope.IsValid());
+   AgentTask task("research-retries", "比较所选来源", AgentMode::kAct, scope);
+   AgentTaskPlan plan;
+   auto envelope = base::JSONReader::ReadDict(
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 6c4fd76dd6d828e04273a62e295f32528a8fd5cf..141267dd4a14f0672db71c73fd90e3ce1dbcc880 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.2.0.143";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.2 (143)";
++inline constexpr char kProductVersion[] = "2.2.0.144";
++inline constexpr char kProductVersionLabel[] = "Ver 2.2 (144)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
