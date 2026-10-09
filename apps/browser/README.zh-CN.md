@@ -8,6 +8,8 @@ GCSA-aegis Browser 将隐私与安全能力直接集成到 Chromium 浏览器及
 
 策略逻辑以 `packages/core` 为来源，通过生成的规则快照、内嵌 policy worker、Chromium browser service 以及 Blink/V8 接入点落地。
 
+> **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](../../docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
+
 > **历史证据（2026-09-22）：** macOS Ver 2.0 (061) 的 539 项原生回归等结果，仅属于[原审计记录](../../docs/audit/p1-p2-followup-2026-09-22.zh-CN.md)绑定的候选，不代表当前源码已通过验收。
 
 当前聚焦 macOS，运行、真实网络与分发验收仍待完成。其他平台按[路线图](../../docs/roadmap.zh-CN.md)推进。
@@ -18,7 +20,7 @@ GCSA-aegis Browser 将隐私与安全能力直接集成到 Chromium 浏览器及
 
 | 文件 | 含义 |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 固定的 Mac Stable 版本，当前为 `153.0.8010.53` |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `155.0.8059.40`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | 补丁所基于的精确 Chromium commit |
 
 该版本是固定快照，不会自动跟随更新的 Stable 版本。

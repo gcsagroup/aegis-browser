@@ -1,0 +1,48 @@
+From 2232be7a593f7c08eece67909d70b98243cf869c Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 29 Sep 2026 18:37:09 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E6=AD=A3=20Android=20=E5=8E=9F?=
+ =?UTF-8?q?=E7=94=9F=E6=B5=8B=E8=AF=95=E7=9A=84=E9=9D=9E=E6=B3=95=20UTF-8?=
+ =?UTF-8?q?=20=E5=A4=B9=E5=85=B7=E5=B9=B6=E9=80=92=E5=A2=9E=E5=86=85?=
+ =?UTF-8?q?=E9=83=A8=E7=89=88=E6=9C=AC=20069?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/agent_core_unittest.cc  | 3 ++-
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
+index aae8961692e92e5cc2c48f1d10b50e3d1bc33e79..cd126b4c7168630310a1119c1d6b2ca26a891d72 100644
+--- a/chrome/browser/aegis/agent/agent_core_unittest.cc
++++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
+@@ -655,7 +655,8 @@ TEST(AegisAgentMonitorObservationTest, InputsAndStoredResultsAreBounded) {
+     excessive.Append(base::DictValue().Set("text", "$99"));
+   }
+   EXPECT_FALSE(ReadAgentMonitorObservation(kind, excessive));
+-  EXPECT_FALSE(MonitorObservation(kind, {std::string("\xff", 1)}));
++  // 非法 UTF-8 在序列化输入边界验证，不能先构造不满足 Value 契约的字符串。
++  EXPECT_FALSE(IsValidAgentMonitorObservation(kind, std::string("\xff", 1)));
+   EXPECT_FALSE(DidAgentMonitorConditionMatch(kind, "not json", "{}"));
+   EXPECT_FALSE(DidAgentMonitorConditionMatch(kind,
+       R"({"version":1,"kind":0,"currency":"USD","amount":"100"})",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 382df0b89530c2de085d2b0214a6a36fdb1f4759..d1d60da571c8f959917c4d74f17bb1a8744c7470 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.68";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (068)";
++inline constexpr char kProductVersion[] = "2.0.0.69";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (069)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

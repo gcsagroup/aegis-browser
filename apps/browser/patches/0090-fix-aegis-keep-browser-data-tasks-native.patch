@@ -1,4 +1,4 @@
-From 4f1e7877082c153374f17bf1889ff95dd9f241c5 Mon Sep 17 00:00:00 2001
+From 25be4ffc72c6ef99f626fa57cd47bb2dd3576420 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Thu, 3 Sep 2026 00:57:00 +0800
 Subject: [PATCH] fix(aegis): keep browser data tasks native
@@ -9,7 +9,7 @@ Subject: [PATCH] fix(aegis): keep browser data tasks native
  2 files changed, 41 insertions(+)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index ef716ddfff..b76deec8c1 100644
+index ef716ddfff6f54f854b883ea73f8b72d935bccfb..b76deec8c1688581de89a8d236d6ff439828a7e4 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -182,6 +182,25 @@ bool GoalRequestsSafeDownload(std::string_view goal) {
@@ -55,7 +55,7 @@ index ef716ddfff..b76deec8c1 100644
        route.workflow == AgentWorkflowKind::kBrowserSteward) {
      route.workflow = shopping_authority ? AgentWorkflowKind::kShopping
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index 1189d48036..4a7c166fd4 100644
+index 1189d48036d0898cc9b00ba86f826ea532a35d5b..4a7c166fd432fdf731b39fac1c4d78b1cbc50800 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -230,6 +230,19 @@ TEST(AegisAgentPlannerTest, BrowserNarrowsShoppingAndNamedSiteRoutes) {

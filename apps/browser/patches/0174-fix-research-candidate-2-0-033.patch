@@ -1,4 +1,4 @@
-From 9ecce6cc914fd56fdc5ebb0f4b90c47b41563bb4 Mon Sep 17 00:00:00 2001
+From 38624a1a60c396e10e6ff19dd141eba3c29652dd Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Wed, 16 Sep 2026 21:52:02 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=EF=BC=9A=E5=A4=9A=E9=A1=B5?=
@@ -26,7 +26,7 @@ Content-Transfer-Encoding: 8bit
  14 files changed, 343 insertions(+), 246 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 6ceba21f11..c1b99ec192 100644
+index 6ceba21f11e40c948cdd5546cf8188330a155289..c1b99ec192557b34c8b14a88f860dc10e0e2692d 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -172,7 +172,7 @@ class ProfileDestructionProbe : public ProfileObserver {
@@ -1527,7 +1527,7 @@ index 6ceba21f11..c1b99ec192 100644
        security_interstitials::SecurityInterstitialTabHelper::FromWebContents(
            contents);
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
-index 01e53e3ef9..1df5854500 100644
+index 01e53e3ef9369080f5676f1060afb8baaf5e93fb..1df585450000d679c9233c49e99ab79a93ad069d 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_service.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_service.cc
 @@ -763,7 +763,7 @@ AgentTask* AegisAgentService::CreateSelectedTabGroupTask(
@@ -1548,7 +1548,7 @@ index 01e53e3ef9..1df5854500 100644
    scope->budgets.max_tool_calls = 4;
    scope->budgets.max_model_calls = 6;
 diff --git a/chrome/browser/aegis/agent/agent_core_unittest.cc b/chrome/browser/aegis/agent/agent_core_unittest.cc
-index b9a1159f05..68c2e982d8 100644
+index b9a1159f05eedc28929692e9ac3b8df8756bd29d..68c2e982d8ebaa509e911d49b017fd831b46669e 100644
 --- a/chrome/browser/aegis/agent/agent_core_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_core_unittest.cc
 @@ -166,6 +166,36 @@ TEST(AegisAgentTypesTest, SelectedResearchIsBoundedAndCannotGainActions) {
@@ -1589,7 +1589,7 @@ index b9a1159f05..68c2e982d8 100644
    AgentToolRegistry registry;
    AgentPolicyBroker broker(&registry);
 diff --git a/chrome/browser/aegis/agent/agent_execution.cc b/chrome/browser/aegis/agent/agent_execution.cc
-index 86931c5677..87b516cdbe 100644
+index 86931c567772f2dea7155da94d51b99525bf6835..87b516cdbe12b1bce81934ddd3f3cfaa98f02843 100644
 --- a/chrome/browser/aegis/agent/agent_execution.cc
 +++ b/chrome/browser/aegis/agent/agent_execution.cc
 @@ -1472,39 +1472,11 @@ void NormalizeAgentTabGroupCompletion(
@@ -1634,7 +1634,7 @@ index 86931c5677..87b516cdbe 100644
      completion->unfinished_items.push_back(
          "尚未确认覆盖目标中的全部标签。请在研究工作台勾选要分组的网页，再点击分"
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 9597665fc1..85a3fb2e6e 100644
+index 9597665fc1271fbc49eaa42454c292e4f3b74630..85a3fb2e6e5e4c9aee21a1f777f1dfcd3d6d1803 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -1703,6 +1703,10 @@ TEST(AegisAgentExecutionTest,
@@ -1689,7 +1689,7 @@ index 9597665fc1..85a3fb2e6e 100644
       BookmarkCheckUsesVerifiedCountsAndPartialOutcome) {
    for (int scenario = 0; scenario < 3; ++scenario) {
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index e29a194728..8e42e190c1 100644
+index e29a1947289922f3b48a90f60a1931ac79f92b7e..8e42e190c1b2bd27d26cba0c46f85f3c29c85ffe 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -1102,6 +1102,7 @@ std::optional<AgentTaskPlan> ParseAndValidateTaskPlan(
@@ -1701,7 +1701,7 @@ index e29a194728..8e42e190c1 100644
    base::flat_set<std::string> step_ids;
    for (const base::Value& value : *steps) {
 diff --git a/chrome/browser/aegis/agent/agent_task_store.cc b/chrome/browser/aegis/agent/agent_task_store.cc
-index 13c289ca4a..dc6acb3a20 100644
+index 13c289ca4a6f9d5d8532e8c13f56aa398bb887a7..dc6acb3a20641af2ebdd511b7eace4c7c299428a 100644
 --- a/chrome/browser/aegis/agent/agent_task_store.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store.cc
 @@ -668,11 +668,13 @@ std::optional<AgentTaskScope> AgentTaskStore::DeserializeScope(
@@ -1740,7 +1740,7 @@ index 13c289ca4a..dc6acb3a20 100644
      value.Set("restrict_to_current_page", true);
    }
 diff --git a/chrome/browser/aegis/agent/agent_task_store_unittest.cc b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
-index ec77a874d8..a69ac5f882 100644
+index ec77a874d81a094c1f048e58ada51507ea20f5cf..a69ac5f88254cfa17a28f38c21f7b9075f8df9a2 100644
 --- a/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_task_store_unittest.cc
 @@ -249,6 +249,28 @@ TEST(AegisAgentTaskStoreTest, RoundTripsSelectedResearchAndRejectsFlagType) {
@@ -1773,7 +1773,7 @@ index ec77a874d8..a69ac5f882 100644
    EXPECT_FALSE(AgentTaskStore::DeserializeScope("not-json"));
    EXPECT_FALSE(AgentTaskStore::DeserializeScope(R"({})"));
 diff --git a/chrome/browser/aegis/agent/agent_types.cc b/chrome/browser/aegis/agent/agent_types.cc
-index 54c2e5da3a..151a56f150 100644
+index 54c2e5da3a97d144a793ecd6603b4cfadd883f98..151a56f150d1695272a2d13cd772657c551e9fe6 100644
 --- a/chrome/browser/aegis/agent/agent_types.cc
 +++ b/chrome/browser/aegis/agent/agent_types.cc
 @@ -69,6 +69,14 @@ bool AgentTaskScope::IsValid() const {
@@ -1800,7 +1800,7 @@ index 54c2e5da3a..151a56f150 100644
        (tab_metadata_window_id != 0 &&
         tab_metadata_window_id != other.tab_metadata_window_id) ||
 diff --git a/chrome/browser/aegis/agent/agent_types.h b/chrome/browser/aegis/agent/agent_types.h
-index b7ccc80449..c816b0ce6d 100644
+index b7ccc804490b07213c34bb41699e96c840fab695..c816b0ce6dcc8e363513d40af883416bfda81ccf 100644
 --- a/chrome/browser/aegis/agent/agent_types.h
 +++ b/chrome/browser/aegis/agent/agent_types.h
 @@ -109,6 +109,8 @@ struct AgentTaskScope {
@@ -1813,7 +1813,7 @@ index b7ccc80449..c816b0ce6d 100644
    base::flat_set<AgentDataClass> allowed_data_classes;
    AgentBudgets budgets;
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index d3d63cf1bf..35aa1e56e2 100644
+index d3d63cf1bf40992fd0bf737e4cf6280a749f475d..35aa1e56e268255930598bfb89ea84b7c4b1f379 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
 @@ -313,7 +313,7 @@ function updateResearchSelection() {
@@ -1836,7 +1836,7 @@ index d3d63cf1bf..35aa1e56e2 100644
          goal, [...selectedResearchTabs]);
      activeView = 'task';
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
-index 75fc8afa85..7483dc26ee 100644
+index 75fc8afa85de1b5485cb64dc6bd4d610cdc9558a..7483dc26ee714febb07169ab9e76ffac26a96855 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
 @@ -483,9 +483,10 @@ void AegisAgentPageHandler::CreateSelectedTask(
@@ -1854,7 +1854,7 @@ index 75fc8afa85..7483dc26ee 100644
      for (int32_t id : tab_ids) {
        auto* tab = tabs::TabHandle(id).Get();
 diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
-index ca7733e310..711e711531 100644
+index ca7733e310a2efa7f0ee946285b8889e8ae64061..711e71153145737a8d677308ee11c0b6814370dc 100644
 --- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 +++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
 @@ -82,13 +82,16 @@ void AddStrings(content::WebUIDataSource* source) {
@@ -1877,7 +1877,7 @@ index ca7733e310..711e711531 100644
        "Compare the selected sources, preserve conflicting facts, include dates "
        "when present, and cite every source. Do not invent missing information.",
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index d8ad1735e4..13510f53ab 100644
+index d8ad1735e46faf324104377611f55a15d72d629a..13510f53ab31a0f339d0ffb0257b05892d694c04 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;

@@ -1,4 +1,4 @@
-From d4fd8a1bd7a361f6886d721cded18706f738c1d4 Mon Sep 17 00:00:00 2001
+From fb3eb8695cf7d28f68cb57a912f831504258104a Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro.local>
 Date: Sat, 5 Sep 2026 00:00:35 +0800
 Subject: [PATCH] fix(agent): finish bookmark checks after rate limits
@@ -10,7 +10,7 @@ Subject: [PATCH] fix(agent): finish bookmark checks after rate limits
  3 files changed, 121 insertions(+), 26 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index 04f68949e1..c2ab010ccb 100644
+index 04f68949e1fa5561387b098b4807b6d3caae56dd..c2ab010ccbc21a7b7a16e77ed819f2ab7967213a 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
 @@ -231,6 +231,7 @@ if (!is_android) {
@@ -35,7 +35,7 @@ index 04f68949e1..c2ab010ccb 100644
        "//url",
      ]
 diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
-index 98934585e4..2ff6b57165 100644
+index 98934585e4bae1d5dd3ed7e07a87314a9adf1202..2ff6b57165c2ba8c2ceacc88d533be07cf6adf1f 100644
 --- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 +++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
 @@ -1,14 +1,17 @@
@@ -199,7 +199,7 @@ index 98934585e4..2ff6b57165 100644
    ASSERT_TRUE(base::test::RunUntil([&]() {
      return content::EvalJs(regular_contents, R"JS(
 diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
-index caf749213e..63aaf8b3c2 100644
+index caf749213e61f08f3a322db22aba0228da2a04da..63aaf8b3c2c92d8892ce51410acdba6eac5d4c84 100644
 --- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
 +++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
 @@ -805,7 +805,6 @@ struct AegisBrowserTools::UrlCheckBatch {

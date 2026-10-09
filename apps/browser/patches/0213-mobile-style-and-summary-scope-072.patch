@@ -1,4 +1,4 @@
-From dcf7c95944f7d0b5fac7d27f74d0c816346e92bf Mon Sep 17 00:00:00 2001
+From 5445bb7617569081b60c884ea5ac0361fd3432d6 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Tue, 29 Sep 2026 19:34:05 +0800
 Subject: [PATCH] =?UTF-8?q?=E8=A7=84=E8=8C=83=E7=A7=BB=E5=8A=A8=E7=AB=AF?=
@@ -18,7 +18,7 @@ Content-Transfer-Encoding: 8bit
  6 files changed, 252 insertions(+), 53 deletions(-)
 
 diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
-index d65e019ed4..19cfdbb252 100644
+index d65e019ed4a5ebd40ff8c4a80c586282a1de48f9..19cfdbb252af12539c120cf111626f3371e1c828 100644
 --- a/chrome/browser/resources/aegis/aegis.css
 +++ b/chrome/browser/resources/aegis/aegis.css
 @@ -31,6 +31,7 @@ body {
@@ -212,7 +212,7 @@ index d65e019ed4..19cfdbb252 100644
 +  }
  }
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index b93a7b8164..2cd71f64e7 100644
+index b93a7b81642d87286cb486a30c74822f9752fce3..2cd71f64e788c5d8870e29ea492404860f2533fe 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
 @@ -293,6 +293,12 @@ function formatMeta(status: AegisStatus): string {
@@ -247,7 +247,7 @@ index b93a7b8164..2cd71f64e7 100644
  }
  
 diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
-index a430626be1..cd4dfa5a51 100644
+index a430626be152a72fd38e2e0da9d0868f9d8fb5f2..cd4dfa5a51b97bc765c5aab551f05e8699dd9b66 100644
 --- a/chrome/browser/resources/aegis_agent/agent.css
 +++ b/chrome/browser/resources/aegis_agent/agent.css
 @@ -678,17 +678,61 @@ summary {
@@ -323,7 +323,7 @@ index a430626be1..cd4dfa5a51 100644
 +  }
  }
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 77ace210fa..9ec2c354b1 100644
+index 77ace210fa26ede3dfee895ca9c6a5b6e2d8dd51..9ec2c354b137e0bcdfbd576be4bea92d38f4446c 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;
@@ -338,7 +338,7 @@ index 77ace210fa..9ec2c354b1 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/components/webui/version/resources/about_version.css b/components/webui/version/resources/about_version.css
-index 8f222c3964..1d356ed319 100644
+index 8f222c3964f75a4dbda2688e95d8d90009da9fc9..1d356ed319e021168260e3f9c76ee0446ac3a33f 100644
 --- a/components/webui/version/resources/about_version.css
 +++ b/components/webui/version/resources/about_version.css
 @@ -137,5 +137,16 @@ html[webui-rounded-icons] #copy-to-clipboard-icon {
@@ -361,7 +361,7 @@ index 8f222c3964..1d356ed319 100644
 +  padding-block: 0 1rem;
 +}
 diff --git a/components/webui/version/resources/about_version_mobile.css b/components/webui/version/resources/about_version_mobile.css
-index 0c2611de14..4711b2b46c 100644
+index 0c2611de14d8a4cac1d44e1a79ecedf2fb0fa99e..4711b2b46cedc419d1d278fb6ce561c60ad3bc7f 100644
 --- a/components/webui/version/resources/about_version_mobile.css
 +++ b/components/webui/version/resources/about_version_mobile.css
 @@ -24,13 +24,48 @@

@@ -14,9 +14,9 @@ source_set("aegis") {
     "//chrome/browser/aegis:agent_core",
     "//chrome/browser/download",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/resources/aegis:resources",
     "//chrome/browser/tab_list",
     "//chrome/browser/ui/browser_window",
-    "//chrome/browser/resources/aegis:resources",
     "//chrome/browser/ui/side_panel",
     "//chrome/common",
     "//chrome/common/aegis",
@@ -28,6 +28,14 @@ source_set("aegis") {
     "//ui/webui",
   ]
   if (!is_android) {
+    sources += [
+      "aegis_gesture_handler.cc",
+      "aegis_gesture_handler.h",
+    ]
+    deps += [
+      "//chrome/browser/aegis:gesture_core",
+      "//components/prefs",
+    ]
     deps += [
       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
       "//chrome/browser/ui/tabs:tab_strip",

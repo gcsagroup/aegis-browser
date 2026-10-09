@@ -18,14 +18,20 @@
 
 Aegis is in development; no release-qualified build is available yet.
 
+> **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
+
+> **2026-10-09 · iOS Ver 3.2 (69) main integration:** The compact interface, private confirmations and download management now work with main’s background recovery safeguards. iPhone: 194 passed and 1 iPad-only check skipped; iPad: 195 passed. See the [integration record](docs/audit/ios-main-merge-2026-10-09.zh-CN.md) for scope and evidence. No signed installation package was released.
+
+> **2026-10-05 · iOS Ver 3.2 (63) development candidate:** compact iPhone/iPad toolbars and private-mode features have completed simulator validation. Private browsing does not automatically record history, sessions or AI tasks; explicit saves, downloads and model sends require confirmation. See the [engineering guide](apps/ios/README.md) and [validation record](docs/audit/ios-private-mode-2026-10-05.zh-CN.md). The published source preview remains 2.2.
+
 > **2026-10-03 · iOS 2.2.0 source prerelease:** page assistance, filtering, downloads, workspaces, tab groups and independent iPad windows are integrated. See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for validation and usage. No installable signed IPA is available.
 
 ## Core capabilities
 
 | Capability | What it does | Platform and current stage |
 | --- | --- | --- |
-| Privacy browsing | Reduces tracking and risky navigation through link, cookie, phishing and selected fingerprint protections; the native app isolates standard and private profiles. | macOS: in source, runtime acceptance pending. iOS/iPadOS: see the 2.2 simulator validation and prerelease notes above. |
-| Controllable Agent | Shows plans, keeps actions under browser policy and asks before sensitive operations. | macOS: in source, runtime acceptance pending. iOS/iPadOS: confirmed page-to-model requests; browser action tools remain unavailable. |
+| Privacy browsing | Reduces tracking and risky navigation through link, cookie, phishing and selected fingerprint protections; the native app isolates standard and private profiles. | macOS: in source, runtime acceptance pending. iOS/iPadOS: see the 3.2 private-mode validation and 2.2 source prerelease notes above. |
+| Controllable Agent | Shows plans, keeps actions under browser policy and asks before sensitive operations. | macOS: in source, runtime acceptance pending. iOS/iPadOS: confirmed page-to-model requests and separately authorized organization of saved bookmarks. |
 | Native downloads | Uses Chromium's browser download surfaces and bounded download paths. | macOS: in source, runtime acceptance pending. |
 | Access policy | Routes selected traffic through native proxy components and fails closed when a required route is unavailable. | macOS: in source, integration and real-network acceptance pending. |
 
@@ -59,7 +65,7 @@ Open `apps/ios/Aegis.xcodeproj`; follow the [iOS guide](apps/ios/README.md) for 
 | Platform | Priority | Status |
 | --- | --- | --- |
 | macOS | Now | Chromium integration and Access Service work continue; current-source runtime and distribution qualification remain open. |
-| iOS / iPadOS | Next | Native SwiftUI/WKWebView 2.2 source prerelease with simulator validation; device and distribution acceptance remain open. |
+| iOS / iPadOS | Next | Native SwiftUI/WKWebView 3.2 has completed simulator feature checks. The source prerelease remains 2.2; device and distribution acceptance remain open. |
 | Windows / Android / Linux | Later | Source and evaluation entry points exist; no near-term release commitment. |
 
 macOS can qualify independently of iOS. See the [roadmap](docs/roadmap.md) for release criteria.

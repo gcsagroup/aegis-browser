@@ -1,0 +1,182 @@
+From 7dbd023ad3c4ab1a7055007801c9852ef9d44f91 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Wed, 30 Sep 2026 04:02:52 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=B7=A5=E4=BD=9C=E5=8C=BA?=
+ =?UTF-8?q?=E6=A0=87=E7=AD=BE=E7=BB=84=E9=A2=9C=E8=89=B2=E6=8C=81=E4=B9=85?=
+ =?UTF-8?q?=E5=8C=96=E5=B9=B6=E8=A6=86=E7=9B=96=E5=85=A8=E9=83=A8=E9=A2=9C?=
+ =?UTF-8?q?=E8=89=B2=20079?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/aegis_ui_handler_unittest.cc        | 23 ++++++--
+ .../aegis/agent/aegis_browser_tools.cc        | 52 ++++++++++++++-----
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 3 files changed, 59 insertions(+), 20 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index d5925a93ec7fb0e87a6204fdb44acd9b68566d82..0f4d3bef8374acd40f820ab3bb1727a914ae82ae 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -39,7 +39,9 @@ class WorkspaceTestWindow : public TestBrowserWindow {
+   bool IsTabStripEditable() const override { return true; }
+ };
+ 
+-class AegisWorkspaceHandlerTest : public AegisUIHandlerTest {
++class AegisWorkspaceHandlerTest
++    : public AegisUIHandlerTest,
++      public testing::WithParamInterface<tab_groups::TabGroupColorId> {
+  protected:
+   std::unique_ptr<BrowserWindow> CreateBrowserWindow() override {
+     return std::make_unique<WorkspaceTestWindow>();
+@@ -81,7 +83,7 @@ TEST_F(AegisUIHandlerTest, RejectsTabFromAnotherWindowModel) {
+                          TabListInterface::From(browser()), foreign.get()));
+ }
+ 
+-TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
++TEST_P(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+   using namespace aegis::agent;
+   AddTab(browser(), GURL("https://workspace.example/first"));
+   AddTab(browser(), GURL("https://workspace.example/second"));
+@@ -93,8 +95,7 @@ TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+       list->CreateTabGroup({first->GetHandle(), second->GetHandle()});
+   ASSERT_TRUE(group);
+   list->SetTabGroupVisualData(
+-      *group, tab_groups::TabGroupVisualData(
+-                  u"研究集合", tab_groups::TabGroupColorId::kBlue));
++      *group, tab_groups::TabGroupVisualData(u"研究集合", GetParam()));
+   AgentTaskScope scope;
+   scope.allowed_origins = {
+       url::Origin::Create(GURL("https://workspace.example/"))};
+@@ -160,7 +161,7 @@ TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+   auto visual = list->GetTabGroupVisualData(*restored_first->GetGroup());
+   ASSERT_TRUE(visual);
+   EXPECT_EQ(visual->title(), u"研究集合");
+-  EXPECT_EQ(visual->color(), tab_groups::TabGroupColorId::kBlue);
++  EXPECT_EQ(visual->color(), GetParam());
+   EXPECT_TRUE(
+       task.owned_tab_ids().contains(restored_first->GetHandle().raw_value()));
+ 
+@@ -178,6 +179,18 @@ TEST_F(AegisWorkspaceHandlerTest, WorkspaceRoundTripUsesSharedTabInterface) {
+   EXPECT_EQ(list->GetTabCount(), 4);
+ }
+ 
++INSTANTIATE_TEST_SUITE_P(AllGroupColors,
++                         AegisWorkspaceHandlerTest,
++                         testing::Values(tab_groups::TabGroupColorId::kGrey,
++                                         tab_groups::TabGroupColorId::kBlue,
++                                         tab_groups::TabGroupColorId::kRed,
++                                         tab_groups::TabGroupColorId::kYellow,
++                                         tab_groups::TabGroupColorId::kGreen,
++                                         tab_groups::TabGroupColorId::kPink,
++                                         tab_groups::TabGroupColorId::kPurple,
++                                         tab_groups::TabGroupColorId::kCyan,
++                                         tab_groups::TabGroupColorId::kOrange));
++
+ TEST_F(AegisUIHandlerTest, WebUIConfigAllowsOnlySupportedProfiles) {
+   AegisUIConfig config;
+   EXPECT_TRUE(config.IsWebUIEnabled(profile()));
+diff --git a/chrome/browser/aegis/agent/aegis_browser_tools.cc b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+index e3eba80b82544f5f214d3e3e73c5d1052f281c2b..adb899901b404a750423dd2fd91562421ebfbb8b 100644
+--- a/chrome/browser/aegis/agent/aegis_browser_tools.cc
++++ b/chrome/browser/aegis/agent/aegis_browser_tools.cc
+@@ -480,32 +480,59 @@ std::string TabRevision(Profile* profile, const AgentTask& task) {
+   return Hash(material);
+ }
+ 
+-tab_groups::TabGroupColorId ParseGroupColor(const std::string* color) {
+-  if (!color || *color == "grey") {
+-    return tab_groups::TabGroupColorId::kGrey;
++// 工作区持久化使用固定小写值，不依赖上游调试输出或界面语言。
++std::string GroupColorName(tab_groups::TabGroupColorId color) {
++  switch (color) {
++    case tab_groups::TabGroupColorId::kGrey:
++      return "grey";
++    case tab_groups::TabGroupColorId::kBlue:
++      return "blue";
++    case tab_groups::TabGroupColorId::kRed:
++      return "red";
++    case tab_groups::TabGroupColorId::kYellow:
++      return "yellow";
++    case tab_groups::TabGroupColorId::kGreen:
++      return "green";
++    case tab_groups::TabGroupColorId::kPink:
++      return "pink";
++    case tab_groups::TabGroupColorId::kPurple:
++      return "purple";
++    case tab_groups::TabGroupColorId::kCyan:
++      return "cyan";
++    case tab_groups::TabGroupColorId::kOrange:
++      return "orange";
++    case tab_groups::TabGroupColorId::kNumEntries:
++      return "grey";
+   }
+-  if (*color == "blue") {
++}
++
++tab_groups::TabGroupColorId ParseGroupColor(const std::string* color) {
++  const std::string normalized = color ? base::ToLowerASCII(*color) : "grey";
++  if (normalized == "blue") {
+     return tab_groups::TabGroupColorId::kBlue;
+   }
+-  if (*color == "red") {
++  if (normalized == "red") {
+     return tab_groups::TabGroupColorId::kRed;
+   }
+-  if (*color == "yellow") {
++  if (normalized == "yellow") {
+     return tab_groups::TabGroupColorId::kYellow;
+   }
+-  if (*color == "green") {
++  if (normalized == "green") {
+     return tab_groups::TabGroupColorId::kGreen;
+   }
+-  if (*color == "pink") {
++  if (normalized == "pink") {
+     return tab_groups::TabGroupColorId::kPink;
+   }
+-  if (*color == "purple") {
++  if (normalized == "purple") {
+     return tab_groups::TabGroupColorId::kPurple;
+   }
+-  if (*color == "cyan") {
++  if (normalized == "cyan") {
+     return tab_groups::TabGroupColorId::kCyan;
+   }
+-  return tab_groups::TabGroupColorId::kOrange;
++  if (normalized == "orange") {
++    return tab_groups::TabGroupColorId::kOrange;
++  }
++  return tab_groups::TabGroupColorId::kGrey;
+ }
+ 
+ void AppendBookmarkSnapshot(const bookmarks::BookmarkNode* node,
+@@ -1562,8 +1589,7 @@ void AegisBrowserTools::ExecuteWorkspaceTool(AgentTask* task,
+         if (visual) {
+           value.Set("group_key", group_id->ToString());
+           value.Set("group_title", base::UTF16ToUTF8(visual->title()));
+-          value.Set("group_color",
+-                    tab_groups::TabGroupColorToString(visual->color()));
++          value.Set("group_color", GroupColorName(visual->color()));
+         }
+       }
+       tabs.Append(std::move(value));
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 28c21890cba433729e67c1490ed4e1aa3d5423f9..d855121a2e2d1d069a5f4021bef947ed240f4264 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.0.0.78";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.0 (078)";
++inline constexpr char kProductVersion[] = "2.0.0.79";
++inline constexpr char kProductVersionLabel[] = "Ver 2.0 (079)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

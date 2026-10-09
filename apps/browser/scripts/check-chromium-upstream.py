@@ -47,7 +47,7 @@ def fetch_json(url):
         raise RuntimeError("缺少 curl，无法核对官方来源")
     curl = str(Path(curl).resolve(strict=True))
     result = subprocess.run(
-        [curl, "--fail", "--silent", "--show-error", "--location",
+        [curl, "--http1.1", "--fail", "--silent", "--show-error", "--location",
          "--proto", "=https", "--proto-redir", "=https", "--max-time", "40",
          "--max-filesize", "8388608", "--retry", "1", "--retry-all-errors", url],
         capture_output=True, timeout=90, check=False)

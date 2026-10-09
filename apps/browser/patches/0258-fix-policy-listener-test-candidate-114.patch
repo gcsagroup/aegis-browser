@@ -1,0 +1,102 @@
+From 260ae1309ad28a7bb343786c77796287af6784d0 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 6 Oct 2026 18:04:38 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E9=80=82=E9=85=8D=E7=AD=96=E7=95=A5?=
+ =?UTF-8?q?=E9=80=9A=E7=9F=A5=E6=B5=8B=E8=AF=95=E6=9E=84=E9=80=A0=E5=B9=B6?=
+ =?UTF-8?q?=E9=80=92=E5=A2=9E=E5=80=99=E9=80=89114?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ ...fm_registration_token_uploader_unittest.cc | 28 +------------------
+ .../ui/webui/help/aegis_github_update.h       |  4 +--
+ 2 files changed, 3 insertions(+), 29 deletions(-)
+
+diff --git a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
+index 7e5ae56b7a825492378e1c8051239b73255f157c..ca68645749ecc187cb88549998b4f3d75adb99b3 100644
+--- a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
++++ b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
+@@ -17,7 +17,6 @@
+ #include "chrome/test/base/testing_profile.h"
+ #include "components/invalidation/invalidation_listener.h"
+ #include "components/invalidation/profile_invalidation_provider.h"
+-#include "components/invalidation/public/identity_provider.h"
+ #include "components/invalidation/test_support/fake_invalidation_listener.h"
+ #include "components/policy/core/common/cloud/cloud_policy_client.h"
+ #include "components/policy/core/common/cloud/cloud_policy_constants.h"
+@@ -27,9 +26,7 @@
+ #include "components/policy/proto/device_management_backend.pb.h"
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/test/browser_task_environment.h"
+-#include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+ #include "services/network/test/test_network_connection_tracker.h"
+-#include "services/network/test/test_url_loader_factory.h"
+ #include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -67,25 +64,6 @@ class MockInvalidationListener : public invalidation::InvalidationListener {
+   int64_t project_number() const override { return kFakeProjectNumber; }
+ };
+ 
+-class NoAccountIdentityProvider final : public invalidation::IdentityProvider {
+- public:
+-  CoreAccountId GetActiveAccountId() override { return CoreAccountId(); }
+-
+-  bool IsActiveAccountWithRefreshToken() override { return false; }
+-
+-  std::unique_ptr<invalidation::ActiveAccountAccessTokenFetcher>
+-  FetchAccessToken(
+-      const std::string& oauth_consumer_name,
+-      const OAuth2AccessTokenManager::ScopeSet& scopes,
+-      invalidation::ActiveAccountAccessTokenCallback callback) override {
+-    ADD_FAILURE() << "未受管 Profile 不应请求 access token";
+-    return nullptr;
+-  }
+-
+-  void InvalidateAccessToken(const OAuth2AccessTokenManager::ScopeSet& scopes,
+-                             const std::string& access_token) override {}
+-};
+-
+ struct ListenerCounters {
+   size_t created = 0;
+   size_t started = 0;
+@@ -375,11 +353,8 @@ class UserFmRegistrationTokenUploaderTest : public testing::Test {
+   }
+ 
+   std::unique_ptr<KeyedService> BuildInvalidationProvider(
+-      content::BrowserContext* context) {
+-    Profile* profile = Profile::FromBrowserContext(context);
++      content::BrowserContext* /*context*/) {
+     return std::make_unique<invalidation::ProfileInvalidationProvider>(
+-        test_url_loader_factory_.GetSafeWeakWrapper(),
+-        std::make_unique<NoAccountIdentityProvider>(), profile->GetPrefs(),
+         base::BindRepeating(
+             &UserFmRegistrationTokenUploaderTest::CreateListener,
+             base::Unretained(this)));
+@@ -408,7 +383,6 @@ class UserFmRegistrationTokenUploaderTest : public testing::Test {
+   }
+ 
+   content::BrowserTaskEnvironment task_environment_;
+-  network::TestURLLoaderFactory test_url_loader_factory_;
+   ListenerCounters counters_;
+   std::unique_ptr<TestingProfile> profile_;
+   std::unique_ptr<MockCloudPolicyManager> policy_manager_;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 0e6a1022c65cbfed3ecd7493b47d417daec05863..a426ff959efcf6b0c73b553f36a1c7de7a201467 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "2.1.0.113";
+-inline constexpr char kProductVersionLabel[] = "Ver 2.1 (113)";
++inline constexpr char kProductVersion[] = "2.1.0.114";
++inline constexpr char kProductVersionLabel[] = "Ver 2.1 (114)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

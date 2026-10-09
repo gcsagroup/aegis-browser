@@ -1,4 +1,4 @@
-From 31f5ae181e2d17b7c64e9ad512f53504bb1adbb5 Mon Sep 17 00:00:00 2001
+From bf1ee48afd9b20fd3652eb2679f17408defc0038 Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Sun, 20 Sep 2026 15:57:45 +0800
 Subject: [PATCH] =?UTF-8?q?=E6=B5=8B=E8=AF=95=EF=BC=9A=E4=BF=AE=E6=AD=A3?=
@@ -16,7 +16,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_execution_unittest.cc b/chrome/browser/aegis/agent/agent_execution_unittest.cc
-index 37163fba43..d63d135ac3 100644
+index 37163fba4334574c5637c04a9dae6870d98f7b3c..d63d135ac383aa5107f18ee5341d758328689005 100644
 --- a/chrome/browser/aegis/agent/agent_execution_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_execution_unittest.cc
 @@ -2561,7 +2561,7 @@ TEST(AegisAgentExecutionTest, BlocksSubmitAndFinalTransactionControls) {
@@ -38,7 +38,7 @@ index 37163fba43..d63d135ac3 100644
                                        .summary = "预览已生成"};
      NormalizeAgentBookmarkApplyCompletion(&completion, task, {});
 diff --git a/chrome/browser/aegis/agent/agent_research_unittest.cc b/chrome/browser/aegis/agent/agent_research_unittest.cc
-index 44fe86b6d4..2e4ed37c20 100644
+index 44fe86b6d49f509db192f9d6c3a8f94420a316be..2e4ed37c20fa2d5fa9a8846fe93ca8b22f2e610c 100644
 --- a/chrome/browser/aegis/agent/agent_research_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_research_unittest.cc
 @@ -263,6 +263,7 @@ struct ComparisonFixture {
@@ -50,7 +50,7 @@ index 44fe86b6d4..2e4ed37c20 100644
          .label = "延迟", .prefix = "延迟：", .suffix = "。"};
      int id = 0;
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 6585196776..576d6dd3b7 100644
+index 6585196776c76f48506900836beb593ce76e7c72..576d6dd3b7b5bf28f850b779956549046971fbce 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

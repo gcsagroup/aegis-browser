@@ -84,8 +84,8 @@ class NodeJournal:
                         CREATE TABLE pending (lease_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL,
                             up INTEGER NOT NULL, down INTEGER NOT NULL);
                     """)
-                    connection.execute(f"PRAGMA application_id={APPLICATION_ID}")
-                    connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                    connection.execute("PRAGMA application_id=0x57324C54")
+                    connection.execute("PRAGMA user_version=1")
                 self._check_database(connection)
         except sqlite3.Error as error:
             raise JournalStorageError(f"journal unavailable: {error}") from error
@@ -110,8 +110,11 @@ class NodeJournal:
             raise JournalStorageError("unknown journal application id")
         if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
             raise JournalStorageError("unknown journal schema version")
-        for table in ("fences", "sessions", "leases", "chunks", "pending"):
-            connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+        connection.execute("""SELECT COUNT(*) FROM fences
+            UNION ALL SELECT COUNT(*) FROM sessions
+            UNION ALL SELECT COUNT(*) FROM leases
+            UNION ALL SELECT COUNT(*) FROM chunks
+            UNION ALL SELECT COUNT(*) FROM pending""").fetchall()
 
     @contextmanager
     def _transaction(self, *, run_fault_hook: bool = True) -> Iterator[sqlite3.Connection]:
@@ -359,10 +362,13 @@ class NodeJournal:
                                            (chunk_id,)).fetchone()
                 if chunk is None or chunk["state"] != "SENDING" or sent > chunk["size"]:
                     raise NodeError("chunk not awaiting completion")
-                field = "up" if chunk["direction"] == "up" else "down"
                 connection.execute("UPDATE chunks SET state='COMPLETE' WHERE chunk_id=?", (chunk_id,))
-                connection.execute(f"UPDATE leases SET {field}={field}+? WHERE lease_id=?",
-                                   (sent, chunk["lease_id"]))
+                if chunk["direction"] == "up":
+                    connection.execute("UPDATE leases SET up=up+? WHERE lease_id=?",
+                                       (sent, chunk["lease_id"]))
+                else:
+                    connection.execute("UPDATE leases SET down=down+? WHERE lease_id=?",
+                                       (sent, chunk["lease_id"]))
             del self.sent_chunks[chunk_id]
 
     def lease_ids(self) -> list[str]:

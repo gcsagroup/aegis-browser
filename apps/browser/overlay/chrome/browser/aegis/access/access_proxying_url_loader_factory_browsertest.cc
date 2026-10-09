@@ -40,7 +40,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_test_util.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -497,7 +498,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     ASSERT_TRUE(ui_test_utils::NavigateToURL(
         browser(), embedded_test_server()->GetURL("/title1.html")));
 
-    transport_ = AccessNetworkContextTransport::Get(browser()->profile());
+    transport_ = AccessNetworkContextTransport::Get(browser()->GetProfile());
     ASSERT_NE(transport_, nullptr);
 
     owner_ = transport_->OwnerForPartition(
@@ -563,7 +564,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
       const GURL& url,
       aegis_access::RequestCancellationSelector* selector) {
     ASSERT_NE(selector, nullptr);
-    Profile* profile = browser()->profile();
+    Profile* profile = browser()->GetProfile();
     content::RenderFrameHost* frame = web_contents()->GetPrimaryMainFrame();
     ASSERT_NE(frame, nullptr);
     const content::FrameTreeNodeId frame_tree_node_id =
@@ -646,7 +647,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
   std::optional<std::string> FetchBrowserProcessPrefetchOnPartition(
       content::StoragePartition* partition,
       const GURL& url) {
-    Profile* profile = browser()->profile();
+    Profile* profile = browser()->GetProfile();
     EXPECT_NE(partition, nullptr);
     if (!partition) {
       return std::nullopt;
@@ -679,7 +680,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   std::optional<std::string> FetchBrowserProcessPrefetch(const GURL& url) {
     return FetchBrowserProcessPrefetchOnPartition(
-        browser()->profile()->GetDefaultStoragePartition(), url);
+        browser()->GetProfile()->GetDefaultStoragePartition(), url);
   }
 
   std::string RunPrefetch(const GURL& url) {
@@ -976,7 +977,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   uint64_t CommitIdentityGenerationForProxyPolicy() {
     auto* identity =
-        AccessIdentityGenerationSource::GetOrCreate(browser()->profile());
+        AccessIdentityGenerationSource::GetOrCreate(browser()->GetProfile());
     EXPECT_NE(identity, nullptr);
     if (!identity) {
       return 0;
@@ -992,7 +993,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   uint64_t CommitSelectionGenerationForProxyPolicy() {
     auto* selection =
-        AccessProxySelectionGenerationSource::GetOrCreate(browser()->profile());
+        AccessProxySelectionGenerationSource::GetOrCreate(browser()->GetProfile());
     EXPECT_NE(selection, nullptr);
     if (!selection) {
       return 0;
@@ -1008,7 +1009,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   uint64_t CurrentBaseProxyGeneration() {
     auto* network_service =
-        ProfileNetworkContextServiceFactory::GetForContext(browser()->profile());
+        ProfileNetworkContextServiceFactory::GetForContext(browser()->GetProfile());
     EXPECT_NE(network_service, nullptr);
     if (!network_service) {
       return 0;
@@ -1048,7 +1049,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     snapshot.independent_rules.push_back(std::move(stored_rule));
 
     auto* runtime =
-        AccessPublishedRequestRuntime::GetOrCreate(browser()->profile());
+        AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
     EXPECT_NE(runtime, nullptr);
     if (!runtime) {
       return;
@@ -1093,7 +1094,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   std::optional<aegis_access::RequestCancellationSelector> CurrentSiteSelector() {
     const auto metadata = BuildBrowserOwnedRequestMetadata(
-        browser()->profile(), base::BindRepeating(
+        browser()->GetProfile(), base::BindRepeating(
             &AccessProxyingURLLoaderFactoryBrowserTest::web_contents,
             base::Unretained(this)),
         web_contents()->GetPrimaryMainFrame()->GetFrameTreeNodeId(), std::nullopt);
@@ -1462,11 +1463,11 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   // pending. Destroying its WebContents must close queued requests, not run
   // them through the downstream factory.
   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
+      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
       std::numeric_limits<int64_t>::max(), builder);
   scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
       std::move(builder).Finish(
-          browser()->profile()
+          browser()->GetProfile()
               ->GetDefaultStoragePartition()
               ->GetURLLoaderFactoryForBrowserProcess());
   auto request = std::make_unique<network::ResourceRequest>();
@@ -1516,11 +1517,11 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
 
   network::URLLoaderFactoryBuilder builder;
   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
-      browser()->profile(), pending_frame,
+      browser()->GetProfile(), pending_frame,
       handle->GetNavigationId(), builder);
   scoped_refptr<network::SharedURLLoaderFactory> pending_factory =
       std::move(builder).Finish(
-          browser()->profile()
+          browser()->GetProfile()
               ->GetDefaultStoragePartition()
               ->GetURLLoaderFactoryForBrowserProcess());
   mojo::Remote<network::mojom::URLLoaderFactory> clone;
@@ -1718,7 +1719,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
       CommitSelectionGenerationForProxyPolicy(),
       transport_->network_epoch(), CurrentBaseProxyGeneration()};
   PublishSelectedProxyEndpoint(kTargetHost, generations);
-  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(browser()->profile());
+  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(browser()->GetProfile());
   ASSERT_EQ(runtime->PublishPreparedPolicyCandidate(*candidate.value).status,
             AccessPolicyPublicationStatus::kPublished);
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
@@ -1735,7 +1736,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        ConflictingSiteProxyGroupPreservesNavigationRoute) {
   PublishProxyPolicy(/*publish_endpoint=*/true);
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), target_url()));
-  auto* runtime = AccessPublishedRequestRuntime::Get(browser()->profile());
+  auto* runtime = AccessPublishedRequestRuntime::Get(browser()->GetProfile());
   ASSERT_TRUE(runtime);
   const auto* published = runtime->GetPublishedPolicySnapshot(*owner_);
   ASSERT_TRUE(published);
@@ -1756,7 +1757,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   const auto selector = CurrentSiteSelector();
   ASSERT_TRUE(selector);
   const auto selection_before = transport_->CurrentSelection(*owner_);
-  auto* coordinator = AccessServiceCoordinator::GetOrCreate(browser()->profile());
+  auto* coordinator = AccessServiceCoordinator::GetOrCreate(browser()->GetProfile());
   ASSERT_TRUE(coordinator);
   base::test::TestFuture<AccessMutationTransactionResult> result;
   coordinator->CommitSiteGroupMutation(std::move(store), request, *selector,
@@ -1792,7 +1793,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   Profile* second_profile = &profiles::testing::CreateProfileSync(
       profile_manager, profile_manager->GenerateNextProfileDirectoryPath());
   ASSERT_NE(second_profile, nullptr);
-  Browser* second_browser = CreateBrowser(second_profile);
+  BrowserWindowInterface* second_browser = CreateBrowser(second_profile);
   ASSERT_NE(second_browser, nullptr);
 
   origin_before = origin_requests_.load(std::memory_order_relaxed);
@@ -1865,7 +1866,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
   PublishProxyPolicy(/*publish_endpoint=*/true);
   auto* dispatch_state =
-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
+      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
   ASSERT_NE(dispatch_state, nullptr);
   // Navigation and automatic page requests can finish after NavigateToURL.
   // Establish an empty registry before asserting exact relay ownership
@@ -1880,7 +1881,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
   network::URLLoaderFactoryBuilder builder;
   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
+      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
       std::nullopt, builder);
   ASSERT_EQ(builder.num_interceptors(), 1u);
   scoped_refptr<network::SharedURLLoaderFactory> factory =
@@ -1981,7 +1982,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
   PublishProxyPolicy(/*publish_endpoint=*/true);
   auto* dispatch_state =
-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
+      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
   ASSERT_NE(dispatch_state, nullptr);
   ASSERT_TRUE(base::test::RunUntil(
       [&] { return dispatch_state->ownership().size() == 0u; }));
@@ -1991,7 +1992,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
   network::URLLoaderFactoryBuilder builder;
   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
+      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
       std::nullopt, builder);
   ASSERT_EQ(builder.num_interceptors(), 1u);
   scoped_refptr<network::SharedURLLoaderFactory> factory =
@@ -2038,7 +2039,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), worker_page_url()));
   PublishProxyPolicy(/*publish_endpoint=*/true);
   auto* dispatch_state =
-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
+      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
   ASSERT_NE(dispatch_state, nullptr);
   ASSERT_TRUE(base::test::RunUntil(
       [&] { return dispatch_state->ownership().size() == 0u; }));
@@ -2048,7 +2049,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   network::TestURLLoaderFactory terminal(/*observe_loader_requests=*/true);
   network::URLLoaderFactoryBuilder builder;
   AccessProxyingURLLoaderFactory::MaybeProxyDocumentSubresource(
-      browser()->profile(), web_contents()->GetPrimaryMainFrame(),
+      browser()->GetProfile(), web_contents()->GetPrimaryMainFrame(),
       std::nullopt, builder);
   ASSERT_EQ(builder.num_interceptors(), 1u);
   scoped_refptr<network::SharedURLLoaderFactory> factory =
@@ -2213,7 +2214,7 @@ IN_PROC_BROWSER_TEST_F(
 IN_PROC_BROWSER_TEST_F(
     AccessProxyingURLLoaderFactoryBrowserTest,
     BrowserProcessPrefetchNonDefaultPartitionStaysNative) {
-  Profile* profile = browser()->profile();
+  Profile* profile = browser()->GetProfile();
   const content::StoragePartitionConfig config =
       content::StoragePartitionConfig::Create(
           profile, "aegis-prefetch-test", "non-default",
@@ -2555,7 +2556,7 @@ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
   aegis_access::RequestCancellationSelector selector;
   BuildCancellationSelector(hanging_url(), &selector);
   auto* dispatch_state =
-      AccessRequestDispatchState::GetOrCreate(browser()->profile());
+      AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
   ASSERT_NE(dispatch_state, nullptr);
   const AccessBlockAndCancelResult result =
       dispatch_state->InstallBlockBarrierAndCancelMatching(
@@ -2650,7 +2651,7 @@ class AccessLoadingPredictorPrefetchBrowserTest
     const GURL navigation_url = web_contents()->GetLastCommittedURL();
     LoadingPredictorPrefetchCompletion completion(navigation_url, resource_url);
     predictors::PrefetchManager manager(completion.GetDelegateWeakPtr(),
-                                        browser()->profile());
+                                        browser()->GetProfile());
     manager.set_observer_for_testing(&completion);
     manager.Start(navigation_url,
                   {predictors::PrefetchRequest(

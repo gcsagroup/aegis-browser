@@ -1,4 +1,4 @@
-From cd4db70c78ab11d7b01458abc81fe18178e8f654 Mon Sep 17 00:00:00 2001
+From dc700237b263a91912708a3a1d57adc61f6fd0b9 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
 Date: Wed, 30 Sep 2026 05:13:19 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=B8=A6=E6=98=BE=E5=BC=8F?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 41 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/agent_planner.cc b/chrome/browser/aegis/agent/agent_planner.cc
-index 07ddf0d540..5461b84359 100644
+index 07ddf0d54097c94248ec20fa814c3196e5abe172..5461b84359cc233030ca4c06ca0a4b1158891421 100644
 --- a/chrome/browser/aegis/agent/agent_planner.cc
 +++ b/chrome/browser/aegis/agent/agent_planner.cc
 @@ -424,8 +424,11 @@ bool GoalRequestsSafeDownload(std::string_view goal) {
@@ -51,7 +51,7 @@ index 07ddf0d540..5461b84359 100644
    // 让模型读取原文规划；当前页入口仍由浏览器绑定并验证实际观察。
    if (workflow == AgentWorkflowKind::kBrowserSteward &&
 diff --git a/chrome/browser/aegis/agent/agent_planner_unittest.cc b/chrome/browser/aegis/agent/agent_planner_unittest.cc
-index bd37c5b02f..8d4900b319 100644
+index bd37c5b02f6a2a0628fa874187b57463ffe7857c..8d4900b319fcc2ea2bb02fd767d8c70d10e92e16 100644
 --- a/chrome/browser/aegis/agent/agent_planner_unittest.cc
 +++ b/chrome/browser/aegis/agent/agent_planner_unittest.cc
 @@ -803,6 +803,29 @@ TEST(AegisAgentPlannerTest, NegatedWorkflowPhrasesKeepPageEntryRoutes) {
@@ -85,7 +85,7 @@ index bd37c5b02f..8d4900b319 100644
    const std::string_view goal =
        "打开 http://127.0.0.1:52861/slow 并总结页面内容。只允许读取这个"
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index d03cdfb823..85a0124f08 100644
+index d03cdfb823f2320f26df32c4078ee6ac83be107d..85a0124f086764fc772fb7c4279d1cba7631b4b3 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@ class SimpleURLLoader;

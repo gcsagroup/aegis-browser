@@ -45,6 +45,12 @@ struct AegisApp: App {
         if isTest && ProcessInfo.processInfo.arguments.contains("--ui-testing-dark") { defaults.set("dark", forKey: "browser.appearance") }
         _settings = StateObject(wrappedValue: BrowserSettings(defaults: defaults))
         let downloadDirectory = isTest ? FileManager.default.temporaryDirectory.appendingPathComponent("ui-downloads-" + UUID().uuidString) : nil
+#if DEBUG
+        if isTest, arguments.contains("--ui-testing-damaged-records"), let downloadDirectory {
+            try? FileManager.default.createDirectory(at: downloadDirectory, withIntermediateDirectories: true)
+            try? Data("合成损坏记录".utf8).write(to: downloadDirectory.appendingPathComponent("downloads.json"))
+        }
+#endif
         _downloads = StateObject(wrappedValue: DownloadManager(directory: downloadDirectory, background: !isTest || ProcessInfo.processInfo.arguments.contains("--ui-testing-background-download")))
         let historyURL = isTest ? FileManager.default.temporaryDirectory.appendingPathComponent("ui-assistant-tasks.aes") : AssistantTaskStore.defaultURL
         if isTest && !ProcessInfo.processInfo.arguments.contains("--ui-testing-assistant-history-keep") {
@@ -53,7 +59,14 @@ struct AegisApp: App {
         _assistantTasks = StateObject(wrappedValue: AssistantTaskStore(url: historyURL,
             keyAccount: isTest ? "assistant-tasks-ui-v1" : "assistant-tasks-v1"))
         dataStore = store
-        let workspaceStore = WorkspaceStore(persistenceURL: isTest ? nil : WorkspaceStore.defaultURL)
+        var workspaceURL: URL? = isTest ? nil : WorkspaceStore.defaultURL
+#if DEBUG
+        if isTest, arguments.contains("--ui-testing-damaged-records") {
+            workspaceURL = FileManager.default.temporaryDirectory.appendingPathComponent("ui-workspaces-" + UUID().uuidString + ".json")
+            try? Data("合成损坏记录".utf8).write(to: workspaceURL!)
+        }
+#endif
+        let workspaceStore = WorkspaceStore(persistenceURL: workspaceURL)
         self.workspaceStore = workspaceStore
         let windowsURL = isTest ? FileManager.default.temporaryDirectory.appendingPathComponent("ui-browser-windows.json") : BrowserWindowStore.defaultURL
         if isTest && !ProcessInfo.processInfo.arguments.contains("--ui-testing-windows-keep") {
@@ -74,6 +87,7 @@ struct AegisApp: App {
         } defaultValue: {
             windows.defaultWindowID()
         }
+        .commands { BrowserKeyboardCommands() }
     }
 
 #if DEBUG

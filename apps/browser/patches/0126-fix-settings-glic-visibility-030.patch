@@ -1,4 +1,4 @@
-From 6173aa73f14d5adfb97c97382c23f6eabc62b953 Mon Sep 17 00:00:00 2001
+From 538f71395d40662228eeaf0e6610f1401af278ac Mon Sep 17 00:00:00 2001
 From: MacBook Pro <lazy@MacBook-Pro-3.local>
 Date: Tue, 15 Sep 2026 04:55:13 +0800
 Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E9=9D=9E=E8=B0=B7=E6=AD=8C?=
@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
-index 89f68e35de..a537285c47 100644
+index 89f68e35de5fa9c1359acea7b6c0b879f1b8ea13..a537285c47aa7e69abf0df22ab8b7f9d77e1a3d2 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@ class SimpleURLLoader;
@@ -32,13 +32,13 @@ index 89f68e35de..a537285c47 100644
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 90776defcb..54c7309d19 100644
+index 2e367f22028794e79badeefb44327c917942aab0..c0adc893ca8b5133316458d63986b03f9a927f0e 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -619,7 +619,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
-        base::FeatureList::IsEnabled(contextual_cueing::kContextualCueingV2)},
+@@ -625,7 +625,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
        {"showInlineCueMenuControl",
         base::FeatureList::IsEnabled(features::kGlicSelectionPrompt) &&
+            !features::kGlicSelectionPromptUpdatesOnly.Get() &&
 -           glic_enablement.ShouldShowSettingsPage()},
 +           show_glic_section},
        {"showSkillsSettingPage",
