@@ -6,9 +6,9 @@
 
 ## 目前證據邊界
 
-- Android 與桌面使用同一固定 Chromium `153.0.8010.53` 基線。
+- Android 使用正式 Stable `155.0.8059.39`，桌面使用 `155.0.8059.40`。Android 保留獨立的 `ci-pins/android.json` 與 `patches-android/` 輸入。
 - 預留 application ID 為 `app.gcsa.aegis`；預留不證明已經形成有效套件或 Play 身分。
-- 当前共享源码含140个Chromium补丁与3个V8补丁，重放树为`6f6294dfabbb9bfcf69a5a612bad3b2c41334ce5`；153 Android构建、安装包身份与真机尚未验收，Mac044结果不能转作Android证据。
+- 2026-10-09 原始碼候選為 Ver 2.2 (144)，versionCode `2002000144`，含276個Chromium補丁與3個V8補丁。完整Chromium重放通過，與已驗證桌面原始碼僅有官方 `chrome/VERSION` 差異；共享Agent修復和桌面手勢的平台限制均保留，不會在Android開啟桌面手勢。APK建置、簽章、套件身分及實機驗收仍待完成。
 - 目前沒有綁定身分的 APK 或 AAB。即使存在 `$HOME/Desktop/GCSA-aegis.apk` 之類的歷史檔案，也不能對應到目前原始碼，更不是 RC。
 - v2 原始碼會解析全頁 Agent 分頁背後的公開網頁，並把目前頁面工作綁定到該文件。頁面擷取、去識別化、導覽失效和結果仍需實機驗收。
 - v2 原始碼將處理程序層級遠端偵錯 latch 置於 Android DevTools HTTP/socket 啟動之前，並涵蓋延遲啟動。無痕 Profile 一旦觸發 latch，本處理程序內待處理和後續啟動都會被拒絕；實機驗證仍未完成。
@@ -52,10 +52,10 @@ pnpm --filter @gcsa-aegis/browser package:android
 
 ## 驗收條件
 
-1. 在干净的x86-64 Linux源码目录，从固定基线精确重放当前140个Chromium补丁与3个V8补丁。
+1. 在乾淨的x86-64 Linux原始碼目錄，從Android獨立固定基線精確重放276個Chromium補丁與3個V8補丁，核對完整原始碼樹和產品版本。
 2. 建置成功，並由清單綁定根儲存庫 commit、Chromium commit、兩套補丁序列身分、GN 參數和 APK/AAB SHA-256。
 3. 驗證最終套件名稱、版本、啟動器名稱、圖示、權限、原生程式庫和簽署結構。
-4. 解除安裝舊版本，在代表裝置上安裝目前 APK，完成 First Run，開啟一般網頁和 `chrome://aegis`，實際驗證核心保護。
+4. 在專用實機保留舊版資料，以原套件名稱和簽章安裝升級套件，核對資料相容、正常網頁、`chrome://aegis`與核心保護。首次安裝另用隔離裝置驗證，不透過解除安裝舊版規避升級相容問題。
 5. 在實機驗證頁面擷取、文件綁定、去識別化、確認、導覽失效和結果處理。
 6. 完成啟動、前後台、當機、儲存、升級和網路驗收，不能留下殘留程序或無法解釋的出站，並驗證延遲 DevTools 啟動不能繞過無痕處理程序 latch。
 7. 內部候選通過與 Play 可發布仍是兩道獨立門禁。
