@@ -34,3 +34,7 @@ packages/core/dist-worker
 
 # Access-service local credentials and test bindings are never source artifacts.
 /.local/access-service/
+
+# iOS 过滤规则原始文件：忽略未跟踪副本，已跟踪文件仍由 Git 管理。
+/apps/ios/BrowserKit/Resources/easylist.txt
+/apps/ios/BrowserKit/Resources/easyprivacy.txt
