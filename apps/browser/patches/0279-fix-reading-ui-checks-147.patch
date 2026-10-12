@@ -1,0 +1,135 @@
+From dbfb12a491ccdf2aa1c8767733daa8bb05bb455d Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 05:55:16 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E4=BF=AE=E6=AD=A3=E9=98=85=E8=AF=BB?=
+ =?UTF-8?q?=E7=95=8C=E9=9D=A2=E7=9A=84=E4=B8=A5=E6=A0=BC=E7=B1=BB=E5=9E=8B?=
+ =?UTF-8?q?=E5=92=8C=E6=A0=B7=E5=BC=8F=E6=A0=BC=E5=BC=8F=20147?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/resources/aegis_agent/agent.css   | 78 ++++++++++++++++---
+ .../aegis_agent/reading_workspace.ts          |  2 +-
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 3 files changed, 69 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 2b9bb49c7dc7844c9d74df886ecc4604c2e25dc5..daed0fffaaef1d428512c7bf52f82dea5d502872 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -792,17 +792,71 @@ summary {
+ }
+ 
+ /* 阅读资料的原文保留换行，窄侧栏自动转为单列。 */
+-.reading-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+-.reading-entry { border-top: 1px solid var(--border-color, #8886); padding-block: 12px; }
+-.reading-editor { display: grid; gap: 10px; overflow-wrap: anywhere; }
+-.reading-editor label { display: grid; gap: 6px; white-space: pre-wrap; }
+-.reading-editor pre { white-space: pre-wrap; font: inherit; max-height: 320px; overflow: auto; }
+-.reading-pairs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+-#reading-tabs label { display: flex; gap: 8px; align-items: start; }
+-#reading-tabs span { white-space: pre-wrap; overflow-wrap: anywhere; }
+-#reading-tabs { max-height: 260px; overflow: auto; }
+-#reading-search { width: 100%; box-sizing: border-box; }
++.reading-actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px;
++  margin-block: 12px;
++}
++
++.reading-entry {
++  border-top: 1px solid var(--border-color, #8886);
++  padding-block: 12px;
++}
++
++.reading-editor {
++  display: grid;
++  gap: 10px;
++  overflow-wrap: anywhere;
++}
++
++.reading-editor label {
++  display: grid;
++  gap: 6px;
++  white-space: pre-wrap;
++}
++
++.reading-editor pre {
++  white-space: pre-wrap;
++  font: inherit;
++  max-height: 320px;
++  overflow: auto;
++}
++
++.reading-pairs {
++  display: grid;
++  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
++  gap: 12px;
++}
++
++#reading-tabs label {
++  display: flex;
++  gap: 8px;
++  align-items: start;
++}
++
++#reading-tabs span {
++  white-space: pre-wrap;
++  overflow-wrap: anywhere;
++}
++
++#reading-tabs {
++  max-height: 260px;
++  overflow: auto;
++}
++
++#reading-search {
++  width: 100%;
++  box-sizing: border-box;
++}
++
+ @media (max-width: 480px) {
+-  .reading-pairs { grid-template-columns: minmax(0, 1fr); }
+-  .reading-pairs h4 { display: none; }
++  .reading-pairs {
++    grid-template-columns: minmax(0, 1fr);
++  }
++
++  .reading-pairs h4 {
++    display: none;
++  }
++
+ }
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index 28d2f2d9b10113c766f7b6c9b3fa52ecb321a45c..3cf6210e2760d871f95f1585f02b7ef98f0f8081 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -116,7 +116,7 @@ export class ReadingWorkspace {
+         // 翻译完成后保留尚未保存的批注。
+         const note = document.getElementById('reading-draft-note') as HTMLTextAreaElement|null;
+         const quote = document.getElementById('reading-draft-quote') as HTMLTextAreaElement|null;
+-        if (request.op === 'translate') {
++        if (request['op'] === 'translate') {
+           state.draft.note = note?.value || '';
+           state.draft.quote = quote?.value || '';
+           state.draft.group = (document.getElementById('reading-draft-group') as HTMLTextAreaElement|null)?.value || '';
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 212549cbc0e57a10ce683f1ba230d9cbce776bdb..e29e94be7438be0f75bbeaf4d04ec35fd2b4a533 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.146";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (146)";
++inline constexpr char kProductVersion[] = "3.0.0.147";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (147)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

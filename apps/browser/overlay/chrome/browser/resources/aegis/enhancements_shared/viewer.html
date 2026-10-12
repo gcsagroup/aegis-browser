@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data: blob: https: http:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Markdown 阅读</title>
+    <link rel="stylesheet" href="viewer.css" />
+    <script src="vendor/markdown-it.min.js" defer></script>
+    <script src="vendor/task-lists.min.js" defer></script>
+    <script src="vendor/highlight.min.js" defer></script>
+    <script src="vendor/purify.min.js" defer></script>
+    <script src="viewer.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <div>
+        <strong id="title">Markdown 阅读</strong
+        ><small id="origin">在浏览器中打开或导入文档</small>
+      </div>
+      <nav aria-label="阅读选项">
+        <button id="outline-toggle" aria-expanded="true">目录</button>
+        <button id="source-toggle" aria-pressed="false">源码</button>
+        <button id="copy-source">复制原文</button>
+        <button id="theme">主题</button>
+        <button id="width">宽度</button>
+        <button id="font-down" aria-label="减小字体">A−</button>
+        <button id="font-up" aria-label="增大字体">A+</button>
+      </nav>
+    </header>
+    <section class="findbar">
+      <input
+        id="query"
+        type="search"
+        placeholder="查找文档内容"
+        aria-label="查找文档内容"
+      /><button id="find">查找下一个</button
+      ><button id="remote-images">加载外部图片</button>
+    </section>
+    <p id="notice" role="status" aria-live="polite"></p>
+    <div class="layout">
+      <aside id="outline" aria-label="文档目录"></aside>
+      <main>
+        <article id="document"><p class="empty">Markdown 文档将在这里显示。</p></article>
+        <pre id="source" hidden></pre>
+      </main>
+    </div>
+  </body>
+</html>

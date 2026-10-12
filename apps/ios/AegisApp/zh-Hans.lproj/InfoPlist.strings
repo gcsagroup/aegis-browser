@@ -1,0 +1,2 @@
+"NSCameraUsageDescription" = "网站请求使用相机时，Aegis 会先征求你的许可。";
+"NSMicrophoneUsageDescription" = "网站请求使用麦克风时，Aegis 会先征求你的许可。";

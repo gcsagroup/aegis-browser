@@ -1,0 +1,85 @@
+From e2663bdc7fd28cbc26566309fb1a8edddeee6896 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 05:57:23 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E5=AF=B9=E9=BD=90=E9=98=85=E8=AF=BB?=
+ =?UTF-8?q?=E5=B7=A5=E4=BD=9C=E5=8C=BA=E7=9A=84=20Chromium=20=E5=8E=9F?=
+ =?UTF-8?q?=E7=94=9F=E6=8E=A5=E5=8F=A3=20148?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn                 | 1 +
+ .../browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc | 5 ++++-
+ chrome/browser/ui/webui/aegis_agent/reading_workspace.cc     | 4 +++-
+ chrome/browser/ui/webui/help/aegis_github_update.h           | 4 ++--
+ 4 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+index 0991f675950669dcbd566cbf266688705122abb9..6a77ee34f775c1817c2445669fc2e08c9398673c 100644
+--- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -59,6 +59,7 @@ source_set("impl") {
+     "//components/search_engines",
+     "//components/tabs:public",
+     "//content/public/browser",
++    "//third_party/blink/public/common",
+     "//ui/base",
+     "//ui/webui",
+     "//url",
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index da4b93691d581e4d61a0f89514d884b2c184a366..758bd8658e6853d7c70e84486e70b6fc27dcd8e7 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -612,7 +612,10 @@ void AegisAgentPageHandler::ReadingCommand(
+   if (!reading_workspace_) {
+     reading_workspace_ = std::make_unique<AegisReadingWorkspace>(profile_, browser_);
+   }
+-  reading_workspace_->Run(request, std::move(callback));
++  reading_workspace_->Run(request, base::BindOnce(
++      [](ReadingCommandCallback done, std::string result, std::string error) {
++        std::move(done).Run(result, error);
++      }, std::move(callback)));
+ }
+ 
+ void AegisAgentPageHandler::ShowUI() {
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index 985684ce37cbac57abaf96f54264c74ee1e5a8e8..635ecea9be074178f7481bb47294236472752684 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -32,6 +32,7 @@
+ #include "content/public/browser/web_contents.h"
+ #include "crypto/sha2.h"
+ #include "pdf/buildflags.h"
++#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+ #if BUILDFLAG(ENABLE_PDF)
+ #include "components/pdf/browser/pdf_document_helper.h"
+ #endif
+@@ -500,7 +501,8 @@ void AegisReadingWorkspace::Captured(
+       source_url_.SchemeIsHTTPOrHTTPS() &&
+       aegis::IsModelSummaryAllowed(original, &reason);
+   auto state = State();
+-  state.Set("draft", draft_.Clone()).Set("canTranslate", model_allowed_);
++  state.Set("draft", draft_.Clone());
++  state.Set("canTranslate", model_allowed_);
+   if (auto* core = aegis::AegisServiceFactory::GetForProfile(profile_)) {
+     state.Set("destination", core->ConfiguredModelBaseUrl());
+     state.Set("model", core->ConfiguredModelName());
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index e29e94be7438be0f75bbeaf4d04ec35fd2b4a533..23d4655c58f1248c5dc47f6eae43f7879dabc789 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.147";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (147)";
++inline constexpr char kProductVersion[] = "3.0.0.148";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (148)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

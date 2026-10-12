@@ -1,0 +1,226 @@
+From 7d77ac9d4cfb4592995f254434dc8bcad14ed03a Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 01:32:46 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E9=80=9A=E8=BF=87=E5=9B=BA=E5=AE=9A?=
+ =?UTF-8?q?=E5=8E=9F=E7=94=9F=E6=B8=85=E5=8D=95=E4=B8=8B=E8=BD=BD=E7=BF=BB?=
+ =?UTF-8?q?=E8=AF=91=E8=AF=AD=E8=A8=80=E5=8C=85=20165?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 31 +++++++++
+ .../aegis_agent/local_ai/asset_manifest.json  |  4 +-
+ .../resources/aegis_agent/local_ai/worker.js  |  2 +-
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn  |  2 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 67 ++++++++++++++++++-
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 6 files changed, 104 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index af8881334a7be53f7604e1decadb6af8ee623a51..e529bae06cfa767969a73dadd9450f84f7049364 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -10,6 +10,7 @@
+ #include <vector>
+ 
+ #include "base/command_line.h"
++#include "content/public/test/url_loader_interceptor.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+ #include "base/functional/bind.h"
+@@ -6147,6 +6148,36 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalTranslationAndResearch
+   run(research.Clone(), "research_disabled");
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingPackDownloadScopeAndIntegrity) {
++  std::atomic<int> requests{0};
++  content::URLLoaderInterceptor intercept(base::BindRepeating(
++      [&](content::URLLoaderInterceptor::RequestParams* params) {
++        if (params->url_request.url.host() != "firefox-settings-attachments.cdn.mozilla.net") return false;
++        ++requests;
++        EXPECT_EQ(params->url_request.credentials_mode, network::mojom::CredentialsMode::kOmit);
++        EXPECT_EQ(params->url_request.redirect_mode, network::mojom::RedirectMode::kError);
++        EXPECT_TRUE(params->url_request.referrer.empty());
++        EXPECT_EQ(params->url_request.url.path(), "/main-workspace/translations-models-v2/900beaed-2dba-4a88-ad7c-852ec9e73f6a.zst");
++        // 长度正确但内容损坏；浏览器不得把这个文件标记为已安装。
++        content::URLLoaderInterceptor::WriteResponse("HTTP/1.1 200 OK\nContent-Type: application/octet-stream\n\n",
++            std::string(2499275, 'x'), params->client.get());
++        return true;
++      }));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
++  auto* page = browser()->tab_strip_model()->GetActiveWebContents();
++  EXPECT_EQ(content::EvalJs(page, R"JS(
++    (async () => {
++      try { await fetch('./local_ai/download/https://example.com/private'); return 'unrestricted'; } catch {}
++      const {LocalAiClient} = await import('./local_ai_client.js');
++      const client = new LocalAiClient();
++      try { await client.run({op: 'download', direction: 'en-zh'}, () => {}); return 'accepted corrupt'; }
++      catch (error) { if (error.message !== 'package_corrupt') return error.message; }
++      return (await client.run({op: 'status', direction: 'en-zh'}, () => {})).ready ? 'partial installed' : 'passed';
++    })()
++  )JS"), "passed");
++  EXPECT_EQ(requests.load(), 1);
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalAiWorkerInWebUI) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
+       GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index d3cb9a89f78a42e9ef241311bb20b518c5025e69..fc3ee51082d4eacf5560ac94f34daceb1f30d5ba 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -10,8 +10,8 @@
+       "sha256": "8bc2c806918e38d7c158522b2238317c6d935b8caf57866243852e87e7763913"
+     },
+     "worker.js": {
+-      "bytes": 6925,
+-      "sha256": "13972886468d9bfe4589e9c79e91eeb501f5e292d03042260b7c71f92728c7a8"
++      "bytes": 6914,
++      "sha256": "5de1eba323d69b074ceec689620dba637c2e1da48ca52693cc0f89c215590279"
+     },
+     "research.js": {
+       "bytes": 6647,
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/worker.js b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+index ff1bcac3b95d2f3883ee71472753572170b7d5aa..f92d360e90bcf98661eb6fd742b025e56ddd8414 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/worker.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+@@ -3,7 +3,7 @@
+ import {BatchTranslator, TranslatorBacking} from './bergamot/translator.js';
+ import {decompress} from './vendor/fzstd.js';
+ 
+-const CDN = 'https://firefox-settings-attachments.cdn.mozilla.net/';
++const CDN = new URL('./download/', import.meta.url).href;
+ const digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)),
+     n => n.toString(16).padStart(2, '0')).join('');
+ const progress = text => self.postMessage({progress: text});
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+index 6a77ee34f775c1817c2445669fc2e08c9398673c..2e85395210a5bc16f72c1f2926d22c0eeafdbdcd 100644
+--- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -55,6 +55,8 @@ source_set("impl") {
+     "//components/os_crypt/async/browser",
+     "//components/os_crypt/async/common",
+     "//crypto",
++    "//net",
++    "//services/network/public/cpp",
+     "//pdf:buildflags",
+     "//components/search_engines",
+     "//components/tabs:public",
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index e5abd7db9229002e4323b23b330ba4b7fbbedddc..f512b350de2a38bc3c7bacf51b156a24745cac9f 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -3,6 +3,18 @@
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
+ 
+ #include <string>
++#include <memory>
++#include <optional>
++
++#include "base/functional/bind.h"
++#include "base/memory/ref_counted_memory.h"
++#include "base/time/time.h"
++#include "content/public/browser/storage_partition.h"
++#include "net/base/load_flags.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
+ 
+ #include "base/feature_list.h"
+ #include "base/strings/string_util.h"
+@@ -28,6 +40,52 @@
+ 
+ namespace {
+ 
++// 仅向固定官方来源下载清单中的七个文件，不接受客户端地址、正文或凭据。
++// 原生获取用于适配来源站不提供 CORS 响应头；WebUI 仍仅允许同源连接。
++struct TranslationAsset { const char* path; size_t size; };
++constexpr TranslationAsset kTranslationAssets[] = {
++    {"main-workspace/translations-models-v2/900beaed-2dba-4a88-ad7c-852ec9e73f6a.zst", 2499275},
++    {"main-workspace/translations-models-v2/83278466-fec4-4944-a99d-c2372fa9de88.zst", 348078},
++    {"main-workspace/translations-models-v2/84236654-1b66-42fc-9ba2-74c37f27e5eb.zst", 354994},
++    {"main-workspace/translations-models-v2/ef9e8f1a-b8c5-4626-a134-ff74bd8628ae.zst", 43556159},
++    {"main-workspace/translations-models-v2/321191b6-2c42-4bca-84ec-b7b074b67bd6.zst", 32923790},
++    {"main-workspace/translations-models-v2/570592b5-224e-4ad9-96cd-7a4905f0f044.zst", 3429363},
++    {"main-workspace/translations-models-v2/4c5d89d3-9412-4a61-a843-dfc1ed70565d.zst", 611595},
++};
++void FetchTranslationAsset(scoped_refptr<network::SharedURLLoaderFactory> factory,
++    std::shared_ptr<int> active, const std::string& path,
++    content::WebUIDataSource::GotDataCallback callback) {
++  const TranslationAsset* asset = nullptr;
++  for (const auto& candidate : kTranslationAssets) {
++    if (path == std::string("local_ai/download/") + candidate.path) asset = &candidate;
++  }
++  if (!asset || *active >= 2) { std::move(callback).Run(nullptr); return; }
++  auto request = std::make_unique<network::ResourceRequest>();
++  request->url = GURL(std::string("https://firefox-settings-attachments.cdn.mozilla.net/") + asset->path);
++  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++  request->redirect_mode = network::mojom::RedirectMode::kError;
++  request->load_flags = net::LOAD_DISABLE_CACHE;
++  auto loader = network::SimpleURLLoader::Create(std::move(request),
++      net::DefineNetworkTrafficAnnotation("aegis_local_translation_pack", R"(
++        semantics { sender: "Aegis local translation" description: "Downloads a fixed public language pack."
++          trigger: "User clicks Download language pack." data: "No user content or credentials."
++          destination: OTHER destination_other: "Mozilla translation model CDN" }
++        policy { cookies_allowed: NO setting: "Only an explicit download action starts a request."
++          policy_exception_justification: "Optional user-triggered public asset download." }
++      )"));
++  loader->SetTimeoutDuration(base::Minutes(2));
++  ++*active;
++  auto* download = loader.get();
++  download->DownloadToString(factory.get(), base::BindOnce(
++      [](std::unique_ptr<network::SimpleURLLoader> loader, std::shared_ptr<int> active,
++         size_t size, content::WebUIDataSource::GotDataCallback callback,
++         std::optional<std::string> data) {
++        --*active;
++        if (!data || data->size() != size) { std::move(callback).Run(nullptr); return; }
++        std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(std::move(*data)));
++      }, std::move(loader), active, asset->size, std::move(callback)), asset->size);
++}
++
+ enum class UiLanguage {
+   kEnglish,
+   kSimplifiedChinese,
+@@ -1071,6 +1129,13 @@ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
+       chrome::kChromeUIUntrustedAegisAgentURL);
+   webui::SetupWebUIDataSource(source, kAegisAgentResources,
+                               IDR_AEGIS_AGENT_AGENT_HTML);
++  source->SetRequestFilter(
++      base::BindRepeating([](const std::string& path) {
++        return base::StartsWith(path, "local_ai/download/");
++      }),
++      base::BindRepeating(&FetchTranslationAsset,
++          web_ui->GetWebContents()->GetBrowserContext()->GetDefaultStoragePartition()
++              ->GetURLLoaderFactoryForBrowserProcess(), std::make_shared<int>(0)));
+   AddStrings(source);
+   source->AddBoolean("isAndroid", BUILDFLAG(IS_ANDROID));
+   source->OverrideContentSecurityPolicy(
+@@ -1083,7 +1148,7 @@ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
+       network::mojom::CSPDirectiveName::ImgSrc, "img-src 'self' data:;");
+   source->OverrideContentSecurityPolicy(
+       network::mojom::CSPDirectiveName::ConnectSrc,
+-      "connect-src 'self' https://firefox-settings-attachments.cdn.mozilla.net;");
++      "connect-src 'self';");
+   source->OverrideContentSecurityPolicy(
+       network::mojom::CSPDirectiveName::WorkerSrc, "worker-src 'self';");
+   source->OverrideContentSecurityPolicy(
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 173d87b724328aa8352b3a7701afa2fd487a51fd..eb56d09ef6cf75525ffc368c3ff0f2c430efedf1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.164";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (164)";
++inline constexpr char kProductVersion[] = "3.1.0.165";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (165)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

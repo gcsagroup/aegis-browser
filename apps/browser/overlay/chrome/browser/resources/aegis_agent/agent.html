@@ -23,12 +23,39 @@
 
       <nav class="workspace-tabs" aria-label="$i18n{workspaceLabel}">
         <button id="protection-view-button" type="button"></button>
+        <button id="reading-view-button" type="button" aria-selected="false">$i18n{readingLibrary}</button>
         <button id="research-view-button" type="button" aria-selected="false"></button>
         <button id="task-view-button" type="button" aria-selected="true"></button>
       </nav>
       <div class="workspace-tools">
+        <a id="enhancement-link" hidden href="chrome://aegis/enhancements.html" target="_blank" rel="noopener">网站增强与脚本</a>
+        <a id="markdown-link" hidden href="chrome://aegis/markdown.html" target="_blank" rel="noopener">Markdown 阅读</a>
         <button id="automation-view-button" type="button" aria-selected="false"></button>
       </div>
+
+      <section id="reading-view" class="card" hidden aria-labelledby="reading-title">
+        <h2 id="reading-title">$i18n{readingLibrary}</h2>
+        <p class="help">$i18n{readingHelp}</p>
+        <button id="reading-refresh" type="button">$i18n{readingRefresh}</button>
+        <div id="reading-tabs" class="research-sources"></div>
+        <p class="help">$i18n{readingSelection}</p>
+        <label for="reading-group">$i18n{readingGroup}</label>
+        <input id="reading-group" maxlength="128">
+        <div class="reading-actions">
+          <button id="reading-stash" type="button">$i18n{readingStash}</button>
+          <button id="reading-split" type="button">$i18n{readingSplit}</button>
+          <button id="reading-restore" type="button">$i18n{readingRestore}</button>
+        </div>
+        <label for="reading-page">$i18n{readingPage}</label>
+        <input id="reading-page" type="number" min="1" max="10000" value="1">
+        <button id="reading-capture" type="button">$i18n{readingCapture}</button>
+        <p id="reading-status" role="status" aria-live="polite"></p>
+        <div id="reading-draft"></div>
+        <label for="reading-search">$i18n{readingSearch}</label>
+        <input id="reading-search" type="search">
+        <label><input id="reading-archived" type="checkbox">$i18n{readingArchived}</label>
+        <div id="reading-records"></div>
+      </section>
 
       <section id="research-view" class="card" hidden aria-labelledby="research-title">
         <h2 id="research-title"></h2>
@@ -86,6 +113,27 @@
         </section>
       </section>
 
+      <details id="reading-ai-settings" class="card">
+        <summary>$i18n{readingLocalSettings}</summary>
+        <p class="help">$i18n{readingLocalHelp}</p>
+        <label for="reading-direction">$i18n{readingDirection}</label>
+        <select id="reading-direction">
+          <option value="en-zh">English → 简体中文 · 36.13 MB</option>
+          <option value="zh-en">简体中文 → English · 47.60 MB</option>
+        </select>
+        <p id="reading-package-status" role="status" aria-live="polite"></p>
+        <div class="reading-actions">
+          <button id="reading-package-download" type="button">$i18n{readingDownloadPack}</button>
+          <button id="reading-package-remove" type="button">$i18n{readingRemovePack}</button>
+          <button id="reading-local-cancel" type="button" disabled>$i18n{readingCancel}</button>
+        </div>
+        <h3>$i18n{readingExperiments}</h3>
+        <p class="help">$i18n{readingResearchWarning}</p>
+        <label><input id="reading-minim" type="checkbox">MINIM · $i18n{readingMinimOption}</label>
+        <label><input id="reading-phishlang" type="checkbox">PhishLang · $i18n{readingPhishlangOption}</label>
+        <p id="reading-research-settings-status" role="status"></p>
+      </details>
+
       <details id="model-details" class="card model-card">
         <summary>
           <span id="model-settings-label"></span>
@@ -108,6 +156,10 @@
             <select id="model-options" hidden></select>
             <label for="model-api-key" id="api-key-label"></label>
             <input id="model-api-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
+          </div>
+          <details id="model-advanced">
+            <summary>$i18n{modelAdvanced}</summary>
+            <div class="field-grid">
             <label for="model-routing-mode" id="model-routing-mode-label"></label>
             <select id="model-routing-mode">
               <option value="0">$i18n{modelRoutingFixed}</option>
@@ -145,6 +197,7 @@
             <label><input id="model-supports-strong-reasoning" type="checkbox" checked>
               <span id="model-supports-strong-reasoning-label"></span></label>
           </div>
+          </details>
           <div class="model-actions">
             <button id="detect-models-button" type="button"></button>
             <button id="save-model-button" class="primary" type="button"></button>
