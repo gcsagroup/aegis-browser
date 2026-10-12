@@ -148,7 +148,7 @@ node "$ROOT_DIR/scripts/write-build-identity.mjs" "${identity_begin[@]}"
 echo "Building chrome at $OUT (this can take a long time)…"
 autoninja -C "$OUT" chrome
 
-# 本地 ad-hoc 签名会修改 App 内的 Mach-O 字节，必须发生在身份清单
+# 固定证书签名会修改 App 内的 Mach-O 字节，必须发生在身份清单
 # finalize 之前。启动流程不得再对已绑定产物做任何签名或修补。
 if [[ "$(uname -s)" == Darwin ]]; then
   bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$APP" "$OUT"

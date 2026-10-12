@@ -1,0 +1,119 @@
+From 88ffacc65b78674136109096f5e2a2633448f640 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 01:43:30 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E6=8C=89=E6=B8=85=E5=8D=95=E5=A4=A7?=
+ =?UTF-8?q?=E5=B0=8F=E6=B5=81=E5=BC=8F=E6=8E=A5=E6=94=B6=E7=BF=BB=E8=AF=91?=
+ =?UTF-8?q?=E6=A8=A1=E5=9E=8B=20166?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    | 54 +++++++++++++++----
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 2 files changed, 47 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index f512b350de2a38bc3c7bacf51b156a24745cac9f..4f75e6b60686312bed3b9d468c0bbfa9ebf4c374 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -7,6 +7,7 @@
+ #include <optional>
+ 
+ #include "base/functional/bind.h"
++#include "base/logging.h"
+ #include "base/memory/ref_counted_memory.h"
+ #include "base/time/time.h"
+ #include "content/public/browser/storage_partition.h"
+@@ -15,6 +16,7 @@
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/shared_url_loader_factory.h"
+ #include "services/network/public/cpp/simple_url_loader.h"
++#include "services/network/public/cpp/simple_url_loader_stream_consumer.h"
+ 
+ #include "base/feature_list.h"
+ #include "base/strings/string_util.h"
+@@ -52,6 +54,47 @@ constexpr TranslationAsset kTranslationAssets[] = {
+     {"main-workspace/translations-models-v2/570592b5-224e-4ad9-96cd-7a4905f0f044.zst", 3429363},
+     {"main-workspace/translations-models-v2/4c5d89d3-9412-4a61-a843-dfc1ed70565d.zst", 611595},
+ };
++// 模型超过 SimpleURLLoader 的 5 MiB 字符串上限，按固定大小流式接收。
++class TranslationDownload : public base::RefCounted<TranslationDownload>,
++                            public network::SimpleURLLoaderStreamConsumer {
++ public:
++  TranslationDownload(std::unique_ptr<network::SimpleURLLoader> loader,
++      std::shared_ptr<int> active, size_t size,
++      content::WebUIDataSource::GotDataCallback callback)
++      : loader_(std::move(loader)), active_(std::move(active)), size_(size),
++        callback_(std::move(callback)) {}
++  void Start(network::SharedURLLoaderFactory* factory) {
++    keep_alive_ = this;
++    loader_->DownloadAsStream(factory, this);
++  }
++ private:
++  friend class base::RefCounted<TranslationDownload>;
++  ~TranslationDownload() override = default;
++  void OnDataReceived(std::string_view chunk, base::OnceClosure resume) override {
++    if (chunk.size() > size_ - bytes_.size()) { Finish(false); return; }
++    bytes_.append(chunk);
++    std::move(resume).Run();
++  }
++  void OnComplete(bool success) override {
++    if (!success || bytes_.size() != size_)
++      LOG(ERROR) << "Aegis language pack download: net=" << loader_->NetError()
++                 << " bytes=" << bytes_.size() << " expected=" << size_;
++    Finish(success && bytes_.size() == size_);
++  }
++  void OnRetry(base::OnceClosure retry) override { bytes_.clear(); std::move(retry).Run(); }
++  void Finish(bool success) {
++    auto keep_alive = std::move(keep_alive_);
++    loader_.reset();
++    --*active_;
++    std::move(callback_).Run(success ? base::MakeRefCounted<base::RefCountedString>(std::move(bytes_)) : nullptr);
++  }
++  std::unique_ptr<network::SimpleURLLoader> loader_;
++  std::shared_ptr<int> active_;
++  const size_t size_;
++  std::string bytes_;
++  content::WebUIDataSource::GotDataCallback callback_;
++  scoped_refptr<TranslationDownload> keep_alive_;
++};
+ void FetchTranslationAsset(scoped_refptr<network::SharedURLLoaderFactory> factory,
+     std::shared_ptr<int> active, const std::string& path,
+     content::WebUIDataSource::GotDataCallback callback) {
+@@ -75,15 +118,8 @@ void FetchTranslationAsset(scoped_refptr<network::SharedURLLoaderFactory> factor
+       )"));
+   loader->SetTimeoutDuration(base::Minutes(2));
+   ++*active;
+-  auto* download = loader.get();
+-  download->DownloadToString(factory.get(), base::BindOnce(
+-      [](std::unique_ptr<network::SimpleURLLoader> loader, std::shared_ptr<int> active,
+-         size_t size, content::WebUIDataSource::GotDataCallback callback,
+-         std::optional<std::string> data) {
+-        --*active;
+-        if (!data || data->size() != size) { std::move(callback).Run(nullptr); return; }
+-        std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(std::move(*data)));
+-      }, std::move(loader), active, asset->size, std::move(callback)), asset->size);
++  base::MakeRefCounted<TranslationDownload>(std::move(loader), active, asset->size,
++      std::move(callback))->Start(factory.get());
+ }
+ 
+ enum class UiLanguage {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index eb56d09ef6cf75525ffc368c3ff0f2c430efedf1..98b5ea26b6ca9ed3821318f5993271df209c9a42 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.165";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (165)";
++inline constexpr char kProductVersion[] = "3.1.0.166";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (166)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

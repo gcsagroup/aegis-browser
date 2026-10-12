@@ -19,6 +19,7 @@ struct AegisApp: App {
     @StateObject private var settings: BrowserSettings
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
+    @StateObject private var readingLibrary: ReadingLibrary
 
     init() {
         let store: BrowserDataStore
@@ -41,7 +42,7 @@ struct AegisApp: App {
 #endif
         // UI 验收数据与用户配置、下载目录分开。
         let defaults = isTest ? UserDefaults(suiteName: "com.gcsa.aegis.ios.ui-tests")! : .standard
-        if isTest { defaults.removePersistentDomain(forName: "com.gcsa.aegis.ios.ui-tests") }
+        if isTest && !ProcessInfo.processInfo.arguments.contains("--ui-testing-preferences-keep") { defaults.removePersistentDomain(forName: "com.gcsa.aegis.ios.ui-tests") }
         if isTest && ProcessInfo.processInfo.arguments.contains("--ui-testing-dark") { defaults.set("dark", forKey: "browser.appearance") }
         _settings = StateObject(wrappedValue: BrowserSettings(defaults: defaults))
         let downloadDirectory = isTest ? FileManager.default.temporaryDirectory.appendingPathComponent("ui-downloads-" + UUID().uuidString) : nil
@@ -51,13 +52,20 @@ struct AegisApp: App {
             try? Data("合成损坏记录".utf8).write(to: downloadDirectory.appendingPathComponent("downloads.json"))
         }
 #endif
-        _downloads = StateObject(wrappedValue: DownloadManager(directory: downloadDirectory, background: !isTest || ProcessInfo.processInfo.arguments.contains("--ui-testing-background-download")))
+        _downloads = StateObject(wrappedValue: DownloadManager(directory: downloadDirectory,
+            background: !isTest || ProcessInfo.processInfo.arguments.contains("--ui-testing-background-download"), defaults: defaults))
         let historyURL = isTest ? FileManager.default.temporaryDirectory.appendingPathComponent("ui-assistant-tasks.aes") : AssistantTaskStore.defaultURL
         if isTest && !ProcessInfo.processInfo.arguments.contains("--ui-testing-assistant-history-keep") {
             try? FileManager.default.removeItem(at: historyURL)
         }
         _assistantTasks = StateObject(wrappedValue: AssistantTaskStore(url: historyURL,
             keyAccount: isTest ? "assistant-tasks-ui-v1" : "assistant-tasks-v1"))
+        let readingURL = isTest ? FileManager.default.temporaryDirectory.appendingPathComponent("ui-reading-library-v1.aes") : ReadingLibrary.defaultURL
+        if isTest && !ProcessInfo.processInfo.arguments.contains("--ui-testing-reading-keep") {
+            try? FileManager.default.removeItem(at: readingURL)
+        }
+        _readingLibrary = StateObject(wrappedValue: ReadingLibrary(url: readingURL,
+            keyAccount: isTest ? "reading-library-ui-v1" : "reading-library-v1"))
         dataStore = store
         var workspaceURL: URL? = isTest ? nil : WorkspaceStore.defaultURL
 #if DEBUG
@@ -77,11 +85,13 @@ struct AegisApp: App {
 
     var body: some Scene {
         WindowGroup(id: "browser", for: UUID.self) { $windowID in
-            AegisWindowView(id: windowID, dataStore: dataStore, workspaces: workspaceStore, windows: windows)
+            AegisWindowView(id: windowID, dataStore: dataStore, workspaces: workspaceStore, windows: windows,
+                            preferences: settings.browserPreferences)
                 .environmentObject(windows)
                 .environmentObject(settings)
                 .environmentObject(downloads)
                 .environmentObject(assistantTasks)
+                .environmentObject(readingLibrary)
                 .preferredColorScheme(settings.colorScheme)
                 .tint(Color(red: 0.09, green: 0.47, blue: 0.37))
         } defaultValue: {
@@ -145,10 +155,11 @@ struct AegisApp: App {
 private struct AegisWindowView: View {
     @StateObject private var browser: BrowserSession
     @ObservedObject var windows: BrowserWindowStore
-    init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore) {
+    init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore,
+         preferences: BrowserPreferences) {
         self.windows = windows
         _browser = StateObject(wrappedValue: BrowserSession(dataStore: dataStore, workspaceStore: workspaces,
-            windowID: id, windowStore: windows))
+            windowID: id, windowStore: windows, preferences: preferences))
     }
     var body: some View {
         AegisRootView()

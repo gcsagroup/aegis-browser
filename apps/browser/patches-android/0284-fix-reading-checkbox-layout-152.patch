@@ -1,0 +1,54 @@
+From 3d9a1de1e714f65269675d49e79be50cbb737699 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 06:23:22 +0800
+Subject: [PATCH] fix: correct reading checkbox size for build 152
+
+---
+ chrome/browser/resources/aegis_agent/agent.css    | 15 +++++++++++++++
+ .../browser/ui/webui/help/aegis_github_update.h   |  4 ++--
+ 2 files changed, 17 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index bd85b68591c8c299998f009fa156f5003d67115d..e4695952f1ab56e09858bead86dfc281e67a5811 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -835,6 +835,21 @@ summary {
+   align-items: start;
+ }
+ 
++#reading-view label:has(input[type='checkbox']) {
++  display: flex;
++  align-items: start;
++  gap: 8px;
++}
++
++#reading-view input[type='checkbox'] {
++  flex: 0 0 16px;
++  width: 16px;
++  height: 16px;
++  min-height: 16px;
++  margin: 2px 0 0;
++  padding: 0;
++}
++
+ #reading-tabs span {
+   white-space: pre-wrap;
+   overflow-wrap: anywhere;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 29cae767da253fd893ce2d4bd0c24b8349410df1..c219afa9377c1c9bf6a9d27adfe5c4b27c69b891 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.151";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (151)";
++inline constexpr char kProductVersion[] = "3.0.0.152";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (152)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

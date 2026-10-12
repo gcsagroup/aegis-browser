@@ -229,6 +229,7 @@ interface Page {
 
 interface PageHandler {
   ShowUI();
+  ReadingCommand(string request) => (string result, string error);
 
   GetSnapshot() => (TaskSnapshot snapshot);
   ListResearchTabs() => (array<ResearchTab> tabs, string error);

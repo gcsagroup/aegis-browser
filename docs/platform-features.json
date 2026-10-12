@@ -1,0 +1,2892 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-10-13",
+  "platforms": [
+    "macOS",
+    "Windows",
+    "Android",
+    "iOS"
+  ],
+  "languages": [
+    "zh-CN",
+    "en",
+    "zh-TW"
+  ],
+  "features": [
+    {
+      "id": "kAegisEnabled",
+      "name": {
+        "zh-CN": "总开关与设置持久化",
+        "en": "Master control and persistence",
+        "zh-TW": "總開關與設置持久化"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "提供独立保护选项，未增加与 Chromium 同构的总开关。",
+            "en": "Separate protection options; no equivalent Chromium master switch.",
+            "zh-TW": "提供獨立保護選項，未增加與 Chromium 同構的總開關。"
+          },
+          "source": [
+            "apps/ios/AegisApp/BrowserPreferenceViews.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisTrackerBlocking",
+      "name": {
+        "zh-CN": "跟踪器拦截",
+        "en": "Tracker blocking",
+        "zh-TW": "跟蹤器攔截"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "WebKit 内容规则支持广告与跟踪过滤，规则语法覆盖有差异。",
+            "en": "WebKit content rules filter ads and trackers with different rule syntax coverage.",
+            "zh-TW": "WebKit 內容規則支持廣告與跟蹤過濾，規則語法覆蓋有差異。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/ContentFilterCompiler.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisPhishInterstitial",
+      "name": {
+        "zh-CN": "钓鱼警告页",
+        "en": "Phishing warning",
+        "zh-TW": "釣魚警告頁"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "签名本地主机快照、PSL 网址判断、有限结构观察与原生阻止页；检查在加载后发生，非实时威胁查询。",
+            "en": "Signed local host snapshot, PSL URL checks, bounded structure observation and a native warning. Structure checks start after loading; no real-time threat query.",
+            "zh-TW": "簽章本機主機快照、PSL 網址判斷、有限結構觀察與原生阻止頁；檢查在載入後發生，非即時威脅查詢。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/NavigationPolicy.swift",
+            "apps/ios/BrowserKit/PageProtection.swift",
+            "apps/ios/AegisPolicyKit/RegisteredDomain.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisFingerprintGuard",
+      "name": {
+        "zh-CN": "指纹防护",
+        "en": "Fingerprint protection",
+        "zh-TW": "指紋防護"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "独立已知指纹资源规则及默认关闭的页面 API 限制；Worker 等可绕过，未移植引擎级扰动。",
+            "en": "Independent known fingerprint resource rules and optional page API limits. Workers can bypass them; engine-level noise is not ported.",
+            "zh-TW": "獨立已知指紋資源規則及預設關閉的頁面 API 限制；Worker 等可繞過，未移植引擎層級擾動。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserSession.swift",
+            "apps/ios/BrowserKit/SecurityRules.swift",
+            "apps/ios/BrowserKit/PageProtection.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisMinerGuard",
+      "name": {
+        "zh-CN": "挖矿防护",
+        "en": "Mining protection",
+        "zh-TW": "挖礦防護"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "独立已知挖矿主机资源拦截；Worker/WASM 组合仅提示，不宣称未知挖矿识别。",
+            "en": "Independent blocking of known mining host resources. Worker/WASM combinations only produce notices, without claiming unknown miner detection.",
+            "zh-TW": "獨立已知挖礦主機資源攔截；Worker/WASM 組合僅提示，不宣稱未知挖礦辨識。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserSession.swift",
+            "apps/ios/BrowserKit/SecurityRules.swift",
+            "apps/ios/BrowserKit/PageProtection.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisBytecodeShadow",
+      "name": {
+        "zh-CN": "字节码检查",
+        "en": "Bytecode inspection",
+        "zh-TW": "字節碼檢查"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "系统 WebKit 不使用项目的 V8 字节码检查补丁。",
+            "en": "System WebKit does not use this project's V8 bytecode inspection patches.",
+            "zh-TW": "系統 WebKit 不使用項目的 V8 字節碼檢查補丁。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserSession.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "kAegisFilterListUpdater",
+      "name": {
+        "zh-CN": "过滤列表更新",
+        "en": "Filter list updates",
+        "zh-TW": "過濾列表更新"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "手动更新及可关闭的前台检查；不承诺后台定时。",
+            "en": "Manual updates and optional foreground checks; no background schedule guarantee.",
+            "zh-TW": "手動更新及可關閉的前台檢查；不承諾後台定時。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserPreferences.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisLinkSanitize",
+      "name": {
+        "zh-CN": "链接清理",
+        "en": "Link cleanup",
+        "zh-TW": "鏈接清理"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "可配置的导航追踪参数清理；凭据网址始终阻止。",
+            "en": "Configurable tracking parameter cleanup; credentialed URLs remain blocked.",
+            "zh-TW": "可配置的導航追蹤參數清理；憑據網址始終阻止。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/NavigationPolicy.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisCookieJanitor",
+      "name": {
+        "zh-CN": "Cookie清理",
+        "en": "Cookie cleanup",
+        "zh-TW": "Cookie清理"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "支持按网站和全部清除；未移植自动 Cookie 清理策略。",
+            "en": "Per-site and full clearing; automatic cookie cleanup policies are not ported.",
+            "zh-TW": "支持按網站和全部清除；未移植自動 Cookie 清理策略。"
+          },
+          "source": [
+            "apps/ios/AegisApp/BrowserPreferenceViews.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisCnameUncloak",
+      "name": {
+        "zh-CN": "CNAME识别",
+        "en": "CNAME detection",
+        "zh-TW": "CNAME識別"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "未移植 Chromium 网络层的 CNAME 识别。",
+            "en": "Chromium network-layer CNAME detection is not ported.",
+            "zh-TW": "未移植 Chromium 網絡層的 CNAME 識別。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserSession.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "kAegisBounceTracking",
+      "name": {
+        "zh-CN": "跳转跟踪防护",
+        "en": "Bounce tracking protection",
+        "zh-TW": "跳轉跟蹤防護"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "system",
+          "reason": {
+            "zh-CN": "由 WebKit 自身追踪保护处理；没有独立 Aegis 跳转跟踪模块。",
+            "en": "Handled by WebKit tracking protection; no separate Aegis bounce tracking module.",
+            "zh-TW": "由 WebKit 自身追蹤保護處理；沒有獨立 Aegis 跳轉跟蹤模塊。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserSession.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "kAegisPolicyWorker",
+      "name": {
+        "zh-CN": "策略执行",
+        "en": "Policy execution",
+        "zh-TW": "策略執行"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "Swift 策略、能力令牌和来源检查；与 Chromium 执行架构不同。",
+            "en": "Swift policies, capability tokens and source checks use a different execution architecture.",
+            "zh-TW": "Swift 策略、能力令牌和來源檢查；與 Chromium 執行架構不同。"
+          },
+          "source": [
+            "apps/ios/AgentKit/AgentBroker.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisPrivacyAi",
+      "name": {
+        "zh-CN": "隐私AI",
+        "en": "Privacy AI",
+        "zh-TW": "隱私AI"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "发送前脱敏与预览；未内置设备端推理模型。",
+            "en": "Redaction and preview before sending; no bundled on-device inference model.",
+            "zh-TW": "發送前脫敏與預覽；未內置設備端推理模型。"
+          },
+          "source": [
+            "apps/ios/AegisPolicyKit/PIIScanner.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisAiControl",
+      "name": {
+        "zh-CN": "AI权限控制",
+        "en": "AI permissions",
+        "zh-TW": "AI權限控制"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "读取、发送和操作分别确认，限制窗口、模式和来源。",
+            "en": "Separate read, send and execution confirmations bound to window, mode and sources.",
+            "zh-TW": "讀取、發送和操作分別確認，限制窗口、模式和來源。"
+          },
+          "source": [
+            "apps/ios/AgentKit/BrowserOperations.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisAgent",
+      "name": {
+        "zh-CN": "浏览器Agent及隐私资料隔离",
+        "en": "Browser agent and private data isolation",
+        "zh-TW": "瀏覽器Agent及隱私資料隔離"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "网页阅读、比较、任务保存和有限浏览器操作；不覆盖桌面全部工具。",
+            "en": "Page reading, comparison, task saving and limited browser operations; not all desktop tools.",
+            "zh-TW": "網頁閱讀、比較、任務保存和有限瀏覽器操作；不覆蓋桌面全部工具。"
+          },
+          "source": [
+            "apps/ios/AegisApp/PageAssistantView.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisAgentPageActions",
+      "name": {
+        "zh-CN": "Agent页面操作",
+        "en": "Agent page actions",
+        "zh-TW": "Agent頁面操作"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "固定向下滚动及导航操作；不自动填表、登录或付款。",
+            "en": "Fixed scroll and navigation operations; no automatic form filling, sign-in or payment.",
+            "zh-TW": "固定向下滾動及導航操作；不自動填表、登錄或付款。"
+          },
+          "source": [
+            "apps/ios/AgentKit/BrowserOperations.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "kAegisAgentBrowserTools",
+      "name": {
+        "zh-CN": "Agent浏览器工具",
+        "en": "Agent browser tools",
+        "zh-TW": "Agent瀏覽器工具"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "标签分组、工作区、用户输入网址、重载及关闭，执行前确认。",
+            "en": "Confirmed grouping, workspaces, user-supplied URLs, reload and close operations.",
+            "zh-TW": "標籤分組、工作區、用戶輸入網址、重載及關閉，執行前確認。"
+          },
+          "source": [
+            "apps/ios/AgentKit/BrowserOperations.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisAgentWebMcp",
+      "name": {
+        "zh-CN": "WebMCP实验开关保持关闭",
+        "en": "WebMCP experiment disabled",
+        "zh-TW": "WebMCP實驗開關保持關閉"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "未接入 WebMCP，也没有可启用的空开关。",
+            "en": "WebMCP is not integrated and has no nonfunctional enable switch.",
+            "zh-TW": "未接入 WebMCP，也沒有可啓用的空開關。"
+          },
+          "source": [
+            "apps/ios/AegisApp/BrowserOperationsView.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "kAegisAgentWorkflows",
+      "name": {
+        "zh-CN": "Agent工作流",
+        "en": "Agent workflows",
+        "zh-TW": "Agent工作流"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "保留既有工作流，新增前台网页变化检查；后台调度未移植。",
+            "en": "Existing workflows plus foreground page-change checks; background scheduling is not ported.",
+            "zh-TW": "保留既有工作流，新增前台網頁變化檢查；後台調度未移植。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/ForegroundPageWatch.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisAgentTransactionPilot",
+      "name": {
+        "zh-CN": "交易实验开关保持关闭",
+        "en": "Transaction experiment disabled",
+        "zh-TW": "交易實驗開關保持關閉"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "没有交易执行接口，购买流程由用户完成。",
+            "en": "No transaction execution interface; users complete purchases.",
+            "zh-TW": "沒有交易執行接口，購買流程由用戶完成。"
+          },
+          "source": [
+            "apps/ios/AgentKit/BrowserOperations.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "aegis-access",
+      "name": {
+        "zh-CN": "网络访问规则和权限",
+        "en": "Network access rules and permissions",
+        "zh-TW": "網絡訪問規則和權限"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "按来源的网站显示、脚本、相机和麦克风设置；未移植 Aegis Access 代理路由。",
+            "en": "Per-origin display, script, camera and microphone settings; no Aegis Access proxy routing.",
+            "zh-TW": "按來源的網站顯示、腳本、相機和麥克風設置；未移植 Aegis Access 代理路由。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserPreferences.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "profile-compatibility",
+      "name": {
+        "zh-CN": "旧资料、隐私模式和重启兼容",
+        "en": "Profile and restart compatibility",
+        "zh-TW": "舊資料、隱私模式和重啓兼容"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "普通标签恢复、私密隔离、加密资料及旧下载记录兼容；格式独立。",
+            "en": "Normal tab restoration, private isolation, encrypted items and legacy download records; independent formats.",
+            "zh-TW": "普通標籤恢復、私密隔離、加密資料及舊下載記錄兼容；格式獨立。"
+          },
+          "source": [
+            "apps/ios/AegisApp/AegisApp.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "release-update",
+      "name": {
+        "zh-CN": "已有更新入口、摘要校验和失败恢复",
+        "en": "Updates, integrity and recovery",
+        "zh-TW": "已有更新入口、摘要校驗和失敗恢復"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "system",
+          "reason": {
+            "zh-CN": "安装和更新依赖 iOS 分发资格；无桌面式自更新器。",
+            "en": "Installation and updates depend on iOS distribution eligibility; no desktop-style updater.",
+            "zh-TW": "安裝和更新依賴 iOS 分發資格；無桌面式自更新器。"
+          },
+          "source": [
+            "apps/ios/AegisApp/Info.plist"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "MouseGestures",
+      "name": {
+        "zh-CN": "桌面右键手势、配置持久化、练习区与PDF动作",
+        "en": "Desktop mouse gestures",
+        "zh-TW": "桌面右鍵手勢、配置持久化、練習區與PDF動作"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已纳入共享 Chromium 功能合同；本轮未重跑该端原生验收。",
+            "en": "Included in the shared Chromium feature contract; native acceptance was not rerun for this platform.",
+            "zh-TW": "已納入共享 Chromium 功能合同；本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/aegis/aegis_prefs.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "桌面右键手势不在 Android 合同范围。",
+            "en": "Desktop right-button gestures are outside the Android contract.",
+            "zh-TW": "桌面右鍵手勢不在 Android 合同範圍。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "使用触控与系统导航；未移植桌面右键手势。",
+            "en": "Uses touch and system navigation; desktop right-button gestures are not ported.",
+            "zh-TW": "使用觸控與系統導航；未移植桌面右鍵手勢。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserWebView.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "search-home-startup",
+      "name": {
+        "zh-CN": "搜索、主页与启动",
+        "en": "Search, home page and startup",
+        "zh-TW": "搜索、主頁與啓動"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "搜索引擎选择、删除与恢复；空列表只打开网址，自定义 HTTPS 模板、主页及普通标签恢复。",
+            "zh-TW": "搜尋引擎選擇、刪除與恢復；空清單只開啟網址，自訂 HTTPS 範本、首頁及一般分頁恢復。",
+            "en": "Select, remove and restore search engines; an empty list permits direct addresses only. Supports custom HTTPS templates, a home page and regular-tab restore."
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserPreferences.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md",
+            "docs/audit/ios-search-engines-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "site-display-permissions",
+      "name": {
+        "zh-CN": "网页显示与网站权限",
+        "en": "Page display and site permissions",
+        "zh-TW": "網頁顯示與網站權限"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "全局及按来源的缩放、桌面模式、JavaScript、相机/麦克风询问或阻止；无静默授权。",
+            "en": "Global and per-origin zoom, desktop mode, JavaScript and camera/microphone ask or deny; no silent grants.",
+            "zh-TW": "全局及按來源的縮放、桌面模式、JavaScript、相機/麥克風詢問或阻止；無靜默授權。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserSession.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "site-storage",
+      "name": {
+        "zh-CN": "网站存储管理",
+        "en": "Site storage management",
+        "zh-TW": "網站存儲管理"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "按网站清除普通 Cookie、缓存和存储，先关闭所有窗口的普通标签。",
+            "en": "Clear normal cookies, cache and storage per site after closing normal tabs across windows.",
+            "zh-TW": "按網站清除普通 Cookie、緩存和存儲，先關閉所有窗口的普通標籤。"
+          },
+          "source": [
+            "apps/ios/AegisApp/BrowserPreferenceViews.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "bookmarks-history",
+      "name": {
+        "zh-CN": "收藏与历史",
+        "en": "Bookmarks and history",
+        "zh-TW": "收藏與歷史"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "收藏管理和历史搜索；私密浏览不记历史，显式保存需确认。",
+            "en": "Bookmark management and history search; private browsing keeps no history and saving requires confirmation.",
+            "zh-TW": "收藏管理和歷史搜索；私密瀏覽不記歷史，顯式保存需確認。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserDataStore.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "tabs-windows-workspaces",
+      "name": {
+        "zh-CN": "标签、窗口与工作区",
+        "en": "Tabs, windows and workspaces",
+        "zh-TW": "標籤、窗口與工作區"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "标签分组、普通窗口恢复、iPad 多窗口；私密标签不跨启动恢复。",
+            "en": "Tab groups, normal window restoration and iPad multiwindow support; private tabs do not survive relaunch.",
+            "zh-TW": "標籤分組、普通窗口恢復、iPad 多窗口；私密標籤不跨啓動恢復。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/BrowserWindowStore.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "http-downloads",
+      "name": {
+        "zh-CN": "HTTP 下载与完整性校验",
+        "en": "HTTP downloads and integrity",
+        "zh-TW": "HTTP 下載與完整性校驗"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "系统后台 HTTP 下载、暂停续传、哈希校验、导出及回收站。",
+            "en": "System background HTTP downloads, pause/resume, hashing, export and recycle bin.",
+            "zh-TW": "系統後台 HTTP 下載、暫停續傳、哈希校驗、導出及回收站。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/DownloadManager.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "metalink-mirrors",
+      "name": {
+        "zh-CN": "Metalink 与镜像",
+        "en": "Metalink and mirrors",
+        "zh-TW": "Metalink 與鏡像"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/metalink_parser.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/metalink_parser.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/metalink_parser.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "导入 Metalink、逐个切换镜像及 SHA 校验；不合并镜像分片。",
+            "en": "Metalink import, sequential mirror failover and SHA checks; no merged mirror chunks.",
+            "zh-TW": "導入 Metalink、逐個切換鏡像及 SHA 校驗；不合併鏡像分片。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/DownloadPlan.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "download-network-limits",
+      "name": {
+        "zh-CN": "下载网络与容量设置",
+        "en": "Download network and size limits",
+        "zh-TW": "下載網絡與容量設置"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "Chromium 下载设置及调度，选项与 iOS 不一一对应。",
+            "en": "Chromium download settings and scheduling; options do not map one to one to iOS.",
+            "zh-TW": "Chromium 下載設置及調度，選項與 iOS 不一一對應。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "Chromium 下载设置及调度，选项与 iOS 不一一对应。",
+            "en": "Chromium download settings and scheduling; options do not map one to one to iOS.",
+            "zh-TW": "Chromium 下載設置及調度，選項與 iOS 不一一對應。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "Chromium 下载设置及调度，选项与 iOS 不一一对应。",
+            "en": "Chromium download settings and scheduling; options do not map one to one to iOS.",
+            "zh-TW": "Chromium 下載設置及調度，選項與 iOS 不一一對應。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "新任务保存网络策略和容量上限，续传沿用原策略。",
+            "en": "New tasks capture network policies and size limits; resumes keep their original rules.",
+            "zh-TW": "新任務保存網絡策略和容量上限，續傳沿用原策略。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/DownloadManager.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "torrent-magnet",
+      "name": {
+        "zh-CN": "BT 与磁力下载",
+        "en": "BitTorrent and magnet downloads",
+        "zh-TW": "BT 與磁力下載"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/services/aegis_torrent/aegis_torrent_service.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/services/aegis_torrent/aegis_torrent_service.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/services/aegis_torrent/aegis_torrent_service.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "需要 iOS 专用传输后端和后台调度方案，本轮未移植。",
+            "en": "Requires an iOS-specific transfer backend and background scheduling design; not ported in this work.",
+            "zh-TW": "需要 iOS 專用傳輸後端和後台調度方案，本輪未移植。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/DownloadManager.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "reading-library",
+      "name": {
+        "zh-CN": "阅读资料与批注库",
+        "en": "Reading library and notes",
+        "zh-TW": "閱讀資料與批注庫"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "显式采集正文，AES-GCM 本机保存，引文高亮、批注、检索、归档与导出。",
+            "en": "Explicit text capture, local AES-GCM storage, quote highlighting, notes, search, archiving and export.",
+            "zh-TW": "顯式採集正文，AES-GCM 本機保存，引文高亮、批注、檢索、歸檔與導出。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/ReadingLibrary.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "reading-translation",
+      "name": {
+        "zh-CN": "阅读翻译与对照",
+        "en": "Reading translation and comparison",
+        "zh-TW": "閱讀翻譯與對照"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "网页正文脱敏预览后翻译；iPad 并排、iPhone 上下对照，保存后才持久化。",
+            "en": "Translate page text after a redacted preview; side by side on iPad and stacked on iPhone, persisted only on save.",
+            "zh-TW": "網頁正文脫敏預覽後翻譯；iPad 並排、iPhone 上下對照，保存後才持久化。"
+          },
+          "source": [
+            "apps/ios/AegisApp/ReadingLibraryView.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "pdf-text-notes",
+      "name": {
+        "zh-CN": "PDF 文字层批注",
+        "en": "PDF text-layer notes",
+        "zh-TW": "PDF 文字層批注"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "当前工作区已有阅读实现改动；本清单不将其视为已发布或四端验收通过。",
+            "en": "Reading changes exist in the working tree; this catalog does not establish publication or acceptance on every platform.",
+            "zh-TW": "當前工作區已有閱讀實現改動；本清單不將其視為已發佈或四端驗收通過。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "导入本地 PDF 指定页文字，不执行 OCR，不把 PDF 发给模型。",
+            "en": "Import text from a selected page of a local PDF; no OCR or PDF model upload.",
+            "zh-TW": "導入本地 PDF 指定頁文字，不執行 OCR，不把 PDF 發給模型。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/ReadingLibrary.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "foreground-page-watch",
+      "name": {
+        "zh-CN": "前台网页变化检查",
+        "en": "Foreground page change checks",
+        "zh-TW": "前台網頁變化檢查"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/agent/agent_monitor_scheduler.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/agent/agent_monitor_scheduler.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/agent/agent_monitor_scheduler.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "面板前台按间隔重载并比较正文，停止或离开前台即取消。",
+            "en": "Reload and compare page text at intervals while the panel stays foreground; stopping or leaving the foreground cancels it.",
+            "zh-TW": "面板前台按間隔重載並比較正文，停止或離開前台即取消。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/ForegroundPageWatch.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-portable-features-2026-10-11.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "third-party-extensions",
+      "name": {
+        "zh-CN": "第三方扩展安装",
+        "en": "Third-party extension installation",
+        "zh-TW": "第三方擴展安裝"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "有项目自带的 WebExtension 集成，尚无任意第三方扩展安装入口。",
+            "en": "Bundled WebExtension integration is present; arbitrary third-party installation is unavailable.",
+            "zh-TW": "有項目自帶的 WebExtension 集成，尚無任意第三方擴展安裝入口。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/WebExtensionRuntime.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "cross-device-sync",
+      "name": {
+        "zh-CN": "跨设备同步",
+        "en": "Cross-device sync",
+        "zh-TW": "跨設備同步"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本清单没有可验证的 GCSA 跨设备同步服务交付证据。",
+            "en": "This catalog has no verifiable delivery evidence for a GCSA cross-device sync service.",
+            "zh-TW": "本清單沒有可驗證的 GCSA 跨設備同步服務交付證據。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本清单没有可验证的 GCSA 跨设备同步服务交付证据。",
+            "en": "This catalog has no verifiable delivery evidence for a GCSA cross-device sync service.",
+            "zh-TW": "本清單沒有可驗證的 GCSA 跨設備同步服務交付證據。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本清单没有可验证的 GCSA 跨设备同步服务交付证据。",
+            "en": "This catalog has no verifiable delivery evidence for a GCSA cross-device sync service.",
+            "zh-TW": "本清單沒有可驗證的 GCSA 跨設備同步服務交付證據。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本轮仅本机存储，没有账号同步服务。",
+            "en": "Local storage only; no account sync service in this work.",
+            "zh-TW": "本輪僅本機存儲，沒有賬號同步服務。"
+          },
+          "source": [
+            "apps/ios/AegisApp/AegisApp.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "default-browser-language",
+      "name": {
+        "zh-CN": "默认浏览器与语言",
+        "en": "Default browser and language",
+        "zh-TW": "默認瀏覽器與語言"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "功能由 Chromium 产品集成提供，本轮未重跑该端原生验收。",
+            "en": "Provided through the Chromium product integration; native acceptance was not rerun for this platform.",
+            "zh-TW": "功能由 Chromium 產品集成提供，本輪未重跑該端原生驗收。"
+          },
+          "source": [
+            "apps/browser/README.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "system",
+          "reason": {
+            "zh-CN": "跳转系统设置；默认浏览器资格、App 语言和硬件权限由 iOS 决定。",
+            "en": "Opens system settings; iOS controls browser eligibility, app language and hardware permissions.",
+            "zh-TW": "跳轉系統設置；默認瀏覽器資格、App 語言和硬件權限由 iOS 決定。"
+          },
+          "source": [
+            "apps/ios/AegisApp/BrowserSettings.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "webkit-system-hardening",
+      "name": {
+        "zh-CN": "WebKit 系统加固",
+        "en": "WebKit system hardening",
+        "zh-TW": "WebKit 系統強化"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此项为 WKWebView 专用接口；该端使用 Chromium，相关引擎能力分别记录。",
+            "en": "This item describes a WKWebView-specific API. This platform uses Chromium; engine capabilities are listed separately.",
+            "zh-TW": "此項為 WKWebView 專用介面；該端使用 Chromium，相關引擎能力分別記錄。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此项为 WKWebView 专用接口；该端使用 Chromium，相关引擎能力分别记录。",
+            "en": "This item describes a WKWebView-specific API. This platform uses Chromium; engine capabilities are listed separately.",
+            "zh-TW": "此項為 WKWebView 專用介面；該端使用 Chromium，相關引擎能力分別記錄。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此项为 WKWebView 专用接口；该端使用 Chromium，相关引擎能力分别记录。",
+            "en": "This item describes a WKWebView-specific API. This platform uses Chromium; engine capabilities are listed separately.",
+            "zh-TW": "此項為 WKWebView 專用介面；該端使用 Chromium，相關引擎能力分別記錄。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "iOS 26.4 以上可选公开安全限制；旧版保留默认保护。保留系统欺诈警告、HTTPS 策略与 Lockdown；模拟器不能证明 MTE 效果。",
+            "en": "Optional public security restriction on iOS 26.4+. Earlier systems retain default protection. System fraud warnings, HTTPS policy and Lockdown remain; Simulator cannot establish MTE effectiveness.",
+            "zh-TW": "iOS 26.4 以上可選公開安全限制；舊版保留預設保護。保留系統詐騙警告、HTTPS 策略與 Lockdown；模擬器不能證明 MTE 效果。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/PageProtection.swift",
+            "apps/ios/BrowserKit/BrowserSession.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisWebsiteEnhancements",
+      "name": {
+        "zh-CN": "按站点网站增强",
+        "en": "Per-site website enhancements",
+        "zh-TW": "依網站增強"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "已接入固定 App；原生与界面验收逐项见报告，真实网站和模型仍有未通过项。",
+            "en": "Integrated in the fixed app; see individual native/UI evidence and unresolved real-site/model gates.",
+            "zh-TW": "已接入固定 App；原生與介面驗收逐項見報告，真實網站和模型仍有未通過項。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc"
+          ],
+          "validation": "native",
+          "evidence": [
+            "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
+          ]
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "共享桌面源码已接入；现有 Windows 154 环境已登录核验，用户已批准升级至 155，构建和操作验收尚未完成。",
+            "en": "Shared desktop source is integrated. The existing Windows 154 environment was verified; its approved upgrade to 155 and native acceptance remain incomplete.",
+            "zh-TW": "共用桌面原始碼已接入；現有 Windows 154 環境已登入核驗，使用者已批准升級至 155，建置和操作驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本轮未实施，相关桌面入口在 Android 隐藏。",
+            "en": "Not implemented in this work; desktop entry points are hidden on Android.",
+            "zh-TW": "本輪未實作，相關桌面入口在 Android 隱藏。"
+          },
+          "source": [
+            "docs/plans/site-enhancement-userscripts-markdown-desktop-ios-2026-10-11.zh-CN.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "SwiftUI 与 WKWebView 已接入；按报告记录 iPhone/iPad 模拟器证据，不代表真机、最低系统运行或分发验收。",
+            "en": "Integrated with SwiftUI/WKWebView; the report records iPhone/iPad Simulator evidence, not physical-device, minimum-OS runtime or distribution acceptance.",
+            "zh-TW": "SwiftUI 與 WKWebView 已接入；按報告記錄 iPhone/iPad 模擬器證據，不代表實機、最低系統執行或散布驗收。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/UserScriptController.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisUserScripts",
+      "name": {
+        "zh-CN": "用户脚本与 AI 草稿",
+        "en": "User scripts and AI drafts",
+        "zh-TW": "使用者腳本與 AI 草稿"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "已接入固定 App；原生与界面验收逐项见报告，真实网站和模型仍有未通过项。",
+            "en": "Integrated in the fixed app; see individual native/UI evidence and unresolved real-site/model gates.",
+            "zh-TW": "已接入固定 App；原生與介面驗收逐項見報告，真實網站和模型仍有未通過項。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/enhancements/enhancement_store.cc"
+          ],
+          "validation": "native",
+          "evidence": [
+            "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
+          ]
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "共享桌面源码已接入；现有 Windows 154 环境已登录核验，用户已批准升级至 155，构建和操作验收尚未完成。",
+            "en": "Shared desktop source is integrated. The existing Windows 154 environment was verified; its approved upgrade to 155 and native acceptance remain incomplete.",
+            "zh-TW": "共用桌面原始碼已接入；現有 Windows 154 環境已登入核驗，使用者已批准升級至 155，建置和操作驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/enhancements/enhancement_store.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本轮未实施，相关桌面入口在 Android 隐藏。",
+            "en": "Not implemented in this work; desktop entry points are hidden on Android.",
+            "zh-TW": "本輪未實作，相關桌面入口在 Android 隱藏。"
+          },
+          "source": [
+            "docs/plans/site-enhancement-userscripts-markdown-desktop-ios-2026-10-11.zh-CN.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "SwiftUI 与 WKWebView 已接入；按报告记录 iPhone/iPad 模拟器证据，不代表真机、最低系统运行或分发验收。",
+            "en": "Integrated with SwiftUI/WKWebView; the report records iPhone/iPad Simulator evidence, not physical-device, minimum-OS runtime or distribution acceptance.",
+            "zh-TW": "SwiftUI 與 WKWebView 已接入；按報告記錄 iPhone/iPad 模擬器證據，不代表實機、最低系統執行或散布驗收。"
+          },
+          "source": [
+            "apps/ios/BrowserKit/WebsiteEnhancements.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kAegisMarkdownReader",
+      "name": {
+        "zh-CN": "内置 Markdown 阅读",
+        "en": "Built-in Markdown reader",
+        "zh-TW": "內建 Markdown 閱讀"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "已接入固定 App；原生与界面验收逐项见报告，真实网站和模型仍有未通过项。",
+            "en": "Integrated in the fixed app; see individual native/UI evidence and unresolved real-site/model gates.",
+            "zh-TW": "已接入固定 App；原生與介面驗收逐項見報告，真實網站和模型仍有未通過項。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/resources/aegis/markdown.js"
+          ],
+          "validation": "native",
+          "evidence": [
+            "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
+          ]
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "共享桌面源码已接入；现有 Windows 154 环境已登录核验，用户已批准升级至 155，构建和操作验收尚未完成。",
+            "en": "Shared desktop source is integrated. The existing Windows 154 environment was verified; its approved upgrade to 155 and native acceptance remain incomplete.",
+            "zh-TW": "共用桌面原始碼已接入；現有 Windows 154 環境已登入核驗，使用者已批准升級至 155，建置和操作驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/resources/aegis/markdown.js"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "本轮未实施，相关桌面入口在 Android 隐藏。",
+            "en": "Not implemented in this work; desktop entry points are hidden on Android.",
+            "zh-TW": "本輪未實作，相關桌面入口在 Android 隱藏。"
+          },
+          "source": [
+            "docs/plans/site-enhancement-userscripts-markdown-desktop-ios-2026-10-11.zh-CN.md"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "partial",
+          "reason": {
+            "zh-CN": "SwiftUI 与 WKWebView 已接入；按报告记录 iPhone/iPad 模拟器证据，不代表真机、最低系统运行或分发验收。",
+            "en": "Integrated with SwiftUI/WKWebView; the report records iPhone/iPad Simulator evidence, not physical-device, minimum-OS runtime or distribution acceptance.",
+            "zh-TW": "SwiftUI 與 WKWebView 已接入；按報告記錄 iPhone/iPad 模擬器證據，不代表實機、最低系統執行或散布驗收。"
+          },
+          "source": [
+            "apps/ios/AegisApp/MarkdownReaderView.swift"
+          ],
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
+          ]
+        }
+      }
+    }
+  ]
+}

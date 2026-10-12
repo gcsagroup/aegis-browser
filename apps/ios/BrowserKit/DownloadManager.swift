@@ -3,6 +3,22 @@ import CryptoKit
 import Foundation
 import UIKit
 
+public struct DownloadTransferPreferences: Codable, Equatable, Sendable {
+    public var allowsCellular = true
+    public var allowsExpensive = true
+    public var allowsConstrained = true
+    public var maximumBytes: Int64 = 1_000_000_000
+    public init() { }
+    public var boundedMaximumBytes: Int64 { min(5_000_000_000, max(100_000_000, maximumBytes)) }
+    public func request(for url: URL) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.allowsCellularAccess = allowsCellular
+        request.allowsExpensiveNetworkAccess = allowsExpensive
+        request.allowsConstrainedNetworkAccess = allowsConstrained
+        return request
+    }
+}
+
 public struct BrowserDownload: Codable, Identifiable, Equatable, Sendable {
     public enum State: String, Codable, Sendable { case queued, running, pausing, paused, completed, failed, cancelled }
     public let id: UUID
@@ -25,6 +41,8 @@ public struct BrowserDownload: Codable, Identifiable, Equatable, Sendable {
     var inferredInterruption: Bool?
     var userStopState: State?
     var resumeDataUsable: Bool?
+    public var transferPreferences: DownloadTransferPreferences?
+    public var maximumBytes: Int64 { transferPreferences?.boundedMaximumBytes ?? 1_000_000_000 }
     public var currentURL: URL {
         guard let mirrors, !mirrors.isEmpty else { return url }
         return mirrors[min(max(0, mirrorIndex ?? 0), mirrors.count - 1)]
@@ -45,7 +63,7 @@ public enum DownloadError: LocalizedError {
         case .invalidHash: String(localized: "SHA-256 应为 64 位十六进制字符。")
         case let .http(status): String(localized: "下载服务器返回错误（\(status)）。")
         case .hashMismatch: String(localized: "文件校验不一致，已丢弃本次文件。")
-        case .tooLarge: String(localized: "文件超过当前 1 GB 下载限制，已停止下载。")
+        case .tooLarge: String(localized: "文件超过此任务的下载容量限制，已停止下载。")
         case .missingFile: String(localized: "下载文件已不可用，请重新下载。")
         }
     }
@@ -86,6 +104,8 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
     @Published public private(set) var items: [BrowserDownload] = []
     @Published public private(set) var storageError: String?
     @Published public private(set) var maximumConcurrentDownloads: Int
+    @Published public private(set) var transferPreferences: DownloadTransferPreferences
+    private let preferenceDefaults: UserDefaults?
     @Published public private(set) var storedBytes: Int64 = 0
     @Published public private(set) var recycleBinBytes: Int64 = 0
     @Published public private(set) var availableBytes: Int64?
@@ -154,14 +174,15 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
     }()
 
     public convenience init(directory: URL? = nil, background: Bool = true, maximumConcurrentDownloads: Int? = nil,
-                            availableBytes: (@Sendable (URL) -> Int64?)? = nil) {
+                            availableBytes: (@Sendable (URL) -> Int64?)? = nil, defaults: UserDefaults? = nil) {
         self.init(directory: directory, background: background, storage: DownloadManifestStorage(),
-                  maximumConcurrentDownloads: maximumConcurrentDownloads, availableBytes: availableBytes)
+                  maximumConcurrentDownloads: maximumConcurrentDownloads, availableBytes: availableBytes, defaults: defaults)
     }
 
     init(directory: URL?, background: Bool, storage: DownloadManifestStorage,
          maximumConcurrentDownloads: Int? = nil,
          availableBytes: (@Sendable (URL) -> Int64?)? = nil,
+         defaults: UserDefaults? = nil,
          enumerateTasks: ((URLSession) async -> [URLSessionTask])? = nil,
          automaticallyRecover: Bool = true,
          registersBackgroundEvents: Bool? = nil,
@@ -180,6 +201,10 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             .appendingPathComponent("Downloads", isDirectory: true)
         let savedLimit = background ? UserDefaults.standard.integer(forKey: "downloads.concurrentLimit") : 2
         self.maximumConcurrentDownloads = min(4, max(1, maximumConcurrentDownloads ?? (savedLimit == 0 ? 2 : savedLimit)))
+        preferenceDefaults = defaults ?? (background ? .standard : nil)
+        transferPreferences = preferenceDefaults?.data(forKey: "downloads.transferPreferences").flatMap {
+            try? JSONDecoder().decode(DownloadTransferPreferences.self, from: $0)
+        } ?? DownloadTransferPreferences()
         self.capacity = availableBytes ?? { DownloadManager.freeCapacity($0) }
         self.useBackgroundSession = background
         self.storage = storage
@@ -586,8 +611,8 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
 
     nonisolated static func decodeRecords(_ data: Data) throws -> [BrowserDownload] {
         guard data.count <= 2_000_000 else { throw DownloadError.recordsTooLarge }
-        let values = try JSONDecoder().decode([BrowserDownload].self, from: data)
-        guard Set(values.map(\.id)).count == values.count,
+        guard let values = try? JSONDecoder().decode([BrowserDownload].self, from: data),
+              Set(values.map(\.id)).count == values.count,
               values.allSatisfy({ $0.filename == Self.safeFilename($0.filename) }) else { throw DownloadError.unreadableRecords }
         return values
     }
@@ -670,7 +695,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             let file = fileURL(item)
             guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
                   values.isRegularFile == true, values.isSymbolicLink != true,
-                  (values.fileSize ?? Int.max) <= 1_000_000_000 else { continue }
+                  Int64(values.fileSize ?? Int.max) <= item.maximumBytes else { continue }
             let expected512 = item.sha512
             let valid = try await Task.detached(priority: .utility) {
                 guard try Self.hashFile(file) == hash else { return false }
@@ -799,13 +824,14 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
         let hash512 = (plan.sha512 ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard hash.isEmpty || hash.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
               hash512.isEmpty || hash512.range(of: "^[a-f0-9]{128}$", options: .regularExpression) != nil else { throw DownloadError.invalidHash }
-        guard plan.size == nil || (0...1_000_000_000).contains(plan.size!) else { throw DownloadError.tooLarge }
+        guard plan.size == nil || (0...transferPreferences.boundedMaximumBytes).contains(plan.size!) else { throw DownloadError.tooLarge }
         try checkCapacity(required: plan.size ?? 0)
         let item = BrowserDownload(id: UUID(), url: urls[0], filename: Self.safeFilename(plan.filename ?? urls[0].lastPathComponent),
                                    state: tasks.count < maximumConcurrentDownloads ? .running : .queued,
                                    expectedSHA256: hash.isEmpty ? nil : hash, mirrors: urls, mirrorIndex: 0,
                                    expectedSize: plan.size, expectedSHA512: hash512.isEmpty ? nil : hash512,
-                                   plannedFilename: plan.filename, createdAt: Date(), transferID: UUID(), resumeDataUsable: false)
+                                   plannedFilename: plan.filename, createdAt: Date(), transferID: UUID(), resumeDataUsable: false,
+                                   transferPreferences: transferPreferences)
         var candidate = items
         candidate.insert(item, at: 0)
         do { try persist(candidate) } catch { reportStorage(error); throw error }
@@ -820,11 +846,19 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             task = session.downloadTask(withResumeData: data)
             try? FileManager.default.removeItem(at: resumeURL(item.id))
         } else {
-            task = session.downloadTask(with: item.currentURL)
+            task = session.downloadTask(with: (item.transferPreferences ?? DownloadTransferPreferences()).request(for: item.currentURL))
         }
         task.taskDescription = description(item)
         tasks[item.id] = task
         startTransfer(task)
+    }
+
+    public func setTransferPreferences(_ value: DownloadTransferPreferences) throws {
+        var next = value
+        next.maximumBytes = next.boundedMaximumBytes
+        let data = try JSONEncoder().encode(next)
+        preferenceDefaults?.set(data, forKey: "downloads.transferPreferences")
+        transferPreferences = next
     }
 
     public func pause(_ id: UUID) {
@@ -1062,7 +1096,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
                 guard let finalURL = receipt.finalURL else { throw DownloadError.invalidURL }
                 _ = try Self.validatedURL(finalURL.absoluteString)
                 let length = try staged.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                guard length <= 1_000_000_000 else { throw DownloadError.tooLarge }
+                guard Int64(length) <= items[index].maximumBytes else { throw DownloadError.tooLarge }
                 if let expected = items[index].expectedSize, expected != Int64(length) { throw DownloadPlanError.sizeMismatch }
                 let hashes = try await payloadHashes(staged)
                 guard ingressRevision == revision else { recoveryRequested = true; return }
@@ -1131,9 +1165,15 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
                                        didWriteData bytesWritten: Int64, totalBytesWritten: Int64,
                                        totalBytesExpectedToWrite: Int64) {
         MainActor.assumeIsolated {
-            if totalBytesWritten > 1_000_000_000 || totalBytesExpectedToWrite > 1_000_000_000 { downloadTask.cancel() }
             guard let name = downloadTask.taskDescription, let index = itemIndex(name),
                   tasks[items[index].id]?.taskIdentifier == downloadTask.taskIdentifier else { return }
+            if totalBytesWritten > items[index].maximumBytes || totalBytesExpectedToWrite > items[index].maximumBytes {
+                items[index].received = totalBytesWritten
+                items[index].expected = totalBytesExpectedToWrite
+                items[index].message = DownloadError.tooLarge.localizedDescription
+                downloadTask.cancel()
+                return
+            }
             let id = items[index].id
             let now = Date()
             if now.timeIntervalSince(capacityCheckDates[id] ?? .distantPast) >= 1 {
@@ -1185,7 +1225,9 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             }
             ingressRevision += 1
             let receiptURL = pendingDirectory.appendingPathComponent(UUID().uuidString + ".json")
-            let receipt = PendingDownloadReceipt(taskDescription: name, error: error.localizedDescription, userStopState: stopState(name))
+            let exceedsLimit = itemIndex(name).map { items[$0].received > items[$0].maximumBytes || items[$0].expected > items[$0].maximumBytes } ?? false
+            let failureMessage = exceedsLimit ? DownloadError.tooLarge.localizedDescription : error.localizedDescription
+            let receipt = PendingDownloadReceipt(taskDescription: name, error: failureMessage, userStopState: stopState(name))
             pendingReceiptWrites[receiptURL] = receipt
             do {
                 try FileManager.default.createDirectory(at: pendingDirectory, withIntermediateDirectories: true)

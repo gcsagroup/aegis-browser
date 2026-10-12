@@ -1,0 +1,66 @@
+From 232767c097257fe67b4a05ab8b5038886eae8ddd Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 01:11:06 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E9=80=82=E9=85=8D=E5=8E=9F=E7=94=9F?=
+ =?UTF-8?q?=E5=AD=97=E5=85=B8=E5=86=99=E5=85=A5=E6=8E=A5=E5=8F=A3=20163?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/aegis_agent_browsertest.cc    | 3 ++-
+ chrome/browser/ui/webui/aegis_agent/reading_workspace.cc | 8 +++++---
+ chrome/browser/ui/webui/help/aegis_github_update.h       | 4 ++--
+ 3 files changed, 9 insertions(+), 6 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 6832f086c4cf352de5d920e057a58d732d46b8a8..af8881334a7be53f7604e1decadb6af8ee623a51 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6128,7 +6128,8 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalTranslationAndResearch
+   state = run(base::DictValue().Set("op", "save").Set("id", id)
+       .Set("note", "离线批注").Set("quote", "notes").Set("group", "本机翻译")
+       .Set("revision", *state.FindString("revision")));
+-  translation.Set("draft", false).Set("revision", "stale");
++  translation.Set("draft", false);
++  translation.Set("revision", "stale");
+   run(translation.Clone(), "library_changed");
+   translation.Set("revision", *state.FindString("revision"));
+   state = run(std::move(translation));
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index aa4d540332981416b97b54b6de86a4608d77bd84..344426f35f02ca616b3013f7ffbf7c892200fdcf 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -298,9 +298,11 @@ void AegisReadingWorkspace::Dispatch(
+       Reply(std::move(callback), {}, "library_changed"); return;
+     }
+     auto updated = record->Clone();
+-    updated.Set("translation", translated->Clone()).Set("language", language)
+-        .Set("note", Field(request, "note")).Set("quote", Field(request, "quote"))
+-        .Set("group", Field(request, "group"));
++    updated.Set("translation", translated->Clone());
++    updated.Set("language", language);
++    updated.Set("note", Field(request, "note"));
++    updated.Set("quote", Field(request, "quote"));
++    updated.Set("group", Field(request, "group"));
+     base::ListValue check; check.Append(updated.Clone());
+     if (!ValidateRecords(check)) {
+       Reply(std::move(callback), {}, "library_full_or_invalid"); return;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index eac23603f36e49fa1703bfa17bf822bc4f4cd47b..7349b6444f6dadd78a420caa7e391e3af4e47c58 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.162";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (162)";
++inline constexpr char kProductVersion[] = "3.1.0.163";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (163)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

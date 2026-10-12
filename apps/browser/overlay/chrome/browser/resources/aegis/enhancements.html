@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>网站增强与用户脚本</title>
+    <link rel="stylesheet" href="enhancements.css" />
+    <script src="enhancements_shared/core.js" defer></script>
+    <script src="enhancements_shared/vendor/acorn.js" defer></script>
+    <script type="module" src="enhancements.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="aegis.html">← 防护中心</a>
+      <h1>网站增强与用户脚本</h1>
+      <a href="markdown.html">Markdown 阅读</a>
+    </header>
+    <p id="notice" role="status" aria-live="polite">正在读取设置…</p>
+    <section>
+      <h2>目标网页</h2>
+      <div class="row">
+        <select id="tabs" aria-label="目标网页"></select
+        ><button id="refresh">刷新列表与状态</button
+        ><button id="inspect">打开网页调试工具</button>
+      </div>
+      <p id="scope"></p>
+      <p id="private"></p>
+    </section>
+    <div class="columns">
+      <div>
+        <section>
+          <h2>记住网站设置</h2>
+          <label>网站来源<input id="origin" placeholder="https://example.com" /></label
+          ><label><input type="checkbox" id="menu" />恢复原生菜单</label
+          ><label><input type="checkbox" id="copy" />允许选取和复制</label
+          ><label><input type="checkbox" id="debug" />反调试兼容处理</label
+          ><label><input type="checkbox" id="subdomains" />包含子域名</label
+          ><label><input type="checkbox" id="disabled" />暂停本站增强</label
+          ><button id="save-site">保存网站规则</button>
+          <p>设置在下一次加载生效。当前页有未提交内容时，请先保存再手动刷新。</p>
+          <p>
+            反调试适配处理纯 debugger 动态函数、窗口尺寸检测及部分 disable-devtool
+            行为；不会关闭普通断点或全部跳转。
+          </p>
+          <div id="sites"></div>
+        </section>
+        <section>
+          <h2>用户脚本</h2>
+          <div class="row">
+            <button id="new">新建脚本</button
+            ><label class="file"
+              >导入 .user.js<input
+                type="file"
+                id="import"
+                accept=".js,.user.js,text/javascript"
+            /></label>
+          </div>
+          <div id="scripts"></div>
+          <h3>本页运行结果与脚本菜单</h3>
+          <div id="runtime"></div>
+          <button id="recover" class="danger">停用全部脚本并恢复当前页</button>
+          <p>恢复会重新载入当前页，尚未提交的输入可能丢失。已发出的外部请求无法撤销。</p>
+        </section>
+      </div>
+      <section class="editor">
+        <h2 id="editor-title">脚本草稿</h2>
+        <label>源码<textarea id="source" spellcheck="false" rows="22"></textarea></label>
+        <div class="row">
+          <label
+            >执行环境<select id="world">
+              <option value="isolated">隔离环境</option>
+              <option value="page">页面环境（无 GM 权限）</option>
+            </select></label
+          ><label><input type="checkbox" id="frames" />在匹配的子框架运行</label>
+        </div>
+        <p id="permissions"></p>
+        <div class="row">
+          <button id="check">静态检查</button><button id="save">保存草稿</button
+          ><button id="trial">在当前页试运行</button><button id="export">导出源码</button
+          ><button id="rollback">回退上一版</button>
+        </div>
+        <p>
+          保存会停用旧版，需要重新确认启用。隔离执行仍能读取和修改网页内容；试运行使用临时存储。
+        </p>
+        <h2>AI 编写与修复</h2>
+        <label
+          >需求或错误反馈<textarea
+            id="goal"
+            rows="3"
+            placeholder="例如：隐藏右侧栏并加宽正文"
+          ></textarea></label
+        ><button id="context">读取当前页结构供检查</button>
+        <pre id="context-preview"></pre>
+        <p id="model"></p>
+        <div class="row">
+          <button id="generate">生成或修复草稿</button
+          ><button id="cancel">取消生成</button>
+        </div>
+        <p>
+          发送需求、编辑器源码及上方已预览的结构。不会读取密码、Cookie
+          或表单值；模型只返回草稿，由你决定是否试运行。
+        </p>
+      </section>
+    </div>
+  </body>
+</html>

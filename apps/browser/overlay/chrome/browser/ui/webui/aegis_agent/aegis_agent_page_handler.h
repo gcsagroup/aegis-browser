@@ -28,6 +28,7 @@
 class Profile;
 class BrowserWindowInterface;
 class AegisAgentUI;
+class AegisReadingWorkspace;
 class AegisAgentCoreServiceObserver;
 
 namespace aegis {
@@ -53,6 +54,8 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   ~AegisAgentPageHandler() override;
 
   void ShowUI() override;
+  void ReadingCommand(const std::string& request,
+                      ReadingCommandCallback callback) override;
   void GetSnapshot(GetSnapshotCallback callback) override;
   void ListResearchTabs(ListResearchTabsCallback callback) override;
   void CreateResearchTask(const std::string& goal,
@@ -183,6 +186,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
                       UndoCallback callback,
                       aegis::agent::AgentToolResult result);
 
+  std::unique_ptr<AegisReadingWorkspace> reading_workspace_;
   raw_ptr<Profile> profile_;
   raw_ptr<BrowserWindowInterface> browser_ = nullptr;
   raw_ptr<AegisAgentUI> ui_ = nullptr;

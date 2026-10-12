@@ -40,7 +40,8 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS '请求未加载'")
         ).firstMatch.exists)
-        XCTAssertTrue(app.webViews.staticTexts["页面提示注入已隔离"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["page-protection-blocked"].exists)
+        XCTAssertFalse(app.webViews.staticTexts["页面提示注入已隔离"].exists)
     }
 
     func testPolicySanitizesTrackingURLBeforeLoad() {
@@ -338,7 +339,8 @@ final class AegisUITests: XCTestCase {
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 20))
         app.buttons["browser-more"].tap(); app.buttons["设置"].tap()
-        app.buttons["content-filter-settings"].tap()
+        let filterSettings = app.buttons["content-filter-settings"]
+        XCTAssertTrue(scrollPortableControl(filterSettings, in: app, shortScroll: true)); filterSettings.tap()
         XCTAssertTrue(app.staticTexts["网络规则"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["元素隐藏规则"].exists)
         attachScreenshot("广告过滤规则与更新", app)
@@ -441,7 +443,7 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(downloadError.label.contains("原文件已保留"))
         let address = app.textFields["download-url"]
         address.tap(); address.typeText("http://127.0.0.1:8768/download.bin")
-        app.buttons["start-download"].tap()
+        XCTAssertFalse(app.buttons["start-download"].isEnabled)
         XCTAssertFalse(app.staticTexts["正在下载"].exists)
         XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", downloadError.label)).count, 1)
         attachScreenshot("下载损坏记录保留与错误提示", app)
@@ -928,6 +930,274 @@ final class AegisUITests: XCTestCase {
         let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
         attachment.name = "确认与取消后的实际请求计数"
         attachment.lifetime = .keepAlways; add(attachment)
+    }
+
+    func testPortableSettingsPersistAndDownloadRulesAreEditable() {
+        let app = launchApp()
+        app.buttons["browser-more"].tap(); app.buttons["设置"].tap()
+        app.buttons["general-browser-settings"].tap()
+        app.buttons["search-engine-picker"].tap(); app.buttons["Bing"].tap()
+        let desktop = app.switches["desktop-default-toggle"]
+        XCTAssertTrue(scrollPortableControl(desktop, in: app)); tapPortableSwitch(desktop); XCTAssertEqual(desktop.value as? String, "1")
+        let save = app.buttons["save-browser-preferences"]
+        XCTAssertTrue(scrollPortableControl(save, in: app)); save.tap()
+        XCTAssertTrue(app.staticTexts["浏览设置已保存。"].waitForExistence(timeout: 5))
+        attachScreenshot("浏览设置保存", app)
+        app.terminate(); app.launchArguments += ["--ui-testing-preferences-keep"]; app.launch()
+        app.buttons["browser-more"].tap(); app.buttons["设置"].tap(); app.buttons["general-browser-settings"].tap()
+        XCTAssertTrue(app.buttons["search-engine-picker"].label.contains("Bing"))
+        XCTAssertTrue(scrollPortableControl(desktop, in: app)); XCTAssertEqual(desktop.value as? String, "1")
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        tapBrowserButton("downloads-button", in: app)
+        let storage = app.buttons["下载设置与存储"]
+        XCTAssertTrue(scrollPortableControl(storage, in: app, shortScroll: true)); storage.tap()
+        let cellular = app.switches["允许蜂窝网络下载"]
+        XCTAssertTrue(scrollPortableControl(cellular, in: app, shortScroll: true)); tapPortableSwitch(cellular)
+        XCTAssertEqual(cellular.value as? String, "0")
+        let limit = app.buttons["download-size-limit"]
+        XCTAssertTrue(scrollPortableControl(limit, in: app, shortScroll: true)); limit.tap(); app.buttons["500 MB"].tap()
+        XCTAssertTrue(limit.label.contains("500 MB"))
+        attachScreenshot("下载网络与容量设置", app)
+    }
+
+    func testSearchEngineDeletionRestartEmptyListAndRestore() {
+        let app = launchApp()
+        func openSettings() {
+            app.buttons["browser-more"].tap(); app.buttons["设置"].tap()
+            app.buttons["general-browser-settings"].tap()
+        }
+        func saveSettings() {
+            app.buttons["管理搜索引擎"].tap()
+            let save = app.buttons["save-browser-preferences"]
+            XCTAssertTrue(scrollPortableControl(save, in: app)); save.tap()
+            XCTAssertTrue(app.staticTexts["浏览设置已保存。"].waitForExistence(timeout: 5))
+        }
+        openSettings()
+        app.buttons["管理搜索引擎"].tap()
+        app.buttons["remove-search-engine-duckDuckGo"].tap()
+        app.buttons["remove-search-engine-bing"].tap()
+        XCTAssertTrue(app.buttons["search-engine-picker"].label.contains("Google"))
+        saveSettings()
+        app.terminate(); app.launchArguments += ["--ui-testing-preferences-keep"]; app.launch()
+        openSettings()
+        app.buttons["search-engine-picker"].tap()
+        XCTAssertFalse(app.buttons["DuckDuckGo"].exists)
+        XCTAssertFalse(app.buttons["Bing"].exists)
+        app.buttons["Google"].tap()
+        app.buttons["管理搜索引擎"].tap()
+        for engine in ["google", "baidu", "custom"] { app.buttons["remove-search-engine-\(engine)"].tap() }
+        XCTAssertTrue(app.buttons["search-engine-picker"].label.contains("未启用搜索"))
+        attachScreenshot("搜索引擎全部删除", app)
+        saveSettings()
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        navigate(app, to: "do not send this search")
+        XCTAssertTrue(app.staticTexts["尚未启用搜索引擎，请输入网址，或在浏览设置中恢复搜索引擎。"].waitForExistence(timeout: 5))
+        navigate(app, to: "http://127.0.0.1:8768/article")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 10))
+        openSettings()
+        app.buttons["管理搜索引擎"].tap()
+        app.buttons["restore-search-engines"].tap()
+        XCTAssertTrue(app.buttons["search-engine-picker"].label.contains("DuckDuckGo"))
+        attachScreenshot("预置搜索引擎恢复", app)
+        saveSettings()
+    }
+
+    func testPortableReadingTranslationSaveRestartAndArchive() {
+        let app = launchApp()
+        configurePortableModel(app)
+        navigate(app, to: "http://127.0.0.1:8768/article")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        tapBrowserButton("reading-library-button", in: app)
+        app.buttons["reading-capture-page"].tap()
+        XCTAssertTrue(app.staticTexts["reading-original"].waitForExistence(timeout: 8))
+        let quote = app.textFields["reading-quote"].exists ? app.textFields["reading-quote"] : app.textViews["reading-quote"]
+        XCTAssertTrue(scrollReadingControl(quote, in: app)); quote.tap(); quote.typeText("12 公顷")
+        if app.keyboards.firstMatch.exists { app.buttons["reading-dismiss-keyboard"].tap() }
+        let note = app.textFields["reading-note"].exists ? app.textFields["reading-note"] : app.textViews["reading-note"]
+        XCTAssertTrue(scrollReadingControl(note, in: app)); note.tap(); note.typeText("跨重启保留的阅读批注")
+        if app.keyboards.firstMatch.exists { app.buttons["reading-dismiss-keyboard"].tap() }
+        let translate = app.buttons["reading-translate"]
+        XCTAssertTrue(scrollReadingControl(translate, in: app)); translate.tap()
+        let confirm = app.buttons["reading-confirm-translation"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["reading-translation-destination"].label, "http://127.0.0.1:8768/v1")
+        XCTAssertEqual(app.staticTexts["reading-translation-model"].label, "aegis-simulator-fixture")
+        XCTAssertTrue(app.staticTexts["reading-translation-payload"].label.contains("12 公顷"))
+        XCTAssertFalse(app.staticTexts["reading-translation-payload"].label.contains("跨重启保留的阅读批注"))
+        attachScreenshot("翻译首次发送范围完整可见", app)
+        XCTAssertTrue(scrollPortableControl(confirm, in: app)); confirm.tap()
+        XCTAssertTrue(app.staticTexts["reading-translation"].waitForExistence(timeout: 15))
+        let originalFrame = app.staticTexts["reading-original"].frame
+        let translationFrame = app.staticTexts["reading-translation"].frame
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCTAssertLessThanOrEqual(originalFrame.maxX, translationFrame.minX)
+            XCTAssertEqual(originalFrame.minY, translationFrame.minY, accuracy: 5)
+        } else { XCTAssertGreaterThanOrEqual(translationFrame.minY, originalFrame.maxY) }
+        let save = app.buttons["reading-save"]
+        XCTAssertTrue(scrollReadingControl(save, in: app)); save.tap()
+        XCTAssertTrue(app.staticTexts["阅读资料已保存。"].waitForExistence(timeout: 5))
+        attachScreenshot("阅读译文与批注保存", app)
+        app.terminate(); app.launchArguments += ["--ui-testing-reading-keep"]; app.launch()
+        tapBrowserButton("reading-library-button", in: app)
+        let record = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'reading-record-' ")).firstMatch
+        XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
+        XCTAssertTrue(app.staticTexts["reading-translation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["reading-translation"].label.contains("12 hectares"))
+        let archive = app.switches["归档此资料"]
+        XCTAssertTrue(scrollReadingControl(archive, in: app)); tapPortableSwitch(archive)
+        XCTAssertEqual(archive.value as? String, "1")
+        XCTAssertTrue(scrollReadingControl(app.buttons["reading-save"], in: app)); app.buttons["reading-save"].tap()
+        app.buttons["reading-editor-done"].tap()
+        XCTAssertFalse(record.exists)
+        tapPortableSwitch(app.switches["查看归档"]); XCTAssertTrue(record.waitForExistence(timeout: 5))
+        attachScreenshot("阅读归档与重启恢复", app)
+    }
+
+    func testPortablePrivateReadingCancelDoesNotSaveOrSend() async throws {
+        let app = launchApp()
+        configurePortableModel(app)
+        let marker = "AEGISPRIVATE_" + UUID().uuidString
+        tapBrowserButton("profile-menu", in: app); app.buttons["私密"].tap()
+        navigate(app, to: "http://127.0.0.1:8768/article?case=" + marker)
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        tapBrowserButton("reading-library-button", in: app); app.buttons["reading-capture-page"].tap()
+        XCTAssertTrue(app.staticTexts["reading-original"].waitForExistence(timeout: 8))
+        let save = app.buttons["reading-save"]
+        XCTAssertTrue(scrollReadingControl(save, in: app)); save.tap()
+        XCTAssertTrue(app.alerts["保存私密阅读资料？"].waitForExistence(timeout: 5)); app.alerts.buttons["取消"].tap()
+        let translate = app.buttons["reading-translate"]
+        XCTAssertTrue(scrollReadingControl(translate, in: app)); translate.tap()
+        XCTAssertTrue(app.buttons["reading-confirm-translation"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["reading-translation-destination"].label, "http://127.0.0.1:8768/v1")
+        XCTAssertTrue(app.staticTexts["reading-translation-payload"].label.contains(marker))
+        app.buttons["取消"].tap()
+        app.buttons["reading-editor-done"].tap()
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'reading-record-' ")).firstMatch.exists)
+        try await assertFixtureRequests(marker, model: 0, download: 0)
+        attachScreenshot("私密阅读取消后未保存", app)
+    }
+
+    func testPortableModelPlanConfirmationAndForegroundWatch() {
+        let app = launchApp()
+        configurePortableModel(app)
+        navigate(app, to: "http://127.0.0.1:8768/article")
+        XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 12))
+        tapBrowserButton("agent-button", in: app); app.buttons["browser-operations"].tap()
+        let goal = app.textFields["browser-operation-goal"].exists ? app.textFields["browser-operation-goal"] : app.textViews["browser-operation-goal"]
+        XCTAssertTrue(scrollPortableControl(goal, in: app)); goal.tap(); goal.typeText("把选中的标签分组并保存工作区")
+        if app.keyboards.firstMatch.exists { app.buttons["operation-dismiss-keyboard"].tap() }
+        let propose = app.buttons["browser-operation-propose"]
+        XCTAssertTrue(scrollPortableControl(propose, in: app)); propose.tap()
+        let confirmModel = app.buttons["browser-operation-confirm-model"]
+        XCTAssertTrue(confirmModel.waitForExistence(timeout: 5))
+        XCTAssertEqual(app.staticTexts["browser-operation-destination"].label, "http://127.0.0.1:8768/v1")
+        XCTAssertEqual(app.staticTexts["browser-operation-model"].label, "aegis-simulator-fixture")
+        XCTAssertTrue(app.staticTexts["browser-operation-payload"].label.contains("把选中的标签分组并保存工作区"))
+        XCTAssertTrue(app.staticTexts["browser-operation-payload"].label.contains("模拟器验收文章"))
+        XCTAssertTrue(app.staticTexts["browser-operation-payload"].label.contains("http://127.0.0.1:8768/article"))
+        attachScreenshot("模型步骤首次发送范围完整可见", app)
+        XCTAssertTrue(scrollPortableControl(confirmModel, in: app)); confirmModel.tap()
+        let execute = app.buttons["browser-operation-confirm"]
+        XCTAssertTrue(scrollPortableControl(execute, in: app))
+        XCTAssertFalse(app.staticTexts["已完成 2 个步骤。"].exists)
+        attachScreenshot("模型计划执行前确认", app)
+        execute.tap()
+        let result = app.staticTexts["browser-operation-status"]
+        let finished = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "已完成 2 个步骤。"), object: result)
+        XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 10), .completed)
+        XCTAssertFalse(execute.exists)
+        let watch = app.buttons["检查当前网页更新"]
+        XCTAssertTrue(scrollPortableControl(watch, in: app)); watch.tap()
+        app.buttons["foreground-watch-toggle"].tap()
+        XCTAssertTrue(app.staticTexts["已检查 1 次"].waitForExistence(timeout: 10))
+        app.buttons["foreground-watch-toggle"].tap()
+        XCTAssertTrue(app.buttons["确认并开始检查"].exists)
+        attachScreenshot("前台网页检查已停止", app)
+    }
+
+    private func scrollPortableControl(_ element: XCUIElement, in app: XCUIApplication, shortScroll: Bool = false) -> Bool {
+        for _ in 0..<8 {
+            // 虚拟列表尚未创建目标时，不能先读取目标的属性，否则 XCTest 会直接终止流程。
+            let identifier = element.exists ? element.identifier : nil
+            let scrolls = identifier.map { app.scrollViews.containing(.any, identifier: $0).allElementsBoundByIndex } ?? []
+            let lists = identifier.map { app.collectionViews.containing(.any, identifier: $0).allElementsBoundByIndex } ?? []
+            let container = scrolls.last ?? lists.last ?? app.collectionViews.allElementsBoundByIndex.last ?? app.scrollViews.allElementsBoundByIndex.last
+            let bounds = (container?.frame ?? app.frame).intersection(app.frame)
+            let top = max(bounds.minY, app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? bounds.minY) + 8
+            var bottom = bounds.maxY - 12
+            let search = app.searchFields.firstMatch
+            if search.exists, search.isHittable, search.frame.midY > bounds.midY { bottom = min(bottom, search.frame.minY - 8) }
+            if app.keyboards.firstMatch.exists { bottom = min(bottom, app.keyboards.firstMatch.frame.minY - 8) }
+            if element.exists, element.isHittable, element.frame.midY >= top, element.frame.midY <= bottom { return true }
+            let moveDown = element.exists && element.frame.midY < top
+            if shortScroll {
+                // iPad 紧凑设置表单用短距离拖动，避免整页滑动反复越过目标行。
+                let target = container ?? app
+                let start = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: moveDown ? 0.4 : 0.7))
+                let end = target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: moveDown ? 0.7 : 0.4))
+                start.press(forDuration: 0.1, thenDragTo: end)
+            } else if moveDown { (container ?? app).swipeDown() }
+            else { (container ?? app).swipeUp() }
+        }
+        return false
+    }
+
+    private func tapPortableSwitch(_ element: XCUIElement) {
+        // 宽屏行的末端开关可能远离整行中点，优先点击实际的开关子元素。
+        let control = element.switches.firstMatch
+        if control.exists { control.tap() }
+        else { element.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.5)).tap() }
+    }
+
+    private func scrollReadingControl(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+        let scroll = app.scrollViews["reading-editor-scroll"]
+        for _ in 0..<8 {
+            let navigation = app.navigationBars["阅读资料"].frame
+            let bounds = scroll.frame.intersection(app.frame)
+            let top = max(bounds.minY, navigation.maxY) + 10
+            if element.exists, element.isHittable, element.frame.minY >= top, element.frame.maxY <= bounds.maxY - 20 { return true }
+            if element.exists, element.frame.minY < top { scroll.swipeDown() } else { scroll.swipeUp() }
+        }
+        return false
+    }
+
+    private func configurePortableModel(_ app: XCUIApplication) {
+        app.buttons["browser-more"].tap(); app.buttons["设置"].tap(); app.buttons["模型服务"].tap()
+        let endpoint = app.textFields["model-endpoint"]
+        endpoint.tap(); endpoint.clearAndType("http://127.0.0.1:8768/v1")
+        let model = app.textFields["model-name"]
+        model.tap(); model.clearAndType("aegis-simulator-fixture")
+        app.buttons["save-model"].tap()
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+    }
+
+    func testWebKitProtectionSettingsAndNativePageRecovery() {
+        let app = launchApp(extraArguments: ["--ui-testing-security"])
+        navigate(app, to: "http://127.0.0.1:8768/security/dynamic")
+        let blocked = app.descendants(matching: .any)["page-protection-blocked"]
+        XCTAssertTrue(blocked.waitForExistence(timeout: 15))
+        attachScreenshot("WebKit-动态钓鱼阻止页", app)
+        app.buttons["protection-continue-once"].tap()
+        XCTAssertTrue(app.webViews.staticTexts["PayPal verify your account"].waitForExistence(timeout: 8))
+        navigate(app, to: "http://127.0.0.1:8768/security/canvas")
+        XCTAssertTrue(app.webViews.staticTexts["绘图与读取验收"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["fingerprint-observation"].waitForExistence(timeout: 5))
+        app.buttons["browser-more"].tap(); app.buttons["设置"].tap()
+        let protection = app.buttons["保护选项"]
+        XCTAssertTrue(scrollPortableControl(protection, in: app, shortScroll: true)); protection.tap()
+        let mining = app.switches["mining-protection"]
+        XCTAssertTrue(scrollPortableControl(mining, in: app)); XCTAssertEqual(mining.value as? String, "1")
+        let hardening = app.switches["hardened-security"]
+        XCTAssertTrue(scrollPortableControl(hardening, in: app)); tapPortableSwitch(hardening)
+        XCTAssertEqual(hardening.value as? String, "1")
+        let strict = app.switches["strict-fingerprinting"]
+        XCTAssertTrue(scrollPortableControl(strict, in: app)); tapPortableSwitch(strict)
+        XCTAssertEqual(strict.value as? String, "1")
+        attachScreenshot("WebKit-保护设置", app)
+        app.navigationBars.buttons.element(boundBy: 0).tap(); app.buttons["完成"].tap()
+        navigate(app, to: "http://127.0.0.1:8768/security/canvas")
+        XCTAssertTrue(app.webViews.staticTexts["绘图与读取验收"].waitForExistence(timeout: 8))
+        attachScreenshot("WebKit-严格模式正常绘图", app)
     }
 
     private func launchApp(extraArguments: [String] = []) -> XCUIApplication {

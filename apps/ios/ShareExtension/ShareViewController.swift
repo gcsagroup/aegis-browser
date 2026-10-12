@@ -39,6 +39,29 @@ final class ShareViewController: UIViewController {
     private func receiveURL() {
         let items = extensionContext?.inputItems.compactMap { $0 as? NSExtensionItem } ?? []
         let providers = items.flatMap { $0.attachments ?? [] }
+        let markdownType = "net.daringfireball.markdown"
+        if let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(markdownType) || $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) {
+            let type = provider.hasItemConformingToTypeIdentifier(markdownType) ? markdownType : UTType.fileURL.identifier
+            provider.loadItem(forTypeIdentifier: type, options: nil) { [weak self] item, failure in
+                let result: Result<(String, Data), Error>
+                do {
+                    if let failure { throw failure }
+                    guard let url = item as? URL, url.isFileURL, ["md", "markdown"].contains(url.pathExtension.lowercased()),
+                          (try url.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? Int.max <= 2_097_152 else { throw ShareInboxError.invalidEnvelope }
+                    result = .success((url.lastPathComponent, try Data(contentsOf: url)))
+                } catch { result = .failure(error) }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    do {
+                        let (title, data) = try result.get(); try MarkdownShareInbox().store(title: title, data: data)
+                        self.statusLabel.text = String(localized: "文档已交给 Aegis，请在 60 秒内打开 App。")
+                        self.activity.stopAnimating()
+                        self.extensionContext?.completeRequest(returningItems: nil)
+                    } catch { self.finish(error: error) }
+                }
+            }
+            return
+        }
         guard let provider = providers.first(where: {
             $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
                 || $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)

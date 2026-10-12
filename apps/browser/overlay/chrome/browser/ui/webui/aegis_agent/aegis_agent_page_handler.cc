@@ -2,6 +2,8 @@
 
 #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h"
 
+#include "chrome/browser/ui/webui/aegis_agent/reading_workspace.h"
+
 #include <algorithm>
 #include <optional>
 #include <utility>
@@ -603,6 +605,17 @@ AegisAgentPageHandler::AegisAgentPageHandler(
         base::BindRepeating(&AegisAgentPageHandler::PushSnapshot,
                             weak_ptr_factory_.GetWeakPtr()));
   }
+}
+
+void AegisAgentPageHandler::ReadingCommand(
+    const std::string& request, ReadingCommandCallback callback) {
+  if (!reading_workspace_) {
+    reading_workspace_ = std::make_unique<AegisReadingWorkspace>(profile_, browser_);
+  }
+  reading_workspace_->Run(request, base::BindOnce(
+      [](ReadingCommandCallback done, std::string result, std::string error) {
+        std::move(done).Run(result, error);
+      }, std::move(callback)));
 }
 
 void AegisAgentPageHandler::ShowUI() {
