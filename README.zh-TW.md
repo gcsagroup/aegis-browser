@@ -18,6 +18,12 @@
 
 Aegis 正在開發中，尚無通過發布驗收的可散布版本。
 
+> **2026-10-13 · 桌面 4.0 與 iOS 6.0 原始碼整合：** 整合閱讀批註、本機中英翻譯與品質提示、網站增強、受控使用者腳本、Markdown 閱讀及 iOS 網頁防護；Google 服務缺少設定時僅在主動使用對應功能後提示。 本次為原始碼提交，並非正式發行。Windows 仍在建置；真實網站及 AI 腳本產生的未通過項目持續跟進。公開原始碼不包含授權尚未明確的 MINIM、PhishLang 權重與配套詞表，本機實驗檔案保留。 [2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md)
+
+> **2026-10-12 · iOS Ver 5.0 網頁保護：** 新增釣魚主機與頁面結構檢查、獨立挖礦／指紋資源攔截、系統強化及預設關閉的嚴格指紋限制。規則隨 App 更新；未知行為只提示。 [使用說明](docs/ios-webkit-protection.zh-TW.md) · [驗收紀錄](docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md)
+
+> **2026-10-11 · iOS Ver 4.0 可移植功能：** 新增搜尋與網站設定、加密閱讀批註、PDF 文字層、翻譯確認、有限瀏覽器操作和下載網路規則。 [功能使用說明](docs/ios-portable-features.zh-TW.md) · [四端功能對照](docs/platform-features.zh-TW.md) · [驗收記錄](docs/audit/ios-portable-features-2026-10-11.zh-CN.md) 雙模擬器集中測試、修復複測及實際操作已完成，該輪候選為 Ver 4.0 (82)。
+
 > **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
 
 > **2026-10-09 · iOS Ver 3.2 (69) 主線整合：** 精簡介面、私密確認與下載管理已接入 main 的背景復原保護；iPhone 194 項通過、1 項 iPad 專屬檢查略過，iPad 195 項通過。範圍與證據見[整合記錄](docs/audit/ios-main-merge-2026-10-09.zh-CN.md)。本次未發布簽名安裝套件。

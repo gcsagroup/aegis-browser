@@ -1,0 +1,46 @@
+From 0f0417befa5e98b85bc2954d16c5f48660a5c57f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 01:08:28 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E6=89=A9=E5=85=85=E6=9C=AC=E6=9C=BA?=
+ =?UTF-8?q?=E6=A8=A1=E5=9E=8B=E8=B5=84=E6=BA=90=E7=BC=96=E5=8F=B7=E9=85=8D?=
+ =?UTF-8?q?=E9=A2=9D=20162?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ tools/gritsettings/resource_ids.spec               | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 9ce71356d0a5cdfb589f006293e93793fc4bbcb6..eac23603f36e49fa1703bfa17bf822bc4f4cd47b 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.161";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (161)";
++inline constexpr char kProductVersion[] = "3.1.0.162";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (162)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
+index 8eeef24f1f8899457ef78b073d54bf1eb0d5cbee..6d522634a991968e634e1bbdf4d677e998678f90 100644
+--- a/tools/gritsettings/resource_ids.spec
++++ b/tools/gritsettings/resource_ids.spec
+@@ -892,7 +892,7 @@
+     "includes": [5170],
+   },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis_agent/resources.grd": {
+-    "META": {"sizes": {"includes": [10]}},
++    "META": {"sizes": {"includes": [40]}},
+     "includes": [5180],
+   },
+   "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/whats_new/resources.grd": {
+-- 
+2.52.0
+

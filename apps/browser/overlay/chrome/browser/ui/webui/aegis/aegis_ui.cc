@@ -8,6 +8,7 @@
 #include "build/build_config.h"
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
+#include "chrome/browser/ui/webui/aegis/aegis_enhancement_handler.h"
 #endif
 #include "chrome/browser/aegis/aegis_download_prefs.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
@@ -20,6 +21,7 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "ui/webui/webui_util.h"
+#include "services/network/public/mojom/content_security_policy.mojom.h"
 
 namespace {
 
@@ -683,6 +685,9 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   web_ui->AddMessageHandler(std::make_unique<AegisUIHandler>());
 #if !BUILDFLAG(IS_ANDROID)
   web_ui->AddMessageHandler(std::make_unique<AegisGestureHandler>());
+  web_ui->AddMessageHandler(std::make_unique<AegisEnhancementHandler>());
+  web_ui->AddRequestableScheme("chrome-untrusted");
+  source->OverrideContentSecurityPolicy(network::mojom::CSPDirectiveName::FrameSrc, "frame-src chrome-untrusted://aegis-markdown;");
 #endif
 }
 

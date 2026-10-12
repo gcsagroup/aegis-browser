@@ -1,0 +1,37 @@
+{
+  "retrieved": "2026-10-12",
+  "sources": [
+    {
+      "url": "https://github.com/blocklistproject/Lists",
+      "file": "phishing.txt",
+      "license": "Unlicense (repository LICENSE; upstream list header still says MIT)",
+      "count": 190191,
+      "sha256": "4407e6b9af2fa1e4def92ed523643a3380448fde81837341ffc596c6e781f134",
+      "upstreamModified": "2026-07-06"
+    },
+    {
+      "url": "https://github.com/hoshsadiq/adblock-nocoin-list",
+      "file": "hosts.txt",
+      "license": "MIT",
+      "count": 312,
+      "sha256": "41c0e875b48dc65282c9aee579ae315eb557f115be654d6a9e4fccac7db9a2d1"
+    },
+    {
+      "url": "https://easylist.to/pages/licence.html",
+      "file": "easyprivacy.txt",
+      "license": "CC-BY-SA-3.0 (selected under the upstream dual license)",
+      "selection": [
+        "c.fingerprint.com",
+        "fpc.fingerprint.com",
+        "customfingerprints.bablosoft.com",
+        "ipfingerprint.com"
+      ],
+      "sha256": "0597209a67b3c67d6754163574ba7e2b98d1e2085130e85ff966a1fe818d1dd2"
+    },
+    {
+      "url": "https://publicsuffix.org/list/public_suffix_list.dat",
+      "license": "MPL-2.0",
+      "sha256": "ba7d836c0ea57a8bcf9f1fcb868066a7554bed029b441ecc6204ad8494a32612"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Markdown 阅读</title>
+    <link rel="stylesheet" href="enhancements.css" />
+    <script type="module" src="markdown.js"></script>
+  </head>
+  <body class="reading">
+    <header>
+      <a href="aegis.html">← 防护中心</a>
+      <h1>Markdown 阅读</h1>
+      <label class="file"
+        >打开文件<input
+          id="file"
+          type="file"
+          accept=".md,.markdown,text/markdown,text/plain" /></label
+      ><label class="file"
+        >授权图片目录<input id="directory" type="file" webkitdirectory multiple /></label
+      ><select id="tabs" aria-label="在线文本页面"></select
+      ><button id="refresh">刷新网页列表</button
+      ><button id="read-page">预览在线原文</button
+      ><label><input id="auto-preview" type="checkbox" />此网站自动预览</label
+      ><select id="downloads" aria-label="已下载 Markdown"></select
+      ><button id="open-download">打开下载</button
+      ><button id="save-reading">保存到阅读库</button
+      ><button id="print">打印 / 保存 PDF</button
+      ><button id="assistant">总结与翻译</button>
+    </header>
+    <p id="notice" role="status">
+      拖入 Markdown 文件，或选择已经打开的在线文本页。文档只读，最大 2 MiB。
+    </p>
+    <iframe
+      id="reader"
+      class="reader"
+      title="Markdown 阅读内容"
+      src="chrome-untrusted://aegis-markdown/viewer.html"
+    ></iframe>
+    <dialog id="ai">
+      <h2>文档助手</h2>
+      <p>只发送下方可编辑的内容，最多 32 KiB。文档阅读本身不需要模型。</p>
+      <p id="model"></p>
+      <textarea id="ai-input" aria-label="发送给模型的内容"></textarea
+      ><select id="ai-goal">
+        <option value="用中文总结">用中文总结</option>
+        <option value="完整翻译为简体中文">翻译为简体中文</option>
+        <option value="完整翻译为英语">翻译为英语</option></select
+      ><button id="generate">确认发送并生成</button><button id="cancel">取消</button
+      ><button id="close">关闭</button>
+      <pre id="ai-output"></pre>
+    </dialog>
+  </body>
+</html>

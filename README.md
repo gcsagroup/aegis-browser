@@ -18,6 +18,12 @@
 
 Aegis is in development; no release-qualified build is available yet.
 
+> **2026-10-13 · Desktop 4.0 and iOS 6.0 source integration：** Integrates reading notes, local English/Chinese translation with quality notices, site enhancements, controlled user scripts, Markdown reading, and iOS web protection. Missing Google configuration is reported only when its feature is requested. This is a source submission, not a release. Windows is still building; outstanding real-site and AI-script acceptance continues. Public source excludes MINIM and PhishLang weights and their vocabulary while redistribution permission is unresolved; existing local experimental files are preserved. [2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md)
+
+> **2026-10-12 · iOS Ver 5.0 Web protection：** Adds phishing host and page structure checks, independent mining/fingerprinting resource blocking, system hardening and strict fingerprint limits that are off by default. Rules ship with app updates; unknown behavior only produces notices. [User guide](docs/ios-webkit-protection.en.md) · [Acceptance record](docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md)
+
+> **2026-10-11 · iOS Ver 4.0 portable features：** Adds search and site settings, encrypted reading notes, PDF text layers, translation consent, limited browser operations and download network policies. [User guide](docs/ios-portable-features.en.md) · [Four-platform comparison](docs/platform-features.en.md) · [Acceptance record](docs/audit/ios-portable-features-2026-10-11.zh-CN.md) Concentrated Simulator tests, fixes with targeted retests, and actual interaction checks are complete; the candidate for that work was Ver 4.0 (82).
+
 > **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
 
 > **2026-10-09 · iOS Ver 3.2 (69) main integration:** The compact interface, private confirmations and download management now work with main’s background recovery safeguards. iPhone: 194 passed and 1 iPad-only check skipped; iPad: 195 passed. See the [integration record](docs/audit/ios-main-merge-2026-10-09.zh-CN.md) for scope and evidence. No signed installation package was released.

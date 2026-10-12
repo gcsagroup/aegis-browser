@@ -3,7 +3,41 @@
 
 import("//ui/webui/resources/tools/build_webui.gni")
 
+generate_grd("enhancement_resources") {
+  grd_prefix = "aegis_enhancement"
+  out_grd = "$target_gen_dir/enhancement_resources.grdp"
+  input_files_base_dir = rebase_path(".", "//")
+  input_files = [
+    "enhancements.html",
+    "enhancements.css",
+    "enhancements.js",
+    "markdown.html",
+    "markdown.js",
+    "enhancements_shared/core.js",
+    "enhancements_shared/tests/matching-vectors.json",
+    "enhancements_shared/site_rules.js",
+    "enhancements_shared/viewer.js",
+    "enhancements_shared/viewer.html",
+    "enhancements_shared/viewer.css",
+    "enhancements_shared/script_runtime.js",
+    "enhancements_shared/vendor/purify.min.js",
+    "enhancements_shared/vendor/task-lists.min.js",
+    "enhancements_shared/vendor/markdown-it-LICENSE",
+    "enhancements_shared/vendor/task-lists-LICENSE",
+    "enhancements_shared/vendor/acorn-LICENSE",
+    "enhancements_shared/vendor/acorn.js",
+    "enhancements_shared/vendor/NOTICE.txt",
+    "enhancements_shared/vendor/manifest.json",
+    "enhancements_shared/vendor/DOMPurify-LICENSE",
+    "enhancements_shared/vendor/highlight.min.js",
+    "enhancements_shared/vendor/markdown-it.min.js",
+    "enhancements_shared/vendor/highlight-LICENSE",
+  ]
+}
+
 build_webui("build") {
+  extra_grdp_deps = [ ":enhancement_resources" ]
+  extra_grdp_files = [ "$target_gen_dir/enhancement_resources.grdp" ]
   grd_prefix = "aegis"
   static_files = [
     "aegis.css",
@@ -11,6 +45,7 @@ build_webui("build") {
     "gestures.html",
     "gestures.css",
     "product_logo.svg",
+
   ]
   ts_files = [
     "aegis.ts",
