@@ -460,7 +460,7 @@ const actionContext = vm.createContext({
   Workflow: {kResearch: 0, kBrowserSteward: 1, kSafeDownload: 2, kShopping: 3},
   AgentMode: {kAct: 1, kAutomate: 2}, selectedWorkflow: null,
   detectModels: () => {}, saveModel: () => {},
-  addCurrentModelToPool: () => {}, saveModelRouting: () => {}, snapshot: null,
+  addCurrentModelToPool: () => {}, saveModelRouting: () => {},
   selectDetectedModel: () => {}, syncDetectedModel: () => {}, resetDetectedModels: () => {},
   proxy: {handler: {createTask: async (...args) => {
     actionCalls.push(args); return {snapshot: {taskId: `task-${actionCalls.length}`, lastError: ''}};

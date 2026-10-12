@@ -24,6 +24,7 @@ struct DownloadsView: View {
     @State private var confirmsRemoval = false
     @State private var confirmsEmpty = false
     @State private var previewURL: URL?
+    @State private var markdownDocument: MarkdownDocument?
     @State private var recoveringFiles = false
     @State private var privateDownloadPlan: DownloadPlan?
     @State private var confirmsPrivateDownload = false
@@ -151,6 +152,7 @@ struct DownloadsView: View {
         }
         .onAppear { address = initialURL?.absoluteString ?? ""; downloads.refreshStorageUsage() }
         .quickLookPreview($previewURL)
+        .sheet(item: $markdownDocument) { document in MarkdownReaderView(initial: document) }
         .sheet(item: $exportFile) { file in
             FileExportPicker(url: file.url) { saved in
                 exportFile = nil
@@ -221,6 +223,18 @@ struct DownloadsView: View {
                 Picker("同时下载数量", selection: Binding(get: { downloads.maximumConcurrentDownloads }, set: { downloads.setConcurrencyLimit($0) })) {
                     ForEach(1...4, id: \.self) { Text("\($0) 个任务").tag($0) }
                 }.accessibilityIdentifier("download-concurrency")
+                Toggle("允许蜂窝网络下载", isOn: transferBinding(\.allowsCellular))
+                Toggle("允许按流量计费的网络", isOn: transferBinding(\.allowsExpensive))
+                Toggle("允许低数据模式下载", isOn: transferBinding(\.allowsConstrained))
+                Picker("单文件容量上限", selection: Binding(get: { downloads.transferPreferences.boundedMaximumBytes }, set: { value in
+                    var next = downloads.transferPreferences; next.maximumBytes = value
+                    do { try downloads.setTransferPreferences(next) } catch { self.error = error.localizedDescription }
+                })) {
+                    Text("100 MB").tag(Int64(100_000_000)); Text("500 MB").tag(Int64(500_000_000))
+                    Text("1 GB").tag(Int64(1_000_000_000)); Text("5 GB").tag(Int64(5_000_000_000))
+                }.accessibilityIdentifier("download-size-limit")
+                Text("网络与容量选项只用于之后新建的任务。已有任务、续传和镜像切换沿用开始时的设置；系统仍可能延后后台传输。")
+                    .font(.footnote).foregroundStyle(.secondary)
                 Text("下载与备份占用：\(ByteCountFormatter.string(fromByteCount: downloads.storedBytes, countStyle: .file))")
                 Text("回收站占用：\(ByteCountFormatter.string(fromByteCount: downloads.recycleBinBytes, countStyle: .file))")
                 if let available = downloads.availableBytes { Text("设备可用空间：\(ByteCountFormatter.string(fromByteCount: available, countStyle: .file))") }
@@ -241,6 +255,13 @@ struct DownloadsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func transferBinding(_ key: WritableKeyPath<DownloadTransferPreferences, Bool>) -> Binding<Bool> {
+        Binding(get: { downloads.transferPreferences[keyPath: key] }, set: { value in
+            var next = downloads.transferPreferences; next[keyPath: key] = value
+            do { try downloads.setTransferPreferences(next) } catch { self.error = error.localizedDescription }
+        })
     }
 
     private func downloadRow(_ item: BrowserDownload) -> some View {
@@ -289,7 +310,9 @@ struct DownloadsView: View {
     private func showFile(_ item: BrowserDownload, preview: Bool) {
         let url = downloads.fileURL(item)
         guard FileManager.default.fileExists(atPath: url.path) else { error = DownloadError.missingFile.localizedDescription; return }
-        if preview { previewURL = url } else { exportFile = ExportedFile(url: url) }
+        if preview, MarkdownDocument.accepts(url) {
+            do { markdownDocument = try MarkdownDocument.read(url) } catch { self.error = error.localizedDescription }
+        } else if preview { previewURL = url } else { exportFile = ExportedFile(url: url) }
     }
     private func remove(includingFiles: Bool) {
         do {

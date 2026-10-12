@@ -1,0 +1,24 @@
+GCSA Aegis 本机翻译与实验模型
+
+Bergamot Translator 0.4.9：MPL 2.0
+来源：https://github.com/browsermt/bergamot-translator
+npm：https://registry.npmjs.org/@browsermt/bergamot-translator/-/bergamot-translator-0.4.9.tgz
+本项目将引擎包装改为由现有模块 Worker 直接载入，删除 Node 兼容层及额外 Worker 消息层，并让 Emscripten 胶水复用初始化配置并显式引用模块环境的全局对象；没有修改模型计算、放宽 eval 或新增常驻进程。
+对应许可见 bergamot/LICENSE。Mozilla 中英语言包使用 MPL 2.0，按清单下载并核对压缩与解压摘要。
+模型说明：https://github.com/mozilla/translations/blob/main/README.md
+
+ONNX Runtime Web 1.20.1、fzstd 0.1.1、js-md5 0.8.3：MIT
+对应许可位于 vendor 目录。没有修改这些包的推理或解压实现。
+
+MINIM：使用本机训练的 MLP 权重；仅对提取段落评分，不是完整 AX 树策略。
+上游代码：https://github.com/yyyyhx/MINIM/tree/456c60b6fd47941d1e5849db573dbbcb488e3ae7
+训练数据：https://huggingface.co/datasets/Chaoyu112358/MINIM-data （数据卡 MIT）。
+PhishLang：MobileBERT 的 ONNX INT8 本机版本；46 条已观察试验样本的分类与原权重一致。
+上游模型：https://github.com/UTA-SPRLab/phishlang/tree/6b7283854ef8a6edc73f945c1ce7e51b2e1dc4fd
+上述研究代码/模型未发现完整明确的许可，本包只用于用户要求的本机实验，尚不能作为公开分发许可凭据。
+两模型默认关闭。开启后仍需点击实验分析；不用于自动拦截、删除、提交表单或放宽 Agent 权限。
+
+来源摘要见 research_manifest.json 和 asset_manifest.json。
+
+公开源码不包含 MINIM 权重、PhishLang ONNX 或配套词表，补丁中也不包含这些数据。
+已有本机实验文件保留在独立工作区；公开源码不会自动下载这些模型。
