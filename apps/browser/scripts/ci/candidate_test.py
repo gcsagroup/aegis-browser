@@ -100,15 +100,19 @@ class CandidateTests(unittest.TestCase):
             def git(*args):
                 return subprocess.check_output(['git', '-C', str(src), *args], text=True).strip()
             git('init', '-q'); git('config', 'user.name', 'CI test'); git('config', 'user.email', 'ci@example.invalid')
-            (src / 'code.txt').write_text('base\n')
+            git('config', 'core.autocrlf', 'false')
+            (src / 'code.txt').write_text('base\n', newline='\n')
             git('add', 'code.txt'); git('commit', '-qm', 'base')
             base = git('rev-parse', 'HEAD')
-            (src / 'code.txt').write_text('fixed\n')
+            (src / 'code.txt').write_text('fixed\n', newline='\n')
             git('commit', '-qam', 'fix')
-            (patches / 'fix.patch').write_text(git('format-patch', '-1', '--stdout') + '\n')
+            # 补丁是 Git 输出的字节流，不能经平台换行转换后再重放。
+            (patches / 'fix.patch').write_bytes(subprocess.check_output(
+                ['git', '-C', str(src), 'format-patch', '-1', '--stdout']))
             (patches / 'series').write_text('fix.patch\n')
             fresh = root / 'fresh'
             subprocess.run(['git', 'clone', '-q', str(src), str(fresh)], check=True)
+            subprocess.run(['git', '-C', str(fresh), 'config', 'core.autocrlf', 'false'], check=True)
             subprocess.run(['git', '-C', str(fresh), 'checkout', '-q', '--detach', base], check=True)
             ci.apply_if_base(fresh, base, patches, root / 'apply.log')
             ci.verify_tree(fresh, base, patches)
