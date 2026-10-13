@@ -210,6 +210,63 @@ TEST_F(ModelProviderClientNetworkTest,
 }
 
 TEST_F(ModelProviderClientNetworkTest,
+       LimitsQwenThinkingOverrideToOptedInLocalRequests) {
+  struct Case {
+    ModelProvider provider;
+    const char *base;
+    const char *model;
+    bool opt_in;
+    bool expected;
+  };
+  for (const auto &item : {
+           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1",
+                "mlx/Qwen3.8-Flash-Next", true, true},
+           Case{ModelProvider::kOpenAI, "http://[::1]:8000/v1", "QWEN3", true,
+                true},
+           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1", "Qwen3",
+                false, false},
+           Case{ModelProvider::kOpenAI, "https://model.example/v1", "Qwen3",
+                true, false},
+           Case{ModelProvider::kOpenAI, "https://localhost/v1", "Qwen3", true,
+                false},
+           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1",
+                "other-model", true, false},
+           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1", "notqwen3",
+                true, false},
+           Case{ModelProvider::kAnthropic, "http://127.0.0.1:8000/v1", "Qwen3",
+                true, false},
+       }) {
+    SCOPED_TRACE(item.model);
+    SCOPED_TRACE(item.base);
+    ModelProviderClient client;
+    base::test::TestFuture<bool, std::string, std::string> result;
+    const auto id =
+        client.Chat(item.provider, item.base, "", item.model, "生成脚本草稿",
+                    "隐藏测试侧栏", result.GetCallback(), item.opt_in);
+    ASSERT_TRUE(id);
+    const GURL endpoint(std::string(item.base) +
+                        (item.provider == ModelProvider::kAnthropic
+                             ? "/messages"
+                             : "/chat/completions"));
+    const auto payload = base::JSONReader::Read(
+        network::GetUploadData(PendingRequest(endpoint)), base::JSON_PARSE_RFC);
+    ASSERT_TRUE(payload && payload->is_dict());
+    const auto *options = payload->GetDict().FindDict("chat_template_kwargs");
+    if (item.expected) {
+      ASSERT_TRUE(options);
+      EXPECT_EQ(false, options->FindBool("enable_thinking"));
+    } else {
+      EXPECT_FALSE(options);
+    }
+    EXPECT_TRUE(test_url_loader_factory_.SimulateResponseForPendingRequest(
+        endpoint.spec(), item.provider == ModelProvider::kAnthropic
+                             ? R"({"content":[{"type":"text","text":"草稿"}]})"
+                             : R"({"choices":[{"message":{"content":"草稿"}}]})"));
+    EXPECT_TRUE(result.Get<0>());
+  }
+}
+
+TEST_F(ModelProviderClientNetworkTest,
        UsesAnthropicFormatWithThirdPartyHttpsPrefixAndNoKey) {
   constexpr std::string_view kBaseUrl =
       "https://gateway.example.test/tenant/claude/v1/";

@@ -36,7 +36,6 @@ struct BrowserSettingsView: View {
                         .accessibilityIdentifier("general-browser-settings")
                     NavigationLink("网站设置与权限") { WebsiteSettingsView(preferences: browser.preferences) }
                         .accessibilityIdentifier("website-settings")
-                    NavigationLink("网站增强与用户脚本") { WebsiteEnhancementsView() }
                     NavigationLink("网站数据管理") { WebsiteDataSettingsView() }
                         .accessibilityIdentifier("website-data-settings")
                     Button("打开系统 App 设置") {
@@ -44,6 +43,14 @@ struct BrowserSettingsView: View {
                     }
                     Text("默认浏览器、App 语言及系统相机、麦克风权限由 iOS 管理；可用选项取决于安装资格和系统版本。")
                         .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("网站增强与脚本") {
+                    NavigationLink("网站规则与已安装脚本") { WebsiteEnhancementsView(embedded: true) }
+                        .accessibilityIdentifier("enhancement-settings")
+                }
+                Section("阅读") {
+                    NavigationLink("阅读外观与图片权限") { ReadingPreferencesView() }
+                    NavigationLink("Markdown 自动预览网站") { WebsiteSettingsView(preferences: browser.preferences) }
                 }
                 Section("AI 助手") {
                     NavigationLink("模型服务") { ModelSettingsView() }

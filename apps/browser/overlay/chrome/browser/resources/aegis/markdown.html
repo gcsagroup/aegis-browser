@@ -1,54 +1,45 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="color-scheme" content="light dark" />
-    <title>Markdown 阅读</title>
-    <link rel="stylesheet" href="enhancements.css" />
-    <script type="module" src="markdown.js"></script>
-  </head>
-  <body class="reading">
-    <header>
-      <a href="aegis.html">← 防护中心</a>
-      <h1>Markdown 阅读</h1>
-      <label class="file"
-        >打开文件<input
-          id="file"
-          type="file"
-          accept=".md,.markdown,text/markdown,text/plain" /></label
-      ><label class="file"
-        >授权图片目录<input id="directory" type="file" webkitdirectory multiple /></label
-      ><select id="tabs" aria-label="在线文本页面"></select
-      ><button id="refresh">刷新网页列表</button
-      ><button id="read-page">预览在线原文</button
-      ><label><input id="auto-preview" type="checkbox" />此网站自动预览</label
-      ><select id="downloads" aria-label="已下载 Markdown"></select
-      ><button id="open-download">打开下载</button
-      ><button id="save-reading">保存到阅读库</button
-      ><button id="print">打印 / 保存 PDF</button
-      ><button id="assistant">总结与翻译</button>
-    </header>
-    <p id="notice" role="status">
-      拖入 Markdown 文件，或选择已经打开的在线文本页。文档只读，最大 2 MiB。
-    </p>
-    <iframe
-      id="reader"
-      class="reader"
-      title="Markdown 阅读内容"
-      src="chrome-untrusted://aegis-markdown/viewer.html"
-    ></iframe>
-    <dialog id="ai">
-      <h2>文档助手</h2>
-      <p>只发送下方可编辑的内容，最多 32 KiB。文档阅读本身不需要模型。</p>
-      <p id="model"></p>
-      <textarea id="ai-input" aria-label="发送给模型的内容"></textarea
-      ><select id="ai-goal">
-        <option value="用中文总结">用中文总结</option>
-        <option value="完整翻译为简体中文">翻译为简体中文</option>
-        <option value="完整翻译为英语">翻译为英语</option></select
-      ><button id="generate">确认发送并生成</button><button id="cancel">取消</button
-      ><button id="close">关闭</button>
-      <pre id="ai-output"></pre>
-    </dialog>
-  </body>
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" /><title>Markdown 阅读</title>
+  <link rel="stylesheet" href="enhancements.css" /><link rel="stylesheet" href="markdown.css" />
+  <script type="module" src="markdown.js"></script>
+</head>
+<body class="reading">
+  <header class="reader-toolbar">
+    <a href="chrome://settings/aegisReading" aria-label="返回阅读库">← 阅读库</a>
+    <div class="document-heading"><strong id="document-title">Markdown 阅读</strong><button id="source-info" class="text-button" popovertarget="source-panel">打开文档后查看来源</button></div>
+    <nav id="document-tools" aria-label="阅读工具" hidden>
+      <button id="outline-toggle" aria-expanded="true">目录</button><button id="find-toggle">查找</button>
+      <button popovertarget="appearance">外观</button><button id="assistant" aria-expanded="false">文档助手</button>
+      <button popovertarget="document-actions" aria-label="更多文档操作">更多</button>
+    </nav>
+  </header>
+  <p id="notice" role="status" aria-live="polite"></p>
+  <section id="start" class="reader-start">
+    <h1>打开 Markdown 文档</h1><p>拖入文件，或打开正在浏览的在线原文。</p>
+    <div class="row"><label class="file">打开文件<input id="file" type="file" accept=".md,.markdown,text/markdown,text/plain" /></label><a href="chrome://settings/aegisReading">阅读库</a></div>
+    <details id="online-open"><summary>打开在线原文</summary><div class="row"><select id="tabs" aria-label="在线文本页面"></select><button id="refresh">刷新列表</button><button id="read-page">打开所选原文</button></div></details>
+  </section>
+  <div class="reader-workspace" id="workspace" hidden>
+    <iframe id="reader" class="reader" title="Markdown 阅读内容" src="chrome-untrusted://aegis-markdown/viewer.html"></iframe>
+    <aside id="ai" hidden aria-label="文档助手">
+      <div class="row section-heading"><h2>文档助手</h2><button id="close" aria-label="关闭文档助手">关闭</button></div>
+      <p id="model"></p><label>发送内容<textarea id="ai-input" rows="8"></textarea></label>
+      <p class="hint">只发送上方可编辑的内容，最多 32 KiB。</p>
+      <select id="ai-goal" aria-label="文档助手任务"><option value="用中文总结">用中文总结</option><option value="完整翻译为简体中文">翻译为简体中文</option><option value="完整翻译为英语">翻译为英语</option></select>
+      <div class="row"><button id="generate" class="primary">确认发送并生成</button><button id="cancel">取消</button></div><pre id="ai-output" role="status"></pre>
+    </aside>
+  </div>
+  <div id="appearance" popover class="reader-popover"><h2>阅读外观</h2>
+    <label>主题<select id="reading-theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
+    <label>字体<select id="reading-family"><option value="sans">系统字体</option><option value="serif">衬线字体</option></select></label>
+    <label>字号<input id="reading-font" type="number" min="12" max="28" value="17" /></label>
+    <label>行距<select id="reading-spacing"><option value="150">紧凑</option><option value="180">标准</option><option value="210">宽松</option></select></label>
+    <label>正文宽度<select id="reading-width"><option value="680">窄</option><option value="820">标准</option><option value="1100">宽</option></select></label>
+  </div>
+  <div id="document-actions" popover class="reader-popover action-menu"><button id="open-another">打开其他文件</button><button id="source-toggle" aria-pressed="false">查看源码</button><button id="copy-source">复制原文</button><button id="save-reading">保存到阅读库</button><button id="print">打印 / 导出 PDF</button><details><summary>文档图片权限</summary><label class="file">选择本地图片目录<input id="directory" type="file" webkitdirectory multiple /></label><button id="remote-images">加载 / 停用外部图片</button><p class="hint">仅对此次打开的文档生效。</p></details></div>
+  <div id="source-panel" popover class="reader-popover"><h2>文档来源</h2><p id="source-address"></p><label><input id="auto-preview" type="checkbox" />此网站自动预览 Markdown</label></div>
+</body>
 </html>

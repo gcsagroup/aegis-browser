@@ -16,7 +16,7 @@ ARTICLE = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="wi
 <title>模拟器验收文章</title><style>body{font:20px -apple-system;margin:24px;line-height:1.6}a{display:block;margin:20px 0}</style>
 <main><h1>城市绿地观察</h1><p>这是一份合成验收资料。青林公园面积为 12 公顷，开放时间为每天 06:00 至 21:00，步道总长 3 公里。</p>
 <p>2026 年的改造计划包括增加 40 棵乔木和两个饮水点。本文没有提供项目预算。</p></main>
-<a href="/article-two" target="_blank">打开第二篇来源</a><a href="/download.bin" download>下载验收文件</a>
+<a id="article-end" href="/article-two" target="_blank">打开第二篇来源</a><a href="/download.bin" download>下载验收文件</a>
 <a href="/sensitive">登录表单测试</a><input placeholder="输入框不应进入助手" value="private form text">
 </html>"""
 SECOND = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第二篇合成来源</title>
