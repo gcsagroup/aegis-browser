@@ -1,0 +1,32 @@
+.................# Chromium 候选证据
+
+
+平台：android；阶段：failed
+实际运行验收：pending；正式发布：未执行。
+失败原因：device missing
+
+阶段：failure
+failed
+
+.hint: Using 'master' as the name for the initial branch. This default branch name
+hint: will change to "main" in Git 3.0. To configure the initial branch name
+hint: to use in all of your new repositories, which will suppress this warning,
+hint: call:
+hint:
+hint: 	git config --global init.defaultBranch <name>
+hint:
+hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+hint: 'development'. The just-created branch can be renamed via this command:
+hint:
+hint: 	git branch -m <name>
+hint:
+hint: Disable this message with "git config set advice.defaultBranchName false"
+阶段：patch-000
+阶段：patch-commit
+.阶段：success
+.阶段：timeout
+..
+----------------------------------------------------------------------
+Ran 22 tests in 1.921s
+
+OK
