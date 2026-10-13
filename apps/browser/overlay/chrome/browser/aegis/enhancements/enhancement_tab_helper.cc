@@ -667,8 +667,16 @@ void EnhancementTabHelper::DidStartNavigation(
   if (!handle->IsInPrimaryMainFrame() || handle->IsSameDocument())
     return;
   navigation_id_ = handle->GetNavigationId();
-  const auto url = handle->GetURL();
-  if (!handle->IsRendererInitiated() && url.SchemeIsFile() &&
+}
+void EnhancementTabHelper::DidFinishLoad(content::RenderFrameHost* frame,
+                                        const GURL& url) {
+  if (frame != web_contents()->GetPrimaryMainFrame() ||
+      frame->IsErrorDocument() ||
+      web_contents()->GetLastCommittedURL() != url)
+    return;
+  // 拖入文件和本地页面链接由渲染进程发起。等待 Chromium 成功载入后再
+  // 读取原文，既覆盖首次打开，也不绕过浏览器原有的本地文件访问检查。
+  if (url.SchemeIsFile() &&
       (url.host().empty() || url.host() == "localhost")) {
     base::FilePath path;
     if (!net::FileURLToFilePath(url, &path))
@@ -681,23 +689,20 @@ void EnhancementTabHelper::DidStartNavigation(
         path, url, true,
         base::BindOnce(
             [](base::WeakPtr<EnhancementTabHelper> self, int64_t navigation,
-               base::DictValue result) {
+               GURL source, base::DictValue result) {
               if (!self || self->navigation_id_ != navigation ||
+                  self->web_contents()->GetLastCommittedURL() != source ||
                   result.FindString("error"))
                 return;
               self->markdown_ = std::move(result);
-              self->web_contents()->Stop();
               self->web_contents()->GetController().LoadURL(
                   GURL("chrome://aegis/markdown.html"), content::Referrer(),
                   ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
             },
-            weak_.GetWeakPtr(), navigation_id_));
+            weak_.GetWeakPtr(), navigation_id_, url));
+    return;
   }
-}
-void EnhancementTabHelper::DidFinishLoad(content::RenderFrameHost* frame,
-                                         const GURL& url) {
-  if (frame != web_contents()->GetPrimaryMainFrame() ||
-      !url.SchemeIsHTTPOrHTTPS())
+  if (!url.SchemeIsHTTPOrHTTPS())
     return;
   const std::string path = base::ToLowerASCII(std::string(url.path()));
   if (!path.ends_with(".md") && !path.ends_with(".markdown") &&

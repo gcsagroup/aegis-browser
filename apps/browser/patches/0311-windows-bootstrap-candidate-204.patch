@@ -5,6 +5,7 @@ Subject: [PATCH] 修复 Windows 工具初始化并递增候选为 204
 
 ---
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index edcce161cf13d4c954da5b7f3c3dea6257ea1709..2fc67e2e91642bb3644407a29f56ce40ce56940f 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@

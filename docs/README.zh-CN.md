@@ -1,5 +1,6 @@
 # 文档
 
+- [本地 Markdown 首次打开修复与验收](audit/markdown-first-open-2026-10-14.zh-CN.md)
 - [Windows 构建最新结果与超时修复](audit/windows-actions-2026-10-13.zh-CN.md)
 - [Windows 后续构建方案及预计费用](plans/windows-build-budget-2026-10-14.zh-CN.md)
 
@@ -9,7 +10,7 @@
 - [验收记录](audit/ios-portable-features-2026-10-11.zh-CN.md)
 
 
-> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
+> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。该条为历史整合记录；后续改动以本文顶部的专项验收记录为准。
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
 本目录保存 GCSA-aegis 的公开产品架构、路线图、研究边界、产品页，以及带日期的本地审计记录。

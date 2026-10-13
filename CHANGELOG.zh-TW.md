@@ -4,15 +4,15 @@
 
 本文件記錄專案的重要變更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，專案計畫採用[語意化版本](https://semver.org/lang/zh-TW/)。
 
-軟體套件版本仍為 `0.1.0`；iOS 目前開發候選為 `6.0`，已發布原始碼預覽仍為 `2.2`。以下新增 iOS 原始碼預發布記錄，簽章及商店發布驗收尚未完成。
+軟體套件版本仍為 `0.1.0`；iOS 目前開發候選為 `7.0`，已發布原始碼預覽仍為 `2.2`。以下新增 iOS 原始碼預發布記錄，簽章及商店發布驗收尚未完成。
 
 ## 2026-10-13 · 桌面 4.0 與 iOS 6.0 原始碼整合
 
 整合閱讀批註、本機中英翻譯與品質提示、網站增強、受控使用者腳本、Markdown 閱讀及 iOS 網頁防護；Google 服務缺少設定時僅在主動使用對應功能後提示。
 
-本次為原始碼提交，並非正式發行。Windows 仍在建置；真實網站及 AI 腳本產生的未通過項目持續跟進。公開原始碼不包含授權尚未明確的 MINIM、PhishLang 權重與配套詞表，本機實驗檔案保留。
+本次為原始碼提交，並非正式發行。公開原始碼不包含授權尚未明確的 MINIM、PhishLang 權重與配套詞表，本機實驗檔案保留。
 
-[2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md)
+[2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md) · [2026-10-14](docs/audit/windows-actions-2026-10-13.zh-CN.md)
 
 ## iOS 5.0 — 2026-10-12
 

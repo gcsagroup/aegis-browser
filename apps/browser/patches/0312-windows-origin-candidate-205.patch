@@ -5,6 +5,7 @@ Subject: [PATCH] 补齐 Windows 源码 origin 并递增候选为 205
 
 ---
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 2fc67e2e91642bb3644407a29f56ce40ce56940f..892b5f0e24c38374aabf5a59802607327cdf8492 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@

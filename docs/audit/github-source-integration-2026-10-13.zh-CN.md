@@ -1,5 +1,7 @@
 # 2026-10-13 GitHub 源码整合
 
+> 历史记录：下文反映首次源码提交当时的状态。后续 macOS / iOS 界面与模型脚本修复见[新版验收](native-website-reading-ui-2026-10-13.zh-CN.md)及[网站增强验收](site-enhancement-markdown-2026-10-13.zh-CN.md)；Windows 已超时结束，最终结果与后续方案见[Windows 记录](windows-actions-2026-10-13.zh-CN.md)。首次打开 Markdown 问题另见[2026-10-14 修复记录](markdown-first-open-2026-10-14.zh-CN.md)。
+
 用户确认将当前项目代码和文档一并提交。本次基于 `e96c62393abe884e5e37d1ee4ad98e87d0ac2f91` 整合此前未提交的阅读、翻译、本机 AI、Google 服务提示、网站增强、用户脚本、Markdown 及 iOS 功能与防护改动。
 
 这是源码提交，不是正式发行，也不代表全部验收完成。桌面原有本机候选为 Ver 4.0 (190)，iOS 为 Ver 6.0 (108)；Windows 186 仍在原输出目录构建。此次公开源码整理没有重新打包 App。

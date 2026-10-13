@@ -1,0 +1,52 @@
+使用固定 GCSA 证书签名 <chromium-src>/out/AegisRelease/GCSA Aegis.app …
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Alerts).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif Alerts).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif GPU).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif Renderer).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (GPU).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Renderer).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper.app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/app_mode_loader: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/web_app_shortcut_copier: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/GCSA Aegis Framework: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper (Alerts).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper (Aperitif Alerts).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper (Aperitif GPU).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper (Aperitif Renderer).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper (Aperitif).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper (GPU).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper (Renderer).app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis Helper.app: replacing existing signature
+<chromium-src>/out/AegisRelease/GCSA Aegis.app: replacing existing signature
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/.
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/web_app_shortcut_copier
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/web_app_shortcut_copier
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/app_mode_loader
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/app_mode_loader
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (GPU).app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (GPU).app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Renderer).app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Alerts).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Renderer).app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper.app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif Alerts).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper.app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif Renderer).app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif Renderer).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Alerts).app
+--prepared:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif GPU).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif GPU).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers/GCSA Aegis Helper (Aperitif Alerts).app
+--validated:<chromium-src>/out/AegisRelease/GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/.
+<chromium-src>/out/AegisRelease/GCSA Aegis.app: valid on disk
+<chromium-src>/out/AegisRelease/GCSA Aegis.app: satisfies its Designated Requirement
+<chromium-src>/out/AegisRelease/GCSA Aegis.app: explicit requirement satisfied
+GCSA 固定签名通过（R3JK7R29AC，严格整包校验）。
+此结果不代表 Developer ID 签名或公证。

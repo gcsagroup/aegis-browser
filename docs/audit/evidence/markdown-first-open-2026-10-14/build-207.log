@@ -1,0 +1,26 @@
+ninja: Entering directory `out/AegisRelease'
+[1/37] ACTION //chrome:aegis_product_app_plist(//build/toolchain/mac:clang_arm64)
+[2/37] ACTION //chrome:chrome_app_plist(//build/toolchain/mac:clang_arm64)
+[3/37] ACTION //chrome:chrome_app_info_plist_merge(//build/toolchain/mac:clang_arm64)
+[4/37] ACTION //chrome:chrome_app_info_plist(//build/toolchain/mac:clang_arm64)
+[5/37] ACTION //chrome:chrome_app_pkg_info(//build/toolchain/mac:clang_arm64)
+[6/37] CXX obj/chrome/browser/ui/safety_hub/impl/safety_hub_util.o
+[7/37] CXX obj/chrome/browser/ui/webui/help/help/version_updater_basic.o
+[8/37] CXX obj/chrome/browser/ui/webui/help/aegis_github_update/aegis_github_update.o
+[9/37] CXX obj/chrome/browser/ui/webui/version/version/version_ui.o
+[10/37] CXX obj/chrome/browser/aegis/browser_tests/enhancement_browsertest.o
+[11/37] CXX obj/chrome/browser/ui/webui/settings/impl/settings_localized_strings_provider.o
+[12/37] SOLINK 'obj/chrome/chrome_framework_shared_library/GCSA Aegis Framework' 'obj/chrome/chrome_framework_shared_library/GCSA Aegis Framework.TOC' 'GCSA Aegis Framework.dSYM/Contents/Info.plist' 'GCSA Aegis Framework.dSYM/Contents/Resources/DWARF/GCSA Aegis Framework' 'GCSA Aegis Framework.dSYM/Contents/Resources/Relocations/aarch64/GCSA Aegis Framework.yml'
+warning: no debug symbols in executable (-arch arm64)
+[13/23] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif(//build/toolchain/mac:clang_arm64)
+[14/23] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif_gpu(//build/toolchain/mac:clang_arm64)
+[15/23] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif_renderer(//build/toolchain/mac:clang_arm64)
+[16/23] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif_alerts(//build/toolchain/mac:clang_arm64)
+[17/23] COPY_BUNDLE_DATA 'obj/chrome/chrome_framework_shared_library/GCSA Aegis Framework' 'GCSA Aegis Framework.framework/Versions/155.0.8059.40/GCSA Aegis Framework'
+[18/23] ACTION //chrome:verify_chrome_framework_order(//build/toolchain/mac:clang_arm64)
+[19/23] COPY_BUNDLE_DATA gen/chrome/chrome_app_pkg_info 'GCSA Aegis.app/Contents/PkgInfo'
+[20/23] COPY_BUNDLE_DATA gen/chrome/chrome_app_info_plist.plist 'GCSA Aegis.app/Contents/Info.plist'
+[21/23] COPY_BUNDLE_DATA 'GCSA Aegis Framework.framework' 'GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework'
+[22/23] ACTION //chrome:verify_libraries_chrome_app(//build/toolchain/mac:clang_arm64)
+[23/23] LINK ./browser_tests
+warning: no debug symbols in executable (-arch arm64)
