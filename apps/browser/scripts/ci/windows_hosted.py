@@ -16,6 +16,7 @@ import candidate
 ROOT = candidate.ROOT
 BROWSER = candidate.BROWSER
 DEPOT_COMMIT = '2fd34a8813b6f34336aad40976cc4223768177f8'
+CHROMIUM_URL = 'https://chromium.googlesource.com/chromium/src.git'
 TARGETS = ['chrome', 'mini_installer', 'aegis_browser_unittests', 'browser_tests']
 
 
@@ -158,6 +159,100 @@ def check_cpp_entry(runner, work, env):
                '/d', '/c', command], work, env)
 
 
+def checkout_source(runner, work, env, url, revision, base, sparse=False):
+    """保留固定版本和 origin，让随后 gclient 接管已有源码仓库。"""
+    source = work / 'src'
+    runner.run('source-init', ['git', 'init', source], work, env)
+    runner.run('source-origin', ['git', '-C', source, 'remote', 'add', 'origin', url], work, env)
+    fetch_options = ['--filter=blob:none'] if sparse else []
+    runner.run('source-fetch', ['git', '-C', source, 'fetch', '--depth=1',
+               *fetch_options, 'origin', revision], work, env)
+    if sparse:
+        # 免费机器仅检出真实 Chromium 的 DEPS，完整依赖另由付费机器验证。
+        runner.run('source-sparse', ['git', '-C', source, 'sparse-checkout', 'set',
+                   '--no-cone', '/DEPS'], work, env)
+    runner.run('source-checkout', ['git', '-C', source, 'checkout', '--detach', base], work, env)
+    verify_source_identity(source, url, base)
+    return source
+
+
+def verify_source_identity(source, url, base):
+    if candidate.git(source, 'remote', 'get-url', 'origin') != url:
+        raise ValueError('源码 origin 与指定上游不一致')
+    if candidate.git(source, 'rev-parse', 'HEAD') != base:
+        raise ValueError('源码提交与固定基线不一致')
+
+
+def sync_source(runner, work, depot, env, url, base, *, dependencies=True):
+    (work / '.gclient').write_text('solutions = ' + repr([{
+        'name': 'src', 'url': url, 'managed': False, 'custom_deps': {}, 'custom_vars': {}}])
+        + "\ntarget_os = ['win']\n", encoding='utf-8')
+    command = [candidate.windows_system_executable('cmd.exe'), '/d', '/c', depot / 'gclient.bat']
+    # 接管检查解析真实 DEPS，但不下载三类依赖或执行 pre-DEPS hook。
+    scope = [] if dependencies else ['--noprehooks', '--ignore-dep-type=git',
+                                     '--ignore-dep-type=cipd', '--ignore-dep-type=gcs']
+    runner.run('dependencies' if dependencies else 'source-handoff', [*command, 'sync',
+               '--no-history', '--nohooks', *scope,
+               '--revision', 'src@' + base, '-j', '16'], work, env)
+    verify_source_identity(work / 'src', url, base)
+    return command
+
+
+def check_source_handoff(runner, work, depot, env):
+    """真实 Chromium 接管和完整小仓库同步分开验收，明确资源边界。"""
+    version = (BROWSER / 'CHROMIUM_VERSION').read_text().strip()
+    base = (BROWSER / 'CHROMIUM_COMMIT').read_text().strip()
+    chromium = work / 'chromium-probe'
+    chromium.mkdir()
+    checkout_source(runner, chromium, env, CHROMIUM_URL, 'refs/tags/' + version, base, sparse=True)
+    sync_source(runner, chromium, depot, env, CHROMIUM_URL, base, dependencies=False)
+    candidate.write_json(runner.evidence / 'chromium-handoff.json', {
+        'status': 'passed', 'commit': base, 'origin': CHROMIUM_URL,
+        'scope': '真实固定版本稀疏检出与 gclient 接管；未下载完整 Chromium 依赖'})
+
+    # 独立日志目录，防止小仓库的 source-* 覆盖真实 Chromium 证据。
+    logs = runner.evidence / 'fixture'
+    logs.mkdir()
+    fixture_runner = Runner(logs, work, minimum_gib=5)
+    fixture_runner.deadline = runner.deadline
+    upstream = work / 'fixture-upstream'
+    dependency = work / 'fixture-dependency'
+    for repo in [dependency, upstream]:
+        repo.mkdir()
+        subprocess.run(['git', 'init', str(repo)], check=True, capture_output=True, env=env)
+    (dependency / 'marker.txt').write_text('fixed dependency\n', encoding='utf-8')
+
+    def commit(repo):
+        subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True, env=env)
+        subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Aegis CI', '-c',
+                        'user.email=aegis-ci@users.noreply.github.com', 'commit', '-m',
+                        '固定同步验收输入'], check=True, capture_output=True, env=env)
+        return candidate.git(repo, 'rev-parse', 'HEAD')
+
+    dep_base = commit(dependency)
+    (upstream / 'DEPS').write_text('deps = ' + repr({
+        'src/dependency': dependency.as_uri() + '@' + dep_base}) + '\nhooks = ' + repr([{
+        'name': 'verify-fixed-dependency', 'pattern': '.',
+        'action': ['python3', 'src/verify_hook.py']}]) + '\n', encoding='utf-8')
+    (upstream / 'verify_hook.py').write_text(
+        'from pathlib import Path\n'
+        'assert Path("src/dependency/marker.txt").read_text() == "fixed dependency\\n"\n'
+        'Path("hook-passed.txt").write_text("dependency and hook passed\\n")\n', encoding='utf-8')
+    root_base = commit(upstream)
+    checkout = work / 'fixture-checkout'
+    checkout.mkdir()
+    source = checkout_source(fixture_runner, checkout, env, upstream.as_uri(), root_base, root_base)
+    command = sync_source(fixture_runner, checkout, depot, env, upstream.as_uri(), root_base)
+    fixture_runner.run('hooks', [*command, 'runhooks'], checkout, env)
+    if candidate.git(source / 'dependency', 'rev-parse', 'HEAD') != dep_base:
+        raise ValueError('验收依赖没有固定到指定提交')
+    if (checkout / 'hook-passed.txt').read_text() != 'dependency and hook passed\n':
+        raise ValueError('验收 hook 未完成')
+    candidate.write_json(logs / 'result.json', {
+        'status': 'passed', 'sourceCommit': root_base, 'dependencyCommit': dep_base,
+        'scope': '完整小仓库：源码拉取、gclient 接管、固定依赖同步和 hook 实际执行'})
+
+
 def preflight(work, evidence):
     evidence.mkdir(parents=True, exist_ok=False)
     result = {'status': 'failed', 'depotCommit': DEPOT_COMMIT}
@@ -165,9 +260,10 @@ def preflight(work, evidence):
         if sys.platform != 'win32' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
             raise ValueError('入口验收仅允许 GitHub 托管 Windows runner')
         work.mkdir(exist_ok=False)
-        runner = Runner(evidence, work, minutes=15, minimum_gib=5)
-        _, env = prepare_depot(runner, work)
+        runner = Runner(evidence, work, minutes=25, minimum_gib=5)
+        depot, env = prepare_depot(runner, work)
         check_cpp_entry(runner, work, env)
+        check_source_handoff(runner, work, depot, env)
         result['status'] = 'passed'
     except Exception as error:
         result['error'] = str(error)
@@ -201,17 +297,8 @@ def build(work, evidence):
         runner = Runner(evidence, work)
         depot, env = prepare_depot(runner, work)
         check_cpp_entry(runner, work, env)
-        source = work / 'src'
-        runner.run('source-init', ['git', 'init', source], work, env)
-        runner.run('source-fetch', ['git', '-C', source, 'fetch', '--depth=1',
-                   'https://chromium.googlesource.com/chromium/src.git', 'refs/tags/' + version], work, env)
-        runner.run('source-checkout', ['git', '-C', source, 'checkout', '--detach', base], work, env)
-        (work / '.gclient').write_text("solutions = [{'name': 'src', 'url': "
-            "'https://chromium.googlesource.com/chromium/src.git', 'managed': False, "
-            "'custom_deps': {}, 'custom_vars': {}}]\ntarget_os = ['win']\n", encoding='utf-8')
-        command = [candidate.windows_system_executable('cmd.exe'), '/d', '/c', depot / 'gclient.bat']
-        runner.run('dependencies', [*command, 'sync', '--no-history', '--nohooks',
-                   '--revision', 'src@' + base, '-j', '16'], work, env)
+        source = checkout_source(runner, work, env, CHROMIUM_URL, 'refs/tags/' + version, base)
+        command = sync_source(runner, work, depot, env, CHROMIUM_URL, base)
         runner.run('hooks', [*command, 'runhooks'], work, env)
         v8_base = candidate.git(source, 'rev-parse', base + ':v8')
         if candidate.git(source / 'v8', 'rev-parse', 'HEAD') != v8_base:
