@@ -1,0 +1,4 @@
+3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]
+WARNING: Your metrics.cfg file was invalid or nonexistent. A new one will be created.
+git version 2.55.0.windows.5
+gclient Git subprocess entry passed
