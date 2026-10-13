@@ -28,7 +28,7 @@ public struct ModelConfiguration: Codable, Equatable, Sendable {
         guard let url = URL(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines)),
               let host = url.host, !host.isEmpty, url.user == nil, url.password == nil,
               url.query == nil, url.fragment == nil,
-              url.scheme == "https" || (url.scheme == "http" && ["127.0.0.1", "localhost", "[::1]"].contains(host))
+              url.scheme == "https" || (url.scheme == "http" && ["127.0.0.1", "localhost", "::1", "[::1]"].contains(host))
         else { throw ModelClientError.invalidEndpoint }
         return url
     }
@@ -135,8 +135,8 @@ public struct ModelClient: Sendable {
     }
 
     /// 结构化阅读结果仍是文字；调用方必须校验完整结构，不会执行模型输出中的代码。
-    public func completeStructured(goal: String, sources: [String], language: String) async throws -> String {
-        let body = try completionRequest(goal: goal, sources: sources, language: language, structured: true)
+    public func completeStructured(goal: String, sources: [String], language: String, disableLocalQwenThinking: Bool = false) async throws -> String {
+        let body = try completionRequest(goal: goal, sources: sources, language: language, structured: true, disableLocalQwenThinking: disableLocalQwenThinking)
         return try Self.decodeCompletion(try await perform(body), provider: configuration.provider)
     }
 
@@ -185,7 +185,7 @@ public struct ModelClient: Sendable {
         }
     }
 
-    public func completionRequest(goal: String, sources: [String], language: String, streaming: Bool = false, structured: Bool = false) throws -> URLRequest {
+    public func completionRequest(goal: String, sources: [String], language: String, streaming: Bool = false, structured: Bool = false, disableLocalQwenThinking: Bool = false) throws -> URLRequest {
         let base = try configuration.validatedURL()
         guard !configuration.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ModelClientError.missingModel }
         let text = ([goal] + sources).joined(separator: "\n\n")
@@ -209,6 +209,11 @@ public struct ModelClient: Sendable {
             url = base.appendingPathComponent("chat/completions")
             payload = ["model": configuration.model, "stream": streaming,
                        "messages": [["role": "system", "content": system], ["role": "user", "content": scan.redacted]]]
+            // 只对脚本入口明确要求的数字回环 Qwen 请求关闭思考。
+            if disableLocalQwenThinking, ["127.0.0.1", "::1", "[::1]"].contains(base.host ?? ""),
+               configuration.model.range(of: #"(?:^|[/_-])qwen(?:[0-9_-]|$)"#, options: [.regularExpression, .caseInsensitive]) != nil {
+                payload["chat_template_kwargs"] = ["enable_thinking": false]
+            }
         case .anthropic:
             url = base.appendingPathComponent("messages")
             payload = ["model": configuration.model, "max_tokens": 4096, "system": system, "stream": streaming,

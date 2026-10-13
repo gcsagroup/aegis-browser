@@ -11,14 +11,36 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
   @Published var error = ""
   @Published var ready = false
   @Published var exportURL: URL?
+  @Published var needsResources = false
   var openURL: ((URL) -> Void)?
   var fontSize: Double = 17
   func updateFont(_ size: Double) {
     fontSize = size
+    configure()
+  }
+  func configure() {
     guard ready else { return }
-    Task {
-      _ = try? await webView.callAsyncJavaScript(
-        "AegisMarkdown.setFont(size);", arguments: ["size": size], in: nil, contentWorld: .page)
+    let defaults = UserDefaults.standard
+    let preferences: [String: Any] = [
+      "font": (defaults.object(forKey: "markdown.font") as? Double ?? 17) * fontSize / 17,
+      "theme": defaults.string(forKey: "markdown.theme") ?? "system",
+      "family": defaults.string(forKey: "markdown.family") ?? "sans",
+      "width": defaults.object(forKey: "markdown.width") as? Int ?? 820,
+      "spacing": defaults.object(forKey: "markdown.spacing") as? Int ?? 180,
+    ]
+    Task { @MainActor in
+      do {
+        _ = try await webView.callAsyncJavaScript(
+          "AegisMarkdown.configure(value);", arguments: ["value": ["embedded": true, "locale": Bundle.main.preferredLocalizations.first ?? "zh-Hans", "preferences": preferences]],
+          in: nil, contentWorld: .page)
+      } catch { self.error = error.localizedDescription }
+    }
+  }
+  func command(_ value: String) {
+    guard ready, document != nil else { return }
+    Task { @MainActor in
+      do { _ = try await webView.callAsyncJavaScript("AegisMarkdown.command(value);", arguments: ["value": value], in: nil, contentWorld: .page) }
+      catch { self.error = error.localizedDescription }
     }
   }
   private(set) var webView: WKWebView!
@@ -33,7 +55,7 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
     if let root = EnhancementAssets.directory {
       webView.loadFileURL(root.appendingPathComponent("viewer.html"), allowingReadAccessTo: root)
     } else {
-      error = "Markdown 阅读资源缺失。"
+      error = String(localized: "Markdown 阅读资源缺失。")
     }
   }
   func close() {
@@ -43,6 +65,7 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
   }
   func load(_ value: MarkdownDocument) {
     document = value
+    error = ""
     if ready { render() }
   }
   private func render() {
@@ -97,10 +120,11 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
     case "copy":
       if value.utf8.count <= MarkdownDocument.maximumBytes {
         UIPasteboard.general.string = value
-        error = "已复制。"
+        error = String(localized: "已复制。")
       }
     case "open": if let url = URL(string: value), ScriptMatch.origin(url) != nil { openURL?(url) }
-    case "relativeLink": error = "这是本地相对链接，请通过打开文件选择目标文档：" + String(value.prefix(300))
+    case "resources": needsResources = true
+    case "relativeLink": error = String(localized: "这是本地相对链接，请通过打开文件选择目标文档：") + String(value.prefix(300))
     default: break
     }
   }
@@ -113,7 +137,7 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
         as? [String] ?? []
       let count = try document.loadResources(from: directory, references: references)
       load(document)
-      error = "已加载 \(count) 张本地图片。"
+      error = String(localized: "已加载 \(count) 张本地图片。")
     } catch { self.error = error.localizedDescription }
   }
   func exportPDF() async {
@@ -145,10 +169,12 @@ struct MarkdownReaderView: View {
   @StateObject private var model = MarkdownReaderModel()
   var initial: MarkdownDocument?
   @State private var importing = false
-  @State private var resources = false
+  @State private var importingResources = false
   @State private var showsAssistant = false
   @State private var confirmsSave = false
   @State private var automatic = false
+  @State private var appearance = false
+  @State private var sourceInfo = false
   @ScaledMetric(relativeTo: .body) private var fontSize = 17.0
   var body: some View {
     NavigationStack {
@@ -161,47 +187,88 @@ struct MarkdownReaderView: View {
           ContentUnavailableView(
             "打开 Markdown 文档", systemImage: "doc.richtext",
             description: Text("支持本地 .md、.markdown 文件和在线 Raw 原始页面。"))
-          Button("选择文件") { importing = true }.buttonStyle(.borderedProminent)
+          Button("选择文件") { importingResources = false; importing = true }.buttonStyle(.borderedProminent)
             .accessibilityIdentifier("markdown-import")
           Button("读取当前原始页面") { Task { await capture() } }.padding()
         }
         MarkdownWebView(webView: model.webView).accessibilityIdentifier("markdown-webview")
+          .frame(height: model.document == nil ? 0 : nil)
+          .accessibilityHidden(model.document == nil)
       }
-      .navigationTitle("Markdown 阅读").navigationBarTitleDisplayMode(.inline)
+      .navigationTitle(model.document?.title ?? String(localized: "Markdown 阅读")).navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
         ToolbarItem(placement: .topBarLeading) {
           Menu {
-            Button("打开文件") { importing = true }
-            Button("读取当前原始页面") { Task { await capture() } }
-            Button("选择本地图片目录") { resources = true }.disabled(model.document == nil)
-            Button("保存到阅读资料库") { confirmsSave = true }.disabled(model.document == nil)
-            Button("AI 总结与翻译") { showsAssistant = true }.disabled(model.document == nil)
-            Button("打印") { model.printDocument() }.disabled(model.document == nil)
-            Button("导出 PDF") { Task { await model.exportPDF() } }.disabled(model.document == nil)
-            if let url = model.document?.sourceURL, ScriptMatch.origin(url) != nil {
-              Toggle("本站自动预览 Markdown", isOn: $automatic)
-                .onChange(of: automatic) { _, value in
-                  do {
-                    var site = browser.preferences.site(for: url)
-                    site.markdownPreview = value
-                    try browser.preferences.setSite(site, for: url)
-                  } catch { model.error = error.localizedDescription }
+            Button("打开文件", systemImage: "doc") { importingResources = false; importing = true }
+            Button("读取当前原始页面", systemImage: "globe") { Task { await capture() } }
+            if model.document != nil {
+              Section("文档操作") {
+                Button("查看源码", systemImage: "chevron.left.forwardslash.chevron.right") { model.command("source-toggle") }
+                Button("复制原文", systemImage: "doc.on.doc") { model.command("copy-source") }
+                Button("保存到阅读库", systemImage: "books.vertical") { confirmsSave = true }
+                Button("文档来源与预览设置", systemImage: "info.circle") { sourceInfo = true }
+                Button("打印", systemImage: "printer") { model.printDocument() }
+                Button("导出 PDF", systemImage: "square.and.arrow.up") { Task { await model.exportPDF() } }
+              }
+              Section("图片权限") {
+                if model.document?.sourceURL?.isFileURL != false {
+                  Button("选择本地图片目录") { importingResources = true; importing = true }
                 }
+                Button("加载或停用外部图片") { model.command("remote-images") }
+              }
             }
-          } label: {
-            Image(systemName: "ellipsis.circle")
+          } label: { Image(systemName: "ellipsis.circle") }
+          .accessibilityLabel("文档操作").accessibilityIdentifier("markdown-actions")
+        }
+        ToolbarItemGroup(placement: .bottomBar) {
+          if model.document != nil {
+            Button { model.command("outline-toggle") } label: { Label("目录", systemImage: "list.bullet") }
+              .accessibilityIdentifier("markdown-outline")
+            Spacer()
+            Button { model.command("find-toggle") } label: { Label("查找", systemImage: "magnifyingglass") }
+              .accessibilityIdentifier("markdown-find")
+            Spacer()
+            Button { appearance = true } label: { Label("外观", systemImage: "textformat.size") }
+              .accessibilityIdentifier("markdown-appearance")
+            Spacer()
+            Button { showsAssistant = true } label: { Label("文档助手", systemImage: "sparkles") }
+              .accessibilityIdentifier("markdown-assistant")
           }
         }
       }
-      .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, .data]) { result in
-        do { model.load(try MarkdownDocument.read(result.get())) } catch {
-          model.error = error.localizedDescription
+      .sheet(isPresented: $appearance, onDismiss: { model.configure() }) {
+        NavigationStack { ReadingPreferencesView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { appearance = false } } } }
+          .presentationDetents([.medium, .large])
+      }
+      .sheet(isPresented: $sourceInfo) {
+        NavigationStack {
+          Form {
+            Section("文档来源") { Text(model.document?.sourceURL?.absoluteString ?? String(localized: "本地导入 · 只读")).textSelection(.enabled) }
+            if let url = model.document?.sourceURL, ScriptMatch.origin(url) != nil {
+              Toggle("本站自动预览 Markdown", isOn: $automatic)
+                .onChange(of: automatic) { _, value in
+                  do { var site = browser.preferences.site(for: url); site.markdownPreview = value; try browser.preferences.setSite(site, for: url) }
+                  catch { model.error = error.localizedDescription }
+                }
+            }
+          }.navigationTitle("文档来源").toolbar { Button("完成") { sourceInfo = false } }
         }
       }
-      .fileImporter(isPresented: $resources, allowedContentTypes: [.folder]) { result in
+      .onChange(of: model.needsResources) { _, value in if value { importingResources = true; importing = true; model.needsResources = false } }
+
+      .fileImporter(
+        isPresented: $importing,
+        allowedContentTypes: importingResources ? [.folder] : [.plainText, .data]
+      ) { result in
         switch result {
-        case .success(let url): Task { await model.loadResources(url) }
+        case .success(let url):
+          if importingResources {
+            Task { await model.loadResources(url) }
+          } else {
+            do { model.load(try MarkdownDocument.read(url)) }
+            catch { model.error = error.localizedDescription }
+          }
         case .failure(let error): model.error = error.localizedDescription
         }
       }
@@ -217,6 +284,10 @@ struct MarkdownReaderView: View {
             initial.sourceURL.map { browser.preferences.site(for: $0).markdownPreview == true }
             ?? false
         }
+      }
+      .onChange(of: model.document?.id) { _, _ in
+        automatic = model.document?.sourceURL.map { browser.preferences.site(for: $0).markdownPreview == true } ?? false
+        showsAssistant = false
       }
       .onChange(of: fontSize) { _, value in model.updateFont(value) }
       .onDisappear { model.close() }
@@ -272,7 +343,30 @@ struct MarkdownReaderView: View {
           title: document.title,
           sourceURL: document.sourceURL?.isFileURL == true ? nil : document.sourceURL,
           text: document.text))
-      model.error = "已保存完整原文到阅读资料库。"
+      model.error = String(localized: "已保存完整原文到阅读资料库。")
     } catch { model.error = error.localizedDescription }
+  }
+}
+
+struct ReadingPreferencesView: View {
+  @AppStorage("markdown.theme") private var theme = "system"
+  @AppStorage("markdown.family") private var family = "sans"
+  @AppStorage("markdown.font") private var font = 17.0
+  @AppStorage("markdown.spacing") private var spacing = 180
+  @AppStorage("markdown.width") private var width = 820
+  var body: some View {
+    Form {
+      Section("阅读外观") {
+        Picker("主题", selection: $theme) { Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark") }
+        Picker("字体", selection: $family) { Text("系统字体").tag("sans"); Text("衬线字体").tag("serif") }
+        Stepper(value: $font, in: 12...28, step: 1) { LabeledContent("字号", value: String(Int(font))) }
+        Picker("行距", selection: $spacing) { Text("紧凑").tag(150); Text("标准").tag(180); Text("宽松").tag(210) }
+        Picker("正文宽度", selection: $width) { Text("窄").tag(680); Text("标准").tag(820); Text("宽").tag(1100) }
+      }
+      Section("图片权限") {
+        Text("外部图片每次打开文档时按需加载；本地图片需要选择所属目录。")
+        Text("外观设置会记住，图片权限不会随外观扩大。").font(.footnote).foregroundStyle(.secondary)
+      }
+    }.navigationTitle("阅读外观").navigationBarTitleDisplayMode(.inline)
   }
 }

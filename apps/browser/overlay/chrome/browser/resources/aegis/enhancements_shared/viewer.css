@@ -1,12 +1,12 @@
 :root {
   color-scheme: light dark;
-  --bg: light-dark(#fafbf9, #171c1b);
-  --paper: light-dark(#fff, #1f2624);
-  --ink: light-dark(#243b32, #e7eee9);
-  --muted: light-dark(#617268, #a2b2a8);
-  --line: light-dark(#dce6de, #3c4d44);
-  --accent: light-dark(#176b49, #83d0ac);
-  --code: light-dark(#f1f5f2, #14201a);
+  --bg: light-dark(#f8f9fa, #17181b);
+  --paper: light-dark(#fff, #202124);
+  --ink: light-dark(#202124, #e8eaed);
+  --muted: light-dark(#5f6368, #bdc1c6);
+  --line: light-dark(#dadce0, #45474b);
+  --accent: light-dark(#185abc, #a8c7fa);
+  --code: light-dark(#f1f3f4, #292a2d);
   --font: 17px;
   --measure: 820px;
 }
@@ -128,7 +128,8 @@ main {
 }
 article {
   font-size: var(--font);
-  line-height: 1.8;
+  line-height: var(--spacing, 1.8);
+  font-family: var(--reading-font, system-ui, sans-serif);
   overflow-wrap: anywhere;
   background: var(--paper);
   padding: 32px 40px;
@@ -340,3 +341,8 @@ mark {
     max-height: 90vh;
   }
 }
+
+.embedded > header { display: none; }
+#image-permissions { padding: 12px 24px; border-bottom: 1px solid var(--line); font-size: 13px; }
+#image-permissions #notice { padding: 0 0 8px; min-height: 0; }
+@media print { #image-permissions { display: none !important; } .embedded > header { display: flex; } }

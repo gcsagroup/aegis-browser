@@ -185,6 +185,12 @@ public struct UserScriptRecord: Codable, Equatable, Identifiable, Sendable {
   public var world: String
   public var allFrames: Bool
   public var history: [UserScriptVersion]
+  // 缺失时沿用旧版行为；只记录用户明确停用的精确来源。
+  public var disabledOrigins: [String]? = nil
+  public func paused(at url: URL?) -> Bool {
+    guard let url, let origin = ScriptMatch.origin(url) else { return false }
+    return disabledOrigins?.contains(origin) == true
+  }
   public var digest: String {
     SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
   }
@@ -259,6 +265,11 @@ public final class WebsiteEnhancementStore: ObservableObject {
       }
     }
     for script in state.scripts {
+      guard (script.disabledOrigins?.count ?? 0) <= 200,
+        (script.disabledOrigins ?? []).allSatisfy({ origin in
+          URL(string: origin).flatMap(ScriptMatch.origin) == origin
+        })
+      else { throw EnhancementError.invalid("脚本的网站停用范围无效。") }
       guard UUID(uuidString: script.id) != nil, script.revision > 0,
         ["isolated", "page"].contains(script.world),
         try ScriptMetadata.parse(script.source) == script.metadata, script.history.count <= 5,
@@ -336,9 +347,10 @@ public final class WebsiteEnhancementStore: ObservableObject {
       newRevision = old.revision + 1
       next.scripts.removeAll { $0.id == id }
     }
-    let record = UserScriptRecord(
+    var record = UserScriptRecord(
       id: id ?? UUID().uuidString.lowercased(), revision: newRevision, source: source,
       metadata: metadata, enabled: false, world: world, allFrames: allFrames, history: history)
+    record.disabledOrigins = state.scripts.first(where: { $0.id == id })?.disabledOrigins
     next.scripts.append(record)
     try commit(next)
     return record
@@ -358,6 +370,19 @@ public final class WebsiteEnhancementStore: ObservableObject {
       next.scripts[index].enabled = false
       next.scripts[index].revision += 1
     }
+    try commit(next)
+  }
+  public func setSiteEnabled(_ id: String, revision: Int, url: URL, enabled: Bool) throws {
+    var next = state
+    guard let origin = ScriptMatch.origin(url),
+      let index = next.scripts.firstIndex(where: { $0.id == id && $0.revision == revision }),
+      next.scripts[index].enabled
+    else { throw EnhancementError.invalid("请先授权启用脚本，并选择普通网站。") }
+    var origins = next.scripts[index].disabledOrigins ?? []
+    origins.removeAll { $0 == origin }
+    if !enabled { origins.append(origin) }
+    next.scripts[index].disabledOrigins = origins
+    next.scripts[index].revision += 1
     try commit(next)
   }
   public func removeScript(_ id: String) throws {

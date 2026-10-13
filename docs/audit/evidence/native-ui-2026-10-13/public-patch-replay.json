@@ -1,0 +1,11 @@
+{
+  "basePublicTree": "af89c7b18f2b832078bb98bc5adc5629f3e4ce91",
+  "resultTree": "b9ef22040b46d3df031084f5277f01eddbaa1589",
+  "patches": [
+    "0308-local-qwen-script-193.patch",
+    "0309-native-website-reading-ui-202.patch"
+  ],
+  "verifiedOverlayFiles": 37,
+  "status": "passed",
+  "privateResearchWeightsPresent": false
+}

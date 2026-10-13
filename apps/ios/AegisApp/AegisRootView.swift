@@ -16,8 +16,6 @@ struct AegisRootView: View {
     @State private var showsDownloads = false
     @State private var showsFind = false
     @State private var showsReading = false
-    @State private var showsEnhancements = false
-    @State private var showsMarkdown = false
     @State private var findText = ""
     @State private var findMessage = ""
 
@@ -34,9 +32,7 @@ struct AegisRootView: View {
                     showsFilters: $showsFilters,
                     showsDownloads: $showsDownloads,
                     showsFind: $showsFind,
-                    showsReading: $showsReading,
-                    showsEnhancements: $showsEnhancements,
-                    showsMarkdown: $showsMarkdown
+                    showsReading: $showsReading
                 )
             } else {
                 ContentUnavailableView("没有标签页", systemImage: "rectangle.stack")
@@ -52,15 +48,8 @@ struct AegisRootView: View {
         .sheet(isPresented: $showsData) { BrowserLibraryView(dataStore: browser.dataStore, workspaces: browser.workspaceStore) }
         .sheet(isPresented: $showsSettings) { BrowserSettingsView() }
         .sheet(isPresented: $showsReading) { ReadingLibraryView() }
-        .sheet(isPresented: $showsEnhancements) { WebsiteEnhancementsView() }
-        .sheet(isPresented: $showsMarkdown) { MarkdownReaderView() }
         .sheet(item: $browser.pendingMarkdown) { document in MarkdownReaderView(initial: document) }
-        .sheet(isPresented: $showsFilters) {
-            NavigationStack {
-                ContentFilterSettingsView()
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showsFilters = false } } }
-            }
-        }
+        .sheet(isPresented: $showsFilters) { CurrentWebsiteView() }
         .sheet(isPresented: $showsDownloads, onDismiss: { browser.pendingDownloadURL = nil }) {
             DownloadsView(initialURL: browser.pendingDownloadURL)
         }
@@ -165,8 +154,6 @@ private struct BrowserPane: View {
     @Binding var showsDownloads: Bool
     @Binding var showsFind: Bool
     @Binding var showsReading: Bool
-    @Binding var showsEnhancements: Bool
-    @Binding var showsMarkdown: Bool
     @State private var addressFocused = false
     @State private var addressSelectionRequest = 0
     @State private var confirmsPrivateBookmark = false
@@ -265,7 +252,7 @@ private struct BrowserPane: View {
                             .foregroundStyle(browser.profile.isPrivate ? Color.purple : Color.secondary)
                             .frame(width: 44, height: 44)
                     }
-                    .accessibilityLabel("广告与跟踪过滤")
+                    .accessibilityLabel("当前网站")
                     .accessibilityValue(browser.profile.isPrivate ? String(localized: "私密浏览：不记录历史，保存和发送资料前需确认") : filterStatus)
                     .accessibilityIdentifier("page-protection")
                 }
@@ -339,11 +326,7 @@ private struct BrowserPane: View {
                     .disabled(!browser.agentIsAvailable)
                     .accessibilityIdentifier("agent-button")
                 Button("下载", systemImage: "arrow.down.circle") { showsDownloads = true }.accessibilityIdentifier("downloads-button")
-                Button("网站增强与脚本", systemImage: "wand.and.stars") { showsEnhancements = true }
-                    .accessibilityIdentifier("website-enhancements-button")
-                Button("Markdown 阅读", systemImage: "doc.richtext") { showsMarkdown = true }
-                    .accessibilityIdentifier("markdown-reader-button")
-                Button("阅读与批注", systemImage: "text.book.closed") { showsReading = true }
+                Button("阅读库", systemImage: "text.book.closed") { showsReading = true }
                     .accessibilityIdentifier("reading-library-button")
             }
             Menu {

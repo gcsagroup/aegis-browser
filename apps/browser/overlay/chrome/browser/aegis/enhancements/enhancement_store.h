@@ -41,6 +41,7 @@ class EnhancementStore : public base::SupportsUserData::Data {
       const std::string& source);
   static bool Matches(const std::string& pattern, const GURL& url);
   static bool Applies(const base::DictValue& script, const GURL& url, bool top);
+  static bool PausedAt(const base::DictValue& script, const GURL& url);
   static bool Validate(const base::DictValue& state);
 
  private:

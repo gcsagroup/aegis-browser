@@ -14,6 +14,7 @@
     <script src="vendor/task-lists.min.js" defer></script>
     <script src="vendor/highlight.min.js" defer></script>
     <script src="vendor/purify.min.js" defer></script>
+    <script src="i18n.js" defer></script>
     <script src="viewer.js" defer></script>
   </head>
   <body>
@@ -32,16 +33,17 @@
         <button id="font-up" aria-label="增大字体">A+</button>
       </nav>
     </header>
-    <section class="findbar">
+    <section class="findbar" id="findbar" hidden>
       <input
         id="query"
         type="search"
         placeholder="查找文档内容"
         aria-label="查找文档内容"
       /><button id="find">查找下一个</button
-      ><button id="remote-images">加载外部图片</button>
+      >
     </section>
     <p id="notice" role="status" aria-live="polite"></p>
+    <div id="image-permissions" hidden><p id="image-notice"></p><button id="remote-images">加载外部图片</button><button id="local-images">选择本地图片目录</button></div>
     <div class="layout">
       <aside id="outline" aria-label="文档目录"></aside>
       <main>

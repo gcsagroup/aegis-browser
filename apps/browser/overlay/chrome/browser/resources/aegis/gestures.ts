@@ -11,8 +11,10 @@ type Settings = {
 type Action = {id: string, label: string, pdfOnly: boolean};
 type Snapshot = {settings: Settings, actions: Action[]};
 
+export function initializeGestures(root: Document|ShadowRoot = document) {
+const events = new AbortController();
 function element<T extends Element = HTMLElement>(id: string): T {
-  const value = document.querySelector<T>(`#${id}`);
+  const value = root.querySelector<T>(`#${id}`);
   if (!value) {
     throw new Error(`缺少设置元素：${id}`);
   }
@@ -185,9 +187,10 @@ function updateRegion() {
     ]);
   });
 }
-new ResizeObserver(updateRegion).observe(practice);
-window.addEventListener('resize', updateRegion);
-window.addEventListener('scroll', updateRegion, {capture: true, passive: true});
+const observer = new ResizeObserver(updateRegion);
+observer.observe(practice);
+window.addEventListener('resize', updateRegion, {signal: events.signal});
+window.addEventListener('scroll', updateRegion, {capture: true, passive: true, signal: events.signal});
 function cancelPractice() {
   if (drawing) {
     cancelled = true;
@@ -283,12 +286,12 @@ practice.addEventListener('pointerup', event => {
   }
 });
 practice.addEventListener('pointercancel', cancelPractice);
-window.addEventListener('blur', cancelPractice);
+window.addEventListener('blur', cancelPractice, {signal: events.signal});
 window.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     cancelPractice();
   }
-});
+}, {signal: events.signal});
 void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
   render(snapshot);
   save.disabled = false;
@@ -296,3 +299,7 @@ void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
 }).catch(() => {
   message('设置加载失败，请重新打开此页面。', true);
 });
+
+return () => { events.abort(); observer.disconnect(); };
+}
+if (document.getElementById("practice")) initializeGestures();
