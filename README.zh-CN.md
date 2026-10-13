@@ -18,7 +18,7 @@
 
 Aegis 正在开发中，尚无通过发行验收的可分发版本。
 
-> **2026-10-13 · 桌面 4.0 与 iOS 6.0 源码整合：** 整合阅读批注、本机中英翻译与质量提示、网站增强、受控用户脚本、Markdown 阅读及 iOS 网页防护；Google 服务缺少配置时仅在主动使用对应功能后提示。 本次是源码提交，不是正式发行。Windows 仍在构建；真实站点与 AI 脚本生成的未通过项继续跟进。公开源码不包含许可尚未明确的 MINIM、PhishLang 权重及配套词表，本地实验文件保留。 [2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md)
+> **2026-10-13 · 桌面 4.0 与 iOS 6.0 源码整合：** 整合阅读批注、本机中英翻译与质量提示、网站增强、受控用户脚本、Markdown 阅读及 iOS 网页防护；Google 服务缺少配置时仅在主动使用对应功能后提示。 本次是源码提交，不是正式发行。公开源码不包含许可尚未明确的 MINIM、PhishLang 权重及配套词表，本地实验文件保留。 [2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md) · [2026-10-14](docs/audit/windows-actions-2026-10-13.zh-CN.md)
 
 > **2026-10-12 · iOS Ver 5.0 网页保护：** 钓鱼主机与页面结构检查、独立挖矿/指纹资源拦截、系统加固和默认关闭的严格指纹限制。规则随 App 更新；未知行为只提示。 [使用说明](docs/ios-webkit-protection.zh-CN.md) · [验收记录](docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md)
 
