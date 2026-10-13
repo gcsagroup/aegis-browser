@@ -43,3 +43,11 @@ Windows 既有验收脚本自检通过，包括原生互操作编译；Pester �
 组织 Actions 月度预算已保存为 $40，达到上限停用为 Yes；保存时当月已用 $1.61。专用 runner 组 `aegis-windows-trial` 仅允许本仓库上述分支的候选构建工作流，runner 状态 Ready、并发 0/1。
 
 首次完整工作流 [38395665299](https://github.com/gcsagroup/aegis-browser/actions/runs/38395665299) 绑定 `b536755836e4ddc411e3adcda688f1a12053add0`，标准 Windows 前置测试运行 22 项，其中补丁重放样本因平台换行转换失败。付费作业跳过，没有开始本次付费编译。修复仅让测试样本保留 Git 原始补丁字节，并固定临时仓库换行设置；没有放宽生产补丁树校验。修复后本地 22 项再次通过，Windows 结果以下一次工作流为准。
+
+## 完整构建已实际启动
+
+[工作流 38396053667](https://github.com/gcsagroup/aegis-browser/actions/runs/38396053667) 绑定 `74da61b7208ec196671d0ea8aa6cb36936c589f2`。标准 Windows runner 的 22 项前置测试全部通过，测试耗时 4.119 秒、作业耗时 23 秒；日志见 [Windows 实际回归](evidence/windows-2026-10-13/hosted-windows-preflight-passed.txt)。两个 Windows 作业均在检出前关闭自动换行转换，确保补丁和覆盖文件字节保持一致。
+
+北京时间 20:16:42，付费作业已分配到 `aegis-windows-32-1000002792`，组为 `aegis-windows-trial`。工具链及磁盘门槛检查通过，编排脚本的 Windows、32 核与托管身份检查通过；固定 depot_tools 已准备完毕，开始下载 Chromium 源码。启动回执见 [运行状态](evidence/windows-2026-10-13/hosted-started-run.json)及 [runner 身份](evidence/windows-2026-10-13/hosted-started-job.json)。
+
+本记录为启动时快照：完整构建和原生测试尚未完成，安装包、交互验收、签名及正式发布没有通过结论。工作流会继续在 GitHub 运行，最多 4 小时，不会自动重试付费作业。提交证据不会改写这次运行绑定的源码提交。
