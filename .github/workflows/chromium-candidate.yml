@@ -101,6 +101,8 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 10
     steps:
+      - name: 保持补丁与覆盖文件原始字节
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -116,6 +118,8 @@ jobs:
     runs-on: aegis-windows-32
     timeout-minutes: 240
     steps:
+      - name: 保持补丁与覆盖文件原始字节
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
