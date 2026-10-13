@@ -2,7 +2,35 @@
 
 import("//ui/webui/resources/tools/build_webui.gni")
 
+generate_grd("local_ai_resources") {
+  grd_prefix = "aegis_agent_local"
+  out_grd = "$target_gen_dir/local_ai_resources.grdp"
+  input_files_base_dir = rebase_path(".", "//")
+  input_files = [
+    "local_ai/NOTICE.txt",
+    "local_ai/asset_manifest.json",
+    "local_ai/bergamot/LICENSE",
+    "local_ai/bergamot/worker/bergamot-translator-worker.js",
+    "local_ai/bergamot/worker/bergamot-translator-worker.wasm",
+    "local_ai/bergamot/worker/translator-worker.js",
+    "local_ai/research.js",
+    "local_ai/research_manifest.json",
+    "local_ai/translation_manifest.json",
+    "local_ai/vendor/fzstd-LICENSE",
+    "local_ai/vendor/fzstd.js",
+    "local_ai/vendor/js-md5-LICENSE",
+    "local_ai/vendor/md5.js",
+    "local_ai/vendor/onnxruntime-web-LICENSE",
+    "local_ai/vendor/ort-wasm-simd-threaded.js",
+    "local_ai/vendor/ort-wasm-simd-threaded.wasm",
+    "local_ai/vendor/ort.js",
+    "local_ai/worker.js",
+  ]
+}
+
 build_webui("build") {
+  extra_grdp_deps = [ ":local_ai_resources" ]
+  extra_grdp_files = [ "$target_gen_dir/local_ai_resources.grdp" ]
   grd_prefix = "aegis_agent"
   ts_composite = true
   ts_deps = [
@@ -19,6 +47,8 @@ build_webui("build") {
   ]
   ts_files = [
     "agent.ts",
+    "reading_workspace.ts",
+    "local_ai_client.ts",
     "browser_proxy.ts",
   ]
   webui_context_type = "untrusted"

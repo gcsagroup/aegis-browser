@@ -35,6 +35,8 @@ struct PageAssistantView: View {
     @State private var pendingGoal = ""
     @State private var taskID: UUID?
     @State private var showingHistory = false
+    @State private var showingOperations = false
+    @State private var showingScripts = false
     @State private var confirmsPrivateSave = false
     @State private var confirmsPrivateExport = false
     @State private var resultGoal = ""
@@ -50,6 +52,9 @@ struct PageAssistantView: View {
                         .foregroundStyle(.secondary)
                     Button("任务记录与继续", systemImage: "clock.arrow.circlepath") { goalFocused = false; showingHistory = true }
                         .accessibilityIdentifier("assistant-history")
+                    Button("浏览器操作与工作流", systemImage: "list.bullet.clipboard") { showingOperations = true }
+                        .disabled(busy).accessibilityIdentifier("browser-operations")
+                    Button("为当前网站编写脚本", systemImage: "curlybraces") { showingScripts = true }
                     if let storageError = tasks.storageError { Text(storageError).foregroundStyle(.red) }
                     if browser.profile.isPrivate {
                         Text("私密分析只在本次界面保留，不自动保存任务、来源网址或回答。发送前会说明模型服务；主动保存或导出后，结果会保留在设备上。")
@@ -115,6 +120,8 @@ struct PageAssistantView: View {
                 AgentCenterView(currentURL: browser.profile.isPrivate ? nil : browser.activeTab?.url,
                                 profileID: browser.standardProfileID, isPrivateProfile: false, dataStore: browser.dataStore)
             }
+            .sheet(isPresented: $showingOperations) { BrowserOperationsView() }
+            .sheet(isPresented: $showingScripts) { WebsiteEnhancementsView() }
             .sheet(isPresented: $showingSendConfirmation) {
                 NavigationStack {
                     Form {

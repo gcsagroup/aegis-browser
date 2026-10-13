@@ -64,7 +64,7 @@ struct BrowserAddressField: UIViewRepresentable {
         func textFieldDidBeginEditing(_ field: UITextField) {
             field.text = parent.address
             field.textAlignment = .left
-            parent.focused = true
+            if !parent.focused { parent.focused = true }
             Task { @MainActor [weak field] in
                 guard let field, field.isFirstResponder else { return }
                 field.selectAll(nil)
@@ -72,7 +72,8 @@ struct BrowserAddressField: UIViewRepresentable {
         }
 
         func textFieldDidEndEditing(_ field: UITextField) {
-            parent.focused = false
+            // updateUIView 主动结束编辑时状态已经是 false，避免在视图更新中重复写入。
+            if parent.focused { parent.focused = false }
             field.text = parent.displayText
             field.accessibilityValue = parent.address
         }

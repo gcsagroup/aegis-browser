@@ -35,7 +35,9 @@ public struct BrowserNavigationPolicyDecision: Equatable, Sendable {
 public enum BrowserNavigationPolicy {
     public static func evaluate(
         _ url: URL,
-        httpMethod: String = "GET"
+        httpMethod: String = "GET",
+        sanitizeLinks: Bool = true,
+        checkPhishing: Bool = true
     ) -> BrowserNavigationPolicyDecision {
         let original = url.absoluteString
         let scheme = url.scheme?.lowercased()
@@ -57,7 +59,8 @@ public enum BrowserNavigationPolicy {
             )
         }
 
-        let sanitizeResult = LinkSanitizer.sanitize(original)
+        let sanitizeResult = sanitizeLinks ? LinkSanitizer.sanitize(original)
+            : LinkSanitizeResult(original: original, cleaned: original, removed: [], changed: false)
         let effective = URL(string: sanitizeResult.cleaned) ?? url
         let requiresTrackingSanitization = !sanitizeResult.removed.isEmpty
         let assessment = PhishingScorer.scoreURL(effective.absoluteString)
@@ -72,8 +75,13 @@ public enum BrowserNavigationPolicy {
                 reasonCodes: reasonCodes
             )
         }
+        if checkPhishing && LocalThreatDatabase.contains(url) {
+            return blocked(originalURL: original, effectiveURL: original, phishingScore: 100, reasonCodes: ["known_phishing_host"])
+        }
         let kind: BrowserNavigationPolicyKind
-        if assessment.shouldBlock {
+        let hasImpersonation = assessment.reasons.contains { ["brand_spoof_host", "brand_lookalike_host"].contains($0.code) }
+        // IP、HTTP、国际化域名和登录路径可以正常出现；弱信号累计分数只用于提示。
+        if checkPhishing && assessment.shouldBlock && hasImpersonation {
             kind = .blocked
         } else if requiresTrackingSanitization,
                   httpMethod.uppercased() != "GET",

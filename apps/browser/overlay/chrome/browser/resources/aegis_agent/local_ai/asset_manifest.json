@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "files": {
+    "translation_manifest.json": {
+      "bytes": 5480,
+      "sha256": "8bc2c806918e38d7c158522b2238317c6d935b8caf57866243852e87e7763913"
+    },
+    "worker.js": {
+      "bytes": 7394,
+      "sha256": "c25ca0879e8c82244353f748210e113745e76b58c5bd9b923d6a16ccc903998f"
+    },
+    "research.js": {
+      "bytes": 6902,
+      "sha256": "4cab59d5065b196ac0fafbd1a5e8f2e23b4e8327bd0bff2019b2599d0b4b872c"
+    },
+    "research_manifest.json": {
+      "bytes": 1011,
+      "sha256": "9423baea24b828f0b5d0ae5fffd1a681fea1bb1fcc1bd2903e719fd2a55652c7"
+    },
+    "NOTICE.txt": {
+      "bytes": 1892,
+      "sha256": "98390e9043db13fe6e120efb8693f73bbc6aa8232571bf92dbbc350ddc43ceb5"
+    },
+    "bergamot/LICENSE": {
+      "bytes": 16725,
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+    },
+    "vendor/ort.js": {
+      "bytes": 48904,
+      "sha256": "f53ed4792e758e7232f779d479eb8931b97ff3ab2e3b9a33ee00d1251ffdaad6"
+    },
+    "vendor/ort-wasm-simd-threaded.wasm": {
+      "bytes": 11246032,
+      "sha256": "207d02be4591c156b0a98f024f3d58005b5b04c92274d759fb390338c63559ea"
+    },
+    "vendor/fzstd-LICENSE": {
+      "bytes": 1069,
+      "sha256": "62249119bb7df6e54300f37a37145c26a6d4420410aac8881a119c5b427cf751"
+    },
+    "vendor/onnxruntime-web-LICENSE": {
+      "bytes": 1073,
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    },
+    "vendor/fzstd.js": {
+      "bytes": 24407,
+      "sha256": "1a901fc5a58c349bbdb4f2aa1e688637ef56891ec58243a9f0cd863166b0d2a4"
+    },
+    "vendor/md5.js": {
+      "bytes": 29468,
+      "sha256": "e2d6d6818e2d63adc7c7e7aa13e445cd2c65da05f313ea6c9f54ee4e35733f0f"
+    },
+    "vendor/js-md5-LICENSE": {
+      "bytes": 1059,
+      "sha256": "ac52bd3e7b6e3155c416a6d875c5738fa2c315015fca5a70b21b6863662abd67"
+    },
+    "vendor/ort-wasm-simd-threaded.js": {
+      "bytes": 24618,
+      "sha256": "745eb7c0ce6f18a6aa521971b2877babc7ffb27eecb58ab3bc6e5ef4692672e8"
+    },
+    "bergamot/worker/bergamot-translator-worker.js": {
+      "bytes": 80606,
+      "sha256": "67c8d8aee602d654c43ef4129a55ce361811468850287469b1a8e0cffddc333d"
+    },
+    "bergamot/worker/bergamot-translator-worker.wasm": {
+      "bytes": 5174294,
+      "sha256": "95a2b58dd6773bf1b3f345d71f9149928b9f75f4ec9c9064c0b3e42c298671b2"
+    },
+    "bergamot/worker/translator-worker.js": {
+      "bytes": 13697,
+      "sha256": "b5ef1df59c8fb33850a491470b755c2c3db767a04824e57488535952b5e8166f"
+    }
+  }
+}
