@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "language": "bash",
+  "status": "PASS",
+  "testedSha": "df5ac9f9df1a944f5f64964d0b869c3c626584e0",
+  "generatedAt": "2026-10-13T11:47:37.974309+00:00",
+  "tool": {
+    "name": "kcov",
+    "version": "kcov 43",
+    "sourceTag": "v43",
+    "sourceCommit": "a39874f938ce13f7a65f253120d1ec946b349ffe",
+    "sourceUrl": "https://codeload.github.com/SimonKagstrom/kcov/tar.gz/a39874f938ce13f7a65f253120d1ec946b349ffe",
+    "sourceArchiveSha256": "dac01569171979477b500924be264d2a1bc649dae6010536228cbb319344d516",
+    "binarySha256": "8b51745f94c1f3f40cfe83087be15b48e54e90ac57834223e41b2a5c287aadfb"
+  },
+  "scope": {
+    "kind": "browser-shell-production-behavior",
+    "include": [
+      "apps/browser/scripts/*.sh"
+    ],
+    "exclude": [
+      "apps/browser/scripts/*_test.sh",
+      "scripts/ci/platform-tests/**"
+    ],
+    "reportedProductionFiles": [
+      "apps/browser/scripts/android-keystore.sh",
+      "apps/browser/scripts/apply-patches.sh",
+      "apps/browser/scripts/bootstrap-depot-tools.sh",
+      "apps/browser/scripts/bootstrap-libtorrent.sh",
+      "apps/browser/scripts/build-android.sh",
+      "apps/browser/scripts/build-release.sh",
+      "apps/browser/scripts/build.sh",
+      "apps/browser/scripts/common.sh",
+      "apps/browser/scripts/enable-android-gclient.sh",
+      "apps/browser/scripts/fetch-chromium-detached.sh",
+      "apps/browser/scripts/fetch-chromium.sh",
+      "apps/browser/scripts/fix-vpython-network.sh",
+      "apps/browser/scripts/install-threat-index.sh",
+      "apps/browser/scripts/package-android.sh",
+      "apps/browser/scripts/package.sh",
+      "apps/browser/scripts/run-android-java-coverage-emulator.sh",
+      "apps/browser/scripts/run-release.sh",
+      "apps/browser/scripts/run-script-quality-checks.sh",
+      "apps/browser/scripts/run.sh",
+      "apps/browser/scripts/seed-overlay-patch.sh",
+      "apps/browser/scripts/seed-webui-patch.sh",
+      "apps/browser/scripts/sign-chromium-app.sh",
+      "apps/browser/scripts/status.sh",
+      "apps/browser/scripts/sync-core-snapshot.sh",
+      "apps/browser/scripts/sync-easylist.sh",
+      "apps/browser/scripts/sync-policy-worker.sh",
+      "apps/browser/scripts/test-aegis-access-native.sh",
+      "apps/browser/scripts/verify-multisite-runtime.sh"
+    ],
+    "unmeasuredProductionFiles": [],
+    "notMeasured": [
+      "shell scripts outside apps/browser/scripts",
+      "branches and functions (kcov Bash line coverage only)",
+      "macOS-only behavior not reached by the Linux fixtures"
+    ]
+  },
+  "subprocessFixture": {
+    "result": "PASS",
+    "parent": "scripts/ci/platform-tests/kcov-parent-fixture.sh",
+    "child": "scripts/ci/platform-tests/kcov-child-fixture.sh",
+    "includedInProductionReport": false
+  },
+  "tests": [
+    {
+      "entry": "apps/browser/scripts/aegis-access-gn-wiring_test.sh",
+      "result": "PASS"
+    },
+    {
+      "entry": "apps/browser/scripts/status_test.sh",
+      "result": "PASS"
+    },
+    {
+      "entry": "apps/browser/scripts/fetch-toolchain_test.sh",
+      "result": "PASS"
+    },
+    {
+      "entry": "apps/browser/scripts/run_test.sh",
+      "result": "PASS"
+    },
+    {
+      "entry": "apps/browser/scripts/apply-patches_test.sh",
+      "result": "PASS"
+    },
+    {
+      "entry": "apps/browser/scripts/build-package-guards_test.sh",
+      "result": "PASS"
+    },
+    {
+      "entry": "apps/browser/scripts/package-android-guards_test.sh",
+      "result": "PASS"
+    },
+    {
+      "entry": "apps/browser/scripts/sign-chromium-app_test.sh",
+      "result": "PASS"
+    }
+  ],
+  "totals": {
+    "lines": {
+      "covered": 592,
+      "total": 2008,
+      "pct": 29.48
+    }
+  },
+  "reports": {
+    "lcov": {
+      "path": "lcov.info",
+      "sha256": "b4b2f08d15db014e6ea82c12068321eebfd819eebd053cd202d354a970ab056e"
+    },
+    "cobertura": {
+      "path": "cobertura.xml",
+      "sha256": "0a938ea48340995c80a4250df803a4cbcffe15d6420bab86effa926836bf336a"
+    },
+    "summary": {
+      "path": "coverage.txt",
+      "sha256": "4e8275d7238d6976bbb37280ce9bf87212d81e579928202c9bc81d23afec088c"
+    }
+  }
+}

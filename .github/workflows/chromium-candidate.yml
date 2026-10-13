@@ -1,13 +1,22 @@
 name: Chromium 三平台候选构建
 on:
   workflow_dispatch:
+    inputs:
+      windows_hosted_trial:
+        description: '仅运行已批准的 Windows 32 核付费试跑（最多 4 小时，不自动重试）'
+        type: boolean
+        default: false
 permissions:
   contents: read
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
 concurrency:
   group: aegis-candidate-build
   cancel-in-progress: false
 jobs:
   preflight:
+    if: ${{ !inputs.windows_hosted_trial }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -36,6 +45,7 @@ jobs:
           path: ci-evidence/upstream
           if-no-files-found: error
   build:
+    if: ${{ !inputs.windows_hosted_trial }}
     needs: preflight
     timeout-minutes: 1440
     strategy:
@@ -74,7 +84,7 @@ jobs:
           retention-days: 14
   summary:
     needs: [preflight, build]
-    if: always()
+    if: ${{ always() && !inputs.windows_hosted_trial }}
     runs-on: ubuntu-latest
     steps:
       - name: 三平台完成状态
@@ -85,3 +95,56 @@ jobs:
           echo "前置检查：$PREFLIGHT；三平台构建与配置的验收：$BUILDS" >> "$GITHUB_STEP_SUMMARY"
           echo '安装包、运行验收、漏洞回归和正式发布是独立状态；本流程不发布 Release 或替换用户 App。' >> "$GITHUB_STEP_SUMMARY"
           test "$PREFLIGHT" = success && test "$BUILDS" = success
+
+  windows-trial-preflight:
+    if: ${{ inputs.windows_hosted_trial && github.repository == 'gcsagroup/aegis-browser' && github.run_attempt == 1 }}
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: 在免费 Windows 机器验证编排与失败边界
+        run: python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
+
+  windows-hosted-trial:
+    needs: windows-trial-preflight
+    if: ${{ inputs.windows_hosted_trial && github.repository == 'gcsagroup/aegis-browser' && github.run_attempt == 1 }}
+    runs-on: aegis-windows-32
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: 核对工具链并选择临时构建盘
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -products '*' -version '[18.0,19.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.VC.ATLMFC -property installationPath
+          if (-not $vs) { throw '缺少 VS2026 C++ 与 ATL/MFC 工具链' }
+          "GYP_MSVS_OVERRIDE_PATH=$vs" >> $env:GITHUB_ENV
+          "vs2026_install=$vs" >> $env:GITHUB_ENV
+          $disk = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Free -gt 300GB -and $_.Root -match '^[A-Z]:\\$' } | Sort-Object Free -Descending | Select-Object -First 1
+          if (-not $disk) { throw '没有满足 300 GiB 可用空间门槛的构建盘' }
+          "AEGIS_HOSTED_WORK=$($disk.Root)aegis" >> $env:GITHUB_ENV
+      - name: 固定源码、完整构建并运行原生测试
+        timeout-minutes: 220
+        shell: pwsh
+        run: python apps/browser/scripts/ci/windows_hosted.py --work "$env:AEGIS_HOSTED_WORK" --evidence ci-evidence/windows-hosted
+      - name: 保存本次产物、源码身份及失败日志
+        if: ${{ always() }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-hosted-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence/windows-hosted
+          if-no-files-found: warn
+          retention-days: 1
