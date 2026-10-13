@@ -16,7 +16,7 @@ Windows 共用功能、平台参数、构建覆盖文件及验收脚本已包含
 
 使用仓库既有 `Other Platform Coverage` 手动工作流，选取上述集成分支。其 Windows 2025 标准 runner 运行 PowerShell 验收脚本的四项安全边界测试并上传覆盖率证据；同一工作流也运行 Bash 行为测试。此工作流不构建 Chromium，不代替 Windows 原生产品测试。
 
-组织管理页面当前仅列出标准 GitHub 托管 runner，未列出专用 Windows runner。此前 Team 与 32 核 runner 购买已取消，本轮未新增套餐或调整预算。本轮随后获得用户明确授权，恢复 Team 月付、$40 Actions 预算及一次 32 核、最多 4 小时的完整编译试跑；付费构建状态独立记录。
+本轮开始时组织仅有标准 GitHub 托管 runner，此前 Team 与 32 核 runner 购买已取消。随后获得用户明确授权，恢复 Team 月付、$40 Actions 预算及一次 32 核、最多 4 小时的完整编译试跑；付费构建状态独立记录。
 
 ## 标准 runner 实际结果
 
@@ -39,3 +39,7 @@ Windows 既有验收脚本自检通过，包括原生互操作编译；Pester �
 当前官方 Windows 32 核价格为 $0.162/分钟，240 分钟计算费上限场景为 $38.88；Team 订阅另计。Actions $40 为月度预算，包含当月已有消费，不能解释为本次任务精准扣费封顶。来源：[runner 规格](https://docs.github.com/en/actions/reference/runners/larger-runners)、[计费](https://docs.github.com/en/billing/reference/actions-runner-pricing)。
 
 本地 22 项回归通过，覆盖真实子进程、超时停止、剩余空间门槛、临时 Git 补丁重放与脏目录保护、空/失败/跳过的测试摘要拒绝。新增版本补丁在当前 202 源码上只读应用检查通过，仓库合同和工作流 YAML 解析通过。完整 Windows 编译尚待实际运行结果。
+
+组织 Actions 月度预算已保存为 $40，达到上限停用为 Yes；保存时当月已用 $1.61。专用 runner 组 `aegis-windows-trial` 仅允许本仓库上述分支的候选构建工作流，runner 状态 Ready、并发 0/1。
+
+首次完整工作流 [38395665299](https://github.com/gcsagroup/aegis-browser/actions/runs/38395665299) 绑定 `b536755836e4ddc411e3adcda688f1a12053add0`，标准 Windows 前置测试运行 22 项，其中补丁重放样本因平台换行转换失败。付费作业跳过，没有开始本次付费编译。修复仅让测试样本保留 Git 原始补丁字节，并固定临时仓库换行设置；没有放宽生产补丁树校验。修复后本地 22 项再次通过，Windows 结果以下一次工作流为准。
