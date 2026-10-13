@@ -115,10 +115,11 @@ def prepare_depot(runner, work):
         raise ValueError('初始化改变了 depot_tools 固定提交')
     require_depot_wrappers(depot)
     runner.run('depot-python', [*cmd, depot / 'python3.bat', '--version'], work, env)
-    probe = work / 'probe_depot.py'
+    # 与 gclient.py 同目录，确保 vpython 加载官方 vpython.toml，避免默认旧 Python。
+    probe = depot / 'aegis_probe_entry.py'
     probe.write_text(
-        'import pathlib, subprocess, sys\n'
-        'sys.path.insert(0, str(pathlib.Path(__file__).parent / "depot_tools"))\n'
+        'import subprocess, sys\n'
+        'print(sys.version, flush=True)\n'
         'import git_cache\n'
         'assert git_cache.Mirror.git_exe == "git.bat"\n'
         'subprocess.run([git_cache.Mirror.git_exe, "--version"], check=True)\n'
