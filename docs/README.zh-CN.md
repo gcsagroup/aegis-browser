@@ -1,5 +1,8 @@
 # 文档
 
+- [Windows 构建最新结果与超时修复](audit/windows-actions-2026-10-13.zh-CN.md)
+- [Windows 后续构建方案及预计费用](plans/windows-build-budget-2026-10-14.zh-CN.md)
+
 - [iOS WebKit 指纹、深层保护、钓鱼与挖矿检测实施方案](plans/ios-webkit-protection-2026-10-11.zh-CN.md)
 - [iOS Ver 4.0 可移植功能：功能使用说明](ios-portable-features.zh-CN.md)
 - [四端功能对照](platform-features.zh-CN.md)
