@@ -133,6 +133,31 @@ class HostedTrialTest(unittest.TestCase):
         (depot / 'git.bat').write_text('@echo off')
         hosted.require_depot_wrappers(depot)
 
+    def test_older_sdk_does_not_satisfy_chromium_requirement(self):
+        old = self.root / 'Include/10.0.26100.0/um'
+        old.mkdir(parents=True)
+        (old / 'windows.h').write_text('old SDK')
+        with self.assertRaisesRegex(ValueError, '10.0.28000.0'):
+            hosted.require_sdk(self.root)
+
+    def test_sdk_without_x86_link_library_is_rejected(self):
+        for name in hosted.sdk_files():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'fixture')
+        hosted.require_sdk(self.root)
+        (self.root / f'Lib/{hosted.SDK_VERSION}/um/x86/kernel32.lib').unlink()
+        with self.assertRaisesRegex(ValueError, 'um/x86/kernel32.lib'):
+            hosted.require_sdk(self.root)
+
+    def test_chromium_sdk_version_drift_is_rejected(self):
+        source = self.root / 'src'
+        script = source / 'build/toolchain/win/setup_toolchain.py'
+        script.parent.mkdir(parents=True)
+        script.write_text("SDK_VERSION = '10.0.99999.0'\n")
+        with self.assertRaisesRegex(ValueError, '源码要求不一致'):
+            hosted.check_chromium_toolchain(self.runner, source, self.root, {})
+
     def test_preflight_rejects_non_windows_with_failure_receipt(self):
         evidence = self.root / 'toolchain-evidence'
         work = self.root / 'toolchain-work'

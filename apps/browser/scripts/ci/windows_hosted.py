@@ -16,6 +16,7 @@ import candidate
 ROOT = candidate.ROOT
 BROWSER = candidate.BROWSER
 DEPOT_COMMIT = '2fd34a8813b6f34336aad40976cc4223768177f8'
+SDK_VERSION = json.loads(Path(__file__).with_name('windows_sdk.json').read_text())['version']
 CHROMIUM_URL = 'https://chromium.googlesource.com/chromium/src.git'
 TARGETS = ['chrome', 'mini_installer', 'aegis_browser_unittests', 'browser_tests']
 
@@ -139,24 +140,70 @@ def require_depot_wrappers(depot):
             raise ValueError('depot_tools 初始化缺少入口：' + name)
 
 
+def sdk_files():
+    files = [f'Include/{SDK_VERSION}/{name}' for name in
+             ['um/windows.h', 'um/dcomp.h', 'shared/sdkddkver.h', 'ucrt/stdio.h', 'winrt/windows.foundation.h']]
+    for cpu in ['x64', 'x86']:
+        files.extend([f'Lib/{SDK_VERSION}/um/{cpu}/kernel32.lib',
+                      f'Lib/{SDK_VERSION}/ucrt/{cpu}/ucrt.lib',
+                      f'bin/{SDK_VERSION}/{cpu}/rc.exe', f'bin/{SDK_VERSION}/{cpu}/midl.exe'])
+    return files
+
+
+def require_sdk(sdk):
+    missing = [name for name in sdk_files() if not (sdk / name).is_file()]
+    if missing:
+        raise ValueError('指定 Windows SDK 不完整：' + ', '.join(missing))
+
+
 def check_cpp_entry(runner, work, env):
+    sdk = Path(os.environ['ProgramFiles(x86)']) / 'Windows Kits/10'
+    require_sdk(sdk)
     vswhere = Path(os.environ['ProgramFiles(x86)']) / 'Microsoft Visual Studio/Installer/vswhere.exe'
     vs = env.get('GYP_MSVS_OVERRIDE_PATH') or subprocess.check_output([
-        str(vswhere), '-latest', '-products', '*', '-version', '[17.0,19.0)',
+        str(vswhere), '-latest', '-products', '*', '-version', '[18.0,19.0)',
         '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
         'Microsoft.VisualStudio.Component.VC.ATLMFC', '-property', 'installationPath'], text=True).strip()
     if not vs:
-        raise ValueError('缺少 VS C++ 与 ATL/MFC 工具链')
+        raise ValueError('缺少 VS2026 C++ 与 ATL/MFC 工具链')
+    env.update(GYP_MSVS_OVERRIDE_PATH=vs, vs2026_install=vs)
     (work / 'probe.cpp').write_text('#include <windows.h>\n#include <atlbase.h>\n'
-                                  'int main() { return 0; }\n', encoding='utf-8')
-    command = work / 'probe_cpp.cmd'
-    command.write_text('@echo off\r\ncall "' + vs + '\\VC\\Auxiliary\\Build\\vcvars64.bat"\r\n'
-                       'if errorlevel 1 exit /b %errorlevel%\r\n'
-                       'cl.exe /nologo /EHsc probe.cpp /Fe:probe.exe\r\n'
-                       'if errorlevel 1 exit /b %errorlevel%\r\nprobe.exe\r\n',
-                       encoding='utf-8', newline='')
-    runner.run('cpp-toolchain-entry', [candidate.windows_system_executable('cmd.exe'),
-               '/d', '/c', command], work, env)
+                                  'static_assert(sizeof(void*) * 8 == PROBE_BITS, "架构不匹配");\n'
+                                  'int main() { return GetCurrentProcessId() == 0; }\n', encoding='utf-8')
+    for cpu, target in [('x64', 'amd64'), ('x86', 'amd64_x86')]:
+        command = work / ('probe_cpp_' + cpu + '.cmd')
+        command.write_text('@echo off\r\ncall "' + vs +
+                           '\\VC\\Auxiliary\\Build\\vcvarsall.bat" ' + target + ' ' + SDK_VERSION + '\r\n'
+                           'if errorlevel 1 exit /b %errorlevel%\r\n'
+                           'if not "%WindowsSDKVersion%"=="' + SDK_VERSION + '\\" exit /b 2\r\n'
+                           'echo WindowsSDKVersion=%WindowsSDKVersion%\r\n'
+                           'cl.exe /nologo /EHsc /utf-8 /DPROBE_BITS=' + ('64' if cpu == 'x64' else '32') + ' probe.cpp /Fo:probe-' + cpu + '.obj /Fe:probe-' + cpu + '.exe\r\n'
+                           'if errorlevel 1 exit /b %errorlevel%\r\nprobe-' + cpu + '.exe\r\n',
+                           encoding='utf-8', newline='')
+        runner.run('cpp-toolchain-' + cpu, [candidate.windows_system_executable('cmd.exe'),
+                   '/d', '/c', command], work, env)
+    candidate.write_json(runner.evidence / 'sdk-result.json', {
+        'status': 'passed', 'sdkVersion': SDK_VERSION, 'architectures': ['x64', 'x86'],
+        'checkedFiles': sdk_files(), 'visualStudio': vs})
+
+
+def check_chromium_toolchain(runner, source, work, env):
+    script = source / 'build/toolchain/win/setup_toolchain.py'
+    actual = re.search(r"SDK_VERSION = ['\"]([^'\"]+)", script.read_text()).group(1)
+    if actual != SDK_VERSION:
+        raise ValueError('安装 SDK 与固定 Chromium 源码要求不一致')
+    sdk = Path(os.environ['ProgramFiles(x86)']) / 'Windows Kits/10'
+    runtime = str(Path(os.environ['SystemRoot']) / 'System32')
+    for cpu in ['x64', 'x86']:
+        block = runner.evidence / ('environment.' + cpu)
+        runner.run('chromium-toolchain-' + cpu, [sys.executable, script,
+                   env['GYP_MSVS_OVERRIDE_PATH'], sdk, runtime, 'win', cpu, block], work, env)
+        data = block.read_text(encoding='utf-8')
+        if SDK_VERSION not in data or 'INCLUDE=' not in data or 'LIB=' not in data:
+            raise ValueError('Chromium 工具链环境缺少指定 SDK 或编译链接变量')
+    candidate.write_json(runner.evidence / 'chromium-toolchain-result.json', {
+        'status': 'passed', 'sdkVersion': SDK_VERSION, 'architectures': ['x64', 'x86'],
+        'scriptSha256': candidate.sha256(script)})
 
 
 def checkout_source(runner, work, env, url, revision, base, sparse=False):
@@ -168,9 +215,10 @@ def checkout_source(runner, work, env, url, revision, base, sparse=False):
     runner.run('source-fetch', ['git', '-C', source, 'fetch', '--depth=1',
                *fetch_options, 'origin', revision], work, env)
     if sparse:
-        # 免费机器仅检出真实 Chromium 的 DEPS，完整依赖另由付费机器验证。
+        # 免费机器检出真实 DEPS 和工具链入口；完整依赖由付费机器验证。
         runner.run('source-sparse', ['git', '-C', source, 'sparse-checkout', 'set',
-                   '--no-cone', '/DEPS'], work, env)
+                   '--no-cone', '/DEPS', '/build/toolchain/win/setup_toolchain.py',
+                   '/build/action_helpers.py', '/build/gn_helpers.py'], work, env)
     runner.run('source-checkout', ['git', '-C', source, 'checkout', '--detach', base], work, env)
     verify_source_identity(source, url, base)
     return source
@@ -206,6 +254,7 @@ def check_source_handoff(runner, work, depot, env):
     chromium.mkdir()
     checkout_source(runner, chromium, env, CHROMIUM_URL, 'refs/tags/' + version, base, sparse=True)
     sync_source(runner, chromium, depot, env, CHROMIUM_URL, base, dependencies=False)
+    check_chromium_toolchain(runner, chromium / 'src', chromium, env)
     candidate.write_json(runner.evidence / 'chromium-handoff.json', {
         'status': 'passed', 'commit': base, 'origin': CHROMIUM_URL,
         'scope': '真实固定版本稀疏检出与 gclient 接管；未下载完整 Chromium 依赖'})
@@ -300,6 +349,7 @@ def build(work, evidence):
         source = checkout_source(runner, work, env, CHROMIUM_URL, 'refs/tags/' + version, base)
         command = sync_source(runner, work, depot, env, CHROMIUM_URL, base)
         runner.run('hooks', [*command, 'runhooks'], work, env)
+        check_chromium_toolchain(runner, source, work, env)
         v8_base = candidate.git(source, 'rev-parse', base + ':v8')
         if candidate.git(source / 'v8', 'rev-parse', 'HEAD') != v8_base:
             raise ValueError('V8 依赖与 Chromium 固定基线不一致')

@@ -2,6 +2,10 @@ name: Chromium 三平台候选构建
 on:
   workflow_dispatch:
     inputs:
+      windows_preflight_only:
+        description: '仅在免费 Windows runner 验证，不启动付费机器'
+        type: boolean
+        default: false
       windows_hosted_trial:
         description: '仅运行已批准的 Windows 32 核付费试跑（最多 4 小时，不自动重试）'
         type: boolean
@@ -16,7 +20,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   preflight:
-    if: ${{ !inputs.windows_hosted_trial }}
+    if: ${{ !inputs.windows_hosted_trial && !inputs.windows_preflight_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -45,7 +49,7 @@ jobs:
           path: ci-evidence/upstream
           if-no-files-found: error
   build:
-    if: ${{ !inputs.windows_hosted_trial }}
+    if: ${{ !inputs.windows_hosted_trial && !inputs.windows_preflight_only }}
     needs: preflight
     timeout-minutes: 1440
     strategy:
@@ -84,7 +88,7 @@ jobs:
           retention-days: 14
   summary:
     needs: [preflight, build]
-    if: ${{ always() && !inputs.windows_hosted_trial }}
+    if: ${{ always() && !inputs.windows_hosted_trial && !inputs.windows_preflight_only }}
     runs-on: ubuntu-latest
     steps:
       - name: 三平台完成状态
@@ -97,9 +101,9 @@ jobs:
           test "$PREFLIGHT" = success && test "$BUILDS" = success
 
   windows-trial-preflight:
-    if: ${{ inputs.windows_hosted_trial && github.repository == 'gcsagroup/aegis-browser' && github.run_attempt == 1 }}
+    if: ${{ (inputs.windows_hosted_trial || inputs.windows_preflight_only) && github.repository == 'gcsagroup/aegis-browser' && github.run_attempt == 1 }}
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: 保持补丁与覆盖文件原始字节
         run: git config --global core.autocrlf false
@@ -111,20 +115,26 @@ jobs:
           python-version: '3.12'
       - name: 在免费 Windows 机器验证编排与失败边界
         run: python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
-      - name: 验证工具链、真实 Chromium 接管与完整小仓库依赖同步
+      - name: 安装 Chromium 固定 Windows SDK
+        timeout-minutes: 12
+        shell: pwsh
+        run: ./apps/browser/scripts/ci/install_windows_sdk.ps1 -Evidence ci-evidence/windows-sdk
+      - name: 验证指定 SDK、双架构工具链、源码接管与依赖同步
         run: python apps/browser/scripts/ci/windows_hosted.py --preflight-only --work "${{ runner.temp }}\aegis-tools" --evidence ci-evidence/windows-toolchain
       - name: 保存入口验收与初始化日志
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: windows-toolchain-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ci-evidence/windows-toolchain
+          path: |
+            ci-evidence/windows-toolchain
+            ci-evidence/windows-sdk
           if-no-files-found: warn
           retention-days: 7
 
   windows-hosted-trial:
     needs: windows-trial-preflight
-    if: ${{ inputs.windows_hosted_trial && github.repository == 'gcsagroup/aegis-browser' && github.run_attempt == 1 }}
+    if: ${{ inputs.windows_hosted_trial && !inputs.windows_preflight_only && github.repository == 'gcsagroup/aegis-browser' && github.run_attempt == 1 }}
     runs-on: aegis-windows-32
     timeout-minutes: 240
     steps:
@@ -149,6 +159,10 @@ jobs:
           $disk = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Free -gt 300GB -and $_.Root -match '^[A-Z]:\\$' } | Sort-Object Free -Descending | Select-Object -First 1
           if (-not $disk) { throw '没有满足 300 GiB 可用空间门槛的构建盘' }
           "AEGIS_HOSTED_WORK=$($disk.Root)aegis" >> $env:GITHUB_ENV
+      - name: 安装 Chromium 固定 Windows SDK
+        timeout-minutes: 12
+        shell: pwsh
+        run: ./apps/browser/scripts/ci/install_windows_sdk.ps1 -Evidence ci-evidence/windows-sdk
       - name: 固定源码、完整构建并运行原生测试
         timeout-minutes: 220
         shell: pwsh
@@ -159,6 +173,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: windows-hosted-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ci-evidence/windows-hosted
+          path: |
+            ci-evidence/windows-hosted
+            ci-evidence/windows-sdk
           if-no-files-found: warn
           retention-days: 1
