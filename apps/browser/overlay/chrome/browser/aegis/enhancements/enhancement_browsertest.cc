@@ -1,6 +1,9 @@
 // Copyright 2026 GCSA
 // 浏览器进程验收：真实文档注入、授权撤销与无特权 Markdown 渲染。
 #include "base/command_line.h"
+#include "base/files/file_util.h"
+#include "base/files/scoped_temp_dir.h"
+#include "base/functional/callback_helpers.h"
 #include "base/functional/bind.h"
 #include "base/test/bind.h"
 #include "base/test/run_until.h"
@@ -13,12 +16,16 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_widget_host.h"
+#include "content/public/browser/render_widget_host_view.h"
+#include "content/public/common/drop_data.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_devtools_protocol_client.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/dns/mock_host_resolver.h"
+#include "net/base/filename_util.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "url/origin.h"
 
@@ -79,6 +86,26 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
               "");
     return EnhancementField(
         store_->state().FindList("scripts")->back().GetDict(), "id");
+  }
+  void ExpectMarkdownPreview() {
+    ASSERT_TRUE(base::test::RunUntil([&] {
+      return contents()->GetLastCommittedURL() ==
+                 GURL("chrome://aegis/markdown.html") &&
+             !contents()->IsLoading();
+    }));
+    auto* frame = content::ChildFrameAt(contents()->GetPrimaryMainFrame(), 0);
+    ASSERT_NE(frame, nullptr);
+    EXPECT_EQ(true, content::EvalJs(frame, R"JS(
+      new Promise(resolve => {
+        const check = () => {
+          if (document.querySelector('#document h1')?.textContent === '首次打开')
+            resolve(true);
+          else requestAnimationFrame(check);
+        };
+        check();
+      })
+    )JS"));
+    EXPECT_EQ("undefined", content::EvalJs(frame, "typeof window.unsafe"));
   }
   raw_ptr<EnhancementStore> store_ = nullptr;
 };
@@ -211,6 +238,57 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
   base::test::TestFuture<base::DictValue> denied;
   helper->RunMenu(menu, denied.GetCallback());
   EXPECT_TRUE(denied.Get().Find("error"));
+}
+// 使用真实文件和浏览器导航，不能仅向预览框架直接注入待渲染文本。
+IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+                       MarkdownFirstBrowserOpenRendersWithoutReload) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto path = directory.GetPath().AppendASCII("first.MARKDOWN");
+  ASSERT_TRUE(base::WriteFile(path,
+      "# 首次打开\n\n<script>window.unsafe=1</script>"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(path)));
+  ExpectMarkdownPreview();
+}
+IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+                       MarkdownFirstLocalLinkRendersWithoutReload) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto path = directory.GetPath().AppendASCII("first.md");
+  const auto page = directory.GetPath().AppendASCII("open.html");
+  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+  ASSERT_TRUE(base::WriteFile(page,
+      "<!doctype html><a id='open' href='first.md'>打开</a>"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(page)));
+  ASSERT_TRUE(content::ExecJs(contents(), "document.querySelector('#open').click()"));
+  ExpectMarkdownPreview();
+}
+IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+                       MarkdownFirstFileDropRendersWithoutReload) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto path = directory.GetPath().AppendASCII("first.md");
+  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), embedded_test_server()->GetURL("/page")));
+  auto* widget = contents()->GetPrimaryMainFrame()->GetRenderWidgetHost();
+  const auto bounds = widget->GetView()->GetViewBounds();
+  const gfx::PointF client(bounds.width() / 2, bounds.height() / 2);
+  const gfx::PointF screen(bounds.CenterPoint());
+  content::DropData data;
+  data.operation = ui::mojom::DragOperation::kCopy;
+  data.filenames.emplace_back(path, path.BaseName());
+  widget->FilterDropData(&data);
+  base::test::TestFuture<ui::mojom::DragOperation, bool> entered;
+  widget->DragTargetDragEnter(data, client, screen,
+      blink::DragOperationsMask::kDragOperationEvery, 0, entered.GetCallback());
+  ASSERT_TRUE(entered.Wait());
+  base::test::TestFuture<ui::mojom::DragOperation, bool> moved;
+  widget->DragTargetDragOver(client, screen,
+      blink::DragOperationsMask::kDragOperationEvery, 0, moved.GetCallback());
+  ASSERT_TRUE(moved.Wait());
+  widget->DragTargetDrop(data, client, screen, 0, base::DoNothing());
+  ExpectMarkdownPreview();
 }
 IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
                        MarkdownUntrustedFrameRendersAndBlocksExecutableHTML) {

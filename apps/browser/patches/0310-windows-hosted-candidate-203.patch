@@ -5,6 +5,7 @@ Subject: [PATCH] 递增 Windows 托管构建候选为 203
 
 ---
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index eeba71134ac6dfd8c1b5fe41ace64b15dc536457..edcce161cf13d4c954da5b7f3c3dea6257ea1709 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -21,8 +21,8 @@
