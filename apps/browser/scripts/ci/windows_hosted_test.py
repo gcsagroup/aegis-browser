@@ -23,6 +23,31 @@ class HostedTrialTest(unittest.TestCase):
         self.runner.run('success', [sys.executable, '-c', 'print("representative input")'], self.root)
         self.assertIn('representative input', (self.logs / 'success.log').read_text())
 
+    def test_fixed_source_has_origin_before_gclient_takeover(self):
+        upstream = self.root / 'upstream'
+        upstream.mkdir()
+        def git(path, *args):
+            return subprocess.check_output(['git', '-C', str(path), *args], text=True).strip()
+        git(upstream, 'init', '-q')
+        git(upstream, 'config', 'user.name', '测试')
+        git(upstream, 'config', 'user.email', 'test@example.invalid')
+        (upstream / 'DEPS').write_text('deps = {}\n', newline='\n')
+        git(upstream, 'add', 'DEPS')
+        git(upstream, 'commit', '-qm', '固定输入')
+        git(upstream, 'tag', 'test-pin')
+        base = git(upstream, 'rev-parse', 'HEAD')
+        work = self.root / 'checkout'
+        work.mkdir()
+        source = hosted.checkout_source(self.runner, work, None, upstream.as_uri(),
+                                        'refs/tags/test-pin', base)
+        self.assertEqual(git(source, 'remote', 'get-url', 'origin'), upstream.as_uri())
+        # 重放上次 gclient 真正失败的命令，确认无需凭空创建或猜测远端。
+        git(source, 'remote', 'set-url', 'origin', upstream.as_uri())
+        hosted.verify_source_identity(source, upstream.as_uri(), base)
+        git(source, 'remote', 'set-url', 'origin', 'https://example.invalid/wrong.git')
+        with self.assertRaisesRegex(ValueError, 'origin'):
+            hosted.verify_source_identity(source, upstream.as_uri(), base)
+
     def test_nonzero_exit_preserves_log_and_fails(self):
         with self.assertRaisesRegex(RuntimeError, '退出码 3'):
             self.runner.run('failure', [sys.executable, '-c', 'print("failed");exit(3)'], self.root)
