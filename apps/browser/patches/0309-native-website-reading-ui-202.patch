@@ -1,0 +1,4434 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 17:52:00 +0800
+Subject: [PATCH] 统一当前网站、原生设置与 Markdown 阅读界面，候选 202
+
+---
+diff --git a/chrome/browser/aegis/enhancements/enhancement_store.cc b/chrome/browser/aegis/enhancements/enhancement_store.cc
+index de6bfddc349a7faae47b793bce8ba376a43d1e83..5039dab4165287b0e572b179b7c995ca0b1cc6f3 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_store.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_store.cc
+@@ -179,6 +179,10 @@ bool EnhancementStore::Matches(const std::string& pattern, const GURL& url) {
+   }
+   return re2::RE2::FullMatch(address, regex + "$");
+ }
++bool EnhancementStore::PausedAt(const base::DictValue& script, const GURL& url) {
++  const auto* origins = script.FindList("disabledOrigins");
++  return origins && origins->contains(url::Origin::Create(url).Serialize());
++}
+ bool EnhancementStore::Applies(const base::DictValue& script,
+                                const GURL& url,
+                                bool top) {
+@@ -286,6 +290,18 @@ bool EnhancementStore::Validate(const base::DictValue& state) {
+         return false;
+     }
+   }
++  if (const auto* reading = state.FindDict("readingPreferences")) {
++    const int font = reading->FindInt("font").value_or(17);
++    const auto theme = EnhancementField(*reading, "theme");
++    const auto family = EnhancementField(*reading, "family");
++    const int width = reading->FindInt("width").value_or(820);
++    const int spacing = reading->FindInt("spacing").value_or(180);
++    if (font < 12 || font > 28 || (width != 680 && width != 820 && width != 1100) ||
++        (spacing != 150 && spacing != 180 && spacing != 210) ||
++        (theme != "system" && theme != "light" && theme != "dark") ||
++        (family != "sans" && family != "serif"))
++      return false;
++  }
+   std::set<std::string> ids, origins;
+   for (const auto& item : *sites) {
+     if (!item.is_dict())
+@@ -308,6 +324,18 @@ bool EnhancementStore::Validate(const base::DictValue& state) {
+                       world = EnhancementField(s, "world");
+     auto m = ParseMetadata(EnhancementField(s, "source"));
+     const auto* history = s.FindList("history");
++    if (const auto* disabled = s.FindList("disabledOrigins")) {
++      if (disabled->size() > 200)
++        return false;
++      for (const auto& origin : *disabled) {
++        if (!origin.is_string() || !WebURL(GURL(origin.GetString())) ||
++            url::Origin::Create(GURL(origin.GetString())).Serialize() !=
++                origin.GetString())
++          return false;
++      }
++    } else if (s.contains("disabledOrigins")) {
++      return false;
++    }
+     if (!base::Uuid::ParseCaseInsensitive(id).is_valid() ||
+         !ids.insert(id).second || s.FindInt("revision").value_or(0) < 1 ||
+         !s.FindBool("enabled") || !s.FindBool("allFrames") || !m ||
+@@ -418,7 +446,8 @@ void EnhancementStore::Mutate(const base::DictValue& request, Completion done) {
+     RunNext();
+     return;
+   }
+-  Commit(std::move(next), true, std::move(done));
++  const auto op = EnhancementField(request, "op");
++  Commit(std::move(next), op != "reading-preferences" && op != "markdown-site", std::move(done));
+ }
+ std::string EnhancementStore::Prepare(const base::DictValue& r,
+                                       base::DictValue& next) {
+@@ -433,6 +462,11 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
+       return "缺少网站预览设置。";
+     next.FindDict("markdownSites")
+         ->Set(EnhancementField(r, "origin"), Flag(r, "enabled"));
++  } else if (op == "reading-preferences") {
++    const auto* preferences = r.FindDict("preferences");
++    if (!preferences)
++      return "阅读外观设置无效。";
++    next.Set("readingPreferences", preferences->Clone());
+   } else if (op == "site-save") {
+     const auto* rule = r.FindDict("rule");
+     if (!rule)
+@@ -465,6 +499,24 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
+         return EnhancementField(v.GetDict(), "id") == id;
+       });
+       next.FindDict("values")->Remove(id);
++    } else if (op == "script-site") {
++      const auto origin = EnhancementField(r, "origin");
++      if (!old || !Flag(*old, "enabled") || !r.FindBool("enabled") ||
++          !WebURL(GURL(origin)) ||
++          url::Origin::Create(GURL(origin)).Serialize() != origin)
++        return "请先授权启用脚本，并选择普通网站。";
++      for (auto& item : *scripts) {
++        auto& script = item.GetDict();
++        if (EnhancementField(script, "id") != id)
++          continue;
++        if (!script.FindList("disabledOrigins"))
++          script.Set("disabledOrigins", base::ListValue());
++        auto* disabled = script.FindList("disabledOrigins");
++        disabled->EraseIf([&](const base::Value& v) { return v.GetString() == origin; });
++        if (!Flag(r, "enabled"))
++          disabled->Append(origin);
++        script.Set("revision", old->FindInt("revision").value() + 1);
++      }
+     } else if (op == "script-enable") {
+       if (!old || !r.FindBool("enabled"))
+         return "启停参数无效。";
+@@ -508,6 +560,9 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
+               .Set("world", EnhancementField(input, "world"))
+               .Set("allFrames", Flag(input, "allFrames"))
+               .Set("enabled", false)
++              .Set("disabledOrigins", old && old->FindList("disabledOrigins")
++                                          ? old->FindList("disabledOrigins")->Clone()
++                                          : base::ListValue())
+               .Set("history", std::move(history)));
+     } else
+       return "未知操作。";
+diff --git a/chrome/browser/aegis/enhancements/enhancement_store.h b/chrome/browser/aegis/enhancements/enhancement_store.h
+index 97bb3f48516e28639afb3c2ff1b9e209fab2d5a9..e55f9e9fcec37064dc41326bfdeb05d3449e74a9 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_store.h
++++ b/chrome/browser/aegis/enhancements/enhancement_store.h
+@@ -41,6 +41,7 @@ class EnhancementStore : public base::SupportsUserData::Data {
+       const std::string& source);
+   static bool Matches(const std::string& pattern, const GURL& url);
+   static bool Applies(const base::DictValue& script, const GURL& url, bool top);
++  static bool PausedAt(const base::DictValue& script, const GURL& url);
+   static bool Validate(const base::DictValue& state);
+ 
+  private:
+diff --git a/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc b/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc
+index 841213a2e440063581570f0d9a433dec36692b07..be9cedf881d7ed354fd7d5e28328969113b139bc 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc
+@@ -1,6 +1,7 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/aegis/enhancements/enhancement_store.h"
+ #include "base/base_paths.h"
++#include "base/test/bind.h"
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/json/json_reader.h"
+@@ -185,5 +186,47 @@ TEST_F(EnhancementStoreTest, QueuedWritesKeepValuesAndRejectRevokedRevision) {
+             "");
+ }
+ 
++TEST_F(EnhancementStoreTest, SitePausePreservesGlobalGrantValuesAndOldSchema) {
++  EnhancementStore store(base::FilePath{});
++  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-save")
++      .Set("source", Script()).Set("world", "isolated")).empty());
++  const auto id = EnhancementField(store.state().FindList("scripts")->front().GetDict(), "id");
++  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-enable")
++      .Set("id", id).Set("revision", 1).Set("enabled", true)).empty());
++  auto old_schema = store.state().Clone();
++  old_schema.FindList("scripts")->front().GetDict().Remove("disabledOrigins");
++  EXPECT_TRUE(EnhancementStore::Validate(old_schema));
++  auto request = base::DictValue().Set("op", "script-site").Set("id", id)
++      .Set("revision", 2).Set("origin", "https://example.com").Set("enabled", false);
++  ASSERT_TRUE(Mutate(store, request.Clone()).empty());
++  EXPECT_EQ(store.Script(id)->FindBool("enabled"), true);
++  EXPECT_TRUE(EnhancementStore::PausedAt(*store.Script(id), GURL("https://example.com/article")));
++  EXPECT_FALSE(EnhancementStore::PausedAt(*store.Script(id), GURL("https://sub.example.com/")));
++  EXPECT_FALSE(EnhancementStore::PausedAt(*store.Script(id), GURL("http://example.com/")));
++  EXPECT_FALSE(Mutate(store, request.Clone()).empty());
++  request.Set("revision", 3);
++  request.Set("enabled", true);
++  ASSERT_TRUE(Mutate(store, request.Clone()).empty());
++  EXPECT_FALSE(EnhancementStore::PausedAt(*store.Script(id), GURL("https://example.com/")));
++  request.Set("revision", 4);
++  request.Set("origin", "file:///tmp");
++  EXPECT_FALSE(Mutate(store, request.Clone()).empty());
++}
++TEST_F(EnhancementStoreTest, ReadingPreferencesDoNotRevokeScriptsOrGrantImages) {
++  EnhancementStore store(base::FilePath{});
++  int changed = 0;
++  auto subscription = store.Observe(base::BindLambdaForTesting([&] { ++changed; }));
++  auto preferences = base::DictValue().Set("theme", "dark").Set("family", "serif")
++      .Set("font", 19).Set("spacing", 180).Set("width", 820);
++  EXPECT_TRUE(Mutate(store, base::DictValue().Set("op", "reading-preferences")
++      .Set("preferences", preferences.Clone())).empty());
++  EXPECT_EQ(changed, 0);
++  EXPECT_FALSE(store.state().contains("remoteImages"));
++  preferences.Set("font", 200);
++  EXPECT_FALSE(Mutate(store, base::DictValue().Set("op", "reading-preferences")
++      .Set("preferences", preferences.Clone())).empty());
++  EXPECT_EQ(store.state().FindDict("readingPreferences")->FindInt("font"), 19);
++}
++
+ }  // namespace
+ }  // namespace aegis
+diff --git a/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc b/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
+index 5a44f323865b1858d0834e65f2a5d5437a021bea..86469f121e58e3e3767ef1ed950c0298bffc7a55 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
+@@ -95,8 +95,12 @@ EnhancementTabHelper* EnhancementTabHelper::Find(Profile* profile,
+ }
+ base::DictValue EnhancementTabHelper::Snapshot() const {
+   base::ListValue menus;
+-  for (const auto& [id, m] : menus_)
+-    menus.Append(base::DictValue().Set("id", id).Set("label", m.label));
++  for (const auto& [id, m] : menus_) {
++    auto binding = bindings_.find(m.binding);
++    if (binding != bindings_.end())
++      menus.Append(base::DictValue().Set("id", id).Set("label", m.label)
++                       .Set("script", EnhancementField(binding->second.script, "id")));
++  }
+   return base::DictValue()
+       .Set("id", id_)
+       .Set("document", base::NumberToString(navigation_id_))
+@@ -236,6 +240,9 @@ std::string EnhancementTabHelper::Source(const base::DictValue& script,
+       "))return 'unmatched';const key=" +
+       JSON(base::Value("__aegisRan_" + name)) +
+       ";if(globalThis[key])return 'duplicate';globalThis[key]=true;";
++  if (const auto* disabled = script.FindList("disabledOrigins"))
++    source += "if(" + JSON(base::Value(disabled->Clone())) +
++              ".some(origin=>[location.origin,...Array.from(location.ancestorOrigins||[])].includes(origin)))return 'paused';";
+   if (page)
+     source += "const runtime={api:{},report:(s,e)=>{if(e)console.warn(e)}};";
+   else
+@@ -246,7 +253,7 @@ std::string EnhancementTabHelper::Source(const base::DictValue& script,
+         "aegisReply=runtime.receive;globalThis.__aegisMenu=runtime.runMenu;";
+   source +=
+       "const {GM,GM_addStyle,GM_registerMenuCommand}=runtime.api;const "
+-      "run=async()=>{try{await(async()=>{\n" +
++      "run=async()=>{runtime.report('running');try{await(async()=>{\n" +
+       EnhancementField(script, "source") +
+       "\n})();runtime.report('completed');}catch(e){runtime.report('failed',"
+       "String(e));}};";
+@@ -378,6 +385,8 @@ void EnhancementTabHelper::HandleBinding(Context context,
+   if (!value || !actual ||
+       actual->FindInt("revision") != binding.script.FindInt("revision") ||
+       (!binding.trial && !Flag(*actual, "enabled")) ||
++      EnhancementStore::PausedAt(*actual, web_contents()->GetLastCommittedURL()) ||
++      (value && EnhancementStore::PausedAt(*actual, GURL(*value))) ||
+       !EnhancementStore::Applies(*actual, GURL(*value),
+                                  context.frame == main_frame_))
+     error = "页面或脚本授权已变化。";
+@@ -442,6 +451,8 @@ void EnhancementTabHelper::HandleBinding(Context context,
+           id,
+           base::DictValue()
+               .Set("status", EnhancementField(body, "status").substr(0, 100))
++              .Set("trial", binding.trial)
++              .Set("mainFrame", context.frame == main_frame_)
+               .Set("error", EnhancementField(body, "error").substr(0, 1000)));
+     else
+       error = "未知脚本操作。";
+@@ -557,6 +568,8 @@ void EnhancementTabHelper::RunMenu(const std::string& id, Reply reply) {
+                  script->FindInt("revision") !=
+                      binding->second.script.FindInt("revision") ||
+                  (!binding->second.trial && !Flag(*script, "enabled")) ||
++                 EnhancementStore::PausedAt(*script, self->web_contents()->GetLastCommittedURL()) ||
++                 (address && EnhancementStore::PausedAt(*script, GURL(*address))) ||
+                  !EnhancementStore::Applies(*script, GURL(*address),
+                                             ctx.frame == self->main_frame_)) {
+                std::move(reply).Run(Failure("菜单授权已经变化。"));
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+index 92e181cc1342a67c03238cc5a77d4d9a9d18dca6..7d47b5361d7ca2bf11654fafe09d582c4ea139ae 100644
+--- a/chrome/browser/resources/aegis/BUILD.gn
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -12,8 +12,10 @@ generate_grd("enhancement_resources") {
+     "enhancements.css",
+     "enhancements.js",
+     "markdown.html",
++    "markdown.css",
+     "markdown.js",
+     "enhancements_shared/core.js",
++    "enhancements_shared/i18n.js",
+     "enhancements_shared/tests/matching-vectors.json",
+     "enhancements_shared/site_rules.js",
+     "enhancements_shared/viewer.js",
+diff --git a/chrome/browser/resources/aegis/enhancements.css b/chrome/browser/resources/aegis/enhancements.css
+index 48b64c02d1605d3bb78c1fa8b67aa0fa39f191fe..cda4f732e0fe61a81772a726974ed50d1ef33fd2 100644
+--- a/chrome/browser/resources/aegis/enhancements.css
++++ b/chrome/browser/resources/aegis/enhancements.css
+@@ -1,191 +1,59 @@
+-:root {
+-  font:
+-    15px/1.6 system-ui,
+-    sans-serif;
++:root, :host {
+   color-scheme: light dark;
+-  background: light-dark(#f4f6fa, #121620);
+-  color: light-dark(#192337, #e4eafa);
+-}
+-body {
+-  max-width: 1500px;
+-  margin: auto;
+-  padding: 24px;
+-}
+-header {
+-  display: flex;
+-  align-items: center;
+-  gap: 24px;
+-}
+-header h1 {
+-  flex: 1;
+-  font-size: 26px;
+-}
+-a {
+-  color: light-dark(#225dd8, #96b6ff);
+-}
+-section {
+-  background: light-dark(#fff, #1b2230);
+-  border: 1px solid light-dark(#dae1ed, #344054);
+-  border-radius: 12px;
+-  padding: 22px;
+-  margin: 18px 0;
+-}
+-h2 {
+-  font-size: 19px;
+-  margin: 0 0 16px;
+-}
+-h3 {
+-  font-size: 16px;
+-}
+-.columns {
+-  display: grid;
+-  grid-template-columns: minmax(300px, 0.85fr) minmax(420px, 1.5fr);
+-  gap: 22px;
+-}
+-label {
+-  display: block;
+-  margin: 8px 0;
+-}
+-input:not([type="checkbox"]),
+-select,
+-textarea {
+-  font: inherit;
+-  box-sizing: border-box;
+-  max-width: 100%;
+-  padding: 9px;
+-  border: 1px solid light-dark(#bbc7da, #48566d);
+-  border-radius: 6px;
+-  background: light-dark(#fff, #111927);
+-  color: inherit;
+-}
+-textarea {
+-  display: block;
+-  width: 100%;
+-  resize: vertical;
+-}
+-#source {
+-  font:
+-    13px/1.5 ui-monospace,
+-    monospace;
+-  tab-size: 2;
+-}
+-input[type="checkbox"] {
+-  width: 17px;
+-  height: 17px;
+-  vertical-align: middle;
+-}
+-button,
+-.file {
+-  font: inherit;
+-  cursor: pointer;
+-  padding: 8px 12px;
+-  border: 1px solid light-dark(#bbc7da, #48566d);
+-  border-radius: 7px;
+-  background: light-dark(#f6f8fc, #28344a);
+-  color: inherit;
+-}
+-button:hover {
+-  border-color: #527df0;
+-}
+-button:disabled {
+-  opacity: 0.5;
+-  cursor: wait;
+-}
+-.row {
+-  display: flex;
+-  gap: 9px;
+-  flex-wrap: wrap;
+-  align-items: center;
+-}
+-.file input {
+-  max-width: 220px;
+-  font-size: 12px;
+-}
+-p {
+-  color: light-dark(#53637b, #aebbd0);
+-}
+-#notice {
+-  white-space: pre-wrap;
+-  border-left: 4px solid #4e7ad9;
+-  padding: 10px 15px;
+-  background: light-dark(#eaf0ff, #1b2945);
+-  color: inherit;
+-}
+-.item {
+-  border-top: 1px solid light-dark(#dde4ef, #344054);
+-  padding: 12px 0;
+-}
+-.item strong {
+-  display: block;
+-}
+-.item small {
+-  display: block;
+-  overflow-wrap: anywhere;
+-}
+-pre {
+-  white-space: pre-wrap;
+-  overflow-wrap: anywhere;
+-  max-height: 220px;
+-  overflow: auto;
+-}
+-button.danger {
+-  color: light-dark(#a52222, #ffacac);
+-}
+-#tabs {
+-  max-width: 70%;
+-}
+-.editor {
+-  align-self: start;
+-}
+-iframe.reader {
+-  border: 0;
+-  width: 100%;
+-  height: calc(100vh - 200px);
+-  min-height: 550px;
+-  background: white;
+-}
+-body.reading {
+-  max-width: none;
+-  padding: 14px;
+-}
+-body.reading header {
+-  flex-wrap: wrap;
+-}
+-body.reading h1 {
+-  font-size: 21px;
+-}
+-dialog {
+-  max-width: 850px;
+-  width: 85%;
+-  border: 1px solid #8090aa;
+-  border-radius: 14px;
+-  padding: 25px;
+-}
+-dialog textarea {
+-  min-height: 180px;
+-}
+-#ai-output {
+-  max-height: 300px;
+-  overflow: auto;
+-  white-space: pre-wrap;
+-}
+-@media (max-width: 850px) {
+-  .columns {
+-    grid-template-columns: 1fr;
+-  }
+-  header {
+-    flex-wrap: wrap;
+-  }
+-  #tabs {
+-    max-width: 100%;
+-  }
+-}
+-@media print {
+-  body.reading header,
+-  body.reading #notice {
+-    display: none;
+-  }
+-  iframe.reader {
+-    height: 100vh;
+-  }
+-}
++  --surface: light-dark(#fff, #202124);
++  --background: light-dark(#f8f9fa, #17181b);
++  --ink: light-dark(#202124, #e8eaed);
++  --muted: light-dark(#5f6368, #bdc1c6);
++  --line: light-dark(#dadce0, #45474b);
++  --accent: light-dark(#185abc, #a8c7fa);
++  font: 14px/1.55 system-ui, sans-serif;
++  color: var(--ink);
++  background: var(--background);
++}
++* { box-sizing: border-box; }
++body { margin: 0; padding: 24px; }
++#enhancement-root { max-width: 960px; margin: auto; }
++h1 { font-size: 24px; font-weight: 500; margin: 16px 0; }
++h2 { font-size: 17px; font-weight: 600; margin: 0; }
++h3 { font-size: 15px; }
++a { color: var(--accent); }
++section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 14px 0; }
++p { color: var(--muted); }
++.hint, small { font-size: 12px; color: var(--muted); }
++.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
++.section-heading h2 { flex: 1; }
++label { display: block; margin: 10px 0; }
++.toggle { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 8px 0; }
++input:not([type=checkbox]), select, textarea { font: inherit; max-width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: inherit; }
++textarea { display: block; width: 100%; resize: vertical; }
++#source { font: 13px/1.6 ui-monospace, monospace; tab-size: 2; }
++input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); vertical-align: middle; }
++button, .file, summary { font: inherit; cursor: pointer; }
++button, .file { padding: 8px 14px; min-height: 36px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--accent); }
++button:hover, .file:hover { background: light-dark(#f1f3f4, #303134); }
++button:disabled { opacity: .5; cursor: default; }
++button.primary { background: var(--accent); color: light-dark(#fff, #183153); border-color: transparent; }
++button.danger { color: light-dark(#b3261e, #f2b8b5); }
++:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
++.file { position: relative; display: inline-flex; align-items: center; }
++.file input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
++.file:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
++#notice { white-space: pre-wrap; padding: 10px 0; margin: 0; min-height: 34px; color: var(--muted); }
++#notice:empty { display: none; }
++#scope { overflow-wrap: anywhere; margin: 6px 0; }
++#private { margin-bottom: 0; }
++.item { border-bottom: 1px solid var(--line); padding: 14px 0; }
++.item:first-child { padding-top: 0; }
++.item:last-child { border: 0; padding-bottom: 0; }
++.item strong, .item small { display: block; overflow-wrap: anywhere; }
++.item button { margin-top: 9px; margin-inline-end: 8px; }
++#tabs { max-width: 100%; flex: 1; min-width: 100px; }
++details { margin: 12px 0; }
++summary { color: var(--ink); padding: 10px 0; font-weight: 500; }
++pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow: auto; }
++.steps { font-size: 13px; }
++[hidden] { display: none !important; }
++:host [data-standalone] { display: none; }
++:host #enhancement-root { margin: 0; }
++:host section { margin: 12px 0; }
++@media (max-width: 650px) { body { padding: 14px; } section { padding: 14px; } .target-summary .row { align-items: stretch; } .target-summary select { flex-basis: 100%; } }
+diff --git a/chrome/browser/resources/aegis/enhancements.html b/chrome/browser/resources/aegis/enhancements.html
+index c63b969363d6157d5007f6a709830e668ada476e..a21c41b7dfc3672de54575d72836e4a6daea4ea3 100644
+--- a/chrome/browser/resources/aegis/enhancements.html
++++ b/chrome/browser/resources/aegis/enhancements.html
+@@ -1,106 +1,58 @@
+ <!doctype html>
+ <html lang="zh-CN">
+-  <head>
+-    <meta charset="utf-8" />
+-    <meta name="color-scheme" content="light dark" />
+-    <title>网站增强与用户脚本</title>
+-    <link rel="stylesheet" href="enhancements.css" />
+-    <script src="enhancements_shared/core.js" defer></script>
+-    <script src="enhancements_shared/vendor/acorn.js" defer></script>
+-    <script type="module" src="enhancements.js"></script>
+-  </head>
+-  <body>
+-    <header>
+-      <a href="aegis.html">← 防护中心</a>
+-      <h1>网站增强与用户脚本</h1>
+-      <a href="markdown.html">Markdown 阅读</a>
+-    </header>
++<head>
++  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
++  <meta name="color-scheme" content="light dark" /><title>网站增强与脚本</title>
++  <link rel="stylesheet" href="enhancements.css" />
++  <script src="enhancements_shared/core.js" defer></script>
++  <script src="enhancements_shared/vendor/acorn.js" defer></script>
++  <script type="module" src="enhancements.js"></script>
++</head>
++<body>
++  <main id="enhancement-root">
++    <header class="page-heading" data-standalone><a href="chrome://settings/aegisEnhancements">← 返回设置</a><h1>网站增强与脚本</h1></header>
+     <p id="notice" role="status" aria-live="polite">正在读取设置…</p>
+-    <section>
+-      <h2>目标网页</h2>
+-      <div class="row">
+-        <select id="tabs" aria-label="目标网页"></select
+-        ><button id="refresh">刷新列表与状态</button
+-        ><button id="inspect">打开网页调试工具</button>
+-      </div>
+-      <p id="scope"></p>
+-      <p id="private"></p>
++    <section class="target-summary">
++      <div class="row"><label for="tabs">当前操作的网页</label><select id="tabs" aria-label="目标网页"></select><button id="refresh">刷新状态</button></div>
++      <p id="scope"></p><p id="private" class="hint"></p>
+     </section>
+-    <div class="columns">
+-      <div>
+-        <section>
+-          <h2>记住网站设置</h2>
+-          <label>网站来源<input id="origin" placeholder="https://example.com" /></label
+-          ><label><input type="checkbox" id="menu" />恢复原生菜单</label
+-          ><label><input type="checkbox" id="copy" />允许选取和复制</label
+-          ><label><input type="checkbox" id="debug" />反调试兼容处理</label
+-          ><label><input type="checkbox" id="subdomains" />包含子域名</label
+-          ><label><input type="checkbox" id="disabled" />暂停本站增强</label
+-          ><button id="save-site">保存网站规则</button>
+-          <p>设置在下一次加载生效。当前页有未提交内容时，请先保存再手动刷新。</p>
+-          <p>
+-            反调试适配处理纯 debugger 动态函数、窗口尺寸检测及部分 disable-devtool
+-            行为；不会关闭普通断点或全部跳转。
+-          </p>
+-          <div id="sites"></div>
++    <div id="manager">
++      <div class="row section-heading"><h2>已安装脚本</h2><button id="new" class="primary">新建 / AI 编写</button><label class="file">导入 .user.js<input type="file" id="import" aria-label="导入 .user.js" accept=".js,.user.js,text/javascript" /></label></div>
++      <section><div id="scripts"></div></section>
++      <details id="site-manager"><summary>网站规则 · 右键、选取和复制</summary>
++        <section><div id="sites"></div>
++          <details id="site-editor"><summary>编辑所选网站规则</summary>
++            <label>网站来源<input id="origin" placeholder="https://example.com" /></label>
++            <label class="toggle"><span>恢复右键菜单</span><input type="checkbox" id="menu" /></label>
++            <label class="toggle"><span>允许选取和复制</span><input type="checkbox" id="copy" /></label>
++            <details><summary>更多选项与适用范围</summary>
++              <label class="toggle"><span>网页调试兼容</span><input type="checkbox" id="debug" /></label>
++              <p class="hint">处理部分网页的调试干扰，保留普通断点和导航。</p>
++              <label class="toggle"><span>也应用于子域名</span><input type="checkbox" id="subdomains" /></label>
++              <label class="toggle"><span>暂停本站增强</span><input type="checkbox" id="disabled" /></label>
++              <button id="inspect">打开网页调试工具</button>
++            </details>
++            <button id="save-site">保存网站规则</button><p class="hint">设置保存后不自动刷新。也可直接从地址栏盾牌调整当前网站。</p>
++          </details>
+         </section>
+-        <section>
+-          <h2>用户脚本</h2>
+-          <div class="row">
+-            <button id="new">新建脚本</button
+-            ><label class="file"
+-              >导入 .user.js<input
+-                type="file"
+-                id="import"
+-                accept=".js,.user.js,text/javascript"
+-            /></label>
+-          </div>
+-          <div id="scripts"></div>
+-          <h3>本页运行结果与脚本菜单</h3>
+-          <div id="runtime"></div>
+-          <button id="recover" class="danger">停用全部脚本并恢复当前页</button>
+-          <p>恢复会重新载入当前页，尚未提交的输入可能丢失。已发出的外部请求无法撤销。</p>
+-        </section>
+-      </div>
+-      <section class="editor">
+-        <h2 id="editor-title">脚本草稿</h2>
+-        <label>源码<textarea id="source" spellcheck="false" rows="22"></textarea></label>
+-        <div class="row">
+-          <label
+-            >执行环境<select id="world">
+-              <option value="isolated">隔离环境</option>
+-              <option value="page">页面环境（无 GM 权限）</option>
+-            </select></label
+-          ><label><input type="checkbox" id="frames" />在匹配的子框架运行</label>
+-        </div>
+-        <p id="permissions"></p>
+-        <div class="row">
+-          <button id="check">静态检查</button><button id="save">保存草稿</button
+-          ><button id="trial">在当前页试运行</button><button id="export">导出源码</button
+-          ><button id="rollback">回退上一版</button>
+-        </div>
+-        <p>
+-          保存会停用旧版，需要重新确认启用。隔离执行仍能读取和修改网页内容；试运行使用临时存储。
+-        </p>
+-        <h2>AI 编写与修复</h2>
+-        <label
+-          >需求或错误反馈<textarea
+-            id="goal"
+-            rows="3"
+-            placeholder="例如：隐藏右侧栏并加宽正文"
+-          ></textarea></label
+-        ><button id="context">读取当前页结构供检查</button>
+-        <pre id="context-preview"></pre>
+-        <p id="model"></p>
+-        <div class="row">
+-          <button id="generate">生成或修复草稿</button
+-          ><button id="cancel">取消生成</button>
+-        </div>
+-        <p>
+-          发送需求、编辑器源码及上方已预览的结构。不会读取密码、Cookie
+-          或表单值；模型只返回草稿，由你决定是否试运行。
+-        </p>
+-      </section>
++      </details>
++      <details><summary>本页运行详情</summary><section><div id="runtime"></div><button id="reload">重新加载当前页</button></section></details>
++      <details><summary>恢复操作</summary><section><p>停用此配置中的全部脚本，并重新载入目标页。未提交的输入可能丢失；已发出的请求无法撤销。</p><button id="recover" class="danger">停用全部脚本并恢复当前页</button></section></details>
+     </div>
+-  </body>
++    <section id="editor" class="editor" hidden>
++      <div class="row section-heading"><button id="back-list">← 返回脚本列表</button><h2 id="editor-title">脚本草稿</h2></div>
++      <p class="steps">1 描述需求 → 2 检查草稿与权限 → 3 试运行 → 4 确认启用</p>
++      <details id="ai-editor" open><summary>AI 编写与修复</summary>
++        <label>需求或错误反馈<textarea id="goal" rows="3" placeholder="例如：隐藏右侧栏并加宽正文"></textarea></label>
++        <div class="row"><button id="generate" class="primary">生成或修复草稿</button><button id="cancel">取消生成</button></div>
++        <details><summary>发送内容与当前模型</summary><p id="model"></p><button id="context">读取当前页结构供检查</button><pre id="context-preview"></pre><p class="hint">发送需求、编辑器源码及已预览的结构。不会读取密码、Cookie 或表单值。</p></details>
++      </details>
++      <label>源码<textarea id="source" spellcheck="false" rows="18"></textarea></label>
++      <details><summary>执行环境与子框架</summary><label>执行环境<select id="world"><option value="isolated">隔离环境</option><option value="page">页面环境（无 GM 权限）</option></select></label><label><input type="checkbox" id="frames" />在匹配的子框架运行</label></details>
++      <p id="permissions" role="status"></p>
++      <div class="row"><button id="check">检查权限与语法</button><button id="save">保存草稿</button><button id="trial">试运行</button><button id="enable-reviewed" class="primary">确认启用</button><button id="export">导出源码</button><button id="rollback">回退上一版</button></div>
++      <p class="hint">保存修改会撤销旧授权。试运行只使用临时存储；启用前再次确认网址和权限。</p>
++    </section>
++  </main>
++</body>
+ </html>
+diff --git a/chrome/browser/resources/aegis/enhancements.js b/chrome/browser/resources/aegis/enhancements.js
+index 692f7124077e9ae53d7fb2e7fca545411b83aba6..fe5b28c947da5df516e8a35579884e5bd3353b97 100644
+--- a/chrome/browser/resources/aegis/enhancements.js
++++ b/chrome/browser/resources/aegis/enhancements.js
+@@ -1,6 +1,13 @@
++import "/strings.m.js";
++import { loadTimeData } from "chrome://resources/js/load_time_data.js";
++import "./enhancements_shared/i18n.js";
++const uiText = value => globalThis.AegisI18n.t(value);
+ // Copyright 2026 GCSA
+ import { sendWithPromise } from "chrome://resources/js/cr.js";
+-const $ = (id) => document.getElementById(id),
++export async function initializeEnhancements(root = document) {
++  globalThis.AegisI18n.setLocale(loadTimeData.getString("aegisLocale"));
++  globalThis.AegisI18n.translate(root);
++const $ = (id) => root.querySelector("#" + id),
+   core = globalThis.AegisEnhancementsCore;
+ let state = {},
+   record = null,
+@@ -21,7 +28,7 @@ async function request(value) {
+ const target = () => state.tabs?.find((t) => t.id === $("tabs").value);
+ const pageRequest = (op) => {
+   const t = target();
+-  if (!t) throw Error("请先选择普通 HTTP/HTTPS 网页。");
++  if (!t) throw Error(uiText("请先选择普通 HTTP/HTTPS 网页。"));
+   return { op, tab: t.id, url: t.url, document: t.document };
+ };
+ function action(id, fn) {
+@@ -47,12 +54,14 @@ function button(text, fn) {
+ }
+ function edit(script) {
+   record = script;
++  $("manager").hidden = true;
++  $("editor").hidden = false;
+   $("source").value = script?.source || core.template(target()?.url);
+   $("world").value = script?.world || "isolated";
+   $("frames").checked = script?.allFrames || false;
+   $("editor-title").textContent = script
+-    ? script.metadata.name + " · 第 " + script.revision + " 版"
+-    : "新脚本草稿";
++    ? script.metadata.name + uiText(" · 第 ") + script.revision + uiText(" 版")
++    : uiText("新脚本草稿");
+   $("permissions").textContent = "";
+ }
+ function check() {
+@@ -60,19 +69,19 @@ function check() {
+     m = core.parse(source);
+   globalThis.acorn.parse("(async()=>{\n" + source + "\n})", { ecmaVersion: "latest" });
+   if ($("world").value === "page" && m.grants.length)
+-    throw Error("页面环境不能使用 GM 权限。");
++    throw Error(uiText("页面环境不能使用 GM 权限。"));
+   $("permissions").textContent =
+-    "适用网址：" +
++    uiText("适用网址：") +
+     m.matches.join("、") +
+-    "；权限：" +
+-    (m.grants.join("、") || "普通网页 DOM") +
+-    "；时机：" +
++    uiText("；权限：") +
++    (m.grants.join("、") || uiText("普通网页 DOM")) +
++    uiText("；时机：") +
+     m.runAt;
+   return m;
+ }
+ function render(next) {
+   state = next;
+-  const selected = $("tabs").value;
++  const selected = $("tabs").value || new URLSearchParams(location.hash.slice(1)).get("tab");
+   $("tabs").replaceChildren();
+   for (const t of state.tabs || []) {
+     const option = document.createElement("option");
+@@ -82,13 +91,13 @@ function render(next) {
+   }
+   if (state.tabs?.some((t) => t.id === selected)) $("tabs").value = selected;
+   $("private").textContent = state.private
+-    ? "私密会话：规则、脚本和值仅留在内存，不继承普通脚本。"
+-    : "普通配置：网站规则、已启用脚本和值在重启后保留。";
++    ? uiText("私密会话：规则、脚本和值仅留在内存，不继承普通脚本。")
++    : uiText("普通配置：网站规则、已启用脚本和值在重启后保留。");
+   $("model").textContent =
+-    "当前模型：" +
+-    (state.model || "未配置") +
++    uiText("当前模型：") +
++    (state.model || uiText("未配置")) +
+     " · " +
+-    (state.destination || "请在防护中心配置");
++    (state.destination || uiText("请在防护中心配置"));
+   $("scripts").replaceChildren();
+   for (const script of state.scripts || []) {
+     const row = document.createElement("div");
+@@ -97,22 +106,22 @@ function render(next) {
+     title.textContent = script.metadata.name;
+     const detail = document.createElement("small");
+     detail.textContent =
+-      (script.enabled ? "已启用" : "草稿或停用") +
++      (script.enabled ? uiText("已启用") : uiText("草稿或停用")) +
+       " · " +
+       script.metadata.matches.join("、");
+     row.append(
+       title,
+       detail,
+-      button("编辑", () => edit(script)),
+-      button(script.enabled ? "停用" : "启用", async () => {
++      button(uiText("编辑"), () => edit(script)),
++      button(script.enabled ? uiText("停用") : uiText("启用"), async () => {
+         if (
+           !script.enabled &&
+           !confirm(
+-            "为以下网址启用脚本？\n" +
++            uiText("为以下网址启用脚本？\n") +
+               script.metadata.matches.join("\n") +
+-              "\n权限：" +
++              uiText("\n权限：") +
+               script.metadata.grants.join("、") +
+-              "\n脚本能读取和修改网页内容。",
++              uiText("\n脚本能读取和修改网页内容。"),
+           )
+         )
+           return;
+@@ -127,10 +136,10 @@ function render(next) {
+             enabled: !script.enabled,
+           }),
+         );
+-        notify("设置已保存，下一次页面加载应用。");
++        notify(uiText("设置已保存，下一次页面加载应用。"));
+       }),
+-      button("删除", async () => {
+-        if (confirm("删除该脚本及其存储值？"))
++      button(uiText("删除"), async () => {
++        if (confirm(uiText("删除该脚本及其存储值？")))
+           render(
+             await request({
+               op: "script-remove",
+@@ -147,8 +156,8 @@ function render(next) {
+     const row = document.createElement("div");
+     row.className = "item";
+     row.append(
+-      button(site.origin + (site.disabled ? "（暂停）" : ""), () => showRule(site)),
+-      button("删除", async () =>
++      button(site.origin + (site.disabled ? uiText("（暂停）") : ""), () => { showRule(site); $("site-editor").open = true; }),
++      button(uiText("删除"), async () =>
+         render(await request({ op: "site-remove", origin: site.origin })),
+       ),
+     );
+@@ -163,7 +172,7 @@ function showRule(rule) {
+ }
+ function selectTarget() {
+   const t = target();
+-  $("scope").textContent = t?.url || "请在另一个标签打开目标网页，然后刷新列表。";
++  $("scope").textContent = t?.url || uiText("请在另一个标签打开目标网页，然后刷新列表。");
+   if (t)
+     showRule(
+       core.siteRule(state.sites || [], t.url) || { origin: new URL(t.url).origin },
+@@ -171,22 +180,28 @@ function selectTarget() {
+   context = "";
+   $("context-preview").textContent = "";
+   $("runtime").replaceChildren();
+-  for (const [id, status] of Object.entries(t?.statuses || {})) {
+-    const p = document.createElement("p");
+-    p.textContent =
+-      (state.scripts.find((s) => s.id === id)?.metadata.name || id) +
+-      "：" +
+-      status.status +
+-      (status.error ? " · " + status.error : "");
+-    $("runtime").append(p);
+-  }
+-  for (const menu of t?.menus || [])
+-    $("runtime").append(
+-      button(menu.label, async () => {
++  for (const script of state.scripts || []) {
++    const status = t?.statuses?.[script.id];
++    if (!status && (!t || !core.applies(script.metadata, t.url, true, script.allFrames))) continue;
++    const row = document.createElement("div");
++    row.className = "item";
++    const label = document.createElement("strong");
++    const paused = t && script.disabledOrigins?.includes(new URL(t.url).origin);
++    label.textContent = script.metadata.name + " · " +
++      (status?.trial ? uiText("试运行 · ") : "") +
++      ({completed: uiText("已执行"), running: uiText("执行中"), failed: uiText("执行失败")}[status?.status] ||
++        (!script.enabled ? uiText("已停用 / 待授权") : paused ? uiText("本站已停用") : script.world === "page" ? uiText("已启用 · 无执行回执") : uiText("等待重新加载"))) +
++      (status?.mainFrame === false ? uiText("（子框架）") : "");
++    row.append(label);
++    if (status?.error) { const error = document.createElement("p"); error.textContent = status.error; row.append(error); }
++    for (const menu of (t?.menus || []).filter(menu => menu.script === script.id))
++      row.append(button(menu.label, async () => {
+         await request({ ...pageRequest("menu"), id: menu.id });
+-        notify("已调用脚本菜单，请检查页面。");
+-      }),
+-    );
++        notify(uiText("已调用脚本命令，请检查页面。"));
++      }));
++    $("runtime").append(row);
++  }
++  if (!$("runtime").childElementCount) $("runtime").textContent = uiText("此页面没有适用脚本。");
+   if (t?.error) notify(t.error);
+ }
+ async function save() {
+@@ -205,49 +220,72 @@ async function save() {
+     next.scripts.find((s) => s.id === record?.id) ||
+     next.scripts.find((s) => s.source === source && s.metadata.name === m.name);
+   edit(record);
+-  notify("已保存为停用草稿，请检查后在列表启用。");
++  notify(uiText("已保存为停用草稿，请检查后在列表启用。"));
+ }
+ $("tabs").onchange = selectTarget;
+ action("refresh", async () => {
+   render(await request({ op: "state" }));
+-  notify("已刷新配置和运行状态。");
++  notify(uiText("已刷新配置和运行状态。"));
+ });
+ action("save-site", async () => {
+   const u = new URL($("origin").value);
+   if (!["http:", "https:"].includes(u.protocol) || u.username || u.password)
+-    throw Error("仅支持普通 HTTP/HTTPS 网站。");
++    throw Error(uiText("仅支持普通 HTTP/HTTPS 网站。"));
+   const rule = { origin: u.origin };
+   for (const k of ["menu", "copy", "debug", "subdomains", "disabled"])
+     rule[k] = $(k).checked;
+   render(await request({ op: "site-save", rule }));
+-  notify("网站规则已保存，重新载入网页后应用。");
++  notify(uiText("网站规则已保存，重新载入网页后应用。"));
+ });
+ action("new", () => edit(null));
++action("back-list", () => {
++  if (record ? $("source").value !== record.source : $("source").value !== core.template(target()?.url)) {
++    if (!confirm(uiText("返回列表将关闭未保存的编辑内容，继续？"))) return;
++  }
++  $("editor").hidden = true;
++  $("manager").hidden = false;
++});
++action("enable-reviewed", async () => {
++  const metadata = check();
++  if (!record || record.source !== $("source").value || record.world !== $("world").value || record.allFrames !== $("frames").checked)
++    await save();
++  if (!confirm(uiText("确认持久启用脚本？\n") + metadata.matches.join("\n") + uiText("\n权限：") + (metadata.grants.join("、") || uiText("普通网页 DOM")) + uiText("\n将按上述网址运行；下一次页面加载生效。"))) return;
++  const next = await request({op: "script-enable", id: record.id, revision: record.revision, enabled: true});
++  const id = record.id;
++  render(next);
++  edit(next.scripts.find(script => script.id === id));
++  notify(uiText("已启用。重新加载目标页后，请检查实际执行状态。"));
++});
++action("reload", async () => {
++  if (!confirm(uiText("重新加载当前目标页？未提交的输入可能丢失。"))) return;
++  await request(pageRequest("reload"));
++  notify(uiText("已请求重新加载。请在目标页盾牌检查运行状态。"));
++});
+ action("check", () => {
+   check();
+-  notify("语法和元数据检查通过；还需实际检查页面效果。");
++  notify(uiText("语法和元数据检查通过；还需实际检查页面效果。"));
+ });
+ action("save", save);
+ action("trial", async () => {
+   check();
+   const t = target();
+-  if (!t) throw Error("请选择目标网页。");
++  if (!t) throw Error(uiText("请选择目标网页。"));
+   if (
+     !confirm(
+-      "在以下真实网页试运行？\n" +
++      uiText("在以下真实网页试运行？\n") +
+         t.url +
+-        "\n脚本会修改网页，可能产生外部请求。试运行的 GM 存储为临时值。",
++        uiText("\n脚本会修改网页，可能产生外部请求。试运行的 GM 存储为临时值。"),
+     )
+   )
+     return;
+   await save();
+   const r = await request({ ...pageRequest("trial"), id: record.id });
+   notify(
+-    "已安排试运行：" + (r.result?.result?.value || "请检查网页效果，并刷新运行状态。"),
++    uiText("已安排试运行：") + (r.result?.result?.value || uiText("请检查网页效果，并刷新运行状态。")),
+   );
+ });
+ action("rollback", async () => {
+-  if (!record) throw Error("先选择已有脚本。");
++  if (!record) throw Error(uiText("先选择已有脚本。"));
+   const next = await request({
+     op: "script-rollback",
+     id: record.id,
+@@ -256,7 +294,7 @@ action("rollback", async () => {
+   const id = record.id;
+   render(next);
+   edit(next.scripts.find((s) => s.id === id));
+-  notify("已回退为草稿，请重新检查后启用。");
++  notify(uiText("已回退为草稿，请重新检查后启用。"));
+ });
+ action("export", () => {
+   const blob = new Blob([$("source").value], { type: "text/javascript;charset=utf-8" }),
+@@ -271,7 +309,7 @@ $("import").onchange = async () => {
+   try {
+     const f = $("import").files[0];
+     if (!f) return;
+-    if (f.size > 65536) throw Error("脚本超过 64 KiB。");
++    if (f.size > 65536) throw Error(uiText("脚本超过 64 KiB。"));
+     const source = new TextDecoder("utf-8", { fatal: true }).decode(
+       await f.arrayBuffer(),
+     );
+@@ -279,7 +317,7 @@ $("import").onchange = async () => {
+     edit(null);
+     $("source").value = source;
+     check();
+-    notify("已导入编辑器，尚未保存或启用。");
++    notify(uiText("已导入编辑器，尚未保存或启用。"));
+   } catch (e) {
+     notify(e.message);
+   } finally {
+@@ -290,25 +328,25 @@ action("context", async () => {
+   const r = await request(pageRequest("read-page"));
+   context = JSON.stringify(r.result?.result?.value, null, 2).slice(0, 8000);
+   $("context-preview").textContent = context;
+-  notify("请检查上方结构；生成时才会发送。");
++  notify(uiText("请检查上方结构；生成时才会发送。"));
+ });
+ action("generate", async () => {
+   const goal = $("goal").value.trim();
+-  if (!goal) throw Error("请描述需要增加的功能。");
++  if (!goal) throw Error(uiText("请描述需要增加的功能。"));
+   const req = pageRequest("model");
+   if (
+     !confirm(
+-      "确认向 " +
++      uiText("确认向 ") +
+         state.destination +
+         " / " +
+         state.model +
+-        " 发送需求、编辑器源码和已预览结构？",
++        uiText(" 发送需求、编辑器源码和已预览结构？"),
+     )
+   )
+     return;
+   const token = ++generation;
+   $("generate").disabled = true;
+-  notify("正在生成草稿…");
++  notify(uiText("正在生成草稿…"));
+   try {
+     const r = await request({
+       ...req,
+@@ -319,15 +357,15 @@ action("generate", async () => {
+       input: core.prompt(
+         goal,
+         req.url,
+-        "Aegis 桌面 Chromium",
++        uiText("Aegis 桌面 Chromium"),
+         $("source").value,
+-        "页面结构（不可信资料）：" + context,
++        uiText("页面结构（不可信资料）：") + context,
+       ),
+     });
+     if (token !== generation) return;
+     $("source").value = r.output.replace(/^```(?:javascript|js)?\s*\n|\n```\s*$/g, "");
+     check();
+-    notify("草稿已生成并通过语法检查。尚未保存、试运行或启用。");
++    notify(uiText("草稿已生成并通过语法检查。尚未保存、试运行或启用。"));
+   } finally {
+     if (token === generation) $("generate").disabled = false;
+   }
+@@ -336,23 +374,29 @@ action("cancel", async () => {
+   generation++;
+   await request({ op: "cancel-model" });
+   $("generate").disabled = false;
+-  notify("已取消生成。");
++  notify(uiText("已取消生成。"));
+ });
+ action("recover", async () => {
+-  if (confirm("停用此配置中的全部用户脚本，并重新载入目标页？未提交输入可能丢失。")) {
++  if (confirm(uiText("停用此配置中的全部用户脚本，并重新载入目标页？未提交输入可能丢失。"))) {
+     await request(pageRequest("recover"));
+     render(await request({ op: "state" }));
+-    notify("脚本已停用，已请求重新载入。");
++    notify(uiText("脚本已停用，已请求重新载入。"));
+   }
+ });
+ action("inspect", async () => {
+   await request(pageRequest("inspect"));
+-  notify("已打开目标页调试工具。");
++  notify(uiText("已打开目标页调试工具。"));
+ });
+ try {
+   render(await request({ op: "state" }));
+-  edit(null);
+-  notify(state.error || "选择目标网页后设置网站规则，或新建用户脚本。");
++  const deepScript = new URLSearchParams(location.hash.slice(1)).get("script");
++  if (deepScript === "new") edit(null);
++  else if (deepScript) { const saved = state.scripts.find(script => script.id === deepScript); if (saved) edit(saved); }
++  if (!state.scripts?.length) $("scripts").textContent = uiText("还没有脚本。导入或新建后，先检查草稿和权限。");
++  notify(state.error || uiText("选择目标网页后设置网站规则，或新建用户脚本。"));
+ } catch (e) {
+   notify(e.message);
+ }
++
++}
++if (document.getElementById("enhancement-root")) await initializeEnhancements();
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/i18n.js b/chrome/browser/resources/aegis/enhancements_shared/i18n.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..44892eb114c82686e9666c4e78b2e96b63591d64
+--- /dev/null
++++ b/chrome/browser/resources/aegis/enhancements_shared/i18n.js
+@@ -0,0 +1,1293 @@
++// Copyright 2026 GCSA
++// 仅翻译已知界面文字；不会观察或改写脚本、文档、用户输入。
++(function () {
++  "use strict";
++  const messages = {"为以下网址启用脚本？\n": ["Enable the script on these URLs?\n", "為以下網址啟用腳本？\n"], "\n权限：": ["\nPermissions: ", "\n權限："], "\n脚本能读取和修改网页内容。": ["\nThe script can read and change page content.", "\n腳本能讀取和修改網頁內容。"], "确认持久启用脚本？\n": ["Enable this script persistently?\n", "確認持久啟用腳本？\n"], "\n将按上述网址运行；下一次页面加载生效。": ["\nRuns on the URLs above, starting with the next page load.", "\n將按上述網址執行；下一次頁面載入生效。"], "在以下真实网页试运行？\n": ["Try the script on this live page?\n", "在以下真實網頁試執行？\n"], "\n脚本会修改网页，可能产生外部请求。试运行的 GM 存储为临时值。": ["\nThe script changes the page and may make external requests. Trial GM storage is temporary.", "\n腳本會修改網頁，可能產生外部請求。試執行的 GM 儲存為臨時值。"],
++  "主题": [
++    "Theme",
++    "主題"
++  ],
++  "保存": [
++    "Save",
++    "保存"
++  ],
++  "保存设置": [
++    "Save settings",
++    "保存設定"
++  ],
++  "允许": [
++    "Allow",
++    "允許"
++  ],
++  "全部": [
++    "All",
++    "全部"
++  ],
++  "关闭": [
++    "Close",
++    "關閉"
++  ],
++  "删除": [
++    "Delete",
++    "刪除"
++  ],
++  "刷新": [
++    "Reload",
++    "刷新"
++  ],
++  "原文": [
++    "Original",
++    "原文"
++  ],
++  "取消": [
++    "Cancel",
++    "取消"
++  ],
++  "外观": [
++    "Appearance",
++    "外觀"
++  ],
++  "已取消": [
++    "Cancelled",
++    "已取消"
++  ],
++  "应用": [
++    "App",
++    "應用"
++  ],
++  "开启": [
++    "On",
++    "開啟"
++  ],
++  "当前网站": [
++    "Current site",
++    "當前網站"
++  ],
++  "搜索": [
++    "Search",
++    "搜索"
++  ],
++  "操作": [
++    "Action",
++    "操作"
++  ],
++  "新建": [
++    "New tab",
++    "新建"
++  ],
++  "普通": [
++    "Regular",
++    "普通"
++  ],
++  "暂停": [
++    "Pause",
++    "暫停"
++  ],
++  "更多": [
++    "More",
++    "更多"
++  ],
++  "更新过滤规则": [
++    "Update filter rules",
++    "更新過濾規則"
++  ],
++  "来源": [
++    "Source",
++    "來源"
++  ],
++  "查找下一个": [
++    "Find next",
++    "查找下一個"
++  ],
++  "标签": [
++    "Tabs",
++    "標籤"
++  ],
++  "模型服务": [
++    "Model service",
++    "模型服務"
++  ],
++  "正在处理": [
++    "Processing",
++    "正在處理"
++  ],
++  "浅色": [
++    "Light",
++    "淺色"
++  ],
++  "浏览": [
++    "Browsing",
++    "瀏覽"
++  ],
++  "深色": [
++    "Dark",
++    "深色"
++  ],
++  "目标": [
++    "Goal",
++    "目標"
++  ],
++  "确认": [
++    "Confirmation",
++    "確認"
++  ],
++  "确认发送": [
++    "Confirm and send",
++    "確認發送"
++  ],
++  "私密": [
++    "Private",
++    "私密"
++  ],
++  "移除": [
++    "Remove",
++    "移除"
++  ],
++  "简体中文": [
++    "简体中文",
++    "简体中文"
++  ],
++  "翻译": [
++    "Translate",
++    "翻譯"
++  ],
++  "范围": [
++    "Scope",
++    "範圍"
++  ],
++  "设置": [
++    "Settings",
++    "設定"
++  ],
++  "资料": [
++    "Library",
++    "資料"
++  ],
++  "跟随系统": [
++    "System",
++    "跟隨系統"
++  ],
++  "重试": [
++    "Retry",
++    "重試"
++  ],
++  "1 描述需求 → 2 检查草稿与权限 → 3 试运行 → 4 确认启用": [
++    "1 Describe → 2 Review source and permissions → 3 Trial run → 4 Enable",
++    "1 描述需求 → 2 檢查草稿與權限 → 3 試運行 → 4 確認啓用"
++  ],
++  "AI 编写与修复": [
++    "Write or repair with AI",
++    "AI 編寫與修復"
++  ],
++  "Markdown 文档将在这里显示。": [
++    "Your Markdown document will appear here.",
++    "Markdown 文檔將在這裡顯示。"
++  ],
++  "Markdown 自动预览网站": [
++    "Sites with automatic Markdown preview",
++    "Markdown 自動預覽網站"
++  ],
++  "Markdown 阅读": [
++    "Markdown reader",
++    "Markdown 閱讀"
++  ],
++  "Markdown 阅读内容": [
++    "Markdown content",
++    "Markdown 閱讀內容"
++  ],
++  "PDF 专用动作仅在内置 PDF 阅读器内生效。普通动作在 PDF 中含义不变。": [
++    "PDF actions work only in the built-in PDF viewer. Other actions keep their usual behavior.",
++    "PDF 專用動作僅在內置 PDF 閱讀器內生效。普通動作在 PDF 中含義不變。"
++  ],
++  "← 返回脚本列表": [
++    "← Back to scripts",
++    "← 返回腳本列表"
++  ],
++  "← 返回设置": [
++    "← Back to settings",
++    "← 返回設定"
++  ],
++  "← 阅读库": [
++    "← Reading library",
++    "← 閱讀庫"
++  ],
++  "← 隐私与安全": [
++    "← Privacy and security",
++    "← 隱私與安全"
++  ],
++  "上下左右可以组合；松开后查看匹配结果。": [
++    "Combine directions, then release to see the matching action.",
++    "上下左右可以組合；松開後查看匹配結果。"
++  ],
++  "中文": [
++    "Chinese",
++    "中文"
++  ],
++  "临时暂停由当前网站盾牌控制，保留钓鱼防护。": [
++    "Pause protection from the current site's shield. Phishing protection stays active.",
++    "臨時暫停由當前網站盾牌控制，保留釣魚防護。"
++  ],
++  "也应用于子域名": [
++    "Also apply to subdomains",
++    "也應用於子域名"
++  ],
++  "仅对已授权来源的 Markdown 原文响应自动预览。": [
++    "Automatically preview Markdown responses only from approved origins.",
++    "僅對已授權來源的 Markdown 原文響應自動預覽。"
++  ],
++  "仅对此次打开的文档生效。": [
++    "Applies only while this document is open.",
++    "僅對此次打開的文檔生效。"
++  ],
++  "例如：隐藏右侧栏并加宽正文": [
++    "For example: hide the sidebar and widen the article",
++    "例如：隱藏右側欄並加寬正文"
++  ],
++  "保存修改会撤销旧授权。试运行只使用临时存储；启用前再次确认网址和权限。": [
++    "Saving changes revokes previous permissions. Trial runs use temporary storage; review sites and permissions before enabling.",
++    "保存修改會撤銷舊授權。試運行只使用臨時存儲；啓用前再次確認網址和權限。"
++  ],
++  "保存到阅读库": [
++    "Save to reading library",
++    "保存到閱讀庫"
++  ],
++  "保存网站规则": [
++    "Save site rule",
++    "保存網站規則"
++  ],
++  "保存草稿": [
++    "Save draft",
++    "保存草稿"
++  ],
++  "停用": [
++    "Disable",
++    "停用"
++  ],
++  "停用全部脚本并恢复当前页": [
++    "Disable all scripts and reload this page",
++    "停用全部腳本並恢復當前頁"
++  ],
++  "停用此配置中的全部脚本，并重新载入目标页。未提交的输入可能丢失；已发出的请求无法撤销。": [
++    "Disable all scripts in this profile and reload the target page. Unsent input may be lost; sent requests cannot be undone.",
++    "停用此配置中的全部腳本，並重新載入目標頁。未提交的輸入可能丟失；已發出的請求無法撤銷。"
++  ],
++  "像素": [
++    "pixels",
++    "像素"
++  ],
++  "允许选取和复制": [
++    "Allow selection and copying",
++    "允許選取和複製"
++  ],
++  "先试一试": [
++    "Try it first",
++    "先試一試"
++  ],
++  "全局保护": [
++    "Global protection",
++    "全局保護"
++  ],
++  "关闭文档助手": [
++    "Close document assistant",
++    "關閉文檔助手"
++  ],
++  "减小字体": [
++    "Decrease font size",
++    "減小字型"
++  ],
++  "刷新列表": [
++    "Refresh list",
++    "刷新列表"
++  ],
++  "刷新状态": [
++    "Refresh status",
++    "刷新狀態"
++  ],
++  "加载 / 停用外部图片": [
++    "Load / disable external images",
++    "載入 / 停用外部圖片"
++  ],
++  "加载外部图片": [
++    "Load external images",
++    "載入外部圖片"
++  ],
++  "发送内容": [
++    "Content to send",
++    "發送內容"
++  ],
++  "发送内容与当前模型": [
++    "Content and current model",
++    "發送內容與當前模型"
++  ],
++  "发送并生成": [
++    "Send and generate",
++    "發送並生成"
++  ],
++  "发送需求、编辑器源码及已预览的结构。不会读取密码、Cookie 或表单值。": [
++    "Send your request, editor source and reviewed page structure. Passwords, cookies and form values are excluded.",
++    "發送需求、編輯器原始碼及已預覽的結構。不會讀取密碼、Cookie 或表單值。"
++  ],
++  "取消生成": [
++    "Cancel generation",
++    "取消生成"
++  ],
++  "只发送上方可编辑的内容，最多 32 KiB。": [
++    "Only the editable content above is sent, up to 32 KiB.",
++    "只發送上方可編輯的內容，最多 32 KiB。"
++  ],
++  "右键轻点仍打开菜单。按住 Shift 再右键可临时跳过手势。": [
++    "A right click still opens the menu. Hold Shift to temporarily skip gestures.",
++    "右鍵輕點仍打開菜單。按住 Shift 再右鍵可臨時跳過手勢。"
++  ],
++  "启用": [
++    "Enable",
++    "啓用"
++  ],
++  "启用鼠标手势": [
++    "Enable mouse gestures",
++    "啓用滑鼠手勢"
++  ],
++  "回退上一版": [
++    "Revert to previous version",
++    "回退上一版"
++  ],
++  "图片权限": [
++    "Image permissions",
++    "圖片權限"
++  ],
++  "在匹配的子框架运行": [
++    "Run in matching subframes",
++    "在匹配的子框架運行"
++  ],
++  "在浏览器中打开或导入文档": [
++    "Open or import a document",
++    "在瀏覽器中打開或導入文檔"
++  ],
++  "在线文本页面": [
++    "Online text page",
++    "在線文本頁面"
++  ],
++  "基本设置": [
++    "Basic settings",
++    "基本設定"
++  ],
++  "增大字体": [
++    "Increase font size",
++    "增大字型"
++  ],
++  "处理部分网页的调试干扰，保留普通断点和导航。": [
++    "Handle some debugger interference while keeping normal breakpoints and navigation.",
++    "處理部分網頁的調試干擾，保留普通斷點和導航。"
++  ],
++  "复制原文": [
++    "Copy original text",
++    "複製原文"
++  ],
++  "外部图片每次打开文档时询问；本地图片需选择所属目录。阅读外观不会授予图片访问权限。": [
++    "External images require permission each time. Choose a folder for local images. Appearance settings do not grant image access.",
++    "外部圖片每次打開文檔時詢問；本地圖片需選擇所屬目錄。閱讀外觀不會授予圖片訪問權限。"
++  ],
++  "字体": [
++    "Font",
++    "字型"
++  ],
++  "字号": [
++    "Font size",
++    "字號"
++  ],
++  "宽": [
++    "Wide",
++    "寬"
++  ],
++  "宽度": [
++    "Width",
++    "寬度"
++  ],
++  "宽松": [
++    "Loose",
++    "寬松"
++  ],
++  "导入 .user.js": [
++    "Import .user.js",
++    "導入 .user.js"
++  ],
++  "导出 PDF": [
++    "Export PDF",
++    "導出 PDF"
++  ],
++  "导出源码": [
++    "Export source",
++    "導出原始碼"
++  ],
++  "已保存": [
++    "Saved",
++    "已保存"
++  ],
++  "已停用 / 待授权": [
++    "Disabled / needs permission",
++    "已停用 / 待授權"
++  ],
++  "已启用": [
++    "Enabled",
++    "已啓用"
++  ],
++  "已启用 · 无执行回执": [
++    "Enabled · no execution receipt",
++    "已啓用 · 無執行回執"
++  ],
++  "已复制。": [
++    "Copied.",
++    "已複製。"
++  ],
++  "已安装脚本": [
++    "Installed scripts",
++    "已安裝腳本"
++  ],
++  "已执行": [
++    "Completed",
++    "已執行"
++  ],
++  "当前操作的网页": [
++    "Target page",
++    "當前操作的網頁"
++  ],
++  "恢复右键菜单": [
++    "Restore context menu",
++    "恢復右鍵菜單"
++  ],
++  "恢复操作": [
++    "Recovery",
++    "恢復操作"
++  ],
++  "恢复默认": [
++    "Restore defaults",
++    "恢復默認"
++  ],
++  "手势与动作": [
++    "Gestures and actions",
++    "手勢與動作"
++  ],
++  "手势练习区：按住右键画方向，松开查看结果": [
++    "Gesture practice: hold the right mouse button, draw, then release",
++    "手勢練習區：按住右鍵畫方向，松開查看結果"
++  ],
++  "打印": [
++    "Print",
++    "打印"
++  ],
++  "打印 / 导出 PDF": [
++    "Print / export PDF",
++    "打印 / 導出 PDF"
++  ],
++  "打开 Markdown 文件": [
++    "Open Markdown file",
++    "打開 Markdown 檔案"
++  ],
++  "打开 Markdown 文档": [
++    "Open Markdown document",
++    "打開 Markdown 文檔"
++  ],
++  "打开其他文件": [
++    "Open another file",
++    "打開其他檔案"
++  ],
++  "打开在线原文": [
++    "Open online source",
++    "打開在線原文"
++  ],
++  "打开所选原文": [
++    "Open selected source",
++    "打開所選原文"
++  ],
++  "打开文件": [
++    "Open file",
++    "打開檔案"
++  ],
++  "打开文档后查看来源": [
++    "Open a document to see its source",
++    "打開文檔後查看來源"
++  ],
++  "打开网页调试工具": [
++    "Open developer tools",
++    "打開網頁調試工具"
++  ],
++  "执行中": [
++    "Running",
++    "執行中"
++  ],
++  "执行失败": [
++    "Failed",
++    "執行失敗"
++  ],
++  "执行环境": [
++    "Execution environment",
++    "執行環境"
++  ],
++  "执行环境与子框架": [
++    "Environment and subframes",
++    "執行環境與子框架"
++  ],
++  "拖入文件，或打开正在浏览的在线原文。": [
++    "Drop a file here or open an online source page.",
++    "拖入檔案，或打開正在瀏覽的在線原文。"
++  ],
++  "按住右键，在这里画一笔": [
++    "Hold the right mouse button and draw here",
++    "按住右鍵，在這裡畫一筆"
++  ],
++  "按住鼠标右键画出方向，松开执行。支持网页、设置页和内置 PDF 阅读器。": [
++    "Hold the right mouse button to draw, then release. Works on webpages, settings and the built-in PDF viewer.",
++    "按住滑鼠右鍵畫出方向，松開執行。支持網頁、設定頁和內置 PDF 閱讀器。"
++  ],
++  "文档助手": [
++    "Document assistant",
++    "文檔助手"
++  ],
++  "文档助手任务": [
++    "Assistant task",
++    "文檔助手任務"
++  ],
++  "文档图片权限": [
++    "Document image permissions",
++    "文檔圖片權限"
++  ],
++  "文档操作": [
++    "Document actions",
++    "文檔操作"
++  ],
++  "文档来源": [
++    "Document source",
++    "文檔來源"
++  ],
++  "文档目录": [
++    "Document outline",
++    "文檔目錄"
++  ],
++  "新建 / AI 编写": [
++    "New / write with AI",
++    "新建 / AI 編寫"
++  ],
++  "显示轨迹与动作提示": [
++    "Show trail and action hints",
++    "顯示軌跡與動作提示"
++  ],
++  "暂停本站增强": [
++    "Pause enhancements on this site",
++    "暫停本站增強"
++  ],
++  "更多文档操作": [
++    "More document actions",
++    "更多文檔操作"
++  ],
++  "更多选项与适用范围": [
++    "More options and scope",
++    "更多選項與適用範圍"
++  ],
++  "本地导入 · 只读": [
++    "Local import · read only",
++    "本地導入 · 唯讀"
++  ],
++  "本站已停用": [
++    "Disabled on this site",
++    "本站已停用"
++  ],
++  "本页运行详情": [
++    "Execution details",
++    "本頁運行詳情"
++  ],
++  "查找": [
++    "Find",
++    "查找"
++  ],
++  "查找文档内容": [
++    "Find in document",
++    "查找文檔內容"
++  ],
++  "查看源码": [
++    "View source",
++    "查看原始碼"
++  ],
++  "标准": [
++    "Standard",
++    "標準"
++  ],
++  "检查权限与语法": [
++    "Check permissions and syntax",
++    "檢查權限與語法"
++  ],
++  "正在加载设置…": [
++    "Loading settings…",
++    "正在載入設定…"
++  ],
++  "正在生成草稿…": [
++    "Generating draft…",
++    "正在生成草稿…"
++  ],
++  "正在读取设置…": [
++    "Loading settings…",
++    "正在讀取設定…"
++  ],
++  "正文宽度": [
++    "Text width",
++    "正文寬度"
++  ],
++  "此网站自动预览 Markdown": [
++    "Automatically preview Markdown on this site",
++    "此網站自動預覽 Markdown"
++  ],
++  "此页面没有适用脚本。": [
++    "No scripts apply to this page.",
++    "此頁面沒有適用腳本。"
++  ],
++  "每行一个完整域名，例如 example.com。子域名请单独添加。": [
++    "One full domain per line, such as example.com. Add subdomains separately.",
++    "每行一個完整域名，例如 example.com。子域名請單獨添加。"
++  ],
++  "源码": [
++    "Source",
++    "原始碼"
++  ],
++  "生成或修复草稿": [
++    "Generate or repair draft",
++    "生成或修復草稿"
++  ],
++  "用中文总结": [
++    "Summarize in Chinese",
++    "用中文總結"
++  ],
++  "画到哪里、将执行什么，一眼看清。": [
++    "See the trail and the action before it runs.",
++    "畫到哪裡、將執行什麼，一眼看清。"
++  ],
++  "目录": [
++    "Outline",
++    "目錄"
++  ],
++  "目标网页": [
++    "Target page",
++    "目標網頁"
++  ],
++  "确认发送并生成": [
++    "Confirm, send and generate",
++    "確認發送並生成"
++  ],
++  "确认启用": [
++    "Confirm and enable",
++    "確認啓用"
++  ],
++  "窄": [
++    "Narrow",
++    "窄"
++  ],
++  "等待重新加载": [
++    "Waiting for reload",
++    "等待重新載入"
++  ],
++  "系统字体": [
++    "System font",
++    "系統字型"
++  ],
++  "紧凑": [
++    "Compact",
++    "緊湊"
++  ],
++  "练习不执行操作": [
++    "Practice does not run actions",
++    "練習不執行操作"
++  ],
++  "编辑所选网站规则": [
++    "Edit selected site rule",
++    "編輯所選網站規則"
++  ],
++  "网址：": [
++    "Sites:",
++    "網址："
++  ],
++  "网站例外与权限": [
++    "Site exceptions and permissions",
++    "網站例外與權限"
++  ],
++  "网站增强": [
++    "Site enhancements",
++    "網站增強"
++  ],
++  "网站增强与脚本": [
++    "Site enhancements and scripts",
++    "網站增強與腳本"
++  ],
++  "网站权限与数据": [
++    "Site permissions and data",
++    "網站權限與數據"
++  ],
++  "网站来源": [
++    "Site origin",
++    "網站來源"
++  ],
++  "网站规则 · 右键、选取和复制": [
++    "Site rules · menus, selection and copying",
++    "網站規則 · 右鍵、選取和複製"
++  ],
++  "网页调试兼容": [
++    "Debugger compatibility",
++    "網頁調試兼容"
++  ],
++  "翻译为简体中文": [
++    "Translate to Simplified Chinese",
++    "翻譯為簡體中文"
++  ],
++  "翻译为英语": [
++    "Translate to English",
++    "翻譯為英語"
++  ],
++  "脚本草稿": [
++    "Script draft",
++    "腳本草稿"
++  ],
++  "脚本超过 64 KiB。": [
++    "Script exceeds 64 KiB.",
++    "腳本超過 64 KiB。"
++  ],
++  "行距": [
++    "Line spacing",
++    "行距"
++  ],
++  "衬线字体": [
++    "Serif",
++    "襯線字型"
++  ],
++  "设置保存后不自动刷新。也可直接从地址栏盾牌调整当前网站。": [
++    "Saving does not reload the page. You can also adjust this site from the address bar shield.",
++    "設定保存後不自動刷新。也可直接從地址欄盾牌調整當前網站。"
++  ],
++  "识别距离": [
++    "Recognition distance",
++    "識別距離"
++  ],
++  "试运行": [
++    "Trial run",
++    "試運行"
++  ],
++  "读取当前页结构供检查": [
++    "Load page structure for review",
++    "讀取當前頁結構供檢查"
++  ],
++  "距离越大，越不容易被小幅抖动触发。斜线方向不明确时不执行；按 Esc 或切换窗口可取消。": [
++    "Higher distances reduce accidental gestures. Ambiguous diagonals are ignored. Press Esc or switch windows to cancel.",
++    "距離越大，越不容易被小幅抖動觸發。斜線方向不明確時不執行；按 Esc 或切換窗口可取消。"
++  ],
++  "输入 L / R / U / D，分别代表 ← → ↑ ↓。最多 8 个方向，同一手势不能重复绑定。": [
++    "Enter L / R / U / D for ← → ↑ ↓, up to 8 directions. Each gesture can have one binding.",
++    "輸入 L / R / U / D，分別代表 ← → ↑ ↓。最多 8 個方向，同一手勢不能重復綁定。"
++  ],
++  "返回阅读库": [
++    "Back to reading library",
++    "返回閱讀庫"
++  ],
++  "这些网站不使用手势": [
++    "Disable gestures on these sites",
++    "這些網站不使用手勢"
++  ],
++  "选择本地图片目录": [
++    "Choose local image folder",
++    "選擇本地圖片目錄"
++  ],
++  "重新加载当前页": [
++    "Reload current page",
++    "重新載入當前頁"
++  ],
++  "重新载入": [
++    "Reload",
++    "重新載入"
++  ],
++  "阅读": [
++    "Reading",
++    "閱讀"
++  ],
++  "阅读外观": [
++    "Reading appearance",
++    "閱讀外觀"
++  ],
++  "阅读工具": [
++    "Reading tools",
++    "閱讀工具"
++  ],
++  "阅读库": [
++    "Reading library",
++    "閱讀庫"
++  ],
++  "阅读选项": [
++    "Reading options",
++    "閱讀選項"
++  ],
++  "防护记录": [
++    "Protection history",
++    "防護記錄"
++  ],
++  "隔离环境": [
++    "Isolated environment",
++    "隔離環境"
++  ],
++  "需求或错误反馈": [
++    "Request or error feedback",
++    "需求或錯誤反饋"
++  ],
++  "页面环境（无 GM 权限）": [
++    "Page environment (no GM permissions)",
++    "頁面環境（無 GM 權限）"
++  ],
++  "默认阅读外观": [
++    "Default reading appearance",
++    "默認閱讀外觀"
++  ],
++  "鼠标手势": [
++    "Mouse gestures",
++    "滑鼠手勢"
++  ],
++  "（子框架）": [
++    " (subframe)",
++    "（子框架）"
++  ],
++  "＋ 添加手势": [
++    "＋ Add gesture",
++    "＋ 添加手勢"
++  ],
++  "阅读已保存原文": [
++    "Read saved text",
++    "閱讀已保存原文"
++  ],
++  "打开来源": [
++    "Open source",
++    "打開來源"
++  ],
++  "已保存的原文": [
++    "Saved original text",
++    "已保存的原文"
++  ],
++  "阅读库为空。在文档的更多操作中保存原文。": [
++    "Your library is empty. Save original text from a document's More menu.",
++    "閱讀庫為空。在文檔的更多操作中保存原文。"
++  ],
++  "尚未授权自动预览网站。可以从在线文档的来源菜单开启。": [
++    "No sites approved for automatic preview. Enable it in an online document's Source menu.",
++    "尚未授權自動預覽網站。可以從在線文檔的來源菜單開啓。"
++  ],
++  "阅读外观已保存，下次打开文档时应用。": [
++    "Appearance saved. It applies the next time you open a document.",
++    "閱讀外觀已保存，下次打開文檔時應用。"
++  ],
++  "网站预览设置已保存。": [
++    "Site preview preference saved.",
++    "網站預覽設定已保存。"
++  ],
++  "拦截跟踪请求": [
++    "Block tracking requests",
++    "攔截跟蹤請求"
++  ],
++  "钓鱼网站保护": [
++    "Phishing protection",
++    "釣魚網站保護"
++  ],
++  "指纹防护": [
++    "Fingerprint protection",
++    "指紋防護"
++  ],
++  "清理链接参数": [
++    "Clean link parameters",
++    "清理鏈接參數"
++  ],
++  "清理跟踪 Cookie": [
++    "Clear tracking cookies",
++    "清理跟蹤 Cookie"
++  ],
++  "识别别名跟踪": [
++    "Detect CNAME tracking",
++    "識別別名跟蹤"
++  ],
++  "跳转跟踪清理": [
++    "Clear bounce tracking",
++    "跳轉跟蹤清理"
++  ],
++  "挖矿风险观察": [
++    "Observe mining risks",
++    "挖礦風險觀察"
++  ],
++  "自动更新过滤规则": [
++    "Update filter rules automatically",
++    "自動更新過濾規則"
++  ],
++  "设置未保存，请重试。": [
++    "Settings could not be saved. Try again.",
++    "設定未保存，請重試。"
++  ],
++  "设置已保存。": [
++    "Settings saved.",
++    "設定已保存。"
++  ],
++  "暂无防护记录。": [
++    "No protection events yet.",
++    "暫無防護記錄。"
++  ],
++  "已保存的文档不可用。": [
++    "The saved document is unavailable.",
++    "已保存的文檔不可用。"
++  ],
++  "阅读外观已保存。": [
++    "Reading appearance saved.",
++    "閱讀外觀已保存。"
++  ],
++  "没有找到匹配内容。": [
++    "No matches found.",
++    "沒有找到匹配內容。"
++  ],
++  "停用外部图片": [
++    "Disable external images",
++    "停用外部圖片"
++  ],
++  "外部图片已获准加载，仅对此次打开的文档生效。": [
++    "External images are allowed for this document session only.",
++    "外部圖片已獲准載入，僅對此次打開的文檔生效。"
++  ],
++  " · 第 ": [
++    " · version ",
++    " · 第 "
++  ],
++  " 发送需求、编辑器源码和已预览结构？": [
++    ": send the request, source and reviewed structure?",
++    " 發送需求、編輯器源碼和已預覽結構？"
++  ],
++  " 版": [
++    "",
++    " 版"
++  ],
++  "Aegis 桌面 Chromium": [
++    "Aegis desktop Chromium",
++    "Aegis 桌面 Chromium"
++  ],
++  "仅支持普通 HTTP/HTTPS 网站。": [
++    "Only regular HTTP/HTTPS sites are supported.",
++    "僅支持普通 HTTP/HTTPS 網站。"
++  ],
++  "停用此配置中的全部用户脚本，并重新载入目标页？未提交输入可能丢失。": [
++    "Disable all scripts in this profile and reload the target page? Unsent input may be lost.",
++    "停用此配置中的全部用戶腳本，並重新載入目標頁？未提交輸入可能丟失。"
++  ],
++  "先选择已有脚本。": [
++    "Select an existing script first.",
++    "先選擇已有腳本。"
++  ],
++  "删除该脚本及其存储值？": [
++    "Delete this script and its stored values?",
++    "刪除該腳本及其存儲值？"
++  ],
++  "已保存为停用草稿，请检查后在列表启用。": [
++    "Saved as a disabled draft. Review it, then enable it from the list.",
++    "已保存為停用草稿，請檢查後在列表啓用。"
++  ],
++  "已刷新配置和运行状态。": [
++    "Settings and execution status refreshed.",
++    "已刷新配置和運行狀態。"
++  ],
++  "已取消生成。": [
++    "Generation canceled.",
++    "已取消生成。"
++  ],
++  "已启用。重新加载目标页后，请检查实际执行状态。": [
++    "Enabled. Reload the target page and check its execution status.",
++    "已啓用。重新加載目標頁後，請檢查實際執行狀態。"
++  ],
++  "已回退为草稿，请重新检查后启用。": [
++    "Reverted to a draft. Review again before enabling.",
++    "已回退為草稿，請重新檢查後啓用。"
++  ],
++  "已安排试运行：": [
++    "Trial scheduled: ",
++    "已安排試運行："
++  ],
++  "已导入编辑器，尚未保存或启用。": [
++    "Imported into the editor. Not saved or enabled yet.",
++    "已導入編輯器，尚未保存或啓用。"
++  ],
++  "已打开目标页调试工具。": [
++    "Developer tools opened for the target page.",
++    "已打開目標頁調試工具。"
++  ],
++  "已请求重新加载。请在目标页盾牌检查运行状态。": [
++    "Reload requested. Check execution status in the target page's shield.",
++    "已請求重新加載。請在目標頁盾牌檢查運行狀態。"
++  ],
++  "已调用脚本命令，请检查页面。": [
++    "Script command called. Check the page.",
++    "已調用腳本命令，請檢查頁面。"
++  ],
++  "当前模型：": [
++    "Current model: ",
++    "當前模型："
++  ],
++  "新脚本草稿": [
++    "New script draft",
++    "新腳本草稿"
++  ],
++  "普通网页 DOM": [
++    "Regular webpage DOM",
++    "普通網頁 DOM"
++  ],
++  "普通配置：网站规则、已启用脚本和值在重启后保留。": [
++    "Regular profile: site rules, enabled scripts and stored values persist after restarting.",
++    "普通配置：網站規則、已啓用腳本和值在重啓後保留。"
++  ],
++  "未配置": [
++    "Not configured",
++    "未配置"
++  ],
++  "确认向 ": [
++    "Confirm sending to ",
++    "確認向 "
++  ],
++  "私密会话：规则、脚本和值仅留在内存，不继承普通脚本。": [
++    "Private session: rules, scripts and values stay in memory. Regular scripts are not inherited.",
++    "私密會話：規則、腳本和值僅留在內存，不繼承普通腳本。"
++  ],
++  "编辑": [
++    "Edit",
++    "編輯"
++  ],
++  "网站规则已保存，重新载入网页后应用。": [
++    "Site rule saved. Reload the webpage to apply.",
++    "網站規則已保存，重新載入網頁後應用。"
++  ],
++  "脚本已停用，已请求重新载入。": [
++    "Scripts disabled. Reload requested.",
++    "腳本已停用，已請求重新載入。"
++  ],
++  "草稿已生成并通过语法检查。尚未保存、试运行或启用。": [
++    "Draft generated and syntax checked. Not saved, tested or enabled yet.",
++    "草稿已生成並通過語法檢查。尚未保存、試運行或啓用。"
++  ],
++  "草稿或停用": [
++    "Draft or disabled",
++    "草稿或停用"
++  ],
++  "设置已保存，下一次页面加载应用。": [
++    "Settings saved. Applies on the next page load.",
++    "設置已保存，下一次頁面加載應用。"
++  ],
++  "试运行 · ": [
++    "Trial · ",
++    "試運行 · "
++  ],
++  "语法和元数据检查通过；还需实际检查页面效果。": [
++    "Syntax and metadata checks passed. Verify the actual page behavior next.",
++    "語法和元數據檢查通過；還需實際檢查頁面效果。"
++  ],
++  "请先选择普通 HTTP/HTTPS 网页。": [
++    "Select a regular HTTP/HTTPS webpage first.",
++    "請先選擇普通 HTTP/HTTPS 網頁。"
++  ],
++  "请在另一个标签打开目标网页，然后刷新列表。": [
++    "Open the target webpage in another tab, then refresh this list.",
++    "請在另一個標籤打開目標網頁，然後刷新列表。"
++  ],
++  "请在防护中心配置": [
++    "Configure in the protection center",
++    "請在防護中心配置"
++  ],
++  "请描述需要增加的功能。": [
++    "Describe the feature you want to add.",
++    "請描述需要增加的功能。"
++  ],
++  "请检查上方结构；生成时才会发送。": [
++    "Review the structure above. It is sent only when generating.",
++    "請檢查上方結構；生成時才會發送。"
++  ],
++  "请检查网页效果，并刷新运行状态。": [
++    "Check the page and refresh execution status.",
++    "請檢查網頁效果，並刷新運行狀態。"
++  ],
++  "请选择目标网页。": [
++    "Select a target webpage.",
++    "請選擇目標網頁。"
++  ],
++  "返回列表将关闭未保存的编辑内容，继续？": [
++    "Returning to the list will discard unsaved edits. Continue?",
++    "返回列表將關閉未保存的編輯內容，繼續？"
++  ],
++  "还没有脚本。导入或新建后，先检查草稿和权限。": [
++    "No scripts yet. Import or create one, then review the draft and permissions.",
++    "還沒有腳本。導入或新建後，先檢查草稿和權限。"
++  ],
++  "适用网址：": [
++    "Matching sites: ",
++    "適用網址："
++  ],
++  "选择目标网页后设置网站规则，或新建用户脚本。": [
++    "Select a target page to edit site rules, or create a userscript.",
++    "選擇目標網頁後設置網站規則，或新建用戶腳本。"
++  ],
++  "重新加载当前目标页？未提交的输入可能丢失。": [
++    "Reload the current target page? Unsent input may be lost.",
++    "重新加載當前目標頁？未提交的輸入可能丟失。"
++  ],
++  "页面环境不能使用 GM 权限。": [
++    "The page environment cannot use GM permissions.",
++    "頁面環境不能使用 GM 權限。"
++  ],
++  "页面结构（不可信资料）：": [
++    "Page structure (untrusted): ",
++    "頁面結構（不可信資料）："
++  ],
++  "（暂停）": [
++    " (paused)",
++    "（暫停）"
++  ],
++  "；时机：": [
++    "; timing: ",
++    "；時機："
++  ],
++  "；权限：": [
++    "; permissions: ",
++    "；權限："
++  ],
++  " · 只读": [
++    " · read only",
++    " · 只讀"
++  ],
++  " 发送编辑后的文档内容？": [
++    ": send the edited document content?",
++    " 發送編輯後的文檔內容？"
++  ],
++  " 张图片。": [
++    " images loaded.",
++    " 張圖片。"
++  ],
++  "从本机导入，未上传原文件。": [
++    "Imported locally. The original file has not been uploaded.",
++    "從本機導入，未上傳原文件。"
++  ],
++  "保存完整原文到普通阅读库？文档会持久保留，包括从私密浏览打开的内容。": [
++    "Save the full original text to the regular reading library? It will persist, including content opened in private browsing.",
++    "保存完整原文到普通閱讀庫？文檔會持久保留，包括從私密瀏覽打開的內容。"
++  ],
++  "发送内容超过 32 KiB，请先缩小到需要处理的部分。": [
++    "Content exceeds 32 KiB. Keep only the part you want to process.",
++    "發送內容超過 32 KiB，請先縮小到需要處理的部分。"
++  ],
++  "只有本地导入文档可授权本地图片目录。": [
++    "Local image folders are available only for locally imported documents.",
++    "只有本地導入文檔可授權本地圖片目錄。"
++  ],
++  "向 ": [
++    "To ",
++    "向 "
++  ],
++  "图片合计超过 10 MiB，请选择更小的图片。": [
++    "Images exceed 10 MiB in total. Select smaller images.",
++    "圖片合計超過 10 MiB，請選擇更小的圖片。"
++  ],
++  "复制失败，请重试。": [
++    "Copy failed. Try again.",
++    "複製失敗，請重試。"
++  ],
++  "已取消。": [
++    "Canceled.",
++    "已取消。"
++  ],
++  "已在授权目录内加载 ": [
++    "From the approved folder: ",
++    "已在授權目錄內加載 "
++  ],
++  "文档已保存到加密阅读库，可从浏览器菜单的阅读库查看。": [
++    "Document saved to the encrypted reading library, available from the browser menu.",
++    "文檔已保存到加密閱讀庫，可從瀏覽器菜單的閱讀庫查看。"
++  ],
++  "文档已变化，请重新选择图片目录。": [
++    "The document changed. Select the image folder again.",
++    "文檔已變化，請重新選擇圖片目錄。"
++  ],
++  "文档超过 2 MiB，请使用原文件查看。": [
++    "Document exceeds 2 MiB. View the original file instead.",
++    "文檔超過 2 MiB，請使用原文件查看。"
++  ],
++  "未配置模型服务": [
++    "No model service configured",
++    "未配置模型服務"
++  ],
++  "本地文档 · 只读": [
++    "Local document · read only",
++    "本地文檔 · 只讀"
++  ],
++  "本地相对链接请通过“打开文件”选择目标文档：": [
++    "For a local relative link, choose the target with Open file: ",
++    "本地相對鏈接請通過“打開文件”選擇目標文檔："
++  ],
++  "正在处理…": [
++    "Processing…",
++    "正在處理…"
++  ],
++  "网站预览设置已保存，下次访问 Markdown 原文时应用。": [
++    "Preview preference saved. It applies the next time you visit a Markdown source.",
++    "網站預覽設置已保存，下次訪問 Markdown 原文時應用。"
++  ],
++  "请先打开在线 Markdown 原文页。": [
++    "Open an online Markdown source page first.",
++    "請先打開在線 Markdown 原文頁。"
++  ],
++  "请先打开文档。": [
++    "Open a document first.",
++    "請先打開文檔。"
++  ],
++  "请选择 .md 或 .markdown 文件。": [
++    "Choose an .md or .markdown file.",
++    "請選擇 .md 或 .markdown 文件。"
++  ],
++  "阅读库目前最多保存 32 KiB，请保留原文件。": [
++    "The library currently saves up to 32 KiB. Keep the original file.",
++    "閱讀庫目前最多保存 32 KiB，請保留原文件。"
++  ],
++  "页面没有可读取的文本。": [
++    "No readable text found on this page.",
++    "頁面沒有可讀取的文本。"
++  ],
++  "文档超过 2 MiB 或格式无效，请查看原始文件。": [
++    "The document exceeds 2 MiB or is invalid. View the original file.",
++    "文檔超過 2 MiB 或格式無效，請查看原始文件。"
++  ],
++  "第 {current} / {total} 处匹配": [
++    "Match {current} of {total}",
++    "第 {current} / {total} 處匹配"
++  ],
++  "{count} 张图片尚未加载。外部图片可按需加载，本地相对图片需要授权资源目录。": [
++    "{count} images are blocked. Load external images as needed, or choose a folder for local images.",
++    "{count} 張圖片尚未加載。外部圖片可按需加載，本地相對圖片需要授權資源目錄。"
++  ]
++};
++  let locale = navigator.language || "zh-CN";
++  const originals = new WeakMap();
++  function setLocale(value) { if (typeof value === "string") locale = value; }
++  function t(value, fields = {}) {
++    const item = messages[value];
++    let output = !item || /^zh(?![-_](?:TW|HK|MO|Hant))/i.test(locale) ? value : /^zh/i.test(locale) ? item[1] : item[0];
++    for (const [key, replacement] of Object.entries(fields)) output = output.replaceAll("{" + key + "}", String(replacement));
++    return output;
++  }
++  function translate(root = document) {
++    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
++    const nodes = [];
++    while (walker.nextNode()) nodes.push(walker.currentNode);
++    for (const node of nodes) {
++      if (node.parentElement?.closest("script,style,textarea,pre,code,#document,#source,#outline,#context-preview,#ai-output,#title,#document-title,#origin,#source-address,#source-info")) continue;
++      const original = originals.get(node) || node.textContent;
++      originals.set(node, original);
++      const trimmed = original.trim();
++      if (messages[trimmed]) node.textContent = original.replace(trimmed, t(trimmed));
++    }
++    for (const node of root.querySelectorAll("[aria-label],[placeholder],[title],[aria-description]")) {
++      for (const attr of ["aria-label", "placeholder", "title", "aria-description"]) {
++        const original = node.getAttribute("data-i18n-" + attr) || node.getAttribute(attr);
++        if (!original) continue;
++        node.setAttribute("data-i18n-" + attr, original);
++        node.setAttribute(attr, t(original));
++      }
++    }
++  }
++  globalThis.AegisI18n = Object.freeze({t, translate, setLocale});
++})();
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.css b/chrome/browser/resources/aegis/enhancements_shared/viewer.css
+index 7a9f7fc75c6324788cdee438f0b19058ec43499e..5ba3f6ebedfbb2038def02854e13d46186437cc2 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/viewer.css
++++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.css
+@@ -1,12 +1,12 @@
+ :root {
+   color-scheme: light dark;
+-  --bg: light-dark(#fafbf9, #171c1b);
+-  --paper: light-dark(#fff, #1f2624);
+-  --ink: light-dark(#243b32, #e7eee9);
+-  --muted: light-dark(#617268, #a2b2a8);
+-  --line: light-dark(#dce6de, #3c4d44);
+-  --accent: light-dark(#176b49, #83d0ac);
+-  --code: light-dark(#f1f5f2, #14201a);
++  --bg: light-dark(#f8f9fa, #17181b);
++  --paper: light-dark(#fff, #202124);
++  --ink: light-dark(#202124, #e8eaed);
++  --muted: light-dark(#5f6368, #bdc1c6);
++  --line: light-dark(#dadce0, #45474b);
++  --accent: light-dark(#185abc, #a8c7fa);
++  --code: light-dark(#f1f3f4, #292a2d);
+   --font: 17px;
+   --measure: 820px;
+ }
+@@ -128,7 +128,8 @@ main {
+ }
+ article {
+   font-size: var(--font);
+-  line-height: 1.8;
++  line-height: var(--spacing, 1.8);
++  font-family: var(--reading-font, system-ui, sans-serif);
+   overflow-wrap: anywhere;
+   background: var(--paper);
+   padding: 32px 40px;
+@@ -340,3 +341,8 @@ mark {
+     max-height: 90vh;
+   }
+ }
++
++.embedded > header { display: none; }
++#image-permissions { padding: 12px 24px; border-bottom: 1px solid var(--line); font-size: 13px; }
++#image-permissions #notice { padding: 0 0 8px; min-height: 0; }
++@media print { #image-permissions { display: none !important; } .embedded > header { display: flex; } }
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.html b/chrome/browser/resources/aegis/enhancements_shared/viewer.html
+index f6f1e8ea259cdfccef1a6d78dce188d93149f721..367d3d8d953cbaa5723f70604c2da8e76fd2450e 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/viewer.html
++++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.html
+@@ -14,6 +14,7 @@
+     <script src="vendor/task-lists.min.js" defer></script>
+     <script src="vendor/highlight.min.js" defer></script>
+     <script src="vendor/purify.min.js" defer></script>
++    <script src="i18n.js" defer></script>
+     <script src="viewer.js" defer></script>
+   </head>
+   <body>
+@@ -32,16 +33,17 @@
+         <button id="font-up" aria-label="增大字体">A+</button>
+       </nav>
+     </header>
+-    <section class="findbar">
++    <section class="findbar" id="findbar" hidden>
+       <input
+         id="query"
+         type="search"
+         placeholder="查找文档内容"
+         aria-label="查找文档内容"
+       /><button id="find">查找下一个</button
+-      ><button id="remote-images">加载外部图片</button>
++      >
+     </section>
+     <p id="notice" role="status" aria-live="polite"></p>
++    <div id="image-permissions" hidden><p id="image-notice"></p><button id="remote-images">加载外部图片</button><button id="local-images">选择本地图片目录</button></div>
+     <div class="layout">
+       <aside id="outline" aria-label="文档目录"></aside>
+       <main>
+diff --git a/chrome/browser/resources/aegis/enhancements_shared/viewer.js b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+index ae7a321e8b3782bb8e8eb7a32dd465db94085f78..8186f907d19269b5c0e84bae6f3f88274ebe8875 100644
+--- a/chrome/browser/resources/aegis/enhancements_shared/viewer.js
++++ b/chrome/browser/resources/aegis/enhancements_shared/viewer.js
+@@ -2,8 +2,10 @@
+ // 文档渲染页没有原生文件、模型或设置接口；链接交给外层浏览器处理。
+ (function () {
+   "use strict";
++  const uiText = value => globalThis.AegisI18n?.t(value) || value;
++  globalThis.AegisI18n?.translate(document);
+   const $ = (id) => document.getElementById(id);
+-  let current = { text: "", title: "Markdown 阅读", baseURL: "", resources: {} },
++  let current = { text: "", title: uiText("Markdown 阅读"), baseURL: "", resources: {} },
+     remote = false,
+     font = 17,
+     found = -1,
+@@ -153,9 +155,11 @@
+           }
+         }),
+       );
+-    $("notice").textContent = blockedImages
+-      ? `${blockedImages} 张图片尚未加载。外部图片可按需加载，本地相对图片需要授权资源目录。`
+-      : "文档只读；代码块不会执行。";
++    $("image-permissions").hidden = !blockedImages && !remote;
++    $("local-images").hidden = /^https?:/.test(current.baseURL);
++    $("image-notice").textContent = blockedImages
++      ? globalThis.AegisI18n.t("{count} 张图片尚未加载。外部图片可按需加载，本地相对图片需要授权资源目录。", {count: blockedImages})
++      : remote ? "外部图片已获准加载，仅对此次打开的文档生效。" : "";
+     marks = [];
+     found = -1;
+     lastQuery = "";
+@@ -166,7 +170,7 @@
+       typeof payload.text !== "string" ||
+       new TextEncoder().encode(payload.text).length > 2097152
+     ) {
+-      $("notice").textContent = "文档超过 2 MiB 或格式无效，请查看原始文件。";
++      $("notice").textContent = uiText("文档超过 2 MiB 或格式无效，请查看原始文件。");
+       return false;
+     }
+     current = {
+@@ -176,10 +180,18 @@
+       resources: payload.resources || {},
+     };
+     remote = false;
++    $("remote-images").textContent = "加载外部图片";
++    $("source").hidden = true;
++    $("document").hidden = false;
++    $("source-toggle").setAttribute("aria-pressed", "false");
++    $("findbar").hidden = true;
++    $("query").value = "";
+     $("title").textContent = current.title;
+     $("origin").textContent = current.baseURL || "本地导入 · 只读";
+     document.title = current.title;
++    $("notice").textContent = "";
+     render();
++    viewState();
+     send("images", globalThis.AegisMarkdown.images());
+     return true;
+   }
+@@ -188,7 +200,7 @@
+     if (query === lastQuery && marks.length) {
+       found = (found + 1) % marks.length;
+       marks[found].scrollIntoView({ block: "center" });
+-      $("notice").textContent = `第 ${found + 1} / ${marks.length} 处匹配`;
++      $("notice").textContent = globalThis.AegisI18n.t("第 {current} / {total} 处匹配", {current: found + 1, total: marks.length});
+       return;
+     }
+     lastQuery = query;
+@@ -225,17 +237,20 @@
+     found = marks.length ? (found + 1) % marks.length : -1;
+     if (found >= 0) marks[found].scrollIntoView({ block: "center" });
+     $("notice").textContent = marks.length
+-      ? `第 ${found + 1} / ${marks.length} 处匹配`
++      ? globalThis.AegisI18n.t("第 {current} / {total} 处匹配", {current: found + 1, total: marks.length})
+       : "没有找到匹配内容。";
+   }
++  function viewState() { send("view-state", {outline: !$("outline").hidden, source: !$("source").hidden}); }
+   $("outline-toggle").onclick = () => {
+     $("outline").hidden = !$("outline").hidden;
+     $("outline-toggle").setAttribute("aria-expanded", String(!$("outline").hidden));
++    viewState();
+   };
+   $("source-toggle").onclick = () => {
+     $("source").hidden = !$("source").hidden;
+     $("document").hidden = !$("source").hidden;
+     $("source-toggle").setAttribute("aria-pressed", String(!$("source").hidden));
++    viewState();
+   };
+   $("copy-source").onclick = () => send("copy", current.text);
+   $("theme").onclick = () => {
+@@ -266,22 +281,40 @@
+     render();
+     $("remote-images").textContent = remote ? "停用外部图片" : "加载外部图片";
+   };
++  $("local-images").onclick = () => send("resources", true);
++  function configure(value) {
++    if (!value || typeof value !== "object") return;
++    document.body.classList.toggle("embedded", value.embedded === true);
++    if (value.locale) globalThis.AegisI18n?.setLocale(value.locale);
++    globalThis.AegisI18n?.translate(document);
++    const preferences = value.preferences || {};
++    const style = document.documentElement.style;
++    if (["light", "dark", "system"].includes(preferences.theme))
++      style.colorScheme = preferences.theme === "system" ? "light dark" : preferences.theme;
++    if (Number.isFinite(preferences.font)) {
++      font = Math.max(12, Math.min(48, preferences.font));
++      style.setProperty("--font", font + "px");
++    }
++    if ([680, 820, 1100].includes(preferences.width)) style.setProperty("--measure", preferences.width + "px");
++    if ([150, 180, 210].includes(preferences.spacing)) style.setProperty("--spacing", String(preferences.spacing / 100));
++    if (["sans", "serif"].includes(preferences.family)) style.setProperty("--reading-font", preferences.family === "serif" ? "Georgia, 'Songti SC', serif" : "system-ui, sans-serif");
++  }
++  function command(value) {
++    if (value === "find-toggle") {
++      $("findbar").hidden = !$("findbar").hidden;
++      if (!$("findbar").hidden) $("query").focus();
++    } else if (["outline-toggle", "source-toggle", "copy-source", "remote-images"].includes(value)) $(value).click();
++  }
++  if (matchMedia("(max-width: 760px)").matches) $("outline-toggle").click();
+   window.addEventListener("message", (event) => {
+-    if (
+-      event.source === parent &&
+-      event.origin === "chrome://aegis" &&
+-      event.data?.type === "load"
+-    )
+-      load(event.data.value);
+-    if (
+-      event.source === parent &&
+-      event.origin === "chrome://aegis" &&
+-      event.data?.type === "print"
+-    )
+-      window.print();
++    if (event.source !== parent || event.origin !== "chrome://aegis") return;
++    if (event.data?.type === "load") load(event.data.value);
++    else if (event.data?.type === "print") window.print();
++    else if (event.data?.type === "configure") configure(event.data.value);
++    else if (event.data?.type === "command") command(event.data.value);
+   });
+   globalThis.AegisMarkdown = Object.freeze({
+-    load,
++    load, configure, command,
+     setFont: (size) => {
+       if (Number.isFinite(size)) {
+         font = Math.max(12, Math.min(48, size));
+diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
+index a5e2466d496ca59cc8a42d08ad6be61d5738ee1c..cb074d285cb67980a8e6c0851a0f3b7f8e2b305c 100644
+--- a/chrome/browser/resources/aegis/gestures.ts
++++ b/chrome/browser/resources/aegis/gestures.ts
+@@ -11,8 +11,10 @@ type Settings = {
+ type Action = {id: string, label: string, pdfOnly: boolean};
+ type Snapshot = {settings: Settings, actions: Action[]};
+ 
++export function initializeGestures(root: Document|ShadowRoot = document) {
++const events = new AbortController();
+ function element<T extends Element = HTMLElement>(id: string): T {
+-  const value = document.querySelector<T>(`#${id}`);
++  const value = root.querySelector<T>(`#${id}`);
+   if (!value) {
+     throw new Error(`缺少设置元素：${id}`);
+   }
+@@ -185,9 +187,10 @@ function updateRegion() {
+     ]);
+   });
+ }
+-new ResizeObserver(updateRegion).observe(practice);
+-window.addEventListener('resize', updateRegion);
+-window.addEventListener('scroll', updateRegion, {capture: true, passive: true});
++const observer = new ResizeObserver(updateRegion);
++observer.observe(practice);
++window.addEventListener('resize', updateRegion, {signal: events.signal});
++window.addEventListener('scroll', updateRegion, {capture: true, passive: true, signal: events.signal});
+ function cancelPractice() {
+   if (drawing) {
+     cancelled = true;
+@@ -283,12 +286,12 @@ practice.addEventListener('pointerup', event => {
+   }
+ });
+ practice.addEventListener('pointercancel', cancelPractice);
+-window.addEventListener('blur', cancelPractice);
++window.addEventListener('blur', cancelPractice, {signal: events.signal});
+ window.addEventListener('keydown', event => {
+   if (event.key === 'Escape') {
+     cancelPractice();
+   }
+-});
++}, {signal: events.signal});
+ void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
+   render(snapshot);
+   save.disabled = false;
+@@ -296,3 +299,7 @@ void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
+ }).catch(() => {
+   message('设置加载失败，请重新打开此页面。', true);
+ });
++
++return () => { events.abort(); observer.disconnect(); };
++}
++if (document.getElementById("practice")) initializeGestures();
+diff --git a/chrome/browser/resources/aegis/markdown.css b/chrome/browser/resources/aegis/markdown.css
+new file mode 100644
+index 0000000000000000000000000000000000000000..7154f0442f89d12c6b5a9bc2317a50b77879189c
+--- /dev/null
++++ b/chrome/browser/resources/aegis/markdown.css
+@@ -0,0 +1,24 @@
++body.reading { padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
++.reader-toolbar { display: flex; align-items: center; gap: 20px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
++.reader-toolbar > a { white-space: nowrap; text-decoration: none; }
++.document-heading { flex: 1; min-width: 80px; }
++.document-heading strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
++.text-button { display: block; font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; color: var(--muted); padding: 0; min-height: 24px; background: transparent; }
++.reader-toolbar nav { display: flex; gap: 6px; flex-wrap: wrap; }
++.reading #notice { padding: 5px 20px; min-height: 0; font-size: 12px; }
++.reader-workspace { display: flex; flex: 1; min-height: 0; }
++iframe.reader { flex: 1; min-width: 0; width: 100%; height: 100%; border: 0; }
++.reader-start { width: min(560px, calc(100% - 32px)); margin: 12vh auto 20px; padding: 32px; }
++.reader-start .row { justify-content: center; }
++.reader-start h1, .reader-start > p { text-align: center; }
++.reader-start details { margin-top: 28px; }
++#ai { width: 340px; max-width: 45vw; overflow: auto; padding: 20px; background: var(--surface); border-left: 1px solid var(--line); }
++#ai-output { max-height: none; white-space: pre-wrap; }
++#ai .row { margin-top: 14px; }
++.reader-popover { inset: 90px 20px auto auto; margin: 0; width: 290px; max-width: calc(100vw - 32px); border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--surface); color: var(--ink); box-shadow: 0 6px 24px #0002; }
++.reader-popover label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
++.reader-popover input[type=number] { width: 90px; }
++.action-menu > button { width: 100%; text-align: left; border: 0; display: block; }
++#source-address { overflow-wrap: anywhere; }
++@media (max-width: 780px) { .reader-toolbar { flex-wrap: wrap; gap: 8px 16px; padding: 10px 14px; } .reader-toolbar nav { width: 100%; } #ai { position: absolute; inset: 100px 0 0 auto; width: min(360px,100%); max-width: 100%; z-index: 2; box-shadow: -6px 0 24px #0002; } }
++@media print { .reader-toolbar, #notice, #ai, [popover] { display:none !important; } body.reading, .reader-workspace { height:auto; overflow:visible; } }
+diff --git a/chrome/browser/resources/aegis/markdown.html b/chrome/browser/resources/aegis/markdown.html
+index 12e18c450d5a8e8ced004c125cebc05988f26d8a..c8cc748bb59106338437bcb74ed084cc92918fa0 100644
+--- a/chrome/browser/resources/aegis/markdown.html
++++ b/chrome/browser/resources/aegis/markdown.html
+@@ -1,54 +1,45 @@
+ <!doctype html>
+ <html lang="zh-CN">
+-  <head>
+-    <meta charset="utf-8" />
+-    <meta name="color-scheme" content="light dark" />
+-    <title>Markdown 阅读</title>
+-    <link rel="stylesheet" href="enhancements.css" />
+-    <script type="module" src="markdown.js"></script>
+-  </head>
+-  <body class="reading">
+-    <header>
+-      <a href="aegis.html">← 防护中心</a>
+-      <h1>Markdown 阅读</h1>
+-      <label class="file"
+-        >打开文件<input
+-          id="file"
+-          type="file"
+-          accept=".md,.markdown,text/markdown,text/plain" /></label
+-      ><label class="file"
+-        >授权图片目录<input id="directory" type="file" webkitdirectory multiple /></label
+-      ><select id="tabs" aria-label="在线文本页面"></select
+-      ><button id="refresh">刷新网页列表</button
+-      ><button id="read-page">预览在线原文</button
+-      ><label><input id="auto-preview" type="checkbox" />此网站自动预览</label
+-      ><select id="downloads" aria-label="已下载 Markdown"></select
+-      ><button id="open-download">打开下载</button
+-      ><button id="save-reading">保存到阅读库</button
+-      ><button id="print">打印 / 保存 PDF</button
+-      ><button id="assistant">总结与翻译</button>
+-    </header>
+-    <p id="notice" role="status">
+-      拖入 Markdown 文件，或选择已经打开的在线文本页。文档只读，最大 2 MiB。
+-    </p>
+-    <iframe
+-      id="reader"
+-      class="reader"
+-      title="Markdown 阅读内容"
+-      src="chrome-untrusted://aegis-markdown/viewer.html"
+-    ></iframe>
+-    <dialog id="ai">
+-      <h2>文档助手</h2>
+-      <p>只发送下方可编辑的内容，最多 32 KiB。文档阅读本身不需要模型。</p>
+-      <p id="model"></p>
+-      <textarea id="ai-input" aria-label="发送给模型的内容"></textarea
+-      ><select id="ai-goal">
+-        <option value="用中文总结">用中文总结</option>
+-        <option value="完整翻译为简体中文">翻译为简体中文</option>
+-        <option value="完整翻译为英语">翻译为英语</option></select
+-      ><button id="generate">确认发送并生成</button><button id="cancel">取消</button
+-      ><button id="close">关闭</button>
+-      <pre id="ai-output"></pre>
+-    </dialog>
+-  </body>
++<head>
++  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
++  <meta name="color-scheme" content="light dark" /><title>Markdown 阅读</title>
++  <link rel="stylesheet" href="enhancements.css" /><link rel="stylesheet" href="markdown.css" />
++  <script type="module" src="markdown.js"></script>
++</head>
++<body class="reading">
++  <header class="reader-toolbar">
++    <a href="chrome://settings/aegisReading" aria-label="返回阅读库">← 阅读库</a>
++    <div class="document-heading"><strong id="document-title">Markdown 阅读</strong><button id="source-info" class="text-button" popovertarget="source-panel">打开文档后查看来源</button></div>
++    <nav id="document-tools" aria-label="阅读工具" hidden>
++      <button id="outline-toggle" aria-expanded="true">目录</button><button id="find-toggle">查找</button>
++      <button popovertarget="appearance">外观</button><button id="assistant" aria-expanded="false">文档助手</button>
++      <button popovertarget="document-actions" aria-label="更多文档操作">更多</button>
++    </nav>
++  </header>
++  <p id="notice" role="status" aria-live="polite"></p>
++  <section id="start" class="reader-start">
++    <h1>打开 Markdown 文档</h1><p>拖入文件，或打开正在浏览的在线原文。</p>
++    <div class="row"><label class="file">打开文件<input id="file" type="file" accept=".md,.markdown,text/markdown,text/plain" /></label><a href="chrome://settings/aegisReading">阅读库</a></div>
++    <details id="online-open"><summary>打开在线原文</summary><div class="row"><select id="tabs" aria-label="在线文本页面"></select><button id="refresh">刷新列表</button><button id="read-page">打开所选原文</button></div></details>
++  </section>
++  <div class="reader-workspace" id="workspace" hidden>
++    <iframe id="reader" class="reader" title="Markdown 阅读内容" src="chrome-untrusted://aegis-markdown/viewer.html"></iframe>
++    <aside id="ai" hidden aria-label="文档助手">
++      <div class="row section-heading"><h2>文档助手</h2><button id="close" aria-label="关闭文档助手">关闭</button></div>
++      <p id="model"></p><label>发送内容<textarea id="ai-input" rows="8"></textarea></label>
++      <p class="hint">只发送上方可编辑的内容，最多 32 KiB。</p>
++      <select id="ai-goal" aria-label="文档助手任务"><option value="用中文总结">用中文总结</option><option value="完整翻译为简体中文">翻译为简体中文</option><option value="完整翻译为英语">翻译为英语</option></select>
++      <div class="row"><button id="generate" class="primary">确认发送并生成</button><button id="cancel">取消</button></div><pre id="ai-output" role="status"></pre>
++    </aside>
++  </div>
++  <div id="appearance" popover class="reader-popover"><h2>阅读外观</h2>
++    <label>主题<select id="reading-theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
++    <label>字体<select id="reading-family"><option value="sans">系统字体</option><option value="serif">衬线字体</option></select></label>
++    <label>字号<input id="reading-font" type="number" min="12" max="28" value="17" /></label>
++    <label>行距<select id="reading-spacing"><option value="150">紧凑</option><option value="180">标准</option><option value="210">宽松</option></select></label>
++    <label>正文宽度<select id="reading-width"><option value="680">窄</option><option value="820">标准</option><option value="1100">宽</option></select></label>
++  </div>
++  <div id="document-actions" popover class="reader-popover action-menu"><button id="open-another">打开其他文件</button><button id="source-toggle" aria-pressed="false">查看源码</button><button id="copy-source">复制原文</button><button id="save-reading">保存到阅读库</button><button id="print">打印 / 导出 PDF</button><details><summary>文档图片权限</summary><label class="file">选择本地图片目录<input id="directory" type="file" webkitdirectory multiple /></label><button id="remote-images">加载 / 停用外部图片</button><p class="hint">仅对此次打开的文档生效。</p></details></div>
++  <div id="source-panel" popover class="reader-popover"><h2>文档来源</h2><p id="source-address"></p><label><input id="auto-preview" type="checkbox" />此网站自动预览 Markdown</label></div>
++</body>
+ </html>
+diff --git a/chrome/browser/resources/aegis/markdown.js b/chrome/browser/resources/aegis/markdown.js
+index 602fdf3bae1004c5dbd10f16a9d081413e9d1959..0069380e6c906cb25e62e43a438c5644e092722d 100644
+--- a/chrome/browser/resources/aegis/markdown.js
++++ b/chrome/browser/resources/aegis/markdown.js
+@@ -1,3 +1,9 @@
++import "/strings.m.js";
++import { loadTimeData } from "chrome://resources/js/load_time_data.js";
++import "./enhancements_shared/i18n.js";
++const uiText = value => globalThis.AegisI18n.t(value);
++globalThis.AegisI18n.setLocale(loadTimeData.getString("aegisLocale"));
++globalThis.AegisI18n.translate(document);
+ // Copyright 2026 GCSA
+ import { sendWithPromise } from "chrome://resources/js/cr.js";
+ const $ = (id) => document.getElementById(id),
+@@ -11,8 +17,13 @@ let current = null,
+ const notify = (t) => {
+   $("notice").textContent = t;
+ };
+-const send = (type, value) =>
++const send = (type, value) => {
++  if (type === "configure") {
++    const theme = value?.preferences?.theme;
++    document.documentElement.style.colorScheme = ["dark", "light"].includes(theme) ? theme : "light dark";
++  }
+   reader.contentWindow.postMessage({ type, value }, "chrome-untrusted://aegis-markdown");
++};
+ async function request(value) {
+   const r = await sendWithPromise("aegisEnhancements", value);
+   if (r.error) throw Error(typeof r.error === "string" ? r.error : r.error.message);
+@@ -33,20 +44,34 @@ function action(id, fn) {
+   };
+ }
+ function load(document, isLocal) {
++  generation++;
++  void request({op: "cancel-model"});
++  $("generate").disabled = false;
++  $("ai").hidden = true;
++  $("assistant").setAttribute("aria-expanded", "false");
++  $("ai-output").textContent = "";
+   current = document;
+   local = isLocal;
++  $("document-title").textContent = current.title;
++  $("source-toggle").setAttribute("aria-pressed", "false");
++  $("source-info").textContent = isLocal ? uiText("本地文档 · 只读") : new URL(current.baseURL).host + uiText(" · 只读");
++  $("source-address").textContent = current.baseURL || uiText("从本机导入，未上传原文件。");
++  $("directory").disabled = !isLocal;
++  $("start").hidden = true;
++  $("workspace").hidden = false;
++  $("document-tools").hidden = false;
+   if (ready) send("load", current);
+   const origin = /^https?:/.test(current.baseURL || "")
+     ? new URL(current.baseURL).origin
+     : "";
+   $("auto-preview").disabled = !origin;
+   $("auto-preview").checked = !!state.markdownSites?.[origin];
+-  notify("已打开 " + current.title + "，文档只读。外部图片需要在阅读区主动加载。");
++  notify("");
+ }
+ async function file(f) {
+   if (!f || !/\.(md|markdown)$/i.test(f.name))
+-    throw Error("请选择 .md 或 .markdown 文件。");
+-  if (f.size > 2097152) throw Error("文档超过 2 MiB，请使用原文件查看。");
++    throw Error(uiText("请选择 .md 或 .markdown 文件。"));
++  if (f.size > 2097152) throw Error(uiText("文档超过 2 MiB，请使用原文件查看。"));
+   const text = new TextDecoder("utf-8", { fatal: true }).decode(await f.arrayBuffer());
+   load({ text, title: f.name, baseURL: "", resources: {} }, true);
+ }
+@@ -59,11 +84,12 @@ window.addEventListener("message", (event) => {
+   const { type, value } = event.data || {};
+   if (type === "ready") {
+     ready = true;
++    send("configure", {embedded: true, locale: loadTimeData.getString("aegisLocale"), preferences: state.readingPreferences});
+     if (current) send("load", current);
+   } else if (type === "copy" && typeof value === "string" && value.length <= 2097152)
+     navigator.clipboard.writeText(value).then(
+-      () => notify("已复制。"),
+-      () => notify("复制失败，请重试。"),
++      () => notify(uiText("已复制。")),
++      () => notify(uiText("复制失败，请重试。")),
+     );
+   else if (type === "open" && typeof value === "string") {
+     try {
+@@ -72,8 +98,12 @@ window.addEventListener("message", (event) => {
+         window.open(u.href, "_blank", "noopener,noreferrer");
+     } catch {}
+   } else if (type === "relativeLink")
+-    notify("本地相对链接请通过“打开文件”选择目标文档：" + String(value).slice(0, 200));
+-  else if (type === "images" && Array.isArray(value))
++    notify(uiText("本地相对链接请通过“打开文件”选择目标文档：") + String(value).slice(0, 200));
++  else if (type === "resources") $("directory").click();
++  else if (type === "view-state" && value && typeof value === "object") {
++    $("outline-toggle").setAttribute("aria-expanded", String(value.outline === true));
++    $("source-toggle").setAttribute("aria-pressed", String(value.source === true));
++  } else if (type === "images" && Array.isArray(value))
+     images = value.filter((x) => typeof x === "string").slice(0, 100);
+ });
+ $("file").onchange = async () => {
+@@ -96,7 +126,7 @@ document.addEventListener("drop", async (e) => {
+ });
+ $("directory").onchange = async () => {
+   try {
+-    if (!current || !local) throw Error("只有本地导入文档可授权本地图片目录。");
++    if (!current || !local) throw Error(uiText("只有本地导入文档可授权本地图片目录。"));
+     const targetDocument = current;
+     const files = new Map();
+     for (const f of $("directory").files) {
+@@ -120,7 +150,7 @@ $("directory").onchange = async () => {
+       if (!f || !/^image\/(png|jpeg|gif|webp)$/.test(f.type) || f.size > 4194304)
+         continue;
+       total += f.size;
+-      if (total > 10485760) throw Error("图片合计超过 10 MiB，请选择更小的图片。");
++      if (total > 10485760) throw Error(uiText("图片合计超过 10 MiB，请选择更小的图片。"));
+       resources[ref] = await new Promise((resolve, reject) => {
+         const r = new FileReader();
+         r.onload = () => resolve(r.result);
+@@ -128,10 +158,10 @@ $("directory").onchange = async () => {
+         r.readAsDataURL(f);
+       });
+     }
+-    if(current !== targetDocument || !local) throw Error("文档已变化，请重新选择图片目录。");
++    if(current !== targetDocument || !local) throw Error(uiText("文档已变化，请重新选择图片目录。"));
+     current.resources = resources;
+     send("load", current);
+-    notify("已在授权目录内加载 " + Object.keys(resources).length + " 张图片。");
++    notify(uiText("已在授权目录内加载 ") + Object.keys(resources).length + uiText(" 张图片。"));
+   } catch (e) {
+     notify(e.message);
+   } finally {
+@@ -149,47 +179,41 @@ async function refresh() {
+     $("tabs").append(option);
+   }
+   if (state.tabs.some((t) => t.id === prior)) $("tabs").value = prior;
+-  const d = await request({ op: "downloads" });
+-  $("downloads").replaceChildren();
+-  for (const item of d.downloads) {
+-    const option = document.createElement("option");
+-    option.value = item.id;
+-    option.textContent = item.title;
+-    $("downloads").append(option);
+-  }
++
+ }
+ action("refresh", refresh);
+ action("read-page", async () => {
+   const t = state.tabs.find((t) => t.id === $("tabs").value);
+-  if (!t) throw Error("请先打开在线 Markdown 原文页。");
+-  const r = await request({ op: "read-markdown", tab: t.id, url: t.url });
++  if (!t) throw Error(uiText("请先打开在线 Markdown 原文页。"));
++  const r = await request({ op: "read-markdown", tab: t.id, url: t.url, document: t.document });
+   const payload = r.result?.result?.value;
+-  if (!payload?.text) throw Error("页面没有可读取的文本。");
++  if (!payload?.text) throw Error(uiText("页面没有可读取的文本。"));
+   load(payload, false);
+ });
+ action("print", () => {
+-  if (!current) throw Error("请先打开文档。");
++  if (!current) throw Error(uiText("请先打开文档。"));
+   send("print");
+ });
+ action("assistant", () => {
+-  if (!current) throw Error("请先打开文档。");
++  if (!current) throw Error(uiText("请先打开文档。"));
+   $("ai-input").value = current.text;
+   $("ai-output").textContent = "";
+   $("model").textContent =
+-    (state.destination || "未配置模型服务") + " / " + (state.model || "");
+-  $("ai").showModal();
++    (state.destination || uiText("未配置模型服务")) + " / " + (state.model || "");
++  $("ai").hidden = !$("ai").hidden;
++  $("assistant").setAttribute("aria-expanded", String(!$("ai").hidden));
+ });
+ action("generate", async () => {
+   const text = $("ai-input").value;
+   if (new TextEncoder().encode(text).length > 32768)
+-    throw Error("发送内容超过 32 KiB，请先缩小到需要处理的部分。");
++    throw Error(uiText("发送内容超过 32 KiB，请先缩小到需要处理的部分。"));
+   if (
+-    !confirm("向 " + state.destination + " / " + state.model + " 发送编辑后的文档内容？")
++    !confirm(uiText("向 ") + state.destination + " / " + state.model + uiText(" 发送编辑后的文档内容？"))
+   )
+     return;
+   const token = ++generation;
+   $("generate").disabled = true;
+-  $("ai-output").textContent = "正在处理…";
++  $("ai-output").textContent = uiText("正在处理…");
+   try {
+     const r = await request({
+       op: "model",
+@@ -208,28 +232,26 @@ async function cancel() {
+   generation++;
+   await request({ op: "cancel-model" });
+   $("generate").disabled = false;
+-  $("ai-output").textContent = "已取消。";
++  $("ai-output").textContent = uiText("已取消。");
+ }
+ action("cancel", cancel);
+ action("close", async () => {
+   await cancel();
+-  $("ai").close();
+-});
+-action("open-download", async () => {
+-  const r = await request({ op: "open-download", id: $("downloads").value });
+-  load(r, true);
++  $("ai").hidden = true;
++  $("assistant").setAttribute("aria-expanded", "false");
+ });
+ action("save-reading", async () => {
+-  if (!current) throw Error("请先打开文档。");
++  if (!current) throw Error(uiText("请先打开文档。"));
+   if (new TextEncoder().encode(current.text).length > 32768)
+-    throw Error("阅读库目前最多保存 32 KiB，请保留原文件。");
++    throw Error(uiText("阅读库目前最多保存 32 KiB，请保留原文件。"));
++  if (!confirm(uiText("保存完整原文到普通阅读库？文档会持久保留，包括从私密浏览打开的内容。"))) return;
+   await request({
+     op: "save-reading",
+     text: current.text,
+     title: current.title,
+     url: current.baseURL || "file:///Markdown/" + encodeURIComponent(current.title),
+   });
+-  notify("文档已保存到加密阅读库，可从助手的阅读库查看。");
++  notify(uiText("文档已保存到加密阅读库，可从浏览器菜单的阅读库查看。"));
+ });
+ $("auto-preview").onchange = async () => {
+   try {
+@@ -239,15 +261,50 @@ $("auto-preview").onchange = async () => {
+       origin,
+       enabled: $("auto-preview").checked,
+     });
+-    notify("网站预览设置已保存，下次访问 Markdown 原文时应用。");
++    notify(uiText("网站预览设置已保存，下次访问 Markdown 原文时应用。"));
+   } catch (e) {
+     notify(e.message);
+   }
+ };
+ try {
+   await refresh();
++  const prefs = state.readingPreferences || {theme: "system", family: "sans", font: 17, spacing: 180, width: 820};
++  for (const [key, value] of Object.entries(prefs)) if ($("reading-" + key)) $("reading-" + key).value = String(value);
++  if (ready) send("configure", {embedded: true, locale: loadTimeData.getString("aegisLocale"), preferences: prefs});
+   const pending = await request({ op: "take-markdown" });
+   if (typeof pending.text === "string") load(pending, !!pending.local);
++  else {
++    const params = new URLSearchParams(location.hash.slice(1));
++    const recordID = params.get("record");
++    if (recordID) {
++      const library = await request({op: "library-list"});
++      const record = library.records?.find(item => item.id === recordID);
++      if (!record?.text) throw Error(uiText("已保存的文档不可用。"));
++      load({text: record.text, title: record.title, baseURL: /^https?:/.test(record.url || "") ? record.url : "", resources: {}}, !/^https?:/.test(record.url || ""));
++    }
++    const t = state.tabs.find(tab => tab.id === params.get("tab"));
++    if (t) { $("tabs").value = t.id; $("read-page").click(); }
++  }
+ } catch (e) {
+   notify(e.message);
+ }
++
++for (const id of ["outline-toggle", "find-toggle", "source-toggle", "copy-source", "remote-images"])
++  action(id, () => {
++    if (!current) return;
++    send("command", id);
++    if (id === "outline-toggle") $(id).setAttribute("aria-expanded", String($(id).getAttribute("aria-expanded") !== "true"));
++    if (id === "source-toggle") $(id).setAttribute("aria-pressed", String($(id).getAttribute("aria-pressed") !== "true"));
++  });
++action("open-another", () => $("file").click());
++for (const key of ["theme", "family", "font", "spacing", "width"])
++  $("reading-" + key).onchange = async () => {
++    const preferences = {};
++    for (const field of ["theme", "family", "font", "spacing", "width"])
++      preferences[field] = ["font", "spacing", "width"].includes(field) ? Number($("reading-" + field).value) : $("reading-" + field).value;
++    try {
++      state = await request({op: "reading-preferences", preferences});
++      send("configure", {embedded: true, locale: loadTimeData.getString("aegisLocale"), preferences});
++      notify(uiText("阅读外观已保存。"));
++    } catch (error) { notify(error.message); }
++  };
+diff --git a/chrome/browser/resources/settings/BUILD.gn b/chrome/browser/resources/settings/BUILD.gn
+index 5b58a98f56da953749f3f1c42ee9410b4337e890..44c4086e2d45192c358671ba1b1a3a71ead8200d 100644
+--- a/chrome/browser/resources/settings/BUILD.gn
++++ b/chrome/browser/resources/settings/BUILD.gn
+@@ -51,6 +51,7 @@ build_webui("build") {
+ 
+   # -----------------web_component_files start ---------------------------------
+   web_component_files = [
++    "aegis_page/aegis_page.ts",
+     "ai_page/ai_info_card.ts",
+     "ai_page/ai_logging_info_bullet.ts",
+     "ai_page/ai_mode_search_page.ts",
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.html b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+new file mode 100644
+index 0000000000000000000000000000000000000000..9317eff92b232e85e328d944921069a739352524
+--- /dev/null
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+@@ -0,0 +1,112 @@
++<link rel="stylesheet" href="aegis/enhancements.css">
++<style>
++ :host { display:block; margin: 24px auto; max-width: 1000px; padding: 0 24px; background: transparent; }
++ .page-title { font-size: 20px; font-weight: 500; margin: 0 0 20px; }
++ .setting-row { display:flex; gap:20px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--line); }
++ .setting-row:last-child { border-bottom:0; }
++ .setting-row select { max-width:55%; }
++ #events { padding-left:20px; }
++ #library .item { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
++ #library .item span { flex:1; min-width:150px; }
++</style>
++<h1 class="page-title">[[pageTitle_(mode)]]</h1>
++<template is="dom-if" if="[[isMode_(mode, 'enhancements')]]">
++  <main id="enhancement-root">
++    <header class="page-heading" data-standalone><a href="chrome://settings/aegisEnhancements">← 返回设置</a><h1>网站增强与脚本</h1></header>
++    <p id="notice" role="status" aria-live="polite">正在读取设置…</p>
++    <section class="target-summary">
++      <div class="row"><label for="tabs">当前操作的网页</label><select id="tabs" aria-label="目标网页"></select><button id="refresh">刷新状态</button></div>
++      <p id="scope"></p><p id="private" class="hint"></p>
++    </section>
++    <div id="manager">
++      <div class="row section-heading"><h2>已安装脚本</h2><button id="new" class="primary">新建 / AI 编写</button><label class="file">导入 .user.js<input type="file" id="import" aria-label="导入 .user.js" accept=".js,.user.js,text/javascript" /></label></div>
++      <section><div id="scripts"></div></section>
++      <details id="site-manager"><summary>网站规则 · 右键、选取和复制</summary>
++        <section><div id="sites"></div>
++          <details id="site-editor"><summary>编辑所选网站规则</summary>
++            <label>网站来源<input id="origin" placeholder="https://example.com" /></label>
++            <label class="toggle"><span>恢复右键菜单</span><input type="checkbox" id="menu" /></label>
++            <label class="toggle"><span>允许选取和复制</span><input type="checkbox" id="copy" /></label>
++            <details><summary>更多选项与适用范围</summary>
++              <label class="toggle"><span>网页调试兼容</span><input type="checkbox" id="debug" /></label>
++              <p class="hint">处理部分网页的调试干扰，保留普通断点和导航。</p>
++              <label class="toggle"><span>也应用于子域名</span><input type="checkbox" id="subdomains" /></label>
++              <label class="toggle"><span>暂停本站增强</span><input type="checkbox" id="disabled" /></label>
++              <button id="inspect">打开网页调试工具</button>
++            </details>
++            <button id="save-site">保存网站规则</button><p class="hint">设置保存后不自动刷新。也可直接从地址栏盾牌调整当前网站。</p>
++          </details>
++        </section>
++      </details>
++      <details><summary>本页运行详情</summary><section><div id="runtime"></div><button id="reload">重新加载当前页</button></section></details>
++      <details><summary>恢复操作</summary><section><p>停用此配置中的全部脚本，并重新载入目标页。未提交的输入可能丢失；已发出的请求无法撤销。</p><button id="recover" class="danger">停用全部脚本并恢复当前页</button></section></details>
++    </div>
++    <section id="editor" class="editor" hidden>
++      <div class="row section-heading"><button id="back-list">← 返回脚本列表</button><h2 id="editor-title">脚本草稿</h2></div>
++      <p class="steps">1 描述需求 → 2 检查草稿与权限 → 3 试运行 → 4 确认启用</p>
++      <details id="ai-editor" open><summary>AI 编写与修复</summary>
++        <label>需求或错误反馈<textarea id="goal" rows="3" placeholder="例如：隐藏右侧栏并加宽正文"></textarea></label>
++        <div class="row"><button id="generate" class="primary">生成或修复草稿</button><button id="cancel">取消生成</button></div>
++        <details><summary>发送内容与当前模型</summary><p id="model"></p><button id="context">读取当前页结构供检查</button><pre id="context-preview"></pre><p class="hint">发送需求、编辑器源码及已预览的结构。不会读取密码、Cookie 或表单值。</p></details>
++      </details>
++      <label>源码<textarea id="source" spellcheck="false" rows="18"></textarea></label>
++      <details><summary>执行环境与子框架</summary><label>执行环境<select id="world"><option value="isolated">隔离环境</option><option value="page">页面环境（无 GM 权限）</option></select></label><label><input type="checkbox" id="frames" />在匹配的子框架运行</label></details>
++      <p id="permissions" role="status"></p>
++      <div class="row"><button id="check">检查权限与语法</button><button id="save">保存草稿</button><button id="trial">试运行</button><button id="enable-reviewed" class="primary">确认启用</button><button id="export">导出源码</button><button id="rollback">回退上一版</button></div>
++      <p class="hint">保存修改会撤销旧授权。试运行只使用临时存储；启用前再次确认网址和权限。</p>
++    </section>
++  </main>
++</template>
++<template is="dom-if" if="[[isMode_(mode, 'gestures')]]"><link rel="stylesheet" href="aegis/gestures.css">
++
++    <header>
++      <div class="eyebrow">GCSA AEGIS</div>
++      <h1>鼠标手势</h1>
++      <p>按住鼠标右键画出方向，松开执行。支持网页、设置页和内置 PDF 阅读器。</p>
++    </header>
++    <section aria-labelledby="options-title">
++      <h2 id="options-title">基本设置</h2>
++      <label class="switch-row"><span><strong>启用鼠标手势</strong><small>右键轻点仍打开菜单。按住 Shift 再右键可临时跳过手势。</small></span><input id="enabled" type="checkbox"></label>
++      <label class="switch-row"><span><strong>显示轨迹与动作提示</strong><small>画到哪里、将执行什么，一眼看清。</small></span><input id="showTrail" type="checkbox"></label>
++      <label class="threshold" for="threshold">识别距离 <output id="thresholdValue">16</output> 像素</label>
++      <input id="threshold" type="range" min="8" max="64" value="16">
++      <p class="hint">距离越大，越不容易被小幅抖动触发。斜线方向不明确时不执行；按 Esc 或切换窗口可取消。</p>
++    </section>
++    <section aria-labelledby="practice-title">
++      <div class="section-head"><h2 id="practice-title">先试一试</h2><span class="badge">练习不执行操作</span></div>
++      <div id="practice" tabindex="0" role="group" aria-label="手势练习区：按住右键画方向，松开查看结果">
++        <svg id="practiceSvg" aria-hidden="true"><polyline id="practiceLine"></polyline></svg>
++        <div class="practice-copy"><strong id="practicePattern">按住右键，在这里画一笔</strong><span id="practiceResult" aria-live="polite">上下左右可以组合；松开后查看匹配结果。</span></div>
++      </div>
++    </section>
++    <section aria-labelledby="bindings-title">
++      <div class="section-head"><div><h2 id="bindings-title">手势与动作</h2><p class="hint">输入 L / R / U / D，分别代表 ← → ↑ ↓。最多 8 个方向，同一手势不能重复绑定。</p></div><button id="addBinding" type="button">＋ 添加手势</button></div>
++      <div id="bindings"></div>
++      <p class="hint">PDF 专用动作仅在内置 PDF 阅读器内生效。普通动作在 PDF 中含义不变。</p>
++    </section>
++    <section aria-labelledby="sites-title">
++      <h2 id="sites-title">这些网站不使用手势</h2>
++      <label for="disabledSites" class="hint">每行一个完整域名，例如 example.com。子域名请单独添加。</label>
++      <textarea id="disabledSites" rows="3" spellcheck="false" placeholder="example.com"></textarea>
++    </section>
++    <footer><button id="reset" type="button">恢复默认</button><span id="status" role="status" aria-live="polite">正在加载设置…</span><button id="save" type="button" class="primary" disabled>保存设置</button></footer>
++  </template>
++<template is="dom-if" if="[[isMode_(mode, 'privacy')]]">
++  <a href="/privacy">← 隐私与安全</a><p id="result" role="status"></p>
++  <section><h2>全局保护</h2><div id="protections"></div></section>
++  <section><h2>网站例外与权限</h2><p>临时暂停由当前网站盾牌控制，保留钓鱼防护。</p><a href="/content/all">网站权限与数据</a></section>
++  <section><h2>防护记录</h2><ul id="events"></ul></section>
++</template>
++<template is="dom-if" if="[[isMode_(mode, 'reading')]]">
++  <p id="result" role="status"></p>
++  <section><div class="section-heading row"><h2>阅读库</h2><a href="chrome://aegis/markdown.html">打开 Markdown 文件</a><button id="refresh-library">刷新</button></div><div id="library"></div></section>
++  <section><h2>默认阅读外观</h2>
++    <label class="setting-row">主题<select id="reading-theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
++    <label class="setting-row">字体<select id="reading-family"><option value="sans">系统字体</option><option value="serif">衬线字体</option></select></label>
++    <label class="setting-row">字号<input id="reading-font" type="number" min="12" max="28" value="17"></label>
++    <label class="setting-row">行距<select id="reading-spacing"><option value="150">紧凑</option><option value="180">标准</option><option value="210">宽松</option></select></label>
++    <label class="setting-row">正文宽度<select id="reading-width"><option value="680">窄</option><option value="820">标准</option><option value="1100">宽</option></select></label>
++  </section>
++  <section><h2>Markdown 自动预览网站</h2><div id="markdown-sites"></div><p class="hint">仅对已授权来源的 Markdown 原文响应自动预览。</p></section>
++  <section><h2>图片权限</h2><p>外部图片每次打开文档时询问；本地图片需选择所属目录。阅读外观不会授予图片访问权限。</p></section>
++</template>
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.ts b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a8307a48a6334062191a0c897e0b649fad61df1
+--- /dev/null
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+@@ -0,0 +1,147 @@
++// Copyright 2026 GCSA
++import {sendWithPromise} from 'chrome://resources/js/cr.js';
++import {flush, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
++import {loadTimeData} from '../i18n_setup.js';
++import type {SearchResult} from '../search_settings.js';
++import {getTemplate} from './aegis_page.html.js';
++
++type ReadingPreferences = {theme: string, family: string, font: number, spacing: number, width: number};
++type LibraryRecord = {id: string, title: string, archived?: boolean, text?: string, url?: string};
++type State = {error?: string, readingPreferences?: ReadingPreferences, markdownSites?: Record<string, boolean>, records?: LibraryRecord[]};
++
++export class SettingsAegisPageElement extends PolymerElement {
++  static get is() { return 'settings-aegis-page'; }
++  static get template() { return getTemplate(); }
++  static get properties() { return {mode: {type: String}}; }
++  declare mode: string;
++  private translate_: (value: string) => string = value => value;
++  private cleanup_: (() => void)|undefined;
++  protected isMode_(mode: string, expected: string): boolean { return mode === expected; }
++  protected pageTitle_(mode: string): string {
++    return loadTimeData.getString({enhancements: 'aegisEnhancementsTitle', reading: 'aegisReadingTitle', gestures: 'aegisGesturesTitle', privacy: 'aegisPrivacyTitle'}[mode] || 'aegisEnhancementsTitle');
++  }
++  override connectedCallback() {
++    super.connectedCallback();
++    queueMicrotask(() => { flush(); void this.initialize_().catch(error => this.message_(String(error))); });
++  }
++  override disconnectedCallback() { this.cleanup_?.(); super.disconnectedCallback(); }
++  private element_<T extends HTMLElement = HTMLElement>(id: string): T {
++    const value = this.shadowRoot!.querySelector<T>('#' + id);
++    if (!value) throw Error('设置控件不可用：' + id);
++    return value;
++  }
++  private message_(value: string) {
++    const target = this.shadowRoot?.querySelector('#result, #notice, #status');
++    if (target) target.textContent = value;
++  }
++  private async request_(request: object): Promise<State> {
++    const result = await sendWithPromise<State>('aegisEnhancements', request);
++    if (result.error) throw Error(result.error);
++    return result;
++  }
++  searchContents(query: string): Promise<SearchResult> {
++    flush();
++    const keywords = this.mode === 'enhancements' ? '复制 右键 脚本 user.js copy context menu scripts' : this.mode === 'reading' ? 'Markdown 阅读 字体 图片 文档 reading library' : this.mode === 'privacy' ? '跟踪 指纹 Cookie 隐私 privacy tracking fingerprint' : '鼠标 手势 mouse gestures';
++    const text = (this.shadowRoot?.textContent || '') + keywords;
++    const match = !query || text.toLocaleLowerCase().includes(query.toLocaleLowerCase());
++    // 搜索命中时展开管理分类，避免结果藏在折叠标题下。
++    if (query && match) this.shadowRoot?.querySelectorAll<HTMLDetailsElement>('details').forEach(node => node.open = true);
++    return Promise.resolve({canceled: false, matchCount: match ? 1 : 0, wasClearSearch: !query});
++  }
++  private async initialize_() {
++    const i18nModule = await import('/' + 'aegis/enhancements_shared/i18n.js');
++    void i18nModule;
++    const i18n = (globalThis as unknown as {AegisI18n: {t: (value: string) => string, translate: (root: ShadowRoot) => void, setLocale: (value: string) => void}}).AegisI18n;
++    i18n.setLocale(loadTimeData.getString('aegisLocale'));
++    this.translate_ = i18n.t;
++    i18n.translate(this.shadowRoot!);
++    if (this.mode === 'enhancements') {
++      for (const path of ['aegis/enhancements_shared/core.js', 'aegis/enhancements_shared/vendor/acorn.js']) await import('/' + path);
++      const module = await import('/' + 'aegis/enhancements.js');
++      await module.initializeEnhancements(this.shadowRoot);
++    } else if (this.mode === 'gestures') {
++      const module = await import('/' + 'aegis/gestures.js');
++      this.cleanup_ = module.initializeGestures(this.shadowRoot);
++    } else if (this.mode === 'reading') {
++      const state = await this.request_({op: 'state'});
++      const prefs = state.readingPreferences || {theme: 'system', family: 'sans', font: 17, spacing: 180, width: 820};
++      for (const key of ['theme', 'family', 'font', 'spacing', 'width'] as const) {
++        const control = this.element_<HTMLInputElement|HTMLSelectElement>('reading-' + key);
++        control.value = String(prefs[key]);
++        control.onchange = () => { void this.saveReading_(); };
++      }
++      const sites = this.element_('markdown-sites');
++      for (const [origin, enabled] of Object.entries(state.markdownSites || {})) {
++        if (!enabled) continue;
++        const label = document.createElement('label'); label.className = 'setting-row';
++        const text = document.createElement('span'); text.textContent = origin;
++        const control = document.createElement('input'); control.type = 'checkbox'; control.checked = true;
++        control.onchange = async () => {
++          control.disabled = true;
++          try { await this.request_({op: 'markdown-site', origin, enabled: control.checked}); this.message_(this.translate_('网站预览设置已保存。')); }
++          catch (error) { control.checked = !control.checked; this.message_(String(error)); }
++          finally { control.disabled = false; }
++        };
++        label.append(text, control); sites.append(label);
++      }
++      if (!sites.childElementCount) sites.textContent = this.translate_('尚未授权自动预览网站。可以从在线文档的来源菜单开启。');
++      this.element_('refresh-library').onclick = () => { void this.library_().catch(error => this.message_(String(error))); };
++      await this.library_();
++    } else if (this.mode === 'privacy') {
++      await this.privacy_();
++    }
++  }
++  private async saveReading_() {
++    const read = (key: string) => this.element_<HTMLInputElement|HTMLSelectElement>('reading-' + key).value;
++    try {
++      await this.request_({op: 'reading-preferences', preferences: {theme: read('theme'), family: read('family'), font: Number(read('font')), spacing: Number(read('spacing')), width: Number(read('width'))}});
++      this.message_(this.translate_('阅读外观已保存，下次打开文档时应用。'));
++    } catch (error) { this.message_(String(error)); }
++  }
++  private async library_() {
++    const result = await this.request_({op: 'library-list'});
++    const list = this.element_('library'); list.replaceChildren();
++    for (const record of result.records || []) {
++      if (record.archived) continue;
++      const row = document.createElement('div'); row.className = 'item';
++      const title = document.createElement('span'); title.textContent = record.title;
++      const open = document.createElement('a'); open.textContent = record.text ? this.translate_('阅读已保存原文') : this.translate_('打开来源');
++      open.href = record.text ? 'chrome://aegis/markdown.html#record=' + encodeURIComponent(record.id) : '#';
++      if (!record.text) open.onclick = event => { event.preventDefault(); void this.request_({op: 'library-open', id: record.id}).catch(error => this.message_(String(error))); };
++      row.append(title, open);
++      if (record.text) {
++        const detail = document.createElement('details'); const label = document.createElement('summary'); label.textContent = this.translate_('已保存的原文');
++        const text = document.createElement('pre'); text.textContent = record.text; detail.append(label, text); row.append(detail);
++      }
++      list.append(row);
++    }
++    if (!list.childElementCount) list.textContent = this.translate_('阅读库为空。在文档的更多操作中保存原文。');
++  }
++  private async privacy_() {
++    const status = await sendWithPromise<Record<string, unknown>>('getStatus');
++    const list = this.element_('protections'); list.replaceChildren();
++    const labels: Record<string, string> = {trackerBlocking: this.translate_('拦截跟踪请求'), phishInterstitial: this.translate_('钓鱼网站保护'), fingerprintGuard: this.translate_('指纹防护'), linkSanitize: this.translate_('清理链接参数'), cookieJanitor: this.translate_('清理跟踪 Cookie'), cnameUncloak: this.translate_('识别别名跟踪'), bounceTracking: this.translate_('跳转跟踪清理'), minerGuard: this.translate_('挖矿风险观察'), filterListAutoUpdate: this.translate_('自动更新过滤规则')};
++    for (const [key, name] of Object.entries(labels)) {
++      const row = document.createElement('label'); row.className = 'setting-row';
++      const title = document.createElement('span'); title.textContent = name;
++      const control = document.createElement('input'); control.type = 'checkbox'; control.checked = status[key] === true;
++      control.disabled = status['profileAvailable'] === false;
++      control.onchange = async () => {
++        control.disabled = true;
++        try {
++          const next = await sendWithPromise<Record<string, unknown>>('setModuleEnabled', key, control.checked);
++          control.checked = next[key] === true;
++          this.message_(next['ok'] === false ? '设置未保存，请重试。' : this.translate_('设置已保存。'));
++        } catch (error) { control.checked = !control.checked; this.message_(String(error)); }
++        finally { control.disabled = false; }
++      };
++      row.append(title, control); list.append(row);
++    }
++    const events = this.element_('events'); events.replaceChildren();
++    for (const event of (status['recentEvents'] || []) as Array<{kind: string, domain: string, count: number}>) {
++      const row = document.createElement('li'); row.textContent = event.domain + ' · ' + event.kind + ' × ' + event.count; events.append(row);
++    }
++    if (!events.childElementCount) events.textContent = this.translate_('暂无防护记录。');
++  }
++}
++customElements.define(SettingsAegisPageElement.is, SettingsAegisPageElement);
+diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
+index 591870805ef317288dd05f65d0ce3e4a47337bf8..e95cd297f3e3649f46b960ef2932ef1a2605a383 100644
+--- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
++++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
+@@ -2,10 +2,9 @@
+   <settings-section page-title="$i18n{privacyPageTitle}">
+     <cr-link-row id="aegisLinkRow"
+         start-icon="privacy:lock"
+-        label="$i18n{aegisSettingsRowLabel}"
+-        sub-label="$i18n{aegisSettingsRowSublabel}"
+-        on-click="onAegisSettingsClick_"
+-        external></cr-link-row>
++        label="$i18n{aegisPrivacyTitle}"
++        sub-label="$i18n{aegisPrivacyDescription}"
++        on-click="onAegisSettingsClick_"></cr-link-row>
+     <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
+       <settings-clear-browsing-data-dialog
+           on-close="onCbdDialogClosed_"
+diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.ts b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
+index 08f191188e266d673ea56286e775c00d21aaa2a8..45ff91ff570b67b93e340a658203cfa996dfd22b 100644
+--- a/chrome/browser/resources/settings/privacy_page/privacy_page.ts
++++ b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
+@@ -127,7 +127,7 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
+ 
+   private onAegisSettingsClick_() {
+     this.interactedWithPage_();
+-    OpenWindowProxyImpl.getInstance().openUrl('chrome://aegis');
++    Router.getInstance().navigateTo(routes.AEGIS_PRIVACY);
+   }
+ 
+   private onCookiesClick_() {
+diff --git a/chrome/browser/resources/settings/route.ts b/chrome/browser/resources/settings/route.ts
+index aff0d534fdcfdb4cdc02901d2ae177a59f44d9a9..157b3acb3f49805865a3209ecd71c72eef793a37 100644
+--- a/chrome/browser/resources/settings/route.ts
++++ b/chrome/browser/resources/settings/route.ts
+@@ -142,6 +142,10 @@ function createRoutes(): SettingsRoutes {
+ 
+   // Root page.
+   r.BASIC = new Route('/');
++  r.AEGIS_ENHANCEMENTS = r.BASIC.createSection('/aegisEnhancements', 'aegisEnhancements', loadTimeData.getString('aegisEnhancementsTitle'));
++  r.AEGIS_READING = r.BASIC.createSection('/aegisReading', 'aegisReading', loadTimeData.getString('aegisReadingTitle'));
++  r.AEGIS_GESTURES = r.BASIC.createSection('/aegisGestures', 'aegisGestures', loadTimeData.getString('aegisGesturesTitle'));
++  r.AEGIS_PRIVACY = r.BASIC.createSection('/aegisPrivacy', 'aegisPrivacy', loadTimeData.getString('aegisPrivacyTitle'));
+ 
+   r.ABOUT = r.BASIC.createSection(
+       '/help', 'about', loadTimeData.getString('aboutPageTitle'));
+diff --git a/chrome/browser/resources/settings/router.ts b/chrome/browser/resources/settings/router.ts
+index a6b043271a7318309f7490d90f6ffd8ee4bc0a2a..d07ed49a7bcb97c2b3368f601f98e5665fb096c1 100644
+--- a/chrome/browser/resources/settings/router.ts
++++ b/chrome/browser/resources/settings/router.ts
+@@ -14,6 +14,10 @@ import {loadTimeData} from './i18n_setup.js';
+  * Specifies all possible routes in settings.
+  */
+ export interface SettingsRoutes {
++  AEGIS_ENHANCEMENTS: Route;
++  AEGIS_READING: Route;
++  AEGIS_GESTURES: Route;
++  AEGIS_PRIVACY: Route;
+   ABOUT: Route;
+   ACCESSIBILITY: Route;
+   ADDRESSES: Route;
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
+index b5c3842ff0449c621350a20e5bacdd1ce8577228..e3529823e885e2b16139b742f02af98feaf8f26a 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.html
++++ b/chrome/browser/resources/settings/settings_main/settings_main.html
+@@ -50,6 +50,10 @@
+ 
+ <cr-view-manager id="switcher"
+     show-all$="[[shouldShowAll_(inSearchMode_, lastRoute_)]]">
++  <div slot="view" id="aegisEnhancements"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_ENHANCEMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="enhancements"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisReading"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_READING, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="reading"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisGestures"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_GESTURES, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="gestures"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisPrivacy"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_PRIVACY, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="privacy"></settings-aegis-page></template></div>
+   <template is="dom-if" if="[[showPage_(pageVisibility_.people)]]">
+     <div slot="view" id="people">
+       <template is="dom-if" if="[[renderPlugin_(
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.ts b/chrome/browser/resources/settings/settings_main/settings_main.ts
+index d9fd6ab2a9aa0dda6774762475b764eec7123c40..18899cf080024465eed9484cfdb1da0110e453f5 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.ts
++++ b/chrome/browser/resources/settings/settings_main/settings_main.ts
+@@ -11,6 +11,7 @@ import 'chrome://resources/cr_elements/cr_shared_style.css.js';
+ import 'chrome://resources/cr_elements/cr_view_manager/cr_view_manager.js';
+ import 'chrome://resources/cr_elements/icons.html.js';
+ import '../about_page/about_page.js';
++import '../aegis_page/aegis_page.js';
+ import '../ai_page/ai_page_index.js';
+ import '../appearance_page/appearance_page_index.js';
+ import '../autofill_page/autofill_page_index.js';
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+index 8752b005f49268703d762fba8a4e07d2a7915f51..e4e829ac1d7e88023746818b6ebd7200de5ab904 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+@@ -72,14 +72,12 @@
+     </style>
+ 
+     <div role="navigation">
+-      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink):not(#aegisGesturesLink)"
++      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
+           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
+           on-click="onLinkClick_" selected-attribute="selected">
+-        <a role="menuitem" id="aegisGesturesLink"
+-            class="cr-nav-menu-item" href="chrome://aegis/gestures.html">
+-          <cr-icon icon="settings:touchpad-mouse"></cr-icon>
+-          鼠标手势
+-        </a>
++        <a role="menuitem" class="cr-nav-menu-item" href="/aegisEnhancements"><cr-icon icon="settings:code"></cr-icon>$i18n{aegisEnhancementsTitle}</a>
++        <a role="menuitem" class="cr-nav-menu-item" href="/aegisReading"><cr-icon icon="settings:appearance"></cr-icon>$i18n{aegisReadingTitle}</a>
++        <a role="menuitem" class="cr-nav-menu-item" href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon>$i18n{aegisGesturesTitle}</a>
+         <a role="menuitem"
+             id="people" href="/people"
+             hidden="[[!showPeopleMenuItem_(
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index fe0a3efec372d47e876ae683541cb105ac0efa5e..dc52e3cb26d934fe3f6027367d9684dbf095b07a 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -1310,7 +1310,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
+     case IDC_AEGIS_ENHANCEMENTS:
+     case IDC_AEGIS_MARKDOWN:
+       if (IsAegisProfileSupported(profile()))
+-        ShowSingletonTab(browser_, GURL(id == IDC_AEGIS_ENHANCEMENTS ? "chrome://aegis/enhancements.html" : "chrome://aegis/markdown.html"));
++        ShowSingletonTab(browser_, GURL(id == IDC_AEGIS_ENHANCEMENTS ? "chrome://settings/aegisEnhancements" : "chrome://settings/aegisReading"));
+       break;
+     case IDC_SHOW_AEGIS_AGENT:
+       SidePanelUI::From(browser_)->Show(
+diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
+index 7b00b4f5bf6c0e17091cf4406a282dc75e519d72..c8efeb579dfc191203df0c269122bfcec15c37f6 100644
+--- a/chrome/browser/ui/toolbar/app_menu_model.cc
++++ b/chrome/browser/ui/toolbar/app_menu_model.cc
+@@ -2346,17 +2346,19 @@ void AppMenuModel::Build() {
+ #endif
+ #endif
+ 
++  if (const auto about = GetIndexOfCommandId(IDC_ABOUT)) {
++    const std::string locale = g_browser_process->GetApplicationLocale();
++    SetLabel(*about, locale.starts_with("zh")
++        ? (locale == "zh-TW" || locale == "zh-HK" ? u"關於 GCSA Aegis" : u"关于 GCSA Aegis")
++        : u"About GCSA Aegis");
++  }
++
+   AddItemWithStringIdAndVectorIcon(
+       this, IDC_OPTIONS, IDS_SETTINGS,
+       features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
+   if (IsAegisProfileSupported(browser_->GetProfile())) {
+     const std::string locale = g_browser_process->GetApplicationLocale();
+-    AddItem(IDC_AEGIS_ENHANCEMENTS, locale.starts_with("zh") ? (locale == "zh-TW" ? u"網站增強與腳本" : u"网站增强与脚本") : u"Website enhancements and scripts");
+-    AddItem(IDC_AEGIS_MARKDOWN, locale.starts_with("zh") ? (locale == "zh-TW" ? u"Markdown 閱讀" : u"Markdown 阅读") : u"Markdown reader");
+-    AddItemWithStringIdAndVectorIcon(
+-        this, IDC_SHOW_AEGIS, IDS_AEGIS_SETTINGS_MENU,
+-        features::IsRoundedIconsEnabled() ? kSettingsIcon
+-                                          : kSettingsMenuOldIcon);
++    AddItem(IDC_AEGIS_MARKDOWN, locale.starts_with("zh") ? (locale == "zh-TW" ? u"閱讀庫" : u"阅读库") : u"Reading library");
+   }
+ 
+   if (browser_defaults::kShowExitMenuItem) {
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 6e6a70d349122c40079db4185d22e37a9bf89a52..3fe98d7a3660a59994cc9d8e639491f3da229bcc 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -5,6 +5,7 @@
+ #include <algorithm>
+ #include <memory>
+ #include <optional>
++#include <set>
+ #include <string>
+ #include <utility>
+ 
+@@ -14,7 +15,12 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+-#include "chrome/browser/aegis/summary_session.h"
++#include "chrome/browser/aegis/enhancements/enhancement_store.h"
++#include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/timer/timer.h"
++#include "ui/views/controls/button/checkbox.h"
++#include "url/origin.h"
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_commands.h"
+@@ -48,7 +54,6 @@
+ namespace {
+ 
+ constexpr int kBubbleWidth = 440;
+-constexpr int kResultMaxHeight = 300;
+ constexpr base::TimeDelta kIntroDuration = base::Seconds(4);
+ 
+ aegis::AegisService* ServiceForBrowser(BrowserWindowInterface* browser) {
+@@ -113,17 +118,6 @@ std::u16string EventKind(const std::string& kind) {
+   return Copy(u"保护动作", u"Protection action", u"保護動作");
+ }
+ 
+-std::u16string ModelFormat(const std::string& provider) {
+-  if (provider == "anthropic") {
+-    return Copy(u"Claude（Anthropic）兼容", u"Anthropic compatible",
+-                u"Claude（Anthropic）相容");
+-  }
+-  if (provider == "gemini") {
+-    return Copy(u"Gemini 兼容", u"Gemini compatible", u"Gemini 相容");
+-  }
+-  return Copy(u"OpenAI 兼容", u"OpenAI compatible", u"OpenAI 相容");
+-}
+-
+ views::Label* AddLabel(
+     views::View* parent,
+     std::u16string text,
+@@ -144,449 +138,288 @@ std::unique_ptr<views::View> CreatePanel() {
+   return panel;
+ }
+ 
+-std::unique_ptr<views::View> CreateButtonRow() {
+-  auto row = std::make_unique<views::View>();
+-  auto* layout = row->SetLayoutManager(std::make_unique<views::BoxLayout>(
+-      views::BoxLayout::Orientation::kHorizontal, gfx::Insets(), 8));
+-  layout->set_main_axis_alignment(views::BoxLayout::MainAxisAlignment::kEnd);
+-  return row;
+-}
+-
++// 面板始终绑定打开时的文档；切换标签或导航后关闭，避免操作落到别的网页。
+ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   METADATA_HEADER(AegisPageBubble, LocationBarBubbleDelegateView)
+-
+  public:
+   AegisPageBubble(AegisToolbarButton* anchor,
+                   BrowserWindowInterface* browser,
+                   aegis::PagePrivacySummary summary)
+-      : LocationBarBubbleDelegateView(
+-            views::BubbleAnchor(anchor),
+-            browser->GetTabStripModel()->GetActiveWebContents(),
+-            /*autosize=*/true),
+-        browser_(browser),
+-        summary_(std::move(summary)) {
++      : LocationBarBubbleDelegateView(views::BubbleAnchor(anchor),
++            browser->GetTabStripModel()->GetActiveWebContents(), true),
++        browser_(browser), summary_(std::move(summary)),
++        source_(browser->GetTabStripModel()->GetActiveWebContents()->GetWeakPtr()) {
+     SetButtons(static_cast<int>(ui::mojom::DialogButton::kNone));
+     SetShowCloseButton(true);
+     set_margins(gfx::Insets::VH(16, 18));
+-    const std::u16string title = Copy(
+-        u"Aegis 当前站点保护", u"Aegis site protection", u"Aegis 當前站點保護");
++    const auto title = Copy(u"当前网站", u"Current website", u"目前網站");
+     SetTitle(title);
+     SetAccessibleTitle(title);
+     set_fixed_width(kBubbleWidth);
+-  }
+-
+-  AegisPageBubble(const AegisPageBubble&) = delete;
+-  AegisPageBubble& operator=(const AegisPageBubble&) = delete;
+-  ~AegisPageBubble() override {
+-    if (summary_session_) {
+-      summary_session_->Cancel();
++    address_ = source_->GetLastCommittedURL();
++    if (auto* helper = Helper()) {
++      document_ = aegis::EnhancementField(helper->Snapshot(), "document");
++      tab_ = aegis::EnhancementField(helper->Snapshot(), "id");
+     }
+   }
+-
+  private:
+-  void Init() override {
+-    auto* layout = SetLayoutManager(std::make_unique<views::BoxLayout>(
+-        views::BoxLayout::Orientation::kVertical, gfx::Insets(), 10));
+-    layout->set_cross_axis_alignment(
+-        views::BoxLayout::CrossAxisAlignment::kStretch);
+-
+-    BuildProtectionPanel();
+-    BuildProgressPanel();
+-    BuildPreviewPanel();
+-    BuildResultPanel();
+-    ShowPanel(protection_panel_);
+-  }
+-
+-  void BuildProtectionPanel() {
+-    protection_panel_ = AddChildView(CreatePanel());
+-
+-    const std::u16string site =
+-        summary_.site_key.empty()
+-            ? Copy(u"当前内部页面", u"this internal page", u"當前內部頁面")
+-            : base::UTF8ToUTF16(summary_.site_key);
+-    AddLabel(protection_panel_,
+-             summary_.paused
+-                 ? Copy(u"此站的跟踪与清理规则已暂停 10 分钟",
+-                        u"Tracking and cleanup rules are paused for 10 minutes",
+-                        u"此站的跟蹤與清理規則已暫停 10 分鐘")
+-                 : Copy(u"Aegis 正在保护 ", u"Aegis is protecting ",
+-                        u"Aegis 正在保護 ") +
+-                       site,
+-             views::style::CONTEXT_DIALOG_TITLE);
+-
+-    AddLabel(protection_panel_,
+-             Copy(u"本页已处理 ", u"Handled ", u"本頁已處理 ") +
+-                 base::NumberToString16(summary_.total) +
+-                 Copy(u" 项", u" items on this page", u" 項"));
+-    AddLabel(protection_panel_,
+-             Copy(u"阻止跟踪请求：", u"Blocked requests: ", u"阻止跟蹤請求：") +
+-                 base::NumberToString16(summary_.blocked));
+-    AddLabel(protection_panel_, Copy(u"清理链接与来源跟踪参数：",
+-                                     u"Cleaned link/referrer parameters: ",
+-                                     u"清理連結與來源跟蹤引數：") +
+-                                    base::NumberToString16(summary_.params));
+-    AddLabel(protection_panel_,
+-             Copy(u"清理跟踪 Cookie：", u"Cleaned tracking cookies: ",
+-                  u"清理跟蹤 Cookie：") +
+-                 base::NumberToString16(summary_.cookies));
+-    AddLabel(protection_panel_,
+-             Copy(u"挖矿风险提醒（仅观察）：",
+-                  u"Mining risk alerts (observe-only): ",
+-                  u"挖礦風險提醒（僅觀察）：") +
+-                 base::NumberToString16(summary_.miner_alerts));
+-
+-    AddLabel(protection_panel_,
+-             summary_.fingerprint_configured
+-                 ? Copy(u"指纹防护配置：已开启",
+-                        u"Fingerprint protection configured: on",
+-                        u"指紋防護設定：已開啟")
+-                 : Copy(u"指纹防护配置：未开启",
+-                        u"Fingerprint protection configured: off",
+-                        u"指紋防護設定：未開啟"));
+-    if (!summary_.site_history.empty()) {
+-      AddLabel(protection_panel_,
+-               Copy(u"本站历史（未归属到当前页面）",
+-                    u"Site history (not attributed to this page)",
+-                    u"本站歷史（未歸屬到目前頁面）"),
+-               views::style::CONTEXT_DIALOG_TITLE);
+-      for (size_t index = 0;
+-           index < std::min<size_t>(3, summary_.site_history.size()); ++index) {
+-        const auto& event = summary_.site_history[index];
+-        AddLabel(
+-            protection_panel_,
+-            u"• " + EventKind(event.kind) + u" · " +
+-                base::UTF8ToUTF16(event.display_domain) +
+-                (event.count > 1 ? u" ×" + base::NumberToString16(event.count)
+-                                 : std::u16string()));
+-      }
+-    }
+-    if (!summary_.events.empty()) {
+-      AddLabel(protection_panel_,
+-               Copy(u"最近发生了什么", u"Recent actions", u"最近發生了什麼"),
+-               views::style::CONTEXT_DIALOG_TITLE);
+-      const size_t visible_events = std::min<size_t>(5, summary_.events.size());
+-      for (size_t index = 0; index < visible_events; ++index) {
+-        const aegis::PrivacyEvent& event = summary_.events[index];
+-        const std::u16string domain = base::UTF8ToUTF16(
+-            event.display_domain.empty() ? event.site_key
+-                                         : event.display_domain);
+-        AddLabel(
+-            protection_panel_,
+-            u"• " + EventKind(event.kind) + u" · " + domain +
+-                (event.count > 1 ? u" ×" + base::NumberToString16(event.count)
+-                                 : std::u16string()));
+-      }
+-    }
+-
+-    auto summarize_button = std::make_unique<views::MdTextButton>(
+-        base::BindRepeating(&AegisPageBubble::OpenSummary,
+-                            base::Unretained(this)),
+-        Copy(u"AI 摘要当前页", u"Summarize this page with AI",
+-             u"AI 摘要當前頁"));
+-    summarize_button->SetEnabled(CanSummarizeCurrentPage());
+-    if (!summarize_button->GetEnabled()) {
+-      summarize_button->SetTooltipText(
+-          Copy(u"AI 摘要仅支持普通网页", u"AI summary supports web pages only",
+-               u"AI 摘要僅支援一般網頁"));
+-    }
+-    protection_panel_->AddChildView(std::move(summarize_button));
+-
+-    if (!summary_.site_key.empty()) {
+-      protection_panel_->AddChildView(std::make_unique<views::MdTextButton>(
+-          base::BindRepeating(&AegisPageBubble::TogglePause,
+-                              base::Unretained(this)),
+-          summary_.paused
+-              ? Copy(u"恢复此站默认保护", u"Restore protection for this site",
+-                     u"恢復此站預設保護")
+-              : Copy(u"为此站暂停 10 分钟并重新加载",
+-                     u"Pause this site for 10 minutes and reload",
+-                     u"為此站暫停 10 分鐘並重新載入")));
+-    }
+-    protection_panel_->AddChildView(std::make_unique<views::MdTextButton>(
+-        base::BindRepeating(&AegisPageBubble::OpenSettings,
+-                            base::Unretained(this)),
+-        Copy(u"打开防护中心", u"Open full settings", u"開啟防護中心")));
+-    AddLabel(protection_panel_,
+-             Copy(u"临时暂停不关闭钓鱼防护，也不会改变全局默认。",
+-                  u"Temporary pause keeps phishing protection on and "
+-                  u"does not change global defaults.",
+-                  u"臨時暫停不關閉釣魚防護，也不會改變全域性預設。"));
+-  }
+-
+-  void BuildProgressPanel() {
+-    progress_panel_ = AddChildView(CreatePanel());
+-    progress_panel_->SetVisible(false);
+-    throbber_ =
+-        progress_panel_->AddChildView(std::make_unique<views::Throbber>());
+-    AddLabel(progress_panel_,
+-             Copy(u"AI 摘要当前页", u"AI page summary", u"AI 摘要當前頁"),
+-             views::style::CONTEXT_DIALOG_TITLE);
+-    progress_label_ = AddLabel(progress_panel_,
+-                               Copy(u"正在读取并脱敏当前页…",
+-                                    u"Reading and redacting the current page…",
+-                                    u"正在讀取並脫敏當前頁…"));
+-    progress_panel_->AddChildView(std::make_unique<views::MdTextButton>(
+-        base::BindRepeating(&AegisPageBubble::CancelSummary,
+-                            base::Unretained(this)),
+-        Copy(u"取消摘要", u"Cancel summary", u"取消摘要")));
+-  }
+-
+-  void BuildPreviewPanel() {
+-    preview_panel_ = AddChildView(CreatePanel());
+-    preview_panel_->SetVisible(false);
+-    AddLabel(preview_panel_,
+-             Copy(u"摘要前确认", u"Confirm summary", u"摘要前確認"),
+-             views::style::CONTEXT_DIALOG_TITLE);
+-    preview_site_label_ = AddLabel(preview_panel_, std::u16string());
+-    preview_read_label_ = AddLabel(preview_panel_, std::u16string());
+-    preview_redacted_label_ = AddLabel(preview_panel_, std::u16string());
+-    preview_destination_label_ = AddLabel(preview_panel_, std::u16string());
+-    AddLabel(
+-        preview_panel_,
+-        Copy(u"不会显示或送出完整网址查询参数；非本机地址只有确认后才会发送脱敏"
+-             u"文本。",
+-             u"Full URL query values are never shown or sent. Redacted text "
+-             u"is sent to a non-local endpoint only after confirmation.",
+-             u"不會顯示或送出完整網址查詢引數；非本機地址只有確認後才會傳送脫敏"
+-             u"文字。"));
+-
+-    auto buttons = CreateButtonRow();
+-    buttons->AddChildView(std::make_unique<views::MdTextButton>(
+-        base::BindRepeating(&AegisPageBubble::CancelSummary,
+-                            base::Unretained(this)),
+-        Copy(u"取消", u"Cancel", u"取消")));
+-    auto confirm = std::make_unique<views::MdTextButton>(
+-        base::BindRepeating(&AegisPageBubble::ConfirmSummary,
+-                            base::Unretained(this)),
+-        Copy(u"确认并摘要", u"Confirm and summarize", u"確認並摘要"));
+-    confirm->SetStyle(ui::ButtonStyle::kProminent);
+-    confirm_button_ = buttons->AddChildView(std::move(confirm));
+-    preview_panel_->AddChildView(std::move(buttons));
++  aegis::EnhancementTabHelper* Helper() const {
++    return source_ ? aegis::EnhancementTabHelper::FromWebContents(source_.get()) : nullptr;
+   }
+-
+-  void BuildResultPanel() {
+-    result_panel_ = AddChildView(CreatePanel());
+-    result_panel_->SetVisible(false);
+-    AddLabel(result_panel_,
+-             Copy(u"AI 摘要结果", u"AI summary result", u"AI 摘要結果"),
+-             views::style::CONTEXT_DIALOG_TITLE);
+-
+-    auto scroll_view = std::make_unique<views::ScrollView>();
+-    scroll_view->SetHorizontalScrollBarMode(
+-        views::ScrollView::ScrollBarMode::kDisabled);
+-    scroll_view->ClipHeightTo(80, kResultMaxHeight);
+-    auto result_contents = CreatePanel();
+-    result_label_ = AddLabel(result_contents.get(), std::u16string());
+-    result_label_->SetSelectable(true);
+-    result_label_->SetMaximumWidth(kBubbleWidth - 48);
+-    scroll_view->SetContents(std::move(result_contents));
+-    result_panel_->AddChildView(std::move(scroll_view));
+-    result_panel_->AddChildView(std::make_unique<views::MdTextButton>(
+-        base::BindRepeating(&AegisPageBubble::CancelSummary,
+-                            base::Unretained(this)),
+-        Copy(u"返回站点保护", u"Back to site protection", u"返回站點保護")));
++  bool Valid() const {
++    return source_ && browser_->GetTabStripModel()->GetActiveWebContents() == source_.get() &&
++           source_->GetLastCommittedURL() == address_ &&
++           (!Helper() || aegis::EnhancementField(Helper()->Snapshot(), "document") == document_);
+   }
+-
+-  void TogglePause() {
+-    content::WebContents* source =
+-        browser_->GetTabStripModel()->GetActiveWebContents();
+-    aegis::AegisService* service = ServiceForWebContents(browser_, source);
+-    if (!service || summary_.site_key.empty()) {
++  void Init() override {
++    SetLayoutManager(std::make_unique<views::BoxLayout>(
++        views::BoxLayout::Orientation::kVertical));
++    auto scroll = std::make_unique<views::ScrollView>();
++    scroll->SetHorizontalScrollBarMode(views::ScrollView::ScrollBarMode::kDisabled);
++    scroll->ClipHeightTo(80, 580);
++    panel_ = scroll->SetContents(CreatePanel());
++    AddChildView(std::move(scroll));
++    Build();
++    timer_.Start(FROM_HERE, base::Milliseconds(500), this, &AegisPageBubble::Poll);
++  }
++  void Poll() {
++    if (!Valid()) {
++      if (GetWidget()) GetWidget()->Close();
+       return;
+     }
+-    service->SetSitePaused(summary_.site_key, !summary_.paused,
+-                           base::Minutes(10));
+-    if (GetWidget()) {
+-      GetWidget()->Close();
+-    }
++    auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
++    const auto snapshot = Helper() ? Helper()->Snapshot() : base::DictValue();
++    const int revision = store->state().FindInt("revision").value_or(0);
++    if (revision != revision_ || snapshot != snapshot_) Build();
++  }
++  void RefreshSoon() {
++    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++        FROM_HERE, base::BindOnce(&AegisPageBubble::Build, weak_.GetWeakPtr()));
++  }
++  void Button(views::View* parent, std::u16string title, base::RepeatingClosure action) {
++    parent->AddChildView(std::make_unique<views::MdTextButton>(std::move(action), std::move(title)));
++  }
++  void Toggle(views::View* parent, std::u16string title, bool value,
++              base::RepeatingClosure action) {
++    auto checkbox = std::make_unique<views::Checkbox>(std::move(title), std::move(action));
++    checkbox->SetChecked(value);
++    parent->AddChildView(std::move(checkbox));
++  }
++  void Expand(const std::string& key) {
++    if (!expanded_.erase(key)) expanded_.insert(key);
++    RefreshSoon();
++  }
++  void Mutate(base::DictValue request) {
++    if (!Valid()) return;
++    aegis::EnhancementStore::Get(browser_->GetProfile())->Mutate(
++        request, base::BindOnce([](base::WeakPtr<AegisPageBubble> self, std::string error) {
++          if (!self || !self->Valid()) return;
++          self->notice_ = error.empty()
++              ? Copy(u"已保存，重新加载后生效。", u"Saved. Reload to apply.", u"已儲存，重新載入後生效。")
++              : base::UTF8ToUTF16(error);
++          self->RefreshSoon();
++        }, weak_.GetWeakPtr()));
++  }
++  void ChangeRule(std::string key) {
++    if (!Valid()) return;
++    auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
++    // 快捷开关只写当前精确来源；不意外改变父域名已有的子域规则。
++    base::DictValue rule = store->Rule(address_) ? store->Rule(address_)->Clone() : base::DictValue();
++    const auto origin = url::Origin::Create(address_).Serialize();
++    if (aegis::EnhancementField(rule, "origin") != origin) rule.Set("subdomains", false);
++    rule.Set("origin", origin);
++    for (const auto* field : {"menu", "copy", "debug", "subdomains", "disabled"})
++      if (!rule.FindBool(field)) rule.Set(field, false);
++    rule.Set(key, !rule.FindBool(key).value_or(false));
++    Mutate(base::DictValue().Set("op", "site-save").Set("rule", std::move(rule)));
++  }
++  void SiteScript(std::string id) {
++    if (!Valid()) return;
++    const auto* script = aegis::EnhancementStore::Get(browser_->GetProfile())->Script(id);
++    if (!script || !script->FindBool("enabled").value_or(false)) return;
++    Mutate(base::DictValue().Set("op", "script-site").Set("id", id)
++               .Set("revision", script->FindInt("revision").value_or(0))
++               .Set("origin", url::Origin::Create(address_).Serialize())
++               .Set("enabled", aegis::EnhancementStore::PausedAt(*script, address_)));
++  }
++  void Menu(std::string id) {
++    if (!Valid() || !Helper()) return;
++    Helper()->RunMenu(id, base::BindOnce([](base::WeakPtr<AegisPageBubble> self, base::DictValue result) {
++      if (!self || !self->Valid()) return;
++      const auto error = aegis::EnhancementField(result, "error");
++      self->notice_ = !error.empty() ? base::UTF8ToUTF16(error)
++          : result.FindDictByDottedPath("result.exceptionDetails")
++              ? Copy(u"脚本命令执行失败，请查看详情。", u"Script command failed. See details.", u"腳本命令執行失敗，請查看詳情。")
++              : Copy(u"已调用脚本命令，请检查页面。", u"Command called. Check the page.", u"已呼叫腳本命令，請檢查頁面。");
++      self->RefreshSoon();
++    }, weak_.GetWeakPtr()));
++  }
++  void OpenReading() {
++    if (!Valid()) return;
++    content::OpenURLParams params(GURL("chrome://aegis/markdown.html#tab=" + tab_),
++        content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
++        ui::PAGE_TRANSITION_LINK, false);
++    source_->OpenURL(params, {});
++    if (GetWidget()) GetWidget()->Close();
++  }
++  void OpenManager(std::string script) {
++    if (!Valid()) return;
++    content::OpenURLParams params(
++        GURL("chrome://settings/aegisEnhancements#tab=" + tab_ + "&script=" + script),
++        content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
++        ui::PAGE_TRANSITION_LINK, false);
++    source_->OpenURL(params, {});
++    if (GetWidget()) GetWidget()->Close();
++  }
++  void Reload() {
++    if (!Valid()) return;
++    if (GetWidget()) GetWidget()->Close();
+     chrome::Reload(browser_, WindowOpenDisposition::CURRENT_TAB);
+   }
+-
+-  bool CanSummarizeCurrentPage() const {
+-    content::WebContents* source =
+-        browser_->GetTabStripModel()->GetActiveWebContents();
+-    return ServiceForWebContents(browser_, source) &&
+-           source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS();
+-  }
+-
+-  void OpenSummary() {
+-    content::WebContents* source =
+-        browser_->GetTabStripModel()->GetActiveWebContents();
+-    if (!ServiceForWebContents(browser_, source) ||
+-        !source->GetLastCommittedURL().SchemeIsHTTPOrHTTPS()) {
+-      return;
++  void Pause() {
++    if (!Valid()) return;
++    if (auto* service = ServiceForWebContents(browser_, source_.get())) {
++      service->SetSitePaused(summary_.site_key, !summary_.paused, base::Minutes(10));
++      summary_ = service->GetPageSummary(source_.get());
++      notice_ = Copy(u"保护设置已保存，重新加载后应用。", u"Protection saved. Reload to apply.", u"保護設定已儲存，重新載入後套用。");
++      RefreshSoon();
+     }
+-    summary_session_ = std::make_unique<aegis::SummarySession>(
+-        source, g_browser_process ? g_browser_process->GetApplicationLocale()
+-                                  : std::string("en"));
+-    ShowPanel(progress_panel_);
+-    progress_label_->SetText(Copy(u"正在读取并脱敏当前页…",
+-                                  u"Reading and redacting the current page…",
+-                                  u"正在讀取並脫敏當前頁…"));
+-    summary_session_->Begin(base::BindOnce(&AegisPageBubble::OnSummaryPrepared,
+-                                           weak_factory_.GetWeakPtr()));
+   }
+-
+-  void OnSummaryPrepared(aegis::SummarySession::Preview preview) {
+-    if (!preview.ok) {
+-      ShowError(base::UTF8ToUTF16(preview.error));
++  void Build() {
++    if (!Valid()) return;
++    auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
++    snapshot_ = Helper() ? Helper()->Snapshot() : base::DictValue();
++    revision_ = store->state().FindInt("revision").value_or(0);
++    panel_->RemoveAllChildViews();
++    if (!address_.SchemeIsHTTPOrHTTPS()) {
++      AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
++      AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
++      Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
++             base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
+       return;
+     }
+-    preview_ = std::move(preview);
+-    preview_site_label_->SetText(
+-        Copy(u"来源站点：", u"Source site: ", u"來源站點：") +
+-        base::UTF8ToUTF16(preview_.site));
+-    preview_read_label_->SetText(Copy(u"将读取的页面文字：",
+-                                      u"Page characters read: ",
+-                                      u"將讀取的頁面文字：") +
+-                                 base::NumberToString16(preview_.chars_read));
+-    preview_redacted_label_->SetText(
+-        Copy(u"脱敏后文字：", u"Characters after redaction: ",
+-             u"脫敏後文字：") +
+-        base::NumberToString16(preview_.chars_redacted));
+-
+-    const std::u16string processing =
+-        !preview_.model_allowed ? Copy(u"在本机处理，不调用模型",
+-                                       u"On-device heuristic; no model call",
+-                                       u"在本機處理，不呼叫模型")
+-        : preview_.stayed_on_device
+-            ? Copy(u"本机处理", u"On-device processing", u"本機處理")
+-            : Copy(u"远程处理", u"Remote processing", u"遠端處理");
+-    preview_destination_label_->SetText(
+-        processing +
+-        Copy(u" · API 格式：", u" · API format: ", u" · API 格式：") +
+-        ModelFormat(preview_.provider) +
+-        Copy(u" · 模型：", u" · Model: ", u" · 模型：") +
+-        base::UTF8ToUTF16(preview_.model) +
+-        Copy(u" · 目标：", u" · Destination: ", u" · 目標：") +
+-        base::UTF8ToUTF16(preview_.base_url));
+-    ShowPanel(preview_panel_);
+-    confirm_button_->RequestFocus();
+-  }
+-
+-  void ConfirmSummary() {
+-    if (!summary_session_) {
++    AddLabel(panel_, base::UTF8ToUTF16(address_.host()), views::style::CONTEXT_DIALOG_TITLE);
++    if (browser_->GetProfile()->IsOffTheRecord())
++      AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
++    AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
++    AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
++                                    : Copy(u"保护已开启 · ", u"Protection on · ", u"保護已開啟 · ")) +
++                         base::NumberToString16(summary_.total) + Copy(u" 项处理", u" actions", u" 項處理"));
++    if (summary_.miner_alerts > 0)
++      AddLabel(panel_, Copy(u"发现挖矿风险（仅观察）", u"Mining risk detected (observe-only)", u"發現挖礦風險（僅觀察）"));
++    Button(panel_, Copy(u"保护明细", u"Protection details", u"保護明細"),
++           base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this), "privacy"));
++    if (expanded_.contains("privacy")) {
++      AddLabel(panel_, Copy(u"拦截请求 / 参数清理 / Cookie：", u"Blocked / parameters / cookies: ", u"攔截請求 / 參數清理 / Cookie：") +
++                        base::NumberToString16(summary_.blocked) + u" / " + base::NumberToString16(summary_.params) + u" / " + base::NumberToString16(summary_.cookies));
++      for (size_t i = 0; i < std::min<size_t>(3, summary_.events.size()); ++i)
++        AddLabel(panel_, EventKind(summary_.events[i].kind) + u" · " + base::UTF8ToUTF16(summary_.events[i].display_domain));
++      Button(panel_, summary_.paused ? Copy(u"恢复本站保护", u"Resume protection", u"恢復本站保護")
++                                     : Copy(u"暂停本站保护 10 分钟", u"Pause protection for 10 minutes", u"暫停本站保護 10 分鐘"),
++             base::BindRepeating(&AegisPageBubble::Pause, base::Unretained(this)));
++      AddLabel(panel_, Copy(u"临时暂停不关闭钓鱼保护。", u"Temporary pause keeps phishing protection on.", u"臨時暫停不關閉釣魚保護。"));
++    }
++    AddLabel(panel_, Copy(u"网站增强", u"Website enhancements", u"網站增強"), views::style::CONTEXT_DIALOG_TITLE);
++    if (!store->ready() || !store->error().empty()) {
++      AddLabel(panel_, base::UTF8ToUTF16(store->error().empty() ? "正在读取设置…" : store->error()));
+       return;
+     }
+-    ShowPanel(progress_panel_);
+-    progress_label_->SetText(
+-        !preview_.model_allowed
+-            ? Copy(u"正在生成本机启发式摘要，不调用模型…",
+-                   u"Generating an on-device heuristic summary without a "
+-                   u"model call…",
+-                   u"正在生成本機啟發式摘要，不呼叫模型…")
+-        : preview_.stayed_on_device
+-            ? Copy(u"本机模型正在生成，最长等待 3 分钟…",
+-                   u"The local model is generating; allow up to 3 minutes…",
+-                   u"本機模型正在生成，最長等待 3 分鐘…")
+-            : Copy(u"兼容模型服务正在生成，最长等待 45 秒…",
+-                   u"The compatible model service is generating; allow up "
+-                   u"to 45 seconds…",
+-                   u"相容模型服務正在生成，最長等待 45 秒…"));
+-    summary_session_->Confirm(base::BindOnce(
+-        &AegisPageBubble::OnSummaryFinished, weak_factory_.GetWeakPtr()));
+-  }
+-
+-  void OnSummaryFinished(aegis::SummarizeResult result) {
+-    std::u16string text;
+-    if (!result.ok && result.summary.empty()) {
+-      text = Copy(u"摘要失败：", u"Summary failed: ", u"摘要失敗：") +
+-             base::UTF8ToUTF16(result.error);
+-    } else {
+-      text = result.stayed_on_device
+-                 ? Copy(u"本机处理 · 未出网",
+-                        u"On-device · did not leave this computer",
+-                        u"本機處理 · 未出網")
+-                 : Copy(u"远程处理", u"Remote processing", u"遠端處理");
+-      text += Copy(u"\nAPI 格式：", u"\nAPI format: ", u"\nAPI 格式：") +
+-              ModelFormat(preview_.provider);
+-      text += Copy(u"\n模型：", u"\nModel: ", u"\n模型：") +
+-              base::UTF8ToUTF16(preview_.model);
+-      if (!result.summary.empty()) {
+-        text += u"\n\n" + base::UTF8ToUTF16(result.summary);
+-      }
+-      for (const std::string& item : result.bullets) {
+-        text += u"\n• " + base::UTF8ToUTF16(item);
+-      }
+-      if (!result.risks.empty()) {
+-        text += Copy(u"\n\n风险提示", u"\n\nRisk notes", u"\n\n風險提示");
+-        for (const std::string& item : result.risks) {
+-          text += u"\n• " + base::UTF8ToUTF16(item);
++    const auto* rule = store->Rule(address_);
++    const auto flag = [&](const char* key) { return rule && rule->FindBool(key).value_or(false); };
++    Toggle(panel_, Copy(u"恢复右键菜单", u"Restore context menu", u"恢復右鍵選單"), flag("menu"),
++           base::BindRepeating(&AegisPageBubble::ChangeRule, base::Unretained(this), "menu"));
++    Toggle(panel_, Copy(u"允许选取和复制", u"Allow selection and copy", u"允許選取與複製"), flag("copy"),
++           base::BindRepeating(&AegisPageBubble::ChangeRule, base::Unretained(this), "copy"));
++    if (flag("disabled")) AddLabel(panel_, Copy(u"本站增强已暂停", u"Enhancements paused for this site", u"本站增強已暫停"));
++    Button(panel_, Copy(u"更多选项与适用范围", u"More options and scope", u"更多選項與適用範圍"),
++           base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this), "scope"));
++    if (expanded_.contains("scope")) {
++      Toggle(panel_, Copy(u"网页调试兼容", u"Web debugging compatibility", u"網頁偵錯相容"), flag("debug"),
++             base::BindRepeating(&AegisPageBubble::ChangeRule, base::Unretained(this), "debug"));
++      AddLabel(panel_, Copy(u"处理部分网页的调试干扰，不关闭普通断点。", u"Handles some page debugging interference; keeps normal breakpoints.", u"處理部分網頁的偵錯干擾，保留一般中斷點。"));
++      Toggle(panel_, Copy(u"将当前网站规则也用于其子域名", u"Also apply this site's rules to its subdomains", u"將目前網站規則也用於其子網域"), flag("subdomains"),
++             base::BindRepeating(&AegisPageBubble::ChangeRule, base::Unretained(this), "subdomains"));
++      Toggle(panel_, Copy(u"暂停本站增强", u"Pause site enhancements", u"暫停本站增強"), flag("disabled"),
++             base::BindRepeating(&AegisPageBubble::ChangeRule, base::Unretained(this), "disabled"));
++      AddLabel(panel_, base::UTF8ToUTF16(url::Origin::Create(address_).Serialize()));
++    }
++    AddLabel(panel_, Copy(u"本页脚本", u"Scripts on this page", u"本頁腳本"), views::style::CONTEXT_DIALOG_TITLE);
++    const auto* statuses = snapshot_.FindDict("statuses");
++    const auto* menus = snapshot_.FindList("menus");
++    size_t visible = 0;
++    for (const auto& value : *store->state().FindList("scripts")) {
++      const auto& script = value.GetDict();
++      const auto id = aegis::EnhancementField(script, "id");
++      const auto* status = statuses ? statuses->FindDict(id) : nullptr;
++      if (!status && !aegis::EnhancementStore::Applies(script, address_, true)) continue;
++      if (++visible > 4 && !expanded_.contains("all")) continue;
++      const bool enabled = script.FindBool("enabled").value_or(false);
++      const bool paused = aegis::EnhancementStore::PausedAt(script, address_);
++      std::u16string state;
++      const auto result = status ? aegis::EnhancementField(*status, "status") : "";
++      if (status && status->FindBool("trial").value_or(false))
++        state = Copy(u"试运行 · ", u"Trial · ", u"試執行 · ");
++      state += result == "completed" ? Copy(u"已执行", u"Executed", u"已執行")
++             : result == "running" ? Copy(u"执行中", u"Running", u"執行中")
++             : result == "failed" ? Copy(u"执行失败", u"Failed", u"執行失敗")
++             : !enabled ? Copy(u"已停用 / 待授权", u"Disabled / needs permission", u"已停用 / 待授權")
++             : paused ? Copy(u"本站已停用", u"Disabled on this site", u"本站已停用")
++             : aegis::EnhancementField(script, "world") == "page"
++                 ? Copy(u"已启用 · 无执行回执", u"Enabled · no execution receipt", u"已啟用 · 無執行回報")
++                 : Copy(u"等待重新加载", u"Waiting for reload", u"等待重新載入");
++      if (status && !status->FindBool("mainFrame").value_or(true))
++        state += Copy(u"（子框架）", u" (subframe)", u"（子框架）");
++      Button(panel_, base::UTF8ToUTF16(aegis::EnhancementField(*script.FindDict("metadata"), "name")) + u" · " + state,
++             base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this), id));
++      if (expanded_.contains(id)) {
++        if (status && !aegis::EnhancementField(*status, "error").empty())
++          AddLabel(panel_, base::UTF8ToUTF16(aegis::EnhancementField(*status, "error")));
++        if (enabled)
++          Toggle(panel_, Copy(u"在本站启用", u"Enable on this site", u"在本站啟用"), !paused,
++                 base::BindRepeating(&AegisPageBubble::SiteScript, base::Unretained(this), id));
++        Button(panel_, Copy(u"源码、权限与全局设置", u"Source, permissions and global settings", u"原始碼、權限與全域設定"),
++               base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), id));
++        if (menus) for (const auto& item : *menus) {
++          const auto& menu = item.GetDict();
++          if (aegis::EnhancementField(menu, "script") == id)
++            Button(panel_, base::UTF8ToUTF16(aegis::EnhancementField(menu, "label")),
++                   base::BindRepeating(&AegisPageBubble::Menu, base::Unretained(this), aegis::EnhancementField(menu, "id")));
+         }
+       }
+-      if (!result.error.empty()) {
+-        text += Copy(u"\n\n模型调用未完成，已显示本机启发式结果：",
+-                     u"\n\nThe model call did not complete; showing the "
+-                     u"on-device heuristic result: ",
+-                     u"\n\n模型呼叫未完成，已顯示本機啟發式結果：") +
+-                base::UTF8ToUTF16(result.error);
+-      }
+-    }
+-    result_label_->SetText(text);
+-    ShowPanel(result_panel_);
+-    result_label_->GetViewAccessibility().AnnounceText(text);
+-  }
+-
+-  void ShowError(std::u16string error) {
+-    result_label_->SetText(
+-        Copy(u"摘要失败：", u"Summary failed: ", u"摘要失敗：") + error);
+-    ShowPanel(result_panel_);
+-  }
+-
+-  void CancelSummary() {
+-    summary_session_.reset();
+-    preview_ = aegis::SummarySession::Preview();
+-    ShowPanel(protection_panel_);
+-  }
+-
+-  void ShowPanel(views::View* panel) {
+-    protection_panel_->SetVisible(panel == protection_panel_);
+-    progress_panel_->SetVisible(panel == progress_panel_);
+-    preview_panel_->SetVisible(panel == preview_panel_);
+-    result_panel_->SetVisible(panel == result_panel_);
+-    if (panel == progress_panel_) {
+-      throbber_->Start();
+-    } else {
+-      throbber_->Stop();
+     }
+-    const std::u16string title =
+-        panel == protection_panel_
+-            ? Copy(u"Aegis 当前站点保护", u"Aegis site protection",
+-                   u"Aegis 當前站點保護")
+-            : Copy(u"AI 摘要当前页", u"AI page summary", u"AI 摘要當前頁");
+-    SetTitle(title);
+-    SetAccessibleTitle(title);
+-    PreferredSizeChanged();
+-  }
+-
+-  void OpenSettings() {
+-    browser_->OpenURL(content::OpenURLParams(
+-                          GURL(chrome::kChromeUIAegisURL), content::Referrer(),
+-                          WindowOpenDisposition::NEW_FOREGROUND_TAB,
+-                          ui::PAGE_TRANSITION_LINK, false),
+-                      /*navigation_handle_callback=*/{});
+-    if (GetWidget()) {
+-      GetWidget()->Close();
++    if (!visible) AddLabel(panel_, Copy(u"此页面没有适用脚本。", u"No scripts apply to this page.", u"此頁面沒有適用腳本。"));
++    if (visible > 4)
++      Button(panel_, Copy(u"查看全部脚本", u"Show all scripts", u"查看全部腳本"),
++             base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this), "all"));
++    Button(panel_, Copy(u"新建或用 AI 编写脚本", u"Create a script or write with AI", u"新增或用 AI 編寫腳本"),
++           base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string("new")));
++    const auto runtime_error = aegis::EnhancementField(snapshot_, "error");
++    if (!runtime_error.empty()) AddLabel(panel_, base::UTF8ToUTF16(runtime_error));
++    if (!notice_.empty()) {
++      AddLabel(panel_, notice_);
++      Button(panel_, Copy(u"重新加载", u"Reload", u"重新載入"), base::BindRepeating(&AegisPageBubble::Reload, base::Unretained(this)));
++      AddLabel(panel_, Copy(u"重载会清除页面修改，未提交的输入可能丢失。", u"Reload clears page changes; unsent input may be lost.", u"重新載入會清除頁面修改，未送出的輸入可能遺失。"));
+     }
+-  }
+-
+-  const raw_ptr<BrowserWindowInterface> browser_;
+-  const aegis::PagePrivacySummary summary_;
+-  raw_ptr<views::View> protection_panel_ = nullptr;
+-  raw_ptr<views::View> progress_panel_ = nullptr;
+-  raw_ptr<views::View> preview_panel_ = nullptr;
+-  raw_ptr<views::View> result_panel_ = nullptr;
+-  raw_ptr<views::Throbber> throbber_ = nullptr;
+-  raw_ptr<views::Label> progress_label_ = nullptr;
+-  raw_ptr<views::Label> preview_site_label_ = nullptr;
+-  raw_ptr<views::Label> preview_read_label_ = nullptr;
+-  raw_ptr<views::Label> preview_redacted_label_ = nullptr;
+-  raw_ptr<views::Label> preview_destination_label_ = nullptr;
+-  raw_ptr<views::MdTextButton> confirm_button_ = nullptr;
+-  raw_ptr<views::Label> result_label_ = nullptr;
+-  aegis::SummarySession::Preview preview_;
+-  std::unique_ptr<aegis::SummarySession> summary_session_;
+-  base::WeakPtrFactory<AegisPageBubble> weak_factory_{this};
++    if (address_.SchemeIsHTTPOrHTTPS())
++      Button(panel_, Copy(u"将本页原文作为 Markdown 阅读", u"Read this page as Markdown", u"將本頁原文作為 Markdown 閱讀"),
++             base::BindRepeating(&AegisPageBubble::OpenReading, base::Unretained(this)));
++    Button(panel_, Copy(u"此网站的全部设置", u"All settings for this site", u"此網站的全部設定"),
++           base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
++    InvalidateLayout();
++    SizeToContents();
++  }
++  raw_ptr<BrowserWindowInterface> browser_;
++  aegis::PagePrivacySummary summary_;
++  base::WeakPtr<content::WebContents> source_;
++  GURL address_;
++  std::string document_, tab_;
++  raw_ptr<views::View> panel_ = nullptr;
++  base::DictValue snapshot_;
++  int revision_ = -1;
++  std::set<std::string> expanded_;
++  std::u16string notice_;
++  base::RepeatingTimer timer_;
++  base::WeakPtrFactory<AegisPageBubble> weak_{this};
+ };
+ 
+ BEGIN_METADATA(AegisPageBubble)
+diff --git a/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc b/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc
+index c42d611f3cbf67633554c64443213301c00d34da..cb278782095a0d05a3dab06cfae9e944ef7a070f 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc
+@@ -2,6 +2,7 @@
+ #include "chrome/browser/ui/webui/aegis/aegis_enhancement_handler.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_writer.h"
++#include "base/json/json_reader.h"
+ #include "base/strings/string_util.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+@@ -16,6 +17,7 @@
+ #include "content/public/browser/download_manager.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_ui.h"
++#include "content/public/browser/navigation_controller.h"
+ #include "url/origin.h"
+ namespace {
+ base::DictValue Error(std::string error) {
+@@ -57,9 +59,13 @@ base::DictValue AegisEnhancementHandler::Snapshot() {
+   return result;
+ }
+ void AegisEnhancementHandler::Request(const base::ListValue& args) {
+-  const auto url = web_ui()->GetWebContents()->GetLastCommittedURL();
++  const auto url = web_ui()->GetWebContents()->GetLastCommittedURL().GetWithoutRef();
++  const bool settings = url.SchemeIs("chrome") && url.host() == "settings";
++  // 原生设置搜索会在根路径呈现同一批设置控件。
++  const bool settings_search = settings && url.path() == "/" &&
++                               url.query().starts_with("search=");
+   if ((url != GURL("chrome://aegis/enhancements.html") &&
+-       url != GURL("chrome://aegis/markdown.html")) ||
++       url != GURL("chrome://aegis/markdown.html") && !settings) ||
+       args.size() != 2 || !args[0].is_string() || !args[1].is_dict())
+     return;
+   AllowJavascript();
+@@ -115,8 +121,9 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
+               : Error("下载文件已不可用。"));
+     return;
+   }
+-  if (op == "save-reading") {
+-    if (url != GURL("chrome://aegis/markdown.html")) {
++  if (op == "save-reading" || op == "library-list" || op == "library-open") {
++    if (url != GURL("chrome://aegis/markdown.html") &&
++        !(settings && (url.path() == "/aegisReading" || settings_search || op == "library-list"))) {
+       Reply(std::move(callback), Error("请从 Markdown 阅读器保存。"));
+       return;
+     }
+@@ -136,7 +143,8 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
+       reading_ = std::make_unique<AegisReadingWorkspace>(profile, owner);
+     }
+     auto request = base::DictValue()
+-                       .Set("op", "import_markdown")
++                       .Set("op", op == "library-list" ? "list" : op == "library-open" ? "open" : "import_markdown")
++                       .Set("id", aegis::EnhancementField(r, "id"))
+                        .Set("text", aegis::EnhancementField(r, "text"))
+                        .Set("title", aegis::EnhancementField(r, "title"))
+                        .Set("url", aegis::EnhancementField(r, "url"));
+@@ -144,15 +152,15 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
+         base::WriteJson(request).value_or("{}"),
+         base::BindOnce(
+             [](base::WeakPtr<AegisEnhancementHandler> self,
+-               base::Value callback, std::string output, std::string error) {
++                               base::Value callback, std::string output, std::string error) {
+               if (self)
+                 self->Reply(std::move(callback),
+-                            error.empty() ? base::DictValue() : Error(error));
++                            error.empty() ? base::JSONReader::ReadDict(output, base::JSON_PARSE_RFC).value_or(base::DictValue()) : Error(error));
+             },
+             weak_.GetWeakPtr(), std::move(callback)));
+     return;
+   }
+-  if (op == "markdown-site") {
++  if (op == "markdown-site" || op == "reading-preferences") {
+     store->Mutate(
+         r, base::BindOnce(
+                [](base::WeakPtr<AegisEnhancementHandler> self,
+@@ -251,9 +259,10 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
+     return;
+   }
+   if (op == "trial" || op == "menu" || op == "read-page" ||
+-      op == "read-markdown" || op == "recover" || op == "inspect") {
++      op == "read-markdown" || op == "recover" || op == "inspect" || op == "reload") {
+     if (!tab || aegis::EnhancementField(tab->Snapshot(), "url") !=
+-                    aegis::EnhancementField(r, "url")) {
++                    aegis::EnhancementField(r, "url") ||
++        aegis::EnhancementField(tab->Snapshot(), "document") != aegis::EnhancementField(r, "document")) {
+       Reply(std::move(callback), Error("目标网页已变化，请刷新列表。"));
+       return;
+     }
+@@ -267,13 +276,18 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
+       tab->ReadPage(op == "read-markdown", std::move(reply));
+     else if (op == "recover")
+       tab->Recover(std::move(reply));
++    else if (op == "reload") {
++      tab->web_contents()->GetController().Reload(content::ReloadType::NORMAL, true);
++      std::move(reply).Run({});
++    }
+     else {
+       tab->Inspect();
+       std::move(reply).Run({});
+     }
+     return;
+   }
+-  if (url != GURL("chrome://aegis/enhancements.html")) {
++  if (url != GURL("chrome://aegis/enhancements.html") &&
++      !(settings && (url.path() == "/aegisEnhancements" || settings_search))) {
+     Reply(std::move(callback), Error("此界面不能修改脚本。"));
+     return;
+   }
+diff --git a/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
+index fcfdf3400f08ef9fbe60e553626601648db90988..9136f3721594663b7238bb5a4d992efbb3c48201 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
+@@ -38,8 +38,9 @@ void AegisGestureHandler::RegisterMessages() {
+ 
+ bool AegisGestureHandler::IsGesturePage() {
+   // 手势配置不向普通网页、PDF 或其他 WebUI 暴露。
+-  return web_ui()->GetWebContents()->GetLastCommittedURL() ==
+-         GURL("chrome://aegis/gestures.html");
++  const auto url = web_ui()->GetWebContents()->GetLastCommittedURL().GetWithoutRef();
++  return url == GURL("chrome://aegis/gestures.html") ||
++         (url.SchemeIs("chrome") && url.host() == "settings" && (url.path() == "/aegisGestures" || (url.path() == "/" && url.query().starts_with("search="))));
+ }
+ 
+ base::DictValue AegisGestureHandler::Snapshot() {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 080d0e1733b66d16bc6d87a28c1948ba4e4e3439..eeba71134ac6dfd8c1b5fe41ace64b15dc536457 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "4.0.0.193";
+-inline constexpr char kProductVersionLabel[] = "Ver 4.0 (193)";
++inline constexpr char kProductVersion[] = "5.0.0.202";
++inline constexpr char kProductVersionLabel[] = "Ver 5.0 (202)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/settings/BUILD.gn b/chrome/browser/ui/webui/settings/BUILD.gn
+index 1c325bb1e2d39aa72e7452a926ce63b4d7add1e7..d0213f6f1512c22a6bf9d1a9aef4b12076833699 100644
+--- a/chrome/browser/ui/webui/settings/BUILD.gn
++++ b/chrome/browser/ui/webui/settings/BUILD.gn
+@@ -182,6 +182,8 @@ source_set("impl") {
+   ]
+ 
+   deps = [
++    "//chrome/browser/ui/webui/aegis",
++    "//chrome/browser/resources/aegis:resources",
+     ":settings",
+     "//chrome/app:command_ids",
+     "//chrome/app:generated_resources",
+diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
+index c0adc893ca8b5133316458d63986b03f9a927f0e..0fcc84f988c1144903415ca998ded0c85e6cc73c 100644
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -2,6 +2,10 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
++#include "chrome/browser/ui/webui/aegis/aegis_enhancement_handler.h"
++#include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
++#include "chrome/grit/aegis_resources_map.h"
+ #include "chrome/browser/ui/webui/settings/settings_ui.h"
+ 
+ #include <stddef.h>
+@@ -240,6 +244,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+       content::WebUIDataSource::CreateAndAdd(
+           web_ui->GetWebContents()->GetBrowserContext(),
+           chrome::kChromeUISettingsHost);
++  web_ui->AddMessageHandler(std::make_unique<AegisUIHandler>());
++  web_ui->AddMessageHandler(std::make_unique<AegisEnhancementHandler>());
++  web_ui->AddMessageHandler(std::make_unique<AegisGestureHandler>());
++  for (const auto& resource : kAegisResources)
++    html_source->AddResourcePath(std::string("aegis/") + resource.path, resource.id);
++  const auto& locale = g_browser_process->GetApplicationLocale();
++  const bool chinese = locale.starts_with("zh");
++  const bool traditional = locale == "zh-TW" || locale == "zh-HK";
++  html_source->AddString("aegisEnhancementsTitle", chinese ? (traditional ? "網站增強與腳本" : "网站增强与脚本") : "Website enhancements and scripts");
++  html_source->AddString("aegisReadingTitle", chinese ? (traditional ? "閱讀" : "阅读") : "Reading");
++  html_source->AddString("aegisGesturesTitle", chinese ? (traditional ? "滑鼠手勢" : "鼠标手势") : "Mouse gestures");
++  html_source->AddString("aegisPrivacyTitle", chinese ? (traditional ? "追蹤與指紋防護" : "跟踪与指纹防护") : "Tracking and fingerprint protection");
++  html_source->AddString("aegisPrivacyDescription", chinese ? (traditional ? "網站例外與防護記錄" : "网站例外与防护记录") : "Site exceptions and protection history");
+   // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
+   html_source->AddString("aegisLocale",
+                          g_browser_process->GetApplicationLocale());

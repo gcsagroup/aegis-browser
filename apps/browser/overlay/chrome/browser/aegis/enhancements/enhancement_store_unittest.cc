@@ -1,6 +1,7 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/enhancements/enhancement_store.h"
 #include "base/base_paths.h"
+#include "base/test/bind.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
@@ -183,6 +184,48 @@ TEST_F(EnhancementStoreTest, QueuedWritesKeepValuesAndRejectRevokedRevision) {
                               .Set("origin", "file:///tmp")
                               .Set("enabled", true)),
             "");
+}
+
+TEST_F(EnhancementStoreTest, SitePausePreservesGlobalGrantValuesAndOldSchema) {
+  EnhancementStore store(base::FilePath{});
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-save")
+      .Set("source", Script()).Set("world", "isolated")).empty());
+  const auto id = EnhancementField(store.state().FindList("scripts")->front().GetDict(), "id");
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-enable")
+      .Set("id", id).Set("revision", 1).Set("enabled", true)).empty());
+  auto old_schema = store.state().Clone();
+  old_schema.FindList("scripts")->front().GetDict().Remove("disabledOrigins");
+  EXPECT_TRUE(EnhancementStore::Validate(old_schema));
+  auto request = base::DictValue().Set("op", "script-site").Set("id", id)
+      .Set("revision", 2).Set("origin", "https://example.com").Set("enabled", false);
+  ASSERT_TRUE(Mutate(store, request.Clone()).empty());
+  EXPECT_EQ(store.Script(id)->FindBool("enabled"), true);
+  EXPECT_TRUE(EnhancementStore::PausedAt(*store.Script(id), GURL("https://example.com/article")));
+  EXPECT_FALSE(EnhancementStore::PausedAt(*store.Script(id), GURL("https://sub.example.com/")));
+  EXPECT_FALSE(EnhancementStore::PausedAt(*store.Script(id), GURL("http://example.com/")));
+  EXPECT_FALSE(Mutate(store, request.Clone()).empty());
+  request.Set("revision", 3);
+  request.Set("enabled", true);
+  ASSERT_TRUE(Mutate(store, request.Clone()).empty());
+  EXPECT_FALSE(EnhancementStore::PausedAt(*store.Script(id), GURL("https://example.com/")));
+  request.Set("revision", 4);
+  request.Set("origin", "file:///tmp");
+  EXPECT_FALSE(Mutate(store, request.Clone()).empty());
+}
+TEST_F(EnhancementStoreTest, ReadingPreferencesDoNotRevokeScriptsOrGrantImages) {
+  EnhancementStore store(base::FilePath{});
+  int changed = 0;
+  auto subscription = store.Observe(base::BindLambdaForTesting([&] { ++changed; }));
+  auto preferences = base::DictValue().Set("theme", "dark").Set("family", "serif")
+      .Set("font", 19).Set("spacing", 180).Set("width", 820);
+  EXPECT_TRUE(Mutate(store, base::DictValue().Set("op", "reading-preferences")
+      .Set("preferences", preferences.Clone())).empty());
+  EXPECT_EQ(changed, 0);
+  EXPECT_FALSE(store.state().contains("remoteImages"));
+  preferences.Set("font", 200);
+  EXPECT_FALSE(Mutate(store, base::DictValue().Set("op", "reading-preferences")
+      .Set("preferences", preferences.Clone())).empty());
+  EXPECT_EQ(store.state().FindDict("readingPreferences")->FindInt("font"), 19);
 }
 
 }  // namespace

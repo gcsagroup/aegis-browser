@@ -1,0 +1,24 @@
+body.reading { padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.reader-toolbar { display: flex; align-items: center; gap: 20px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.reader-toolbar > a { white-space: nowrap; text-decoration: none; }
+.document-heading { flex: 1; min-width: 80px; }
+.document-heading strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.text-button { display: block; font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; color: var(--muted); padding: 0; min-height: 24px; background: transparent; }
+.reader-toolbar nav { display: flex; gap: 6px; flex-wrap: wrap; }
+.reading #notice { padding: 5px 20px; min-height: 0; font-size: 12px; }
+.reader-workspace { display: flex; flex: 1; min-height: 0; }
+iframe.reader { flex: 1; min-width: 0; width: 100%; height: 100%; border: 0; }
+.reader-start { width: min(560px, calc(100% - 32px)); margin: 12vh auto 20px; padding: 32px; }
+.reader-start .row { justify-content: center; }
+.reader-start h1, .reader-start > p { text-align: center; }
+.reader-start details { margin-top: 28px; }
+#ai { width: 340px; max-width: 45vw; overflow: auto; padding: 20px; background: var(--surface); border-left: 1px solid var(--line); }
+#ai-output { max-height: none; white-space: pre-wrap; }
+#ai .row { margin-top: 14px; }
+.reader-popover { inset: 90px 20px auto auto; margin: 0; width: 290px; max-width: calc(100vw - 32px); border: 1px solid var(--line); border-radius: 12px; padding: 20px; background: var(--surface); color: var(--ink); box-shadow: 0 6px 24px #0002; }
+.reader-popover label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.reader-popover input[type=number] { width: 90px; }
+.action-menu > button { width: 100%; text-align: left; border: 0; display: block; }
+#source-address { overflow-wrap: anywhere; }
+@media (max-width: 780px) { .reader-toolbar { flex-wrap: wrap; gap: 8px 16px; padding: 10px 14px; } .reader-toolbar nav { width: 100%; } #ai { position: absolute; inset: 100px 0 0 auto; width: min(360px,100%); max-width: 100%; z-index: 2; box-shadow: -6px 0 24px #0002; } }
+@media print { .reader-toolbar, #notice, #ai, [popover] { display:none !important; } body.reading, .reader-workspace { height:auto; overflow:visible; } }

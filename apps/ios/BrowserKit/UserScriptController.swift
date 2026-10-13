@@ -39,11 +39,14 @@ public struct ScriptRunStatus: Identifiable, Equatable {
   public var name: String
   public var status: String
   public var error: String
+  public var trial = false
+  public var mainFrame = true
 }
 
 public struct UserScriptMenu: Identifiable {
   public let id: String
   public let label: String
+  public let scriptID: String
   fileprivate let binding: String
   fileprivate let key: String
   fileprivate let frame: WKFrameInfo
@@ -103,6 +106,7 @@ public final class UserScriptController: NSObject, ObservableObject, WKScriptMes
     }
     bindings = [:]
     menus = []
+    statuses = []
     trialValues = [:]
     do {
       let core = try EnhancementAssets.text("core.js")
@@ -159,17 +163,19 @@ public final class UserScriptController: NSObject, ObservableObject, WKScriptMes
     }
     return core + "\n" + runtime + "\n" + """
       (()=>{'use strict';if(!AegisEnhancementsCore.applies(\(metadata),location.href,window===window.top,\(script.allFrames)))return 'unmatched';
+      if(\(EnhancementAssets.json(script.disabledOrigins ?? [])).some(origin=>[location.origin,...Array.from(location.ancestorOrigins||[])].includes(origin)))return 'paused';
       if(globalThis[\(EnhancementAssets.json("__aegisRan_" + binding))])return 'duplicate';globalThis[\(EnhancementAssets.json("__aegisRan_" + binding))]=true;
       \(sender)
       const {GM,GM_addStyle,GM_registerMenuCommand}=runtime.api;
-      const run=async()=>{try{await(async()=>{\n\(script.source)\n})();runtime.report('completed');}catch(error){runtime.report('failed',String(error));}};
+      const run=async()=>{runtime.report('running');try{await(async()=>{\n\(script.source)\n})();runtime.report('completed');}catch(error){runtime.report('failed',String(error));}};
       \(trial || script.metadata.runAt == "document-start" ? "void run();" : "const ready=()=>{\(script.metadata.runAt == "document-idle" ? "setTimeout(()=>void run(),0);" : "void run();")};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ready,{once:true});else ready();")
       return 'scheduled';})();
       """
   }
   public func trial(_ script: UserScriptRecord) async throws {
     update(store.state)
-    guard let tab, let current = tab.webView.url, script.metadata.applies(to: current) else {
+    guard let tab, let current = tab.webView.url, script.metadata.applies(to: current),
+      !script.paused(at: current) else {
       throw EnhancementError.invalid("当前页面不在脚本授权范围内。")
     }
     try EnhancementAssets.checkSyntax(script.source)
@@ -193,13 +199,14 @@ public final class UserScriptController: NSObject, ObservableObject, WKScriptMes
   public func runMenu(_ menu: UserScriptMenu) async throws {
     guard let tab, let binding = bindings[menu.binding],
       let actual = store.state.scripts.first(where: { $0.id == binding.script.id }),
-      actual.revision == binding.script.revision, binding.trial || actual.enabled
+      actual.revision == binding.script.revision, binding.trial || actual.enabled,
+      !actual.paused(at: tab.url)
     else { throw EnhancementError.invalid("脚本菜单已过期。") }
     let address =
       try await tab.webView.callAsyncJavaScript(
         "return location.href;", arguments: [:], in: menu.frame, contentWorld: binding.world)
       as? String
-    guard let address, let url = URL(string: address),
+    guard let address, let url = URL(string: address), !actual.paused(at: url),
       binding.script.metadata.applies(
         to: url, mainFrame: menu.frame.isMainFrame, allFrames: binding.script.allFrames)
     else { throw EnhancementError.invalid("页面已超出脚本授权范围。") }
@@ -211,11 +218,13 @@ public final class UserScriptController: NSObject, ObservableObject, WKScriptMes
       arguments: ["nonce": menu.nonce, "key": menu.key], in: menu.frame, contentWorld: binding.world
     )
   }
-  private func setStatus(_ script: UserScriptRecord, status: String, error: String) {
+  private func setStatus(_ script: UserScriptRecord, status: String, error: String,
+                         trial: Bool = false, mainFrame: Bool = true) {
     statuses.removeAll { $0.id == script.id }
     statuses.append(
       ScriptRunStatus(
-        id: script.id, name: script.metadata.name, status: status, error: String(error.prefix(1000))
+        id: script.id, name: script.metadata.name, status: status, error: String(error.prefix(1000)),
+        trial: trial, mainFrame: mainFrame
       ))
     if statuses.count > 64 { statuses.removeFirst() }
   }
@@ -254,7 +263,8 @@ public final class UserScriptController: NSObject, ObservableObject, WKScriptMes
         guard current as? Bool == true, tab.navigationEpoch == epoch,
           self.bindings[message.name] != nil,
           let actual = self.store.state.scripts.first(where: { $0.id == binding.script.id }),
-          actual.revision == binding.script.revision, binding.trial || actual.enabled
+          actual.revision == binding.script.revision, binding.trial || actual.enabled,
+          !actual.paused(at: tab.url), !actual.paused(at: url)
         else { throw EnhancementError.invalid("页面或脚本授权已变化。") }
         var value: Any = NSNull()
         let key = body["key"] as? String ?? ""
@@ -300,12 +310,13 @@ public final class UserScriptController: NSObject, ObservableObject, WKScriptMes
           self.menus.removeAll { $0.id == menuID }
           self.menus.append(
             UserScriptMenu(
-              id: menuID, label: label, binding: message.name, key: key, frame: message.frameInfo,
+              id: menuID, label: label, scriptID: actual.id, binding: message.name, key: key, frame: message.frameInfo,
               nonce: nonce))
         case "report":
           self.setStatus(
-            actual, status: body["status"] as? String == "completed" ? "执行完成" : "执行失败",
-            error: body["error"] as? String ?? "")
+            actual, status: body["status"] as? String ?? "unknown",
+            error: body["error"] as? String ?? "", trial: binding.trial,
+            mainFrame: message.frameInfo.isMainFrame)
         default: throw EnhancementError.invalid("不支持的脚本操作。")
         }
         replyHandler(["request": request, "value": value], nil)

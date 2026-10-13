@@ -2,8 +2,10 @@
 // 文档渲染页没有原生文件、模型或设置接口；链接交给外层浏览器处理。
 (function () {
   "use strict";
+  const uiText = value => globalThis.AegisI18n?.t(value) || value;
+  globalThis.AegisI18n?.translate(document);
   const $ = (id) => document.getElementById(id);
-  let current = { text: "", title: "Markdown 阅读", baseURL: "", resources: {} },
+  let current = { text: "", title: uiText("Markdown 阅读"), baseURL: "", resources: {} },
     remote = false,
     font = 17,
     found = -1,
@@ -153,9 +155,11 @@
           }
         }),
       );
-    $("notice").textContent = blockedImages
-      ? `${blockedImages} 张图片尚未加载。外部图片可按需加载，本地相对图片需要授权资源目录。`
-      : "文档只读；代码块不会执行。";
+    $("image-permissions").hidden = !blockedImages && !remote;
+    $("local-images").hidden = /^https?:/.test(current.baseURL);
+    $("image-notice").textContent = blockedImages
+      ? globalThis.AegisI18n.t("{count} 张图片尚未加载。外部图片可按需加载，本地相对图片需要授权资源目录。", {count: blockedImages})
+      : remote ? "外部图片已获准加载，仅对此次打开的文档生效。" : "";
     marks = [];
     found = -1;
     lastQuery = "";
@@ -166,7 +170,7 @@
       typeof payload.text !== "string" ||
       new TextEncoder().encode(payload.text).length > 2097152
     ) {
-      $("notice").textContent = "文档超过 2 MiB 或格式无效，请查看原始文件。";
+      $("notice").textContent = uiText("文档超过 2 MiB 或格式无效，请查看原始文件。");
       return false;
     }
     current = {
@@ -176,10 +180,18 @@
       resources: payload.resources || {},
     };
     remote = false;
+    $("remote-images").textContent = "加载外部图片";
+    $("source").hidden = true;
+    $("document").hidden = false;
+    $("source-toggle").setAttribute("aria-pressed", "false");
+    $("findbar").hidden = true;
+    $("query").value = "";
     $("title").textContent = current.title;
     $("origin").textContent = current.baseURL || "本地导入 · 只读";
     document.title = current.title;
+    $("notice").textContent = "";
     render();
+    viewState();
     send("images", globalThis.AegisMarkdown.images());
     return true;
   }
@@ -188,7 +200,7 @@
     if (query === lastQuery && marks.length) {
       found = (found + 1) % marks.length;
       marks[found].scrollIntoView({ block: "center" });
-      $("notice").textContent = `第 ${found + 1} / ${marks.length} 处匹配`;
+      $("notice").textContent = globalThis.AegisI18n.t("第 {current} / {total} 处匹配", {current: found + 1, total: marks.length});
       return;
     }
     lastQuery = query;
@@ -225,17 +237,20 @@
     found = marks.length ? (found + 1) % marks.length : -1;
     if (found >= 0) marks[found].scrollIntoView({ block: "center" });
     $("notice").textContent = marks.length
-      ? `第 ${found + 1} / ${marks.length} 处匹配`
+      ? globalThis.AegisI18n.t("第 {current} / {total} 处匹配", {current: found + 1, total: marks.length})
       : "没有找到匹配内容。";
   }
+  function viewState() { send("view-state", {outline: !$("outline").hidden, source: !$("source").hidden}); }
   $("outline-toggle").onclick = () => {
     $("outline").hidden = !$("outline").hidden;
     $("outline-toggle").setAttribute("aria-expanded", String(!$("outline").hidden));
+    viewState();
   };
   $("source-toggle").onclick = () => {
     $("source").hidden = !$("source").hidden;
     $("document").hidden = !$("source").hidden;
     $("source-toggle").setAttribute("aria-pressed", String(!$("source").hidden));
+    viewState();
   };
   $("copy-source").onclick = () => send("copy", current.text);
   $("theme").onclick = () => {
@@ -266,22 +281,40 @@
     render();
     $("remote-images").textContent = remote ? "停用外部图片" : "加载外部图片";
   };
+  $("local-images").onclick = () => send("resources", true);
+  function configure(value) {
+    if (!value || typeof value !== "object") return;
+    document.body.classList.toggle("embedded", value.embedded === true);
+    if (value.locale) globalThis.AegisI18n?.setLocale(value.locale);
+    globalThis.AegisI18n?.translate(document);
+    const preferences = value.preferences || {};
+    const style = document.documentElement.style;
+    if (["light", "dark", "system"].includes(preferences.theme))
+      style.colorScheme = preferences.theme === "system" ? "light dark" : preferences.theme;
+    if (Number.isFinite(preferences.font)) {
+      font = Math.max(12, Math.min(48, preferences.font));
+      style.setProperty("--font", font + "px");
+    }
+    if ([680, 820, 1100].includes(preferences.width)) style.setProperty("--measure", preferences.width + "px");
+    if ([150, 180, 210].includes(preferences.spacing)) style.setProperty("--spacing", String(preferences.spacing / 100));
+    if (["sans", "serif"].includes(preferences.family)) style.setProperty("--reading-font", preferences.family === "serif" ? "Georgia, 'Songti SC', serif" : "system-ui, sans-serif");
+  }
+  function command(value) {
+    if (value === "find-toggle") {
+      $("findbar").hidden = !$("findbar").hidden;
+      if (!$("findbar").hidden) $("query").focus();
+    } else if (["outline-toggle", "source-toggle", "copy-source", "remote-images"].includes(value)) $(value).click();
+  }
+  if (matchMedia("(max-width: 760px)").matches) $("outline-toggle").click();
   window.addEventListener("message", (event) => {
-    if (
-      event.source === parent &&
-      event.origin === "chrome://aegis" &&
-      event.data?.type === "load"
-    )
-      load(event.data.value);
-    if (
-      event.source === parent &&
-      event.origin === "chrome://aegis" &&
-      event.data?.type === "print"
-    )
-      window.print();
+    if (event.source !== parent || event.origin !== "chrome://aegis") return;
+    if (event.data?.type === "load") load(event.data.value);
+    else if (event.data?.type === "print") window.print();
+    else if (event.data?.type === "configure") configure(event.data.value);
+    else if (event.data?.type === "command") command(event.data.value);
   });
   globalThis.AegisMarkdown = Object.freeze({
-    load,
+    load, configure, command,
     setFont: (size) => {
       if (Number.isFinite(size)) {
         font = Math.max(12, Math.min(48, size));

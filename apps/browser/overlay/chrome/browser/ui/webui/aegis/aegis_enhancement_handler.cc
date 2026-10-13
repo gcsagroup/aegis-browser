@@ -2,6 +2,7 @@
 #include "chrome/browser/ui/webui/aegis/aegis_enhancement_handler.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/json/json_reader.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/aegis/aegis_service.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
@@ -16,6 +17,7 @@
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/navigation_controller.h"
 #include "url/origin.h"
 namespace {
 base::DictValue Error(std::string error) {
@@ -57,9 +59,13 @@ base::DictValue AegisEnhancementHandler::Snapshot() {
   return result;
 }
 void AegisEnhancementHandler::Request(const base::ListValue& args) {
-  const auto url = web_ui()->GetWebContents()->GetLastCommittedURL();
+  const auto url = web_ui()->GetWebContents()->GetLastCommittedURL().GetWithoutRef();
+  const bool settings = url.SchemeIs("chrome") && url.host() == "settings";
+  // 原生设置搜索会在根路径呈现同一批设置控件。
+  const bool settings_search = settings && url.path() == "/" &&
+                               url.query().starts_with("search=");
   if ((url != GURL("chrome://aegis/enhancements.html") &&
-       url != GURL("chrome://aegis/markdown.html")) ||
+       url != GURL("chrome://aegis/markdown.html") && !settings) ||
       args.size() != 2 || !args[0].is_string() || !args[1].is_dict())
     return;
   AllowJavascript();
@@ -115,8 +121,9 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
               : Error("下载文件已不可用。"));
     return;
   }
-  if (op == "save-reading") {
-    if (url != GURL("chrome://aegis/markdown.html")) {
+  if (op == "save-reading" || op == "library-list" || op == "library-open") {
+    if (url != GURL("chrome://aegis/markdown.html") &&
+        !(settings && (url.path() == "/aegisReading" || settings_search || op == "library-list"))) {
       Reply(std::move(callback), Error("请从 Markdown 阅读器保存。"));
       return;
     }
@@ -136,7 +143,8 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
       reading_ = std::make_unique<AegisReadingWorkspace>(profile, owner);
     }
     auto request = base::DictValue()
-                       .Set("op", "import_markdown")
+                       .Set("op", op == "library-list" ? "list" : op == "library-open" ? "open" : "import_markdown")
+                       .Set("id", aegis::EnhancementField(r, "id"))
                        .Set("text", aegis::EnhancementField(r, "text"))
                        .Set("title", aegis::EnhancementField(r, "title"))
                        .Set("url", aegis::EnhancementField(r, "url"));
@@ -144,15 +152,15 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
         base::WriteJson(request).value_or("{}"),
         base::BindOnce(
             [](base::WeakPtr<AegisEnhancementHandler> self,
-               base::Value callback, std::string output, std::string error) {
+                               base::Value callback, std::string output, std::string error) {
               if (self)
                 self->Reply(std::move(callback),
-                            error.empty() ? base::DictValue() : Error(error));
+                            error.empty() ? base::JSONReader::ReadDict(output, base::JSON_PARSE_RFC).value_or(base::DictValue()) : Error(error));
             },
             weak_.GetWeakPtr(), std::move(callback)));
     return;
   }
-  if (op == "markdown-site") {
+  if (op == "markdown-site" || op == "reading-preferences") {
     store->Mutate(
         r, base::BindOnce(
                [](base::WeakPtr<AegisEnhancementHandler> self,
@@ -246,13 +254,15 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
                           base::DictValue().Set("output", output));
             },
             weak_.GetWeakPtr(), std::move(callback), target, address,
-            document));
+            document),
+        /*disable_local_qwen_thinking=*/kind == "script");
     return;
   }
   if (op == "trial" || op == "menu" || op == "read-page" ||
-      op == "read-markdown" || op == "recover" || op == "inspect") {
+      op == "read-markdown" || op == "recover" || op == "inspect" || op == "reload") {
     if (!tab || aegis::EnhancementField(tab->Snapshot(), "url") !=
-                    aegis::EnhancementField(r, "url")) {
+                    aegis::EnhancementField(r, "url") ||
+        aegis::EnhancementField(tab->Snapshot(), "document") != aegis::EnhancementField(r, "document")) {
       Reply(std::move(callback), Error("目标网页已变化，请刷新列表。"));
       return;
     }
@@ -266,13 +276,18 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
       tab->ReadPage(op == "read-markdown", std::move(reply));
     else if (op == "recover")
       tab->Recover(std::move(reply));
+    else if (op == "reload") {
+      tab->web_contents()->GetController().Reload(content::ReloadType::NORMAL, true);
+      std::move(reply).Run({});
+    }
     else {
       tab->Inspect();
       std::move(reply).Run({});
     }
     return;
   }
-  if (url != GURL("chrome://aegis/enhancements.html")) {
+  if (url != GURL("chrome://aegis/enhancements.html") &&
+      !(settings && (url.path() == "/aegisEnhancements" || settings_search))) {
     Reply(std::move(callback), Error("此界面不能修改脚本。"));
     return;
   }
