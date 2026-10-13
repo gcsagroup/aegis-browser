@@ -1,0 +1,46 @@
+Usage: gclient.py <command> [options]
+
+Meta checkout dependency manager for Git.
+
+Commands are:
+  [32mconfig      [39m creates a .gclient file in the current directory
+  [32mdiff        [39m displays local diff for every dependencies
+  [32mfetch       [39m fetches upstream commits for all modules
+  [32mflatten     [39m flattens the solutions into a single DEPS file
+  [32mgetconfig   [39m gets config values from the .gclient file
+  [32mgetdep      [39m gets revision information and variable values from a DEPS file
+  [32mgitmodules  [39m adds or updates Git Submodules based on the contents of the DEPS file
+  [32mgrep        [39m greps through git repos managed by gclient
+  [32mhelp        [39m prints list of commands or help for a specific command
+  [32minstallhooks[39m installs gclient git hooks
+  [32mmetrics     [39m reports, and optionally modifies, the status of metric collection
+  [32mpack        [39m generates a patch which can be applied at the root of the tree
+  [32mrecurse     [39m operates [command args ...] on all the dependencies
+  [32mrevert      [39m reverts all modifications in every dependencies
+  [32mrevinfo     [39m outputs revision info mapping for the client and its dependencies
+  [32mroot        [39m outputs the solution root (or current dir if there isn't one)
+  [32mrunhooks    [39m runs hooks for files that have been modified in the local working copy
+  [32msetdep      [39m modifies dependency revisions and variable values in a DEPS file
+  [32mstatus      [39m shows modification status for every dependencies
+  [32msync        [39m checkout/update all modules
+  [32mvalidate    [39m validates the .gclient and DEPS syntax
+  [32mverify      [39m verifies the DEPS file deps are only from allowed_hosts
+
+Options:
+  --version             show program's version number and exit
+  -h, --help            show this help message and exit
+  -j JOBS, --jobs=JOBS  Specify how many SCM commands can run in parallel;
+                        defaults to 8 on this machine
+  -v, --verbose         Produces additional output for diagnostics. Can be
+                        used up to three times for more logging info.
+  --gclientfile=CONFIG_FILENAME
+                        Specify an alternate .gclient file
+  --spec=SPEC           create a gclient file containing the provided string.
+                        Due to Cygwin/Python brokenness, it can't contain any
+                        newlines.
+  --no-nag-max          Ignored for backwards compatibility.
+  --trace               Enable tracing to Chrome Trace Event format for
+                        Perfetto UI.
+  --trace-file=TRACE_FILE
+                        Specify output file path for trace JSON (implies
+                        --trace).
