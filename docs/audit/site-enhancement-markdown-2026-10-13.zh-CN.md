@@ -74,7 +74,9 @@ iOS **Ver 6.0 (110)** 已完成 iPhone 13/13 项模型与网站增强单元测�
 
 本轮没有创建 Git 提交、推送、合并或发布。此前经另行授权推送的 `74699ff` 不包含此后修复。
 
-## GitHub 32 核 Windows runner 试跑前检查
+## GitHub 32 核 Windows runner 试跑前检查（历史快照）
+
+本节记录最初检查与取消购买时的状态；之后用户重新授权并完成试跑，当前结果以 [Windows Actions 记录](windows-actions-2026-10-13.zh-CN.md)为准。
 
 2026-10-13，用户授权先检查 32 核 GitHub runner 资格及预算，现有 Windows 构建保持不动。已通过 Safari 中现有组织管理会话实际核对：`gcsagroup` 当前为 GitHub Free；New GitHub-hosted runner 入口禁用，明确要求付费 Team 或 Enterprise。Actions 组织预算为 $0，Stop usage 为 Yes。套餐比较页标价 Team 为 $4/用户/月；实际席位数、税费和付款方式需在升级结算时确认。命令行当前账户 `erjinyi` 对本仓库只有读取权限，不能代替组织管理员执行配置或工作流写入。
 

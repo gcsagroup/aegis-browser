@@ -58,12 +58,25 @@ class Runner:
                     time.sleep(0.2)
             finally:
                 if process.poll() is None:
-                    if os.name == 'nt':
-                        subprocess.run([candidate.windows_system_executable('taskkill.exe'),
-                                        '/PID', str(process.pid), '/T', '/F'], check=True)
-                    else:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
+                    original_error = sys.exception()
+                    try:
+                        try:
+                            if os.name == 'nt':
+                                subprocess.run([candidate.windows_system_executable('taskkill.exe'),
+                                                '/PID', str(process.pid), '/T', '/F'],
+                                               check=True, timeout=10)
+                            else:
+                                os.killpg(process.pid, signal.SIGKILL)
+                        finally:
+                            # 进程树清理失败时仍回收主进程，避免无限等待。
+                            if process.poll() is None:
+                                process.kill()
+                            process.wait(timeout=10)
+                    except Exception as cleanup_error:
+                        if original_error is None:
+                            raise
+                        # 清理错误只作附注，保留先发生的超时或磁盘错误。
+                        original_error.add_note(f'{label} 清理异常：{cleanup_error}')
             if process.returncode:
                 tail = (self.evidence / (label + '.log')).read_text(errors='replace')[-5000:]
                 print(tail, flush=True)
@@ -316,6 +329,7 @@ def preflight(work, evidence):
         result['status'] = 'passed'
     except Exception as error:
         result['error'] = str(error)
+        result['errorNotes'] = getattr(error, '__notes__', [])
         raise
     finally:
         candidate.write_json(evidence / 'toolchain-result.json', result)
@@ -383,6 +397,7 @@ def build(work, evidence):
         result.update(status='build_and_native_tests_passed', installerSha256=candidate.sha256(installer))
     except Exception as error:
         result.update(status='failed', error=str(error))
+        result['errorNotes'] = getattr(error, '__notes__', [])
         raise
     finally:
         if 'out' in locals() and (out / 'mini_installer.exe').is_file():
