@@ -19,7 +19,7 @@
 
 针对 `main` 的 Copilot code review ruleset 当前保持停用，个人 develop 也不自动请求 Copilot；不购买 Copilot 方案、不等待 Copilot 结果。上游 Codacy、`quality-gate`、独立 reviewer、适用 Chromium 集成、设备、签名和发布证据按各自范围继续执行。ruleset、Codacy 授权和分支保护均属于服务端状态，须由管理员/API 实时回读，不能由仓库文件或本地测试证明。
 
-## 当前优先方案：GitHub 托管
+## GitHub 托管方案与当前边界
 
 2026-09-16 用户选择优先使用 GitHub 提供的机器。上游监控及 23 项脚本回归使用公开仓库的标准 `ubuntu-latest`，不依赖自托管机器或 `AEGIS_BUILD_RUNNERS_READY`。审核分支推送可以验证实际云端执行；合入默认分支后才有每日定时运行。首次云端没有 `.chromium-root` 时记录源码路径为空，不伪造本机安装证据。
 
@@ -30,11 +30,11 @@
 | Android 的 Linux x64 构建 | 32 核、128 GB 内存、1200 GB 存储 | 0.082 | 9.84 | 29.52 |
 | Windows x64 构建 | 32 核、128 GB 内存、1200 GB 存储 | 0.162 | 19.44 | 58.32 |
 
-2 小时与 6 小时只是成本场景，不是已经测得的构建时长。大规格机器需要组织的 Team 或 Enterprise Cloud 套餐，公开仓库也收费。付费执行需先确定预算；目前没有启动付费机器，也没有新增预算或付款信息。
+2 小时与 6 小时只是成本场景，不是已经测得的构建时长。大规格机器需要组织的 Team 或 Enterprise Cloud 套餐，公开仓库也收费。该表是早期成本快照。2026-10-13 已获单独授权执行 Windows 32 核试跑；最新运行编译超时，原生测试未执行。2026-10-14 预算已用满，付费监控暂停；不得按本文早期方案直接重跑。见 [Windows 实测记录](audit/windows-actions-2026-10-13.zh-CN.md)和[后续预算方案](plans/windows-build-budget-2026-10-14.zh-CN.md)。
 
 Mac 大规格机器公布存储仍为 14 GB，完整 Mac 构建暂沿用现有环境。Android 托管 Linux 可运行模拟器测试，但不能替代现有 ARM64 真机验收；APK 构建、模拟器与真机结果分别记录。
 
-现有 `chromium-candidate.yml` 是专用源码目录方案，保持就绪开关关闭，并且当前只保留 `workflow_dispatch` 手动入口。它不能仅更换 `runs-on` 就当作托管完整构建：还需要适配首次依赖准备、六小时时限、缓存/产物交接、工具链与真实验收。三台 runner 真正验收并设置 `AEGIS_BUILD_RUNNERS_READY=true` 后，如需恢复候选分支自动触发，应作为单独可审查变更重新启用。下面的自托管注册说明保留为备选，不是免费上游检查的前置要求。
+现有 `chromium-candidate.yml` 是专用源码目录方案，保持就绪开关关闭，并且当前只保留 `workflow_dispatch` 手动入口。Windows 另有默认关闭的 `windows_hosted_trial` 托管试跑入口，以及 `windows_preflight_only` 标准机器门禁；前者仍须单独授权且预算足够，后者不会启动付费作业。其他平台不能仅更换 `runs-on` 就当作托管完整构建：仍需适配首次依赖准备、时限、缓存/产物交接、工具链与真实验收。三台 runner 真正验收并设置 `AEGIS_BUILD_RUNNERS_READY=true` 后，如需恢复候选分支自动触发，应作为单独可审查变更重新启用。下面的自托管注册说明保留为备选，不是免费上游检查的前置要求。
 
 来源：[标准机器](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)、[大规格机器](https://docs.github.com/en/actions/reference/runners/larger-runners)、[时限](https://docs.github.com/en/actions/reference/limits)、[计费](https://docs.github.com/en/billing/reference/actions-runner-pricing)。
 

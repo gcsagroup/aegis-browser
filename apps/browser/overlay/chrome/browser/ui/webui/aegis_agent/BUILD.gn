@@ -1,5 +1,7 @@
 # Copyright 2026 GCSA
 
+import("//pdf/features.gni")
+
 import("//mojo/public/tools/bindings/mojom.gni")
 
 mojom("mojo_bindings") {
@@ -30,6 +32,8 @@ source_set("impl") {
   sources = [
     "aegis_agent_page_handler.cc",
     "aegis_agent_ui.cc",
+    "reading_workspace.cc",
+    "reading_workspace.h",
   ]
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
   deps = [
@@ -46,14 +50,25 @@ source_set("impl") {
     "//chrome/browser/ui/webui:webui_util",
     "//chrome/common",
     "//chrome/common/aegis",
+    "//components/content_extraction/content/browser",
     "//components/prefs",
+    "//components/os_crypt/async/browser",
+    "//components/os_crypt/async/common",
+    "//crypto",
+    "//net",
+    "//services/network/public/cpp",
+    "//pdf:buildflags",
     "//components/search_engines",
     "//components/tabs:public",
     "//content/public/browser",
+    "//third_party/blink/public/common",
     "//ui/base",
     "//ui/webui",
     "//url",
   ]
+  if (enable_pdf) {
+    deps += [ "//components/pdf/browser" ]
+  }
   if (!is_android) {
     deps += [ "//chrome/browser/ui/webui:theme_source" ]
   }

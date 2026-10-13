@@ -278,7 +278,7 @@ button:disabled {
   border-radius: 12px;
   display: grid;
   gap: 4px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding: 4px;
 }
 
@@ -789,4 +789,116 @@ summary {
     max-width: 100%;
     white-space: normal;
   }
+}
+
+/* 阅读资料的原文保留换行，窄侧栏自动转为单列。 */
+.reading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 12px;
+}
+
+.reading-entry {
+  border-top: 1px solid var(--border-color, #8886);
+  padding-block: 12px;
+}
+
+.reading-editor {
+  display: grid;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+.reading-editor label {
+  display: grid;
+  gap: 6px;
+  white-space: pre-wrap;
+}
+
+.reading-editor pre {
+  white-space: pre-wrap;
+  font: inherit;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.reading-pairs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.reading-translation-warning {
+  border-inline-start: 3px solid var(--warning);
+  padding-inline-start: 8px;
+  font-size: 0.9em;
+}
+
+#reading-tabs label {
+  display: flex;
+  gap: 8px;
+  align-items: start;
+}
+
+#reading-view label:has(input[type='checkbox']),
+#reading-ai-settings label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+}
+
+#reading-view input[type='checkbox'],
+#reading-ai-settings input[type='checkbox'] {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+#reading-tabs span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#reading-tabs {
+  max-height: 260px;
+  overflow: auto;
+}
+
+#reading-search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#reading-ai-settings {
+  display: block;
+}
+
+.reading-local-controls {
+  display: grid;
+  gap: 8px;
+  margin-block: 16px;
+  padding: 12px;
+  border: 1px solid var(--border-color, #8886);
+  border-radius: 10px;
+}
+
+.reading-research-results {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 480px) {
+  .reading-pairs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reading-pairs h4 {
+    display: none;
+  }
+
 }

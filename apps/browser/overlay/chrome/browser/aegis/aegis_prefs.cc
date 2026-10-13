@@ -56,6 +56,10 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
   registry->RegisterBooleanPref(prefs::kAgentEnabled, false);
   registry->RegisterIntegerPref(prefs::kAgentTaskRetentionDays, 30);
   registry->RegisterDictionaryPref(prefs::kAgentWorkspaces);
+  // 用户主动保存的阅读资料，仅持久化系统加密密文，不同步。
+  registry->RegisterStringPref("aegis.reading_library", std::string());
+  registry->RegisterBooleanPref("aegis.research_minim_enabled", false);
+  registry->RegisterBooleanPref("aegis.research_phishlang_enabled", false);
   registry->RegisterStringPref(prefs::kPausedSites, std::string());
   registry->RegisterBooleanPref(prefs::kAwarenessIntroShown, false);
   registry->RegisterBooleanPref(prefs::kTorrentDisclosureAcknowledged, false);

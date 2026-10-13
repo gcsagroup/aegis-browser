@@ -1,0 +1,18 @@
+{
+  "phishlang": {
+    "source_sha256": "235f0f52b32575c46ddd5584ef382a7969c96d012ed9a903722da8cb7593d009",
+    "onnx_sha256": "2e8923b6fd90647c9c79e87b51c38fa07f4011bcc360901aa22488967c707830",
+    "precision": "dynamic int8 MatMul/Gemm, ONNX opset 17",
+    "source_repository": "https://github.com/UTA-SPRLab/phishlang/tree/6b7283854ef8a6edc73f945c1ce7e51b2e1dc4fd",
+    "license_status": "No explicit model license found; local experimental integration only",
+    "bundled": false
+  },
+  "minim": {
+    "checkpoint_sha256": "9259bc70d469870d41ba24d0576d84b291b0f4770e8f45c415b8b979b63ceab1",
+    "weights_sha256": "15bab7e6d6a7975e8f1c098e0a05cdf73646433285166fda191f7489e4e1985c",
+    "source_repository": "https://github.com/yyyyhx/MINIM/tree/456c60b6fd47941d1e5849db573dbbcb488e3ae7",
+    "training": "450 variants; page-group split 360/45/45; seed 20261011; 10 epochs; MLP",
+    "license_status": "Dataset MIT; upstream code license unclear; locally trained research weights",
+    "bundled": false
+  }
+}

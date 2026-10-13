@@ -37,8 +37,7 @@ case "${AEGIS_RUN_DRY_RUN:-0}" in
 esac
 
 if [[ -d "$APP" ]]; then
-  # Component builds ship linker-signed bundles that Gatekeeper rejects until
-  # ad-hoc re-signed. Cheap if already signed.
+  # 开发入口也使用固定 GCSA 证书；只有证书和整包校验均通过才跳过重签。
   bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$APP" "$OUT"
   printf '启动已验证开发版：%s\n独立 Profile：%s\n' "$binary" "$PROFILE"
   open -n "$APP" --args "${run_args[@]}"

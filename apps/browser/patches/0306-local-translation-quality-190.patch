@@ -1,0 +1,227 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Tue, 13 Oct 2026 04:13:10 +0800
+Subject: [PATCH] 改善本机翻译分句并提示数字与单位疑点 190
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+未提交工作区补丁，接续 0305。零值标记表示尚无对应提交。
+---
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 522dfe89f62045f5da4baada17bb711c992ddf05..f2565336cdb2a7f489904a573ae5961daaf7b0e9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6185,19 +6185,32 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalTranslationWithVerifie
+       }));
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
+   auto* page = browser()->tab_strip_model()->GetActiveWebContents();
+-  // 使用真实压缩文件和生产下载/解压/IDB/嵌套 Worker/WASM 路径；不提供伪造译文。
++  // 使用真实压缩文件和生产下载/解压/IDB/Worker/WASM 路径；不提供伪造译文。
+   EXPECT_EQ(content::EvalJs(page, R"JS(
+     (async () => {
+       const {LocalAiClient} = await import('./local_ai_client.js');
+       const client = new LocalAiClient();
+       for (const [direction, text] of [['en-zh', 'The file size is 12.5 MB. Do not close the window.'],
+-          ['zh-en', '文件大小为12.5 MB，请不要关闭窗口。']]) {
++          ['zh-en', '文件大小为12.5 MB。请勿关闭窗口。']]) {
+         const installed = await client.run({op: 'download', direction}, () => {});
+         if (!installed.ready) return 'download failed';
+         const output = await client.run({op: 'translate', direction, paragraphs: [text]}, () => {});
+         if (output.translations.length !== 1 || !output.translations[0].includes('12.5')) return 'invalid translation';
+         if (!(direction === 'en-zh' ? /[\u3400-\u9fff]/ : /[A-Za-z]/).test(output.translations[0])) return 'wrong language';
++        if (direction === 'en-zh' && !/(?:请勿|不要|不得)关闭/.test(output.translations[0])) return 'negation regression';
++        if (direction === 'zh-en') {
++          if (!/do not close/i.test(output.translations[0])) return 'negation regression';
++          const long = Array.from({length: 24}, (_, i) =>
++            `第${i + 1}节。记录包含${1001 + i}个项目。在备份验证完成之前不要覆盖原件。`).join('');
++          const result = await client.run({op: 'translate', direction, paragraphs: [long]}, () => {});
++          const translated = result.translations[0].replaceAll(',', '');
++          if (result.translations.length !== 1 || Array.from({length: 24}, (_, i) =>
++              String(1001 + i)).some(value => !translated.includes(value))) return 'long text omission';
++        }
+       }
++      const {translationWarnings} = await import('./reading_workspace.js');
++      if (translationWarnings('费用为人民币1,234.56元。', 'The fee is $1,234.36.').join(',') !==
++          'NumberWarning,UnitWarning') return 'quality reminder missing';
+       return 'passed';
+     })()
+   )JS"), "passed");
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 7421837bbeea9f23eef0bf084bd81f162c24a534..f57acced0edd48300807ad86d34616601f0ee5f1 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -829,6 +829,12 @@ summary {
+   gap: 12px;
+ }
+ 
++.reading-translation-warning {
++  border-inline-start: 3px solid var(--warning);
++  padding-inline-start: 8px;
++  font-size: 0.9em;
++}
++
+ #reading-tabs label {
+   display: flex;
+   gap: 8px;
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index c0c01263938dbc0f0f34578bd2cf0122219d163e..aaa45269a72c8034b180395f9e61bce2efbbe0bc 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -10,8 +10,8 @@
+       "sha256": "8bc2c806918e38d7c158522b2238317c6d935b8caf57866243852e87e7763913"
+     },
+     "worker.js": {
+-      "bytes": 6715,
+-      "sha256": "0f6e5918c1e273e3f356fc24b3e309d21a41f74dbac1c79cfa946806b9453236"
++      "bytes": 7394,
++      "sha256": "c25ca0879e8c82244353f748210e113745e76b58c5bd9b923d6a16ccc903998f"
+     },
+     "research.js": {
+       "bytes": 6647,
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/worker.js b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+index ed45081d055498f60eb8ef9601c6eb8b215dfcfa..54821b84f2db735c662cec327937170f6023149a 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/worker.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+@@ -77,16 +77,27 @@ async function download(rows) {
+   await writeFiles(rows, files);
+   return {ready: true};
+ }
+-export function splitText(text, limit = 800) {
+-  const chars = Array.from(text), result = [];
+-  while (chars.length) {
+-    let end = Math.min(limit, chars.length);
+-    if (end < chars.length) {
+-      for (let i = end - 1; i > limit / 2; --i) {
+-        if (/[\s。！？.!?]/u.test(chars[i])) { end = i + 1; break; }
++export function splitText(text, limit = 800, language = 'en') {
++  if (!Number.isInteger(limit) || limit < 1) throw Error('invalid_input');
++  const sentences = [], result = [];
++  for (const {segment} of new Intl.Segmenter(language, {granularity: 'sentence'}).segment(text)) {
++    // ICU 会将部分称谓误判为句尾；只合并边界，不修改原文或译文。
++    if (sentences.length && /\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr|e\.g|i\.e)\.\s*$/iu.test(sentences.at(-1))) {
++      sentences[sentences.length - 1] += segment;
++    } else sentences.push(segment);
++  }
++  for (const sentence of sentences) {
++    const chars = Array.from(sentence);
++    while (chars.length) {
++      let end = Math.min(limit, chars.length);
++      if (end < chars.length) {
++        for (let i = end - 1; i > limit / 2; --i) {
++          // 超长单句优先在空白/分句标点处分块，不在小数点处分块。
++          if (/[\s，,；;。！？!?]/u.test(chars[i])) { end = i + 1; break; }
++        }
+       }
++      result.push(chars.splice(0, end).join(''));
+     }
+-    result.push(chars.splice(0, end).join(''));
+   }
+   return result;
+ }
+@@ -118,7 +129,7 @@ async function execute(request) {
+   try {
+     for (const paragraph of request.paragraphs) {
+       const pieces = [];
+-      for (const text of splitText(paragraph)) {
++      for (const text of splitText(paragraph, 800, from)) {
+         const [output] = translator.translate({models: [{from, to}], texts: [{text, html: false, qualityScores: false}]});
+         if (!output.target.text.trim()) throw Error('translation_incomplete');
+         pieces.push(output.target.text);
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index 8d53a3cfd3e235e78f171e9c8ab778e56f3d9155..3a08182a3a6d889a4e938eddf32aafd8bbbe9f33 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -34,6 +34,40 @@ export function matchesReading(record: ReadingRecord, query: string): boolean {
+           record.group, ...record.translation].join('\n').toLocaleLowerCase()
+       .includes(query.trim().toLocaleLowerCase());
+ }
++export function translationWarnings(source: string, translation: string): string[] {
++  // 只提示可疑差异，不判断译文正确性，也不按规则改写数字或单位。
++  const normalize = (text: string) => text.normalize('NFKC').replaceAll('−', '-');
++  const numbers = (text: string) => (normalize(text).match(
++      /(?<!\d)[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[eE][+-]?\d+)?/gu) || [])
++      .map(value => value.replaceAll(',', '').replace(/^\+/, '')
++          .replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')).sort().join('|');
++  const warnings = [];
++  if (numbers(source) !== numbers(translation)) warnings.push('NumberWarning');
++  const units = [
++    /%|\bpercent\b|百分之/iu,
++    /\b(?:CNY|RMB|yuan)\b|人民币|人民幣|\d\s*元/iu,
++    /\$|\b(?:USD|dollars?)\b|美元/iu,
++    /€|\b(?:EUR|euros?)\b|欧元|歐元/iu,
++    /°\s*C\b|摄氏|攝氏|\bcelsius\b/iu,
++    /°\s*F\b|华氏|華氏|\bfahrenheit\b/iu,
++    // B 与 b 含义不同，数据容量标记保留大小写。
++    /\bGB\b|\d\s*GB\b/u, /\bMB\b|\d\s*MB\b/u, /\bKB\b|\d\s*KB\b/u,
++    /\bGb\b|\d\s*Gb\b/u, /\bMb\b|\d\s*Mb\b/u, /\bKb\b|\d\s*Kb\b/u,
++    /\bkg\b|\d\s*kg\b|千克|公斤/iu,
++    /\bcm\b|\d\s*cm\b|厘米|公分|\bcentimet(?:er|re)s?\b/iu,
++    /\bmm\b|\d\s*mm\b|毫米|\bmillimet(?:er|re)s?\b/iu,
++    /\bmL\b|\d\s*mL\b|毫升|\bmillilit(?:er|re)s?\b/iu,
++    /\bkm\/h\b|每小时\s*\d*\s*(?:公里|千米)|千米\/小时/iu,
++    /\bfps\b|frames? per second|帧每秒|幀每秒|每秒\s*\d*\s*[帧幀]/iu,
++  ];
++  if (/\d/u.test(source + translation) && units.some(unit =>
++      unit.test(normalize(source)) !== unit.test(normalize(translation)))) warnings.push('UnitWarning');
++  // 两个字段都不超过 12 时，不替用户决定月/日顺序。
++  if (/\b(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|1[0-2])\/\d{4}\b/u.test(normalize(source))) {
++    warnings.push('DateWarning');
++  }
++  return warnings;
++}
+ export class ReadingWorkspace {
+   private records: ReadingRecord[] = [];
+   private revision = '';
+@@ -245,11 +279,20 @@ export class ReadingWorkspace {
+     original.append(node('h4', label('Original')), originalText);
+     section.append(original);
+     if (record.translation.length) {
++      section.append(node('p', label('TranslationCaution')));
+       const pairs = node('div');
+       pairs.className = 'reading-pairs';
+       pairs.append(node('h4', label('Original')), node('h4', label('Translation')));
+       record.paragraphs.forEach((paragraph, index) => {
+-        pairs.append(node('p', paragraph), node('p', record.translation[index] || ''));
++        const translated = record.translation[index] || '';
++        const target = node('div');
++        target.append(node('p', translated));
++        for (const warning of translationWarnings(paragraph, translated)) {
++          const message = node('p', label(warning));
++          message.className = 'reading-translation-warning';
++          target.append(message);
++        }
++        pairs.append(node('p', paragraph), target);
+       });
+       section.append(pairs);
+     }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 60ea07dac150c25188f88e630df4c5e8e63bde13..f9ac23091c082e237c9c242dff4af65be942e728 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -184,6 +184,10 @@ void AddStrings(content::WebUIDataSource *source) {
+   add("readingTranslating", "Translating paragraph", "正在翻译段落", "正在翻譯段落");
+   add("readingAnalyzing", "Analyzing locally", "正在本机分析", "正在本機分析");
+   add("readingTranslationSaved", "Translation of a saved item also saves its current notes.", "已保存资料的翻译会同时保存当前批注。", "已儲存資料的翻譯會同時儲存目前批註。");
++  add("readingTranslationCaution", "Machine translation may misread negation, short titles or numbers. Compare with the original; no warning does not mean the translation is correct.", "机器翻译可能误解否定句、短标题或数字。请对照原文；没有提示也不代表译文正确。", "機器翻譯可能誤解否定句、短標題或數字。請對照原文；沒有提示也不代表譯文正確。");
++  add("readingNumberWarning", "Check the numbers: their written forms differ. Numbers written as words can also trigger this reminder.", "请核对数字：原译文的数字写法不一致，数字改写成文字也可能触发此提示。", "請核對數字：原譯文的數字寫法不一致，數字改寫成文字也可能觸發此提示。");
++  add("readingUnitWarning", "Check the units or currency: a common unit marker differs from the original.", "请核对单位或币种：译文中的常见单位标记与原文不一致。", "請核對單位或幣種：譯文中的常見單位標記與原文不一致。");
++  add("readingDateWarning", "The original date may use either month/day or day/month order. Confirm it before relying on the translation.", "原文日期可能采用月/日或日/月顺序，请确认后再使用译文。", "原文日期可能採用月/日或日/月順序，請確認後再使用譯文。");
+   add("readingReadArticle", "Read article", "阅读文章", "閱讀文章");
+   add("readingReadEmail", "Read email", "阅读邮件", "閱讀郵件");
+   add("readingReadMessage", "Read message", "阅读消息", "閱讀訊息");
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1113d4ed2ef35db7000378a4410baaa94faa0799..693088b37cd12e0871c3b72cffd695e2e549dd60 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "4.0.0.189";
+-inline constexpr char kProductVersionLabel[] = "Ver 4.0 (189)";
++inline constexpr char kProductVersion[] = "4.0.0.190";
++inline constexpr char kProductVersionLabel[] = "Ver 4.0 (190)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

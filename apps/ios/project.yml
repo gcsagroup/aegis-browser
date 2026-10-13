@@ -17,10 +17,10 @@ configs:
 settings:
   base:
     CLANG_ENABLE_MODULES: YES
-    CURRENT_PROJECT_VERSION: 69
+    CURRENT_PROJECT_VERSION: 116
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     IPHONEOS_DEPLOYMENT_TARGET: "18.4"
-    MARKETING_VERSION: 3.2
+    MARKETING_VERSION: 7.0
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_VERSION: "6.0"
     SWIFT_EMIT_LOC_STRINGS: YES
@@ -44,6 +44,7 @@ targets:
           - Aegis.entitlements
           - Info.plist
       - path: Shared/ShareInbox.swift
+      - path: Shared/MarkdownShareInbox.swift
       - path: Shared/ExternalPageLink.swift
       - path: Shared/SafariReadOnlyGate.swift
       - path: SharedWebExtension
@@ -75,6 +76,9 @@ targets:
       - path: BrowserKit
         excludes:
           - Info.plist
+      - path: ../browser/overlay/chrome/browser/resources/aegis/enhancements_shared
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: AegisPolicyKit
     settings:
@@ -148,6 +152,7 @@ targets:
           - Info.plist
           - ShareExtension.entitlements
       - path: Shared/ShareInbox.swift
+      - path: Shared/MarkdownShareInbox.swift
     settings:
       base:
         APPLICATION_EXTENSION_API_ONLY: YES

@@ -1,0 +1,131 @@
+From 878d79fec83355f11eb7d84b1da63f880254a36a Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 05:53:14 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E9=98=85=E8=AF=BB=E6=8F=90=E5=8F=96?=
+ =?UTF-8?q?=E5=AE=8C=E6=95=B4=E8=8C=83=E5=9B=B4=E5=B9=B6=E5=90=8C=E6=AD=A5?=
+ =?UTF-8?q?=E7=89=88=E6=9C=AC=20146?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    |  5 +++-
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn  |  1 +
+ .../ui/webui/aegis_agent/reading_workspace.cc | 29 ++++++++++++++++---
+ .../ui/webui/help/aegis_github_update.h       |  4 +--
+ 4 files changed, 32 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index e4196d7019fd7d19bf56833b25a8098e643de7c5..bfecbe0ed8d104b2e71f8dd1737ad6d5d0f41c1e 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6030,6 +6030,9 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceCaptureAndAnnotati
+   ASSERT_TRUE(embedded_test_server()->Start());
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
+       embedded_test_server()->GetURL("/title1.html")));
++  const std::string long_text = std::string(6000, 'a') + "阅读末尾验证";
++  ASSERT_TRUE(content::ExecJs(browser()->tab_strip_model()->GetActiveWebContents(),
++      content::JsReplace("document.body.textContent = $1", long_text)));
+   AegisReadingWorkspace workspace(browser()->GetProfile(), browser());
+   auto run = [&](base::DictValue request, const std::string& error = "") {
+     base::test::TestFuture<std::string, std::string> done;
+@@ -6042,7 +6045,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceCaptureAndAnnotati
+   state = run(base::DictValue().Set("op", "capture").Set("tab", tab).Set("page", 1));
+   const auto* draft = state.FindDict("draft");
+   ASSERT_TRUE(draft);
+-  EXPECT_FALSE(draft->FindString("text")->empty());
++  EXPECT_NE(draft->FindString("text")->find("阅读末尾验证"), std::string::npos);
+   const std::string id = *draft->FindString("id");
+   auto save = base::DictValue().Set("op", "save").Set("id", id)
+       .Set("note", "本地批注").Set("quote", "不在原文中的引文_12345")
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+index 823605b4ea4875063c6ddb8b19db17ee91a38f4c..0991f675950669dcbd566cbf266688705122abb9 100644
+--- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -50,6 +50,7 @@ source_set("impl") {
+     "//chrome/browser/ui/webui:webui_util",
+     "//chrome/common",
+     "//chrome/common/aegis",
++    "//components/content_extraction/content/browser",
+     "//components/prefs",
+     "//components/os_crypt/async/browser",
+     "//components/os_crypt/async/common",
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index 0d0b1708438bcd6e9be7a51f6caf203c7b1e9db8..985684ce37cbac57abaf96f54264c74ee1e5a8e8 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -1,6 +1,7 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/ui/webui/aegis_agent/reading_workspace.h"
+ 
++#include <algorithm>
+ #include <set>
+ #include <utility>
+ 
+@@ -22,6 +23,7 @@
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
++#include "components/content_extraction/content/browser/inner_text.h"
+ #include "components/os_crypt/async/browser/os_crypt_async.h"
+ #include "components/os_crypt/async/common/encryptor.h"
+ #include "components/prefs/pref_service.h"
+@@ -116,7 +118,7 @@ bool AegisReadingWorkspace::ValidateRecords(const base::ListValue& records) {
+       return false;
+   }
+   auto json = base::WriteJson(records);
+-  return json && json->size() <= kMaxStore;
++  return json && json->size() <= kMaxStore - 64;
+ }
+ 
+ void AegisReadingWorkspace::Run(const std::string& request, Callback callback) {
+@@ -434,9 +436,28 @@ void AegisReadingWorkspace::Capture(int tab_id, int page, Callback callback) {
+   draft_ = NewEntry(source_url_, title, "web", 0);
+   source->GetContents()->GetPrimaryMainFrame()->GetRemoteAssociatedInterfaces()
+       ->GetInterface(&capture_client_);
+-  capture_client_->CollectAegisPageSignals(true, base::BindOnce(
+-      &AegisReadingWorkspace::Captured, capture_factory_.GetWeakPtr(),
+-      std::move(callback)));
++  capture_client_->CollectAegisPageSignals(false, base::BindOnce(
++      [](base::WeakPtr<AegisReadingWorkspace> self, Callback done,
++         int passwords, int forms, const std::vector<std::string>& actions,
++         const std::string& title, const std::string& sample) {
++        if (!self) return;
++        if (!self->SourceCurrent()) {
++          self->Reply(std::move(done), {}, "tabs_changed"); return;
++        }
++        auto* frame = self->source_document_.AsRenderFrameHostIfValid();
++        int frames = 0;
++        frame->ForEachRenderFrameHost([&frames](content::RenderFrameHost*) { ++frames; });
++        // 子框架的敏感表单信号未单独收集时，正文仅供本机阅读。
++        if (frames > 1) forms = std::max(1, forms);
++        content_extraction::GetInnerText(*frame, std::nullopt, base::BindOnce(
++            [](base::WeakPtr<AegisReadingWorkspace> current, Callback done,
++               int passwords, int forms, std::string title,
++               std::unique_ptr<content_extraction::InnerTextResult> result) {
++              if (current) current->Captured(std::move(done), passwords, forms,
++                  {}, title, result ? result->inner_text : std::string());
++            }, self->capture_factory_.GetWeakPtr(), std::move(done),
++            passwords, forms, title));
++      }, capture_factory_.GetWeakPtr(), std::move(callback)));
+ }
+ 
+ bool AegisReadingWorkspace::SourceCurrent() const {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 8ff9752254219e7b5a0523c1dc4b886fffd1961e..212549cbc0e57a10ce683f1ba230d9cbce776bdb 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.145";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (145)";
++inline constexpr char kProductVersion[] = "3.0.0.146";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (146)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
