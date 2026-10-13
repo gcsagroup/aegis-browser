@@ -1,0 +1,948 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Debug -destination "platform=iOS Simulator,id=05FF1A0C-CE7C-4A72-A308-3830EEE3922A" -derivedDataPath <build-root>/ios/DerivedData -resultBundlePath .artifacts/ui-unification-20261013/ios-ipad-118.xcresult -parallel-testing-enabled NO -collect-test-diagnostics never "-only-testing:AegisTests/WebsiteEnhancementTests" "-only-testing:AegisUITests/WebsiteEnhancementUITests" test
+
+Writing result bundle at path:
+	<repo>/.artifacts/ui-unification-20261013/ios-ipad-118.xcresult
+
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (8 targets)
+    Target 'AegisUITests' in project 'Aegis'
+        ➜ Explicit dependency on target 'Aegis' in project 'Aegis'
+    Target 'AegisTests' in project 'Aegis'
+        ➜ Explicit dependency on target 'Aegis' in project 'Aegis'
+        ➜ Explicit dependency on target 'BrowserKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'AegisPolicyKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'AgentKit' in project 'Aegis'
+    Target 'Aegis' in project 'Aegis'
+        ➜ Explicit dependency on target 'BrowserKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'AegisPolicyKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'AgentKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'SafariWebExtension' in project 'Aegis'
+        ➜ Explicit dependency on target 'ShareExtension' in project 'Aegis'
+    Target 'ShareExtension' in project 'Aegis' (no dependencies)
+    Target 'SafariWebExtension' in project 'Aegis' (no dependencies)
+    Target 'AgentKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'AegisPolicyKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'BrowserKit' in project 'Aegis'
+    Target 'BrowserKit' in project 'Aegis'
+        ➜ Explicit dependency on target 'AegisPolicyKit' in project 'Aegis'
+    Target 'AegisPolicyKit' in project 'Aegis' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -arch arm64 -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.0.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc --version
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/xcstringstool compile --dry-run --output-directory <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/ShareExtension.build <repo>/apps/ios/AegisApp/Localizable.xcstrings
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --print-asset-tag-combinations --output-format xml1 <repo>/apps/ios/AegisApp/Assets.xcassets
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/xcstringstool compile --dry-run --output-directory <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build <repo>/apps/ios/AegisApp/Localizable.xcstrings
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang -v -E -dM -isysroot /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.0.sdk -x c -c /dev/null
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ld -version_details
+
+ExecuteExternalTool /Applications/Xcode.app/Contents/Developer/usr/bin/actool --version --output-format xml1
+
+Build description signature: c595288abfda8178c726e0ccb8428282
+Build description path: <build-root>/ios/DerivedData/Build/Intermediates.noindex/XCBuildData/c595288abfda8178c726e0ccb8428282.xcbuilddata
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.0.sdk <build-root>/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.0-24A430-8dc58220667be655e1bcc261a7455254.sdkstatcache
+    cd <repo>/apps/ios/Aegis.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.0.sdk -o <build-root>/ios/DerivedData/SDKStatCaches.noindex/iphonesimulator27.0-24A430-8dc58220667be655e1bcc261a7455254.sdkstatcache
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/Info.plist <repo>/apps/ios/ShareExtension/Info.plist (in target 'ShareExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/ShareExtension/Info.plist -producttype com.apple.product-type.app-extension -expandbuildsettings -format binary -platform iphonesimulator -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/Info.plist
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/Info.plist <repo>/apps/ios/SafariWebExtension/Info.plist (in target 'SafariWebExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/SafariWebExtension/Info.plist -producttype com.apple.product-type.app-extension -expandbuildsettings -format binary -platform iphonesimulator -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/Info.plist
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisPolicyKit.framework/Info.plist <repo>/apps/ios/AegisPolicyKit/Info.plist (in target 'AegisPolicyKit' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/AegisPolicyKit/Info.plist -producttype com.apple.product-type.framework -expandbuildsettings -format binary -platform iphonesimulator -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisPolicyKit.framework/Info.plist
+
+CompileAssetCatalogVariant thinned <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app <repo>/apps/ios/AegisApp/Assets.xcassets (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/usr/bin/actool <repo>/apps/ios/AegisApp/Assets.xcassets --compile <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_output/thinned --output-format human-readable-text --notices --warnings --export-dependency-info <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_dependencies_thinned --output-partial-info-plist <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_generated_info.plist_thinned --app-icon AppIcon --compress-pngs --enable-on-demand-resources YES --filter-for-thinning-device-configuration iPad16,9 --filter-for-device-os-version 26.5 --development-region zh-Hans --target-device iphone --target-device ipad --minimum-deployment-target 18.4 --platform iphonesimulator
+/* com.apple.actool.compilation-results */
+<build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_generated_info.plist_thinned
+<build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_output/thinned/AppIcon60x60@2x.png
+<build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_output/thinned/AppIcon76x76@2x~ipad.png
+<build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_output/thinned/Assets.car
+
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework/Info.plist <repo>/apps/ios/BrowserKit/Info.plist (in target 'BrowserKit' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/BrowserKit/Info.plist -producttype com.apple.product-type.framework -expandbuildsettings -format binary -platform iphonesimulator -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework/Info.plist
+
+CpResource <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework/enhancements_shared <repo>/apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared (in target 'BrowserKit' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks <repo>/apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework
+
+AppIntentsSSUTraining (in target 'SafariWebExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/Info.plist --temp-dir-path <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/SafariWebExtension.build/ssu --bundle-id com.gcsa.aegis.ios.app.safari --product-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex --extracted-metadata-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/Metadata.appintents --metadata-file-list <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/SafariWebExtension.build/SafariWebExtension.DependencyMetadataFileList --source-file <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/Info.plist --archive-ssu-assets
+2026-10-13 18:20:03.138 appintentsnltrainingprocessor[95559:15204347] Parsing options for appintentsnltrainingprocessor
+2026-10-13 18:20:03.138 appintentsnltrainingprocessor[95559:15204347] Starting AppIntents SSU YAML Generation
+2026-10-13 18:20:03.139 appintentsnltrainingprocessor[95559:15204347] No AppShortcuts found - Skipping.
+
+AppIntentsSSUTraining (in target 'ShareExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/Info.plist --temp-dir-path <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/ShareExtension.build/ssu --bundle-id com.gcsa.aegis.ios.app.share --product-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex --extracted-metadata-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/Metadata.appintents --metadata-file-list <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/ShareExtension.build/ShareExtension.DependencyMetadataFileList --source-file <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/Info.plist --archive-ssu-assets
+2026-10-13 18:20:03.138 appintentsnltrainingprocessor[95560:15204348] Parsing options for appintentsnltrainingprocessor
+2026-10-13 18:20:03.138 appintentsnltrainingprocessor[95560:15204348] Starting AppIntents SSU YAML Generation
+2026-10-13 18:20:03.139 appintentsnltrainingprocessor[95560:15204348] No AppShortcuts found - Skipping.
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework (in target 'BrowserKit' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/SafariWebExtension.debug.dylib (in target 'SafariWebExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/SafariWebExtension.debug.dylib
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/SafariWebExtension.debug.dylib: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/ShareExtension.debug.dylib (in target 'ShareExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/ShareExtension.debug.dylib
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/ShareExtension.debug.dylib: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/__preview.dylib (in target 'SafariWebExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/__preview.dylib
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex/__preview.dylib: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/__preview.dylib (in target 'ShareExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/__preview.dylib
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex/__preview.dylib: replacing existing signature
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AgentKit.framework/Info.plist <repo>/apps/ios/AgentKit/Info.plist (in target 'AgentKit' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/AgentKit/Info.plist -producttype com.apple.product-type.framework -expandbuildsettings -format binary -platform iphonesimulator -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AgentKit.framework/Info.plist
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex (in target 'ShareExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --entitlements <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/ShareExtension.build/ShareExtension.appex.xcent --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex (in target 'SafariWebExtension' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --entitlements <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/SafariWebExtension.build/SafariWebExtension.appex.xcent --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex: replacing existing signature
+
+LinkAssetCatalog <repo>/apps/ios/AegisApp/Assets.xcassets (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-linkAssetCatalog --thinned <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_output/thinned --thinned-dependencies <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_dependencies_thinned --thinned-info-plist-content <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_generated_info.plist_thinned --unthinned <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_output/unthinned --unthinned-dependencies <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_dependencies_unthinned --unthinned-info-plist-content <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_generated_info.plist_unthinned --output <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app --plist-output <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_generated_info.plist
+note: Emplaced <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/AppIcon60x60@2x.png (in target 'Aegis' from project 'Aegis')
+note: Emplaced <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Assets.car (in target 'Aegis' from project 'Aegis')
+note: Emplaced <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/AppIcon76x76@2x~ipad.png (in target 'Aegis' from project 'Aegis')
+
+Copy <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/SafariWebExtension.appex <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -resolve-src-symlinks -remove-static-executable <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/SafariWebExtension.appex <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns
+
+Copy <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/ShareExtension.appex <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -resolve-src-symlinks -remove-static-executable <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/ShareExtension.appex <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns
+
+Copy <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks/BrowserKit.framework <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -resolve-src-symlinks -remove-static-executable <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Info.plist <repo>/apps/ios/AegisApp/Info.plist (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/AegisApp/Info.plist -producttype com.apple.product-type.application -genpkginfo <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PkgInfo -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/assetcatalog_generated_info.plist -scanforprivacyfile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks/AegisPolicyKit.framework -scanforprivacyfile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks/AgentKit.framework -scanforprivacyfile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks/BrowserKit.framework -scanforprivacyfile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/SafariWebExtension.appex -scanforprivacyfile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/ShareExtension.appex -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Info.plist
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks/BrowserKit.framework (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks/BrowserKit.framework
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks/BrowserKit.framework: replacing existing signature
+
+CopySwiftLibs <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Aegis.debug.dylib --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/SystemExtensions --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Extensions --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisPolicyKit.framework --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AgentKit.framework --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Frameworks --strip-bitcode --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+AppIntentsSSUTraining (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Info.plist --temp-dir-path <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/ssu --bundle-id com.gcsa.aegis.ios.app --product-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app --extracted-metadata-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Metadata.appintents --metadata-file-list <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/Aegis.DependencyMetadataFileList --source-file <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Info.plist --archive-ssu-assets
+2026-10-13 18:20:03.642 appintentsnltrainingprocessor[95570:15204453] Parsing options for appintentsnltrainingprocessor
+2026-10-13 18:20:03.642 appintentsnltrainingprocessor[95570:15204453] Starting AppIntents SSU YAML Generation
+2026-10-13 18:20:03.642 appintentsnltrainingprocessor[95570:15204453] No AppShortcuts found - Skipping.
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Info.plist <repo>/apps/ios/Tests/AegisTests/Info.plist (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/Tests/AegisTests/Info.plist -producttype com.apple.product-type.bundle.unit-test -expandbuildsettings -format binary -platform iphonesimulator -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Info.plist
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/AgentKit.framework (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/AgentKit.framework
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/AgentKit.framework: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/AegisPolicyKit.framework (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/AegisPolicyKit.framework
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/AegisPolicyKit.framework: replacing existing signature
+
+Copy <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/BrowserKit.framework <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -exclude Headers -exclude PrivateHeaders -exclude Modules -exclude \*.tbd -resolve-src-symlinks -remove-static-executable <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/BrowserKit.framework (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --preserve-metadata\=identifier,entitlements,flags --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/BrowserKit.framework
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks/BrowserKit.framework: replacing existing signature
+
+CopySwiftLibs <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/AegisTests --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/PlugIns --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/SystemExtensions --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Extensions --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/BrowserKit.framework --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisPolicyKit.framework --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AgentKit.framework --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/AegisTests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+AppIntentsSSUTraining (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Info.plist --temp-dir-path <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/AegisTests.build/ssu --bundle-id com.gcsa.aegis.ios.tests --product-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest --extracted-metadata-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Metadata.appintents --metadata-file-list <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/AegisTests.build/AegisTests.DependencyMetadataFileList --source-file <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest/Info.plist --archive-ssu-assets
+2026-10-13 18:20:03.717 appintentsnltrainingprocessor[95574:15204480] Parsing options for appintentsnltrainingprocessor
+2026-10-13 18:20:03.718 appintentsnltrainingprocessor[95574:15204480] Starting AppIntents SSU YAML Generation
+2026-10-13 18:20:03.718 appintentsnltrainingprocessor[95574:15204480] No AppShortcuts found - Skipping.
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest (in target 'AegisTests' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/AegisTests.xctest: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Aegis.debug.dylib (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Aegis.debug.dylib
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Aegis.debug.dylib: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/__preview.dylib (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/__preview.dylib
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/__preview.dylib: replacing existing signature
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --entitlements <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/Aegis.build/Aegis.app.xcent --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app: replacing existing signature
+
+ValidateEmbeddedBinary <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/ShareExtension.appex (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/usr/bin/embeddedBinaryValidationUtility <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/ShareExtension.appex -signing-cert - -info-plist-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Info.plist
+
+ValidateEmbeddedBinary <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/SafariWebExtension.appex (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/usr/bin/embeddedBinaryValidationUtility <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/PlugIns/SafariWebExtension.appex -signing-cert - -info-plist-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app/Info.plist
+
+Validate <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app (in target 'Aegis' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-validationUtility <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app -shallow-bundle -infoplist-subpath Info.plist
+
+ProcessInfoPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Info.plist <repo>/apps/ios/Tests/AegisUITests/Info.plist (in target 'AegisUITests' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-infoPlistUtility <repo>/apps/ios/Tests/AegisUITests/Info.plist -producttype com.apple.product-type.bundle.ui-testing -expandbuildsettings -format binary -platform iphonesimulator -additionalcontentfile <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/AegisUITests.build/ProductTypeInfoPlistAdditions.plist -o <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Info.plist
+
+CopySwiftLibs <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest (in target 'AegisUITests' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-swiftStdLibTool --copy --verbose --sign - --scan-executable <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/AegisUITests --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Frameworks --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/PlugIns --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/SystemExtensions --scan-folder <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Extensions --platform iphonesimulator --toolchain /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain --destination <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Frameworks --strip-bitcode --scan-executable /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/usr/lib/libXCTestSwiftSupport.dylib --strip-bitcode-tool /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/bitcode_strip --emit-dependency-info <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/AegisUITests.build/SwiftStdLibToolInputDependencies.dep --filter-for-swift-os
+
+AppIntentsSSUTraining (in target 'AegisUITests' from project 'Aegis')
+    cd <repo>/apps/ios
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/appintentsnltrainingprocessor --infoplist-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Info.plist --temp-dir-path <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/AegisUITests.build/ssu --bundle-id com.gcsa.aegis.ios.uitests --product-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest --extracted-metadata-path <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Metadata.appintents --metadata-file-list <build-root>/ios/DerivedData/Build/Intermediates.noindex/Aegis.build/Debug-iphonesimulator/AegisUITests.build/AegisUITests.DependencyMetadataFileList --source-file <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Info.plist --archive-ssu-assets
+2026-10-13 18:20:04.256 appintentsnltrainingprocessor[95581:15204576] Parsing options for appintentsnltrainingprocessor
+2026-10-13 18:20:04.256 appintentsnltrainingprocessor[95581:15204576] Starting AppIntents SSU YAML Generation
+2026-10-13 18:20:04.256 appintentsnltrainingprocessor[95581:15204576] No AppShortcuts found - Skipping.
+
+CodeSign <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest (in target 'AegisUITests' from project 'Aegis')
+    cd <repo>/apps/ios
+
+    Signing Identity:     "Sign to Run Locally"
+
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest
+<build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest: replacing existing signature
+
+CopyPlistFile <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/Info.plist /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/XCTRunner.app/Info.plist (in target 'AegisUITests' from project 'Aegis')
+    cd <repo>/apps/ios
+    builtin-copyPlist --validate --convert xml1 --macro-expansion WRAPPEDPRODUCTNAME AegisUITests-Runner --macro-expansion WRAPPEDPRODUCTBUNDLEIDENTIFIER com.gcsa.aegis.ios.uitests.xctrunner --macro-expansion TESTPRODUCTNAME AegisUITests --macro-expansion TESTPRODUCTBUNDLEIDENTIFIER com.gcsa.aegis.ios.uitests --copy-value UIDeviceFamily <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app/PlugIns/AegisUITests.xctest/Info.plist --outdir <build-root>/ios/DerivedData/Build/Products/Debug-iphonesimulator/AegisUITests-Runner.app -- /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/Library/Xcode/Agents/XCTRunner.app/Info.plist
+
+PruneExplicitPrecompiledModules <build-root>/ios/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules <build-root>/ios/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules <build-root>/ios/DerivedData/SDKExplicitPrecompiledModules
+
+2026-10-13 18:20:07.905565+0800 Aegis[95585:15204972] [default] Failed to resolve host network app id to config: bundleID: com.apple.WebKit.Networking instance ID: Optional([_EXExtensionInstanceIdentifier: 31BF71F8-B865-47BA-BABD-9E269361DAA0])
+Test Suite 'Selected tests' started at 2026-10-13 18:20:08.011.
+Test Suite 'AegisTests.xctest' started at 2026-10-13 18:20:08.012.
+Test Suite 'WebsiteEnhancementTests' started at 2026-10-13 18:20:08.012.
+Test Case '-[AegisTests.WebsiteEnhancementTests testAllFramesMatchesIndividuallyAndStaleMenuIsRejected]' started.
+2026-10-13 18:20:08.376982+0800 Aegis[95585:15205097] [ResourceLoadStatistics] WebContent[95597] Unable to hide query parameters from script (missing data)
+2026-10-13 18:20:08.432777+0800 Aegis[95585:15205097] [ResourceLoadStatistics] WebContent[95598] Unable to hide query parameters from script (missing data)
+2026-10-13 18:20:09.913182+0800 Aegis[95585:15205097] [ResourceLoadStatistics] WebContent[95594] Unable to filter tracking query parameters (missing data)
+2026-10-13 18:20:09.930183+0800 Aegis[95585:15205097] [ResourceLoadStatistics] WebContent[95594] Unable to hide query parameters from script (missing data)
+2026-10-13 18:20:10.230128+0800 Aegis[95585:15205097] [ProcessSuspension] WebContent[95600] 0x10e04c100 - [sessionID=9223372036854775810] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+Test Case '-[AegisTests.WebsiteEnhancementTests testAllFramesMatchesIndividuallyAndStaleMenuIsRejected]' passed (2.218 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testExternalWriteAndCorruptDataArePreserved]' started.
+2026-10-13 18:20:10.243310+0800 Aegis[95585:15204967] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:20:10.243534+0800 Aegis[95585:15204967] [ProcessSuspension] 0x112188600 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=95600, error: (null)
+2026-10-13 18:20:10.244324+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c8b9350 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:10.244606+0800 Aegis[95585:15204967] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 95600 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 95600 does not exist}>
+2026-10-13 18:20:10.244661+0800 Aegis[95585:15204967] [ProcessSuspension] 0x1121886c0 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=95600, error: (null)
+2026-10-13 18:20:10.245183+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c8b8780 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+Test Case '-[AegisTests.WebsiteEnhancementTests testExternalWriteAndCorruptDataArePreserved]' passed (0.015 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testMarkdownFileLimitsContainmentAndRawResponse]' started.
+2026-10-13 18:20:10.867534+0800 Aegis[95585:15205097] [Process] WebContent[95601] 0x107618008 - [webPageID=162] WebPage::runJavaScriptInFrameInScriptWorld: Request to run JavaScript failed with error Error: 当前页面已经由网站排版，请打开 Raw 原始文件
+Test Case '-[AegisTests.WebsiteEnhancementTests testMarkdownFileLimitsContainmentAndRawResponse]' passed (0.623 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testPersistenceDraftRevisionRollbackAndPrivateIsolation]' started.
+2026-10-13 18:20:10.876110+0800 Aegis[95585:15204967] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:20:10.876214+0800 Aegis[95585:15204967] [ProcessSuspension] 0x112188540 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=95601, error: (null)
+2026-10-13 18:20:10.877756+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c8ba310 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:10.878396+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c8ba4f0 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+Test Case '-[AegisTests.WebsiteEnhancementTests testPersistenceDraftRevisionRollbackAndPrivateIsolation]' passed (0.014 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testRealWebKitEarlyRulesStorageMenuAndDisable]' started.
+2026-10-13 18:20:11.306505+0800 Aegis[95585:15205097] [ProcessSuspension] WebContent[95602] 0x10e04c100 - [sessionID=9223372036854775812] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+Test Case '-[AegisTests.WebsiteEnhancementTests testRealWebKitEarlyRulesStorageMenuAndDisable]' passed (0.423 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMarkdownRendererUsesPackagedAssetsAndEscapesExecutableContent]' started.
+2026-10-13 18:20:11.313520+0800 Aegis[95585:15204972] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:20:11.313619+0800 Aegis[95585:15204972] [ProcessSuspension] 0x112188780 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=95602, error: (null)
+2026-10-13 18:20:11.314364+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c8b9230 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:11.314397+0800 Aegis[95585:15204972] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 95602 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 95602 does not exist}>
+2026-10-13 18:20:11.314577+0800 Aegis[95585:15204972] [ProcessSuspension] 0x112188840 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=95602, error: (null)
+2026-10-13 18:20:11.315621+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c8ba430 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:11.636350+0800 Aegis[95585:15205097] [ProcessSuspension] WebContent[95604] 0x11004c100 - [sessionID=1] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+2026-10-13 18:20:11.643512+0800 Aegis[95585:15204972] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:20:11.643601+0800 Aegis[95585:15204972] [ProcessSuspension] 0x112188840 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=95604, error: (null)
+2026-10-13 18:20:11.644241+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c9a4d50 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:11.644503+0800 Aegis[95585:15204972] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 95604 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 95604 does not exist}>
+2026-10-13 18:20:11.644553+0800 Aegis[95585:15204972] [ProcessSuspension] 0x112188900 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=95604, error: (null)
+2026-10-13 18:20:11.645393+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c9a4270 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMarkdownRendererUsesPackagedAssetsAndEscapesExecutableContent]' passed (0.339 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMatchingVectors]' started.
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMatchingVectors]' passed (0.007 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseKeepsGrantAndReadsOldSchema]' started.
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseKeepsGrantAndReadsOldSchema]' passed (0.002 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseRevokesMenuAndStopsInjectionAfterReload]' started.
+2026-10-13 18:20:12.227617+0800 Aegis[95585:15205097] [ProcessSuspension] WebContent[95605] 0x11204c100 - [sessionID=9223372036854775813] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseRevokesMenuAndStopsInjectionAfterReload]' passed (0.572 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testTrialStorageIsTemporaryAndWrongURLDoesNotRun]' started.
+2026-10-13 18:20:12.234557+0800 Aegis[95585:15204969] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:20:12.234648+0800 Aegis[95585:15204969] [ProcessSuspension] 0x1121886c0 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=95605, error: (null)
+2026-10-13 18:20:12.235293+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c9a5d40 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:12.235464+0800 Aegis[95585:15204969] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 95605 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 95605 does not exist}>
+2026-10-13 18:20:12.235532+0800 Aegis[95585:15204969] [ProcessSuspension] 0x112188900 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=95605, error: (null)
+2026-10-13 18:20:12.236370+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c9a7420 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+Test Case '-[AegisTests.WebsiteEnhancementTests testTrialStorageIsTemporaryAndWrongURLDoesNotRun]' passed (0.374 seconds).
+Test Suite 'WebsiteEnhancementTests' passed at 2026-10-13 18:20:12.602.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 4.588 (4.590) seconds
+Test Suite 'AegisTests.xctest' passed at 2026-10-13 18:20:12.602.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 4.588 (4.591) seconds
+Test Suite 'Selected tests' passed at 2026-10-13 18:20:12.603.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 4.588 (4.591) seconds
+2026-10-13 18:20:12.609749+0800 Aegis[95585:15204969] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:20:12.609849+0800 Aegis[95585:15204969] [ProcessSuspension] 0x1121889c0 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=95606, error: (null)
+2026-10-13 18:20:12.611130+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c9a7780 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:12.612216+0800 Aegis[95585:15204915] [general] Failed to terminate process: Error Domain=com.apple.extensionKit.errorDomain Code=18 "(null)" UserInfo={NSUnderlyingError=0x701c9a7720 {Error Domain=RBSRequestErrorDomain Code=3 "No such process found" UserInfo={NSLocalizedFailureReason=No such process found}}}
+2026-10-13 18:20:13.252156+0800 AegisUITests-Runner[95607:15205432] [Default] Running tests...
+2026-10-13 18:20:13.266835+0800 AegisUITests-Runner[95607:15205432] [UIKit App Config] Update the Info.plist: Launch screens will soon be required.
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-10-13 18:20:13.617.
+Test Suite 'AegisUITests.xctest' started at 2026-10-13 18:20:13.618.
+Test Suite 'WebsiteEnhancementUITests' started at 2026-10-13 18:20:13.618.
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testMarkdownPreviewSourceAndLandscape]' started.
+    t =     0.00s Start Test at 2026-10-13 18:20:13.618
+    t =     0.02s Set Up
+    t =     0.02s Open com.gcsa.aegis.ios.app
+    t =     0.02s     Launch com.gcsa.aegis.ios.app
+2026-10-13 18:20:13.809 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:20:13.809 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: no debugger version
+objc[95607]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x109944310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x109dfc398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =     0.40s         Setting up automation session
+    t =     0.85s         Wait for com.gcsa.aegis.ios.app to idle
+    t =     2.10s Waiting 10.0s for "address-field" TextField to exist
+    t =     3.13s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =     3.13s         Checking existence of `"address-field" TextField`
+    t =     3.18s Tap "address-field" TextField
+    t =     3.18s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.18s     Find the "address-field" TextField
+    t =     3.19s     Check for interrupting elements affecting "address-field" TextField
+    t =     3.21s         Wait for com.apple.springboard to idle
+    t =     3.22s     Synthesize event
+    t =     3.51s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.88s Find the "address-field" TextField
+    t =     3.91s Type '' into "address-field" TextField
+    t =     3.91s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.91s     Find the "address-field" TextField
+    t =     3.93s     Check for interrupting elements affecting "address-field" TextField
+    t =     3.95s         Wait for com.apple.springboard to idle
+    t =     3.96s     Synthesize event
+    t =     4.38s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.38s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =     4.38s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.39s     Find the "address-field" TextField
+    t =     4.41s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.43s         Wait for com.apple.springboard to idle
+    t =     4.44s     Synthesize event
+    t =     5.43s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.49s Tap "page-protection" Button
+    t =     5.49s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.87s     Find the "page-protection" Button
+    t =     5.89s     Check for interrupting elements affecting "page-protection" Button
+    t =     5.91s         Wait for com.apple.springboard to idle
+    t =     5.92s     Synthesize event
+    t =     6.21s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     6.88s Find the "site-read-markdown" Button
+    t =     7.93s     Find the "site-read-markdown" Button (retry 1)
+    t =     8.96s     Find the "site-read-markdown" Button (retry 2)
+    t =     9.00s Swipe up Target Application 'com.gcsa.aegis.ios.app'
+    t =     9.00s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     9.00s     Find the Target Application 'com.gcsa.aegis.ios.app'
+    t =     9.02s     Check for interrupting elements affecting "GCSA Aegis" Application
+    t =     9.05s         Wait for com.apple.springboard to idle
+    t =     9.06s     Synthesize event
+    t =     9.48s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    10.16s Find the "site-read-markdown" Button
+    t =    10.21s Find the "site-read-markdown" Button
+    t =    10.25s Tap "site-read-markdown" Button
+    t =    10.25s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    10.25s     Find the "site-read-markdown" Button
+    t =    10.28s     Check for interrupting elements affecting "site-read-markdown" Button
+    t =    10.31s         Wait for com.apple.springboard to idle
+    t =    10.33s     Synthesize event
+<unknown>:0: warning: -[AegisUITests.WebsiteEnhancementUITests testMarkdownPreviewSourceAndLandscape] : Adding 'UIKitToolbar' as a subview of UIHostingController.view is not supported and may result in a broken view hierarchy. Add your view above UIHostingController.view in a common superview or insert it into your SwiftUI content in a UIViewRepresentable instead.
+    t =    10.62s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    11.36s Waiting 10.0s for "Markdown 验收" StaticText to exist
+    t =    12.39s     Checking `Expect predicate `existsNoRetry == 1` for object "Markdown 验收" StaticText`
+    t =    12.39s         Checking existence of `"Markdown 验收" StaticText`
+    t =    12.52s Waiting 5.0s for "markdown-actions" Button to exist
+    t =    13.56s     Checking `Expect predicate `existsNoRetry == 1` for object "markdown-actions" Button`
+    t =    13.56s         Checking existence of `"markdown-actions" Button`
+    t =    13.62s Tap "markdown-actions" Button
+    t =    13.62s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    13.62s     Find the "markdown-actions" Button
+    t =    13.67s     Check for interrupting elements affecting "markdown-actions" Button
+    t =    13.72s         Wait for com.apple.springboard to idle
+    t =    13.73s     Synthesize event
+    t =    14.03s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    14.91s Tap "查看源码" Button
+    t =    14.91s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    14.91s     Find the "查看源码" Button
+    t =    14.97s     Check for interrupting elements affecting "chevron.left.forwardslash.chevron.right" Button
+    t =    15.02s         Wait for com.apple.springboard to idle
+    t =    15.04s     Synthesize event
+    t =    15.33s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.90s Waiting 5.0s for StaticText (First Match) to exist
+    t =    17.93s     Checking `Expect predicate `existsNoRetry == 1` for object StaticText (First Match)`
+    t =    17.93s         Checking existence of `StaticText (First Match)`
+    t =    18.04s Tap "markdown-actions" Button
+    t =    18.04s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    18.04s     Find the "markdown-actions" Button
+    t =    18.09s     Check for interrupting elements affecting "markdown-actions" Button
+    t =    18.13s         Wait for com.apple.springboard to idle
+    t =    18.14s     Synthesize event
+    t =    18.44s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.34s Tap "查看源码" Button
+    t =    19.34s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.35s     Find the "查看源码" Button
+    t =    19.40s     Check for interrupting elements affecting "chevron.left.forwardslash.chevron.right" Button
+    t =    19.45s         Wait for com.apple.springboard to idle
+    t =    19.46s     Synthesize event
+    t =    19.75s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    20.89s Added attachment named 'Markdown 表格与任务列表'
+    t =    20.89s Setting device orientation to Landscape Left
+    t =    20.90s     Device orientation changed to Landscape Left
+    t =    20.90s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    20.90s     Wait for com.apple.springboard to idle
+    t =    20.90s Waiting 5.0s for "markdown-outline" Button to exist
+    t =    21.93s     Checking `Expect predicate `existsNoRetry == 1` for object "markdown-outline" Button`
+    t =    21.93s         Checking existence of `"markdown-outline" Button`
+    t =    22.06s Added attachment named 'Markdown 横屏'
+    t =    22.07s Setting device orientation to Portrait
+    t =    22.07s     Device orientation changed to Portrait
+    t =    22.07s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    22.07s     Wait for com.apple.springboard to idle
+    t =    22.07s Tear Down
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testMarkdownPreviewSourceAndLandscape]' passed (22.306 seconds).
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testScriptDraftTrialEnableAndRecovery]' started.
+    t =     0.00s Start Test at 2026-10-13 18:20:35.925
+    t =     0.02s Set Up
+    t =     0.02s Open com.gcsa.aegis.ios.app
+    t =     0.02s     Launch com.gcsa.aegis.ios.app
+    t =     0.02s         Terminate com.gcsa.aegis.ios.app:95611
+2026-10-13 18:20:37.003 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:20:37.003 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     1.28s         Setting up automation session
+    t =     1.76s         Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.02s Waiting 10.0s for "address-field" TextField to exist
+    t =     4.06s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =     4.06s         Checking existence of `"address-field" TextField`
+    t =     4.09s Tap "address-field" TextField
+    t =     4.09s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.10s     Find the "address-field" TextField
+    t =     4.11s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.12s         Wait for com.apple.springboard to idle
+    t =     4.14s     Synthesize event
+    t =     4.43s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.79s Find the "address-field" TextField
+    t =     4.82s Type '' into "address-field" TextField
+    t =     4.82s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.82s     Find the "address-field" TextField
+    t =     4.84s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.86s         Wait for com.apple.springboard to idle
+    t =     4.87s     Synthesize event
+    t =     5.29s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.30s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =     5.30s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.30s     Find the "address-field" TextField
+    t =     5.32s     Check for interrupting elements affecting "address-field" TextField
+    t =     5.34s         Wait for com.apple.springboard to idle
+    t =     5.35s     Synthesize event
+    t =     6.22s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     6.29s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =     7.33s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =     7.33s         Checking existence of `"网站增强验收文章" StaticText`
+    t =     7.36s Tap "page-protection" Button
+    t =     7.36s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     7.36s     Find the "page-protection" Button
+    t =     7.38s     Check for interrupting elements affecting "page-protection" Button
+    t =     7.40s         Wait for com.apple.springboard to idle
+    t =     7.41s     Synthesize event
+    t =     7.70s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     8.36s Find the "site-new-script" Button
+    t =     9.42s     Find the "site-new-script" Button (retry 1)
+    t =    10.46s     Find the "site-new-script" Button (retry 2)
+    t =    10.50s Swipe up Target Application 'com.gcsa.aegis.ios.app'
+    t =    10.50s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    10.50s     Find the Target Application 'com.gcsa.aegis.ios.app'
+    t =    10.53s     Check for interrupting elements affecting "GCSA Aegis" Application
+    t =    10.56s         Wait for com.apple.springboard to idle
+    t =    10.57s     Synthesize event
+    t =    10.99s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    12.07s Find the "site-new-script" Button
+    t =    12.13s Find the "site-new-script" Button
+    t =    12.17s Tap "site-new-script" Button
+    t =    12.17s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    12.18s     Find the "site-new-script" Button
+    t =    12.21s     Check for interrupting elements affecting "site-new-script" Button
+    t =    12.25s         Wait for com.apple.springboard to idle
+    t =    12.26s     Synthesize event
+    t =    12.55s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    13.31s Waiting 5.0s for "user-script-source" TextView to exist
+    t =    14.33s     Checking `Expect predicate `existsNoRetry == 1` for object "user-script-source" TextView`
+    t =    14.33s         Checking existence of `"user-script-source" TextView`
+    t =    14.40s Find the "user-script-source" TextView
+    t =    14.46s Find the "user-script-source" TextView
+    t =    14.52s Tap "user-script-source" TextView
+    t =    14.52s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    14.52s     Find the "user-script-source" TextView
+    t =    14.57s     Check for interrupting elements affecting "user-script-source" TextView
+    t =    14.62s         Wait for com.apple.springboard to idle
+    t =    14.63s     Synthesize event
+    t =    14.92s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    15.46s Type 'a' key with modifiers '⌘' (0x10)
+    t =    15.46s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    15.46s     Find the Target Application 'com.gcsa.aegis.ios.app'
+    t =    15.51s     Check for interrupting elements affecting "GCSA Aegis" Application
+    t =    15.56s         Wait for com.apple.springboard to idle
+    t =    15.57s     Synthesize event
+    t =    15.92s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.75s Type '' into "user-script-source" TextView
+    t =    16.75s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.75s     Find the "user-script-source" TextView
+    t =    16.81s     Check for interrupting elements affecting "user-script-source" TextView
+    t =    16.86s         Wait for com.apple.springboard to idle
+    t =    16.88s     Synthesize event
+    t =    17.10s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    18.31s Type '// ==UserScript==
+...' into "user-script-source" TextView
+    t =    18.31s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    18.31s     Find the "user-script-source" TextView
+    t =    18.37s     Check for interrupting elements affecting "user-script-source" TextView
+    t =    18.43s         Wait for com.apple.springboard to idle
+    t =    18.44s     Synthesize event
+    t =    21.65s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    21.65s Find the "user-script-trial" Button
+    t =    22.72s     Find the "user-script-trial" Button (retry 1)
+    t =    23.79s     Find the "user-script-trial" Button (retry 2)
+    t =    23.85s Swipe up Target Application 'com.gcsa.aegis.ios.app'
+    t =    23.85s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    23.85s     Find the Target Application 'com.gcsa.aegis.ios.app'
+    t =    23.90s     Check for interrupting elements affecting "GCSA Aegis" Application
+    t =    23.95s         Wait for com.apple.springboard to idle
+    t =    23.96s     Synthesize event
+    t =    24.39s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    25.44s Find the "user-script-trial" Button
+    t =    25.51s Find the "user-script-trial" Button
+    t =    25.59s Tap "user-script-trial" Button
+    t =    25.59s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    25.59s     Find the "user-script-trial" Button
+    t =    25.65s     Check for interrupting elements affecting "user-script-trial" Button
+    t =    25.71s         Wait for com.apple.springboard to idle
+    t =    25.72s     Synthesize event
+    t =    26.02s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    26.56s Waiting 5.0s for "在真实页面试运行？" Alert to exist
+    t =    27.58s     Checking `Expect predicate `existsNoRetry == 1` for object "在真实页面试运行？" Alert`
+    t =    27.59s         Checking existence of `"在真实页面试运行？" Alert`
+    t =    27.66s Tap "试运行" Button
+    t =    27.66s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    27.66s     Find the "试运行" Button
+    t =    27.72s     Check for interrupting elements affecting "试运行" Button
+    t =    27.78s         Wait for com.apple.springboard to idle
+    t =    27.80s     Synthesize event
+    t =    28.09s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    28.59s Tap "完成" Button
+    t =    28.59s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    28.59s     Find the "完成" Button
+    t =    28.66s     Check for interrupting elements affecting "完成" Button
+    t =    28.73s         Wait for com.apple.springboard to idle
+    t =    28.74s     Synthesize event
+    t =    29.04s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.82s Tap "完成" Button
+    t =    29.82s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.82s     Find the "完成" Button
+    t =    29.87s     Check for interrupting elements affecting "完成" Button
+    t =    29.90s         Wait for com.apple.springboard to idle
+    t =    29.92s     Synthesize event
+    t =    30.22s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    31.01s Waiting 8.0s for "SCRIPT_APPLIED" StaticText to exist
+    t =    32.04s     Checking `Expect predicate `existsNoRetry == 1` for object "SCRIPT_APPLIED" StaticText`
+    t =    32.05s         Checking existence of `"SCRIPT_APPLIED" StaticText`
+    t =    32.15s Added attachment named '脚本试运行效果'
+    t =    32.15s Tap "page-protection" Button
+    t =    32.15s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    32.15s     Find the "page-protection" Button
+    t =    32.17s     Check for interrupting elements affecting "page-protection" Button
+    t =    32.19s         Wait for com.apple.springboard to idle
+    t =    32.20s     Synthesize event
+    t =    32.50s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    33.07s Find the "此网站的全部设置" Button
+    t =    34.12s     Find the "此网站的全部设置" Button (retry 1)
+    t =    35.16s     Find the "此网站的全部设置" Button (retry 2)
+    t =    35.21s Swipe up Target Application 'com.gcsa.aegis.ios.app'
+    t =    35.21s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    35.21s     Find the Target Application 'com.gcsa.aegis.ios.app'
+    t =    35.24s     Check for interrupting elements affecting "GCSA Aegis" Application
+    t =    35.27s         Wait for com.apple.springboard to idle
+    t =    35.28s     Synthesize event
+    t =    35.70s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    36.33s Find the "此网站的全部设置" Button
+    t =    36.39s Find the "此网站的全部设置" Button
+    t =    36.44s Tap "此网站的全部设置" Button
+    t =    36.44s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    36.44s     Find the "此网站的全部设置" Button
+    t =    36.48s     Check for interrupting elements affecting "此网站的全部设置" Button
+    t =    36.51s         Wait for com.apple.springboard to idle
+    t =    36.53s     Synthesize event
+    t =    36.82s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    37.64s Find the "启用" Button
+    t =    37.69s Find the "script-2f326a3b-fcb9-4679-83f5-724c09fb371f" Button
+    t =    37.74s Tap "script-2f326a3b-fcb9-4679-83f5-724c09fb371f" Button
+    t =    37.74s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    37.74s     Find the "script-2f326a3b-fcb9-4679-83f5-724c09fb371f" Button
+    t =    37.78s     Check for interrupting elements affecting "script-2f326a3b-fcb9-4679-83f5-724c09fb371f" Button
+    t =    37.81s         Wait for com.apple.springboard to idle
+    t =    37.82s     Synthesize event
+    t =    38.12s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    38.37s Tap "确认启用" Button
+    t =    38.37s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    38.37s     Find the "确认启用" Button
+    t =    38.42s     Check for interrupting elements affecting "确认启用" Button
+    t =    38.46s         Wait for com.apple.springboard to idle
+    t =    38.47s     Synthesize event
+    t =    38.76s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    39.01s Find the "恢复操作" Button
+    t =    39.05s Find the "恢复操作" Button
+    t =    39.10s Tap "恢复操作" Button
+    t =    39.10s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    39.10s     Find the "恢复操作" Button
+    t =    39.14s     Check for interrupting elements affecting "恢复操作" Button
+    t =    39.17s         Wait for com.apple.springboard to idle
+    t =    39.19s     Synthesize event
+    t =    39.48s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    39.74s Find the "停用全部脚本并恢复当前页" Button
+    t =    39.79s Find the "停用全部脚本并恢复当前页" Button
+    t =    39.83s Tap "停用全部脚本并恢复当前页" Button
+    t =    39.83s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    39.83s     Find the "停用全部脚本并恢复当前页" Button
+    t =    39.87s     Check for interrupting elements affecting "停用全部脚本并恢复当前页" Button
+    t =    39.90s         Wait for com.apple.springboard to idle
+    t =    39.92s     Synthesize event
+    t =    40.21s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    40.47s Tap "停用并恢复" Button
+    t =    40.47s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    40.47s     Find the "停用并恢复" Button
+    t =    40.51s     Check for interrupting elements affecting "停用并恢复" Button
+    t =    40.55s         Wait for com.apple.springboard to idle
+    t =    40.57s     Synthesize event
+    t =    40.86s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    41.12s Tap Button (Element at index 0)
+    t =    41.12s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    41.14s     Find the Button (Element at index 0)
+    t =    41.19s     Check for interrupting elements affecting "BackButton" Button
+    t =    41.23s         Wait for com.apple.springboard to idle
+    t =    41.25s     Synthesize event
+    t =    41.54s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    42.32s Tap "完成" Button
+    t =    42.32s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    42.33s     Find the "完成" Button
+    t =    42.38s     Check for interrupting elements affecting "完成" Button
+    t =    42.41s         Wait for com.apple.springboard to idle
+    t =    42.43s     Synthesize event
+    t =    42.72s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    43.51s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =    44.53s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =    44.53s         Checking existence of `"网站增强验收文章" StaticText`
+    t =    44.56s Checking existence of `"SCRIPT_APPLIED" StaticText`
+    t =    44.58s Tear Down
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testScriptDraftTrialEnableAndRecovery]' passed (44.840 seconds).
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testWebsiteSettingSurvivesRestartAndPrivateProfileIsEmpty]' started.
+    t =     0.00s Start Test at 2026-10-13 18:21:20.766
+    t =     0.02s Set Up
+    t =     0.02s Open com.gcsa.aegis.ios.app
+    t =     0.02s     Launch com.gcsa.aegis.ios.app
+    t =     0.02s         Terminate com.gcsa.aegis.ios.app:95642
+2026-10-13 18:21:21.837 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:21:21.837 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     1.28s         Setting up automation session
+    t =     1.78s         Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.06s Waiting 10.0s for "address-field" TextField to exist
+    t =     4.08s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =     4.08s         Checking existence of `"address-field" TextField`
+    t =     4.12s Tap "address-field" TextField
+    t =     4.12s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.13s     Find the "address-field" TextField
+    t =     4.14s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.16s         Wait for com.apple.springboard to idle
+    t =     4.17s     Synthesize event
+    t =     4.46s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.82s Find the "address-field" TextField
+    t =     4.84s Type '' into "address-field" TextField
+    t =     4.85s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.85s     Find the "address-field" TextField
+    t =     4.87s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.89s         Wait for com.apple.springboard to idle
+    t =     4.90s     Synthesize event
+    t =     5.32s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.33s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =     5.33s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.33s     Find the "address-field" TextField
+    t =     5.35s     Check for interrupting elements affecting "address-field" TextField
+    t =     5.37s         Wait for com.apple.springboard to idle
+    t =     5.39s     Synthesize event
+    t =     6.26s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     6.34s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =     7.36s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =     7.36s         Checking existence of `"网站增强验收文章" StaticText`
+    t =     7.39s Tap "page-protection" Button
+    t =     7.39s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     7.39s     Find the "page-protection" Button
+    t =     7.41s     Check for interrupting elements affecting "page-protection" Button
+    t =     7.43s         Wait for com.apple.springboard to idle
+    t =     7.44s     Synthesize event
+    t =     7.73s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     7.75s Tap "site-copy" Switch[0.94, 0.50]
+    t =     7.75s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     8.48s     Find the "site-copy" Switch
+    t =     8.54s     Check for interrupting elements affecting "site-copy" Switch
+    t =     8.57s         Wait for com.apple.springboard to idle
+    t =     8.58s     Synthesize event
+    t =     8.59s         Find the "site-copy" Switch
+    t =     8.62s         Find the "site-copy" Switch
+    t =     8.66s         Find the "site-copy" Switch
+    t =     8.99s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    10.29s Find the "site-copy" Switch
+    t =    10.33s Waiting 5.0s for "site-rule-result" StaticText to exist
+    t =    11.34s     Checking `Expect predicate `existsNoRetry == 1` for object "site-rule-result" StaticText`
+    t =    11.34s         Checking existence of `"site-rule-result" StaticText`
+    t =    11.46s Added attachment named '网站设置已保存'
+    t =    11.46s Terminate com.gcsa.aegis.ios.app:95700
+    t =    12.52s Open com.gcsa.aegis.ios.app
+    t =    12.52s     Launch com.gcsa.aegis.ios.app
+2026-10-13 18:21:33.286 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:21:33.286 xcodebuild[95532:15204043] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =    12.73s         Setting up automation session
+    t =    13.23s         Wait for com.gcsa.aegis.ios.app to idle
+    t =    14.51s Waiting 10.0s for "address-field" TextField to exist
+    t =    15.54s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =    15.54s         Checking existence of `"address-field" TextField`
+    t =    15.58s Tap "address-field" TextField
+    t =    15.58s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    15.59s     Find the "address-field" TextField
+    t =    15.60s     Check for interrupting elements affecting "address-field" TextField
+    t =    15.62s         Wait for com.apple.springboard to idle
+    t =    15.63s     Synthesize event
+    t =    15.94s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.30s Find the "address-field" TextField
+    t =    16.34s Type '' into "address-field" TextField
+    t =    16.34s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.34s     Find the "address-field" TextField
+    t =    16.37s     Check for interrupting elements affecting "address-field" TextField
+    t =    16.39s         Wait for com.apple.springboard to idle
+    t =    16.41s     Synthesize event
+    t =    16.83s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.83s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =    16.83s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.84s     Find the "address-field" TextField
+    t =    16.87s     Check for interrupting elements affecting "address-field" TextField
+    t =    16.89s         Wait for com.apple.springboard to idle
+    t =    16.91s     Synthesize event
+    t =    17.78s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    17.87s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =    18.90s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =    18.90s         Checking existence of `"网站增强验收文章" StaticText`
+    t =    18.94s Tap "page-protection" Button
+    t =    18.94s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    18.94s     Find the "page-protection" Button
+    t =    18.96s     Check for interrupting elements affecting "page-protection" Button
+    t =    18.98s         Wait for com.apple.springboard to idle
+    t =    19.00s     Synthesize event
+    t =    19.28s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.33s Find the "site-copy" Switch
+    t =    19.40s Tap "完成" Button
+    t =    19.40s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    20.02s     Find the "完成" Button
+    t =    20.06s     Check for interrupting elements affecting "完成" Button
+    t =    20.09s         Wait for com.apple.springboard to idle
+    t =    20.11s     Synthesize event
+    t =    20.40s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    21.18s Find the "profile-menu" Button
+    t =    22.21s     Find the "profile-menu" Button (retry 1)
+    t =    23.24s     Find the "profile-menu" Button (retry 2)
+    t =    23.26s Tap "browser-more" Button
+    t =    23.26s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    23.26s     Find the "browser-more" Button
+    t =    23.28s     Check for interrupting elements affecting "browser-more" Button
+    t =    23.30s         Wait for com.apple.springboard to idle
+    t =    23.31s     Synthesize event
+    t =    23.60s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    24.75s Waiting 5.0s for "profile-menu" Button to exist
+    t =    25.77s     Checking `Expect predicate `existsNoRetry == 1` for object "profile-menu" Button`
+    t =    25.77s         Checking existence of `"profile-menu" Button`
+    t =    25.81s Tap "profile-menu" Button
+    t =    25.81s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    25.81s     Find the "profile-menu" Button
+    t =    25.84s     Check for interrupting elements affecting "profile-menu" Button
+    t =    25.86s         Wait for com.apple.springboard to idle
+    t =    25.88s     Synthesize event
+    t =    26.16s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    26.87s Tap "私密" Button
+    t =    26.87s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    26.87s     Find the "私密" Button
+    t =    26.89s     Check for interrupting elements affecting "eye.slash" Button
+    t =    26.92s         Wait for com.apple.springboard to idle
+    t =    26.94s     Synthesize event
+    t =    27.23s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    28.65s Waiting 10.0s for "address-field" TextField to exist
+    t =    29.68s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =    29.68s         Checking existence of `"address-field" TextField`
+    t =    29.70s Tap "address-field" TextField
+    t =    29.70s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.71s     Find the "address-field" TextField
+    t =    29.72s     Check for interrupting elements affecting "address-field" TextField
+    t =    29.73s         Wait for com.apple.springboard to idle
+    t =    29.74s     Synthesize event
+    t =    30.03s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.27s Find the "address-field" TextField
+    t =    30.29s Type '' into "address-field" TextField
+    t =    30.29s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.29s     Find the "address-field" TextField
+    t =    30.31s     Check for interrupting elements affecting "address-field" TextField
+    t =    30.33s         Wait for com.apple.springboard to idle
+    t =    30.34s     Synthesize event
+    t =    30.76s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.76s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =    30.76s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.77s     Find the "address-field" TextField
+    t =    30.79s     Check for interrupting elements affecting "address-field" TextField
+    t =    30.81s         Wait for com.apple.springboard to idle
+    t =    30.82s     Synthesize event
+    t =    31.69s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    31.91s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =    32.93s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =    32.93s         Checking existence of `"网站增强验收文章" StaticText`
+    t =    32.96s Tap "page-protection" Button
+    t =    32.96s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    32.96s     Find the "page-protection" Button
+    t =    32.98s     Check for interrupting elements affecting "page-protection" Button
+    t =    32.99s         Wait for com.apple.springboard to idle
+    t =    33.00s     Synthesize event
+    t =    33.29s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    33.97s Find the "site-copy" Switch
+    t =    34.09s Added attachment named '私密设置没有继承'
+    t =    34.09s Tear Down
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testWebsiteSettingSurvivesRestartAndPrivateProfileIsEmpty]' passed (34.373 seconds).
+Test Suite 'WebsiteEnhancementUITests' passed at 2026-10-13 18:21:55.138.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 101.519 (101.520) seconds
+Test Suite 'AegisUITests.xctest' passed at 2026-10-13 18:21:55.139.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 101.519 (101.521) seconds
+Test Suite 'Selected tests' passed at 2026-10-13 18:21:55.139.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 101.519 (101.522) seconds
+2026-10-13 18:21:55.435 xcodebuild[95532:15204043] [MT] IDETestOperationsObserverDebug: 111.163 elapsed -- Testing started completed.
+2026-10-13 18:21:55.435 xcodebuild[95532:15204043] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-13 18:21:55.435 xcodebuild[95532:15204043] [MT] IDETestOperationsObserverDebug: 111.163 sec, +111.163 sec -- end
+
+Test session results, code coverage, and logs:
+	<repo>/.artifacts/ui-unification-20261013/ios-ipad-118.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started

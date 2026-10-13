@@ -1,0 +1,112 @@
+<link rel="stylesheet" href="aegis/enhancements.css">
+<style>
+ :host { display:block; margin: 24px auto; max-width: 1000px; padding: 0 24px; background: transparent; }
+ .page-title { font-size: 20px; font-weight: 500; margin: 0 0 20px; }
+ .setting-row { display:flex; gap:20px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--line); }
+ .setting-row:last-child { border-bottom:0; }
+ .setting-row select { max-width:55%; }
+ #events { padding-left:20px; }
+ #library .item { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+ #library .item span { flex:1; min-width:150px; }
+</style>
+<h1 class="page-title">[[pageTitle_(mode)]]</h1>
+<template is="dom-if" if="[[isMode_(mode, 'enhancements')]]">
+  <main id="enhancement-root">
+    <header class="page-heading" data-standalone><a href="chrome://settings/aegisEnhancements">← 返回设置</a><h1>网站增强与脚本</h1></header>
+    <p id="notice" role="status" aria-live="polite">正在读取设置…</p>
+    <section class="target-summary">
+      <div class="row"><label for="tabs">当前操作的网页</label><select id="tabs" aria-label="目标网页"></select><button id="refresh">刷新状态</button></div>
+      <p id="scope"></p><p id="private" class="hint"></p>
+    </section>
+    <div id="manager">
+      <div class="row section-heading"><h2>已安装脚本</h2><button id="new" class="primary">新建 / AI 编写</button><label class="file">导入 .user.js<input type="file" id="import" aria-label="导入 .user.js" accept=".js,.user.js,text/javascript" /></label></div>
+      <section><div id="scripts"></div></section>
+      <details id="site-manager"><summary>网站规则 · 右键、选取和复制</summary>
+        <section><div id="sites"></div>
+          <details id="site-editor"><summary>编辑所选网站规则</summary>
+            <label>网站来源<input id="origin" placeholder="https://example.com" /></label>
+            <label class="toggle"><span>恢复右键菜单</span><input type="checkbox" id="menu" /></label>
+            <label class="toggle"><span>允许选取和复制</span><input type="checkbox" id="copy" /></label>
+            <details><summary>更多选项与适用范围</summary>
+              <label class="toggle"><span>网页调试兼容</span><input type="checkbox" id="debug" /></label>
+              <p class="hint">处理部分网页的调试干扰，保留普通断点和导航。</p>
+              <label class="toggle"><span>也应用于子域名</span><input type="checkbox" id="subdomains" /></label>
+              <label class="toggle"><span>暂停本站增强</span><input type="checkbox" id="disabled" /></label>
+              <button id="inspect">打开网页调试工具</button>
+            </details>
+            <button id="save-site">保存网站规则</button><p class="hint">设置保存后不自动刷新。也可直接从地址栏盾牌调整当前网站。</p>
+          </details>
+        </section>
+      </details>
+      <details><summary>本页运行详情</summary><section><div id="runtime"></div><button id="reload">重新加载当前页</button></section></details>
+      <details><summary>恢复操作</summary><section><p>停用此配置中的全部脚本，并重新载入目标页。未提交的输入可能丢失；已发出的请求无法撤销。</p><button id="recover" class="danger">停用全部脚本并恢复当前页</button></section></details>
+    </div>
+    <section id="editor" class="editor" hidden>
+      <div class="row section-heading"><button id="back-list">← 返回脚本列表</button><h2 id="editor-title">脚本草稿</h2></div>
+      <p class="steps">1 描述需求 → 2 检查草稿与权限 → 3 试运行 → 4 确认启用</p>
+      <details id="ai-editor" open><summary>AI 编写与修复</summary>
+        <label>需求或错误反馈<textarea id="goal" rows="3" placeholder="例如：隐藏右侧栏并加宽正文"></textarea></label>
+        <div class="row"><button id="generate" class="primary">生成或修复草稿</button><button id="cancel">取消生成</button></div>
+        <details><summary>发送内容与当前模型</summary><p id="model"></p><button id="context">读取当前页结构供检查</button><pre id="context-preview"></pre><p class="hint">发送需求、编辑器源码及已预览的结构。不会读取密码、Cookie 或表单值。</p></details>
+      </details>
+      <label>源码<textarea id="source" spellcheck="false" rows="18"></textarea></label>
+      <details><summary>执行环境与子框架</summary><label>执行环境<select id="world"><option value="isolated">隔离环境</option><option value="page">页面环境（无 GM 权限）</option></select></label><label><input type="checkbox" id="frames" />在匹配的子框架运行</label></details>
+      <p id="permissions" role="status"></p>
+      <div class="row"><button id="check">检查权限与语法</button><button id="save">保存草稿</button><button id="trial">试运行</button><button id="enable-reviewed" class="primary">确认启用</button><button id="export">导出源码</button><button id="rollback">回退上一版</button></div>
+      <p class="hint">保存修改会撤销旧授权。试运行只使用临时存储；启用前再次确认网址和权限。</p>
+    </section>
+  </main>
+</template>
+<template is="dom-if" if="[[isMode_(mode, 'gestures')]]"><link rel="stylesheet" href="aegis/gestures.css">
+
+    <header>
+      <div class="eyebrow">GCSA AEGIS</div>
+      <h1>鼠标手势</h1>
+      <p>按住鼠标右键画出方向，松开执行。支持网页、设置页和内置 PDF 阅读器。</p>
+    </header>
+    <section aria-labelledby="options-title">
+      <h2 id="options-title">基本设置</h2>
+      <label class="switch-row"><span><strong>启用鼠标手势</strong><small>右键轻点仍打开菜单。按住 Shift 再右键可临时跳过手势。</small></span><input id="enabled" type="checkbox"></label>
+      <label class="switch-row"><span><strong>显示轨迹与动作提示</strong><small>画到哪里、将执行什么，一眼看清。</small></span><input id="showTrail" type="checkbox"></label>
+      <label class="threshold" for="threshold">识别距离 <output id="thresholdValue">16</output> 像素</label>
+      <input id="threshold" type="range" min="8" max="64" value="16">
+      <p class="hint">距离越大，越不容易被小幅抖动触发。斜线方向不明确时不执行；按 Esc 或切换窗口可取消。</p>
+    </section>
+    <section aria-labelledby="practice-title">
+      <div class="section-head"><h2 id="practice-title">先试一试</h2><span class="badge">练习不执行操作</span></div>
+      <div id="practice" tabindex="0" role="group" aria-label="手势练习区：按住右键画方向，松开查看结果">
+        <svg id="practiceSvg" aria-hidden="true"><polyline id="practiceLine"></polyline></svg>
+        <div class="practice-copy"><strong id="practicePattern">按住右键，在这里画一笔</strong><span id="practiceResult" aria-live="polite">上下左右可以组合；松开后查看匹配结果。</span></div>
+      </div>
+    </section>
+    <section aria-labelledby="bindings-title">
+      <div class="section-head"><div><h2 id="bindings-title">手势与动作</h2><p class="hint">输入 L / R / U / D，分别代表 ← → ↑ ↓。最多 8 个方向，同一手势不能重复绑定。</p></div><button id="addBinding" type="button">＋ 添加手势</button></div>
+      <div id="bindings"></div>
+      <p class="hint">PDF 专用动作仅在内置 PDF 阅读器内生效。普通动作在 PDF 中含义不变。</p>
+    </section>
+    <section aria-labelledby="sites-title">
+      <h2 id="sites-title">这些网站不使用手势</h2>
+      <label for="disabledSites" class="hint">每行一个完整域名，例如 example.com。子域名请单独添加。</label>
+      <textarea id="disabledSites" rows="3" spellcheck="false" placeholder="example.com"></textarea>
+    </section>
+    <footer><button id="reset" type="button">恢复默认</button><span id="status" role="status" aria-live="polite">正在加载设置…</span><button id="save" type="button" class="primary" disabled>保存设置</button></footer>
+  </template>
+<template is="dom-if" if="[[isMode_(mode, 'privacy')]]">
+  <a href="/privacy">← 隐私与安全</a><p id="result" role="status"></p>
+  <section><h2>全局保护</h2><div id="protections"></div></section>
+  <section><h2>网站例外与权限</h2><p>临时暂停由当前网站盾牌控制，保留钓鱼防护。</p><a href="/content/all">网站权限与数据</a></section>
+  <section><h2>防护记录</h2><ul id="events"></ul></section>
+</template>
+<template is="dom-if" if="[[isMode_(mode, 'reading')]]">
+  <p id="result" role="status"></p>
+  <section><div class="section-heading row"><h2>阅读库</h2><a href="chrome://aegis/markdown.html">打开 Markdown 文件</a><button id="refresh-library">刷新</button></div><div id="library"></div></section>
+  <section><h2>默认阅读外观</h2>
+    <label class="setting-row">主题<select id="reading-theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></label>
+    <label class="setting-row">字体<select id="reading-family"><option value="sans">系统字体</option><option value="serif">衬线字体</option></select></label>
+    <label class="setting-row">字号<input id="reading-font" type="number" min="12" max="28" value="17"></label>
+    <label class="setting-row">行距<select id="reading-spacing"><option value="150">紧凑</option><option value="180">标准</option><option value="210">宽松</option></select></label>
+    <label class="setting-row">正文宽度<select id="reading-width"><option value="680">窄</option><option value="820">标准</option><option value="1100">宽</option></select></label>
+  </section>
+  <section><h2>Markdown 自动预览网站</h2><div id="markdown-sites"></div><p class="hint">仅对已授权来源的 Markdown 原文响应自动预览。</p></section>
+  <section><h2>图片权限</h2><p>外部图片每次打开文档时询问；本地图片需选择所属目录。阅读外观不会授予图片访问权限。</p></section>
+</template>

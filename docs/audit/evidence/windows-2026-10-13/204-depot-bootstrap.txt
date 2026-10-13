@@ -1,0 +1,16 @@
+Downloading CIPD client for windows-amd64 from https://chrome-infra-packages.appspot.com/client?platform=windows-amd64&version=git_revision:7a04966073ee0fee4501e766b6200e98faae91b1...
+WARNING:root:depot_tools recommends setting the following for
+optimal Chromium development:
+
+$ git config --global core.filemode false
+$ git config --global core.fscache true
+$ git config --global core.preloadindex true
+
+You can silence this message by setting these recommended values.
+
+You can allow depot_tools to automatically update your global
+Git config to recommended settings by running:
+$ git config --global depot-tools.allowGlobalGitConfig true
+
+To suppress this warning and silence future recommendations, run:
+$ git config --global depot-tools.allowGlobalGitConfig false

@@ -38,8 +38,9 @@ void AegisGestureHandler::RegisterMessages() {
 
 bool AegisGestureHandler::IsGesturePage() {
   // 手势配置不向普通网页、PDF 或其他 WebUI 暴露。
-  return web_ui()->GetWebContents()->GetLastCommittedURL() ==
-         GURL("chrome://aegis/gestures.html");
+  const auto url = web_ui()->GetWebContents()->GetLastCommittedURL().GetWithoutRef();
+  return url == GURL("chrome://aegis/gestures.html") ||
+         (url.SchemeIs("chrome") && url.host() == "settings" && (url.path() == "/aegisGestures" || (url.path() == "/" && url.query().starts_with("search="))));
 }
 
 base::DictValue AegisGestureHandler::Snapshot() {

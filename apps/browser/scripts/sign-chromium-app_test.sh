@@ -10,11 +10,15 @@ cat > "$FAKE_CODESIGN" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_CODESIGN_LOG"
-if [[ " $* " == *" --force "* && " $* " == *" --sign - "* && \
+if [[ " $* " == *" --force "* && " $* " == *" --sign 7C33B517942161311A087CE893D2F1CE9B204B44 "* && \
       "$*" == *"Helper Sibling.app"* ]]; then
   touch "$FAKE_SIBLING_SIGNED"
 fi
+if [[ " $* " == *" --force "* && "$FAKE_CODESIGN_MODE" == sign_failed ]]; then
+  exit 41
+fi
 if [[ " $* " == *" --verify "* ]]; then
+  [[ " $* " == *" --test-requirement "* && "$*" == *'certificate leaf = H"7C33B517942161311A087CE893D2F1CE9B204B44"'* && "$*" == *R3JK7R29AC* ]] || exit 42
   count=0
   [[ ! -f "$FAKE_CODESIGN_COUNT" ]] || count="$(<"$FAKE_CODESIGN_COUNT")"
   count=$((count + 1))
@@ -36,7 +40,7 @@ if [[ " $* " == *" --verify "* ]]; then
     sibling_invalid)
       if [[ "$*" == *"Helper Sibling.app"* ]]; then exit 1; else exit 0; fi
       ;;
-    never_valid) exit 1 ;;
+    never_valid|sign_failed) exit 1 ;;
     *) exit 2 ;;
   esac
 fi
@@ -76,11 +80,11 @@ if rg -q -- '--force' "$TEST_ROOT/already/calls.log"; then
 fi
 
 run_case sign_then_valid
-rg -q -- '--force --sign -' "$TEST_ROOT/sign_then_valid/calls.log"
+rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44' "$TEST_ROOT/sign_then_valid/calls.log"
 [[ "$(<"$TEST_ROOT/sign_then_valid/count")" -eq 3 ]]
 
 run_case sibling_sign_then_valid
-rg -q -- '--force --sign - .*Chromium Helper Sibling.app' \
+rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*Chromium Helper Sibling.app' \
   "$TEST_ROOT/sibling_sign_then_valid/calls.log"
 
 brand_root="$TEST_ROOT/branded"
@@ -100,9 +104,9 @@ export FAKE_CODESIGN_COUNT="$brand_root/count"
 export FAKE_SIBLING_SIGNED="$brand_root/sibling-signed"
 CODESIGN="$FAKE_CODESIGN" bash "$SCRIPT_DIR/sign-chromium-app.sh" \
   "$brand_app" "$brand_root"
-rg -q -- '--force --sign - .*GCSA Aegis Framework.framework/Versions/Current/GCSA Aegis Framework' \
+rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*GCSA Aegis Framework.framework/Versions/Current/GCSA Aegis Framework' \
   "$brand_root/calls.log"
-rg -q -- '--force --sign - .*GCSA Aegis Helper Sibling.app' \
+rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*GCSA Aegis Helper Sibling.app' \
   "$brand_root/calls.log"
 
 set +e
@@ -117,8 +121,19 @@ status=$?
 set -e
 [[ "$status" -eq 1 ]]
 
+set +e
+run_case sign_failed >/dev/null 2>&1
+status=$?
+set -e
+[[ "$status" -eq 41 ]]
+[[ "$(rg -c -- '--force' "$TEST_ROOT/sign_failed/calls.log")" -eq 1 ]]
+
 for log in "$TEST_ROOT"/*/calls.log; do
   while IFS= read -r call; do
+    [[ " $call " != *" --sign - "* ]] || {
+      echo "不得回退到临时签名" >&2
+      exit 1
+    }
     if [[ " $call " == *" --verify "* ]]; then
       [[ " $call " == *" --deep "* && " $call " == *" --strict "* ]] || {
         echo "verify call missing --deep/--strict: $call" >&2
@@ -132,4 +147,4 @@ for log in "$TEST_ROOT"/*/calls.log; do
   done < "$log"
 done
 
-echo "PASS: sign-chromium-app strict/deep fixture"
+echo "PASS: 固定 GCSA 证书、严格校验、失败关闭与 Helper 签名回归"

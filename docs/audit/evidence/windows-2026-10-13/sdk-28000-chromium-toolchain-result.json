@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "sdkVersion": "10.0.28000.0",
+  "architectures": [
+    "x64",
+    "x86"
+  ],
+  "scriptSha256": "d44e8a20670fb92b794809e66cd874aafb48521731ec32e13684ef689fca18f1"
+}

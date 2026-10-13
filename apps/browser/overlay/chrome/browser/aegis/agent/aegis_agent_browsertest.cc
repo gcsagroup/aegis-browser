@@ -1,5 +1,7 @@
 // Copyright 2026 GCSA
 
+#include "chrome/browser/ui/webui/aegis_agent/reading_workspace.h"
+
 #include <algorithm>
 #include <atomic>
 #include <map>
@@ -8,6 +10,7 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "content/public/test/url_loader_interceptor.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -21,6 +24,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/run_until.h"
+#include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "base/test/scoped_run_loop_timeout.h"
@@ -5976,6 +5980,300 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
       EXPECT_EQ((*sources)[source].GetDict().FindBool("available"), true);
     }
   }
+}
+
+// 真实 Profile、标签和加密持久化；不开模型也可以使用阅读资料库。
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceStorageAndConflict) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  const GURL url = embedded_test_server()->GetURL("/title1.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
+  auto* profile = browser()->GetProfile();
+  profile->GetPrefs()->SetBoolean(prefs::kAgentEnabled, false);
+  AegisReadingWorkspace workspace(profile, browser());
+  auto run = [&](base::DictValue request, const std::string& error = "") {
+    base::test::TestFuture<std::string, std::string> done;
+    workspace.Run(base::WriteJson(request).value(), done.GetCallback());
+    EXPECT_EQ(done.Get<1>(), error);
+    return base::JSONReader::ReadDict(done.Get<0>(), base::JSON_PARSE_RFC).value();
+  };
+  auto state = run(base::DictValue().Set("op", "list"));
+  const auto* tabs = state.FindList("tabs");
+  ASSERT_TRUE(tabs);
+  ASSERT_EQ(tabs->size(), 1u);
+  const int id = *tabs->front().GetDict().FindInt("id");
+  const std::string first_revision = *state.FindString("revision");
+  auto stash = [&] (std::string revision) {
+    return base::DictValue().Set("op", "stash").Set("group", "测试工作区")
+        .Set("revision", revision).Set("tabs", base::ListValue().Append(id));
+  };
+  state = run(stash(first_revision));
+  ASSERT_EQ(state.FindList("records")->size(), 1u);
+  const auto& stored = profile->GetPrefs()->GetString(AegisReadingWorkspace::kStoragePref);
+  EXPECT_FALSE(stored.empty());
+  EXPECT_EQ(stored.find("测试工作区"), std::string::npos);
+  EXPECT_EQ(stored.find(url.spec()), std::string::npos);
+  run(stash(first_revision), "library_changed");
+  state = run(stash(*state.FindString("revision")));
+  EXPECT_EQ(state.FindList("records")->size(), 1u);
+  // 新 handler 必须解密得到同一内容，而非复用内存缓存。
+  AegisReadingWorkspace reopened(profile, browser());
+  base::test::TestFuture<std::string, std::string> reloaded;
+  reopened.Run("{\"op\":\"list\"}", reloaded.GetCallback());
+  EXPECT_TRUE(reloaded.Get<1>().empty());
+  auto readback = base::JSONReader::ReadDict(reloaded.Get<0>(), base::JSON_PARSE_RFC);
+  ASSERT_TRUE(readback);
+  EXPECT_EQ(readback->FindList("records")->size(), 1u);
+  profile->GetPrefs()->SetString(AegisReadingWorkspace::kStoragePref, "broken");
+  run(base::DictValue().Set("op", "list"), "stored_library_unreadable");
+  EXPECT_EQ(profile->GetPrefs()->GetString(AegisReadingWorkspace::kStoragePref), "broken");
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceCaptureAndAnnotation) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
+      embedded_test_server()->GetURL("/title1.html")));
+  const std::string long_text = std::string(6000, 'a') + "阅读末尾验证";
+  ASSERT_TRUE(content::ExecJs(browser()->tab_strip_model()->GetActiveWebContents(),
+      content::JsReplace("document.body.textContent = $1", long_text)));
+  AegisReadingWorkspace workspace(browser()->GetProfile(), browser());
+  auto run = [&](base::DictValue request, const std::string& error = "") {
+    base::test::TestFuture<std::string, std::string> done;
+    workspace.Run(base::WriteJson(request).value(), done.GetCallback());
+    EXPECT_EQ(done.Get<1>(), error);
+    return base::JSONReader::ReadDict(done.Get<0>(), base::JSON_PARSE_RFC).value();
+  };
+  auto state = run(base::DictValue().Set("op", "list"));
+  const int tab = *state.FindList("tabs")->front().GetDict().FindInt("id");
+  state = run(base::DictValue().Set("op", "capture").Set("tab", tab).Set("page", 1));
+  const auto* draft = state.FindDict("draft");
+  ASSERT_TRUE(draft);
+  EXPECT_NE(draft->FindString("text")->find("阅读末尾验证"), std::string::npos);
+  const std::string id = *draft->FindString("id");
+  auto save = base::DictValue().Set("op", "save").Set("id", id)
+      .Set("note", "本地批注").Set("quote", "不在原文中的引文_12345")
+      .Set("group", "阅读").Set("revision", *state.FindString("revision"));
+  run(save.Clone(), "library_full_or_invalid");
+  save.Set("quote", "阅读末尾验证");
+  state = run(std::move(save));
+  ASSERT_EQ(state.FindList("records")->size(), 1u);
+  state = run(base::DictValue().Set("op", "stash").Set("group", "阅读")
+      .Set("tabs", base::ListValue().Append(tab))
+      .Set("revision", *state.FindString("revision")));
+  ASSERT_EQ(state.FindList("records")->size(), 2u);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  auto restored = run(base::DictValue().Set("op", "restore").Set("group", "阅读"));
+  EXPECT_EQ(restored.FindInt("opened"), 1);
+  EXPECT_EQ(browser()->tab_strip_model()->count(), 2);
+  restored = run(base::DictValue().Set("op", "restore").Set("group", "阅读"));
+  EXPECT_EQ(restored.FindInt("opened"), 0);
+  auto update = base::DictValue().Set("op", "update").Set("id", id)
+      .Set("note", "更新批注").Set("quote", "").Set("group", "阅读")
+      .Set("archived", true).Set("revision", *state.FindString("revision"));
+  state = run(std::move(update));
+  EXPECT_EQ(state.FindList("records")->front().GetDict().FindBool("archived"), true);
+  run(base::DictValue().Set("op", "open").Set("id", id), "invalid_selection");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  run(base::DictValue().Set("op", "translate").Set("id", id)
+      .Set("language", "en"), "translation_unavailable");
+  run(base::DictValue().Set("op", "capture").Set("tab", tab), "tabs_changed");
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalTranslationAndResearchSettings) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
+      embedded_test_server()->GetURL("/title1.html")));
+  ASSERT_TRUE(content::ExecJs(browser()->tab_strip_model()->GetActiveWebContents(),
+      "document.body.textContent = 'Save your notes before closing the browser.'"));
+  auto* profile = browser()->GetProfile();
+  AegisReadingWorkspace workspace(profile, browser());
+  auto run = [&](base::DictValue request, const std::string& error = "") {
+    base::test::TestFuture<std::string, std::string> done;
+    workspace.Run(base::WriteJson(request).value(), done.GetCallback());
+    EXPECT_EQ(done.Get<1>(), error);
+    return base::JSONReader::ReadDict(done.Get<0>(), base::JSON_PARSE_RFC).value();
+  };
+  auto state = run(base::DictValue().Set("op", "list"));
+  EXPECT_EQ(state.FindBool("minimEnabled"), false);
+  EXPECT_EQ(state.FindBool("phishlangEnabled"), false);
+  const int tab = *state.FindList("tabs")->front().GetDict().FindInt("id");
+  state = run(base::DictValue().Set("op", "capture").Set("tab", tab));
+  const auto* draft = state.FindDict("draft");
+  ASSERT_TRUE(draft);
+  const std::string id = *draft->FindString("id");
+  const std::string original = *draft->FindString("text");
+  auto research = base::DictValue().Set("op", "research_input")
+      .Set("id", id).Set("draft", true);
+  run(research.Clone(), "research_disabled");
+  run(base::DictValue().Set("op", "research_settings").Set("minim", "true")
+      .Set("phishlang", false), "invalid_request");
+  run(base::DictValue().Set("op", "research_settings").Set("minim", true)
+      .Set("phishlang", false));
+  EXPECT_TRUE(profile->GetPrefs()->GetBoolean("aegis.research_minim_enabled"));
+  EXPECT_FALSE(profile->GetPrefs()->GetBoolean("aegis.research_phishlang_enabled"));
+  auto input = run(research.Clone());
+  ASSERT_TRUE(input.FindList("researchParagraphs"));
+  EXPECT_EQ(input.FindList("researchParagraphs")->size(), draft->FindList("paragraphs")->size());
+  // 离线翻译使用捕获副本，不依赖原网页继续在线，也不需要远端模型凭据。
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
+  auto translation = base::DictValue().Set("op", "translate_local").Set("draft", true)
+      .Set("id", id).Set("language", "zh-CN").Set("note", "离线批注")
+      .Set("quote", "notes").Set("group", "本机翻译")
+      .Set("translation", base::ListValue());
+  run(translation.Clone(), "translation_incomplete");
+  base::ListValue translated;
+  for (size_t i = 0; i < draft->FindList("paragraphs")->size(); ++i)
+    translated.Append("关闭浏览器前保存批注。");
+  translation.Set("translation", translated.Clone());
+  state = run(translation.Clone());
+  EXPECT_EQ(*state.FindDict("draft")->FindString("text"), original);
+  EXPECT_EQ(*state.FindDict("draft")->FindList("translation"), translated);
+  state = run(base::DictValue().Set("op", "save").Set("id", id)
+      .Set("note", "离线批注").Set("quote", "notes").Set("group", "本机翻译")
+      .Set("revision", *state.FindString("revision")));
+  translation.Set("draft", false);
+  translation.Set("revision", "stale");
+  run(translation.Clone(), "library_changed");
+  translation.Set("revision", *state.FindString("revision"));
+  state = run(std::move(translation));
+  AegisReadingWorkspace reopened(profile, browser());
+  base::test::TestFuture<std::string, std::string> reloaded;
+  reopened.Run("{\"op\":\"list\"}", reloaded.GetCallback());
+  ASSERT_TRUE(reloaded.Get<1>().empty());
+  auto stored = base::JSONReader::ReadDict(reloaded.Get<0>(), base::JSON_PARSE_RFC);
+  ASSERT_TRUE(stored);
+  EXPECT_EQ(stored->FindBool("minimEnabled"), true);
+  EXPECT_EQ(*stored->FindList("records")->front().GetDict().FindList("translation"), translated);
+  EXPECT_EQ(profile->GetPrefs()->GetString(AegisReadingWorkspace::kStoragePref).find("离线批注"), std::string::npos);
+  run(base::DictValue().Set("op", "research_settings").Set("minim", false)
+      .Set("phishlang", false));
+  run(research.Clone(), "research_disabled");
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalTranslationWithVerifiedAssets) {
+  const base::FilePath fixtures = base::CommandLine::ForCurrentProcess()->GetSwitchValuePath("aegis-local-pack-fixtures");
+  if (fixtures.empty()) GTEST_SKIP() << "需要指定已校验的真实语言包目录";
+  std::map<std::string, std::string> files;
+  {
+    base::ScopedAllowBlockingForTesting allow;
+    std::string json;
+    ASSERT_TRUE(base::ReadFileToString(fixtures.AppendASCII("manifest.json"), &json));
+    auto manifest = base::JSONReader::Read(json, base::JSON_PARSE_RFC);
+    ASSERT_TRUE(manifest && manifest->is_list());
+    for (const auto& row : manifest->GetList()) {
+      const auto* asset = row.GetDict().FindDict("attachment");
+      ASSERT_TRUE(asset);
+      const auto* name = asset->FindString("filename");
+      const auto* location = asset->FindString("location");
+      ASSERT_TRUE(name && location);
+      std::string bytes;
+      ASSERT_TRUE(base::ReadFileToString(fixtures.AppendASCII(*name), &bytes));
+      files.emplace("https://firefox-settings-attachments.cdn.mozilla.net/" + *location, std::move(bytes));
+    }
+  }
+  std::atomic<int> downloads{0};
+  content::URLLoaderInterceptor intercept(base::BindLambdaForTesting(
+      [&](content::URLLoaderInterceptor::RequestParams* params) {
+        if (params->url_request.url.host() != "firefox-settings-attachments.cdn.mozilla.net") return false;
+        auto found = files.find(params->url_request.url.spec());
+        if (found == files.end()) {
+          content::URLLoaderInterceptor::WriteResponse("HTTP/1.1 404 Not Found\n\n", "", params->client.get());
+          return true;
+        }
+        ++downloads;
+        content::URLLoaderInterceptor::WriteResponse("HTTP/1.1 200 OK\nContent-Type: application/zstd\n\n", found->second, params->client.get());
+        return true;
+      }));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
+  auto* page = browser()->tab_strip_model()->GetActiveWebContents();
+  // 使用真实压缩文件和生产下载/解压/IDB/Worker/WASM 路径；不提供伪造译文。
+  EXPECT_EQ(content::EvalJs(page, R"JS(
+    (async () => {
+      const {LocalAiClient} = await import('./local_ai_client.js');
+      const client = new LocalAiClient();
+      for (const [direction, text] of [['en-zh', 'The file size is 12.5 MB. Do not close the window.'],
+          ['zh-en', '文件大小为12.5 MB。请勿关闭窗口。']]) {
+        const installed = await client.run({op: 'download', direction}, () => {});
+        if (!installed.ready) return 'download failed';
+        const output = await client.run({op: 'translate', direction, paragraphs: [text]}, () => {});
+        if (output.translations.length !== 1 || !output.translations[0].includes('12.5')) return 'invalid translation';
+        if (!(direction === 'en-zh' ? /[\u3400-\u9fff]/ : /[A-Za-z]/).test(output.translations[0])) return 'wrong language';
+        if (direction === 'en-zh' && !/(?:请勿|不要|不得)关闭/.test(output.translations[0])) return 'negation regression';
+        if (direction === 'zh-en') {
+          if (!/do not close/i.test(output.translations[0])) return 'negation regression';
+          const long = Array.from({length: 24}, (_, i) =>
+            `第${i + 1}节。记录包含${1001 + i}个项目。在备份验证完成之前不要覆盖原件。`).join('');
+          const result = await client.run({op: 'translate', direction, paragraphs: [long]}, () => {});
+          const translated = result.translations[0].replaceAll(',', '');
+          if (result.translations.length !== 1 || Array.from({length: 24}, (_, i) =>
+              String(1001 + i)).some(value => !translated.includes(value))) return 'long text omission';
+        }
+      }
+      const {translationWarnings} = await import('./reading_workspace.js');
+      if (translationWarnings('费用为人民币1,234.56元。', 'The fee is $1,234.36.').join(',') !==
+          'NumberWarning,UnitWarning') return 'quality reminder missing';
+      return 'passed';
+    })()
+  )JS"), "passed");
+  EXPECT_EQ(downloads.load(), 7);
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingPackDownloadScopeAndIntegrity) {
+  std::atomic<int> requests{0};
+  content::URLLoaderInterceptor intercept(base::BindLambdaForTesting(
+      [&](content::URLLoaderInterceptor::RequestParams* params) {
+        if (params->url_request.url.host() != "firefox-settings-attachments.cdn.mozilla.net") return false;
+        ++requests;
+        EXPECT_EQ(params->url_request.headers.GetHeader("User-Agent"), "GCSA-Aegis-LocalTranslation/1.0");
+        EXPECT_EQ(params->url_request.credentials_mode, network::mojom::CredentialsMode::kOmit);
+        EXPECT_EQ(params->url_request.redirect_mode, network::mojom::RedirectMode::kError);
+        EXPECT_TRUE(params->url_request.referrer.is_empty());
+        EXPECT_EQ(params->url_request.url.path(), "/main-workspace/translations-models-v2/900beaed-2dba-4a88-ad7c-852ec9e73f6a.zst");
+        // 长度正确但内容损坏；浏览器不得把这个文件标记为已安装。
+        content::URLLoaderInterceptor::WriteResponse("HTTP/1.1 200 OK\nContent-Type: application/octet-stream\n\n",
+            std::string(2499275, 'x'), params->client.get());
+        return true;
+      }));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
+  auto* page = browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_EQ(content::EvalJs(page, R"JS(
+    (async () => {
+      try { await fetch('./local_ai/download/https://example.com/private'); return 'unrestricted'; } catch {}
+      const {LocalAiClient} = await import('./local_ai_client.js');
+      const client = new LocalAiClient();
+      try { await client.run({op: 'download', direction: 'en-zh'}, () => {}); return 'accepted corrupt'; }
+      catch (error) { if (error.message !== 'package_corrupt') return error.message; }
+      return (await client.run({op: 'status', direction: 'en-zh'}, () => {})).ready ? 'partial installed' : 'passed';
+    })()
+  )JS"), "passed");
+  EXPECT_EQ(requests.load(), 1);
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalAiWorkerInWebUI) {
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
+      GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
+  auto* page = browser()->tab_strip_model()->GetActiveWebContents();
+  // 在真实 WebUI CSP 下检查 IDB、嵌套 Worker、WASM 与两份真实实验权重。
+  EXPECT_EQ(content::EvalJs(page, R"JS(
+    (async () => {
+      const {LocalAiClient} = await import('./local_ai_client.js');
+      const client = new LocalAiClient();
+      const missing = await client.run({op: 'status', direction: 'en-zh'}, () => {});
+      if (missing.ready !== false) return 'unexpected package';
+      const result = await client.run({op: 'research', minim: true, phishlang: true,
+        goal: 'read_post', paragraphs: ['Save your notes before closing the browser.']}, () => {});
+      if (result.minim.length !== 1 || !Number.isFinite(result.minim[0].necessity) ||
+          !Number.isFinite(result.phishlang.score) || result.phishlang.windows < 1) return 'invalid scores';
+      return 'passed';
+    })()
+  )JS"), "passed");
+}
+
+IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceRejectsPrivateProfile) {
+  BrowserWindowInterface* incognito = CreateIncognitoBrowser(browser()->GetProfile());
+  AegisReadingWorkspace workspace(incognito->GetProfile(), incognito);
+  base::test::TestFuture<std::string, std::string> done;
+  workspace.Run("{\"op\":\"list\"}", done.GetCallback());
+  EXPECT_EQ(done.Get<1>(), "reading_unavailable");
 }
 
 }  // namespace

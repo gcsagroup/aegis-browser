@@ -1,7 +1,16 @@
 # 文档
 
+- [本地 Markdown 首次打开修复与验收](audit/markdown-first-open-2026-10-14.zh-CN.md)
+- [Windows 构建最新结果与超时修复](audit/windows-actions-2026-10-13.zh-CN.md)
+- [Windows 后续构建方案及预计费用](plans/windows-build-budget-2026-10-14.zh-CN.md)
 
-> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
+- [iOS WebKit 指纹、深层保护、钓鱼与挖矿检测实施方案](plans/ios-webkit-protection-2026-10-11.zh-CN.md)
+- [iOS Ver 4.0 可移植功能：功能使用说明](ios-portable-features.zh-CN.md)
+- [四端功能对照](platform-features.zh-CN.md)
+- [验收记录](audit/ios-portable-features-2026-10-11.zh-CN.md)
+
+
+> [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。该条为历史整合记录；后续改动以本文顶部的专项验收记录为准。
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
 本目录保存 GCSA-aegis 的公开产品架构、路线图、研究边界、产品页，以及带日期的本地审计记录。
@@ -11,6 +20,8 @@
 > **历史边界 — 2026-09-10：** Browser Agent v2 候选源码包含 108 个顶层 Chromium 补丁和 2 个嵌套 V8 补丁，可精确重放到 Chromium 提交 源码树 `319366182c31108e29e62d2f2199aff29a0b86e8`。平台构建和验收仍是独立门禁，这个源码身份不代表公开发行合格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 样本 operator-blinded public pilot，召回率为 `1/3`；两者都不能泛化为广义恶意 JavaScript 检测结论。项目整体仍为发行 No-Go。
 
 [2026-09-10 main 合并与验证](audit/main-consolidation-2026-09-10.md)
+
+- [iOS Ver 5.0 网页保护](ios-webkit-protection.zh-CN.md) · [验收记录](audit/ios-webkit-protection-2026-10-12.zh-CN.md)
 
 ## 从这里开始
 

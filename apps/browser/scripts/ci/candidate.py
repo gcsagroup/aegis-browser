@@ -289,7 +289,7 @@ def build(name, evidence):
                 artifact = evidence / ('candidate.zip' if name == 'mac' else 'candidate.exe' if name == 'windows' else 'candidate.apk')
                 if name == 'mac':
                     app = out / 'GCSA Aegis.app'
-                    run(['bash', BROWSER / 'scripts/sign-chromium-app.sh', app, out], src, evidence / 'adhoc-sign.log', src, minimum)
+                    run(['bash', BROWSER / 'scripts/sign-chromium-app.sh', app, out], src, evidence / 'gcsa-sign.log', src, minimum)
                     run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', app, artifact], src, evidence / 'package.log', src, minimum)
                 else:
                     built = out / ('mini_installer.exe' if name == 'windows' else 'apks/ChromePublic.apk')

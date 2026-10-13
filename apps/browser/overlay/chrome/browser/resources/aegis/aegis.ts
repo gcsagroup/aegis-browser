@@ -680,6 +680,9 @@ function applyStatus(status: AegisStatus) {
   checkbox('policy-worker').checked = status.policyWorker;
   checkbox('privacy-ai').checked = status.privacyAi;
   const android = !!status.isAndroid;
+  getRequiredElement('enhancement-navigation').hidden = android;
+  getRequiredElement('enhancement-link').textContent = localeCode() === 'en' ? 'Website enhancements and scripts' : localeCode() === 'zh-TW' ? '網站增強與腳本' : '网站增强与用户脚本';
+  getRequiredElement('markdown-link').textContent = localeCode() === 'en' ? 'Markdown reader' : localeCode() === 'zh-TW' ? 'Markdown 閱讀' : 'Markdown 阅读';
   modelControlsEnabled = status.privacyAi;
   const modelFields = document.getElementById('model-fields');
   if (modelFields instanceof HTMLElement) {

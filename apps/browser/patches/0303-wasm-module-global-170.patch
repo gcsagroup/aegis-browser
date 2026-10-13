@@ -1,0 +1,88 @@
+From 07c1d76177c3f3525ad12d7eee74988ef3691d48 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 03:35:55 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E9=80=82=E9=85=8D=20WASM=20=E8=83=B6?=
+ =?UTF-8?q?=E6=B0=B4=E7=9A=84=E6=A8=A1=E5=9D=97=E4=B8=A5=E6=A0=BC=E6=A8=A1?=
+ =?UTF-8?q?=E5=BC=8F=20170?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt  | 2 +-
+ .../resources/aegis_agent/local_ai/asset_manifest.json    | 8 ++++----
+ .../bergamot/worker/bergamot-translator-worker.js         | 3 ++-
+ chrome/browser/ui/webui/help/aegis_github_update.h        | 4 ++--
+ 4 files changed, 9 insertions(+), 8 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
+index e5cf0c4d1c0c8b7a8c7b566f2cb09c6beb57126f..beee1e84713eab99f60f76e59b035d42b32d5c8c 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
++++ b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
+@@ -3,7 +3,7 @@ GCSA Aegis 本机翻译与实验模型
+ Bergamot Translator 0.4.9：MPL 2.0
+ 来源：https://github.com/browsermt/bergamot-translator
+ npm：https://registry.npmjs.org/@browsermt/bergamot-translator/-/bergamot-translator-0.4.9.tgz
+-本项目将引擎包装改为由现有模块 Worker 直接载入，删除 Node 兼容层及额外 Worker 消息层，并让 Emscripten 胶水复用初始化配置；没有修改模型计算、放宽 eval 或新增常驻进程。
++本项目将引擎包装改为由现有模块 Worker 直接载入，删除 Node 兼容层及额外 Worker 消息层，并让 Emscripten 胶水复用初始化配置并显式引用模块环境的全局对象；没有修改模型计算、放宽 eval 或新增常驻进程。
+ 对应许可见 bergamot/LICENSE。Mozilla 中英语言包使用 MPL 2.0，按清单下载并核对压缩与解压摘要。
+ 模型说明：https://github.com/mozilla/translations/blob/main/README.md
+ 
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index 790b8b37f0a72838b4401b3c6ebe86b05f9f9f79..c0c01263938dbc0f0f34578bd2cf0122219d163e 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -22,8 +22,8 @@
+       "sha256": "d03ab72b2d09f4f11fbf47a176496cd7400c5139bae171e927dd4fdba498589c"
+     },
+     "NOTICE.txt": {
+-      "bytes": 1645,
+-      "sha256": "2d383253280f10c51d03ab6ed39bfe05ccd348358d696f364fc94edee8c1ec79"
++      "bytes": 1687,
++      "sha256": "1a800705272df07e96a26e6d798a9595061c398dc847baed69a79dfa3c8dde20"
+     },
+     "phishlang-vocab.txt": {
+       "bytes": 231508,
+@@ -70,8 +70,8 @@
+       "sha256": "745eb7c0ce6f18a6aa521971b2877babc7ffb27eecb58ab3bc6e5ef4692672e8"
+     },
+     "bergamot/worker/bergamot-translator-worker.js": {
+-      "bytes": 80514,
+-      "sha256": "29142cc5405c1c4ff783850adafc07051102bfd182ecffc997b40f17439725ea"
++      "bytes": 80606,
++      "sha256": "67c8d8aee602d654c43ef4129a55ce361811468850287469b1a8e0cffddc333d"
+     },
+     "bergamot/worker/bergamot-translator-worker.wasm": {
+       "bytes": 5174294,
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/bergamot-translator-worker.js b/chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/bergamot-translator-worker.js
+index be732a5bfb9981fa2d86766d774f290b1f7f53d0..2dc3bfe7bd0d83d864cdfc34bce364ca64a913e0 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/bergamot-translator-worker.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/bergamot-translator-worker.js
+@@ -581,7 +581,8 @@ function asmjsMangle(x) {
+ }
+ 
+ function exportAsmFunctions(asm) {
+- var global_object = this;
++ // GCSA：ES 模块采用严格模式，显式使用当前 Worker 的全局对象。
++ var global_object = globalThis;
+  for (var __exportedFunc in asm) {
+   var jsname = asmjsMangle(__exportedFunc);
+   global_object[jsname] = Module[jsname] = asm[__exportedFunc];
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index e807b1c832e57b0ea4e8cb2db7a87ce41ffec6f8..5ec7e6d8c5a8bf00edfebf2bc8ed3bc82aad7011 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.169";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (169)";
++inline constexpr char kProductVersion[] = "3.1.0.170";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (170)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

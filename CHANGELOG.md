@@ -4,7 +4,29 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/).
 
-The workspace package remains `0.1.0`; the current iOS development candidate uses `3.2` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+The workspace package remains `0.1.0`; the current iOS development candidate uses `7.0` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+
+## 2026-10-13 · Desktop 4.0 and iOS 6.0 source integration
+
+Integrates reading notes, local English/Chinese translation with quality notices, site enhancements, controlled user scripts, Markdown reading, and iOS web protection. Missing Google configuration is reported only when its feature is requested.
+
+This is a source submission, not a release. Public source excludes MINIM and PhishLang weights and their vocabulary while redistribution permission is unresolved; existing local experimental files are preserved.
+
+[2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md) · [2026-10-14](docs/audit/windows-actions-2026-10-13.zh-CN.md)
+
+## iOS 5.0 — 2026-10-12
+
+Adds phishing host and page structure checks, independent mining/fingerprinting resource blocking, system hardening and strict fingerprint limits that are off by default. Rules ship with app updates; unknown behavior only produces notices.
+
+[User guide](docs/ios-webkit-protection.en.md) · [Acceptance record](docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md)
+
+## iOS 4.0 — 2026-10-11
+
+- Search settings now support removing preset/custom engines, selecting a remaining engine automatically, address-only browsing when all are removed, and restoring presets while preserving legacy settings and the custom template.
+
+Adds search and site settings, encrypted reading notes, PDF text layers, translation consent, limited browser operations and download network policies.
+
+[User guide](docs/ios-portable-features.en.md) · [Four-platform comparison](docs/platform-features.en.md) · [Acceptance record](docs/audit/ios-portable-features-2026-10-11.zh-CN.md)
 
 ## iOS 3.2 — 2026-10-09 · main integration
 

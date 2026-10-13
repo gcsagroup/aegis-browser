@@ -1,0 +1,69 @@
+IMPORTANT DEBUGGING NOTE: each test is run inside its own process.
+For debugging a test inside a debugger, use the
+--gtest_filter=<your_test_name> flag along with either
+--single-process-tests (to run the test in one launcher/browser process) or
+--single-process (to do the above, and also run Chrome in single-process mode).
+Using sharding settings from environment. This is shard 0/1
+Using 1 parallel jobs.
+Note: Google Test filter = EnhancementBrowserTest.EarlyRulesIsolationStorageAndRevocation
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from EnhancementBrowserTest, where TypeParam =
+[ RUN      ] EnhancementBrowserTest.EarlyRulesIsolationStorageAndRevocation
+[10186:15259775:1013/183043.362305:INFO:chrome/browser/aegis/aegis_service.cc:495] GCSA-aegis initialized for profile (tracker blocking on)
+[10186:15259775:1013/183043.547738:INFO:chrome/browser/aegis/filter_list_updater.cc:238] Aegis: filter list cache missing or stale, will fetch after startup
+2026-10-13 18:30:43.785 browser_tests[10186:15259775] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+[       OK ] EnhancementBrowserTest.EarlyRulesIsolationStorageAndRevocation (934 ms)
+[----------] 1 test from EnhancementBrowserTest (940 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (941 ms total)
+[  PASSED  ] 1 test.
+[1/4] EnhancementBrowserTest.EarlyRulesIsolationStorageAndRevocation (1100 ms)
+Note: Google Test filter = EnhancementBrowserTest.TrialDoesNotPersistAndPrivateProfileStartsEmpty
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from EnhancementBrowserTest, where TypeParam =
+[ RUN      ] EnhancementBrowserTest.TrialDoesNotPersistAndPrivateProfileStartsEmpty
+[10203:15260172:1013/183044.426265:INFO:chrome/browser/aegis/aegis_service.cc:495] GCSA-aegis initialized for profile (tracker blocking on)
+[10203:15260172:1013/183044.584426:INFO:chrome/browser/aegis/filter_list_updater.cc:238] Aegis: filter list cache missing or stale, will fetch after startup
+2026-10-13 18:30:44.793 browser_tests[10203:15260172] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+[       OK ] EnhancementBrowserTest.TrialDoesNotPersistAndPrivateProfileStartsEmpty (745 ms)
+[----------] 1 test from EnhancementBrowserTest (746 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (746 ms total)
+[  PASSED  ] 1 test.
+[2/4] EnhancementBrowserTest.TrialDoesNotPersistAndPrivateProfileStartsEmpty (976 ms)
+Note: Google Test filter = EnhancementBrowserTest.CrossProcessFramesAreMatchedIndividually
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from EnhancementBrowserTest, where TypeParam =
+[ RUN      ] EnhancementBrowserTest.CrossProcessFramesAreMatchedIndividually
+[10218:15260389:1013/183045.406009:INFO:chrome/browser/aegis/aegis_service.cc:495] GCSA-aegis initialized for profile (tracker blocking on)
+[10218:15260389:1013/183045.567785:INFO:chrome/browser/aegis/filter_list_updater.cc:238] Aegis: filter list cache missing or stale, will fetch after startup
+2026-10-13 18:30:45.784 browser_tests[10218:15260389] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+[       OK ] EnhancementBrowserTest.CrossProcessFramesAreMatchedIndividually (810 ms)
+[----------] 1 test from EnhancementBrowserTest (810 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (810 ms total)
+[  PASSED  ] 1 test.
+[3/4] EnhancementBrowserTest.CrossProcessFramesAreMatchedIndividually (972 ms)
+Note: Google Test filter = EnhancementBrowserTest.MarkdownUntrustedFrameRendersAndBlocksExecutableHTML
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from EnhancementBrowserTest, where TypeParam =
+[ RUN      ] EnhancementBrowserTest.MarkdownUntrustedFrameRendersAndBlocksExecutableHTML
+[10234:15260608:1013/183046.376229:INFO:chrome/browser/aegis/aegis_service.cc:495] GCSA-aegis initialized for profile (tracker blocking on)
+[10234:15260608:1013/183046.526728:INFO:chrome/browser/aegis/filter_list_updater.cc:238] Aegis: filter list cache missing or stale, will fetch after startup
+2026-10-13 18:30:46.727 browser_tests[10234:15260608] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+[       OK ] EnhancementBrowserTest.MarkdownUntrustedFrameRendersAndBlocksExecutableHTML (804 ms)
+[----------] 1 test from EnhancementBrowserTest (805 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (805 ms total)
+[  PASSED  ] 1 test.
+[4/4] EnhancementBrowserTest.MarkdownUntrustedFrameRendersAndBlocksExecutableHTML (972 ms)
+SUCCESS: all tests passed.
+Tests took 4 seconds.
