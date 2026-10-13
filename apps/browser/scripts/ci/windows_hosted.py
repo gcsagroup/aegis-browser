@@ -96,6 +96,85 @@ def check_test_summary(path, expected=None):
     return len(tests[0])
 
 
+def prepare_depot(runner, work):
+    """全新机器先初始化固定版本的工具，再验证 gclient 实际使用的入口。"""
+    depot = work / 'depot_tools'
+    env = dict(os.environ, DEPOT_TOOLS_UPDATE='0', DEPOT_TOOLS_WIN_TOOLCHAIN='0',
+               PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
+    env['PATH'] = str(depot) + os.pathsep + env['PATH']
+    for key, value in [('core.autocrlf', 'false'), ('core.longpaths', 'true')]:
+        runner.run('git-' + key, ['git', 'config', '--global', key, value], work, env)
+    runner.run('depot-init', ['git', 'init', depot], work, env)
+    runner.run('depot-fetch', ['git', '-C', depot, 'fetch', '--depth=1',
+               'https://chromium.googlesource.com/chromium/tools/depot_tools.git', DEPOT_COMMIT], work, env)
+    runner.run('depot-checkout', ['git', '-C', depot, 'checkout', '--detach', 'FETCH_HEAD'], work, env)
+    cmd = [candidate.windows_system_executable('cmd.exe'), '/d', '/c']
+    # 禁止自动升级不等于跳过首次初始化；此官方入口生成 git.bat / python3.bat。
+    runner.run('depot-bootstrap', [*cmd, depot / 'bootstrap/win_tools.bat'], work, env)
+    if candidate.git(depot, 'rev-parse', 'HEAD') != DEPOT_COMMIT:
+        raise ValueError('初始化改变了 depot_tools 固定提交')
+    require_depot_wrappers(depot)
+    runner.run('depot-python', [*cmd, depot / 'python3.bat', '--version'], work, env)
+    probe = work / 'probe_depot.py'
+    probe.write_text(
+        'import pathlib, subprocess, sys\n'
+        'sys.path.insert(0, str(pathlib.Path(__file__).parent / "depot_tools"))\n'
+        'import git_cache\n'
+        'assert git_cache.Mirror.git_exe == "git.bat"\n'
+        'subprocess.run([git_cache.Mirror.git_exe, "--version"], check=True)\n'
+        'result = subprocess.run([git_cache.Mirror.git_exe, "config", "--type", '
+        '"path", "cache.cachepath"])\n'
+        'assert result.returncode in (0, 1), result.returncode\n'
+        'print("gclient Git subprocess entry passed", flush=True)\n', encoding='utf-8')
+    runner.run('depot-git-entry', [*cmd, depot / 'vpython3.bat', probe], work, env)
+    runner.run('depot-gclient', [*cmd, depot / 'gclient.bat', '--version'], work, env)
+    return depot, env
+
+
+def require_depot_wrappers(depot):
+    for name in ['git.bat', 'python3.bat', 'vpython3.bat', 'gclient.bat']:
+        if not (depot / name).is_file():
+            raise ValueError('depot_tools 初始化缺少入口：' + name)
+
+
+def check_cpp_entry(runner, work, env):
+    vswhere = Path(os.environ['ProgramFiles(x86)']) / 'Microsoft Visual Studio/Installer/vswhere.exe'
+    vs = env.get('GYP_MSVS_OVERRIDE_PATH') or subprocess.check_output([
+        str(vswhere), '-latest', '-products', '*', '-version', '[17.0,19.0)',
+        '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+        'Microsoft.VisualStudio.Component.VC.ATLMFC', '-property', 'installationPath'], text=True).strip()
+    if not vs:
+        raise ValueError('缺少 VS C++ 与 ATL/MFC 工具链')
+    (work / 'probe.cpp').write_text('#include <windows.h>\n#include <atlbase.h>\n'
+                                  'int main() { return 0; }\n', encoding='utf-8')
+    command = work / 'probe_cpp.cmd'
+    command.write_text('@echo off\r\ncall "' + vs + '\\VC\\Auxiliary\\Build\\vcvars64.bat"\r\n'
+                       'if errorlevel 1 exit /b %errorlevel%\r\n'
+                       'cl.exe /nologo /EHsc probe.cpp /Fe:probe.exe\r\n'
+                       'if errorlevel 1 exit /b %errorlevel%\r\nprobe.exe\r\n',
+                       encoding='utf-8', newline='')
+    runner.run('cpp-toolchain-entry', [candidate.windows_system_executable('cmd.exe'),
+               '/d', '/c', command], work, env)
+
+
+def preflight(work, evidence):
+    evidence.mkdir(parents=True, exist_ok=False)
+    result = {'status': 'failed', 'depotCommit': DEPOT_COMMIT}
+    try:
+        if sys.platform != 'win32' or os.environ.get('RUNNER_ENVIRONMENT') != 'github-hosted':
+            raise ValueError('入口验收仅允许 GitHub 托管 Windows runner')
+        work.mkdir(exist_ok=False)
+        runner = Runner(evidence, work, minutes=15, minimum_gib=5)
+        _, env = prepare_depot(runner, work)
+        check_cpp_entry(runner, work, env)
+        result['status'] = 'passed'
+    except Exception as error:
+        result['error'] = str(error)
+        raise
+    finally:
+        candidate.write_json(evidence / 'toolchain-result.json', result)
+
+
 def build(work, evidence):
     evidence.mkdir(parents=True, exist_ok=False)
     result = {'status': 'preflight', 'productCommit': os.environ.get('GITHUB_SHA'),
@@ -119,19 +198,9 @@ def build(work, evidence):
             raise ValueError('首次完整构建至少需要 300 GiB 可用空间')
         work.mkdir()
         runner = Runner(evidence, work)
-        depot, source = work / 'depot_tools', work / 'src'
-        env = dict(os.environ, DEPOT_TOOLS_UPDATE='0', DEPOT_TOOLS_WIN_TOOLCHAIN='0',
-                   PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
-        env['PATH'] = str(depot) + os.pathsep + env['PATH']
-        # 仅修改本次临时机器的 Git 配置，避免换行符和长路径破坏源码校验。
-        for key, value in [('core.autocrlf', 'false'), ('core.longpaths', 'true')]:
-            runner.run('git-' + key, ['git', 'config', '--global', key, value], work, env)
-        runner.run('depot-init', ['git', 'init', depot], work, env)
-        runner.run('depot-fetch', ['git', '-C', depot, 'fetch', '--depth=1',
-                   'https://chromium.googlesource.com/chromium/tools/depot_tools.git', DEPOT_COMMIT], work, env)
-        runner.run('depot-checkout', ['git', '-C', depot, 'checkout', '--detach', 'FETCH_HEAD'], work, env)
-        if candidate.git(depot, 'rev-parse', 'HEAD') != DEPOT_COMMIT:
-            raise ValueError('depot_tools 固定提交不匹配')
+        depot, env = prepare_depot(runner, work)
+        check_cpp_entry(runner, work, env)
+        source = work / 'src'
         runner.run('source-init', ['git', 'init', source], work, env)
         runner.run('source-fetch', ['git', '-C', source, 'fetch', '--depth=1',
                    'https://chromium.googlesource.com/chromium/src.git', 'refs/tags/' + version], work, env)
@@ -199,5 +268,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--evidence', type=Path, required=True)
+    parser.add_argument('--preflight-only', action='store_true', help='仅验证全新 Windows 工具入口')
     args = parser.parse_args()
-    build(args.work.resolve(), args.evidence.resolve())
+    (preflight if args.preflight_only else build)(args.work.resolve(), args.evidence.resolve())
