@@ -98,6 +98,25 @@ class HostedTrialTest(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['uiAcceptance'], 'pending')
 
+    def test_missing_git_wrapper_stops_before_dependency_sync(self):
+        depot = self.root / 'depot'
+        depot.mkdir()
+        for name in ['python3.bat', 'vpython3.bat', 'gclient.bat']:
+            (depot / name).write_text('@echo off')
+        with self.assertRaisesRegex(ValueError, 'git.bat'):
+            hosted.require_depot_wrappers(depot)
+        (depot / 'git.bat').write_text('@echo off')
+        hosted.require_depot_wrappers(depot)
+
+    def test_preflight_rejects_non_windows_with_failure_receipt(self):
+        evidence = self.root / 'toolchain-evidence'
+        work = self.root / 'toolchain-work'
+        with patch.object(hosted.sys, 'platform', 'darwin'):
+            with self.assertRaisesRegex(ValueError, '托管 Windows'):
+                hosted.preflight(work, evidence)
+        self.assertFalse(work.exists())
+        self.assertEqual(json.loads((evidence / 'toolchain-result.json').read_text())['status'], 'failed')
+
 
 if __name__ == '__main__':
     unittest.main()

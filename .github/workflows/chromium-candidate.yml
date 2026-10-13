@@ -99,7 +99,7 @@ jobs:
   windows-trial-preflight:
     if: ${{ inputs.windows_hosted_trial && github.repository == 'gcsagroup/aegis-browser' && github.run_attempt == 1 }}
     runs-on: windows-2025
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: 保持补丁与覆盖文件原始字节
         run: git config --global core.autocrlf false
@@ -111,6 +111,16 @@ jobs:
           python-version: '3.12'
       - name: 在免费 Windows 机器验证编排与失败边界
         run: python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
+      - name: 实际初始化并验证 Windows Git、Python、gclient 与 C++ 入口
+        run: python apps/browser/scripts/ci/windows_hosted.py --preflight-only --work "${{ runner.temp }}\aegis-tools" --evidence ci-evidence/windows-toolchain
+      - name: 保存入口验收与初始化日志
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: windows-toolchain-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-evidence/windows-toolchain
+          if-no-files-found: warn
+          retention-days: 7
 
   windows-hosted-trial:
     needs: windows-trial-preflight
