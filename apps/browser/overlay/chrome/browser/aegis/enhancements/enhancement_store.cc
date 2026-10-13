@@ -179,6 +179,10 @@ bool EnhancementStore::Matches(const std::string& pattern, const GURL& url) {
   }
   return re2::RE2::FullMatch(address, regex + "$");
 }
+bool EnhancementStore::PausedAt(const base::DictValue& script, const GURL& url) {
+  const auto* origins = script.FindList("disabledOrigins");
+  return origins && origins->contains(url::Origin::Create(url).Serialize());
+}
 bool EnhancementStore::Applies(const base::DictValue& script,
                                const GURL& url,
                                bool top) {
@@ -286,6 +290,18 @@ bool EnhancementStore::Validate(const base::DictValue& state) {
         return false;
     }
   }
+  if (const auto* reading = state.FindDict("readingPreferences")) {
+    const int font = reading->FindInt("font").value_or(17);
+    const auto theme = EnhancementField(*reading, "theme");
+    const auto family = EnhancementField(*reading, "family");
+    const int width = reading->FindInt("width").value_or(820);
+    const int spacing = reading->FindInt("spacing").value_or(180);
+    if (font < 12 || font > 28 || (width != 680 && width != 820 && width != 1100) ||
+        (spacing != 150 && spacing != 180 && spacing != 210) ||
+        (theme != "system" && theme != "light" && theme != "dark") ||
+        (family != "sans" && family != "serif"))
+      return false;
+  }
   std::set<std::string> ids, origins;
   for (const auto& item : *sites) {
     if (!item.is_dict())
@@ -308,6 +324,18 @@ bool EnhancementStore::Validate(const base::DictValue& state) {
                       world = EnhancementField(s, "world");
     auto m = ParseMetadata(EnhancementField(s, "source"));
     const auto* history = s.FindList("history");
+    if (const auto* disabled = s.FindList("disabledOrigins")) {
+      if (disabled->size() > 200)
+        return false;
+      for (const auto& origin : *disabled) {
+        if (!origin.is_string() || !WebURL(GURL(origin.GetString())) ||
+            url::Origin::Create(GURL(origin.GetString())).Serialize() !=
+                origin.GetString())
+          return false;
+      }
+    } else if (s.contains("disabledOrigins")) {
+      return false;
+    }
     if (!base::Uuid::ParseCaseInsensitive(id).is_valid() ||
         !ids.insert(id).second || s.FindInt("revision").value_or(0) < 1 ||
         !s.FindBool("enabled") || !s.FindBool("allFrames") || !m ||
@@ -418,7 +446,8 @@ void EnhancementStore::Mutate(const base::DictValue& request, Completion done) {
     RunNext();
     return;
   }
-  Commit(std::move(next), true, std::move(done));
+  const auto op = EnhancementField(request, "op");
+  Commit(std::move(next), op != "reading-preferences" && op != "markdown-site", std::move(done));
 }
 std::string EnhancementStore::Prepare(const base::DictValue& r,
                                       base::DictValue& next) {
@@ -433,6 +462,11 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
       return "缺少网站预览设置。";
     next.FindDict("markdownSites")
         ->Set(EnhancementField(r, "origin"), Flag(r, "enabled"));
+  } else if (op == "reading-preferences") {
+    const auto* preferences = r.FindDict("preferences");
+    if (!preferences)
+      return "阅读外观设置无效。";
+    next.Set("readingPreferences", preferences->Clone());
   } else if (op == "site-save") {
     const auto* rule = r.FindDict("rule");
     if (!rule)
@@ -465,6 +499,24 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
         return EnhancementField(v.GetDict(), "id") == id;
       });
       next.FindDict("values")->Remove(id);
+    } else if (op == "script-site") {
+      const auto origin = EnhancementField(r, "origin");
+      if (!old || !Flag(*old, "enabled") || !r.FindBool("enabled") ||
+          !WebURL(GURL(origin)) ||
+          url::Origin::Create(GURL(origin)).Serialize() != origin)
+        return "请先授权启用脚本，并选择普通网站。";
+      for (auto& item : *scripts) {
+        auto& script = item.GetDict();
+        if (EnhancementField(script, "id") != id)
+          continue;
+        if (!script.FindList("disabledOrigins"))
+          script.Set("disabledOrigins", base::ListValue());
+        auto* disabled = script.FindList("disabledOrigins");
+        disabled->EraseIf([&](const base::Value& v) { return v.GetString() == origin; });
+        if (!Flag(r, "enabled"))
+          disabled->Append(origin);
+        script.Set("revision", old->FindInt("revision").value() + 1);
+      }
     } else if (op == "script-enable") {
       if (!old || !r.FindBool("enabled"))
         return "启停参数无效。";
@@ -508,6 +560,9 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
               .Set("world", EnhancementField(input, "world"))
               .Set("allFrames", Flag(input, "allFrames"))
               .Set("enabled", false)
+              .Set("disabledOrigins", old && old->FindList("disabledOrigins")
+                                          ? old->FindList("disabledOrigins")->Clone()
+                                          : base::ListValue())
               .Set("history", std::move(history)));
     } else
       return "未知操作。";

@@ -95,8 +95,12 @@ EnhancementTabHelper* EnhancementTabHelper::Find(Profile* profile,
 }
 base::DictValue EnhancementTabHelper::Snapshot() const {
   base::ListValue menus;
-  for (const auto& [id, m] : menus_)
-    menus.Append(base::DictValue().Set("id", id).Set("label", m.label));
+  for (const auto& [id, m] : menus_) {
+    auto binding = bindings_.find(m.binding);
+    if (binding != bindings_.end())
+      menus.Append(base::DictValue().Set("id", id).Set("label", m.label)
+                       .Set("script", EnhancementField(binding->second.script, "id")));
+  }
   return base::DictValue()
       .Set("id", id_)
       .Set("document", base::NumberToString(navigation_id_))
@@ -236,6 +240,9 @@ std::string EnhancementTabHelper::Source(const base::DictValue& script,
       "))return 'unmatched';const key=" +
       JSON(base::Value("__aegisRan_" + name)) +
       ";if(globalThis[key])return 'duplicate';globalThis[key]=true;";
+  if (const auto* disabled = script.FindList("disabledOrigins"))
+    source += "if(" + JSON(base::Value(disabled->Clone())) +
+              ".some(origin=>[location.origin,...Array.from(location.ancestorOrigins||[])].includes(origin)))return 'paused';";
   if (page)
     source += "const runtime={api:{},report:(s,e)=>{if(e)console.warn(e)}};";
   else
@@ -246,7 +253,7 @@ std::string EnhancementTabHelper::Source(const base::DictValue& script,
         "aegisReply=runtime.receive;globalThis.__aegisMenu=runtime.runMenu;";
   source +=
       "const {GM,GM_addStyle,GM_registerMenuCommand}=runtime.api;const "
-      "run=async()=>{try{await(async()=>{\n" +
+      "run=async()=>{runtime.report('running');try{await(async()=>{\n" +
       EnhancementField(script, "source") +
       "\n})();runtime.report('completed');}catch(e){runtime.report('failed',"
       "String(e));}};";
@@ -378,6 +385,8 @@ void EnhancementTabHelper::HandleBinding(Context context,
   if (!value || !actual ||
       actual->FindInt("revision") != binding.script.FindInt("revision") ||
       (!binding.trial && !Flag(*actual, "enabled")) ||
+      EnhancementStore::PausedAt(*actual, web_contents()->GetLastCommittedURL()) ||
+      (value && EnhancementStore::PausedAt(*actual, GURL(*value))) ||
       !EnhancementStore::Applies(*actual, GURL(*value),
                                  context.frame == main_frame_))
     error = "页面或脚本授权已变化。";
@@ -442,6 +451,8 @@ void EnhancementTabHelper::HandleBinding(Context context,
           id,
           base::DictValue()
               .Set("status", EnhancementField(body, "status").substr(0, 100))
+              .Set("trial", binding.trial)
+              .Set("mainFrame", context.frame == main_frame_)
               .Set("error", EnhancementField(body, "error").substr(0, 1000)));
     else
       error = "未知脚本操作。";
@@ -557,6 +568,8 @@ void EnhancementTabHelper::RunMenu(const std::string& id, Reply reply) {
                  script->FindInt("revision") !=
                      binding->second.script.FindInt("revision") ||
                  (!binding->second.trial && !Flag(*script, "enabled")) ||
+                 EnhancementStore::PausedAt(*script, self->web_contents()->GetLastCommittedURL()) ||
+                 (address && EnhancementStore::PausedAt(*script, GURL(*address))) ||
                  !EnhancementStore::Applies(*script, GURL(*address),
                                             ctx.frame == self->main_frame_)) {
                std::move(reply).Run(Failure("菜单授权已经变化。"));

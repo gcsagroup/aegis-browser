@@ -1,0 +1,116 @@
+{
+  "scope": "macOS 202 与 iOS 模拟器 118 验收证据，公开日志替换本机绝对路径并清理行尾空白，完整原始资料继续保留于本地。",
+  "files": [
+    {
+      "file": "mac-build-202.log",
+      "sourceSha256": "ae78b50da5e379bc2e6c00abf1c06daea5c8384a5ef01f2bfe2c9002a36d7b6d",
+      "publicSha256": "ae78b50da5e379bc2e6c00abf1c06daea5c8384a5ef01f2bfe2c9002a36d7b6d",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "mac-unit-202.log",
+      "sourceSha256": "d6cb9c8f2c672e1c544cc847b05a50fae38ebfe40f52f73bc345d7b401e3f54f",
+      "publicSha256": "d6cb9c8f2c672e1c544cc847b05a50fae38ebfe40f52f73bc345d7b401e3f54f",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "mac-browser-202.log",
+      "sourceSha256": "5c4a4d404e759803fe37304fb87feaf2682a4df685ae7400e6a87c4f2011400c",
+      "publicSha256": "256a7a693a3dc8b8e2c094fa377c18afc9047e5d718e8c184b0ff57e3f6b449c",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "mac-sign-202.log",
+      "sourceSha256": "8df1309690200eec9f780a1ca57f380a424bb45163ae2b5342bb5b47ce583185",
+      "publicSha256": "0e34b043d77d8af1140fa13c4b763a2d78673a2d5eba8007a2bac2ad732a9e7b",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "quality-fast-202.log",
+      "sourceSha256": "08eb524efa2a70c4e95e5ed7f279241725abb20efadfa461fb094e7dc5d3f240",
+      "publicSha256": "e071f64bf66c1786305750373d4e7c241ba0d99d7e0d550be5908ec64fcb7b08",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "contracts-202.log",
+      "sourceSha256": "0ed710cccfb776fc211e7fd6e2f80438c5bdf5654377aeaa8f0bce0f6df22719",
+      "publicSha256": "0ed710cccfb776fc211e7fd6e2f80438c5bdf5654377aeaa8f0bce0f6df22719",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "ui-core-202.log",
+      "sourceSha256": "91423cb7cb1ac27e89bffcc176a46b171023cbfa7cb08a641ce288de856891e5",
+      "publicSha256": "91423cb7cb1ac27e89bffcc176a46b171023cbfa7cb08a641ce288de856891e5",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "patch-tests-202.log",
+      "sourceSha256": "1f5c251556e3c62efebd89ffd19eb7d362fe5a44d5629b276bf6aa2befa0db7f",
+      "publicSha256": "1f5c251556e3c62efebd89ffd19eb7d362fe5a44d5629b276bf6aa2befa0db7f",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "ios-iphone-118.log",
+      "sourceSha256": "9d6acc2e4d8de09c54ef93f4d076c7a710549167983004ecfa827a42ca0e9446",
+      "publicSha256": "9eeb34a7b5302c944d507b052df01079799d8c22615808ff85730ff60c2a74ec",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "ios-ipad-118.log",
+      "sourceSha256": "124c875041ab03a451b291f0e16ddf6dd43e383e4f85f9bfa5680019754c9aa3",
+      "publicSha256": "408a0d4417073e3e71e8c41c6c739fb4361b80ea940e946278ef6bd9748eaac5",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "ios-iphone-118-summary.json",
+      "source": "ios-iphone-118.xcresult",
+      "export": "xcresulttool get test-results summary",
+      "publicSha256": "a2a9c1665d2f5a2d3a1b114e0ea895b93d564257b3ac336864e8ade896ca4d43"
+    },
+    {
+      "file": "ios-ipad-118-summary.json",
+      "source": "ios-ipad-118.xcresult",
+      "export": "xcresulttool get test-results summary",
+      "publicSha256": "ffc24ba2301ea6d4656ca0e67da0dadeb0b8ea59b92dbd695062fe16ff5df04d"
+    },
+    {
+      "file": "mac-enhancements-en-202.png",
+      "sha256": "4e3c2b7e4eab23c539ee44cad846bcbf93afd2aef0080927f97912083a5c9692",
+      "publicSha256": "4e3c2b7e4eab23c539ee44cad846bcbf93afd2aef0080927f97912083a5c9692"
+    },
+    {
+      "file": "mac-enhancements-hant-202.png",
+      "sha256": "460a67cf680752501dc7615a4452622f77a96788f1c343c1527f9f94c9b33a88",
+      "publicSha256": "460a67cf680752501dc7615a4452622f77a96788f1c343c1527f9f94c9b33a88"
+    },
+    {
+      "file": "ios-reading-dark-118.png",
+      "sha256": "8f5232fdf394c4c95bc9417d0e7d8f2260f0b3b49fb0c153cc7b1f3d9e266c36",
+      "publicSha256": "8f5232fdf394c4c95bc9417d0e7d8f2260f0b3b49fb0c153cc7b1f3d9e266c36"
+    },
+    {
+      "file": "quality-fast-public.log",
+      "sourceSha256": "9480613cae7d44b4af8cccd75cf52ffcc3958048cd296e23624a1557c741f408",
+      "publicSha256": "35c37f9f5604ac7ab4a5ddaf4160c71489383ab9f9d73efe5ffcf29857c2acf6",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "quality-fast-public-initial.log",
+      "sourceSha256": "9c50945020c0bb8c5045ad6bafcc8b0ed939f7141a5a0280e3d2bf29eddeecb1",
+      "publicSha256": "ad4cc6825c18e09235c470a9b2ddd84e7e25723b76d6b55145d14d760585e7fa",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "fixture-selftest.log",
+      "sourceSha256": "8a3337c4fcd4013415db6aa090716d35733c009bdd1c43c407b0fd64a2b8edab",
+      "publicSha256": "8a3337c4fcd4013415db6aa090716d35733c009bdd1c43c407b0fd64a2b8edab",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    },
+    {
+      "file": "platform-features.log",
+      "sourceSha256": "af76ac5daca918c8e0eeeb6fb49ae0627e797882f2f8c54ec55c4991e40357a0",
+      "publicSha256": "af76ac5daca918c8e0eeeb6fb49ae0627e797882f2f8c54ec55c4991e40357a0",
+      "redaction": "替换本机绝对路径并清理行尾空白，测试内容不变"
+    }
+  ]
+}

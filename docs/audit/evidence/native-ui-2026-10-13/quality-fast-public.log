@@ -1,0 +1,1126 @@
+
+> gcsa-aegis@0.1.0 quality:fast <public-worktree>
+> corepack pnpm run lint && corepack pnpm --filter @gcsa-aegis/core typecheck && corepack pnpm --filter @gcsa-aegis/core test && corepack pnpm --filter @gcsa-aegis/browser test:scripts && corepack pnpm --filter @gcsa-aegis/browser test:agent-ui && corepack pnpm --filter @gcsa-aegis/browser test:enhancements && corepack pnpm --filter @gcsa-aegis/browser test:local-model && node ./scripts/check-repo-contracts.mjs && corepack pnpm --filter @gcsa-aegis/core build && corepack pnpm run test:access-metering
+
+
+> gcsa-aegis@0.1.0 lint <public-worktree>
+> eslint "packages/core/src/**/*.ts" "scripts/ci/**/*.mjs" --max-warnings 0
+
+
+> @gcsa-aegis/core@0.1.0 typecheck <public-worktree>/packages/core
+> tsc --noEmit
+
+
+> @gcsa-aegis/core@0.1.0 test <public-worktree>/packages/core
+> vitest run --coverage
+
+
+ RUN  v3.2.7 <public-worktree>/packages/core
+      Coverage enabled with v8
+
+ ✓ src/privacy/pii.test.ts (3 tests) 3ms
+ ✓ src/script-risk/provenance.test.ts (6 tests) 5ms
+ ✓ src/privacy/orchestrator.test.ts (5 tests) 4ms
+ ✓ src/script-risk/grey-zone-review.test.ts (7 tests) 4ms
+ ✓ src/script-risk/federated-simulation.test.ts (6 tests) 4ms
+ ✓ src/script-risk/evaluation/research-gate-cli.test.ts (8 tests) 11ms
+ ✓ src/script-risk/evaluation/public-pilot-acquisition.test.ts (6 tests) 81ms
+ ✓ src/security-text.test.ts (5 tests) 6ms
+ ✓ src/policy-worker-entry.test.ts (7 tests) 4ms
+ ✓ src/policy.test.ts (23 tests) 13ms
+ ✓ src/access/route-planner-vectors.test.ts (1 test) 5ms
+ ✓ src/phish/detector.test.ts (13 tests) 4ms
+ ✓ src/agent/contracts/v1/agent-contract-v1.test.ts (3 tests) 3ms
+ ✓ src/snapshot.test.ts (1 test) 3ms
+ ✓ src/script-risk/research-gates.test.ts (6 tests) 4ms
+ ✓ src/script-risk/evaluation/confidence-bounds.test.ts (15 tests) 5ms
+ ✓ src/phish/threat-feed-lib.test.ts (5 tests) 5ms
+ ✓ src/script-risk/structure-signature.test.ts (6 tests) 16ms
+ ✓ src/tracker/easylist.test.ts (3 tests) 3ms
+ ✓ src/script-risk/branch-candidates.test.ts (5 tests) 9ms
+ ✓ src/access/policy-matcher-vectors.test.ts (1 test) 3ms
+ ✓ src/script-risk/observer.test.ts (24 tests) 18ms
+ ✓ src/tracker/link-sanitize.test.ts (1 test) 2ms
+ ✓ src/script-risk/evaluation/corpus-eval.test.ts (9 tests) 38ms
+ ✓ src/script-risk/ast-analyzer.test.ts (6 tests) 123ms
+ ✓ src/tracker/cookie-classify.test.ts (4 tests) 2ms
+ ✓ src/tracker/first-party-collect.test.ts (5 tests) 2ms
+ ✓ src/script-risk/evaluation/public-pilot-blind-bridge.test.ts (2 tests) 966ms
+   ✓ public pilot to blind-v1 bridge > prepares an unlabelled pseudonymous envelope and reveals labels only after prediction  906ms
+ ✓ src/script-risk/evaluation/blind-protocol.test.ts (7 tests) 1920ms
+   ✓ blind prediction and post-prediction scoring CLI > freezes all identities, aggregates files in one case, joins labels later, and refuses overwrite  1385ms
+
+ Test Files  29 passed (29)
+      Tests  193 passed (193)
+   Start at  19:21:27
+   Duration  2.31s (transform 690ms, setup 0ms, collect 3.30s, tests 3.26s, environment 2ms, prepare 1.56s)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   92.29 |    83.78 |   96.46 |   92.29 |
+ src               |   90.96 |    84.04 |     100 |   90.96 |
+  index.ts         |     100 |      100 |     100 |     100 |
+  ...rker-entry.ts |   66.66 |       60 |     100 |   66.66 | ...20-121,124-126
+  policy.ts        |     100 |    93.87 |     100 |     100 | 74,159,176
+  ports.ts         |       0 |        0 |       0 |       0 |
+  security-text.ts |     100 |      100 |     100 |     100 |
+  snapshot.ts      |     100 |      100 |     100 |     100 |
+  types.ts         |     100 |      100 |     100 |     100 |
+ ...t/contracts/v1 |   90.39 |    71.21 |     100 |   90.39 |
+  ...ontract-v1.ts |   90.39 |    71.21 |     100 |   90.39 | ...26,260-261,308
+ src/phish         |   89.12 |    84.17 |     100 |   89.12 |
+  builtin-hosts.ts |     100 |      100 |     100 |     100 |
+  detector.ts      |   87.46 |     85.6 |     100 |   87.46 | ...61-362,379-390
+  ...ight-model.ts |    90.9 |    57.14 |     100 |    90.9 | 24-25,27-28
+ src/privacy       |   74.53 |    71.66 |   73.68 |   74.53 |
+  orchestrator.ts  |   71.42 |    64.28 |   88.88 |   71.42 | ...60-261,266-267
+  pii.ts           |   80.17 |    88.88 |      60 |   80.17 | 43-46,55-68,79-83
+ src/script-risk   |   95.61 |    85.12 |     100 |   95.61 |
+  ast-analyzer.ts  |   90.25 |    86.17 |     100 |   90.25 | ...90-191,317-331
+  ...candidates.ts |     100 |    85.71 |     100 |     100 | 71,129,154,171
+  ...simulation.ts |   95.36 |    74.78 |     100 |   95.36 | ...86-387,472-473
+  ...one-review.ts |   93.64 |    85.14 |     100 |   93.64 | ...88-389,430-436
+  observer.ts      |   98.87 |     85.6 |     100 |   98.87 | 67-68,187,322-323
+  provenance.ts    |   88.23 |    74.76 |     100 |   88.23 | ...61-463,480-481
+  ...arch-gates.ts |     100 |      100 |     100 |     100 |
+  ...-signature.ts |   97.65 |    80.85 |     100 |   97.65 | ...80-381,433-435
+  types.ts         |     100 |      100 |     100 |     100 |
+ ...isk/evaluation |     100 |      100 |     100 |     100 |
+  ...nce-bounds.ts |     100 |      100 |     100 |     100 |
+ src/tracker       |   90.28 |     86.5 |    90.9 |   90.28 |
+  builtin-rules.ts |   97.05 |       90 |     100 |   97.05 | 142-143,148-149
+  classifier.ts    |   53.65 |    72.72 |      75 |   53.65 | 8-9,21-37
+  ...e-classify.ts |   93.52 |    85.71 |   85.71 |   93.52 | ...63-164,187-188
+  easylist.ts      |   92.85 |    88.67 |     100 |   92.85 | ...53-154,156-157
+  link-sanitize.ts |   81.57 |    85.71 |     100 |   81.57 | 18-24
+-------------------|---------|----------|---------|---------|-------------------
+
+> @gcsa-aegis/browser@0.1.0 test:scripts <public-worktree>/apps/browser
+> bash ./scripts/run-script-quality-checks.sh
+
+==> 构建源码来源
+......
+----------------------------------------------------------------------
+Ran 6 tests in 1.149s
+
+OK
+==> Windows MIDL 路径
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.003s
+
+OK
+==> 构建容量
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.005s
+
+OK
+==> 构建进程
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.650s
+
+OK
+==> Chromium 上游监测
+......................
+----------------------------------------------------------------------
+Ran 22 tests in 0.023s
+
+OK
+==> 发行资产一致性
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 0.043s
+
+OK
+==> GitHub发行编排
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.965s
+
+OK
+==> 候选编排
+..............
+----------------------------------------------------------------------
+Ran 14 tests in 0.302s
+
+OK
+# Chromium 候选证据
+
+
+平台：android；阶段：failed
+实际运行验收：pending；正式发布：未执行。
+失败原因：device missing
+
+==> 进程测量
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.000s
+
+OK
+==> workspace-paths
+✔ 构建路径遵守环境变量、标记、统一默认目录的优先级 (21.892083ms)
+✔ libtorrent准备使用同一源码入口，不回退到已撤下的旧目录 (0.130708ms)
+✔ 原生运行检查与产物身份脚本的默认路径均已收敛 (147.626375ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 203.61975
+==> public-link-fixture
+✔ 独立服务覆盖500条目录的全部HTTP分类，并保留拒绝负例 (121.305667ms)
+✔ 公开服务不暴露控制、模型、证据、文件或写入入口 (8.178791ms)
+✔ 命令行正常启动、错误参数失败，退出不遗留服务 (244.740125ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 415.417375
+==> integration-benchmark-fixtures
+✔ 第二版500条链接保留HTTP分类和独立范围拒绝负例 (1.167541ms)
+✔ 准备包导出不启动浏览器、不覆盖旧包且未部署不能标为通过 (412.81775ms)
+✔ 冻结清单明确区分任务、重复运行与未执行的安全场景 (0.709333ms)
+✔ 安全载体包含真实指令且不执行脚本或网络请求 (0.881083ms)
+✔ 真实 HTTP 服务交付清单、100 个独立页面和严格未知编号响应 (251.219208ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 706.309167
+==> integration-evidence-report
+✔ 空报告保留90次和100场景分母，成功率不是零或百分之百 (4.234125ms)
+✔ 局部证据缺失不能变成通过，已观测失败保持失败 (3.027125ms)
+✔ 完整90次报告计算固定分母与每类成绩，不排除未支持任务 (43.508125ms)
+✔ 重复轮次、未知任务、第四次、混用身份及清单变动均拒绝 (4.48725ms)
+✔ 区分真实暴露、提取隔离和未核验出站；正出站计数强制失败 (6.838958ms)
+✔ 篡改文件、空文件、重复证据及越界符号链接不能满足证据包 (3.292667ms)
+✔ 命令行实际正常、失败和修复输入返回正确退出码 (96.018709ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 199.705834
+==> update-metadata-prototype
+✔ 合法签名及完整包仍不能代表平台签名通过或已安装 (1.23025ms)
+✔ 拒绝过期 (0.242333ms)
+✔ 拒绝未来发布 (0.136458ms)
+✔ 拒绝过长有效期 (0.1015ms)
+✔ 拒绝错误平台 (0.111459ms)
+✔ 拒绝降级 (0.107708ms)
+✔ 拒绝版本格式歧义 (0.106375ms)
+✔ 拒绝伪造摘要格式 (0.116375ms)
+✔ 拒绝越界大小 (0.121917ms)
+✔ 拒绝其他仓库 (0.491292ms)
+✔ 拒绝旧版本链接 (0.141834ms)
+✔ 拒绝额外字段 (0.117833ms)
+✔ 拒绝篡改签名、未知密钥和元数据回滚 (0.640667ms)
+✔ 元数据拒绝重复字段和缺失可信时钟 (0.190792ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 40.465708
+==> patch series formats
+PASS: Chromium and V8 patch formats
+==> patch series regression fixtures
+PASS: patch series format regressions
+==> Access native unit tests
+PASS: aegis_access native unit (864 checks)
+==> fixed Chromium Access GTest runner tests
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 0.811s
+
+OK
+==> TypeSafe choice contract unit tests
+PASS: TypeSafe production choice contract 10/10
+==> model generation profiles and accounting
+Agent generation profile and split-token accounting PASS
+==> paired model routing evaluation
+✔ actual cache rates and reasoning subset produce exact cost without double billing (0.799292ms)
+✔ unknown usage, prices, and cache split never silently become free (0.126667ms)
+✔ TypeSafe, failed attempts and fallback are included in total and cost per correct task (0.547291ms)
+✔ failed tasks remain in denominators and their costs cannot disappear (0.343084ms)
+✔ unknown verdict is not inferred from completed; differences withheld for unmatched labels (0.118375ms)
+✔ incomplete or duplicate cohorts and changed fixtures fail closed (0.171875ms)
+✔ unknown router price invalidates total savings, preserves known subtotal (0.386792ms)
+✔ failed TypeSafe calls with no returned model remain in the accounting cohort (0.123833ms)
+✔ non-model tasks do not dilute fallback rate; null token details stay unknown (0.1035ms)
+✔ invalid detail subsets, negative values and extra sensitive fields are rejected (0.165584ms)
+✔ CLI writes once, refuses overwriting evidence, and produces no savings claim for unknown cost (53.885125ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 95.827792
+==> vector generators
+PASS: vector generator rejection fixtures (2 checks)
+==> Access GN wiring
+....
+----------------------------------------------------------------------
+Ran 4 tests in 0.208s
+
+OK
+PASS: AccessRuleStore overlay, patch, and GN wiring contract
+PASS: aegis_access GN developer-graph wiring contract
+==> browser status script
+PASS: status.sh fixture
+==> toolchain fetch script
+.../opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'missing'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+.
+----------------------------------------------------------------------
+Ran 4 tests in 2.037s
+
+OK
+PASS: Chromium fetch toolchain fixtures
+==> browser run script
+PASS: run preflight fixture
+==> patch application script
+warning: adding embedded git repository: v8
+hint: You've added another git repository inside your current repository.
+hint: Clones of the outer repository will not contain the contents of
+hint: the embedded repository and will not know how to obtain it.
+hint: If you meant to add a submodule, use:
+hint:
+hint: 	git submodule add <url> v8
+hint:
+hint: If you added this path by mistake, you can remove it from the
+hint: index with:
+hint:
+hint: 	git rm --cached v8
+hint:
+hint: See "git help submodule" for more information.
+hint: Disable this message with "git config set advice.addEmbeddedRepo false"
+PASS: apply-patches.sh fixture
+==> package guard script
+PASS: build/package path guard fixtures
+==> Chromium signing script
+使用固定 GCSA 证书签名 /var/folders/4w/h_lm_xbj1qg2f387wsmx08fh0000gn/T/tmp.insoXLZdSh/already/Chromium.app …
+整包及固定证书验证通过，保留现有签名。
+使用固定 GCSA 证书签名 /var/folders/4w/h_lm_xbj1qg2f387wsmx08fh0000gn/T/tmp.insoXLZdSh/sign_then_valid/Chromium.app …
+GCSA 固定签名通过（R3JK7R29AC，严格整包校验）。
+此结果不代表 Developer ID 签名或公证。
+使用固定 GCSA 证书签名 /var/folders/4w/h_lm_xbj1qg2f387wsmx08fh0000gn/T/tmp.insoXLZdSh/sibling_sign_then_valid/Chromium.app …
+GCSA 固定签名通过（R3JK7R29AC，严格整包校验）。
+此结果不代表 Developer ID 签名或公证。
+使用固定 GCSA 证书签名 /var/folders/4w/h_lm_xbj1qg2f387wsmx08fh0000gn/T/tmp.insoXLZdSh/branded/GCSA Aegis.app …
+GCSA 固定签名通过（R3JK7R29AC，严格整包校验）。
+此结果不代表 Developer ID 签名或公证。
+PASS: 固定 GCSA 证书、严格校验、失败关闭与 Helper 签名回归
+==> bootstrap libtorrent syntax
+==> fetch Chromium syntax
+==> detached Chromium fetch syntax
+==> vpython network fix syntax
+==> threat index installer syntax
+==> release build syntax
+==> package script syntax
+==> signing script syntax
+==> build identity syntax
+==> build identity self-test
+{
+  "schemaVersion": 1,
+  "kind": "aegis-build-identity-self-test",
+  "passed": true,
+  "tests": [
+    {
+      "name": "链接器入口名保留，真实二进制变化可被检测",
+      "passed": true
+    },
+    {
+      "name": "链接器回补记录必须匹配链接器和编译器",
+      "passed": true
+    },
+    {
+      "name": "目录树哈希具有确定性",
+      "passed": true
+    },
+    {
+      "name": "内容变化会改变目录树哈希",
+      "passed": true
+    },
+    {
+      "name": "权限变化会改变目录树哈希",
+      "passed": true
+    },
+    {
+      "name": "逃逸符号链接会被拒绝",
+      "passed": true
+    },
+    {
+      "name": "现有清单不会被静默覆盖",
+      "passed": true
+    },
+    {
+      "name": "payload 篡改会被拒绝",
+      "passed": true
+    },
+    {
+      "name": "仅排除独立校验的 V8 gitlink 脏状态",
+      "passed": true
+    },
+    {
+      "name": "artifact 路径穿越会被拒绝",
+      "passed": true
+    },
+    {
+      "name": "品牌 App 身份绑定使用 Info.plist 中的可执行文件名",
+      "passed": true
+    },
+    {
+      "name": "artifact 父目录符号链接逃逸会被拒绝",
+      "passed": true
+    },
+    {
+      "name": "overlay 父目录符号链接逃逸会被拒绝",
+      "passed": true
+    }
+  ]
+}
+==> Agent runtime syntax
+==> Agent runtime self-test
+{
+  "schema_version": 8,
+  "kind": "aegis-agent-runtime-fixture-self-test",
+  "started_at": "2026-10-13T11:21:49.672Z",
+  "finished_at": "2026-10-13T11:21:50.185Z",
+  "ok": true,
+  "fixture": {
+    "sources": 10,
+    "bookmarks": 500,
+    "download_hashes": {
+      "macos-arm64": "c3f99477218ffb23bc82a11cf41e734062bcb45f27a7aea717202f99ef37532e",
+      "macos-x64": "daf7231381eb33b48a991d3f42176506ce358e4c43b74e5085d6c53d1db8923c",
+      "windows-x64": "b5f502ab36c1e909f7b8b88325c292df4e20eb08956a21daf5d23d9b3aff639c",
+      "android-arm64": "26505d5d8d4a4a3829def6a8bd1c99a57589a014d714903029b5b031217d9f23"
+    }
+  },
+  "checks": [
+    {
+      "name": "health",
+      "ok": true,
+      "duration_ms": 8
+    },
+    {
+      "name": "A1 ten sources, conflicts, and injection markers",
+      "ok": true,
+      "duration_ms": 5
+    },
+    {
+      "name": "A1 bounded slow navigation and client cancellation",
+      "ok": true,
+      "duration_ms": 57
+    },
+    {
+      "name": "A2 fixed 500-bookmark dataset and snapshot",
+      "ok": true,
+      "duration_ms": 4
+    },
+    {
+      "name": "跨端工作区夹具仅引用浏览器标识，不暗加恢复动作",
+      "ok": true,
+      "duration_ms": 1
+    },
+    {
+      "name": "窗口验收只引用本任务新建窗口和原生版本",
+      "ok": true,
+      "duration_ms": 1
+    },
+    {
+      "name": "A3 URL status and bounded fallback semantics",
+      "ok": true,
+      "duration_ms": 55
+    },
+    {
+      "name": "摘要校对保留草稿并拒绝缺失输入",
+      "ok": true,
+      "duration_ms": 2
+    },
+    {
+      "name": "A4 architecture and SHA-256 download evidence",
+      "ok": true,
+      "duration_ms": 5
+    },
+    {
+      "name": "A5 total-price and final-price-change evidence",
+      "ok": true,
+      "duration_ms": 306
+    },
+    {
+      "name": "A6 non-vacuous sensitive page and cookie fixture",
+      "ok": true,
+      "duration_ms": 1
+    },
+    {
+      "name": "A7 browser-owned scheduled automation contract",
+      "ok": true,
+      "duration_ms": 2
+    },
+    {
+      "name": "A9 model normal, malformed, redirect, timeout, wrong-tool modes",
+      "ok": true,
+      "duration_ms": 64
+    },
+    {
+      "name": "A10 sanitized request evidence",
+      "ok": true,
+      "duration_ms": 0
+    }
+  ]
+}
+==> local model verifier syntax
+==> local model verifier help
+用法：
+  node apps/browser/scripts/verify-agent-local-model.mjs \
+    --base-url http://127.0.0.1:8000/v1 --model MODEL \
+    [--rounds 2] [--report PATH] [--transport-grace-ms 0]
+
+预检模型的原生 route、plan 和 execution tool calls。报告不会保存完整提示词、
+网页内容、凭据或原始模型响应。本脚本不接受 API key，适合无密钥的本地端点。
+远程测试可显式增加传输余量，报告会记录；不改变浏览器产品的超时策略。
+==> bytecode shadow verifier syntax
+==> bytecode shadow verifier self-test
+{
+  "schemaVersion": 2,
+  "kind": "aegis-bytecode-shadow-runtime-self-test",
+  "passed": true,
+  "summary": {
+    "passed": 22,
+    "total": 22
+  },
+  "tests": [
+    {
+      "name": "接受严格 observed 记录",
+      "passed": true
+    },
+    {
+      "name": "接受严格 skipped-too-large 并支持多条",
+      "passed": true
+    },
+    {
+      "name": "拒绝错误分类、名称和 phase",
+      "passed": true
+    },
+    {
+      "name": "拒绝 would_block=1",
+      "passed": true
+    },
+    {
+      "name": "拒绝错误 schema 和签名分片范围",
+      "passed": true
+    },
+    {
+      "name": "拒绝 uint32 越界长度与零字节 skipped 记录",
+      "passed": true
+    },
+    {
+      "name": "拒绝任何额外参数，包括 source、URL 和函数名",
+      "passed": true
+    },
+    {
+      "name": "拒绝 skipped-too-large 携带摘要",
+      "passed": true
+    },
+    {
+      "name": "摘要只保留计数和签名",
+      "passed": true
+    },
+    {
+      "name": "进程角色摘要不保留 PID 且能证明 renderer",
+      "passed": true
+    },
+    {
+      "name": "primary 与 cleanup 双失败均被保留且 primary 在前",
+      "passed": true
+    },
+    {
+      "name": "良性 fixture 在脚本执行前已有 body",
+      "passed": true
+    },
+    {
+      "name": "stress fixture 固定两阶段函数数和协议摘要",
+      "passed": true
+    },
+    {
+      "name": "loopback fixture 只在完整请求体与正确阶段后完成",
+      "passed": true
+    },
+    {
+      "name": "loopback fixture 页面由 browser CDP 在 trace 后显式创建",
+      "passed": true
+    },
+    {
+      "name": "browser CDP 页面创建拒绝非 loopback fixture URL",
+      "passed": true
+    },
+    {
+      "name": "清理日志只豁免精确可解释的 SIGTERM 15",
+      "passed": true
+    },
+    {
+      "name": "覆盖 Chromium renderer、child 与 RenderProcessHost 崩溃格式",
+      "passed": true
+    },
+    {
+      "name": "主动清理只接受 close 后的 code=0 或 SIGTERM",
+      "passed": true
+    },
+    {
+      "name": "CANARY 同时启用 feature、记录上限和 1-byte 上限",
+      "passed": true
+    },
+    {
+      "name": "STRESS 使用每进程 1000 条硬上限",
+      "passed": true
+    },
+    {
+      "name": "独立 pipe-holder 在固定合成日志量下形成真实反压",
+      "passed": true
+    }
+  ]
+}
+==> bytecode shadow site verifier syntax
+==> bytecode shadow site verifier self-test
+{"kind":"bytecode-shadow-sites-self-test","passed":true,"tests":69}
+==> CDP runtime verifier syntax
+==> download runtime verifier syntax
+==> fingerprint runtime verifier syntax
+==> fingerprint runtime verifier self-test
+{
+  "schemaVersion": 1,
+  "kind": "aegis-fingerprint-runtime-self-test",
+  "passed": true,
+  "tests": [
+    {
+      "name": "参数解析接受代表性选项",
+      "passed": true
+    },
+    {
+      "name": "未知参数会被拒绝",
+      "passed": true
+    },
+    {
+      "name": "构建身份清单与固定摘要必须成对且格式严格",
+      "passed": true
+    },
+    {
+      "name": "报告路径不得覆盖 App 或身份清单",
+      "passed": true
+    },
+    {
+      "name": "报告父目录符号链接不得逃逸到 App",
+      "passed": true
+    },
+    {
+      "name": "报告原子发布不得覆盖既有证据",
+      "passed": true
+    },
+    {
+      "name": "五状态合成矩阵全部通过",
+      "passed": true
+    },
+    {
+      "name": "Profile secret 仅接受规范 Base64",
+      "passed": true
+    },
+    {
+      "name": "显式产品标记会被拒绝",
+      "passed": true
+    },
+    {
+      "name": "WebGPU 内部错误不能冒充 limit 拒绝",
+      "passed": true
+    },
+    {
+      "name": "最终进程扫描不依赖 Chromium Helper 名称",
+      "passed": true
+    },
+    {
+      "name": "精确终止主 PID 与启动后代",
+      "passed": true
+    },
+    {
+      "name": "Crashpad 快照差分识别新增与修改",
+      "passed": true
+    },
+    {
+      "name": "loopback fixture 返回真实探针页面",
+      "passed": true
+    }
+  ]
+}
+==> miner runtime verifier syntax
+==> miner runtime verifier self-test
+{
+  "schemaVersion": 1,
+  "kind": "aegis-miner-runtime-self-test",
+  "passed": true,
+  "qualification": false,
+  "runtime_pass": false,
+  "release_eligible": false,
+  "checks": [
+    {
+      "name": "参数解析拒绝不完整构建身份与过短超时",
+      "passed": true,
+      "details": {
+        "missingPairRejected": true,
+        "shortTimeoutRejected": true
+      }
+    },
+    {
+      "name": "矩阵包含一个正例、三个负例和两个关闭控制",
+      "passed": true,
+      "details": [
+        "positive-combined",
+        "negative-cpu-only",
+        "negative-worker-wasm-load",
+        "negative-chat-websocket",
+        "control-pref-off",
+        "control-master-off"
+      ]
+    },
+    {
+      "name": "结构化 stderr 告警只接受固定隐私格式",
+      "passed": true,
+      "details": {
+        "alerts": [
+          {
+            "verdict": "likely_mining",
+            "scoreBucket": "high"
+          }
+        ],
+        "malformed": []
+      }
+    },
+    {
+      "name": "browser target 的 flat CDP session 精确路由并分离",
+      "passed": true,
+      "details": [
+        {
+          "method": "Runtime.enable",
+          "params": {},
+          "sessionId": "loopback-session"
+        },
+        {
+          "method": "Target.detachFromTarget",
+          "params": {
+            "sessionId": "loopback-session"
+          },
+          "sessionId": null
+        }
+      ]
+    },
+    {
+      "name": "pref-off 在启动前写入 Default 并可回读",
+      "passed": true,
+      "details": {
+        "before": {
+          "path": "/var/folders/4w/h_lm_xbj1qg2f387wsmx08fh0000gn/T/aegis-miner-pref-self-test-rmXmMw/Default/Preferences",
+          "exists": true,
+          "minerGuardEnabled": false,
+          "sha256": "42044b651260de4faf30916401a3d5b51db86f46de736b832c79ef6a4a07076b"
+        },
+        "after": {
+          "path": "/var/folders/4w/h_lm_xbj1qg2f387wsmx08fh0000gn/T/aegis-miner-pref-self-test-rmXmMw/Default/Preferences",
+          "exists": true,
+          "minerGuardEnabled": false,
+          "sha256": "42044b651260de4faf30916401a3d5b51db86f46de736b832c79ef6a4a07076b"
+        }
+      }
+    },
+    {
+      "name": "fixture 源码有界且不含真实挖矿协议素材",
+      "passed": true,
+      "details": {
+        "workerSha256": "d0efcaab8e1b1bc800c3223f3552a74363b5de5542c96f3eb9e22b46c79b32f5",
+        "clientSha256": "27746f2e70fa72a6a260103650270d576587740681ebf979ba51396894cf565b"
+      }
+    },
+    {
+      "name": "指定报告路径时终端仅输出简洁摘要",
+      "passed": true,
+      "details": {
+        "kind": "self-test-summary",
+        "passed": true,
+        "qualification": "partial",
+        "runtime_pass": true,
+        "release_eligible": false,
+        "assertionSummary": null,
+        "report": "/tmp/aegis-report.json"
+      }
+    },
+    {
+      "name": "报告原子发布拒绝覆盖既有证据",
+      "passed": true,
+      "details": {
+        "overwriteRejected": true
+      }
+    },
+    {
+      "name": "精确终止自测主 PID 且无残留",
+      "passed": true,
+      "details": {
+        "terminationMethod": "controlled-sigterm",
+        "survivors": []
+      }
+    },
+    {
+      "name": "loopback HTTP 与 WebSocket echo fixture 可用",
+      "passed": true,
+      "details": {
+        "bind": "127.0.0.1",
+        "port": 50081,
+        "httpRequests": [
+          {
+            "host": "127.0.0.1",
+            "method": "GET",
+            "path": "/health"
+          },
+          {
+            "host": "127.0.0.1",
+            "method": "GET",
+            "path": "/positive"
+          }
+        ],
+        "websocketExchanges": [
+          {
+            "path": "/chat",
+            "payloadSha256": "cc2456ae55e8ad47f6ac0614327cf5c675e3cd798956510175f61e859e553eaa",
+            "size": 23,
+            "echoed": true
+          }
+        ]
+      }
+    }
+  ]
+}
+==> multisite runtime verifier syntax
+
+> @gcsa-aegis/browser@0.1.0 test:agent-ui <public-worktree>/apps/browser
+> node ./scripts/research-workspace_test.mjs && node ./scripts/agent-ui-status_test.mjs && node ./scripts/agent-task-lifecycle_test.mjs && node ./scripts/agent-model-selection_test.mjs && node ./scripts/summary-model-requests_test.mjs && node ./scripts/download-error-copy_test.mjs && node ./scripts/ui-locale-aliases_test.mjs && node ./scripts/reading-workspace_test.mjs && node ./scripts/local-ai-runtime_test.mjs && node ./scripts/local-ai-client_test.mjs && node ./scripts/translation-quality-corpus_test.mjs
+
+研究选择真实函数回归通过：范围3–10、空目标、忙碌、惰性标题及失败刷新；不是App验收。
+研究转监控回归通过：预填后立即可创建；忙碌和模型未配置继续禁用。
+研究保存界面回归通过：惰性来源、部分结果、正文变化、未知状态拒绝和读取失败清空旧列表。
+下载证据界面回归通过：白名单、未核验身份、惰性文本、文件名与空态。
+PASS: 身份问答不把来源页作为候选文件，普通查找保持候选 2/2
+PASS: 周期意图及否定请求 14/14
+PASS: Agent 界面状态 27/27
+PASS: Agent 状态颜色 6/6
+PASS: Agent 页面上下文错误提示 2/2
+PASS: 监控变化摘要渲染 6/6（DOM 单元测试，非实机验收）
+PASS: 立即检查入口及暂停/忙碌/失败状态 5/5
+PASS: 检查、暂停及删除监控失败均显示当前可见错误 3/3
+PASS: 模型表单状态 8/8（DOM 单元测试，非实机验收）
+PASS: TypeSafe 独立设置 6/6（DOM 单元测试，非实机验收）
+PASS: 自动化入口及普通任务对照 9/9（真实按钮绑定单元测试，非实机验收）
+PASS: 普通输入只预填监控确认面板 2/2
+PASS: 监控收尾与部分完成时间线 6/6（DOM 单元测试，非实机验收）
+PASS: 无计划失败/取消/规划/暂停均可复制观测，离开任务清空观测（DOM）
+PASS: 未建任务快筛记录独立显示，不冒充旧任务，空历史清除（DOM）
+PASS: 无计划及空时间线状态 10/10（DOM 单元测试，非实机验收）
+PASS: 浏览器来源标题与模型正文隔离 3/3
+PASS: 下载回读问答与操作命令分离 15/15
+PASS: 新增时间线状态与详情本地化 7/7
+PASS: 安装问答复用当前任务回执且不创建下载任务 2/2
+PASS: 风险文字、稳定时间线与单一任务状态播报
+PASS: 含糊浏览器目标显示可操作的澄清提示
+{
+  "observedAt": "2026-10-13T11:21:59.312Z",
+  "source": "<public-worktree>/apps/browser/overlay/chrome/browser/resources/aegis_agent/agent.ts",
+  "sourceSha256": "6fd2d826d653891df76a27456b23f882c38908eafaf20e15f3dc1af63b5e6b0b",
+  "qualification": "真实产品按钮和渲染函数的DOM回归，非App实机验收",
+  "createFailurePromiseRejected": false,
+  "cases": [
+    {
+      "label": "新任务创建等待时清除旧完成状态",
+      "actual": {
+        "taskId": "",
+        "status": "statusUnderstanding",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "label": "创建成功后立即显示新任务",
+      "actual": {
+        "taskId": "B",
+        "status": "statusPlanning",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "label": "迟到旧任务快照不覆盖新任务",
+      "actual": {
+        "taskId": "B",
+        "status": "statusPlanning",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "label": "普通暂停操作保留当前任务",
+      "actual": {
+        "taskId": "B",
+        "status": "statusRunning",
+        "error": ""
+      },
+      "passed": true
+    },
+    {
+      "label": "创建失败显示可读错误",
+      "actual": {
+        "taskId": "",
+        "status": "statusFailed",
+        "error": "planningGenericError"
+      },
+      "passed": true
+    }
+  ]
+}
+PASS: 跨任务监控删除与当前结果隔离 4/4
+PASS: 普通与自动化原生创建拒绝及配置刷新 10/10
+PASS: 出站审批显示实际风险、完整地址和来源；本地操作清除旧传输提示
+PASS: 接管与终态撤销旧批准入口，最终接管信息保留
+PASS: 原生启动一次性消费、刷新返回恢复、新请求和消费失败
+PASS: 显示已保存配置不主动请求模型服务，也不生成检测成功提示
+PASS: 已保存的长模型名不筛掉其他候选，完整展示服务返回的五项
+PASS: 真实选择事件写入模型名，保存调用使用所选项
+PASS: 手动输入不被检测覆盖，匹配项同步、非列表名称允许保存
+PASS: 首次无模型名时预选第一项
+PASS: 连接变更清除旧候选：model-provider
+PASS: 连接变更清除旧候选：model-base-url
+PASS: 连接变更清除旧候选：model-api-key
+PASS: 空列表不保留旧候选或卡住按钮
+PASS: 服务失败不保留旧候选或卡住按钮
+PASS: 传输异常不保留旧候选或卡住按钮
+PASS: 检测期间禁用选择，响应完成后恢复
+PASS: 路由模式在忙碌渲染前冻结并按用户选择提交
+PASS: 推理 profile 保留默认、解析配置并拒绝错误预算格式
+模型选择回归 14/14，另含 HTML 结构检查；非实机验收。
+PASS: 本机与远程配置各 3 项请求边界验证（真实初始化与按钮绑定）
+PASS: 三语错误提示与诊断保留，共 12 项断言
+PASS: HTML 语言别名与地区码一致，共 5 项断言
+PASS: 摘要语言、协议名、错误与空页面说明别名一致，共 4 项断言
+PASS: 真实模板语言桥接在默认字段补入后仍保留地区，共 3 项断言
+阅读模块真实 DOM 回归通过：选择、文本、高亮、搜索、授权、译文、冲突、实验默认关闭和本机译文保存。
+公开源码分词及缺失模型拒绝回归通过；未运行真实实验权重对照。
+本机翻译无损分段回归通过。
+本机 Worker 回归通过：主动取消、旧消息隔离、正常回收与超时终止。
+翻译语料冻结检查通过：240 条短文本、20 篇长文，196 开发 / 64 封存。
+
+> @gcsa-aegis/browser@0.1.0 test:enhancements <public-worktree>/apps/browser
+> node --test ./tests/enhancements/*.test.mjs
+
+✔ 共用网址匹配向量 (0.754166ms)
+✔ 元数据与不支持的权限 (0.393ms)
+✔ 框架授权、排除与具体规则覆盖 (0.146542ms)
+✔ 反调试只改写目标动态函数并保留普通函数 (0.88725ms)
+✔ 存储权限与回复隔离 (0.478917ms)
+✔ 元数据字节上限一致，不静默截断名称 (0.095958ms)
+✔ BOSS 调试快捷键只阻止网页监听，普通按键和其他网站保持原样 (1.033209ms)
+✔ 离线解析器与许可证均匹配固定摘要 (0.762291ms)
+✔ BOSS 控制台探针仅限已取样资源，保留普通日志与 iframe 对象 (1.344875ms)
+✔ 阅读外观不授予图片权限，换文档撤销图片授权与旧源码状态 (52.47625ms)
+✔ 阅读器拒绝非受信来源命令，并按需展开查找和目录 (8.716209ms)
+✔ 从盾牌深链接到准确标签及脚本，命令保留文档标识且按脚本分组 (16.746834ms)
+✔ 三语切换只改变阅读控件，保留文档标题、正文、源码和图片授权边界 (10.887417ms)
+✔ 脚本管理界面跟随应用语言，保留脚本名称与源码 (9.992667ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 235.025916
+
+> @gcsa-aegis/browser@0.1.0 test:local-model <public-worktree>/apps/browser
+> node --test ./scripts/verify-agent-local-model_test.mjs
+
+✔ 默认保持原有模型请求时限 (0.377875ms)
+✔ 远程验收传输余量显式且有界 (0.129625ms)
+✔ 传输余量不放宽模型端点或凭据边界 (0.073667ms)
+✔ 点名站点预检拒绝相似后缀、明文地址和凭据：named-site (0.10925ms)
+✔ 点名站点预检拒绝相似后缀、明文地址和凭据：named-site-cnbeta-regression (0.061459ms)
+✔ 点名站点预检拒绝相似后缀、明文地址和凭据：official-download (0.039542ms)
+✔ 浏览器内部任务的路由目标必须为空 (0.057667ms)
+✔ 计划预检不能忽略范围外工具 (0.095959ms)
+✔ 书签预览缺步的修复错误与当前原生验证器一致 (0.252042ms)
+✔ 否定约束监控保留完整限制且只允许观察和注册 (0.29125ms)
+✔ 协议预检接受符合请求 schema 的工具参数 (0.416542ms)
+✔ 用量记录保留 UTF-8 字节数，非法服务用量不伪装成零 (0.382625ms)
+✔ 协议预检拒绝额外字段 (0.224416ms)
+✔ 协议预检拒绝缺少必需字段 (0.083042ms)
+✔ 协议预检拒绝整数类型错误 (0.074625ms)
+✔ 协议预检拒绝整数不是安全整数 (0.097041ms)
+✔ 协议预检拒绝整数超出上界 (0.068292ms)
+✔ 协议预检拒绝枚举值不符 (0.060291ms)
+✔ 协议预检拒绝数组为空 (0.074916ms)
+✔ 协议预检拒绝数组过长 (0.084ms)
+✔ 协议预检拒绝数组元素类型错误 (0.072583ms)
+✔ 协议预检拒绝嵌套字符串过长 (0.072833ms)
+✔ 整段 CLI 不把脚本恢复当成模型或浏览器成功，也不覆盖报告 (130.821959ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 177.332542
+仓库合同通过：产品拓扑、补丁、版本、链接和命令一致。
+
+> @gcsa-aegis/core@0.1.0 build <public-worktree>/packages/core
+> tsup src/index.ts --format esm --dts --clean && tsup src/script-risk/ast-analyzer.ts src/script-risk/structure-signature.ts --format cjs --dts --platform node --target node20 --minify --outDir dist/script-risk
+
+CLI Building entry: src/index.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Target: es2022
+CLI Cleaning output folder
+ESM Build start
+ESM dist/index.js 102.20 KB
+ESM ⚡️ Build success in 38ms
+DTS Build start
+DTS ⚡️ Build success in 471ms
+DTS dist/index.d.ts 39.60 KB
+CLI Building entry: src/script-risk/ast-analyzer.ts, src/script-risk/structure-signature.ts
+CLI Using tsconfig: tsconfig.json
+CLI tsup v8.5.1
+CLI Target: node20
+CJS Build start
+DTS Build start
+CJS dist/script-risk/ast-analyzer.cjs        3.40 MB
+CJS dist/script-risk/structure-signature.cjs 3.40 MB
+CJS ⚡️ Build success in 222ms
+DTS ⚡️ Build success in 512ms
+DTS dist/script-risk/ast-analyzer.d.cts        1.51 KB
+DTS dist/script-risk/structure-signature.d.cts 2.33 KB
+
+> gcsa-aegis@0.1.0 test:access-metering <public-worktree>
+> PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s prototypes/access-metering -p 'test_*.py' -v
+
+test_account_period_and_utf8_id_caps_survive_restart (test_lease_metering.LeaseLedgerTests.test_account_period_and_utf8_id_caps_survive_restart) ... ok
+test_audit_cap_fails_closed_but_last_report_retries_after_restart (test_lease_metering.LeaseLedgerTests.test_audit_cap_fails_closed_but_last_report_retries_after_restart) ... ok
+test_boot_key_capacity_survives_restart_and_known_retry (test_lease_metering.LeaseLedgerTests.test_boot_key_capacity_survives_restart_and_known_retry) ... ok
+test_concurrent_nodes_and_same_key_retry_never_overgrant (test_lease_metering.LeaseLedgerTests.test_concurrent_nodes_and_same_key_retry_never_overgrant) ... ok
+test_count_rejects_unlisted_table_without_modifying_data (test_lease_metering.LeaseLedgerTests.test_count_rejects_unlisted_table_without_modifying_data) ... ok
+test_expiry_marks_uncertain_only_when_explicitly_observed (test_lease_metering.LeaseLedgerTests.test_expiry_marks_uncertain_only_when_explicitly_observed) ... ok
+test_grant_failure_before_commit_rolls_back_key_lease_and_balance (test_lease_metering.LeaseLedgerTests.test_grant_failure_before_commit_rolls_back_key_lease_and_balance) ... ok
+test_grant_key_capacity_retains_partial_and_denial_history (test_lease_metering.LeaseLedgerTests.test_grant_key_capacity_retains_partial_and_denial_history) ... ok
+test_lease_byte_cap_rejects_oversized_request (test_lease_metering.LeaseLedgerTests.test_lease_byte_cap_rejects_oversized_request) ... ok
+test_lost_grant_reply_and_partial_grant_retry_preserve_budget (test_lease_metering.LeaseLedgerTests.test_lost_grant_reply_and_partial_grant_retry_preserve_budget) ... ok
+test_missing_center_requires_explicit_initialization (test_lease_metering.LeaseLedgerTests.test_missing_center_requires_explicit_initialization) ... ok
+test_old_boot_retry_does_not_reactivate_fenced_epoch (test_lease_metering.LeaseLedgerTests.test_old_boot_retry_does_not_reactivate_fenced_epoch) ... ok
+test_old_partial_grant_retry_after_expiry_and_epoch_change_is_historical (test_lease_metering.LeaseLedgerTests.test_old_partial_grant_retry_after_expiry_and_epoch_change_is_historical) ... ok
+test_old_period_duplicate_stale_conflict_and_new_sequence_are_distinct (test_lease_metering.LeaseLedgerTests.test_old_period_duplicate_stale_conflict_and_new_sequence_are_distinct) ... ok
+test_report_failure_before_commit_rolls_back_watermark_and_usage (test_lease_metering.LeaseLedgerTests.test_report_failure_before_commit_rolls_back_watermark_and_usage) ... ok
+test_report_replay_stale_and_wrong_owner_do_not_change_balance (test_lease_metering.LeaseLedgerTests.test_report_replay_stale_and_wrong_owner_do_not_change_balance) ... ok
+test_rollover_and_new_old_period_grant_serialize (test_lease_metering.LeaseLedgerTests.test_rollover_and_new_old_period_grant_serialize) ... ok
+test_rollover_rejects_held_then_closes_old_new_grants (test_lease_metering.LeaseLedgerTests.test_rollover_rejects_held_then_closes_old_new_grants) ... ok
+test_all_five_crash_windows_reopen_without_releasing_budget (test_lease_metering.NodeJournalTests.test_all_five_crash_windows_reopen_without_releasing_budget) ... ok
+test_completed_chunk_replays_report_without_resending (test_lease_metering.NodeJournalTests.test_completed_chunk_replays_report_without_resending) ... ok
+test_expiry_between_prepare_and_send_blocks_sink (test_lease_metering.NodeJournalTests.test_expiry_between_prepare_and_send_blocks_sink) ... ok
+test_expiry_during_sending_commit_prevents_sink (test_lease_metering.NodeJournalTests.test_expiry_during_sending_commit_prevents_sink) ... ok
+test_failed_fence_persist_blocks_send_in_this_process (test_lease_metering.NodeJournalTests.test_failed_fence_persist_blocks_send_in_this_process) ... ok
+test_failed_local_complete_keeps_chunk_unconfirmed_after_reopen (test_lease_metering.NodeJournalTests.test_failed_local_complete_keeps_chunk_unconfirmed_after_reopen) ... ok
+test_failed_new_session_activation_blocks_old_prepared_and_new_sends (test_lease_metering.NodeJournalTests.test_failed_new_session_activation_blocks_old_prepared_and_new_sends) ... ok
+test_fence_is_scoped_and_late_lease_does_not_clear_it (test_lease_metering.NodeJournalTests.test_fence_is_scoped_and_late_lease_does_not_clear_it) ... ok
+test_fence_scope_rows_are_bounded_across_restarts (test_lease_metering.NodeJournalTests.test_fence_scope_rows_are_bounded_across_restarts) ... ok
+test_invalid_fence_message_blocks_corresponding_scope (test_lease_metering.NodeJournalTests.test_invalid_fence_message_blocks_corresponding_scope) ... ok
+test_journal_chunk_cap_survives_reopen_and_new_epoch (test_lease_metering.NodeJournalTests.test_journal_chunk_cap_survives_reopen_and_new_epoch) ... ok
+test_lease_must_match_durable_session_and_epoch (test_lease_metering.NodeJournalTests.test_lease_must_match_durable_session_and_epoch) ... ok
+test_missing_node_journal_requires_explicit_initialization (test_lease_metering.NodeJournalTests.test_missing_node_journal_requires_explicit_initialization) ... ok
+test_no_new_completion_needs_no_new_report (test_lease_metering.NodeJournalTests.test_no_new_completion_needs_no_new_report) ... ok
+test_node_rejects_oversized_session_and_lease_identifiers (test_lease_metering.NodeJournalTests.test_node_rejects_oversized_session_and_lease_identifiers) ... ok
+test_offline_old_epoch_and_new_epoch_share_original_account_budget (test_lease_metering.NodeJournalTests.test_offline_old_epoch_and_new_epoch_share_original_account_budget) ... ok
+test_one_nonblocking_socket_send_counts_only_short_write (test_lease_metering.NodeJournalTests.test_one_nonblocking_socket_send_counts_only_short_write) ... ok
+test_prepare_failure_and_session_cap_fail_closed_after_reopen (test_lease_metering.NodeJournalTests.test_prepare_failure_and_session_cap_fail_closed_after_reopen) ... ok
+test_prepared_chunk_is_not_replayed_after_reopen (test_lease_metering.NodeJournalTests.test_prepared_chunk_is_not_replayed_after_reopen) ... ok
+test_rejected_fence_inputs_do_not_grow_failure_tracking (test_lease_metering.NodeJournalTests.test_rejected_fence_inputs_do_not_grow_failure_tracking) ... ok
+test_send_then_crash_before_complete_stays_uncertain (test_lease_metering.NodeJournalTests.test_send_then_crash_before_complete_stays_uncertain) ... ok
+test_socket_send_rechecks_expiry_after_sending_commit (test_lease_metering.NodeJournalTests.test_socket_send_rechecks_expiry_after_sending_commit) ... ok
+test_socket_send_validates_nonblocking_and_exact_prepared_data (test_lease_metering.NodeJournalTests.test_socket_send_validates_nonblocking_and_exact_prepared_data) ... ok
+test_stale_response_cannot_ack_later_unreported_completion (test_lease_metering.NodeJournalTests.test_stale_response_cannot_ack_later_unreported_completion) ... ok
+test_stale_response_cannot_fabricate_local_completion (test_lease_metering.NodeJournalTests.test_stale_response_cannot_fabricate_local_completion) ... ok
+test_stale_response_cannot_roll_back_prior_acknowledgment (test_lease_metering.NodeJournalTests.test_stale_response_cannot_roll_back_prior_acknowledgment) ... ok
+test_data_path_journal_storage_error_latches_relay (test_lease_relay.LeaseRelayFailureTests.test_data_path_journal_storage_error_latches_relay) ... lease relay closed: journal unavailable
+ok
+test_pending_journal_error_latches_before_next_connection (test_lease_relay.LeaseRelayFailureTests.test_pending_journal_error_latches_before_next_connection) ... ok
+test_retry_cap_counts_successful_replays_across_recovery (test_lease_relay.LeaseRelayFailureTests.test_retry_cap_counts_successful_replays_across_recovery) ... ok
+test_center_outage_on_restart_never_opens_old_session (test_lease_relay.LeaseRelayProcessTests.test_center_outage_on_restart_never_opens_old_session) ... ok
+test_center_outage_preserves_pending_and_idle_recovery_settles_once (test_lease_relay.LeaseRelayProcessTests.test_center_outage_preserves_pending_and_idle_recovery_settles_once) ... ok
+test_concurrent_process_boots_reserve_no_more_than_account_quota (test_lease_relay.LeaseRelayProcessTests.test_concurrent_process_boots_reserve_no_more_than_account_quota) ... ok
+test_crash_after_center_report_before_ack_is_idempotent (test_lease_relay.LeaseRelayProcessTests.test_crash_after_center_report_before_ack_is_idempotent) ... ok
+test_crash_after_complete_replays_durable_cumulative_report (test_lease_relay.LeaseRelayProcessTests.test_crash_after_complete_replays_durable_cumulative_report) ... ok
+test_crash_after_prepare_does_not_resend (test_lease_relay.LeaseRelayProcessTests.test_crash_after_prepare_does_not_resend) ... ok
+test_crash_after_socket_send_keeps_origin_and_ledger_distinct (test_lease_relay.LeaseRelayProcessTests.test_crash_after_socket_send_keeps_origin_and_ledger_distinct) ... ok
+test_echo_counts_both_directions_while_connection_stays_open (test_lease_relay.LeaseRelayProcessTests.test_echo_counts_both_directions_while_connection_stays_open) ... ok
+test_expiry_after_prepare_blocks_actual_socket_send (test_lease_relay.LeaseRelayProcessTests.test_expiry_after_prepare_blocks_actual_socket_send) ... ok
+test_known_new_epoch_after_prepare_blocks_socket_send (test_lease_relay.LeaseRelayProcessTests.test_known_new_epoch_after_prepare_blocks_socket_send) ... ok
+test_report_conflict_stops_future_connections (test_lease_relay.LeaseRelayProcessTests.test_report_conflict_stops_future_connections) ... ok
+test_report_retry_cap_stops_new_sends_and_keeps_pending (test_lease_relay.LeaseRelayProcessTests.test_report_retry_cap_stops_new_sends_and_keeps_pending) ... ok
+test_short_write_counts_only_sent_prefix_and_keeps_full_reservation (test_lease_relay.LeaseRelayProcessTests.test_short_write_counts_only_sent_prefix_and_keeps_full_reservation) ... ok
+test_two_relay_processes_share_finite_quota_and_independent_origins (test_lease_relay.LeaseRelayProcessTests.test_two_relay_processes_share_finite_quota_and_independent_origins) ... ok
+test_partial_grant_does_not_cancel_other_direction_permit (test_metering.ConcurrentPermitTests.test_partial_grant_does_not_cancel_other_direction_permit) ... READY 50163
+ok
+test_prepare_cancels_previous_idle_deadline (test_metering.ConcurrentPermitTests.test_prepare_cancels_previous_idle_deadline) ... READY 50167
+ok
+test_zero_remaining_does_not_cancel_other_direction_permit (test_metering.ConcurrentPermitTests.test_zero_remaining_does_not_cancel_other_direction_permit) ... READY 50171
+ok
+test_account_wide_two_direction_reservations_and_idempotent_completion (test_metering.LedgerTests.test_account_wide_two_direction_reservations_and_idempotent_completion) ... ok
+test_corrupt_or_uninitialized_file_refuses_start (test_metering.LedgerTests.test_corrupt_or_uninitialized_file_refuses_start) ... ok
+test_duplicate_gap_wrong_amount_and_oversized_grant_fail_closed (test_metering.LedgerTests.test_duplicate_gap_wrong_amount_and_oversized_grant_fail_closed) ... ok
+test_pending_cap_fails_closed_even_when_quota_remains (test_metering.LedgerTests.test_pending_cap_fails_closed_even_when_quota_remains) ... ok
+test_pending_cap_survives_recovery_without_reissue (test_metering.LedgerTests.test_pending_cap_survives_recovery_without_reissue) ... ok
+test_reopened_uncertain_permit_cannot_complete_without_proof (test_metering.LedgerTests.test_reopened_uncertain_permit_cannot_complete_without_proof) ... ok
+test_stale_period_cannot_advance_or_reuse_old_quota (test_metering.LedgerTests.test_stale_period_cannot_advance_or_reuse_old_quota) ... ok
+test_actual_forwarding_stops_at_shared_two_direction_quota (test_metering.RelayTests.test_actual_forwarding_stops_at_shared_two_direction_quota) ... ok
+test_download_only_activity_outlives_shared_idle_timeout (test_metering.RelayTests.test_download_only_activity_outlives_shared_idle_timeout) ... ok
+test_exact_quota_closes_immediately_after_final_settlement (test_metering.RelayTests.test_exact_quota_closes_immediately_after_final_settlement) ... ok
+test_kill_after_prepare_keeps_uncertain_bytes_held_after_restart (test_metering.RelayTests.test_kill_after_prepare_keeps_uncertain_bytes_held_after_restart) ... ok
+test_kill_after_socket_send_preserves_forwarded_but_unsettled_uncertainty (test_metering.RelayTests.test_kill_after_socket_send_preserves_forwarded_but_unsettled_uncertainty) ... ok
+test_partial_final_permit_notifies_other_open_connection (test_metering.RelayTests.test_partial_final_permit_notifies_other_open_connection) ... ok
+test_runtime_ledger_mismatch_blocks_forwarding (test_metering.RelayTests.test_runtime_ledger_mismatch_blocks_forwarding) ... ok
+test_truly_idle_connection_closes_within_bound (test_metering.RelayTests.test_truly_idle_connection_closes_within_bound) ... ok
+test_two_streams_share_one_account_and_both_directions (test_metering.RelayTests.test_two_streams_share_one_account_and_both_directions) ... ok
+test_upload_only_activity_outlives_shared_idle_timeout (test_metering.RelayTests.test_upload_only_activity_outlives_shared_idle_timeout) ... ok
+test_usage_changes_while_long_connection_stays_open (test_metering.RelayTests.test_usage_changes_while_long_connection_stays_open) ... ok
+test_all_budgets_are_finite_integers_with_consistent_caps (test_sm00_preflight.SyntheticPreflightTests.test_all_budgets_are_finite_integers_with_consistent_caps) ... ok
+test_build_digest_and_byte_units_are_explicit (test_sm00_preflight.SyntheticPreflightTests.test_build_digest_and_byte_units_are_explicit) ... ok
+test_cli_rejects_real_resource_and_does_not_echo_input (test_sm00_preflight.SyntheticPreflightTests.test_cli_rejects_real_resource_and_does_not_echo_input) ... ok
+test_complete_synthetic_manifest_and_check_only_cli (test_sm00_preflight.SyntheticPreflightTests.test_complete_synthetic_manifest_and_check_only_cli) ... ok
+test_deep_json_and_unknown_nested_keys_reject_without_echo (test_sm00_preflight.SyntheticPreflightTests.test_deep_json_and_unknown_nested_keys_reject_without_echo) ... ok
+test_durability_time_and_execution_are_bounded (test_sm00_preflight.SyntheticPreflightTests.test_durability_time_and_execution_are_bounded) ... ok
+test_every_applicable_writer_and_fast_path_needs_evidence (test_sm00_preflight.SyntheticPreflightTests.test_every_applicable_writer_and_fast_path_needs_evidence) ... ok
+test_identity_scope_and_account_mapping_cannot_be_inferred (test_sm00_preflight.SyntheticPreflightTests.test_identity_scope_and_account_mapping_cannot_be_inferred) ... ok
+test_missing_unknown_and_duplicate_fields_fail_closed (test_sm00_preflight.SyntheticPreflightTests.test_missing_unknown_and_duplicate_fields_fail_closed) ... ok
+test_read_input_is_bounded_regular_utf8_json (test_sm00_preflight.SyntheticPreflightTests.test_read_input_is_bounded_regular_utf8_json) ... ok
+
+----------------------------------------------------------------------
+Ran 92 tests in 10.292s
+
+OK

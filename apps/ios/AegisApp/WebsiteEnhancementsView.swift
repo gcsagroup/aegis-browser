@@ -6,14 +6,17 @@ import UniformTypeIdentifiers
 struct WebsiteEnhancementsView: View {
   @EnvironmentObject private var browser: BrowserSession
   @Environment(\.dismiss) private var dismiss
-  var body: some View {
-    NavigationStack {
-      WebsiteEnhancementManager(
-        store: browser.enhancements, tab: browser.activeTab, isPrivate: browser.profile.isPrivate
-      )
+  var embedded = false
+  private var content: some View {
+    WebsiteEnhancementManager(store: browser.enhancements, tab: browser.activeTab,
+                              isPrivate: browser.profile.isPrivate)
       .navigationTitle("网站增强与脚本")
       .navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+  }
+  var body: some View {
+    if embedded { content }
+    else {
+      NavigationStack { content.toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } } }
     }
   }
 }
@@ -29,6 +32,7 @@ private struct WebsiteEnhancementManager: View {
   let tab: BrowserTab?
   let isPrivate: Bool
   @State private var rule = WebsiteEnhancementRule(origin: "")
+  @State private var showsRule = false
   @State private var message = ""
   @State private var editor: ScriptEditorRequest?
   @State private var importing = false
@@ -42,7 +46,7 @@ private struct WebsiteEnhancementManager: View {
       if let error = store.error { Text(error).foregroundStyle(.red) }
       if !message.isEmpty { Text(message).accessibilityIdentifier("enhance-result") }
       if isPrivate { Text("本次私密会话的规则和脚本只留在内存，关闭全部私密标签后清除。普通脚本不会自动在此运行。") }
-      if !rule.origin.isEmpty {
+      if !rule.origin.isEmpty && showsRule {
         Section("当前网站") {
           Text(rule.origin).font(.caption).textSelection(.enabled)
           Toggle("恢复长按与菜单", isOn: $rule.menu).accessibilityIdentifier("enhance-menu")
@@ -53,7 +57,7 @@ private struct WebsiteEnhancementManager: View {
           Button(isPrivate ? "保存到本次私密会话" : "保存并记住本站") {
             perform {
               try store.saveRule(rule)
-              message = "设置已保存，重新载入后应用。"
+              message = String(localized: "设置已保存，重新载入后应用。")
             }
           }.accessibilityIdentifier("enhance-save-site")
           Button("重新载入以应用") { reloadConfirmation = true }.accessibilityIdentifier("enhance-reload")
@@ -62,10 +66,9 @@ private struct WebsiteEnhancementManager: View {
             .font(.footnote).foregroundStyle(.secondary)
         }
       }
-      Section("用户脚本") {
+      Section("已安装脚本") {
         Button("新建或用 AI 编写", systemImage: "square.and.pencil") { editor = ScriptEditorRequest() }
           .accessibilityIdentifier("enhance-new-script")
-        Button("停用全部脚本并恢复当前页", role: .destructive) { recoveryConfirmation = true }
         Button("导入 .user.js 文件", systemImage: "square.and.arrow.down") { importing = true }
         ForEach(store.state.scripts) { script in
           VStack(alignment: .leading, spacing: 8) {
@@ -95,11 +98,18 @@ private struct WebsiteEnhancementManager: View {
         }
         if store.state.scripts.isEmpty { Text("暂无用户脚本。导入和 AI 生成后先保存为草稿，启用时确认网址和权限。") }
       }
-      if let runtime = tab?.userScripts { UserScriptRuntimeView(runtime: runtime) }
+      if let runtime = tab?.userScripts {
+        DisclosureGroup("本页运行详情") { UserScriptRuntimeView(runtime: runtime) }
+      }
+      DisclosureGroup("恢复操作") {
+        Button("停用全部脚本并恢复当前页", role: .destructive) { recoveryConfirmation = true }
+      }
       Section("已记住的网站") {
+        if !rule.origin.isEmpty { Button("编辑当前网站规则") { showsRule.toggle() } }
         ForEach(store.state.sites) { site in
           Button {
             rule = site
+            showsRule = true
           } label: {
             VStack(alignment: .leading) {
               Text(site.origin)
@@ -147,7 +157,7 @@ private struct WebsiteEnhancementManager: View {
         perform {
           try store.disableAll()
           tab?.recoverAfterDisablingScripts()
-          message = "全部脚本已停用，当前页面已重新打开。"
+          message = String(localized: "全部脚本已停用，当前页面已重新打开。")
         }
       }
       Button("取消", role: .cancel) {}
@@ -158,7 +168,7 @@ private struct WebsiteEnhancementManager: View {
       Button("开启") {
         perform {
           try tab?.setInspectionEnabled(true)
-          message = "已允许检查。请在 Mac Safari 的开发菜单选择此页面；页面导航后自动关闭。"
+          message = String(localized: "已允许检查。请在 Mac Safari 的开发菜单选择此页面；页面导航后自动关闭。")
         }
       }
       Button("取消", role: .cancel) {}
@@ -170,7 +180,7 @@ private struct WebsiteEnhancementManager: View {
         if let script = enabling {
           perform {
             try store.setEnabled(script.id, revision: script.revision, enabled: true)
-            message = "脚本已启用，下一次页面加载自动运行。"
+            message = String(localized: "脚本已启用，下一次页面加载自动运行。")
           }
         }
       }
@@ -197,14 +207,14 @@ private struct UserScriptRuntimeView: View {
       if let message = runtime.installationError { Text(message).foregroundStyle(.red) }
       ForEach(runtime.statuses) { item in
         VStack(alignment: .leading) {
-          Text(item.name + " · " + item.status)
+          Text(item.name + " · " + scriptStatusText(item))
           if !item.error.isEmpty { Text(item.error).font(.caption).foregroundStyle(.red) }
         }
       }
-      ForEach(runtime.menus) { menu in
-        Button(menu.label) {
-          Task {
-            do { try await runtime.runMenu(menu) } catch { self.error = error.localizedDescription }
+      ForEach(runtime.statuses) { item in
+        ForEach(runtime.menus.filter { $0.scriptID == item.id }) { menu in
+          Button(item.name + " · " + menu.label) {
+            Task { do { try await runtime.runMenu(menu) } catch { self.error = error.localizedDescription } }
           }
         }
       }
@@ -252,34 +262,6 @@ struct UserScriptEditor: View {
   var body: some View {
     NavigationStack {
       Form {
-        Section("脚本源码") {
-          TextEditor(text: $source).font(.system(.footnote, design: .monospaced)).frame(
-            minHeight: 280
-          )
-          .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityIdentifier(
-            "user-script-source")
-          Picker("执行环境", selection: $world) {
-            Text("隔离环境").tag("isolated")
-            Text("页面环境（无 GM 权限）").tag("page")
-          }
-          Toggle("在匹配的子框架中运行", isOn: $allFrames)
-          Button("检查并保存草稿") { save() }.accessibilityIdentifier("user-script-save")
-          Button("在当前页面试运行") { if save() { confirmsTrial = true } }.disabled(tab == nil)
-            .accessibilityIdentifier("user-script-trial")
-          Button("导出 .user.js") { exporting = true }
-          if let record, !record.history.isEmpty {
-            Button("回退到上一版草稿") {
-              do {
-                let value = try store.rollback(record.id, revision: record.revision)
-                self.record = value
-                source = value.source
-                world = value.world
-                allFrames = value.allFrames
-                message = "已回退为草稿，请检查后重新启用。"
-              } catch { message = error.localizedDescription }
-            }
-          }
-        }.disabled(busy)
         Section("AI 编写与修复") {
           TextField("描述想增加的功能，或说明当前错误", text: $goal, axis: .vertical).lineLimit(2...5)
             .accessibilityIdentifier("user-script-goal")
@@ -295,13 +277,43 @@ struct UserScriptEditor: View {
             confirmsModel = true
           }.disabled(goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy)
             .accessibilityIdentifier("user-script-generate")
-          Text("发送需求、上方源码和已读取的结构；AI 只生成草稿，不会自动运行。结构不包含输入值、密码或 Cookie。")
+          Text("发送需求、编辑器源码及已预览的结构。不会读取密码、Cookie 或表单值。")
             .font(.footnote).foregroundStyle(.secondary)
           if busy {
             ProgressView("正在生成草稿…")
             Button("取消") { cancel() }
           }
         }
+        Section("脚本源码") {
+          TextEditor(text: $source).font(.system(.footnote, design: .monospaced)).frame(
+            minHeight: 280
+          )
+          .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityIdentifier(
+            "user-script-source")
+          DisclosureGroup("执行环境与子框架") {
+          Picker("执行环境", selection: $world) {
+            Text("隔离环境").tag("isolated")
+            Text("页面环境（无 GM 权限）").tag("page")
+          }
+          Toggle("在匹配的子框架中运行", isOn: $allFrames)
+          }
+          Button("检查并保存草稿") { save() }.accessibilityIdentifier("user-script-save")
+          Button("在当前页面试运行") { if save() { confirmsTrial = true } }.disabled(tab == nil)
+            .accessibilityIdentifier("user-script-trial")
+          Button("导出 .user.js") { exporting = true }
+          if let record, !record.history.isEmpty {
+            Button("回退到上一版草稿") {
+              do {
+                let value = try store.rollback(record.id, revision: record.revision)
+                self.record = value
+                source = value.source
+                world = value.world
+                allFrames = value.allFrames
+                message = String(localized: "已回退为草稿，请检查后重新启用。")
+              } catch { message = error.localizedDescription }
+            }
+          }
+        }.disabled(busy)
         if !message.isEmpty {
           Text(message).textSelection(.enabled).accessibilityIdentifier("user-script-message")
         }
@@ -330,7 +342,7 @@ struct UserScriptEditor: View {
             do {
               if let record {
                 try await tab?.userScripts.trial(record)
-                message = "已安排试运行，请检查实际效果及运行状态。试运行存储不会持久保存。"
+                message = String(localized: "已安排试运行，请检查实际效果及运行状态。试运行存储不会持久保存。")
               }
             } catch { message = error.localizedDescription }
           }
@@ -344,7 +356,7 @@ struct UserScriptEditor: View {
         contentType: .plainText, defaultFilename: "aegis-script.user.js"
       ) { result in
         switch result {
-        case .success: message = "已导出脚本。"
+        case .success: message = String(localized: "已导出脚本。")
         case .failure(let error): message = error.localizedDescription
         }
       }
@@ -356,7 +368,7 @@ struct UserScriptEditor: View {
       record = try store.saveScript(
         id: record?.id, revision: record?.revision, source: source, world: world,
         allFrames: allFrames)
-      message = "草稿已保存。修改后的版本需要回到列表确认启用。"
+      message = String(localized: "草稿已保存。修改后的版本需要回到列表确认启用。")
       return true
     } catch {
       message = error.localizedDescription
@@ -365,7 +377,7 @@ struct UserScriptEditor: View {
   }
   private func readContext() async {
     guard let tab, let url = tab.url, ScriptMatch.origin(url) != nil else {
-      message = "请先打开普通网页。"
+      message = String(localized: "请先打开普通网页。")
       return
     }
     let epoch = tab.navigationEpoch
@@ -380,7 +392,7 @@ struct UserScriptEditor: View {
         throw EnhancementError.invalid("页面已变化，请重新读取。")
       }
       context = result as? String ?? ""
-      message = "已读取结构，请在发送前检查。"
+      message = String(localized: "已读取结构，请在发送前检查。")
     } catch {
       context = ""
       message = error.localizedDescription
@@ -408,7 +420,7 @@ struct UserScriptEditor: View {
             goal: prompt,
             sources: [
               "网址：" + (url?.absoluteString ?? "未指定"), "待修改脚本：\n" + source, "不可信的页面结构：\n" + context,
-            ], language: "中文")
+            ], language: "中文", disableLocalQwenThinking: true)
         try Task.checkCancellation()
         guard generation == token, (tab?.navigationEpoch ?? 0) == epoch, tab?.url == url else {
           throw EnhancementError.invalid("页面已变化，生成结果没有应用。")
@@ -432,5 +444,198 @@ struct UserScriptEditor: View {
     operation?.cancel()
     operation = nil
     busy = false
+  }
+}
+
+private func scriptStatusText(_ item: ScriptRunStatus) -> String {
+  let status: String
+  switch item.status {
+  case "completed": status = String(localized: "已执行")
+  case "running": status = String(localized: "执行中")
+  case "failed": status = String(localized: "执行失败")
+  default: status = item.status
+  }
+  return (item.trial ? String(localized: "试运行") + " · " : "") + status
+    + (item.mainFrame ? "" : String(localized: "（子框架）"))
+}
+
+struct CurrentWebsiteView: View {
+  @EnvironmentObject private var browser: BrowserSession
+  @Environment(\.dismiss) private var dismiss
+  var body: some View {
+    NavigationStack {
+      if let tab = browser.activeTab {
+        CurrentWebsitePanel(tab: tab, store: browser.enhancements, isPrivate: browser.profile.isPrivate)
+          .id(tab.id)
+          .navigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
+          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+      }
+    }
+  }
+}
+
+private struct CurrentWebsitePanel: View {
+  @ObservedObject var tab: BrowserTab
+  @ObservedObject var store: WebsiteEnhancementStore
+  let isPrivate: Bool
+  @State private var message = ""
+  @State private var markdownDocument: MarkdownDocument?
+  @State private var readingPage = false
+  @State private var paused = false
+  @State private var reload = false
+  @State private var editor: ScriptEditorRequest?
+  var body: some View {
+    Form {
+      if let url = tab.url, ScriptMatch.origin(url) != nil {
+        Section {
+          Text(url.host ?? url.absoluteString).font(.headline).textSelection(.enabled)
+          if isPrivate { Text("私密会话：网站规则与脚本仅保留在本次会话。").font(.footnote) }
+        }
+        Section("隐私保护") {
+          Label(!TrackingProtection.enabled ? "广告过滤已关闭" : paused ? "此网站已暂停过滤" : "广告与跟踪过滤已开启", systemImage: "shield.lefthalf.filled")
+          DisclosureGroup("保护明细") {
+            NavigationLink("广告与跟踪过滤设置") { ContentFilterSettingsView() }
+            if !isPrivate {
+              Button(paused ? "恢复本站过滤" : "暂停本站过滤") {
+                TrackingProtection.setException(!paused, for: url)
+                paused = TrackingProtection.isExcepted(url)
+                message = String(localized: "保护设置已保存，重新载入后应用。")
+              }
+            }
+            Text("过滤设置与网站增强分别管理。风险页面保护不会因此关闭。")
+              .font(.footnote).foregroundStyle(.secondary)
+          }
+        }
+        WebsiteQuickRuleSection(store: store, tab: tab, url: url, message: $message)
+        CurrentPageScriptsSection(store: store, runtime: tab.userScripts, tab: tab)
+        Section {
+          Button("新建或用 AI 编写脚本", systemImage: "square.and.pencil") { editor = ScriptEditorRequest() }
+            .accessibilityIdentifier("site-new-script")
+          NavigationLink("此网站的全部设置") { WebsiteEnhancementsView(embedded: true) }
+          Button("将本页原文作为 Markdown 阅读", systemImage: "doc.richtext") {
+            readingPage = true
+            Task {
+              do { markdownDocument = try await MarkdownDocument.capture(tab) }
+              catch { message = error.localizedDescription }
+              readingPage = false
+            }
+          }.disabled(readingPage).accessibilityIdentifier("site-read-markdown")
+        }
+        Section {
+          Button("重新载入当前页") { reload = true }.accessibilityIdentifier("site-reload")
+          Text("应用新设置或移除已有页面修改；尚未提交的输入可能丢失。")
+            .font(.footnote).foregroundStyle(.secondary)
+        }
+      } else {
+        Section {
+          Label("浏览器内部页面", systemImage: "globe")
+          Text("此页面不支持网站增强与用户脚本。")
+          NavigationLink("网站增强与脚本设置") { WebsiteEnhancementsView(embedded: true) }
+        }
+      }
+    }
+    .onAppear { if let url = tab.url { paused = TrackingProtection.isExcepted(url) } }
+    .onChange(of: tab.navigationEpoch) { _, _ in
+      message = ""
+      if let url = tab.url { paused = TrackingProtection.isExcepted(url) }
+    }
+    .sheet(item: $markdownDocument) { document in MarkdownReaderView(initial: document) }
+    .sheet(item: $editor) { item in UserScriptEditor(store: store, tab: tab, record: item.record, imported: item.imported) }
+    .alert("重新载入当前页面？", isPresented: $reload) {
+      Button("重新载入") { tab.recoverAfterDisablingScripts() }
+      Button("取消", role: .cancel) {}
+    } message: { Text("当前页尚未提交的输入可能丢失。") }
+  }
+}
+
+private struct WebsiteQuickRuleSection: View {
+  @ObservedObject var store: WebsiteEnhancementStore
+  @ObservedObject var tab: BrowserTab
+  let url: URL
+  @Binding var message: String
+  private func binding(_ key: WritableKeyPath<WebsiteEnhancementRule, Bool>) -> Binding<Bool> {
+    Binding(get: { (store.rule(for: url) ?? WebsiteEnhancementRule(origin: ""))[keyPath: key] }, set: { value in
+      guard tab.url == url, let origin = ScriptMatch.origin(url) else { return }
+      var rule = store.rule(for: url) ?? WebsiteEnhancementRule(origin: origin)
+      if rule.origin != origin { rule.subdomains = false }
+      rule.origin = origin
+      rule[keyPath: key] = value
+      do { try store.saveRule(rule); message = String(localized: "已保存，重新载入后生效。") }
+      catch { message = error.localizedDescription }
+    })
+  }
+  var body: some View {
+    Section("网站增强") {
+      Toggle("恢复长按与菜单", isOn: binding(\.menu)).accessibilityIdentifier("site-menu")
+      Toggle("允许选取和复制", isOn: binding(\.copy)).accessibilityIdentifier("site-copy")
+      if !message.isEmpty { Text(message).font(.footnote).accessibilityIdentifier("site-rule-result") }
+      DisclosureGroup("更多选项与适用范围") {
+        Toggle("网页调试兼容", isOn: binding(\.debug))
+        Text("处理部分网页的调试干扰，保留普通断点和导航。").font(.footnote).foregroundStyle(.secondary)
+        Toggle("也应用于当前网站的子域名", isOn: binding(\.subdomains))
+        Toggle("暂停本站增强", isOn: binding(\.disabled))
+        Text(ScriptMatch.origin(url) ?? "").font(.caption).textSelection(.enabled)
+      }
+      if store.rule(for: url)?.disabled == true { Text("本站增强已暂停").foregroundStyle(.secondary) }
+    }
+  }
+}
+
+private struct CurrentPageScriptsSection: View {
+  @ObservedObject var store: WebsiteEnhancementStore
+  @ObservedObject var runtime: UserScriptController
+  @ObservedObject var tab: BrowserTab
+  @State private var error = ""
+  @State private var editor: ScriptEditorRequest?
+  @State private var showAll = false
+  private var scripts: [UserScriptRecord] {
+    store.state.scripts.filter { script in
+      runtime.statuses.contains { $0.id == script.id } || tab.url.map { script.metadata.applies(to: $0) } == true
+    }
+  }
+  private func status(_ script: UserScriptRecord) -> String {
+    if let value = runtime.statuses.first(where: { $0.id == script.id }) { return scriptStatusText(value) }
+    if !script.enabled { return String(localized: "已停用 / 待授权") }
+    if script.paused(at: tab.url) { return String(localized: "本站已停用") }
+    if script.world == "page" { return String(localized: "已启用 · 无执行回执") }
+    return String(localized: "等待重新加载")
+  }
+  var body: some View {
+    Section("本页脚本") {
+      if scripts.isEmpty { Text("此页面没有适用脚本。").foregroundStyle(.secondary) }
+      ForEach(Array(scripts.prefix(showAll ? 64 : 4))) { script in
+        DisclosureGroup {
+          if script.enabled {
+            Toggle("在本站启用", isOn: Binding(get: { !script.paused(at: tab.url) }, set: { value in
+              guard let url = tab.url else { return }
+              do {
+                try store.setSiteEnabled(script.id, revision: script.revision, url: url, enabled: value)
+                error = String(localized: "设置已保存，重新载入后应用；全局启用状态不变。")
+              } catch { self.error = error.localizedDescription }
+            }))
+          }
+          if let status = runtime.statuses.first(where: { $0.id == script.id }), !status.error.isEmpty {
+            Text(status.error).font(.caption).foregroundStyle(.red)
+          }
+          ForEach(runtime.menus.filter { $0.scriptID == script.id }) { menu in
+            Button(menu.label) {
+              Task { do { try await runtime.runMenu(menu) } catch { self.error = error.localizedDescription } }
+            }
+          }
+          Button("查看源码与权限") { editor = ScriptEditorRequest(record: script) }
+          NavigationLink("全局启停与授权") { WebsiteEnhancementsView(embedded: true) }
+        } label: {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(script.metadata.name)
+            Text(status(script)).font(.caption).foregroundStyle(.secondary)
+          }
+        }.accessibilityIdentifier("site-script-" + script.id)
+      }
+      if scripts.count > 4 { Button(showAll ? "收起脚本" : "查看全部脚本") { showAll.toggle() } }
+      if let issue = runtime.installationError { Text(issue).foregroundStyle(.red) }
+      if !error.isEmpty { Text(error).font(.footnote).accessibilityIdentifier("site-script-result") }
+    }
+    .onChange(of: tab.navigationEpoch) { _, _ in error = "" }
+    .sheet(item: $editor) { item in UserScriptEditor(store: store, tab: tab, record: item.record, imported: item.imported) }
   }
 }

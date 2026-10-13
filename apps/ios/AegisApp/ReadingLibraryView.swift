@@ -14,6 +14,7 @@ struct ReadingLibraryView: View {
     @State private var busy = false
     @State private var operation: Task<Void, Never>?
     @State private var importing = false
+    @State private var showsMarkdown = false
     @State private var pdfData: Data?
     @State private var pdfName = ""
     @State private var pdfPage = 1
@@ -24,6 +25,8 @@ struct ReadingLibraryView: View {
         NavigationStack {
             List {
                 Section("添加资料") {
+                    Button("打开 Markdown 文档", systemImage: "doc.richtext") { showsMarkdown = true }
+                        .accessibilityIdentifier("reading-open-markdown")
                     Button(busy ? "正在读取页面…" : "读取当前网页") { readCurrentPage() }
                         .disabled(busy || browser.activeTab?.url == nil).accessibilityIdentifier("reading-capture-page")
                     Button("导入 PDF 页面") { importing = true }.disabled(busy)
@@ -57,6 +60,7 @@ struct ReadingLibraryView: View {
                 }
             }
             .searchable(text: $query, prompt: "搜索标题、正文、批注或译文")
+            .sheet(isPresented: $showsMarkdown) { MarkdownReaderView() }
             .navigationTitle("阅读与批注")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }

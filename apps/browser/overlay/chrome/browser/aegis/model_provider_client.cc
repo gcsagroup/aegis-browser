@@ -18,6 +18,7 @@
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "base/values.h"
+#include "chrome/browser/aegis/agent/agent_model_protocol.h"
 #include "chrome/browser/browser_process.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -249,7 +250,8 @@ base::DictValue GeminiTextPart(std::string_view text) {
 std::optional<std::string> BuildChatBody(ModelProvider provider,
                                          const std::string& model,
                                          const std::string& system,
-                                         const std::string& user) {
+                                         const std::string& user,
+                                         bool disable_thinking) {
   base::DictValue payload;
   payload.Set("model", model);
 
@@ -260,6 +262,10 @@ std::optional<std::string> BuildChatBody(ModelProvider provider,
       messages.Append(TextMessage("user", user));
       payload.Set("messages", std::move(messages));
       payload.Set("stream", false);
+      if (disable_thinking) {
+        payload.Set("chat_template_kwargs",
+                    base::DictValue().Set("enable_thinking", false));
+      }
       break;
     }
     case ModelProvider::kAnthropic: {
@@ -530,7 +536,8 @@ std::optional<ModelProviderClient::ChatRequestId> ModelProviderClient::Chat(
     const std::string& model,
     const std::string& system,
     const std::string& user,
-    ChatCallback done) {
+    ChatCallback done,
+    bool disable_local_qwen_thinking) {
   if (request_in_flight_) {
     std::move(done).Run(false, "model request already in progress", {});
     return std::nullopt;
@@ -560,7 +567,11 @@ std::optional<ModelProviderClient::ChatRequestId> ModelProviderClient::Chat(
     return std::nullopt;
   }
   const std::optional<std::string> body =
-      BuildChatBody(provider, model, system, user);
+      BuildChatBody(provider, model, system, user,
+                    disable_local_qwen_thinking &&
+                        provider == ModelProvider::kOpenAI &&
+                        IsLocalModelEndpoint(provider, *parsed_base) &&
+                        agent::IsQwenModelName(model));
   if (!body) {
     std::move(done).Run(false, "failed to encode model request", {});
     return std::nullopt;

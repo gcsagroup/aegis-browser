@@ -163,7 +163,8 @@ final class WebsiteEnhancementTests: XCTestCase {
       source: source(
         "await GM.setValue('trial',12);document.body.dataset.trial='yes';", grants: "GM.setValue"))
     try await tab.userScripts.trial(draft)
-    try await wait { !tab.userScripts.statuses.isEmpty }
+    try await wait { tab.userScripts.statuses.contains { $0.id == draft.id && $0.status == "completed" } }
+    XCTAssertTrue(tab.userScripts.statuses.first(where: { $0.id == draft.id })?.trial == true)
     XCTAssertNil(store.value("trial", script: draft.id))
     XCTAssertFalse(store.state.scripts[0].enabled)
     let applied = try await js(tab, "return document.body.dataset.trial;") as? String
@@ -274,6 +275,51 @@ final class WebsiteEnhancementTests: XCTestCase {
     } catch {}
     try store.disableAll()
     XCTAssertTrue(store.state.scripts.allSatisfy { !$0.enabled })
+  }
+
+  func testSitePauseKeepsGrantAndReadsOldSchema() throws {
+    let file = directory.appendingPathComponent("pause.json")
+    let store = WebsiteEnhancementStore(fileURL: file)
+    let script = try store.saveScript(source: source())
+    try store.setEnabled(script.id, revision: 1, enabled: true)
+    let url = URL(string: "http://127.0.0.1:8768/enhancements/page")!
+    try store.setSiteEnabled(script.id, revision: 2, url: url, enabled: false)
+    XCTAssertTrue(store.state.scripts[0].enabled)
+    XCTAssertTrue(store.state.scripts[0].paused(at: url))
+    XCTAssertFalse(store.state.scripts[0].paused(at: URL(string: "http://localhost:8768/")))
+    XCTAssertThrowsError(try store.setSiteEnabled(script.id, revision: 2, url: url, enabled: true))
+    XCTAssertThrowsError(try store.setSiteEnabled(script.id, revision: 3, url: URL(string: "file:///tmp")!, enabled: true))
+    let reloaded = WebsiteEnhancementStore(fileURL: file)
+    XCTAssertEqual(reloaded.state, store.state)
+    var old = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(store.state)) as? [String: Any])
+    var scripts = try XCTUnwrap(old["scripts"] as? [[String: Any]])
+    scripts[0].removeValue(forKey: "disabledOrigins")
+    old["scripts"] = scripts
+    let restored = try JSONDecoder().decode(WebsiteEnhancementState.self, from: JSONSerialization.data(withJSONObject: old))
+    XCTAssertFalse(restored.scripts[0].paused(at: url))
+    XCTAssertTrue(restored.scripts[0].enabled)
+  }
+  func testSitePauseRevokesMenuAndStopsInjectionAfterReload() async throws {
+    let store = WebsiteEnhancementStore()
+    let script = try store.saveScript(source: source("document.body.dataset.pausedTest='ran'; GM_registerMenuCommand('暂停验收',()=>document.body.dataset.pausedTest='menu');", grants: "GM_registerMenuCommand"))
+    try store.setEnabled(script.id, revision: 1, enabled: true)
+    let tab = makeTab(store)
+    try await load(tab)
+    try await wait { !tab.userScripts.menus.isEmpty }
+    let menu = try XCTUnwrap(tab.userScripts.menus.first)
+    XCTAssertEqual(menu.scriptID, script.id)
+    try store.setSiteEnabled(script.id, revision: 2, url: XCTUnwrap(tab.url), enabled: false)
+    do { try await tab.userScripts.runMenu(menu); XCTFail("本站停用后旧菜单必须被撤销") } catch {}
+    try await Task.sleep(for: .milliseconds(100))
+    try await load(tab)
+    let value = try await js(tab, "return document.body.dataset.pausedTest || ''; ") as? String
+    XCTAssertEqual(value, "")
+    XCTAssertTrue(tab.userScripts.statuses.isEmpty)
+    XCTAssertTrue(store.state.scripts[0].enabled)
+    try store.setSiteEnabled(script.id, revision: 3, url: XCTUnwrap(tab.url), enabled: true)
+    try await Task.sleep(for: .milliseconds(100))
+    try await load(tab)
+    try await wait { !tab.userScripts.menus.isEmpty }
   }
 
 }

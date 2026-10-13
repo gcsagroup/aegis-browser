@@ -72,14 +72,12 @@
     </style>
 
     <div role="navigation">
-      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink):not(#aegisGesturesLink)"
+      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
           on-click="onLinkClick_" selected-attribute="selected">
-        <a role="menuitem" id="aegisGesturesLink"
-            class="cr-nav-menu-item" href="chrome://aegis/gestures.html">
-          <cr-icon icon="settings:touchpad-mouse"></cr-icon>
-          鼠标手势
-        </a>
+        <a role="menuitem" class="cr-nav-menu-item" href="/aegisEnhancements"><cr-icon icon="settings:code"></cr-icon>$i18n{aegisEnhancementsTitle}</a>
+        <a role="menuitem" class="cr-nav-menu-item" href="/aegisReading"><cr-icon icon="settings:appearance"></cr-icon>$i18n{aegisReadingTitle}</a>
+        <a role="menuitem" class="cr-nav-menu-item" href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon>$i18n{aegisGesturesTitle}</a>
         <a role="menuitem"
             id="people" href="/people"
             hidden="[[!showPeopleMenuItem_(
