@@ -108,7 +108,7 @@ try {
   });
 
   const javascriptFiles = [
-    ...discover(join(repoRoot, 'scripts'), ['.mjs'], (path) => path.includes('/tests/')),
+    ...discover(join(repoRoot, 'scripts'), ['.mjs'], (path) => /(?:^|\/)(?:tests|fixtures)(?:\/|$)|(?:_test|\.test)\.mjs$/u.test(path)),
     ...discover(join(repoRoot, 'packages/core/scripts'), ['.mjs'], (path) => /(?:^|\/)(?:fixtures)(?:\/|$)|(?:_test|\.test)\.mjs$/u.test(path)),
     ...discover(join(repoRoot, 'packages/core/src'), ['.mjs'], (path) => /(?:_test|\.test)\.mjs$/u.test(path)),
     ...discover(join(repoRoot, 'apps/browser/scripts'), ['.js', '.mjs', '.cjs'], (path) => /(?:^|\/)(?:fixtures)(?:\/|$)|(?:_test|\.test)\.(?:js|mjs|cjs)$/u.test(path)),
@@ -159,20 +159,30 @@ try {
   const pythonFiles = [
     'apps/browser/overlay/components/aegis_access/generate_policy_matcher_vectors.py',
     'apps/browser/overlay/components/aegis_access/generate_route_planner_vectors.py',
+    'apps/browser/scripts/audit-reading-research.py',
     'apps/browser/scripts/build_capacity.py',
     'apps/browser/scripts/build_processes.py',
     'apps/browser/scripts/check-chromium-upstream.py',
+    'apps/browser/scripts/check-keychain-upgrade.py',
     'apps/browser/scripts/ci/candidate.py',
+    'apps/browser/scripts/export-local-research-models.py',
     'apps/browser/scripts/local-pypi-proxy.py',
     'apps/browser/scripts/measure-browser-processes.py',
+    'apps/browser/scripts/minim-real-data-pilot.py',
+    'apps/browser/scripts/phishlang-model-probe.py',
+    'apps/browser/scripts/phishlang-real-data-pilot.py',
     'apps/browser/scripts/release-assets.py',
     'apps/browser/scripts/release-contract.py',
     'apps/browser/scripts/release-github.py',
+    'apps/browser/scripts/translation-quality-opus.py',
+    'apps/browser/scripts/translation-quality-report.py',
     'apps/browser/scripts/verify-build-source.py',
   ];
   if (JSON.stringify(Object.keys(pythonJson.files ?? {}).sort()) !== JSON.stringify(pythonFiles)) fail('Python coverage scope does not match the declared production tools');
   const pythonLcovPath = join(coverageRoot, 'python/lcov.info');
-  const pythonLcov = parseLcov(freshFile(pythonLcovPath, notBefore), repoRoot);
+  const pythonLcov = parseLcov(freshFile(pythonLcovPath, notBefore), repoRoot, {
+    allowEmptyFunctionSummary: true,
+  });
   requireExactFiles(pythonLcov.files, pythonFiles, 'Python LCOV');
   const pythonTotals = pythonJson.totals;
   for (const [field, coveredField] of [['num_statements', 'covered_lines'], ['num_branches', 'covered_branches']]) {
