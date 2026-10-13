@@ -1,0 +1,641 @@
+{
+  "v8-state": {
+    "status": "passed",
+    "pid": 9480,
+    "checkedAt": "2026-10-12T19:48:22.494396+00:00",
+    "actualTree": "1311034bb4ae51f33eec3046a83146649421c300",
+    "sourceHeadUnchanged": "25068e32bfe46677f634f135eace50b6aebc07a8"
+  },
+  "source-final-state": {
+    "worktreeDiff": "Completed successfully before the receipt write-tree lock conflict",
+    "expectedTree": "61b2d3a41a4e6cf0a0f1ade5e62d6177e54edfd6",
+    "actualTree": "61b2d3a41a4e6cf0a0f1ade5e62d6177e54edfd6",
+    "sourceHeadUnchanged": "6db854c615f6e4e982d939747f1d08600d6d9bf1",
+    "checkedAt": "2026-10-12T20:14:08.3163807Z",
+    "status": "passed",
+    "priorState": "prepare-state.json",
+    "receiptRecovery": "Diagnostic query stopped, its temporary index lock retained, write-tree rechecked"
+  },
+  "gn-185-state": {
+    "time": "2026-10-12T19:58:48.4251895Z",
+    "status": "passed",
+    "exitCode": 0
+  },
+  "dependency-extra-import-state": {
+    "status": "passed",
+    "pid": 4240,
+    "completed": [
+      {
+        "path": "third_party/angle/third_party/VK-GL-CTS/src",
+        "before": "cf7edb26d3be2d8763595ed08fdc41f3c1b1966f",
+        "target": "1942832354c96f0de379f491519734256fbd4f9d",
+        "localHead": "1942832354c96f0de379f491519734256fbd4f9d",
+        "localAvailable": true,
+        "mirror": "repo-000-1942832354c9.git"
+      },
+      {
+        "path": "third_party/dawn/third_party/directx-shader-compiler/src",
+        "before": "942eeceb8500349a51ff0c8c1e2670050a0777a9",
+        "target": "b9e9f840b3ed530a7f67010ee899a02a613d3586",
+        "localHead": "b9e9f840b3ed530a7f67010ee899a02a613d3586",
+        "localAvailable": true,
+        "mirror": "repo-001-b9e9f840b3ed.git"
+      },
+      {
+        "path": "third_party/dawn/third_party/webgpu-cts",
+        "before": "c354d28170af04797c053d223ff53dbdb9e17b8d",
+        "target": "32cc9f03ad14135b5f6f833dba83e7e80edc256f",
+        "localHead": "32cc9f03ad14135b5f6f833dba83e7e80edc256f",
+        "localAvailable": true,
+        "mirror": "repo-002-32cc9f03ad14.git"
+      },
+      {
+        "path": "third_party/openscreen/src/third_party/tinycbor/src",
+        "before": "49d3a238cf4b7b7ff8cba1836803af60ca9c7dc5",
+        "target": "bac6648fed8c0ff3d34616e4fff7cdcca634a18e",
+        "localHead": "bac6648fed8c0ff3d34616e4fff7cdcca634a18e",
+        "localAvailable": true,
+        "mirror": "repo-003-bac6648fed8c.git"
+      }
+    ],
+    "checkedAt": "2026-10-12T19:54:11.587045+00:00",
+    "freeBytes": 50136834048,
+    "current": "third_party/openscreen/src/third_party/tinycbor/src"
+  },
+  "remaining-artifacts-state": {
+    "status": "passed",
+    "records": [
+      {
+        "path": "third_party/updater/chromium_win_arm64/cipd",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\updater\\chromium_win_arm64\\cipd",
+        "filesVerified": 1
+      },
+      {
+        "path": "third_party/updater/chromium_win_x86/cipd",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\updater\\chromium_win_x86\\cipd",
+        "filesVerified": 1
+      },
+      {
+        "path": "third_party/updater/chromium_win_x86_64/cipd",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\updater\\chromium_win_x86_64\\cipd",
+        "filesVerified": 1
+      },
+      {
+        "path": "third_party/enterprise_companion/chromium_win_x86/cipd",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\enterprise_companion\\chromium_win_x86\\cipd",
+        "filesVerified": 2
+      },
+      {
+        "path": "third_party/enterprise_companion/chromium_win_x86_64/cipd",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\enterprise_companion\\chromium_win_x86_64\\cipd",
+        "filesVerified": 2
+      },
+      {
+        "path": "components/variations/test_data/cipd",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\components\\variations\\test_data\\cipd",
+        "filesVerified": 8
+      },
+      {
+        "path": "tools/luci-go",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\tools\\luci-go",
+        "filesVerified": 6
+      },
+      {
+        "path": "third_party/lzma_sdk/bin/host_platform",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\lzma_sdk\\bin\\host_platform",
+        "filesVerified": 3
+      },
+      {
+        "path": "third_party/lzma_sdk/bin/win64",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\lzma_sdk\\bin\\win64",
+        "filesVerified": 3
+      },
+      {
+        "path": "third_party/siso/cipd",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\siso\\cipd",
+        "filesVerified": 2
+      },
+      {
+        "path": "third_party/screen-ai/windows_amd64",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\screen-ai\\windows_amd64",
+        "filesVerified": 100
+      },
+      {
+        "path": "third_party/screen-ai/windows_386",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\screen-ai\\windows_386",
+        "filesVerified": 100
+      },
+      {
+        "path": "third_party/subresource-filter-ruleset/data",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\remaining-artifacts\\third_party\\subresource-filter-ruleset\\data",
+        "filesVerified": 1
+      }
+    ],
+    "checkedAt": "2026-10-12T20:12:32.439995+00:00",
+    "files": 230
+  },
+  "source186-final-state": {
+    "basis": "185 full worktree comparison passed; only candidate version header changed, exact bytes verified against independently constructed local delta",
+    "expected186Tree": "014e2acea2cbbd86feb382ee187d493795bacbbc",
+    "verifiedDelta": {
+      "sha256": "feac61e72f142954166d53276f799832200ba433ac317c7e28195e3530916ad3",
+      "path": "chrome/browser/ui/webui/help/aegis_github_update.h"
+    },
+    "productVersion": "4.0.0.186",
+    "base185Tree": "61b2d3a41a4e6cf0a0f1ade5e62d6177e54edfd6",
+    "status": "passed",
+    "checkedAt": "2026-10-12T20:22:17.9189129Z"
+  },
+  "dependency-import-state": {
+    "status": "passed",
+    "pid": 516,
+    "completed": [
+      {
+        "path": "agents/shared",
+        "before": "73470db4a7810560ec92e8aa27ff3c6a8a36bea5",
+        "target": "b61aca5681312269c2a2bb46ceb6b6f65fdd94dd",
+        "localHead": "b61aca5681312269c2a2bb46ceb6b6f65fdd94dd",
+        "localAvailable": true,
+        "mirror": "repo-000-b61aca568131.git"
+      },
+      {
+        "path": "docs/website",
+        "before": "c3cbe61e9891506afb2075e4430a228ad7658e23",
+        "target": "a88b32e46218523463a769f0ecfcb4da46649ce5",
+        "localHead": "a88b32e46218523463a769f0ecfcb4da46649ce5",
+        "localAvailable": true,
+        "mirror": "repo-001-a88b32e46218.git"
+      },
+      {
+        "path": "net/third_party/quiche/src",
+        "before": "80bf9559d3a4c08dde4b85abc46d190a88ffef64",
+        "target": "0b2bc13f4fdad122a0ffc163b182a9b0f9cfdfbd",
+        "localHead": "0b2bc13f4fdad122a0ffc163b182a9b0f9cfdfbd",
+        "localAvailable": true,
+        "mirror": "repo-002-0b2bc13f4fda.git"
+      },
+      {
+        "path": "third_party/angle",
+        "before": "e12217f3e133cb1029b050d893b1806d141483be",
+        "target": "170484eea03a4255a388072add4232e1fadfbee4",
+        "localHead": "170484eea03a4255a388072add4232e1fadfbee4",
+        "localAvailable": true,
+        "mirror": "repo-003-170484eea03a.git"
+      },
+      {
+        "path": "third_party/anonymous_tokens/src",
+        "before": "4640033b0879d78a0725fdf6b7365b00d6841cad",
+        "target": "1ae8df5e40bab28959cc182c2c0d88923059e278",
+        "localHead": "1ae8df5e40bab28959cc182c2c0d88923059e278",
+        "localAvailable": true,
+        "mirror": "repo-004-1ae8df5e40ba.git"
+      },
+      {
+        "path": "third_party/boringssl/src",
+        "before": "ac39ea6853833c1f18fd23614091d11855e71752",
+        "target": "b780f192ce515ed8ed358f6c0947bd7acce438b9",
+        "localHead": "b780f192ce515ed8ed358f6c0947bd7acce438b9",
+        "localAvailable": true,
+        "mirror": "repo-005-b780f192ce51.git"
+      },
+      {
+        "path": "third_party/breakpad/breakpad",
+        "before": "418aacd617897c19d960ec3e649f42ea95a6363a",
+        "target": "a9df3bd99cf8b863a92502ef906b5ddc399c2c9a",
+        "localHead": "a9df3bd99cf8b863a92502ef906b5ddc399c2c9a",
+        "localAvailable": true,
+        "mirror": "repo-006-a9df3bd99cf8.git"
+      },
+      {
+        "path": "third_party/catapult",
+        "before": "50c971fc0958d8c1fb0adcc97f41b90042fa7c87",
+        "target": "471aa8aec31a4de79a96b72815180bc9dc71c420",
+        "localHead": "471aa8aec31a4de79a96b72815180bc9dc71c420",
+        "localAvailable": true,
+        "mirror": "repo-007-471aa8aec31a.git"
+      },
+      {
+        "path": "third_party/compiler-rt/src",
+        "before": "949185fe89d2c78514ddaa6b8874de9415036491",
+        "target": "ccf6305a0bdd648ec1c873de316ca483a7136498",
+        "localHead": "ccf6305a0bdd648ec1c873de316ca483a7136498",
+        "localAvailable": true,
+        "mirror": "repo-008-ccf6305a0bdd.git"
+      },
+      {
+        "path": "third_party/crabbyavif/src",
+        "before": "6dcab82c0389d1d1eb0978702c9faafcb89238d4",
+        "target": "ad8f13ec73e03247bd7f8026bdc134190cdab36c",
+        "localHead": "ad8f13ec73e03247bd7f8026bdc134190cdab36c",
+        "localAvailable": true,
+        "mirror": "repo-009-ad8f13ec73e0.git"
+      },
+      {
+        "path": "third_party/crossbench",
+        "before": "437a7726d609643de0ea64d222689fca6c43cf3d",
+        "target": "385559563561c434453a599e5f14a46f411405e2",
+        "localHead": "385559563561c434453a599e5f14a46f411405e2",
+        "localAvailable": true,
+        "mirror": "repo-010-385559563561.git"
+      },
+      {
+        "path": "third_party/crossbench-web-tests",
+        "before": "df7f538dbac4b62cb503179a0e2f1e304fc3096d",
+        "target": "33397fe15820ff895d88b4cd9a37e214968ef68d",
+        "localHead": "33397fe15820ff895d88b4cd9a37e214968ef68d",
+        "localAvailable": true,
+        "mirror": "repo-011-33397fe15820.git"
+      },
+      {
+        "path": "third_party/dav1d/libdav1d",
+        "before": "52b9d3d3ec525f5a20849145fa0e879d585f4911",
+        "target": "a34e0685b9111b9eb1d7835ea7bea5b425dced73",
+        "localHead": "a34e0685b9111b9eb1d7835ea7bea5b425dced73",
+        "localAvailable": true,
+        "mirror": "repo-012-a34e0685b911.git"
+      },
+      {
+        "path": "third_party/dawn",
+        "before": "38bc7fb0b3a024d05212958ae843e4ddf8c44ff1",
+        "target": "42d0e90fe3552a2a8e95ca8e506bc19bbda12729",
+        "localHead": "42d0e90fe3552a2a8e95ca8e506bc19bbda12729",
+        "localAvailable": true,
+        "mirror": "repo-013-42d0e90fe355.git"
+      },
+      {
+        "path": "third_party/depot_tools",
+        "before": "c101dcbe0489c455fce7c2247bfee19680b116c3",
+        "target": "dca727ba1f8fa8f1e3b12a815d065818bb61d395",
+        "localHead": "dca727ba1f8fa8f1e3b12a815d065818bb61d395",
+        "localAvailable": true,
+        "mirror": "repo-014-dca727ba1f8f.git"
+      },
+      {
+        "path": "third_party/devtools-frontend/src",
+        "before": "66df492aaa0129d090937e933dd44c5389ab24d2",
+        "target": "cd7bfad9bba968ac23ba67e538f9e1d499991d25",
+        "localHead": "cd7bfad9bba968ac23ba67e538f9e1d499991d25",
+        "localAvailable": true,
+        "mirror": "repo-015-cd7bfad9bba9.git"
+      },
+      {
+        "path": "third_party/disarm/src",
+        "before": "2d13d3f410a52daff1c5d8ef07d623332f372560",
+        "target": "2d960dae4b4fb29dba05cfc48210fbed423f3d2c",
+        "localHead": "2d960dae4b4fb29dba05cfc48210fbed423f3d2c",
+        "localAvailable": true,
+        "mirror": "repo-016-2d960dae4b4f.git"
+      },
+      {
+        "path": "third_party/dom_distiller_js/dist",
+        "before": "199de96b345ada7c6e7e6ba3d2fa7a6911b8767d",
+        "target": "015cda307cf81e293889c0887cffff4f0aa090ce",
+        "localHead": "015cda307cf81e293889c0887cffff4f0aa090ce",
+        "localAvailable": true,
+        "mirror": "repo-017-015cda307cf8.git"
+      },
+      {
+        "path": "third_party/ds_store/src",
+        "before": "d93392c32b92033789e8e7590f09812f7289873b",
+        "target": "6f971c764a511f609615c6c4f5ae2a9403ff32cb",
+        "localHead": "6f971c764a511f609615c6c4f5ae2a9403ff32cb",
+        "localAvailable": true,
+        "mirror": "repo-018-6f971c764a51.git"
+      },
+      {
+        "path": "third_party/eigen3/src",
+        "before": "e350b7eaaf48f6d315bd4e73cc082e9b5b794f79",
+        "target": "9b196f65756803ab6b9ef60c9e75b6a197b8df8c",
+        "localHead": "9b196f65756803ab6b9ef60c9e75b6a197b8df8c",
+        "localAvailable": true,
+        "mirror": "repo-019-9b196f657568.git"
+      },
+      {
+        "path": "third_party/ffmpeg",
+        "before": "a06d51a20a28f980b2ddc6b7d73d69b2d29bf323",
+        "target": "ba5e7eaea38b6a54157870e0085b2e8c75aa6bcb",
+        "localHead": "ba5e7eaea38b6a54157870e0085b2e8c75aa6bcb",
+        "localAvailable": true,
+        "mirror": "repo-020-ba5e7eaea38b.git"
+      },
+      {
+        "path": "third_party/freetype/src",
+        "before": "4800589f76dc62fbe523a74a59e0d4850a5dd7df",
+        "target": "5c79d6cd1ac73d70a55f3d963fb568aa32f6d794",
+        "localHead": "5c79d6cd1ac73d70a55f3d963fb568aa32f6d794",
+        "localAvailable": true,
+        "mirror": "repo-021-5c79d6cd1ac7.git"
+      },
+      {
+        "path": "third_party/fuzztest/src",
+        "before": "94c3cf3a4391eb0bb12999128e29cbe625bad2f3",
+        "target": "846bda6f291e26b7f8fb33c8de23796129bffd12",
+        "localHead": "846bda6f291e26b7f8fb33c8de23796129bffd12",
+        "localAvailable": true,
+        "mirror": "repo-022-846bda6f291e.git"
+      },
+      {
+        "path": "third_party/glslang/src",
+        "before": "23076b376e06a99b4c765df5c9836d127c8bbbfc",
+        "target": "0f99286a3542c19097ea807f751342a89ab11e04",
+        "localHead": "0f99286a3542c19097ea807f751342a89ab11e04",
+        "localAvailable": true,
+        "mirror": "repo-023-0f99286a3542.git"
+      },
+      {
+        "path": "third_party/harfbuzz/src",
+        "before": "886fc1e645388080b72f6d9b06347533a0018045",
+        "target": "f5efbbef3841bdcdc6427bde7c2971f62ac8c8f1",
+        "localHead": "f5efbbef3841bdcdc6427bde7c2971f62ac8c8f1",
+        "localAvailable": true,
+        "mirror": "repo-024-f5efbbef3841.git"
+      },
+      {
+        "path": "third_party/libFuzzer/src",
+        "before": "5811dc57603eac1fa0e76addedb77f72f62bfa2d",
+        "target": "adc3407201e641a73a551d2f1181c684c33eea56",
+        "localHead": "adc3407201e641a73a551d2f1181c684c33eea56",
+        "localAvailable": true,
+        "mirror": "repo-025-adc3407201e6.git"
+      },
+      {
+        "path": "third_party/libaom/source/libaom",
+        "before": "441c439b9916474cac15d2822af47a9ad70674a8",
+        "target": "023743a7d78d9c7d33390c5c45b35495ea013a21",
+        "localHead": "023743a7d78d9c7d33390c5c45b35495ea013a21",
+        "localAvailable": true,
+        "mirror": "repo-026-023743a7d78d.git"
+      },
+      {
+        "path": "third_party/libc++abi/src",
+        "before": "fc1897a2c12aa27e703c3ed48b62eba8abf4ce19",
+        "target": "14024f8f89421ba73a3d28c9b8f9fbd745d92dff",
+        "localHead": "14024f8f89421ba73a3d28c9b8f9fbd745d92dff",
+        "localAvailable": true,
+        "mirror": "repo-027-14024f8f8942.git"
+      },
+      {
+        "path": "third_party/libphonenumber/src",
+        "before": "4ad67e90c65e365658ff9a480d3ac29ccfc6977b",
+        "target": "806ee32e8c8c74ca339d8c91a6d86ef58687c9f4",
+        "localHead": "806ee32e8c8c74ca339d8c91a6d86ef58687c9f4",
+        "localAvailable": true,
+        "mirror": "repo-028-806ee32e8c8c.git"
+      },
+      {
+        "path": "third_party/libunwind/src",
+        "before": "45120ee2331193c3650acc9c427ed267fab31d62",
+        "target": "24a407d5353ad38f948f107c7d6bc2bcbb4bca24",
+        "localHead": "24a407d5353ad38f948f107c7d6bc2bcbb4bca24",
+        "localAvailable": true,
+        "mirror": "repo-029-24a407d5353a.git"
+      },
+      {
+        "path": "third_party/libvpx/source/libvpx",
+        "before": "3ffe23d874a1b454e02be57f3e025d4aa70d6de0",
+        "target": "d2413e2ca11039724ca33bb4d661ca2c94cb501e",
+        "localHead": "d2413e2ca11039724ca33bb4d661ca2c94cb501e",
+        "localAvailable": true,
+        "mirror": "repo-030-d2413e2ca110.git"
+      },
+      {
+        "path": "third_party/libyuv",
+        "before": "2fed9193c94d3701f36188351bd5251854762cb6",
+        "target": "2dd4257364d39c38d79465c4ddc4b93137fe729b",
+        "localHead": "2dd4257364d39c38d79465c4ddc4b93137fe729b",
+        "localAvailable": true,
+        "mirror": "repo-031-2dd4257364d3.git"
+      },
+      {
+        "path": "third_party/litert/src",
+        "before": "f67457790c9c2ab67347d6fe53270e8d3df20868",
+        "target": "e0dbf4d47f2e50652496479bd3bca678231b2062",
+        "localHead": "e0dbf4d47f2e50652496479bd3bca678231b2062",
+        "localAvailable": true,
+        "mirror": "repo-032-e0dbf4d47f2e.git"
+      },
+      {
+        "path": "third_party/llvm-libc/src",
+        "before": "43a9a99ce4b5a04954090f8a0e74bf2786f59379",
+        "target": "91b3328166da1db7db15cb49c714d59198e56cab",
+        "localHead": "91b3328166da1db7db15cb49c714d59198e56cab",
+        "localAvailable": true,
+        "mirror": "repo-033-91b3328166da.git"
+      },
+      {
+        "path": "third_party/mac_alias/src",
+        "before": "43cd06eb8c233140be75c106e3c673097ffb5761",
+        "target": "d0c076b4562541c1509d9874f42880378245d268",
+        "localHead": "d0c076b4562541c1509d9874f42880378245d268",
+        "localAvailable": true,
+        "mirror": "repo-034-d0c076b45625.git"
+      },
+      {
+        "path": "third_party/oak/src",
+        "before": "590f1df2c7528b39366a1a72533b6f9e9bf47d1e",
+        "target": "d3e0f13998b13628fa8b55be52c9ddf31244668d",
+        "localHead": "d3e0f13998b13628fa8b55be52c9ddf31244668d",
+        "localAvailable": true,
+        "mirror": "repo-035-d3e0f13998b1.git"
+      },
+      {
+        "path": "third_party/openscreen/src",
+        "before": "fb748e428dfda43d3b55f3fb8c98d933ef66aa1c",
+        "target": "d11342d20e542b48cc63e2d932a273c20cc99820",
+        "localHead": "d11342d20e542b48cc63e2d932a273c20cc99820",
+        "localAvailable": true,
+        "mirror": "repo-036-d11342d20e54.git"
+      },
+      {
+        "path": "third_party/pdfium",
+        "before": "2358b16c1947eff67f0732754af6b3c4e1715ff9",
+        "target": "bc8e654f49c980f64e08067329ff35539db80610",
+        "localHead": "bc8e654f49c980f64e08067329ff35539db80610",
+        "localAvailable": true,
+        "mirror": "repo-037-bc8e654f49c9.git"
+      },
+      {
+        "path": "third_party/perfetto",
+        "before": "5dbeaad4ceb91470a835426b52e0cb43a3e5ef10",
+        "target": "d10115a34cfa887efd75606c460f541d1b854e23",
+        "localHead": "d10115a34cfa887efd75606c460f541d1b854e23",
+        "localAvailable": true,
+        "mirror": "repo-038-d10115a34cfa.git"
+      },
+      {
+        "path": "third_party/search_engines_data/resources",
+        "before": "b9f48dc46a8172cbdd9c3923bd5a85c04458e49f",
+        "target": "1d39fffec1e14bf6f430a65b8de65669cb1479e6",
+        "localHead": "1d39fffec1e14bf6f430a65b8de65669cb1479e6",
+        "localAvailable": true,
+        "mirror": "repo-039-1d39fffec1e1.git"
+      },
+      {
+        "path": "third_party/skia",
+        "before": "2466dcf3937437e217e7f284afe0e1aae15891ce",
+        "target": "29ed1e87a0a50f3d8347e988842d9d59e7573efa",
+        "localHead": "29ed1e87a0a50f3d8347e988842d9d59e7573efa",
+        "localAvailable": true,
+        "mirror": "repo-040-29ed1e87a0a5.git"
+      },
+      {
+        "path": "third_party/spirv-headers/src",
+        "before": "496543121ce6419f23d6fa5d7194ba66c36212d2",
+        "target": "04fd3caa1e8267e4d95c806cad901181728e1006",
+        "localHead": "04fd3caa1e8267e4d95c806cad901181728e1006",
+        "localAvailable": true,
+        "mirror": "repo-041-04fd3caa1e82.git"
+      },
+      {
+        "path": "third_party/spirv-tools/src",
+        "before": "3a2f6ea08f17f149908a17ff9ba6cba4791d7f96",
+        "target": "d6f63db7031c181c146963206da772445704d5a0",
+        "localHead": "d6f63db7031c181c146963206da772445704d5a0",
+        "localAvailable": true,
+        "mirror": "repo-042-d6f63db7031c.git"
+      },
+      {
+        "path": "third_party/tflite/src",
+        "before": "a28014403be71a9507e7a90136ecd34399411876",
+        "target": "bf3e7d28d4e95c73044c538381235758004ed18c",
+        "localHead": "bf3e7d28d4e95c73044c538381235758004ed18c",
+        "localAvailable": true,
+        "mirror": "repo-043-bf3e7d28d4e9.git"
+      },
+      {
+        "path": "third_party/vulkan-deps",
+        "before": "14ee2ae607c275ecc1769f83e1a05376afa20c68",
+        "target": "634fe15e4d1e699cf3b0516a33d4148a45607870",
+        "localHead": "634fe15e4d1e699cf3b0516a33d4148a45607870",
+        "localAvailable": true,
+        "mirror": "repo-044-634fe15e4d1e.git"
+      },
+      {
+        "path": "third_party/vulkan-headers/src",
+        "before": "31386378257ac8653ce5b32c93baec385259ebbe",
+        "target": "ee2ec5fd83dafce291024683b50dc89219333076",
+        "localHead": "ee2ec5fd83dafce291024683b50dc89219333076",
+        "localAvailable": true,
+        "mirror": "repo-045-ee2ec5fd83da.git"
+      },
+      {
+        "path": "third_party/vulkan-loader/src",
+        "before": "07e50bb6cc89025c37586efd215e2b8280670978",
+        "target": "bde79ad2dd832db9180c4a6eca2e84ceb12b1bb0",
+        "localHead": "bde79ad2dd832db9180c4a6eca2e84ceb12b1bb0",
+        "localAvailable": true,
+        "mirror": "repo-046-bde79ad2dd83.git"
+      },
+      {
+        "path": "third_party/vulkan-tools/src",
+        "before": "af0452ed9eedc16acbe58ef378177057d67a8d84",
+        "target": "462d9819e5953e064e1dcdc04d3edc5fc6bc9431",
+        "localHead": "462d9819e5953e064e1dcdc04d3edc5fc6bc9431",
+        "localAvailable": true,
+        "mirror": "repo-047-462d9819e595.git"
+      },
+      {
+        "path": "third_party/vulkan-utility-libraries/src",
+        "before": "634022187b2cd1e02e4793e75cdc569ed90e1f51",
+        "target": "930a38bce146cf85c5bd7cb00fa33a66c640c0c6",
+        "localHead": "930a38bce146cf85c5bd7cb00fa33a66c640c0c6",
+        "localAvailable": true,
+        "mirror": "repo-048-930a38bce146.git"
+      },
+      {
+        "path": "third_party/vulkan-validation-layers/src",
+        "before": "9ef2b8b81b6273898f37345472d87ca59d3e8d91",
+        "target": "e59427bc03981779b8a153e6cd84ea2b1d6bf087",
+        "localHead": "e59427bc03981779b8a153e6cd84ea2b1d6bf087",
+        "localAvailable": true,
+        "mirror": "repo-049-e59427bc0398.git"
+      },
+      {
+        "path": "third_party/webgpu-cts/src",
+        "before": "c354d28170af04797c053d223ff53dbdb9e17b8d",
+        "target": "32cc9f03ad14135b5f6f833dba83e7e80edc256f",
+        "localHead": "32cc9f03ad14135b5f6f833dba83e7e80edc256f",
+        "localAvailable": true,
+        "mirror": "repo-050-32cc9f03ad14.git"
+      },
+      {
+        "path": "third_party/webrtc",
+        "before": "dbaaaf413fe8c1d01c340af1a461c069960f43fc",
+        "target": "5bd86a2f17a35dfc986b87d058f511e45805bd1d",
+        "localHead": "5bd86a2f17a35dfc986b87d058f511e45805bd1d",
+        "localAvailable": true,
+        "mirror": "repo-051-5bd86a2f17a3.git"
+      },
+      {
+        "path": "third_party/xnnpack/src",
+        "before": "1eb7302a49e708c5c4dc3dd473be6e60ec598d6a",
+        "target": "3c4596adb505f51c042ee14e76731b9004524b1a",
+        "localHead": "3c4596adb505f51c042ee14e76731b9004524b1a",
+        "localAvailable": true,
+        "mirror": "repo-052-3c4596adb505.git"
+      }
+    ],
+    "current": "third_party/xnnpack/src",
+    "checkedAt": "2026-10-12T19:54:38.070349+00:00",
+    "freeBytes": 49442496512
+  },
+  "build-tools-state": {
+    "status": "passed",
+    "gn": "2562 (cfcd774b98f3)",
+    "records": [
+      {
+        "kind": "gn",
+        "preserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\tool-gn"
+      },
+      {
+        "kind": "libclang",
+        "preserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\tool-libclang"
+      }
+    ]
+  },
+  "nested-artifacts-state": {
+    "status": "passed",
+    "records": [
+      {
+        "path": "third_party/dawn/third_party/agility-sdk/src",
+        "oldPreserved": null,
+        "filesVerified": 75
+      },
+      {
+        "path": "third_party/dawn/tools/golang/windows-amd64",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\nested-artifacts\\third_party\\dawn\\tools\\golang\\windows-amd64",
+        "filesVerified": 11509
+      },
+      {
+        "path": "third_party/dawn/tools/golang/windows-arm64",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\nested-artifacts\\third_party\\dawn\\tools\\golang\\windows-arm64",
+        "filesVerified": 11509
+      },
+      {
+        "path": "third_party/dawn/third_party/ninja",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\nested-artifacts\\third_party\\dawn\\third_party\\ninja",
+        "filesVerified": 3
+      },
+      {
+        "path": "third_party/openscreen/src/buildtools/win",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\nested-artifacts\\third_party\\openscreen\\src\\buildtools\\win",
+        "filesVerified": 2
+      },
+      {
+        "path": "third_party/webpagereplay/third_party/golang/win/x64",
+        "oldPreserved": "C:\\a\\build-status\\site-enhancement-185\\retained-111\\nested-artifacts\\third_party\\webpagereplay\\third_party\\golang\\win\\x64",
+        "filesVerified": 11497
+      }
+    ],
+    "checkedAt": "2026-10-12T20:24:23.067348+00:00",
+    "files": 34595
+  },
+  "toolchains-final-state": {
+    "gn": "2562 (cfcd774b98f3)",
+    "clang": "clang version 24.0.0git (https://chromium.googlesource.com/a/external/github.com/llvm/llvm-project 86922d51225db089fffb99475eefc4904f79e3c8)\r\nTarget: x86_64-pc-windows-msvc\r\nThread model: posix\r\nInstalledDir: C:\\a\\src\\third_party\\llvm-build\\Release+Asserts\\bin\r\nBuild config: +alloc:rpmalloc",
+    "esbuild": "0.28.2",
+    "rust": "rustc 1.100.0-nightly (1edd55dcf 2026-09-09) (1edd55dcfcd573872c727fa3e086369a71661ee0-1-llvmorg-24-init-7747-g62397f8b chromium)",
+    "status": "passed",
+    "checkedAt": "2026-10-12T20:19:03.0894421Z"
+  }
+}
