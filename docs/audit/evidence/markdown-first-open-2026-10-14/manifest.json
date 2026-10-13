@@ -1,0 +1,42 @@
+[
+  {
+    "file": "build-207.log",
+    "sourceSha256": "92ac894deb815314e840cee743cfaff5f756836b245e8c9a696e5f2359e02db9",
+    "publishedSha256": "92ac894deb815314e840cee743cfaff5f756836b245e8c9a696e5f2359e02db9"
+  },
+  {
+    "file": "browser-207.log",
+    "sourceSha256": "6c0da788c20cca8141c4a65324b591fd1cf153226964259027f2ee409017c26b",
+    "publishedSha256": "618c11f386b1f5fc347ff27f534bb6f53a3c0919d87ca400a8269c56964d08cd"
+  },
+  {
+    "file": "unit-207.log",
+    "sourceSha256": "c348254929662261cdbf97779194ac5c2950a967b08229bfb8c53beb4b613f77",
+    "publishedSha256": "c348254929662261cdbf97779194ac5c2950a967b08229bfb8c53beb4b613f77"
+  },
+  {
+    "file": "orchestration-tests.log",
+    "sourceSha256": "346b2dded026b66ce22f018bd86781d1d805b0f07ed19ae03d93fa94ca9f316c",
+    "publishedSha256": "346b2dded026b66ce22f018bd86781d1d805b0f07ed19ae03d93fa94ca9f316c"
+  },
+  {
+    "file": "quality-fast-207.log",
+    "sourceSha256": "ec708ef5efb2881b4d420e6af32cab0580e0d05ec3cbd4034b418a3239f41865",
+    "publishedSha256": "23799037e7ca80f4f1cf6a01fc86302aa3fc710e38f0c1e7c72a22ff8a5ecb4b"
+  },
+  {
+    "file": "sign-207.log",
+    "sourceSha256": "6217580323c88670da2b5e81124f3ade5b62205d0054d721b65127838f78aeca",
+    "publishedSha256": "a85117a196b53228f25b51dd8101d4f0ddaf03e5d990d0ed80d12c77ac4b02b9"
+  },
+  {
+    "file": "patch-replay-207.json",
+    "sourceSha256": "ab9eb5607bbe8ee5e0f462d4f1d1a64b8c8725c352507636812370af264d82a6",
+    "publishedSha256": "ab9eb5607bbe8ee5e0f462d4f1d1a64b8c8725c352507636812370af264d82a6"
+  },
+  {
+    "file": "after-first-open-207.png",
+    "sourceSha256": "0f976ce9625c3626bfe029f10c0e16fa5d15c2ad696efd41710a971c9b509ff5",
+    "publishedSha256": "0f976ce9625c3626bfe029f10c0e16fa5d15c2ad696efd41710a971c9b509ff5"
+  }
+]

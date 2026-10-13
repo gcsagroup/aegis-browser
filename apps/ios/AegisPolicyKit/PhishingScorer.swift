@@ -201,10 +201,6 @@ public enum PhishingScorer {
         let username: String
     }
 
-    private static let commonSecondLevelSuffixes: Set<String> = [
-        "co.uk", "com.au", "com.br", "com.cn", "com.hk", "co.jp", "co.kr",
-    ]
-
     private static let shortenerHosts: Set<String> = [
         "bit.ly", "buff.ly", "cutt.ly", "is.gd", "ow.ly", "rb.gy", "rebrand.ly",
         "shorturl.at", "t.co", "tinyurl.com",
@@ -248,11 +244,7 @@ public enum PhishingScorer {
     }
 
     private static func registrableLabel(_ host: String) -> String {
-        let labels = host.lowercased().split(separator: ".", omittingEmptySubsequences: false)
-        let suffix = labels.suffix(2).joined(separator: ".")
-        let index = commonSecondLevelSuffixes.contains(suffix) ? labels.count - 3 : labels.count - 2
-        guard !labels.isEmpty else { return "" }
-        return String(labels[max(0, index)])
+        (RegisteredDomain.of(host) ?? host).split(separator: ".").first.map(String.init) ?? ""
     }
 
     private static func normalizeLookalike(_ label: String) -> String {

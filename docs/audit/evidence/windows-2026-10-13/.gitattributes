@@ -1,0 +1,3 @@
+# 保留 Windows 原始产物的 CRLF，确保与 metadata 中的 SHA-256 一致。
+*.xml -text whitespace=cr-at-eol
+powershell-* -text whitespace=cr-at-eol

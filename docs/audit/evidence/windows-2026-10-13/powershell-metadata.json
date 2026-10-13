@@ -1,0 +1,73 @@
+{
+    "schemaVersion":  1,
+    "language":  "powershell",
+    "status":  "PASS",
+    "testedSha":  "df5ac9f9df1a944f5f64964d0b869c3c626584e0",
+    "generatedAt":  "2026-10-13T11:47:03.1854067Z",
+    "tool":  {
+                 "name":  "Pester",
+                 "version":  "5.7.1",
+                 "source":  "https://www.powershellgallery.com/api/v2/package/Pester/5.7.1",
+                 "packageSha256":  "4a27904c6814a5fbe4758f8e49861f6a1994aee77b71165a5c43c0371ba6c580",
+                 "sourceTagCommit":  "dc45b7481fffc4f6c2ff1a74edebaad03ce1efcb",
+                 "moduleManifestSha256":  "c6dce1cdd85a9236a9a628dcaaf3e6f07b0ac4173fb25f620fa466f4402ec341",
+                 "host":  "Desktop 5.1.26100.33438"
+             },
+    "scope":  {
+                  "kind":  "windows-acceptance-script-safe-failure-boundaries",
+                  "include":  [
+                                  "apps/browser/scripts/windows-agent-ui-acceptance.ps1",
+                                  "apps/browser/scripts/windows-protection-headless-acceptance.ps1"
+                              ],
+                  "exclude":  [
+                                  "scripts/ci/platform-tests/*.Tests.ps1"
+                              ],
+                  "notMeasured":  [
+                                      "interactive WinForms and UIAutomation acceptance",
+                                      "real Chromium launch or browser behavior",
+                                      "successful headless protection acceptance",
+                                      "PowerShell scripts outside the two declared acceptance scripts"
+                                  ]
+              },
+    "tests":  [
+                  {
+                      "entry":  "apps/browser/scripts/windows-agent-ui-acceptance_test.ps1",
+                      "result":  "PASS",
+                      "kind":  "existing non-interactive argument and interop test"
+                  },
+                  {
+                      "entry":  "scripts/ci/platform-tests/windows-acceptance-boundaries.Tests.ps1",
+                      "result":  "PASS",
+                      "cases":  4,
+                      "kind":  "mock-driven direct product script execution"
+                  }
+              ],
+    "safetyAssertions":  [
+                             "missing Chrome and fixture paths throw before process or window actions",
+                             "existing headless evidence directory is rejected",
+                             "mismatched mocked git SHA writes completed=true and passed=false",
+                             "empty mocked Get-CimInstance result never triggers Stop-Process",
+                             "Start-Process defaults to a throwing mock in boundary tests"
+                         ],
+    "totals":  {
+                   "commands":  {
+                                    "covered":  57,
+                                    "total":  1014,
+                                    "pct":  5.62
+                                }
+               },
+    "reports":  {
+                    "jacoco":  {
+                                   "path":  "jacoco.xml",
+                                   "sha256":  "42ce29543a31388f5f26b8fba476a4014118a782c8ed5a20fd4bbf2ec7758ce0"
+                               },
+                    "summary":  {
+                                    "path":  "coverage.txt",
+                                    "sha256":  "cabcf30ca0518b35284d1b594a5640b1cdf378acfe8434be04b51db8a0574147"
+                                },
+                    "tests":  {
+                                  "path":  "pester-results.xml",
+                                  "sha256":  "9318a8ab828b3cbb86adde5d9bcbc7922eb4018936e85015761eb1b4645f3192"
+                              }
+                }
+}

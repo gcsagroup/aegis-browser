@@ -1,0 +1,139 @@
+{
+  "sourceCommit": "a792c2ed25fbff92001bfd98c8eabd9bf24ea8b1",
+  "comparedFiles": 33,
+  "allIdentical": true,
+  "files": [
+    {
+      "path": "apps/browser/args/aegis-windows.gn",
+      "sha256": "4e612ff0d611044f3656b2c25f62eff0493a855652da104fca4771826c64b1d2"
+    },
+    {
+      "path": "apps/browser/overlay/build/toolchain/win/midl.py",
+      "sha256": "ea59c9073b57cbc28bb12ce819123d995769f3c4e62aec8d29b7c0a7c40612a5"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/README",
+      "sha256": "1ea4fef190b6cb6d068553f820fcb327ee83957ef03ce10af80133b6abc7c5ae"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/app_list.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/chromium.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/chromium_doc.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/chromium_pdf.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/incognito.ico",
+      "sha256": "bf69980065d88a51d697fc8287fdaf37178c5725aa5ce4c55d821f486be7be32"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/tiles/Logo.png",
+      "sha256": "769de892f646f432c6d1740af0561767769d17650e2fa77d79650e176f672ac7"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/app/theme/gcsa_aegis/win/tiles/SmallLogo.png",
+      "sha256": "8096505b1c555bac44cbf4a1179f003f25d77aa10d0ff8e726d30e1629081865"
+    },
+    {
+      "path": "apps/browser/overlay/chrome/windows_services/elevated_tracing_service/BUILD.gn",
+      "sha256": "83b2b1d2f0768a1bf1ac38c08af4589c6688c5c3a09192d6bd3ca35f35ccf765"
+    },
+    {
+      "path": "apps/browser/patches-android/0106-fix-aegis-use-cached-ui-locale-on-windows.patch",
+      "sha256": "ad62b7a7546bd8fa655e2332f0a0ed10047fdd487faf0006b8cf395cf5fbad8a"
+    },
+    {
+      "path": "apps/browser/patches-android/0228-windows-product-identity-086.patch",
+      "sha256": "9f4f6b845e539fe86453edec9186249347e2ab1a48009192ab89de9ed8f81875"
+    },
+    {
+      "path": "apps/browser/patches-android/0230-windows-update-task-runner-088.patch",
+      "sha256": "c2ee2abc92114855dbe54d6292690394d3e61a91ae0e82e03e61135906087719"
+    },
+    {
+      "path": "apps/browser/patches-android/0237-windows-midl-path-095.patch",
+      "sha256": "6347658d33028a796963135baebecf43d8d3d2cf9f8a361caf74bd7fb63caf69"
+    },
+    {
+      "path": "apps/browser/patches-android/0238-windows-midl-template-096.patch",
+      "sha256": "57d181229591c8260d6cdb086579f265ab0e64b5165f3897caf0faf1e2e30b3d"
+    },
+    {
+      "path": "apps/browser/patches-android/0239-windows-identity-expectations-097.patch",
+      "sha256": "68df6fd0f04de781848da4af20b7c2c7655f38e18115a28ca999a71341bc71ed"
+    },
+    {
+      "path": "apps/browser/patches/0106-fix-aegis-use-cached-ui-locale-on-windows.patch",
+      "sha256": "de36cd9474292d2321913b009499d3c87dc2a5aad98892cefafb6061d6c51eb5"
+    },
+    {
+      "path": "apps/browser/patches/0228-windows-product-identity-086.patch",
+      "sha256": "8790c854125af4a799781bd14ab2a9836e4f7c2f2b4b047212a355fc64d122a8"
+    },
+    {
+      "path": "apps/browser/patches/0230-windows-update-task-runner-088.patch",
+      "sha256": "30e77217a19c9ab651061703956c4674896f7183c07d39e3631f360505634cfb"
+    },
+    {
+      "path": "apps/browser/patches/0237-windows-midl-path-095.patch",
+      "sha256": "7639a0dce8b76f5e25902ae6cd1a457f230d62785733a1557018ef5724eab601"
+    },
+    {
+      "path": "apps/browser/patches/0238-windows-midl-template-096.patch",
+      "sha256": "1e995c87e5700df4b2c947272e30a12ed86efec14e3db65973566b8d90306974"
+    },
+    {
+      "path": "apps/browser/patches/0239-windows-identity-expectations-097.patch",
+      "sha256": "8e49d78eec9887d5105686ab12129c37dd54c9a58535ccc205d9d5949f98ad69"
+    },
+    {
+      "path": "apps/browser/scripts/windows-agent-ui-acceptance.ps1",
+      "sha256": "f9d6b1a39fe86a047022f67caa4550f16ec984c9e23575dd45f7edfa8d79a157"
+    },
+    {
+      "path": "apps/browser/scripts/windows-agent-ui-acceptance_test.ps1",
+      "sha256": "62cc678806338fbc075a35355d1311e753b54d60561df52d8ffb2ead0ec385b8"
+    },
+    {
+      "path": "apps/browser/scripts/windows-protection-headless-acceptance.ps1",
+      "sha256": "6d1b9d9d3c98a88191d659920ff10b43a1ffc8026e613711d9cbd2be3ef004bf"
+    },
+    {
+      "path": "apps/ios/AegisApp/BrowserWindowsView.swift",
+      "sha256": "6369e32d2f6aba95f234113c4f51f47847e976e16b2cc9ec1b8d49bad210da66"
+    },
+    {
+      "path": "apps/ios/BrowserKit/BrowserWindowStore.swift",
+      "sha256": "9262477efb78fb7183ffb8ecfae96b2f03ea5a7c56022216ac240e0dc319b5fd"
+    },
+    {
+      "path": "docs/audit/ios-windows-and-tab-groups-2026-10-01.zh-CN.md",
+      "sha256": "867e66fdf6a41d74114fcc2b68a1547b9d56e726d0e6670d2e699e6d21277ab4"
+    },
+    {
+      "path": "docs/releases/ios-2.2.0-preview.1/ipad-windows.png",
+      "sha256": "b2f4ed4be8372d2cfd89eba93cc4edf8babf66f0421fa90e7d22096c6771dace"
+    },
+    {
+      "path": "docs/windows-product-identity.zh-CN.md",
+      "sha256": "a701f4ecad6e35ccdd6396a2a7037677d1a444443dbcb0949b199b8034e6c389"
+    },
+    {
+      "path": "scripts/ci/platform-tests/windows-acceptance-boundaries.Tests.ps1",
+      "sha256": "b06aba501440dbb4605bb976a24464441777a27b621c444f5fc0e3156fffba72"
+    },
+    {
+      "path": "scripts/ci/run-powershell-coverage.ps1",
+      "sha256": "528a421fc40fb5b0eebc2ffbccae40d6233cd993f92a8e2bc3a2710b00c42464"
+    }
+  ]
+}

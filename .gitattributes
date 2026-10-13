@@ -9,3 +9,7 @@ apps/browser/patches-android/v8/*.patch whitespace=-blank-at-eol,-blank-at-eof
 # 订阅规则保留上游原始字节，包括注释末尾空格，便于核对来源与哈希。
 apps/ios/BrowserKit/Resources/easylist.txt whitespace=-blank-at-eol
 apps/ios/BrowserKit/Resources/easyprivacy.txt whitespace=-blank-at-eol
+
+# 第三方运行库保留已核对的原始字节，以保持资产清单哈希一致。
+apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/translator-worker.js whitespace=-blank-at-eol,-blank-at-eof
+apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/vendor/ort-wasm-simd-threaded.js whitespace=-blank-at-eol,-blank-at-eof

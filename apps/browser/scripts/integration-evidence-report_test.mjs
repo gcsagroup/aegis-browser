@@ -84,7 +84,7 @@ test('重复轮次、未知任务、第四次、混用身份及清单变动均�
     await assert.rejects(buildEvidenceReport({...input(), catalogSha256: '0'.repeat(64)}, root));
     await assert.rejects(buildEvidenceReport({...input(),
       identity: {...identity, apiKey: '合成测试字段，不能原样输出'}}, root));
-    const {catalogSha256, ...shortened} = structuredClone(manifest);
+    const {catalogSha256: _catalogSha256, ...shortened} = structuredClone(manifest);
     shortened.tasks.pop();
     const changed = {...shortened, catalogSha256: digest(JSON.stringify(shortened))};
     await assert.rejects(buildEvidenceReport({...input(), catalogSha256: changed.catalogSha256},

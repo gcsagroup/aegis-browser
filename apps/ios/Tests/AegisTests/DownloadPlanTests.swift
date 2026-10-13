@@ -123,6 +123,7 @@ import XCTest
             await manager.retryStorage()
             XCTAssertFalse(manager.isReady)
             XCTAssertNotNil(manager.storageError)
+            XCTAssertTrue(manager.storageError?.contains(DownloadError.unreadableRecords.localizedDescription) == true)
             XCTAssertEqual(try Data(contentsOf: url), bytes)
         }
     }

@@ -1,0 +1,42 @@
+{
+  "markdown-it.min.js": {
+    "package": "markdown-it-15.0.2.tgz",
+    "sha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5"
+  },
+  "markdown-it-LICENSE": {
+    "package": "markdown-it-15.0.2.tgz",
+    "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+  },
+  "purify.min.js": {
+    "package": "dompurify-3.4.16.tgz",
+    "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2"
+  },
+  "DOMPurify-LICENSE": {
+    "package": "dompurify-3.4.16.tgz",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  "task-lists.min.js": {
+    "package": "markdown-it-task-lists-2.1.1.tgz",
+    "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81"
+  },
+  "task-lists-LICENSE": {
+    "package": "markdown-it-task-lists-2.1.1.tgz",
+    "sha256": "e7cefb44454d371c9eddb390fb829d34fc6ffa79e63776873c34f8413bf3268b"
+  },
+  "acorn.js": {
+    "package": "acorn-8.15.0.tgz",
+    "sha256": "fdb08546776ec6228b03e8d02b40d4ab3255bae5f401adba7ff5dad927ac5c9c"
+  },
+  "acorn-LICENSE": {
+    "package": "acorn-8.15.0.tgz",
+    "sha256": "76a876cf886ff9be2a8b5e2e86514fed06223c8c9f0c1e9ee9606e93841e00b7"
+  },
+  "highlight.min.js": {
+    "package": "highlight.js-11.12.0.tgz",
+    "sha256": "e5ad08ffe8e86f140acb54acb122613305114e1058ae27323fcd36cc63aee1bc"
+  },
+  "highlight-LICENSE": {
+    "package": "highlight.js-11.12.0.tgz",
+    "sha256": "6c081431591d9df696c82dc598fe1423765b8a299b200ed00b281afd0f64c490"
+  }
+}

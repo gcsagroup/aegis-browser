@@ -256,10 +256,15 @@ source_set("aegis") {
   ]
   if (!is_android) {
     sources += [
+      "enhancements/enhancement_store.cc",
+      "enhancements/enhancement_store.h",
+      "enhancements/enhancement_tab_helper.cc",
+      "enhancements/enhancement_tab_helper.h",
       "summary_session.cc",
       "summary_session.h",
     ]
     deps += [
+      "//chrome/browser/resources/aegis:resources",
       "//chrome/browser/ui/tabs:tab_strip",
       "//ui/message_center/public/cpp",
     ]
@@ -302,6 +307,8 @@ if (!is_android) {
       "access/access_browser_request_adapter_browsertest.cc",
       "access/access_proxying_url_loader_factory_browsertest.cc",
       "agent/aegis_agent_browsertest.cc",
+      "enhancements/enhancement_browsertest.cc",
+      "google_service_prompt_browsertest.cc",
     ]
     deps = [
       ":aegis",
@@ -330,12 +337,16 @@ if (!is_android) {
       "//chrome/browser/profiles:profile_manager",
       "//chrome/browser/renderer_context_menu:test_support",
       "//chrome/browser/search_engines",
+      "//chrome/browser/translate",
       "//chrome/browser/ui",
       "//chrome/browser/ui:browser_actions",
       "//chrome/browser/ui/side_panel",
       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+      "//chrome/browser/ui/signin",
+      "//chrome/browser/ui/startup",
       "//chrome/browser/ui/views/side_panel",
       "//chrome/browser/ui/webui/aegis_agent",
+      "//chrome/browser/ui/webui/aegis_agent:impl",
       "//chrome/common/aegis",
       "//chrome/test:test_support",
       "//chrome/test:test_support_ui",
@@ -344,10 +355,14 @@ if (!is_android) {
       "//components/aegis_access:access_proxy_selection_generation_state",
       "//components/bookmarks/browser",
       "//components/bookmarks/test",
+      "//components/infobars/content",
       "//components/prefs",
       "//components/search_engines",
+      "//components/signin/public/base",
+      "//components/translate/core/browser",
       "//content/public/common",
       "//content/test:test_support",
+      "//google_apis",
       "//mojo/public/cpp/bindings",
       "//net:test_support",
       "//services/network:test_support",
@@ -483,6 +498,7 @@ test("aegis_browser_unittests") {
     sources += [
       "actor_journal_privacy_unittest.cc",
       "aegis_ui_handler_unittest.cc",
+      "enhancements/enhancement_store_unittest.cc",
       "agent/aegis_agent_service_unittest.cc",
       "agent/agent_core_unittest.cc",
       "agent/agent_observation_unittest.cc",
@@ -508,6 +524,9 @@ test("aegis_browser_unittests") {
     ]
   }
   if (is_mac) {
-    sources += [ "aegis_torrent_client_unittest.cc" ]
+    sources += [
+      "aegis_torrent_client_unittest.cc",
+      "aegis_mac_signing_unittest.cc",
+    ]
   }
 }

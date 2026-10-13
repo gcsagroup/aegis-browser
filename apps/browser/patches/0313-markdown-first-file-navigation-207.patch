@@ -1,0 +1,189 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 03:30:00 +0800
+Subject: [PATCH] 在本地文件成功载入后自动预览 Markdown，修复首次拖放
+
+---
+diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+index 4835f62798288b31ef212182c2dd1c1c70445c1d..4d3aa2342e310c53f048c200f412a1c4e02bd00a 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+@@ -1,6 +1,9 @@
+ // Copyright 2026 GCSA
+ // 浏览器进程验收：真实文档注入、授权撤销与无特权 Markdown 渲染。
+ #include "base/command_line.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/functional/bind.h"
+ #include "base/test/bind.h"
+ #include "base/test/run_until.h"
+@@ -13,12 +16,16 @@
+ #include "chrome/test/base/in_process_browser_test.h"
+ #include "chrome/test/base/ui_test_utils.h"
+ #include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/common/drop_data.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+ #include "content/public/test/test_devtools_protocol_client.h"
+ #include "net/test/embedded_test_server/embedded_test_server.h"
+ #include "net/dns/mock_host_resolver.h"
++#include "net/base/filename_util.h"
+ #include "net/test/embedded_test_server/http_response.h"
+ #include "url/origin.h"
+ 
+@@ -80,6 +87,26 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
+     return EnhancementField(
+         store_->state().FindList("scripts")->back().GetDict(), "id");
+   }
++  void ExpectMarkdownPreview() {
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return contents()->GetLastCommittedURL() ==
++                 GURL("chrome://aegis/markdown.html") &&
++             !contents()->IsLoading();
++    }));
++    auto* frame = content::ChildFrameAt(contents()->GetPrimaryMainFrame(), 0);
++    ASSERT_NE(frame, nullptr);
++    EXPECT_EQ(true, content::EvalJs(frame, R"JS(
++      new Promise(resolve => {
++        const check = () => {
++          if (document.querySelector('#document h1')?.textContent === '首次打开')
++            resolve(true);
++          else requestAnimationFrame(check);
++        };
++        check();
++      })
++    )JS"));
++    EXPECT_EQ("undefined", content::EvalJs(frame, "typeof window.unsafe"));
++  }
+   raw_ptr<EnhancementStore> store_ = nullptr;
+ };
+ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+@@ -212,6 +239,57 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+   helper->RunMenu(menu, denied.GetCallback());
+   EXPECT_TRUE(denied.Get().Find("error"));
+ }
++// 使用真实文件和浏览器导航，不能仅向预览框架直接注入待渲染文本。
++IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
++                       MarkdownFirstBrowserOpenRendersWithoutReload) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto path = directory.GetPath().AppendASCII("first.MARKDOWN");
++  ASSERT_TRUE(base::WriteFile(path,
++      "# 首次打开\n\n<script>window.unsafe=1</script>"));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(path)));
++  ExpectMarkdownPreview();
++}
++IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
++                       MarkdownFirstLocalLinkRendersWithoutReload) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto path = directory.GetPath().AppendASCII("first.md");
++  const auto page = directory.GetPath().AppendASCII("open.html");
++  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
++  ASSERT_TRUE(base::WriteFile(page,
++      "<!doctype html><a id='open' href='first.md'>打开</a>"));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), net::FilePathToFileURL(page)));
++  ASSERT_TRUE(content::ExecJs(contents(), "document.querySelector('#open').click()"));
++  ExpectMarkdownPreview();
++}
++IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
++                       MarkdownFirstFileDropRendersWithoutReload) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto path = directory.GetPath().AppendASCII("first.md");
++  ASSERT_TRUE(base::WriteFile(path, "# 首次打开"));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/page")));
++  auto* widget = contents()->GetPrimaryMainFrame()->GetRenderWidgetHost();
++  const auto bounds = widget->GetView()->GetViewBounds();
++  const gfx::PointF client(bounds.width() / 2, bounds.height() / 2);
++  const gfx::PointF screen(bounds.CenterPoint());
++  content::DropData data;
++  data.operation = ui::mojom::DragOperation::kCopy;
++  data.filenames.emplace_back(path, path.BaseName());
++  widget->FilterDropData(&data);
++  base::test::TestFuture<ui::mojom::DragOperation, bool> entered;
++  widget->DragTargetDragEnter(data, client, screen,
++      blink::DragOperationsMask::kDragOperationEvery, 0, entered.GetCallback());
++  ASSERT_TRUE(entered.Wait());
++  base::test::TestFuture<ui::mojom::DragOperation, bool> moved;
++  widget->DragTargetDragOver(client, screen,
++      blink::DragOperationsMask::kDragOperationEvery, 0, moved.GetCallback());
++  ASSERT_TRUE(moved.Wait());
++  widget->DragTargetDrop(data, client, screen, 0, base::DoNothing());
++  ExpectMarkdownPreview();
++}
+ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+                        MarkdownUntrustedFrameRendersAndBlocksExecutableHTML) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+diff --git a/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc b/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
+index 86469f121e58e3e3767ef1ed950c0298bffc7a55..b49a9771a344133edb058b35a5527c41dcc25502 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_tab_helper.cc
+@@ -667,8 +667,16 @@ void EnhancementTabHelper::DidStartNavigation(
+   if (!handle->IsInPrimaryMainFrame() || handle->IsSameDocument())
+     return;
+   navigation_id_ = handle->GetNavigationId();
+-  const auto url = handle->GetURL();
+-  if (!handle->IsRendererInitiated() && url.SchemeIsFile() &&
++}
++void EnhancementTabHelper::DidFinishLoad(content::RenderFrameHost* frame,
++                                        const GURL& url) {
++  if (frame != web_contents()->GetPrimaryMainFrame() ||
++      frame->IsErrorDocument() ||
++      web_contents()->GetLastCommittedURL() != url)
++    return;
++  // 拖入文件和本地页面链接由渲染进程发起。等待 Chromium 成功载入后再
++  // 读取原文，既覆盖首次打开，也不绕过浏览器原有的本地文件访问检查。
++  if (url.SchemeIsFile() &&
+       (url.host().empty() || url.host() == "localhost")) {
+     base::FilePath path;
+     if (!net::FileURLToFilePath(url, &path))
+@@ -681,23 +689,20 @@ void EnhancementTabHelper::DidStartNavigation(
+         path, url, true,
+         base::BindOnce(
+             [](base::WeakPtr<EnhancementTabHelper> self, int64_t navigation,
+-               base::DictValue result) {
++               GURL source, base::DictValue result) {
+               if (!self || self->navigation_id_ != navigation ||
++                  self->web_contents()->GetLastCommittedURL() != source ||
+                   result.FindString("error"))
+                 return;
+               self->markdown_ = std::move(result);
+-              self->web_contents()->Stop();
+               self->web_contents()->GetController().LoadURL(
+                   GURL("chrome://aegis/markdown.html"), content::Referrer(),
+                   ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+             },
+-            weak_.GetWeakPtr(), navigation_id_));
++            weak_.GetWeakPtr(), navigation_id_, url));
++    return;
+   }
+-}
+-void EnhancementTabHelper::DidFinishLoad(content::RenderFrameHost* frame,
+-                                         const GURL& url) {
+-  if (frame != web_contents()->GetPrimaryMainFrame() ||
+-      !url.SchemeIsHTTPOrHTTPS())
++  if (!url.SchemeIsHTTPOrHTTPS())
+     return;
+   const std::string path = base::ToLowerASCII(std::string(url.path()));
+   if (!path.ends_with(".md") && !path.ends_with(".markdown") &&
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 892b5f0e24c38374aabf5a59802607327cdf8492..0fb42c8fed1b6a23e339a43f251db3e20c4cc70b 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "5.0.0.205";
+-inline constexpr char kProductVersionLabel[] = "Ver 5.0 (205)";
++inline constexpr char kProductVersion[] = "5.0.0.207";
++inline constexpr char kProductVersionLabel[] = "Ver 5.0 (207)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

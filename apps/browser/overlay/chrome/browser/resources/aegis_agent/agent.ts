@@ -19,6 +19,7 @@ import {
   TypeSafeSettingsError,
   Workflow,
 } from './aegis_agent.mojom-webui.js';
+import {ReadingWorkspace} from './reading_workspace.js';
 import {BrowserProxy} from './browser_proxy.js';
 
 let proxy: BrowserProxy;
@@ -37,7 +38,7 @@ let modelFormInitialized = false;
 let typesafeEnabledDirty = false;
 let autoRunTaskId = '';
 let autoRunInFlight = false;
-let activeView: 'task'|'automation'|'research' = 'task';
+let activeView: 'task'|'automation'|'research'|'reading' = 'task';
 let researchTabs: ResearchTab[] = [];
 const selectedResearchTabs = new Set<number>();
 const launchParameters = new URLSearchParams(window.location.search);
@@ -205,6 +206,8 @@ function renderView() {
   const taskButton = element<HTMLButtonElement>('task-view-button');
   const automationButton =
       element<HTMLButtonElement>('automation-view-button');
+  element('reading-view').hidden = activeView !== 'reading';
+  element('reading-view-button').setAttribute('aria-selected', String(activeView === 'reading'));
   const taskSelected = activeView === 'task';
   taskView.hidden = !taskSelected;
   automationView.hidden = activeView !== 'automation';
@@ -1347,6 +1350,12 @@ async function withBusy(
 }
 
 function initializeLabels() {
+  const language = document.documentElement.lang;
+  const traditional = /^zh-(?:TW|HK|Hant)/i.test(language);
+  element('enhancement-link').hidden = loadTimeData.getBoolean('isAndroid');
+  element('markdown-link').hidden = loadTimeData.getBoolean('isAndroid');
+  element('enhancement-link').textContent = language.startsWith('zh') ? (traditional ? '網站增強與腳本' : '网站增强与脚本') : 'Website enhancements and scripts';
+  element('markdown-link').textContent = language.startsWith('zh') ? (traditional ? 'Markdown 閱讀' : 'Markdown 阅读') : 'Markdown reader';
   element('platform-note').hidden = !loadTimeData.getBoolean('isAndroid');
   text('title', 'title');
   text('subtitle', 'subtitle');
@@ -1947,6 +1956,12 @@ initializeLabels();
 try {
   proxy = BrowserProxy.getInstance();
   bindActions();
+  const reading = new ReadingWorkspace(proxy);
+  element('reading-view-button').addEventListener('click', () => {
+    activeView = 'reading';
+    renderView();
+    void reading.refresh();
+  });
   proxy.callbackRouter.onSnapshotChanged.addListener(render);
   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
     render(initial);

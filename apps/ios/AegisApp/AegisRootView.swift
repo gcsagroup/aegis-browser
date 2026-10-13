@@ -15,6 +15,7 @@ struct AegisRootView: View {
     @State private var showsFilters = false
     @State private var showsDownloads = false
     @State private var showsFind = false
+    @State private var showsReading = false
     @State private var findText = ""
     @State private var findMessage = ""
 
@@ -30,7 +31,8 @@ struct AegisRootView: View {
                     showsSettings: $showsSettings,
                     showsFilters: $showsFilters,
                     showsDownloads: $showsDownloads,
-                    showsFind: $showsFind
+                    showsFind: $showsFind,
+                    showsReading: $showsReading
                 )
             } else {
                 ContentUnavailableView("没有标签页", systemImage: "rectangle.stack")
@@ -45,12 +47,9 @@ struct AegisRootView: View {
         }
         .sheet(isPresented: $showsData) { BrowserLibraryView(dataStore: browser.dataStore, workspaces: browser.workspaceStore) }
         .sheet(isPresented: $showsSettings) { BrowserSettingsView() }
-        .sheet(isPresented: $showsFilters) {
-            NavigationStack {
-                ContentFilterSettingsView()
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showsFilters = false } } }
-            }
-        }
+        .sheet(isPresented: $showsReading) { ReadingLibraryView() }
+        .sheet(item: $browser.pendingMarkdown) { document in MarkdownReaderView(initial: document) }
+        .sheet(isPresented: $showsFilters) { CurrentWebsiteView() }
         .sheet(isPresented: $showsDownloads, onDismiss: { browser.pendingDownloadURL = nil }) {
             DownloadsView(initialURL: browser.pendingDownloadURL)
         }
@@ -81,6 +80,10 @@ struct AegisRootView: View {
             browser.pendingDownloadURL = nil
         }
         .onOpenURL { input in
+            if input.isFileURL, MarkdownDocument.accepts(input) {
+                browser.pendingMarkdown = try? MarkdownDocument.read(input)
+                return
+            }
             guard let url = ExternalPageLink.destination(input) else { return }
             externalURL = url
             showsExternalConfirmation = true
@@ -97,6 +100,14 @@ struct AegisRootView: View {
             updateAddress()
             consumeSharedURLIfPresent()
         }
+        .task(id: scenePhase) {
+            guard scenePhase == .active, !browser.profile.isPrivate else { return }
+            let protection = TrackingProtection.shared
+            _ = try? await protection.ruleList()
+            if browser.preferences.claimFilterUpdate(lastSuccess: protection.updatedAt) {
+                await protection.update()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else {
                 browser.persistSession()
@@ -112,6 +123,10 @@ struct AegisRootView: View {
     }
 
     private func consumeSharedURLIfPresent() {
+        if let inbox = try? MarkdownShareInbox(), let value = try? inbox.consume() {
+            browser.pendingMarkdown = MarkdownDocument(title: value.title, text: value.text)
+            return
+        }
         guard let inbox = try? ShareInbox(),
               let envelope = try? inbox.consume()
         else { return }
@@ -138,6 +153,7 @@ private struct BrowserPane: View {
     @Binding var showsFilters: Bool
     @Binding var showsDownloads: Bool
     @Binding var showsFind: Bool
+    @Binding var showsReading: Bool
     @State private var addressFocused = false
     @State private var addressSelectionRequest = 0
     @State private var confirmsPrivateBookmark = false
@@ -236,7 +252,7 @@ private struct BrowserPane: View {
                             .foregroundStyle(browser.profile.isPrivate ? Color.purple : Color.secondary)
                             .frame(width: 44, height: 44)
                     }
-                    .accessibilityLabel("广告与跟踪过滤")
+                    .accessibilityLabel("当前网站")
                     .accessibilityValue(browser.profile.isPrivate ? String(localized: "私密浏览：不记录历史，保存和发送资料前需确认") : filterStatus)
                     .accessibilityIdentifier("page-protection")
                 }
@@ -310,6 +326,8 @@ private struct BrowserPane: View {
                     .disabled(!browser.agentIsAvailable)
                     .accessibilityIdentifier("agent-button")
                 Button("下载", systemImage: "arrow.down.circle") { showsDownloads = true }.accessibilityIdentifier("downloads-button")
+                Button("阅读库", systemImage: "text.book.closed") { showsReading = true }
+                    .accessibilityIdentifier("reading-library-button")
             }
             Menu {
                 Button(browser.bookmarkIsActive ? "移除收藏" : "添加收藏", systemImage: browser.bookmarkIsActive ? "star.fill" : "star") {
@@ -320,6 +338,12 @@ private struct BrowserPane: View {
                 }.accessibilityIdentifier("toggle-bookmark")
                 Button("前进", systemImage: "chevron.right") { tab.goForward() }.disabled(!tab.canGoForward)
                 Button("编辑网址", systemImage: "text.cursor", action: editAddress)
+                Button("打开主页", systemImage: "house") { tab.load(browser.preferences.homeURL) }
+                if tab.securityResourcesTemporarilyAllowed {
+                    Button("恢复安全资源拦截", systemImage: "shield.fill") { tab.restoreSecurityResourceProtection() }
+                } else if tab.url?.host != nil {
+                    Button("临时允许本站安全资源（10 分钟）", systemImage: "shield.slash") { tab.temporarilyRestoreSecurityResources() }
+                }
                 Button("在页面中查找", systemImage: "doc.text.magnifyingglass") { showsFind = true }
                 if let url = tab.url, ["http", "https"].contains(url.scheme ?? "") {
                     ShareLink(item: url) { Label("分享页面", systemImage: "square.and.arrow.up") }
@@ -366,8 +390,32 @@ private struct ActiveTabView: View {
                     tab.dismissPolicyIntervention()
                 }
             }
-            BrowserWebView(webView: tab.webView, onFind: onFind, onScroll: onScroll)
-                .accessibilityIdentifier("browser-webview")
+            if let incident = tab.protectionIncident {
+                ScrollView {
+                  VStack(alignment: .leading, spacing: 18) {
+                    Label("已阻止风险页面", systemImage: "exclamationmark.shield.fill").font(.title2.bold()).accessibilityIdentifier("page-protection-blocked")
+                    Text(incident.url.host ?? "").font(.headline).textSelection(.enabled)
+                    Text(incident.fromPage ? String(localized: "页面结构检查发现高风险，已卸载该页面。检查发生在页面开始加载之后。") : String(localized: "本地网址检查已阻止此次导航。"))
+                    Text(incident.reasons.contains("known_phishing_host") ? String(localized: "命中本地已知钓鱼主机规则。") : String(localized: "网址或登录表单包含多项风险信号。"))
+                    ForEach(incident.explanations, id: \.self) { Text($0).font(.callout) }
+                    Text("评分：\(incident.score)").font(.caption)
+                    Button("返回起始页") { tab.load(URL(string: "aegis://start")!) }.buttonStyle(.borderedProminent)
+                    Button("仍然访问此网址（10 分钟）") { tab.continueProtectedPageOnce() }
+                        .accessibilityIdentifier("protection-continue-once")
+                    Text("临时允许仅限当前标签和此完整网址，切换网址即失效；不会关闭挖矿与指纹资源规则。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                  }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
+                }
+            } else {
+                if let notice = tab.protectionNotice { Text(notice).font(.caption).padding(8).accessibilityIdentifier("page-protection-notice") }
+                if tab.fingerprintSignals.count >= 2 {
+                    Text("观察到多种指纹读取接口；正常绘图与音频也可能使用这些接口。")
+                        .font(.caption).padding(8).accessibilityIdentifier("fingerprint-observation")
+                }
+                BrowserWebView(webView: tab.webView, onFind: onFind, onScroll: onScroll)
+                    .id(ObjectIdentifier(tab.webView))
+                    .accessibilityIdentifier("browser-webview")
+            }
         }
         .onChange(of: tab.url) { _, url in
             if !addressIsEditing { address = url?.absoluteString ?? address }

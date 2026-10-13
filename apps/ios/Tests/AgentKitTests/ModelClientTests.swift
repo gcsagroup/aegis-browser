@@ -29,6 +29,29 @@ final class ModelClientTests: XCTestCase {
         XCTAssertThrowsError(try client.completionRequest(goal: "总结", sources: ["api_key=supersecret12345"], language: "zh-Hans"))
     }
 
+    func testScriptThinkingOverrideOnlyAppliesToExplicitLocalQwenRequests() throws {
+        let cases: [(ModelProvider, String, String, Bool, Bool)] = [
+            (.compatible, "http://127.0.0.1:8000/v1", "mlx/Qwen3.8-Flash-Next", true, true),
+            (.compatible, "http://[::1]:8000/v1", "QWEN3", true, true),
+            (.compatible, "http://127.0.0.1:8000/v1", "Qwen3", false, false),
+            (.compatible, "https://model.example/v1", "Qwen3", true, false),
+            (.compatible, "http://localhost:8000/v1", "Qwen3", true, false),
+            (.compatible, "http://127.0.0.1:8000/v1", "other-model", true, false),
+            (.compatible, "http://127.0.0.1:8000/v1", "notqwen3", true, false),
+            (.compatible, "http://127.0.0.1:8000/v1", "Qwenish", true, false),
+            (.anthropic, "http://127.0.0.1:8000/v1", "Qwen3", true, false),
+            (.gemini, "http://127.0.0.1:8000/v1", "Qwen3", true, false)
+        ]
+        for (provider, endpoint, model, enabled, expected) in cases {
+            let client = ModelClient(configuration: ModelConfiguration(provider: provider, endpoint: endpoint, model: model), key: "")
+            let request = try client.completionRequest(goal: "生成脚本草稿", sources: [], language: "中文", structured: true, disableLocalQwenThinking: enabled)
+            let body = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(request.httpBody)) as? [String: Any])
+            let options = body["chat_template_kwargs"] as? [String: Bool]
+            if expected { XCTAssertEqual(options?["enable_thinking"], false, endpoint + model) }
+            else { XCTAssertNil(options, endpoint + model) }
+        }
+    }
+
     func testIncompleteAndToolResponsesNeverBecomeCompletedText() throws {
         for json in [#"{"choices":[{"finish_reason":"length","message":{"content":"半截结果"}}]}"#,
                      #"{"choices":[{"finish_reason":"tool_calls","message":{"tool_calls":[]}}]}"#,

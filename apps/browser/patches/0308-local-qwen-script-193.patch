@@ -1,0 +1,173 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Tue, 13 Oct 2026 05:35:44 +0800
+Subject: [PATCH] 限定本机 Qwen 脚本生成关闭思考，候选 193
+
+---
+diff --git a/chrome/browser/aegis/model_provider_client.cc b/chrome/browser/aegis/model_provider_client.cc
+index 2034d4300a7c0802bd22d7a8500aeb5e51821e87..b1070034ac1c13f72cd155b3dd45d0945b802262 100644
+--- a/chrome/browser/aegis/model_provider_client.cc
++++ b/chrome/browser/aegis/model_provider_client.cc
+@@ -18,6 +18,7 @@
+ #include "base/time/time.h"
+ #include "base/unguessable_token.h"
+ #include "base/values.h"
++#include "chrome/browser/aegis/agent/agent_model_protocol.h"
+ #include "chrome/browser/browser_process.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+@@ -249,7 +250,8 @@ base::DictValue GeminiTextPart(std::string_view text) {
+ std::optional<std::string> BuildChatBody(ModelProvider provider,
+                                          const std::string& model,
+                                          const std::string& system,
+-                                         const std::string& user) {
++                                         const std::string& user,
++                                         bool disable_thinking) {
+   base::DictValue payload;
+   payload.Set("model", model);
+ 
+@@ -260,6 +262,10 @@ std::optional<std::string> BuildChatBody(ModelProvider provider,
+       messages.Append(TextMessage("user", user));
+       payload.Set("messages", std::move(messages));
+       payload.Set("stream", false);
++      if (disable_thinking) {
++        payload.Set("chat_template_kwargs",
++                    base::DictValue().Set("enable_thinking", false));
++      }
+       break;
+     }
+     case ModelProvider::kAnthropic: {
+@@ -530,7 +536,8 @@ std::optional<ModelProviderClient::ChatRequestId> ModelProviderClient::Chat(
+     const std::string& model,
+     const std::string& system,
+     const std::string& user,
+-    ChatCallback done) {
++    ChatCallback done,
++    bool disable_local_qwen_thinking) {
+   if (request_in_flight_) {
+     std::move(done).Run(false, "model request already in progress", {});
+     return std::nullopt;
+@@ -560,7 +567,11 @@ std::optional<ModelProviderClient::ChatRequestId> ModelProviderClient::Chat(
+     return std::nullopt;
+   }
+   const std::optional<std::string> body =
+-      BuildChatBody(provider, model, system, user);
++      BuildChatBody(provider, model, system, user,
++                    disable_local_qwen_thinking &&
++                        provider == ModelProvider::kOpenAI &&
++                        IsLocalModelEndpoint(provider, *parsed_base) &&
++                        agent::IsQwenModelName(model));
+   if (!body) {
+     std::move(done).Run(false, "failed to encode model request", {});
+     return std::nullopt;
+diff --git a/chrome/browser/aegis/model_provider_client.h b/chrome/browser/aegis/model_provider_client.h
+index 3867b0e4e0d3f6688b45d66aeeb419ac0509791f..9646321f20cd50c5c5414ce9f7e22856a277c0e4 100644
+--- a/chrome/browser/aegis/model_provider_client.h
++++ b/chrome/browser/aegis/model_provider_client.h
+@@ -45,7 +45,8 @@ class ModelProviderClient {
+                                     const std::string& model,
+                                     const std::string& system,
+                                     const std::string& user,
+-                                    ChatCallback done);
++                                    ChatCallback done,
++                                    bool disable_local_qwen_thinking = false);
+   bool CancelChat(ChatRequestId request_id);
+ 
+   bool busy() const { return request_in_flight_; }
+diff --git a/chrome/browser/aegis/model_provider_client_unittest.cc b/chrome/browser/aegis/model_provider_client_unittest.cc
+index acd5d7559ec30d317d40a9fc39695026aa95d52d..5eeb18411f8dbfb2d28a9d49ef7accd9507d42ed 100644
+--- a/chrome/browser/aegis/model_provider_client_unittest.cc
++++ b/chrome/browser/aegis/model_provider_client_unittest.cc
+@@ -209,6 +209,63 @@ TEST_F(ModelProviderClientNetworkTest,
+   EXPECT_EQ(R"({"summary":"local"})", chat_result.Get<2>());
+ }
+ 
++TEST_F(ModelProviderClientNetworkTest,
++       LimitsQwenThinkingOverrideToOptedInLocalRequests) {
++  struct Case {
++    ModelProvider provider;
++    const char *base;
++    const char *model;
++    bool opt_in;
++    bool expected;
++  };
++  for (const auto &item : {
++           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1",
++                "mlx/Qwen3.8-Flash-Next", true, true},
++           Case{ModelProvider::kOpenAI, "http://[::1]:8000/v1", "QWEN3", true,
++                true},
++           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1", "Qwen3",
++                false, false},
++           Case{ModelProvider::kOpenAI, "https://model.example/v1", "Qwen3",
++                true, false},
++           Case{ModelProvider::kOpenAI, "https://localhost/v1", "Qwen3", true,
++                false},
++           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1",
++                "other-model", true, false},
++           Case{ModelProvider::kOpenAI, "http://127.0.0.1:8000/v1", "notqwen3",
++                true, false},
++           Case{ModelProvider::kAnthropic, "http://127.0.0.1:8000/v1", "Qwen3",
++                true, false},
++       }) {
++    SCOPED_TRACE(item.model);
++    SCOPED_TRACE(item.base);
++    ModelProviderClient client;
++    base::test::TestFuture<bool, std::string, std::string> result;
++    const auto id =
++        client.Chat(item.provider, item.base, "", item.model, "生成脚本草稿",
++                    "隐藏测试侧栏", result.GetCallback(), item.opt_in);
++    ASSERT_TRUE(id);
++    const GURL endpoint(std::string(item.base) +
++                        (item.provider == ModelProvider::kAnthropic
++                             ? "/messages"
++                             : "/chat/completions"));
++    const auto payload = base::JSONReader::Read(
++        network::GetUploadData(PendingRequest(endpoint)), base::JSON_PARSE_RFC);
++    ASSERT_TRUE(payload && payload->is_dict());
++    const auto *options = payload->GetDict().FindDict("chat_template_kwargs");
++    if (item.expected) {
++      ASSERT_TRUE(options);
++      EXPECT_EQ(false, options->FindBool("enable_thinking"));
++    } else {
++      EXPECT_FALSE(options);
++    }
++    EXPECT_TRUE(test_url_loader_factory_.SimulateResponseForPendingRequest(
++        endpoint.spec(), item.provider == ModelProvider::kAnthropic
++                             ? R"({"content":[{"type":"text","text":"草稿"}]})"
++                             : R"({"choices":[{"message":{"content":"草稿"}}]})"));
++    EXPECT_TRUE(result.Get<0>());
++  }
++}
++
+ TEST_F(ModelProviderClientNetworkTest,
+        UsesAnthropicFormatWithThirdPartyHttpsPrefixAndNoKey) {
+   constexpr std::string_view kBaseUrl =
+diff --git a/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc b/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc
+index bb468c7ff551bdedb0f69abadca7d8d124c484fa..c42d611f3cbf67633554c64443213301c00d34da 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc
+@@ -246,7 +246,8 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
+                           base::DictValue().Set("output", output));
+             },
+             weak_.GetWeakPtr(), std::move(callback), target, address,
+-            document));
++            document),
++        /*disable_local_qwen_thinking=*/kind == "script");
+     return;
+   }
+   if (op == "trial" || op == "menu" || op == "read-page" ||
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 693088b37cd12e0871c3b72cffd695e2e549dd60..080d0e1733b66d16bc6d87a28c1948ba4e4e3439 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "4.0.0.190";
+-inline constexpr char kProductVersionLabel[] = "Ver 4.0 (190)";
++inline constexpr char kProductVersion[] = "4.0.0.193";
++inline constexpr char kProductVersionLabel[] = "Ver 4.0 (193)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

@@ -16,7 +16,7 @@ ARTICLE = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="wi
 <title>模拟器验收文章</title><style>body{font:20px -apple-system;margin:24px;line-height:1.6}a{display:block;margin:20px 0}</style>
 <main><h1>城市绿地观察</h1><p>这是一份合成验收资料。青林公园面积为 12 公顷，开放时间为每天 06:00 至 21:00，步道总长 3 公里。</p>
 <p>2026 年的改造计划包括增加 40 棵乔木和两个饮水点。本文没有提供项目预算。</p></main>
-<a href="/article-two" target="_blank">打开第二篇来源</a><a href="/download.bin" download>下载验收文件</a>
+<a id="article-end" href="/article-two" target="_blank">打开第二篇来源</a><a href="/download.bin" download>下载验收文件</a>
 <a href="/sensitive">登录表单测试</a><input placeholder="输入框不应进入助手" value="private form text">
 </html>"""
 SECOND = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1"><title>第二篇合成来源</title>
@@ -27,16 +27,17 @@ class Handler(BaseHTTPRequestHandler):
     dropped_paths = set()
     drop_lock = threading.Lock()
     request_counts = {}
+    watch_count = 0
     request_lock = threading.Lock()
 
     @classmethod
     def count_request(cls, marker, kind):
         # 只保存合成验收标记及次数，不记录模型输入或页面正文。
-        if not re.fullmatch(r"AEGISPRIVATE_[A-F0-9-]+", marker):
+        if not re.fullmatch(r"(?:AEGISPRIVATE_[A-F0-9-]+|SECURITY_[A-Za-z0-9_-]{1,80})", marker):
             return
         with cls.request_lock:
             counts = cls.request_counts.setdefault(marker, {"model": 0, "download": 0})
-            counts[kind] += 1
+            counts[kind] = counts.get(kind, 0) + 1
 
     def log_message(self, *_):
         pass
@@ -58,13 +59,69 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         query = parse_qs(urlsplit(self.path).query)
+        if path in ("/enhancements/page", "/enhancements/frame"):
+            html = """<!doctype html><html><head><meta name="viewport" content="width=device-width"><title>网站增强验收</title>
+<script>window.aegisOrder=!!document.documentElement.dataset.early;
+window.addEventListener('contextmenu',e=>{window.contextBlocked=true;e.preventDefault();});
+window.addEventListener('copy',e=>{window.copyBlocked=true;e.preventDefault();});</script>
+<style>body{font:20px system-ui;margin:24px;user-select:none}main{max-width:600px}aside{padding:20px;background:#ddd}button{font:inherit;padding:10px}</style></head>
+<body><main><h1>网站增强验收文章</h1><p>这段文字用于检查选取、复制、脚本样式和存储。</p><button id="normal-button" onclick="this.textContent='普通按钮正常'">普通按钮</button><input placeholder="保留未提交输入"></main><aside>右侧栏</aside><div id="frames"></div></body></html>"""
+            if path.endswith("page"):
+                html = html.replace('<div id="frames"></div>', '<iframe src="/enhancements/frame"></iframe><iframe src="http://localhost:8768/enhancements/frame"></iframe>')
+            return self.respond(200, html, "text/html; charset=utf-8", {"Cache-Control": "no-store"})
+        if path in ("/enhancements/document.md", "/enhancements/attachment.md"):
+            text = "# Markdown 验收\n\n城市绿地观察：中文长文与 **粗体**。\n\n## 重复标题\n\n- [x] 完成项目\n- [ ] 待办项目\n\n|名称|数值|\n|---|---|\n|绿地|12 公顷|\n\n## 重复标题\n\n```js\nconst value = 42;\n```\n\n<script>window.markdownExecuted=true</script>\n\n[危险链接](javascript:alert(1))\n"
+            headers = {"Content-Disposition": 'attachment; filename="document.md"'} if path.endswith("attachment.md") else {}
+            return self.respond(200, text, "text/markdown; charset=utf-8", headers)
+        if path == "/enhancements/fake.md":
+            return self.respond(200, "<h1>实际为 HTML，不能接管</h1>", "text/html; charset=utf-8")
         if path == "/test-request-counts":
             marker = query.get("case", [""])[0]
             with self.request_lock:
                 counts = dict(self.request_counts.get(marker, {"model": 0, "download": 0}))
             return self.respond(200, counts)
+        if path.startswith("/security-fixture/"):
+            category = path.split("/")[2]
+            self.count_request(query.get("case", [""])[0], category)
+            return self.respond(200, "globalThis.fixtureExecuted=true;", "application/javascript", {"Cache-Control": "no-store"})
+        if path == "/security/resources":
+            marker = query.get("case", [""])[0]
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", marker):
+                return self.respond(400, "invalid marker")
+            page = f'''<!doctype html><meta name="viewport" content="width=device-width"><title>安全资源验收</title>
+            <main>安全资源验收：检查脚本、Worker 和请求是否被拦截。</main>
+            <script src="/security-fixture/mining/script.js?case={marker}"></script>
+            <script src="/security-fixture/fingerprinting/script.js?case={marker}"></script>
+            <script>try {{ new Worker('/security-fixture/mining/worker.js?case={marker}'); }} catch {{}}
+            fetch('/security-fixture/mining/endpoint?case={marker}').catch(()=>{{}});
+            fetch('/security-fixture/fingerprinting/endpoint?case={marker}').catch(()=>{{}});
+            window.fixtureReady=true;</script>'''
+            return self.respond(200, page, "text/html; charset=utf-8", {"Cache-Control": "no-store"})
+        if path in ("/security/login", "/security/safe", "/security/dynamic"):
+            malicious = path != "/security/safe"
+            title = "PayPal verify your account" if malicious else "本机登录示例"
+            form = '<form action="http://untrusted.example.invalid/collect"><input type=password><button>提交</button></form>' if malicious else '<form action="/security/safe"><input type=password><button>登录</button></form>'
+            if path == "/security/dynamic":
+                form = '<script>setTimeout(()=>{document.body.insertAdjacentHTML("beforeend",' + json.dumps(form) + ')},500);</script>'
+            return self.respond(200, f'<!doctype html><meta name="viewport" content="width=device-width"><title>{title}</title><body><main>{title}</main>{form}</body>', "text/html; charset=utf-8", {"Cache-Control": "no-store"})
+        if path == "/security/redirect":
+            return self.respond(302, "", headers={"Location": "http://paypal.example.top/login"})
+        if path == "/security/canvas":
+            return self.respond(200, '''<!doctype html><meta name="viewport" content="width=device-width"><title>指纹兼容验收</title><main>绘图与读取验收</main><canvas id="canvas" width="32" height="32"></canvas>
+            <script>const ctx=document.getElementById('canvas').getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,32,32);window.drawingWorked=true;
+            try{canvas.toDataURL();window.canvasReadable=true;}catch(e){window.canvasReadable=false;window.canvasError=e.name;}
+            if(parent!==window)parent.postMessage({kind:"security-frame",readable:canvasReadable},"*");
+            const ac=new AudioContext();const ab=ac.createBuffer(1,16,ac.sampleRate);try{ab.getChannelData(0);window.audioReadable=true;}catch{window.audioReadable=false;}ac.close();
+
+            </script>''', "text/html; charset=utf-8", {"Cache-Control": "no-store"})
+        if path == "/security/worker":
+            return self.respond(200, "onmessage=()=>{let result={offscreen:typeof OffscreenCanvas!=='undefined'};try{const c=new OffscreenCanvas(4,4);c.getContext('2d').getImageData(0,0,1,1);result.readable=true;}catch{result.readable=false;}postMessage(result)};", "application/javascript")
         if path == "/article":
-            return self.respond(200, ARTICLE, "text/html; charset=utf-8")
+            marker = query.get("case", [""])[0]
+            article = ARTICLE
+            if re.fullmatch(r"AEGISPRIVATE_[A-F0-9-]+", marker):
+                article = ARTICLE.replace("</main>", "<p>" + marker + "</p></main>")
+            return self.respond(200, article, "text/html; charset=utf-8")
         if path == "/long-article":
             return self.respond(200, ARTICLE.replace("</main>", "<p>合成长页面滚动验收。</p>" * 150 + "</main>"), "text/html; charset=utf-8")
         if path == "/test.txt":
@@ -76,6 +133,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/download.bin":
             self.count_request(query.get("case", [""])[0], "download")
             return self.respond(200, PAYLOAD, "application/octet-stream", {"Content-Disposition": f'attachment; filename="aegis-test-{time.time_ns()}.bin"', "Accept-Ranges": "bytes"})
+        if path == "/oversize.bin":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", "100000001")
+            self.end_headers()
+            try:
+                for _ in range(8):
+                    self.wfile.write(b"x" * 65536)
+                    self.wfile.flush()
+                    time.sleep(0.03)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         if path in ("/slow.bin", "/drop.bin"):
             with self.drop_lock:
                 drop = path == "/drop.bin" and self.path not in self.dropped_paths
@@ -105,6 +175,13 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 pass
             return
+        if path == "/preferences":
+            return self.respond(200, '<!doctype html><title>JavaScript disabled</title><main id="status">JavaScript disabled</main><script>document.title="JavaScript enabled";document.getElementById("status").textContent="JavaScript enabled";</script>', mime="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
+        if path == "/watch":
+            with self.request_lock:
+                Handler.watch_count += 1
+                count = Handler.watch_count
+            return self.respond(200, f'<!doctype html><title>Watch fixture</title><main>Revision {count}</main>', mime="text/html; charset=utf-8", headers={"Cache-Control": "no-store"})
         if path == "/v1/models":
             return self.respond(200, {"data": [{"id": "aegis-simulator-fixture"}]})
         if path == "/redirect-model":
@@ -133,6 +210,12 @@ class Handler(BaseHTTPRequestHandler):
                 content = value["contents"][-1]["parts"][0]["text"]
             else:
                 content = value["messages"][-1]["content"]
+            if model == "aegis-simulator-fixture" and "AEGIS_READING_TRANSLATION" in content and "城市绿地观察" in content:
+                result = json.dumps({"translation": "Urban green space survey. Qinglin Park covers 12 hectares, opens daily from 06:00 to 21:00, and has 3 kilometres of trails. Plans include 40 trees and two drinking fountains. No budget is provided."})
+                return self.respond(200, {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": result}}]})
+            if model == "aegis-simulator-fixture" and "AEGIS_BROWSER_PLAN" in content and "模拟器验收文章" in content:
+                result = json.dumps({"steps": [{"kind": "groupTabs", "name": "模型建议分组"}, {"kind": "saveWorkspace", "name": "模型建议工作区"}]})
+                return self.respond(200, {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": result}}]})
             if model not in ("aegis-simulator-fixture", "stream-slow", "stream-cut", "json-fallback") or "城市绿地观察" not in content:
                 return self.respond(400, {"error": "没有收到预期的真实页面正文"})
             result = "合成模型验收结果：青林公园面积为 12 公顷，每天 06:00 至 21:00 开放，步道长 3 公里。[1]\n改造计划增加 40 棵乔木和两个饮水点；资料未提供预算。[1]"
@@ -226,7 +309,25 @@ def self_test():
         request("GET", "/download.bin?case=" + marker)
         if json.loads(request("GET", "/test-request-counts?case=" + marker)) != {"model": 1, "download": 1}:
             raise RuntimeError("下载请求计数不匹配")
-        print("SIMULATOR_FIXTURE_SELF_TEST=PASS cases=10")
+        for marker, body, field in [("AEGIS_READING_TRANSLATION", "城市绿地观察", "translation"), ("AEGIS_BROWSER_PLAN", "模拟器验收文章", "steps")]:
+            payload = {"model": "aegis-simulator-fixture", "messages": [{"role": "user", "content": marker + " " + body}]}
+            result = json.loads(request("POST", "/v1/chat/completions", json.dumps(payload).encode()))
+            structured = json.loads(result["choices"][0]["message"]["content"])
+            if field not in structured:
+                raise AssertionError("结构化模型响应无效")
+        if "JavaScript enabled" not in request("GET", "/preferences").decode():
+            raise AssertionError("脚本设置网页缺失")
+        if request("GET", "/watch") == request("GET", "/watch"):
+            raise AssertionError("网页更新样例未变化")
+        if "fixtureReady" not in request("GET", "/security/resources?case=SECURITY_SELF_TEST").decode():
+            raise AssertionError("安全资源样例缺失")
+        request("GET", "/security-fixture/mining/script.js?case=SECURITY_SELF_TEST")
+        if json.loads(request("GET", "/test-request-counts?case=SECURITY_SELF_TEST")).get("mining") != 1:
+            raise AssertionError("安全资源真实请求计数无效")
+        for route in ("login", "safe", "dynamic", "canvas"):
+            if "<title>" not in request("GET", "/security/" + route).decode():
+                raise AssertionError("安全页面样例缺失")
+        print("SIMULATOR_FIXTURE_SELF_TEST=PASS cases=20")
     finally:
         server.shutdown()
         server.server_close()

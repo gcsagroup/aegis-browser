@@ -1,0 +1,95 @@
+From e97f496eb02208a13f280684085ec58ed137b833 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 07:05:07 +0800
+Subject: [PATCH] test(mac): remove raw libc buffer writes from signing fixture
+
+---
+ .../aegis/aegis_mac_signing_unittest.cc       | 28 +++++++++++--------
+ .../ui/webui/help/aegis_github_update.h       |  4 +--
+ 2 files changed, 18 insertions(+), 14 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_mac_signing_unittest.cc b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
+index b2a88e3484ab8f7216e5c3f6a8b85cbed7f4417c..cb3d9f8229c05ae5898e5f36b61609047b0c2234 100644
+--- a/chrome/browser/aegis/aegis_mac_signing_unittest.cc
++++ b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
+@@ -2,10 +2,6 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
+-#include "base/mac/process_requirement.h"
+-
+-#include "base/mac/code_signature_spi.h"
+-
+ #include <Kernel/kern/cs_blobs.h>
+ #include <Security/Security.h>
+ 
+@@ -13,6 +9,8 @@
+ 
+ #include "base/apple/scoped_cftyperef.h"
+ #include "base/containers/span.h"
++#include "base/mac/code_signature_spi.h"
++#include "base/mac/process_requirement.h"
+ #include "base/strings/sys_string_conversions.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -20,15 +18,21 @@ namespace {
+ 
+ class GcsaSigningProvider
+     : public base::mac::ProcessRequirement::CSOpsSystemCallProvider {
+-public:
+-  int csops(pid_t, unsigned int op, void *data, size_t size) override {
++ public:
++  int csops(pid_t, unsigned int op, void* data, size_t size) override {
+     if (op == CS_OPS_VALIDATION_CATEGORY) {
+-      *static_cast<unsigned int *>(data) = CS_VALIDATION_CATEGORY_ENTERPRISE;
++      *static_cast<unsigned int*>(data) = CS_VALIDATION_CATEGORY_ENTERPRISE;
+       return 0;
+     }
+-    if (op == CS_OPS_TEAMID && size >= 8 + team.size() + 1) {
+-      std::memset(data, 0, size);
+-      std::memcpy(static_cast<char *>(data) + 8, team.c_str(), team.size() + 1);
++    struct TeamResult {
++      uint32_t type;
++      uint32_t length;
++      char identifier[CS_MAX_TEAMID_LEN + 1];
++    };
++    if (op == CS_OPS_TEAMID && size >= sizeof(TeamResult)) {
++      auto* result = static_cast<TeamResult*>(data);
++      *result = {};
++      base::span(result->identifier).copy_prefix_from(team);
+       return 0;
+     }
+     errno = EINVAL;
+@@ -38,7 +42,7 @@ public:
+ };
+ 
+ class GcsaMacSigningTest : public testing::Test {
+-protected:
++ protected:
+   void SetUp() override {
+     base::mac::ProcessRequirement::SetCSOpsSystemCallProviderForTesting(
+         &provider);
+@@ -84,4 +88,4 @@ TEST_F(GcsaMacSigningTest, OtherEnterpriseTeamCannotMatchGcsaIdentity) {
+   EXPECT_NE(value.find("R3JK7R29AC"), std::string::npos);
+ }
+ 
+-} // namespace
++}  // namespace
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 3c84346ffc80d87448803d872056e6705121e091..4273f922960b1a46351b0411f85ac8c702f3b112 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.156";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (156)";
++inline constexpr char kProductVersion[] = "3.0.0.157";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (157)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

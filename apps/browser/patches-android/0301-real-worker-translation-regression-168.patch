@@ -1,0 +1,178 @@
+From e6cc03d3b9e27f87b92eee3bf747b308d96131a8 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 01:59:57 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E8=AF=86=E5=88=AB=E6=B5=8F=E8=A7=88?=
+ =?UTF-8?q?=E5=99=A8=20Worker=20=E5=B9=B6=E9=AA=8C=E8=AF=81=E7=9C=9F?=
+ =?UTF-8?q?=E5=AE=9E=E5=8F=8C=E5=90=91=E7=BF=BB=E8=AF=91=20168?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 55 +++++++++++++++++++
+ .../resources/aegis_agent/local_ai/NOTICE.txt |  2 +-
+ .../aegis_agent/local_ai/asset_manifest.json  |  8 +--
+ .../local_ai/bergamot/translator.js           | 12 +++-
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 5 files changed, 71 insertions(+), 10 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 86ba59d43d1bde4d02a3337320216ebcfb3d32bd..522dfe89f62045f5da4baada17bb711c992ddf05 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6149,6 +6149,61 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalTranslationAndResearch
+   run(research.Clone(), "research_disabled");
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalTranslationWithVerifiedAssets) {
++  const base::FilePath fixtures = base::CommandLine::ForCurrentProcess()->GetSwitchValuePath("aegis-local-pack-fixtures");
++  if (fixtures.empty()) GTEST_SKIP() << "需要指定已校验的真实语言包目录";
++  std::map<std::string, std::string> files;
++  {
++    base::ScopedAllowBlockingForTesting allow;
++    std::string json;
++    ASSERT_TRUE(base::ReadFileToString(fixtures.AppendASCII("manifest.json"), &json));
++    auto manifest = base::JSONReader::Read(json, base::JSON_PARSE_RFC);
++    ASSERT_TRUE(manifest && manifest->is_list());
++    for (const auto& row : manifest->GetList()) {
++      const auto* asset = row.GetDict().FindDict("attachment");
++      ASSERT_TRUE(asset);
++      const auto* name = asset->FindString("filename");
++      const auto* location = asset->FindString("location");
++      ASSERT_TRUE(name && location);
++      std::string bytes;
++      ASSERT_TRUE(base::ReadFileToString(fixtures.AppendASCII(*name), &bytes));
++      files.emplace("https://firefox-settings-attachments.cdn.mozilla.net/" + *location, std::move(bytes));
++    }
++  }
++  std::atomic<int> downloads{0};
++  content::URLLoaderInterceptor intercept(base::BindLambdaForTesting(
++      [&](content::URLLoaderInterceptor::RequestParams* params) {
++        if (params->url_request.url.host() != "firefox-settings-attachments.cdn.mozilla.net") return false;
++        auto found = files.find(params->url_request.url.spec());
++        if (found == files.end()) {
++          content::URLLoaderInterceptor::WriteResponse("HTTP/1.1 404 Not Found\n\n", "", params->client.get());
++          return true;
++        }
++        ++downloads;
++        content::URLLoaderInterceptor::WriteResponse("HTTP/1.1 200 OK\nContent-Type: application/zstd\n\n", found->second, params->client.get());
++        return true;
++      }));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
++  auto* page = browser()->tab_strip_model()->GetActiveWebContents();
++  // 使用真实压缩文件和生产下载/解压/IDB/嵌套 Worker/WASM 路径；不提供伪造译文。
++  EXPECT_EQ(content::EvalJs(page, R"JS(
++    (async () => {
++      const {LocalAiClient} = await import('./local_ai_client.js');
++      const client = new LocalAiClient();
++      for (const [direction, text] of [['en-zh', 'The file size is 12.5 MB. Do not close the window.'],
++          ['zh-en', '文件大小为12.5 MB，请不要关闭窗口。']]) {
++        const installed = await client.run({op: 'download', direction}, () => {});
++        if (!installed.ready) return 'download failed';
++        const output = await client.run({op: 'translate', direction, paragraphs: [text]}, () => {});
++        if (output.translations.length !== 1 || !output.translations[0].includes('12.5')) return 'invalid translation';
++        if (!(direction === 'en-zh' ? /[\u3400-\u9fff]/ : /[A-Za-z]/).test(output.translations[0])) return 'wrong language';
++      }
++      return 'passed';
++    })()
++  )JS"), "passed");
++  EXPECT_EQ(downloads.load(), 7);
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingPackDownloadScopeAndIntegrity) {
+   std::atomic<int> requests{0};
+   content::URLLoaderInterceptor intercept(base::BindLambdaForTesting(
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
+index 72a33c82505f39d42cc8abd6369ac0c96bd8e17f..506a5256759d04e21793af07426c0e2e11ca40a5 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
++++ b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
+@@ -3,7 +3,7 @@ GCSA Aegis 本机翻译与实验模型
+ Bergamot Translator 0.4.9：MPL 2.0
+ 来源：https://github.com/browsermt/bergamot-translator
+ npm：https://registry.npmjs.org/@browsermt/bergamot-translator/-/bergamot-translator-0.4.9.tgz
+-本项目仅修改了两个 Worker 的固定脚本地址包装，以兼容 Trusted Types；不放宽 eval 限制。
++本项目修改了两个 Worker 的固定脚本地址包装，以兼容 Trusted Types，并修正 Worker 被误判为 Node 的环境检测及初始化错误回传；不放宽 eval 限制。
+ 对应许可见 bergamot/LICENSE。Mozilla 中英语言包使用 MPL 2.0，按清单下载并核对压缩与解压摘要。
+ 模型说明：https://github.com/mozilla/translations/blob/main/README.md
+ 
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index fc3ee51082d4eacf5560ac94f34daceb1f30d5ba..b40614667230de02a0b236f270a683fdc6f1b07e 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -22,8 +22,8 @@
+       "sha256": "d03ab72b2d09f4f11fbf47a176496cd7400c5139bae171e927dd4fdba498589c"
+     },
+     "NOTICE.txt": {
+-      "bytes": 1531,
+-      "sha256": "c03c4279ac6b42853390f3527446fd7568f842a9f75b89df8debcb58973956b3"
++      "bytes": 1605,
++      "sha256": "dede7394f931bb1b457d8126b9655595919623fed8b67de797baaecdcaa92bef"
+     },
+     "phishlang-vocab.txt": {
+       "bytes": 231508,
+@@ -38,8 +38,8 @@
+       "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+     },
+     "bergamot/translator.js": {
+-      "bytes": 31033,
+-      "sha256": "60d516b4200236e655de2e1567525ab65ba83c8d8f80123177d4448360e909e7"
++      "bytes": 31408,
++      "sha256": "52bf67df53cb97740b83dbc90f8984d7cda6a85554590ce6b8c2afbe459b18a6"
+     },
+     "vendor/ort.js": {
+       "bytes": 48904,
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/bergamot/translator.js b/chrome/browser/resources/aegis_agent/local_ai/bergamot/translator.js
+index 3b9ba25c35cae3623a368670844ca7668bc9e3bd..2d662914603dffab5127c6129e7a3de32b8b6357 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/bergamot/translator.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/bergamot/translator.js
+@@ -16,7 +16,8 @@
+ /**
+  * NodeJS compatibility, a thin WebWorker layer around node:worker_threads.
+  */
+-if (!(typeof window !== 'undefined' && window.Worker)) {
++// GCSA：DedicatedWorkerGlobalScope 没有 window，但仍提供原生 Worker。
++if (typeof globalThis.Worker === 'undefined') {
+     globalThis.Worker = class {
+         #worker;
+ 
+@@ -167,7 +168,12 @@ export class CancelledError extends Error {}
+         });
+ 
+         // … and general errors
+-        worker.addEventListener('error', this.onerror.bind(this));
++        worker.addEventListener('error', error => {
++            // GCSA：初始化失败应立即传回调用者，不能留下永远等待的任务。
++            for (const {reject} of pending.values()) reject(new Error(error.message || 'translation_runtime_error'));
++            pending.clear();
++            this.onerror(error);
++        });
+ 
+         // Await initialisation. This will also nicely error out if the WASM
+         // runtime fails to load.
+@@ -372,7 +378,7 @@ export class CancelledError extends Error {}
+ 
+             // Disable the integrity check for NodeJS because of
+             // https://github.com/nodejs/undici/issues/1594
+-            if (typeof window === 'undefined')
++            if (typeof process === 'object' && process.versions?.node)
+                 delete options['integrity'];
+ 
+             // Start downloading the url, using the hex checksum to ask
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 79ec483fbae0c3a13073b320221c7cbfba4ff8aa..2b9bae98b118ed5f32a98033fb6ee637edbc9303 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.167";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (167)";
++inline constexpr char kProductVersion[] = "3.1.0.168";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (168)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

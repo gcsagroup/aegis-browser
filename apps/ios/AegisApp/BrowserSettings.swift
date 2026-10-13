@@ -8,9 +8,11 @@ final class BrowserSettings: ObservableObject {
         didSet { if let data = try? JSONEncoder().encode(model) { defaults.set(data, forKey: "model.configuration.v1") } }
     }
     @Published var appearance: String { didSet { defaults.set(appearance, forKey: "browser.appearance") } }
+    let browserPreferences: BrowserPreferences
     private let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        browserPreferences = BrowserPreferences(defaults: defaults)
         model = defaults.data(forKey: "model.configuration.v1").flatMap { try? JSONDecoder().decode(ModelConfiguration.self, from: $0) } ?? ModelConfiguration()
         appearance = defaults.string(forKey: "browser.appearance") ?? "system"
     }
@@ -29,14 +31,35 @@ struct BrowserSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("浏览") {
+                    NavigationLink("搜索、主页与浏览方式") { BrowserGeneralSettingsView(preferences: browser.preferences) }
+                        .accessibilityIdentifier("general-browser-settings")
+                    NavigationLink("网站设置与权限") { WebsiteSettingsView(preferences: browser.preferences) }
+                        .accessibilityIdentifier("website-settings")
+                    NavigationLink("网站数据管理") { WebsiteDataSettingsView() }
+                        .accessibilityIdentifier("website-data-settings")
+                    Button("打开系统 App 设置") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                    Text("默认浏览器、App 语言及系统相机、麦克风权限由 iOS 管理；可用选项取决于安装资格和系统版本。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                Section("网站增强与脚本") {
+                    NavigationLink("网站规则与已安装脚本") { WebsiteEnhancementsView(embedded: true) }
+                        .accessibilityIdentifier("enhancement-settings")
+                }
+                Section("阅读") {
+                    NavigationLink("阅读外观与图片权限") { ReadingPreferencesView() }
+                    NavigationLink("Markdown 自动预览网站") { WebsiteSettingsView(preferences: browser.preferences) }
+                }
                 Section("AI 助手") {
                     NavigationLink("模型服务") { ModelSettingsView() }
                     Text("读取网页前会确认范围，发送给模型前会再次确认。私密分析不自动保存任务或回答。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("隐私与保护") {
-                    Label("链接追踪参数清理", systemImage: "checkmark.shield")
-                    Label("高风险网址检查", systemImage: "checkmark.shield")
+                    NavigationLink("保护选项") { ProtectionOptionsView(preferences: browser.preferences) }
+                        .accessibilityIdentifier("protection-options")
                     NavigationLink("广告与跟踪过滤") { ContentFilterSettingsView() }
                         .accessibilityIdentifier("content-filter-settings")
                     if let url = browser.activeTab?.url, ["http", "https"].contains(url.scheme ?? ""), !browser.profile.isPrivate {

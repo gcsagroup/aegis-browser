@@ -1,0 +1,32 @@
+2026-10-13T12:16:28.0047812Z ##[group]Run python -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'
+2026-10-13T12:16:28.0048526Z [36;1mpython -m unittest discover -s apps/browser/scripts/ci -p '*_test.py'[0m
+2026-10-13T12:16:28.0130591Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-10-13T12:16:28.0131007Z env:
+2026-10-13T12:16:28.0131212Z   PYTHONUTF8: 1
+2026-10-13T12:16:28.0131648Z   PYTHONIOENCODING: utf-8
+2026-10-13T12:16:28.0132020Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-10-13T12:16:28.0132593Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.12.10\x64/lib/pkgconfig
+2026-10-13T12:16:28.0133149Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-10-13T12:16:28.0133643Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-10-13T12:16:28.0134136Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.12.10\x64
+2026-10-13T12:16:28.0134539Z ##[endgroup]
+2026-10-13T12:16:32.0545158Z # Chromium 候选证据
+2026-10-13T12:16:32.0545473Z 
+2026-10-13T12:16:32.0545480Z 
+2026-10-13T12:16:32.0546093Z 平台：android；阶段：failed
+2026-10-13T12:16:32.0546690Z 实际运行验收：pending；正式发布：未执行。
+2026-10-13T12:16:32.0547219Z 失败原因：device missing
+2026-10-13T12:16:32.0547515Z 
+2026-10-13T12:16:32.0547760Z 阶段：failure
+2026-10-13T12:16:32.2574240Z failed
+2026-10-13T12:16:32.2574459Z 
+2026-10-13T12:16:32.7216256Z 阶段：patch-000
+2026-10-13T12:16:32.9245155Z 阶段：patch-commit
+2026-10-13T12:16:33.3354541Z 阶段：success
+2026-10-13T12:16:33.5395517Z 阶段：timeout
+2026-10-13T12:16:34.2024929Z SUCCESS: The process with PID 6400 (child process of PID 3440) has been terminated.
+2026-10-13T12:16:34.2108322Z ......................
+2026-10-13T12:16:34.2108872Z ----------------------------------------------------------------------
+2026-10-13T12:16:34.2109389Z Ran 22 tests in 4.119s
+2026-10-13T12:16:34.2109585Z 
+2026-10-13T12:16:34.2109688Z OK

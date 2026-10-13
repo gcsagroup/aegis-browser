@@ -22,6 +22,7 @@ source_set("aegis") {
     "//chrome/common/aegis",
     "//chrome/services/aegis_torrent/public/mojom",
     "//content/public/browser",
+    "//services/network/public/mojom",
     "//mojo/public/cpp/bindings",
     "//third_party/blink/public/common",
     "//ui/base",
@@ -29,11 +30,17 @@ source_set("aegis") {
   ]
   if (!is_android) {
     sources += [
+      "aegis_enhancement_handler.cc",
+      "aegis_enhancement_handler.h",
+      "aegis_markdown_ui.cc",
+      "aegis_markdown_ui.h",
       "aegis_gesture_handler.cc",
       "aegis_gesture_handler.h",
     ]
     deps += [
       "//chrome/browser/aegis:gesture_core",
+      "//chrome/browser/ui/webui/aegis_agent:impl",
+      "//components/download/public/common:public",
       "//components/prefs",
     ]
     deps += [

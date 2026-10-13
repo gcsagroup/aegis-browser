@@ -1,0 +1,7 @@
+tool=kcov 43
+tested_sha=df5ac9f9df1a944f5f64964d0b869c3c626584e0
+tests_passed=8/8
+production_files_reported=28
+lines_covered=592
+lines_total=2008
+line_rate=29.48%

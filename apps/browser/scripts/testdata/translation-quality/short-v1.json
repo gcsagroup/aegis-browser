@@ -1,0 +1,3126 @@
+{
+  "schema": 1,
+  "origin": "本轮编写的合成中英语义对照；参考译文不唯一，不是标准公开基准",
+  "cases": [
+    {
+      "id": "negation-01-en-zh",
+      "category": "negation",
+      "family": "negation-01",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The file size is 12.5 MB. Do not close the window."
+      ],
+      "reference": [
+        "文件大小为12.5 MB。请勿关闭窗口。"
+      ]
+    },
+    {
+      "id": "negation-01-zh-en",
+      "category": "negation",
+      "family": "negation-01",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "文件大小为12.5 MB。请勿关闭窗口。"
+      ],
+      "reference": [
+        "The file size is 12.5 MB. Do not close the window."
+      ]
+    },
+    {
+      "id": "negation-02-en-zh",
+      "category": "negation",
+      "family": "negation-02",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Do not close the window."
+      ],
+      "reference": [
+        "请勿关闭窗口。"
+      ]
+    },
+    {
+      "id": "negation-02-zh-en",
+      "category": "negation",
+      "family": "negation-02",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "请勿关闭窗口。"
+      ],
+      "reference": [
+        "Do not close the window."
+      ]
+    },
+    {
+      "id": "negation-03-en-zh",
+      "category": "negation",
+      "family": "negation-03",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Do not close the window until the download is complete."
+      ],
+      "reference": [
+        "下载完成前不要关闭窗口。"
+      ]
+    },
+    {
+      "id": "negation-03-zh-en",
+      "category": "negation",
+      "family": "negation-03",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "下载完成前不要关闭窗口。"
+      ],
+      "reference": [
+        "Do not close the window until the download is complete."
+      ]
+    },
+    {
+      "id": "negation-04-en-zh",
+      "category": "negation",
+      "family": "negation-04",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Your text is not sent to a server."
+      ],
+      "reference": [
+        "你的文本不会发送到服务器。"
+      ]
+    },
+    {
+      "id": "negation-04-zh-en",
+      "category": "negation",
+      "family": "negation-04",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "你的文本不会发送到服务器。"
+      ],
+      "reference": [
+        "Your text is not sent to a server."
+      ]
+    },
+    {
+      "id": "negation-05-en-zh",
+      "category": "negation",
+      "family": "negation-05",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "This action does not delete the original file."
+      ],
+      "reference": [
+        "此操作不会删除原文件。"
+      ]
+    },
+    {
+      "id": "negation-05-zh-en",
+      "category": "negation",
+      "family": "negation-05",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "此操作不会删除原文件。"
+      ],
+      "reference": [
+        "This action does not delete the original file."
+      ]
+    },
+    {
+      "id": "negation-06-en-zh",
+      "category": "negation",
+      "family": "negation-06",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The changes have not been saved yet."
+      ],
+      "reference": [
+        "更改尚未保存。"
+      ]
+    },
+    {
+      "id": "negation-06-zh-en",
+      "category": "negation",
+      "family": "negation-06",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "更改尚未保存。"
+      ],
+      "reference": [
+        "The changes have not been saved yet."
+      ]
+    },
+    {
+      "id": "negation-07-en-zh",
+      "category": "negation",
+      "family": "negation-07",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Do not restart the device while the update is being installed."
+      ],
+      "reference": [
+        "安装更新期间不要重启设备。"
+      ]
+    },
+    {
+      "id": "negation-07-zh-en",
+      "category": "negation",
+      "family": "negation-07",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "安装更新期间不要重启设备。"
+      ],
+      "reference": [
+        "Do not restart the device while the update is being installed."
+      ]
+    },
+    {
+      "id": "negation-08-en-zh",
+      "category": "negation",
+      "family": "negation-08",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "You cannot restore this item after permanent deletion."
+      ],
+      "reference": [
+        "永久删除后无法恢复此项目。"
+      ]
+    },
+    {
+      "id": "negation-08-zh-en",
+      "category": "negation",
+      "family": "negation-08",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "永久删除后无法恢复此项目。"
+      ],
+      "reference": [
+        "You cannot restore this item after permanent deletion."
+      ]
+    },
+    {
+      "id": "negation-09-en-zh",
+      "category": "negation",
+      "family": "negation-09",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Do not enable sharing unless everyone has agreed."
+      ],
+      "reference": [
+        "除非所有人都已同意，否则不要开启共享。"
+      ]
+    },
+    {
+      "id": "negation-09-zh-en",
+      "category": "negation",
+      "family": "negation-09",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "除非所有人都已同意，否则不要开启共享。"
+      ],
+      "reference": [
+        "Do not enable sharing unless everyone has agreed."
+      ]
+    },
+    {
+      "id": "negation-10-en-zh",
+      "category": "negation",
+      "family": "negation-10",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The alarm will not stop unless you press the button."
+      ],
+      "reference": [
+        "除非按下按钮，否则警报不会停止。"
+      ]
+    },
+    {
+      "id": "negation-10-zh-en",
+      "category": "negation",
+      "family": "negation-10",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "除非按下按钮，否则警报不会停止。"
+      ],
+      "reference": [
+        "The alarm will not stop unless you press the button."
+      ]
+    },
+    {
+      "id": "negation-11-en-zh",
+      "category": "negation",
+      "family": "negation-11",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Not all files were uploaded."
+      ],
+      "reference": [
+        "并非所有文件都已上传。"
+      ]
+    },
+    {
+      "id": "negation-11-zh-en",
+      "category": "negation",
+      "family": "negation-11",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "并非所有文件都已上传。"
+      ],
+      "reference": [
+        "Not all files were uploaded."
+      ]
+    },
+    {
+      "id": "negation-12-en-zh",
+      "category": "negation",
+      "family": "negation-12",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "None of the files were uploaded."
+      ],
+      "reference": [
+        "没有任何文件被上传。"
+      ]
+    },
+    {
+      "id": "negation-12-zh-en",
+      "category": "negation",
+      "family": "negation-12",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "没有任何文件被上传。"
+      ],
+      "reference": [
+        "None of the files were uploaded."
+      ]
+    },
+    {
+      "id": "negation-13-en-zh",
+      "category": "negation",
+      "family": "negation-13",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The service is not always available."
+      ],
+      "reference": [
+        "该服务并非始终可用。"
+      ]
+    },
+    {
+      "id": "negation-13-zh-en",
+      "category": "negation",
+      "family": "negation-13",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "该服务并非始终可用。"
+      ],
+      "reference": [
+        "The service is not always available."
+      ]
+    },
+    {
+      "id": "negation-14-en-zh",
+      "category": "negation",
+      "family": "negation-14",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The service is never available offline."
+      ],
+      "reference": [
+        "该服务在离线时始终不可用。"
+      ]
+    },
+    {
+      "id": "negation-14-zh-en",
+      "category": "negation",
+      "family": "negation-14",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "该服务在离线时始终不可用。"
+      ],
+      "reference": [
+        "The service is never available offline."
+      ]
+    },
+    {
+      "id": "negation-15-en-zh",
+      "category": "negation",
+      "family": "negation-15",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "There is no need to sign in again."
+      ],
+      "reference": [
+        "无需再次登录。"
+      ]
+    },
+    {
+      "id": "negation-15-zh-en",
+      "category": "negation",
+      "family": "negation-15",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "无需再次登录。"
+      ],
+      "reference": [
+        "There is no need to sign in again."
+      ]
+    },
+    {
+      "id": "negation-16-en-zh",
+      "category": "negation",
+      "family": "negation-16",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "There is no evidence that the data was lost."
+      ],
+      "reference": [
+        "没有证据表明数据已经丢失。"
+      ]
+    },
+    {
+      "id": "negation-16-zh-en",
+      "category": "negation",
+      "family": "negation-16",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "没有证据表明数据已经丢失。"
+      ],
+      "reference": [
+        "There is no evidence that the data was lost."
+      ]
+    },
+    {
+      "id": "negation-17-en-zh",
+      "category": "negation",
+      "family": "negation-17",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "It is not impossible to recover the draft."
+      ],
+      "reference": [
+        "恢复草稿并非不可能。"
+      ]
+    },
+    {
+      "id": "negation-17-zh-en",
+      "category": "negation",
+      "family": "negation-17",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "恢复草稿并非不可能。"
+      ],
+      "reference": [
+        "It is not impossible to recover the draft."
+      ]
+    },
+    {
+      "id": "negation-18-en-zh",
+      "category": "negation",
+      "family": "negation-18",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The result is not inaccurate, but it is incomplete."
+      ],
+      "reference": [
+        "结果并非不准确，但并不完整。"
+      ]
+    },
+    {
+      "id": "negation-18-zh-en",
+      "category": "negation",
+      "family": "negation-18",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "结果并非不准确，但并不完整。"
+      ],
+      "reference": [
+        "The result is not inaccurate, but it is incomplete."
+      ]
+    },
+    {
+      "id": "negation-19-en-zh",
+      "category": "negation",
+      "family": "negation-19",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Do not share the code, even with a colleague."
+      ],
+      "reference": [
+        "不要分享此代码，即使对方是同事。"
+      ]
+    },
+    {
+      "id": "negation-19-zh-en",
+      "category": "negation",
+      "family": "negation-19",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "不要分享此代码，即使对方是同事。"
+      ],
+      "reference": [
+        "Do not share the code, even with a colleague."
+      ]
+    },
+    {
+      "id": "negation-20-en-zh",
+      "category": "negation",
+      "family": "negation-20",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "You may read the document, but you must not edit it."
+      ],
+      "reference": [
+        "你可以阅读文档，但不得编辑。"
+      ]
+    },
+    {
+      "id": "negation-20-zh-en",
+      "category": "negation",
+      "family": "negation-20",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "你可以阅读文档，但不得编辑。"
+      ],
+      "reference": [
+        "You may read the document, but you must not edit it."
+      ]
+    },
+    {
+      "id": "negation-21-en-zh",
+      "category": "negation",
+      "family": "negation-21",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The switch is off. Turning it on will not start a task automatically."
+      ],
+      "reference": [
+        "开关已关闭。打开它不会自动启动任务。"
+      ]
+    },
+    {
+      "id": "negation-21-zh-en",
+      "category": "negation",
+      "family": "negation-21",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "开关已关闭。打开它不会自动启动任务。"
+      ],
+      "reference": [
+        "The switch is off. Turning it on will not start a task automatically."
+      ]
+    },
+    {
+      "id": "negation-22-en-zh",
+      "category": "negation",
+      "family": "negation-22",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Deleting the shortcut does not uninstall the application."
+      ],
+      "reference": [
+        "删除快捷方式不会卸载应用。"
+      ]
+    },
+    {
+      "id": "negation-22-zh-en",
+      "category": "negation",
+      "family": "negation-22",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "删除快捷方式不会卸载应用。"
+      ],
+      "reference": [
+        "Deleting the shortcut does not uninstall the application."
+      ]
+    },
+    {
+      "id": "negation-23-en-zh",
+      "category": "negation",
+      "family": "negation-23",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The package is downloaded, but it has not been verified."
+      ],
+      "reference": [
+        "软件包已下载，但尚未验证。"
+      ]
+    },
+    {
+      "id": "negation-23-zh-en",
+      "category": "negation",
+      "family": "negation-23",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "软件包已下载，但尚未验证。"
+      ],
+      "reference": [
+        "The package is downloaded, but it has not been verified."
+      ]
+    },
+    {
+      "id": "negation-24-en-zh",
+      "category": "negation",
+      "family": "negation-24",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The download failed; the existing package was not replaced."
+      ],
+      "reference": [
+        "下载失败，现有软件包未被替换。"
+      ]
+    },
+    {
+      "id": "negation-24-zh-en",
+      "category": "negation",
+      "family": "negation-24",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "下载失败，现有软件包未被替换。"
+      ],
+      "reference": [
+        "The download failed; the existing package was not replaced."
+      ]
+    },
+    {
+      "id": "negation-25-en-zh",
+      "category": "negation",
+      "family": "negation-25",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Only unread messages should remain. Do not remove the attachments."
+      ],
+      "reference": [
+        "只保留未读消息。不要移除附件。"
+      ]
+    },
+    {
+      "id": "negation-25-zh-en",
+      "category": "negation",
+      "family": "negation-25",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "只保留未读消息。不要移除附件。"
+      ],
+      "reference": [
+        "Only unread messages should remain. Do not remove the attachments."
+      ]
+    },
+    {
+      "id": "negation-26-en-zh",
+      "category": "negation",
+      "family": "negation-26",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The report says the cause is unknown, not that no problem exists."
+      ],
+      "reference": [
+        "报告说原因未知，并不是说不存在问题。"
+      ]
+    },
+    {
+      "id": "negation-26-zh-en",
+      "category": "negation",
+      "family": "negation-26",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "报告说原因未知，并不是说不存在问题。"
+      ],
+      "reference": [
+        "The report says the cause is unknown, not that no problem exists."
+      ]
+    },
+    {
+      "id": "negation-27-en-zh",
+      "category": "negation",
+      "family": "negation-27",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The device is not connected to the network, so no update will be downloaded."
+      ],
+      "reference": [
+        "设备未连接网络，因此不会下载更新。"
+      ]
+    },
+    {
+      "id": "negation-27-zh-en",
+      "category": "negation",
+      "family": "negation-27",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "设备未连接网络，因此不会下载更新。"
+      ],
+      "reference": [
+        "The device is not connected to the network, so no update will be downloaded."
+      ]
+    },
+    {
+      "id": "negation-28-en-zh",
+      "category": "negation",
+      "family": "negation-28",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Do not translate the text inside the code block."
+      ],
+      "reference": [
+        "不要翻译代码块中的文本。"
+      ]
+    },
+    {
+      "id": "negation-28-zh-en",
+      "category": "negation",
+      "family": "negation-28",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "不要翻译代码块中的文本。"
+      ],
+      "reference": [
+        "Do not translate the text inside the code block."
+      ]
+    },
+    {
+      "id": "negation-29-en-zh",
+      "category": "negation",
+      "family": "negation-29",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "No charge will be made until you confirm the order."
+      ],
+      "reference": [
+        "确认订单之前不会扣款。"
+      ]
+    },
+    {
+      "id": "negation-29-zh-en",
+      "category": "negation",
+      "family": "negation-29",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "确认订单之前不会扣款。"
+      ],
+      "reference": [
+        "No charge will be made until you confirm the order."
+      ]
+    },
+    {
+      "id": "negation-30-en-zh",
+      "category": "negation",
+      "family": "negation-30",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The price does not include delivery or tax."
+      ],
+      "reference": [
+        "价格不包含运费或税费。"
+      ]
+    },
+    {
+      "id": "negation-30-zh-en",
+      "category": "negation",
+      "family": "negation-30",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "价格不包含运费或税费。"
+      ],
+      "reference": [
+        "The price does not include delivery or tax."
+      ]
+    },
+    {
+      "id": "negation-31-en-zh",
+      "category": "negation",
+      "family": "negation-31",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "You need not finish today, but you must not miss the deadline."
+      ],
+      "reference": [
+        "你不必今天完成，但不得错过截止日期。"
+      ]
+    },
+    {
+      "id": "negation-31-zh-en",
+      "category": "negation",
+      "family": "negation-31",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "你不必今天完成，但不得错过截止日期。"
+      ],
+      "reference": [
+        "You need not finish today, but you must not miss the deadline."
+      ]
+    },
+    {
+      "id": "negation-32-en-zh",
+      "category": "negation",
+      "family": "negation-32",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The test did not show a failure. That does not prove the system is safe."
+      ],
+      "reference": [
+        "测试未发现故障。这并不能证明系统安全。"
+      ]
+    },
+    {
+      "id": "negation-32-zh-en",
+      "category": "negation",
+      "family": "negation-32",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "测试未发现故障。这并不能证明系统安全。"
+      ],
+      "reference": [
+        "The test did not show a failure. That does not prove the system is safe."
+      ]
+    },
+    {
+      "id": "negation-33-en-zh",
+      "category": "negation",
+      "family": "negation-33",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "If the backup is incomplete, do not overwrite the original."
+      ],
+      "reference": [
+        "如果备份不完整，不要覆盖原件。"
+      ]
+    },
+    {
+      "id": "negation-33-zh-en",
+      "category": "negation",
+      "family": "negation-33",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "如果备份不完整，不要覆盖原件。"
+      ],
+      "reference": [
+        "If the backup is incomplete, do not overwrite the original."
+      ]
+    },
+    {
+      "id": "negation-34-en-zh",
+      "category": "negation",
+      "family": "negation-34",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The update will continue even if this window is closed. It will not cancel the download."
+      ],
+      "reference": [
+        "即使关闭此窗口，更新也会继续。这不会取消下载。"
+      ]
+    },
+    {
+      "id": "negation-34-zh-en",
+      "category": "negation",
+      "family": "negation-34",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "即使关闭此窗口，更新也会继续。这不会取消下载。"
+      ],
+      "reference": [
+        "The update will continue even if this window is closed. It will not cancel the download."
+      ]
+    },
+    {
+      "id": "negation-35-en-zh",
+      "category": "negation",
+      "family": "negation-35",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Do not assume that an empty result means there are no records."
+      ],
+      "reference": [
+        "不要认为结果为空就意味着没有记录。"
+      ]
+    },
+    {
+      "id": "negation-35-zh-en",
+      "category": "negation",
+      "family": "negation-35",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "不要认为结果为空就意味着没有记录。"
+      ],
+      "reference": [
+        "Do not assume that an empty result means there are no records."
+      ]
+    },
+    {
+      "id": "negation-36-en-zh",
+      "category": "negation",
+      "family": "negation-36",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "You are not required to enable either experimental model."
+      ],
+      "reference": [
+        "你不需要启用任何一个实验模型。"
+      ]
+    },
+    {
+      "id": "negation-36-zh-en",
+      "category": "negation",
+      "family": "negation-36",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "你不需要启用任何一个实验模型。"
+      ],
+      "reference": [
+        "You are not required to enable either experimental model."
+      ]
+    },
+    {
+      "id": "negation-37-en-zh",
+      "category": "negation",
+      "family": "negation-37",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Neither the title nor the notes should be changed."
+      ],
+      "reference": [
+        "标题和批注都不应更改。"
+      ]
+    },
+    {
+      "id": "negation-37-zh-en",
+      "category": "negation",
+      "family": "negation-37",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "标题和批注都不应更改。"
+      ],
+      "reference": [
+        "Neither the title nor the notes should be changed."
+      ]
+    },
+    {
+      "id": "negation-38-en-zh",
+      "category": "negation",
+      "family": "negation-38",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Not only the title but also the notes must be preserved."
+      ],
+      "reference": [
+        "不仅标题要保留，批注也必须保留。"
+      ]
+    },
+    {
+      "id": "negation-38-zh-en",
+      "category": "negation",
+      "family": "negation-38",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "不仅标题要保留，批注也必须保留。"
+      ],
+      "reference": [
+        "Not only the title but also the notes must be preserved."
+      ]
+    },
+    {
+      "id": "negation-39-en-zh",
+      "category": "negation",
+      "family": "negation-39",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "No more than three attempts are allowed."
+      ],
+      "reference": [
+        "最多允许尝试三次。"
+      ]
+    },
+    {
+      "id": "negation-39-zh-en",
+      "category": "negation",
+      "family": "negation-39",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "最多允许尝试三次。"
+      ],
+      "reference": [
+        "No more than three attempts are allowed."
+      ]
+    },
+    {
+      "id": "negation-40-en-zh",
+      "category": "negation",
+      "family": "negation-40",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The meeting has not been canceled; it has been postponed."
+      ],
+      "reference": [
+        "会议并未取消，只是推迟了。"
+      ]
+    },
+    {
+      "id": "negation-40-zh-en",
+      "category": "negation",
+      "family": "negation-40",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "会议并未取消，只是推迟了。"
+      ],
+      "reference": [
+        "The meeting has not been canceled; it has been postponed."
+      ]
+    },
+    {
+      "id": "title-01-en-zh",
+      "category": "title",
+      "family": "title-01",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Not available"
+      ],
+      "reference": [
+        "不可用"
+      ]
+    },
+    {
+      "id": "title-01-zh-en",
+      "category": "title",
+      "family": "title-01",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "不可用"
+      ],
+      "reference": [
+        "Not available"
+      ]
+    },
+    {
+      "id": "title-02-en-zh",
+      "category": "title",
+      "family": "title-02",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Download complete"
+      ],
+      "reference": [
+        "下载完成"
+      ]
+    },
+    {
+      "id": "title-02-zh-en",
+      "category": "title",
+      "family": "title-02",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "下载完成"
+      ],
+      "reference": [
+        "Download complete"
+      ]
+    },
+    {
+      "id": "title-03-en-zh",
+      "category": "title",
+      "family": "title-03",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Pending approval"
+      ],
+      "reference": [
+        "等待批准"
+      ]
+    },
+    {
+      "id": "title-03-zh-en",
+      "category": "title",
+      "family": "title-03",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "等待批准"
+      ],
+      "reference": [
+        "Pending approval"
+      ]
+    },
+    {
+      "id": "title-04-en-zh",
+      "category": "title",
+      "family": "title-04",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Read only"
+      ],
+      "reference": [
+        "只读"
+      ]
+    },
+    {
+      "id": "title-04-zh-en",
+      "category": "title",
+      "family": "title-04",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "只读"
+      ],
+      "reference": [
+        "Read only"
+      ]
+    },
+    {
+      "id": "title-05-en-zh",
+      "category": "title",
+      "family": "title-05",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Save a copy"
+      ],
+      "reference": [
+        "保存副本"
+      ]
+    },
+    {
+      "id": "title-05-zh-en",
+      "category": "title",
+      "family": "title-05",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "保存副本"
+      ],
+      "reference": [
+        "Save a copy"
+      ]
+    },
+    {
+      "id": "title-06-en-zh",
+      "category": "title",
+      "family": "title-06",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Restore archived items"
+      ],
+      "reference": [
+        "恢复已归档项目"
+      ]
+    },
+    {
+      "id": "title-06-zh-en",
+      "category": "title",
+      "family": "title-06",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "恢复已归档项目"
+      ],
+      "reference": [
+        "Restore archived items"
+      ]
+    },
+    {
+      "id": "title-07-en-zh",
+      "category": "title",
+      "family": "title-07",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Local translation"
+      ],
+      "reference": [
+        "本机翻译"
+      ]
+    },
+    {
+      "id": "title-07-zh-en",
+      "category": "title",
+      "family": "title-07",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "本机翻译"
+      ],
+      "reference": [
+        "Local translation"
+      ]
+    },
+    {
+      "id": "title-08-en-zh",
+      "category": "title",
+      "family": "title-08",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Original text"
+      ],
+      "reference": [
+        "原文"
+      ]
+    },
+    {
+      "id": "title-08-zh-en",
+      "category": "title",
+      "family": "title-08",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "原文"
+      ],
+      "reference": [
+        "Original text"
+      ]
+    },
+    {
+      "id": "title-09-en-zh",
+      "category": "title",
+      "family": "title-09",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Unsaved changes"
+      ],
+      "reference": [
+        "未保存的更改"
+      ]
+    },
+    {
+      "id": "title-09-zh-en",
+      "category": "title",
+      "family": "title-09",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "未保存的更改"
+      ],
+      "reference": [
+        "Unsaved changes"
+      ]
+    },
+    {
+      "id": "title-10-en-zh",
+      "category": "title",
+      "family": "title-10",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "No results found"
+      ],
+      "reference": [
+        "未找到结果"
+      ]
+    },
+    {
+      "id": "title-10-zh-en",
+      "category": "title",
+      "family": "title-10",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "未找到结果"
+      ],
+      "reference": [
+        "No results found"
+      ]
+    },
+    {
+      "id": "title-11-en-zh",
+      "category": "title",
+      "family": "title-11",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Back to library"
+      ],
+      "reference": [
+        "返回资料库"
+      ]
+    },
+    {
+      "id": "title-11-zh-en",
+      "category": "title",
+      "family": "title-11",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "返回资料库"
+      ],
+      "reference": [
+        "Back to library"
+      ]
+    },
+    {
+      "id": "title-12-en-zh",
+      "category": "title",
+      "family": "title-12",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Keep both files"
+      ],
+      "reference": [
+        "保留两个文件"
+      ]
+    },
+    {
+      "id": "title-12-zh-en",
+      "category": "title",
+      "family": "title-12",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "保留两个文件"
+      ],
+      "reference": [
+        "Keep both files"
+      ]
+    },
+    {
+      "id": "title-13-en-zh",
+      "category": "title",
+      "family": "title-13",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Close without saving"
+      ],
+      "reference": [
+        "关闭且不保存"
+      ]
+    },
+    {
+      "id": "title-13-zh-en",
+      "category": "title",
+      "family": "title-13",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "关闭且不保存"
+      ],
+      "reference": [
+        "Close without saving"
+      ]
+    },
+    {
+      "id": "title-14-en-zh",
+      "category": "title",
+      "family": "title-14",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Automatic updates paused"
+      ],
+      "reference": [
+        "自动更新已暂停"
+      ]
+    },
+    {
+      "id": "title-14-zh-en",
+      "category": "title",
+      "family": "title-14",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "自动更新已暂停"
+      ],
+      "reference": [
+        "Automatic updates paused"
+      ]
+    },
+    {
+      "id": "title-15-en-zh",
+      "category": "title",
+      "family": "title-15",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Offline reading"
+      ],
+      "reference": [
+        "离线阅读"
+      ]
+    },
+    {
+      "id": "title-15-zh-en",
+      "category": "title",
+      "family": "title-15",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "离线阅读"
+      ],
+      "reference": [
+        "Offline reading"
+      ]
+    },
+    {
+      "id": "title-16-en-zh",
+      "category": "title",
+      "family": "title-16",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Notes on the draft"
+      ],
+      "reference": [
+        "草稿批注"
+      ]
+    },
+    {
+      "id": "title-16-zh-en",
+      "category": "title",
+      "family": "title-16",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "草稿批注"
+      ],
+      "reference": [
+        "Notes on the draft"
+      ]
+    },
+    {
+      "id": "title-17-en-zh",
+      "category": "title",
+      "family": "title-17",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "A change of plan"
+      ],
+      "reference": [
+        "计划有变"
+      ]
+    },
+    {
+      "id": "title-17-zh-en",
+      "category": "title",
+      "family": "title-17",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "计划有变"
+      ],
+      "reference": [
+        "A change of plan"
+      ]
+    },
+    {
+      "id": "title-18-en-zh",
+      "category": "title",
+      "family": "title-18",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "What comes next"
+      ],
+      "reference": [
+        "接下来做什么"
+      ]
+    },
+    {
+      "id": "title-18-zh-en",
+      "category": "title",
+      "family": "title-18",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "接下来做什么"
+      ],
+      "reference": [
+        "What comes next"
+      ]
+    },
+    {
+      "id": "title-19-en-zh",
+      "category": "title",
+      "family": "title-19",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Less noise, more control"
+      ],
+      "reference": [
+        "减少干扰，增加控制"
+      ]
+    },
+    {
+      "id": "title-19-zh-en",
+      "category": "title",
+      "family": "title-19",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "减少干扰，增加控制"
+      ],
+      "reference": [
+        "Less noise, more control"
+      ]
+    },
+    {
+      "id": "title-20-en-zh",
+      "category": "title",
+      "family": "title-20",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The case for local processing"
+      ],
+      "reference": [
+        "本地处理的理由"
+      ]
+    },
+    {
+      "id": "title-20-zh-en",
+      "category": "title",
+      "family": "title-20",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "本地处理的理由"
+      ],
+      "reference": [
+        "The case for local processing"
+      ]
+    },
+    {
+      "id": "title-21-en-zh",
+      "category": "title",
+      "family": "title-21",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "A window of opportunity"
+      ],
+      "reference": [
+        "机会之窗"
+      ]
+    },
+    {
+      "id": "title-21-zh-en",
+      "category": "title",
+      "family": "title-21",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "机会之窗"
+      ],
+      "reference": [
+        "A window of opportunity"
+      ]
+    },
+    {
+      "id": "title-22-en-zh",
+      "category": "title",
+      "family": "title-22",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Open questions"
+      ],
+      "reference": [
+        "尚待解答的问题"
+      ]
+    },
+    {
+      "id": "title-22-zh-en",
+      "category": "title",
+      "family": "title-22",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "尚待解答的问题"
+      ],
+      "reference": [
+        "Open questions"
+      ]
+    },
+    {
+      "id": "title-23-en-zh",
+      "category": "title",
+      "family": "title-23",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "On the record"
+      ],
+      "reference": [
+        "公开记录"
+      ]
+    },
+    {
+      "id": "title-23-zh-en",
+      "category": "title",
+      "family": "title-23",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "公开记录"
+      ],
+      "reference": [
+        "On the record"
+      ]
+    },
+    {
+      "id": "title-24-en-zh",
+      "category": "title",
+      "family": "title-24",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Under review"
+      ],
+      "reference": [
+        "审核中"
+      ]
+    },
+    {
+      "id": "title-24-zh-en",
+      "category": "title",
+      "family": "title-24",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "审核中"
+      ],
+      "reference": [
+        "Under review"
+      ]
+    },
+    {
+      "id": "title-25-en-zh",
+      "category": "title",
+      "family": "title-25",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "A closer look"
+      ],
+      "reference": [
+        "进一步观察"
+      ]
+    },
+    {
+      "id": "title-25-zh-en",
+      "category": "title",
+      "family": "title-25",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "进一步观察"
+      ],
+      "reference": [
+        "A closer look"
+      ]
+    },
+    {
+      "id": "title-26-en-zh",
+      "category": "title",
+      "family": "title-26",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Beyond the headline"
+      ],
+      "reference": [
+        "标题背后的内容"
+      ]
+    },
+    {
+      "id": "title-26-zh-en",
+      "category": "title",
+      "family": "title-26",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "标题背后的内容"
+      ],
+      "reference": [
+        "Beyond the headline"
+      ]
+    },
+    {
+      "id": "title-27-en-zh",
+      "category": "title",
+      "family": "title-27",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Small steps, lasting changes"
+      ],
+      "reference": [
+        "小步推进，持久改变"
+      ]
+    },
+    {
+      "id": "title-27-zh-en",
+      "category": "title",
+      "family": "title-27",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "小步推进，持久改变"
+      ],
+      "reference": [
+        "Small steps, lasting changes"
+      ]
+    },
+    {
+      "id": "title-28-en-zh",
+      "category": "title",
+      "family": "title-28",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Before you begin"
+      ],
+      "reference": [
+        "开始之前"
+      ]
+    },
+    {
+      "id": "title-28-zh-en",
+      "category": "title",
+      "family": "title-28",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "开始之前"
+      ],
+      "reference": [
+        "Before you begin"
+      ]
+    },
+    {
+      "id": "title-29-en-zh",
+      "category": "title",
+      "family": "title-29",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Numbers that matter"
+      ],
+      "reference": [
+        "重要的数据"
+      ]
+    },
+    {
+      "id": "title-29-zh-en",
+      "category": "title",
+      "family": "title-29",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "重要的数据"
+      ],
+      "reference": [
+        "Numbers that matter"
+      ]
+    },
+    {
+      "id": "title-30-en-zh",
+      "category": "title",
+      "family": "title-30",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "A date to remember"
+      ],
+      "reference": [
+        "值得记住的日子"
+      ]
+    },
+    {
+      "id": "title-30-zh-en",
+      "category": "title",
+      "family": "title-30",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "值得记住的日子"
+      ],
+      "reference": [
+        "A date to remember"
+      ]
+    },
+    {
+      "id": "numbers-01-en-zh",
+      "category": "numbers",
+      "family": "numbers-01",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The file size is 12.5 MB."
+      ],
+      "reference": [
+        "文件大小为12.5 MB。"
+      ]
+    },
+    {
+      "id": "numbers-01-zh-en",
+      "category": "numbers",
+      "family": "numbers-01",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "文件大小为12.5 MB。"
+      ],
+      "reference": [
+        "The file size is 12.5 MB."
+      ]
+    },
+    {
+      "id": "numbers-02-en-zh",
+      "category": "numbers",
+      "family": "numbers-02",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The temperature fell to -7.5 degrees Celsius."
+      ],
+      "reference": [
+        "温度降至零下7.5摄氏度。"
+      ]
+    },
+    {
+      "id": "numbers-02-zh-en",
+      "category": "numbers",
+      "family": "numbers-02",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "温度降至零下7.5摄氏度。"
+      ],
+      "reference": [
+        "The temperature fell to -7.5 degrees Celsius."
+      ]
+    },
+    {
+      "id": "numbers-03-en-zh",
+      "category": "numbers",
+      "family": "numbers-03",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The battery level is 0.5%, not 5%."
+      ],
+      "reference": [
+        "电量为0.5%，不是5%。"
+      ]
+    },
+    {
+      "id": "numbers-03-zh-en",
+      "category": "numbers",
+      "family": "numbers-03",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "电量为0.5%，不是5%。"
+      ],
+      "reference": [
+        "The battery level is 0.5%, not 5%."
+      ]
+    },
+    {
+      "id": "numbers-04-en-zh",
+      "category": "numbers",
+      "family": "numbers-04",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The price increased from $19.99 to $24.50."
+      ],
+      "reference": [
+        "价格从19.99美元上涨至24.50美元。"
+      ]
+    },
+    {
+      "id": "numbers-04-zh-en",
+      "category": "numbers",
+      "family": "numbers-04",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "价格从19.99美元上涨至24.50美元。"
+      ],
+      "reference": [
+        "The price increased from $19.99 to $24.50."
+      ]
+    },
+    {
+      "id": "numbers-05-en-zh",
+      "category": "numbers",
+      "family": "numbers-05",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The discount is 15%, and the final price is 85 yuan."
+      ],
+      "reference": [
+        "折扣为15%，最终价格为85元。"
+      ]
+    },
+    {
+      "id": "numbers-05-zh-en",
+      "category": "numbers",
+      "family": "numbers-05",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "折扣为15%，最终价格为85元。"
+      ],
+      "reference": [
+        "The discount is 15%, and the final price is 85 yuan."
+      ]
+    },
+    {
+      "id": "numbers-06-en-zh",
+      "category": "numbers",
+      "family": "numbers-06",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "There are 1,024 records in the first file and 2,048 in the second."
+      ],
+      "reference": [
+        "第一个文件有1,024条记录，第二个文件有2,048条。"
+      ]
+    },
+    {
+      "id": "numbers-06-zh-en",
+      "category": "numbers",
+      "family": "numbers-06",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "第一个文件有1,024条记录，第二个文件有2,048条。"
+      ],
+      "reference": [
+        "There are 1,024 records in the first file and 2,048 in the second."
+      ]
+    },
+    {
+      "id": "numbers-07-en-zh",
+      "category": "numbers",
+      "family": "numbers-07",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The meeting is on October 13, 2026, at 9:30 a.m."
+      ],
+      "reference": [
+        "会议定于2026年10月13日上午9:30举行。"
+      ]
+    },
+    {
+      "id": "numbers-07-zh-en",
+      "category": "numbers",
+      "family": "numbers-07",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "会议定于2026年10月13日上午9:30举行。"
+      ],
+      "reference": [
+        "The meeting is on October 13, 2026, at 9:30 a.m."
+      ]
+    },
+    {
+      "id": "numbers-08-en-zh",
+      "category": "numbers",
+      "family": "numbers-08",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The deadline is December 31, 2026, at 11:59 p.m."
+      ],
+      "reference": [
+        "截止时间为2026年12月31日晚上11:59。"
+      ]
+    },
+    {
+      "id": "numbers-08-zh-en",
+      "category": "numbers",
+      "family": "numbers-08",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "截止时间为2026年12月31日晚上11:59。"
+      ],
+      "reference": [
+        "The deadline is December 31, 2026, at 11:59 p.m."
+      ]
+    },
+    {
+      "id": "numbers-09-en-zh",
+      "category": "numbers",
+      "family": "numbers-09",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The event moved from October 11 to October 13, 2026."
+      ],
+      "reference": [
+        "活动由2026年10月11日改至10月13日。"
+      ]
+    },
+    {
+      "id": "numbers-09-zh-en",
+      "category": "numbers",
+      "family": "numbers-09",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "活动由2026年10月11日改至10月13日。"
+      ],
+      "reference": [
+        "The event moved from October 11 to October 13, 2026."
+      ]
+    },
+    {
+      "id": "numbers-10-en-zh",
+      "category": "numbers",
+      "family": "numbers-10",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The call starts at 09:30 UTC+8 and ends at 10:15 UTC+8."
+      ],
+      "reference": [
+        "通话从UTC+8时间09:30开始，到10:15结束。"
+      ]
+    },
+    {
+      "id": "numbers-10-zh-en",
+      "category": "numbers",
+      "family": "numbers-10",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "通话从UTC+8时间09:30开始，到10:15结束。"
+      ],
+      "reference": [
+        "The call starts at 09:30 UTC+8 and ends at 10:15 UTC+8."
+      ]
+    },
+    {
+      "id": "numbers-11-en-zh",
+      "category": "numbers",
+      "family": "numbers-11",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The store opens at 12:00 noon, not at midnight."
+      ],
+      "reference": [
+        "商店中午12:00开门，不是午夜。"
+      ]
+    },
+    {
+      "id": "numbers-11-zh-en",
+      "category": "numbers",
+      "family": "numbers-11",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "商店中午12:00开门，不是午夜。"
+      ],
+      "reference": [
+        "The store opens at 12:00 noon, not at midnight."
+      ]
+    },
+    {
+      "id": "numbers-12-en-zh",
+      "category": "numbers",
+      "family": "numbers-12",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The countdown is 00:05:30."
+      ],
+      "reference": [
+        "倒计时为00:05:30。"
+      ]
+    },
+    {
+      "id": "numbers-12-zh-en",
+      "category": "numbers",
+      "family": "numbers-12",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "倒计时为00:05:30。"
+      ],
+      "reference": [
+        "The countdown is 00:05:30."
+      ]
+    },
+    {
+      "id": "numbers-13-en-zh",
+      "category": "numbers",
+      "family": "numbers-13",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The year 2028 has 366 days."
+      ],
+      "reference": [
+        "2028年有366天。"
+      ]
+    },
+    {
+      "id": "numbers-13-zh-en",
+      "category": "numbers",
+      "family": "numbers-13",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "2028年有366天。"
+      ],
+      "reference": [
+        "The year 2028 has 366 days."
+      ]
+    },
+    {
+      "id": "numbers-14-en-zh",
+      "category": "numbers",
+      "family": "numbers-14",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The appointment is on February 29, 2028."
+      ],
+      "reference": [
+        "预约时间为2028年2月29日。"
+      ]
+    },
+    {
+      "id": "numbers-14-zh-en",
+      "category": "numbers",
+      "family": "numbers-14",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "预约时间为2028年2月29日。"
+      ],
+      "reference": [
+        "The appointment is on February 29, 2028."
+      ]
+    },
+    {
+      "id": "numbers-15-en-zh",
+      "category": "numbers",
+      "family": "numbers-15",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The date shown is 03/04/2026; the date format is not specified."
+      ],
+      "reference": [
+        "显示的日期是03/04/2026，未指定日期格式。"
+      ]
+    },
+    {
+      "id": "numbers-15-zh-en",
+      "category": "numbers",
+      "family": "numbers-15",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "显示的日期是03/04/2026，未指定日期格式。"
+      ],
+      "reference": [
+        "The date shown is 03/04/2026; the date format is not specified."
+      ]
+    },
+    {
+      "id": "numbers-16-en-zh",
+      "category": "numbers",
+      "family": "numbers-16",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The version is 4.0.0.185, and the build number is 185."
+      ],
+      "reference": [
+        "版本为4.0.0.185，构建号为185。"
+      ]
+    },
+    {
+      "id": "numbers-16-zh-en",
+      "category": "numbers",
+      "family": "numbers-16",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "版本为4.0.0.185，构建号为185。"
+      ],
+      "reference": [
+        "The version is 4.0.0.185, and the build number is 185."
+      ]
+    },
+    {
+      "id": "numbers-17-en-zh",
+      "category": "numbers",
+      "family": "numbers-17",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The order number is 000123."
+      ],
+      "reference": [
+        "订单号为000123。"
+      ]
+    },
+    {
+      "id": "numbers-17-zh-en",
+      "category": "numbers",
+      "family": "numbers-17",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "订单号为000123。"
+      ],
+      "reference": [
+        "The order number is 000123."
+      ]
+    },
+    {
+      "id": "numbers-18-en-zh",
+      "category": "numbers",
+      "family": "numbers-18",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The model number is AX-2048-B."
+      ],
+      "reference": [
+        "型号为AX-2048-B。"
+      ]
+    },
+    {
+      "id": "numbers-18-zh-en",
+      "category": "numbers",
+      "family": "numbers-18",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "型号为AX-2048-B。"
+      ],
+      "reference": [
+        "The model number is AX-2048-B."
+      ]
+    },
+    {
+      "id": "numbers-19-en-zh",
+      "category": "numbers",
+      "family": "numbers-19",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The dimensions are 12 × 8 × 3 cm."
+      ],
+      "reference": [
+        "尺寸为12 × 8 × 3厘米。"
+      ]
+    },
+    {
+      "id": "numbers-19-zh-en",
+      "category": "numbers",
+      "family": "numbers-19",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "尺寸为12 × 8 × 3厘米。"
+      ],
+      "reference": [
+        "The dimensions are 12 × 8 × 3 cm."
+      ]
+    },
+    {
+      "id": "numbers-20-en-zh",
+      "category": "numbers",
+      "family": "numbers-20",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The distance is 1.5 km, not 1.5 m."
+      ],
+      "reference": [
+        "距离为1.5千米，不是1.5米。"
+      ]
+    },
+    {
+      "id": "numbers-20-zh-en",
+      "category": "numbers",
+      "family": "numbers-20",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "距离为1.5千米，不是1.5米。"
+      ],
+      "reference": [
+        "The distance is 1.5 km, not 1.5 m."
+      ]
+    },
+    {
+      "id": "numbers-21-en-zh",
+      "category": "numbers",
+      "family": "numbers-21",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The speed limit is 80 km/h."
+      ],
+      "reference": [
+        "限速为80千米/小时。"
+      ]
+    },
+    {
+      "id": "numbers-21-zh-en",
+      "category": "numbers",
+      "family": "numbers-21",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "限速为80千米/小时。"
+      ],
+      "reference": [
+        "The speed limit is 80 km/h."
+      ]
+    },
+    {
+      "id": "numbers-22-en-zh",
+      "category": "numbers",
+      "family": "numbers-22",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The connection transfers 100 MB/s, not 100 Mb/s."
+      ],
+      "reference": [
+        "连接传输速度为100 MB/s，不是100 Mb/s。"
+      ]
+    },
+    {
+      "id": "numbers-22-zh-en",
+      "category": "numbers",
+      "family": "numbers-22",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "连接传输速度为100 MB/s，不是100 Mb/s。"
+      ],
+      "reference": [
+        "The connection transfers 100 MB/s, not 100 Mb/s."
+      ]
+    },
+    {
+      "id": "numbers-23-en-zh",
+      "category": "numbers",
+      "family": "numbers-23",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The storage capacity is 128 GB, with 32 GB free."
+      ],
+      "reference": [
+        "存储容量为128 GB，其中32 GB可用。"
+      ]
+    },
+    {
+      "id": "numbers-23-zh-en",
+      "category": "numbers",
+      "family": "numbers-23",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "存储容量为128 GB，其中32 GB可用。"
+      ],
+      "reference": [
+        "The storage capacity is 128 GB, with 32 GB free."
+      ]
+    },
+    {
+      "id": "numbers-24-en-zh",
+      "category": "numbers",
+      "family": "numbers-24",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The amount is EUR 1,234.56."
+      ],
+      "reference": [
+        "金额为1,234.56欧元。"
+      ]
+    },
+    {
+      "id": "numbers-24-zh-en",
+      "category": "numbers",
+      "family": "numbers-24",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "金额为1,234.56欧元。"
+      ],
+      "reference": [
+        "The amount is EUR 1,234.56."
+      ]
+    },
+    {
+      "id": "numbers-25-en-zh",
+      "category": "numbers",
+      "family": "numbers-25",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The amount is CNY 1,234.56, excluding tax."
+      ],
+      "reference": [
+        "金额为人民币1,234.56元，不含税。"
+      ]
+    },
+    {
+      "id": "numbers-25-zh-en",
+      "category": "numbers",
+      "family": "numbers-25",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "金额为人民币1,234.56元，不含税。"
+      ],
+      "reference": [
+        "The amount is CNY 1,234.56, excluding tax."
+      ]
+    },
+    {
+      "id": "numbers-26-en-zh",
+      "category": "numbers",
+      "family": "numbers-26",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Revenue fell by 2.5 million dollars to 10 million dollars."
+      ],
+      "reference": [
+        "收入减少250万美元，降至1,000万美元。"
+      ]
+    },
+    {
+      "id": "numbers-26-zh-en",
+      "category": "numbers",
+      "family": "numbers-26",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "收入减少250万美元，降至1,000万美元。"
+      ],
+      "reference": [
+        "Revenue fell by 2.5 million dollars to 10 million dollars."
+      ]
+    },
+    {
+      "id": "numbers-27-en-zh",
+      "category": "numbers",
+      "family": "numbers-27",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The population is 1.2 billion."
+      ],
+      "reference": [
+        "人口为12亿。"
+      ]
+    },
+    {
+      "id": "numbers-27-zh-en",
+      "category": "numbers",
+      "family": "numbers-27",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "人口为12亿。"
+      ],
+      "reference": [
+        "The population is 1.2 billion."
+      ]
+    },
+    {
+      "id": "numbers-28-en-zh",
+      "category": "numbers",
+      "family": "numbers-28",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The estimate ranges from 3,000 to 5,000 units."
+      ],
+      "reference": [
+        "估计数量介于3,000至5,000件之间。"
+      ]
+    },
+    {
+      "id": "numbers-28-zh-en",
+      "category": "numbers",
+      "family": "numbers-28",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "估计数量介于3,000至5,000件之间。"
+      ],
+      "reference": [
+        "The estimate ranges from 3,000 to 5,000 units."
+      ]
+    },
+    {
+      "id": "numbers-29-en-zh",
+      "category": "numbers",
+      "family": "numbers-29",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The ratio is 3:2."
+      ],
+      "reference": [
+        "比例为3:2。"
+      ]
+    },
+    {
+      "id": "numbers-29-zh-en",
+      "category": "numbers",
+      "family": "numbers-29",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "比例为3:2。"
+      ],
+      "reference": [
+        "The ratio is 3:2."
+      ]
+    },
+    {
+      "id": "numbers-30-en-zh",
+      "category": "numbers",
+      "family": "numbers-30",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The probability is 1 in 10,000."
+      ],
+      "reference": [
+        "概率为万分之一。"
+      ]
+    },
+    {
+      "id": "numbers-30-zh-en",
+      "category": "numbers",
+      "family": "numbers-30",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "概率为万分之一。"
+      ],
+      "reference": [
+        "The probability is 1 in 10,000."
+      ]
+    },
+    {
+      "id": "numbers-31-en-zh",
+      "category": "numbers",
+      "family": "numbers-31",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The value must be greater than 0 and less than or equal to 100."
+      ],
+      "reference": [
+        "数值必须大于0且小于或等于100。"
+      ]
+    },
+    {
+      "id": "numbers-31-zh-en",
+      "category": "numbers",
+      "family": "numbers-31",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "数值必须大于0且小于或等于100。"
+      ],
+      "reference": [
+        "The value must be greater than 0 and less than or equal to 100."
+      ]
+    },
+    {
+      "id": "numbers-32-en-zh",
+      "category": "numbers",
+      "family": "numbers-32",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The tolerance is ±0.05 mm."
+      ],
+      "reference": [
+        "公差为±0.05毫米。"
+      ]
+    },
+    {
+      "id": "numbers-32-zh-en",
+      "category": "numbers",
+      "family": "numbers-32",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "公差为±0.05毫米。"
+      ],
+      "reference": [
+        "The tolerance is ±0.05 mm."
+      ]
+    },
+    {
+      "id": "numbers-33-en-zh",
+      "category": "numbers",
+      "family": "numbers-33",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The measurement is 2.3e-4 meters."
+      ],
+      "reference": [
+        "测量值为2.3e-4米。"
+      ]
+    },
+    {
+      "id": "numbers-33-zh-en",
+      "category": "numbers",
+      "family": "numbers-33",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "测量值为2.3e-4米。"
+      ],
+      "reference": [
+        "The measurement is 2.3e-4 meters."
+      ]
+    },
+    {
+      "id": "numbers-34-en-zh",
+      "category": "numbers",
+      "family": "numbers-34",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The screen resolution is 2560 × 1440 pixels."
+      ],
+      "reference": [
+        "屏幕分辨率为2560 × 1440像素。"
+      ]
+    },
+    {
+      "id": "numbers-34-zh-en",
+      "category": "numbers",
+      "family": "numbers-34",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "屏幕分辨率为2560 × 1440像素。"
+      ],
+      "reference": [
+        "The screen resolution is 2560 × 1440 pixels."
+      ]
+    },
+    {
+      "id": "numbers-35-en-zh",
+      "category": "numbers",
+      "family": "numbers-35",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The frame rate is 59.94 fps."
+      ],
+      "reference": [
+        "帧率为59.94 fps。"
+      ]
+    },
+    {
+      "id": "numbers-35-zh-en",
+      "category": "numbers",
+      "family": "numbers-35",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "帧率为59.94 fps。"
+      ],
+      "reference": [
+        "The frame rate is 59.94 fps."
+      ]
+    },
+    {
+      "id": "numbers-36-en-zh",
+      "category": "numbers",
+      "family": "numbers-36",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The sample rate is 44.1 kHz."
+      ],
+      "reference": [
+        "采样率为44.1 kHz。"
+      ]
+    },
+    {
+      "id": "numbers-36-zh-en",
+      "category": "numbers",
+      "family": "numbers-36",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "采样率为44.1 kHz。"
+      ],
+      "reference": [
+        "The sample rate is 44.1 kHz."
+      ]
+    },
+    {
+      "id": "numbers-37-en-zh",
+      "category": "numbers",
+      "family": "numbers-37",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The package contains 6 bottles, each holding 250 mL."
+      ],
+      "reference": [
+        "包装内有6瓶，每瓶容量为250毫升。"
+      ]
+    },
+    {
+      "id": "numbers-37-zh-en",
+      "category": "numbers",
+      "family": "numbers-37",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "包装内有6瓶，每瓶容量为250毫升。"
+      ],
+      "reference": [
+        "The package contains 6 bottles, each holding 250 mL."
+      ]
+    },
+    {
+      "id": "numbers-38-en-zh",
+      "category": "numbers",
+      "family": "numbers-38",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The total weight is 0.75 kg."
+      ],
+      "reference": [
+        "总重量为0.75千克。"
+      ]
+    },
+    {
+      "id": "numbers-38-zh-en",
+      "category": "numbers",
+      "family": "numbers-38",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "总重量为0.75千克。"
+      ],
+      "reference": [
+        "The total weight is 0.75 kg."
+      ]
+    },
+    {
+      "id": "numbers-39-en-zh",
+      "category": "numbers",
+      "family": "numbers-39",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Page 3 of 12 contains the figure."
+      ],
+      "reference": [
+        "图位于12页中的第3页。"
+      ]
+    },
+    {
+      "id": "numbers-39-zh-en",
+      "category": "numbers",
+      "family": "numbers-39",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "图位于12页中的第3页。"
+      ],
+      "reference": [
+        "Page 3 of 12 contains the figure."
+      ]
+    },
+    {
+      "id": "numbers-40-en-zh",
+      "category": "numbers",
+      "family": "numbers-40",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "Rows 10–20 are hidden."
+      ],
+      "reference": [
+        "第10至20行已隐藏。"
+      ]
+    },
+    {
+      "id": "numbers-40-zh-en",
+      "category": "numbers",
+      "family": "numbers-40",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "第10至20行已隐藏。"
+      ],
+      "reference": [
+        "Rows 10–20 are hidden."
+      ]
+    },
+    {
+      "id": "numbers-41-en-zh",
+      "category": "numbers",
+      "family": "numbers-41",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The timer runs for 1 hour and 30 minutes."
+      ],
+      "reference": [
+        "计时器运行1小时30分钟。"
+      ]
+    },
+    {
+      "id": "numbers-41-zh-en",
+      "category": "numbers",
+      "family": "numbers-41",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "计时器运行1小时30分钟。"
+      ],
+      "reference": [
+        "The timer runs for 1 hour and 30 minutes."
+      ]
+    },
+    {
+      "id": "numbers-42-en-zh",
+      "category": "numbers",
+      "family": "numbers-42",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The trial lasts 14 days and ends on November 2, 2026."
+      ],
+      "reference": [
+        "试用期为14天，于2026年11月2日结束。"
+      ]
+    },
+    {
+      "id": "numbers-42-zh-en",
+      "category": "numbers",
+      "family": "numbers-42",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "试用期为14天，于2026年11月2日结束。"
+      ],
+      "reference": [
+        "The trial lasts 14 days and ends on November 2, 2026."
+      ]
+    },
+    {
+      "id": "numbers-43-en-zh",
+      "category": "numbers",
+      "family": "numbers-43",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The room is on floor B2, next to room 021."
+      ],
+      "reference": [
+        "房间位于B2层，在021室旁边。"
+      ]
+    },
+    {
+      "id": "numbers-43-zh-en",
+      "category": "numbers",
+      "family": "numbers-43",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "房间位于B2层，在021室旁边。"
+      ],
+      "reference": [
+        "The room is on floor B2, next to room 021."
+      ]
+    },
+    {
+      "id": "numbers-44-en-zh",
+      "category": "numbers",
+      "family": "numbers-44",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The range is -10 to +10 degrees Celsius."
+      ],
+      "reference": [
+        "范围为零下10至零上10摄氏度。"
+      ]
+    },
+    {
+      "id": "numbers-44-zh-en",
+      "category": "numbers",
+      "family": "numbers-44",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "范围为零下10至零上10摄氏度。"
+      ],
+      "reference": [
+        "The range is -10 to +10 degrees Celsius."
+      ]
+    },
+    {
+      "id": "numbers-45-en-zh",
+      "category": "numbers",
+      "family": "numbers-45",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The balance is -$12.50 after the refund."
+      ],
+      "reference": [
+        "退款后余额为负12.50美元。"
+      ]
+    },
+    {
+      "id": "numbers-45-zh-en",
+      "category": "numbers",
+      "family": "numbers-45",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "退款后余额为负12.50美元。"
+      ],
+      "reference": [
+        "The balance is -$12.50 after the refund."
+      ]
+    },
+    {
+      "id": "numbers-46-en-zh",
+      "category": "numbers",
+      "family": "numbers-46",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The tax rate changed from 5% to 7.5%."
+      ],
+      "reference": [
+        "税率从5%变为7.5%。"
+      ]
+    },
+    {
+      "id": "numbers-46-zh-en",
+      "category": "numbers",
+      "family": "numbers-46",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "税率从5%变为7.5%。"
+      ],
+      "reference": [
+        "The tax rate changed from 5% to 7.5%."
+      ]
+    },
+    {
+      "id": "numbers-47-en-zh",
+      "category": "numbers",
+      "family": "numbers-47",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The reading changed from 0.003 to 0.030."
+      ],
+      "reference": [
+        "读数从0.003变为0.030。"
+      ]
+    },
+    {
+      "id": "numbers-47-zh-en",
+      "category": "numbers",
+      "family": "numbers-47",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "读数从0.003变为0.030。"
+      ],
+      "reference": [
+        "The reading changed from 0.003 to 0.030."
+      ]
+    },
+    {
+      "id": "numbers-48-en-zh",
+      "category": "numbers",
+      "family": "numbers-48",
+      "split": "holdout",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The meeting is at 8:00 p.m. in Tokyo and 7:00 p.m. in Shanghai."
+      ],
+      "reference": [
+        "会议时间为东京晚上8:00，上海晚上7:00。"
+      ]
+    },
+    {
+      "id": "numbers-48-zh-en",
+      "category": "numbers",
+      "family": "numbers-48",
+      "split": "holdout",
+      "direction": "zh-en",
+      "paragraphs": [
+        "会议时间为东京晚上8:00，上海晚上7:00。"
+      ],
+      "reference": [
+        "The meeting is at 8:00 p.m. in Tokyo and 7:00 p.m. in Shanghai."
+      ]
+    },
+    {
+      "id": "numbers-49-en-zh",
+      "category": "numbers",
+      "family": "numbers-49",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The range includes both March 1 and March 31, 2027."
+      ],
+      "reference": [
+        "日期范围包含2027年3月1日和3月31日。"
+      ]
+    },
+    {
+      "id": "numbers-49-zh-en",
+      "category": "numbers",
+      "family": "numbers-49",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "日期范围包含2027年3月1日和3月31日。"
+      ],
+      "reference": [
+        "The range includes both March 1 and March 31, 2027."
+      ]
+    },
+    {
+      "id": "numbers-50-en-zh",
+      "category": "numbers",
+      "family": "numbers-50",
+      "split": "development",
+      "direction": "en-zh",
+      "paragraphs": [
+        "The update requires at least 2 GB of free space and takes approximately 15 minutes."
+      ],
+      "reference": [
+        "更新至少需要2 GB可用空间，大约耗时15分钟。"
+      ]
+    },
+    {
+      "id": "numbers-50-zh-en",
+      "category": "numbers",
+      "family": "numbers-50",
+      "split": "development",
+      "direction": "zh-en",
+      "paragraphs": [
+        "更新至少需要2 GB可用空间，大约耗时15分钟。"
+      ],
+      "reference": [
+        "The update requires at least 2 GB of free space and takes approximately 15 minutes."
+      ]
+    }
+  ]
+}

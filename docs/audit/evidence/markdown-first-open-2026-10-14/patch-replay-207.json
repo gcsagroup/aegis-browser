@@ -1,0 +1,10 @@
+{
+  "before": "341cba3547790eeb2666cc832f1284c0072265cb",
+  "after": "8d58290826885f39f64ef1652be8af0d5ca22aaa",
+  "files": [
+    "chrome/browser/aegis/enhancements/enhancement_tab_helper.cc",
+    "chrome/browser/aegis/enhancements/enhancement_browsertest.cc",
+    "chrome/browser/ui/webui/help/aegis_github_update.h"
+  ],
+  "verified": true
+}

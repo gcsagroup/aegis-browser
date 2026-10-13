@@ -1,0 +1,44 @@
+From bea2aa3e2536cc5dcc0ee88452d12d7c90ee1da7 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 07:04:02 +0800
+Subject: [PATCH] test(mac): use bounds-checked signing fixture buffers
+
+---
+ chrome/browser/aegis/aegis_mac_signing_unittest.cc | 3 ++-
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_mac_signing_unittest.cc b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
+index d9694bd63201988d250a9be284f0769cf43a498c..b2a88e3484ab8f7216e5c3f6a8b85cbed7f4417c 100644
+--- a/chrome/browser/aegis/aegis_mac_signing_unittest.cc
++++ b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
+@@ -9,9 +9,10 @@
+ #include <Kernel/kern/cs_blobs.h>
+ #include <Security/Security.h>
+ 
+-#include <cstring>
++#include <cstdint>
+ 
+ #include "base/apple/scoped_cftyperef.h"
++#include "base/containers/span.h"
+ #include "base/strings/sys_string_conversions.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ba31c776d7f7e8fe5f5df47d91daa597e3dc8cd4..3c84346ffc80d87448803d872056e6705121e091 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.155";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (155)";
++inline constexpr char kProductVersion[] = "3.0.0.156";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (156)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

@@ -1,0 +1,554 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Debug -destination "platform=iOS Simulator,id=01D9DC02-2C70-4958-973E-4F5668AB788A" -derivedDataPath <build-root>/ios/DerivedData -resultBundlePath .artifacts/ui-unification-20261013/ios-iphone-118.xcresult -parallel-testing-enabled NO -collect-test-diagnostics never "-only-testing:AegisTests/WebsiteEnhancementTests" "-only-testing:AegisUITests/WebsiteEnhancementUITests" test-without-building
+
+Writing result bundle at path:
+	<repo>/.artifacts/ui-unification-20261013/ios-iphone-118.xcresult
+
+2026-10-13 18:23:27.240264+0800 Aegis[95987:15212393] [default] Failed to resolve host network app id to config: bundleID: com.apple.WebKit.Networking instance ID: Optional([_EXExtensionInstanceIdentifier: 57D3FF7D-B068-492D-8709-DD4E73AC8BB7])
+Test Suite 'Selected tests' started at 2026-10-13 18:23:27.505.
+Test Suite 'AegisTests.xctest' started at 2026-10-13 18:23:27.506.
+Test Suite 'WebsiteEnhancementTests' started at 2026-10-13 18:23:27.506.
+Test Case '-[AegisTests.WebsiteEnhancementTests testAllFramesMatchesIndividuallyAndStaleMenuIsRejected]' started.
+2026-10-13 18:23:27.552951+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[95996] Unable to filter tracking query parameters (missing data)
+2026-10-13 18:23:27.742715+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96001] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.805232+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96002] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.857918+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[95996] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.883313+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96003] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.893296+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96003] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.893650+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96003] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.908144+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96003] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.917125+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96003] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.932318+0800 Aegis[95987:15212503] [ResourceLoadStatistics] WebContent[96003] Unable to hide query parameters from script (missing data)
+2026-10-13 18:23:27.935538+0800 Aegis[95987:15212503] [ProcessSuspension] WebContent[96003] 0x10e04c100 - [sessionID=9223372036854775810] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+Test Case '-[AegisTests.WebsiteEnhancementTests testAllFramesMatchesIndividuallyAndStaleMenuIsRejected]' passed (0.429 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testExternalWriteAndCorruptDataArePreserved]' started.
+2026-10-13 18:23:27.938514+0800 Aegis[95987:15212394] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:23:27.938631+0800 Aegis[95987:15212394] [ProcessSuspension] 0x111198600 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=96003, error: (null)
+2026-10-13 18:23:27.938929+0800 Aegis[95987:15212394] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 96003 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 96003 does not exist}>
+2026-10-13 18:23:27.939000+0800 Aegis[95987:15212394] [ProcessSuspension] 0x1111986c0 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=96003, error: (null)
+Test Case '-[AegisTests.WebsiteEnhancementTests testExternalWriteAndCorruptDataArePreserved]' passed (0.007 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testMarkdownFileLimitsContainmentAndRawResponse]' started.
+2026-10-13 18:23:28.038349+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.038420+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.069246+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.069438+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.069543+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.069642+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.069798+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.084978+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.095685+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.095797+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.095854+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.095902+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.110735+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.118589+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.123130+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.129432+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.129664+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.135670+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.135916+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.141053+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.142547+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.143261+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.151634+0800 Aegis[95987:15212503] [com.apple.WebKit.WebContent] WebContent[95996] makeImagePlus:3799: *** ERROR: 'WEBP'-_reader->initImage[0] failed err=-50
+2026-10-13 18:23:28.569624+0800 Aegis[95987:15212503] [Process] WebContent[96006] 0x107a20008 - [webPageID=120] WebPage::runJavaScriptInFrameInScriptWorld: Request to run JavaScript failed with error Error: 当前页面已经由网站排版，请打开 Raw 原始文件
+Test Case '-[AegisTests.WebsiteEnhancementTests testMarkdownFileLimitsContainmentAndRawResponse]' passed (0.628 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testPersistenceDraftRevisionRollbackAndPrivateIsolation]' started.
+Test Case '-[AegisTests.WebsiteEnhancementTests testPersistenceDraftRevisionRollbackAndPrivateIsolation]' passed (0.008 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testRealWebKitEarlyRulesStorageMenuAndDisable]' started.
+2026-10-13 18:23:29.009157+0800 Aegis[95987:15212503] [ProcessSuspension] WebContent[96017] 0x11204c100 - [sessionID=9223372036854775812] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+Test Case '-[AegisTests.WebsiteEnhancementTests testRealWebKitEarlyRulesStorageMenuAndDisable]' passed (0.430 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMarkdownRendererUsesPackagedAssetsAndEscapesExecutableContent]' started.
+2026-10-13 18:23:29.011912+0800 Aegis[95987:15212401] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:23:29.012009+0800 Aegis[95987:15212401] [ProcessSuspension] 0x111198780 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=96017, error: (null)
+2026-10-13 18:23:29.012358+0800 Aegis[95987:15212401] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 96017 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 96017 does not exist}>
+2026-10-13 18:23:29.012418+0800 Aegis[95987:15212401] [ProcessSuspension] 0x111198840 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=96017, error: (null)
+2026-10-13 18:23:29.339957+0800 Aegis[95987:15212503] [ProcessSuspension] WebContent[96023] 0x10e04c100 - [sessionID=1] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+2026-10-13 18:23:29.342167+0800 Aegis[95987:15212401] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:23:29.342248+0800 Aegis[95987:15212401] [ProcessSuspension] 0x111198840 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=96023, error: (null)
+2026-10-13 18:23:29.342479+0800 Aegis[95987:15212401] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 96023 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 96023 does not exist}>
+2026-10-13 18:23:29.342531+0800 Aegis[95987:15212401] [ProcessSuspension] 0x111198900 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=96023, error: (null)
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMarkdownRendererUsesPackagedAssetsAndEscapesExecutableContent]' passed (0.334 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMatchingVectors]' started.
+Test Case '-[AegisTests.WebsiteEnhancementTests testSharedMatchingVectors]' passed (0.010 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseKeepsGrantAndReadsOldSchema]' started.
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseKeepsGrantAndReadsOldSchema]' passed (0.003 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseRevokesMenuAndStopsInjectionAfterReload]' started.
+2026-10-13 18:23:29.982984+0800 Aegis[95987:15212503] [ProcessSuspension] WebContent[96029] 0x11004c100 - [sessionID=9223372036854775813] WebProcess::updateFreezerStatus: isFreezable=1, error=-1
+Test Case '-[AegisTests.WebsiteEnhancementTests testSitePauseRevokesMenuAndStopsInjectionAfterReload]' passed (0.625 seconds).
+Test Case '-[AegisTests.WebsiteEnhancementTests testTrialStorageIsTemporaryAndWrongURLDoesNotRun]' started.
+2026-10-13 18:23:29.985961+0800 Aegis[95987:15212394] [assertion] Error acquiring assertion: <Error Domain=RBSServiceErrorDomain Code=1 "((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))" UserInfo={NSLocalizedFailureReason=((target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.rendering AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.networking AND target is not running or doesn't have entitlement com.apple.developer.web-browser-engine.webcontent))}>
+2026-10-13 18:23:29.986056+0800 Aegis[95987:15212394] [ProcessSuspension] 0x111198900 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'XPCConnectionTerminationWatchdog' for process with PID=96029, error: (null)
+2026-10-13 18:23:29.986327+0800 Aegis[95987:15212394] [assertion] Error acquiring assertion: <Error Domain=RBSAssertionErrorDomain Code=2 "Specified target process 96029 does not exist" UserInfo={NSLocalizedFailureReason=Specified target process 96029 does not exist}>
+2026-10-13 18:23:29.986387+0800 Aegis[95987:15212394] [ProcessSuspension] 0x1111989c0 - ProcessAssertion::acquireSync Failed to acquire RBS assertion 'WebProcess NearSuspended Assertion' for process with PID=96029, error: (null)
+Test Case '-[AegisTests.WebsiteEnhancementTests testTrialStorageIsTemporaryAndWrongURLDoesNotRun]' passed (0.374 seconds).
+Test Suite 'WebsiteEnhancementTests' passed at 2026-10-13 18:23:30.358.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 2.849 (2.851) seconds
+Test Suite 'AegisTests.xctest' passed at 2026-10-13 18:23:30.358.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 2.849 (2.852) seconds
+Test Suite 'Selected tests' passed at 2026-10-13 18:23:30.358.
+	 Executed 10 tests, with 0 failures (0 unexpected) in 2.849 (2.852) seconds
+2026-10-13 18:23:30.973891+0800 AegisUITests-Runner[96049:15213043] [Default] Running tests...
+    t =      nans Interface orientation changed to Portrait
+Test Suite 'Selected tests' started at 2026-10-13 18:23:31.348.
+Test Suite 'AegisUITests.xctest' started at 2026-10-13 18:23:31.349.
+Test Suite 'WebsiteEnhancementUITests' started at 2026-10-13 18:23:31.349.
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testMarkdownPreviewSourceAndLandscape]' started.
+    t =     0.00s Start Test at 2026-10-13 18:23:31.349
+    t =     0.02s Set Up
+    t =     0.02s Open com.gcsa.aegis.ios.app
+    t =     0.02s     Launch com.gcsa.aegis.ios.app
+2026-10-13 18:23:31.413 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:23:31.413 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     0.27s         Setting up automation session
+objc[96049]: Class UIAccessibilityLoaderWebShared is implemented in both /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebCore.axbundle/WebCore (0x106118310) and /Library/Developer/CoreSimulator/Volumes/iOS_23F77/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 26.5.simruntime/Contents/Resources/RuntimeRoot/System/Library/AccessibilityBundles/WebKit.axbundle/WebKit (0x1061b4398). This may cause spurious casting failures and mysterious crashes. One of the duplicates must be removed or renamed.
+    t =     0.75s         Wait for com.gcsa.aegis.ios.app to idle
+    t =     2.18s Waiting 10.0s for "address-field" TextField to exist
+    t =     3.22s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =     3.22s         Checking existence of `"address-field" TextField`
+    t =     3.26s Tap "address-field" TextField
+    t =     3.26s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.26s     Find the "address-field" TextField
+    t =     3.28s     Check for interrupting elements affecting "address-field" TextField
+    t =     3.29s     Synthesize event
+    t =     3.59s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.96s Find the "address-field" TextField
+    t =     4.00s Type '' into "address-field" TextField
+    t =     4.00s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.00s     Find the "address-field" TextField
+    t =     4.02s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.04s     Synthesize event
+    t =     4.47s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.47s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =     4.47s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.47s     Find the "address-field" TextField
+    t =     4.49s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.52s     Synthesize event
+    t =     5.50s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.60s Tap "page-protection" Button
+    t =     5.60s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.99s     Find the "page-protection" Button
+    t =     6.01s     Check for interrupting elements affecting "page-protection" Button
+    t =     6.03s     Synthesize event
+    t =     6.32s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     6.37s Find the "site-read-markdown" Button
+    t =     6.50s Find the "site-read-markdown" Button
+    t =     6.57s Tap "site-read-markdown" Button
+    t =     6.57s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     7.15s     Find the "site-read-markdown" Button
+    t =     7.19s     Check for interrupting elements affecting "site-read-markdown" Button
+    t =     7.22s     Synthesize event
+<unknown>:0: warning: -[AegisUITests.WebsiteEnhancementUITests testMarkdownPreviewSourceAndLandscape] : Adding 'UIKitToolbar' as a subview of UIHostingController.view is not supported and may result in a broken view hierarchy. Add your view above UIHostingController.view in a common superview or insert it into your SwiftUI content in a UIViewRepresentable instead.
+    t =     7.51s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     7.55s Waiting 10.0s for "Markdown 验收" StaticText to exist
+    t =     8.59s     Checking `Expect predicate `existsNoRetry == 1` for object "Markdown 验收" StaticText`
+    t =     8.59s         Checking existence of `"Markdown 验收" StaticText`
+    t =     8.70s Waiting 5.0s for "markdown-actions" Button to exist
+    t =     9.74s     Checking `Expect predicate `existsNoRetry == 1` for object "markdown-actions" Button`
+    t =     9.74s         Checking existence of `"markdown-actions" Button`
+    t =     9.79s Tap "markdown-actions" Button
+    t =     9.79s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     9.80s     Find the "markdown-actions" Button
+    t =     9.85s     Check for interrupting elements affecting "markdown-actions" Button
+    t =     9.89s     Synthesize event
+    t =    10.18s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    11.04s Tap "查看源码" Button
+    t =    11.04s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    11.05s     Find the "查看源码" Button
+    t =    11.11s     Check for interrupting elements affecting "chevron.left.forwardslash.chevron.right" Button
+    t =    11.15s     Synthesize event
+    t =    11.44s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    13.00s Waiting 5.0s for StaticText (First Match) to exist
+    t =    14.04s     Checking `Expect predicate `existsNoRetry == 1` for object StaticText (First Match)`
+    t =    14.04s         Checking existence of `StaticText (First Match)`
+    t =    14.14s Tap "markdown-actions" Button
+    t =    14.14s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    14.14s     Find the "markdown-actions" Button
+    t =    14.18s     Check for interrupting elements affecting "markdown-actions" Button
+    t =    14.22s     Synthesize event
+    t =    14.51s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    15.41s Tap "查看源码" Button
+    t =    15.41s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    15.41s     Find the "查看源码" Button
+    t =    15.46s     Check for interrupting elements affecting "chevron.left.forwardslash.chevron.right" Button
+    t =    15.51s     Synthesize event
+    t =    15.79s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.92s Added attachment named 'Markdown 表格与任务列表'
+    t =    16.92s Setting device orientation to Landscape Left
+    t =    16.92s     Device orientation changed to Landscape Left
+    t =    16.94s     Interface orientation changed to Landscape Right
+    t =    16.94s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    17.05s Waiting 5.0s for "markdown-outline" Button to exist
+    t =    18.08s     Checking `Expect predicate `existsNoRetry == 1` for object "markdown-outline" Button`
+    t =    18.08s         Checking existence of `"markdown-outline" Button`
+    t =    18.20s Added attachment named 'Markdown 横屏'
+    t =    18.20s Setting device orientation to Portrait
+    t =    18.20s     Device orientation changed to Portrait
+    t =    18.23s     Interface orientation changed to Portrait
+    t =    18.23s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.45s Tear Down
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testMarkdownPreviewSourceAndLandscape]' passed (19.694 seconds).
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testScriptDraftTrialEnableAndRecovery]' started.
+    t =     0.00s Start Test at 2026-10-13 18:23:51.044
+    t =     0.02s Set Up
+    t =     0.02s Open com.gcsa.aegis.ios.app
+    t =     0.02s     Launch com.gcsa.aegis.ios.app
+    t =     0.02s         Terminate com.gcsa.aegis.ios.app:96063
+2026-10-13 18:23:52.121 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:23:52.121 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     1.29s         Setting up automation session
+    t =     1.74s         Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.16s Waiting 10.0s for "address-field" TextField to exist
+    t =     4.19s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =     4.19s         Checking existence of `"address-field" TextField`
+    t =     4.23s Tap "address-field" TextField
+    t =     4.23s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.23s     Find the "address-field" TextField
+    t =     4.25s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.26s     Synthesize event
+    t =     4.55s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.89s Find the "address-field" TextField
+    t =     4.92s Type '' into "address-field" TextField
+    t =     4.92s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.92s     Find the "address-field" TextField
+    t =     4.94s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.96s     Synthesize event
+    t =     5.38s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.38s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =     5.38s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.39s     Find the "address-field" TextField
+    t =     5.40s     Check for interrupting elements affecting "address-field" TextField
+    t =     5.42s     Synthesize event
+    t =     6.29s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     6.38s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =     7.42s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =     7.42s         Checking existence of `"网站增强验收文章" StaticText`
+    t =     7.45s Tap "page-protection" Button
+    t =     7.45s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     7.45s     Find the "page-protection" Button
+    t =     7.47s     Check for interrupting elements affecting "page-protection" Button
+    t =     7.49s     Synthesize event
+    t =     7.78s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     8.45s Find the "site-new-script" Button
+    t =     8.53s Find the "site-new-script" Button
+    t =     8.58s Tap "site-new-script" Button
+    t =     8.58s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     8.58s     Find the "site-new-script" Button
+    t =     8.63s     Check for interrupting elements affecting "site-new-script" Button
+    t =     8.66s     Synthesize event
+    t =     8.95s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     9.69s Waiting 5.0s for "user-script-source" TextView to exist
+    t =    10.72s     Checking `Expect predicate `existsNoRetry == 1` for object "user-script-source" TextView`
+    t =    10.72s         Checking existence of `"user-script-source" TextView`
+    t =    10.78s Find the "user-script-source" TextView
+    t =    10.84s Find the "user-script-source" TextView
+    t =    10.90s Tap "user-script-source" TextView
+    t =    10.90s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    10.90s     Find the "user-script-source" TextView
+    t =    10.95s     Check for interrupting elements affecting "user-script-source" TextView
+    t =    11.00s     Synthesize event
+    t =    11.29s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    11.53s Type 'a' key with modifiers '⌘' (0x10)
+    t =    11.53s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    11.53s     Find the Target Application 'com.gcsa.aegis.ios.app'
+    t =    11.58s     Check for interrupting elements affecting "GCSA Aegis" Application
+    t =    11.63s     Synthesize event
+    t =    11.97s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    11.98s Type '' into "user-script-source" TextView
+    t =    11.98s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    11.98s     Find the "user-script-source" TextView
+    t =    12.04s     Check for interrupting elements affecting "user-script-source" TextView
+    t =    12.09s     Synthesize event
+    t =    12.31s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    12.32s Type '// ==UserScript==
+...' into "user-script-source" TextView
+    t =    12.32s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    12.32s     Find the "user-script-source" TextView
+    t =    12.38s     Check for interrupting elements affecting "user-script-source" TextView
+    t =    12.43s     Synthesize event
+    t =    15.63s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    15.63s Find the "user-script-trial" Button
+    t =    16.70s     Find the "user-script-trial" Button (retry 1)
+    t =    17.76s     Find the "user-script-trial" Button (retry 2)
+    t =    17.82s Swipe up Target Application 'com.gcsa.aegis.ios.app'
+    t =    17.82s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    17.82s     Find the Target Application 'com.gcsa.aegis.ios.app'
+    t =    17.86s     Check for interrupting elements affecting "GCSA Aegis" Application
+    t =    17.91s     Synthesize event
+    t =    18.33s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.40s Find the "user-script-trial" Button
+    t =    19.47s Find the "user-script-trial" Button
+    t =    19.53s Tap "user-script-trial" Button
+    t =    19.53s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.54s     Find the "user-script-trial" Button
+    t =    19.59s     Check for interrupting elements affecting "user-script-trial" Button
+    t =    19.64s     Synthesize event
+    t =    19.93s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    20.35s Waiting 5.0s for "在真实页面试运行？" Alert to exist
+    t =    21.38s     Checking `Expect predicate `existsNoRetry == 1` for object "在真实页面试运行？" Alert`
+    t =    21.38s         Checking existence of `"在真实页面试运行？" Alert`
+    t =    21.44s Tap "试运行" Button
+    t =    21.44s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    21.45s     Find the "试运行" Button
+    t =    21.51s     Check for interrupting elements affecting "试运行" Button
+    t =    21.57s     Synthesize event
+    t =    21.87s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    22.15s Tap "完成" Button
+    t =    22.15s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    22.15s     Find the "完成" Button
+    t =    22.22s     Check for interrupting elements affecting "完成" Button
+    t =    22.28s     Synthesize event
+    t =    22.57s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    23.34s Tap "完成" Button
+    t =    23.34s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    23.34s     Find the "完成" Button
+    t =    23.38s     Check for interrupting elements affecting "完成" Button
+    t =    23.41s     Synthesize event
+    t =    23.70s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    24.49s Waiting 8.0s for "SCRIPT_APPLIED" StaticText to exist
+    t =    25.51s     Checking `Expect predicate `existsNoRetry == 1` for object "SCRIPT_APPLIED" StaticText`
+    t =    25.51s         Checking existence of `"SCRIPT_APPLIED" StaticText`
+    t =    25.59s Added attachment named '脚本试运行效果'
+    t =    25.59s Tap "page-protection" Button
+    t =    25.59s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    25.59s     Find the "page-protection" Button
+    t =    25.61s     Check for interrupting elements affecting "page-protection" Button
+    t =    25.62s     Synthesize event
+    t =    25.91s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    26.45s Find the "此网站的全部设置" Button
+    t =    26.51s Find the "此网站的全部设置" Button
+    t =    26.55s Tap "此网站的全部设置" Button
+    t =    26.55s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    26.55s     Find the "此网站的全部设置" Button
+    t =    26.59s     Check for interrupting elements affecting "此网站的全部设置" Button
+    t =    26.62s     Synthesize event
+    t =    26.91s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    27.71s Find the "启用" Button
+    t =    27.77s Find the "script-c51f8634-fe79-47ef-890c-3f520ee2d24d" Button
+    t =    27.81s Tap "script-c51f8634-fe79-47ef-890c-3f520ee2d24d" Button
+    t =    27.81s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    27.81s     Find the "script-c51f8634-fe79-47ef-890c-3f520ee2d24d" Button
+    t =    27.84s     Check for interrupting elements affecting "script-c51f8634-fe79-47ef-890c-3f520ee2d24d" Button
+    t =    27.87s     Synthesize event
+    t =    28.16s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    28.42s Tap "确认启用" Button
+    t =    28.42s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    28.42s     Find the "确认启用" Button
+    t =    28.48s     Check for interrupting elements affecting "确认启用" Button
+    t =    28.51s     Synthesize event
+    t =    28.81s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.05s Find the "恢复操作" Button
+    t =    29.10s Find the "恢复操作" Button
+    t =    29.14s Tap "恢复操作" Button
+    t =    29.14s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.14s     Find the "恢复操作" Button
+    t =    29.17s     Check for interrupting elements affecting "恢复操作" Button
+    t =    29.19s     Synthesize event
+    t =    29.48s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.74s Find the "停用全部脚本并恢复当前页" Button
+    t =    29.80s Find the "停用全部脚本并恢复当前页" Button
+    t =    29.84s Tap "停用全部脚本并恢复当前页" Button
+    t =    29.84s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.84s     Find the "停用全部脚本并恢复当前页" Button
+    t =    29.87s     Check for interrupting elements affecting "停用全部脚本并恢复当前页" Button
+    t =    29.90s     Synthesize event
+    t =    30.19s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.45s Tap "停用并恢复" Button
+    t =    30.45s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.45s     Find the "停用并恢复" Button
+    t =    30.49s     Check for interrupting elements affecting "停用并恢复" Button
+    t =    30.53s     Synthesize event
+    t =    30.82s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    31.06s Tap Button (Element at index 0)
+    t =    31.06s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    31.06s     Find the Button (Element at index 0)
+    t =    31.09s     Check for interrupting elements affecting "BackButton" Button
+    t =    31.14s     Synthesize event
+    t =    31.44s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    32.22s Tap "完成" Button
+    t =    32.22s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    32.23s     Find the "完成" Button
+    t =    32.29s     Check for interrupting elements affecting "完成" Button
+    t =    32.32s     Synthesize event
+    t =    32.62s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    33.40s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =    34.44s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =    34.44s         Checking existence of `"网站增强验收文章" StaticText`
+    t =    34.47s Checking existence of `"SCRIPT_APPLIED" StaticText`
+    t =    34.49s Tear Down
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testScriptDraftTrialEnableAndRecovery]' passed (34.788 seconds).
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testWebsiteSettingSurvivesRestartAndPrivateProfileIsEmpty]' started.
+    t =     0.00s Start Test at 2026-10-13 18:24:25.832
+    t =     0.02s Set Up
+    t =     0.03s Open com.gcsa.aegis.ios.app
+    t =     0.03s     Launch com.gcsa.aegis.ios.app
+    t =     0.03s         Terminate com.gcsa.aegis.ios.app:96196
+2026-10-13 18:24:26.901 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:24:26.901 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =     1.28s         Setting up automation session
+    t =     1.72s         Wait for com.gcsa.aegis.ios.app to idle
+    t =     3.12s Waiting 10.0s for "address-field" TextField to exist
+    t =     4.15s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =     4.15s         Checking existence of `"address-field" TextField`
+    t =     4.19s Tap "address-field" TextField
+    t =     4.19s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.20s     Find the "address-field" TextField
+    t =     4.21s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.22s     Synthesize event
+    t =     4.51s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.85s Find the "address-field" TextField
+    t =     4.88s Type '' into "address-field" TextField
+    t =     4.88s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     4.88s     Find the "address-field" TextField
+    t =     4.90s     Check for interrupting elements affecting "address-field" TextField
+    t =     4.92s     Synthesize event
+    t =     5.34s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.34s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =     5.34s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     5.35s     Find the "address-field" TextField
+    t =     5.37s     Check for interrupting elements affecting "address-field" TextField
+    t =     5.39s     Synthesize event
+    t =     6.26s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     6.33s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =     7.35s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =     7.35s         Checking existence of `"网站增强验收文章" StaticText`
+    t =     7.37s Tap "page-protection" Button
+    t =     7.37s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     7.38s     Find the "page-protection" Button
+    t =     7.39s     Check for interrupting elements affecting "page-protection" Button
+    t =     7.41s     Synthesize event
+    t =     7.70s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     8.40s Tap "site-copy" Switch[0.94, 0.50]
+    t =     8.40s     Wait for com.gcsa.aegis.ios.app to idle
+    t =     8.40s     Find the "site-copy" Switch
+    t =     8.46s     Check for interrupting elements affecting "site-copy" Switch
+    t =     8.49s     Synthesize event
+    t =     8.49s         Find the "site-copy" Switch
+    t =     8.53s         Find the "site-copy" Switch
+    t =     8.57s         Find the "site-copy" Switch
+    t =     8.89s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    10.18s Find the "site-copy" Switch
+    t =    10.22s Waiting 5.0s for "site-rule-result" StaticText to exist
+    t =    11.24s     Checking `Expect predicate `existsNoRetry == 1` for object "site-rule-result" StaticText`
+    t =    11.24s         Checking existence of `"site-rule-result" StaticText`
+    t =    11.35s Added attachment named '网站设置已保存'
+    t =    11.35s Terminate com.gcsa.aegis.ios.app:2639
+    t =    12.39s Open com.gcsa.aegis.ios.app
+    t =    12.39s     Launch com.gcsa.aegis.ios.app
+2026-10-13 18:24:38.221 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL
+2026-10-13 18:24:38.221 xcodebuild[95976:15211977] [MT] IDELaunchParametersSnapshot: no debugger version
+    t =    12.60s         Setting up automation session
+    t =    13.06s         Wait for com.gcsa.aegis.ios.app to idle
+    t =    14.48s Waiting 10.0s for "address-field" TextField to exist
+    t =    15.49s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =    15.49s         Checking existence of `"address-field" TextField`
+    t =    15.53s Tap "address-field" TextField
+    t =    15.53s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    15.54s     Find the "address-field" TextField
+    t =    15.55s     Check for interrupting elements affecting "address-field" TextField
+    t =    15.56s     Synthesize event
+    t =    15.85s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.18s Find the "address-field" TextField
+    t =    16.20s Type '' into "address-field" TextField
+    t =    16.20s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.20s     Find the "address-field" TextField
+    t =    16.22s     Check for interrupting elements affecting "address-field" TextField
+    t =    16.24s     Synthesize event
+    t =    16.66s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.66s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =    16.66s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    16.66s     Find the "address-field" TextField
+    t =    16.69s     Check for interrupting elements affecting "address-field" TextField
+    t =    16.71s     Synthesize event
+    t =    17.57s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    17.64s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =    18.66s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =    18.66s         Checking existence of `"网站增强验收文章" StaticText`
+    t =    18.69s Tap "page-protection" Button
+    t =    18.69s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    18.69s     Find the "page-protection" Button
+    t =    18.71s     Check for interrupting elements affecting "page-protection" Button
+    t =    18.72s     Synthesize event
+    t =    19.01s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.67s Find the "site-copy" Switch
+    t =    19.73s Tap "完成" Button
+    t =    19.73s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    19.73s     Find the "完成" Button
+    t =    19.77s     Check for interrupting elements affecting "完成" Button
+    t =    19.81s     Synthesize event
+    t =    20.10s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    20.88s Find the "profile-menu" Button
+    t =    21.90s     Find the "profile-menu" Button (retry 1)
+    t =    22.93s     Find the "profile-menu" Button (retry 2)
+    t =    22.95s Tap "browser-more" Button
+    t =    22.95s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    22.96s     Find the "browser-more" Button
+    t =    22.97s     Check for interrupting elements affecting "browser-more" Button
+    t =    22.99s     Synthesize event
+    t =    23.28s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    24.42s Waiting 5.0s for "profile-menu" Button to exist
+    t =    25.42s     Checking `Expect predicate `existsNoRetry == 1` for object "profile-menu" Button`
+    t =    25.42s         Checking existence of `"profile-menu" Button`
+    t =    25.45s Tap "profile-menu" Button
+    t =    25.45s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    25.46s     Find the "profile-menu" Button
+    t =    25.48s     Check for interrupting elements affecting "profile-menu" Button
+    t =    25.50s     Synthesize event
+    t =    25.79s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    26.92s Tap "私密" Button
+    t =    26.92s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    26.92s     Find the "私密" Button
+    t =    26.95s     Check for interrupting elements affecting "eye.slash" Button
+    t =    26.96s     Synthesize event
+    t =    27.25s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    28.68s Waiting 10.0s for "address-field" TextField to exist
+    t =    29.72s     Checking `Expect predicate `existsNoRetry == 1` for object "address-field" TextField`
+    t =    29.72s         Checking existence of `"address-field" TextField`
+    t =    29.74s Tap "address-field" TextField
+    t =    29.74s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    29.74s     Find the "address-field" TextField
+    t =    29.75s     Check for interrupting elements affecting "address-field" TextField
+    t =    29.76s     Synthesize event
+    t =    30.05s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.31s Find the "address-field" TextField
+    t =    30.33s Type '' into "address-field" TextField
+    t =    30.33s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.34s     Find the "address-field" TextField
+    t =    30.36s     Check for interrupting elements affecting "address-field" TextField
+    t =    30.38s     Synthesize event
+    t =    30.80s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.80s Type 'http://127.0.0.1:8...' into "address-field" TextField
+    t =    30.80s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    30.80s     Find the "address-field" TextField
+    t =    30.83s     Check for interrupting elements affecting "address-field" TextField
+    t =    30.85s     Synthesize event
+    t =    31.71s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    31.95s Waiting 12.0s for "网站增强验收文章" StaticText to exist
+    t =    32.98s     Checking `Expect predicate `existsNoRetry == 1` for object "网站增强验收文章" StaticText`
+    t =    32.98s         Checking existence of `"网站增强验收文章" StaticText`
+    t =    33.01s Tap "page-protection" Button
+    t =    33.01s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    33.01s     Find the "page-protection" Button
+    t =    33.03s     Check for interrupting elements affecting "page-protection" Button
+    t =    33.05s     Synthesize event
+    t =    33.44s     Wait for com.gcsa.aegis.ios.app to idle
+    t =    34.17s Find the "site-copy" Switch
+    t =    34.28s Added attachment named '私密设置没有继承'
+    t =    34.28s Tear Down
+Test Case '-[AegisUITests.WebsiteEnhancementUITests testWebsiteSettingSurvivesRestartAndPrivateProfileIsEmpty]' passed (34.527 seconds).
+Test Suite 'WebsiteEnhancementUITests' passed at 2026-10-13 18:25:00.359.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 89.008 (89.010) seconds
+Test Suite 'AegisUITests.xctest' passed at 2026-10-13 18:25:00.360.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 89.008 (89.012) seconds
+Test Suite 'Selected tests' passed at 2026-10-13 18:25:00.361.
+	 Executed 3 tests, with 0 failures (0 unexpected) in 89.008 (89.013) seconds
+2026-10-13 18:25:00.662 xcodebuild[95976:15211977] [MT] IDETestOperationsObserverDebug: 95.031 elapsed -- Testing started completed.
+2026-10-13 18:25:00.662 xcodebuild[95976:15211977] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-13 18:25:00.662 xcodebuild[95976:15211977] [MT] IDETestOperationsObserverDebug: 95.031 sec, +95.031 sec -- end
+
+Test session results, code coverage, and logs:
+	<repo>/.artifacts/ui-unification-20261013/ios-iphone-118.xcresult
+
+** TEST EXECUTE SUCCEEDED **
+
+Testing started

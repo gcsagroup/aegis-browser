@@ -96,3 +96,15 @@ normal logs, task timeline, or build artifacts.
 - This acceptance round covers macOS, Android, and Windows. iOS is explicitly deferred.
 - The candidate is evaluated in an independent Profile against public read-only sites and local fixtures.
   Public release, signing, notarization, and store publication remain separate gates.
+
+## Website enhancements, user scripts and Markdown (development candidate)
+
+On desktop, open Website Enhancements from the main menu or protection center. On iOS, use the browser menu, settings or page assistant. Select the target page, enable menu recovery, text selection/copy or anti-debugging compatibility independently, save, then reload manually. Normal profiles remember the exact scheme, host and port; subdomains require an explicit choice. Private sessions use temporary settings and do not inherit normal-profile scripts.
+
+Imported, pasted and AI-generated scripts start as disabled drafts. Review their URL scope, permissions and execution world, try them on the real page, then explicitly enable them. Editing or rollback disables the old version and requires renewed authorization. Supported APIs are DOM, `GM_addStyle`, asynchronous `GM.getValue/setValue/deleteValue`, and `GM_registerMenuCommand`. Remote dependencies, privileged cross-origin requests and full Tampermonkey compatibility are unavailable. Subframes require an explicit choice and independent URL matching. Page-world scripts have no native GM bridge. Use Disable All Scripts and Recover Current Page if a script becomes unresponsive.
+
+AI uses the existing model settings. The request, editor source and explicitly previewed page structure are sent only after confirmation. Models produce drafts and never start trials automatically; timeouts leave scripts disabled.
+
+The read-only Markdown reader opens `.md` and `.markdown` files. Desktop supports drag and drop; iOS supports Files, downloads and sharing. For an online Raw page, choose Read Current Raw Page. Automatic preview is off by default and enabled per site. The reader includes an outline, search, source view, themes, font controls, code copying and printing; desktop can save PDF through the print dialog, while iOS offers PDF export. External images require a click; local relative images require an explicitly selected directory. Embedded HTML cannot execute. Limits are 2 MiB per document, 4 MiB per image and 10 MiB of images. Library saving has a separate limit of 32 KiB on desktop or 24,000 characters on iOS and rejects oversized content without truncating the reader. Summaries and translations require a separate send confirmation.
+
+iOS inspection exposes only the selected page to Mac Safari and switches off after navigation. Anti-debugging compatibility covers specific patterns only. See the [acceptance report](audit/site-enhancement-markdown-2026-10-13.zh-CN.md) for real-site/model results and the Windows and physical-device boundaries.

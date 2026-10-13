@@ -1,0 +1,14 @@
+{
+  "status": "passed",
+  "sdkVersion": "10.0.28000.0",
+  "packageVersion": "10.0.28000.2270",
+  "regressionTests": 28,
+  "architectures": [
+    "x64",
+    "x86"
+  ],
+  "chromiumOriginalEntry": "passed",
+  "sourceHandoffAndFixture": "passed",
+  "paidJob": "skipped",
+  "installer": "not built"
+}

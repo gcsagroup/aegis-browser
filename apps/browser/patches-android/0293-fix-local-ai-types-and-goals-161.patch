@@ -1,0 +1,184 @@
+From 4cdde52786b82bb47b62654e8a4f255a29a2ed3a Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 01:05:45 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E5=AE=8C=E5=96=84=E6=9C=AC=E6=9C=BA?=
+ =?UTF-8?q?=E6=A8=A1=E5=9E=8B=E7=B1=BB=E5=9E=8B=E4=B8=8E=E9=98=85=E8=AF=BB?=
+ =?UTF-8?q?=E7=9B=AE=E6=A0=87=20161?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_agent_browsertest.cc |  2 +-
+ .../aegis_agent/local_ai/asset_manifest.json       |  4 ++--
+ .../resources/aegis_agent/local_ai/worker.js       |  5 ++++-
+ .../resources/aegis_agent/local_ai_client.ts       | 14 +++++++++++---
+ .../resources/aegis_agent/reading_workspace.ts     | 12 +++++++++---
+ .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  6 +++++-
+ chrome/browser/ui/webui/help/aegis_github_update.h |  4 ++--
+ 7 files changed, 34 insertions(+), 13 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index d4a4e093e112c337b725ff4f9b97d51f24dc6b66..6832f086c4cf352de5d920e057a58d732d46b8a8 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6158,7 +6158,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalAiWorkerInWebUI) {
+       const missing = await client.run({op: 'status', direction: 'en-zh'}, () => {});
+       if (missing.ready !== false) return 'unexpected package';
+       const result = await client.run({op: 'research', minim: true, phishlang: true,
+-        goal: 'read', paragraphs: ['Save your notes before closing the browser.']}, () => {});
++        goal: 'read_post', paragraphs: ['Save your notes before closing the browser.']}, () => {});
+       if (result.minim.length !== 1 || !Number.isFinite(result.minim[0].necessity) ||
+           !Number.isFinite(result.phishlang.score) || result.phishlang.windows < 1) return 'invalid scores';
+       return 'passed';
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index 01cec7267e75752424ba0fab8dea1fd3aeaa6a3b..d3cb9a89f78a42e9ef241311bb20b518c5025e69 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -10,8 +10,8 @@
+       "sha256": "8bc2c806918e38d7c158522b2238317c6d935b8caf57866243852e87e7763913"
+     },
+     "worker.js": {
+-      "bytes": 6853,
+-      "sha256": "65f22a9286010fc8d11dc00ea2504bf3f5e806aaaef26a847bfb6f4c9c7fef35"
++      "bytes": 6925,
++      "sha256": "13972886468d9bfe4589e9c79e91eeb501f5e292d03042260b7c71f92728c7a8"
+     },
+     "research.js": {
+       "bytes": 6647,
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/worker.js b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+index 12350f192714e7fda4645f37b10730ef21df80da..ff1bcac3b95d2f3883ee71472753572170b7d5aa 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/worker.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+@@ -50,7 +50,10 @@ async function download(rows) {
+   const files = [], total = rows.reduce((sum, row) => sum + row.attachment.size, 0);
+   let complete = 0;
+   for (const row of rows) {
+-    const response = await fetch(CDN + row.attachment.location, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error'});
++    let response;
++    try {
++      response = await fetch(CDN + row.attachment.location, {credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'error'});
++    } catch { throw Error('download_failed'); }
+     if (!response.ok || !response.body) throw Error('download_failed');
+     const reader = response.body.getReader(), chunks = [];
+     let received = 0;
+diff --git a/chrome/browser/resources/aegis_agent/local_ai_client.ts b/chrome/browser/resources/aegis_agent/local_ai_client.ts
+index e2bda35ce4e3b49a8da5e1f4c88f4e25a6fc6be9..03106928688ac0865cd3f84b18cae129cb11461a 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai_client.ts
++++ b/chrome/browser/resources/aegis_agent/local_ai_client.ts
+@@ -1,6 +1,13 @@
+ // Copyright 2026 GCSA
+ // 每次任务独占 Worker；取消或离开页面会终止推理并释放模型。
+ import {getTrustedScriptURL} from '//resources/js/static_types.js';
++export interface LocalAiResult {
++  ready?: boolean;
++  translations?: string[];
++  language?: string;
++  minim?: Array<{index: number, sensitivity: number, necessity: number, recommendation: string}>;
++  phishlang?: {score: number, windows: number, tokens: number, flagged: boolean};
++}
+ export class LocalAiClient {
+   private worker: Worker|null = null;
+   private reject: ((error: Error) => void)|null = null;
+@@ -12,7 +19,7 @@ export class LocalAiClient {
+     this.reject?.(new Error(reason));
+     this.reject = null;
+   }
+-  async run(request: Record<string, unknown>, progress: (text: string) => void): Promise<any> {
++  async run(request: Record<string, unknown>, progress: (text: string) => void): Promise<LocalAiResult> {
+     this.cancel();
+     return new Promise((resolve, reject) => {
+       this.reject = reject;
+@@ -24,10 +31,11 @@ export class LocalAiClient {
+         worker.terminate();
+         if (this.worker === worker) { this.worker = null; this.reject = null; }
+       };
+-      worker.onmessage = ({data}) => {
++      worker.onmessage = ({data}: MessageEvent<{progress?: string, error?: string, result?: LocalAiResult}>) => {
+         if (data.progress) { progress(data.progress); return; }
+         finish();
+-        if (data.error) reject(new Error(data.error)); else resolve(data.result);
++        if (data.error || !data.result) reject(new Error(data.error || 'invalid_result'));
++        else resolve(data.result);
+       };
+       worker.onerror = () => { finish(); reject(new Error('runtime_unavailable')); };
+       worker.postMessage(request);
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index 51a0b10db412c0ed040d7a816a2634a88f79007b..dabf7928bf76c1fd38eae6be05db143843efbd55 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -126,7 +126,7 @@ export class ReadingWorkspace {
+     try {
+       const result = await this.local.run({op, direction: element<HTMLSelectElement>('direction').value},
+           text => this.localProgress(status, text));
+-      this.packReady = result.ready;
++      this.packReady = result.ready === true;
+       status.textContent = label(result.ready ? 'PackReady' : 'PackMissing');
+     } catch (error) { status.textContent = this.localError(error); }
+     finally { this.localBusy = false; this.updateButtons(); }
+@@ -287,6 +287,7 @@ export class ReadingWorkspace {
+         status.textContent = label('Busy');
+         try {
+           const result = await this.local.run({op: 'translate', direction: direction.value, paragraphs: record.paragraphs}, text => this.localProgress(status, text));
++          if (!Array.isArray(result.translations) || !result.language) throw new Error('invalid_result');
+           this.localBusy = false;
+           const ok = await this.run({op: 'translate_local', id: record.id, draft, language: result.language,
+             translation: result.translations, quote: quote.value, note: note.value, group: group.value});
+@@ -297,7 +298,12 @@ export class ReadingWorkspace {
+       controls.append(translate, settings, cancel, status);
+       if (!draft) controls.append(node('p', label('TranslationSaved')));
+       const goalLabel = node('label', label('ResearchGoal'));
+-      const goal = node('input'); goal.maxLength = 128; goal.value = 'read'; goalLabel.append(goal); controls.append(goalLabel);
++      const goal = node('select');
++      for (const [value, title] of [['read_post', 'ReadArticle'], ['read_email', 'ReadEmail'],
++        ['read_slack_message', 'ReadMessage'], ['read_reviews', 'ReadReviews']]) {
++        const option = node('option', label(title!)); option.value = value!; goal.append(option);
++      }
++      goalLabel.append(goal); controls.append(goalLabel);
+       const research = node('button', label('Analyze')); research.type = 'button'; research.dataset['localResearch'] = '';
+       research.disabled = this.busy || this.localBusy || (!this.minimEnabled && !this.phishlangEnabled);
+       const results = node('pre'); results.className = 'reading-research-results';
+@@ -309,7 +315,7 @@ export class ReadingWorkspace {
+           if (reply.error) throw new Error(reply.error);
+           const state = JSON.parse(reply.result) as ReadingState;
+           const result = await this.local.run({op: 'research', minim: state.minimEnabled,
+-            phishlang: state.phishlangEnabled, paragraphs: state.researchParagraphs, goal: goal.value.trim() || 'read'}, text => this.localProgress(status, text));
++            phishlang: state.phishlangEnabled, paragraphs: state.researchParagraphs, goal: goal.value}, text => this.localProgress(status, text));
+           const lines = [label('ResearchWarning')];
+           if (result.phishlang) lines.push('PhishLang: ' + result.phishlang.score.toFixed(4) +
+             ' · ' + label(result.phishlang.flagged ? 'ResearchFlagged' : 'ResearchUnflagged') +
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index d3de41229793b37aca7d9598dfbbc9f9b6f781de..e5abd7db9229002e4323b23b330ba4b7fbbedddc 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -88,7 +88,11 @@ void AddStrings(content::WebUIDataSource *source) {
+   add("readingTranslating", "Translating paragraph", "正在翻译段落", "正在翻譯段落");
+   add("readingAnalyzing", "Analyzing locally", "正在本机分析", "正在本機分析");
+   add("readingTranslationSaved", "Translation of a saved item also saves its current notes.", "已保存资料的翻译会同时保存当前批注。", "已儲存資料的翻譯會同時儲存目前批註。");
+-  add("readingResearchGoal", "MINIM task identifier (experimental)", "MINIM 任务标识（实验）", "MINIM 工作識別碼（實驗）");
++  add("readingReadArticle", "Read article", "阅读文章", "閱讀文章");
++  add("readingReadEmail", "Read email", "阅读邮件", "閱讀郵件");
++  add("readingReadMessage", "Read message", "阅读消息", "閱讀訊息");
++  add("readingReadReviews", "Read reviews", "阅读评价", "閱讀評價");
++  add("readingResearchGoal", "Reading task for MINIM", "MINIM 阅读目标", "MINIM 閱讀目標");
+   add("readingAnalyze", "Experimental analysis", "实验分析", "實驗分析");
+   add("readingResearchTooLong", "This text exceeds the experimental 8192-token limit. No safety verdict was produced.", "正文超过实验模型 8192 token 上限，未生成风险结论。", "正文超過實驗模型 8192 token 上限，未產生風險結論。");
+   add("readingResearchDisabled", "Both experimental models are disabled. Enable one in settings.", "实验模型均已关闭，可在设置中开启。", "實驗模型均已關閉，可在設定中開啟。");
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 016e24b3bd8acc4af57e1f4900764843cdad127c..9ce71356d0a5cdfb589f006293e93793fc4bbcb6 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.160";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (160)";
++inline constexpr char kProductVersion[] = "3.1.0.161";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (161)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

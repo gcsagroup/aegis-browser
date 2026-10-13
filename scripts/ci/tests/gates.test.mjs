@@ -602,6 +602,33 @@ test('LLVM LCOV summary superset is opt-in and cannot hide uncovered lines', () 
   }
 });
 
+test('Python 无函数文件可省略函数汇总，但残缺汇总或函数记录仍须拒绝', () => {
+  const fixture = createCoverageFixture();
+  try {
+    const source = coverageRecord(fixture.sourcePaths[0]).replace('FNF:1\nFNH:1\n', '');
+    const options = {allowEmptyFunctionSummary: true};
+    assert.throws(() => parseLcov(source, fixture.sourceDirectory), /invalid functions totals/u);
+    const parsed = parseLcov(source, fixture.sourceDirectory, options);
+    assert.deepEqual(parsed.totals.functions, {total: 0, covered: 0, pct: 100});
+    assert.deepEqual(parsed.totals.lines, {total: 1, covered: 1, pct: 100});
+    for (const malformed of [
+      source.replace('DA:1,1', 'FNF:1\nDA:1,1'),
+      source.replace('DA:1,1', 'FNH:1\nDA:1,1'),
+      ...['FN:1,main', 'FNDA:1,main', 'FNL:0,1,2', 'FNA:0,1,main'].map(
+        (record) => source.replace('DA:1,1', `${record}\nDA:1,1`),
+      ),
+    ]) {
+      assert.throws(() => parseLcov(malformed, fixture.sourceDirectory, options), /invalid functions totals/u);
+    }
+    assert.throws(
+      () => parseLcov(source.replace('BRF:0\nBRH:0\n', ''), fixture.sourceDirectory, options),
+      /invalid branches totals/u,
+    );
+  } finally {
+    rmSync(fixture.directory, {recursive: true, force: true});
+  }
+});
+
 test('coverage validator rejects missing, empty, corrupt, unsafe, stale, and incomplete reports', () => {
   const cases = [
     ['missing', (fixture) => unlinkSync(join(fixture.coverageDirectory, 'lcov.info'))],

@@ -4,11 +4,29 @@
 
 A native SwiftUI and system WebKit browser for iOS 18.4 and later, developed for worldwide App Store technical requirements, including mainland China. Functionality and testing come first; submission materials will be supplied later. Simulator results do not establish release qualification.
 
+## iOS Ver 6.0 · Site enhancements and Markdown
+
+[Ver 6.0 (108)](../../docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md) · Simulator scope only; real-model and site acceptance still has outstanding items.
+
+## iOS Ver 5.0 · Web protection
+
+Local phishing rules and structure checks, independent mining/fingerprinting resource blocking, optional WebKit hardening and experimental strict fingerprint limits. Security rules ship with app updates; unknown behavior is only reported as a signal.
+
+[Guide](../../docs/ios-webkit-protection.en.md) · [Acceptance](../../docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md)
+
+## iOS Ver 4.0 portable features
+
+Adds search, home page, startup and site permissions, encrypted reading notes, selected PDF pages, translation previews, limited browser operations, foreground page checks and download network rules.
+
+Ver 6.0 is the current development line. The dated 3.x results below remain historical and do not validate this implementation.
+
+[User guide](../../docs/ios-portable-features.en.md) · [Four-platform comparison](../../docs/platform-features.en.md) · [Acceptance record](../../docs/audit/ios-portable-features-2026-10-11.zh-CN.md)
+
 ## Ver 3.2 private browsing candidate
 
 Private browsing now supports the library, bookmarks, workspaces, downloads and AI. History, private sessions and AI tasks are not saved automatically. Explicit bookmark, workspace, download and report save/export actions explain what remains stored. AI reads only selected tabs from the current browsing mode; each send shows the service and scope for confirmation. Closing the assistant discards the temporary analysis. Explicitly saved reports remain in task history.
 
-Current candidate: **Ver 3.2 (69)**. After integration with main and corrective reruns, iPhone completed 194 checks with 1 iPad-only check skipped; iPad passed 195. Each device ran 185 native tests plus interface flows for downloads, recovery and private confirmations. See the [main integration validation](../../docs/audit/ios-main-merge-2026-10-09.zh-CN.md); the earlier [private browsing validation](../../docs/audit/ios-private-mode-2026-10-05.zh-CN.md) and [interface validation](../../docs/audit/ios-compact-ui-2026-10-05.zh-CN.md) remain historical records. This is Simulator acceptance only. The published source preview remains 2.2.
+Historical candidate: **Ver 3.2 (69)**. After integration with main and corrective reruns, iPhone completed 194 checks with 1 iPad-only check skipped; iPad passed 195. Each device ran 185 native tests plus interface flows for downloads, recovery and private confirmations. See the [main integration validation](../../docs/audit/ios-main-merge-2026-10-09.zh-CN.md); the earlier [private browsing validation](../../docs/audit/ios-private-mode-2026-10-05.zh-CN.md) and [interface validation](../../docs/audit/ios-compact-ui-2026-10-05.zh-CN.md) remain historical records. This is Simulator acceptance only. The published source preview remains 2.2.
 
 ## Ver 3.1 interface candidate
 
@@ -32,7 +50,7 @@ See the [Ver 3.0 validation record](../../docs/audit/ios-3-0-2026-10-04.zh-CN.md
 - Page assistant: explicitly select up to five pages, read visible text, review redaction and confirm the model destination. Summarize, translate, ask questions or compare sources/products. Open cited pages and export the report. Regular-mode task metadata is encrypted. Private mode creates a record only after explicit report-save confirmation; reports are saved only on request. Restored tasks require a fresh page read and confirmation.
 - Model settings: OpenAI-compatible, Anthropic and Gemini APIs; model discovery and manual entry. Service-specific keys are kept in Keychain. Model requests do not follow redirects.
 - Bookmark management: preview, confirm, deduplicate and undo, including recovery after relaunch. Link checking is explicit and never automatically deletes bookmarks.
-- Downloads: HTTP(S), progress, pause, resume where supported, cancel, retry, system background transfer, up to 16 fallback mirrors, Metalink import with confirmation, SHA-256/SHA-512 and size verification, and sharing to Files. The per-file limit is 1 GB. HTTPS and loopback HTTP are supported; remote cleartext HTTP remains subject to system transport policy.
+- Downloads: HTTP(S), progress, pause, resume where supported, cancel, retry, system background transfer, up to 16 fallback mirrors, Metalink import with confirmation, SHA-256/SHA-512 and size verification, and sharing to Files. The default file limit is 1 GB; new tasks can select 100 MB through 5 GB. HTTPS and loopback HTTP are supported; remote cleartext HTTP remains subject to system transport policy.
 - Protection: bundled EasyList/EasyPrivacy, manual updates, network blocking, element hiding and site exceptions, tracking-parameter removal, URL risk checks and history/website-data clearing. Private browsing does not automatically save history or sessions; persistent saves and model sends require explicit actions and confirmation.
 - Interface: Simplified Chinese, Traditional Chinese and English, iPhone controls, iPad full-window browser, light/dark appearance, large text and landscape layouts.
 - Extensions: the share extension transfers only short-lived HTTP(S) links. The Safari extension retains its bounded read authorization and hands a URL to the app for a separate open confirmation.
@@ -66,7 +84,7 @@ See the [verification record](../../docs/audit/ios-feature-parity-2026-10-01.zh-
 
 Unreadable download or workspace records are preserved, with a visible error and further writes blocked. Workspaces are limited to 100 entries and manifests to 2 MB; rejected saves preserve existing data. A failed save during download recovery retains the previous state and resume data. A failed manifest write after file completion is also reported. See the [storage reliability report](../../docs/audit/ios-stability-2026-10-04.zh-CN.md).
 
-Pages are limited to 24,000 characters with an explicit truncation notice. Cross-origin frames, input values, passwords and cookies are excluded. Detected sensitive forms or secrets stop model submission. Models return text only; they cannot purchase, sign in, modify pages or invoke tools. Citation numbers are range-checked; conclusions still need source review.
+Pages are limited to 24,000 characters with an explicit truncation notice. Cross-origin frames, input values, passwords and cookies are excluded. Detected sensitive forms or secrets stop model submission. Models return text or proposed steps and cannot directly invoke tools, purchase or sign in. The browser executes only the limited operations that the user separately confirms. Citation numbers are range-checked; conclusions still need source review.
 
 Assistant tasks stop when closed or backgrounded and require fresh reading/confirmation to run again. Download scheduling is controlled by iOS; force quit, termination, connectivity and server behavior can prevent continuation. Downloads do not reuse website login cookies. The app checks initial/final download URLs; intermediate background redirects are controlled by iOS.
 
