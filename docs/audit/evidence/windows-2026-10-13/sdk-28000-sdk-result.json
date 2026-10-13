@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "sdkVersion": "10.0.28000.0",
+  "architectures": [
+    "x64",
+    "x86"
+  ],
+  "checkedFiles": [
+    "Include/10.0.28000.0/um/windows.h",
+    "Include/10.0.28000.0/um/dcomp.h",
+    "Include/10.0.28000.0/shared/sdkddkver.h",
+    "Include/10.0.28000.0/ucrt/stdio.h",
+    "Include/10.0.28000.0/winrt/windows.foundation.h",
+    "Lib/10.0.28000.0/um/x64/kernel32.lib",
+    "Lib/10.0.28000.0/ucrt/x64/ucrt.lib",
+    "bin/10.0.28000.0/x64/rc.exe",
+    "bin/10.0.28000.0/x64/midl.exe",
+    "Lib/10.0.28000.0/um/x86/kernel32.lib",
+    "Lib/10.0.28000.0/ucrt/x86/ucrt.lib",
+    "bin/10.0.28000.0/x86/rc.exe",
+    "bin/10.0.28000.0/x86/midl.exe"
+  ],
+  "visualStudio": "C:\\Program Files\\Microsoft Visual Studio\\18\\Enterprise"
+}

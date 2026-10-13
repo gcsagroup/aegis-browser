@@ -79,3 +79,5 @@ Windows 既有验收脚本自检通过，包括原生互操作编译；Pester �
 本次按用户要求补足固定 SDK：使用[微软官方安装器](https://learn.microsoft.com/en-us/windows/apps/windows-sdk/downloads)的 10.0.28000.2270 包，对应 Chromium 要求的 10.0.28000.0 目录。安装前验证固定 SHA-256 和微软签名；免费与付费机器共用安装脚本，保留安装日志。验收检查指定 Include/Lib/Bin 文件，显式指定 SDK 分别编译、链接和运行 x64/x86 程序，校验实际位数，并执行固定 Chromium 原始 setup_toolchain.py 的双架构环境生成。默认 SDK 不再能代替指定版本通过门禁。
 
 新增 windows_preflight_only 输入。启用时仅运行标准 Windows 免费门禁；即使同时勾选付费试跑，付费作业仍被阻止。本轮不启动付费构建，也不生成新 App；产品版本暂保持 205。新增旧 SDK、缺 x86 库和上游版本漂移回归，本地共 28 项通过；实际 Windows 安装及入口验证待免费运行回读。
+
+固定 SDK 实测已完成：[免费运行 38410192444](https://github.com/gcsagroup/aegis-browser/actions/runs/38410192444) 绑定 b21caa3b2081b22bf350f9109d6c09c4c4224fa8，于北京时间 22:28:31 成功，耗时 24 分 21 秒。28 项回归、固定 SDK 安装、13 项文件检查、x64/x86 编译链接运行，以及固定 Chromium 原始 setup_toolchain.py 的两种架构环境生成全部通过；真实接管和小仓库完整同步也通过。安装器微软签名有效，安装退出码 0。付费作业 skipped，未分配机器。详见 [汇总回执](evidence/windows-2026-10-13/sdk-28000-acceptance.json)、[SDK 回执](evidence/windows-2026-10-13/sdk-28000-sdk-result.json)及 [Chromium 原始入口回执](evidence/windows-2026-10-13/sdk-28000-chromium-toolchain-result.json)。完整日志和原始产物已在本机校验留存；本轮没有完整浏览器构建、原生测试或新安装包。
