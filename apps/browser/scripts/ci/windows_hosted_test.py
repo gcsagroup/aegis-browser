@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import windows_hosted as hosted
 
@@ -63,6 +63,66 @@ class HostedTrialTest(unittest.TestCase):
         self.runner.deadline = hosted.time.monotonic() + 0.5
         with self.assertRaises(TimeoutError):
             self.runner.run('timeout', [sys.executable, '-c', 'import time;time.sleep(30)'], self.root)
+
+    def test_windows_cleanup_error_preserves_original_timeout(self):
+        # 重现远端 taskkill 返回 255，以及清理命令本身无法启动两种情形。
+        for cleanup_error in [subprocess.CalledProcessError(255, ['taskkill']),
+                              FileNotFoundError('taskkill missing')]:
+            with self.subTest(cleanup_error=cleanup_error):
+                process = Mock(pid=123, returncode=None)
+                process.poll.return_value = None
+                self.runner.deadline = 1
+                with patch.object(hosted.os, 'name', 'nt'), \
+                     patch.object(hosted.subprocess, 'CREATE_NEW_PROCESS_GROUP', 512, create=True), \
+                     patch.object(hosted.subprocess, 'Popen', return_value=process), \
+                     patch.object(hosted.time, 'monotonic', side_effect=[0, 0, 2]), \
+                     patch.object(hosted.candidate, 'windows_system_executable', return_value='taskkill'), \
+                     patch.object(hosted.subprocess, 'run', side_effect=cleanup_error):
+                    with self.assertRaisesRegex(TimeoutError, '本次构建时限已到') as caught:
+                        self.runner.run('timeout', ['compiler'], self.root)
+                self.assertIn(str(cleanup_error), caught.exception.__notes__[0])
+                process.kill.assert_called_once()
+                process.wait.assert_called_once_with(timeout=10)
+
+    def test_real_process_is_reaped_when_tree_cleanup_fails(self):
+        self.runner.deadline = hosted.time.monotonic() + 0.5
+        real_popen = subprocess.Popen
+        processes = []
+        def start(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            processes.append(process)
+            self.addCleanup(lambda: process.kill() if process.poll() is None else None)
+            return process
+        cleanup = (patch.object(hosted.subprocess, 'run',
+                                side_effect=subprocess.CalledProcessError(255, ['taskkill']))
+                   if hosted.os.name == 'nt' else
+                   patch.object(hosted.os, 'killpg', side_effect=ProcessLookupError('清理竞争')))
+        with patch.object(hosted.subprocess, 'Popen', side_effect=start), cleanup:
+            with self.assertRaisesRegex(TimeoutError, '本次构建时限已到') as caught:
+                self.runner.run('timeout-cleanup',
+                                [sys.executable, '-c', 'import time;time.sleep(30)'], self.root)
+        self.assertIn('清理异常', caught.exception.__notes__[0])
+        self.assertIsNotNone(processes[0].poll())
+
+    def test_failure_receipts_keep_original_error_and_cleanup_note(self):
+        error = TimeoutError('本次构建时限已到')
+        error.add_note('build 清理异常：taskkill exit 255')
+        def environment(key, default=None):
+            if key == 'RUNNER_ENVIRONMENT':
+                raise error
+            return default
+        # 两个入口的结果文件均须保留主错误及附注。
+        for entry, filename in [(hosted.preflight, 'toolchain-result.json'),
+                                (hosted.build, 'result.json')]:
+            with self.subTest(entry=entry.__name__):
+                evidence = self.root / entry.__name__
+                with patch.object(hosted.sys, 'platform', 'win32'), \
+                     patch.object(hosted.os.environ, 'get', side_effect=environment):
+                    with self.assertRaises(TimeoutError):
+                        entry(self.root / 'unused', evidence)
+                result = json.loads((evidence / filename).read_text())
+                self.assertEqual(result['error'], '本次构建时限已到')
+                self.assertEqual(result['errorNotes'], ['build 清理异常：taskkill exit 255'])
 
     def test_low_space_never_launches(self):
         self.runner.minimum = 10**30
