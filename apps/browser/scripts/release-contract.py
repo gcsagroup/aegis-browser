@@ -34,6 +34,15 @@ def load(browser, enforce_history=False):
                 or not set(platforms) <= PLATFORMS):
             raise ValueError('功能ID重复或平台范围无效')
         ids.add(name)
+        selections = feature.get('testFiltersByPlatform', {})
+        if not isinstance(selections, dict) or not set(selections) <= set(platforms):
+            raise ValueError('功能测试选择的平台范围无效：' + name)
+        for filters in [feature.get('testFilters', []), *selections.values()]:
+            if (not isinstance(filters, list) or any(not isinstance(value, str)
+                    or not re.fullmatch(r'[A-Za-z0-9_.*?/]+', value) for value in filters)):
+                raise ValueError('功能测试过滤器无效：' + name)
+        if any(not filters for filters in selections.values()):
+            raise ValueError('功能测试选择不能为空：' + name)
     header = Path(browser) / 'overlay/chrome/common/aegis/features.h'
     declared = set(re.findall(r'BASE_DECLARE_FEATURE\((\w+)\)', header.read_text()))
     if not declared or not declared <= ids:
@@ -81,7 +90,7 @@ def validate_features(receipt, contract, contract_hash, platform, evidence_root)
             raise ValueError('功能验收日志缺失或摘要不一致')
 
 
-def validate_version(src, browser, previous=0):
+def validate_version(src, browser, previous=0, enforce_history=False):
     """构建前必须准备并提交完整版本；禁止只临时改一个头文件。"""
     header = Path('chrome/browser/ui/webui/help/aegis_github_update.h')
     text = (Path(src) / header).read_text()
@@ -95,13 +104,44 @@ def validate_version(src, browser, previous=0):
     label = f'Ver {major}.{minor} ({number:03d})'
     package = (Path(browser) / 'scripts/package.sh').read_text()
     android = (Path(browser) / 'args/aegis-android.gn').read_text()
-    code = major * 1000000000 + minor * 1000000 + patch * 10000 + number
-    if code > 2100000000 or any(value < 0 for value in (major, minor, patch, number)):
+    # Android 已使用独立、连续的 200xxxxxxx 编号，不能由产品主版本乘十亿重算。
+    code_match = re.search(r'^android_override_version_code = "(\d+)"$', android, re.M)
+    code = int(code_match[1]) if code_match else 0
+    if not 1 <= code <= 2100000000:
         raise ValueError('Android版本号超出发行范围，需保持升级连续性的版本迁移')
-    if (label not in text or '${AEGIS_PACKAGE_VERSION:-' + version + '}' not in package
-            or f'android_override_version_name = "{label}"' not in android
-            or f'android_override_version_code = "{code}"' not in android):
+    if (number >= 10000 or code % 10000 != number or label not in text
+            or '${AEGIS_PACKAGE_VERSION:-' + version + '}' not in package
+            or f'android_override_version_name = "{label}"' not in android):
         raise ValueError('产品版本、打包版本及Android版本元数据不一致')
+    if enforce_history:
+        validate_android_history(browser, code, label)
     if number <= previous:
         raise ValueError('本次真实编译前必须递增并提交完整产品版本')
     return version, number
+
+
+def validate_android_history(browser, code, label):
+    """对照最近不同版本的已提交编号，禁止大版本变化造成 Android 降级。"""
+    root = Path(browser).resolve().parents[1]
+    relative = (Path(browser) / 'args/aegis-android.gn').resolve().relative_to(root).as_posix()
+    executable = shutil.which('git')
+    if not executable:
+        raise ValueError('缺少用于核对Android版本历史的 Git')
+    executable = str(Path(executable).resolve(strict=True))
+    def git(*args):
+        # 固定只读命令，修订来自 Git 自身，不经 shell。
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        return subprocess.check_output([executable, '-C', str(root), *args],  # nosec B603
+                                       text=True, timeout=30, shell=False)
+    for revision in git('log', '--format=%H', '--', relative).splitlines():
+        old = git('show', revision + ':' + relative)
+        match = re.search(r'^android_override_version_code = "(\d+)"$', old, re.M)
+        name = re.search(r'^android_override_version_name = "([^"\n]+)"$', old, re.M)
+        if not match or not name:
+            raise ValueError('既有Android版本历史不完整，禁止跳过升级连续性核对')
+        old_code = int(match[1])
+        if (old_code, name[1]) == (code, label):
+            continue
+        if code <= old_code:
+            raise ValueError('Android versionCode 必须高于上一已提交版本')
+        return
