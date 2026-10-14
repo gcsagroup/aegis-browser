@@ -8,12 +8,12 @@ Subject: [PATCH] build(aegis): pin bytecode shadow V8 revision
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/v8 b/v8
-index 56832c166a78bd1eb61068ac69876d6880eaabdf..a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c 160000
+index d89479ac5446a374c55a35be19b5a23437558d99..29666f90c3856a29ef669953d1325806e0f3d0b8 160000
 --- a/v8
 +++ b/v8
 @@ -1 +1 @@
--Subproject commit 56832c166a78bd1eb61068ac69876d6880eaabdf
-+Subproject commit a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c
+-Subproject commit d89479ac5446a374c55a35be19b5a23437558d99
++Subproject commit 29666f90c3856a29ef669953d1325806e0f3d0b8
 -- 
 2.52.0
 

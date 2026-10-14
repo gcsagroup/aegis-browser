@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Upstream <aegis-upstream@example.invalid>
+Date: Wed, 14 Oct 2026 09:07:40 +0800
+Subject: [PATCH] 更新安全候选产品版本至 208
+
+---
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -20,9 +20,9 @@
+ } // namespace network
+ 
+ namespace aegis {
+-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.170";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (170)";
++// 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
++inline constexpr char kProductVersion[] = "5.0.0.208";
++inline constexpr char kProductVersionLabel[] = "Ver 5.0 (208)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
