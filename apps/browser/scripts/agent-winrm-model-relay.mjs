@@ -232,7 +232,7 @@ async function selfTest() {
     method: 'POST', headers: {[CONTROL_HEADER]: CONTROL_VALUE, 'content-type': 'application/json'},
     body: JSON.stringify(value),
   });
-  try {
+  return await (async () => {
     assert.equal((await fetch(origin + '/health')).status, 200);
     assert.equal((await fetch(origin + '/bridge/poll')).status, 403);
     assert.equal((await fetch(origin + '/health', {headers: {origin: 'https://example.com'}})).status, 403);
@@ -260,7 +260,7 @@ async function selfTest() {
     assert(!JSON.stringify(report).includes('body_base64'));
     assert(!JSON.stringify(report).includes(responseBody));
     process.stdout.write('PASS: WinRM 模型回环中转、来源限制、敏感值拒绝、超时和无正文日志\n');
-  } finally { await relay.close(); }
+  })().finally(async () => { await relay.close(); });
 }
 
 async function main() {

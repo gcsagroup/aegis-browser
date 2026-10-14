@@ -1038,7 +1038,7 @@ function combinePrimaryAndCleanupError(primaryError, cleanupErrors) {
 
 async function withinTimeout(promise, timeoutMs, timeoutMessage) {
   let timer;
-  try {
+  return await (async () => {
     return await Promise.race([
       promise,
       new Promise((_, rejectTimeout) => {
@@ -1048,9 +1048,9 @@ async function withinTimeout(promise, timeoutMs, timeoutMessage) {
         );
       }),
     ]);
-  } finally {
+  })().finally(async () => {
     clearTimeout(timer);
-  }
+  });
 }
 
 async function captureCleanupError(cleanupErrors, callback) {

@@ -130,7 +130,7 @@ async function main() {
   let lastOutcome = '任务刚开始。';
   const plannerGoal = residualGoalAfterEntry(config.goal, config.entryUrl);
 
-  try {
+  return await (async () => {
     browser = await localBrowser.launch({
       executablePath: config.browserExecutable,
       userDataDir: config.profilePath,
@@ -311,11 +311,11 @@ async function main() {
       stagehandModelCalls: stagehandModel.calls,
       revokedTabs,
     })}\n`);
-  } finally {
+  })().finally(async () => {
     if (!broker.stopped) broker.stop();
     if (stagehand) await stagehand.close();
     if (browser && !browser.closed) await browser.close();
-  }
+  });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
