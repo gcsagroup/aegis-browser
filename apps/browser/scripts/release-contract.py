@@ -133,6 +133,8 @@ def validate_android_history(browser, code, label):
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         return subprocess.check_output([executable, '-C', str(root), *args],  # nosec B603
                                        text=True, timeout=30, shell=False)
+    if git('rev-parse', '--is-shallow-repository').strip() != 'false':
+        raise ValueError('Android版本历史不完整：浅克隆必须补齐历史后再构建')
     for revision in git('log', '--format=%H', '--', relative).splitlines():
         old = git('show', revision + ':' + relative)
         match = re.search(r'^android_override_version_code = "(\d+)"$', old, re.M)

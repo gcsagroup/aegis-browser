@@ -34,8 +34,8 @@
         "apps/browser/scripts/check-chromium-upstream_test.py"
       ],
       "exitCode": 0,
-      "log": "0-check-chromium-upstream_test.py.log",
-      "sha256": "9b719fed5726303eaec0fa388c15324c30d24749e650042b8d09bef52209edd4"
+      "log": "0-check-chromium-upstream_test.py-historyguard.log",
+      "sha256": "ef62cef24a1a61ac0c289b64e8c26c0765b42a293e886fc451649aed41f4965d"
     },
     {
       "command": [
@@ -43,8 +43,8 @@
         "apps/browser/scripts/release-contract_test.py"
       ],
       "exitCode": 0,
-      "log": "1-release-contract_test.py.log",
-      "sha256": "44c5326491d7279f524c9d9241c75410817cb621c0f8b95f32b2e623424adf3f"
+      "log": "1-release-contract_test.py-historyguard.log",
+      "sha256": "3ff97d55e148c31599961a0ea0e9df1885a32c53b6b526d19f0313eda787ffce"
     },
     {
       "command": [
@@ -52,8 +52,8 @@
         "apps/browser/scripts/release-github_test.py"
       ],
       "exitCode": 0,
-      "log": "2-release-github_test.py.log",
-      "sha256": "84564760fa1f4c221ecb2fb98545aa8600ea409da4c3767f5433f6579d3d6c70"
+      "log": "2-release-github_test.py-historyguard.log",
+      "sha256": "d24fd19cebf9337037a4a3dd3b0d829cebbb3241c83c1cccdf2dc675587f6268"
     },
     {
       "command": [
@@ -61,8 +61,8 @@
         "apps/browser/scripts/release-assets_test.py"
       ],
       "exitCode": 0,
-      "log": "3-release-assets_test.py.log",
-      "sha256": "ea81f81542831c3152a522420d86c868c0d6a8c3630a48b66c408924a7460b2b"
+      "log": "3-release-assets_test.py-historyguard.log",
+      "sha256": "90bc7491ee87a778cc6da7f6867f5aa4c4aedb111ca546deb4401319d8b96038"
     },
     {
       "command": [
@@ -70,8 +70,8 @@
         "apps/browser/scripts/ci/candidate_test.py"
       ],
       "exitCode": 0,
-      "log": "4-candidate_test.py.log",
-      "sha256": "6b497566284613648fc99ee0bad85c8c0997dfba1cd23ab3150dcf57f2a981dc"
+      "log": "4-candidate_test.py-historyguard.log",
+      "sha256": "8d30ee3a224d605eb92acb0b32d5fcd03eb04f7f51fa720c39dc46853be9b66d"
     },
     {
       "command": [
@@ -138,5 +138,6 @@
     "patches": 3,
     "replayReceiptSha256": "4e2e27768e53247a9aa1ff8a12d1cef9a177f7a689471155cf5c1c4453f20c53"
   },
-  "evidenceScope": "完整补丁索引回放及涉及内容摘要；未修改的按需下载对象不等于完整依赖同步。"
+  "evidenceScope": "完整补丁索引回放及涉及内容摘要；未修改的按需下载对象不等于完整依赖同步。",
+  "androidHistoryRequiresFullCheckout": true
 }
