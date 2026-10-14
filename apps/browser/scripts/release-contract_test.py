@@ -92,6 +92,11 @@ class ContractTests(unittest.TestCase):
             'Ver 2.1 (126)', 'Ver 5.0 (208)'))
         git('add', 'apps'); git('commit', '-qm', '新版本')
         contract.validate_android_history(browser, 2005000208, 'Ver 5.0 (208)')
+        shallow = self.root / 'shallow-product'
+        git('clone', '--quiet', '--depth=1', repo.as_uri(), str(shallow))
+        with self.assertRaisesRegex(ValueError, '浅克隆'):
+            contract.validate_android_history(shallow / 'apps/browser', 2005000208,
+                                              'Ver 5.0 (208)')
 
     def test_platform_test_selection_is_not_allowed_to_escape_scope(self):
         row = self.features['features'][0]
