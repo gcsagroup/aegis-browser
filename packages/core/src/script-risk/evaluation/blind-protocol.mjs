@@ -124,7 +124,8 @@ function canonicalValue(value) {
   }
   if (Array.isArray(value)) return value.map(canonicalValue);
   plainObject(value, "canonical JSON value");
-  const result = {};
+  // 特殊自有键也必须进入摘要，不能触发 Object 原型上的 setter。
+  const result = Object.create(null);
   for (const key of Object.keys(value).sort()) {
     assertBlind(value[key] !== undefined, "canonical JSON rejects undefined values");
     result[key] = canonicalValue(value[key]);
