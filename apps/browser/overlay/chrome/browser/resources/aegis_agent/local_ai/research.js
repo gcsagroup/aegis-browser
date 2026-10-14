@@ -101,7 +101,7 @@ export async function analyze(request, progress) {
     if (!ids.length || ids.length > 8192) throw Error('research_text_too_long');
     const session = await ort.InferenceSession.create(bytes, {executionProviders: ['wasm'], graphOptimizationLevel: 'all'});
     let score = 0, windows = 0;
-    try {
+    await (async () => {
       for (let offset = 0; offset < ids.length; offset += 64) {
         const values = [101, ...ids.slice(offset, offset + 126), 102], size = values.length;
         while (values.length < 128) values.push(0);
@@ -116,7 +116,7 @@ export async function analyze(request, progress) {
         progress('research:PhishLang ' + Math.min(offset + 126, ids.length) + '/' + ids.length);
         if (offset + 126 >= ids.length) break;
       }
-    } finally { await session.release(); }
+    })().finally(async () => { await session.release(); });
     result.phishlang = {score, windows, tokens: ids.length, flagged: score > .5};
   }
   return result;
