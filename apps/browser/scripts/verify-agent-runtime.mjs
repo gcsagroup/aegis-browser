@@ -1434,11 +1434,11 @@ function usage() {
 async function fetchWithTimeout(url, options = {}, timeoutMs = 1500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
+  return await (async () => {
     return await fetch(url, {...options, signal: controller.signal});
-  } finally {
+  })().finally(async () => {
     clearTimeout(timer);
-  }
+  });
 }
 
 async function providerCall(origin, toolName, prompt = {}) {
@@ -1465,7 +1465,7 @@ async function runSelfTest(reportPath = null) {
     await operation();
     checks.push({name, ok: true, duration_ms: Math.round(performance.now() - started)});
   };
-  try {
+  await (async () => {
     await check('health', async () => {
       const value = await (await fetch(`${origin}/health`)).json();
       assert(value.ok && value.source_count === 10 && value.bookmark_count === 500,
@@ -1923,9 +1923,9 @@ async function runSelfTest(reportPath = null) {
       assert(server.requests.every((request) => request.host.startsWith('127.0.0.1:')),
              'fixture observed a non-loopback Host');
     });
-  } finally {
+  })().finally(async () => {
     await server.close();
-  }
+  });
   const report = {
     schema_version: FIXTURE_VERSION,
     kind: 'aegis-agent-runtime-fixture-self-test',

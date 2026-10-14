@@ -258,12 +258,26 @@ async function devToolsPort(profileDir, child, timeoutMs) {
            'Chromium 在 DevTools 就绪前退出：' + child.exitCode);
     const content = await readFile(portFile, 'utf8').catch(() => '');
     const port = Number(content.trim().split(/\r?\n/u)[0]);
-    if (Number.isSafeInteger(port) && port > 0) {
+    if (Number.isSafeInteger(port) && port > 0 && port <= 65535) {
       return port;
     }
     await delay(POLL_MS);
   }
   throw new VerificationError('等待 DevToolsActivePort 超时');
+}
+
+async function createLocalCdpTarget(url) {
+  const target = new URL(url);
+  assert(target.protocol === 'http:' && target.pathname === '/json/new' &&
+         !target.username && !target.password && !target.search && !target.hash,
+         'CDP 请求地址格式无效');
+  // 在发送边界核对实际地址；重定向也不能把请求带离本机。
+  if (['127.0.0.1'].includes(target.hostname)) {
+    const response = await fetch(target, {method: 'PUT', redirect: 'error'});
+    assert(response.ok, '创建 CDP target 失败');
+    return response.json();
+  }
+  throw new VerificationError('CDP 请求仅允许访问本机回环地址');
 }
 
 async function stop(child) {
@@ -321,14 +335,13 @@ async function runDownload(
   let child;
   fixture.reset();
   const startedAt = performance.now();
-  try {
+  return await (async () => {
     child = spawn(chromium, args, {stdio: ['ignore', logFd, logFd]});
     closeSync(logFd);
     const port = await devToolsPort(profile, child, timeoutMs);
-    const response = await fetch(
-        'http://127.0.0.1:' + port + '/json/new', {method: 'PUT'});
-    assert(response.ok, '创建 CDP target 失败');
-    const target = await response.json();
+    const targetUrl = new URL('http://127.0.0.1/json/new');
+    targetUrl.port = String(port);
+    const target = await createLocalCdpTarget(targetUrl);
     const cdp = await Cdp.connect(target.webSocketDebuggerUrl, timeoutMs);
     await cdp.command('Browser.setDownloadBehavior', {
       behavior: 'allow',
@@ -350,9 +363,9 @@ async function runDownload(
       requestCount: fixture.requests.length,
       sha256,
     };
-  } finally {
+  })().finally(async () => {
     await stop(child);
-  }
+  });
 }
 
 async function main() {
@@ -366,7 +379,7 @@ async function main() {
   const tempRoot = await mkdtemp(join(tmpdir(), 'gcsa-aegis-download-'));
   const fixture = new Fixture();
   let passed = false;
-  try {
+  return await (async () => {
     await fixture.start();
     const single = await runDownload(
         chromium, fixture, tempRoot, 'single', '/single.bin', true,
@@ -414,14 +427,14 @@ async function main() {
     }
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     passed = true;
-  } finally {
+  })().finally(async () => {
     await fixture.close();
     if (passed && !options.keepProfile) {
       await rm(tempRoot, {recursive: true, force: true});
     } else {
       process.stderr.write('保留运行证据：' + tempRoot + '\n');
     }
-  }
+  });
 }
 
 main().catch((error) => {

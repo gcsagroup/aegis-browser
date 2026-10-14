@@ -17,17 +17,17 @@ function openStore() {
 }
 async function readFiles(rows) {
   const db = await openStore();
-  try {
+  return await (async () => {
     return await Promise.all(rows.map(row => new Promise((resolve, reject) => {
       const request = db.transaction('files').objectStore('files').get(row.decompressedHash);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(Error('storage_unavailable'));
     })));
-  } finally { db.close(); }
+  })().finally(async () => { db.close(); });
 }
 async function writeFiles(rows, files, remove = false) {
   const db = await openStore();
-  try {
+  return await (async () => {
     await new Promise((resolve, reject) => {
       const transaction = db.transaction('files', 'readwrite');
       const store = transaction.objectStore('files');
@@ -35,7 +35,7 @@ async function writeFiles(rows, files, remove = false) {
       transaction.oncomplete = resolve;
       transaction.onabort = transaction.onerror = () => reject(Error('storage_full'));
     });
-  } finally { db.close(); }
+  })().finally(async () => { db.close(); });
 }
 async function verified(rows) {
   const files = await readFiles(rows);
@@ -126,7 +126,7 @@ async function execute(request) {
   translator.loadTranslationModel({from, to}, {model: parts.model, shortlist: parts.lex,
     vocabs: parts.vocab ? [parts.vocab] : [parts.srcvocab, parts.trgvocab], qualityModel: null, config: {}});
   const translations = [];
-  try {
+  return await (async () => {
     for (const paragraph of request.paragraphs) {
       const pieces = [];
       for (const text of splitText(paragraph, 800, from)) {
@@ -139,7 +139,7 @@ async function execute(request) {
     }
     if (new TextEncoder().encode(translations.join('\n')).length > 65536) throw Error('translation_too_long');
     return {translations, language: to === 'zh' ? 'zh-CN' : 'en'};
-  } finally { translator.freeTranslationModel({from, to}); translator.service.delete(); }
+  })().finally(async () => { translator.freeTranslationModel({from, to}); translator.service.delete(); });
 }
 self.onmessage = async ({data}) => {
   try { self.postMessage({result: await execute(data)}); }

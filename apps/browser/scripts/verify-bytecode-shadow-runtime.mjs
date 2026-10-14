@@ -1038,7 +1038,7 @@ function combinePrimaryAndCleanupError(primaryError, cleanupErrors) {
 
 async function withinTimeout(promise, timeoutMs, timeoutMessage) {
   let timer;
-  try {
+  return await (async () => {
     return await Promise.race([
       promise,
       new Promise((_, rejectTimeout) => {
@@ -1048,9 +1048,9 @@ async function withinTimeout(promise, timeoutMs, timeoutMessage) {
         );
       }),
     ]);
-  } finally {
+  })().finally(async () => {
     clearTimeout(timer);
-  }
+  });
 }
 
 async function captureCleanupError(cleanupErrors, callback) {
@@ -1092,10 +1092,9 @@ function startStderrPipeHolder(onData = () => {}) {
     child.stdin && child.stdout && child.stdio[3] && child.stdio[4],
     '无法建立 stderr pipe-holder',
   );
-  child.stdin.on('error', (error) => state.streamErrors.push(error));
-  child.stdout.on('error', (error) => state.streamErrors.push(error));
-  child.stdio[3].on('error', (error) => state.streamErrors.push(error));
-  child.stdio[4].on('error', (error) => state.streamErrors.push(error));
+  for (const stream of [child.stdin, child.stdout, child.stdio[3], child.stdio[4]]) {
+    stream.on('error', (error) => { state.streamErrors.push(error); });
+  }
   child.stdio[4].on('data', (chunk) => {
     state.readyOutput += chunk.toString('utf8');
     if (state.readyOutput.length > 'ready\n'.length) {

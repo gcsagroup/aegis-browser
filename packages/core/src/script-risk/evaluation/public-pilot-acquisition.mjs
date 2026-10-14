@@ -371,7 +371,7 @@ async function readExistingBoundFile({
     localPath,
     constants.O_RDONLY | noFollowFlag(),
   );
-  try {
+  return await (async () => {
     const opened = await validateOpenedLeaf({
       canonicalRoot,
       localPath,
@@ -391,9 +391,9 @@ async function readExistingBoundFile({
       await handle.chmod(0o600);
     }
     return bytes;
-  } finally {
+  })().finally(async () => {
     await handle.close();
-  }
+  });
 }
 
 async function unlinkCreatedIfOwned(item) {

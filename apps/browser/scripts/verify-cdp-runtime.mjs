@@ -83,7 +83,7 @@ function deferred() {
 
 async function withTimeout(promise, timeoutMs, description) {
   let timer;
-  try {
+  return await (async () => {
     return await Promise.race([
       promise,
       new Promise((_, reject) => {
@@ -93,9 +93,9 @@ async function withTimeout(promise, timeoutMs, description) {
         );
       }),
     ]);
-  } finally {
+  })().finally(async () => {
     clearTimeout(timer);
-  }
+  });
 }
 
 function printUsage() {
@@ -656,16 +656,16 @@ async function verifyBlankGrantIsSingleUse(endpoint, timeoutMs) {
   const target = await endpoint.newTarget();
   assert(target.url === 'about:blank', `/json/new 默认 URL 异常：${target.url}`);
   const firstClient = await CdpClient.connect(target.webSocketDebuggerUrl, timeoutMs);
-  try {
+  return await (async () => {
     await firstClient.evaluateMarker('about:blank');
     await expectWebSocketRejected(
       target.webSocketDebuggerUrl,
       timeoutMs,
       '同一空白文档的第二次 WebSocket 复用应被拒绝',
     );
-  } finally {
+  })().finally(async () => {
     await firstClient.close();
-  }
+  });
 }
 
 async function verifyMalformedHandshakeConsumesGrant(endpoint, timeoutMs) {
@@ -686,11 +686,11 @@ async function verifyPendingAndPublicTargets(endpoint, fixture, timeoutMs) {
     target.webSocketDebuggerUrl,
     timeoutMs,
   );
-  try {
+  await (async () => {
     await pendingClient.evaluateMarker('about:blank');
-  } finally {
+  })().finally(async () => {
     await pendingClient.close();
-  }
+  });
 
   controlled.release(
     '<!doctype html><title>Aegis pending public fixture</title>',
@@ -708,14 +708,14 @@ async function verifyPendingAndPublicTargets(endpoint, fixture, timeoutMs) {
     target.webSocketDebuggerUrl,
     timeoutMs,
   );
-  try {
+  return await (async () => {
     await Promise.all([
       firstPublicClient.evaluateMarker(controlled.url),
       secondPublicClient.evaluateMarker(controlled.url),
     ]);
-  } finally {
+  })().finally(async () => {
     await Promise.all([firstPublicClient.close(), secondPublicClient.close()]);
-  }
+  });
 }
 
 async function provePendingInitialGrantUsable(
@@ -728,14 +728,14 @@ async function provePendingInitialGrantUsable(
   const target = await endpoint.newTarget(controlled.url);
   await controlled.waitForRequest();
   const client = await CdpClient.connect(target.webSocketDebuggerUrl, timeoutMs);
-  try {
+  return await (async () => {
     await client.evaluateMarker('about:blank');
-  } finally {
+  })().finally(async () => {
     await client.close();
     controlled.release(
       '<!doctype html><title>Aegis pending grant control</title>',
     );
-  }
+  });
 }
 
 async function verifyCrossDocumentInvalidatesGrant(endpoint, fixture, timeoutMs) {
@@ -779,7 +779,7 @@ async function runVerification(options, chromiumExecutable) {
   const fixture = new LocalFixtureServer(options.timeoutMs);
   let browserProcess;
   let succeeded = false;
-  try {
+  return await (async () => {
     await fixture.start();
     const logFd = openSync(logPath, 'a', 0o600);
     const chromiumArgs = [
@@ -875,7 +875,7 @@ async function runVerification(options, chromiumExecutable) {
       `结论：${results.length}/${results.length} 个真实 Chromium CDP 场景通过，` +
         '一次性精确文档授权有效。\n',
     );
-  } finally {
+  })().finally(async () => {
     await fixture.close();
     await terminateProcess(browserProcess);
     if (succeeded && !options.keepProfile) {
@@ -883,7 +883,7 @@ async function runVerification(options, chromiumExecutable) {
     } else {
       process.stderr.write(`保留运行证据：${tempRoot}\n`);
     }
-  }
+  });
 }
 
 async function main() {

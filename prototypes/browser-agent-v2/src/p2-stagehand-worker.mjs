@@ -4,7 +4,7 @@ import { localBrowser, Stagehand } from '@browserbasehq/stagehand';
 async function main() {
   const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   let browser;
-  try {
+  return await (async () => {
     browser = await localBrowser.launch({
       executablePath: config.browserExecutable,
       userDataDir: config.profilePath,
@@ -47,9 +47,9 @@ async function main() {
       after: after.formattedTree,
     };
     process.stdout.write(`${JSON.stringify(result)}\n`);
-  } finally {
+  })().finally(async () => {
     if (browser && !browser.closed) await browser.close();
-  }
+  });
 }
 
 main().catch((error) => {

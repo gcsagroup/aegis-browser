@@ -15,7 +15,7 @@ async function main() {
     baseUrl: config.model.baseUrl,
     model: config.model.model,
   });
-  try {
+  return await (async () => {
     browser = await localBrowser.launch({
       executablePath: config.browserExecutable,
       userDataDir: config.profilePath,
@@ -75,10 +75,10 @@ async function main() {
       operation,
       modelCalls: modelController.calls,
     })}\n`);
-  } finally {
+  })().finally(async () => {
     if (stagehand) await stagehand.close();
     if (browser && !browser.closed) await browser.close();
-  }
+  });
 }
 
 main().catch((error) => {
