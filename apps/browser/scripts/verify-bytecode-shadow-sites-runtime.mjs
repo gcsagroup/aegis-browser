@@ -1667,7 +1667,7 @@ async function waitForDevToolsEndpoint(profileDir, child, closePromise, deadline
 async function waitWithBrowser(promise, closePromise, deadline, code, message) {
   const timeoutMs = remaining(deadline, code, message);
   let timer;
-  try {
+  return await (async () => {
     const result = await Promise.race([
       promise.then((value) => ({kind: 'value', value})),
       closePromise.then(() => ({kind: 'closed'})),
@@ -1683,9 +1683,9 @@ async function waitWithBrowser(promise, closePromise, deadline, code, message) {
     }
     if (result.kind === 'timeout') fail(code, message);
     return result.value;
-  } finally {
+  })().finally(async () => {
     clearTimeout(timer);
-  }
+  });
 }
 
 async function monitoredDelay(
@@ -4958,11 +4958,11 @@ async function main() {
     return;
   }
   const removeSignalHandlers = installSignalHandlers();
-  try {
+  return await (async () => {
     await runLive(options, manifestEvidence);
-  } finally {
+  })().finally(async () => {
     removeSignalHandlers();
-  }
+  });
 }
 
 main().catch((error) => {
