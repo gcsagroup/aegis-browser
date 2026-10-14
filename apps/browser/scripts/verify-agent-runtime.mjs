@@ -617,14 +617,15 @@ function executionArguments(name, prompt, serverOrigin) {
   }
   if (name === 'page.navigate') {
     const stepId = String(prompt.required_step?.id || '');
-    const shoppingPaths = {
-      'shop-a-navigate': '/shop/a',
-      'shop-b-navigate': '/shop/b',
-      'shop-c-navigate': '/shop/c',
-      'shop-chosen-navigate': '/shop/a',
-    };
-    if (shoppingPaths[stepId]) {
-      return {tab_id: tabId, url: `${origin}${shoppingPaths[stepId]}`};
+    const shoppingPaths = new Map([
+      ['shop-a-navigate', '/shop/a'],
+      ['shop-b-navigate', '/shop/b'],
+      ['shop-c-navigate', '/shop/c'],
+      ['shop-chosen-navigate', '/shop/a'],
+    ]);
+    const shoppingPath = shoppingPaths.get(stepId);
+    if (shoppingPath) {
+      return {tab_id: tabId, url: `${origin}${shoppingPath}`};
     }
     const sourceIndex = Math.floor(step / 2) + 1;
     return {tab_id: tabId, url: `${origin}${sourcePath(sourceIndex)}`};
@@ -809,6 +810,8 @@ class AgentFixtureServer {
     this.downloadTransfers = [];
     this.checkoutPriceChanged = false;
     this.requests = [];
+    this.logWrites = Promise.resolve();
+    this.logError = null;
     this.statusCounts = new Map();
     this.server = createServer((request, response) => {
       void this.handle(request, response).catch((error) => {
@@ -833,8 +836,10 @@ class AgentFixtureServer {
   }
 
   async close() {
-    await this.flushLog();
     await new Promise((resolveClose) => this.server.close(resolveClose));
+    await this.logWrites;
+    if (this.logError) throw this.logError;
+    await this.flushLog();
   }
 
   async flushLog() {
@@ -862,7 +867,10 @@ class AgentFixtureServer {
 
   record(request, body = '') {
     this.requests.push(sanitizedRequest(request, body, this.origin));
-    void this.flushLog();
+    // 同一报告不得并发截断写入；错误交给关闭流程报告，避免脱离调用链的拒绝。
+    this.logWrites = this.logWrites.then(() => this.flushLog()).catch((error) => {
+      this.logError ??= error;
+    });
   }
 
   async handle(request, response) {
