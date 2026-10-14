@@ -321,7 +321,7 @@ async function runDownload(
   let child;
   fixture.reset();
   const startedAt = performance.now();
-  try {
+  return await (async () => {
     child = spawn(chromium, args, {stdio: ['ignore', logFd, logFd]});
     closeSync(logFd);
     const port = await devToolsPort(profile, child, timeoutMs);
@@ -350,9 +350,9 @@ async function runDownload(
       requestCount: fixture.requests.length,
       sha256,
     };
-  } finally {
+  })().finally(async () => {
     await stop(child);
-  }
+  });
 }
 
 async function main() {
@@ -366,7 +366,7 @@ async function main() {
   const tempRoot = await mkdtemp(join(tmpdir(), 'gcsa-aegis-download-'));
   const fixture = new Fixture();
   let passed = false;
-  try {
+  return await (async () => {
     await fixture.start();
     const single = await runDownload(
         chromium, fixture, tempRoot, 'single', '/single.bin', true,
@@ -414,14 +414,14 @@ async function main() {
     }
     process.stdout.write(JSON.stringify(report, null, 2) + '\n');
     passed = true;
-  } finally {
+  })().finally(async () => {
     await fixture.close();
     if (passed && !options.keepProfile) {
       await rm(tempRoot, {recursive: true, force: true});
     } else {
       process.stderr.write('保留运行证据：' + tempRoot + '\n');
     }
-  }
+  });
 }
 
 main().catch((error) => {
