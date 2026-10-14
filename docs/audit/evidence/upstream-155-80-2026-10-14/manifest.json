@@ -1,25 +1,25 @@
 {
-  "checkedAt": "2026-10-14T01:27:30.717603+00:00",
+  "checkedAt": "2026-10-14T01:33:46.971487+00:00",
   "productBase": "507231e8a1c0a07987af5387193d18d7f793d888",
   "productVersion": "5.0.0.208",
   "androidVersionCode": 2005000208,
   "featureCount": 31,
   "featureContractSha256": "4b761a9f20dcadf1494c314577ba627bd288e954a065287a43368b326db77d61",
   "overlayFiles": 581,
-  "overlayReceiptSha256": "d7d002a5fb7012ceee3497e6f5676aa9e62240ce888807500ff97dc29280d9ee",
+  "overlayReceiptSha256": "6befa2d04c80d08102d709ad42383457ba39cf64c4fbb3f38a57c21fde2bffca",
   "desktop": {
     "version": "155.0.8059.80",
     "base": "43a195105613ac83c21d3f14de279f4a045c7da0",
     "tree": "8a6e86eea4d7e0ff9360e906f88d055ce5663646",
     "patches": 314,
-    "replayReceiptSha256": "af5b40a8d82cbbeb938088036436ae95723fdc91e809c8568e21a53bb214e686"
+    "replayReceiptSha256": "3970ebd10b28f625871537849459687e5e94df7f1e548b9e93e9c74379ff44b7"
   },
   "android": {
     "version": "155.0.8059.79",
     "base": "a49e2e3d4addfd84e765b52afe230bedb81096db",
     "tree": "0757cafa75b7d544fc6f90e02f5199b118cbc11a",
     "patches": 305,
-    "replayReceiptSha256": "699be4ff545eef45384ea54d72e0f8993e06d9c1214ba4edb22d8ccc12e89011"
+    "replayReceiptSha256": "dd208e26df1ecf39911ff2d01e1974d3569ecb6e9b9ba80441890d9a4d7a38d2"
   },
   "v8": {
     "base": "d89479ac5446a374c55a35be19b5a23437558d99",
@@ -119,6 +119,15 @@
       "exitCode": 0,
       "log": "diff-check.log",
       "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "apps/browser/scripts/aegis-access-gn-wiring_test.sh"
+      ],
+      "exitCode": 0,
+      "log": "gn-wiring.log",
+      "sha256": "cb87aa54f5d1261e2a0d7268b4e8f256e4e36c5003330a2074f7d88b659df53a"
     }
   ],
   "nativeAcceptance": "not-run",

@@ -6,6 +6,7 @@ Subject: [PATCH] 更新安全候选产品版本至 208
 ---
 
 diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 5ec7e6d8c5a8bf00edfebf2bc8ed3bc82aad7011..a6a38aebbd745e95a86c8ecff18906f159eba582 100644
 --- a/chrome/browser/ui/webui/help/aegis_github_update.h
 +++ b/chrome/browser/ui/webui/help/aegis_github_update.h
 @@ -20,9 +20,9 @@
