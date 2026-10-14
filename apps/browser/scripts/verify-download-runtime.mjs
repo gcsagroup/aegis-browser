@@ -258,7 +258,7 @@ async function devToolsPort(profileDir, child, timeoutMs) {
            'Chromium 在 DevTools 就绪前退出：' + child.exitCode);
     const content = await readFile(portFile, 'utf8').catch(() => '');
     const port = Number(content.trim().split(/\r?\n/u)[0]);
-    if (Number.isSafeInteger(port) && port > 0) {
+    if (Number.isSafeInteger(port) && port > 0 && port <= 65535) {
       return port;
     }
     await delay(POLL_MS);
@@ -325,8 +325,9 @@ async function runDownload(
     child = spawn(chromium, args, {stdio: ['ignore', logFd, logFd]});
     closeSync(logFd);
     const port = await devToolsPort(profile, child, timeoutMs);
-    const response = await fetch(
-        'http://127.0.0.1:' + port + '/json/new', {method: 'PUT'});
+    const targetUrl = new URL('http://127.0.0.1/json/new');
+    targetUrl.port = String(port);
+    const response = await fetch(targetUrl, {method: 'PUT', redirect: 'error'});
     assert(response.ok, '创建 CDP target 失败');
     const target = await response.json();
     const cdp = await Cdp.connect(target.webSocketDebuggerUrl, timeoutMs);
