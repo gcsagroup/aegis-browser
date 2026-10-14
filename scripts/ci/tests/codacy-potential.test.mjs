@@ -77,7 +77,8 @@ test('崩溃日志保留匹配语义，并能在有界时间内处理重复前�
     assert.equal(count(text), 1, text);
   }
   for (const text of ['crash before RenderProcessHost', 'exited unexpectedly before Child process ',
-    'RenderProcessHost\u2028crash', 'Child process \u2029exited unexpectedly']) {
+    'RenderProcessHost\u2028crash', 'Child process \u2029exited unexpectedly',
+    'RenderProcessHost\rcrash', 'Child process \rexited unexpectedly']) {
     assert.equal(count(text), 0, text);
   }
   assert.equal(count('RenderProcessHost\u2028RenderProcessHost crash'), 1);

@@ -1486,10 +1486,14 @@ function expectedSigtermCleanupLine(line) {
   if (/\bFATAL\b|CHECK failed|DCHECK failed|Aw, Snap/iu.test(line)) {
     return false;
   }
-  // 只接受单个日志头和单行消息，损坏的嵌套头或换行不能获得清理豁免。
-  return /^(?:\[[^[\]\r\n\u2028\u2029]*\][ \t]*)?(?:Received signal 15\b[^\r\n\u2028\u2029]*|GPU process exited unexpectedly: exit_code=15)$/iu.test(
-    line.trim(),
-  );
+  // 日志头单独解析，避免把无界重复嵌套在可选分组中。
+  let message = line.trim();
+  if (message.startsWith('[')) {
+    const header = /^\[[^[\]\r\n\u2028\u2029]*\][ \t]*/u.exec(message);
+    if (!header) return false;
+    message = message.slice(header[0].length);
+  }
+  return /^(?:Received signal 15\b[^\r\n\u2028\u2029]*|GPU process exited unexpectedly: exit_code=15)$/iu.test(message);
 }
 
 function fatalSignalCount(
@@ -1497,7 +1501,7 @@ function fatalSignalCount(
   {cleanup = false, controlledTerminationRequested = false} = {},
 ) {
   const pattern =
-    /\bFATAL\b|CHECK failed|DCHECK failed|Received signal(?: \d+)?|Aw, Snap|GPU process (?:crashed|exited unexpectedly)|Render(?:er)? process (?:gone|crashed|exited|terminated)(?: unexpectedly)?|process (?:crashed|exited unexpectedly)/iu;
+    /\bFATAL\b|CHECK failed|DCHECK failed|Received signal|Aw, Snap|GPU process (?:crashed|exited unexpectedly)|Render(?:er)? process (?:gone|crashed|exited|terminated)|process (?:crashed|exited unexpectedly)/iu;
   return logText.split(/\r?\n/u).filter((line) => {
     if (
       cleanup &&
@@ -1508,7 +1512,7 @@ function fatalSignalCount(
     }
     if (pattern.test(line)) return true;
     // 重复进程前缀不能让通配匹配逐次回溯；每个片段只查找一次前缀和后缀。
-    return line.split(/[\u2028\u2029]/u).some((fragment) => {
+    return line.split(/[\r\u2028\u2029]/u).some((fragment) => {
       const host = /RenderProcessHost/iu.exec(fragment);
       const child = /Child process /iu.exec(fragment);
       return (host !== null && /crash|exited unexpectedly/iu.test(fragment.slice(host.index + host[0].length))) ||
