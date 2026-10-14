@@ -266,6 +266,20 @@ async function devToolsPort(profileDir, child, timeoutMs) {
   throw new VerificationError('等待 DevToolsActivePort 超时');
 }
 
+async function createLocalCdpTarget(url) {
+  const target = new URL(url);
+  assert(target.protocol === 'http:' && target.pathname === '/json/new' &&
+         !target.username && !target.password && !target.search && !target.hash,
+         'CDP 请求地址格式无效');
+  // 在发送边界核对实际地址；重定向也不能把请求带离本机。
+  if (['127.0.0.1'].includes(target.hostname)) {
+    const response = await fetch(target, {method: 'PUT', redirect: 'error'});
+    assert(response.ok, '创建 CDP target 失败');
+    return response.json();
+  }
+  throw new VerificationError('CDP 请求仅允许访问本机回环地址');
+}
+
 async function stop(child) {
   if (!child || child.exitCode !== null) {
     return;
@@ -327,9 +341,7 @@ async function runDownload(
     const port = await devToolsPort(profile, child, timeoutMs);
     const targetUrl = new URL('http://127.0.0.1/json/new');
     targetUrl.port = String(port);
-    const response = await fetch(targetUrl, {method: 'PUT', redirect: 'error'});
-    assert(response.ok, '创建 CDP target 失败');
-    const target = await response.json();
+    const target = await createLocalCdpTarget(targetUrl);
     const cdp = await Cdp.connect(target.webSocketDebuggerUrl, timeoutMs);
     await cdp.command('Browser.setDownloadBehavior', {
       behavior: 'allow',
