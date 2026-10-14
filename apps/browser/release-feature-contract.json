@@ -126,6 +126,11 @@
         "mac-arm64",
         "win-x64",
         "android-arm64"
+      ],
+      "testFilters": [
+        "ModelProviderPolicyTest.*",
+        "ModelProviderClientNetworkTest.*",
+        "AegisServiceModelSettingsTest.*"
       ]
     },
     {
@@ -207,7 +212,16 @@
         "mac-arm64",
         "win-x64",
         "android-arm64"
-      ]
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "GoogleServicePromptBrowserTest.*"
+        ],
+        "win-x64": [
+          "GoogleServicePromptBrowserTest.*"
+        ]
+      },
+      "additionalChecks": "保留原有更新入口全部验收；另验 Google 翻译和登录服务缺凭据提示仅由用户操作触发。"
     },
     {
       "id": "MouseGestures",
@@ -222,6 +236,140 @@
         "AegisGestureBrowserTest.*",
         "*AegisGesturePdfTest.*"
       ]
+    },
+    {
+      "id": "reading-library",
+      "name": "阅读资料、批注、持久化及隐私隔离",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AegisAgentBrowserTest.ReadingWorkspace*"
+        ],
+        "win-x64": [
+          "AegisAgentBrowserTest.ReadingWorkspace*"
+        ]
+      },
+      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。"
+    },
+    {
+      "id": "reading-translation",
+      "name": "本地翻译、真实模型包、下载范围与完整性",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AegisAgentBrowserTest.ReadingLocal*",
+          "AegisAgentBrowserTest.ReadingPackDownloadScopeAndIntegrity"
+        ],
+        "win-x64": [
+          "AegisAgentBrowserTest.ReadingLocal*",
+          "AegisAgentBrowserTest.ReadingPackDownloadScopeAndIntegrity"
+        ]
+      },
+      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。"
+    },
+    {
+      "id": "pdf-text-notes",
+      "name": "PDF 文字摘录与批注保留",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AegisAgentBrowserTest.ReadingWorkspaceCaptureAndAnnotation"
+        ],
+        "win-x64": [
+          "AegisAgentBrowserTest.ReadingWorkspaceCaptureAndAnnotation"
+        ]
+      },
+      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。"
+    },
+    {
+      "id": "foreground-page-watch",
+      "name": "网页监控的所有权、恢复与预算",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AegisAgentUrlMonitorBrowserTest.*",
+          "AegisAgentMonitorWithoutGlicBrowserTest.*",
+          "AegisAgentServiceTest.*Monitor*",
+          "AegisAgentTaskStoreTest.*Monitor*"
+        ],
+        "win-x64": [
+          "AegisAgentUrlMonitorBrowserTest.*",
+          "AegisAgentMonitorWithoutGlicBrowserTest.*",
+          "AegisAgentServiceTest.*Monitor*",
+          "AegisAgentTaskStoreTest.*Monitor*"
+        ]
+      },
+      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。"
+    },
+    {
+      "id": "kAegisWebsiteEnhancements",
+      "name": "网站增强、站点授权、子框架与撤销",
+      "platforms": [
+        "mac-arm64",
+        "win-x64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "EnhancementStoreTest.*",
+          "EnhancementBrowserTest.EarlyRulesIsolationStorageAndRevocation",
+          "EnhancementBrowserTest.CrossProcessFramesAreMatchedIndividually"
+        ],
+        "win-x64": [
+          "EnhancementStoreTest.*",
+          "EnhancementBrowserTest.EarlyRulesIsolationStorageAndRevocation",
+          "EnhancementBrowserTest.CrossProcessFramesAreMatchedIndividually"
+        ]
+      }
+    },
+    {
+      "id": "kAegisUserScripts",
+      "name": "用户脚本、AI草稿、试用与隐私隔离",
+      "platforms": [
+        "mac-arm64",
+        "win-x64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "EnhancementStoreTest.*",
+          "EnhancementBrowserTest.TrialDoesNotPersistAndPrivateProfileStartsEmpty"
+        ],
+        "win-x64": [
+          "EnhancementStoreTest.*",
+          "EnhancementBrowserTest.TrialDoesNotPersistAndPrivateProfileStartsEmpty"
+        ]
+      }
+    },
+    {
+      "id": "kAegisMarkdownReader",
+      "name": "Markdown 首次打开、本地链接、拖放与非可信内容",
+      "platforms": [
+        "mac-arm64",
+        "win-x64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "EnhancementBrowserTest.Markdown*"
+        ],
+        "win-x64": [
+          "EnhancementBrowserTest.Markdown*"
+        ]
+      }
     }
   ]
 }
