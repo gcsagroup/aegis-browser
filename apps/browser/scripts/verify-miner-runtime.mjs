@@ -1530,7 +1530,7 @@ async function terminateOwnedProcess(child, endpoint, tracker, ownership) {
   if (!child || !tracker) {
     return null;
   }
-  try {
+  return await (async () => {
     await tracker.sample();
     const browserClose = {
       attempted: false,
@@ -1620,9 +1620,9 @@ async function terminateOwnedProcess(child, endpoint, tracker, ownership) {
       );
     }
     return evidence;
-  } finally {
+  })().finally(async () => {
     await tracker.stopMonitoring();
-  }
+  });
 }
 
 function findFatalSignals(logText) {
@@ -2691,7 +2691,7 @@ async function main() {
   const releaseOperationLock = options.buildIdentity
     ? await acquireBuildOperationLock(dirname(appPath))
     : async () => {};
-  try {
+  return await (async () => {
     // 严格顺序：先验证整包与调用方固定身份，再执行被测 App。
     const sourceArtifactBinding = await verifySourceArtifactBinding(
       options,
@@ -2742,9 +2742,9 @@ async function main() {
     } else if (!report.release_eligible) {
       process.exitCode = 2;
     }
-  } finally {
+  })().finally(async () => {
     await releaseOperationLock();
-  }
+  });
 }
 
 main().catch(async (error) => {

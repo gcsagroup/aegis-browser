@@ -13,7 +13,7 @@ function request(url) {
       response.setEncoding('utf8');
       response.on('data', (chunk) => { body += chunk; });
       response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body }));
-    }).on('error', reject);
+    }).on('error', (error) => { reject(error); });
   });
 }
 
