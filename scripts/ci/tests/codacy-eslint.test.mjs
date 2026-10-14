@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { TextDecoder, TextEncoder } from 'node:util';
 import vm from 'node:vm';
@@ -15,7 +17,7 @@ const config = [{
   files: ['**/*.{mjs,js,cjs,jsx,ts,tsx}'],
   languageOptions: { ecmaVersion: 2022, sourceType: 'module' },
   plugins: { 'security-node': securityNode },
-  rules: { 'security-node/detect-unhandled-async-errors': 'error' },
+  rules: securityNode.configs.recommended.rules,
 }, {
   files: ['**/*.{ts,tsx}'],
   languageOptions: { parser: tseslint.parser },
@@ -24,6 +26,13 @@ const config = [{
 test('固定的 Codacy 安全规则仍能复现上游空 catch 节点异常', () => {
   const source = 'async function example() { try { await work(); } finally { clean(); } }';
   assert.throws(() => new Linter().verify(source, config, { filename: 'control.mjs' }), /type/);
+});
+
+test('固定的事件规则仍能复现表达式回调和函数引用的节点异常', () => {
+  for (const callback of ['error => errors.push(error)', 'reject']) {
+    const source = `const myEmitter = new EventEmitter(); myEmitter.on('error', ${callback});`;
+    assert.throws(() => new Linter().verify(source, config, { filename: 'event-control.mjs' }), /length|loc/);
+  }
 });
 
 test('全部 JavaScript 和 TypeScript 文件均可完成 Codacy 安全规则扫描', () => {
@@ -78,7 +87,8 @@ test('本机翻译存储在读写成功和失败时均关闭数据库且保留�
 // 运行实际生产函数，并注入外部依赖，避免启动浏览器或访问模型服务。
 function loadFunction(file, name, globals) {
   const source = readFileSync(new URL(file, `file://${root}`), 'utf8');
-  const start = source.indexOf(`async function ${name}(`);
+  const signature = source.includes(`async function ${name}(`) ? `async function ${name}(` : `function ${name}(`;
+  const start = source.indexOf(signature);
   const end = source.indexOf('\n}', start);
   assert.ok(start >= 0 && end > start, `找不到完整函数 ${file}:${name}`);
   // VM 中仅替换模块加载入口，业务与清理逻辑均取自产品文件。
@@ -87,6 +97,25 @@ function loadFunction(file, name, globals) {
     .replace(/await import\('([^']+)'\)/gu, (_, specifier) => `await importForTest(${JSON.stringify(specifier)})`);
   return vm.runInNewContext(`(${body})`, globals);
 }
+
+test('stderr 管道的四个错误监听仍逐一保留原始错误', async () => {
+  const child = new EventEmitter();
+  const streams = Array.from({ length: 4 }, () => new EventEmitter());
+  [child.stdin, child.stdout] = streams;
+  child.stdio = [child.stdin, child.stdout, null, streams[2], streams[3]];
+  const start = loadFunction('apps/browser/scripts/verify-bytecode-shadow-runtime.mjs', 'startStderrPipeHolder', {
+    spawn: () => child, STDERR_HOLDER_SCRIPT: '', process: { env: {} }, assert, VerificationError: Error,
+  });
+  const state = start();
+  const errors = streams.map((stream, index) => {
+    const error = new Error(`管道 ${index}`);
+    stream.emit('error', error);
+    return error;
+  });
+  assert.deepEqual(Array.from(state.streamErrors), errors);
+  child.emit('close', 0, null);
+  assert.equal((await state.closePromise).exitCode, 0);
+});
 
 test('本机翻译在成功和翻译失败后均释放模型与服务', async () => {
   for (const failure of [false, true]) {
@@ -184,6 +213,38 @@ test('下载验收仅接受有效的本机 DevTools 端口', async () => {
     const result = devToolsPort('/fixture', { exitCode: null }, 2);
     if (port === '1' || port === '65535') assert.equal(await result, Number(port));
     else await assert.rejects(result, /等待 DevToolsActivePort 超时/);
+  }
+});
+
+test('CDP 发送边界拒绝非回环地址和重定向，真实回环请求可完成', async () => {
+  let calls = 0;
+  let redirect = false;
+  const server = createServer((request, response) => {
+    calls += 1;
+    assert.equal(request.method, 'PUT');
+    assert.equal(request.url, '/json/new');
+    if (redirect) response.writeHead(302, { location: 'http://example.test/forbidden' });
+    else response.writeHead(200, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ id: 'local-target' }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const createTarget = loadFunction('apps/browser/scripts/verify-download-runtime.mjs', 'createLocalCdpTarget', {
+    URL, assert, VerificationError: Error, fetch: globalThis.fetch,
+  });
+  try {
+    for (const url of ['http://example.test/json/new', 'http://127.0.0.1.example.test/json/new',
+      'https://127.0.0.1/json/new', 'http://user:password@127.0.0.1/json/new',
+      'http://127.0.0.1/other', 'http://127.0.0.1/json/new?url=outside']) {
+      await assert.rejects(createTarget(url), /CDP 请求/);
+    }
+    assert.equal(calls, 0);
+    const url = `http://127.0.0.1:${server.address().port}/json/new`;
+    assert.deepEqual(await createTarget(url), { id: 'local-target' });
+    redirect = true;
+    await assert.rejects(createTarget(url), /fetch failed/);
+    assert.equal(calls, 2);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 
