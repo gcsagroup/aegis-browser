@@ -1,0 +1,143 @@
+{
+  "checkedAt": "2026-10-14T01:33:46.971487+00:00",
+  "productBase": "507231e8a1c0a07987af5387193d18d7f793d888",
+  "productVersion": "5.0.0.208",
+  "androidVersionCode": 2005000208,
+  "featureCount": 31,
+  "featureContractSha256": "4b761a9f20dcadf1494c314577ba627bd288e954a065287a43368b326db77d61",
+  "overlayFiles": 581,
+  "overlayReceiptSha256": "6befa2d04c80d08102d709ad42383457ba39cf64c4fbb3f38a57c21fde2bffca",
+  "desktop": {
+    "version": "155.0.8059.80",
+    "base": "43a195105613ac83c21d3f14de279f4a045c7da0",
+    "tree": "8a6e86eea4d7e0ff9360e906f88d055ce5663646",
+    "patches": 314,
+    "replayReceiptSha256": "3970ebd10b28f625871537849459687e5e94df7f1e548b9e93e9c74379ff44b7"
+  },
+  "android": {
+    "version": "155.0.8059.79",
+    "base": "a49e2e3d4addfd84e765b52afe230bedb81096db",
+    "tree": "0757cafa75b7d544fc6f90e02f5199b118cbc11a",
+    "patches": 305,
+    "replayReceiptSha256": "dd208e26df1ecf39911ff2d01e1974d3569ecb6e9b9ba80441890d9a4d7a38d2"
+  },
+  "v8": {
+    "base": "d89479ac5446a374c55a35be19b5a23437558d99",
+    "tree": "6118ed2344b35e01250ec2949d6cf58fa5a9abab",
+    "patches": 3,
+    "replayReceiptSha256": "3813c26a19fca9c558aacbb4826a9c2f4efc2554183644433bfa62082fcda2f4"
+  },
+  "tests": [
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/check-chromium-upstream_test.py"
+      ],
+      "exitCode": 0,
+      "log": "0-check-chromium-upstream_test.py-historyguard.log",
+      "sha256": "ef62cef24a1a61ac0c289b64e8c26c0765b42a293e886fc451649aed41f4965d"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/release-contract_test.py"
+      ],
+      "exitCode": 0,
+      "log": "1-release-contract_test.py-historyguard.log",
+      "sha256": "3ff97d55e148c31599961a0ea0e9df1885a32c53b6b526d19f0313eda787ffce"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/release-github_test.py"
+      ],
+      "exitCode": 0,
+      "log": "2-release-github_test.py-historyguard.log",
+      "sha256": "d24fd19cebf9337037a4a3dd3b0d829cebbb3241c83c1cccdf2dc675587f6268"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/release-assets_test.py"
+      ],
+      "exitCode": 0,
+      "log": "3-release-assets_test.py-historyguard.log",
+      "sha256": "90bc7491ee87a778cc6da7f6867f5aa4c4aedb111ca546deb4401319d8b96038"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/ci/candidate_test.py"
+      ],
+      "exitCode": 0,
+      "log": "4-candidate_test.py-historyguard.log",
+      "sha256": "8d30ee3a224d605eb92acb0b32d5fcd03eb04f7f51fa720c39dc46853be9b66d"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/check-platform-features.mjs"
+      ],
+      "exitCode": 0,
+      "log": "5-check-platform-features.mjs.log",
+      "sha256": "8cf18f12e3ffb16573f876fa68e2f987f9bd76f08db2c022f2c84fde2b493095"
+    },
+    {
+      "command": [
+        "node",
+        "--test",
+        "scripts/check-platform-features.test.mjs"
+      ],
+      "exitCode": 0,
+      "log": "6-check-platform-features.test.mjs.log",
+      "sha256": "f60f43c339b55a5c9111649933e7691c4fcbf4a872bc9524aa4cdb6e4586e272"
+    },
+    {
+      "command": [
+        "bash",
+        "apps/browser/scripts/apply-patches_test.sh"
+      ],
+      "exitCode": 0,
+      "log": "7-apply-patches_test.sh.log",
+      "sha256": "4dc7660080d59e3e48c9b5ded4f1a370805d1419bffae01073b66842047fba45"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/check-repo-contracts.mjs"
+      ],
+      "exitCode": 0,
+      "log": "repo-contract.log",
+      "sha256": "0ed710cccfb776fc211e7fd6e2f80438c5bdf5654377aeaa8f0bce0f6df22719"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "log": "diff-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": [
+        "bash",
+        "apps/browser/scripts/aegis-access-gn-wiring_test.sh"
+      ],
+      "exitCode": 0,
+      "log": "gn-wiring.log",
+      "sha256": "cb87aa54f5d1261e2a0d7268b4e8f256e4e36c5003330a2074f7d88b659df53a"
+    }
+  ],
+  "nativeAcceptance": "not-run",
+  "releaseReady": false,
+  "androidV8": {
+    "base": "d89479ac5446a374c55a35be19b5a23437558d99",
+    "tree": "6118ed2344b35e01250ec2949d6cf58fa5a9abab",
+    "patches": 3,
+    "replayReceiptSha256": "4e2e27768e53247a9aa1ff8a12d1cef9a177f7a689471155cf5c1c4453f20c53"
+  },
+  "evidenceScope": "完整补丁索引回放及涉及内容摘要；未修改的按需下载对象不等于完整依赖同步。",
+  "androidHistoryRequiresFullCheckout": true
+}
