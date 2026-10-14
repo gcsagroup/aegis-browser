@@ -108,6 +108,8 @@ Codacy 正式分析范围为上游 `gcsagroup/aegis-browser` 的 main 及以 mai
 
 `.github/workflows/quality.yml` 对所有目标为 `develop` 或 `main` 的 PR（含 Draft）和这两个分支的 push 运行 macOS 优先基础门；普通开发分支不重复执行 push 全量门。固定汇总检查名是 `quality-gate`。它仅在唯一必需执行 job `quality` 明确为 `success` 时成功，结果映射必须恰好包含 `quality`；failure、cancelled、skipped、timeout 或缺失均不得放行。
 
+常规 macOS 测试支持仓库级 opt-in：将 `AEGIS_SELF_HOSTED_TEST_REPOSITORY` 设置为当前个人仓库的精确 `owner/repo` 后，`quality`、`quality-gate` 与 C++ 单元测试使用 `[self-hosted, macOS, ARM64, aegis-test]`。变量为空、身份不匹配或 PR 来自外部 fork 时继续使用 `macos-15`。个人仓库部署两个独立测试 runner，预安装并核验固定 Node/Python；托管 runner 继续通过固定 setup actions 安装工具，本地 runner 验证预安装的 Python `3.11.9`，避免 setup-python 在 macOS 上强制使用托管账号路径。在本机 job-start hook 拒绝仓库身份不匹配、外部 fork PR 及非 `main`/`develop` 的 push/手动事件；拒绝时必须在返回前终止经本机路径与用户校验的所属 `Runner.Worker`，阻断包括 `always()` 在内的后续步骤；只返回非零不足以构成安全边界。无法确认所属 Worker 时阻塞作业并等待服务检查，不能继续执行。workflow 条件不能替代这个主机端边界。禁用变量即可让后续测试恢复托管路由，既有运行仍保留原 runner 与证据身份。iOS、Android、Linux、Windows、Chromium 构建和晋升控制器保持原路线；测试 runner 不使用 `aegis-upstream` 构建标签。
+
 `.github/workflows/ios-coverage.yml` 是独立报告 workflow。仅通过 `workflow_dispatch` 手动生成报告，PR/develop/main push 不自动运行。它继续严格绑定当次 GitHub tested SHA，测试失败仍为非零；当前分支保护的必需状态检查为 `quality-gate`，因此 iOS 报告不改变 macOS 优先的合并门。
 
 `.github/workflows/android-java-coverage.yml` 也是独立报告 workflow，仅通过 `workflow_dispatch` 手动运行，PR 和 develop/main push 不再自动触发。当前仅推进 macOS，其余平台后置。它构建 normal 与 coverage 两种验收工具以证明普通 APK 不含 JaCoCo，仅在专用 emulator 运行 coverage APK 的六项 fixture，并把 JaCoCo exec/XML、原始 class 摘要与实际 GitHub tested SHA 写入 artifact。固定检查名为 `android-java-coverage`，不并入 macOS `quality-gate`；`browserTested=false` 明确保留工具覆盖率与浏览器 runtime 验收的边界。
