@@ -254,7 +254,7 @@ def build(name, evidence):
                 built = plistlib.loads(app_info.read_bytes()).get('AegisProductVersion', '')
                 if re.fullmatch(r'\d+\.\d+\.\d+\.\d+', built):
                     previous = max(previous, int(built.rsplit('.', 1)[1]))
-            version, number = contract.validate_version(src, BROWSER, previous)
+            version, number = contract.validate_version(src, BROWSER, previous, enforce_history=True)
             write_json(counter, {'number': number, 'version': version, 'runId': run_id})
             result.update(chromium=pin, sourceHead=git(src, 'rev-parse', 'HEAD'), sourceTree=source_tree,
                           v8Tree=v8_tree, productVersion=version, status='building')
