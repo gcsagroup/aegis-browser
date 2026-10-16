@@ -1,25 +1,25 @@
 {
-  "checkedAt": "2026-10-16T07:25:17.780915+00:00",
+  "checkedAt": "2026-10-16T07:31:05.372474+00:00",
   "productBase": "65a0b34cd695efa3aab6794659fa33bb539ec7db",
   "productVersion": "5.0.0.209",
   "androidVersionCode": 2005000209,
   "featureCount": 31,
   "featureContractSha256": "4b761a9f20dcadf1494c314577ba627bd288e954a065287a43368b326db77d61",
   "overlayFiles": 581,
-  "overlayReceiptSha256": "4cf0e4732d5ebb500300acc10f15bae24d4dc14cbe16812d090de38846f98ff6",
+  "overlayReceiptSha256": "4b7a3c8993fe38b9f3881238df94f6493a798ff1eef16509cd24cbf12807e041",
   "desktop": {
     "version": "155.0.8059.85",
     "base": "0e66b94549a8bd85f03fbdf189b752d6e7b63c32",
     "tree": "48db3f4167c375e8e862cc9c8a4b2bfa1c8866dc",
     "patches": 316,
-    "replayReceiptSha256": "8cd5e837c4cb4dc036d6d47d2d63b9adedfc854d5e25fe3f09dbfd0a839d4598"
+    "replayReceiptSha256": "eb933801f6dec16dcedadb38328dd7319e92c7842b664dbd2c5f256d881b093e"
   },
   "android": {
     "version": "155.0.8059.84",
     "base": "5869fe313571d75152b77813cf0a4ee26a4e6df0",
     "tree": "ca7fa97961e9043045290118061e71c518b7d152",
     "patches": 307,
-    "replayReceiptSha256": "cdf28eac5c67a6e7d97d0155c527176b121ac8508309a22c0ce17e54bed7b076"
+    "replayReceiptSha256": "e4ba6e9c57d32deeb5cf84e9fd237ef6fe84d12784569ab80f405b7448e8f912"
   },
   "v8": {
     "base": "712e1808de2d7416f1276d0deb1ee4ac978132b8",
@@ -91,6 +91,15 @@
       "exitCode": 0,
       "log": "--check-final-r3.log",
       "tail": ""
+    },
+    {
+      "command": [
+        "bash",
+        "apps/browser/scripts/aegis-access-gn-wiring_test.sh"
+      ],
+      "exitCode": 0,
+      "log": "gn-wiring-final.log",
+      "tail": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.200s\n\nOK\nPASS: AccessRuleStore overlay, patch, and GN wiring contract\nPASS: aegis_access GN developer-graph wiring contract\n"
     }
   ],
   "nativeAcceptance": "not-run",
