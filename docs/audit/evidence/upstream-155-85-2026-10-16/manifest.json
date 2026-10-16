@@ -1,0 +1,105 @@
+{
+  "checkedAt": "2026-10-16T07:25:17.780915+00:00",
+  "productBase": "65a0b34cd695efa3aab6794659fa33bb539ec7db",
+  "productVersion": "5.0.0.209",
+  "androidVersionCode": 2005000209,
+  "featureCount": 31,
+  "featureContractSha256": "4b761a9f20dcadf1494c314577ba627bd288e954a065287a43368b326db77d61",
+  "overlayFiles": 581,
+  "overlayReceiptSha256": "4cf0e4732d5ebb500300acc10f15bae24d4dc14cbe16812d090de38846f98ff6",
+  "desktop": {
+    "version": "155.0.8059.85",
+    "base": "0e66b94549a8bd85f03fbdf189b752d6e7b63c32",
+    "tree": "48db3f4167c375e8e862cc9c8a4b2bfa1c8866dc",
+    "patches": 316,
+    "replayReceiptSha256": "8cd5e837c4cb4dc036d6d47d2d63b9adedfc854d5e25fe3f09dbfd0a839d4598"
+  },
+  "android": {
+    "version": "155.0.8059.84",
+    "base": "5869fe313571d75152b77813cf0a4ee26a4e6df0",
+    "tree": "ca7fa97961e9043045290118061e71c518b7d152",
+    "patches": 307,
+    "replayReceiptSha256": "cdf28eac5c67a6e7d97d0155c527176b121ac8508309a22c0ce17e54bed7b076"
+  },
+  "v8": {
+    "base": "712e1808de2d7416f1276d0deb1ee4ac978132b8",
+    "tree": "e96efadeb06ee417735f263f84cb44d042dc7ed0",
+    "patches": 3,
+    "replayReceiptSha256": "bd2fa05c1986530a62bcf64e321d99518d5f884e513cce50e79bb932e3e62ad3"
+  },
+  "tests": [
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/check-chromium-upstream_test.py"
+      ],
+      "exitCode": 0,
+      "log": "check-chromium-upstream_test-py.log",
+      "tail": "......................\n----------------------------------------------------------------------\nRan 22 tests in 0.042s\n\nOK\n"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/release-contract_test.py"
+      ],
+      "exitCode": 0,
+      "log": "release-contract_test-py.log",
+      "tail": "................\n----------------------------------------------------------------------\nRan 16 tests in 0.398s\n\nOK\n"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/release-github_test.py"
+      ],
+      "exitCode": 0,
+      "log": "release-github_test-py.log",
+      "tail": "...................\n----------------------------------------------------------------------\nRan 19 tests in 1.305s\n\nOK\n"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/release-assets_test.py"
+      ],
+      "exitCode": 0,
+      "log": "release-assets_test-py.log",
+      "tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 0.059s\n\nOK\n"
+    },
+    {
+      "command": [
+        "python3",
+        "apps/browser/scripts/ci/candidate_test.py"
+      ],
+      "exitCode": 0,
+      "log": "candidate_test-py.log",
+      "tail": "..............\n----------------------------------------------------------------------\nRan 14 tests in 0.372s\n\nOK\n# Chromium 候选证据\n\n\n平台：android；阶段：failed\n实际运行验收：pending；正式发布：未执行。\n失败原因：device missing\n\n"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/check-repo-contracts.mjs"
+      ],
+      "exitCode": 0,
+      "log": "check-repo-contracts-mjs-final-r3.log",
+      "tail": "仓库合同通过：产品拓扑、补丁、版本、链接和命令一致。\n"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "log": "--check-final-r3.log",
+      "tail": ""
+    }
+  ],
+  "nativeAcceptance": "not-run",
+  "releaseReady": false,
+  "androidV8": {
+    "base": "712e1808de2d7416f1276d0deb1ee4ac978132b8",
+    "tree": "e96efadeb06ee417735f263f84cb44d042dc7ed0",
+    "patches": 3,
+    "replayReceiptSha256": "7fa1d8ebd29d79bc7e5750472210bf64069e3c2389695b9285c65d580b443478"
+  },
+  "evidenceScope": "完整补丁索引回放及涉及内容摘要；未修改的按需下载对象不等于完整依赖同步。"
+}
