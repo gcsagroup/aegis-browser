@@ -842,14 +842,14 @@ summary {
 }
 
 #reading-view label:has(input[type='checkbox']),
-#reading-ai-settings label:has(input[type='checkbox']) {
+#reading-research-settings label:has(input[type='checkbox']) {
   display: flex;
   align-items: start;
   gap: 8px;
 }
 
 #reading-view input[type='checkbox'],
-#reading-ai-settings input[type='checkbox'] {
+#reading-research-settings input[type='checkbox'] {
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
@@ -906,6 +906,7 @@ summary {
 /* 桌面全局配置集中到设置中心，任务侧栏只保留前往设置的入口。 */
 body.central-settings #model-details,
 body.central-settings #typesafe-details,
+body.central-settings #reading-research-settings,
 body.central-settings #reading-ai-settings {
   display: none !important;
 }
@@ -933,9 +934,10 @@ body.settings-only main > * {
   display: none !important;
 }
 
-body.settings-only main > #model-details,
-body.settings-only main > #typesafe-details,
-body.settings-only main > #reading-ai-settings {
+body.settings-only[data-settings-section='ai'] main > #model-details,
+body.settings-only[data-settings-section='ai'] main > #typesafe-details,
+body.settings-only[data-settings-section='ai'] main > #reading-ai-settings,
+body.settings-only[data-settings-section='experiments'] main > #reading-research-settings {
   display: block !important;
 }
 
