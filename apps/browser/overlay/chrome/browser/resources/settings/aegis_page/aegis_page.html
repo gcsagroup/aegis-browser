@@ -27,6 +27,7 @@
   <a href="/aegisAi"><cr-icon icon="settings:person"></cr-icon><span><strong>$i18n{aegisAiTitle}</strong><small>$i18n{aegisAiDescription}</small></span></a>
   <a href="/aegisDownloads"><cr-icon icon="settings:download"></cr-icon><span><strong>$i18n{aegisDownloadsTitle}</strong><small>$i18n{aegisDownloadsDescription}</small></span></a>
   <a href="/aegisTools"><cr-icon icon="settings:build"></cr-icon><span><strong>$i18n{aegisToolsTitle}</strong><small>$i18n{aegisToolsDescription}</small></span></a>
+  <a href="/aegisExperiments"><cr-icon icon="settings20:insight-spark"></cr-icon><span><strong>$i18n{aegisExperimentsTitle}</strong><small>$i18n{aegisExperimentsDescription}</small></span></a>
 </nav></template>
 <template is="dom-if" if="[[isMode_(mode, 'enhancements')]]">
   <main id="enhancement-root">
@@ -112,6 +113,7 @@
 <template is="dom-if" if="[[isMode_(mode, 'tools')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=tools" title="$i18n{aegisToolsTitle}"></iframe></template>
 <template is="dom-if" if="[[isMode_(mode, 'ai')]]"><p>$i18n{aegisSharedModelDescription}</p><iframe class="legacy-frame" src="chrome://aegis/?settings=ai" title="$i18n{aegisAiTitle}"></iframe>
 <iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=1" title="$i18n{aegisAgentSettingsTitle}"></iframe></template>
+<template is="dom-if" if="[[isMode_(mode, 'experiments')]]"><iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=experiments" title="$i18n{aegisExperimentsTitle}"></iframe></template>
 <template is="dom-if" if="[[isMode_(mode, 'reading')]]">
   <p id="result" role="status"></p>
   <section><div class="section-heading row"><h2>阅读库</h2><a href="chrome://aegis/markdown.html">打开 Markdown 文件</a><button id="refresh-library">刷新</button></div><div id="library"></div></section>

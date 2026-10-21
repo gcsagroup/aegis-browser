@@ -1,10 +1,5 @@
   <style include="cr-shared-style cr-hidden-style settings-shared"></style>
   <settings-section page-title="$i18n{privacyPageTitle}">
-    <cr-link-row id="aegisLinkRow"
-        start-icon="privacy:lock"
-        label="$i18n{aegisSettingsTitle}"
-        sub-label="$i18n{aegisSettingsDescription}"
-        on-click="onAegisSettingsClick_"></cr-link-row>
     <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
       <settings-clear-browsing-data-dialog
           on-close="onCbdDialogClosed_"
