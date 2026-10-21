@@ -52,6 +52,18 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 `quality.yml` 继续验证 develop/main PR 与 push，检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
 
+## Dependabot 第一阶段
+
+`.github/dependabot.yml` 仅配置根目录 pnpm workspace（`apps/browser`、`packages/core`）的 npm 生态更新。常规版本检查为每周一北京时间 09:00，最多同时打开 3 个版本更新 PR；lint、Vitest、构建工具的 minor/patch 按工具族分组。major 单独审查，其中 Vitest 与 `@vitest/*` 的 major 保持同组，避免测试运行器和覆盖率插件拆开升级。提交与 PR 标题使用 `chore(deps):`。
+
+配置不设置 `target-branch`，跟随仓库默认分支：开发 Fork 指向 `develop`，共享配置以后晋升到上游时指向上游默认分支。配置必须合入默认分支才生效；保留为未合并 PR 不代表定期更新已经启用。Fork 还需在 Settings → Advanced Security（或 Code security）中显式启用 Dependabot version updates；只提交配置不能证明该开关已开启。
+
+Dependabot alerts 与 Dependabot security updates 是独立的仓库设置，需要分别开启并回读验证，不能由本文件推断。安全更新不受每周版本检查时刻和 3 个版本 PR 上限限制；Vitest 安全修复单独分组。仓库级安全更新可能针对依赖图中其他已识别的清单提出修复，不等于本阶段为那些目录启用了常规版本更新。
+
+第一阶段不配置 GitHub Actions、pip 或隔离原型的常规更新，并显式排除原型与 iOS 测试 fixture。Actions 的批准 SHA、coverage.py 的重复版本校验和原型 `prototype-lock.json` 仍需联动维护；Node、pnpm、Python 固定工具链、Chromium、补丁与模型权重继续走各自验收流程。发现这些范围的安全告警或修复 PR 时按原合同人工处理，不能直接合并清单变更。
+
+所有依赖 PR 保留现有本地完整门、独立 Review、最终 HEAD 的 `quality-gate` 和服务端保护，不自动批准或合并。服务端开关、配置合并、Dependabot 首次作业/PR、该 PR 的实际 CI 是四份独立证据；配置 PR 的 CI 通过不能替代 Dependabot 实际运行验收。若暂停常规版本更新，可将 `open-pull-requests-limit` 设为 `0`，仍保留 Alerts 与安全更新。
+
 ## 固定工具链与本地完整门
 
 仓库在 `.mise.toml` 固定 Node `22.23.1`、pnpm `9.15.0` 与 Python `3.11.9`。使用 mise 时先安装并进入固定环境：
