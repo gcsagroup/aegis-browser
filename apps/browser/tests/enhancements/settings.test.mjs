@@ -1,0 +1,276 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createRequire} from 'node:module';
+import {JSDOM} from 'jsdom';
+const ts = createRequire(new URL('../../../../packages/core/package.json', import.meta.url))('typescript');
+const root = new URL('../../overlay/chrome/browser/resources/', import.meta.url);
+const read = path => fs.readFileSync(new URL(path, root), 'utf8');
+const compile = source => ts.transpileModule(source, {compilerOptions: {target: ts.ScriptTarget.ES2022}}).outputText;
+
+// 迁移清单独立列出既有控件；新增分类不得以简化旧表单代替完整迁移。
+const legacyGroups = {
+  privacy: ['tracker', 'phish', 'fingerprint', 'fp-probe', 'miner-guard', 'link-sanitize', 'cookie-janitor', 'cname-uncloak', 'bounce-tracking', 'policy-worker', 'filter-auto', 'filter-update'],
+  ai: ['privacy-ai', 'model-provider', 'model-endpoint', 'model-api-key', 'model-select', 'model-custom', 'model-load', 'model-save', 'model-key-clear', 'summarize', 'browser-agent', 'browser-agent-open'],
+  downloads: [],
+  tools: ['ai-control'],
+};
+function legacy() {
+  const dom = new JSDOM(read('aegis/aegis.html'), {url: 'https://aegis.invalid/', runScripts: 'outside-only'});
+  dom.window.document.documentElement.lang = 'zh-CN';
+  const w = dom.window;
+  const calls = [];
+  const saved = {profileAvailable: true, enabled: true, trackerBlocking: false, phishInterstitial: true, fingerprintGuard: true, minerGuard: false, linkSanitize: true, cookieJanitor: false, cnameUncloak: true, bounceTracking: false, policyWorker: true, privacyAi: true, browserAgentAvailable: true, browserAgentEnabled: false, aiControl: false, aiControlAvailable: true, filterListAutoUpdate: false, filterListHostCount: 123, modelProvider: 'remote-openai', modelBaseUrl: 'https://model.invalid/v1', modelName: 'saved-model', modelApiKeyConfigured: true, recentEvents: []};
+  w.getRequiredElement = id => w.document.getElementById(id);
+  w.addWebUiListener = () => {};
+  w.embeddedSettings = false;
+  w.sendWithPromise = async (op, ...args) => {
+    calls.push([op, ...args]);
+    if (op === 'setModuleEnabled') saved[args[0]] = args[1];
+    return {...saved};
+  };
+  const tree = ts.createSourceFile('aegis.ts', read('aegis/aegis.ts').split('// 复用完整设置控件；')[0], ts.ScriptTarget.Latest, true);
+  const source = tree.statements.filter(node => !ts.isImportDeclaration(node)).map(node => node.getText(tree)).join('\n').split('// 复用完整设置控件；')[0];
+  w.eval(compile(source));
+  return {dom, w, calls, saved};
+}
+
+test('完整迁移防护、摘要、工具和下载控件，没有重复 ID 或丢失旧设置', () => {
+  const dom = new JSDOM(read('aegis/aegis.html'));
+  const doc = dom.window.document;
+  const ids = [...doc.querySelectorAll('[id]')].map(el => el.id);
+  assert.equal(new Set(ids).size, ids.length);
+  for (const [group, controls] of Object.entries(legacyGroups)) {
+    for (const id of controls) assert(doc.getElementById(id), `${group} 遗漏 ${id}`);
+  }
+  assert(doc.querySelector('#downloads aegis-download-panel'));
+  assert(doc.querySelector('.privacy #privacy-ai'));
+  const agent = new JSDOM(read('aegis_agent/agent.html'));
+  for (const id of ['model-provider','model-base-url','model-name','model-api-key','model-options','model-routing-mode','model-quality-score','model-latency-score','model-cost','model-efforts','model-profile-default','model-profile-basic','model-profile-strong','model-input-price','model-cache-price','model-output-price','model-supports-tools','model-supports-long-context','model-supports-strong-reasoning','model-pool','typesafe-enabled','typesafe-api-key','clear-typesafe-key-button','reading-direction','reading-package-download','reading-package-remove','reading-local-cancel','reading-minim','reading-phishlang']) {
+    const el = agent.window.document.getElementById(id);
+    assert(el?.closest('#model-details, #reading-ai-settings, #typesafe-details'), `助手设置遗漏 ${id}`);
+  }
+  dom.window.close(); agent.window.close();
+});
+
+test('打开旧配置只读取状态，混合开关、模型地址和密钥状态不被默认值覆盖', async () => {
+  const {dom, w, calls, saved} = legacy();
+  const before = JSON.stringify(saved);
+  await w.init();
+  assert.deepEqual(calls, [['getStatus']]);
+  assert.equal(JSON.stringify(saved), before);
+  assert.equal(w.document.getElementById('tracker').checked, false);
+  assert.equal(w.document.getElementById('phish').checked, true);
+  assert.equal(w.document.getElementById('filter-auto').checked, false);
+  assert.equal(w.document.getElementById('model-endpoint').value, saved.modelBaseUrl);
+  assert.equal(w.document.getElementById('model-custom').value, saved.modelName);
+  assert.equal(w.document.getElementById('model-api-key').value, '');
+  dom.window.close();
+});
+
+test('仅修改选中的开关，不覆盖其他开关、模型或授权状态', async () => {
+  const {dom, w, calls, saved} = legacy();
+  const before = {...saved};
+  await w.init();
+  const toggle = w.document.getElementById('tracker');
+  toggle.checked = true; toggle.dispatchEvent(new w.Event('change'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [['getStatus'], ['setModuleEnabled', 'trackerBlocking', true]]);
+  assert.deepEqual(saved, {...before, trackerBlocking: true});
+  dom.window.close();
+});
+
+test('伪装跟踪开关显示保存值，主跟踪器关闭时不会误显示配置丢失', async () => {
+  const {dom, w, saved} = legacy();
+  saved.trackerBlocking = false;
+  saved.cnameUncloak = false;
+  saved.cnameUncloakConfigured = true;
+  await w.init();
+  assert.equal(w.document.getElementById('tracker').checked, false);
+  assert.equal(w.document.getElementById('cname-uncloak').checked, true);
+  dom.window.close();
+});
+
+test('分类页错误显示在当前可见区域，不藏到摘要表单里', () => {
+  const {dom, w} = legacy();
+  for (const section of ['privacy', 'downloads', 'tools']) {
+    w.document.body.dataset.settings = section;
+    w.showResult('当前配置不可用');
+    const result = w.document.getElementById('settings-result');
+    assert.equal(result.hidden, false);
+    assert.equal(result.textContent, '当前配置不可用');
+    assert.equal(w.document.getElementById('privacy-result').hidden, true);
+  }
+  w.document.body.dataset.settings = 'ai';
+  w.showResult('摘要已完成');
+  assert.equal(w.document.getElementById('privacy-result').textContent, '摘要已完成');
+  dom.window.close();
+});
+
+test('设置侧栏只有一个入口，七个分类及原来的四个设置地址均可到达', () => {
+  const menu = new JSDOM(read('settings/settings_menu/settings_menu.html'));
+  assert.deepEqual([...menu.window.document.querySelectorAll('a[href^="/aegis"]')].map(el => el.getAttribute('href')), ['/aegis']);
+  const html = read('settings/aegis_page/aegis_page.html');
+  const route = read('settings/route.ts');
+  for (const page of ['Privacy','Enhancements','Reading','Gestures','Ai','Downloads','Tools']) {
+    assert(html.includes(`href="/aegis${page}"`));
+    assert(route.includes(`createSection('/aegis${page}'`));
+  }
+  assert(!html.includes('settings:code'));
+  assert(!html.includes('settings:appearance'));
+  menu.window.close();
+});
+
+test('旧脚本入口跳转保留标签页、脚本和查询参数', () => {
+  const source = read('aegis/enhancements.js').split('if (document.getElementById("enhancement-root"))')[1];
+  let destination;
+  const run = new Function('document','loadTimeData','location', `return (async () => {if (document.getElementById("enhancement-root"))${source}})()`);
+  return run({getElementById: () => ({})}, {valueExists: () => true, getBoolean: () => false}, {search: '?from=shield', hash: '#tab=second&script=script-1', replace: value => {destination = value;}}).then(() => {
+    assert.equal(destination, 'chrome://settings/aegisEnhancements?from=shield#tab=second&script=script-1');
+  });
+});
+
+test('设置模式显示完整助手配置，移除隐藏任务输入焦点，侧栏只保留统一入口', () => {
+  const tree = ts.createSourceFile('agent.ts', read('aegis_agent/agent.ts'), ts.ScriptTarget.Latest, true);
+  const fn = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'initializeSettingsPresentation');
+  assert(fn);
+  for (const settingsMode of [false, true]) {
+    const dom = new JSDOM(read('aegis_agent/agent.html'), {url: 'https://agent.invalid/', runScripts: 'outside-only'});
+    const w = dom.window; const messages = [];
+    w.settingsMode = settingsMode;
+    w.element = id => w.document.getElementById(id);
+    w.loadTimeData = {getBoolean: () => false, getString: () => 'Aegis 功能设置'};
+    w.ResizeObserver = class {observe() {}};
+    w.postMessage = (...args) => messages.push(args);
+    w.eval(compile(fn.getText(tree)));
+    w.initializeSettingsPresentation();
+    assert.equal(w.document.body.classList.contains('settings-only'), settingsMode);
+    assert.equal(w.document.body.classList.contains('central-settings'), !settingsMode);
+    assert.equal(w.element('aegis-settings-link').hidden, settingsMode);
+    if (settingsMode) {
+      for (const id of ['model-details','reading-ai-settings','typesafe-details']) assert(w.element(id).open);
+      assert(!w.element('goal').hasAttribute('autofocus'));
+      assert.equal(messages.length, 1);
+      assert.equal(messages[0][0].type, 'aegis-settings-height');
+      assert.equal(messages[0][1], 'chrome://settings');
+      assert.deepEqual(Object.keys(messages[0][0]).sort(), ['height','type']);
+    } else assert.equal(messages.length, 0);
+    dom.window.close();
+  }
+});
+
+test('布局通知只接受当前内部子页，拒绝伪造来源和越界尺寸', () => {
+  const tree = ts.createSourceFile('settings.ts', read('settings/aegis_page/aegis_page.ts'), ts.ScriptTarget.Latest, true);
+  const cls = tree.statements.find(node => ts.isClassDeclaration(node));
+  const handler = cls.members.find(node => node.name?.getText(tree) === 'onFrameMessage_');
+  const frame = {contentWindow: {}, classList: {contains: () => false}, style: {height: '320px'}};
+  const owner = {shadowRoot: {querySelectorAll: () => [frame]}};
+  const code = compile(`const callback = ${handler.initializer.getText(tree)}; return callback;`);
+  const onMessage = new Function(code).call(owner);
+  const send = patch => onMessage({source: frame.contentWindow, origin: 'chrome://aegis', data: {type: 'aegis-settings-height', height: 800}, ...patch});
+  send({origin: 'https://aegis'}); assert.equal(frame.style.height, '320px');
+  send({source: {}}); assert.equal(frame.style.height, '320px');
+  send({data: {type: 'setModuleEnabled', height: 800}}); assert.equal(frame.style.height, '320px');
+  send({}); assert.equal(frame.style.height, '800px');
+  send({data: {type: 'aegis-settings-height', height: Infinity}}); assert.equal(frame.style.height, '800px');
+  send({data: {type: 'aegis-settings-height', height: -100}}); assert.equal(frame.style.height, '320px');
+  send({data: {type: 'aegis-settings-height', height: 1e8}}); assert.equal(frame.style.height, '24000px');
+});
+
+test('设置搜索能找到嵌入分类里的过滤列表、模型密钥、语言包与下载限速', async () => {
+  const tree = ts.createSourceFile('settings.ts', read('settings/aegis_page/aegis_page.ts'), ts.ScriptTarget.Latest, true);
+  const cls = tree.statements.find(node => ts.isClassDeclaration(node));
+  const method = cls.members.find(node => node.name?.getText(tree) === 'searchContents');
+  const search = new Function('flush', compile(`return function(query: string) ${method.body.getText(tree)};`))(() => {});
+  for (const [mode, terms] of Object.entries({
+    privacy: ['过滤列表', '挖矿', 'fingerprint', '過濾規則'],
+    ai: ['网页摘要', 'API 密钥', '模型池', '语言包', 'TypeSafe'],
+    downloads: ['限速', '磁力链接', 'DHT'],
+    tools: ['工具连接', '权限', 'CDP'],
+  })) {
+    const owner = {mode, shadowRoot: {textContent: '', querySelectorAll: () => []}};
+    for (const query of terms) assert.equal((await search.call(owner, query)).matchCount, 1, `${mode}: ${query}`);
+    assert.equal((await search.call(owner, '不存在的功能')).matchCount, 0);
+  }
+});
+
+test('嵌入设置请求校验来源、接口和参数，读写返回后台结果，离页不回写', async () => {
+  const tree = ts.createSourceFile('settings.ts', read('settings/aegis_page/aegis_page.ts'), ts.ScriptTarget.Latest, true);
+  const cls = tree.statements.find(node => ts.isClassDeclaration(node));
+  const handler = cls.members.find(node => node.name?.getText(tree) === 'onFrameMessage_');
+  const forward = cls.members.find(node => node.name?.getText(tree) === 'forwardRequest_');
+  const calls = [], replies = [];
+  const frame = {isConnected: true, contentWindow: {postMessage: (...args) => replies.push(args)}, classList: {contains: () => false}, style: {}};
+  const owner = {isConnected: true, shadowRoot: {querySelectorAll: () => [frame]}};
+  owner.forwardRequest_ = new Function('sendWithPromise', compile(`return async function(frame, data) ${forward.body.getText(tree)};`))(async (...args) => {calls.push(args); return {trackerBlocking: args[2] ?? true};});
+  const onMessage = new Function(compile(`return ${handler.initializer.getText(tree)};`)).call(owner);
+  const data = {type: 'aegis-settings-request', id: 'settings-1', method: 'setModuleEnabled', args: ['trackerBlocking', false]};
+  const send = patch => onMessage({source: frame.contentWindow, origin: 'chrome://aegis', data, ...patch});
+  send({origin: 'https://aegis'}); send({source: {}});
+  assert.equal(calls.length, 0);
+  send({}); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [['setModuleEnabled', 'trackerBlocking', false]]);
+  assert.deepEqual(replies[0], [{type: 'aegis-settings-response', id: 'settings-1', result: {trackerBlocking: false}}, 'chrome://aegis']);
+  for (const bad of [{method: 'deleteProfile'}, {method: 'toString'}, {args: ['trackerBlocking', 'false']}, {id: '__proto__'}]) send({data: {...data, ...bad}});
+  assert.equal(calls.length, 1);
+  owner.isConnected = false;
+  const before = replies.length; send({}); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(replies.length, before);
+});
+
+test('子页通过父框架获取并保存设置，不直接调用无效的 chrome.send', async () => {
+  const tree = ts.createSourceFile('aegis.ts', read('aegis/aegis.ts'), ts.ScriptTarget.Latest, true);
+  const request = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'requestSettings');
+  const messages = [], pending = new Map();
+  const run = new Function('parent', 'window', 'settingsRequests', compile(`const embeddedSettings = true; let settingsRequestId = 0; ${request.getText(tree)} return requestSettings;`))(
+    {postMessage: (...args) => messages.push(args)}, {setTimeout: () => 1}, pending);
+  const promise = run('getStatus');
+  assert.deepEqual(messages[0], [{type: 'aegis-settings-request', id: 'settings-1', method: 'getStatus', args: []}, 'chrome://settings']);
+  pending.get('settings-1').resolve({trackerBlocking: true});
+  assert.deepEqual(await promise, {trackerBlocking: true});
+});
+
+test('全局下载参数串行保存并使用后台读回结果，小数限速按整数保存', async () => {
+  const tree = ts.createSourceFile('downloads.ts', read('settings/downloads_page/downloads_page.ts'), ts.ScriptTarget.Latest, true);
+  const cls = tree.statements.find(node => ts.isClassDeclaration(node));
+  const owner = {aegisSettingsReady_: true, aegisSaveChain_: Promise.resolve(), aegisStrings_: {saving: '保存中', saved: '已保存', failed: '失败'}};
+  for (const name of ['applyAegisDownloadSettings_', 'currentAegisDownloadSettings_', 'saveAegisDownloadSettings_', 'loadAegisDownloadSettings_', 'onAegisLimitChange_']) {
+    const method = cls.members.find(node => node.name?.getText(tree) === name);
+    owner[name] = new Function(compile(`return ${method.modifiers?.some(n => n.kind === ts.SyntaxKind.AsyncKeyword) ? 'async ' : ''}function(${method.parameters.map(n => n.getText(tree)).join(',')}) ${method.body.getText(tree)};`))();
+  }
+  let stored = {parallelMode: 3, reduceOnMetered: false, reduceOnBattery: true, torrentDhtEnabled: false, torrentPexEnabled: true, torrentDownloadLimitKib: 128, torrentUploadLimitKib: 64};
+  const saves = [];
+  owner.browserProxy_ = {getAegisDownloadSettings: async () => stored, setAegisDownloadSettings: async settings => {saves.push(settings); stored = settings; return stored;}};
+  await owner.loadAegisDownloadSettings_();
+  assert.deepEqual(owner.currentAegisDownloadSettings_(), stored);
+  owner.onAegisLimitChange_({currentTarget: {id: 'aegisTorrentDownloadLimit', value: '257.9'}});
+  owner.onAegisLimitChange_({currentTarget: {id: 'aegisTorrentUploadLimit', value: '129'}});
+  await owner.aegisSaveChain_;
+  assert.equal(saves.length, 2);
+  assert.equal(stored.torrentDownloadLimitKib, 257);
+  assert.equal(stored.torrentUploadLimitKib, 129);
+  assert.equal(stored.parallelMode, 3);
+  assert.equal(owner.aegisSaveStatus_, '已保存');
+  owner.browserProxy_.setAegisDownloadSettings = async () => {throw Error('拒绝保存');};
+  owner.onAegisLimitChange_({currentTarget: {id: 'aegisTorrentUploadLimit', value: '999'}});
+  await owner.aegisSaveChain_;
+  assert.equal(owner.aegisTorrentUploadLimitKib_, 129);
+  assert.equal(owner.aegisSaveStatus_, '失败');
+});
+
+test('新任务预览使用后台刚读取的下载默认值，不沿用页面打开时的缓存', () => {
+  const path = new URL('../../overlay/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts', import.meta.url);
+  const tree = ts.createSourceFile('panel.ts', fs.readFileSync(path, 'utf8'), ts.ScriptTarget.Latest, true);
+  const cls = tree.statements.find(node => ts.isClassDeclaration(node));
+  const method = cls.members.find(node => node.name?.getText(tree) === 'setTorrentPreview_');
+  const run = new Function('formatBytes', 'document', compile(`return function(preview, zh) ${method.body.getText(tree)};`))(() => '0', {documentElement: {lang: 'zh-CN'}});
+  const owner = {torrentDhtDefault_: true, torrentPexDefault_: true, torrentDownloadLimitDefault_: 0, torrentUploadLimitDefault_: 256};
+  run.call(owner, {ok: true, requestId: 'preview', name: '验收', defaultDhtEnabled: false, defaultPexEnabled: false, defaultDownloadLimitKib: 257, defaultUploadLimitKib: 129}, true);
+  assert.equal(owner.torrentDhtDefault_, false);
+  assert.equal(owner.torrentPexDefault_, false);
+  assert.equal(owner.torrentDownloadLimitDefault_, 257);
+  assert.equal(owner.torrentUploadLimitDefault_, 129);
+  run.call(owner, {ok: true, requestId: 'second', defaultDhtEnabled: true, defaultPexEnabled: true, defaultDownloadLimitKib: 0, defaultUploadLimitKib: 256}, true);
+  assert.equal(owner.torrentDownloadLimitDefault_, 0);
+  assert.equal(owner.torrentUploadLimitDefault_, 256);
+});

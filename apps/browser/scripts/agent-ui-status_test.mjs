@@ -191,7 +191,7 @@ console.log('PASS: 检查、暂停及删除监控失败均显示当前可见错�
 
 // 模型配置使用真实产品函数和有界异步响应；不把 DOM 测试等同于键盘或实机操作。
 const modelFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
-  ['renderModel', 'saveModel', 'friendlyModelError', 'showModelSaveError'].includes(node.name?.text));
+  ['renderModelPoolDraft', 'renderModel', 'saveModel', 'friendlyModelError', 'showModelSaveError'].includes(node.name?.text));
 for (const name of ['renderModel', 'saveModel', 'friendlyModelError']) {
   assert(modelFunctions.some(node => node.name.text === name), `模型表单函数缺失：${name}`);
 }
@@ -216,8 +216,8 @@ function modelHarness(initial = savedModel) {
   const calls = [];
   let response = {snapshot: {...savedModel, modelName: requestedModel}};
   const sandbox = vm.createContext({
-    element: field, modelBusy: false, modelRoutingBusy: false,
-    modelFormInitialized: false, snapshot: initial,
+    element: field, modelBusy: false, modelRoutingBusy: false, resetDetectedModels() {},
+    modelFormInitialized: false, lastRenderedModelForm: '', lastRenderedModelPoolDraft: '', snapshot: initial,
     document: {createElement: tag => new TestElement(tag)},
     loadTimeData: {getString: key => key},
     proxy: {handler: {configureModel: async (...args) => {
