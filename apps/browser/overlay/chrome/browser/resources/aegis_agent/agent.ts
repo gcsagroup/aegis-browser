@@ -35,6 +35,8 @@ let modelRoutingBusy = false;
 let typesafeBusy = false;
 let goalUserEdited = false;
 let modelFormInitialized = false;
+let lastRenderedModelForm = '';
+let lastRenderedModelPoolDraft = '';
 let typesafeEnabledDirty = false;
 let autoRunTaskId = '';
 let autoRunInFlight = false;
@@ -42,7 +44,8 @@ let activeView: 'task'|'automation'|'research'|'reading' = 'task';
 let researchTabs: ResearchTab[] = [];
 const selectedResearchTabs = new Set<number>();
 const launchParameters = new URLSearchParams(window.location.search);
-const launchRequest = consumeLaunchRequest();
+const settingsMode = launchParameters.get('settings') === '1';
+const launchRequest = settingsMode ? {goal: '', autoStart: false} : consumeLaunchRequest();
 const launchGoal = launchRequest.goal;
 const launchAutoStart = launchRequest.autoStart;
 
@@ -942,22 +945,79 @@ function renderMonitors(monitors: MonitorSummary[]) {
   }
 }
 
+function renderModelPoolDraft(next: TaskSnapshot) {
+  const values: Record<string, string> = {
+    'model-quality-score': '50', 'model-latency-score': '50', 'model-cost': '',
+    'model-efforts': '', 'model-profile-default': '', 'model-profile-basic': '',
+    'model-profile-strong': '', 'model-input-price': '', 'model-cache-price': '',
+    'model-output-price': '',
+  };
+  const checks: Record<string, boolean> = {
+    'model-supports-tools': true, 'model-supports-long-context': true,
+    'model-supports-strong-reasoning': true,
+  };
+  const draft = () => JSON.stringify([
+    ...Object.keys(values).map(id => element<HTMLInputElement>(id).value),
+    ...Object.keys(checks).map(id => element<HTMLInputElement>(id).checked),
+  ]);
+  if (lastRenderedModelPoolDraft && draft() !== lastRenderedModelPoolDraft) return;
+  const entry = next.modelPool.find(candidate =>
+    candidate.provider === element<HTMLSelectElement>('model-provider').value &&
+    candidate.baseUrl === element<HTMLInputElement>('model-base-url').value.trim() &&
+    candidate.model === element<HTMLInputElement>('model-name').value.trim());
+  if (entry) {
+    const profile = (value: {effort: string, maxOutputTokens: number}) =>
+        value.maxOutputTokens ? `${value.effort}:${value.maxOutputTokens}` : '';
+    Object.assign(values, {
+      'model-quality-score': String(entry.qualityScore),
+      'model-latency-score': String(entry.latencyScore),
+      'model-cost': entry.costMicrousdPerMillionTokens,
+      'model-efforts': entry.supportedEfforts.join(','),
+      'model-profile-default': profile(entry.defaultProfile),
+      'model-profile-basic': profile(entry.basicProfile),
+      'model-profile-strong': profile(entry.strongProfile),
+      'model-input-price': entry.inputPrice,
+      'model-cache-price': entry.cachedInputPrice,
+      'model-output-price': entry.outputPrice,
+    });
+    Object.assign(checks, {
+      'model-supports-tools': entry.supportsToolCalls,
+      'model-supports-long-context': entry.supportsLongContext,
+      'model-supports-strong-reasoning': entry.supportsStrongReasoning,
+    });
+  }
+  for (const [id, value] of Object.entries(values)) element<HTMLInputElement>(id).value = value;
+  for (const [id, value] of Object.entries(checks)) element<HTMLInputElement>(id).checked = value;
+  lastRenderedModelPoolDraft = draft();
+}
+
 function renderModel(next: TaskSnapshot) {
   const details = element<HTMLDetailsElement>('model-details');
   const provider = element<HTMLSelectElement>('model-provider');
   const baseUrl = element<HTMLInputElement>('model-base-url');
   const model = element<HTMLInputElement>('model-name');
-  if (!modelFormInitialized) {
+  const currentForm = JSON.stringify([provider.value, baseUrl.value, model.value]);
+  const untouched = currentForm === lastRenderedModelForm &&
+      !element<HTMLInputElement>('model-api-key').value;
+  // 同步另一处表单保存的共用连接，同时保留用户尚未保存的草稿。
+  if (!modelFormInitialized || untouched) {
     provider.value = next.modelConfigured ? next.modelProvider : 'openai';
     baseUrl.value = next.modelConfigured ?
         next.modelBaseUrl :
         'http://127.0.0.1:8000/v1';
     model.value = next.modelConfigured ? next.modelName : '';
+    const updatedForm = JSON.stringify([provider.value, baseUrl.value, model.value]);
+    if (modelFormInitialized && updatedForm !== lastRenderedModelForm) {
+      resetDetectedModels();
+    }
+    lastRenderedModelForm = updatedForm;
     modelFormInitialized = true;
   }
   if (!next.modelConfigured) {
     details.open = true;
   }
+  element('aegis-settings-link').textContent = loadTimeData.getString(
+      next.modelConfigured ? 'aegisSettingsTitle' : 'aegisSettingsConnectModel');
   element('model-state').textContent = next.modelConfigured ?
       `${loadTimeData.getString('modelReady')} · ${next.modelName}` :
       loadTimeData.getString('modelMissing');
@@ -968,6 +1028,7 @@ function renderModel(next: TaskSnapshot) {
   element<HTMLInputElement>('model-api-key').disabled = modelBusy;
   element<HTMLButtonElement>('detect-models-button').disabled = modelBusy;
   element<HTMLButtonElement>('save-model-button').disabled = modelBusy;
+  renderModelPoolDraft(next);
   const routingMode = element<HTMLSelectElement>('model-routing-mode');
   routingMode.value = String(next.modelSelectionMode);
   routingMode.disabled = modelRoutingBusy;
@@ -1349,6 +1410,24 @@ async function withBusy(
   }
 }
 
+function initializeSettingsPresentation() {
+  const desktop = !loadTimeData.getBoolean('isAndroid');
+  document.body.classList.toggle('settings-only', settingsMode);
+  document.body.classList.toggle('central-settings', desktop && !settingsMode);
+  element('aegis-settings-link').textContent = loadTimeData.getString('aegisSettingsTitle');
+  element('aegis-settings-link').hidden = !desktop || settingsMode;
+  if (!settingsMode) return;
+  // 隐藏的任务输入框不能抢走设置页焦点。
+  element('goal').removeAttribute('autofocus');
+  for (const id of ['model-details', 'reading-ai-settings', 'typesafe-details']) {
+    element<HTMLDetailsElement>(id).open = true;
+  }
+  const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
+    height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
+  new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
+  reportHeight();
+}
+
 function initializeLabels() {
   const language = document.documentElement.lang;
   const traditional = /^zh-(?:TW|HK|Hant)/i.test(language);
@@ -1676,7 +1755,7 @@ async function saveModel() {
   }
 }
 
-async function saveModelRouting(modelPool: ModelPoolEntry[]) {
+async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false) {
   if (modelRoutingBusy) {
     return;
   }
@@ -1691,6 +1770,7 @@ async function saveModelRouting(modelPool: ModelPoolEntry[]) {
   }
   try {
     const response = await proxy.handler.configureModelRouting(mode, modelPool);
+    if (savedDraft && !response.snapshot.lastError) lastRenderedModelPoolDraft = '';
     render(response.snapshot);
     element('model-routing-feedback').textContent =
         response.snapshot.lastError ?
@@ -1767,7 +1847,7 @@ function addCurrentModelToPool() {
   };
   const pool = snapshot.modelPool.filter(candidate => candidate.id !== entry.id);
   pool.push(entry);
-  void saveModelRouting(pool);
+  void saveModelRouting(pool, true);
 }
 
 async function saveTypeSafe(clearApiKey = false) {
@@ -1957,6 +2037,7 @@ try {
   proxy = BrowserProxy.getInstance();
   bindActions();
   const reading = new ReadingWorkspace(proxy);
+  initializeSettingsPresentation();
   element('reading-view-button').addEventListener('click', () => {
     activeView = 'reading';
     renderView();
@@ -1965,7 +2046,7 @@ try {
   proxy.callbackRouter.onSnapshotChanged.addListener(render);
   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
     render(initial);
-    proxy.handler.showUI();
+    if (!settingsMode) proxy.handler.showUI();
     // 只有已消费的一次性原生启动请求才创建新任务。
     if (launchAutoStart && initial.modelConfigured) {
       element<HTMLButtonElement>('plan-button').click();

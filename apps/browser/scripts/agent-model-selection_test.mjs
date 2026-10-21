@@ -11,7 +11,7 @@ const html = readFileSync(new URL('agent.html', root), 'utf8');
 assert.match(html, /<select id="model-options" hidden>/);
 assert(!html.includes('<datalist') && !html.includes('list="model-options"'));
 const tree = ts.createSourceFile('agent.ts', source, ts.ScriptTarget.Latest, true);
-const names = ['option', 'renderModel', 'resetDetectedModels', 'selectDetectedModel',
+const names = ['option', 'renderModelPoolDraft', 'renderModel', 'resetDetectedModels', 'selectDetectedModel',
   'syncDetectedModel', 'detectModels', 'friendlyModelError', 'bindActions',
   'saveModel', 'saveModelRouting', 'showModelSaveError', 'readGenerationProfile',
   'reviewCurrentDownload'];
@@ -46,10 +46,10 @@ function harness(name = models[1]) {
     modelBaseUrl: 'http://127.0.0.1:8000/v1', modelName: name, lastError: '',
     modelSelectionMode: 0, modelPool: []};
   const context = vm.createContext({element: field, snapshot, modelBusy: false,
-    modelRoutingBusy: false, modelFormInitialized: false,
+    modelRoutingBusy: false, modelFormInitialized: false, lastRenderedModelForm: '', lastRenderedModelPoolDraft: '',
     addCurrentModelToPool: () => {},
     loadTimeData: {getString: key => key},
-    document: {createElement: () => ({})}, proxy: {handler: {
+    document: {createElement: () => ({children: [], append(...items) {this.children.push(...items);}, addEventListener() {}})}, proxy: {handler: {
       listModels: async () => {
         modelRequests++;
         if (response instanceof Error) throw response;
@@ -61,7 +61,7 @@ function harness(name = models[1]) {
       },
       configureModelRouting: async (...args) => {
         savedRouting.push(args);
-        return {snapshot: {...snapshot, modelSelectionMode: args[0]}};
+        return {snapshot: {...snapshot, modelSelectionMode: args[0], modelPool: args[1]}};
       },
     }},
   });
@@ -89,6 +89,16 @@ await check('显示已保存配置不主动请求模型服务，也不生成检�
   await h.fire('detect-models-button', 'click');
   assert.equal(h.requests(), 1);
   assert(!h.field('model-feedback').textContent.includes('modelDetected'));
+});
+await check('共用连接从另一处保存后同步未编辑表单，保留已有草稿', async () => {
+  const h = harness();
+  const updated = {...h.context.snapshot, modelName: 'saved-from-summary'};
+  h.context.render(updated);
+  assert.equal(h.field('model-name').value, 'saved-from-summary');
+  h.field('model-name').value = 'unsaved-draft';
+  h.context.render({...updated, modelName: 'another-save'});
+  assert.equal(h.field('model-name').value, 'unsaved-draft');
+  assert.equal(h.requests(), 0);
 });
 await check('已保存的长模型名不筛掉其他候选，完整展示服务返回的五项', async () => {
   const h = harness();
@@ -184,5 +194,29 @@ await check('推理 profile 保留默认、解析配置并拒绝错误预算格�
   assert.deepEqual(read(':4096'), {effort: '', maxOutputTokens: 4096});
   assert.equal(read('high:invalid').maxOutputTokens, -1);
   assert.equal(read('ultra:4096').maxOutputTokens, -1);
+});
+await check('模型池高级参数重新读取并保留未保存草稿，确认保存后更新回读基线', async () => {
+  const h = harness();
+  const entry = {id: 'saved', provider: 'openai', baseUrl: h.context.snapshot.modelBaseUrl,
+    model: h.context.snapshot.modelName, enabled: true, qualityScore: 73, latencyScore: 21,
+    costMicrousdPerMillionTokens: '1200', supportedEfforts: ['low','medium','high'],
+    defaultProfile: {effort: 'medium', maxOutputTokens: 8192},
+    basicProfile: {effort: 'low', maxOutputTokens: 2048},
+    strongProfile: {effort: 'high', maxOutputTokens: 16384},
+    inputPrice: '400', cachedInputPrice: '100', outputPrice: '800',
+    supportsToolCalls: true, supportsLongContext: false, supportsStrongReasoning: true};
+  h.context.render({...h.context.snapshot, modelPool: [entry]});
+  for (const [id,value] of Object.entries({'model-quality-score':'73','model-latency-score':'21',
+    'model-cost':'1200','model-efforts':'low,medium,high','model-profile-default':'medium:8192',
+    'model-profile-basic':'low:2048','model-profile-strong':'high:16384',
+    'model-input-price':'400','model-cache-price':'100','model-output-price':'800'})) {
+    assert.equal(h.field(id).value, value);
+  }
+  assert.equal(h.field('model-supports-long-context').checked, false);
+  h.field('model-quality-score').value = '88';
+  h.context.render({...h.context.snapshot, modelPool: [{...entry, qualityScore: 60}]});
+  assert.equal(h.field('model-quality-score').value, '88');
+  await h.context.saveModelRouting(h.context.snapshot.modelPool, true);
+  assert.equal(h.field('model-quality-score').value, '60');
 });
 console.log(`模型选择回归 ${passed}/${passed}，另含 HTML 结构检查；非实机验收。`);

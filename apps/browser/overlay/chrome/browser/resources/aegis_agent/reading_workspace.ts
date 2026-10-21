@@ -331,6 +331,10 @@ export class ReadingWorkspace {
       cancel.addEventListener('click', () => this.local.cancel());
       const settings = node('button', label('ManagePacks')); settings.type = 'button';
       settings.addEventListener('click', () => {
+        if (document.body.classList.contains('central-settings')) {
+          document.getElementById('aegis-settings-link')!.click();
+          return;
+        }
         element<HTMLSelectElement>('direction').value = direction.value;
         element<HTMLDetailsElement>('ai-settings').open = true;
         element('ai-settings').scrollIntoView({block: 'nearest'});

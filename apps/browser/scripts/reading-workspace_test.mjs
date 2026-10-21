@@ -145,5 +145,19 @@ assert.equal(opened.querySelectorAll('.reading-translation-warning').length, 2);
 assert.ok(opened.textContent.includes('readingTranslationCaution'));
 assert.ok(opened.textContent.includes('费用为人民币1,234.56元。'));
 assert.ok(opened.textContent.includes('The fee is $1,234.36.'), '提示不得改写译文');
+// 桌面迁移后，原快捷按钮必须打开统一设置，不再展开隐藏表单。
+let settingsOpened = 0;
+document.body.classList.add('central-settings');
+document.getElementById('aegis-settings-link').addEventListener('click', event => {
+  event.preventDefault();
+  settingsOpened++;
+});
+const managePacks = [...opened.querySelectorAll('button')]
+    .find(button => button.textContent === 'readingManagePacks');
+assert.ok(managePacks);
+const callsBefore = calls.length;
+event(managePacks, 'click');
+assert.equal(settingsOpened, 1);
+assert.equal(calls.length, callsBefore, '打开设置不修改资料或启动下载');
 dom.window.close();
 console.log('阅读模块真实 DOM 回归通过：选择、文本、高亮、搜索、授权、译文、冲突、实验默认关闭和本机译文保存。');

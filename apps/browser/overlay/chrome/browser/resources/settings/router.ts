@@ -14,6 +14,10 @@ import {loadTimeData} from './i18n_setup.js';
  * Specifies all possible routes in settings.
  */
 export interface SettingsRoutes {
+  AEGIS: Route;
+  AEGIS_AI: Route;
+  AEGIS_DOWNLOADS: Route;
+  AEGIS_TOOLS: Route;
   AEGIS_ENHANCEMENTS: Route;
   AEGIS_READING: Route;
   AEGIS_GESTURES: Route;
