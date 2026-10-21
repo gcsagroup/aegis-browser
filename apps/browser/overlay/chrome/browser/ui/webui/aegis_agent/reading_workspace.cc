@@ -277,7 +277,9 @@ void AegisReadingWorkspace::Dispatch(
     const auto* translated = request.FindList("translation");
     const auto language = Field(request, "language");
     if (!translated || translated->size() != record->FindList("paragraphs")->size() ||
-        (language != "en" && language != "zh-CN")) {
+        (language != "en" && language != "zh-CN" && language != "ja" &&
+         language != "ko" && language != "fr" && language != "de" &&
+         language != "es" && language != "ru")) {
       Reply(std::move(callback), {}, "translation_incomplete"); return;
     }
     size_t total = 0;

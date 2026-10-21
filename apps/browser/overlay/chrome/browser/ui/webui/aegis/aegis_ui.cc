@@ -689,7 +689,7 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   web_ui->AddMessageHandler(std::make_unique<AegisGestureHandler>());
   web_ui->AddMessageHandler(std::make_unique<AegisEnhancementHandler>());
   web_ui->AddRequestableScheme("chrome-untrusted");
-  source->OverrideContentSecurityPolicy(network::mojom::CSPDirectiveName::FrameSrc, "frame-src chrome-untrusted://aegis-markdown;");
+  source->OverrideContentSecurityPolicy(network::mojom::CSPDirectiveName::FrameSrc, "frame-src chrome-untrusted://aegis-markdown chrome-untrusted://aegis-agent;");
 #endif
 }
 

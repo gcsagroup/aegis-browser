@@ -12,6 +12,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/json/json_reader.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/escape.h"
@@ -902,11 +903,23 @@ void AegisAgentPageHandler::ConfigureModel(const std::string& provider,
                                            const std::string& model,
                                            const std::string& api_key,
                                            bool clear_api_key,
+                                           const std::string& expected_connection,
                                            ConfigureModelCallback callback) {
   last_error_.clear();
   aegis::AegisService* core_service = CoreServiceForProfile(profile_);
   if (!core_service) {
     last_error_ = "Model settings are unavailable for this profile";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  const auto expected = base::JSONReader::Read(expected_connection, base::JSON_PARSE_RFC);
+  base::ListValue current;
+  current.Append(core_service->ConfiguredModelProvider());
+  current.Append(core_service->ConfiguredModelBaseUrl());
+  current.Append(core_service->ConfiguredModelName());
+  current.Append(base::NumberToString(core_service->ModelSettingsRevision()));
+  if (!expected || !expected->is_list() || expected->GetList() != current) {
+    last_error_ = "settings_changed";
     std::move(callback).Run(BuildSnapshot());
     return;
   }
@@ -946,12 +959,18 @@ void AegisAgentPageHandler::ConfigureTypeSafe(
 void AegisAgentPageHandler::ConfigureModelRouting(
     aegis_agent::mojom::ModelSelectionMode mode,
     std::vector<aegis_agent::mojom::ModelPoolEntryPtr> model_pool,
+    int32_t expected_revision,
     ConfigureModelRoutingCallback callback) {
   last_error_.clear();
   aegis::AegisService* core_service = CoreServiceForProfile(profile_);
   const auto converted_mode = ConvertModelSelectionMode(mode);
   if (!core_service || !converted_mode || model_pool.size() > 8u) {
     last_error_ = "Agent model routing settings are invalid";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  if (expected_revision != core_service->AgentModelCatalogRevision()) {
+    last_error_ = "settings_changed";
     std::move(callback).Run(BuildSnapshot());
     return;
   }
@@ -1493,6 +1512,9 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
     snapshot->model_provider = core_service->ConfiguredModelProvider();
     snapshot->model_base_url = core_service->ConfiguredModelBaseUrl();
     snapshot->model_name = core_service->ConfiguredModelName();
+    snapshot->model_connection_revision = base::NumberToString(core_service->ModelSettingsRevision());
+    snapshot->model_key_configured = core_service->HasModelApiKey(
+        snapshot->model_provider, snapshot->model_base_url);
     snapshot->model_selection_mode = ConvertModelSelectionMode(
         core_service->ConfiguredAgentModelSelectionMode());
     snapshot->model_catalog_revision =

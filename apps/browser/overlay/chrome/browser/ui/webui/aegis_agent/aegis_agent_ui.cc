@@ -4,6 +4,11 @@
 
 #include <string>
 #include <memory>
+#include <map>
+#include <deque>
+#include <algorithm>
+#include "base/uuid.h"
+#include "base/supports_user_data.h"
 
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -19,6 +24,8 @@
 
 #include "base/feature_list.h"
 #include "base/strings/string_util.h"
+#include "base/json/json_reader.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -41,31 +48,56 @@
 
 namespace {
 
-// 仅向固定官方来源下载清单中的七个文件，不接受客户端地址、正文或凭据。
-// 原生获取用于适配来源站不提供 CORS 响应头；WebUI 仍仅允许同源连接。
-struct TranslationAsset { const char* path; size_t size; };
-constexpr TranslationAsset kTranslationAssets[] = {
-    {"main-workspace/translations-models-v2/900beaed-2dba-4a88-ad7c-852ec9e73f6a.zst", 2499275},
-    {"main-workspace/translations-models-v2/83278466-fec4-4944-a99d-c2372fa9de88.zst", 348078},
-    {"main-workspace/translations-models-v2/84236654-1b66-42fc-9ba2-74c37f27e5eb.zst", 354994},
-    {"main-workspace/translations-models-v2/ef9e8f1a-b8c5-4626-a134-ff74bd8628ae.zst", 43556159},
-    {"main-workspace/translations-models-v2/321191b6-2c42-4bca-84ec-b7b074b67bd6.zst", 32923790},
-    {"main-workspace/translations-models-v2/570592b5-224e-4ad9-96cd-7a4905f0f044.zst", 3429363},
-    {"main-workspace/translations-models-v2/4c5d89d3-9412-4a61-a843-dfc1ed70565d.zst", 611595},
+// 下载器从内置模型清单读取白名单，与界面和推理使用相同目录。
+// 原生获取适配来源站的 CORS；客户端不能指定其他地址、正文或凭据。
+std::optional<size_t> TranslationAssetSize(const std::string& path) {
+  const auto manifest = base::JSONReader::Read(
+      ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
+          IDR_AEGIS_AGENT_LOCAL_LOCAL_AI_TRANSLATION_MANIFEST_JSON),
+      base::JSON_PARSE_RFC);
+  if (!manifest || !manifest->is_list()) return std::nullopt;
+  for (const auto& row : manifest->GetList()) {
+    if (!row.is_dict()) continue;
+    const auto* attachment = row.GetDict().FindDict("attachment");
+    if (!attachment) continue;
+    const auto* location = attachment->FindString("location");
+    const auto size = attachment->FindInt("size");
+    if (location && size && *size > 0 && path == "local_ai/download/" + *location)
+      return static_cast<size_t>(*size);
+  }
+  return std::nullopt;
+}
+class TranslationDownload;
+struct TranslationDownloads {
+  std::map<std::string, scoped_refptr<TranslationDownload>> active;
+  std::deque<std::string> cancelled;
 };
+class TranslationDownloadOwner : public base::SupportsUserData::Data {
+ public:
+  std::shared_ptr<TranslationDownloads> downloads =
+      std::make_shared<TranslationDownloads>();
+};
+std::shared_ptr<TranslationDownloads> DownloadsForContext(
+    content::BrowserContext* context) {
+  static const char key[] = "aegis-translation-downloads";
+  if (!context->GetUserData(key))
+    context->SetUserData(key, std::make_unique<TranslationDownloadOwner>());
+  return static_cast<TranslationDownloadOwner*>(context->GetUserData(key))->downloads;
+}
 // 模型超过 SimpleURLLoader 的 5 MiB 字符串上限，按固定大小流式接收。
 class TranslationDownload : public base::RefCounted<TranslationDownload>,
                             public network::SimpleURLLoaderStreamConsumer {
  public:
   TranslationDownload(std::unique_ptr<network::SimpleURLLoader> loader,
-      std::shared_ptr<int> active, size_t size,
+      std::shared_ptr<TranslationDownloads> downloads, std::string job, size_t size,
       content::WebUIDataSource::GotDataCallback callback)
-      : loader_(std::move(loader)), active_(std::move(active)), size_(size),
+      : loader_(std::move(loader)), downloads_(std::move(downloads)), job_(std::move(job)), size_(size),
         callback_(std::move(callback)) {}
   void Start(network::SharedURLLoaderFactory* factory) {
-    keep_alive_ = this;
+    downloads_->active[job_] = this;
     loader_->DownloadAsStream(factory, this);
   }
+  void Cancel() { Finish(false); }
  private:
   friend class base::RefCounted<TranslationDownload>;
   ~TranslationDownload() override = default;
@@ -82,28 +114,50 @@ class TranslationDownload : public base::RefCounted<TranslationDownload>,
   }
   void OnRetry(base::OnceClosure retry) override { bytes_.clear(); std::move(retry).Run(); }
   void Finish(bool success) {
-    auto keep_alive = std::move(keep_alive_);
+    scoped_refptr<TranslationDownload> keep_alive(this);
     loader_.reset();
-    --*active_;
+    downloads_->active.erase(job_);
     std::move(callback_).Run(success ? base::MakeRefCounted<base::RefCountedString>(std::move(bytes_)) : nullptr);
   }
   std::unique_ptr<network::SimpleURLLoader> loader_;
-  std::shared_ptr<int> active_;
+  std::shared_ptr<TranslationDownloads> downloads_;
+  const std::string job_;
   const size_t size_;
   std::string bytes_;
   content::WebUIDataSource::GotDataCallback callback_;
-  scoped_refptr<TranslationDownload> keep_alive_;
 };
 void FetchTranslationAsset(scoped_refptr<network::SharedURLLoaderFactory> factory,
-    std::shared_ptr<int> active, const std::string& path,
+    std::shared_ptr<TranslationDownloads> downloads, const std::string& path,
     content::WebUIDataSource::GotDataCallback callback) {
-  const TranslationAsset* asset = nullptr;
-  for (const auto& candidate : kTranslationAssets) {
-    if (path == std::string("local_ai/download/") + candidate.path) asset = &candidate;
+  const bool cancel = base::StartsWith(path, "local_ai/cancel/");
+  const std::string remainder = path.substr(cancel ? 16 : 18);
+  const size_t slash = remainder.find('/');
+  const std::string job = remainder.substr(0, slash);
+  if (!base::Uuid::ParseLowercase(job).is_valid()) {
+    std::move(callback).Run(nullptr); return;
   }
-  if (!asset || *active >= 2) { std::move(callback).Run(nullptr); return; }
+  if (cancel) {
+    // 只取消调用者持有的随机任务标识；保留短期墓碑处理跨进程先后顺序。
+    downloads->cancelled.push_back(job);
+    if (downloads->cancelled.size() > 256) downloads->cancelled.pop_front();
+    auto found = downloads->active.find(job);
+    if (found != downloads->active.end()) {
+      scoped_refptr<TranslationDownload> pending = found->second;
+      pending->Cancel();
+    }
+    std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>("cancelled"));
+    return;
+  }
+  if (slash == std::string::npos || downloads->active.contains(job) ||
+      std::find(downloads->cancelled.begin(), downloads->cancelled.end(), job) != downloads->cancelled.end()) {
+    std::move(callback).Run(nullptr); return;
+  }
+  const std::string asset_path = "local_ai/download/" + remainder.substr(slash + 1);
+  const auto size = TranslationAssetSize(asset_path);
+  if (!size || downloads->active.size() >= 2) { std::move(callback).Run(nullptr); return; }
   auto request = std::make_unique<network::ResourceRequest>();
-  request->url = GURL(std::string("https://firefox-settings-attachments.cdn.mozilla.net/") + asset->path);
+  request->url = GURL(std::string("https://firefox-settings-attachments.cdn.mozilla.net/") +
+                      asset_path.substr(std::string("local_ai/download/").size()));
   // CDN 不接受通用 Chromium UA；使用真实的原生下载器身份，不冒充其他浏览器。
   request->headers.SetHeader("User-Agent", "GCSA-Aegis-LocalTranslation/1.0");
   request->headers.SetHeader("Accept", "application/octet-stream, */*");
@@ -118,9 +172,8 @@ void FetchTranslationAsset(scoped_refptr<network::SharedURLLoaderFactory> factor
         policy { cookies_allowed: NO setting: "Only an explicit download action starts a request."
           policy_exception_justification: "Optional user-triggered public asset download." }
       )"));
-  loader->SetTimeoutDuration(base::Minutes(2));
-  ++*active;
-  base::MakeRefCounted<TranslationDownload>(std::move(loader), active, asset->size,
+  loader->SetTimeoutDuration(base::Minutes(10));
+  base::MakeRefCounted<TranslationDownload>(std::move(loader), downloads, job, *size,
       std::move(callback))->Start(factory.get());
 }
 
@@ -155,7 +208,8 @@ const char *Localized(UiLanguage language, const char *english,
 
 void AddStrings(content::WebUIDataSource *source) {
   const UiLanguage language = CurrentLanguage();
-  source->AddString("language", g_browser_process->GetApplicationLocale());
+  // Chromium 的 language 默认字段只保留语言子标签；保留地区以区分简繁。
+  source->AddString("aegisLocale", g_browser_process->GetApplicationLocale());
   auto add = [&](const char *key, const char *en, const char *zh_cn,
                  const char *zh_tw) {
     source->AddString(key, Localized(language, en, zh_cn, zh_tw));
@@ -1179,13 +1233,15 @@ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
   webui::SetupWebUIDataSource(source, kAegisAgentResources,
                               IDR_AEGIS_AGENT_AGENT_HTML);
   source->AddFrameAncestor(GURL("chrome://settings"));
+  source->AddFrameAncestor(GURL("chrome://aegis"));
   source->SetRequestFilter(
       base::BindRepeating([](const std::string& path) {
-        return base::StartsWith(path, "local_ai/download/");
+        return base::StartsWith(path, "local_ai/download/") || base::StartsWith(path, "local_ai/cancel/");
       }),
       base::BindRepeating(&FetchTranslationAsset,
           web_ui->GetWebContents()->GetBrowserContext()->GetDefaultStoragePartition()
-              ->GetURLLoaderFactoryForBrowserProcess(), std::make_shared<int>(0)));
+              ->GetURLLoaderFactoryForBrowserProcess(),
+          DownloadsForContext(web_ui->GetWebContents()->GetBrowserContext())));
   AddStrings(source);
   source->AddBoolean("isAndroid", BUILDFLAG(IS_ANDROID));
   source->OverrideContentSecurityPolicy(

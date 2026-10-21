@@ -298,6 +298,11 @@ export class Router {
    */
   setCurrentRoute(
       route: Route, queryParameters: URLSearchParams, isPopstate: boolean) {
+    if (isPopstate && route !== this.currentRoute && !window.dispatchEvent(new Event('aegis-settings-before-route', {cancelable: true}))) {
+      const query = this.currentQueryParameters_.toString();
+      window.history.pushState(window.history.state, '', this.currentRoute.path + (query ? '?' + query : ''));
+      return;
+    }
     this.recordMetrics(route.path);
 
     const oldRoute = this.currentRoute;
@@ -421,6 +426,7 @@ export class Router {
       url += '?' + queryString;
     }
 
+    if (route !== this.currentRoute && !window.dispatchEvent(new Event('aegis-settings-before-route', {cancelable: true}))) return;
     // History serializes the state, so we don't push the actual route object.
     window.history.pushState(this.currentRoute.path, '', url);
     this.setCurrentRoute(route, params, false);

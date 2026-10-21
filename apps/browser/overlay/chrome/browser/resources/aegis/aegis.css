@@ -640,8 +640,6 @@ body[data-settings] .page > :not(dialog) {
   display: none !important;
 }
 
-body[data-settings='privacy'] .page > .overview,
-body[data-settings='privacy'] .page > .activity,
 body[data-settings='privacy'] .page > .modules,
 body[data-settings='privacy'] .page > .filters,
 body[data-settings='ai'] .page > .privacy,
@@ -677,3 +675,55 @@ body[data-settings] input[type='password'],
 body[data-settings] select {
   max-width: 100%;
 }
+
+/* 工作区只呈现日常操作，偏好集中在设置。 */
+body[data-settings='ai'] #model-fields,
+body[data-settings='ai'] .privacy > .actions,
+body[data-settings='ai'] #privacy-meta { display:none; }
+
+body[data-workspace] .page > * { display:none; }
+
+body[data-workspace] #workspace-navigation,
+body[data-workspace] #settings-result:not([hidden]),
+body[data-workspace='protection'] .overview,
+body[data-workspace='protection'] .activity,
+body[data-workspace='protection'] .diagnostics,
+body[data-workspace='downloads'] .downloads,
+body[data-workspace='summary'] .privacy,
+body[data-workspace='reading'] .reading-workspace { display:block; }
+
+body[data-workspace='downloads'] .downloads > h2 { display:none; }
+
+#workspace-navigation a { display:inline-block;
+ margin-bottom:18px; }
+
+#reading-workspace-frame { width:100%;
+ border:0;
+ min-height:75vh;
+ color-scheme:light dark; }
+
+body[data-workspace='reading'] .page { max-width:1100px; }
+
+body[data-workspace='reading'] .reading-workspace { padding:0;
+ border:0;
+ background:transparent; }
+
+.setting-feedback { font-size:13px;
+ margin:4px 0 12px;
+ color:var(--muted); }
+
+.setting-feedback:empty { display:none; }
+
+.setting-feedback button { margin-inline-start:8px; }
+
+#ai-control-address-row { display:flex;
+ flex-wrap:wrap;
+ gap:10px;
+ align-items:center; }
+
+#ai-control-address-row[hidden] { display:none; }
+
+#ai-control-address { overflow-wrap:anywhere; }
+
+[data-search-match] { outline: 2px solid #3986ec;
+ outline-offset: 4px; }

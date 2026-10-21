@@ -69,3 +69,15 @@ for (const text of ['Version 1.2.3 is ready.', 'Meet at 9:30 a.m. tomorrow.', 'h
 assert.equal(context.splitText('').length, 0);
 assert.throws(() => context.splitText('x', 0), /invalid_input/);
 console.log('本机翻译无损分段回归通过。');
+
+// 代码与链接的保护标记必须逐一保留，不能接受丢失、重复或被模型改写的标记。
+const protectedInput = 'Read https://aegis.invalid/docs and keep `const n = 12;` unchanged.';
+const pair = [{from: 'en', to: 'zh'}];
+const echo = {translate: ({texts}) => [{target: {text: texts[0].text}}]};
+assert.equal(context.translateParagraph(echo, pair, protectedInput), protectedInput);
+for (const alter of [text => text.replace(/https:\/\/[^ ]+/, ''), text => text + ' ' + text.match(/https:\/\/[^ ]+/)[0], text => text.replaceAll('https://', 'broken://')]) {
+  assert.throws(() => context.translateParagraph({translate: ({texts}) => [{target: {text: alter(texts[0].text)}}]}, pair, protectedInput), /translation_incomplete/);
+}
+const retry = {translate: ({texts}) => [{target: {text: texts[0].text.replaceAll('aegis.invalid', 'changed.invalid')}}]};
+assert.equal(context.translateParagraph(retry, pair, protectedInput), protectedInput);
+console.log('翻译代码和链接保护回归通过：冲突标记、有界重试、遗漏、重复和改写检测。');
