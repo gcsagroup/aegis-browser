@@ -383,6 +383,32 @@ select {
 .site-entry span { flex:1;
  overflow-wrap:anywhere; }
 
+/* 设置页使用统一内容边界；独立手势页保留原来的间距。 */
+:host section {
+  padding:20px;
+  margin:0 0 24px;
+}
+
+:host .section-head {
+  flex-wrap:wrap;
+}
+
+.switch-row > span,
+.binding > *,
+.site-entry > span {
+  min-width:0;
+}
+
+.switch-row input[type=checkbox] {
+  flex:none;
+}
+
+.binding-edit select,
+#add-site-form input {
+  min-width:min(160px, 100%);
+  max-width:100%;
+}
+
 [role='status'] { min-height:1.4em; }
 @media(max-width: 650px) { .binding { grid-template-columns:1fr; } .binding-controls { grid-column:1; } }
 

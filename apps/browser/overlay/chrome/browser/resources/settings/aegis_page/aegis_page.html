@@ -2,23 +2,31 @@
 <style>
  :host { display:block; margin: 24px auto; max-width: 1000px; padding: 0 24px; background: transparent; }
  iframe { display:block; width:100%; min-height:320px; border:0; color-scheme:light dark; }
+ settings-downloads-page { display:block; margin-bottom:24px; }
  .hub { display:grid; grid-auto-rows:1fr; gap:12px; }
  .hub a { display:flex; align-items:center; gap:16px; padding:20px; border:1px solid var(--line); border-radius:12px; color:inherit; text-decoration:none; }
  .hub a:hover { background:var(--cr-hover-background-color); }
  .hub a::after { content:'›'; margin-inline-start:auto; font-size:24px; color:var(--cr-secondary-text-color); }
  .hub cr-icon { flex:none; width:24px; height:24px; }
+ .hub a > span { min-width:0; overflow-wrap:anywhere; }
  .hub small { display:block; margin-top:4px; color:var(--cr-secondary-text-color); }
  .back { display:inline-block; margin-bottom:20px; }
  .page-title { font-size: 20px; font-weight: 500; margin: 0 0 20px; }
  .setting-row { display:flex; gap:20px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--line); }
  .setting-row:last-child { border-bottom:0; }
+ :host section { margin:0 0 24px; padding:20px; }
  .setting-row select { max-width:55%; }
+ label:not(.setting-row) > input:not([type='checkbox']), label:not(.setting-row) > select { display:block; width:100%; margin-top:8px; }
+ .section-heading > h2 { min-width:0; }
  #events { padding-left:20px; }
  .launch-row { display:flex; align-items:center; flex-wrap:wrap; gap:16px; }
  .launch-row > div { flex:1; min-width:200px; }
  .launch-row h2 { margin-bottom:8px; }
- .reading-layout { display:grid; grid-template-columns:minmax(240px,1fr) minmax(240px,1fr); gap:24px; }
- #reading-preview { padding:20px; border:1px solid var(--line); border-radius:10px; overflow-wrap:anywhere; overflow:hidden; }
+ .reading-layout { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr)); gap:24px; }
+ .reading-layout > * { min-width:0; }
+ .reading-layout .setting-row > select, .reading-layout .setting-row > input { width:140px; max-width:55%; min-width:0; flex:none; }
+ .reading-preview-frame { padding:20px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+ #reading-preview { margin:0 auto; overflow-wrap:anywhere; }
  #reading-preview pre { white-space:pre-wrap; }
  input[type='number'] { width:96px; }
  input[type='checkbox'] { width:18px; flex:none; }
@@ -28,7 +36,7 @@
  form { margin-top:16px; padding:16px; border:1px solid var(--line); border-radius:10px; }
  [data-search-match] { outline:2px solid #3986ec; outline-offset:4px; }
  [role='alert'] { color:var(--google-red-700); }
- @media(max-width:700px) { .reading-layout { grid-template-columns:1fr; } .setting-row { flex-wrap:wrap; gap:10px; } }
+ @media(max-width:700px) { .setting-row { flex-wrap:wrap; gap:10px; } }
 </style>
 <template is="dom-if" if="[[!isMode_(mode, 'home')]]"><a class="back" href="/aegis">← $i18n{aegisSettingsTitle}</a></template>
 <h1 class="page-title">[[pageTitle_(mode)]]</h1>
@@ -121,7 +129,7 @@
       <label class="setting-row">行距<select id="reading-spacing"><option value="150">紧凑</option><option value="180">标准</option><option value="210">宽松</option></select></label>
       <label class="setting-row">正文宽度<select id="reading-width"><option value="680">窄</option><option value="820">标准</option><option value="1100">宽</option></select></label>
       <p id="reading-status" role="status" aria-live="polite"></p><button id="reading-retry" hidden>重试保存</button>
-    </div><article id="reading-preview" aria-label="阅读外观预览"><h3>阅读外观预览</h3><p>用舒适的字号和行距阅读，让注意力留在内容上。</p><p>Reading should feel clear and comfortable.</p><ul><li>正文和列表</li><li><a href="#" id="preview-link">链接样式</a></li></ul><pre><code>const message = 'Hello';</code></pre></article></div>
+    </div><div class="reading-preview-frame"><article id="reading-preview" aria-label="阅读外观预览"><h3>阅读外观预览</h3><p>用舒适的字号和行距阅读，让注意力留在内容上。</p><p>Reading should feel clear and comfortable.</p><ul><li>正文和列表</li><li><a href="#" id="preview-link">链接样式</a></li></ul><pre><code>const message = 'Hello';</code></pre></article></div></div>
   </section>
   <section><div class="section-heading row"><h2>Markdown 自动预览网站</h2><button id="markdown-add">添加网站</button></div>
     <p>只在下一次访问该来源的 Markdown 原文时自动预览；不会转换普通网页，也不会授予图片权限。</p>
