@@ -8,6 +8,7 @@ generate_grd("local_ai_resources") {
   input_files_base_dir = rebase_path(".", "//")
   input_files = [
     "local_ai/NOTICE.txt",
+    "local_ai/catalog.js",
     "local_ai/asset_manifest.json",
     "local_ai/bergamot/LICENSE",
     "local_ai/bergamot/worker/bergamot-translator-worker.js",
@@ -33,6 +34,7 @@ build_webui("build") {
   extra_grdp_files = [ "$target_gen_dir/local_ai_resources.grdp" ]
   grd_prefix = "aegis_agent"
   ts_composite = true
+  ts_definitions = [ "local_ai/catalog.d.ts" ]
   ts_deps = [
     "//ui/webui/resources/js:build_ts",
     "//ui/webui/resources/mojo:build_ts",
@@ -49,6 +51,7 @@ build_webui("build") {
     "agent.ts",
     "reading_workspace.ts",
     "local_ai_client.ts",
+    "language_packs.ts",
     "browser_proxy.ts",
   ]
   webui_context_type = "untrusted"
