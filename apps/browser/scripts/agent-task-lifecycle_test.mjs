@@ -24,7 +24,7 @@ const element = id => {
   return elements.get(id);
 };
 let resolveCreate, rejectCreate, resolvePlan;
-const context = vm.createContext({element, document: {querySelector: element},
+const context = vm.createContext({queueMicrotask: globalThis.queueMicrotask, reportSettingsDraft: () => {}, element, document: {querySelector: element},
   loadTimeData: {getString: key => key}, busy: false, snapshot: null, selectedWorkflow: null,
   goalUserEdited: true, autoRunTaskId: '', creatingTask: false, creatingTaskPreviousId: '', selectedTaskId: null, taskCreationError: '', AgentMode: {kAct: 1}, Workflow: {kResearch: 1},
   proxy: {handler: {

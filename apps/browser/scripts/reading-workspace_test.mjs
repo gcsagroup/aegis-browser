@@ -21,7 +21,14 @@ class LocalAiClient {
   cancel() {}
 }
 vm.runInNewContext(code, {exports, document, window: dom.window,
-  require: name => name.includes('local_ai_client') ? {LocalAiClient} : {loadTimeData: {getString: name => name}}});
+  fetch: async () => ({ok: true, json: async () => ({minim: {bundled: false}, phishlang: {bundled: false}})}),
+  require: name => name.includes('language_packs') ? {packText: zh => zh, LanguagePacks: class {
+    fillDirections(select, text, selected) {
+      for (const value of ['zh-en', 'fr-en']) { const option = document.createElement('option'); option.value = value; select.append(option); }
+      if (selected) select.value = selected;
+    }
+    showRoute() {}
+  }} : name.includes('local_ai_client') ? {LocalAiClient} : {loadTimeData: {getString: name => name}}});
 const fixture = {id: 'a', url: 'https://fixture.invalid/article', title: '<img src=x onerror=alert(1)>',
   kind: 'web', page: 0, text: '原文与唯一关键词', note: '批注', quote: '原文', group: '项目甲',
   paragraphs: ['原文与唯一关键词'], translation: ['unique translation'], language: 'en', archived: false, created: '1'};
@@ -112,14 +119,18 @@ assert.equal(calls.at(-1).minim, true);
 assert.equal(button('Analyze').disabled, false);
 assert.equal(localCalls.length, 0, '开启开关本身也不执行推理');
 el('draft-note').value = '离线翻译前的批注';
+const chosenDirection = el('draft').querySelector('.reading-local-controls select');
+chosenDirection.value = 'fr-en'; event(chosenDirection, 'change');
 localReply = {translations: ['Offline translation'], language: 'en'};
 reply = {draft: {...fixture, translation: ['Offline translation'], note: '离线翻译前的批注'}};
 event(button('LocalTranslate'), 'click'); await flush(); await flush();
 assert.equal(localCalls.at(-1).op, 'translate');
+assert.equal(localCalls.at(-1).direction, 'fr-en');
 assert.equal(calls.at(-1).op, 'translate_local');
 assert.equal(calls.at(-1).draft, true);
 assert.equal(calls.at(-1).note, '离线翻译前的批注');
 assert.equal(el('draft-note').value, '离线翻译前的批注');
+assert.equal(el('draft').querySelector('.reading-local-controls select').value, 'fr-en', '翻译回包重绘后保留用户选择的方向');
 assert.equal(el('draft').querySelector('.reading-pairs').textContent.includes('Offline translation'), true);
 assert.equal(localCalls.some(request => request.op === 'research'), false);
 // 下载管理会刷新资料列表；已保存条目里尚未提交的批注不能因此丢失。
@@ -155,7 +166,7 @@ assert.equal(opened.querySelectorAll('.reading-translation-warning').length, 2);
 assert.ok(opened.textContent.includes('readingTranslationCaution'));
 assert.ok(opened.textContent.includes('费用为人民币1,234.56元。'));
 assert.ok(opened.textContent.includes('The fee is $1,234.36.'), '提示不得改写译文');
-// 桌面迁移后，原快捷按钮必须打开统一设置，不再展开隐藏表单。
+// 阅读器的语言包入口展开同页管理器，保留原文与批注，不触发下载。
 let settingsOpened = 0;
 document.body.classList.add('central-settings');
 document.getElementById('aegis-settings-link').addEventListener('click', event => {
@@ -167,7 +178,8 @@ const managePacks = [...opened.querySelectorAll('button')]
 assert.ok(managePacks);
 const callsBefore = calls.length;
 event(managePacks, 'click');
-assert.equal(settingsOpened, 1);
+assert.equal(settingsOpened, 0);
+assert.equal(el('ai-settings').open, true);
 assert.equal(calls.length, callsBefore, '打开设置不修改资料或启动下载');
 dom.window.close();
 console.log('阅读模块真实 DOM 回归通过：选择、文本、高亮、搜索、授权、译文、冲突、实验默认关闭和本机译文保存。');
