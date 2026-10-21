@@ -631,8 +631,11 @@ body[data-settings] {
 }
 
 body[data-settings] .page {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: minmax(0, 1fr);
   max-width: none;
-  padding: 0 0 24px;
+  padding: 0;
 }
 
 body[data-settings] #enhancement-navigation,
@@ -650,7 +653,7 @@ body[data-settings='tools'] .page > .ai-control:not([hidden]) {
 }
 
 body[data-settings] .page > section {
-  margin: 0 0 24px;
+  margin: 0;
 }
 
 body[data-settings] #settings-result:not([hidden]) {
