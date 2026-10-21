@@ -949,8 +949,9 @@ body.settings-only {
 }
 
 body.settings-only main {
+  gap: 24px;
   max-width: none;
-  padding: 0 0 24px;
+  padding: 0;
   margin: 0;
 }
 
@@ -966,8 +967,25 @@ body.settings-only[data-settings-section='experiments'] main > #reading-research
 }
 
 body.settings-only .card {
-  margin: 0 0 20px;
+  margin: 0;
+  padding: 20px;
+  border-radius: 12px;
   box-shadow: none;
+}
+
+body.settings-only .language-pack-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  align-items: start;
+}
+
+body.settings-only .language-pack-filters label {
+  min-width: 0;
+}
+
+body.settings-only .language-pack-filters select {
+  display: block;
+  margin-top: 8px;
 }
 
 body.settings-only input,
