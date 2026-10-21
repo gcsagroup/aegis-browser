@@ -31,6 +31,10 @@ interface TorrentFile {
 }
 
 interface TorrentPreview {
+  defaultDhtEnabled?: boolean;
+  defaultPexEnabled?: boolean;
+  defaultDownloadLimitKib?: number;
+  defaultUploadLimitKib?: number;
   ok: boolean;
   error?: string;
   requestId?: string;
@@ -353,6 +357,12 @@ export class AegisDownloadPanelElement extends CrLitElement {
       this.previewText_ = this.formatPreviewError_(preview.error || 'invalid torrent');
       return;
     }
+    this.torrentDhtDefault_ = preview.defaultDhtEnabled ?? this.torrentDhtDefault_;
+    this.torrentPexDefault_ = preview.defaultPexEnabled ?? this.torrentPexDefault_;
+    this.torrentDownloadLimitDefault_ =
+        preview.defaultDownloadLimitKib ?? this.torrentDownloadLimitDefault_;
+    this.torrentUploadLimitDefault_ =
+        preview.defaultUploadLimitKib ?? this.torrentUploadLimitDefault_;
     const versions = [
       preview.hasV1 ? 'v1' : '', preview.hasV2 ? 'v2' : ''
     ].filter(Boolean).join(' + ');

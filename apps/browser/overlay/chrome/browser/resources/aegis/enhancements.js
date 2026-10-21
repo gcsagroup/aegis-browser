@@ -399,4 +399,8 @@ try {
 }
 
 }
-if (document.getElementById("enhancement-root")) await initializeEnhancements();
+if (document.getElementById("enhancement-root")) {
+  if (loadTimeData.valueExists('isAndroid') && !loadTimeData.getBoolean('isAndroid')) {
+    location.replace('chrome://settings/aegisEnhancements' + location.search + location.hash);
+  } else await initializeEnhancements();
+}

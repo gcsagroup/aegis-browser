@@ -28,6 +28,7 @@
         <button id="task-view-button" type="button" aria-selected="true"></button>
       </nav>
       <div class="workspace-tools">
+        <a id="aegis-settings-link" href="chrome://settings/aegisAi" target="_blank" rel="noopener" hidden></a>
         <a id="enhancement-link" hidden href="chrome://aegis/enhancements.html" target="_blank" rel="noopener">网站增强与脚本</a>
         <a id="markdown-link" hidden href="chrome://aegis/markdown.html" target="_blank" rel="noopener">Markdown 阅读</a>
         <button id="automation-view-button" type="button" aria-selected="false"></button>
@@ -159,6 +160,7 @@
           </div>
           <details id="model-advanced">
             <summary>$i18n{modelAdvanced}</summary>
+            <p class="help">$i18n{modelPoolSaveHelp}</p>
             <div class="field-grid">
             <label for="model-routing-mode" id="model-routing-mode-label"></label>
             <select id="model-routing-mode">

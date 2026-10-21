@@ -252,17 +252,36 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   const auto& locale = g_browser_process->GetApplicationLocale();
   const bool chinese = locale.starts_with("zh");
   const bool traditional = locale == "zh-TW" || locale == "zh-HK";
+  html_source->AddString("aegisSettingsTitle", chinese ? (traditional ? "Aegis 功能設定" : "Aegis 功能设置") : "Aegis settings");
+  html_source->AddString("aegisSettingsDescription", chinese ? (traditional ? "集中管理 Aegis 的防護、網站增強、閱讀、手勢、AI 與下載功能。" : "集中管理 Aegis 的防护、网站增强、阅读、手势、AI 与下载功能。") : "Manage Aegis protection, website enhancements, reading, gestures, AI and downloads.");
+  html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
+  html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
+  html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");
+  html_source->AddString("aegisAgentSettingsTitle", chinese ? (traditional ? "助手模型與本機翻譯" : "助手模型与本机翻译") : "Assistant models and local translation");
+  html_source->AddString("aegisSharedModelDescription", chinese ? (traditional ? "摘要與助手共用基礎模型連線；儲存任一模型表單會更新這個連線。助手的模型池與路由、TypeSafe 金鑰另行管理。" : "摘要与助手共用基础模型连接；保存任一模型表单会更新这个连接。助手的模型池与路由、TypeSafe 密钥另行管理。") : "Summaries and the assistant share the base model connection. Saving either model form updates that connection. The assistant model pool, routing and TypeSafe key are managed separately.");
+  html_source->AddString("aegisEnhancementsDescription", chinese ? (traditional ? "網站規則、使用者腳本與 AI 編寫" : "网站规则、用户脚本与 AI 编写") : "Site rules, user scripts and AI authoring");
+  html_source->AddString("aegisReadingDescription", chinese ? (traditional ? "閱讀外觀、Markdown、圖片權限與閱讀庫" : "阅读外观、Markdown、图片权限与阅读库") : "Reading appearance, Markdown, image permissions and library");
+  html_source->AddString("aegisGesturesDescription", chinese ? (traditional ? "手勢動作、軌跡、網站例外與練習" : "手势动作、轨迹、网站例外与练习") : "Actions, trails, site exceptions and practice");
+  html_source->AddString("aegisAiDescription", chinese ? (traditional ? "助手與摘要模型、模型池、本機翻譯與實驗功能" : "助手与摘要模型、模型池、本机翻译与实验功能") : "Assistant and summary models, model pool, local translation and experiments");
+  html_source->AddString("aegisDownloadsDescription", chinese ? (traditional ? "鏡像、種子、磁力連結與下載設定" : "镜像、种子、磁力链接与下载配置") : "Mirrors, torrents, magnet links and download preferences");
+  html_source->AddString("aegisToolsDescription", chinese ? (traditional ? "本機 AI 工具連線、權限與連線狀態" : "本机 AI 工具连接、权限与连接状态") : "Local AI tool access, permissions and connection status");
   html_source->AddString("aegisEnhancementsTitle", chinese ? (traditional ? "網站增強與腳本" : "网站增强与脚本") : "Website enhancements and scripts");
-  html_source->AddString("aegisReadingTitle", chinese ? (traditional ? "閱讀" : "阅读") : "Reading");
+  html_source->AddString("aegisReadingTitle", chinese ? (traditional ? "閱讀與 Markdown" : "阅读与 Markdown") : "Reading and Markdown");
   html_source->AddString("aegisGesturesTitle", chinese ? (traditional ? "滑鼠手勢" : "鼠标手势") : "Mouse gestures");
-  html_source->AddString("aegisPrivacyTitle", chinese ? (traditional ? "追蹤與指紋防護" : "跟踪与指纹防护") : "Tracking and fingerprint protection");
-  html_source->AddString("aegisPrivacyDescription", chinese ? (traditional ? "網站例外與防護記錄" : "网站例外与防护记录") : "Site exceptions and protection history");
+  html_source->AddString("aegisPrivacyTitle", chinese ? (traditional ? "隱私與防護" : "隐私与防护") : "Privacy and protection");
+  html_source->AddString("aegisPrivacyDescription", chinese ? (traditional ? "追蹤、指紋、Cookie、過濾規則與防護記錄" : "跟踪、指纹、Cookie、过滤规则与防护记录") : "Tracking, fingerprints, cookies, filter lists and protection history");
   // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
   html_source->AddString("aegisLocale",
                          g_browser_process->GetApplicationLocale());
   html_source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::WorkerSrc,
       "worker-src blob: chrome://resources 'self';");
+
+  // 设置页面只嵌入已有的 Aegis 内部界面，保留原有配置与权限边界。
+  web_ui->AddRequestableScheme("chrome-untrusted");
+  html_source->OverrideContentSecurityPolicy(
+      network::mojom::CSPDirectiveName::FrameSrc,
+      "frame-src chrome://aegis chrome-untrusted://aegis-agent;");
 
   AddSettingsPageUIHandler(std::make_unique<AppearanceHandler>(web_ui));
 

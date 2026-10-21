@@ -738,7 +738,12 @@ void AegisAgentPageHandler::CreateSelectedTask(
 void AegisAgentPageHandler::ShowProtection() {
   auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
   if (list && browser_->GetProfile() == profile_) {
+#if BUILDFLAG(IS_ANDROID)
     list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
+#else
+    list->OpenTab(GURL("chrome://settings/aegisPrivacy"),
+                  list->GetTabCount(), true);
+#endif
   }
 }
 

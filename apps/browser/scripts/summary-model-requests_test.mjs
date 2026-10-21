@@ -19,9 +19,9 @@ for (const endpoint of ['http://127.0.0.1:57212/v1', 'https://model.example.test
   };
   let requests = 0;
   const context = vm.createContext({
-    sendWithPromise: async () => ({privacyAi: true, isAndroid: false}),
+    requestSettings: async () => ({privacyAi: true, isAndroid: false}),
     withRendererPolicyWorkerStatus: value => value,
-    applyStatus() {}, bindToggle() {}, addWebUiListener() {},
+    applyStatus() {}, bindToggle() {}, listenSettingsStatus() {},
     actionButton: field, selectField: field, textField: field,
     isLocalModelEndpoint: value => value.startsWith('http://127.0.0.1'),
     loadModels: async () => {requests++;},

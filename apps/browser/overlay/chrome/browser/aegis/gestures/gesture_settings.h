@@ -25,6 +25,8 @@ struct GestureAction {
 const std::vector<GestureAction>& GestureActions();
 const GestureAction* FindGestureAction(std::string_view id);
 bool IsGesturePattern(std::string_view pattern);
+// 设置读写与练习区拦截必须识别同一组地址，避免迁移后练习触发真实动作。
+bool IsGestureSettingsPage(const GURL& url);
 
 struct GestureSettings {
   bool enabled = true;

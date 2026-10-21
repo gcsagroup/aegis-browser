@@ -490,6 +490,12 @@ void AddStrings(content::WebUIDataSource *source) {
   add("simpleHelp", "Choose a common task or describe the result you want.",
       "选择一个常用场景，或者直接说出你想要的结果。",
       "選擇一個常用情境，或直接說出你想要的結果。");
+  add("aegisSettingsConnectModel", "Connect a model in Aegis settings", "前往 Aegis 功能设置连接模型", "前往 Aegis 功能設定連接模型");
+  add("aegisSettingsTitle", "Aegis settings", "Aegis 功能设置", "Aegis 功能設定");
+  add("modelPoolSaveHelp",
+      "Routing changes save automatically. Capability, price and generation settings are saved with Add current model to pool; an existing entry is updated.",
+      "模型路由更改后自动保存。能力、费用和推理参数通过“将当前模型加入池”保存；已有模型会更新原条目。",
+      "模型路由變更後自動儲存。能力、費用和推理參數透過「將目前模型加入池」儲存；已有模型會更新原項目。");
   add("modelAdvanced", "Advanced model settings", "高级模型设置", "進階模型設定");
   add("modelSettings", "AI model", "AI 模型", "AI 模型");
   add("modelMissing", "Connect an AI model before the first task",
@@ -1172,6 +1178,7 @@ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
       chrome::kChromeUIUntrustedAegisAgentURL);
   webui::SetupWebUIDataSource(source, kAegisAgentResources,
                               IDR_AEGIS_AGENT_AGENT_HTML);
+  source->AddFrameAncestor(GURL("chrome://settings"));
   source->SetRequestFilter(
       base::BindRepeating([](const std::string& path) {
         return base::StartsWith(path, "local_ai/download/");

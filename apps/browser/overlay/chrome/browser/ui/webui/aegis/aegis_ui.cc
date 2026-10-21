@@ -195,7 +195,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .cookie_janitor_hint =
             "清理已識別的廣告和分析 Cookie，並保留規則中的登入例外。",
         .cname_uncloak_label = "偽裝跟蹤防護",
-        .cname_uncloak_hint = "識別借用網站域名的已知跟蹤服務並攔截請求。",
+        .cname_uncloak_hint = "識別借用網站域名的已知跟蹤服務並攔截請求。需同時開啟跟蹤器攔截才會生效。",
         .bounce_tracking_label = "跳轉跟蹤防護",
         .bounce_tracking_hint = "識別用於跟蹤的頁面跳轉，並清理相關 Cookie。",
         .policy_worker_label = "本地隱私處理",
@@ -330,7 +330,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
         .cookie_janitor_hint =
             "清理已识别的广告和分析 Cookie，并保留规则中的登录例外。",
         .cname_uncloak_label = "伪装跟踪防护",
-        .cname_uncloak_hint = "识别借用网站域名的已知跟踪服务并拦截请求。",
+        .cname_uncloak_hint = "识别借用网站域名的已知跟踪服务并拦截请求。需同时开启跟踪器拦截才会生效。",
         .bounce_tracking_label = "跳转跟踪防护",
         .bounce_tracking_hint = "识别用于跟踪的页面跳转，并清理相关 Cookie。",
         .policy_worker_label = "本地隐私处理",
@@ -478,7 +478,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
       .cname_uncloak_label = "Disguised tracking protection",
       .cname_uncloak_hint =
           "Block known tracking services that use aliases under a website’s "
-          "domain.",
+          "domain. Requires tracker blocking to be enabled.",
       .bounce_tracking_label = "Redirect tracking protection",
       .bounce_tracking_hint =
           "Detect tracking redirects and clear related cookies.",
@@ -566,8 +566,10 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
       profile, chrome::kChromeUIAegisHost);
+  source->AddFrameAncestor(GURL("chrome://settings"));
   const aegis::DownloadSettings downloads =
       aegis::ReadDownloadSettings(*g_browser_process->local_state());
+  source->AddBoolean("isAndroid", BUILDFLAG(IS_ANDROID));
   source->AddBoolean("aegisTorrentDhtDefault", downloads.torrent_dht_enabled);
   source->AddBoolean("aegisTorrentPexDefault", downloads.torrent_pex_enabled);
   source->AddInteger("aegisTorrentDownloadLimitKibDefault",
