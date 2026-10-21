@@ -1,6 +1,7 @@
 // Copyright 2026 GCSA
 
 import '/strings.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import './policy_worker.js';
 import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
 
@@ -42,6 +43,7 @@ interface AegisStatus {
   linkSanitize: boolean;
   cookieJanitor: boolean;
   cnameUncloak: boolean;
+  cnameUncloakConfigured?: boolean;
   bounceTracking: boolean;
   policyWorker: boolean;
   policyWorkerReady: boolean;
@@ -675,7 +677,8 @@ function applyStatus(status: AegisStatus) {
   checkbox('miner-guard').checked = status.minerGuard;
   checkbox('link-sanitize').checked = status.linkSanitize;
   checkbox('cookie-janitor').checked = status.cookieJanitor;
-  checkbox('cname-uncloak').checked = status.cnameUncloak;
+  checkbox('cname-uncloak').checked =
+      status.cnameUncloakConfigured ?? status.cnameUncloak;
   checkbox('bounce-tracking').checked = status.bounceTracking;
   checkbox('policy-worker').checked = status.policyWorker;
   checkbox('privacy-ai').checked = status.privacyAi;
@@ -725,19 +728,27 @@ function applyStatus(status: AegisStatus) {
 
 async function setModule(module: ModuleName, enabled: boolean) {
   const status: AegisStatus =
-      await sendWithPromise('setModuleEnabled', module, enabled);
+      await requestSettings('setModuleEnabled', module, enabled);
   applyStatus(status);
+  if (status.ok === false) throw new Error(status.error || '设置未保存');
 }
 
 function bindToggle(id: string, module: ModuleName) {
   const el = checkbox(id);
   el.addEventListener('change', () => {
-    void setModule(module, el.checked);
+    const requested = el.checked;
+    el.disabled = true;
+    void setModule(module, requested).catch(error => {
+      el.checked = !requested;
+      showResult(String(error));
+    }).finally(() => { el.disabled = false; });
   });
 }
 
 function showResult(text: string) {
-  const el = getRequiredElement('privacy-result');
+  const section = document.body.dataset['settings'];
+  const el = getRequiredElement(section && section !== 'ai' ?
+      'settings-result' : 'privacy-result');
   el.hidden = false;
   el.textContent = text;
 }
@@ -1248,7 +1259,7 @@ async function probeFingerprint() {
 }
 
 async function summarizeActiveTab() {
-  const captured: CapturedSummary = await sendWithPromise('summarizeActiveTab');
+  const captured: CapturedSummary = await requestSettings('summarizeActiveTab');
   if (!captured.ok || !captured.requestId || !captured.snapshot) {
     showResult(captured.error || 'summary capture failed');
     return;
@@ -1260,12 +1271,12 @@ async function summarizeActiveTab() {
   if (!prepared) {
     // Consume the prepared browser request even when the renderer rejects its
     // own output; it must never remain reusable until TTL expiry.
-    await sendWithPromise('completePreparedSummary', captured.requestId, {});
+    await requestSettings('completePreparedSummary', captured.requestId, {});
     showResult('renderer policy worker rejected the page snapshot');
     return;
   }
   const liveStatus: AegisStatus =
-      withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
+      withRendererPolicyWorkerStatus(await requestSettings('getStatus'));
   const status: AegisStatus = {
     ...liveStatus,
     modelProvider: captured.modelProvider || liveStatus.modelProvider,
@@ -1273,7 +1284,7 @@ async function summarizeActiveTab() {
     modelName: captured.modelName || liveStatus.modelName,
   };
   if (!await confirmSummaryPreview(captured, prepared, status)) {
-    await sendWithPromise('cancelPreparedSummary', captured.requestId);
+    await requestSettings('cancelPreparedSummary', captured.requestId);
     return;
   }
   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
@@ -1288,7 +1299,7 @@ async function summarizeActiveTab() {
           (zh ?
                (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '相容模型服務正在生成，最長等待 45 秒…' : '兼容模型服务正在生成，最长等待 45 秒…') :
                'The compatible model service is generating; allow up to 45 seconds…'));
-  const result: SummarizeResult = await sendWithPromise(
+  const result: SummarizeResult = await requestSettings(
       'completePreparedSummary', captured.requestId, prepared);
   showResult(formatSummary(result, status));
 }
@@ -1303,7 +1314,7 @@ async function runSummaryAction() {
   } finally {
     summaryRequestRunning = false;
     try {
-      const next: AegisStatus = await sendWithPromise('getStatus');
+      const next: AegisStatus = await requestSettings('getStatus');
       applyStatus(next);
     } catch (err) {
       actionButton('summarize').disabled = false;
@@ -1378,7 +1389,7 @@ async function loadModels() {
   actionButton('model-load').disabled = true;
   fillModelList([], snapshot.modelName, 'loading');
   try {
-    const result: ModelListResult = await sendWithPromise(
+    const result: ModelListResult = await requestSettings(
         'listModels', snapshot.format, snapshot.baseUrl, apiKey);
     if (serial !== modelListRequestSerial ||
         !isCurrentModelSnapshot(snapshot)) {
@@ -1423,7 +1434,7 @@ async function saveModelSettings(clearKey: boolean) {
   actionButton('model-save').disabled = true;
   actionButton('model-key-clear').disabled = true;
   try {
-    const next: AegisStatus = await sendWithPromise(
+    const next: AegisStatus = await requestSettings(
         'setModelSettings', snapshot.format, snapshot.baseUrl,
         snapshot.modelName, apiKey, clearKey);
     if (serial !== modelSettingsRequestSerial ||
@@ -1469,7 +1480,7 @@ async function saveModelSettings(clearKey: boolean) {
 
 async function init() {
   const status: AegisStatus =
-      withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
+      withRendererPolicyWorkerStatus(await requestSettings('getStatus'));
   applyStatus(status);
   bindToggle('tracker', 'trackerBlocking');
   bindToggle('phish', 'phishInterstitial');
@@ -1488,7 +1499,7 @@ async function init() {
   actionButton('filter-update').addEventListener('click', () => {
     void (async () => {
       actionButton('filter-update').disabled = true;
-      const next: AegisStatus = await sendWithPromise('updateFilterLists');
+      const next: AegisStatus = await requestSettings('updateFilterLists');
       applyStatus(next);
     })();
   });
@@ -1500,14 +1511,14 @@ async function init() {
   });
   actionButton('browser-agent-open').addEventListener('click', () => {
     void (async () => {
-      const next: AegisStatus = await sendWithPromise('openBrowserAgent');
+      const next: AegisStatus = await requestSettings('openBrowserAgent');
       fillBrowserAgent(next);
       if (next.ok === false && next.error) {
         getRequiredElement('browser-agent-status').textContent = next.error;
       }
     })();
   });
-  addWebUiListener('aegis-status-changed', (next: AegisStatus) => {
+  listenSettingsStatus( (next: AegisStatus) => {
     next = withRendererPolicyWorkerStatus(next);
     applyModelStatus(next);
     fillOverview(next);
@@ -1521,8 +1532,67 @@ async function init() {
   });
 }
 
+// 独立页面继续使用原接口，嵌入设置页通过经过来源校验的父框架转发。
+function requestSettings<T>(method: string, ...args: unknown[]): Promise<T> {
+  if (!embeddedSettings) return sendWithPromise<T>(method, ...args);
+  return new Promise<T>((resolve, reject) => {
+    const id = 'settings-' + (++settingsRequestId);
+    const timer = window.setTimeout(() => {
+      settingsRequests.delete(id);
+      reject(new Error(document.documentElement.lang.startsWith('zh') ?
+          '设置请求超时，请重新打开此页重试。' : 'Settings request timed out. Reopen this page to retry.'));
+    }, 180000);
+    settingsRequests.set(id, {resolve: value => resolve(value as T), reject, timer});
+    parent.postMessage({type: 'aegis-settings-request', id, method, args}, 'chrome://settings');
+  });
+}
+function listenSettingsStatus(callback: (status: AegisStatus) => void) {
+  if (embeddedSettings) settingsStatusListener = callback;
+  else addWebUiListener('aegis-status-changed', callback);
+}
+
+// 复用完整设置控件；只改变展示分组，不迁移或重写已保存的配置。
+const settingsSection = new URLSearchParams(location.search).get('settings');
+const embeddedSettings = window.parent !== window &&
+    ['privacy', 'ai', 'downloads', 'tools'].includes(settingsSection || '');
+let settingsRequestId = 0;
+const settingsRequests = new Map<string, {resolve: (value: unknown) => void, reject: (reason: Error) => void, timer: number}>();
+let settingsStatusListener: ((status: AegisStatus) => void)|undefined;
+if (embeddedSettings) {
+  document.body.dataset['settings'] = settingsSection!;
+  window.addEventListener('message', event => {
+    if (event.source !== parent || event.origin !== 'chrome://settings') return;
+    if (event.data?.type === 'aegis-settings-status') {
+      settingsStatusListener?.(event.data.status);
+      return;
+    }
+    if (event.data?.type !== 'aegis-settings-response') return;
+    const pending = settingsRequests.get(event.data.id);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    settingsRequests.delete(event.data.id);
+    if (event.data.error) pending.reject(new Error(String(event.data.error)));
+    else pending.resolve(event.data.result);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  if (!loadTimeData.getBoolean('isAndroid') && !embeddedSettings) {
+    const sections: Record<string, string> = {downloads: 'Downloads',
+      privacy: 'Privacy', modules: 'Privacy', filters: 'Privacy',
+      'overview-title': 'Privacy', 'model-fields': 'Ai', 'privacy-ai': 'Ai',
+      'browser-agent-section': 'Ai', 'ai-control-section': 'Tools'};
+    const section = sections[location.hash.slice(1)] || '';
+    location.replace('chrome://settings/aegis' + section);
+    return;
+  }
   document.querySelector<AegisDownloadPanelElement>('aegis-download-panel')
-      ?.setRequestHandler(sendWithPromise);
-  void init();
+      ?.setRequestHandler(requestSettings);
+  if (embeddedSettings) {
+    const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
+      height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
+    new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
+    reportHeight();
+  }
+  void init().catch(error => showResult(String(error)));
 });

@@ -618,3 +618,62 @@ textarea {
     min-height: 64px;
   }
 }
+
+/* 设置中心复用原来的控件和保存逻辑，按分类显示，避免平行配置副本。 */
+body[data-settings] {
+  --bg: light-dark(#fff, #202124);
+  --fg: light-dark(#202124, #e8eaed);
+  --muted: light-dark(#5f6368, #bdc1c6);
+  --line: light-dark(#dadce0, #45474b);
+  --accent: light-dark(#185abc, #a8c7fa);
+  background: transparent;
+  font: 14px/1.55 system-ui, sans-serif;
+}
+
+body[data-settings] .page {
+  max-width: none;
+  padding: 0 0 24px;
+}
+
+body[data-settings] #enhancement-navigation,
+body[data-settings] .page > :not(dialog) {
+  display: none !important;
+}
+
+body[data-settings='privacy'] .page > .overview,
+body[data-settings='privacy'] .page > .activity,
+body[data-settings='privacy'] .page > .modules,
+body[data-settings='privacy'] .page > .filters,
+body[data-settings='ai'] .page > .privacy,
+body[data-settings='ai'] .page > .browser-agent:not([hidden]),
+body[data-settings='downloads'] .page > .downloads,
+body[data-settings='tools'] .page > .ai-control:not([hidden]) {
+  display: block !important;
+}
+
+body[data-settings] .page > section {
+  margin: 0 0 24px;
+}
+
+body[data-settings] #settings-result:not([hidden]) {
+  display: block !important;
+}
+
+body[data-settings] section {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+body[data-settings] h2 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+body[data-settings] input[type='url'],
+body[data-settings] input[type='text'],
+body[data-settings] input[type='password'],
+body[data-settings] select {
+  max-width: 100%;
+}

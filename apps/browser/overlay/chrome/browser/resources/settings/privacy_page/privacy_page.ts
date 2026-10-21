@@ -127,7 +127,7 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
 
   private onAegisSettingsClick_() {
     this.interactedWithPage_();
-    Router.getInstance().navigateTo(routes.AEGIS_PRIVACY);
+    Router.getInstance().navigateTo(routes.AEGIS);
   }
 
   private onCookiesClick_() {

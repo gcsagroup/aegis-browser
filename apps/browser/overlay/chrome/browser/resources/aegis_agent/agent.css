@@ -902,3 +902,59 @@ summary {
   }
 
 }
+
+/* 桌面全局配置集中到设置中心，任务侧栏只保留前往设置的入口。 */
+body.central-settings #model-details,
+body.central-settings #typesafe-details,
+body.central-settings #reading-ai-settings {
+  display: none !important;
+}
+
+body.settings-only {
+  --bg: light-dark(#fff, #202124);
+  --surface: light-dark(#fff, #202124);
+  --surface-strong: light-dark(#f8f9fa, #292a2d);
+  --text: light-dark(#202124, #e8eaed);
+  --muted: light-dark(#5f6368, #bdc1c6);
+  --line: light-dark(#dadce0, #45474b);
+  --primary: light-dark(#185abc, #a8c7fa);
+  background: transparent;
+  color-scheme: light dark;
+  font: 14px/1.55 system-ui, sans-serif;
+}
+
+body.settings-only main {
+  max-width: none;
+  padding: 0 0 24px;
+  margin: 0;
+}
+
+body.settings-only main > * {
+  display: none !important;
+}
+
+body.settings-only main > #model-details,
+body.settings-only main > #typesafe-details,
+body.settings-only main > #reading-ai-settings {
+  display: block !important;
+}
+
+body.settings-only .card {
+  margin: 0 0 20px;
+  box-shadow: none;
+}
+
+body.settings-only input,
+body.settings-only select {
+  max-width: 100%;
+}
+
+#aegis-settings-link {
+  display: inline-block;
+  padding: 8px 0;
+  color: var(--primary);
+}
+
+#aegis-settings-link[hidden] {
+  display: none;
+}

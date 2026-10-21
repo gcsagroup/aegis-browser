@@ -1,6 +1,14 @@
 <link rel="stylesheet" href="aegis/enhancements.css">
 <style>
  :host { display:block; margin: 24px auto; max-width: 1000px; padding: 0 24px; background: transparent; }
+ iframe { display:block; width:100%; min-height:320px; border:0; color-scheme:light dark; }
+ .hub { display:grid; gap:12px; }
+ .hub a { display:flex; align-items:center; gap:16px; padding:20px; border:1px solid var(--line); border-radius:12px; color:inherit; text-decoration:none; }
+ .hub a:hover { background:var(--cr-hover-background-color); }
+ .hub a::after { content:'›'; margin-inline-start:auto; font-size:24px; color:var(--cr-secondary-text-color); }
+ .hub cr-icon { flex:none; width:24px; height:24px; }
+ .hub small { display:block; margin-top:4px; color:var(--cr-secondary-text-color); }
+ .back { display:inline-block; margin-bottom:20px; }
  .page-title { font-size: 20px; font-weight: 500; margin: 0 0 20px; }
  .setting-row { display:flex; gap:20px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--line); }
  .setting-row:last-child { border-bottom:0; }
@@ -9,7 +17,17 @@
  #library .item { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
  #library .item span { flex:1; min-width:150px; }
 </style>
+<template is="dom-if" if="[[!isMode_(mode, 'home')]]"><a class="back" href="/aegis">← $i18n{aegisSettingsTitle}</a></template>
 <h1 class="page-title">[[pageTitle_(mode)]]</h1>
+<template is="dom-if" if="[[isMode_(mode, 'home')]]"><p>$i18n{aegisSettingsDescription}</p><nav class="hub" aria-label="$i18n{aegisSettingsTitle}">
+  <a href="/aegisPrivacy"><cr-icon icon="settings:security"></cr-icon><span><strong>$i18n{aegisPrivacyTitle}</strong><small>$i18n{aegisPrivacyDescription}</small></span></a>
+  <a href="/aegisEnhancements"><cr-icon icon="settings:chrome-extension"></cr-icon><span><strong>$i18n{aegisEnhancementsTitle}</strong><small>$i18n{aegisEnhancementsDescription}</small></span></a>
+  <a href="/aegisReading"><cr-icon icon="settings:translate"></cr-icon><span><strong>$i18n{aegisReadingTitle}</strong><small>$i18n{aegisReadingDescription}</small></span></a>
+  <a href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span><strong>$i18n{aegisGesturesTitle}</strong><small>$i18n{aegisGesturesDescription}</small></span></a>
+  <a href="/aegisAi"><cr-icon icon="settings:person"></cr-icon><span><strong>$i18n{aegisAiTitle}</strong><small>$i18n{aegisAiDescription}</small></span></a>
+  <a href="/aegisDownloads"><cr-icon icon="settings:download"></cr-icon><span><strong>$i18n{aegisDownloadsTitle}</strong><small>$i18n{aegisDownloadsDescription}</small></span></a>
+  <a href="/aegisTools"><cr-icon icon="settings:build"></cr-icon><span><strong>$i18n{aegisToolsTitle}</strong><small>$i18n{aegisToolsDescription}</small></span></a>
+</nav></template>
 <template is="dom-if" if="[[isMode_(mode, 'enhancements')]]">
   <main id="enhancement-root">
     <header class="page-heading" data-standalone><a href="chrome://settings/aegisEnhancements">← 返回设置</a><h1>网站增强与脚本</h1></header>
@@ -60,8 +78,6 @@
 <template is="dom-if" if="[[isMode_(mode, 'gestures')]]"><link rel="stylesheet" href="aegis/gestures.css">
 
     <header>
-      <div class="eyebrow">GCSA AEGIS</div>
-      <h1>鼠标手势</h1>
       <p>按住鼠标右键画出方向，松开执行。支持网页、设置页和内置 PDF 阅读器。</p>
     </header>
     <section aria-labelledby="options-title">
@@ -91,12 +107,11 @@
     </section>
     <footer><button id="reset" type="button">恢复默认</button><span id="status" role="status" aria-live="polite">正在加载设置…</span><button id="save" type="button" class="primary" disabled>保存设置</button></footer>
   </template>
-<template is="dom-if" if="[[isMode_(mode, 'privacy')]]">
-  <a href="/privacy">← 隐私与安全</a><p id="result" role="status"></p>
-  <section><h2>全局保护</h2><div id="protections"></div></section>
-  <section><h2>网站例外与权限</h2><p>临时暂停由当前网站盾牌控制，保留钓鱼防护。</p><a href="/content/all">网站权限与数据</a></section>
-  <section><h2>防护记录</h2><ul id="events"></ul></section>
-</template>
+<template is="dom-if" if="[[isMode_(mode, 'privacy')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=privacy" title="$i18n{aegisPrivacyTitle}"></iframe><section><h2>网站例外与权限</h2><p>临时暂停由当前网站盾牌控制，保留钓鱼防护。</p><a href="/content/all">网站权限与数据</a></section></template>
+<template is="dom-if" if="[[isMode_(mode, 'downloads')]]"><settings-downloads-page aegis-only></settings-downloads-page><iframe class="legacy-frame" src="chrome://aegis/?settings=downloads" title="$i18n{aegisDownloadsTitle}"></iframe></template>
+<template is="dom-if" if="[[isMode_(mode, 'tools')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=tools" title="$i18n{aegisToolsTitle}"></iframe></template>
+<template is="dom-if" if="[[isMode_(mode, 'ai')]]"><p>$i18n{aegisSharedModelDescription}</p><iframe class="legacy-frame" src="chrome://aegis/?settings=ai" title="$i18n{aegisAiTitle}"></iframe>
+<iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=1" title="$i18n{aegisAgentSettingsTitle}"></iframe></template>
 <template is="dom-if" if="[[isMode_(mode, 'reading')]]">
   <p id="result" role="status"></p>
   <section><div class="section-heading row"><h2>阅读库</h2><a href="chrome://aegis/markdown.html">打开 Markdown 文件</a><button id="refresh-library">刷新</button></div><div id="library"></div></section>

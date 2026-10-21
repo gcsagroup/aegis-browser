@@ -302,4 +302,6 @@ void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
 
 return () => { events.abort(); observer.disconnect(); };
 }
-if (document.getElementById("practice")) initializeGestures();
+if (document.getElementById("practice")) {
+  location.replace('chrome://settings/aegisGestures' + location.search + location.hash);
+}

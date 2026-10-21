@@ -48,6 +48,8 @@ export class SettingsDownloadsPageElement extends
 
   static override get properties() {
     return {
+      aegisOnly: {type: Boolean, attribute: 'aegis-only'},
+      aegisSaveStatus_: {type: String},
       autoOpenDownloads_: {type: Boolean},
 
       downloadDefaultDirectoryPref_: {type: Object},
@@ -101,6 +103,8 @@ export class SettingsDownloadsPageElement extends
     };
   }
 
+  accessor aegisOnly: boolean = false;
+  protected accessor aegisSaveStatus_: string = '';
   protected accessor autoOpenDownloads_: boolean = false;
   protected accessor downloadDefaultDirectoryPref_:
       chrome.settingsPrivate.PrefObject<string>|undefined = undefined;
@@ -141,7 +145,7 @@ export class SettingsDownloadsPageElement extends
       downloadLimit: '預設下載上限（KiB/s，0 不限）',
       uploadLimit: '預設上傳上限（KiB/s，0 不限）',
       stopSeeding: '下載完成後自動停止上傳',
-      saved: '設定會立即儲存並應用於新下載。',
+      saved: '已儲存，將應用於新下載。', saving: '正在儲存…', failed: '儲存失敗，已重新讀取設定。', link: '開啟 Aegis 下載設定',
     } : {
       title: '下载加速',
       httpTitle: 'HTTP(S) 并行下载',
@@ -161,7 +165,7 @@ export class SettingsDownloadsPageElement extends
       downloadLimit: '默认下载上限（KiB/s，0 不限）',
       uploadLimit: '默认上传上限（KiB/s，0 不限）',
       stopSeeding: '下载完成后自动停止上传',
-      saved: '设置会立即保存并应用于新下载。',
+      saved: '已保存，将应用于新下载。', saving: '正在保存…', failed: '保存失败，已重新读取设置。', link: '打开 Aegis 下载设置',
     }) : {
       title: 'Aegis download acceleration',
       httpTitle: 'Parallel HTTP(S) downloads',
@@ -181,7 +185,7 @@ export class SettingsDownloadsPageElement extends
       downloadLimit: 'Default download limit (KiB/s, 0 unlimited)',
       uploadLimit: 'Default upload limit (KiB/s, 0 unlimited)',
       stopSeeding: 'Automatically stop uploading when complete',
-      saved: 'Settings are saved immediately and apply to new downloads.',
+      saved: 'Saved. Applies to new downloads.', saving: 'Saving…', failed: 'Could not save. Settings reloaded.', link: 'Open Aegis download settings',
     };
   })();
 
@@ -211,7 +215,9 @@ export class SettingsDownloadsPageElement extends
         });
 
     this.browserProxy_.initializeDownloads();
-    void this.loadAegisDownloadSettings_();
+    void this.loadAegisDownloadSettings_().catch(error => {
+      this.aegisSaveStatus_ = String(error);
+    });
   }
 
   private async loadAegisDownloadSettings_() {
@@ -247,6 +253,7 @@ export class SettingsDownloadsPageElement extends
       return;
     }
     const requested = this.currentAegisDownloadSettings_();
+    this.aegisSaveStatus_ = this.aegisStrings_.saving;
     this.aegisSaveChain_ = this.aegisSaveChain_
                                 .then(async () => {
                                   const saved = await this.browserProxy_
@@ -256,9 +263,13 @@ export class SettingsDownloadsPageElement extends
                                       JSON.stringify(
                                           this.currentAegisDownloadSettings_())) {
                                     this.applyAegisDownloadSettings_(saved);
+                                    this.aegisSaveStatus_ = this.aegisStrings_.saved;
                                   }
                                 })
-                                .catch(() => this.loadAegisDownloadSettings_());
+                                .catch(async () => {
+                                  try { await this.loadAegisDownloadSettings_(); }
+                                  finally { this.aegisSaveStatus_ = this.aegisStrings_.failed; }
+                                }).catch(() => {});
   }
 
   protected onAegisParallelModeChange_(event: Event) {
@@ -289,7 +300,7 @@ export class SettingsDownloadsPageElement extends
 
   protected onAegisLimitChange_(event: Event) {
     const input = event.currentTarget as CrInputElement;
-    const value = Math.min(1000000, Math.max(0, Number(input.value) || 0));
+    const value = Math.min(1000000, Math.max(0, Math.floor(Number(input.value) || 0)));
     if (input.id === 'aegisTorrentDownloadLimit') {
       this.aegisTorrentDownloadLimitKib_ = value;
     } else {
