@@ -283,8 +283,7 @@ function formatMeta(status: AegisStatus): string {
   const zh = lang.startsWith('zh');
   if (!status.filterListLastUpdated) {
     if (count) {
-      return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `已載入 ${count} 條主機規則。` : `已加载 ${count} 条主机规则。`) :
-                  `Loaded ${count} filter rules.`;
+      return settingsText('内置过滤规则可用，尚无在线更新记录。', 'Built-in rules are available; no online update recorded yet.', '內建過濾規則可用，尚無線上更新記錄。');
     }
     return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '尚未下載過濾列表。' : '尚未下载过滤列表。') : 'No compiled filter list yet.';
   }
@@ -293,8 +292,7 @@ function formatMeta(status: AegisStatus): string {
       (zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? ` 上次錯誤：${status.filterListLastError}` : ` 上次错误：${status.filterListLastError}`) :
             ` Last error: ${status.filterListLastError}`) :
       '';
-  return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? `已載入 ${count} 條主機規則 · 更新於 ${when}${err}` : `已加载 ${count} 条主机规则 · 更新于 ${when}${err}`) :
-              `Loaded ${count} filter rules · updated ${when}${err}`;
+  return settingsText('最后成功更新：', 'Last successful update: ', '最後成功更新：') + when + err;
 }
 
 function formatPrivacyMeta(status: AegisStatus): string {
@@ -669,8 +667,35 @@ function isCurrentModelSnapshot(snapshot: ModelFormSnapshot): boolean {
       current.revision === snapshot.revision;
 }
 
+function settingsText(zh: string, en: string, tw: string) {
+  return localeCode() === 'en' ? en : localeCode() === 'zh-TW' ? tw : zh;
+}
+const pendingToggles = new Map<string, boolean>();
+let latestStatus: AegisStatus|undefined;
+let toolsStartingAt = 0;
+let toolsPoll = 0;
+function toggleStatus(id: string): HTMLElement {
+  let status = document.getElementById(id + '-feedback');
+  if (!status) {
+    status = document.createElement('p'); status.id = id + '-feedback'; status.className = 'setting-feedback';
+    status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+    checkbox(id).closest('label')!.after(status);
+  }
+  return status;
+}
+function showDependencies(status: AegisStatus) {
+  const warning = toggleStatus('cname-uncloak');
+  if ((status.cnameUncloakConfigured ?? status.cnameUncloak) && !status.trackerBlocking) {
+    warning.textContent = settingsText('已保存，当前未生效：需要开启跟踪器拦截。', 'Saved, but inactive: tracker blocking is required.', '已儲存，目前未生效：需要開啟追蹤器攔截。');
+    const link = document.createElement('button'); link.type = 'button';
+    link.textContent = settingsText('查看跟踪器拦截', 'Go to tracker blocking', '查看追蹤器攔截');
+    link.addEventListener('click', () => { checkbox('tracker').scrollIntoView({block: 'center'}); checkbox('tracker').focus(); }); warning.append(link);
+    warning.dataset['dependency'] = 'true';
+  } else if (warning.dataset['dependency']) { warning.textContent = ''; delete warning.dataset['dependency']; }
+}
 function applyStatus(status: AegisStatus) {
   status = withRendererPolicyWorkerStatus(status);
+  latestStatus = status;
   checkbox('tracker').checked = status.trackerBlocking;
   checkbox('phish').checked = status.phishInterstitial;
   checkbox('fingerprint').checked = status.fingerprintGuard;
@@ -706,7 +731,11 @@ function applyStatus(status: AegisStatus) {
   }
   fillBrowserAgent(status);
   checkbox('filter-auto').checked = status.filterListAutoUpdate;
+  for (const [id, value] of pendingToggles) checkbox(id).checked = value;
+  showDependencies(status);
   getRequiredElement('filter-meta').textContent = formatMeta(status);
+  getRequiredElement('filter-details-label').textContent = settingsText('规则详情', 'Rule details', '規則詳情');
+  getRequiredElement('filter-count-detail').textContent = settingsText('已载入的主机规则：', 'Loaded host rules: ', '已載入的主機規則：') + (status.filterListHostCount || 0);
   getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(status);
   fillOverview(status);
   fillActivityLog(status.recentEvents || []);
@@ -737,11 +766,17 @@ function bindToggle(id: string, module: ModuleName) {
   const el = checkbox(id);
   el.addEventListener('change', () => {
     const requested = el.checked;
-    el.disabled = true;
-    void setModule(module, requested).catch(error => {
+    el.disabled = true; pendingToggles.set(id, requested);
+    toggleStatus(id).textContent = settingsText('保存中…', 'Saving…', '儲存中…');
+    void setModule(module, requested).then(() => {
+      toggleStatus(id).textContent = settingsText('已保存。', 'Saved.', '已儲存。') + (['fingerprint', 'cookie-janitor'].includes(id) ? settingsText('对重新加载的网页生效。', 'Applies when a page is reloaded.', '對重新載入的網頁生效。') : '');
+    }).catch(() => {
       el.checked = !requested;
-      showResult(String(error));
-    }).finally(() => { el.disabled = false; });
+      toggleStatus(id).textContent = settingsText('保存失败，已恢复原值，请重试。', 'Save failed; the previous value is restored. Retry.', '儲存失敗，已還原原值，請重試。');
+    }).finally(() => {
+      pendingToggles.delete(id); el.disabled = latestStatus?.profileAvailable === false || (id === 'ai-control' && latestStatus?.aiControlAvailable === false);
+      if (latestStatus) showDependencies(latestStatus);
+    });
   });
 }
 
@@ -972,49 +1007,32 @@ function kindLabel(kind: string, zh: boolean): string {
 }
 
 function fillAiControl(status: AegisStatus) {
-  const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
-  const toggle = checkbox('ai-control');
-  toggle.checked = !!status.aiControl;
-  toggle.disabled = status.aiControlAvailable === false;
-  const statusEl = getRequiredElement('ai-control-status');
-  const connectEl = getRequiredElement('ai-control-connect');
+  const toggle = checkbox('ai-control'); toggle.checked = pendingToggles.get('ai-control') ?? !!status.aiControl;
+  toggle.disabled = pendingToggles.has('ai-control') || status.aiControlAvailable === false;
+  const statusEl = getRequiredElement('ai-control-status'), connect = getRequiredElement('ai-control-connect');
+  const addressRow = getRequiredElement('ai-control-address-row'), retry = actionButton('ai-control-retry');
+  addressRow.hidden = true; connect.hidden = true; retry.hidden = true;
+  window.clearTimeout(toolsPoll);
   if (status.aiControlAvailable === false) {
-    statusEl.textContent = zh ?
-        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '為保護無痕分頁，無痕視窗開啟期間暫停本機工具連線；內建 AI 助手仍可使用。' : '为保护无痕标签页，无痕窗口打开期间暂停本机工具连接；内置 AI 助手仍可使用。') :
-        'Local tool connections pause while an Incognito window is open to protect private tabs. The built-in AI assistant remains available.';
-    connectEl.hidden = true;
+    toolsStartingAt = 0; statusEl.textContent = settingsText('无痕窗口打开期间暂停本机工具连接；内置助手仍可使用。', 'Local tool connections pause while an Incognito window is open; the built-in assistant remains available.', '無痕視窗開啟期間暫停本機工具連線；內建助手仍可使用。'); return;
+  }
+  if (!status.aiControl) { toolsStartingAt = 0; statusEl.textContent = settingsText('已关闭。', 'Off.', '已關閉。'); return; }
+  const valid = status.aiControlRunning && status.aiControlLoopbackOnly && Number.isInteger(status.aiControlPort) && status.aiControlPort! > 0;
+  if (!valid) {
+    toolsStartingAt ||= Date.now();
+    const failed = Date.now() - toolsStartingAt > 15000;
+    statusEl.textContent = failed ? settingsText('已允许连接，但端点未能启动。请重试或查看诊断。', 'Connections are allowed, but the endpoint failed to start. Retry or inspect diagnostics.', '已允許連線，但端點未能啟動。請重試或查看診斷。') : settingsText('启动中，连接地址尚不可用…', 'Starting; the connection address is not available yet…', '啟動中，連線位址尚不可用…');
+    retry.hidden = !failed;
+    if (!failed) toolsPoll = window.setTimeout(() => { void requestSettings<AegisStatus>('getStatus').then(fillAiControl).catch(() => { toolsStartingAt = Date.now() - 16000; fillAiControl(status); }); }, 1000);
     return;
   }
-  const on = !!status.aiControl && !!status.aiControlRunning;
-  if (!status.aiControl) {
-    statusEl.textContent =
-        zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? 'AI 控制已關閉（預設）。' : 'AI 控制已关闭（默认）。') : 'AI control is off (default).';
-    connectEl.hidden = true;
-    return;
-  }
-  if (!on) {
-    statusEl.textContent = zh ?
-        (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '正在準備本機連線，連線入口暫不可用。' : '正在准备本机连接，连接入口暂不可用。') :
-        'Preparing the local connection. Connection details are not available yet.';
-    connectEl.hidden = true;
-    return;
-  }
-  const port = status.aiControlPort;
-  const address = status.aiControlAddress || '';
-  const loopback = status.aiControlLoopbackOnly === true;
+  toolsStartingAt = 0;
   const clients = status.aiControlClients || 0;
-  const clientsText = zh ?
-      (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? (clients ? `當前 ${clients} 個本機工具 已連線` :
-                 '當前沒有工具 連線') : (clients ? `当前 ${clients} 个本机工具 已连接` :
-                 '当前没有工具 连接')) :
-      (clients ? `${clients} local agent(s) connected` : 'no agent connected');
-  statusEl.textContent = clientsText;
-  connectEl.hidden = !on;
-  if (on) {
-    connectEl.textContent =
-        `Address: ${address} · Port: ${port} · ${loopback ? 'Loopback' : 'Unknown binding'}\n` +
-        `await chromium.connectOverCDP('http://127.0.0.1:${port}')`;
-  }
+  statusEl.textContent = clients ? settingsText('已连接的本机客户端：', 'Connected local clients: ', '已連線的本機用戶端：') + clients : settingsText('等待本机工具连接。', 'Waiting for a local tool to connect.', '等待本機工具連線。');
+  const endpoint = 'http://127.0.0.1:' + status.aiControlPort;
+  getRequiredElement('ai-control-address').textContent = endpoint;
+  addressRow.hidden = false; connect.hidden = false;
+  connect.textContent = "await chromium.connectOverCDP('" + endpoint + "')";
 }
 
 function fillBrowserAgent(status: AegisStatus) {
@@ -1497,11 +1515,29 @@ async function init() {
   bindToggle('filter-auto', 'filterListAutoUpdate');
   bindModelControls();
   actionButton('filter-update').addEventListener('click', () => {
-    void (async () => {
-      actionButton('filter-update').disabled = true;
-      const next: AegisStatus = await requestSettings('updateFilterLists');
+    actionButton('filter-update').disabled = true;
+    getRequiredElement('filter-update-status').textContent = settingsText('正在检查更新…', 'Checking for updates…', '正在檢查更新…');
+    void requestSettings<AegisStatus>('updateFilterLists').then(next => {
       applyStatus(next);
-    })();
+      getRequiredElement('filter-update-status').textContent = next.filterListLastError ? settingsText('更新失败，继续使用现有规则。', 'Update failed; existing rules remain active.', '更新失敗，繼續使用現有規則。') : next.filterListUpdating ? settingsText('正在下载并验证规则…', 'Downloading and verifying rules…', '正在下載並驗證規則…') : settingsText('检查完成。', 'Check complete.', '檢查完成。');
+    }).catch(() => {
+      actionButton('filter-update').disabled = false;
+      getRequiredElement('filter-update-status').textContent = settingsText('检查失败，请连接网络后重试。现有规则保留。', 'Check failed. Reconnect and retry; existing rules are preserved.', '檢查失敗，請連線網路後重試。現有規則保留。');
+    });
+  });
+  actionButton('ai-control-copy').textContent = settingsText('复制地址', 'Copy address', '複製位址');
+  actionButton('ai-control-retry').textContent = settingsText('重试启动', 'Retry startup', '重試啟動');
+  actionButton('ai-control-copy').addEventListener('click', () => {
+    if (getRequiredElement('ai-control-address-row').hidden) return;
+    void navigator.clipboard.writeText(getRequiredElement('ai-control-address').textContent || '').then(() => {
+      getRequiredElement('ai-control-status').textContent = settingsText('连接地址已复制。', 'Connection address copied.', '連線位址已複製。');
+    }).catch(() => { getRequiredElement('ai-control-status').textContent = settingsText('复制失败，请手动选择地址复制。', 'Copy failed; select and copy the address manually.', '複製失敗，請手動選擇位址複製。'); });
+  });
+  actionButton('ai-control-retry').addEventListener('click', () => {
+    actionButton('ai-control-retry').disabled = true;
+    void setModule('aiControl', false).then(() => { toolsStartingAt = 0; return setModule('aiControl', true); })
+      .catch(() => { getRequiredElement('ai-control-status').textContent = settingsText('启动失败，请再次重试。', 'Startup failed. Retry.', '啟動失敗，請再次重試。'); })
+      .finally(() => { actionButton('ai-control-retry').disabled = false; });
   });
   actionButton('summarize').addEventListener('click', () => {
     void runSummaryAction();
@@ -1526,6 +1562,10 @@ async function init() {
     fillBrowserAgent(next);
     fillAiControl(next);
     getRequiredElement('filter-meta').textContent = formatMeta(next);
+    getRequiredElement('filter-count-detail').textContent = settingsText('已载入的主机规则：', 'Loaded host rules: ', '已載入的主機規則：') + (next.filterListHostCount || 0);
+    actionButton('filter-update').disabled = next.filterListUpdating;
+    showDependencies(next);
+    if (!next.filterListUpdating && getRequiredElement('filter-update-status').textContent) getRequiredElement('filter-update-status').textContent = next.filterListLastError ? settingsText('更新失败，现有规则仍在使用；请重试。', 'Update failed; existing rules remain active. Retry.', '更新失敗，現有規則仍在使用；請重試。') : settingsText('规则更新完成。', 'Rules updated.', '規則更新完成。');
     getRequiredElement('privacy-meta').textContent = formatPrivacyMeta(next);
     actionButton('summarize').disabled =
         summaryRequestRunning || !next.privacyAi || !next.policyWorkerReady;
@@ -1577,14 +1617,41 @@ if (embeddedSettings) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  if (!loadTimeData.getBoolean('isAndroid') && !embeddedSettings) {
-    const sections: Record<string, string> = {downloads: 'Downloads',
+  const workspace = new URLSearchParams(location.search).get('workspace');
+  if (!loadTimeData.getBoolean('isAndroid') && !embeddedSettings &&
+      !['protection', 'downloads', 'summary', 'reading'].includes(workspace || '')) {
+    const legacyWorkspaces: Record<string, string> = {downloads: 'downloads', 'overview-title': 'protection', 'activity-log': 'protection', 'fp-probe': 'protection', 'reading': 'reading', 'privacy-result': 'summary'};
+    const legacy = legacyWorkspaces[location.hash.slice(1)];
+    if (legacy) { location.replace('chrome://aegis/?workspace=' + legacy); return; }
+    const sections: Record<string, string> = {
       privacy: 'Privacy', modules: 'Privacy', filters: 'Privacy',
       'overview-title': 'Privacy', 'model-fields': 'Ai', 'privacy-ai': 'Ai',
       'browser-agent-section': 'Ai', 'ai-control-section': 'Tools'};
     const section = sections[location.hash.slice(1)] || '';
     location.replace('chrome://settings/aegis' + section);
     return;
+  }
+  if (workspace && ['protection', 'downloads', 'summary', 'reading'].includes(workspace)) {
+    document.body.dataset['workspace'] = workspace;
+    const zh = document.documentElement.lang.startsWith('zh');
+    const names: Record<string, string> = localeCode() === 'zh-TW' ? {protection: '防護詳情', downloads: '下載中心', summary: '網頁摘要', reading: '閱讀工作區'} : zh ? {protection: '防护详情', downloads: '下载中心', summary: '网页摘要', reading: '阅读工作区'} :
+        {protection: 'Protection details', downloads: 'Downloads', summary: 'Page summary', reading: 'Reading workspace'};
+    getRequiredElement('workspace-title').textContent = names[workspace]!;
+    getRequiredElement('workspace-settings-link').textContent = settingsText('Aegis 功能设置', 'Aegis settings', 'Aegis 功能設定');
+    document.title = names[workspace]!;
+    getRequiredElement('workspace-navigation').hidden = false;
+    if (workspace === 'reading') {
+      const frame = getRequiredElement<HTMLIFrameElement>('reading-workspace-frame');
+      frame.parentElement!.hidden = false;
+      frame.title = names['reading']!;
+      frame.src = 'chrome-untrusted://aegis-agent/?view=reading';
+      window.addEventListener('message', event => {
+        if (event.source !== frame.contentWindow || event.origin !== 'chrome-untrusted://aegis-agent' ||
+            event.data?.type !== 'aegis-workspace-height') return;
+        const height = event.data.height;
+        if (typeof height === 'number' && Number.isFinite(height)) frame.style.height = Math.max(400, Math.min(24000, height)) + 'px';
+      });
+    }
   }
   document.querySelector<AegisDownloadPanelElement>('aegis-download-panel')
       ?.setRequestHandler(requestSettings);
@@ -1594,5 +1661,26 @@ document.addEventListener('DOMContentLoaded', () => {
     new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
     reportHeight();
   }
-  void init().catch(error => showResult(String(error)));
+  const main = document.querySelector('main')!; main.inert = true;
+  const loading = document.createElement('section'); loading.setAttribute('role', 'status');
+  loading.textContent = settingsText('正在读取配置…', 'Loading settings…', '正在讀取設定…');
+  main.before(loading);
+  void init().then(() => { main.inert = false; loading.remove(); }).catch(() => {
+    loading.textContent = settingsText('配置读取失败。请重试后再修改。', 'Settings could not be loaded. Retry before editing.', '設定讀取失敗。請重試後再修改。');
+    const retry = document.createElement('button'); retry.type = 'button';
+    retry.textContent = settingsText('重试', 'Retry', '重試'); retry.onclick = () => location.reload(); loading.append(retry);
+  });
+});
+
+// 只接受统一设置父页面的查找请求，不接受网页发送的消息。
+window.addEventListener('message', event => {
+  if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
+  document.querySelectorAll('[data-search-match]').forEach(node => node.removeAttribute('data-search-match'));
+  const query = event.data.query.trim().toLocaleLowerCase();
+  if (!query) return;
+  const target = [...document.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(query));
+  if (!target) return;
+  let ancestor = target.parentElement;
+  while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
+  target.dataset['searchMatch'] = 'true'; target.scrollIntoView({block: 'center'});
 });

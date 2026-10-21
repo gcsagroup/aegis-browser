@@ -22,6 +22,7 @@ for (const endpoint of ['http://127.0.0.1:57212/v1', 'https://model.example.test
     requestSettings: async () => ({privacyAi: true, isAndroid: false}),
     withRendererPolicyWorkerStatus: value => value,
     applyStatus() {}, bindToggle() {}, listenSettingsStatus() {},
+    settingsText: zh => zh, getRequiredElement: field,
     actionButton: field, selectField: field, textField: field,
     isLocalModelEndpoint: value => value.startsWith('http://127.0.0.1'),
     loadModels: async () => {requests++;},

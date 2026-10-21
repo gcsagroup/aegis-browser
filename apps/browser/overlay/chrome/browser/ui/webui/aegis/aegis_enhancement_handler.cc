@@ -160,7 +160,7 @@ void AegisEnhancementHandler::Request(const base::ListValue& args) {
             weak_.GetWeakPtr(), std::move(callback)));
     return;
   }
-  if (op == "markdown-site" || op == "reading-preferences") {
+  if (op == "markdown-site" || op == "markdown-site-remove" || op == "reading-preferences") {
     store->Mutate(
         r, base::BindOnce(
                [](base::WeakPtr<AegisEnhancementHandler> self,

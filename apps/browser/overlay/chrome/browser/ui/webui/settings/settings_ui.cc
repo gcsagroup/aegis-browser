@@ -259,19 +259,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
   html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
   html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");
-  html_source->AddString("aegisAgentSettingsTitle", chinese ? (traditional ? "助手模型與本機翻譯" : "助手模型与本机翻译") : "Assistant models and local translation");
+  html_source->AddString("aegisAgentSettingsTitle", chinese ? (traditional ? "助手模型設定" : "助手模型设置") : "Assistant model settings");
   html_source->AddString("aegisSharedModelDescription", chinese ? (traditional ? "摘要與助手共用基礎模型連線；儲存任一模型表單會更新這個連線。助手的模型池與路由、TypeSafe 金鑰另行管理。" : "摘要与助手共用基础模型连接；保存任一模型表单会更新这个连接。助手的模型池与路由、TypeSafe 密钥另行管理。") : "Summaries and the assistant share the base model connection. Saving either model form updates that connection. The assistant model pool, routing and TypeSafe key are managed separately.");
-  html_source->AddString("aegisEnhancementsDescription", chinese ? (traditional ? "網站規則、使用者腳本與 AI 編寫" : "网站规则、用户脚本与 AI 编写") : "Site rules, user scripts and AI authoring");
-  html_source->AddString("aegisReadingDescription", chinese ? (traditional ? "閱讀外觀、Markdown、圖片權限與閱讀庫" : "阅读外观、Markdown、图片权限与阅读库") : "Reading appearance, Markdown, image permissions and library");
+  html_source->AddString("aegisEnhancementsDescription", chinese ? (traditional ? "網站規則與腳本管理入口" : "网站规则与脚本管理入口") : "Site rules and script manager");
+  html_source->AddString("aegisReadingDescription", chinese ? (traditional ? "預設外觀、自動預覽網站與翻譯語言包" : "默认外观、自动预览网站与翻译语言包") : "Default appearance, automatic previews and language packs");
   html_source->AddString("aegisGesturesDescription", chinese ? (traditional ? "手勢動作、軌跡、網站例外與練習" : "手势动作、轨迹、网站例外与练习") : "Actions, trails, site exceptions and practice");
-  html_source->AddString("aegisAiDescription", chinese ? (traditional ? "助手與摘要模型、模型池與本機翻譯" : "助手与摘要模型、模型池与本机翻译") : "Assistant and summary models, model pool and local translation");
-  html_source->AddString("aegisDownloadsDescription", chinese ? (traditional ? "鏡像、種子、磁力連結與下載設定" : "镜像、种子、磁力链接与下载配置") : "Mirrors, torrents, magnet links and download preferences");
+  html_source->AddString("aegisAiDescription", chinese ? (traditional ? "助手、摘要、共用連線與模型池" : "助手、摘要、共用连接与模型池") : "Assistant, summaries, shared connection and model pool");
+  html_source->AddString("aegisDownloadsDescription", chinese ? (traditional ? "並行下載策略與種子新任務預設值" : "并行下载策略与种子新任务默认值") : "Parallel download policy and torrent task defaults");
   html_source->AddString("aegisToolsDescription", chinese ? (traditional ? "本機 AI 工具連線、權限與連線狀態" : "本机 AI 工具连接、权限与连接状态") : "Local AI tool access, permissions and connection status");
   html_source->AddString("aegisEnhancementsTitle", chinese ? (traditional ? "網站增強與腳本" : "网站增强与脚本") : "Website enhancements and scripts");
   html_source->AddString("aegisReadingTitle", chinese ? (traditional ? "閱讀與 Markdown" : "阅读与 Markdown") : "Reading and Markdown");
   html_source->AddString("aegisGesturesTitle", chinese ? (traditional ? "滑鼠手勢" : "鼠标手势") : "Mouse gestures");
   html_source->AddString("aegisPrivacyTitle", chinese ? (traditional ? "隱私與防護" : "隐私与防护") : "Privacy and protection");
-  html_source->AddString("aegisPrivacyDescription", chinese ? (traditional ? "追蹤、指紋、Cookie、過濾規則與防護記錄" : "跟踪、指纹、Cookie、过滤规则与防护记录") : "Tracking, fingerprints, cookies, filter lists and protection history");
+  html_source->AddString("aegisPrivacyDescription", chinese ? (traditional ? "網頁防護、追蹤清理與過濾規則" : "网页防护、跟踪清理与过滤规则") : "Page protection, tracking cleanup and filter lists");
   // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
   html_source->AddString("aegisLocale",
                          g_browser_process->GetApplicationLocale());
