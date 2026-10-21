@@ -16,6 +16,7 @@ import {loadTimeData} from './i18n_setup.js';
 export interface SettingsRoutes {
   AEGIS: Route;
   AEGIS_AI: Route;
+  AEGIS_EXPERIMENTS: Route;
   AEGIS_DOWNLOADS: Route;
   AEGIS_TOOLS: Route;
   AEGIS_ENHANCEMENTS: Route;

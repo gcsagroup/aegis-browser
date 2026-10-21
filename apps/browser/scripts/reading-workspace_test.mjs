@@ -52,6 +52,16 @@ const workspace = new exports.ReadingWorkspace(proxy);
 const el = id => document.getElementById('reading-' + id);
 const event = (node, type) => node.dispatchEvent(new dom.window.Event(type));
 const flush = () => new Promise(resolve => setImmediate(resolve));
+// 实验分类独立展开时回读原开关，不依赖翻译卡片，也不启动本机模型。
+reply.minimEnabled = true; reply.phishlangEnabled = false;
+el('research-settings').open = true; event(el('research-settings'), 'toggle');
+await flush();
+assert.equal(calls.at(-1).op, 'list');
+assert.equal(el('minim').checked, true);
+assert.equal(el('phishlang').checked, false);
+assert.equal(localCalls.length, 0);
+reply.minimEnabled = false;
+el('research-settings').open = false;
 await workspace.refresh();
 assert.equal(el('tabs').querySelector('img'), null);
 assert.equal(el('tabs').querySelector('span').textContent.includes(fixture.title), true);

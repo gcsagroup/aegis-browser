@@ -254,6 +254,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   const bool traditional = locale == "zh-TW" || locale == "zh-HK";
   html_source->AddString("aegisSettingsTitle", chinese ? (traditional ? "Aegis 功能設定" : "Aegis 功能设置") : "Aegis settings");
   html_source->AddString("aegisSettingsDescription", chinese ? (traditional ? "集中管理 Aegis 的防護、網站增強、閱讀、手勢、AI 與下載功能。" : "集中管理 Aegis 的防护、网站增强、阅读、手势、AI 与下载功能。") : "Manage Aegis protection, website enhancements, reading, gestures, AI and downloads.");
+  html_source->AddString("aegisExperimentsTitle", chinese ? (traditional ? "實驗功能" : "实验功能") : "Experimental features");
+  html_source->AddString("aegisExperimentsDescription", chinese ? (traditional ? "MINIM、PhishLang 段落分析實驗，預設關閉" : "MINIM、PhishLang 段落分析实验，默认关闭") : "MINIM and PhishLang paragraph analysis experiments, off by default");
   html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
   html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
   html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");
@@ -262,7 +264,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   html_source->AddString("aegisEnhancementsDescription", chinese ? (traditional ? "網站規則、使用者腳本與 AI 編寫" : "网站规则、用户脚本与 AI 编写") : "Site rules, user scripts and AI authoring");
   html_source->AddString("aegisReadingDescription", chinese ? (traditional ? "閱讀外觀、Markdown、圖片權限與閱讀庫" : "阅读外观、Markdown、图片权限与阅读库") : "Reading appearance, Markdown, image permissions and library");
   html_source->AddString("aegisGesturesDescription", chinese ? (traditional ? "手勢動作、軌跡、網站例外與練習" : "手势动作、轨迹、网站例外与练习") : "Actions, trails, site exceptions and practice");
-  html_source->AddString("aegisAiDescription", chinese ? (traditional ? "助手與摘要模型、模型池、本機翻譯與實驗功能" : "助手与摘要模型、模型池、本机翻译与实验功能") : "Assistant and summary models, model pool, local translation and experiments");
+  html_source->AddString("aegisAiDescription", chinese ? (traditional ? "助手與摘要模型、模型池與本機翻譯" : "助手与摘要模型、模型池与本机翻译") : "Assistant and summary models, model pool and local translation");
   html_source->AddString("aegisDownloadsDescription", chinese ? (traditional ? "鏡像、種子、磁力連結與下載設定" : "镜像、种子、磁力链接与下载配置") : "Mirrors, torrents, magnet links and download preferences");
   html_source->AddString("aegisToolsDescription", chinese ? (traditional ? "本機 AI 工具連線、權限與連線狀態" : "本机 AI 工具连接、权限与连接状态") : "Local AI tool access, permissions and connection status");
   html_source->AddString("aegisEnhancementsTitle", chinese ? (traditional ? "網站增強與腳本" : "网站增强与脚本") : "Website enhancements and scripts");

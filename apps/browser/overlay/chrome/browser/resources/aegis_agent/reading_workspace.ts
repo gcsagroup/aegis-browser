@@ -100,6 +100,9 @@ export class ReadingWorkspace {
       }
     });
     element('direction').addEventListener('change', () => void this.packageAction('status'));
+    element('research-settings').addEventListener('toggle', () => {
+      if (element<HTMLDetailsElement>('research-settings').open) void this.refresh();
+    });
     element('package-download').addEventListener('click', () => void this.packageAction('download'));
     element('package-remove').addEventListener('click', () => void this.packageAction('remove'));
     element('local-cancel').addEventListener('click', () => this.local.cancel());

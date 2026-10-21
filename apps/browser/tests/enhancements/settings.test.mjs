@@ -48,7 +48,7 @@ test('完整迁移防护、摘要、工具和下载控件，没有重复 ID 或�
   const agent = new JSDOM(read('aegis_agent/agent.html'));
   for (const id of ['model-provider','model-base-url','model-name','model-api-key','model-options','model-routing-mode','model-quality-score','model-latency-score','model-cost','model-efforts','model-profile-default','model-profile-basic','model-profile-strong','model-input-price','model-cache-price','model-output-price','model-supports-tools','model-supports-long-context','model-supports-strong-reasoning','model-pool','typesafe-enabled','typesafe-api-key','clear-typesafe-key-button','reading-direction','reading-package-download','reading-package-remove','reading-local-cancel','reading-minim','reading-phishlang']) {
     const el = agent.window.document.getElementById(id);
-    assert(el?.closest('#model-details, #reading-ai-settings, #typesafe-details'), `助手设置遗漏 ${id}`);
+    assert(el?.closest('#model-details, #reading-ai-settings, #typesafe-details, #reading-research-settings'), `助手设置遗漏 ${id}`);
   }
   dom.window.close(); agent.window.close();
 });
@@ -107,15 +107,17 @@ test('分类页错误显示在当前可见区域，不藏到摘要表单里', ()
   dom.window.close();
 });
 
-test('设置侧栏只有一个入口，七个分类及原来的四个设置地址均可到达', () => {
+test('设置侧栏只有一个入口，八个分类及原来的四个设置地址均可到达', () => {
   const menu = new JSDOM(read('settings/settings_menu/settings_menu.html'));
   assert.deepEqual([...menu.window.document.querySelectorAll('a[href^="/aegis"]')].map(el => el.getAttribute('href')), ['/aegis']);
   const html = read('settings/aegis_page/aegis_page.html');
   const route = read('settings/route.ts');
-  for (const page of ['Privacy','Enhancements','Reading','Gestures','Ai','Downloads','Tools']) {
+  for (const page of ['Privacy','Enhancements','Reading','Gestures','Ai','Downloads','Tools','Experiments']) {
     assert(html.includes(`href="/aegis${page}"`));
     assert(route.includes(`createSection('/aegis${page}'`));
   }
+  assert(!read('settings/privacy_page/privacy_page.html').includes('aegisLinkRow'));
+  assert(!read('settings/privacy_page/privacy_page.ts').includes('onAegisSettingsClick_'));
   assert(!html.includes('settings:code'));
   assert(!html.includes('settings:appearance'));
   menu.window.close();
@@ -134,21 +136,34 @@ test('设置模式显示完整助手配置，移除隐藏任务输入焦点，�
   const tree = ts.createSourceFile('agent.ts', read('aegis_agent/agent.ts'), ts.ScriptTarget.Latest, true);
   const fn = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'initializeSettingsPresentation');
   assert(fn);
-  for (const settingsMode of [false, true]) {
+  for (const settingsSection of ['', 'ai', 'experiments']) {
+    const settingsMode = settingsSection !== '';
     const dom = new JSDOM(read('aegis_agent/agent.html'), {url: 'https://agent.invalid/', runScripts: 'outside-only'});
     const w = dom.window; const messages = [];
     w.settingsMode = settingsMode;
+    w.settingsSection = settingsSection;
     w.element = id => w.document.getElementById(id);
     w.loadTimeData = {getBoolean: () => false, getString: () => 'Aegis 功能设置'};
     w.ResizeObserver = class {observe() {}};
     w.postMessage = (...args) => messages.push(args);
     w.eval(compile(fn.getText(tree)));
     w.initializeSettingsPresentation();
+    const style = w.document.createElement('style');
+    const css = read('aegis_agent/agent.css');
+    style.textContent = css.split('/* 桌面全局配置集中到设置中心')[1].split('*/')[1] +
+        css.slice(css.indexOf('#reading-view label:'), css.indexOf('#reading-tabs span'));
+    w.document.head.append(style);
+    assert.equal(w.getComputedStyle(w.element('reading-minim')).width, '16px');
+    assert.equal(w.getComputedStyle(w.element('reading-minim').closest('label')).display, 'flex');
+    for (const id of ['model-details','reading-ai-settings','typesafe-details','reading-research-settings']) {
+      const expected = settingsSection === 'experiments' ? id === 'reading-research-settings' : settingsSection === 'ai' && id !== 'reading-research-settings';
+      assert.equal(w.getComputedStyle(w.element(id)).display !== 'none', expected, `${settingsSection}: ${id}`);
+      assert.equal(w.element(id).open, expected);
+    }
     assert.equal(w.document.body.classList.contains('settings-only'), settingsMode);
     assert.equal(w.document.body.classList.contains('central-settings'), !settingsMode);
     assert.equal(w.element('aegis-settings-link').hidden, settingsMode);
     if (settingsMode) {
-      for (const id of ['model-details','reading-ai-settings','typesafe-details']) assert(w.element(id).open);
       assert(!w.element('goal').hasAttribute('autofocus'));
       assert.equal(messages.length, 1);
       assert.equal(messages[0][0].type, 'aegis-settings-height');
@@ -185,12 +200,14 @@ test('设置搜索能找到嵌入分类里的过滤列表、模型密钥、语�
   for (const [mode, terms] of Object.entries({
     privacy: ['过滤列表', '挖矿', 'fingerprint', '過濾規則'],
     ai: ['网页摘要', 'API 密钥', '模型池', '语言包', 'TypeSafe'],
+    experiments: ['实验功能', 'MINIM', 'PhishLang', '段落评分', '實驗模型'],
     downloads: ['限速', '磁力链接', 'DHT'],
     tools: ['工具连接', '权限', 'CDP'],
   })) {
     const owner = {mode, shadowRoot: {textContent: '', querySelectorAll: () => []}};
     for (const query of terms) assert.equal((await search.call(owner, query)).matchCount, 1, `${mode}: ${query}`);
     assert.equal((await search.call(owner, '不存在的功能')).matchCount, 0);
+    if (mode === 'ai') assert.equal((await search.call(owner, 'MINIM')).matchCount, 0);
   }
 });
 

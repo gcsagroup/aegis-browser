@@ -23,7 +23,7 @@ export class SettingsAegisPageElement extends PolymerElement {
   private cleanup_: (() => void)|undefined;
   protected isMode_(mode: string, expected: string): boolean { return mode === expected; }
   protected pageTitle_(mode: string): string {
-    return loadTimeData.getString({home: 'aegisSettingsTitle', ai: 'aegisAiTitle', downloads: 'aegisDownloadsTitle', tools: 'aegisToolsTitle', enhancements: 'aegisEnhancementsTitle', reading: 'aegisReadingTitle', gestures: 'aegisGesturesTitle', privacy: 'aegisPrivacyTitle'}[mode] || 'aegisEnhancementsTitle');
+    return loadTimeData.getString({home: 'aegisSettingsTitle', ai: 'aegisAiTitle', experiments: 'aegisExperimentsTitle', downloads: 'aegisDownloadsTitle', tools: 'aegisToolsTitle', enhancements: 'aegisEnhancementsTitle', reading: 'aegisReadingTitle', gestures: 'aegisGesturesTitle', privacy: 'aegisPrivacyTitle'}[mode] || 'aegisEnhancementsTitle');
   }
   override connectedCallback() {
     super.connectedCallback();
@@ -95,7 +95,8 @@ export class SettingsAegisPageElement extends PolymerElement {
     const categoryKeywords: Record<string, string> = {
       home: 'Aegis 功能 设置 settings',
       privacy: '跟踪器拦截 钓鱼网站防护 指纹防护 挖矿脚本检测 清理跟踪参数 Cookie 伪装跟踪防护 跳转跟踪防护 本地隐私处理 自动更新过滤列表 广告与跟踪过滤规则 防护记录 隱私 指紋 過濾規則 phishing privacy tracking fingerprint filter lists mining',
-      ai: 'AI 助手 网页摘要 模型池 模型路由 服务地址 API 密钥 自定义模型 模型列表 质量 延迟 费用 推理档位 TypeSafe 本机翻译 语言包 实验模型 MINIM PhishLang 網頁摘要 語言包 模型連線 金鑰 model pool routing API key endpoint translation language pack',
+      ai: 'AI 助手 网页摘要 模型池 模型路由 服务地址 API 密钥 自定义模型 模型列表 质量 延迟 费用 推理档位 TypeSafe 本机翻译 语言包 網頁摘要 語言包 模型連線 金鑰 model pool routing API key endpoint translation language pack',
+      experiments: '实验功能 实验模型 MINIM PhishLang 段落评分 风险分析 默认关闭 實驗功能 實驗模型 風險分析 experimental models paragraph scoring risk analysis',
       downloads: '下载 镜像 种子 磁力链接 DHT PEX 限速 下载记录 下載 種子 磁力連結 torrent magnet metalink download bandwidth',
       tools: '本机工具连接 允许本机 AI 工具读取和操作网页 连接状态 权限 本機工具連線 CDP AI tools connection permissions',
     };

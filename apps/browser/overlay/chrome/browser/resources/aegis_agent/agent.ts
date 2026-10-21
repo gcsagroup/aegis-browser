@@ -44,7 +44,9 @@ let activeView: 'task'|'automation'|'research'|'reading' = 'task';
 let researchTabs: ResearchTab[] = [];
 const selectedResearchTabs = new Set<number>();
 const launchParameters = new URLSearchParams(window.location.search);
-const settingsMode = launchParameters.get('settings') === '1';
+const settingsSection = launchParameters.get('settings') === 'experiments' ? 'experiments' :
+    launchParameters.get('settings') === '1' ? 'ai' : '';
+const settingsMode = settingsSection !== '';
 const launchRequest = settingsMode ? {goal: '', autoStart: false} : consumeLaunchRequest();
 const launchGoal = launchRequest.goal;
 const launchAutoStart = launchRequest.autoStart;
@@ -1413,13 +1415,16 @@ async function withBusy(
 function initializeSettingsPresentation() {
   const desktop = !loadTimeData.getBoolean('isAndroid');
   document.body.classList.toggle('settings-only', settingsMode);
+  document.body.dataset['settingsSection'] = settingsSection;
   document.body.classList.toggle('central-settings', desktop && !settingsMode);
   element('aegis-settings-link').textContent = loadTimeData.getString('aegisSettingsTitle');
   element('aegis-settings-link').hidden = !desktop || settingsMode;
   if (!settingsMode) return;
   // 隐藏的任务输入框不能抢走设置页焦点。
   element('goal').removeAttribute('autofocus');
-  for (const id of ['model-details', 'reading-ai-settings', 'typesafe-details']) {
+  const sections = settingsSection === 'experiments' ? ['reading-research-settings'] :
+      ['model-details', 'reading-ai-settings', 'typesafe-details'];
+  for (const id of sections) {
     element<HTMLDetailsElement>(id).open = true;
   }
   const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',

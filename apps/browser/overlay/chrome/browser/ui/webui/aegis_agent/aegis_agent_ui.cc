@@ -160,7 +160,7 @@ void AddStrings(content::WebUIDataSource *source) {
                  const char *zh_tw) {
     source->AddString(key, Localized(language, en, zh_cn, zh_tw));
   };
-  add("readingLocalSettings", "Local translation & experimental models", "本机翻译与实验模型设置", "本機翻譯與實驗模型設定");
+  add("readingLocalSettings", "Local translation settings", "本机翻译设置", "本機翻譯設定");
   add("readingLocalHelp", "Text stays on this device. Download a language pack once, then translate offline. Only the selected direction is supported.", "正文仅在本机处理。先下载对应语言包，之后可离线翻译；请按原文语言选择方向。", "正文僅在本機處理。先下載對應語言包，之後可離線翻譯；請按原文語言選擇方向。");
   add("readingDirection", "Translation direction", "翻译方向", "翻譯方向");
   add("readingDownloadPack", "Download language pack", "下载语言包", "下載語言包");
