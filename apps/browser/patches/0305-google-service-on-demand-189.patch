@@ -163,7 +163,7 @@ index 0000000000000000000000000000000000000000..31327695a3334ba9859d588da98a0bc5
 +}
 +}  // namespace aegis
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 7b6aa449b46270cbcb60c1d5f58d8021474fde0a..56d155673b7c453f1f5e7a7e1b5be8891f1dd35c 100644
+index a10268f3ffbcdbc61857afb3841b1b7bfd5488cf..78854fc11bb0dc2f4d02cff8eff39aa05596dd6c 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
 @@ -1028,6 +1028,7 @@ static_library("ui") {
@@ -183,7 +183,7 @@ index 7b6aa449b46270cbcb60c1d5f58d8021474fde0a..56d155673b7c453f1f5e7a7e1b5be889
      "//net",
      "//services/device/public/cpp:device_features",
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index 92e31f0b2ae0f761e565f51eb3b5ca2744339990..fe0a3efec372d47e876ae683541cb105ac0efa5e 100644
+index 28da9862949113248a93566cc9dc57df6ad3c6b0..c1a1639cdfbcaa0ea843e5ac4c34cc711ff3353c 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
 @@ -2240,7 +2240,8 @@ void BrowserCommandController::UpdateCommandsForTabState() {
@@ -197,7 +197,7 @@ index 92e31f0b2ae0f761e565f51eb3b5ca2744339990..fe0a3efec372d47e876ae683541cb105
                                  can_translate);
  
 diff --git a/chrome/browser/ui/browser_commands.cc b/chrome/browser/ui/browser_commands.cc
-index 19b58e11263f194a50736c6b6fe8a681eab93f5b..5c8eb5eceafa5ef4693ae1846d6d1933650fc5d6 100644
+index 14f5a7598dd8bf5b9df578f56c3365a7dd6f96ce..9d94b370a73d25f6615bb05931ff437e4fd421aa 100644
 --- a/chrome/browser/ui/browser_commands.cc
 +++ b/chrome/browser/ui/browser_commands.cc
 @@ -102,6 +102,7 @@
@@ -241,7 +241,7 @@ index 19b58e11263f194a50736c6b6fe8a681eab93f5b..5c8eb5eceafa5ef4693ae1846d6d1933
    // focus here as the user has intentionally opened the bubble.
    web_contents->ClearFocusedElement();
 diff --git a/chrome/browser/ui/signin/BUILD.gn b/chrome/browser/ui/signin/BUILD.gn
-index 31faff42afc0bb54c33519a414fe7b2952e1c8ca..59f9eb2e64216abb375efb483d3b6d2ceea15229 100644
+index 8dcbb1feee02e518ceab99b67bfa69f09b47a479..a9c3823a83c6702372f3b8c1ebddcce2bbec2b43 100644
 --- a/chrome/browser/ui/signin/BUILD.gn
 +++ b/chrome/browser/ui/signin/BUILD.gn
 @@ -91,6 +91,7 @@ source_set("impl") {
@@ -253,7 +253,7 @@ index 31faff42afc0bb54c33519a414fe7b2952e1c8ca..59f9eb2e64216abb375efb483d3b6d2c
      "//chrome/browser/ui/views/frame:toolbar_button_provider",
      "//chrome/browser/ui/webui/signin",
 diff --git a/chrome/browser/ui/signin/signin_view_controller.cc b/chrome/browser/ui/signin/signin_view_controller.cc
-index bf67e58c15162f77c0f67ea7296852ced68e93f4..7eed75ac8b5f2227cd46948ebabe0473fda8bf0e 100644
+index cc0e6e86125207b546d30a8134dba1f0942a830b..da047dc6948e30d1c8d05b24a3db1969e11e5648 100644
 --- a/chrome/browser/ui/signin/signin_view_controller.cc
 +++ b/chrome/browser/ui/signin/signin_view_controller.cc
 @@ -77,6 +77,7 @@
@@ -338,7 +338,7 @@ index c232dd0c7ab94325ce933d5ab096dedd87965862..1113d4ed2ef35db7000378a4410baaa9
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/components/translate/core/browser/translate_manager.cc b/components/translate/core/browser/translate_manager.cc
-index fe8a2397eba46e54e3d871260675c8555f8e4d93..6dc320f49b36dcd84454450058540d1209efbd9c 100644
+index e4eb491c4dbc2ef88bb231a0f0b6868bd0d20c73..12a0bcb655467960aa4f20d77d7a21777fc9648b 100644
 --- a/components/translate/core/browser/translate_manager.cc
 +++ b/components/translate/core/browser/translate_manager.cc
 @@ -186,7 +186,8 @@ void TranslateManager::InitiateTranslation(std::string_view page_lang) {

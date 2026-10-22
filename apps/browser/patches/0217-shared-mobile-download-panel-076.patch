@@ -195,7 +195,7 @@ index 9c12cebab32dbff2189cbe5df809892cf75a6978..8868dbcbd5f590d4c92d91bb036603dd
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/ui/webui/resources/BUILD.gn b/ui/webui/resources/BUILD.gn
-index 44b39cda6816b726d1414fb0c5490956f7a78909..53a8f4e755dc6933324280aa2c6303c8505f329b 100644
+index e044096934a47ae8abcc2723944b95fa1861320f..c1d4f55b2d63b5663f8a6cc177a113824bb8c606 100644
 --- a/ui/webui/resources/BUILD.gn
 +++ b/ui/webui/resources/BUILD.gn
 @@ -33,6 +33,7 @@ generate_grd("build_grd") {

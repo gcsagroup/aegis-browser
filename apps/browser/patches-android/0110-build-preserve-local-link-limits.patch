@@ -15,7 +15,7 @@ Content-Transfer-Encoding: 8bit
  3 files changed, 17 insertions(+)
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index 8a60d7061bbfbeea1a15992ee0d9f2389b742f6e..e0c798080f4bdae7aed228a725d6212db14ba8b7 100644
+index d98c86e5dace91937c62c5428084686c666ab0d4..90ade40a4addff98301d469ec0e0cfedff355a33 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
 @@ -1358,6 +1358,14 @@ if (is_win) {
@@ -57,7 +57,7 @@ index 5543d5affb08d914e41616bf4df1b5ca31a9ba15..0a6c89102a9ca5fb0f3cb1f5db43bdca
      "aegis_ai_control_unittest.cc",
      "aegis_download_prefs_unittest.cc",
 diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
-index eebdb636122e0a000772ddcad7d5bf5573a9d34b..5ec121b4b3b35d36887aeadfea77b427ab23e1c2 100644
+index f8f5d5f2b6e1377e5fc540ba552fc85f6df3a912..3107ad1c0affc4028897db802b6d189a4dd892e7 100644
 --- a/chrome/test/BUILD.gn
 +++ b/chrome/test/BUILD.gn
 @@ -1627,6 +1627,10 @@ if (!is_android) {

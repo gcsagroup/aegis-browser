@@ -9,12 +9,64 @@ Content-Transfer-Encoding: 8bit
 未提交工作区补丁，基于 07c1d76177c3f3525ad12d7eee74988ef3691d48。
 零值标记表示尚无对应提交，不变更源仓库分支或索引。
 ---
+ chrome/app/chrome_command_ids.h                    |    2 +
+ chrome/browser/aegis/BUILD.gn                      |    7 +
+ .../aegis/enhancements/enhancement_browsertest.cc  |  246 +
+ .../aegis/enhancements/enhancement_store.cc        |  572 ++
+ .../browser/aegis/enhancements/enhancement_store.h |   65 +
+ .../enhancements/enhancement_store_unittest.cc     |  189 +
+ .../aegis/enhancements/enhancement_tab_helper.cc   |  720 +++
+ .../aegis/enhancements/enhancement_tab_helper.h    |  103 +
+ chrome/browser/resources/aegis/BUILD.gn            |   35 +
+ chrome/browser/resources/aegis/aegis.html          |    1 +
+ chrome/browser/resources/aegis/aegis.ts            |    3 +
+ chrome/browser/resources/aegis/enhancements.css    |  191 +
+ chrome/browser/resources/aegis/enhancements.html   |  106 +
+ chrome/browser/resources/aegis/enhancements.js     |  358 ++
+ .../resources/aegis/enhancements_shared/core.js    |  201 +
+ .../aegis/enhancements_shared/script_runtime.js    |   93 +
+ .../aegis/enhancements_shared/site_rules.js        |  151 +
+ .../tests/matching-vectors.json                    |   21 +
+ .../enhancements_shared/vendor/DOMPurify-LICENSE   |  202 +
+ .../aegis/enhancements_shared/vendor/NOTICE.txt    |    8 +
+ .../aegis/enhancements_shared/vendor/acorn-LICENSE |   21 +
+ .../aegis/enhancements_shared/vendor/acorn.js      | 6262 ++++++++++++++++++++
+ .../enhancements_shared/vendor/highlight-LICENSE   |   29 +
+ .../enhancements_shared/vendor/highlight.min.js    |    3 +
+ .../aegis/enhancements_shared/vendor/manifest.json |   42 +
+ .../enhancements_shared/vendor/markdown-it-LICENSE |   22 +
+ .../enhancements_shared/vendor/markdown-it.min.js  |   14 +
+ .../aegis/enhancements_shared/vendor/purify.min.js |    7 +
+ .../enhancements_shared/vendor/task-lists-LICENSE  |   13 +
+ .../enhancements_shared/vendor/task-lists.min.js   |    2 +
+ .../resources/aegis/enhancements_shared/viewer.css |  342 ++
+ .../aegis/enhancements_shared/viewer.html          |   53 +
+ .../resources/aegis/enhancements_shared/viewer.js  |  305 +
+ chrome/browser/resources/aegis/markdown.html       |   54 +
+ chrome/browser/resources/aegis/markdown.js         |  253 +
+ chrome/browser/resources/aegis_agent/agent.html    |    2 +
+ chrome/browser/resources/aegis_agent/agent.ts      |    6 +
+ chrome/browser/ui/browser_command_controller.cc    |    9 +
+ chrome/browser/ui/tab_helpers.cc                   |    2 +
+ chrome/browser/ui/toolbar/app_menu_model.cc        |    3 +
+ chrome/browser/ui/webui/aegis/BUILD.gn             |    7 +
+ .../ui/webui/aegis/aegis_enhancement_handler.cc    |  288 +
+ .../ui/webui/aegis/aegis_enhancement_handler.h     |   24 +
+ chrome/browser/ui/webui/aegis/aegis_markdown_ui.cc |   38 +
+ chrome/browser/ui/webui/aegis/aegis_markdown_ui.h  |   16 +
+ chrome/browser/ui/webui/aegis/aegis_ui.cc          |    5 +
+ .../ui/webui/aegis_agent/reading_workspace.cc      |   12 +-
+ .../ui/webui/chrome_untrusted_web_ui_configs.cc    |    6 +
+ chrome/browser/ui/webui/help/aegis_github_update.h |    4 +-
+ tools/gritsettings/resource_ids.spec               |    2 +-
+ 50 files changed, 11116 insertions(+), 4 deletions(-)
+
 diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
-index a53651c7424231d1b1e3f8d6c0445b7b516c53e6..574975ef3cb7fa2840f3b820b1710ccacd37429d 100644
+index 19c2be7343897fc516a30cff1abc2ce3bd447579..22ea1f03a01e5a474186e96d8c74875a722caac0 100644
 --- a/chrome/app/chrome_command_ids.h
 +++ b/chrome/app/chrome_command_ids.h
-@@ -294,6 +294,8 @@
- #define IDC_CHROME_ENTERPRISE_RELEASE_NOTES 40305
+@@ -295,6 +295,8 @@
+ #define IDC_SHOW_TTC_MENU 40306
  #define IDC_SHOW_AEGIS                  40310
  #define IDC_SHOW_AEGIS_AGENT            40311
 +#define IDC_AEGIS_ENHANCEMENTS          40312
@@ -10999,10 +11051,10 @@ index 184ca43b9b10889f1e287c4b1f96f3b6e93bbf31..8071fe8d00074c701a69ca511718bd1d
    text('title', 'title');
    text('subtitle', 'subtitle');
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca2744339990 100644
+index 5597fa2616c6dfdf8705c559d36019eb2bc0d3a7..28da9862949113248a93566cc9dc57df6ad3c6b0 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1307,6 +1307,11 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1320,6 +1320,11 @@ void BrowserCommandController::HandleCommandWithDisposition(
          ShowAegisPage(webui::GetBrowserForOpeningWebUi(browser_));
        }
        break;
@@ -11014,7 +11066,7 @@ index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca27
      case IDC_SHOW_AEGIS_AGENT:
        SidePanelUI::From(browser_)->Show(
            SidePanelEntryId::kAegisAgent, SidePanelOpenTrigger::kAegisAgent);
-@@ -2108,6 +2113,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+@@ -2124,6 +2129,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
                                          !forced_incognito && !is_guest);
    command_updater->UpdateCommandEnabled(IDC_OPTIONS,
                                          !forced_incognito || is_guest);
@@ -11023,7 +11075,7 @@ index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca27
    command_updater->UpdateCommandEnabled(IDC_SHOW_AEGIS,
                                          IsAegisProfileSupported(profile));
    command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
-@@ -2432,6 +2439,8 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+@@ -2439,6 +2446,8 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
    command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
    command_updater_->UpdateCommandEnabled(
        IDC_SHOW_AEGIS, show_main_ui && IsAegisProfileSupported(profile()));
@@ -11033,7 +11085,7 @@ index b6b6d2bc0b5ea9fa1138426afe555d528b7c765f..92e31f0b2ae0f761e565f51eb3b5ca27
        IDC_SHOW_AEGIS_AGENT,
        show_main_ui &&
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 61d5a223d93af460ec9e5e26b159df3d7b7a6080..ee54be8cc9fd34941de5e52e7ba94e9468666129 100644
+index 655a8dc161af645046d1ac15a631f0a45760c325..7e50505cacb596871ee38701e4f4c7c78426b8bf 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
 @@ -18,6 +18,7 @@
@@ -11044,19 +11096,19 @@ index 61d5a223d93af460ec9e5e26b159df3d7b7a6080..ee54be8cc9fd34941de5e52e7ba94e94
  #endif
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
-@@ -453,6 +454,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+@@ -371,6 +372,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
    aegis::PhishTabHelper::CreateForWebContents(web_contents);
  #if !BUILDFLAG(IS_ANDROID)
    aegis::MouseGestureTabHelper::CreateForWebContents(web_contents);
 +  aegis::EnhancementTabHelper::CreateForWebContents(web_contents);
  #endif
-   ExternalProtocolObserver::CreateForWebContents(web_contents);
    favicon::CreateContentFaviconDriverForWebContents(web_contents);
+   FileSystemAccessPermissionRequestManager::CreateForWebContents(web_contents);
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index d980c3cbef4ea3cc8860bfb14ed513b487d93260..7b00b4f5bf6c0e17091cf4406a282dc75e519d72 100644
+index aeb48549ef67449fdfff184c48efd76d290a4c78..6911c047a3d428585ef02bdf32eccf78065c43db 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2350,6 +2350,9 @@ void AppMenuModel::Build() {
+@@ -2418,6 +2418,9 @@ void AppMenuModel::Build() {
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
    if (IsAegisProfileSupported(browser_->GetProfile())) {
@@ -11586,10 +11638,10 @@ index 5ec7e6d8c5a8bf00edfebf2bc8ed3bc82aad7011..c232dd0c7ab94325ce933d5ab096dedd
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 6d522634a991968e634e1bbdf4d677e998678f90..2152f779fc4d86aec0743456c98f103dc71f0df8 100644
+index 00c4f85d4003f3d0439d0b3ae798d79694933dd6..c28f02dcf7c672c3c01b1a888d9164afcb52ed0d 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
-@@ -888,7 +888,7 @@
+@@ -880,7 +880,7 @@
     "includes": [5160],
    },
    "<(SHARED_INTERMEDIATE_DIR)/chrome/browser/resources/aegis/resources.grd": {

@@ -8,19 +8,19 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/elevation_service/BUILD.gn             |   7 +
- .../install_static/chromium_install_modes.h   |  85 ++++++------
- .../install_static/install_util_unittest.cc   |   6 +-
- .../product_install_details_unittest.cc       |   5 +-
- .../user_data_dir_win_unittest.cc             |   4 +-
- .../elevated_tracing_service/BUILD.gn         |   7 +
- .../policy/tools/generate_policy_source.py    |   2 +-
- .../tools/generate_policy_source_test_data.py |   2 +-
- .../template_writers/writer_configuration.py  |  14 +-
- .../writers/adm_writer_unittest.py            | 124 +++++++++---------
- .../writers/plist_strings_writer_unittest.py  |  30 ++---
- .../writers/plist_writer_unittest.py          |  26 ++--
- .../writers/reg_writer_unittest.py            |  16 +--
+ chrome/elevation_service/BUILD.gn                  |   7 ++
+ chrome/install_static/chromium_install_modes.h     |  85 +++++++-------
+ chrome/install_static/install_util_unittest.cc     |   6 +-
+ .../product_install_details_unittest.cc            |   5 +-
+ .../install_static/user_data_dir_win_unittest.cc   |   4 +-
+ .../elevated_tracing_service/BUILD.gn              |   7 ++
+ components/policy/tools/generate_policy_source.py  |   2 +-
+ .../tools/generate_policy_source_test_data.py      |   2 +-
+ .../tools/template_writers/writer_configuration.py |  14 +--
+ .../writers/adm_writer_unittest.py                 | 124 ++++++++++-----------
+ .../writers/plist_strings_writer_unittest.py       |  30 ++---
+ .../writers/plist_writer_unittest.py               |  26 ++---
+ .../writers/reg_writer_unittest.py                 |  16 +--
  13 files changed, 166 insertions(+), 162 deletions(-)
 
 diff --git a/chrome/elevation_service/BUILD.gn b/chrome/elevation_service/BUILD.gn
@@ -174,10 +174,10 @@ index a6d969df56d13d94eaa968934f909d6fd23b5f2f..01ad783e7a9556ae16348cdc33061feb
  });
  
 diff --git a/chrome/install_static/install_util_unittest.cc b/chrome/install_static/install_util_unittest.cc
-index 6c68b239c46193182068e2883ea32e2ed308ba2b..39d675f843f405a87329350f3d54dbb175d763af 100644
+index 73d053efd3a676747e41120450e7198d444468c3..6f407f18efa2e2dcaa589e6a489d2c69b6177d7a 100644
 --- a/chrome/install_static/install_util_unittest.cc
 +++ b/chrome/install_static/install_util_unittest.cc
-@@ -361,7 +361,7 @@ class InstallStaticUtilTest
+@@ -362,7 +362,7 @@ class InstallStaticUtilTest
      static constexpr wchar_t kPolicyKey[] =
          L"Software\\Policies\\Google\\Chrome";
  #else
@@ -186,22 +186,22 @@ index 6c68b239c46193182068e2883ea32e2ed308ba2b..39d675f843f405a87329350f3d54dbb1
  #endif
  
      ASSERT_EQ(ERROR_SUCCESS,
-@@ -416,7 +416,7 @@ TEST_P(InstallStaticUtilTest, GetChromeInstallSubDirectory) {
+@@ -417,7 +417,7 @@ TEST_P(InstallStaticUtilTest, GetChromeInstallSubDirectory) {
    // The directory strings for the brand's install modes; parallel to
    // kInstallModes.
-   static constexpr const wchar_t* kInstallDirs[] = {
+   static constexpr auto kInstallDirs = std::to_array<const wchar_t*>({
 -      L"Chromium",
 +      L"GCSA Aegis",
-   };
+   });
  #endif
    static_assert(std::size(kInstallDirs) == NUM_INSTALL_MODES,
-@@ -527,7 +527,7 @@ TEST_P(InstallStaticUtilTest, GetBaseAppId) {
+@@ -531,7 +531,7 @@ TEST_P(InstallStaticUtilTest, GetBaseAppId) {
  #else
    // The base app ids for the brand's install modes; parallel to kInstallModes.
-   static constexpr const wchar_t* kBaseAppIds[] = {
+   static constexpr auto kBaseAppIds = std::to_array<const wchar_t*>({
 -      L"Chromium",
 +      L"app.gcsa.aegis",
-   };
+   });
  #endif
    static_assert(std::size(kBaseAppIds) == NUM_INSTALL_MODES,
 diff --git a/chrome/install_static/product_install_details_unittest.cc b/chrome/install_static/product_install_details_unittest.cc
@@ -1083,6 +1083,3 @@ index d8ee3a9a5db1dba08efe69898fc3071250b07ae7..d1cc9c6a129658fa78acd7097492c828
          '"1"="a"', '"2"="b"'
      ])
      self.CompareOutputs(output, expected_output)
--- 
-2.52.0
-

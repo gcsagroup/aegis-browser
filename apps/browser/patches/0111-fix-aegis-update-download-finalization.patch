@@ -377,7 +377,7 @@ index 26a997a9d23e464143857dbb9c71bac3cc73ed5b..1885112f1be706388b2c9cff3ffeb587
    auto release = Release();
    factory_.AddResponse(kReleaseAPI, JSON(release));
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index ab07496994758aaf0a23107916641d210a1e650b..75bf73dd1a90bca0eac649038df925460e964caf 100644
+index 1036bf22a5f8d9194dc065351f556a1cb717c1f4..7c278cafd586f8b81d9666e722571a557557abcc 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {

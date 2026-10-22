@@ -519,7 +519,7 @@ index 524806957c3d4df57084660cd7029bfd6f02a727..71fa8895be3ff65fce4f55fc20b5223d
    }
  }
 diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
-index b8c4eeb49ff2815f691598a0a84aeb80dc4c14a7..5bf940992671d1adf88e986091ab56a7b296445c 100644
+index 45af70111450e490d2d11458e9e5d5165c4535bf..e365004822410eb12be372edafd1284a5053853a 100644
 --- a/chrome/test/data/webui/history/history_routing_test.ts
 +++ b/chrome/test/data/webui/history/history_routing_test.ts
 @@ -45,6 +45,8 @@ import {navigateTo} from './test_util.js';

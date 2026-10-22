@@ -31,7 +31,7 @@ index a537285c47aa7e69abf0df22ab8b7f9d77e1a3d2..5041b16867fad1d40d9bac5228b06441
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/test/data/webui/history/history_routing_test.ts b/chrome/test/data/webui/history/history_routing_test.ts
-index 367f1a4736e09a63daa6a9a0745df419cbcbda57..dab64f8d85a5ebd219bcaafa9db7d52b2dff0b7a 100644
+index 5461ec4695023c2d1ac64655f8f1913ade5fe89f..51d5a50a101b7ebdd09556e09ae274220aa79263 100644
 --- a/chrome/test/data/webui/history/history_routing_test.ts
 +++ b/chrome/test/data/webui/history/history_routing_test.ts
 @@ -111,6 +111,8 @@ import {navigateTo} from './test_util.js';

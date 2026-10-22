@@ -69,7 +69,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/common/aegis/security_text.h
 
 diff --git a/chrome/browser/actor/actor_navigation_throttle.cc b/chrome/browser/actor/actor_navigation_throttle.cc
-index 9fbb9a63498fabbbaaf1f6443a173015f26c0152..da714dcebc884ceb8d30c668a9aeb28aa4cc8e42 100644
+index f17057f43ccc6ea0edd902bb7289f9128fc93b16..0bc41de9f30188343c61c00fe6690dc0291ed7da 100644
 --- a/chrome/browser/actor/actor_navigation_throttle.cc
 +++ b/chrome/browser/actor/actor_navigation_throttle.cc
 @@ -30,11 +30,8 @@ namespace actor {
@@ -87,7 +87,7 @@ index 9fbb9a63498fabbbaaf1f6443a173015f26c0152..da714dcebc884ceb8d30c668a9aeb28a
    content::NavigationHandle& navigation_handle = registry.GetNavigationHandle();
  
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index 14175162c83e05fc6f419b952084fbedf962dd0f..a88816276de71a83c2ebf994f76b6b8300ec6ac0 100644
+index 0b8e0b325e18da683489ea74eb4f29a524f5dc03..d1a7d5f89d6bc14c2aef8b95e3c3ec1cb0f06a64 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
 @@ -337,6 +337,13 @@ void ActorUiStateManager::OnUiEvent(AsyncUiEvent event,

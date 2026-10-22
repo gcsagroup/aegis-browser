@@ -29,7 +29,7 @@ index ee3a614d39a677af5719790fa1c894fbc72489fa..6e2cf344cf2a7d7b48aee76e4af93557
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/content/browser/loader/prefetch_url_loader_service_context.cc b/content/browser/loader/prefetch_url_loader_service_context.cc
-index 9ae7682b842917e4c819fd67bcaa3b295a6e54af..7288c17f04d2093166d571d27bcf06748c2c03ba 100644
+index fea9fb0793484e58b69fe8786a59adb1df684ad7..f59fa156ada07f732f5116818ab44795a4a1bcb3 100644
 --- a/content/browser/loader/prefetch_url_loader_service_context.cc
 +++ b/content/browser/loader/prefetch_url_loader_service_context.cc
 @@ -276,7 +276,7 @@ void PrefetchURLLoaderServiceContext::StartCommittedPrefetch(

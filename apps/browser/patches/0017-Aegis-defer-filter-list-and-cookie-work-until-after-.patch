@@ -208,7 +208,7 @@ index a66e8f96cd6b5ca32c6d83dc9a85072fda825996..1d92d45069c3f2881855a28dcda712ca
    void ApplyList(CompiledFilterList list);
    void Persist(const CompiledFilterList& list);
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index bf35530a0f98fc0774eee7bba7ea747b2161523f..b58466931834b15a072efc101413b59304c2556b 100644
+index 8bab76f627b94d4f129648625d419cb71f1616e2..9877ac72a72e6d175c00868b386d1732419089bf 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -1005,6 +1005,15 @@ void ChromeBrowserMainParts::RecordBrowserStartupTime() {

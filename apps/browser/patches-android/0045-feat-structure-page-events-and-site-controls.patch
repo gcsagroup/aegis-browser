@@ -1189,7 +1189,7 @@ index 0000000000000000000000000000000000000000..cf5b441dcf2357f9f342c91a7873bd4b
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index d9854cbbafbaac96c36ad245ad05e4cc88932b83..50e4c231bccabdc7065b93a84dedb4ad17b27c78 100644
+index 39b25f216efaf22c7cb3c107878e469de426eb64..4a9184c85238a7ca579d8433b72c8f31be6db609 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -3,9 +3,6 @@
@@ -2569,7 +2569,7 @@ index 7bfe87b202e489f26483675dbb76f899fde0a898..a0f412e50d604b232144a377822927dc
    void SetConfigurationOnProcessLockUpdate(
        chrome::mojom::StaticParamsPtr params) override;
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 2938d8c5ca3e82b9a9a743bb805526ad55087c9c..a6f05de348b558083f03898c51fbba829550f15f 100644
+index fbe6538e099ab24c31c759e00745d57ebed31416..352a7e84ff2378e9c6aab9d98fbe91f806b34dcb 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -5,6 +5,7 @@
