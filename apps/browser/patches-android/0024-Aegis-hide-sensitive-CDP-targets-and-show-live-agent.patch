@@ -134,7 +134,7 @@ index 8a64464ded3606fbdd968ebedef9c8c767d3c1e7..03b752f4937e9be578915a9e0202e4e8
    void InstallReporterCallbacks();
    void OnHeuristicSummary(PageSnapshot snapshot,
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index 2e694986c7617565320e7259f4548ba6e75561b4..a05f0ab7b122da5dd38ea0b34e7150e4063f4af9 100644
+index b754a843cd9045248f38295b5fd15d13a925b797..c9352653f1e853885a4c5ce9153bc2896cde6758 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
 @@ -292,6 +292,7 @@ static_library("devtools") {
@@ -555,7 +555,7 @@ index 0000000000000000000000000000000000000000..8407761169ac4dc0fe4a53142ccc710b
 +
 +#endif  // CHROME_COMMON_AEGIS_CDP_WS_HOOK_H_
 diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
-index e63f76cf8447df74b8a2e24769e524843d8be49f..42d1fb5b93b36b03f216b851c7217fe32b7c4007 100644
+index fab13300e5d8f6f562dfef1e5bc8e902ca0a43c4..eaf7a05d1f556e44e35577e6cd356805eab31ed7 100644
 --- a/content/browser/devtools/devtools_http_handler.cc
 +++ b/content/browser/devtools/devtools_http_handler.cc
 @@ -402,9 +402,7 @@ net::IPEndPoint DevToolsHttpHandler::GetServerIpAddress() const {

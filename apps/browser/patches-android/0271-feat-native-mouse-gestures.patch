@@ -9,44 +9,31 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/aegis/BUILD.gn                 |  49 +-
- chrome/browser/aegis/aegis_prefs.cc           |   3 +
- .../gestures/gesture_interactive_uitest.cc    | 490 +++++++++++++++++
- .../aegis/gestures/gesture_recognizer.cc      |  57 ++
- .../aegis/gestures/gesture_recognizer.h       |  31 ++
- .../aegis/gestures/gesture_settings.cc        | 136 +++++
- .../browser/aegis/gestures/gesture_settings.h |  54 ++
- .../aegis/gestures/gesture_unittest.cc        | 116 ++++
- chrome/browser/resources/aegis/BUILD.gn       |   3 +
- chrome/browser/resources/aegis/gestures.css   | 346 ++++++++++++
- chrome/browser/resources/aegis/gestures.html  |  46 ++
- chrome/browser/resources/aegis/gestures.ts    | 287 ++++++++++
- chrome/browser/resources/pdf/pdf_viewer.ts    |  20 +-
- .../settings/settings_menu/settings_menu.html |   7 +-
- .../settings/settings_menu/settings_menu.ts   |   2 +-
- chrome/browser/ui/BUILD.gn                    |   3 +
- .../ui/aegis_mouse_gesture_tab_helper.cc      | 517 ++++++++++++++++++
- .../ui/aegis_mouse_gesture_tab_helper.h       | 102 ++++
- chrome/browser/ui/tab_helpers.cc              |   6 +
- chrome/browser/ui/webui/aegis/BUILD.gn        |  10 +-
- .../ui/webui/aegis/aegis_gesture_handler.cc   | 126 +++++
- .../ui/webui/aegis/aegis_gesture_handler.h    |  22 +
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |   6 +
- .../ui/webui/help/aegis_github_update.h       |   4 +-
+ chrome/browser/aegis/BUILD.gn                      |  49 +-
+ chrome/browser/aegis/aegis_prefs.cc                |   3 +
+ .../aegis/gestures/gesture_interactive_uitest.cc   | 490 +++++++++++++++++++
+ .../browser/aegis/gestures/gesture_recognizer.cc   |  57 +++
+ chrome/browser/aegis/gestures/gesture_recognizer.h |  31 ++
+ chrome/browser/aegis/gestures/gesture_settings.cc  | 136 ++++++
+ chrome/browser/aegis/gestures/gesture_settings.h   |  54 +++
+ chrome/browser/aegis/gestures/gesture_unittest.cc  | 116 +++++
+ chrome/browser/resources/aegis/BUILD.gn            |   3 +
+ chrome/browser/resources/aegis/gestures.css        | 346 ++++++++++++++
+ chrome/browser/resources/aegis/gestures.html       |  46 ++
+ chrome/browser/resources/aegis/gestures.ts         | 287 ++++++++++++
+ chrome/browser/resources/pdf/pdf_viewer.ts         |  20 +-
+ .../settings/settings_menu/settings_menu.html      |   7 +-
+ .../settings/settings_menu/settings_menu.ts        |   2 +-
+ chrome/browser/ui/BUILD.gn                         |   3 +
+ .../browser/ui/aegis_mouse_gesture_tab_helper.cc   | 517 +++++++++++++++++++++
+ chrome/browser/ui/aegis_mouse_gesture_tab_helper.h | 102 ++++
+ chrome/browser/ui/tab_helpers.cc                   |   6 +
+ chrome/browser/ui/webui/aegis/BUILD.gn             |  10 +-
+ .../ui/webui/aegis/aegis_gesture_handler.cc        | 126 +++++
+ .../browser/ui/webui/aegis/aegis_gesture_handler.h |  22 +
+ chrome/browser/ui/webui/aegis/aegis_ui.cc          |   6 +
+ chrome/browser/ui/webui/help/aegis_github_update.h |   4 +-
  24 files changed, 2429 insertions(+), 14 deletions(-)
- create mode 100644 chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
- create mode 100644 chrome/browser/aegis/gestures/gesture_recognizer.cc
- create mode 100644 chrome/browser/aegis/gestures/gesture_recognizer.h
- create mode 100644 chrome/browser/aegis/gestures/gesture_settings.cc
- create mode 100644 chrome/browser/aegis/gestures/gesture_settings.h
- create mode 100644 chrome/browser/aegis/gestures/gesture_unittest.cc
- create mode 100644 chrome/browser/resources/aegis/gestures.css
- create mode 100644 chrome/browser/resources/aegis/gestures.html
- create mode 100644 chrome/browser/resources/aegis/gestures.ts
- create mode 100644 chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
- create mode 100644 chrome/browser/ui/aegis_mouse_gesture_tab_helper.h
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
- create mode 100644 chrome/browser/ui/webui/aegis/aegis_gesture_handler.h
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index c853991eba4a7bb36092d144253e4731c82aa7dd..f3dd8f230c35e911211fda1df1b93e7c2278c519 100644
@@ -1829,7 +1816,7 @@ index 0000000000000000000000000000000000000000..e4409d7f55d22d4cf1c0a89884cd9ee2
 +  message('设置已加载');
 +}).catch(() => message('设置加载失败，请重新打开此页面。', true));
 diff --git a/chrome/browser/resources/pdf/pdf_viewer.ts b/chrome/browser/resources/pdf/pdf_viewer.ts
-index 12510ab27aba20f2a56943f647f2298d5e8e2a3c..cd15af16bf306336b1b27701798fddd8d8c2440a 100644
+index f5a2c705544153b6876572c92832b58c12dc5da5..5b70c30c5ddc6d8a25e81153176202aa3ca2c486 100644
 --- a/chrome/browser/resources/pdf/pdf_viewer.ts
 +++ b/chrome/browser/resources/pdf/pdf_viewer.ts
 @@ -451,9 +451,25 @@ export class PdfViewerElement extends PdfViewerBaseElement {
@@ -1875,12 +1862,12 @@ index 12510ab27aba20f2a56943f647f2298d5e8e2a3c..cd15af16bf306336b1b27701798fddd8
    getBackgroundColor(): number {
      return BACKGROUND_COLOR;
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index 6db81ec22be55a3fa32fc4611f530903695d8c7f..8752b005f49268703d762fba8a4e07d2a7915f51 100644
+index 1f2eaa8369225e66db4e7311fd3c1aa3cec96a08..7aa355170f07857397b14255c9b78e67b3a3060f 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-@@ -72,9 +72,14 @@
+@@ -83,9 +83,14 @@
+       }
      </style>
- 
      <div role="navigation">
 -      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
 +      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink):not(#aegisGesturesLink)"
@@ -1895,10 +1882,10 @@ index 6db81ec22be55a3fa32fc4611f530903695d8c7f..8752b005f49268703d762fba8a4e07d2
              id="people" href="/people"
              hidden="[[!showPeopleMenuItem_(
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.ts b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
-index fe7a43eb35c17da999b19e9b0864d5ee07948168..e176c10af29ff9c3a0ce7f50fc66ee42334ed99b 100644
+index 1d1e4eb66871fd5ec529878c35230fd514e01c43..8d49e71c9f6bb401e18ffb72ac450a84f404eab3 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.ts
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.ts
-@@ -140,7 +140,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
+@@ -147,7 +147,7 @@ export class SettingsMenuElement extends SettingsMenuElementBase {
     * accessibility purposes, taps are handled separately.
     */
    private onLinkClick_(event: Event) {
@@ -1908,15 +1895,15 @@ index fe7a43eb35c17da999b19e9b0864d5ee07948168..e176c10af29ff9c3a0ce7f50fc66ee42
      }
    }
 diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
-index 21838a7e8cb8deb3105128066abd46fc5e4d2709..7b6aa449b46270cbcb60c1d5f58d8021474fde0a 100644
+index 4d35242df3c15398081e17433df1e6b23f8025b2..a10268f3ffbcdbc61857afb3841b1b7bfd5488cf 100644
 --- a/chrome/browser/ui/BUILD.gn
 +++ b/chrome/browser/ui/BUILD.gn
-@@ -1516,7 +1516,10 @@ static_library("ui") {
+@@ -2300,7 +2300,10 @@ static_library("ui") {
      ]
    } else {
      # !is_android
 +    deps += [ "//chrome/browser/aegis:gesture_core" ]
-     sources += [
+     sources = [
 +      "aegis_mouse_gesture_tab_helper.cc",
 +      "aegis_mouse_gesture_tab_helper.h",
        # This file physically lives in //chrome/browser but is compiled here so
@@ -2554,7 +2541,7 @@ index 0000000000000000000000000000000000000000..342909d65e7678bacd86b6a4f54c68c3
 +}  // namespace aegis
 +#endif
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 02d5bf903388b93b83898fcfb2e746c5a1da2d21..61d5a223d93af460ec9e5e26b159df3d7b7a6080 100644
+index e034a11cc4b3c77d43e27a11aa655ad67afe93a1..655a8dc161af645046d1ac15a631f0a45760c325 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
 @@ -16,6 +16,9 @@
@@ -2567,16 +2554,16 @@ index 02d5bf903388b93b83898fcfb2e746c5a1da2d21..61d5a223d93af460ec9e5e26b159df3d
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
  #include "chrome/browser/browser_process.h"
-@@ -448,6 +451,9 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+@@ -366,6 +369,9 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
        std::make_unique<PageSpecificContentSettingsDelegate>(web_contents));
    CoreTabHelper::CreateForWebContents(web_contents);
    aegis::PhishTabHelper::CreateForWebContents(web_contents);
 +#if !BUILDFLAG(IS_ANDROID)
 +  aegis::MouseGestureTabHelper::CreateForWebContents(web_contents);
 +#endif
-   ExternalProtocolObserver::CreateForWebContents(web_contents);
    favicon::CreateContentFaviconDriverForWebContents(web_contents);
    FileSystemAccessPermissionRequestManager::CreateForWebContents(web_contents);
+   FileSystemAccessTabHelper::CreateForWebContents(web_contents);
 diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
 index f96f952415e15cc481659fc8284b9f7340d92e7e..74562852cf7d0b68e995ba0c00ba4a88bbc3560b 100644
 --- a/chrome/browser/ui/webui/aegis/BUILD.gn

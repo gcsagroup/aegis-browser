@@ -2554,7 +2554,7 @@ index 71ae0c1a7626d31b23bed90f8e22d4a1b6505869..bfed41ab5a2178924fbd09834b7aa457
    .description[description-color='grey'] {
      color: var(--google-grey-500);
 diff --git a/chrome/browser/resources/downloads/item.html.ts b/chrome/browser/resources/downloads/item.html.ts
-index 35465838d549f918b793ed5751b61169b8b453d1..a86ab1abd4c2b27a10aee39b55a784d97a6c2e91 100644
+index f06e438b416dfb9f0381fdb52372a11c726605ac..a6a461709fce5e2a67942ce21be4a47e9cd23e35 100644
 --- a/chrome/browser/resources/downloads/item.html.ts
 +++ b/chrome/browser/resources/downloads/item.html.ts
 @@ -47,6 +47,11 @@ export function getHtml(this: DownloadsItemElement) {
@@ -3360,7 +3360,7 @@ index 484ddb0c2c943cf13e177f805ef05061e299f7f3..744b0a50d72a03e7b1d9f3978cd11b4c
        service_observation_{this};
  
 diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
-index 501c60c60e1bbbb101591a706183a4f5a81dc736..d91ccec5fd4eff397ace07333aeaf6a13c61f5c1 100644
+index c410c13aa6333fc83303447ee3933c469c9a9350..8025dfaa86377e57e7a2f46b4260edde3f86abd0 100644
 --- a/chrome/browser/ui/webui/downloads/BUILD.gn
 +++ b/chrome/browser/ui/webui/downloads/BUILD.gn
 @@ -62,6 +62,7 @@ source_set("downloads") {
@@ -3577,7 +3577,7 @@ index 8ddd0ed3b2105d9211c3ab101ce871c50dc5347d..08fdc73b45ace7446e346c007388a9c1
    MockDownloadItem* item = CreateNextItem();
    ON_CALL(*item, GetRequestInitiator())
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index a613ecb70991eb1a2f7b6681b9ba891170ac1ecc..afffe387238c18306c52a3745e716e34aab018c6 100644
+index 8955c4bf86a64e2d30bc34ecb522422e941a1af8..89336bcc3e5935a182c5595aee732d42f33a88eb 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
 @@ -22,6 +22,7 @@
@@ -4674,7 +4674,7 @@ index d016d7fbe3e4b96c308a2aca706d2fbda9c6475a..ce27034f94f2c67c2bf1bf734a0df93f
          byExtName: '',
          dangerType: DangerType.kNoApplicableDangerType,
 diff --git a/chrome/utility/BUILD.gn b/chrome/utility/BUILD.gn
-index b3fa5a032cee9bf422f56a058b53046189c28a25..fb756f798496f5d6583a4c648c4147e2223c921b 100644
+index 95b88e50fca92ca847662d1861db7de835a1cd37..dac1ea99ea58482cf36f5884d57d3e7b7ffa2e47 100644
 --- a/chrome/utility/BUILD.gn
 +++ b/chrome/utility/BUILD.gn
 @@ -88,6 +88,7 @@ static_library("utility") {
@@ -4686,7 +4686,7 @@ index b3fa5a032cee9bf422f56a058b53046189c28a25..fb756f798496f5d6583a4c648c4147e2
        "//services/proxy_resolver_mac",
      ]
 diff --git a/chrome/utility/services.cc b/chrome/utility/services.cc
-index 5f509ce2d6f0bc2636f328aea054a4ab8fb046d8..4f3eff87dfd7b561972668c61dfb2e602797f77f 100644
+index fd641144f16cb14971c0413031976aa14f7e5c43..11cf9d98ba34c1eceae1fa331d3cc6a20119f28b 100644
 --- a/chrome/utility/services.cc
 +++ b/chrome/utility/services.cc
 @@ -52,6 +52,7 @@

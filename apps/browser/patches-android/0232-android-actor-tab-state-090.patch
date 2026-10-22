@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/android/tab_features.cc b/chrome/browser/android/tab_features.cc
-index a476210c78b3947e38cc1b7e6e86e1c518a0e0d1..7aeae3b168fd8e5c10877451db3889f764abe302 100644
+index a8da26669e518c0de815ccb6cd56ec475529c9ad..2cb72eb75e76c162e7f07400825ed7e222e98a62 100644
 --- a/chrome/browser/android/tab_features.cc
 +++ b/chrome/browser/android/tab_features.cc
 @@ -151,12 +151,13 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {

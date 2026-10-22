@@ -29,7 +29,7 @@ index 85a0124f086764fc772fb7c4279d1cba7631b4b3..0ae40938516dc653b37a3d7a784e1d8b
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts b/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
-index dba2076962e46b44d2a7cd5fde478c1f16208612..763ffa65c439d9a147a02a64abed3f0c09dbef64 100644
+index b2004a0e69873c4c644675ba0eb0bba5628176ce..32eb4adbdbdad2ea34d74baaa5a559f94f68d43e 100644
 --- a/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
 +++ b/ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts
 @@ -19,8 +19,6 @@ export function getHtml(this: CrToolbarElement) {

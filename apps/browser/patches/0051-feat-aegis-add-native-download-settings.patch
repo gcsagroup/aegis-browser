@@ -290,7 +290,7 @@ index 0000000000000000000000000000000000000000..c33796d00d724c76364e295e4b344059
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/download/chrome_download_manager_delegate.cc b/chrome/browser/download/chrome_download_manager_delegate.cc
-index 4e9ae04520701706ed95df46c5d0f13a77e4b724..4137b4d77336f1efbc69d8d46b425fb6421eafcc 100644
+index 0cfc34d1e08df4ff399991e85fb87d0e9725a164..d733dca6c573a92019983d3bed1499623db8f112 100644
 --- a/chrome/browser/download/chrome_download_manager_delegate.cc
 +++ b/chrome/browser/download/chrome_download_manager_delegate.cc
 @@ -32,6 +32,7 @@
@@ -312,7 +312,7 @@ index 4e9ae04520701706ed95df46c5d0f13a77e4b724..4137b4d77336f1efbc69d8d46b425fb6
  
  ChromeDownloadManagerDelegate::~ChromeDownloadManagerDelegate() {
 diff --git a/chrome/browser/prefs/browser_prefs.cc b/chrome/browser/prefs/browser_prefs.cc
-index e1cec7748c984533211ac94f3e3e73dcb46fdcf8..be678c0f4e678ed26e65a9e228491c88731a6ea4 100644
+index 39b0424c5847a7e6bbd7abc4d12aad319e0dfb86..a7909ec8a16fcf4b3579f78a907d75d56d959b86 100644
 --- a/chrome/browser/prefs/browser_prefs.cc
 +++ b/chrome/browser/prefs/browser_prefs.cc
 @@ -19,6 +19,7 @@
@@ -802,7 +802,7 @@ index 827395e3c36964d8eade628926089916b2ab22c7..609b5efbca307f4dc9e63ff7af001f21
  
    protected onChangeDownloadsPathClick_() {
 diff --git a/chrome/browser/ui/webui/downloads/downloads_ui.cc b/chrome/browser/ui/webui/downloads/downloads_ui.cc
-index afffe387238c18306c52a3745e716e34aab018c6..24c94d17c0cced53dbf5addc5a60001956ca75a9 100644
+index 89336bcc3e5935a182c5595aee732d42f33a88eb..d9ef9a765593f67acf444b67db8609798741dd71 100644
 --- a/chrome/browser/ui/webui/downloads/downloads_ui.cc
 +++ b/chrome/browser/ui/webui/downloads/downloads_ui.cc
 @@ -13,6 +13,7 @@

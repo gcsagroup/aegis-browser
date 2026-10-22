@@ -84,7 +84,7 @@ index 3d0a0989c8ccafcf5820edadc86e0187440c37b2..1582e867adf6b4db47b2107b3a34335c
  
    AimEligibilityServiceFactory(const AimEligibilityServiceFactory&) = delete;
 diff --git a/components/omnibox/browser/aim_eligibility_service.cc b/components/omnibox/browser/aim_eligibility_service.cc
-index 3b6b5eba6438a9886b1081f23ba2eeb466b8247a..9dbb220aeb0d0d13a723cbbf5d41627a187b3c72 100644
+index d0d003c8ce35a1bad8181dc68611cf25d571a638..53d8508eb062f892ca8a4aab88ff865f2380fa12 100644
 --- a/components/omnibox/browser/aim_eligibility_service.cc
 +++ b/components/omnibox/browser/aim_eligibility_service.cc
 @@ -350,6 +350,10 @@ AimEligibilityService::AimEligibilityService(
@@ -124,7 +124,7 @@ index a550dc7c27dfb2c28bf1e562ad6f4b55dbe43c16..88c4a9b292a392aacfbe84a54d74c7b8
  
    // Returns the current server eligibility request mode based on the feature
 diff --git a/components/omnibox/browser/aim_eligibility_service_unittest.cc b/components/omnibox/browser/aim_eligibility_service_unittest.cc
-index ce051ec98a3f01f4eef0707a149f95fb9ef014f9..ea296e6c6d539ca0c6933bb020871a4257be142a 100644
+index 6607744d151a40e442831d1e7790d55f7a682909..b0328512e3006206471f3b8440313a939b3b209a 100644
 --- a/components/omnibox/browser/aim_eligibility_service_unittest.cc
 +++ b/components/omnibox/browser/aim_eligibility_service_unittest.cc
 @@ -55,6 +55,10 @@ class AimEligibilityServiceFriend {

@@ -13,14 +13,14 @@ Content-Transfer-Encoding: 8bit
  chrome/browser/actor/actor_task.cc                |  6 +++---
  chrome/browser/actor/actor_task.h                 | 12 ++++++------
  chrome/browser/actor/execution_engine.cc          |  5 +++--
- chrome/browser/actor/execution_engine_unittest.cc | 11 ++++++-----
- 5 files changed, 22 insertions(+), 18 deletions(-)
+ chrome/browser/actor/execution_engine_unittest.cc | 10 +++++-----
+ 5 files changed, 21 insertions(+), 18 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
-index 426f02f473ba39feee28c5b6c3f2867ce06ec812..228fb638c98a0be8c4abed190f49f240ed58739c 100644
+index d761f8ede65672ed7b1826ae5ef61089c4e33056..c6f133b48e45501ffdb8a9509d02c1f1e3e6818e 100644
 --- a/chrome/browser/actor/actor_keyed_service.cc
 +++ b/chrome/browser/actor/actor_keyed_service.cc
-@@ -491,7 +491,8 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
+@@ -497,7 +497,8 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
      actor::ui::ActorUiStateManagerInterface* ui_state_manager,
      std::optional<glic::mojom::InvocationSource> initial_invocation_source) {
    CHECK(ui_state_manager);
@@ -30,8 +30,8 @@ index 426f02f473ba39feee28c5b6c3f2867ce06ec812..228fb638c98a0be8c4abed190f49f240
                          policy_checker, nullptr, std::move(options),
                          std::move(delegate), ui_state_manager,
                          initial_invocation_source);
-@@ -506,7 +507,8 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
-   auto* ui_state_manager = GetActorUiStateManager();
+@@ -512,7 +513,8 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
+   auto* ui_state_manager = actor_ui_state_manager_.get();
    CHECK(ui_state_manager);
    const EnterprisePolicyChecker* policy_checker_ptr = policy_checker.get();
 -  return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager, journal_.is_private()),
@@ -41,7 +41,7 @@ index 426f02f473ba39feee28c5b6c3f2867ce06ec812..228fb638c98a0be8c4abed190f49f240
                          std::move(policy_checker), std::move(options),
                          std::move(delegate), ui_state_manager, std::nullopt);
 diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
-index c2571bbab176081231ec0a27da68f85598d6d4d2..9988858312c88a1eaba79b6cdbceb011a3f91fdf 100644
+index 0c66f96585abb830ee01ed8cf490714a652858f8..f2edc205f2cf93a5625341ea9f4257764cf545f3 100644
 --- a/chrome/browser/actor/actor_task.cc
 +++ b/chrome/browser/actor/actor_task.cc
 @@ -157,6 +157,9 @@ ActorTask::ActorTask(
@@ -65,10 +65,10 @@ index c2571bbab176081231ec0a27da68f85598d6d4d2..9988858312c88a1eaba79b6cdbceb011
        ui_weak_ptr_factory_(ui_event_dispatcher_.get()) {
    CHECK(policy_checker);
 diff --git a/chrome/browser/actor/actor_task.h b/chrome/browser/actor/actor_task.h
-index 3b3d46aa155ed23cca8a230d28b5e76a32851f55..c56ffd71396d2a7f925af5d38c0a780e566c62b9 100644
+index 143aa8f0e376bebc946350acdb70a626d188f02a..0dceffb24a9a11109d454c7ed0b974e33b45ea6d 100644
 --- a/chrome/browser/actor/actor_task.h
 +++ b/chrome/browser/actor/actor_task.h
-@@ -410,6 +410,12 @@ class ActorTask : public base::SupportsUserData {
+@@ -425,6 +425,12 @@ class ActorTask : public base::SupportsUserData {
  
    std::unique_ptr<ActionTrackerForMetrics> action_tracker_for_metrics_;
  
@@ -81,7 +81,7 @@ index 3b3d46aa155ed23cca8a230d28b5e76a32851f55..c56ffd71396d2a7f925af5d38c0a780e
    // This is used by and should be kept above `execution_engine_`.
    std::unique_ptr<ui::UiEventDispatcher> ui_event_dispatcher_;
  
-@@ -492,12 +498,6 @@ class ActorTask : public base::SupportsUserData {
+@@ -507,12 +513,6 @@ class ActorTask : public base::SupportsUserData {
  
    std::optional<InterruptReason> interrupt_reason_;
  
@@ -95,10 +95,10 @@ index 3b3d46aa155ed23cca8a230d28b5e76a32851f55..c56ffd71396d2a7f925af5d38c0a780e
    base::WeakPtr<ActorTaskDelegate> delegate_;
  
 diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
-index 2bf6e11e2369e59c4ddf497429a3e02886f9224e..b743c9cbbe90fb79e4de9bfc47f72a81bcb35fe7 100644
+index 662a5c48c0929b21531ab1ca9f88e9271819e095..b2c456497554ceb71cae0b7a3ee1f3edf47b9aaa 100644
 --- a/chrome/browser/actor/execution_engine.cc
 +++ b/chrome/browser/actor/execution_engine.cc
-@@ -736,7 +736,7 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
+@@ -784,7 +784,7 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
                {
                    {CustomPredicate(
                         base::BindRepeating(&BlockIfExplicitlyDenied,
@@ -107,7 +107,7 @@ index 2bf6e11e2369e59c4ddf497429a3e02886f9224e..b743c9cbbe90fb79e4de9bfc47f72a81
                         ActorCustomPredicate::kExplicitPolicyBlock),
                     GateableEventSet::All()},
                    {CustomPredicate(base::BindRepeating(&BlockTabErrorDocument),
-@@ -796,7 +796,8 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
+@@ -844,7 +844,8 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
                    {CustomPredicate(
                         base::BindRepeating(
                             &BlockSensitiveUrlWhenNavigationGatingDisabled,
@@ -118,20 +118,18 @@ index 2bf6e11e2369e59c4ddf497429a3e02886f9224e..b743c9cbbe90fb79e4de9bfc47f72a81
                         ActorCustomPredicate::kSensitiveUrl),
                     {GateableEvent::kNavigationRequest}},
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 4eabe06e463f64c08ca57d4abc18557724b209f7..41524086a387b05403755dd3bc9735a32e5b1d9e 100644
+index 0b3c52143567dbf119aae2cac1ead2dd57464a5f..d56c9b9576212f6bb7e3e9a56e3043ab6c3c2c2d 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -16,8 +16,8 @@
- #include "base/test/gmock_callback_support.h"
- #include "base/test/gmock_expected_support.h"
+@@ -18,7 +18,6 @@
  #include "base/test/metrics/histogram_tester.h"
--#include "base/test/scoped_feature_list.h"
  #include "base/test/scoped_command_line.h"
-+#include "base/test/scoped_feature_list.h"
+ #include "base/test/scoped_feature_list.h"
+-#include "base/test/scoped_command_line.h"
  #include "base/test/test_future.h"
  #include "base/time/time.h"
  #include "chrome/browser/actor/actor_keyed_service.h"
-@@ -1296,11 +1296,12 @@ TEST_F(AegisExecutionEngineUrlGatingTest, SkipsGlicSensitiveOriginService) {
+@@ -1297,11 +1296,12 @@ TEST_F(AegisExecutionEngineUrlGatingTest, SkipsGlicSensitiveOriginService) {
            testing::An<optimization_guide::OptimizationGuideDecisionCallback>()))
        .Times(0);
    EXPECT_CALL(mock_actor_task_delegate(),
@@ -146,7 +144,7 @@ index 4eabe06e463f64c08ca57d4abc18557724b209f7..41524086a387b05403755dd3bc9735a3
    EXPECT_EQ(allowed.Get(), MayActOnUrlBlockReason::kAllowed);
    CheckUrl(url, true);
  }
-@@ -1470,8 +1471,8 @@ TEST_F(AegisExecutionEngineUrlGatingTest,
+@@ -1471,8 +1471,8 @@ TEST_F(AegisExecutionEngineUrlGatingTest,
        switches::kDisableActorSafetyChecks);
    const GURL url("https://outside-scope.test/");
    auto& engine = GetExecutionEngine();
@@ -157,6 +155,3 @@ index 4eabe06e463f64c08ca57d4abc18557724b209f7..41524086a387b05403755dd3bc9735a3
    SetPolicyReason(EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
    base::test::TestFuture<MayActOnUrlBlockReason> allowed;
    engine.IsAcceptableNavigationDestination(url, allowed.GetCallback());
--- 
-2.52.0
-
