@@ -62,7 +62,7 @@ index dbb575ae3e2469f195b5b6d75edfbbe9355dbbad..aaad1710ca1ad3929a29b88e875f3133
    return prefs_->GetBoolean(prefs::kFingerprintGuardEnabled);
  }
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index d1b1ff7512a74098359f7a1286eb80661784dec9..469838c949024a05476e0c3d3749dbb4c7ab0658 100644
+index f67c207e23f06774c950f946fd7f4f773c5b28b0..a0a0a1eab35db1099e594a2548358b3092cc18c5 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -5989,7 +5989,9 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
@@ -234,7 +234,7 @@ index 0000000000000000000000000000000000000000..f35769ddd398187a7c3c5f2ee0c773b2
 +
 +}  // namespace blink::aegis
 diff --git a/third_party/blink/public/common/BUILD.gn b/third_party/blink/public/common/BUILD.gn
-index 5a5d9a64a4b70f09447022021d03f95f69f2fbb2..a74708a67178be0e3c9ad794c1c7157fbf9aa3cd 100644
+index 4d7fbfa778338a65fb058567b19c2734981efb8f..bf46f07f48dfd56becc8297d933bddda790c1339 100644
 --- a/third_party/blink/public/common/BUILD.gn
 +++ b/third_party/blink/public/common/BUILD.gn
 @@ -150,6 +150,7 @@ source_set("headers") {
@@ -276,7 +276,7 @@ index 0000000000000000000000000000000000000000..5fb108a04a82a79a0d85f34138ad0b5e
 +
 +#endif  // THIRD_PARTY_BLINK_PUBLIC_COMMON_AEGIS_FINGERPRINT_GUARD_H_
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 383115087fb61a1901983b7ebefe32a0c40f7d1a..7f718bc2ea0582929b7a494bea846e3269cfeced 100644
+index 056bd22809479eac64251cfc67f37336c4438424..ea5bdeebd89a8f2ee0ea889e19b7b0346cc7aa98 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -24,6 +24,7 @@ import("//third_party/blink/renderer/core/animation/build.gni")
@@ -514,7 +514,7 @@ index 0000000000000000000000000000000000000000..b50851081fa1094717b12265b3ad8703
 +
 +#endif  // THIRD_PARTY_BLINK_RENDERER_CORE_AEGIS_FARBLING_H_
 diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
-index 4a7dbf745e65e9970af4cbd732d4e6fee4b7460b..54c773598e0db15bb4da419f3f9df2625b1bc8ab 100644
+index 2a5404e4cf7c111f20515886466bc45610d6a5b6..3908a9281252bbf1b397acf67d8054df6fce0d8a 100644
 --- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 +++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
 @@ -26,6 +26,7 @@
@@ -544,7 +544,7 @@ index 4a7dbf745e65e9970af4cbd732d4e6fee4b7460b..54c773598e0db15bb4da419f3f9df262
      auto* options = ImageEncodeOptions::Create();
      options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
 diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
-index 89fcf5f32bc606bf852843d78b976bbc9de8f012..35f9b0b128c4ff466f49ce70b3904e84b0f3d8cf 100644
+index e014baae31c870f3fbd3d22fa1de0c2085aee587..04c489dd8410b12c11e2205aac47a24a13fc61b3 100644
 --- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 +++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 @@ -3,6 +3,7 @@
@@ -591,7 +591,7 @@ index 7a899b0d8cf249d1a01bbc08be8e83e23e6735d9..425d9442acf164c1f4742b23802a9a5f
  
  void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index b452298c2400304cfaa6b137726144ceaa976b6d..4304f199b9181a5027a7f2b0bc42477fc354cb4c 100644
+index b17f336f90c46575d6fc0668a9e85183cdd8c0e6..44054500124e03b5c59c0bc08d799ca85ea1c811 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -24,6 +24,8 @@

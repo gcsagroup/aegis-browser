@@ -716,7 +716,7 @@ index 4a7eda0959342d6b79904faf3835ee3a0e04e818..971abdb14a3fbc789e0df25bd08b8398
 +    </group>
  </vector>
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index 9df664e002a0e9dcfd7364611ddae9a6b691d454..b5efc8558f4818e59de638ba7b352728f54c55d5 100644
+index 2705221cb200e18d9a0b0b130c431252c21cc470..89fc53c5d55263253d2f56ddb28f65f24641c476 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 @@ -2144,7 +2144,7 @@ Your Google account may have other forms of browsing history like searches and a
@@ -765,7 +765,7 @@ index 9df664e002a0e9dcfd7364611ddae9a6b691d454..b5efc8558f4818e59de638ba7b352728
        <message name="IDS_NOTIFICATION_PERMISSION_RATIONALE_DIALOG_MESSAGE" desc="The body text of a dialog explaining the benefits of enabling Chrome notifications.">
          You’ll be able to easily manage media controls, Incognito sessions, downloads and more
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index 08b63dedd90d1347a1c48ad448f843059a927a9a..0bc9201fc6a154339b17b82063f51c7e7492afbd 100644
+index 5a5db6f81c15593894b2c5f4ff322a22dfabf8af..b5d856e20839fc076f7fa056c2b5db1c3549bc7c 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 @@ -2175,4 +2175,8 @@
@@ -778,7 +778,7 @@ index 08b63dedd90d1347a1c48ad448f843059a927a9a..0bc9201fc6a154339b17b82063f51c7e
 +<translation id="7491982752760169795">GCSA Aegis 通知</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-index 4a1dfdd74e236892f2aebbf30c71fdfb30695c44..e885e61ea09ef51faa7e01827270dae697cb7896 100644
+index 40e62e6c64298ae6dee5a2f6cb3320d6432061a0..dddbc0d957a4ba540dee3937f17b35726a9119ec 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 @@ -2177,4 +2177,8 @@

@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 3 insertions(+), 29 deletions(-)
 
 diff --git a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
-index 7e5ae56b7a825492378e1c8051239b73255f157c..ca68645749ecc187cb88549998b4f3d75adb99b3 100644
+index ce13ca764b7b718d4e40a36e1ac1e7520026702c..fd4927b291cda7c808d55bd51b658ad68999daf7 100644
 --- a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 +++ b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 @@ -17,7 +17,6 @@

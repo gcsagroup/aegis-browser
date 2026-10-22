@@ -172,7 +172,7 @@ index b7c2900fe376ded75e0f772353219be58c2d3ef6..333d5473c4f27c4505d80d049d07c247
      aegis::SummarizeResult result;
      result.error = "model request already in progress";
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 89d3e438529423331285fb337ce9439ef385cde9..c88da50a589cd9b20f714950a7a875682469cae3 100644
+index bf43121f0b3a68447964b0da32414d0f34308527..7d6b60410a7807f70aa861d30fb2c9318d833068 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -2882,8 +2882,7 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,

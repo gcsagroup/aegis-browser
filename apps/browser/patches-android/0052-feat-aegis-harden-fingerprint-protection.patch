@@ -4,45 +4,41 @@ Date: Wed, 26 Aug 2026 21:41:38 +0800
 Subject: [PATCH] feat(aegis): harden fingerprint protection
 
 ---
- chrome/browser/aegis/aegis_prefs.cc           |   3 +
- chrome/browser/aegis/aegis_service.cc         |  10 +-
- .../browser/chrome_content_browser_client.cc  |   9 +-
- chrome/browser/profiles/renderer_updater.cc   |  40 +-
- chrome/browser/profiles/renderer_updater.h    |   1 +
- chrome/common/aegis/BUILD.gn                  |   2 +
- chrome/common/aegis/features.cc               |   5 +
- chrome/common/aegis/features.h                |   3 +
- chrome/common/aegis/features_unittest.cc      |  41 ++
- .../aegis/fingerprint_guard_unittest.cc       |  97 +++++
- chrome/common/aegis/pref_names.h              |   2 +
- chrome/common/renderer_configuration.mojom    |   1 +
- .../renderer/chrome_render_thread_observer.cc |   4 +-
- .../worker/embedded_shared_worker_stub.cc     |   2 +
- third_party/blink/common/BUILD.gn             |   1 +
- third_party/blink/common/DEPS                 |   1 +
- .../blink/common/aegis/fingerprint_guard.cc   | 212 +++++++++-
- .../public/common/aegis/fingerprint_guard.h   |  46 ++-
- .../blink/public/web/web_shared_worker.h      |   1 +
- third_party/blink/renderer/core/BUILD.gn      |   1 +
- .../blink/renderer/core/aegis/build.gni       |   2 +
- .../blink/renderer/core/aegis/farbling.cc     | 389 +++++++++++-------
- .../blink/renderer/core/aegis/farbling.h      |  30 +-
- .../renderer/core/aegis/farbling_unittest.cc  |  72 ++++
- .../core/exported/web_shared_worker_impl.cc   |   7 +-
- .../core/exported/web_shared_worker_impl.h    |   1 +
- .../core/offscreencanvas/offscreen_canvas.cc  |  21 +-
- .../core/workers/worker_global_scope.h        |   6 +
- third_party/blink/renderer/modules/BUILD.gn   |   1 +
- .../service_worker_global_scope.cc            |   6 +-
- .../renderer/modules/webaudio/audio_buffer.cc |  17 +-
- .../modules/webaudio/audio_buffer_test.cc     |  84 ++++
- .../webgl/webgl_rendering_context_base.cc     |  30 +-
- .../renderer/modules/webgpu/gpu_adapter.cc    |  94 +++--
+ chrome/browser/aegis/aegis_prefs.cc                |   3 +
+ chrome/browser/aegis/aegis_service.cc              |  10 +-
+ chrome/browser/chrome_content_browser_client.cc    |   9 +-
+ chrome/browser/profiles/renderer_updater.cc        |  40 ++-
+ chrome/browser/profiles/renderer_updater.h         |   1 +
+ chrome/common/aegis/BUILD.gn                       |   2 +
+ chrome/common/aegis/features.cc                    |   5 +
+ chrome/common/aegis/features.h                     |   3 +
+ chrome/common/aegis/features_unittest.cc           |  41 +++
+ chrome/common/aegis/fingerprint_guard_unittest.cc  |  97 +++++
+ chrome/common/aegis/pref_names.h                   |   2 +
+ chrome/common/renderer_configuration.mojom         |   1 +
+ chrome/renderer/chrome_render_thread_observer.cc   |   4 +-
+ .../renderer/worker/embedded_shared_worker_stub.cc |   2 +
+ third_party/blink/common/BUILD.gn                  |   1 +
+ third_party/blink/common/DEPS                      |   1 +
+ .../blink/common/aegis/fingerprint_guard.cc        | 212 +++++++++--
+ .../blink/public/common/aegis/fingerprint_guard.h  |  46 ++-
+ third_party/blink/public/web/web_shared_worker.h   |   1 +
+ third_party/blink/renderer/core/BUILD.gn           |   1 +
+ third_party/blink/renderer/core/aegis/build.gni    |   2 +
+ third_party/blink/renderer/core/aegis/farbling.cc  | 389 +++++++++++++--------
+ third_party/blink/renderer/core/aegis/farbling.h   |  30 +-
+ .../blink/renderer/core/aegis/farbling_unittest.cc |  72 ++++
+ .../core/exported/web_shared_worker_impl.cc        |   7 +-
+ .../core/exported/web_shared_worker_impl.h         |   1 +
+ .../core/offscreencanvas/offscreen_canvas.cc       |  21 +-
+ .../renderer/core/workers/worker_global_scope.h    |   6 +
+ third_party/blink/renderer/modules/BUILD.gn        |   1 +
+ .../service_worker/service_worker_global_scope.cc  |   6 +-
+ .../renderer/modules/webaudio/audio_buffer.cc      |  17 +-
+ .../renderer/modules/webaudio/audio_buffer_test.cc |  84 +++++
+ .../modules/webgl/webgl_rendering_context_base.cc  |  30 +-
+ .../blink/renderer/modules/webgpu/gpu_adapter.cc   |  94 +++--
  34 files changed, 1004 insertions(+), 238 deletions(-)
- create mode 100644 chrome/common/aegis/features_unittest.cc
- create mode 100644 chrome/common/aegis/fingerprint_guard_unittest.cc
- create mode 100644 third_party/blink/renderer/core/aegis/farbling_unittest.cc
- create mode 100644 third_party/blink/renderer/modules/webaudio/audio_buffer_test.cc
 
 diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
 index f84c810f205d19319c2db43a152dcd4a160bbac9..63a5af117b956d0d2e125e1b86e710ed9e6c7b70 100644
@@ -80,10 +76,10 @@ index a56fde3805626c6f384744c8f4eae9f39eddd152..1a2484bf2fa7b3b14918ce6bbaca42de
  
  void AegisService::SetTrackerBlockingEnabled(bool enabled) {
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 50e4c231bccabdc7065b93a84dedb4ad17b27c78..38f0001989e66db2c0ac86ca10bd42cd55b0c4d7 100644
+index 4a9184c85238a7ca579d8433b72c8f31be6db609..f5a726636c489c0a8880efc4e35c3b9a5b2452f4 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -219,6 +219,7 @@
+@@ -221,6 +221,7 @@
  #include "chrome/browser/webauthn/chrome_web_authentication_delegate_base.h"
  #include "chrome/browser/webauthn/webauthn_pref_names.h"
  #include "chrome/common/aegis/aegis_net_throttle.h"
@@ -91,7 +87,7 @@ index 50e4c231bccabdc7065b93a84dedb4ad17b27c78..38f0001989e66db2c0ac86ca10bd42cd
  #include "chrome/common/aegis/pref_names.h"
  #include "chrome/common/buildflags.h"
  #include "chrome/common/channel_info.h"
-@@ -5997,11 +5998,13 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6094,11 +6095,13 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
            profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kTrackerBlockingEnabled),
@@ -796,7 +792,7 @@ index afadb2f8c33436ce709ecd5c22c4efad3f619324..44df8cd29059c8f52062e9e57803e75d
        bool is_constructor_secure_context,
        const WebString& user_agent,
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index 7f718bc2ea0582929b7a494bea846e3269cfeced..5ab27608bdecafde560296cd8ea334f70360506c 100644
+index ea5bdeebd89a8f2ee0ea889e19b7b0346cc7aa98..1912ea7c08c8c85975bff55337ecffb745ce722d 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
 @@ -1505,6 +1505,7 @@ source_set("unit_tests") {
@@ -1519,10 +1515,10 @@ index 184c5da267dc2c6ff97e155012b4df84f7544004..f3f9f1968e0103d45de68937524b4d56
        bool is_constructor_secure_context,
        const WebString& user_agent,
 diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-index fab79aa8c5a4784024d5e38652039a2acde10295..0962c08a3adac3c00b129c191c2c9fab935bbc1d 100644
+index 2a4949728745ed2e5e926676097d3c41f0c49ef3..28f0a1f0cf572bd6e13ce209018ff1a2b47fbfd3 100644
 --- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
 +++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-@@ -18,6 +18,7 @@
+@@ -19,6 +19,7 @@
  #include "third_party/blink/renderer/bindings/core/v8/v8_element_geometry_update_event_init.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_union_element_elementimage.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_update_element_geometry_options.h"
@@ -1530,7 +1526,7 @@ index fab79aa8c5a4784024d5e38652039a2acde10295..0962c08a3adac3c00b129c191c2c9fab
  #include "third_party/blink/renderer/core/css/css_font_selector.h"
  #include "third_party/blink/renderer/core/css/offscreen_font_selector.h"
  #include "third_party/blink/renderer/core/css/style_engine.h"
-@@ -373,6 +374,20 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+@@ -375,6 +376,20 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
      return nullptr;
    }
  
@@ -1551,7 +1547,7 @@ index fab79aa8c5a4784024d5e38652039a2acde10295..0962c08a3adac3c00b129c191c2c9fab
    ImageBitmap* image =
        context_->TransferToImageBitmap(script_state, exception_state);
    if (exception_state.HadException()) [[unlikely]] {
-@@ -383,6 +398,8 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+@@ -385,6 +400,8 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
      // Undocumented exception (not in spec).
      exception_state.ThrowDOMException(DOMExceptionCode::kUnknownError,
                                        "ImageBitmap construction failed");
@@ -1560,7 +1556,7 @@ index fab79aa8c5a4784024d5e38652039a2acde10295..0962c08a3adac3c00b129c191c2c9fab
    }
  
    return image;
-@@ -563,7 +580,9 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+@@ -584,7 +601,9 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
    }
  
    base::TimeTicks start_time = base::TimeTicks::Now();
@@ -1572,10 +1568,10 @@ index fab79aa8c5a4784024d5e38652039a2acde10295..0962c08a3adac3c00b129c191c2c9fab
      auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
          script_state, exception_state.GetContext());
 diff --git a/third_party/blink/renderer/core/workers/worker_global_scope.h b/third_party/blink/renderer/core/workers/worker_global_scope.h
-index 73e55fabee962da3831c992d7715de65a454fcd3..0495bea080ca1fe6d6e8f69b96076455b0552f8f 100644
+index c46068b29b4e12ed3fd0be9ccfe828d10754da56..053fd8962202f16b307cddf4fdb6610dc41ef8ca 100644
 --- a/third_party/blink/renderer/core/workers/worker_global_scope.h
 +++ b/third_party/blink/renderer/core/workers/worker_global_scope.h
-@@ -293,6 +293,12 @@ class CORE_EXPORT WorkerGlobalScope
+@@ -296,6 +296,12 @@ class CORE_EXPORT WorkerGlobalScope
      return top_level_frame_security_origin_.get();
    }
  
@@ -1589,22 +1585,22 @@ index 73e55fabee962da3831c992d7715de65a454fcd3..0495bea080ca1fe6d6e8f69b96076455
    WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
                      WorkerThread*,
 diff --git a/third_party/blink/renderer/modules/BUILD.gn b/third_party/blink/renderer/modules/BUILD.gn
-index 7eb1aa00fe2bb6cc442175690d754e5788ab76fe..ae7387b1fb010aaabf77e38d17ea41c1709841a2 100644
+index 57908c79e9e445feb9eeb52f56d317505fa5db5a..261e32a4308cd30d22573a9ec78efd0971bd7b7d 100644
 --- a/third_party/blink/renderer/modules/BUILD.gn
 +++ b/third_party/blink/renderer/modules/BUILD.gn
-@@ -650,6 +650,7 @@ source_set("unit_tests") {
-     "wake_lock/wake_lock_test_utils.cc",
+@@ -652,6 +652,7 @@ source_set("unit_tests") {
      "wake_lock/wake_lock_test_utils.h",
+     "webaudio/analyser_node_test.cc",
      "webaudio/audio_buffer_source_handler_test.cc",
 +    "webaudio/audio_buffer_test.cc",
      "webaudio/audio_context_autoplay_test.cc",
      "webaudio/audio_context_test.cc",
      "webaudio/audio_node_input_test.cc",
 diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-index 8837b4b53a77ba642f01c89dd4b8b22dafb8eebf..85312d582dcdb0a62c41e9b4469b28d54ed9a925 100644
+index 84233c2714c56d9cc0ed44d90bf124eb34e312ac..6673320e5f104e69384237241bb78329ec7db5b1 100644
 --- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
 +++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-@@ -1797,11 +1797,13 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
+@@ -1698,11 +1698,13 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
  
    ancestor_frame_type_ = ancestor_frame_type;
  
@@ -1767,7 +1763,7 @@ index 0000000000000000000000000000000000000000..82b2b63ca842323a5be2ff3741a962de
 +}  // namespace
 +}  // namespace blink
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 4304f199b9181a5027a7f2b0bc42477fc354cb4c..71b509663fa0de7e20b8e0b84f57f58974b77f84 100644
+index 44054500124e03b5c59c0bc08d799ca85ea1c811..90623bdc96d0248247bc1c3ec14f4d7b2b3e61f0 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,7 +25,6 @@
@@ -2034,6 +2030,3 @@ index 20dc4c663e8858eb09fe50f07529f4bd9683512b..e9b9ae5c02b9b9a34a800f851ad113bc
    }
  
    // Use a set to prevent duplicate features.
--- 
-2.52.0
-

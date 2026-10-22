@@ -19,7 +19,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/tools/build/aegis_product_plist_test.py
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index e0c798080f4bdae7aed228a725d6212db14ba8b7..c6ca74e3a81b332e578e7e3d1d73ba2162310103 100644
+index 90ade40a4addff98301d469ec0e0cfedff355a33..0b0f555225cc251b0ac6065142f3360696d9de60 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
 @@ -508,8 +508,26 @@ if (is_win) {

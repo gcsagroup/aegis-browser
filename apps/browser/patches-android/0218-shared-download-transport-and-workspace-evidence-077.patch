@@ -137,7 +137,7 @@ index 8868dbcbd5f590d4c92d91bb036603dd45243c9e..7b324111c4e83fe41689e9e813556a8d
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/third_party/lit/v3_0/BUILD.gn b/third_party/lit/v3_0/BUILD.gn
-index 512a9736831262654d1fb8d6f46e10ad1fcf5776..39144d48f89066d45ce28ac9f7843096ecc682ef 100644
+index a75e73285cf865a2ae9f2c4e937f63e8b188f10d..a2efbb5e4109791f94b95247268e8902f7113162 100644
 --- a/third_party/lit/v3_0/BUILD.gn
 +++ b/third_party/lit/v3_0/BUILD.gn
 @@ -167,6 +167,7 @@ ts_library("build_ts") {
@@ -161,7 +161,7 @@ index 32c9f41ee3adfc45eee27fd1016012a62462739c..a6f5d161699768eec84e023bdd50b437
      "cr_components/color_change_listener",
      "cr_components/commerce",
 diff --git a/ui/webui/resources/BUILD.gn b/ui/webui/resources/BUILD.gn
-index 53a8f4e755dc6933324280aa2c6303c8505f329b..6889d4b9a22612b3995265b31a3d16c8df3866a3 100644
+index c1d4f55b2d63b5663f8a6cc177a113824bb8c606..4221a852ebf16786ce627d8900a7f0e69ee9441b 100644
 --- a/ui/webui/resources/BUILD.gn
 +++ b/ui/webui/resources/BUILD.gn
 @@ -43,7 +43,6 @@ generate_grd("build_grd") {

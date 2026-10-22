@@ -4,6 +4,42 @@ Date: Tue, 13 Oct 2026 17:52:00 +0800
 Subject: [PATCH] 统一当前网站、原生设置与 Markdown 阅读界面，候选 202
 
 ---
+ .../aegis/enhancements/enhancement_store.cc        |   57 +-
+ .../browser/aegis/enhancements/enhancement_store.h |    1 +
+ .../enhancements/enhancement_store_unittest.cc     |   43 +
+ .../aegis/enhancements/enhancement_tab_helper.cc   |   19 +-
+ chrome/browser/resources/aegis/BUILD.gn            |    2 +
+ chrome/browser/resources/aegis/enhancements.css    |  248 +---
+ chrome/browser/resources/aegis/enhancements.html   |  150 +--
+ chrome/browser/resources/aegis/enhancements.js     |  182 +--
+ .../resources/aegis/enhancements_shared/i18n.js    | 1293 ++++++++++++++++++++
+ .../resources/aegis/enhancements_shared/viewer.css |   22 +-
+ .../aegis/enhancements_shared/viewer.html          |    6 +-
+ .../resources/aegis/enhancements_shared/viewer.js  |   73 +-
+ chrome/browser/resources/aegis/gestures.ts         |   19 +-
+ chrome/browser/resources/aegis/markdown.css        |   24 +
+ chrome/browser/resources/aegis/markdown.html       |   93 +-
+ chrome/browser/resources/aegis/markdown.js         |  137 ++-
+ chrome/browser/resources/settings/BUILD.gn         |    1 +
+ .../resources/settings/aegis_page/aegis_page.html  |  112 ++
+ .../resources/settings/aegis_page/aegis_page.ts    |  147 +++
+ .../settings/privacy_page/privacy_page.html        |    7 +-
+ .../settings/privacy_page/privacy_page.ts          |    2 +-
+ chrome/browser/resources/settings/route.ts         |    4 +
+ chrome/browser/resources/settings/router.ts        |    4 +
+ .../settings/settings_main/settings_main.html      |    4 +
+ .../settings/settings_main/settings_main.ts        |    1 +
+ .../settings/settings_menu/settings_menu.html      |   10 +-
+ chrome/browser/ui/browser_command_controller.cc    |    2 +-
+ chrome/browser/ui/toolbar/app_menu_model.cc        |   14 +-
+ .../ui/views/toolbar/aegis_toolbar_button.cc       |  683 ++++-------
+ .../ui/webui/aegis/aegis_enhancement_handler.cc    |   36 +-
+ .../ui/webui/aegis/aegis_gesture_handler.cc        |    5 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h |    4 +-
+ chrome/browser/ui/webui/settings/BUILD.gn          |    2 +
+ chrome/browser/ui/webui/settings/settings_ui.cc    |   17 +
+ 34 files changed, 2477 insertions(+), 947 deletions(-)
+
 diff --git a/chrome/browser/aegis/enhancements/enhancement_store.cc b/chrome/browser/aegis/enhancements/enhancement_store.cc
 index de6bfddc349a7faae47b793bce8ba376a43d1e83..5039dab4165287b0e572b179b7c995ca0b1cc6f3 100644
 --- a/chrome/browser/aegis/enhancements/enhancement_store.cc
@@ -3054,7 +3090,7 @@ index 602fdf3bae1004c5dbd10f16a9d081413e9d1959..0069380e6c906cb25e62e43a438c5644
 +    } catch (error) { notify(error.message); }
 +  };
 diff --git a/chrome/browser/resources/settings/BUILD.gn b/chrome/browser/resources/settings/BUILD.gn
-index 5b58a98f56da953749f3f1c42ee9410b4337e890..44c4086e2d45192c358671ba1b1a3a71ead8200d 100644
+index 1795e894fc56def1e6c6e6fdf716ec3064d2f2fe..3f02d3f0378868237cd8be358a6ac7ff4cb4d9c6 100644
 --- a/chrome/browser/resources/settings/BUILD.gn
 +++ b/chrome/browser/resources/settings/BUILD.gn
 @@ -51,6 +51,7 @@ build_webui("build") {
@@ -3062,9 +3098,9 @@ index 5b58a98f56da953749f3f1c42ee9410b4337e890..44c4086e2d45192c358671ba1b1a3a71
    # -----------------web_component_files start ---------------------------------
    web_component_files = [
 +    "aegis_page/aegis_page.ts",
-     "ai_page/ai_info_card.ts",
-     "ai_page/ai_logging_info_bullet.ts",
-     "ai_page/ai_mode_search_page.ts",
+     "autofill_page/account_card.ts",
+     "autofill_page/autofill_ai_add_or_edit_dialog.ts",
+     "autofill_page/autofill_ai_entries_list.ts",
 diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.html b/chrome/browser/resources/settings/aegis_page/aegis_page.html
 new file mode 100644
 index 0000000000000000000000000000000000000000..9317eff92b232e85e328d944921069a739352524
@@ -3337,7 +3373,7 @@ index 0000000000000000000000000000000000000000..7a8307a48a6334062191a0c897e0b649
 +}
 +customElements.define(SettingsAegisPageElement.is, SettingsAegisPageElement);
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
-index 591870805ef317288dd05f65d0ce3e4a47337bf8..e95cd297f3e3649f46b960ef2932ef1a2605a383 100644
+index 62d391a2c8043b245ce1c7091c266b0589bd5b9d..9851ae4a98948d1627070c5343a970bbaa5fa764 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
 @@ -2,10 +2,9 @@
@@ -3368,7 +3404,7 @@ index 08f191188e266d673ea56286e775c00d21aaa2a8..45ff91ff570b67b93e340a658203cfa9
  
    private onCookiesClick_() {
 diff --git a/chrome/browser/resources/settings/route.ts b/chrome/browser/resources/settings/route.ts
-index aff0d534fdcfdb4cdc02901d2ae177a59f44d9a9..157b3acb3f49805865a3209ecd71c72eef793a37 100644
+index 825f6bf8e6a81f7d7dd4eb0b5a679b84da74e78e..cb4d650221579c0487d7db3caa86d513a7f56f99 100644
 --- a/chrome/browser/resources/settings/route.ts
 +++ b/chrome/browser/resources/settings/route.ts
 @@ -142,6 +142,10 @@ function createRoutes(): SettingsRoutes {
@@ -3383,7 +3419,7 @@ index aff0d534fdcfdb4cdc02901d2ae177a59f44d9a9..157b3acb3f49805865a3209ecd71c72e
    r.ABOUT = r.BASIC.createSection(
        '/help', 'about', loadTimeData.getString('aboutPageTitle'));
 diff --git a/chrome/browser/resources/settings/router.ts b/chrome/browser/resources/settings/router.ts
-index a6b043271a7318309f7490d90f6ffd8ee4bc0a2a..d07ed49a7bcb97c2b3368f601f98e5665fb096c1 100644
+index 5c07af7bf6d8c5d1d6fe135e21f3bd93f0e81d87..6698d2f0c6ba911649f4d25c2941945823d47810 100644
 --- a/chrome/browser/resources/settings/router.ts
 +++ b/chrome/browser/resources/settings/router.ts
 @@ -14,6 +14,10 @@ import {loadTimeData} from './i18n_setup.js';
@@ -3398,7 +3434,7 @@ index a6b043271a7318309f7490d90f6ffd8ee4bc0a2a..d07ed49a7bcb97c2b3368f601f98e566
    ACCESSIBILITY: Route;
    ADDRESSES: Route;
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
-index b5c3842ff0449c621350a20e5bacdd1ce8577228..e3529823e885e2b16139b742f02af98feaf8f26a 100644
+index 2ef4dcad53f0e98803ec4cba596a0e01e64e49fc..fa43dd63cf7e8b624b3b653ed10a44dffccfe2f7 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.html
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.html
 @@ -50,6 +50,10 @@
@@ -3413,7 +3449,7 @@ index b5c3842ff0449c621350a20e5bacdd1ce8577228..e3529823e885e2b16139b742f02af98f
      <div slot="view" id="people">
        <template is="dom-if" if="[[renderPlugin_(
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.ts b/chrome/browser/resources/settings/settings_main/settings_main.ts
-index d9fd6ab2a9aa0dda6774762475b764eec7123c40..18899cf080024465eed9484cfdb1da0110e453f5 100644
+index 4b6a86f0d9cf27a459d27c1c3ca9160de8c3ac34..fcfff0de40238e1829120cac30d5eff2d0becc66 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.ts
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.ts
 @@ -11,6 +11,7 @@ import 'chrome://resources/cr_elements/cr_shared_style.css.js';
@@ -3425,12 +3461,12 @@ index d9fd6ab2a9aa0dda6774762475b764eec7123c40..18899cf080024465eed9484cfdb1da01
  import '../appearance_page/appearance_page_index.js';
  import '../autofill_page/autofill_page_index.js';
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index 8752b005f49268703d762fba8a4e07d2a7915f51..e4e829ac1d7e88023746818b6ebd7200de5ab904 100644
+index 7aa355170f07857397b14255c9b78e67b3a3060f..c4bd5c041cc212c57bc59acb086df2473e40661d 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-@@ -72,14 +72,12 @@
+@@ -83,14 +83,12 @@
+       }
      </style>
- 
      <div role="navigation">
 -      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink):not(#aegisGesturesLink)"
 +      <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
@@ -3441,17 +3477,17 @@ index 8752b005f49268703d762fba8a4e07d2a7915f51..e4e829ac1d7e88023746818b6ebd7200
 -          <cr-icon icon="settings:touchpad-mouse"></cr-icon>
 -          鼠标手势
 -        </a>
-+        <a role="menuitem" class="cr-nav-menu-item" href="/aegisEnhancements"><cr-icon icon="settings:code"></cr-icon>$i18n{aegisEnhancementsTitle}</a>
-+        <a role="menuitem" class="cr-nav-menu-item" href="/aegisReading"><cr-icon icon="settings:appearance"></cr-icon>$i18n{aegisReadingTitle}</a>
-+        <a role="menuitem" class="cr-nav-menu-item" href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon>$i18n{aegisGesturesTitle}</a>
++        <a role="menuitem" class="cr-nav-menu-item" href="/aegisEnhancements"><cr-icon icon="settings:code"></cr-icon><span class="menu-label">$i18n{aegisEnhancementsTitle}</span></a>
++        <a role="menuitem" class="cr-nav-menu-item" href="/aegisReading"><cr-icon icon="settings:appearance"></cr-icon><span class="menu-label">$i18n{aegisReadingTitle}</span></a>
++        <a role="menuitem" class="cr-nav-menu-item" href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span class="menu-label">$i18n{aegisGesturesTitle}</span></a>
          <a role="menuitem"
              id="people" href="/people"
              hidden="[[!showPeopleMenuItem_(
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index fe0a3efec372d47e876ae683541cb105ac0efa5e..dc52e3cb26d934fe3f6027367d9684dbf095b07a 100644
+index c1a1639cdfbcaa0ea843e5ac4c34cc711ff3353c..c6234ee8444b1a8569a9f582f1108c44b7a534dd 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1310,7 +1310,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1323,7 +1323,7 @@ void BrowserCommandController::HandleCommandWithDisposition(
      case IDC_AEGIS_ENHANCEMENTS:
      case IDC_AEGIS_MARKDOWN:
        if (IsAegisProfileSupported(profile()))
@@ -3461,10 +3497,10 @@ index fe0a3efec372d47e876ae683541cb105ac0efa5e..dc52e3cb26d934fe3f6027367d9684db
      case IDC_SHOW_AEGIS_AGENT:
        SidePanelUI::From(browser_)->Show(
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index 7b00b4f5bf6c0e17091cf4406a282dc75e519d72..c8efeb579dfc191203df0c269122bfcec15c37f6 100644
+index 6911c047a3d428585ef02bdf32eccf78065c43db..0defa3ca590eaf138ebf4041b756960ab6aae087 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2346,17 +2346,19 @@ void AppMenuModel::Build() {
+@@ -2414,17 +2414,19 @@ void AppMenuModel::Build() {
  #endif
  #endif
  
@@ -4385,7 +4421,7 @@ index 080d0e1733b66d16bc6d87a28c1948ba4e4e3439..eeba71134ac6dfd8c1b5fe41ace64b15
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/BUILD.gn b/chrome/browser/ui/webui/settings/BUILD.gn
-index 1c325bb1e2d39aa72e7452a926ce63b4d7add1e7..d0213f6f1512c22a6bf9d1a9aef4b12076833699 100644
+index 1a6f838ed48300ece7eb053e7cf51583dea2ae3e..5c3f8cc973dd7cd66dc3afeb47abd1208614ef21 100644
 --- a/chrome/browser/ui/webui/settings/BUILD.gn
 +++ b/chrome/browser/ui/webui/settings/BUILD.gn
 @@ -182,6 +182,8 @@ source_set("impl") {
@@ -4398,7 +4434,7 @@ index 1c325bb1e2d39aa72e7452a926ce63b4d7add1e7..d0213f6f1512c22a6bf9d1a9aef4b120
      "//chrome/app:command_ids",
      "//chrome/app:generated_resources",
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index c0adc893ca8b5133316458d63986b03f9a927f0e..0fcc84f988c1144903415ca998ded0c85e6cc73c 100644
+index 0584aa084c2ab74e45eb7f3f39a17ed48956870a..eda0053f404f3e55b847a59cee0a2992f6b05bd3 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
 @@ -2,6 +2,10 @@
@@ -4412,7 +4448,7 @@ index c0adc893ca8b5133316458d63986b03f9a927f0e..0fcc84f988c1144903415ca998ded0c8
  #include "chrome/browser/ui/webui/settings/settings_ui.h"
  
  #include <stddef.h>
-@@ -240,6 +244,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -237,6 +241,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
        content::WebUIDataSource::CreateAndAdd(
            web_ui->GetWebContents()->GetBrowserContext(),
            chrome::kChromeUISettingsHost);

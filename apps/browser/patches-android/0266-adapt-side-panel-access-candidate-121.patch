@@ -124,7 +124,7 @@ index ba932cbb41eea8a4f5151733752952604c385c68..ea7a9e0b4208633ac8e5642dd1deed29
    ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
        SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
 diff --git a/chrome/browser/renderer_context_menu/render_view_context_menu.cc b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
-index d0034ca2d08808e662dc020ac549865d9bcd8f37..918b661efe65eef464fa3173e6cf54105eed6cfa 100644
+index 8cbf4632c463058bf31ad177eea1bbcb72abe12c..d7c776a2c84e28b97dde8cd907aac8077d7535ef 100644
 --- a/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 +++ b/chrome/browser/renderer_context_menu/render_view_context_menu.cc
 @@ -112,7 +112,6 @@
@@ -145,7 +145,7 @@ index d0034ca2d08808e662dc020ac549865d9bcd8f37..918b661efe65eef464fa3173e6cf5410
      side_panel->Show(SidePanelEntryId::kAegisAgent,
                       SidePanelOpenTrigger::kAegisAgent);
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index bb0c09a7ba5ea1e26660d2808619c5ab97b1dfec..b6b6d2bc0b5ea9fa1138426afe555d528b7c765f 100644
+index 453e5b3ab5c197df2e30ce6dcd7fec018c7a983b..5597fa2616c6dfdf8705c559d36019eb2bc0d3a7 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
 @@ -60,7 +60,6 @@

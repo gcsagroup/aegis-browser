@@ -673,7 +673,7 @@ index 0afc1143a10cbd9d6feb98785c4621ebbe1c2489..8a64464ded3606fbdd968ebedef9c8c7
                            std::string locale,
                            base::OnceCallback<void(SummarizeResult)> done,
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 263f3e32737ead685659f417884d8c049368750a..d9854cbbafbaac96c36ad245ad05e4cc88932b83 100644
+index c4b5f6fe365d3385e6ad353f3cea4b0a8359d349..39b25f216efaf22c7cb3c107878e469de426eb64 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -5,6 +5,7 @@
@@ -2114,7 +2114,7 @@ index cb3e12ef928fbd366f6c37c8e8b8d4fa47194aa7..0ece297556232fb27614c6e07f70db7d
    chrome::mojom::DynamicParamsPtr dynamic_params_
        GUARDED_BY(dynamic_params_lock_);
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 091cdda90f0720a30d8da500f1d8173707308b37..2938d8c5ca3e82b9a9a743bb805526ad55087c9c 100644
+index 30a068fb5fd3e786f4e2061d2fb9719f653a7071..fbe6538e099ab24c31c759e00745d57ebed31416 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -266,14 +266,16 @@ URLLoaderThrottleProviderImpl::CreateThrottles(

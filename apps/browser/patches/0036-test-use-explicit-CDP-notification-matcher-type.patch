@@ -8,7 +8,7 @@ Subject: [PATCH] test: use explicit CDP notification matcher type
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 1a4889291a6e143a0f2bb7e6e1469c3bb26bf71b..0df50531b1a89dd3c831d8c180c14ae73f0810b3 100644
+index 0f0f041ea6436fdf23a33ef1b72686a4d9b5d4d6..192db12fc36a60bfbdee72733b6d78497cc4f415 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -810,7 +810,8 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,

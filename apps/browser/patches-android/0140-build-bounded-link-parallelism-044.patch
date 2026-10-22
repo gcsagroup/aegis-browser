@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
-index c6ca74e3a81b332e578e7e3d1d73ba2162310103..0bd908730da7f7f033d17bbcd5db866e85be9d56 100644
+index 0b0f555225cc251b0ac6065142f3360696d9de60..9879bc651e72439d09b89adb4778261c3b1352e7 100644
 --- a/chrome/BUILD.gn
 +++ b/chrome/BUILD.gn
 @@ -1376,11 +1376,11 @@ if (is_win) {

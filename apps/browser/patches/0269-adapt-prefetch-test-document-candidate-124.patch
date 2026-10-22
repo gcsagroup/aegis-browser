@@ -29,7 +29,7 @@ index f2243cbcc17c749ac567d023ff31233cf0f565e3..e0bdc6a8c06fb263b69771a08cded2a4
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/content/browser/loader/prefetch_browsertest.cc b/content/browser/loader/prefetch_browsertest.cc
-index b38b75d1a854f2e1fb7b9eefd9b532082a8371b7..a91ad42b87a7132786f5f996dcc9e7cbccac0011 100644
+index 6fb391cdc48a9316a54edfd74c5ea2ee9f9ba457..433fe2cabf70d191feca2fd0319f06c56fc230bb 100644
 --- a/content/browser/loader/prefetch_browsertest.cc
 +++ b/content/browser/loader/prefetch_browsertest.cc
 @@ -1670,10 +1670,23 @@ class PrefetchLoadFlagsBrowserTest : public PrefetchBrowserTestBase {

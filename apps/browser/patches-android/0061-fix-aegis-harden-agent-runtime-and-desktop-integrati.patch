@@ -4,40 +4,40 @@ Date: Fri, 28 Aug 2026 21:01:03 +0800
 Subject: [PATCH] fix(aegis): harden agent runtime and desktop integration
 
 ---
- chrome/browser/actor/execution_engine.cc      |  27 ++++
- .../actor/execution_engine_unittest.cc        |  50 +++++++
- chrome/browser/aegis/BUILD.gn                 |   2 +
- .../browser/aegis/agent/aegis_actor_bridge.cc |  59 +++++++--
- .../aegis/agent/aegis_agent_browsertest.cc    |  19 ++-
- .../agent/aegis_agent_interactive_uitest.cc   |  52 +++++++-
- .../aegis/agent/aegis_agent_service.cc        |  77 +++++++----
- .../browser/aegis/agent/aegis_agent_service.h |   2 +-
- .../agent/aegis_agent_service_unittest.cc     | 122 ++++++++++++++++--
- .../aegis/agent/aegis_browser_tools.cc        | 119 ++++++++++++++---
- .../browser/aegis/agent/aegis_browser_tools.h |  22 +++-
- .../aegis/agent/agent_core_unittest.cc        |  81 ++++++++++++
- chrome/browser/aegis/agent/agent_execution.cc |  43 +++---
- .../aegis/agent/agent_execution_unittest.cc   |  14 ++
- .../agent/agent_model_protocol_fuzzer.cc      |  11 +-
- .../aegis/agent/agent_monitor_scheduler.cc    |   9 ++
- .../aegis/agent/agent_monitor_scheduler.h     |   5 +
- .../aegis/agent/agent_policy_broker.cc        |  12 ++
- .../aegis/agent/agent_result_verifier.cc      |  47 +++++--
- .../browser/aegis/agent/agent_scope_fuzzer.cc |   9 +-
- .../agent/agent_tool_arguments_fuzzer.cc      |  11 +-
- .../aegis/agent/agent_tool_registry.cc        |  10 +-
- .../browser/global_keyboard_shortcuts_mac.mm  |   1 +
- chrome/browser/resources/aegis_agent/agent.ts |   2 +
- .../ui/webui/aegis_agent/aegis_agent.mojom    |  55 +++++---
- .../aegis_agent/aegis_agent_page_handler.cc   |  21 +--
- chrome/chrome_paks.gni                        |   1 +
- 27 files changed, 733 insertions(+), 150 deletions(-)
+ chrome/browser/actor/execution_engine.cc           |  27 +++++
+ chrome/browser/actor/execution_engine_unittest.cc  |  49 +++++++++
+ chrome/browser/aegis/BUILD.gn                      |   2 +
+ chrome/browser/aegis/agent/aegis_actor_bridge.cc   |  59 ++++++++--
+ .../browser/aegis/agent/aegis_agent_browsertest.cc |  19 +++-
+ .../aegis/agent/aegis_agent_interactive_uitest.cc  |  52 ++++++++-
+ chrome/browser/aegis/agent/aegis_agent_service.cc  |  77 ++++++++-----
+ chrome/browser/aegis/agent/aegis_agent_service.h   |   2 +-
+ .../aegis/agent/aegis_agent_service_unittest.cc    | 122 +++++++++++++++++++--
+ chrome/browser/aegis/agent/aegis_browser_tools.cc  | 119 +++++++++++++++++---
+ chrome/browser/aegis/agent/aegis_browser_tools.h   |  22 +++-
+ chrome/browser/aegis/agent/agent_core_unittest.cc  |  81 ++++++++++++++
+ chrome/browser/aegis/agent/agent_execution.cc      |  43 +++++---
+ .../aegis/agent/agent_execution_unittest.cc        |  14 +++
+ .../aegis/agent/agent_model_protocol_fuzzer.cc     |  11 +-
+ .../browser/aegis/agent/agent_monitor_scheduler.cc |   9 ++
+ .../browser/aegis/agent/agent_monitor_scheduler.h  |   5 +
+ chrome/browser/aegis/agent/agent_policy_broker.cc  |  12 ++
+ .../browser/aegis/agent/agent_result_verifier.cc   |  47 ++++++--
+ chrome/browser/aegis/agent/agent_scope_fuzzer.cc   |   9 +-
+ .../aegis/agent/agent_tool_arguments_fuzzer.cc     |  11 +-
+ chrome/browser/aegis/agent/agent_tool_registry.cc  |  10 +-
+ chrome/browser/global_keyboard_shortcuts_mac.mm    |   1 +
+ chrome/browser/resources/aegis_agent/agent.ts      |   2 +
+ .../browser/ui/webui/aegis_agent/aegis_agent.mojom |  55 ++++++----
+ .../webui/aegis_agent/aegis_agent_page_handler.cc  |  21 ++--
+ chrome/chrome_paks.gni                             |   1 +
+ 27 files changed, 732 insertions(+), 150 deletions(-)
 
 diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
-index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e02886f9224e 100644
+index 90c63c54259e3556605abc8f60895209f9468f71..662a5c48c0929b21531ab1ca9f88e9271819e095 100644
 --- a/chrome/browser/actor/execution_engine.cc
 +++ b/chrome/browser/actor/execution_engine.cc
-@@ -118,6 +118,7 @@ namespace actor {
+@@ -124,6 +124,7 @@ namespace actor {
  // Individual custom predicates that the actor framework supports in addition to
  // those provided by the origin_gating framework.
  enum class ActorCustomPredicate {
@@ -45,7 +45,7 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
    kSafetyList,
    kSensitiveUrl,
    kLookalikeUrl,
-@@ -140,6 +141,8 @@ namespace {
+@@ -146,6 +147,8 @@ namespace {
  constexpr std::string_view ActorCustomPredicateToString(
      ActorCustomPredicate predicate) {
    switch (predicate) {
@@ -54,15 +54,15 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
      case ActorCustomPredicate::kSafetyList:
        return "actor_safety_list_check";
      case ActorCustomPredicate::kSensitiveUrl:
-@@ -464,6 +467,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
+@@ -487,6 +490,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
                                    : origin_gating::Decision::kBlocked;
  }
  
 +origin_gating::Decision BlockIfExplicitlyDenied(
 +    const ActorTask* task,
 +    origin_gating::GatingDecisionContext* context,
-+    const GURL& source,
-+    const GURL& destination) {
++    const GateableEvent& event) {
++  const GURL& destination = event.destination();
 +  // 明确拒绝属于授权边界，必须先于 localhost、测试开关、白名单和缓存。
 +  // 保留旧流程对 about:blank 初始文档的例外，不提前放行其他安全检查。
 +  if (!destination.IsAboutBlank() &&
@@ -75,8 +75,8 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
 +
  origin_gating::Decision AllowIfSafetyChecksDisabled(
      origin_gating::GatingDecisionContext* context,
-     const GURL& source,
-@@ -536,6 +554,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
+     const GateableEvent& event) {
+@@ -579,6 +597,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -85,7 +85,7 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
          case ActorCustomPredicate::kSafetyList:
            return decision.is_allowed
                       ? ExecutionEngine::GatingDecision::kAllowByStaticList
-@@ -596,6 +616,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
+@@ -640,6 +660,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -94,8 +94,8 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
          case ActorCustomPredicate::kSafetyList:
            return MayActOnUrlBlockReason::kBlockedByStaticList;
          case ActorCustomPredicate::kDangerousMimeType:
-@@ -712,6 +734,11 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
-           *this,
+@@ -760,6 +782,11 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
+           weak_ptr_factory_.GetWeakPtr(),
            origin_gating::OriginGatingConfiguration(
                {
 +                  {CustomPredicate(
@@ -107,26 +107,18 @@ index d73de80dce009946ecf26539bb401c4f41150ccc..2bf6e11e2369e59c4ddf497429a3e028
                                     ActorCustomPredicate::kTabErrorDocument),
                     {GateableEvent::kPageAction}},
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 782e6653be283a3b4c687ec824dd96f5a6b000cd..4eabe06e463f64c08ca57d4abc18557724b209f7 100644
+index 33a0c6386804aa3e2a708c6b2137d6f275c51fb2..0b3c52143567dbf119aae2cac1ead2dd57464a5f 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -17,6 +17,7 @@
- #include "base/test/gmock_expected_support.h"
+@@ -18,6 +18,7 @@
  #include "base/test/metrics/histogram_tester.h"
+ #include "base/test/scoped_command_line.h"
  #include "base/test/scoped_feature_list.h"
 +#include "base/test/scoped_command_line.h"
  #include "base/test/test_future.h"
  #include "base/time/time.h"
  #include "chrome/browser/actor/actor_keyed_service.h"
-@@ -41,6 +42,7 @@
- #include "chrome/common/webui_url_constants.h"
- #include "chrome/test/base/chrome_render_view_host_test_harness.h"
- #include "components/actor/core/actor_features.h"
-+#include "components/actor/core/actor_switches.h"
- #include "components/actor/core/shared_types.h"
- #include "components/actor/public/mojom/actor_types.mojom.h"
- #include "components/autofill/core/browser/integrators/actor/actor_form_filling_types.h"
-@@ -1172,6 +1174,10 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
+@@ -1174,6 +1175,10 @@ class ExecutionEngineUrlGatingTest : public ChromeRenderViewHostTestHarness {
    }
  
   protected:
@@ -137,7 +129,7 @@ index 782e6653be283a3b4c687ec824dd96f5a6b000cd..4eabe06e463f64c08ca57d4abc185577
    virtual TaskSourceInfo TaskSource() const { return TestTaskSourceInfo(); }
  
    void SetExpectedOptimizationGuideCall(
-@@ -1452,6 +1458,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
+@@ -1454,6 +1459,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
             EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
  }
  
@@ -1794,10 +1786,10 @@ index 6cccfc1ccc0c8b1b6ce523ebcc5f05403ce92692..7dc07d318cfc2a381076dc4c09f9a815
    const bool ok = task && task->mode() == AgentMode::kAutomate &&
                    service_->RemoveMonitor(task_id, monitor_id);
 diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
-index bf4f4183dc28488c6b04370f45f96ae44aefc51f..c156ea62c9441f687adddbe476b12b44d4b4f838 100644
+index 12a5e53584f9f30117ba8e3e1c444974862dbd09..ce149b98106e41d4a6d8d9f043e422d95208d8b4 100644
 --- a/chrome/chrome_paks.gni
 +++ b/chrome/chrome_paks.gni
-@@ -206,6 +206,7 @@ template("chrome_extra_paks") {
+@@ -212,6 +212,7 @@ template("chrome_extra_paks") {
          "$root_gen_dir/chrome/about_sys_resources.pak",
          "$root_gen_dir/chrome/access_code_cast_resources.pak",
          "$root_gen_dir/chrome/actor_overlay_resources.pak",
@@ -1805,6 +1797,3 @@ index bf4f4183dc28488c6b04370f45f96ae44aefc51f..c156ea62c9441f687adddbe476b12b44
          "$root_gen_dir/chrome/app_service_internals_resources.pak",
          "$root_gen_dir/chrome/autofill_ml_internals_resources.pak",
          "$root_gen_dir/chrome/bookmarks_resources.pak",
--- 
-2.52.0
-

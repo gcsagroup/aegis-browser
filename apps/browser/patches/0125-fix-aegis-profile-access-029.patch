@@ -10,7 +10,7 @@ Subject: [PATCH] fix(aegis): migrate profile access in menu and toolbar (029)
  3 files changed, 8 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/toolbar/app_menu_model.cc
-index 061dd8aa5a910b18052c059384290bad9910d3cf..d980c3cbef4ea3cc8860bfb14ed513b487d93260 100644
+index 43adf83701db5a2f89955fe4257790629547ed1b..aeb48549ef67449fdfff184c48efd76d290a4c78 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
 @@ -2349,7 +2349,7 @@ void AppMenuModel::Build() {

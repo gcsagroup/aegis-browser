@@ -10,7 +10,7 @@ Subject: [PATCH] fix: preserve initial blank ownership across hash navigation
  3 files changed, 13 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 81da5856e4d426af3404410a3573e37ca8fd20fd..1a4889291a6e143a0f2bb7e6e1469c3bb26bf71b 100644
+index 9d0539d0b107086434aeb027282967cb0dede6a0..0f0f041ea6436fdf23a33ef1b72686a4d9b5d4d6 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -784,6 +784,17 @@ IN_PROC_BROWSER_TEST_F(AegisRemoteDevToolsProtocolTest,
@@ -45,7 +45,7 @@ index fd5cbd9a9987dc44771a68b1d8d4559fe73ef9ea..f8a34c5276c328609f798834f1b20320
           target->GetType() == DevToolsAgentHost::kTypeTab);
      const WeakDocumentPtr target_document =
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index 6ead35ff839ad76f01c0ed5342b47e7c8f9dd2f8..130fe6c2401ec711081530ee1cc7ebe45fa898a6 100644
+index f3188663eee720cc2deac921b4c0cb133fc4fae2..079cc411232cdf7fdf1e75cf7f2934c234c1013e 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
 @@ -1191,8 +1191,7 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(

@@ -10,19 +10,19 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../aegis/agent/aegis_agent_service.cc        |  86 ++++++++-----
- .../agent/aegis_agent_service_unittest.cc     |  54 +++++++++
- .../aegis/agent/aegis_browser_tools.cc        |  10 +-
- .../aegis/agent/agent_core_unittest.cc        |  38 ++++++
- .../aegis/agent/agent_monitor_scheduler.h     |   4 +
- .../aegis/agent/agent_result_verifier.cc      |  19 +--
- .../chrome_browser_interface_binders_webui.cc |   4 +
- ...me_browser_interface_binders_webui_parts.h |   2 +
- ...r_interface_binders_webui_parts_android.cc |   9 ++
- chrome/browser/resources/aegis_agent/agent.ts | 113 +++++++++++++++---
- .../ui/webui/aegis_agent/aegis_agent.mojom    |   1 +
- .../aegis_agent/aegis_agent_page_handler.cc   |   1 +
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  46 +++++++
+ chrome/browser/aegis/agent/aegis_agent_service.cc  |  86 ++++++++++------
+ .../aegis/agent/aegis_agent_service_unittest.cc    |  54 ++++++++++
+ chrome/browser/aegis/agent/aegis_browser_tools.cc  |  10 +-
+ chrome/browser/aegis/agent/agent_core_unittest.cc  |  38 +++++++
+ .../browser/aegis/agent/agent_monitor_scheduler.h  |   4 +
+ .../browser/aegis/agent/agent_result_verifier.cc   |  19 ++--
+ .../chrome_browser_interface_binders_webui.cc      |   4 +
+ .../chrome_browser_interface_binders_webui_parts.h |   2 +
+ ...rowser_interface_binders_webui_parts_android.cc |   9 ++
+ chrome/browser/resources/aegis_agent/agent.ts      | 113 +++++++++++++++++----
+ .../browser/ui/webui/aegis_agent/aegis_agent.mojom |   1 +
+ .../webui/aegis_agent/aegis_agent_page_handler.cc  |   1 +
+ .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  46 +++++++++
  13 files changed, 326 insertions(+), 61 deletions(-)
 
 diff --git a/chrome/browser/aegis/agent/aegis_agent_service.cc b/chrome/browser/aegis/agent/aegis_agent_service.cc
@@ -450,10 +450,10 @@ index 0c2abce187a288f391f7f78033eb19a15f1194e1..bc21a7ad18e7d593b27e477442975b2e
    if (call.tool_name == "monitor.list") {
      return HasList(value, "monitors") && HasString(value, "revision")
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
-index 449e250679a0734f628849eb65af5def5970eb08..b86893796eb062425bf2669608cc3101a998d5e1 100644
+index f58d5edfdc6cb88288038beafcba5f35ef69c0fc..33222c466cbd67e649ac14c863329c40fa4c3ec5 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
-@@ -443,6 +443,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
+@@ -490,6 +490,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
      content::WebUIBrowserInterfaceBrokerRegistry& registry) {
    PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(registry);
  
@@ -478,7 +478,7 @@ index 6c398bd59393a611fea4cd6f559a5cba599cd2e4..092d2ff57d48e2ccf043390aafd60721
  // These assumes "Desktop" is non-Android.
  void PopulateChromeWebUIFrameBindersPartsDesktop(
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
-index 0c20a4185017d9966f738ab1cf197f30e959bc60..a753fa0a9d18351984463cfe360fe8cf70c62dfd 100644
+index 4de7cd318e1d36b292cc2577446f5be3a24b4531..d69eaa3784573f6d261fb8d312b7a23f76f517aa 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
 @@ -4,6 +4,8 @@
@@ -497,8 +497,8 @@ index 0c20a4185017d9966f738ab1cf197f30e959bc60..a753fa0a9d18351984463cfe360fe8cf
 +#include "content/public/browser/web_ui_browser_interface_broker_registry.h"
  #include "content/public/browser/web_ui_controller_interface_binder.h"
  #include "mojo/public/cpp/bindings/binder_map.h"
- 
-@@ -36,4 +39,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
+ #include "ui/webui/buildflags.h"
+@@ -65,4 +68,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
        notebooks::NotebooksInternalsUI>(map);
  }
  
@@ -829,6 +829,3 @@ index 2de867a0d3762842de8e677fb13a407c0f6f8393..e33c1dfb3fa6b6ea466b48ed7fae91c2
    add("timelineFailedDetail", "The plan did not pass; no web action ran",
        "计划未通过检查，没有执行网页操作", "計畫未通過檢查，沒有執行網頁操作");
    add("timelineExecutionFormatFailed",
--- 
-2.52.0
-
