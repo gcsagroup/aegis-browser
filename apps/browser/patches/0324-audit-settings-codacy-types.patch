@@ -1,0 +1,685 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 21:25:00 +0800
+Subject: [PATCH] 明确设置回调与空值类型并规范选择器
+
+保留现有错误处理、界面状态和访问边界，补齐 Codacy 逐条审查中的类型与表达式约束。
+
+---
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index cb3f7f1a72cf07377326a3cc7079085493ba864b..cf4d1da0aa9e058f5e6e61439cd55bd58b2158cb 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -680,7 +680,9 @@ function toggleStatus(id: string): HTMLElement {
+   if (!status) {
+     status = document.createElement('p'); status.id = id + '-feedback'; status.className = 'setting-feedback';
+     status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+-    checkbox(id).closest('label')!.after(status);
++    const label = checkbox(id).closest('label');
++    if (!label) throw Error('缺少设置标签：' + id);
++    label.after(status);
+   }
+   return status;
+ }
+@@ -1018,7 +1020,7 @@ function fillAiControl(status: AegisStatus) {
+     toolsStartingAt = 0; statusEl.textContent = settingsText('无痕窗口打开期间暂停本机工具连接；内置助手仍可使用。', 'Local tool connections pause while an Incognito window is open; the built-in assistant remains available.', '無痕視窗開啟期間暫停本機工具連線；內建助手仍可使用。'); return;
+   }
+   if (!status.aiControl) { toolsStartingAt = 0; statusEl.textContent = settingsText('已关闭。', 'Off.', '已關閉。'); return; }
+-  const valid = status.aiControlRunning && status.aiControlLoopbackOnly && Number.isInteger(status.aiControlPort) && status.aiControlPort! > 0;
++  const valid = status.aiControlRunning && status.aiControlLoopbackOnly && typeof status.aiControlPort === 'number' && Number.isInteger(status.aiControlPort) && status.aiControlPort > 0;
+   if (!valid) {
+     toolsStartingAt ||= Date.now();
+     const failed = Date.now() - toolsStartingAt > 15000;
+@@ -1589,7 +1591,7 @@ function requestSettings<T>(method: string, ...args: unknown[]): Promise<T> {
+       reject(new Error(document.documentElement.lang.startsWith('zh') ?
+           '设置请求超时，请重新打开此页重试。' : 'Settings request timed out. Reopen this page to retry.'));
+     }, 180000);
+-    settingsRequests.set(id, {resolve: value => resolve(value as T), reject, timer});
++    settingsRequests.set(id, {resolve: value => { resolve(value as T); }, reject, timer});
+     parent.postMessage({type: 'aegis-settings-request', id, method, args}, 'chrome://settings');
+   });
+ }
+@@ -1599,14 +1601,14 @@ function listenSettingsStatus(callback: (status: AegisStatus) => void) {
+ }
+ 
+ // 复用完整设置控件；只改变展示分组，不迁移或重写已保存的配置。
+-const settingsSection = new URLSearchParams(location.search).get('settings');
++const settingsSection = new URLSearchParams(location.search).get('settings') || '';
+ const embeddedSettings = window.parent !== window &&
+-    ['privacy', 'ai', 'downloads', 'tools'].includes(settingsSection || '');
++    ['privacy', 'ai', 'downloads', 'tools'].includes(settingsSection);
+ let settingsRequestId = 0;
+ const settingsRequests = new Map<string, {resolve: (value: unknown) => void, reject: (reason: Error) => void, timer: number}>();
+ let settingsStatusListener: ((status: AegisStatus) => void)|undefined;
+ if (embeddedSettings) {
+-  document.body.dataset['settings'] = settingsSection!;
++  document.body.dataset['settings'] = settingsSection;
+   window.addEventListener('message', event => {
+     if (event.source !== parent || event.origin !== 'chrome://settings') return;
+     if (event.data?.type === 'aegis-settings-status') {
+@@ -1643,14 +1645,18 @@ document.addEventListener('DOMContentLoaded', () => {
+     const zh = document.documentElement.lang.startsWith('zh');
+     const names: Record<string, string> = localeCode() === 'zh-TW' ? {protection: '防護詳情', downloads: '下載中心', summary: '網頁摘要', reading: '閱讀工作區'} : zh ? {protection: '防护详情', downloads: '下载中心', summary: '网页摘要', reading: '阅读工作区'} :
+         {protection: 'Protection details', downloads: 'Downloads', summary: 'Page summary', reading: 'Reading workspace'};
+-    getRequiredElement('workspace-title').textContent = names[workspace]!;
++    const title = names[workspace];
++    if (!title) throw Error('缺少工作区标题：' + workspace);
++    getRequiredElement('workspace-title').textContent = title;
+     getRequiredElement('workspace-settings-link').textContent = settingsText('Aegis 功能设置', 'Aegis settings', 'Aegis 功能設定');
+-    document.title = names[workspace]!;
++    document.title = title;
+     getRequiredElement('workspace-navigation').hidden = false;
+     if (workspace === 'reading') {
+       const frame = getRequiredElement<HTMLIFrameElement>('reading-workspace-frame');
+-      frame.parentElement!.hidden = false;
+-      frame.title = names['reading']!;
++      const container = frame.parentElement;
++      if (!container) throw Error('缺少阅读工作区容器');
++      container.hidden = false;
++      frame.title = title;
+       frame.src = 'chrome-untrusted://aegis-agent/?view=reading';
+       window.addEventListener('message', event => {
+         if (event.source !== frame.contentWindow || event.origin !== 'chrome-untrusted://aegis-agent' ||
+@@ -1662,27 +1668,29 @@ document.addEventListener('DOMContentLoaded', () => {
+   }
+   document.querySelector<AegisDownloadPanelElement>('aegis-download-panel')
+       ?.setRequestHandler(requestSettings);
++  const main = document.querySelector('main');
++  if (!main) throw Error('缺少设置主区域');
+   if (embeddedSettings) {
+-    const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
+-      height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
+-    new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
++    const reportHeight = () => { parent.postMessage({type: 'aegis-settings-height',
++      height: main.getBoundingClientRect().height + 24}, 'chrome://settings'); };
++    new ResizeObserver(reportHeight).observe(main);
+     reportHeight();
+   }
+-  const main = document.querySelector('main')!; main.inert = true;
++  main.inert = true;
+   const loading = document.createElement('section'); loading.setAttribute('role', 'status');
+   loading.textContent = settingsText('正在读取配置…', 'Loading settings…', '正在讀取設定…');
+   main.before(loading);
+   void init().then(() => { main.inert = false; loading.remove(); }).catch(() => {
+     loading.textContent = settingsText('配置读取失败。请重试后再修改。', 'Settings could not be loaded. Retry before editing.', '設定讀取失敗。請重試後再修改。');
+     const retry = document.createElement('button'); retry.type = 'button';
+-    retry.textContent = settingsText('重试', 'Retry', '重試'); retry.onclick = () => location.reload(); loading.append(retry);
++    retry.textContent = settingsText('重试', 'Retry', '重試'); retry.onclick = () => { location.reload(); }; loading.append(retry);
+   });
+ });
+ 
+ // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
+ window.addEventListener('message', event => {
+   if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
+-  document.querySelectorAll('[data-search-match]').forEach(node => node.removeAttribute('data-search-match'));
++  document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
+   const query = event.data.query.trim().toLocaleLowerCase();
+   if (!query) return;
+   const target = [...document.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(query));
+diff --git a/chrome/browser/resources/aegis/enhancements.css b/chrome/browser/resources/aegis/enhancements.css
+index 93684e3be1b3e188301dcf43065db001d322d0e8..798b49c4d23901aa867ace7e1c4bcc094048249c 100644
+--- a/chrome/browser/resources/aegis/enhancements.css
++++ b/chrome/browser/resources/aegis/enhancements.css
+@@ -60,7 +60,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflo
+ 
+ /* 标签在输入后仍保持可见；窄屏字段和脚本选项使用同一左边界。 */
+ #enhancement-root { min-width: 0; overflow-wrap: anywhere; }
+-label > input:not([type=checkbox]):not([type=file]), label > select {
++label > input:not([type=checkbox], [type=file]), label > select {
+   display: block;
+   width: 100%;
+   min-width: 0;
+diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
+index bc36abb9a460277369c2455d99cfe3ca6b5fe7eb..b52627d149fdba06eec52054756bc2287ed679bf 100644
+--- a/chrome/browser/resources/aegis/gestures.ts
++++ b/chrome/browser/resources/aegis/gestures.ts
+@@ -13,8 +13,13 @@ const enabled = element<HTMLInputElement>('enabled'), trail = element<HTMLInputE
+ const threshold = element<HTMLInputElement>('threshold'), sites = element<HTMLTextAreaElement>('disabledSites');
+ const bindings = element('bindings'), practice = element('practice');
+ const patternLabel = element('practicePattern'), resultLabel = element('practiceResult');
+-const line = root.querySelector<SVGPolylineElement>('#practiceLine')!;
++const line = root.querySelector<SVGPolylineElement>('#practiceLine');
++if (!line) throw Error('缺少手势练习轨迹');
+ let saved: Settings|null = null, defaults: Settings|null = null, actions: Action[] = [];
++function savedSettings(): Settings {
++  if (!saved) throw Error('手势设置尚未加载');
++  return saved;
++}
+ let lastPattern = '', lastAction: string|undefined;
+ let practiceSaving = false, pendingSaves = 0, optionSequence = 0;
+ function hasDraft() {
+@@ -23,9 +28,9 @@ function hasDraft() {
+ function reportDirty() {
+   if (root instanceof ShadowRoot) root.host.dispatchEvent(new CustomEvent('aegis-form-dirty', {detail: hasDraft(), bubbles: true, composed: true}));
+ }
+-root.addEventListener('input', () => queueMicrotask(reportDirty), {signal: events.signal});
+-root.addEventListener('change', () => queueMicrotask(reportDirty), {signal: events.signal});
+-root.addEventListener('click', () => queueMicrotask(reportDirty), {signal: events.signal});
++root.addEventListener('input', () => { queueMicrotask(reportDirty); }, {signal: events.signal});
++root.addEventListener('change', () => { queueMicrotask(reportDirty); }, {signal: events.signal});
++root.addEventListener('click', () => { queueMicrotask(reportDirty); }, {signal: events.signal});
+ let saveChain = Promise.resolve();
+ let undo: {pattern: string, action: string}|null = null;
+ const drafts = new Map<string, string>();
+@@ -45,12 +50,13 @@ function actionSelect(select: HTMLSelectElement, current = '') {
+   const groups = new Map<string, HTMLOptGroupElement>();
+   for (const item of actions) {
+     const name = item.pdfOnly ? 'PDF' : /tab/.test(item.id) ? t('标签页') : /back|forward|reload/.test(item.id) ? t('导航') : t('页面');
+-    if (!groups.has(name)) { const group = document.createElement('optgroup'); group.label = name; groups.set(name, group); select.append(group); }
+-    groups.get(name)!.append(new Option(t(item.label) + (item.pdfOnly ? ' · PDF' : ''), item.id));
++    let group = groups.get(name);
++    if (!group) { group = document.createElement('optgroup'); group.label = name; groups.set(name, group); select.append(group); }
++    group.append(new Option(t(item.label) + (item.pdfOnly ? ' · PDF' : ''), item.id));
+   }
+   select.value = current;
+ }
+-function button(text: string, action: () => Promise<unknown>|void) {
++function button(text: string, action: () => Promise<void>|void) {
+   const node = document.createElement('button'); node.type = 'button'; node.textContent = t(text);
+   node.onclick = async () => { node.disabled = true; try { await action(); } finally { node.disabled = false; } };
+   return node;
+@@ -104,7 +110,7 @@ function renderBindings() {
+       if (await persist(next => { next.bindings[pattern] = value; }, status.id)) { if (drafts.get(pattern) === value) drafts.delete(pattern); renderBindings(); reportDirty(); }
+     }), button('取消', () => { drafts.delete(pattern); editor.hidden = true; }), status);
+     controls.append(button('编辑', () => { drafts.set(pattern, action); editor.hidden = false; select.focus(); }), button('移除', async () => {
+-      if (await persist(next => { delete next.bindings[pattern]; }, 'binding-status')) {
++      if (await persist(next => { next.bindings = Object.fromEntries(Object.entries(next.bindings).filter(([key]) => key !== pattern)); }, 'binding-status')) {
+         undo = {pattern, action}; drafts.delete(pattern); renderBindings(); element('undoBinding').hidden = false;
+       }
+     }));
+@@ -144,9 +150,9 @@ element('savePractice').onclick = async () => {
+   practiceSaving = false; element<HTMLSelectElement>('practiceAction').disabled = false;
+   element<HTMLButtonElement>('savePractice').disabled = false; reportDirty();
+ };
+-for (const node of root.querySelectorAll<HTMLButtonElement>('[data-direction]')) node.onclick = () => choosePattern(lastPattern + node.dataset['direction']);
++for (const node of root.querySelectorAll<HTMLButtonElement>('[data-direction]')) node.onclick = () => { choosePattern(lastPattern + node.dataset['direction']); };
+ element('redraw').onclick = clearPractice; element('cancelPractice').onclick = clearPractice;
+-element('usePattern').onclick = () => choosePattern(element<HTMLInputElement>('manualPattern').value);
++element('usePattern').onclick = () => { choosePattern(element<HTMLInputElement>('manualPattern').value); };
+ element('undoBinding').onclick = async () => {
+   if (!undo) return; const value = undo;
+   if (await persist(next => { if (Object.hasOwn(next.bindings, value.pattern)) throw Error(t('这个方向已重新绑定，请先检查现有动作。')); next.bindings[value.pattern] = value.action; }, 'binding-status')) {
+@@ -185,18 +191,18 @@ function renderSites() {
+   for (const domain of saved?.disabledSites || []) {
+     const row = document.createElement('div'); row.className = 'site-entry'; const label = document.createElement('span'); label.textContent = domain;
+     row.append(label, button('移除', async () => {
+-      if (await persist(next => { next.disabledSites = next.disabledSites.filter(item => item !== domain); }, 'sites-status')) { sites.value = saved!.disabledSites.join('\n'); renderSites(); }
++      if (await persist(next => { next.disabledSites = next.disabledSites.filter(item => item !== domain); }, 'sites-status')) { sites.value = savedSettings().disabledSites.join('\n'); renderSites(); }
+     })); list.append(row);
+   }
+   if (!list.childElementCount) list.textContent = t('暂无网站例外。');
+ }
+ element<HTMLFormElement>('add-site-form').onsubmit = event => {
+   event.preventDefault(); const input = element<HTMLInputElement>('newSite'); const value = input.value.trim();
+-  void persist(next => { const domain = hostname(value); if (!next.disabledSites.includes(domain)) next.disabledSites.push(domain); }, 'sites-status').then(ok => { if (ok) { if (input.value.trim() === value) input.value = ''; sites.value = saved!.disabledSites.join('\n'); renderSites(); reportDirty(); } });
++  void persist(next => { const domain = hostname(value); if (!next.disabledSites.includes(domain)) next.disabledSites.push(domain); }, 'sites-status').then(ok => { if (ok) { if (input.value.trim() === value) input.value = ''; sites.value = savedSettings().disabledSites.join('\n'); renderSites(); reportDirty(); } });
+ };
+ element('saveSites').onclick = async () => {
+   const input = sites.value;
+-  if (await persist(next => { next.disabledSites = [...new Set(input.split('\n').map(value => value.trim()).filter(Boolean).map(hostname))]; }, 'sites-status')) { sites.value = saved!.disabledSites.join('\n'); renderSites(); reportDirty(); }
++  if (await persist(next => { next.disabledSites = [...new Set(input.split('\n').map(value => value.trim()).filter(Boolean).map(hostname))]; }, 'sites-status')) { sites.value = savedSettings().disabledSites.join('\n'); renderSites(); reportDirty(); }
+ };
+ element('cancelSites').onclick = () => { sites.value = saved?.disabledSites.join('\n') || ''; };
+ element('reloadSettings').onclick = () => { if (!confirm(t('重新读取会放弃当前未保存的手势编辑，继续？'))) return; drafts.clear(); void reload(); };
+diff --git a/chrome/browser/resources/aegis/mobile_settings.ts b/chrome/browser/resources/aegis/mobile_settings.ts
+index 8286efe851725f1074620ca871f4d411d956c7cc..b9cb8dfc6eddd1c9d85d7effb50b5ee86568895e 100644
+--- a/chrome/browser/resources/aegis/mobile_settings.ts
++++ b/chrome/browser/resources/aegis/mobile_settings.ts
+@@ -2,7 +2,8 @@
+ // 移动端复用现有控件与配置，只调整入口和分组。
+ export function initializeMobileSettings(
+     openAgent: (section: string) => Promise<unknown>) {
+-  const main = document.querySelector<HTMLElement>('main')!;
++  const main = document.querySelector<HTMLElement>('main');
++  if (!main) throw Error('缺少移动设置主区域');
+   if (main.classList.contains('mobile-settings')) return;
+   const language = document.documentElement.lang;
+   const text = (zh: string, en: string, tw: string) =>
+@@ -28,10 +29,11 @@ export function initializeMobileSettings(
+     {id: 'experiments', title: text('实验功能', 'Experiments', '實驗功能'),
+       hint: text('本机实验模型与使用说明', 'Local experimental models and usage notes', '本機實驗模型與使用說明'), selectors: ''},
+   ];
+-  const heading = main.querySelector<HTMLElement>('.page-header h1')!;
++  const heading = main.querySelector<HTMLElement>('.page-header h1');
++  const subtitle = main.querySelector<HTMLElement>('.subtitle');
++  const header = main.querySelector('.page-header');
++  if (!heading || !subtitle || !header) throw Error('缺少移动设置标题区域');
+   heading.setAttribute('tabindex', '-1');
+-  const subtitle = main.querySelector<HTMLElement>('.subtitle')!;
+-  const header = main.querySelector('.page-header')!;
+   main.querySelector<HTMLElement>('.ai-control')?.setAttribute('hidden', '');
+   const downloadDescription = main.querySelector('.downloads > .meta');
+   if (downloadDescription) downloadDescription.textContent = text(
+@@ -114,6 +116,6 @@ export function initializeMobileSettings(
+       heading.focus({preventScroll: true});
+     }
+   };
+-  window.addEventListener('hashchange', () => render(true));
++  window.addEventListener('hashchange', () => { render(true); });
+   render(false);
+ }
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index ec39cd4ff5247d6af534b75fd347d84b9f97dac5..73194f33d65f00497b577eb21ccb9b1679b669a7 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -183,7 +183,7 @@ label {
+ 
+ textarea,
+ select,
+-input:not([type='checkbox']):not([type='radio']) {
++input:not([type='checkbox'], [type='radio']) {
+   background: var(--surface-strong);
+   border: 1px solid var(--line);
+   border-radius: 10px;
+@@ -1068,7 +1068,7 @@ body.reading-workspace-only main > #reading-ai-settings[open] { display:block !i
+  padding: 10px 0;
+  color: var(--primary); }
+ 
+-body[data-mobile-settings] main > :not(.hero):not(.mobile-settings-back) { display: none !important; }
++body[data-mobile-settings] main > :not(.hero, .mobile-settings-back) { display: none !important; }
+ 
+ body[data-mobile-settings='reading'] main > #reading-ai-settings,
+ body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b428739d8 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -996,7 +996,9 @@ function renderModelPoolDraft(next: TaskSnapshot) {
+   for (const [id, value] of Object.entries(values)) element<HTMLInputElement>(id).value = value;
+   for (const [id, value] of Object.entries(checks)) element<HTMLInputElement>(id).checked = value;
+   for (const key of ['default', 'basic', 'strong']) {
+-    const [effort = '', tokens = ''] = values['model-profile-' + key]!.split(':');
++    const profileValue = values['model-profile-' + key];
++    if (profileValue === undefined) throw Error('缺少模型档位：' + key);
++    const [effort = '', tokens = ''] = profileValue.split(':');
+     element<HTMLSelectElement>('model-profile-' + key + '-effort').value = effort;
+     element<HTMLInputElement>('model-profile-' + key + '-tokens').value = tokens;
+   }
+@@ -1066,7 +1068,7 @@ function renderModel(next: TaskSnapshot) {
+         packText('质量评分 ', 'Quality score ', '品質評分 ') + entry.qualityScore + ' · ' + packText('速度评分 ', 'Speed score ', '速度評分 ') + entry.latencyScore + ' · ' + cost + (entry.costMicrousdPerMillionTokens ? ' μUSD / 1M tokens' : '');
+     item.classList.toggle('selected', entry.id === editingPoolId);
+     const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = packText('编辑', 'Edit', '編輯'); edit.disabled = modelRoutingBusy;
+-    edit.addEventListener('click', () => beginPoolEdit(entry.id));
++    edit.addEventListener('click', () => { beginPoolEdit(entry.id); });
+     const remove = document.createElement('button');
+     remove.type = 'button';
+     remove.textContent = loadTimeData.getString('removeModelPool');
+@@ -1453,9 +1455,9 @@ function initializeSettingsPresentation() {
+   element('aegis-settings-link').textContent = loadTimeData.getString('aegisSettingsTitle');
+   element('aegis-settings-link').hidden = !desktop || settingsMode;
+   if (!settingsMode) return;
+-  document.addEventListener('input', () => queueMicrotask(reportSettingsDraft));
+-  document.addEventListener('change', () => queueMicrotask(reportSettingsDraft));
+-  document.addEventListener('click', () => queueMicrotask(reportSettingsDraft));
++  document.addEventListener('input', () => { queueMicrotask(reportSettingsDraft); });
++  document.addEventListener('change', () => { queueMicrotask(reportSettingsDraft); });
++  document.addEventListener('click', () => { queueMicrotask(reportSettingsDraft); });
+   // 隐藏的任务输入框不能抢走设置页焦点。
+   element('goal').removeAttribute('autofocus');
+   const sections = settingsSection === 'experiments' ? ['reading-research-settings'] :
+@@ -1463,9 +1465,11 @@ function initializeSettingsPresentation() {
+   for (const id of sections) {
+     element<HTMLDetailsElement>(id).open = true;
+   }
+-  const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
+-    height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
+-  new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
++  const main = document.querySelector('main');
++  if (!main) throw Error('缺少助手主区域');
++  const reportHeight = () => { parent.postMessage({type: 'aegis-settings-height',
++    height: main.getBoundingClientRect().height + 24}, 'chrome://settings'); };
++  new ResizeObserver(reportHeight).observe(main);
+   reportHeight();
+ }
+ 
+@@ -1570,7 +1574,9 @@ function initializeLabels() {
+   element('pool-field-help').textContent = packText('质量与速度为自填的 0–100 分，越高越优先，不是实测结果。费用单位为每百万 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每档分别选择推理强度和最大输出 token 数，留空使用服务默认。', 'Quality and speed are user-assigned scores from 0 to 100; higher is preferred, not measured. Prices use micro-USD per million tokens (1 USD = 1,000,000 micro-USD); blank means unknown. Each profile selects reasoning effort and maximum output tokens; blank uses service defaults.', '品質與速度為自填的 0–100 分，越高越優先，並非實測結果。費用單位為每百萬 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每檔分別選擇推理強度及最大輸出 token 數，留空使用服務預設。');
+   for (const key of ['default', 'basic', 'strong']) {
+     const select = element<HTMLSelectElement>('model-profile-' + key + '-effort');
+-    select.options[0]!.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
++    const defaultOption = select.options[0];
++    if (!defaultOption) throw Error('缺少默认模型强度选项：' + key);
++    defaultOption.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
+     select.setAttribute('aria-label', packText('推理强度', 'Reasoning effort', '推理強度'));
+     element('model-profile-' + key + '-tokens').setAttribute('aria-label', packText('最大输出 token 数', 'Maximum output tokens', '最大輸出 token 數'));
+   }
+@@ -1819,7 +1825,7 @@ async function saveModel(clearApiKey = false) {
+ }
+ 
+ async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false) {
+-  if (modelRoutingBusy) {
++  if (modelRoutingBusy || !snapshot) {
+     return;
+   }
+   // Capture the user's choice before render() reapplies the persisted
+@@ -1832,7 +1838,7 @@ async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false)
+     render(snapshot);
+   }
+   try {
+-    const response = await proxy.handler.configureModelRouting(mode, modelPool, savedDraft ? editingPoolRevision : snapshot!.modelCatalogRevision);
++    const response = await proxy.handler.configureModelRouting(mode, modelPool, savedDraft ? editingPoolRevision : snapshot.modelCatalogRevision);
+     if (savedDraft && !response.snapshot.lastError) { poolDraftDirty = false; }
+     render(response.snapshot);
+     element('model-routing-feedback').textContent =
+@@ -2058,13 +2064,13 @@ function bindActions() {
+   element('model-name').addEventListener('input', syncDetectedModel);
+   element('model-base-url').addEventListener('input', resetDetectedModels);
+   element('model-api-key').addEventListener('input', resetDetectedModels);
+-  element('save-model-button').addEventListener('click', () => saveModel());
+-  element('clear-model-key-button').addEventListener('click', () => saveModel(true));
++  element('save-model-button').addEventListener('click', () => { void saveModel(); });
++  element('clear-model-key-button').addEventListener('click', () => { void saveModel(true); });
+   element('cancel-model-button').addEventListener('click', () => {
+     if (!snapshot || modelBusy) return; modelFormInitialized = false; element<HTMLInputElement>('model-api-key').value = ''; renderModel(snapshot);
+     element('model-feedback').textContent = packText('已恢复当前保存的连接。', 'Restored the saved connection.', '已還原目前儲存的連線。');
+   });
+-  element('new-model-pool-button').addEventListener('click', () => beginPoolEdit(''));
++  element('new-model-pool-button').addEventListener('click', () => { beginPoolEdit(''); });
+   element('cancel-model-pool-button').addEventListener('click', () => { poolDraftDirty = false; if (snapshot) renderModelPoolDraft(snapshot); });
+   element('model-advanced').addEventListener('input', () => { poolDraftDirty = true; });
+   for (const id of ['model-base-url', 'model-name', 'model-api-key']) element(id).addEventListener('input', () => { element<HTMLInputElement>(id).setCustomValidity(''); renderModelKeyState(); });
+@@ -2113,8 +2119,10 @@ function bindActions() {
+ initializeLabels();
+ element('startup-status').textContent = packText('正在读取配置…', 'Loading settings…', '正在讀取設定…');
+ element('startup-retry').textContent = packText('重试', 'Retry', '重試');
+-element('startup-retry').onclick = () => location.reload();
+-document.querySelector('main')!.inert = true;
++element('startup-retry').onclick = () => { location.reload(); };
++const main = document.querySelector('main');
++if (!main) throw Error('缺少助手主区域');
++main.inert = true;
+ try {
+   proxy = BrowserProxy.getInstance();
+   bindActions();
+@@ -2133,8 +2141,8 @@ try {
+   if (!settingsMode && launchParameters.get('view') === 'reading') {
+     document.body.classList.add('reading-workspace-only');
+     activeView = 'reading'; renderView(); void reading.refresh();
+-    const reportHeight = () => parent.postMessage({type: 'aegis-workspace-height', height: document.querySelector('main')!.getBoundingClientRect().height + 32}, 'chrome://aegis');
+-    new ResizeObserver(reportHeight).observe(document.querySelector('main')!); reportHeight();
++    const reportHeight = () => { parent.postMessage({type: 'aegis-workspace-height', height: main.getBoundingClientRect().height + 32}, 'chrome://aegis'); };
++    new ResizeObserver(reportHeight).observe(main); reportHeight();
+   }
+   element('reading-view-button').addEventListener('click', () => {
+     activeView = 'reading';
+@@ -2143,7 +2151,7 @@ try {
+   });
+   proxy.callbackRouter.onSnapshotChanged.addListener(render);
+   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
+-    document.querySelector('main')!.inert = false; element('startup-state').hidden = true;
++    main.inert = false; element('startup-state').hidden = true;
+     render(initial);
+     if (!settingsMode) proxy.handler.showUI();
+     // 只有已消费的一次性原生启动请求才创建新任务。
+@@ -2158,7 +2166,7 @@ try {
+ // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
+ window.addEventListener('message', event => {
+   if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
+-  document.querySelectorAll('[data-search-match]').forEach(node => node.removeAttribute('data-search-match'));
++  document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
+   const query = event.data.query.trim().toLocaleLowerCase();
+   if (!query) return;
+   const target = [...document.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(query));
+diff --git a/chrome/browser/resources/aegis_agent/language_packs.ts b/chrome/browser/resources/aegis_agent/language_packs.ts
+index b44d64475e957dcaf83a3ea55723b0af9034c4c2..75107dba73f9d882bb3f8042826b307e4ed58ce2 100644
+--- a/chrome/browser/resources/aegis_agent/language_packs.ts
++++ b/chrome/browser/resources/aegis_agent/language_packs.ts
+@@ -45,10 +45,10 @@ export class LanguagePacks {
+       [this.filter, packText('显示', 'Show', '顯示')], [this.preferred, packText('常用目标语言', 'Preferred target', '常用目標語言')]] as const) {
+       const label = make('label', title); label.append(field); controls.append(label);
+     }
+-    for (const [value, title] of [['all', packText('全部语言包', 'All packs', '全部語言包')], ['installed', packText('已安装', 'Installed', '已安裝')]]) {
+-      const option = make('option', title); option.value = value!; this.filter.append(option);
++    for (const [value, title] of [['all', packText('全部语言包', 'All packs', '全部語言包')], ['installed', packText('已安装', 'Installed', '已安裝')]] as const) {
++      const option = make('option', title); option.value = value; this.filter.append(option);
+     }
+-    for (const field of [this.source, this.target, this.filter]) field.addEventListener('change', () => this.render());
++    for (const field of [this.source, this.target, this.filter]) field.addEventListener('change', () => { this.render(); });
+     this.preferred.addEventListener('change', () => {
+       try { localStorage.setItem('aegis-translation-target', this.preferred.value); }
+       catch { this.status.textContent = packText('无法保存常用语言，请检查存储权限。', 'Cannot save the preferred language. Check storage access.', '無法儲存常用語言，請檢查儲存權限。'); }
+@@ -123,7 +123,7 @@ export class LanguagePacks {
+       this.source.value = ''; this.target.value = ''; this.filter.value = 'all';
+       this.selected = new Set(route.packs.filter(id => !this.statuses.get(id)?.ready || this.statuses.get(id)?.update));
+       this.render();
+-      this.status.textContent = this.routeTitle(route) + ' · ' + route.packs.map(id => { const pack = this.packs.find(value => value.id === id)!; return name(pack.from) + ' → ' + name(pack.to); }).join(' + ');
++      this.status.textContent = this.routeTitle(route) + ' · ' + route.packs.map(id => { const pack = this.packs.find(value => value.id === id); if (!pack) throw Error('语言包目录缺少路由依赖：' + id); return name(pack.from) + ' → ' + name(pack.to); }).join(' + ');
+     }
+     this.root.scrollIntoView({block: 'nearest'});
+   }
+@@ -167,7 +167,7 @@ export class LanguagePacks {
+     if (!this.statusKnown || this.active) return;
+     this.queue = [...new Set(ids)];
+     while (this.queue.length) {
+-      const id = this.queue.shift()!; this.active = id; this.progress = packText('下载中…', 'Downloading…', '下載中…'); this.errors.delete(id); this.render();
++      const id = this.queue.shift(); if (id === undefined) break; this.active = id; this.progress = packText('下载中…', 'Downloading…', '下載中…'); this.errors.delete(id); this.render();
+       try {
+         const result = await this.client.run({op: 'download', direction: id}, message => {
+           const [kind, value] = message.split(':');
+diff --git a/chrome/browser/resources/aegis_agent/mobile_settings.ts b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+index 23df4159e1946673b888f4f4b91aafe572d128ee..1a1eea56627a2553a3025b942c468c0a22035f00 100644
+--- a/chrome/browser/resources/aegis_agent/mobile_settings.ts
++++ b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+@@ -8,7 +8,8 @@ export function initializeMobileAgentSettings(
+   const language = document.documentElement.lang;
+   const text = (zh: string, en: string, tw: string) =>
+       !language.startsWith('zh') ? en : /^zh-(?:TW|HK|Hant)/i.test(language) ? tw : zh;
+-  const main = document.querySelector('main')!;
++  const main = document.querySelector('main');
++  if (!main) throw Error('缺少移动助手主区域');
+   document.body.classList.add('mobile-agent-shell');
+   const back = document.createElement('a');
+   back.className = 'mobile-settings-back';
+@@ -28,15 +29,18 @@ export function initializeMobileAgentSettings(
+   if (section !== 'reading' && section !== 'experiments') return;
+   document.getElementById('goal')?.removeAttribute('autofocus');
+   let research = document.getElementById('reading-research-settings');
+-  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement;
+-  local.querySelector('summary')!.textContent = text(
++  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement|null;
++  const localSummary = local?.querySelector('summary');
++  if (!local || !localSummary) throw Error('缺少本机翻译设置区域');
++  localSummary.textContent = text(
+       '本机翻译设置', 'Local translation settings', '本機翻譯設定');
+   if (!research) {
+     research = document.createElement('details');
+     research.id = 'reading-research-settings';
+     research.className = 'card';
+     const summary = document.createElement('summary');
+-    const heading = local.querySelector('h3')!;
++    const heading = local.querySelector('h3');
++    if (!heading) throw Error('缺少阅读研究设置标题');
+     summary.textContent = heading.textContent;
+     research.append(summary);
+     while (heading.nextElementSibling) research.append(heading.nextElementSibling);
+@@ -47,11 +51,15 @@ export function initializeMobileAgentSettings(
+     });
+   }
+   document.body.dataset['mobileSettings'] = section;
+-  document.getElementById('title')!.textContent = section === 'reading' ?
++  const title = document.getElementById('title');
++  const subtitle = document.getElementById('subtitle');
++  if (!title || !subtitle) throw Error('缺少移动助手标题区域');
++  const titleText = section === 'reading' ?
+       text('本机翻译设置', 'Local translation settings', '本機翻譯設定') :
+       text('实验功能', 'Experiments', '實驗功能');
+-  document.title = document.getElementById('title')!.textContent!;
+-  document.getElementById('subtitle')!.textContent = section === 'reading' ?
++  title.textContent = titleText;
++  document.title = titleText;
++  subtitle.textContent = section === 'reading' ?
+       text('先下载语言包，再按所选方向离线翻译。', 'Download a language pack to translate offline in the selected direction.', '先下載語言包，再依所選方向離線翻譯。') :
+       text('实验评分不会自动拦截网页或修改正文。', 'Experimental scores do not automatically block pages or change their content.', '實驗評分不會自動攔截網頁或修改正文。');
+   (section === 'reading' ? local : research as HTMLDetailsElement).open = true;
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index e30acafd80790b5170b5b0b62a39f218a288fb97..0ef2bc9aac69ec18e0f78088bd25ec80a62706b9 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -122,7 +122,7 @@ export class ReadingWorkspace {
+     try {
+       const response = await fetch('./local_ai/research_manifest.json');
+       if (!response.ok) throw Error('unavailable');
+-      const manifest = await response.json() as Record<string, {bundled?: boolean}>;
++      const manifest = await response.json() as Partial<Record<string, {bundled?: boolean}>>;
+       for (const name of ['minim', 'phishlang']) element(name + '-resource').textContent = manifest[name]?.bundled === false ?
+         packText('当前版本未包含模型资源；分发许可尚未确认，因此无法运行。开关只保存手动使用偏好，不会下载或启动分析。', 'This build does not include the model because distribution rights are unconfirmed. The toggle saves a preference only; it does not download or run analysis.', '目前版本未包含模型資源；分發許可尚未確認，因此無法執行。開關僅儲存手動使用偏好，不會下載或啟動分析。') :
+         packText('模型清单已载入；手动分析时仍需校验资源。开启不会自动分析，关闭不会删除已有结果。', 'The model manifest is loaded; assets are verified when analysis is requested. Enabling does not run analysis; disabling preserves results.', '模型清單已載入；手動分析時仍需校驗資源。開啟不會自動分析，關閉不會刪除既有結果。');
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.ts b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+index 793ab45f5beb4501573591c6af65957d8d43849c..aaeeb14891ef55cb61827c4173d0860bf0eb13a3 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.ts
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+@@ -60,10 +60,11 @@ export class SettingsAegisPageElement extends PolymerElement {
+   private onFrameMessage_ = (event: MessageEvent) => {
+     for (const frame of this.shadowRoot?.querySelectorAll<HTMLIFrameElement>('iframe') || []) {
+       const origin = frame.classList.contains('agent-frame') ? 'chrome-untrusted://aegis-agent' : 'chrome://aegis';
+-      if (event.source !== frame.contentWindow || event.origin !== origin) continue;
++      const source = frame.contentWindow;
++      if (!source || event.source !== source || event.origin !== origin) continue;
+       if (event.data?.type === 'aegis-settings-dirty') {
+-        if (event.data.dirty === true) this.frameDirty_.add(frame.contentWindow!);
+-        else if (event.data.dirty === false) this.frameDirty_.delete(frame.contentWindow!);
++        if (event.data.dirty === true) this.frameDirty_.add(source);
++        else if (event.data.dirty === false) this.frameDirty_.delete(source);
+         return;
+       }
+       if (event.data?.type === 'aegis-settings-request' && origin === 'chrome://aegis') {
+@@ -102,8 +103,13 @@ export class SettingsAegisPageElement extends PolymerElement {
+     try { reply({result: await sendWithPromise(method, ...args)}); }
+     catch (error) { reply({error: String(error)}); }
+   }
++  private checkedRoot_(): ShadowRoot {
++    const root = this.shadowRoot;
++    if (!root) throw Error('设置视图尚未创建');
++    return root;
++  }
+   private element_<T extends HTMLElement = HTMLElement>(id: string): T {
+-    const value = this.shadowRoot!.querySelector<T>('#' + id);
++    const value = this.checkedRoot_().querySelector<T>('#' + id);
+     if (!value) throw Error('设置控件不可用：' + id);
+     return value;
+   }
+@@ -135,14 +141,14 @@ export class SettingsAegisPageElement extends PolymerElement {
+     // 只展开命中项的祖先区域；嵌入内容各自定位，不展开无关高级选项。
+     this.shadowRoot?.querySelectorAll('[data-search-match]').forEach(node => node.removeAttribute('data-search-match'));
+     const needle = query.trim().toLocaleLowerCase();
+-    const target = needle ? [...this.shadowRoot!.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(needle)) : null;
++    const target = needle ? [...this.checkedRoot_().querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(needle)) : null;
+     if (target) {
+       target.dataset['searchMatch'] = 'true';
+       let parent = target.parentElement;
+       while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
+       target.scrollIntoView({block: 'center'});
+     }
+-    for (const frame of this.shadowRoot!.querySelectorAll<HTMLIFrameElement>('iframe')) {
++    for (const frame of this.checkedRoot_().querySelectorAll<HTMLIFrameElement>('iframe')) {
+       const origin = frame.src.startsWith('chrome-untrusted:') ? 'chrome-untrusted://aegis-agent' : 'chrome://aegis';
+       frame.contentWindow?.postMessage({type: 'aegis-settings-search', query: needle}, origin);
+     }
+@@ -155,13 +161,13 @@ export class SettingsAegisPageElement extends PolymerElement {
+     const i18n = (globalThis as unknown as {AegisI18n: {t: (value: string) => string, translate: (root: ShadowRoot) => void, setLocale: (value: string) => void}}).AegisI18n;
+     i18n.setLocale(loadTimeData.getString('aegisLocale'));
+     this.translate_ = i18n.t;
+-    i18n.translate(this.shadowRoot!);
++    i18n.translate(this.checkedRoot_());
+     if (this.mode === 'gestures') {
+       const module = await import('/' + 'aegis/gestures.js');
+       if (!this.isConnected) return;
+       this.cleanup_ = module.initializeGestures(this.shadowRoot);
+     } else if (this.mode === 'reading' || this.mode === 'enhancements') {
+-      const controls = [...this.shadowRoot!.querySelectorAll<HTMLInputElement>('input, select, button')];
++      const controls = [...this.checkedRoot_().querySelectorAll<HTMLInputElement>('input, select, button')];
+       controls.forEach(control => control.disabled = true);
+       try {
+         this.state_ = await this.request_({op: 'state'});
+@@ -172,7 +178,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+       } catch (error) {
+         this.message_(String(error));
+         const retry = document.createElement('button'); retry.textContent = this.translate_('重新读取设置');
+-        retry.onclick = () => location.reload();
++        retry.onclick = () => { location.reload(); };
+         this.element_('result').append(' ', retry);
+         return;
+       }
+@@ -202,7 +208,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+       const control = this.input_('reading-' + key); control.value = String(prefs[key]);
+       control.onchange = () => { this.previewReading_(); void this.saveReading_(); };
+     }
+-    this.element_('preview-link').onclick = event => event.preventDefault();
++    this.element_('preview-link').onclick = event => { event.preventDefault(); };
+     this.element_('reading-retry').onclick = () => void this.saveReading_();
+     this.element_('reading-reset').onclick = () => {
+       for (const [key, value] of Object.entries(defaultReading)) this.input_('reading-' + key).value = String(value);
+@@ -214,7 +220,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+       this.formDirty_ = true;
+       try { this.status_('markdown-scope', this.source_(this.input_('markdown-origin').value)); } catch { this.status_('markdown-scope', '路径不参与匹配，子域名需分别添加。'); }
+     };
+-    this.input_('markdown-search').oninput = () => this.renderMarkdownSites_();
++    this.input_('markdown-search').oninput = () => { this.renderMarkdownSites_(); };
+     this.element_<HTMLFormElement>('markdown-form').onsubmit = event => {
+       event.preventDefault(); void this.addMarkdownSite_();
+     };
+@@ -255,7 +261,8 @@ export class SettingsAegisPageElement extends PolymerElement {
+   private async addMarkdownSite_() {
+     const form = this.element_<HTMLFormElement>('markdown-form');
+     if (!form.reportValidity()) return;
+-    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
++    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
++    if (!button) throw Error('缺少阅读设置保存按钮');
+     button.disabled = true; this.input_('markdown-origin').disabled = true;
+     try {
+       const origin = this.source_(this.input_('markdown-origin').value);
+@@ -300,9 +307,9 @@ export class SettingsAegisPageElement extends PolymerElement {
+       option.textContent = (tab.title || tab.url).slice(0, 80) + ' · ' + new URL(tab.url).host; tabs.append(option);
+     }
+     tabs.onchange = () => { if (!tabs.value) return; this.input_('rule-origin').value = tabs.value; this.formDirty_ = true; this.ruleScope_(); };
+-    this.element_('rule-new').onclick = () => this.editRule_(null);
++    this.element_('rule-new').onclick = () => { this.editRule_(null); };
+     this.element_('rule-cancel').onclick = () => { this.element_('rule-editor').hidden = true; this.formDirty_ = false; };
+-    this.input_('rule-search').oninput = () => this.renderRules_();
++    this.input_('rule-search').oninput = () => { this.renderRules_(); };
+     this.element_('rule-editor').oninput = () => {
+       this.formDirty_ = true;
+       this.ruleScope_();
+@@ -319,12 +326,12 @@ export class SettingsAegisPageElement extends PolymerElement {
+       const inherited = (this.state_.sites || []).filter(rule => {
+         const parent = new URL(rule.origin);
+         return rule.subdomains && !rule.disabled && parent.protocol === url.protocol && parent.port === url.port && url.hostname.endsWith('.' + parent.hostname);
+-      }).sort((a, b) => b.origin.length - a.origin.length)[0];
++      }).sort((a, b) => b.origin.length - a.origin.length).at(0);
+       this.status_('rule-scope', origin);
+       if (inherited && !this.state_.sites?.some(rule => rule.origin === origin)) {
+         this.element_('rule-scope').append(' · ' + this.translate_('当前继承自：') + inherited.origin + this.translate_('；保存后将建立当前网站的独立规则。'));
+         this.element_('rule-inherited').hidden = false;
+-        this.element_('rule-inherited').onclick = () => this.editRule_(inherited);
++        this.element_('rule-inherited').onclick = () => { this.editRule_(inherited); };
+       }
+     } catch { this.status_('rule-scope', '保存前请检查完整网站地址。'); }
+   }
+@@ -367,7 +374,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+       const detail = document.createElement('small');
+       const labels = rule.disabled ? ['已暂停'] : [rule.menu ? '恢复右键' : '', rule.copy ? '选取和复制' : '', rule.debug ? '调试兼容' : '', rule.subdomains ? '含子域名' : ''].filter(Boolean);
+       detail.textContent = labels.map(value => this.translate_(value)).join(' · ') || this.translate_('未启用增强选项'); title.append(detail);
+-      row.append(title, this.button_('编辑', () => this.editRule_(rule)), this.button_(rule.disabled ? '恢复' : '暂停', async () => {
++      row.append(title, this.button_('编辑', () => { this.editRule_(rule); }), this.button_(rule.disabled ? '恢复' : '暂停', async () => {
+         this.state_ = await this.request_({op: 'site-save', rule: {...rule, disabled: !rule.disabled}, expected: rule}); this.renderRules_(); this.message_(this.translate_('已保存，重新加载对应网页后生效。'));
+       }), this.button_('移除', async () => {
+         if (!confirm(this.translate_('移除此网站规则？不会删除用户脚本，也不会刷新网页。') + '\n' + rule.origin)) return;
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+index c2d780befaf0b9072cd96b428fbc84b33a4ea066..b81a8a28c2a33bb4ba5f5900f672c2c26cd2361e 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+@@ -272,10 +272,12 @@ export class SettingsDownloadsPageElement extends
+                                   if (generation !== this.aegisSaveGeneration_) {
+                                     return;
+                                   }
+-                                  const merged = {...this.aegisSaved_!, ...Object.fromEntries(changed.map(key => [key, requested[key as keyof AegisDownloadSettings]]))};
++                                  const expected = this.aegisSaved_;
++                                  if (!expected) throw Error('下载设置尚未加载');
++                                  const merged = {...expected, ...Object.fromEntries(changed.map(key => [key, requested[key as keyof AegisDownloadSettings]]))};
+                                   const saved = await this.browserProxy_
+                                                     .setAegisDownloadSettings(
+-                                                        merged, this.aegisSaved_!);
++                                                        merged, expected);
+                                   this.aegisSaved_ = saved;
+                                   if (JSON.stringify(requested) ===
+                                       JSON.stringify(

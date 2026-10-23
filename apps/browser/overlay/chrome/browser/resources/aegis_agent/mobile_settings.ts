@@ -8,7 +8,8 @@ export function initializeMobileAgentSettings(
   const language = document.documentElement.lang;
   const text = (zh: string, en: string, tw: string) =>
       !language.startsWith('zh') ? en : /^zh-(?:TW|HK|Hant)/i.test(language) ? tw : zh;
-  const main = document.querySelector('main')!;
+  const main = document.querySelector('main');
+  if (!main) throw Error('缺少移动助手主区域');
   document.body.classList.add('mobile-agent-shell');
   const back = document.createElement('a');
   back.className = 'mobile-settings-back';
@@ -28,15 +29,18 @@ export function initializeMobileAgentSettings(
   if (section !== 'reading' && section !== 'experiments') return;
   document.getElementById('goal')?.removeAttribute('autofocus');
   let research = document.getElementById('reading-research-settings');
-  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement;
-  local.querySelector('summary')!.textContent = text(
+  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement|null;
+  const localSummary = local?.querySelector('summary');
+  if (!local || !localSummary) throw Error('缺少本机翻译设置区域');
+  localSummary.textContent = text(
       '本机翻译设置', 'Local translation settings', '本機翻譯設定');
   if (!research) {
     research = document.createElement('details');
     research.id = 'reading-research-settings';
     research.className = 'card';
     const summary = document.createElement('summary');
-    const heading = local.querySelector('h3')!;
+    const heading = local.querySelector('h3');
+    if (!heading) throw Error('缺少阅读研究设置标题');
     summary.textContent = heading.textContent;
     research.append(summary);
     while (heading.nextElementSibling) research.append(heading.nextElementSibling);
@@ -47,11 +51,15 @@ export function initializeMobileAgentSettings(
     });
   }
   document.body.dataset['mobileSettings'] = section;
-  document.getElementById('title')!.textContent = section === 'reading' ?
+  const title = document.getElementById('title');
+  const subtitle = document.getElementById('subtitle');
+  if (!title || !subtitle) throw Error('缺少移动助手标题区域');
+  const titleText = section === 'reading' ?
       text('本机翻译设置', 'Local translation settings', '本機翻譯設定') :
       text('实验功能', 'Experiments', '實驗功能');
-  document.title = document.getElementById('title')!.textContent!;
-  document.getElementById('subtitle')!.textContent = section === 'reading' ?
+  title.textContent = titleText;
+  document.title = titleText;
+  subtitle.textContent = section === 'reading' ?
       text('先下载语言包，再按所选方向离线翻译。', 'Download a language pack to translate offline in the selected direction.', '先下載語言包，再依所選方向離線翻譯。') :
       text('实验评分不会自动拦截网页或修改正文。', 'Experimental scores do not automatically block pages or change their content.', '實驗評分不會自動攔截網頁或修改正文。');
   (section === 'reading' ? local : research as HTMLDetailsElement).open = true;

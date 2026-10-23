@@ -193,12 +193,16 @@ test('布局通知只接受当前内部子页，拒绝伪造来源和越界尺�
   send({data: {type: 'aegis-settings-height', height: Infinity}}); assert.equal(frame.style.height, '800px');
   send({data: {type: 'aegis-settings-height', height: -100}}); assert.equal(frame.style.height, '320px');
   send({data: {type: 'aegis-settings-height', height: 1e8}}); assert.equal(frame.style.height, '24000px');
+  frame.contentWindow = null;
+  send({source: null}); assert.equal(frame.style.height, '24000px');
 });
 
 test('设置搜索能找到嵌入分类里的过滤列表、模型密钥、语言包与下载限速', async () => {
   const tree = ts.createSourceFile('settings.ts', read('settings/aegis_page/aegis_page.ts'), ts.ScriptTarget.Latest, true);
   const cls = tree.statements.find(node => ts.isClassDeclaration(node));
   const method = cls.members.find(node => node.name?.getText(tree) === 'searchContents');
+  const rootMethod = cls.members.find(node => node.name?.getText(tree) === 'checkedRoot_');
+  const checkedRoot = new Function(compile(`return function() ${rootMethod.body.getText(tree)};`))();
   const search = new Function('flush', compile(`return function(query: string) ${method.body.getText(tree)};`))(() => {});
   for (const [mode, terms] of Object.entries({
     privacy: ['过滤列表', '挖矿', 'fingerprint', '過濾規則'],
@@ -208,7 +212,7 @@ test('设置搜索能找到嵌入分类里的过滤列表、模型密钥、语�
     downloads: ['限速', '磁力链接', 'DHT'],
     tools: ['工具连接', '权限', 'CDP'],
   })) {
-    const owner = {mode, shadowRoot: {textContent: '', querySelectorAll: () => []}};
+    const owner = {mode, checkedRoot_: checkedRoot, shadowRoot: {textContent: '', querySelectorAll: () => []}};
     for (const query of terms) assert.equal((await search.call(owner, query)).matchCount, 1, `${mode}: ${query}`);
     assert.equal((await search.call(owner, '不存在的功能')).matchCount, 0);
     if (mode === 'ai') assert.equal((await search.call(owner, 'MINIM')).matchCount, 0);
