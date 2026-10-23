@@ -146,7 +146,7 @@ export class SettingsDownloadsPageElement extends
       downloadLimit: '預設下載上限（KiB/s，1–1000000）',
       uploadLimit: '預設上傳上限（KiB/s，1–1000000）',
       stopSeeding: '下載完成後自動停止上傳',
-      saved: '已儲存，將應用於新下載。', saving: '正在儲存…', failed: '儲存失敗，已重新讀取設定。', link: '開啟 Aegis 下載設定',
+      saved: '已儲存，將應用於新下載。', saving: '正在儲存…', failed: '儲存失敗，請檢查目前設定後重試。', link: '開啟 Aegis 下載設定',
     } : {
       unlimited: '不限速', custom: '自定义上限', invalidLimit: '请输入 1–1000000 的整数；不限速请选择“不限速”。', retry: '重新读取',
       title: '下载加速',
@@ -167,7 +167,7 @@ export class SettingsDownloadsPageElement extends
       downloadLimit: '默认下载上限（KiB/s，1–1000000）',
       uploadLimit: '默认上传上限（KiB/s，1–1000000）',
       stopSeeding: '下载完成后自动停止上传',
-      saved: '已保存，将应用于新下载。', saving: '正在保存…', failed: '保存失败，已重新读取设置。', link: '打开 Aegis 下载设置',
+      saved: '已保存，将应用于新下载。', saving: '正在保存…', failed: '保存失败，请检查当前设置后重试。', link: '打开 Aegis 下载设置',
     }) : {
       unlimited: 'Unlimited', custom: 'Custom limit', invalidLimit: 'Enter an integer from 1 to 1000000, or choose Unlimited.', retry: 'Reload',
       title: 'Aegis download acceleration',
@@ -188,13 +188,14 @@ export class SettingsDownloadsPageElement extends
       downloadLimit: 'Default download limit (KiB/s, 1–1000000)',
       uploadLimit: 'Default upload limit (KiB/s, 1–1000000)',
       stopSeeding: 'Automatically stop uploading when complete',
-      saved: 'Saved. Applies to new downloads.', saving: 'Saving…', failed: 'Could not save. Settings reloaded.', link: 'Open Aegis download settings',
+      saved: 'Saved. Applies to new downloads.', saving: 'Saving…', failed: 'Could not save. Check the current settings and try again.', link: 'Open Aegis download settings',
     };
   })();
 
   private browserProxy_: DownloadsBrowserProxy =
       DownloadsBrowserProxyImpl.getInstance();
   private aegisSaveChain_: Promise<void> = Promise.resolve();
+  private aegisSaveGeneration_: number = 0;
   private aegisSaved_: AegisDownloadSettings|null = null;
   private aegisRequested_: AegisDownloadSettings|null = null;
 
@@ -262,11 +263,15 @@ export class SettingsDownloadsPageElement extends
       return;
     }
     const requested = this.currentAegisDownloadSettings_();
+    const generation = this.aegisSaveGeneration_;
     const changed = Object.keys(requested).filter(key => requested[key as keyof AegisDownloadSettings] !== this.aegisRequested_?.[key as keyof AegisDownloadSettings]);
     this.aegisRequested_ = requested;
     this.aegisSaveStatus_ = this.aegisStrings_.saving;
     this.aegisSaveChain_ = this.aegisSaveChain_
                                 .then(async () => {
+                                  if (generation !== this.aegisSaveGeneration_) {
+                                    return;
+                                  }
                                   const merged = {...this.aegisSaved_!, ...Object.fromEntries(changed.map(key => [key, requested[key as keyof AegisDownloadSettings]]))};
                                   const saved = await this.browserProxy_
                                                     .setAegisDownloadSettings(
@@ -280,6 +285,9 @@ export class SettingsDownloadsPageElement extends
                                   }
                                 })
                                 .catch(async () => {
+                                  // 回读会丢弃本轮草稿，尚未执行的保存也必须一并作废。
+                                  this.aegisSaveGeneration_++;
+                                  this.aegisSettingsReady_ = false;
                                   try { await this.loadAegisDownloadSettings_(); }
                                   finally { this.aegisSaveStatus_ = this.aegisStrings_.failed; }
                                 }).catch(() => {});
