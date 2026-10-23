@@ -129,6 +129,40 @@ class CandidateTests(unittest.TestCase):
                 ci.verify_tree(src, base, patches)
             self.assertEqual((src / 'code.txt').read_text(), 'unrelated\n')
 
+    def test_replay_keeps_intermediate_objects_out_of_shared_repository(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src, patches = root / 'source with spaces', root / 'patches'
+            src.mkdir(); patches.mkdir()
+            def git(*args):
+                return ci.git(src, *args)
+            git('init', '-q'); git('config', 'user.name', 'CI test')
+            git('config', 'user.email', 'ci@example.invalid')
+            git('config', 'core.autocrlf', 'false')
+            (src / 'value').write_text('base\n', newline='\n')
+            git('add', 'value'); git('commit', '-qm', '基线')
+            base = git('rev-parse', 'HEAD')
+            for name in ('intermediate', 'final'):
+                (src / 'value').write_text(name + '\n', newline='\n')
+                git('commit', '-qam', name)
+                (patches / (name + '.patch')).write_bytes(subprocess.check_output(
+                    [ci.system_tool('git'), '-C', str(src), 'format-patch', '-1', '--stdout']))
+            (patches / 'series').write_text('intermediate.patch\nfinal.patch\n')
+            linked = root / 'linked worktree'
+            git('worktree', 'add', '-q', '--detach', str(linked), 'HEAD')
+            objects = src / '.git/objects'
+            intermediate = git('rev-parse', 'HEAD^:value')
+            missing_object = objects / intermediate[:2] / intermediate[2:]
+            # 最终树与基线仍完整，只有重放过程需要的中间对象不存在。
+            missing_object.unlink()
+            before = {p.relative_to(objects): p.read_bytes() for p in objects.rglob('*') if p.is_file()}
+            for checkout in (src, linked):
+                with self.subTest(checkout=checkout.name):
+                    self.assertEqual(ci.verify_tree(checkout, base, patches), git('rev-parse', 'HEAD^{tree}'))
+                    self.assertFalse(missing_object.exists())
+                    self.assertEqual(
+                        {p.relative_to(objects): p.read_bytes() for p in objects.rglob('*') if p.is_file()}, before)
+
     def test_series_rejects_traversal(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)

@@ -313,3 +313,11 @@
 0313-markdown-first-file-navigation-207.patch
 0314-upstream-security-version-208.patch
 0315-codacy-local-ai-cleanup.patch
+0316-unified-aegis-settings.patch
+0317-separate-experimental-settings.patch
+0318-rework-eight-settings-and-language-packs.patch
+0319-fix-download-settings-alignment.patch
+0320-align-settings-cards-and-forms.patch
+0321-fix-workspace-and-form-layout.patch
+0322-keep-settings-cleanup-scannable.patch
+0323-fix-settings-review-regressions.patch

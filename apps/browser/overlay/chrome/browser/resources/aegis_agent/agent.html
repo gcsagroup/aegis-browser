@@ -7,7 +7,8 @@
     <title>$i18n{title}</title>
     <link rel="stylesheet" href="agent.css">
   </head>
-  <body>
+  <body class="initializing">
+    <section id="startup-state" role="status"><p id="startup-status"></p><button id="startup-retry" type="button" hidden></button></section>
     <main>
       <header class="hero">
         <img class="mark" src="product_logo.svg" alt="">
@@ -28,6 +29,7 @@
         <button id="task-view-button" type="button" aria-selected="true"></button>
       </nav>
       <div class="workspace-tools">
+        <a id="aegis-settings-link" href="chrome://settings/aegisAi" target="_blank" rel="noopener" hidden></a>
         <a id="enhancement-link" hidden href="chrome://aegis/enhancements.html" target="_blank" rel="noopener">网站增强与脚本</a>
         <a id="markdown-link" hidden href="chrome://aegis/markdown.html" target="_blank" rel="noopener">Markdown 阅读</a>
         <button id="automation-view-button" type="button" aria-selected="false"></button>
@@ -115,22 +117,24 @@
 
       <details id="reading-ai-settings" class="card">
         <summary>$i18n{readingLocalSettings}</summary>
-        <p class="help">$i18n{readingLocalHelp}</p>
-        <label for="reading-direction">$i18n{readingDirection}</label>
-        <select id="reading-direction">
-          <option value="en-zh">English → 简体中文 · 36.13 MB</option>
-          <option value="zh-en">简体中文 → English · 47.60 MB</option>
-        </select>
-        <p id="reading-package-status" role="status" aria-live="polite"></p>
-        <div class="reading-actions">
-          <button id="reading-package-download" type="button">$i18n{readingDownloadPack}</button>
-          <button id="reading-package-remove" type="button">$i18n{readingRemovePack}</button>
-          <button id="reading-local-cancel" type="button" disabled>$i18n{readingCancel}</button>
-        </div>
-        <h3>$i18n{readingExperiments}</h3>
+        <div id="reading-language-packs"></div>
+      </details>
+
+      <details id="reading-research-settings" class="card">
+        <summary>$i18n{readingExperiments}</summary>
         <p class="help">$i18n{readingResearchWarning}</p>
-        <label><input id="reading-minim" type="checkbox">MINIM · $i18n{readingMinimOption}</label>
-        <label><input id="reading-phishlang" type="checkbox">PhishLang · $i18n{readingPhishlangOption}</label>
+        <section class="experiment-item">
+          <h3>MINIM</h3><p id="reading-minim-description"></p>
+          <label><input id="reading-minim" type="checkbox">$i18n{readingMinimOption}</label>
+          <p id="reading-minim-resource" role="status"></p>
+          <a class="reading-experiment-link" href="chrome://aegis/?workspace=reading" target="_blank" rel="noopener"></a>
+        </section>
+        <section class="experiment-item">
+          <h3>PhishLang</h3><p id="reading-phishlang-description"></p>
+          <label><input id="reading-phishlang" type="checkbox">$i18n{readingPhishlangOption}</label>
+          <p id="reading-phishlang-resource" role="status"></p>
+          <a class="reading-experiment-link" href="chrome://aegis/?workspace=reading" target="_blank" rel="noopener"></a>
+        </section>
         <p id="reading-research-settings-status" role="status"></p>
       </details>
 
@@ -157,10 +161,17 @@
             <label for="model-api-key" id="api-key-label"></label>
             <input id="model-api-key" type="password" maxlength="4096" autocomplete="off" spellcheck="false">
           </div>
-          <details id="model-advanced">
-            <summary>$i18n{modelAdvanced}</summary>
-            <div class="field-grid">
-            <label for="model-routing-mode" id="model-routing-mode-label"></label>
+          <p id="model-key-state" class="help" role="status"></p>
+          <div class="model-actions">
+            <button id="detect-models-button" type="button"></button>
+            <button id="save-model-button" class="primary" type="button"></button>
+            <button id="cancel-model-button" type="button"></button>
+            <button id="clear-model-key-button" type="button"></button>
+          </div>
+          <p id="model-feedback" class="help" role="status"></p>
+          <h3 id="model-pool-title"></h3>
+          <p id="model-pool-help" class="help"></p>
+          <div class="field-grid">            <label for="model-routing-mode" id="model-routing-mode-label"></label>
             <select id="model-routing-mode">
               <option value="0">$i18n{modelRoutingFixed}</option>
               <option value="1">$i18n{modelRoutingBalanced}</option>
@@ -168,6 +179,18 @@
               <option value="3">$i18n{modelRoutingCost}</option>
               <option value="4">$i18n{modelRoutingLocalOnly}</option>
             </select>
+</div>
+          <p id="model-candidates-status" class="help" role="status"></p>
+          <button id="new-model-pool-button" type="button"></button>
+          <details id="model-advanced">
+            <summary>$i18n{modelAdvanced}</summary>
+            <p id="model-pool-save-help" class="help"></p>
+            <div class="field-grid" id="model-pool-editor">
+              <label for="pool-provider" id="pool-provider-label"></label>
+              <select id="pool-provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select>
+              <label for="pool-base-url" id="pool-base-label"></label><input id="pool-base-url" type="url" maxlength="2048">
+              <label for="pool-name" id="pool-name-label"></label><input id="pool-name" maxlength="256">
+
             <label for="model-quality-score" id="model-quality-label"></label>
             <input id="model-quality-score" type="number" min="0" max="100" value="50">
             <label for="model-latency-score" id="model-latency-label"></label>
@@ -177,11 +200,23 @@
             <label for="model-efforts">$i18n{supportedEfforts}</label>
             <input id="model-efforts" type="text" placeholder="low,medium,high" maxlength="128">
             <label for="model-profile-default">$i18n{defaultProfile}</label>
-            <input id="model-profile-default" type="text" placeholder="medium:8192" maxlength="32">
+            <div class="profile-fields">
+              <input id="model-profile-default" type="hidden">
+              <select id="model-profile-default-effort"><option value=""></option><option value="none">none</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option></select>
+              <input id="model-profile-default-tokens" type="number" min="0" max="1048576" step="1">
+            </div>
             <label for="model-profile-basic">$i18n{basicProfile}</label>
-            <input id="model-profile-basic" type="text" placeholder="low:2048" maxlength="32">
+            <div class="profile-fields">
+              <input id="model-profile-basic" type="hidden">
+              <select id="model-profile-basic-effort"><option value=""></option><option value="none">none</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option></select>
+              <input id="model-profile-basic-tokens" type="number" min="0" max="1048576" step="1">
+            </div>
             <label for="model-profile-strong">$i18n{strongProfile}</label>
-            <input id="model-profile-strong" type="text" placeholder="high:16384" maxlength="32">
+            <div class="profile-fields">
+              <input id="model-profile-strong" type="hidden">
+              <select id="model-profile-strong-effort"><option value=""></option><option value="none">none</option><option value="minimal">minimal</option><option value="low">low</option><option value="medium">medium</option><option value="high">high</option><option value="xhigh">xhigh</option></select>
+              <input id="model-profile-strong-tokens" type="number" min="0" max="1048576" step="1">
+            </div>
             <label for="model-input-price">$i18n{inputTokenPrice}</label>
             <input id="model-input-price" type="number" min="0">
             <label for="model-cache-price">$i18n{cachedTokenPrice}</label>
@@ -197,15 +232,10 @@
             <label><input id="model-supports-strong-reasoning" type="checkbox" checked>
               <span id="model-supports-strong-reasoning-label"></span></label>
           </div>
-          </details>
-          <div class="model-actions">
-            <button id="detect-models-button" type="button"></button>
-            <button id="save-model-button" class="primary" type="button"></button>
-            <button id="add-model-pool-button" type="button"></button>
-          </div>
-          <ul id="model-pool" class="model-pool"></ul>
+            <p id="pool-field-help" class="help"></p>
+            <div class="model-actions"><button id="add-model-pool-button" type="button"></button><button id="cancel-model-pool-button" type="button"></button></div>
+          </details>          <ul id="model-pool" class="model-pool"></ul>
           <p id="model-routing-feedback" class="help" role="status"></p>
-          <p id="model-feedback" class="help" role="status"></p>
         </div>
       </details>
 

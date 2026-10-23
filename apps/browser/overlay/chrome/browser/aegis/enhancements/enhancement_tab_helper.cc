@@ -1,5 +1,6 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
+#include <memory>
 #include "base/containers/span.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
@@ -76,8 +77,12 @@ bool EnhancementTabHelper::MayWriteLocalFiles() {
   return false;
 }
 bool EnhancementTabHelper::MayAttachToURL(const GURL& url, bool is_webui) {
+  // 内置子框架导航会对整个增强会话做来源检查。保留经过新标签页、
+  // 设置页时的会话，避免首次网页加载前丢失已注册的脚本。
+  // 注入源码与原生授权校验仍仅允许匹配的 HTTP/HTTPS 网页执行脚本。
   return url.SchemeIsHTTPOrHTTPS() || url.SchemeIs("chrome") ||
-         url.IsAboutBlank() || url.is_empty();
+         url.SchemeIs("chrome-untrusted") || url.IsAboutBlank() ||
+         url.is_empty();
 }
 base::ListValue EnhancementTabHelper::Tabs(Profile* profile) {
   base::ListValue result;
@@ -145,8 +150,13 @@ void EnhancementTabHelper::Rebuild() {
   menus_.clear();
   statuses_.clear();
   main_frame_.clear();
-  if (!MayAttachToURL(web_contents()->GetLastCommittedURL(),
+  if (!MayAttachToURL(web_contents()->GetVisibleURL(),
                       web_contents()->GetWebUI() != nullptr))
+    return;
+  // 新窗口的初始主框架可能还没有渲染端。过早创建调试目标会缓存
+  // “尚未就绪”，直到首次提交才发送注册命令，错过文档启动事件。
+  // 等 RenderFrameCreated 确认 Mojo 通道可用后再建立会话。
+  if (!web_contents()->GetPrimaryMainFrame()->IsRenderFrameLive())
     return;
   host_ = content::DevToolsAgentHost::GetOrCreateFor(web_contents());
   if (!host_->AttachClient(this)) {
@@ -165,7 +175,9 @@ void EnhancementTabHelper::Rebuild() {
 }
 void EnhancementTabHelper::Configure(const std::string& session, bool paused) {
   Send("Page.enable", {}, {}, session);
-  Send("Runtime.enable", {}, {}, session);
+  // Chromium 也会暂停此页面创建的 Worker／Worklet；必须接收这些
+  // 目标并立即恢复，否则被过滤掉的后台任务会一直等待。仅 iframe
+  // 进入脚本配置流程，后台目标不注入脚本、不启用调试事件。
   Send("Target.setAutoAttach",
        base::DictValue()
            .Set("autoAttach", true)
@@ -173,6 +185,8 @@ void EnhancementTabHelper::Configure(const std::string& session, bool paused) {
            .Set("flatten", true)
            .Set("filter", base::ListValue()
                               .Append(base::DictValue().Set("type", "iframe"))
+                              .Append(base::DictValue().Set("type", "worker"))
+                              .Append(base::DictValue().Set("type", "worklet"))
                               .Append(base::DictValue().Set("exclude", true))),
        {}, session);
   Send("Page.getFrameTree", {},
@@ -182,8 +196,10 @@ void EnhancementTabHelper::Configure(const std::string& session, bool paused) {
              if (!self || !session.empty())
                return;
              if (const auto* frame =
-                     result.FindDictByDottedPath("result.frameTree.frame"))
+                     result.FindDictByDottedPath("result.frameTree.frame")) {
                self->main_frame_ = EnhancementField(*frame, "id");
+               self->TryAutoPreviewMarkdown();
+             }
            },
            weak_.GetWeakPtr(), session),
        session);
@@ -220,6 +236,9 @@ void EnhancementTabHelper::Configure(const std::string& session, bool paused) {
     Send("Page.addScriptToEvaluateOnNewDocument", std::move(params), {},
          session);
   }
+  // Runtime.enable 会强制创建新窗口的主执行环境。先注册脚本，避免
+  // window.open 首个文档的创建事件早于脚本注册、直到刷新才执行。
+  Send("Runtime.enable", {}, {}, session);
   // 与上面的注册命令在同一会话顺序处理，子框架只在注册完成后继续加载。
   if (paused)
     Send("Runtime.runIfWaitingForDebugger", {}, {}, session);
@@ -321,6 +340,7 @@ void EnhancementTabHelper::DispatchProtocolMessage(
     c.session = session;
     if (!c.unique.empty())
       contexts_[ContextKey(session, c.id)] = std::move(c);
+    TryAutoPreviewMarkdown();
   } else if (method == "Runtime.executionContextDestroyed")
     contexts_.erase(
         ContextKey(session, params->FindInt("executionContextId").value_or(0)));
@@ -336,6 +356,7 @@ void EnhancementTabHelper::DispatchProtocolMessage(
       main_frame_ = EnhancementField(*frame, "id");
       menus_.clear();
       statuses_.clear();
+      TryAutoPreviewMarkdown();
     }
   } else if (method == "Target.detachedFromTarget") {
     const auto child = EnhancementField(*params, "sessionId");
@@ -662,11 +683,16 @@ void EnhancementTabHelper::ReadMarkdownFile(base::FilePath path,
           std::move(path), std::move(source), local),
       std::move(reply));
 }
+void EnhancementTabHelper::RenderFrameCreated(content::RenderFrameHost* frame) {
+  if (!host_ && frame == web_contents()->GetPrimaryMainFrame())
+    Rebuild();
+}
 void EnhancementTabHelper::DidStartNavigation(
     content::NavigationHandle* handle) {
   if (!handle->IsInPrimaryMainFrame() || handle->IsSameDocument())
     return;
   navigation_id_ = handle->GetNavigationId();
+  pending_markdown_url_ = GURL();
 }
 void EnhancementTabHelper::DidFinishLoad(content::RenderFrameHost* frame,
                                         const GURL& url) {
@@ -708,9 +734,20 @@ void EnhancementTabHelper::DidFinishLoad(content::RenderFrameHost* frame,
   if (!path.ends_with(".md") && !path.ends_with(".markdown") &&
       web_contents()->GetContentsMimeType() != "text/markdown")
     return;
+  // 首次导航时，加载完成可能早于增强会话的执行环境事件。记录文档，
+  // 等主框架与执行环境都可用再读取；后续导航立即取消，避免预览串页。
+  pending_markdown_url_ = url;
+  TryAutoPreviewMarkdown();
+}
+void EnhancementTabHelper::TryAutoPreviewMarkdown() {
+  if (pending_markdown_url_.is_empty() || !MainContext() ||
+      web_contents()->GetLastCommittedURL() != pending_markdown_url_)
+    return;
+  const GURL url = pending_markdown_url_;
   const auto* sites = store_->state().FindDict("markdownSites");
   if (!sites || sites->FindBool(url::Origin::Create(url).Serialize()) != true)
     return;
+  pending_markdown_url_ = GURL();
   ReadPage(true, base::BindOnce(
                      [](base::WeakPtr<EnhancementTabHelper> self, GURL url,
                         int64_t navigation, base::DictValue result) {
