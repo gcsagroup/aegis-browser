@@ -7,20 +7,29 @@ Subject: [PATCH] 明确设置键访问与事件绑定并保留翻译标记行为
 
 ---
 diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
-index cf4d1da0aa9e058f5e6e61439cd55bd58b2158cb..95169f5f1f1b7f63b4e9e9ed03e0c893c5613775 100644
+index cf4d1da0aa9e058f5e6e61439cd55bd58b2158cb..b08e6c42a55054d5ced3413c583bff3e3dabd5bb 100644
 --- a/chrome/browser/resources/aegis/aegis.ts
 +++ b/chrome/browser/resources/aegis/aegis.ts
-@@ -1689,7 +1689,9 @@ document.addEventListener('DOMContentLoaded', () => {
+@@ -1688,8 +1688,10 @@ document.addEventListener('DOMContentLoaded', () => {
+ });
  
  // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
- window.addEventListener('message', event => {
+-window.addEventListener('message', event => {
 -  if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
++function handleSettingsSearchMessage(event: MessageEvent) {
 +  if (event.source !== parent) { return; }
 +  if (event.origin !== 'chrome://settings') { return; }
 +  if (event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') { return; }
    document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
    const query = event.data.query.trim().toLocaleLowerCase();
    if (!query) return;
+@@ -1698,4 +1700,5 @@ window.addEventListener('message', event => {
+   let ancestor = target.parentElement;
+   while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
+   target.dataset['searchMatch'] = 'true'; target.scrollIntoView({block: 'center'});
+-});
++}
++window.addEventListener('message', handleSettingsSearchMessage);
 diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
 index b52627d149fdba06eec52054756bc2287ed679bf..309b4d946913ea566588c381fb463dcb6dd5cd9b 100644
 --- a/chrome/browser/resources/aegis/gestures.ts
@@ -109,20 +118,29 @@ index b9cb8dfc6eddd1c9d85d7effb50b5ee86568895e..670b0494167763267fbae864fc30328b
      back.hidden = !group;
      nav.hidden = !!group;
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 918902da6e2413e4e5d8134f1a445c517227b889..aa401c143290400c3cc2ae78d9b9db35eee3e35e 100644
+index 918902da6e2413e4e5d8134f1a445c517227b889..767d92c92c6e9c73ac20ee1fcec92ae1e575d219 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
-@@ -2164,7 +2164,9 @@ try {
+@@ -2163,8 +2163,10 @@ try {
+ }
  
  // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
- window.addEventListener('message', event => {
+-window.addEventListener('message', event => {
 -  if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
++function handleSettingsSearchMessage(event: MessageEvent) {
 +  if (event.source !== parent) { return; }
 +  if (event.origin !== 'chrome://settings') { return; }
 +  if (event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') { return; }
    document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
    const query = event.data.query.trim().toLocaleLowerCase();
    if (!query) return;
+@@ -2173,4 +2175,5 @@ window.addEventListener('message', event => {
+   let ancestor = target.parentElement;
+   while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
+   target.dataset['searchMatch'] = 'true'; target.scrollIntoView({block: 'center'});
+-});
++}
++window.addEventListener('message', handleSettingsSearchMessage);
 diff --git a/chrome/browser/resources/aegis_agent/language_packs.ts b/chrome/browser/resources/aegis_agent/language_packs.ts
 index 75107dba73f9d882bb3f8042826b307e4ed58ce2..7caded35d7dbfce70478c22dd433d4ceb9312b51 100644
 --- a/chrome/browser/resources/aegis_agent/language_packs.ts
