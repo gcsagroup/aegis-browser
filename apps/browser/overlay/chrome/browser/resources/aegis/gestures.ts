@@ -13,8 +13,13 @@ const enabled = element<HTMLInputElement>('enabled'), trail = element<HTMLInputE
 const threshold = element<HTMLInputElement>('threshold'), sites = element<HTMLTextAreaElement>('disabledSites');
 const bindings = element('bindings'), practice = element('practice');
 const patternLabel = element('practicePattern'), resultLabel = element('practiceResult');
-const line = root.querySelector<SVGPolylineElement>('#practiceLine')!;
+const line = root.querySelector<SVGPolylineElement>('#practiceLine');
+if (!line) throw Error('缺少手势练习轨迹');
 let saved: Settings|null = null, defaults: Settings|null = null, actions: Action[] = [];
+function savedSettings(): Settings {
+  if (!saved) throw Error('手势设置尚未加载');
+  return saved;
+}
 let lastPattern = '', lastAction: string|undefined;
 let practiceSaving = false, pendingSaves = 0, optionSequence = 0;
 function hasDraft() {
@@ -23,9 +28,9 @@ function hasDraft() {
 function reportDirty() {
   if (root instanceof ShadowRoot) root.host.dispatchEvent(new CustomEvent('aegis-form-dirty', {detail: hasDraft(), bubbles: true, composed: true}));
 }
-root.addEventListener('input', () => queueMicrotask(reportDirty), {signal: events.signal});
-root.addEventListener('change', () => queueMicrotask(reportDirty), {signal: events.signal});
-root.addEventListener('click', () => queueMicrotask(reportDirty), {signal: events.signal});
+root.addEventListener('input', () => { queueMicrotask(reportDirty); }, {signal: events.signal});
+root.addEventListener('change', () => { queueMicrotask(reportDirty); }, {signal: events.signal});
+root.addEventListener('click', () => { queueMicrotask(reportDirty); }, {signal: events.signal});
 let saveChain = Promise.resolve();
 let undo: {pattern: string, action: string}|null = null;
 const drafts = new Map<string, string>();
@@ -45,12 +50,13 @@ function actionSelect(select: HTMLSelectElement, current = '') {
   const groups = new Map<string, HTMLOptGroupElement>();
   for (const item of actions) {
     const name = item.pdfOnly ? 'PDF' : /tab/.test(item.id) ? t('标签页') : /back|forward|reload/.test(item.id) ? t('导航') : t('页面');
-    if (!groups.has(name)) { const group = document.createElement('optgroup'); group.label = name; groups.set(name, group); select.append(group); }
-    groups.get(name)!.append(new Option(t(item.label) + (item.pdfOnly ? ' · PDF' : ''), item.id));
+    let group = groups.get(name);
+    if (!group) { group = document.createElement('optgroup'); group.label = name; groups.set(name, group); select.append(group); }
+    group.append(new Option(t(item.label) + (item.pdfOnly ? ' · PDF' : ''), item.id));
   }
   select.value = current;
 }
-function button(text: string, action: () => Promise<unknown>|void) {
+function button(text: string, action: () => Promise<void>|void) {
   const node = document.createElement('button'); node.type = 'button'; node.textContent = t(text);
   node.onclick = async () => { node.disabled = true; try { await action(); } finally { node.disabled = false; } };
   return node;
@@ -104,7 +110,7 @@ function renderBindings() {
       if (await persist(next => { next.bindings[pattern] = value; }, status.id)) { if (drafts.get(pattern) === value) drafts.delete(pattern); renderBindings(); reportDirty(); }
     }), button('取消', () => { drafts.delete(pattern); editor.hidden = true; }), status);
     controls.append(button('编辑', () => { drafts.set(pattern, action); editor.hidden = false; select.focus(); }), button('移除', async () => {
-      if (await persist(next => { delete next.bindings[pattern]; }, 'binding-status')) {
+      if (await persist(next => { next.bindings = Object.fromEntries(Object.entries(next.bindings).filter(([key]) => key !== pattern)); }, 'binding-status')) {
         undo = {pattern, action}; drafts.delete(pattern); renderBindings(); element('undoBinding').hidden = false;
       }
     }));
@@ -144,9 +150,9 @@ element('savePractice').onclick = async () => {
   practiceSaving = false; element<HTMLSelectElement>('practiceAction').disabled = false;
   element<HTMLButtonElement>('savePractice').disabled = false; reportDirty();
 };
-for (const node of root.querySelectorAll<HTMLButtonElement>('[data-direction]')) node.onclick = () => choosePattern(lastPattern + node.dataset['direction']);
+for (const node of root.querySelectorAll<HTMLButtonElement>('[data-direction]')) node.onclick = () => { choosePattern(lastPattern + node.dataset['direction']); };
 element('redraw').onclick = clearPractice; element('cancelPractice').onclick = clearPractice;
-element('usePattern').onclick = () => choosePattern(element<HTMLInputElement>('manualPattern').value);
+element('usePattern').onclick = () => { choosePattern(element<HTMLInputElement>('manualPattern').value); };
 element('undoBinding').onclick = async () => {
   if (!undo) return; const value = undo;
   if (await persist(next => { if (Object.hasOwn(next.bindings, value.pattern)) throw Error(t('这个方向已重新绑定，请先检查现有动作。')); next.bindings[value.pattern] = value.action; }, 'binding-status')) {
@@ -185,18 +191,18 @@ function renderSites() {
   for (const domain of saved?.disabledSites || []) {
     const row = document.createElement('div'); row.className = 'site-entry'; const label = document.createElement('span'); label.textContent = domain;
     row.append(label, button('移除', async () => {
-      if (await persist(next => { next.disabledSites = next.disabledSites.filter(item => item !== domain); }, 'sites-status')) { sites.value = saved!.disabledSites.join('\n'); renderSites(); }
+      if (await persist(next => { next.disabledSites = next.disabledSites.filter(item => item !== domain); }, 'sites-status')) { sites.value = savedSettings().disabledSites.join('\n'); renderSites(); }
     })); list.append(row);
   }
   if (!list.childElementCount) list.textContent = t('暂无网站例外。');
 }
 element<HTMLFormElement>('add-site-form').onsubmit = event => {
   event.preventDefault(); const input = element<HTMLInputElement>('newSite'); const value = input.value.trim();
-  void persist(next => { const domain = hostname(value); if (!next.disabledSites.includes(domain)) next.disabledSites.push(domain); }, 'sites-status').then(ok => { if (ok) { if (input.value.trim() === value) input.value = ''; sites.value = saved!.disabledSites.join('\n'); renderSites(); reportDirty(); } });
+  void persist(next => { const domain = hostname(value); if (!next.disabledSites.includes(domain)) next.disabledSites.push(domain); }, 'sites-status').then(ok => { if (ok) { if (input.value.trim() === value) input.value = ''; sites.value = savedSettings().disabledSites.join('\n'); renderSites(); reportDirty(); } });
 };
 element('saveSites').onclick = async () => {
   const input = sites.value;
-  if (await persist(next => { next.disabledSites = [...new Set(input.split('\n').map(value => value.trim()).filter(Boolean).map(hostname))]; }, 'sites-status')) { sites.value = saved!.disabledSites.join('\n'); renderSites(); reportDirty(); }
+  if (await persist(next => { next.disabledSites = [...new Set(input.split('\n').map(value => value.trim()).filter(Boolean).map(hostname))]; }, 'sites-status')) { sites.value = savedSettings().disabledSites.join('\n'); renderSites(); reportDirty(); }
 };
 element('cancelSites').onclick = () => { sites.value = saved?.disabledSites.join('\n') || ''; };
 element('reloadSettings').onclick = () => { if (!confirm(t('重新读取会放弃当前未保存的手势编辑，继续？'))) return; drafts.clear(); void reload(); };

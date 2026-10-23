@@ -680,7 +680,9 @@ function toggleStatus(id: string): HTMLElement {
   if (!status) {
     status = document.createElement('p'); status.id = id + '-feedback'; status.className = 'setting-feedback';
     status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-    checkbox(id).closest('label')!.after(status);
+    const label = checkbox(id).closest('label');
+    if (!label) throw Error('缺少设置标签：' + id);
+    label.after(status);
   }
   return status;
 }
@@ -1018,7 +1020,7 @@ function fillAiControl(status: AegisStatus) {
     toolsStartingAt = 0; statusEl.textContent = settingsText('无痕窗口打开期间暂停本机工具连接；内置助手仍可使用。', 'Local tool connections pause while an Incognito window is open; the built-in assistant remains available.', '無痕視窗開啟期間暫停本機工具連線；內建助手仍可使用。'); return;
   }
   if (!status.aiControl) { toolsStartingAt = 0; statusEl.textContent = settingsText('已关闭。', 'Off.', '已關閉。'); return; }
-  const valid = status.aiControlRunning && status.aiControlLoopbackOnly && Number.isInteger(status.aiControlPort) && status.aiControlPort! > 0;
+  const valid = status.aiControlRunning && status.aiControlLoopbackOnly && typeof status.aiControlPort === 'number' && Number.isInteger(status.aiControlPort) && status.aiControlPort > 0;
   if (!valid) {
     toolsStartingAt ||= Date.now();
     const failed = Date.now() - toolsStartingAt > 15000;
@@ -1589,7 +1591,7 @@ function requestSettings<T>(method: string, ...args: unknown[]): Promise<T> {
       reject(new Error(document.documentElement.lang.startsWith('zh') ?
           '设置请求超时，请重新打开此页重试。' : 'Settings request timed out. Reopen this page to retry.'));
     }, 180000);
-    settingsRequests.set(id, {resolve: value => resolve(value as T), reject, timer});
+    settingsRequests.set(id, {resolve: value => { resolve(value as T); }, reject, timer});
     parent.postMessage({type: 'aegis-settings-request', id, method, args}, 'chrome://settings');
   });
 }
@@ -1599,14 +1601,14 @@ function listenSettingsStatus(callback: (status: AegisStatus) => void) {
 }
 
 // 复用完整设置控件；只改变展示分组，不迁移或重写已保存的配置。
-const settingsSection = new URLSearchParams(location.search).get('settings');
+const settingsSection = new URLSearchParams(location.search).get('settings') || '';
 const embeddedSettings = window.parent !== window &&
-    ['privacy', 'ai', 'downloads', 'tools'].includes(settingsSection || '');
+    ['privacy', 'ai', 'downloads', 'tools'].includes(settingsSection);
 let settingsRequestId = 0;
 const settingsRequests = new Map<string, {resolve: (value: unknown) => void, reject: (reason: Error) => void, timer: number}>();
 let settingsStatusListener: ((status: AegisStatus) => void)|undefined;
 if (embeddedSettings) {
-  document.body.dataset['settings'] = settingsSection!;
+  document.body.dataset['settings'] = settingsSection;
   window.addEventListener('message', event => {
     if (event.source !== parent || event.origin !== 'chrome://settings') return;
     if (event.data?.type === 'aegis-settings-status') {
@@ -1643,14 +1645,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const zh = document.documentElement.lang.startsWith('zh');
     const names: Record<string, string> = localeCode() === 'zh-TW' ? {protection: '防護詳情', downloads: '下載中心', summary: '網頁摘要', reading: '閱讀工作區'} : zh ? {protection: '防护详情', downloads: '下载中心', summary: '网页摘要', reading: '阅读工作区'} :
         {protection: 'Protection details', downloads: 'Downloads', summary: 'Page summary', reading: 'Reading workspace'};
-    getRequiredElement('workspace-title').textContent = names[workspace]!;
+    const title = names[workspace];
+    if (!title) throw Error('缺少工作区标题：' + workspace);
+    getRequiredElement('workspace-title').textContent = title;
     getRequiredElement('workspace-settings-link').textContent = settingsText('Aegis 功能设置', 'Aegis settings', 'Aegis 功能設定');
-    document.title = names[workspace]!;
+    document.title = title;
     getRequiredElement('workspace-navigation').hidden = false;
     if (workspace === 'reading') {
       const frame = getRequiredElement<HTMLIFrameElement>('reading-workspace-frame');
-      frame.parentElement!.hidden = false;
-      frame.title = names['reading']!;
+      const container = frame.parentElement;
+      if (!container) throw Error('缺少阅读工作区容器');
+      container.hidden = false;
+      frame.title = title;
       frame.src = 'chrome-untrusted://aegis-agent/?view=reading';
       window.addEventListener('message', event => {
         if (event.source !== frame.contentWindow || event.origin !== 'chrome-untrusted://aegis-agent' ||
@@ -1662,27 +1668,29 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   document.querySelector<AegisDownloadPanelElement>('aegis-download-panel')
       ?.setRequestHandler(requestSettings);
+  const main = document.querySelector('main');
+  if (!main) throw Error('缺少设置主区域');
   if (embeddedSettings) {
-    const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
-      height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
-    new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
+    const reportHeight = () => { parent.postMessage({type: 'aegis-settings-height',
+      height: main.getBoundingClientRect().height + 24}, 'chrome://settings'); };
+    new ResizeObserver(reportHeight).observe(main);
     reportHeight();
   }
-  const main = document.querySelector('main')!; main.inert = true;
+  main.inert = true;
   const loading = document.createElement('section'); loading.setAttribute('role', 'status');
   loading.textContent = settingsText('正在读取配置…', 'Loading settings…', '正在讀取設定…');
   main.before(loading);
   void init().then(() => { main.inert = false; loading.remove(); }).catch(() => {
     loading.textContent = settingsText('配置读取失败。请重试后再修改。', 'Settings could not be loaded. Retry before editing.', '設定讀取失敗。請重試後再修改。');
     const retry = document.createElement('button'); retry.type = 'button';
-    retry.textContent = settingsText('重试', 'Retry', '重試'); retry.onclick = () => location.reload(); loading.append(retry);
+    retry.textContent = settingsText('重试', 'Retry', '重試'); retry.onclick = () => { location.reload(); }; loading.append(retry);
   });
 });
 
 // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
 window.addEventListener('message', event => {
   if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
-  document.querySelectorAll('[data-search-match]').forEach(node => node.removeAttribute('data-search-match'));
+  document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
   const query = event.data.query.trim().toLocaleLowerCase();
   if (!query) return;
   const target = [...document.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(query));
