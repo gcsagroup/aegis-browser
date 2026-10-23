@@ -357,11 +357,23 @@ struct ReadingPreferencesView: View {
   var body: some View {
     Form {
       Section("阅读外观") {
-        Picker("主题", selection: $theme) { Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark") }
-        Picker("字体", selection: $family) { Text("系统字体").tag("sans"); Text("衬线字体").tag("serif") }
-        Stepper(value: $font, in: 12...28, step: 1) { LabeledContent("字号", value: String(Int(font))) }
-        Picker("行距", selection: $spacing) { Text("紧凑").tag(150); Text("标准").tag(180); Text("宽松").tag(210) }
-        Picker("正文宽度", selection: $width) { Text("窄").tag(680); Text("标准").tag(820); Text("宽").tag(1100) }
+        SettingsPicker("主题", selection: $theme, value: theme == "system" ? "跟随系统" : theme == "dark" ? "深色" : "浅色") {
+          Text("跟随系统").tag("system"); Text("浅色").tag("light"); Text("深色").tag("dark")
+        }
+        SettingsPicker("字体", selection: $family, value: family == "serif" ? "衬线字体" : "系统字体") {
+          Text("系统字体").tag("sans"); Text("衬线字体").tag("serif")
+        }
+        VStack(alignment: .leading, spacing: 8) {
+          Text("字号")
+          Stepper(value: $font, in: 12...28, step: 1) { Text(String(Int(font))) }
+            .accessibilityLabel(Text("字号"))
+        }
+        SettingsPicker("行距", selection: $spacing, value: spacing == 150 ? "紧凑" : spacing == 210 ? "宽松" : "标准") {
+          Text("紧凑").tag(150); Text("标准").tag(180); Text("宽松").tag(210)
+        }
+        SettingsPicker("正文宽度", selection: $width, value: width == 680 ? "窄" : width == 1100 ? "宽" : "标准") {
+          Text("窄").tag(680); Text("标准").tag(820); Text("宽").tag(1100)
+        }.accessibilityIdentifier("reading-width-setting")
       }
       Section("图片权限") {
         Text("外部图片每次打开文档时按需加载；本地图片需要选择所属目录。")

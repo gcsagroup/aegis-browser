@@ -3,6 +3,7 @@
 import '/strings.m.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import './policy_worker.js';
+import {initializeMobileSettings} from './mobile_settings.js';
 import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
 
 import type {AegisDownloadPanelElement} from 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
@@ -1500,6 +1501,12 @@ async function init() {
   const status: AegisStatus =
       withRendererPolicyWorkerStatus(await requestSettings('getStatus'));
   applyStatus(status);
+  if (status.isAndroid) {
+    initializeMobileSettings(async section => {
+      const result: AegisStatus = await sendWithPromise('openBrowserAgent', section);
+      if (result.ok === false) throw new Error(result.error || 'unavailable');
+    });
+  }
   bindToggle('tracker', 'trackerBlocking');
   bindToggle('phish', 'phishInterstitial');
   bindToggle('fingerprint', 'fingerprintGuard');

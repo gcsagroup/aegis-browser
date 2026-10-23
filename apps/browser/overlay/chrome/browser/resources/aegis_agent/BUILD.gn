@@ -49,6 +49,7 @@ build_webui("build") {
   ]
   ts_files = [
     "agent.ts",
+    "mobile_settings.ts",
     "reading_workspace.ts",
     "local_ai_client.ts",
     "language_packs.ts",

@@ -98,6 +98,7 @@
 		A221FA759498782B5C07292B /* AgentCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */; };
 		A26E7BA6658A775C82BC5969 /* tracker-rules.json in Resources */ = {isa = PBXBuildFile; fileRef = 12FBB57073D719D62C6A1D87 /* tracker-rules.json */; };
 		A3869AD8E991BCC6899CC90D /* ContentFilterCompiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBABA36F4D98A942FD63987 /* ContentFilterCompiler.swift */; };
+		A5D16577C28F1F3AAE156C2A /* SettingsLayoutUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0510756A74BFFCEF7ECFDE21 /* SettingsLayoutUITests.swift */; };
 		A75E140D24416D324155FAD6 /* BrowserKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A066F1C80823C272439700C0 /* BrowserKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A7B3F09DCB286D28B4F61923 /* NavigationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEB730B727C42360401232C8 /* NavigationPolicy.swift */; };
 		A81B549D1197E1C4752D1B75 /* CapabilitySecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B6107C5E1917AE2F2CB7D23 /* CapabilitySecurityTests.swift */; };
@@ -147,6 +148,7 @@
 		EC82CA3264103EABFC665167 /* AgentKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0958879001F2F7DF98B0CBEA /* AgentKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		EE37D813D0D8FC497087CBA0 /* enhancements_shared in Resources */ = {isa = PBXBuildFile; fileRef = BAF2AA6253F933AA8EF47610 /* enhancements_shared */; };
 		EEF3036CF71240B396A67F91 /* WorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C9E49E3A13317A299E03EC0 /* WorkspaceStore.swift */; };
+		EF9FD91A54EB1C28D06D9F0E /* SettingsFormControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8082F09623C73FCCCE2FD4D7 /* SettingsFormControls.swift */; };
 		F0358664B6B9171AD9B429F9 /* SafariWebExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4BED1A1355A1EB0F9884D002 /* SafariWebExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F1DB30017933EE43C6660F04 /* DownloadPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */; };
 		F34EB31D71B42F75DBCF92B4 /* FILTER-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = 814C192A9856ED76466487B8 /* FILTER-LICENSE.txt */; };
@@ -296,6 +298,7 @@
 /* Begin PBXFileReference section */
 		0193749B7636A106F72F9642 /* WorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowTests.swift; sourceTree = "<group>"; };
 		01D7E15A595D78AE85CA380C /* ActionCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCapability.swift; sourceTree = "<group>"; };
+		0510756A74BFFCEF7ECFDE21 /* SettingsLayoutUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsLayoutUITests.swift; sourceTree = "<group>"; };
 		0566DCB113FA458049F3395C /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		0733E717B779380580E227F2 /* AssistantTaskStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTaskStoreTests.swift; sourceTree = "<group>"; };
 		0958879001F2F7DF98B0CBEA /* AgentKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AgentKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -352,6 +355,7 @@
 		7DA26E91B481872DFF7904C7 /* ContentFilterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentFilterTests.swift; sourceTree = "<group>"; };
 		7FF0AF5508FE69A29C6DA727 /* LinkSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSanitizer.swift; sourceTree = "<group>"; };
 		8062DAFB759A5F4F2DEA7F6B /* Aegis.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Aegis.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8082F09623C73FCCCE2FD4D7 /* SettingsFormControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsFormControls.swift; sourceTree = "<group>"; };
 		814C192A9856ED76466487B8 /* FILTER-LICENSE.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "FILTER-LICENSE.txt"; sourceTree = "<group>"; };
 		82285F4F697616D48A30E392 /* ModelStreamDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelStreamDecoder.swift; sourceTree = "<group>"; };
 		83743D91211FEF8F59981CDF /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
@@ -596,6 +600,7 @@
 			isa = PBXGroup;
 			children = (
 				D2EE4B19F40D50A254F73400 /* AegisUITests.swift */,
+				0510756A74BFFCEF7ECFDE21 /* SettingsLayoutUITests.swift */,
 				4428CD83AD61F74E9A09CDC3 /* WebsiteEnhancementUITests.swift */,
 			);
 			path = AegisUITests;
@@ -787,6 +792,7 @@
 				C5C0AD744FA049B26B540464 /* PrivacyInfo.xcprivacy */,
 				F9594C0B3C26733D2849ABD0 /* ReadingLibraryView.swift */,
 				68CA4E473918E734EC9A1E48 /* RecordRecoveryView.swift */,
+				8082F09623C73FCCCE2FD4D7 /* SettingsFormControls.swift */,
 				8505E24B26D61C484EF0E7E8 /* TabSwitcher.swift */,
 				B5DFA8B92557D78E2EFD667C /* WebsiteEnhancementsView.swift */,
 				EAB3E0EE5DAAC62A328954CE /* InfoPlist.strings */,
@@ -1198,6 +1204,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0A421F28BB9416326ED8C14F /* AegisUITests.swift in Sources */,
+				A5D16577C28F1F3AAE156C2A /* SettingsLayoutUITests.swift in Sources */,
 				E633825580D4611CE7B0E9DF /* WebsiteEnhancementUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1262,6 +1269,7 @@
 				5F49F1C483F473646F56D052 /* ReadingLibraryView.swift in Sources */,
 				801C6544F4D1EACC7018E7B6 /* RecordRecoveryView.swift in Sources */,
 				B5ED66F92E491CDDC6984660 /* SafariReadOnlyGate.swift in Sources */,
+				EF9FD91A54EB1C28D06D9F0E /* SettingsFormControls.swift in Sources */,
 				4696882FA847A55B0776C99F /* ShareInbox.swift in Sources */,
 				C69FB9E5886048C9656EA64D /* TabSwitcher.swift in Sources */,
 				BF733973E4705255928BF8A3 /* WebsiteEnhancementsView.swift in Sources */,
@@ -1489,7 +1497,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 118;
+				CURRENT_PROJECT_VERSION = 127;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1551,7 +1559,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 118;
+				CURRENT_PROJECT_VERSION = 127;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
