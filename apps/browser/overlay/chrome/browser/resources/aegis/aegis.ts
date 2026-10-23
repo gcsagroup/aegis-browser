@@ -1688,7 +1688,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
-window.addEventListener('message', event => {
+function handleSettingsSearchMessage(event: MessageEvent) {
   if (event.source !== parent) { return; }
   if (event.origin !== 'chrome://settings') { return; }
   if (event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') { return; }
@@ -1700,4 +1700,5 @@ window.addEventListener('message', event => {
   let ancestor = target.parentElement;
   while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
   target.dataset['searchMatch'] = 'true'; target.scrollIntoView({block: 'center'});
-});
+}
+window.addEventListener('message', handleSettingsSearchMessage);

@@ -550,7 +550,7 @@
       "previousReason": "监听器第一条 if 同时要求 event.source === parent、event.origin === chrome://settings、固定消息 type 且 query 为 string；不匹配立即返回。仅执行文本搜索/展开详情，不转发任意原生操作。规则没有识别同一复合条件里的严格校验。",
       "decision": "已整改",
       "runtimeDefectConfirmed": false,
-      "change": "将来源窗口、精确 origin 和消息字段校验拆成三个有花括号的提前返回；校验值与搜索行为不变。"
+      "change": "使用具名消息处理函数，明确保留来源窗口、精确 origin 和消息字段的三层提前返回；校验顺序与搜索行为不变。"
     },
     {
       "issueId": "cf371a552c05481721660a3fa3e199e8",
@@ -732,7 +732,7 @@
       "previousReason": "监听器第一条 if 同时要求 event.source === parent、event.origin === chrome://settings、固定消息 type 且 query 为 string；不匹配立即返回。仅执行文本搜索/展开详情，不转发任意原生操作。规则没有识别同一复合条件里的严格校验。",
       "decision": "已整改",
       "runtimeDefectConfirmed": false,
-      "change": "将来源窗口、精确 origin 和消息字段校验拆成三个有花括号的提前返回；校验值与搜索行为不变。"
+      "change": "使用具名消息处理函数，明确保留来源窗口、精确 origin 和消息字段的三层提前返回；校验顺序与搜索行为不变。"
     },
     {
       "issueId": "497b0c8215d5d44c54c21227d495f70e",

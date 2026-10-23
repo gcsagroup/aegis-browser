@@ -326,8 +326,11 @@ test('下载限速模式只接受真实选择控件，正常切换仍保存相�
 for (const file of ['aegis/aegis.ts', 'aegis_agent/agent.ts']) {
   test(`${file} 搜索消息逐层拒绝伪造来源，合法搜索仍展开并定位`, () => {
     const tree = ts.createSourceFile('settings.ts', read(file), ts.ScriptTarget.Latest, true);
-    const statement = tree.statements.find(node => ts.isExpressionStatement(node) && node.getText(tree).startsWith("window.addEventListener('message'") && node.getText(tree).includes('aegis-settings-search'));
+    const statement = tree.statements.find(node => ts.isExpressionStatement(node) && node.getText(tree).startsWith("window.addEventListener('message'"));
     assert(statement);
+    const callbackName = statement.expression.arguments[1].getText(tree);
+    const callback = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.getText(tree) === callbackName);
+    assert(callback, '消息监听器使用真实的具名处理函数');
     const dom = new JSDOM('', {runScripts: 'outside-only'});
     const document = dom.window.document, parent = dom.window.parent;
     const previous = document.createElement('p'), details = document.createElement('details');
@@ -337,7 +340,6 @@ for (const file of ['aegis/aegis.ts', 'aegis_agent/agent.ts']) {
     details.append(summary, label); document.body.append(previous, details);
     let scrolled = 0;
     label.scrollIntoView = () => { ++scrolled; };
-    const callback = statement.expression.arguments[1];
     const receive = vm.runInContext(compile(`(${callback.getText(tree)});`), dom.getInternalVMContext());
     const valid = {source: parent, origin: 'chrome://settings', data: {type: 'aegis-settings-search', query: ' 密钥 '}};
     for (const change of [{source: {}}, {origin: 'https://settings'}, {origin: 'chrome://settings.evil'},
