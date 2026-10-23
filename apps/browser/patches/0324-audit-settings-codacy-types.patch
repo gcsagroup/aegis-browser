@@ -281,21 +281,31 @@ index ec39cd4ff5247d6af534b75fd347d84b9f97dac5..73194f33d65f00497b577eb21ccb9b16
  body[data-mobile-settings='reading'] main > #reading-ai-settings,
  body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
 diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
-index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b428739d8 100644
+index 85e16b258f2a8fac41d8bd1d9c07da545278798a..918902da6e2413e4e5d8134f1a445c517227b889 100644
 --- a/chrome/browser/resources/aegis_agent/agent.ts
 +++ b/chrome/browser/resources/aegis_agent/agent.ts
-@@ -996,7 +996,9 @@ function renderModelPoolDraft(next: TaskSnapshot) {
+@@ -957,7 +957,7 @@ function renderMonitors(monitors: MonitorSummary[]) {
+ }
+ 
+ function renderModelPoolDraft(next: TaskSnapshot) {
+-  const values: Record<string, string> = {
++  const values = {
+     'pool-provider': 'openai', 'pool-base-url': 'http://127.0.0.1:8000/v1', 'pool-name': '',
+     'model-quality-score': '50', 'model-latency-score': '50', 'model-cost': '',
+     'model-efforts': '', 'model-profile-default': '', 'model-profile-basic': '',
+@@ -995,8 +995,9 @@ function renderModelPoolDraft(next: TaskSnapshot) {
+   }
    for (const [id, value] of Object.entries(values)) element<HTMLInputElement>(id).value = value;
    for (const [id, value] of Object.entries(checks)) element<HTMLInputElement>(id).checked = value;
-   for (const key of ['default', 'basic', 'strong']) {
+-  for (const key of ['default', 'basic', 'strong']) {
 -    const [effort = '', tokens = ''] = values['model-profile-' + key]!.split(':');
-+    const profileValue = values['model-profile-' + key];
-+    if (profileValue === undefined) throw Error('缺少模型档位：' + key);
++  for (const key of ['default', 'basic', 'strong'] as const) {
++    const profileValue = values[`model-profile-${key}`];
 +    const [effort = '', tokens = ''] = profileValue.split(':');
      element<HTMLSelectElement>('model-profile-' + key + '-effort').value = effort;
      element<HTMLInputElement>('model-profile-' + key + '-tokens').value = tokens;
    }
-@@ -1066,7 +1068,7 @@ function renderModel(next: TaskSnapshot) {
+@@ -1066,7 +1067,7 @@ function renderModel(next: TaskSnapshot) {
          packText('质量评分 ', 'Quality score ', '品質評分 ') + entry.qualityScore + ' · ' + packText('速度评分 ', 'Speed score ', '速度評分 ') + entry.latencyScore + ' · ' + cost + (entry.costMicrousdPerMillionTokens ? ' μUSD / 1M tokens' : '');
      item.classList.toggle('selected', entry.id === editingPoolId);
      const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = packText('编辑', 'Edit', '編輯'); edit.disabled = modelRoutingBusy;
@@ -304,7 +314,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
      const remove = document.createElement('button');
      remove.type = 'button';
      remove.textContent = loadTimeData.getString('removeModelPool');
-@@ -1453,9 +1455,9 @@ function initializeSettingsPresentation() {
+@@ -1453,9 +1454,9 @@ function initializeSettingsPresentation() {
    element('aegis-settings-link').textContent = loadTimeData.getString('aegisSettingsTitle');
    element('aegis-settings-link').hidden = !desktop || settingsMode;
    if (!settingsMode) return;
@@ -317,7 +327,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
    // 隐藏的任务输入框不能抢走设置页焦点。
    element('goal').removeAttribute('autofocus');
    const sections = settingsSection === 'experiments' ? ['reading-research-settings'] :
-@@ -1463,9 +1465,11 @@ function initializeSettingsPresentation() {
+@@ -1463,9 +1464,11 @@ function initializeSettingsPresentation() {
    for (const id of sections) {
      element<HTMLDetailsElement>(id).open = true;
    }
@@ -332,18 +342,18 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
    reportHeight();
  }
  
-@@ -1570,7 +1574,9 @@ function initializeLabels() {
+@@ -1570,7 +1573,9 @@ function initializeLabels() {
    element('pool-field-help').textContent = packText('质量与速度为自填的 0–100 分，越高越优先，不是实测结果。费用单位为每百万 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每档分别选择推理强度和最大输出 token 数，留空使用服务默认。', 'Quality and speed are user-assigned scores from 0 to 100; higher is preferred, not measured. Prices use micro-USD per million tokens (1 USD = 1,000,000 micro-USD); blank means unknown. Each profile selects reasoning effort and maximum output tokens; blank uses service defaults.', '品質與速度為自填的 0–100 分，越高越優先，並非實測結果。費用單位為每百萬 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每檔分別選擇推理強度及最大輸出 token 數，留空使用服務預設。');
    for (const key of ['default', 'basic', 'strong']) {
      const select = element<HTMLSelectElement>('model-profile-' + key + '-effort');
 -    select.options[0]!.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
-+    const defaultOption = select.options[0];
++    const defaultOption = select.options.item(0);
 +    if (!defaultOption) throw Error('缺少默认模型强度选项：' + key);
 +    defaultOption.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
      select.setAttribute('aria-label', packText('推理强度', 'Reasoning effort', '推理強度'));
      element('model-profile-' + key + '-tokens').setAttribute('aria-label', packText('最大输出 token 数', 'Maximum output tokens', '最大輸出 token 數'));
    }
-@@ -1819,7 +1825,7 @@ async function saveModel(clearApiKey = false) {
+@@ -1819,7 +1824,7 @@ async function saveModel(clearApiKey = false) {
  }
  
  async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false) {
@@ -352,7 +362,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
      return;
    }
    // Capture the user's choice before render() reapplies the persisted
-@@ -1832,7 +1838,7 @@ async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false)
+@@ -1832,7 +1837,7 @@ async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false)
      render(snapshot);
    }
    try {
@@ -361,7 +371,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
      if (savedDraft && !response.snapshot.lastError) { poolDraftDirty = false; }
      render(response.snapshot);
      element('model-routing-feedback').textContent =
-@@ -2058,13 +2064,13 @@ function bindActions() {
+@@ -2058,13 +2063,13 @@ function bindActions() {
    element('model-name').addEventListener('input', syncDetectedModel);
    element('model-base-url').addEventListener('input', resetDetectedModels);
    element('model-api-key').addEventListener('input', resetDetectedModels);
@@ -378,7 +388,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
    element('cancel-model-pool-button').addEventListener('click', () => { poolDraftDirty = false; if (snapshot) renderModelPoolDraft(snapshot); });
    element('model-advanced').addEventListener('input', () => { poolDraftDirty = true; });
    for (const id of ['model-base-url', 'model-name', 'model-api-key']) element(id).addEventListener('input', () => { element<HTMLInputElement>(id).setCustomValidity(''); renderModelKeyState(); });
-@@ -2113,8 +2119,10 @@ function bindActions() {
+@@ -2113,8 +2118,10 @@ function bindActions() {
  initializeLabels();
  element('startup-status').textContent = packText('正在读取配置…', 'Loading settings…', '正在讀取設定…');
  element('startup-retry').textContent = packText('重试', 'Retry', '重試');
@@ -391,7 +401,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
  try {
    proxy = BrowserProxy.getInstance();
    bindActions();
-@@ -2133,8 +2141,8 @@ try {
+@@ -2133,8 +2140,8 @@ try {
    if (!settingsMode && launchParameters.get('view') === 'reading') {
      document.body.classList.add('reading-workspace-only');
      activeView = 'reading'; renderView(); void reading.refresh();
@@ -402,7 +412,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
    }
    element('reading-view-button').addEventListener('click', () => {
      activeView = 'reading';
-@@ -2143,7 +2151,7 @@ try {
+@@ -2143,7 +2150,7 @@ try {
    });
    proxy.callbackRouter.onSnapshotChanged.addListener(render);
    proxy.handler.getSnapshot().then(({snapshot: initial}) => {
@@ -411,7 +421,7 @@ index 85e16b258f2a8fac41d8bd1d9c07da545278798a..28420d211ac2cd1ca254c02c6864371b
      render(initial);
      if (!settingsMode) proxy.handler.showUI();
      // 只有已消费的一次性原生启动请求才创建新任务。
-@@ -2158,7 +2166,7 @@ try {
+@@ -2158,7 +2165,7 @@ try {
  // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
  window.addEventListener('message', event => {
    if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
@@ -457,7 +467,7 @@ index b44d64475e957dcaf83a3ea55723b0af9034c4c2..75107dba73f9d882bb3f8042826b307e
          const result = await this.client.run({op: 'download', direction: id}, message => {
            const [kind, value] = message.split(':');
 diff --git a/chrome/browser/resources/aegis_agent/mobile_settings.ts b/chrome/browser/resources/aegis_agent/mobile_settings.ts
-index 23df4159e1946673b888f4f4b91aafe572d128ee..1a1eea56627a2553a3025b942c468c0a22035f00 100644
+index 23df4159e1946673b888f4f4b91aafe572d128ee..b96b3861c9341cb9015d9dbf4458d05d7dbcebb9 100644
 --- a/chrome/browser/resources/aegis_agent/mobile_settings.ts
 +++ b/chrome/browser/resources/aegis_agent/mobile_settings.ts
 @@ -8,7 +8,8 @@ export function initializeMobileAgentSettings(
@@ -476,7 +486,7 @@ index 23df4159e1946673b888f4f4b91aafe572d128ee..1a1eea56627a2553a3025b942c468c0a
    let research = document.getElementById('reading-research-settings');
 -  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement;
 -  local.querySelector('summary')!.textContent = text(
-+  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement|null;
++  const local = document.querySelector<HTMLDetailsElement>('#reading-ai-settings');
 +  const localSummary = local?.querySelector('summary');
 +  if (!local || !localSummary) throw Error('缺少本机翻译设置区域');
 +  localSummary.textContent = text(
