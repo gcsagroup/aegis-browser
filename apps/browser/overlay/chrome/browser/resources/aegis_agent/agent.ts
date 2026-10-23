@@ -2164,7 +2164,9 @@ try {
 
 // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
 window.addEventListener('message', event => {
-  if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
+  if (event.source !== parent) { return; }
+  if (event.origin !== 'chrome://settings') { return; }
+  if (event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') { return; }
   document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
   const query = event.data.query.trim().toLocaleLowerCase();
   if (!query) return;
