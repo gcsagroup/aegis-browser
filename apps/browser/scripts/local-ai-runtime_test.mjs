@@ -106,4 +106,19 @@ for (const suffix of ['/1', '/0', '/0/1', '.1', '?1', '-1']) {
   assert.equal(context.translateParagraph(appended, pair, 'Keep `value` unchanged.'), 'Keep `value`' + suffix + ' unchanged.',
       '标记后正文不得被吞掉，也不能被误判为不同的标记前缀');
 }
-console.log('翻译代码和链接保护回归通过：前缀冲突、有界重试、遗漏、重复、越界、前导零与其他前缀隔离。');
+for (const text of ['`one` `two`', '`one` `two` `three`', 'https://example.org/a `two`', 'https://aegis.invalid/docs `one` `two`']) {
+  let attempts = 0;
+  const joined = {translate: ({texts}) => {
+    ++attempts;
+    return [{target: {text: texts[0].text.replace(/\s+/g, '')}}];
+  }};
+  assert.throws(() => context.translateParagraph(joined, pair, text), /translation_incomplete/,
+      '相邻标记前缀不能人为创造数字词边界；缺失边界必须保持拒绝');
+  assert.equal(attempts, 2, '主标记和备用标记均失败后停止重试');
+}
+for (const separator of ['/', '.', '-', '\u200b']) {
+  const separated = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\s+/g, separator)}}]};
+  assert.equal(context.translateParagraph(separated, pair, '`one` `two`'), '`one`' + separator + '`two`',
+      '真实存在的非单词分隔符仍保留数字词边界');
+}
+console.log('翻译代码和链接保护回归通过：前缀冲突、有界重试、遗漏、重复、越界、前导零、相邻标记词边界与其他前缀隔离。');
