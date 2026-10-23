@@ -29,7 +29,7 @@ export function initializeMobileAgentSettings(
   if (section !== 'reading' && section !== 'experiments') return;
   document.getElementById('goal')?.removeAttribute('autofocus');
   let research = document.getElementById('reading-research-settings');
-  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement|null;
+  const local = document.querySelector<HTMLDetailsElement>('#reading-ai-settings');
   const localSummary = local?.querySelector('summary');
   if (!local || !localSummary) throw Error('缺少本机翻译设置区域');
   localSummary.textContent = text(
