@@ -957,7 +957,7 @@ function renderMonitors(monitors: MonitorSummary[]) {
 }
 
 function renderModelPoolDraft(next: TaskSnapshot) {
-  const values: Record<string, string> = {
+  const values = {
     'pool-provider': 'openai', 'pool-base-url': 'http://127.0.0.1:8000/v1', 'pool-name': '',
     'model-quality-score': '50', 'model-latency-score': '50', 'model-cost': '',
     'model-efforts': '', 'model-profile-default': '', 'model-profile-basic': '',
@@ -995,9 +995,8 @@ function renderModelPoolDraft(next: TaskSnapshot) {
   }
   for (const [id, value] of Object.entries(values)) element<HTMLInputElement>(id).value = value;
   for (const [id, value] of Object.entries(checks)) element<HTMLInputElement>(id).checked = value;
-  for (const key of ['default', 'basic', 'strong']) {
-    const profileValue = values['model-profile-' + key];
-    if (profileValue === undefined) throw Error('缺少模型档位：' + key);
+  for (const key of ['default', 'basic', 'strong'] as const) {
+    const profileValue = values[`model-profile-${key}`];
     const [effort = '', tokens = ''] = profileValue.split(':');
     element<HTMLSelectElement>('model-profile-' + key + '-effort').value = effort;
     element<HTMLInputElement>('model-profile-' + key + '-tokens').value = tokens;
@@ -1574,7 +1573,7 @@ function initializeLabels() {
   element('pool-field-help').textContent = packText('质量与速度为自填的 0–100 分，越高越优先，不是实测结果。费用单位为每百万 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每档分别选择推理强度和最大输出 token 数，留空使用服务默认。', 'Quality and speed are user-assigned scores from 0 to 100; higher is preferred, not measured. Prices use micro-USD per million tokens (1 USD = 1,000,000 micro-USD); blank means unknown. Each profile selects reasoning effort and maximum output tokens; blank uses service defaults.', '品質與速度為自填的 0–100 分，越高越優先，並非實測結果。費用單位為每百萬 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每檔分別選擇推理強度及最大輸出 token 數，留空使用服務預設。');
   for (const key of ['default', 'basic', 'strong']) {
     const select = element<HTMLSelectElement>('model-profile-' + key + '-effort');
-    const defaultOption = select.options[0];
+    const defaultOption = select.options.item(0);
     if (!defaultOption) throw Error('缺少默认模型强度选项：' + key);
     defaultOption.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
     select.setAttribute('aria-label', packText('推理强度', 'Reasoning effort', '推理強度'));
