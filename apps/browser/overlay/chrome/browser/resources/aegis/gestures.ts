@@ -22,8 +22,11 @@ function savedSettings(): Settings {
 }
 let lastPattern = '', lastAction: string|undefined;
 let practiceSaving = false, pendingSaves = 0, optionSequence = 0;
+function savedBinding(pattern: string): string|undefined {
+  return new Map(Object.entries(saved?.bindings || {})).get(pattern);
+}
 function hasDraft() {
-  return !!pendingSaves || drafts.size > 0 || !!element<HTMLInputElement>('newSite').value || (saved !== null && sites.value !== saved.disabledSites.join('\n')) || (!!lastPattern && !!element<HTMLSelectElement>('practiceAction').value && element<HTMLSelectElement>('practiceAction').value !== saved?.bindings[lastPattern]);
+  return !!pendingSaves || drafts.size > 0 || !!element<HTMLInputElement>('newSite').value || (saved !== null && sites.value !== saved.disabledSites.join('\n')) || (!!lastPattern && !!element<HTMLSelectElement>('practiceAction').value && element<HTMLSelectElement>('practiceAction').value !== savedBinding(lastPattern));
 }
 function reportDirty() {
   if (root instanceof ShadowRoot) root.host.dispatchEvent(new CustomEvent('aegis-form-dirty', {detail: hasDraft(), bubbles: true, composed: true}));
@@ -39,15 +42,15 @@ function message(text: string, error = false, id = 'status') {
   target.textContent = t(text); target.classList.toggle('error', error);
 }
 function arrows(value: string): string {
-  const symbols: Record<string, string> = {L: '←', R: '→', U: '↑', D: '↓'};
-  return Array.from(value, letter => symbols[letter] || letter).join(' ');
+  const symbols = new Map([['L', '←'], ['R', '→'], ['U', '↑'], ['D', '↓']]);
+  return Array.from(value, letter => symbols.get(letter) || letter).join(' ');
 }
 function normalize(value: string) {
   return value.trim().toUpperCase().replaceAll('←', 'L').replaceAll('→', 'R').replaceAll('↑', 'U').replaceAll('↓', 'D').replaceAll(' ', '');
 }
 function actionSelect(select: HTMLSelectElement, current = '') {
   select.replaceChildren(new Option(t('请选择动作'), ''));
-  const groups = new Map<string, HTMLOptGroupElement>();
+  const groups: Map<string, HTMLOptGroupElement> = new Map();
   for (const item of actions) {
     const name = item.pdfOnly ? 'PDF' : /tab/.test(item.id) ? t('标签页') : /back|forward|reload/.test(item.id) ? t('导航') : t('页面');
     let group = groups.get(name);
@@ -107,7 +110,7 @@ function renderBindings() {
     editor.append(select, button('保存', async () => {
       if (!select.value) { status.textContent = t('请选择动作'); return; }
       const value = select.value;
-      if (await persist(next => { next.bindings[pattern] = value; }, status.id)) { if (drafts.get(pattern) === value) drafts.delete(pattern); renderBindings(); reportDirty(); }
+      if (await persist(next => { next.bindings = Object.fromEntries(new Map(Object.entries(next.bindings)).set(pattern, value)); }, status.id)) { if (drafts.get(pattern) === value) drafts.delete(pattern); renderBindings(); reportDirty(); }
     }), button('取消', () => { drafts.delete(pattern); editor.hidden = true; }), status);
     controls.append(button('编辑', () => { drafts.set(pattern, action); editor.hidden = false; select.focus(); }), button('移除', async () => {
       if (await persist(next => { next.bindings = Object.fromEntries(Object.entries(next.bindings).filter(([key]) => key !== pattern)); }, 'binding-status')) {
@@ -129,7 +132,7 @@ function choosePattern(value: string) {
   if (practiceSaving) return;
   value = normalize(value);
   if (!/^[LRUD]{1,8}$/.test(value) || /(.)\1/.test(value)) { clearPractice(); resultLabel.textContent = t('需包含 1–8 个方向，相邻方向不能相同。'); return; }
-  lastPattern = value; lastAction = saved?.bindings[value];
+  lastPattern = value; lastAction = savedBinding(value);
   patternLabel.textContent = arrows(value); resultLabel.textContent = lastAction ? t('已绑定，可在下方修改；练习不执行操作。') : t('尚未绑定，请选择动作。');
   const select = element<HTMLSelectElement>('practiceAction'); actionSelect(select, lastAction || '');
   element('practice-editor').hidden = false; element('savePractice').textContent = t(lastAction ? '保存绑定修改' : '添加并保存');
@@ -144,7 +147,7 @@ element('savePractice').onclick = async () => {
   element<HTMLButtonElement>('savePractice').disabled = true;
   const ok = await persist(next => {
     if (!Object.hasOwn(next.bindings, pattern) && Object.keys(next.bindings).length >= 64) throw Error(t('最多添加 64 条手势。'));
-    next.bindings[pattern] = action;
+    next.bindings = Object.fromEntries(new Map(Object.entries(next.bindings)).set(pattern, action));
   }, 'practice-status');
   if (ok) { renderBindings(); lastAction = action; resultLabel.textContent = t('已绑定，可在下方修改；练习不执行操作。'); element('savePractice').textContent = t('保存绑定修改'); }
   practiceSaving = false; element<HTMLSelectElement>('practiceAction').disabled = false;

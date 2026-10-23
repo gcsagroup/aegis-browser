@@ -28,7 +28,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
     <controlled-button id="changeDownloadsPath"
         label="$i18n{changeDownloadLocation}"
         aria-labelledby="locationLabel defaultDownloadPath"
-        @click="${this.onChangeDownloadsPathClick_}"
+        @click="${() => { this.onChangeDownloadsPathClick_(); }}"
         pref-key="download.default_directory"
         end-justified>
     </controlled-button>
@@ -43,7 +43,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
       <div class="flex">$i18n{openFileTypesAutomatically}</div>
       <div class="separator"></div>
       <cr-button id="resetAutoOpenFileTypes"
-          @click="${this.onClearAutoOpenFileTypesClick_}">
+          @click="${() => { this.onClearAutoOpenFileTypesClick_(); }}">
         $i18n{clear}
       </cr-button>
     </div>
@@ -58,7 +58,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
 </settings-section>
   <div class="cr-row" ?hidden="${this.aegisOnly}"><a href="/aegisDownloads">${this.aegisStrings_.link}</a></div>
   <p role="status" aria-live="polite" ?hidden="${!this.aegisOnly}">${this.aegisSaveStatus_}</p>
-  <cr-button ?hidden="${!this.aegisOnly || this.aegisSettingsReady_}" @click="${this.onAegisRetryClick_}">${this.aegisStrings_.retry}</cr-button>
+  <cr-button ?hidden="${!this.aegisOnly || this.aegisSettingsReady_}" @click="${() => { this.onAegisRetryClick_(); }}">${this.aegisStrings_.retry}</cr-button>
   <settings-section page-title="${this.aegisStrings_.title}"
       class="cr-centered-card-container" ?hidden="${!this.aegisOnly || !this.aegisSettingsReady_}">
     <div class="cr-row first">
@@ -70,7 +70,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
     <div class="cr-row">
       <div class="flex cr-padded-text">${this.aegisStrings_.mode}</div>
       <select aria-label="${this.aegisStrings_.mode}" class="aegis-select" .value="${String(this.aegisParallelMode_)}"
-          @change="${this.onAegisParallelModeChange_}">
+          @change="${(event: Event) => { this.onAegisParallelModeChange_(event); }}">
         <option value="0">${this.aegisStrings_.smart}</option>
         <option value="1">${this.aegisStrings_.single}</option>
         <option value="3">${this.aegisStrings_.three}</option>
@@ -81,14 +81,14 @@ export function getHtml(this: SettingsDownloadsPageElement) {
       <div class="flex cr-padded-text">${this.aegisStrings_.metered}</div>
       <cr-toggle id="aegisReduceOnMetered" aria-label="${this.aegisStrings_.metered}"
           .checked="${this.aegisReduceOnMetered_}"
-          @change="${this.onAegisToggleChange_}">
+          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
       </cr-toggle>
     </div>
     <div class="cr-row">
       <div class="flex cr-padded-text">${this.aegisStrings_.battery}</div>
       <cr-toggle id="aegisReduceOnBattery" aria-label="${this.aegisStrings_.battery}"
           .checked="${this.aegisReduceOnBattery_}"
-          @change="${this.onAegisToggleChange_}">
+          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
       </cr-toggle>
     </div>
     <div class="aegis-fixed">${this.aegisStrings_.thermal}</div>
@@ -103,14 +103,14 @@ export function getHtml(this: SettingsDownloadsPageElement) {
       <div class="flex cr-padded-text">${this.aegisStrings_.dht}</div>
       <cr-toggle id="aegisTorrentDhtEnabled" aria-label="${this.aegisStrings_.dht}"
           .checked="${this.aegisTorrentDhtEnabled_}"
-          @change="${this.onAegisToggleChange_}">
+          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
       </cr-toggle>
     </div>
     <div class="cr-row">
       <div class="flex cr-padded-text">${this.aegisStrings_.pex}</div>
       <cr-toggle id="aegisTorrentPexEnabled" aria-label="${this.aegisStrings_.pex}"
           .checked="${this.aegisTorrentPexEnabled_}"
-          @change="${this.onAegisToggleChange_}">
+          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
       </cr-toggle>
     </div>
     <div class="aegis-rate-row">
@@ -119,7 +119,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
           <label for="aegis${kind}Mode">${kind === 'Download' ? this.aegisStrings_.downloadLimit : this.aegisStrings_.uploadLimit}</label>
           <select id="aegis${kind}Mode" class="aegis-select"
               .value="${(kind === 'Download' ? this.aegisTorrentDownloadLimitKib_ : this.aegisTorrentUploadLimitKib_) === 0 ? 'unlimited' : 'custom'}"
-              @change="${this.onAegisLimitModeChange_}">
+              @change="${(event: Event) => { this.onAegisLimitModeChange_(event); }}">
             <option value="unlimited">${this.aegisStrings_.unlimited}</option>
             <option value="custom">${this.aegisStrings_.custom}</option>
           </select>
@@ -127,7 +127,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
               max="1000000" .value="${String(kind === 'Download' ? this.aegisTorrentDownloadLimitKib_ : this.aegisTorrentUploadLimitKib_)}"
               label="KiB/s" error-message="${this.aegisStrings_.invalidLimit}"
               ?hidden="${(kind === 'Download' ? this.aegisTorrentDownloadLimitKib_ : this.aegisTorrentUploadLimitKib_) === 0}"
-              @change="${this.onAegisLimitChange_}">
+              @change="${(event: Event) => { this.onAegisLimitChange_(event); }}">
           </cr-input>
         </div>`)}
     </div>
