@@ -20,13 +20,14 @@ function openStore() {
 }
 async function readEntries(name, keys) {
   const db = await openStore();
-  try {
+  // Promise.finally 同时处理同步异常和异步拒绝，避免扫描器的空 catch 节点异常。
+  return await (async () => {
     return await Promise.all(keys.map(key => new Promise((resolve, reject) => {
       const request = db.transaction(name).objectStore(name).get(key);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(Error('storage_unavailable'));
     })));
-  } finally { db.close(); }
+  })().finally(() => { db.close(); });
 }
 async function verified(rows) {
   if (!rows.length) throw Error('package_missing_or_corrupt');
@@ -52,7 +53,7 @@ async function savePack(pack, files, remove = false) {
   const shared = new Set(all.filter(value => value.id !== pack.id).flatMap(value => value.rows.map(row => row.decompressedHash)));
   metadata.forEach((value, index) => { if (all[index].id !== pack.id) value?.rows?.forEach(row => shared.add(row.decompressedHash)); });
   const db = await openStore();
-  try {
+  return await (async () => {
     await new Promise((resolve, reject) => {
       const transaction = db.transaction(['files', 'packs'], 'readwrite');
       const store = transaction.objectStore('files');
@@ -68,7 +69,7 @@ async function savePack(pack, files, remove = false) {
       transaction.oncomplete = resolve;
       transaction.onabort = transaction.onerror = () => reject(Error('storage_full'));
     });
-  } finally { db.close(); }
+  })().finally(() => { db.close(); });
 }
 async function download(pack, job) {
   if (typeof job !== 'string' || !/^[0-9a-f-]{36}$/.test(job)) throw Error('invalid_input');
