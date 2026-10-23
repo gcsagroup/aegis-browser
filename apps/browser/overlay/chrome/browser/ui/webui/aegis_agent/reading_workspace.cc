@@ -277,7 +277,9 @@ void AegisReadingWorkspace::Dispatch(
     const auto* translated = request.FindList("translation");
     const auto language = Field(request, "language");
     if (!translated || translated->size() != record->FindList("paragraphs")->size() ||
-        (language != "en" && language != "zh-CN")) {
+        (language != "en" && language != "zh-CN" && language != "ja" &&
+         language != "ko" && language != "fr" && language != "de" &&
+         language != "es" && language != "ru")) {
       Reply(std::move(callback), {}, "translation_incomplete"); return;
     }
     size_t total = 0;
@@ -337,7 +339,7 @@ void AegisReadingWorkspace::Dispatch(
       values.Append(base::DictValue().Set("id", id)
           .Set("url", tab->GetURL().spec())
           .Set("title", aegis::agent::BoundedAgentObservationText(
-              base::UTF16ToUTF8(tab->GetContents()->GetTitle()), 512)));
+              base::UTF16ToUTF8(tab->GetTitle()), 512)));
     }
     auto state = State();
     state.Set("tabs", std::move(values));
@@ -381,7 +383,7 @@ void AegisReadingWorkspace::Dispatch(
       }
       handles.push_back(match->GetHandle());
       auto item = NewEntry(match->GetURL(),
-          base::UTF16ToUTF8(match->GetContents()->GetTitle()), "shelf", 0);
+          base::UTF16ToUTF8(match->GetTitle()), "shelf", 0);
       item.Set("group", Field(request, "group"));
       bool exists = false;
       for (const auto& record : records_) {
@@ -496,9 +498,14 @@ void AegisReadingWorkspace::Capture(int tab_id, int page, Callback callback) {
   }
   draft_.clear();
   model_allowed_ = false;
-  if (!source || page < 1 || page > 10000 || !AllowedUrl(source->GetURL()) ||
-      !source->GetContents()->GetPrimaryMainFrame()) {
+  if (!source || page < 1 || page > 10000 || !AllowedUrl(source->GetURL())) {
     Reply(std::move(callback), {}, "tabs_changed"); return;
+  }
+  // Android 恢复的后台标签可能尚未加载；仅在用户主动读取时唤醒它。
+  source->LoadIfNeeded();
+  auto* contents = source->GetContents();
+  if (!contents || !contents->GetPrimaryMainFrame()) {
+    Reply(std::move(callback), {}, "page_text_unavailable"); return;
   }
   auto pending = std::make_shared<Callback>(std::move(callback));
   callback = base::BindOnce([](std::shared_ptr<Callback> done,

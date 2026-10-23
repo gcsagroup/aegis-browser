@@ -51,6 +51,7 @@ build_webui("build") {
   ]
   ts_files = [
     "aegis.ts",
+    "mobile_settings.ts",
     "gestures.ts",
     "policy_worker.ts",
   ]

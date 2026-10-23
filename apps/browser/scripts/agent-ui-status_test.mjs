@@ -191,7 +191,7 @@ console.log('PASS: 检查、暂停及删除监控失败均显示当前可见错�
 
 // 模型配置使用真实产品函数和有界异步响应；不把 DOM 测试等同于键盘或实机操作。
 const modelFunctions = tree.statements.filter(node => ts.isFunctionDeclaration(node) &&
-  ['renderModel', 'saveModel', 'friendlyModelError', 'showModelSaveError'].includes(node.name?.text));
+  ['renderModelKeyState', 'renderModelPoolDraft', 'renderModel', 'saveModel', 'friendlyModelError', 'showModelSaveError'].includes(node.name?.text));
 for (const name of ['renderModel', 'saveModel', 'friendlyModelError']) {
   assert(modelFunctions.some(node => node.name.text === name), `模型表单函数缺失：${name}`);
 }
@@ -208,7 +208,7 @@ function modelHarness(initial = savedModel) {
   const fields = new Map();
   const field = name => {
     if (!fields.has(name)) fields.set(name, {
-      value: '', textContent: '', disabled: false, open: true,
+      value: '', textContent: '', disabled: false, open: true, setCustomValidity(value) {this.validationMessage = value;}, reportValidity() {return !this.validationMessage;}, querySelectorAll() {return [];},
       replaceChildren() {}, append() {}, addEventListener() {},
     });
     return fields.get(name);
@@ -216,8 +216,8 @@ function modelHarness(initial = savedModel) {
   const calls = [];
   let response = {snapshot: {...savedModel, modelName: requestedModel}};
   const sandbox = vm.createContext({
-    element: field, modelBusy: false, modelRoutingBusy: false,
-    modelFormInitialized: false, snapshot: initial,
+    element: field, URL, ModelSelectionMode: {kFixed: 0, kLocalOnly: 3}, packText: zh => zh, settingsMode: false, poolDraftDirty: false, editingPoolId: '', editingPoolRevision: '', modelConnectionBaseline: '', modelBusy: false, modelRoutingBusy: false, resetDetectedModels() {},
+    modelFormInitialized: false, lastRenderedModelForm: '', lastRenderedModelPoolDraft: '', snapshot: initial,
     document: {createElement: tag => new TestElement(tag)},
     loadTimeData: {getString: key => key},
     proxy: {handler: {configureModel: async (...args) => {
@@ -249,9 +249,9 @@ const modelCases = [
     await h.sandbox.saveModel();
     assert.equal(h.calls.length, 1);
     assert.equal(h.calls[0][2], requestedModel);
-    assert.equal(h.field('model-feedback').textContent, 'modelSaved');
+    assert.equal(h.field('model-feedback').textContent, '默认连接已保存，摘要与助手共用。');
     assert.equal(h.field('model-name').value, requestedModel);
-    assert.equal(h.field('model-details').open, false);
+    assert.equal(h.field('model-details').open, true);
     assert.equal(h.field('model-api-key').value, '');
     assert.equal(h.sandbox.modelBusy, false);
   }],
@@ -260,12 +260,13 @@ const modelCases = [
     h.field('model-base-url').value = 'file:///invalid';
     h.setResponse({snapshot: {...savedModel, lastError: 'invalid model provider base URL'}});
     await h.sandbox.saveModel();
-    assert.equal(h.field('model-feedback').textContent, 'modelConfigurationError');
+    assert.equal(h.calls.length, 0, '非法地址应在字段内拒绝，不发送保存请求');
+    assert.match(h.field('model-base-url').validationMessage, /HTTP/);
     assert.equal(h.field('model-details').open, true);
     assert.equal(h.field('model-name').value, requestedModel);
     assert.equal(h.field('model-base-url').value, 'file:///invalid');
     assert(h.field('model-state').textContent.endsWith('previous-model'));
-    assert.equal(h.field('model-api-key').value, '');
+    assert.equal(h.field('model-api-key').value, 'synthetic-test-value');
   }],
   ['首次失败也保留非敏感输入供修正', async () => {
     const initial = {...savedModel, modelConfigured: false};
@@ -316,8 +317,8 @@ const modelCases = [
     h.setResponse({snapshot: {...savedModel, modelName: requestedModel}});
     await h.sandbox.saveModel();
     assert.equal(h.calls.length, 2);
-    assert.equal(h.field('model-feedback').textContent, 'modelSaved');
-    assert.equal(h.field('model-details').open, false);
+    assert.equal(h.field('model-feedback').textContent, '默认连接已保存，摘要与助手共用。');
+    assert.equal(h.field('model-details').open, true);
   }],
 ];
 const modelFailures = [];
