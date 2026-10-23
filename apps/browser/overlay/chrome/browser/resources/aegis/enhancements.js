@@ -235,15 +235,15 @@ async function save() {
   editBusy = true;
   const inputs = [$("source"), $("world"), $("frames")];
   inputs.forEach(input => input.disabled = true);
-  let next;
-  try { next = await request({
+  // 保留同步异常和异步拒绝的清理路径，并兼容当前静态扫描器。
+  const next = await (async () => request({
     op: "script-save",
     id: record?.id || "",
     revision: record?.revision || 0,
     source,
     world: $("world").value,
     allFrames: $("frames").checked,
-  }); } finally { editBusy = false; inputs.forEach(input => input.disabled = false); }
+  }))().finally(() => { editBusy = false; inputs.forEach(input => input.disabled = false); });
   render(next);
   record =
     next.scripts.find((s) => s.id === record?.id) ||
