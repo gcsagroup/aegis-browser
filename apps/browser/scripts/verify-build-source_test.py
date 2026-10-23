@@ -1,5 +1,6 @@
 """真实小型 Git 仓库验证源码门禁，不启动 Chromium 编译。"""
 import importlib.util
+import json
 from pathlib import Path
 import shutil
 import subprocess  # nosec B404 - 使用参数数组且不启用 shell。
@@ -60,6 +61,49 @@ class SourceTests(unittest.TestCase):
         self.assertTrue(result['sourceVerified'])
         self.assertFalse(result['built'])
         self.assertFalse(result['runtimeTested'])
+
+    def prepare_android(self):
+        (self.browser / 'ci-pins').mkdir()
+        shutil.copytree(self.browser / 'patches', self.browser / 'patches-android')
+        (self.browser / 'ci-pins/android.json').write_text(json.dumps({
+            'commit': (self.browser / 'CHROMIUM_COMMIT').read_text(),
+            'patchDirectory': 'patches-android',
+        }))
+
+    def test_android_uses_its_pin_and_complete_patch_tree(self):
+        self.prepare_android()
+        (self.browser / 'CHROMIUM_COMMIT').write_text('desktop-only-pin')
+        (self.browser / 'overlay/value').write_text('desktop-only-layout\n')
+        result = check.verify_source(self.src, self.browser, platform='android')
+        self.assertTrue(result['sourceVerified'])
+        self.assertEqual(result['platform'], 'android')
+        self.assertEqual(result['patchDirectory'], 'patches-android')
+        self.assertEqual(result['overlayFilesChecked'], 0)
+        self.assertFalse(result['built'])
+
+    def test_android_rejects_unrelated_source_and_preserves_it(self):
+        self.prepare_android()
+        (self.src / 'value').write_text('unrelated Android source\n')
+        self.commit(self.src, 'unrelated')
+        with self.assertRaisesRegex(ValueError, '源码与本次候选补丁不一致'):
+            check.verify_source(self.src, self.browser, platform='android')
+        self.assertEqual((self.src / 'value').read_text(), 'unrelated Android source\n')
+
+    def test_android_rejects_wrong_v8(self):
+        self.prepare_android()
+        (self.src / 'v8/value').write_text('unrelated V8 source\n')
+        self.commit(self.src / 'v8', 'unrelated')
+        with self.assertRaisesRegex(ValueError, '源码与本次候选补丁不一致'):
+            check.verify_source(self.src, self.browser, platform='android')
+
+    def test_android_rejects_patch_directory_outside_browser(self):
+        self.prepare_android()
+        (self.browser / 'ci-pins/android.json').write_text(json.dumps({
+            'commit': (self.browser / 'CHROMIUM_COMMIT').read_text(),
+            'patchDirectory': '../src',
+        }))
+        with self.assertRaisesRegex(ValueError, '补丁目录必须位于'):
+            check.verify_source(self.src, self.browser, platform='android')
 
     def test_unsaved_work_is_preserved(self):
         (self.src / 'value').write_text('do not overwrite\n')

@@ -1,5 +1,5 @@
 # GCSA-aegis Android（侧载 APK + Play 预留包名）。
-# 必须在 Linux 上 gn gen / autoninja。Chromium 153 不支持 macOS 编 Android。
+# 必须在 Linux 上 gn gen / autoninja。Chromium 不支持 macOS 编 Android。
 #
 #   gn gen out/AegisAndroid --args="$(cat apps/browser/args/aegis-android.gn)"
 #   autoninja -C out/AegisAndroid chrome_public_apk
@@ -39,5 +39,5 @@ use_siso = false
 v8_enable_memory_corruption_api = false
 
 # 产品版本独立于 Chromium 内核版本；版本码高于既有 151 内测包并逐次递增。
-android_override_version_name = "Ver 5.0 (208)"
-android_override_version_code = "2005000208"
+android_override_version_name = "Ver 6.0 (255)"
+android_override_version_code = "2006000255"

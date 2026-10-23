@@ -66,7 +66,7 @@ async function manager(locale = 'zh-CN', enabled = false) {
   const state = {sites: [], scripts: [script], tabs: [{id: 'first', url: 'https://first.test/', document: 'old'}, {id: 'second', url: 'https://second.test/', document: 'new', statuses: {'script-1': {status: 'completed', trial: true}}, menus: [{id: 'menu-1', script: 'script-1', label: '<img src=x>切换'}]}]};
   const requests = [];
   w.sendWithPromise = async (_, request) => { requests.push(request); return state; };
-  const code = read('enhancements.js').replace(/^import .*;\n/gm, '').replace('export async function initializeEnhancements', 'globalThis.initializeEnhancements = async function').replace(/if \(document.getElementById\("enhancement-root"\)\) await initializeEnhancements\(\);/, '');
+  const code = read('enhancements.js').replace(/^import .*;\n/gm, '').replace('export async function initializeEnhancements', 'globalThis.initializeEnhancements = async function').split('if (document.getElementById("enhancement-root"))')[0];
   w.eval(code);
   await w.initializeEnhancements(w.document);
   return {dom, requests};

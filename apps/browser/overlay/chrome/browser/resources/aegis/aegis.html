@@ -7,8 +7,11 @@
     <link rel="stylesheet" href="aegis.css">
   </head>
   <body>
-  <nav id="enhancement-navigation" hidden style="padding: 12px 24px"><a id="enhancement-link" href="enhancements.html">网站增强与用户脚本</a> · <a id="markdown-link" href="markdown.html">Markdown 阅读</a></nav>
     <main class="page">
+      <nav id="enhancement-navigation" hidden><a id="enhancement-link" href="enhancements.html">网站增强与用户脚本</a><a id="markdown-link" href="markdown.html">Markdown 阅读</a></nav>
+      <nav id="workspace-navigation" hidden><a href="chrome://settings/aegis" id="workspace-settings-link">Aegis 功能设置</a><h1 id="workspace-title"></h1></nav>
+      <section class="reading-workspace" hidden><iframe id="reading-workspace-frame" title="阅读工作区"></iframe></section>
+      <pre class="result" id="settings-result" role="status" hidden></pre>
       <header class="page-header">
         <img class="brand-mark" src="product_logo.svg" alt="">
         <div><h1>$i18n{title}</h1>
@@ -68,15 +71,7 @@
           </span>
           <input id="fingerprint" type="checkbox">
         </label>
-        <details>
-          <summary>$i18n{technicalDetails}</summary>
-          <p class="meta">$i18n{fingerprintDetails}</p>
-        <div class="probe">
-          <button id="fp-probe" type="button">$i18n{fingerprintProbe}</button>
-          <canvas id="fp-canvas" width="220" height="48" hidden></canvas>
-          <p class="meta" id="fp-result"></p>
-        </div>
-        </details>
+
         <label class="row">
           <span class="copy">
             <span class="name">$i18n{minerGuardLabel}</span>
@@ -119,17 +114,21 @@
           </span>
           <input id="policy-worker" type="checkbox">
         </label>
-        <label class="row">
-          <span class="copy">
-            <span class="name">$i18n{privacyAiLabel}</span>
-            <span class="hint">$i18n{privacyAiHint}</span>
-          </span>
-          <input id="privacy-ai" type="checkbox">
-        </label>
+
       </section>
+      <section class="diagnostics">        <details>
+          <summary>$i18n{technicalDetails}</summary>
+          <p class="meta">$i18n{fingerprintDetails}</p>
+        <div class="probe">
+          <button id="fp-probe" type="button">$i18n{fingerprintProbe}</button>
+          <canvas id="fp-canvas" width="220" height="48" hidden></canvas>
+          <p class="meta" id="fp-result"></p>
+        </div>
+        </details></section>
       <section class="filters" aria-label="$i18n{filterListTitle}">
         <h2>$i18n{filterListTitle}</h2>
         <p class="meta" id="filter-meta">$i18n{filterListMeta}</p>
+        <details><summary id="filter-details-label"></summary><p id="filter-count-detail"></p></details>
         <label class="row">
           <span class="copy">
             <span class="name">$i18n{filterListAutoUpdate}</span>
@@ -137,18 +136,26 @@
           </span>
           <input id="filter-auto" type="checkbox">
         </label>
+        <p id="filter-update-status" role="status" aria-live="polite"></p>
         <button id="filter-update" type="button">$i18n{filterListUpdateNow}</button>
       </section>
       <section id="downloads" class="downloads" aria-label="$i18n{downloadsTitle}">
         <h2>$i18n{downloadsTitle}</h2>
         <p class="meta">$i18n{downloadsMeta}</p>
-        <aegis-download-panel></aegis-download-panel>
-        <p><a href="chrome://downloads">$i18n{downloadsHistory}</a></p>
+        <aegis-download-panel embedded></aegis-download-panel>
+        <p><a href="chrome://downloads" target="_top">$i18n{downloadsHistory}</a></p>
         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
       </section>
       <section class="privacy" aria-label="$i18n{privacyAiTitle}">
         <h2>$i18n{privacyAiTitle}</h2>
         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
+        <label class="row" id="summary-toggle">
+          <span class="copy">
+            <span class="name">$i18n{privacyAiLabel}</span>
+            <span class="hint">$i18n{privacyAiHint}</span>
+          </span>
+          <input id="privacy-ai" type="checkbox">
+        </label>
         <div id="model-fields">
           <p class="meta">$i18n{modelHint}</p>
           <p class="meta" id="model-data-note">$i18n{modelDataNote}</p>
@@ -221,7 +228,9 @@
           </span>
           <input id="ai-control" type="checkbox">
         </label>
-        <p class="meta" id="ai-control-status">$i18n{aiControlStatus}</p>
+        <p class="meta" id="ai-control-status" role="status">$i18n{aiControlStatus}</p>
+        <div id="ai-control-address-row" hidden><code id="ai-control-address"></code> <button id="ai-control-copy" type="button"></button></div>
+        <button id="ai-control-retry" type="button" hidden></button>
         <details>
           <summary>$i18n{technicalDetails}</summary>
           <pre class="result" id="ai-control-connect" hidden></pre>

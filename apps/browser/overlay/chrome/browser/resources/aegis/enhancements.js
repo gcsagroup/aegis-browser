@@ -12,7 +12,9 @@ const $ = (id) => root.querySelector("#" + id),
 let state = {},
   record = null,
   context = "",
-  generation = 0;
+  generation = 0,
+  editBaseline = "",
+  editBusy = false;
 const notify = (text) => {
   $("notice").textContent = text;
 };
@@ -33,11 +35,13 @@ const pageRequest = (op) => {
 };
 function action(id, fn) {
   $(id).onclick = async () => {
+    if ($(id).disabled) return;
+    $(id).disabled = true;
     try {
       await fn();
     } catch (e) {
       notify(e.message);
-    }
+    } finally { $(id).disabled = false; }
   };
 }
 function button(text, fn) {
@@ -53,6 +57,7 @@ function button(text, fn) {
   return b;
 }
 function edit(script) {
+  generation++;
   record = script;
   $("manager").hidden = true;
   $("editor").hidden = false;
@@ -63,7 +68,11 @@ function edit(script) {
     ? script.metadata.name + uiText(" · 第 ") + script.revision + uiText(" 版")
     : uiText("新脚本草稿");
   $("permissions").textContent = "";
+  editBaseline = JSON.stringify([$("source").value, $("world").value, $("frames").checked]);
+  renderEditorRuntime();
 }
+const hasDraft = () => !$("editor").hidden && editBaseline !== JSON.stringify([$("source").value, $("world").value, $("frames").checked]);
+window.addEventListener("beforeunload", event => { if (hasDraft()) { event.preventDefault(); event.returnValue = ""; } });
 function check() {
   const source = $("source").value,
     m = core.parse(source);
@@ -83,10 +92,11 @@ function render(next) {
   state = next;
   const selected = $("tabs").value || new URLSearchParams(location.hash.slice(1)).get("tab");
   $("tabs").replaceChildren();
+  const choose = document.createElement("option"); choose.value = ""; choose.textContent = uiText("选择目标网页"); $("tabs").append(choose);
   for (const t of state.tabs || []) {
     const option = document.createElement("option");
-    option.value = t.id;
-    option.textContent = (t.title || t.url).slice(0, 80);
+    option.value = t.id; option.title = t.url;
+    option.textContent = (t.title || t.url).slice(0, 60) + " · " + new URL(t.url).host;
     $("tabs").append(option);
   }
   if (state.tabs?.some((t) => t.id === selected)) $("tabs").value = selected;
@@ -100,13 +110,17 @@ function render(next) {
     (state.destination || uiText("请在防护中心配置"));
   $("scripts").replaceChildren();
   for (const script of state.scripts || []) {
+    const query = $("script-search")?.value.trim().toLocaleLowerCase() || "";
+    const filter = $("script-filter")?.value || "all";
+    if (!(script.metadata.name + " " + script.metadata.matches.join(" ")).toLocaleLowerCase().includes(query) ||
+        (filter === "enabled" && !script.enabled) || (filter === "disabled" && script.enabled)) continue;
     const row = document.createElement("div");
     row.className = "item";
     const title = document.createElement("strong");
     title.textContent = script.metadata.name;
     const detail = document.createElement("small");
     detail.textContent =
-      (script.enabled ? uiText("已启用") : uiText("草稿或停用")) +
+      (script.enabled ? uiText("已启用") : uiText(script.reviewed === true ? "已停用" : "草稿／待授权")) +
       " · " +
       script.metadata.matches.join("、");
     row.append(
@@ -151,6 +165,7 @@ function render(next) {
     );
     $("scripts").append(row);
   }
+  if (!$("scripts").childElementCount) $("scripts").textContent = uiText(state.scripts?.length ? "没有匹配的脚本。" : "还没有脚本。可以手动编写、AI 编写或导入。");
   $("sites").replaceChildren();
   for (const site of state.sites || []) {
     const row = document.createElement("div");
@@ -169,6 +184,14 @@ function showRule(rule) {
   $("origin").value = rule.origin;
   for (const key of ["menu", "copy", "debug", "subdomains", "disabled"])
     $(key).checked = !!rule[key];
+}
+function renderEditorRuntime() {
+  const status = target()?.statuses?.[record?.id];
+  $("refresh-trial").hidden = !record || !target();
+  $("editor-runtime").textContent = status ?
+    (status.trial ? uiText("试运行 · ") : "") +
+    ({completed: uiText("已执行"), running: uiText("执行中"), failed: uiText("执行失败")}[status.status] || "") +
+    (status.error ? " · " + status.error : "") : "";
 }
 function selectTarget() {
   const t = target();
@@ -202,19 +225,25 @@ function selectTarget() {
     $("runtime").append(row);
   }
   if (!$("runtime").childElementCount) $("runtime").textContent = uiText("此页面没有适用脚本。");
+  renderEditorRuntime();
   if (t?.error) notify(t.error);
 }
 async function save() {
+  if (editBusy) throw Error(uiText("正在保存，请稍候。"));
   const m = check(),
     source = $("source").value;
-  const next = await request({
+  editBusy = true;
+  const inputs = [$("source"), $("world"), $("frames")];
+  inputs.forEach(input => input.disabled = true);
+  // 保留同步异常和异步拒绝的清理路径，并兼容当前静态扫描器。
+  const next = await (async () => request({
     op: "script-save",
     id: record?.id || "",
     revision: record?.revision || 0,
     source,
     world: $("world").value,
     allFrames: $("frames").checked,
-  });
+  }))().finally(() => { editBusy = false; inputs.forEach(input => input.disabled = false); });
   render(next);
   record =
     next.scripts.find((s) => s.id === record?.id) ||
@@ -227,6 +256,9 @@ action("refresh", async () => {
   render(await request({ op: "state" }));
   notify(uiText("已刷新配置和运行状态。"));
 });
+action("refresh-trial", async () => {
+  render(await request({ op: "state" }));
+});
 action("save-site", async () => {
   const u = new URL($("origin").value);
   if (!["http:", "https:"].includes(u.protocol) || u.username || u.password)
@@ -237,11 +269,17 @@ action("save-site", async () => {
   render(await request({ op: "site-save", rule }));
   notify(uiText("网站规则已保存，重新载入网页后应用。"));
 });
-action("new", () => edit(null));
+action("new", () => { edit(null); $("ai-editor").open = false; });
+if ($("new-ai")) action("new-ai", () => { edit(null); $("ai-editor").open = true; });
+if ($("script-search")) $("script-search").oninput = () => render(state);
+if ($("script-filter")) $("script-filter").onchange = () => render(state);
+if ($("runtime-panel")) $("runtime-panel").ontoggle = () => { $("target-panel").hidden = !$("runtime-panel").open; };
+
 action("back-list", () => {
-  if (record ? $("source").value !== record.source : $("source").value !== core.template(target()?.url)) {
+  if (hasDraft()) {
     if (!confirm(uiText("返回列表将关闭未保存的编辑内容，继续？"))) return;
   }
+  generation++;
   $("editor").hidden = true;
   $("manager").hidden = false;
 });
@@ -268,8 +306,10 @@ action("check", () => {
 action("save", save);
 action("trial", async () => {
   check();
+  $("target-panel").hidden = false;
   const t = target();
-  if (!t) throw Error(uiText("请选择目标网页。"));
+  if (!t) { if ($("target-panel")) $("target-panel").hidden = false; $("tabs").focus(); throw Error(uiText("请选择目标网页；没有网页时仍可保存草稿。")); }
+  if (!core.applies(core.parse($("source").value), t.url, true, $("frames").checked)) throw Error(uiText("脚本不匹配所选网页，请修改适用网址或更换目标。"));
   if (
     !confirm(
       uiText("在以下真实网页试运行？\n") +
@@ -280,6 +320,7 @@ action("trial", async () => {
     return;
   await save();
   const r = await request({ ...pageRequest("trial"), id: record.id });
+  render(await request({op: "state"}));
   notify(
     uiText("已安排试运行：") + (r.result?.result?.value || uiText("请检查网页效果，并刷新运行状态。")),
   );
@@ -345,6 +386,7 @@ action("generate", async () => {
   )
     return;
   const token = ++generation;
+  const original = $("source").value;
   $("generate").disabled = true;
   notify(uiText("正在生成草稿…"));
   try {
@@ -363,6 +405,7 @@ action("generate", async () => {
       ),
     });
     if (token !== generation) return;
+    if ($("source").value !== original && !confirm(uiText("生成期间源码已修改。用生成结果替换当前源码？"))) return;
     $("source").value = r.output.replace(/^```(?:javascript|js)?\s*\n|\n```\s*$/g, "");
     check();
     notify(uiText("草稿已生成并通过语法检查。尚未保存、试运行或启用。"));
@@ -393,10 +436,12 @@ try {
   if (deepScript === "new") edit(null);
   else if (deepScript) { const saved = state.scripts.find(script => script.id === deepScript); if (saved) edit(saved); }
   if (!state.scripts?.length) $("scripts").textContent = uiText("还没有脚本。导入或新建后，先检查草稿和权限。");
-  notify(state.error || uiText("选择目标网页后设置网站规则，或新建用户脚本。"));
+  notify(state.error || uiText("管理已安装脚本，或新建与导入；试运行时再选择网页。"));
 } catch (e) {
   notify(e.message);
 }
 
 }
-if (document.getElementById("enhancement-root")) await initializeEnhancements();
+if (document.getElementById("enhancement-root")) {
+  await initializeEnhancements();
+}

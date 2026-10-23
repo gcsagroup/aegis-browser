@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="light dark" /><title>网站增强与脚本</title>
+  <meta name="color-scheme" content="light dark" /><title>用户脚本管理器</title>
   <link rel="stylesheet" href="enhancements.css" />
   <script src="enhancements_shared/core.js" defer></script>
   <script src="enhancements_shared/vendor/acorn.js" defer></script>
@@ -10,16 +10,16 @@
 </head>
 <body>
   <main id="enhancement-root">
-    <header class="page-heading" data-standalone><a href="chrome://settings/aegisEnhancements">← 返回设置</a><h1>网站增强与脚本</h1></header>
+    <header class="page-heading" data-standalone><a href="chrome://settings/aegisEnhancements">← 返回设置</a><h1>用户脚本管理器</h1></header>
     <p id="notice" role="status" aria-live="polite">正在读取设置…</p>
-    <section class="target-summary">
+    <section class="target-summary" id="target-panel" hidden>
       <div class="row"><label for="tabs">当前操作的网页</label><select id="tabs" aria-label="目标网页"></select><button id="refresh">刷新状态</button></div>
       <p id="scope"></p><p id="private" class="hint"></p>
     </section>
     <div id="manager">
-      <div class="row section-heading"><h2>已安装脚本</h2><button id="new" class="primary">新建 / AI 编写</button><label class="file">导入 .user.js<input type="file" id="import" aria-label="导入 .user.js" accept=".js,.user.js,text/javascript" /></label></div>
-      <section><div id="scripts"></div></section>
-      <details id="site-manager"><summary>网站规则 · 右键、选取和复制</summary>
+      <div class="row section-heading"><h2>已安装脚本</h2><button id="new" class="primary">手动编写</button><button id="new-ai">AI 编写</button><label class="file">导入 .user.js<input type="file" id="import" aria-label="导入 .user.js" accept=".js,.user.js,text/javascript" /></label></div>
+      <section><div class="row"><label>搜索脚本<input id="script-search" type="search" /></label><label>状态<select id="script-filter"><option value="all">全部</option><option value="enabled">已启用</option><option value="disabled">未启用</option></select></label></div><div id="scripts"></div></section>
+      <details id="site-manager" hidden><summary>网站规则 · 右键、选取和复制</summary>
         <section><div id="sites"></div>
           <details id="site-editor"><summary>编辑所选网站规则</summary>
             <label>网站来源<input id="origin" placeholder="https://example.com" /></label>
@@ -36,13 +36,13 @@
           </details>
         </section>
       </details>
-      <details><summary>本页运行详情</summary><section><div id="runtime"></div><button id="reload">重新加载当前页</button></section></details>
+      <details id="runtime-panel"><summary>查看网页运行详情</summary><section><div id="runtime"></div><button id="reload">重新加载当前页</button></section></details>
       <details><summary>恢复操作</summary><section><p>停用此配置中的全部脚本，并重新载入目标页。未提交的输入可能丢失；已发出的请求无法撤销。</p><button id="recover" class="danger">停用全部脚本并恢复当前页</button></section></details>
     </div>
     <section id="editor" class="editor" hidden>
       <div class="row section-heading"><button id="back-list">← 返回脚本列表</button><h2 id="editor-title">脚本草稿</h2></div>
       <p class="steps">1 描述需求 → 2 检查草稿与权限 → 3 试运行 → 4 确认启用</p>
-      <details id="ai-editor" open><summary>AI 编写与修复</summary>
+      <details id="ai-editor"><summary>AI 编写与修复</summary>
         <label>需求或错误反馈<textarea id="goal" rows="3" placeholder="例如：隐藏右侧栏并加宽正文"></textarea></label>
         <div class="row"><button id="generate" class="primary">生成或修复草稿</button><button id="cancel">取消生成</button></div>
         <details><summary>发送内容与当前模型</summary><p id="model"></p><button id="context">读取当前页结构供检查</button><pre id="context-preview"></pre><p class="hint">发送需求、编辑器源码及已预览的结构。不会读取密码、Cookie 或表单值。</p></details>
@@ -50,7 +50,8 @@
       <label>源码<textarea id="source" spellcheck="false" rows="18"></textarea></label>
       <details><summary>执行环境与子框架</summary><label>执行环境<select id="world"><option value="isolated">隔离环境</option><option value="page">页面环境（无 GM 权限）</option></select></label><label><input type="checkbox" id="frames" />在匹配的子框架运行</label></details>
       <p id="permissions" role="status"></p>
-      <div class="row"><button id="check">检查权限与语法</button><button id="save">保存草稿</button><button id="trial">试运行</button><button id="enable-reviewed" class="primary">确认启用</button><button id="export">导出源码</button><button id="rollback">回退上一版</button></div>
+      <div class="row"><button id="check">检查权限与语法</button><button id="save">保存草稿</button><button id="trial">试运行</button><button id="enable-reviewed" class="primary">确认启用</button><details><summary>更多操作</summary><button id="export">导出源码</button><button id="rollback">回退上一版</button></details></div>
+      <p id="editor-runtime" role="status" aria-live="polite"></p><button id="refresh-trial" hidden>刷新状态</button>
       <p class="hint">保存修改会撤销旧授权。试运行只使用临时存储；启用前再次确认网址和权限。</p>
     </section>
   </main>

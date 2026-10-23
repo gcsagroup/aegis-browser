@@ -86,6 +86,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
                       const std::string& model,
                       const std::string& api_key,
                       bool clear_api_key,
+                      const std::string& expected_connection,
                       ConfigureModelCallback callback) override;
   void ConfigureTypeSafe(bool enabled,
                          const std::string& api_key,
@@ -94,6 +95,7 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
   void ConfigureModelRouting(
       aegis_agent::mojom::ModelSelectionMode mode,
       std::vector<aegis_agent::mojom::ModelPoolEntryPtr> model_pool,
+      int32_t expected_revision,
       ConfigureModelRoutingCallback callback) override;
   void ListModels(const std::string& provider,
                   const std::string& base_url,

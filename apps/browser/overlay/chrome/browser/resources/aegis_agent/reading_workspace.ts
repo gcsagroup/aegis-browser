@@ -3,6 +3,7 @@
 import {loadTimeData} from '//resources/js/load_time_data.js';
 import type {BrowserProxy} from './browser_proxy.js';
 import {LocalAiClient} from './local_ai_client.js';
+import {LanguagePacks, packText} from './language_packs.js';
 
 interface ReadingRecord {
   id: string; url: string; title: string; kind: string; page: number;
@@ -78,11 +79,15 @@ export class ReadingWorkspace {
   private canTranslate = false;
   private local = new LocalAiClient();
   private localBusy = false;
+  private settingsLoaded = false;
   private minimEnabled = false;
   private phishlangEnabled = false;
-  private packReady = false;
+  private packs: LanguagePacks;
   private edits = new Map<string, Record<string, string>>();
+  private localDirections = new Map<string, string>();
   constructor(private proxy: BrowserProxy) {
+    this.packs = new LanguagePacks(element('language-packs'));
+    void this.describeExperiments();
     element('refresh').addEventListener('click', () => void this.refresh());
     element('search').addEventListener('input', () => this.renderRecords());
     element('archived').addEventListener('change', () => this.renderRecords());
@@ -94,15 +99,9 @@ export class ReadingWorkspace {
           group: element<HTMLInputElement>('group').value.trim()});
       });
     }
-    element('ai-settings').addEventListener('toggle', () => {
-      if (element<HTMLDetailsElement>('ai-settings').open) {
-        void this.refresh().then(() => this.packageAction('status'));
-      }
+    element('research-settings').addEventListener('toggle', () => {
+      if (element<HTMLDetailsElement>('research-settings').open) { void this.refresh(); void this.verifyExperiments(); }
     });
-    element('direction').addEventListener('change', () => void this.packageAction('status'));
-    element('package-download').addEventListener('click', () => void this.packageAction('download'));
-    element('package-remove').addEventListener('click', () => void this.packageAction('remove'));
-    element('local-cancel').addEventListener('click', () => this.local.cancel());
     for (const name of ['minim', 'phishlang']) {
       element(name).addEventListener('change', () => {
         this.local.cancel();
@@ -115,6 +114,41 @@ export class ReadingWorkspace {
     }
     window.addEventListener('pagehide', () => this.local.cancel());
     this.updateButtons();
+  }
+  private async describeExperiments() {
+    element('minim-description').textContent = packText('按阅读目标评估段落的必要性与敏感性。仅提供人工参考，不删除或改写正文。', 'Scores paragraph relevance and sensitivity for a reading goal. For human review; it does not remove or rewrite text.', '依閱讀目標評估段落的必要性與敏感性。僅供人工參考，不刪除或改寫正文。');
+    element('phishlang-description').textContent = packText('对提取的文字给出钓鱼风险参考。不是网页安全结论，不自动拦截页面。', 'Estimates phishing risk from extracted text. It is not a website safety verdict and never automatically blocks pages.', '對擷取的文字提供釣魚風險參考。並非網頁安全結論，不自動攔截頁面。');
+    for (const link of document.querySelectorAll('.reading-experiment-link')) link.textContent = packText('前往阅读工作区手动分析', 'Open the reading workspace to analyze manually', '前往閱讀工作區手動分析');
+    try {
+      const response = await fetch('./local_ai/research_manifest.json');
+      if (!response.ok) throw Error('unavailable');
+      const manifest = await response.json() as Record<string, {bundled?: boolean}>;
+      for (const name of ['minim', 'phishlang']) element(name + '-resource').textContent = manifest[name]?.bundled === false ?
+        packText('当前版本未包含模型资源；分发许可尚未确认，因此无法运行。开关只保存手动使用偏好，不会下载或启动分析。', 'This build does not include the model because distribution rights are unconfirmed. The toggle saves a preference only; it does not download or run analysis.', '目前版本未包含模型資源；分發許可尚未確認，因此無法執行。開關僅儲存手動使用偏好，不會下載或啟動分析。') :
+        packText('模型清单已载入；手动分析时仍需校验资源。开启不会自动分析，关闭不会删除已有结果。', 'The model manifest is loaded; assets are verified when analysis is requested. Enabling does not run analysis; disabling preserves results.', '模型清單已載入；手動分析時仍需校驗資源。開啟不會自動分析，關閉不會刪除既有結果。');
+    } catch { for (const name of ['minim', 'phishlang']) element(name + '-resource').textContent = packText('无法读取资源状态，请重新打开本页。', 'Cannot read resource status. Reopen this page.', '無法讀取資源狀態，請重新開啟本頁。'); }
+  }
+  private async verifyExperiments() {
+    try {
+      const response = await fetch('./local_ai/research_manifest.json');
+      if (!response.ok) throw Error();
+      const manifest = await response.json();
+      const assetResponse = await fetch('./local_ai/asset_manifest.json');
+      const assets = assetResponse.ok ? await assetResponse.json() : {files: {}};
+      for (const name of ['minim', 'phishlang']) {
+        if (manifest[name]?.bundled === false) continue;
+        const files = name === 'minim' ? [['minim-mlp.json', manifest.minim.weights_sha256]] : [['phishlang.onnx', manifest.phishlang.onnx_sha256], ['phishlang-vocab.txt', assets.files['phishlang-vocab.txt']?.sha256]];
+        element(name + '-resource').textContent = packText('正在校验本机资源…', 'Verifying local resources…', '正在校驗本機資源…');
+        try {
+          for (const [file, hash] of files) {
+            const resource = await fetch('./local_ai/' + file); if (!resource.ok || !hash) throw Error();
+            const digest = await crypto.subtle.digest('SHA-256', await resource.arrayBuffer());
+            if (Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('') !== hash) throw Error();
+          }
+          element(name + '-resource').textContent = packText('本机资源校验通过；开启后可前往阅读工作区手动使用。', 'Local resources verified. Enable and open the reading workspace to use them manually.', '本機資源校驗通過；開啟後可前往閱讀工作區手動使用。');
+        } catch { element(name + '-resource').textContent = packText('资源缺失或校验失败，当前不可用。请安装包含有效资源的版本。', 'Resources are missing or invalid. Install a build with verified resources.', '資源缺失或校驗失敗，目前無法使用。請安裝包含有效資源的版本。'); }
+      }
+    } catch { /* 清单读取错误由基础说明保留，绝不将未知状态标为就绪。 */ }
   }
   async refresh() {
     // 编辑中的草稿保留；原生会重新核对选中标签。
@@ -129,12 +163,8 @@ export class ReadingWorkspace {
     element<HTMLButtonElement>('restore').disabled = busy ||
         !element<HTMLInputElement>('group').value.trim();
     element<HTMLButtonElement>('refresh').disabled = busy;
-    element<HTMLSelectElement>('direction').disabled = busy;
-    element<HTMLButtonElement>('package-download').disabled = busy || this.packReady;
-    element<HTMLButtonElement>('package-remove').disabled = busy || !this.packReady;
-    element<HTMLButtonElement>('local-cancel').disabled = !this.localBusy;
-    element<HTMLInputElement>('minim').disabled = busy;
-    element<HTMLInputElement>('phishlang').disabled = busy;
+    element<HTMLInputElement>('minim').disabled = busy || !this.settingsLoaded;
+    element<HTMLInputElement>('phishlang').disabled = busy || !this.settingsLoaded;
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-local-translate]')) button.disabled = busy;
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-local-research]')) {
       button.disabled = busy || (!this.minimEnabled && !this.phishlangEnabled);
@@ -154,18 +184,6 @@ export class ReadingWorkspace {
   private localProgress(target: HTMLElement, message: string) {
     const [kind, value = ''] = message.split(':');
     target.textContent = label(kind === 'download' ? 'Downloading' : kind === 'translate' ? 'Translating' : 'Analyzing') + ' ' + value + (kind === 'download' ? '%' : '');
-  }
-  private async packageAction(op: string) {
-    if (this.localBusy || this.busy) return;
-    this.localBusy = true; this.updateButtons();
-    const status = element('package-status'); status.textContent = label('Busy');
-    try {
-      const result = await this.local.run({op, direction: element<HTMLSelectElement>('direction').value},
-          text => this.localProgress(status, text));
-      this.packReady = result.ready === true;
-      status.textContent = label(result.ready ? 'PackReady' : 'PackMissing');
-    } catch (error) { status.textContent = this.localError(error); }
-    finally { this.localBusy = false; this.updateButtons(); }
   }
   private async run(request: Record<string, unknown>): Promise<boolean> {
     if (this.busy || this.localBusy) return false;
@@ -191,6 +209,7 @@ export class ReadingWorkspace {
       if (['save', 'update', 'translate_local'].includes(String(request['op']))) {
         this.edits.delete(String(request['id']));
       }
+      if (state.minimEnabled !== undefined && state.phishlangEnabled !== undefined) this.settingsLoaded = true;
       if (state.minimEnabled !== undefined) this.minimEnabled = state.minimEnabled;
       if (state.phishlangEnabled !== undefined) this.phishlangEnabled = state.phishlangEnabled;
       element<HTMLInputElement>('minim').checked = this.minimEnabled;
@@ -317,12 +336,11 @@ export class ReadingWorkspace {
     const group = field('Group', record.group || element<HTMLInputElement>('group').value, 128);
     if (record.text && record.paragraphs.length) {
       const controls = node('div'); controls.className = 'reading-local-controls';
-      controls.append(node('strong', label('LocalTranslate')), node('p', label('LocalHelp')));
+      controls.append(node('strong', label('LocalTranslate')), node('p', label('LocalHelp')), node('p', packText('方向仅作建议，请确认原文与目标语言；无法可靠识别时请手动选择。', 'Confirm the source and target languages; select manually when detection is uncertain.', '方向僅作建議，請確認原文與目標語言；無法可靠識別時請手動選擇。')));
       const direction = node('select');
-      for (const [value, title] of [['en-zh', 'English → 简体中文'], ['zh-en', '简体中文 → English']]) {
-        const option = node('option', title); option.value = value!; direction.append(option);
-      }
-      direction.value = element<HTMLSelectElement>('direction').value;
+      const directionKey = draft ? 'draft' : record.id;
+      void this.packs.fillDirections(direction, record.text, this.localDirections.get(directionKey));
+      direction.addEventListener('change', () => this.localDirections.set(directionKey, direction.value));
       const directionLabel = node('label', label('Direction')); directionLabel.append(direction); controls.append(directionLabel);
       const status = node('p'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
       const translate = node('button', label('LocalTranslate')); translate.type = 'button'; translate.dataset['localTranslate'] = '';
@@ -331,13 +349,13 @@ export class ReadingWorkspace {
       cancel.addEventListener('click', () => this.local.cancel());
       const settings = node('button', label('ManagePacks')); settings.type = 'button';
       settings.addEventListener('click', () => {
-        element<HTMLSelectElement>('direction').value = direction.value;
         element<HTMLDetailsElement>('ai-settings').open = true;
-        element('ai-settings').scrollIntoView({block: 'nearest'});
-        void this.packageAction('status');
+        void this.packs.showRoute(direction.value);
       });
       translate.addEventListener('click', async () => {
         if (this.localBusy || this.busy) return;
+        this.localDirections.set(directionKey, direction.value);
+        direction.disabled = true;
         this.localBusy = true; this.updateButtons(); cancel.disabled = false;
         status.textContent = label('Busy');
         try {
@@ -348,7 +366,7 @@ export class ReadingWorkspace {
             translation: result.translations, quote: quote.value, note: note.value, group: group.value});
           if (!ok) status.textContent = element('status').textContent;
         } catch (error) { status.textContent = this.localError(error); }
-        finally { this.localBusy = false; cancel.disabled = true; this.updateButtons(); }
+        finally { this.localBusy = false; cancel.disabled = true; direction.disabled = false; this.updateButtons(); }
       });
       controls.append(translate, settings, cancel, status);
       if (!draft) controls.append(node('p', label('TranslationSaved')));

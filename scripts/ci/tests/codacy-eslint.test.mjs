@@ -11,6 +11,7 @@ import test from 'node:test';
 import { Linter } from 'eslint';
 import securityNode from 'eslint-plugin-security-node';
 import tseslint from 'typescript-eslint';
+import { routePacks } from '../../../apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/catalog.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const config = [{
@@ -54,18 +55,21 @@ test('全部 JavaScript 和 TypeScript 文件均可完成 Codacy 安全规则扫
 });
 
 test('本机翻译存储在读写成功和失败时均关闭数据库且保留结果', async () => {
-  for (const name of ['readFiles', 'writeFiles']) {
-    for (const failure of [false, true]) {
+  for (const name of ['readEntries', 'savePack']) {
+    for (const failure of ['none', 'error', 'sync', ...(name === 'savePack' ? ['abort'] : [])]) {
       let closed = 0;
       const bytes = {};
       const transaction = {};
       const request = { result: bytes };
+      const original = new Error('事务创建失败');
+      const pack = { id: 'en-zh', version: 'fixture', rows: [{ decompressedHash: 'hash' }] };
       const db = {
         close() { closed += 1; },
         transaction() {
+          if (failure === 'sync') throw original;
           Promise.resolve().then(() => {
-            if (name === 'readFiles') request[failure ? 'onerror' : 'onsuccess']();
-            else transaction[failure ? 'onerror' : 'oncomplete']();
+            if (name === 'readEntries') request[failure === 'error' ? 'onerror' : 'onsuccess']();
+            else transaction[failure === 'abort' ? 'onabort' : failure === 'error' ? 'onerror' : 'oncomplete']();
           });
           return Object.assign(transaction, { objectStore: () => ({
             get: () => request, put: () => {}, delete: () => {},
@@ -74,13 +78,42 @@ test('本机翻译存储在读写成功和失败时均关闭数据库且保留�
       };
       const operation = loadFunction('apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/worker.js', name, {
         openStore: async () => db,
+        manifest: async () => [], languagePacks: () => [pack], readEntries: async () => [],
       });
-      const result = operation([{ decompressedHash: 'hash' }], [bytes]);
-      if (failure) await assert.rejects(result, name === 'readFiles' ? /storage_unavailable/ : /storage_full/);
-      else if (name === 'readFiles') assert.equal((await result)[0], bytes);
+      const result = name === 'readEntries' ? operation('files', ['hash']) : operation(pack, [bytes]);
+      if (failure === 'sync') await assert.rejects(result, error => error === original);
+      else if (failure !== 'none') await assert.rejects(result, name === 'readEntries' ? /storage_unavailable/ : /storage_full/);
+      else if (name === 'readEntries') assert.equal((await result)[0], bytes);
       else assert.equal(await result, undefined);
       assert.equal(closed, 1, `${name}:${failure}`);
     }
+  }
+});
+
+test('脚本保存成功、异步拒绝和同步异常均恢复表单，失败保留原始错误', async () => {
+  for (const scenario of ['success', 'reject', 'throw']) {
+    const original = new Error('保存失败');
+    const inputs = { source: { value: 'fixture' }, world: { value: 'isolated' }, frames: { checked: false } };
+    const saved = { scripts: [{ id: 'script-1', source: 'fixture', metadata: { name: 'fixture' } }] };
+    let resolveRequest, rejectRequest, rendered = 0;
+    const pending = new Promise((resolve, reject) => { resolveRequest = resolve; rejectRequest = reject; });
+    const globals = {
+      editBusy: false, record: null, $: id => inputs[id], uiText: text => text,
+      check: () => ({ name: 'fixture' }), edit() {}, notify() {},
+      render: value => { assert.equal(value, saved); rendered += 1; },
+      request: () => { if (scenario === 'throw') throw original; return pending; },
+    };
+    const save = loadFunction('apps/browser/overlay/chrome/browser/resources/aegis/enhancements.js', 'save', globals);
+    const result = save();
+    assert.equal(globals.editBusy, true);
+    assert.ok(Object.values(inputs).every(input => input.disabled));
+    if (scenario === 'success') resolveRequest(saved);
+    if (scenario === 'reject') rejectRequest(original);
+    if (scenario === 'success') await result;
+    else await assert.rejects(result, error => error === original);
+    assert.equal(globals.editBusy, false);
+    assert.ok(Object.values(inputs).every(input => !input.disabled));
+    assert.equal(rendered, scenario === 'success' ? 1 : 0);
   }
 });
 
@@ -118,31 +151,39 @@ test('stderr 管道的四个错误监听仍逐一保留原始错误', async () =
 });
 
 test('本机翻译在成功和翻译失败后均释放模型与服务', async () => {
-  for (const failure of [false, true]) {
-    const events = [];
-    const original = new Error('翻译失败');
-    class BergamotTranslatorWorker {
-      service = { delete: () => events.push('service.delete') };
-      async initialize() {}
-      loadTranslationModel() {}
-      translate() {
-        if (failure) throw original;
-        return [{ target: { text: '译文' } }];
+  const worker = 'apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/worker.js';
+  const rows = JSON.parse(readFileSync(new URL(worker.replace('worker.js', 'translation_manifest.json'), `file://${root}`), 'utf8'));
+  const splitText = loadFunction(worker, 'splitText', {});
+  const translateWithMarkers = loadFunction(worker, 'translateWithMarkers', { splitText });
+  const translateParagraph = loadFunction(worker, 'translateParagraph', { translateWithMarkers });
+  for (const direction of ['en-zh', 'zh-fr']) {
+    for (const failure of [false, true]) {
+      const events = [];
+      const original = new Error('翻译失败');
+      class BergamotTranslatorWorker {
+        service = { delete: () => events.push('service.delete') };
+        async initialize() {}
+        loadTranslationModel() {}
+        translate() {
+          if (failure) throw original;
+          return [{ target: { text: '译文' } }];
+        }
+        freeTranslationModel(pair) { events.push(`model.free:${pair.from}-${pair.to}`); }
       }
-      freeTranslationModel() { events.push('model.free'); }
+      const execute = loadFunction(worker, 'execute', {
+        TextEncoder, manifest: async () => rows, routePacks,
+        installed: async pack => ({ rows: pack.rows, files: pack.rows.map(() => ({})) }),
+        translateParagraph, progress: () => {},
+        importForTest: async (specifier) => {
+          assert.equal(specifier, './bergamot/worker/translator-worker.js');
+          return { BergamotTranslatorWorker };
+        },
+      });
+      const result = execute({ op: 'translate', direction, paragraphs: ['hello'] });
+      if (failure) await assert.rejects(result, (error) => error === original);
+      else assert.deepEqual(JSON.parse(JSON.stringify(await result)), { translations: ['译文'], language: direction === 'en-zh' ? 'zh-CN' : 'fr' });
+      assert.deepEqual(events, [...routePacks(rows, direction).map(pack => `model.free:${pack.from}-${pack.to}`), 'service.delete']);
     }
-    const execute = loadFunction('apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/worker.js', 'execute', {
-      TextEncoder, manifest: async () => [], verified: async () => [],
-      splitText: (text) => [text], progress: () => {},
-      importForTest: async (specifier) => {
-        assert.equal(specifier, './bergamot/worker/translator-worker.js');
-        return { BergamotTranslatorWorker };
-      },
-    });
-    const result = execute({ op: 'translate', direction: 'en-zh', paragraphs: ['hello'] });
-    if (failure) await assert.rejects(result, (error) => error === original);
-    else assert.deepEqual(JSON.parse(JSON.stringify(await result)), { translations: ['译文'], language: 'zh-CN' });
-    assert.deepEqual(events, ['model.free', 'service.delete']);
   }
 });
 
