@@ -2,7 +2,8 @@
 // 移动端复用现有控件与配置，只调整入口和分组。
 export function initializeMobileSettings(
     openAgent: (section: string) => Promise<unknown>) {
-  const main = document.querySelector<HTMLElement>('main')!;
+  const main = document.querySelector<HTMLElement>('main');
+  if (!main) throw Error('缺少移动设置主区域');
   if (main.classList.contains('mobile-settings')) return;
   const language = document.documentElement.lang;
   const text = (zh: string, en: string, tw: string) =>
@@ -28,10 +29,11 @@ export function initializeMobileSettings(
     {id: 'experiments', title: text('实验功能', 'Experiments', '實驗功能'),
       hint: text('本机实验模型与使用说明', 'Local experimental models and usage notes', '本機實驗模型與使用說明'), selectors: ''},
   ];
-  const heading = main.querySelector<HTMLElement>('.page-header h1')!;
+  const heading = main.querySelector<HTMLElement>('.page-header h1');
+  const subtitle = main.querySelector<HTMLElement>('.subtitle');
+  const header = main.querySelector('.page-header');
+  if (!heading || !subtitle || !header) throw Error('缺少移动设置标题区域');
   heading.setAttribute('tabindex', '-1');
-  const subtitle = main.querySelector<HTMLElement>('.subtitle')!;
-  const header = main.querySelector('.page-header')!;
   main.querySelector<HTMLElement>('.ai-control')?.setAttribute('hidden', '');
   const downloadDescription = main.querySelector('.downloads > .meta');
   if (downloadDescription) downloadDescription.textContent = text(
@@ -114,6 +116,6 @@ export function initializeMobileSettings(
       heading.focus({preventScroll: true});
     }
   };
-  window.addEventListener('hashchange', () => render(true));
+  window.addEventListener('hashchange', () => { render(true); });
   render(false);
 }

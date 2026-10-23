@@ -996,7 +996,9 @@ function renderModelPoolDraft(next: TaskSnapshot) {
   for (const [id, value] of Object.entries(values)) element<HTMLInputElement>(id).value = value;
   for (const [id, value] of Object.entries(checks)) element<HTMLInputElement>(id).checked = value;
   for (const key of ['default', 'basic', 'strong']) {
-    const [effort = '', tokens = ''] = values['model-profile-' + key]!.split(':');
+    const profileValue = values['model-profile-' + key];
+    if (profileValue === undefined) throw Error('缺少模型档位：' + key);
+    const [effort = '', tokens = ''] = profileValue.split(':');
     element<HTMLSelectElement>('model-profile-' + key + '-effort').value = effort;
     element<HTMLInputElement>('model-profile-' + key + '-tokens').value = tokens;
   }
@@ -1066,7 +1068,7 @@ function renderModel(next: TaskSnapshot) {
         packText('质量评分 ', 'Quality score ', '品質評分 ') + entry.qualityScore + ' · ' + packText('速度评分 ', 'Speed score ', '速度評分 ') + entry.latencyScore + ' · ' + cost + (entry.costMicrousdPerMillionTokens ? ' μUSD / 1M tokens' : '');
     item.classList.toggle('selected', entry.id === editingPoolId);
     const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = packText('编辑', 'Edit', '編輯'); edit.disabled = modelRoutingBusy;
-    edit.addEventListener('click', () => beginPoolEdit(entry.id));
+    edit.addEventListener('click', () => { beginPoolEdit(entry.id); });
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = loadTimeData.getString('removeModelPool');
@@ -1453,9 +1455,9 @@ function initializeSettingsPresentation() {
   element('aegis-settings-link').textContent = loadTimeData.getString('aegisSettingsTitle');
   element('aegis-settings-link').hidden = !desktop || settingsMode;
   if (!settingsMode) return;
-  document.addEventListener('input', () => queueMicrotask(reportSettingsDraft));
-  document.addEventListener('change', () => queueMicrotask(reportSettingsDraft));
-  document.addEventListener('click', () => queueMicrotask(reportSettingsDraft));
+  document.addEventListener('input', () => { queueMicrotask(reportSettingsDraft); });
+  document.addEventListener('change', () => { queueMicrotask(reportSettingsDraft); });
+  document.addEventListener('click', () => { queueMicrotask(reportSettingsDraft); });
   // 隐藏的任务输入框不能抢走设置页焦点。
   element('goal').removeAttribute('autofocus');
   const sections = settingsSection === 'experiments' ? ['reading-research-settings'] :
@@ -1463,9 +1465,11 @@ function initializeSettingsPresentation() {
   for (const id of sections) {
     element<HTMLDetailsElement>(id).open = true;
   }
-  const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
-    height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
-  new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
+  const main = document.querySelector('main');
+  if (!main) throw Error('缺少助手主区域');
+  const reportHeight = () => { parent.postMessage({type: 'aegis-settings-height',
+    height: main.getBoundingClientRect().height + 24}, 'chrome://settings'); };
+  new ResizeObserver(reportHeight).observe(main);
   reportHeight();
 }
 
@@ -1570,7 +1574,9 @@ function initializeLabels() {
   element('pool-field-help').textContent = packText('质量与速度为自填的 0–100 分，越高越优先，不是实测结果。费用单位为每百万 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每档分别选择推理强度和最大输出 token 数，留空使用服务默认。', 'Quality and speed are user-assigned scores from 0 to 100; higher is preferred, not measured. Prices use micro-USD per million tokens (1 USD = 1,000,000 micro-USD); blank means unknown. Each profile selects reasoning effort and maximum output tokens; blank uses service defaults.', '品質與速度為自填的 0–100 分，越高越優先，並非實測結果。費用單位為每百萬 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每檔分別選擇推理強度及最大輸出 token 數，留空使用服務預設。');
   for (const key of ['default', 'basic', 'strong']) {
     const select = element<HTMLSelectElement>('model-profile-' + key + '-effort');
-    select.options[0]!.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
+    const defaultOption = select.options[0];
+    if (!defaultOption) throw Error('缺少默认模型强度选项：' + key);
+    defaultOption.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
     select.setAttribute('aria-label', packText('推理强度', 'Reasoning effort', '推理強度'));
     element('model-profile-' + key + '-tokens').setAttribute('aria-label', packText('最大输出 token 数', 'Maximum output tokens', '最大輸出 token 數'));
   }
@@ -1819,7 +1825,7 @@ async function saveModel(clearApiKey = false) {
 }
 
 async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false) {
-  if (modelRoutingBusy) {
+  if (modelRoutingBusy || !snapshot) {
     return;
   }
   // Capture the user's choice before render() reapplies the persisted
@@ -1832,7 +1838,7 @@ async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false)
     render(snapshot);
   }
   try {
-    const response = await proxy.handler.configureModelRouting(mode, modelPool, savedDraft ? editingPoolRevision : snapshot!.modelCatalogRevision);
+    const response = await proxy.handler.configureModelRouting(mode, modelPool, savedDraft ? editingPoolRevision : snapshot.modelCatalogRevision);
     if (savedDraft && !response.snapshot.lastError) { poolDraftDirty = false; }
     render(response.snapshot);
     element('model-routing-feedback').textContent =
@@ -2058,13 +2064,13 @@ function bindActions() {
   element('model-name').addEventListener('input', syncDetectedModel);
   element('model-base-url').addEventListener('input', resetDetectedModels);
   element('model-api-key').addEventListener('input', resetDetectedModels);
-  element('save-model-button').addEventListener('click', () => saveModel());
-  element('clear-model-key-button').addEventListener('click', () => saveModel(true));
+  element('save-model-button').addEventListener('click', () => { void saveModel(); });
+  element('clear-model-key-button').addEventListener('click', () => { void saveModel(true); });
   element('cancel-model-button').addEventListener('click', () => {
     if (!snapshot || modelBusy) return; modelFormInitialized = false; element<HTMLInputElement>('model-api-key').value = ''; renderModel(snapshot);
     element('model-feedback').textContent = packText('已恢复当前保存的连接。', 'Restored the saved connection.', '已還原目前儲存的連線。');
   });
-  element('new-model-pool-button').addEventListener('click', () => beginPoolEdit(''));
+  element('new-model-pool-button').addEventListener('click', () => { beginPoolEdit(''); });
   element('cancel-model-pool-button').addEventListener('click', () => { poolDraftDirty = false; if (snapshot) renderModelPoolDraft(snapshot); });
   element('model-advanced').addEventListener('input', () => { poolDraftDirty = true; });
   for (const id of ['model-base-url', 'model-name', 'model-api-key']) element(id).addEventListener('input', () => { element<HTMLInputElement>(id).setCustomValidity(''); renderModelKeyState(); });
@@ -2113,8 +2119,10 @@ function bindActions() {
 initializeLabels();
 element('startup-status').textContent = packText('正在读取配置…', 'Loading settings…', '正在讀取設定…');
 element('startup-retry').textContent = packText('重试', 'Retry', '重試');
-element('startup-retry').onclick = () => location.reload();
-document.querySelector('main')!.inert = true;
+element('startup-retry').onclick = () => { location.reload(); };
+const main = document.querySelector('main');
+if (!main) throw Error('缺少助手主区域');
+main.inert = true;
 try {
   proxy = BrowserProxy.getInstance();
   bindActions();
@@ -2133,8 +2141,8 @@ try {
   if (!settingsMode && launchParameters.get('view') === 'reading') {
     document.body.classList.add('reading-workspace-only');
     activeView = 'reading'; renderView(); void reading.refresh();
-    const reportHeight = () => parent.postMessage({type: 'aegis-workspace-height', height: document.querySelector('main')!.getBoundingClientRect().height + 32}, 'chrome://aegis');
-    new ResizeObserver(reportHeight).observe(document.querySelector('main')!); reportHeight();
+    const reportHeight = () => { parent.postMessage({type: 'aegis-workspace-height', height: main.getBoundingClientRect().height + 32}, 'chrome://aegis'); };
+    new ResizeObserver(reportHeight).observe(main); reportHeight();
   }
   element('reading-view-button').addEventListener('click', () => {
     activeView = 'reading';
@@ -2143,7 +2151,7 @@ try {
   });
   proxy.callbackRouter.onSnapshotChanged.addListener(render);
   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
-    document.querySelector('main')!.inert = false; element('startup-state').hidden = true;
+    main.inert = false; element('startup-state').hidden = true;
     render(initial);
     if (!settingsMode) proxy.handler.showUI();
     // 只有已消费的一次性原生启动请求才创建新任务。
@@ -2158,7 +2166,7 @@ try {
 // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
 window.addEventListener('message', event => {
   if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
-  document.querySelectorAll('[data-search-match]').forEach(node => node.removeAttribute('data-search-match'));
+  document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
   const query = event.data.query.trim().toLocaleLowerCase();
   if (!query) return;
   const target = [...document.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(query));

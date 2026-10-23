@@ -60,7 +60,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflo
 
 /* 标签在输入后仍保持可见；窄屏字段和脚本选项使用同一左边界。 */
 #enhancement-root { min-width: 0; overflow-wrap: anywhere; }
-label > input:not([type=checkbox]):not([type=file]), label > select {
+label > input:not([type=checkbox], [type=file]), label > select {
   display: block;
   width: 100%;
   min-width: 0;

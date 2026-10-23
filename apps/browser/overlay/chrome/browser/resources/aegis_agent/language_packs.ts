@@ -45,10 +45,10 @@ export class LanguagePacks {
       [this.filter, packText('显示', 'Show', '顯示')], [this.preferred, packText('常用目标语言', 'Preferred target', '常用目標語言')]] as const) {
       const label = make('label', title); label.append(field); controls.append(label);
     }
-    for (const [value, title] of [['all', packText('全部语言包', 'All packs', '全部語言包')], ['installed', packText('已安装', 'Installed', '已安裝')]]) {
-      const option = make('option', title); option.value = value!; this.filter.append(option);
+    for (const [value, title] of [['all', packText('全部语言包', 'All packs', '全部語言包')], ['installed', packText('已安装', 'Installed', '已安裝')]] as const) {
+      const option = make('option', title); option.value = value; this.filter.append(option);
     }
-    for (const field of [this.source, this.target, this.filter]) field.addEventListener('change', () => this.render());
+    for (const field of [this.source, this.target, this.filter]) field.addEventListener('change', () => { this.render(); });
     this.preferred.addEventListener('change', () => {
       try { localStorage.setItem('aegis-translation-target', this.preferred.value); }
       catch { this.status.textContent = packText('无法保存常用语言，请检查存储权限。', 'Cannot save the preferred language. Check storage access.', '無法儲存常用語言，請檢查儲存權限。'); }
@@ -123,7 +123,7 @@ export class LanguagePacks {
       this.source.value = ''; this.target.value = ''; this.filter.value = 'all';
       this.selected = new Set(route.packs.filter(id => !this.statuses.get(id)?.ready || this.statuses.get(id)?.update));
       this.render();
-      this.status.textContent = this.routeTitle(route) + ' · ' + route.packs.map(id => { const pack = this.packs.find(value => value.id === id)!; return name(pack.from) + ' → ' + name(pack.to); }).join(' + ');
+      this.status.textContent = this.routeTitle(route) + ' · ' + route.packs.map(id => { const pack = this.packs.find(value => value.id === id); if (!pack) throw Error('语言包目录缺少路由依赖：' + id); return name(pack.from) + ' → ' + name(pack.to); }).join(' + ');
     }
     this.root.scrollIntoView({block: 'nearest'});
   }
@@ -167,7 +167,7 @@ export class LanguagePacks {
     if (!this.statusKnown || this.active) return;
     this.queue = [...new Set(ids)];
     while (this.queue.length) {
-      const id = this.queue.shift()!; this.active = id; this.progress = packText('下载中…', 'Downloading…', '下載中…'); this.errors.delete(id); this.render();
+      const id = this.queue.shift(); if (id === undefined) break; this.active = id; this.progress = packText('下载中…', 'Downloading…', '下載中…'); this.errors.delete(id); this.render();
       try {
         const result = await this.client.run({op: 'download', direction: id}, message => {
           const [kind, value] = message.split(':');
