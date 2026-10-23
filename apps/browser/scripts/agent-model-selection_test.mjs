@@ -75,7 +75,11 @@ function harness(name = models[1]) {
   };
   context.render(snapshot);
   context.bindActions();
-  const fire = (id, event) => field(id).listeners.get(event)();
+  const fire = async (id, event) => {
+    await field(id).listeners.get(event)();
+    // DOM 事件不等待异步返回值；让显式 void 启动的保存也完成本轮任务。
+    await new Promise(resolve => setImmediate(resolve));
+  };
   return {field, context, saved, savedRouting, fire,
     respond: value => { response = value; }, requests: () => modelRequests};
 }
@@ -122,6 +126,23 @@ await check('真实选择事件写入模型名，保存调用使用所选项', a
   assert.equal(h.saved[0][2], models[3]);
   assert.equal(h.field('model-feedback').textContent, '默认连接已保存，摘要与助手共用。');
 });
+for (const id of ['save-model-button', 'clear-model-key-button']) {
+  await check(id + '异步拒绝仍显示错误、清空临时密钥并恢复操作', async () => {
+    const h = harness();
+    let rejectSave;
+    h.context.proxy.handler.configureModel = () => new Promise((resolve, reject) => { rejectSave = reject; });
+    h.field('model-api-key').value = 'test-only-key';
+    await h.fire(id, 'click');
+    assert.equal(h.context.modelBusy, true);
+    assert.equal(h.field('model-feedback').textContent, '保存中…');
+    rejectSave(Error('disconnected'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(h.field('model-feedback').textContent, 'modelSaveError');
+    assert.equal(h.field('model-api-key').value, '');
+    assert.equal(h.context.modelBusy, false);
+    assert.equal(h.field('save-model-button').disabled, false);
+  });
+}
 await check('手动输入不被检测覆盖，匹配项同步、非列表名称允许保存', async () => {
   const h = harness('custom/model');
   await h.fire('detect-models-button', 'click');

@@ -60,10 +60,11 @@ export class SettingsAegisPageElement extends PolymerElement {
   private onFrameMessage_ = (event: MessageEvent) => {
     for (const frame of this.shadowRoot?.querySelectorAll<HTMLIFrameElement>('iframe') || []) {
       const origin = frame.classList.contains('agent-frame') ? 'chrome-untrusted://aegis-agent' : 'chrome://aegis';
-      if (event.source !== frame.contentWindow || event.origin !== origin) continue;
+      const source = frame.contentWindow;
+      if (!source || event.source !== source || event.origin !== origin) continue;
       if (event.data?.type === 'aegis-settings-dirty') {
-        if (event.data.dirty === true) this.frameDirty_.add(frame.contentWindow!);
-        else if (event.data.dirty === false) this.frameDirty_.delete(frame.contentWindow!);
+        if (event.data.dirty === true) this.frameDirty_.add(source);
+        else if (event.data.dirty === false) this.frameDirty_.delete(source);
         return;
       }
       if (event.data?.type === 'aegis-settings-request' && origin === 'chrome://aegis') {
@@ -102,8 +103,13 @@ export class SettingsAegisPageElement extends PolymerElement {
     try { reply({result: await sendWithPromise(method, ...args)}); }
     catch (error) { reply({error: String(error)}); }
   }
+  private checkedRoot_(): ShadowRoot {
+    const root = this.shadowRoot;
+    if (!root) throw Error('设置视图尚未创建');
+    return root;
+  }
   private element_<T extends HTMLElement = HTMLElement>(id: string): T {
-    const value = this.shadowRoot!.querySelector<T>('#' + id);
+    const value = this.checkedRoot_().querySelector<T>('#' + id);
     if (!value) throw Error('设置控件不可用：' + id);
     return value;
   }
@@ -135,14 +141,14 @@ export class SettingsAegisPageElement extends PolymerElement {
     // 只展开命中项的祖先区域；嵌入内容各自定位，不展开无关高级选项。
     this.shadowRoot?.querySelectorAll('[data-search-match]').forEach(node => node.removeAttribute('data-search-match'));
     const needle = query.trim().toLocaleLowerCase();
-    const target = needle ? [...this.shadowRoot!.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(needle)) : null;
+    const target = needle ? [...this.checkedRoot_().querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(needle)) : null;
     if (target) {
       target.dataset['searchMatch'] = 'true';
       let parent = target.parentElement;
       while (parent) { if (parent instanceof HTMLDetailsElement) parent.open = true; parent = parent.parentElement; }
       target.scrollIntoView({block: 'center'});
     }
-    for (const frame of this.shadowRoot!.querySelectorAll<HTMLIFrameElement>('iframe')) {
+    for (const frame of this.checkedRoot_().querySelectorAll<HTMLIFrameElement>('iframe')) {
       const origin = frame.src.startsWith('chrome-untrusted:') ? 'chrome-untrusted://aegis-agent' : 'chrome://aegis';
       frame.contentWindow?.postMessage({type: 'aegis-settings-search', query: needle}, origin);
     }
@@ -155,13 +161,13 @@ export class SettingsAegisPageElement extends PolymerElement {
     const i18n = (globalThis as unknown as {AegisI18n: {t: (value: string) => string, translate: (root: ShadowRoot) => void, setLocale: (value: string) => void}}).AegisI18n;
     i18n.setLocale(loadTimeData.getString('aegisLocale'));
     this.translate_ = i18n.t;
-    i18n.translate(this.shadowRoot!);
+    i18n.translate(this.checkedRoot_());
     if (this.mode === 'gestures') {
       const module = await import('/' + 'aegis/gestures.js');
       if (!this.isConnected) return;
       this.cleanup_ = module.initializeGestures(this.shadowRoot);
     } else if (this.mode === 'reading' || this.mode === 'enhancements') {
-      const controls = [...this.shadowRoot!.querySelectorAll<HTMLInputElement>('input, select, button')];
+      const controls = [...this.checkedRoot_().querySelectorAll<HTMLInputElement>('input, select, button')];
       controls.forEach(control => control.disabled = true);
       try {
         this.state_ = await this.request_({op: 'state'});
@@ -172,7 +178,7 @@ export class SettingsAegisPageElement extends PolymerElement {
       } catch (error) {
         this.message_(String(error));
         const retry = document.createElement('button'); retry.textContent = this.translate_('重新读取设置');
-        retry.onclick = () => location.reload();
+        retry.onclick = () => { location.reload(); };
         this.element_('result').append(' ', retry);
         return;
       }
@@ -202,7 +208,7 @@ export class SettingsAegisPageElement extends PolymerElement {
       const control = this.input_('reading-' + key); control.value = String(prefs[key]);
       control.onchange = () => { this.previewReading_(); void this.saveReading_(); };
     }
-    this.element_('preview-link').onclick = event => event.preventDefault();
+    this.element_('preview-link').onclick = event => { event.preventDefault(); };
     this.element_('reading-retry').onclick = () => void this.saveReading_();
     this.element_('reading-reset').onclick = () => {
       for (const [key, value] of Object.entries(defaultReading)) this.input_('reading-' + key).value = String(value);
@@ -214,7 +220,7 @@ export class SettingsAegisPageElement extends PolymerElement {
       this.formDirty_ = true;
       try { this.status_('markdown-scope', this.source_(this.input_('markdown-origin').value)); } catch { this.status_('markdown-scope', '路径不参与匹配，子域名需分别添加。'); }
     };
-    this.input_('markdown-search').oninput = () => this.renderMarkdownSites_();
+    this.input_('markdown-search').oninput = () => { this.renderMarkdownSites_(); };
     this.element_<HTMLFormElement>('markdown-form').onsubmit = event => {
       event.preventDefault(); void this.addMarkdownSite_();
     };
@@ -255,7 +261,8 @@ export class SettingsAegisPageElement extends PolymerElement {
   private async addMarkdownSite_() {
     const form = this.element_<HTMLFormElement>('markdown-form');
     if (!form.reportValidity()) return;
-    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (!button) throw Error('缺少阅读设置保存按钮');
     button.disabled = true; this.input_('markdown-origin').disabled = true;
     try {
       const origin = this.source_(this.input_('markdown-origin').value);
@@ -300,9 +307,9 @@ export class SettingsAegisPageElement extends PolymerElement {
       option.textContent = (tab.title || tab.url).slice(0, 80) + ' · ' + new URL(tab.url).host; tabs.append(option);
     }
     tabs.onchange = () => { if (!tabs.value) return; this.input_('rule-origin').value = tabs.value; this.formDirty_ = true; this.ruleScope_(); };
-    this.element_('rule-new').onclick = () => this.editRule_(null);
+    this.element_('rule-new').onclick = () => { this.editRule_(null); };
     this.element_('rule-cancel').onclick = () => { this.element_('rule-editor').hidden = true; this.formDirty_ = false; };
-    this.input_('rule-search').oninput = () => this.renderRules_();
+    this.input_('rule-search').oninput = () => { this.renderRules_(); };
     this.element_('rule-editor').oninput = () => {
       this.formDirty_ = true;
       this.ruleScope_();
@@ -319,12 +326,12 @@ export class SettingsAegisPageElement extends PolymerElement {
       const inherited = (this.state_.sites || []).filter(rule => {
         const parent = new URL(rule.origin);
         return rule.subdomains && !rule.disabled && parent.protocol === url.protocol && parent.port === url.port && url.hostname.endsWith('.' + parent.hostname);
-      }).sort((a, b) => b.origin.length - a.origin.length)[0];
+      }).sort((a, b) => b.origin.length - a.origin.length).at(0);
       this.status_('rule-scope', origin);
       if (inherited && !this.state_.sites?.some(rule => rule.origin === origin)) {
         this.element_('rule-scope').append(' · ' + this.translate_('当前继承自：') + inherited.origin + this.translate_('；保存后将建立当前网站的独立规则。'));
         this.element_('rule-inherited').hidden = false;
-        this.element_('rule-inherited').onclick = () => this.editRule_(inherited);
+        this.element_('rule-inherited').onclick = () => { this.editRule_(inherited); };
       }
     } catch { this.status_('rule-scope', '保存前请检查完整网站地址。'); }
   }
@@ -367,7 +374,7 @@ export class SettingsAegisPageElement extends PolymerElement {
       const detail = document.createElement('small');
       const labels = rule.disabled ? ['已暂停'] : [rule.menu ? '恢复右键' : '', rule.copy ? '选取和复制' : '', rule.debug ? '调试兼容' : '', rule.subdomains ? '含子域名' : ''].filter(Boolean);
       detail.textContent = labels.map(value => this.translate_(value)).join(' · ') || this.translate_('未启用增强选项'); title.append(detail);
-      row.append(title, this.button_('编辑', () => this.editRule_(rule)), this.button_(rule.disabled ? '恢复' : '暂停', async () => {
+      row.append(title, this.button_('编辑', () => { this.editRule_(rule); }), this.button_(rule.disabled ? '恢复' : '暂停', async () => {
         this.state_ = await this.request_({op: 'site-save', rule: {...rule, disabled: !rule.disabled}, expected: rule}); this.renderRules_(); this.message_(this.translate_('已保存，重新加载对应网页后生效。'));
       }), this.button_('移除', async () => {
         if (!confirm(this.translate_('移除此网站规则？不会删除用户脚本，也不会刷新网页。') + '\n' + rule.origin)) return;
