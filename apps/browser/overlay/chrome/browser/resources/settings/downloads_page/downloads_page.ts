@@ -272,10 +272,12 @@ export class SettingsDownloadsPageElement extends
                                   if (generation !== this.aegisSaveGeneration_) {
                                     return;
                                   }
-                                  const merged = {...this.aegisSaved_!, ...Object.fromEntries(changed.map(key => [key, requested[key as keyof AegisDownloadSettings]]))};
+                                  const expected = this.aegisSaved_;
+                                  if (!expected) throw Error('下载设置尚未加载');
+                                  const merged = {...expected, ...Object.fromEntries(changed.map(key => [key, requested[key as keyof AegisDownloadSettings]]))};
                                   const saved = await this.browserProxy_
                                                     .setAegisDownloadSettings(
-                                                        merged, this.aegisSaved_!);
+                                                        merged, expected);
                                   this.aegisSaved_ = saved;
                                   if (JSON.stringify(requested) ===
                                       JSON.stringify(
