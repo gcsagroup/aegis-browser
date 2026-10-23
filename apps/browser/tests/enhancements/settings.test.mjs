@@ -251,15 +251,22 @@ test('子页通过父框架获取并保存设置，不直接调用无效的 chro
   assert.deepEqual(await promise, {trackerBlocking: true});
 });
 
-test('全局下载参数串行保存并使用后台读回结果，拒绝非法限速', async () => {
+function downloadsSettings() {
   const tree = ts.createSourceFile('downloads.ts', read('settings/downloads_page/downloads_page.ts'), ts.ScriptTarget.Latest, true);
   const cls = tree.statements.find(node => ts.isClassDeclaration(node));
-  const owner = {aegisSettingsReady_: true, aegisSaveChain_: Promise.resolve(), aegisStrings_: {saving: '保存中', saved: '已保存', failed: '失败'}};
+  const owner = {aegisSettingsReady_: true, aegisSaveChain_: Promise.resolve(), aegisSaveGeneration_: 0, aegisStrings_: {saving: '保存中', saved: '已保存', failed: '失败'}};
   for (const name of ['applyAegisDownloadSettings_', 'currentAegisDownloadSettings_', 'saveAegisDownloadSettings_', 'loadAegisDownloadSettings_', 'onAegisLimitChange_']) {
     const method = cls.members.find(node => node.name?.getText(tree) === name);
     owner[name] = new Function(compile(`return ${method.modifiers?.some(n => n.kind === ts.SyntaxKind.AsyncKeyword) ? 'async ' : ''}function(${method.parameters.map(n => n.getText(tree)).join(',')}) ${method.body.getText(tree)};`))();
   }
-  let stored = {parallelMode: 3, reduceOnMetered: false, reduceOnBattery: true, torrentDhtEnabled: false, torrentPexEnabled: true, torrentDownloadLimitKib: 128, torrentUploadLimitKib: 64};
+  return owner;
+}
+
+const initialDownloads = () => ({parallelMode: 3, reduceOnMetered: false, reduceOnBattery: true, torrentDhtEnabled: false, torrentPexEnabled: true, torrentDownloadLimitKib: 128, torrentUploadLimitKib: 64});
+
+test('全局下载参数串行保存并使用后台读回结果，拒绝非法限速', async () => {
+  const owner = downloadsSettings();
+  let stored = initialDownloads();
   const saves = [];
   owner.browserProxy_ = {getAegisDownloadSettings: async () => stored, setAegisDownloadSettings: async settings => {saves.push(settings); stored = settings; return stored;}};
   await owner.loadAegisDownloadSettings_();
@@ -282,6 +289,52 @@ test('全局下载参数串行保存并使用后台读回结果，拒绝非法�
   assert.equal(owner.aegisTorrentUploadLimitKib_, 129);
   assert.equal(owner.aegisSaveStatus_, '失败');
 });
+
+for (const reloadFails of [false, true]) {
+  test(`下载保存冲突作废后续排队草稿，回读${reloadFails ? '失败可重试' : '成功与后台一致'}`, async () => {
+    const owner = downloadsSettings();
+    let stored = initialDownloads();
+    let reads = 0;
+    const saves = [];
+    owner.browserProxy_ = {
+      getAegisDownloadSettings: async () => {
+        if (++reads === 2 && reloadFails) throw Error('读取失败');
+        return {...stored};
+      },
+      setAegisDownloadSettings: async (settings, expected) => {
+        saves.push({settings, expected});
+        if (saves.length === 1) {
+          stored = {...stored, parallelMode: 6}; // 另一窗口先保存了新值。
+          throw Error('settings_changed');
+        }
+        assert.deepEqual(expected, stored);
+        stored = {...settings};
+        return {...stored};
+      },
+    };
+    await owner.loadAegisDownloadSettings_();
+    owner.onAegisLimitChange_({currentTarget: {id: 'aegisTorrentDownloadLimit', value: '257'}});
+    owner.onAegisLimitChange_({currentTarget: {id: 'aegisTorrentUploadLimit', value: '129'}});
+    await owner.aegisSaveChain_;
+    assert.equal(saves.length, 1, '冲突后不得继续写入已作废的排队草稿');
+    assert.deepEqual(stored, {...initialDownloads(), parallelMode: 6});
+    assert.equal(owner.aegisSaveStatus_, '失败');
+    assert.equal(owner.aegisSettingsReady_, !reloadFails);
+    if (reloadFails) {
+      owner.saveAegisDownloadSettings_();
+      await owner.aegisSaveChain_;
+      assert.equal(saves.length, 1, '未恢复可信设置前禁止继续保存');
+      await owner.loadAegisDownloadSettings_();
+    }
+    assert.deepEqual(owner.currentAegisDownloadSettings_(), stored);
+    owner.onAegisLimitChange_({currentTarget: {id: 'aegisTorrentUploadLimit', value: '513'}});
+    await owner.aegisSaveChain_;
+    assert.equal(saves.length, 2);
+    assert.deepEqual(stored, {...initialDownloads(), parallelMode: 6, torrentUploadLimitKib: 513});
+    assert.deepEqual(owner.currentAegisDownloadSettings_(), stored);
+    assert.equal(owner.aegisSaveStatus_, '已保存');
+  });
+}
 
 test('新任务预览使用后台刚读取的下载默认值，不沿用页面打开时的缓存', () => {
   const path = new URL('../../overlay/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts', import.meta.url);
