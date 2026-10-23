@@ -682,6 +682,13 @@ test('V8 raw validator requires real production Node subprocess evidence', () =>
     writeFileSync(join(directory, 'coverage-valid.json'), `${JSON.stringify({result: urls.map((url) => ({url}))})}\n`);
     let result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
     assert.equal(result.status, 0, result.stderr);
+    const empty = join(directory, 'coverage-empty.json');
+    writeFileSync(empty, '');
+    result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
+    assert.notEqual(result.status, 0, 'An empty report alongside valid coverage unexpectedly passed');
+    assert.match(result.stderr, /invalid JSON: coverage-empty\.json/u);
+    assert.equal(readFileSync(empty).length, 0, 'Validation must preserve the invalid evidence');
+    unlinkSync(empty);
     writeFileSync(join(directory, 'coverage-valid.json'), `${JSON.stringify({result: [{url: urls[0]}]})}\n`);
     result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
     assert.notEqual(result.status, 0, 'V8 report missing an executed production subprocess unexpectedly passed');
