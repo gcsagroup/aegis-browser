@@ -935,6 +935,11 @@ body.central-settings #reading-ai-settings {
   display: none !important;
 }
 
+/* 阅读时主动管理语言包可在原处展开，切回其他视图后继续隐藏。 */
+body.central-settings main > #reading-view:not([hidden]) ~ #reading-ai-settings[open] {
+  display: block !important;
+}
+
 body.settings-only {
   --bg: light-dark(#fff, #202124);
   --surface: light-dark(#fff, #202124);

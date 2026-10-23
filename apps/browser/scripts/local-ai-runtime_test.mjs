@@ -7,6 +7,14 @@ import vm from 'node:vm';
 
 const root = new URL('../overlay/chrome/browser/resources/aegis_agent/local_ai/', import.meta.url);
 const read = name => readFileSync(new URL(name, root), 'utf8');
+const assets = JSON.parse(read('asset_manifest.json'));
+for (const [name, expected] of Object.entries(assets.files)) {
+  const bytes = readFileSync(new URL(name, root));
+  assert.equal(bytes.length, expected.bytes, `${name} 资源大小必须与清单一致`);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), expected.sha256,
+      `${name} 资源摘要必须与清单一致`);
+}
+console.log(`本地 AI 资源清单校验通过：${Object.keys(assets.files).length} 项大小与 SHA-256 一致。`);
 const context = vm.createContext({console, TextEncoder, TextDecoder, crypto: webcrypto, URL});
 context.self = context;
 vm.runInContext(read('vendor/md5.js'), context);
