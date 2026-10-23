@@ -183,7 +183,7 @@ label {
 
 textarea,
 select,
-input {
+input:not([type='checkbox']):not([type='radio']) {
   background: var(--surface-strong);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -592,6 +592,15 @@ summary {
   gap: 6px;
 }
 
+input[type='checkbox'],
+input[type='radio'] {
+  flex: 0 0 auto;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  width: 18px;
+}
+
 .model-pool {
   display: grid;
   gap: 6px;
@@ -615,9 +624,24 @@ summary {
   grid-column: 1;
 }
 
-.model-pool button {
+.model-pool-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   grid-column: 2;
   grid-row: 1 / span 2;
+}
+
+.model-pool li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .model-pool-actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
 }
 
 .error {
@@ -842,14 +866,14 @@ summary {
 }
 
 #reading-view label:has(input[type='checkbox']),
-#reading-ai-settings label:has(input[type='checkbox']) {
+#reading-research-settings label:has(input[type='checkbox']) {
   display: flex;
   align-items: start;
   gap: 8px;
 }
 
 #reading-view input[type='checkbox'],
-#reading-ai-settings input[type='checkbox'] {
+#reading-research-settings input[type='checkbox'] {
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
@@ -901,4 +925,195 @@ summary {
     display: none;
   }
 
+}
+
+/* 桌面全局配置集中到设置中心，任务侧栏只保留前往设置的入口。 */
+body.central-settings #model-details,
+body.central-settings #typesafe-details,
+body.central-settings #reading-research-settings,
+body.central-settings #reading-ai-settings {
+  display: none !important;
+}
+
+/* 阅读时主动管理语言包可在原处展开，切回其他视图后继续隐藏。 */
+body.central-settings main > #reading-view:not([hidden]) ~ #reading-ai-settings[open] {
+  display: block !important;
+}
+
+body.settings-only {
+  --bg: light-dark(#fff, #202124);
+  --surface: light-dark(#fff, #202124);
+  --surface-strong: light-dark(#f8f9fa, #292a2d);
+  --text: light-dark(#202124, #e8eaed);
+  --muted: light-dark(#5f6368, #bdc1c6);
+  --line: light-dark(#dadce0, #45474b);
+  --primary: light-dark(#185abc, #a8c7fa);
+  background: transparent;
+  color-scheme: light dark;
+  font: 14px/1.55 system-ui, sans-serif;
+}
+
+body.settings-only main {
+  gap: 24px;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+}
+
+body.settings-only main > * {
+  display: none !important;
+}
+
+body.settings-only[data-settings-section='ai'] main > #model-details,
+body.settings-only[data-settings-section='ai'] main > #typesafe-details,
+body.settings-only[data-settings-section='reading'] main > #reading-ai-settings,
+body.settings-only[data-settings-section='experiments'] main > #reading-research-settings {
+  display: block !important;
+}
+
+body.settings-only .card {
+  margin: 0;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+body.settings-only .language-pack-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  align-items: start;
+}
+
+body.settings-only .language-pack-filters label {
+  min-width: 0;
+}
+
+body.settings-only .language-pack-filters select {
+  display: block;
+  margin-top: 8px;
+}
+
+body.settings-only input,
+body.settings-only select {
+  max-width: 100%;
+}
+
+#aegis-settings-link {
+  display: inline-block;
+  padding: 8px 0;
+  color: var(--primary);
+}
+
+#aegis-settings-link[hidden] {
+  display: none;
+}
+
+body.initializing main { visibility:hidden; }
+
+body.reading-workspace-only { background:transparent; }
+
+body.reading-workspace-only main { max-width:100%;
+ padding:0; }
+
+body.reading-workspace-only main > * { display:none !important; }
+
+body.reading-workspace-only main > #reading-view { display:block !important; }
+
+body.reading-workspace-only main > #reading-ai-settings[open] { display:block !important; }
+
+.language-pack-filters { display:flex;
+ flex-wrap:wrap;
+ gap:12px; }
+
+.language-pack-filters label { flex:1 1 150px; }
+
+.language-pack-list { display:grid;
+ gap:12px;
+ margin-top:16px; }
+
+.language-pack-row { border-top:1px solid var(--border);
+ padding:14px 0;
+ min-width:0; }
+
+.language-pack-row > label { display:flex;
+ align-items:center;
+ gap:8px; }
+
+.language-pack-row input[type='checkbox'] { width:auto; }
+
+.language-pack-row p { overflow-wrap:anywhere;
+ margin:8px 0; }
+
+.profile-fields { display:flex;
+ gap:8px;
+ flex-wrap:wrap; }
+
+.profile-fields > * { flex:1 1 120px;
+ min-width:0; }
+
+.model-pool li.selected { outline:2px solid var(--accent);
+ outline-offset:2px; }
+
+.experiment-item + .experiment-item { margin-top:20px;
+ padding-top:16px;
+ border-top:1px solid var(--border); }
+
+[data-search-match] { outline: 2px solid #3986ec;
+ outline-offset: 4px; }
+
+/* 独立设置页保留原控件，隐藏工作区导航和无关表单。 */
+.mobile-settings-back { display: inline-block;
+ width: fit-content;
+ min-height: 44px;
+ padding: 10px 0;
+ color: var(--primary); }
+
+body[data-mobile-settings] main > :not(.hero):not(.mobile-settings-back) { display: none !important; }
+
+body[data-mobile-settings='reading'] main > #reading-ai-settings,
+body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
+
+body[data-mobile-settings] .hero { align-items: flex-start; }
+
+body[data-mobile-settings] .hero h1 { font-size: 1.5rem; }
+
+body[data-mobile-settings] .hero .status { display: none; }
+
+body[data-mobile-settings] details.card { min-width: 0; }
+
+body[data-mobile-settings] details.card > label { display: flex;
+ align-items: flex-start;
+ gap: 12px; }
+
+body[data-mobile-settings] details.card > label > input[type='checkbox'] { flex: none;
+ width: 20px; }
+
+body.mobile-agent-shell {
+  --bg: #f8f9fa;
+ --surface: #fff;
+ --surface-strong: #fff;
+ --text: #202124;
+  --muted: #5f6368;
+ --line: #dadce0;
+ --primary: #1a73e8;
+ --primary-hover: #1967d2;
+  --shadow: none;
+ background: var(--bg);
+}
+@media (prefers-color-scheme: dark) {
+  body.mobile-agent-shell {
+    --bg: #202124;
+ --surface: #292a2d;
+ --surface-strong: #292a2d;
+ --text: #e8eaed;
+    --muted: #9aa0a6;
+ --line: #3c4043;
+ --primary: #8ab4f8;
+ --primary-hover: #aecbfa;
+  }
+}
+
+/* 嵌入实验设置的跳转由主设置页提供，避免不受信任子页的导航被阻止。 */
+body.settings-only[data-settings-section='experiments'] .reading-experiment-link {
+  display: none;
 }

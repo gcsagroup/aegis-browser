@@ -1985,6 +1985,7 @@ void AegisService::PersistModelConfiguration(const std::string& provider,
     agent_service->CancelPendingGoalRouting();
     agent_service->InvalidatePendingModelDispatches();
   }
+  ++model_settings_revision_;
   prefs_->SetString(prefs::kModelProvider, provider);
   prefs_->SetString(prefs::kModelBaseUrl, base_url);
   prefs_->SetString(prefs::kModelName, model);
@@ -1997,6 +1998,11 @@ void AegisService::SetModelSettings(
     const std::string& api_key,
     bool clear_api_key,
     base::OnceCallback<void(bool, std::string)> done) {
+  // 安全存储的异步回调完成前拒绝其他写入，避免旧回包恢复已经清除的密钥。
+  if (model_settings_write_pending_) {
+    std::move(done).Run(false, "model_settings_busy");
+    return;
+  }
   if (!prefs_) {
     std::move(done).Run(false, "profile preferences unavailable");
     return;
@@ -2075,6 +2081,7 @@ void AegisService::SetModelSettings(
     std::move(done).Run(false, "secure credential storage unavailable");
     return;
   }
+  model_settings_write_pending_ = true;
   g_browser_process->os_crypt_async()->GetInstance(base::BindOnce(
       &AegisService::SaveModelApiKey, weak_ptr_factory_.GetWeakPtr(),
       normalized_provider, *normalized_base_url, trimmed_model, api_key,
@@ -2088,6 +2095,7 @@ void AegisService::SaveModelApiKey(
     std::string api_key,
     base::OnceCallback<void(bool, std::string)> done,
     scoped_refptr<os_crypt_async::Encryptor> encryptor) {
+  model_settings_write_pending_ = false;
   if (!prefs_ || !encryptor || !encryptor->IsEncryptionAvailable()) {
     std::move(done).Run(false, "secure credential storage unavailable");
     return;

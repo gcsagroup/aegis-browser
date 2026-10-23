@@ -2,24 +2,24 @@
   "schema": 1,
   "files": {
     "translation_manifest.json": {
-      "bytes": 5480,
-      "sha256": "8bc2c806918e38d7c158522b2238317c6d935b8caf57866243852e87e7763913"
+      "bytes": 34663,
+      "sha256": "a1bfb839c4a97d6d645a9fd2d85c6d8bbf0221b6fc141506eaed9f858af837f0"
     },
     "worker.js": {
-      "bytes": 7394,
-      "sha256": "c25ca0879e8c82244353f748210e113745e76b58c5bd9b923d6a16ccc903998f"
+      "bytes": 12155,
+      "sha256": "ba5a9a498dadf319fc1a613f11e84b8a4cb725ac4a10aec2d36971585104e6b9"
     },
     "research.js": {
-      "bytes": 6902,
-      "sha256": "4cab59d5065b196ac0fafbd1a5e8f2e23b4e8327bd0bff2019b2599d0b4b872c"
+      "bytes": 6934,
+      "sha256": "54aeb6212fa207fd44e9cafca1cd0395e240ded8efd977094abc63c7b1700493"
     },
     "research_manifest.json": {
       "bytes": 1011,
       "sha256": "9423baea24b828f0b5d0ae5fffd1a681fea1bb1fcc1bd2903e719fd2a55652c7"
     },
     "NOTICE.txt": {
-      "bytes": 1892,
-      "sha256": "98390e9043db13fe6e120efb8693f73bbc6aa8232571bf92dbbc350ddc43ceb5"
+      "bytes": 2402,
+      "sha256": "b454eef2730139522f54cf6a6b49a9301442095c92af8d1b74c32517f138589d"
     },
     "bergamot/LICENSE": {
       "bytes": 16725,
@@ -68,6 +68,10 @@
     "bergamot/worker/translator-worker.js": {
       "bytes": 13697,
       "sha256": "b5ef1df59c8fb33850a491470b755c2c3db767a04824e57488535952b5e8166f"
+    },
+    "catalog.js": {
+      "bytes": 2812,
+      "sha256": "2915ec804ff3d868e8d081d576528e70ba5e79c9424874aab47c2c86c3dd449d"
     }
   }
 }

@@ -142,10 +142,15 @@ function createRoutes(): SettingsRoutes {
 
   // Root page.
   r.BASIC = new Route('/');
-  r.AEGIS_ENHANCEMENTS = r.BASIC.createSection('/aegisEnhancements', 'aegisEnhancements', loadTimeData.getString('aegisEnhancementsTitle'));
-  r.AEGIS_READING = r.BASIC.createSection('/aegisReading', 'aegisReading', loadTimeData.getString('aegisReadingTitle'));
-  r.AEGIS_GESTURES = r.BASIC.createSection('/aegisGestures', 'aegisGestures', loadTimeData.getString('aegisGesturesTitle'));
-  r.AEGIS_PRIVACY = r.BASIC.createSection('/aegisPrivacy', 'aegisPrivacy', loadTimeData.getString('aegisPrivacyTitle'));
+  r.AEGIS = r.BASIC.createSection('/aegis', 'aegis', loadTimeData.getString('aegisSettingsTitle'));
+  r.AEGIS_ENHANCEMENTS = r.AEGIS.createSection('/aegisEnhancements', 'aegisEnhancements', loadTimeData.getString('aegisEnhancementsTitle'));
+  r.AEGIS_READING = r.AEGIS.createSection('/aegisReading', 'aegisReading', loadTimeData.getString('aegisReadingTitle'));
+  r.AEGIS_GESTURES = r.AEGIS.createSection('/aegisGestures', 'aegisGestures', loadTimeData.getString('aegisGesturesTitle'));
+  r.AEGIS_PRIVACY = r.AEGIS.createSection('/aegisPrivacy', 'aegisPrivacy', loadTimeData.getString('aegisPrivacyTitle'));
+  r.AEGIS_AI = r.AEGIS.createSection('/aegisAi', 'aegisAi', loadTimeData.getString('aegisAiTitle'));
+  r.AEGIS_EXPERIMENTS = r.AEGIS.createSection('/aegisExperiments', 'aegisExperiments', loadTimeData.getString('aegisExperimentsTitle'));
+  r.AEGIS_DOWNLOADS = r.AEGIS.createSection('/aegisDownloads', 'aegisDownloads', loadTimeData.getString('aegisDownloadsTitle'));
+  r.AEGIS_TOOLS = r.AEGIS.createSection('/aegisTools', 'aegisTools', loadTimeData.getString('aegisToolsTitle'));
 
   r.ABOUT = r.BASIC.createSection(
       '/help', 'about', loadTimeData.getString('aboutPageTitle'));

@@ -48,6 +48,8 @@ export class SettingsDownloadsPageElement extends
 
   static override get properties() {
     return {
+      aegisOnly: {type: Boolean, attribute: 'aegis-only'},
+      aegisSaveStatus_: {type: String},
       autoOpenDownloads_: {type: Boolean},
 
       downloadDefaultDirectoryPref_: {type: Object},
@@ -101,6 +103,8 @@ export class SettingsDownloadsPageElement extends
     };
   }
 
+  accessor aegisOnly: boolean = false;
+  protected accessor aegisSaveStatus_: string = '';
   protected accessor autoOpenDownloads_: boolean = false;
   protected accessor downloadDefaultDirectoryPref_:
       chrome.settingsPrivate.PrefObject<string>|undefined = undefined;
@@ -123,6 +127,7 @@ export class SettingsDownloadsPageElement extends
   protected accessor aegisStrings_ = (() => {
     const zh = document.documentElement.lang.startsWith('zh');
     return zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? {
+      unlimited: '不限速', custom: '自訂上限', invalidLimit: '請輸入 1–1000000 的整數；不限速請選擇「不限速」。', retry: '重新讀取',
       title: '下載加速',
       httpTitle: 'HTTP(S) 並行下載',
       httpDescription: '伺服器支援時使用多個連線，否則使用單連線。',
@@ -138,11 +143,12 @@ export class SettingsDownloadsPageElement extends
       btDescription: '用於新任務；下載中心仍可在開始前臨時修改。',
       dht: '透過 DHT 查詢下載節點',
       pex: '透過 PEX 交換下載節點',
-      downloadLimit: '預設下載上限（KiB/s，0 不限）',
-      uploadLimit: '預設上傳上限（KiB/s，0 不限）',
+      downloadLimit: '預設下載上限（KiB/s，1–1000000）',
+      uploadLimit: '預設上傳上限（KiB/s，1–1000000）',
       stopSeeding: '下載完成後自動停止上傳',
-      saved: '設定會立即儲存並應用於新下載。',
+      saved: '已儲存，將應用於新下載。', saving: '正在儲存…', failed: '儲存失敗，請檢查目前設定後重試。', link: '開啟 Aegis 下載設定',
     } : {
+      unlimited: '不限速', custom: '自定义上限', invalidLimit: '请输入 1–1000000 的整数；不限速请选择“不限速”。', retry: '重新读取',
       title: '下载加速',
       httpTitle: 'HTTP(S) 并行下载',
       httpDescription: '服务器支持时使用多个连接，否则使用单连接。',
@@ -158,11 +164,12 @@ export class SettingsDownloadsPageElement extends
       btDescription: '用于新任务；下载中心仍可在开始前临时修改。',
       dht: '通过 DHT 查找下载节点',
       pex: '通过 PEX 交换下载节点',
-      downloadLimit: '默认下载上限（KiB/s，0 不限）',
-      uploadLimit: '默认上传上限（KiB/s，0 不限）',
+      downloadLimit: '默认下载上限（KiB/s，1–1000000）',
+      uploadLimit: '默认上传上限（KiB/s，1–1000000）',
       stopSeeding: '下载完成后自动停止上传',
-      saved: '设置会立即保存并应用于新下载。',
+      saved: '已保存，将应用于新下载。', saving: '正在保存…', failed: '保存失败，请检查当前设置后重试。', link: '打开 Aegis 下载设置',
     }) : {
+      unlimited: 'Unlimited', custom: 'Custom limit', invalidLimit: 'Enter an integer from 1 to 1000000, or choose Unlimited.', retry: 'Reload',
       title: 'Aegis download acceleration',
       httpTitle: 'Parallel HTTP(S) downloads',
       httpDescription: 'Use multiple connections when supported by the server; otherwise use one connection.',
@@ -176,18 +183,21 @@ export class SettingsDownloadsPageElement extends
       thermal: 'Automatically reduce download connections when the device is hot.',
       btTitle: 'BT / Magnet defaults',
       btDescription: 'Used for new tasks; the Downloads page can override them before starting.',
-      dht: 'Enable DHT by default',
-      pex: 'Enable PEX by default',
-      downloadLimit: 'Default download limit (KiB/s, 0 unlimited)',
-      uploadLimit: 'Default upload limit (KiB/s, 0 unlimited)',
+      dht: 'Discover peers through DHT',
+      pex: 'Exchange peer addresses through PEX',
+      downloadLimit: 'Default download limit (KiB/s, 1–1000000)',
+      uploadLimit: 'Default upload limit (KiB/s, 1–1000000)',
       stopSeeding: 'Automatically stop uploading when complete',
-      saved: 'Settings are saved immediately and apply to new downloads.',
+      saved: 'Saved. Applies to new downloads.', saving: 'Saving…', failed: 'Could not save. Check the current settings and try again.', link: 'Open Aegis download settings',
     };
   })();
 
   private browserProxy_: DownloadsBrowserProxy =
       DownloadsBrowserProxyImpl.getInstance();
   private aegisSaveChain_: Promise<void> = Promise.resolve();
+  private aegisSaveGeneration_: number = 0;
+  private aegisSaved_: AegisDownloadSettings|null = null;
+  private aegisRequested_: AegisDownloadSettings|null = null;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -211,12 +221,18 @@ export class SettingsDownloadsPageElement extends
         });
 
     this.browserProxy_.initializeDownloads();
-    void this.loadAegisDownloadSettings_();
+    this.onAegisRetryClick_();
+  }
+
+  protected onAegisRetryClick_() {
+    void this.loadAegisDownloadSettings_().catch(() => { this.aegisSaveStatus_ = this.aegisStrings_.failed; });
   }
 
   private async loadAegisDownloadSettings_() {
     const settings = await this.browserProxy_.getAegisDownloadSettings();
     this.applyAegisDownloadSettings_(settings);
+    this.aegisSaved_ = settings;
+    this.aegisRequested_ = {...settings};
     this.aegisSettingsReady_ = true;
   }
 
@@ -247,18 +263,34 @@ export class SettingsDownloadsPageElement extends
       return;
     }
     const requested = this.currentAegisDownloadSettings_();
+    const generation = this.aegisSaveGeneration_;
+    const changed = Object.keys(requested).filter(key => requested[key as keyof AegisDownloadSettings] !== this.aegisRequested_?.[key as keyof AegisDownloadSettings]);
+    this.aegisRequested_ = requested;
+    this.aegisSaveStatus_ = this.aegisStrings_.saving;
     this.aegisSaveChain_ = this.aegisSaveChain_
                                 .then(async () => {
+                                  if (generation !== this.aegisSaveGeneration_) {
+                                    return;
+                                  }
+                                  const merged = {...this.aegisSaved_!, ...Object.fromEntries(changed.map(key => [key, requested[key as keyof AegisDownloadSettings]]))};
                                   const saved = await this.browserProxy_
                                                     .setAegisDownloadSettings(
-                                                        requested);
+                                                        merged, this.aegisSaved_!);
+                                  this.aegisSaved_ = saved;
                                   if (JSON.stringify(requested) ===
                                       JSON.stringify(
                                           this.currentAegisDownloadSettings_())) {
                                     this.applyAegisDownloadSettings_(saved);
+                                    this.aegisSaveStatus_ = this.aegisStrings_.saved;
                                   }
                                 })
-                                .catch(() => this.loadAegisDownloadSettings_());
+                                .catch(async () => {
+                                  // 回读会丢弃本轮草稿，尚未执行的保存也必须一并作废。
+                                  this.aegisSaveGeneration_++;
+                                  this.aegisSettingsReady_ = false;
+                                  try { await this.loadAegisDownloadSettings_(); }
+                                  finally { this.aegisSaveStatus_ = this.aegisStrings_.failed; }
+                                }).catch(() => {});
   }
 
   protected onAegisParallelModeChange_(event: Event) {
@@ -287,15 +319,20 @@ export class SettingsDownloadsPageElement extends
     this.saveAegisDownloadSettings_();
   }
 
+  protected onAegisLimitModeChange_(event: Event) {
+    const select = event.currentTarget as HTMLSelectElement;
+    const value = select.value === 'unlimited' ? 0 : 256;
+    if (select.id === 'aegisDownloadMode') this.aegisTorrentDownloadLimitKib_ = value;
+    else this.aegisTorrentUploadLimitKib_ = value;
+    this.saveAegisDownloadSettings_();
+  }
   protected onAegisLimitChange_(event: Event) {
     const input = event.currentTarget as CrInputElement;
-    const value = Math.min(1000000, Math.max(0, Number(input.value) || 0));
-    if (input.id === 'aegisTorrentDownloadLimit') {
-      this.aegisTorrentDownloadLimitKib_ = value;
-    } else {
-      this.aegisTorrentUploadLimitKib_ = value;
-    }
-    input.value = String(value);
+    const value = Number(input.value);
+    input.invalid = !input.value.trim() || !Number.isInteger(value) || value < 1 || value > 1000000;
+    if (input.invalid) return;
+    if (input.id === 'aegisTorrentDownloadLimit') this.aegisTorrentDownloadLimitKib_ = value;
+    else this.aegisTorrentUploadLimitKib_ = value;
     this.saveAegisDownloadSettings_();
   }
 

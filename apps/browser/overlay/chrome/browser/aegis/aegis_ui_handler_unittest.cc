@@ -11,6 +11,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
 #include "chrome/browser/aegis/metalink_download_verifier.h"
+#include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/tab_list/tab_list_interface.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -35,6 +36,18 @@ namespace {
 
 class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
 
+TEST_F(AegisUIHandlerTest, SettingsKeepLocalPacksWithoutExemptingWebOrigins) {
+  ChromeContentBrowserClient client;
+  EXPECT_TRUE(client.ShouldUseFirstPartyStorageKey(
+      url::Origin::Create(GURL("chrome-untrusted://aegis-agent"))));
+  for (const char* url : {"https://aegis-agent", "https://example.com",
+                          "chrome-untrusted://other", "chrome://settings"}) {
+    EXPECT_FALSE(client.ShouldUseFirstPartyStorageKey(
+        url::Origin::Create(GURL(url))));
+  }
+  EXPECT_FALSE(client.ShouldUseFirstPartyStorageKey(url::Origin()));
+}
+
 // 工作区恢复需要可编辑的标签栏；基础测试窗口默认禁止编辑。
 class WorkspaceTestWindow : public TestBrowserWindow {
  public:
@@ -54,6 +67,28 @@ class TestAegisUIHandler : public AegisUIHandler {
  public:
   using content::WebUIMessageHandler::set_web_ui;
 };
+
+TEST_F(AegisUIHandlerTest, KeepsCnamePreferenceSeparateFromRuntimeDependency) {
+  profile()->GetPrefs()->SetBoolean(prefs::kTrackerBlockingEnabled, false);
+  profile()->GetPrefs()->SetBoolean(prefs::kCnameUncloakEnabled, true);
+  auto contents = content::WebContents::Create(
+      content::WebContents::CreateParams(profile()));
+  content::TestWebUI web_ui;
+  web_ui.set_web_contents(contents.get());
+  TestAegisUIHandler handler;
+  handler.set_web_ui(&web_ui);
+  handler.RegisterMessages();
+  base::ListValue args;
+  args.Append("status-test");
+  web_ui.HandleReceivedMessage("getStatus", args);
+  ASSERT_EQ(1u, web_ui.call_data().size());
+  const auto& response = *web_ui.call_data().back();
+  ASSERT_TRUE(response.arg3());
+  const auto& status = response.arg3()->GetDict();
+  EXPECT_TRUE(status.FindBool("cnameUncloakConfigured").value_or(false));
+  EXPECT_FALSE(status.FindBool("cnameUncloak").value_or(true));
+  EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kCnameUncloakEnabled));
+}
 
 TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
   AddTab(browser(), GURL("https://left.example/"));
