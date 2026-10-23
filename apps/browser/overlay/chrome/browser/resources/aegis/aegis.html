@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="aegis.css">
   </head>
   <body>
-  <nav id="enhancement-navigation" hidden style="padding: 12px 24px"><a id="enhancement-link" href="enhancements.html">网站增强与用户脚本</a> · <a id="markdown-link" href="markdown.html">Markdown 阅读</a></nav>
     <main class="page">
+      <nav id="enhancement-navigation" hidden><a id="enhancement-link" href="enhancements.html">网站增强与用户脚本</a><a id="markdown-link" href="markdown.html">Markdown 阅读</a></nav>
       <nav id="workspace-navigation" hidden><a href="chrome://settings/aegis" id="workspace-settings-link">Aegis 功能设置</a><h1 id="workspace-title"></h1></nav>
       <section class="reading-workspace" hidden><iframe id="reading-workspace-frame" title="阅读工作区"></iframe></section>
       <pre class="result" id="settings-result" role="status" hidden></pre>
@@ -142,7 +142,7 @@
       <section id="downloads" class="downloads" aria-label="$i18n{downloadsTitle}">
         <h2>$i18n{downloadsTitle}</h2>
         <p class="meta">$i18n{downloadsMeta}</p>
-        <aegis-download-panel></aegis-download-panel>
+        <aegis-download-panel embedded></aegis-download-panel>
         <p><a href="chrome://downloads" target="_top">$i18n{downloadsHistory}</a></p>
         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
       </section>

@@ -304,3 +304,10 @@
 0304-public-research-assets.patch
 0305-upstream-security-version-208.patch
 0306-codacy-local-ai-cleanup.patch
+0307-align-mobile-settings-and-expanded-forms.patch
+0308-align-mobile-settings-version-248.patch
+0309-fix-android-native-test-support-visibility.patch
+0310-annotate-android-update-network-249.patch
+0311-allocate-android-update-storage-250.patch
+0312-unify-mobile-settings-and-handle-unloaded-tabs-252.patch
+0313-fix-mobile-settings-return-and-platform-copy-255.patch

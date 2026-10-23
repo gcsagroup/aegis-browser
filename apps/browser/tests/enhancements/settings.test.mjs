@@ -152,7 +152,8 @@ test('设置模式显示完整助手配置，移除隐藏任务输入焦点，�
     w.initializeSettingsPresentation();
     const style = w.document.createElement('style');
     const css = read('aegis_agent/agent.css');
-    style.textContent = css.split('/* 桌面全局配置集中到设置中心')[1].split('*/')[1] +
+    // 提取完整规则区段；后续中文注释不得被截成未闭合注释。
+    style.textContent = css.slice(css.indexOf('/* 桌面全局配置集中到设置中心'), css.indexOf('body.initializing main')) +
         css.slice(css.indexOf('#reading-view label:'), css.indexOf('#reading-tabs span'));
     w.document.head.append(style);
     assert.equal(w.getComputedStyle(w.element('reading-minim')).width, '16px');

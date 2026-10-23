@@ -117,7 +117,10 @@
 <template is="dom-if" if="[[isMode_(mode, 'tools')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=tools" title="$i18n{aegisToolsTitle}"></iframe></template>
 <template is="dom-if" if="[[isMode_(mode, 'ai')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=ai" title="$i18n{aegisAiTitle}"></iframe>
 <iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=1" title="$i18n{aegisAgentSettingsTitle}"></iframe></template>
-<template is="dom-if" if="[[isMode_(mode, 'experiments')]]"><iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=experiments" title="$i18n{aegisExperimentsTitle}"></iframe></template>
+<template is="dom-if" if="[[isMode_(mode, 'experiments')]]">
+  <iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=experiments" title="$i18n{aegisExperimentsTitle}"></iframe>
+  <section class="launch-row"><div><h2>阅读工作区</h2><p>打开文档、管理阅读库、翻译和批注。</p></div><a href="chrome://aegis/?workspace=reading">打开阅读工作区 →</a></section>
+</template>
 <template is="dom-if" if="[[isMode_(mode, 'reading')]]">
   <p id="result" role="status" aria-live="polite"></p>
   <section><div class="section-heading row"><h2>默认阅读外观</h2><button id="reading-reset">恢复默认外观</button></div>

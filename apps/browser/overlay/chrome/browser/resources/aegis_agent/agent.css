@@ -1055,3 +1055,60 @@ body.reading-workspace-only main > #reading-ai-settings[open] { display:block !i
 
 [data-search-match] { outline: 2px solid #3986ec;
  outline-offset: 4px; }
+
+/* 独立设置页保留原控件，隐藏工作区导航和无关表单。 */
+.mobile-settings-back { display: inline-block;
+ width: fit-content;
+ min-height: 44px;
+ padding: 10px 0;
+ color: var(--primary); }
+
+body[data-mobile-settings] main > :not(.hero):not(.mobile-settings-back) { display: none !important; }
+
+body[data-mobile-settings='reading'] main > #reading-ai-settings,
+body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
+
+body[data-mobile-settings] .hero { align-items: flex-start; }
+
+body[data-mobile-settings] .hero h1 { font-size: 1.5rem; }
+
+body[data-mobile-settings] .hero .status { display: none; }
+
+body[data-mobile-settings] details.card { min-width: 0; }
+
+body[data-mobile-settings] details.card > label { display: flex;
+ align-items: flex-start;
+ gap: 12px; }
+
+body[data-mobile-settings] details.card > label > input[type='checkbox'] { flex: none;
+ width: 20px; }
+
+body.mobile-agent-shell {
+  --bg: #f8f9fa;
+ --surface: #fff;
+ --surface-strong: #fff;
+ --text: #202124;
+  --muted: #5f6368;
+ --line: #dadce0;
+ --primary: #1a73e8;
+ --primary-hover: #1967d2;
+  --shadow: none;
+ background: var(--bg);
+}
+@media (prefers-color-scheme: dark) {
+  body.mobile-agent-shell {
+    --bg: #202124;
+ --surface: #292a2d;
+ --surface-strong: #292a2d;
+ --text: #e8eaed;
+    --muted: #9aa0a6;
+ --line: #3c4043;
+ --primary: #8ab4f8;
+ --primary-hover: #aecbfa;
+  }
+}
+
+/* 嵌入实验设置的跳转由主设置页提供，避免不受信任子页的导航被阻止。 */
+body.settings-only[data-settings-section='experiments'] .reading-experiment-link {
+  display: none;
+}

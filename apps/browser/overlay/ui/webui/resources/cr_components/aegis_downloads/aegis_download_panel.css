@@ -224,3 +224,24 @@ button:disabled {
     min-height: 44px;
   }
 }
+
+/* 已有外层卡片时沿用其边界，避免工作区里的双重缩进。 */
+:host([embedded]) {
+  width: 100%;
+  margin: 0;
+}
+
+:host([embedded]) .card {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+:host([embedded]) .header {
+  padding: 12px 0;
+}
+
+:host([embedded]) .composer,
+:host([embedded]) .task {
+  padding-inline: 0;
+}

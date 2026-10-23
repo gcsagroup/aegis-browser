@@ -651,15 +651,23 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
   const base::Value& callback_id = args[0];
   base::DictValue status = BuildStatus();
 #if BUILDFLAG(IS_ANDROID)
+  const std::string section = args.size() > 1 && args[1].is_string()
+      ? args[1].GetString() : std::string();
+  const bool reading_settings = section == "reading" || section == "experiments" ||
+                                section == "workspace";
+  const char* suffix = section == "reading" ? "?mobileSettings=reading" :
+      section == "experiments" ? "?mobileSettings=experiments" :
+      section == "workspace" ? "?view=reading" : "";
   Profile* profile = Profile::FromWebUI(web_ui());
   if (!aegis::IsAegisProfileSupported(profile) ||
       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
-      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
+      (!reading_settings &&
+       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled))) {
     status.Set("ok", false);
     status.Set("error", "Enable Browser Agent before opening it");
   } else {
     web_ui()->GetWebContents()->GetController().LoadURL(
-        GURL(chrome::kChromeUIUntrustedAegisAgentURL), content::Referrer(),
+        GURL(std::string(chrome::kChromeUIUntrustedAegisAgentURL) + suffix), content::Referrer(),
         ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
     status.Set("ok", true);
   }

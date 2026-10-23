@@ -1,3 +1,4 @@
+import {initializeMobileAgentSettings} from './mobile_settings.js';
 // Copyright 2026 GCSA
 
 import '/strings.m.js';
@@ -2118,6 +2119,11 @@ try {
   proxy = BrowserProxy.getInstance();
   bindActions();
   const reading = new ReadingWorkspace(proxy);
+  if (loadTimeData.getBoolean('isAndroid')) {
+    initializeMobileAgentSettings(() => reading.refresh(), () => {
+      activeView = 'reading'; renderView();
+    }, () => { void proxy.handler.showProtection(); });
+  }
   initializeSettingsPresentation();
   window.addEventListener('beforeunload', event => {
     const form = JSON.stringify([element<HTMLSelectElement>('model-provider').value, element<HTMLInputElement>('model-base-url').value, element<HTMLInputElement>('model-name').value]);

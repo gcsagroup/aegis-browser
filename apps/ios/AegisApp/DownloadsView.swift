@@ -163,12 +163,16 @@ struct DownloadsView: View {
 
     private var newDownloadSection: some View {
         Section("新建下载") {
-            TextField("文件链接", text: $address).keyboardType(.URL)
-                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("download-url")
-                .focused($editing, equals: .address)
-            TextField("预期 SHA-256（可选）", text: $expectedHash)
-                .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("download-hash")
-                .focused($editing, equals: .hash)
+            SettingsField("文件链接") {
+                TextField("文件链接", text: $address).keyboardType(.URL)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("download-url")
+                    .focused($editing, equals: .address)
+            }
+            SettingsField("预期 SHA-256（可选）") {
+                TextField("预期 SHA-256（可选）", text: $expectedHash)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("download-hash")
+                    .focused($editing, equals: .hash)
+            }
             DisclosureGroup("备用镜像（每行一个）") {
                 TextField("备用文件链接", text: $mirrorAddresses, axis: .vertical)
                     .lineLimit(2...6).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -220,16 +224,16 @@ struct DownloadsView: View {
     private var storageSection: some View {
         Section {
             DisclosureGroup("下载设置与存储") {
-                Picker("同时下载数量", selection: Binding(get: { downloads.maximumConcurrentDownloads }, set: { downloads.setConcurrencyLimit($0) })) {
+                SettingsPicker("同时下载数量", selection: Binding(get: { downloads.maximumConcurrentDownloads }, set: { downloads.setConcurrencyLimit($0) }), value: String(localized: "\(downloads.maximumConcurrentDownloads) 个任务")) {
                     ForEach(1...4, id: \.self) { Text("\($0) 个任务").tag($0) }
                 }.accessibilityIdentifier("download-concurrency")
                 Toggle("允许蜂窝网络下载", isOn: transferBinding(\.allowsCellular))
                 Toggle("允许按流量计费的网络", isOn: transferBinding(\.allowsExpensive))
                 Toggle("允许低数据模式下载", isOn: transferBinding(\.allowsConstrained))
-                Picker("单文件容量上限", selection: Binding(get: { downloads.transferPreferences.boundedMaximumBytes }, set: { value in
+                SettingsPicker("单文件容量上限", selection: Binding(get: { downloads.transferPreferences.boundedMaximumBytes }, set: { value in
                     var next = downloads.transferPreferences; next.maximumBytes = value
                     do { try downloads.setTransferPreferences(next) } catch { self.error = error.localizedDescription }
-                })) {
+                }), value: ByteCountFormatter.string(fromByteCount: downloads.transferPreferences.boundedMaximumBytes, countStyle: .file)) {
                     Text("100 MB").tag(Int64(100_000_000)); Text("500 MB").tag(Int64(500_000_000))
                     Text("1 GB").tag(Int64(1_000_000_000)); Text("5 GB").tag(Int64(5_000_000_000))
                 }.accessibilityIdentifier("download-size-limit")
