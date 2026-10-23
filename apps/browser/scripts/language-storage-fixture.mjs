@@ -16,7 +16,7 @@ const rows = version => ['fr', 'de'].flatMap(targetLanguage => ['model', 'lex', 
     decompressedSize: bytes.length, decompressedHash: digest(bytes),
     attachment: {location: name, size: compressed.stdout.length, hash: digest(compressed.stdout)}};
 }));
-const manifests = {1: rows(1), 2: rows(2)};
+const manifests = new Map([[1, rows(1)], [2, rows(2)]]);
 let version = 1, fault = '', report;
 const browserTest = `
 const results = [];
@@ -111,7 +111,7 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/probe-worker.js') {response.end('postMessage("ready")');return;}
     if (url.pathname === '/test.mjs') {response.end(browserTest);return;}
     if (url.pathname === '/fixture-worker.mjs') {response.end(wrapper);return;}
-    if (url.pathname === '/local_ai/translation_manifest.json') {response.end(JSON.stringify(manifests[version]));return;}
+    if (url.pathname === '/local_ai/translation_manifest.json') {response.end(JSON.stringify(manifests.get(version)));return;}
     if (url.pathname.startsWith('/local_ai/download/')) {
       const bytes=assets.get(url.pathname.split('/').at(-1));
       if (!bytes) {response.writeHead(404);response.end();return;}

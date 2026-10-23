@@ -51,7 +51,7 @@ async function savePack(pack, files, remove = false) {
   const metadata = await readEntries('packs', all.map(value => value.id));
   const previous = metadata[all.findIndex(value => value.id === pack.id)];
   const shared = new Set(all.filter(value => value.id !== pack.id).flatMap(value => value.rows.map(row => row.decompressedHash)));
-  metadata.forEach((value, index) => { if (all[index].id !== pack.id) value?.rows?.forEach(row => shared.add(row.decompressedHash)); });
+  metadata.forEach((value, index) => { if (all.at(index).id !== pack.id) value?.rows?.forEach(row => shared.add(row.decompressedHash)); });
   const db = await openStore();
   return await (async () => {
     await new Promise((resolve, reject) => {
@@ -63,7 +63,7 @@ async function savePack(pack, files, remove = false) {
       }
       if (remove) transaction.objectStore('packs').delete(pack.id);
       else {
-        pack.rows.forEach((row, index) => store.put(files[index], row.decompressedHash));
+        pack.rows.forEach((row, index) => store.put(files.at(index), row.decompressedHash));
         transaction.objectStore('packs').put({version: pack.version, rows: pack.rows}, pack.id);
       }
       transaction.oncomplete = resolve;
@@ -137,9 +137,10 @@ function translateWithMarkers(translator, models, paragraph, markerPrefix) {
   // 译文必须原样保留每个标记且只出现一次，否则拒绝保存，避免代码或链接被改写。
   let prefix = markerPrefix;
   while (paragraph.includes(prefix)) prefix += '0/';
-  const protectedText = [];
+  const protectedText = new Map();
   const input = paragraph.replace(/(```[\s\S]*?```|`[^`\n]+`|https?:\/\/[^\s<>\])}]+)/g, text => {
-    const id = protectedText.push(text) - 1;
+    const id = protectedText.size;
+    protectedText.set(id, {text, count: 0});
     return prefix + id;
   });
   const pieces = [];
@@ -150,14 +151,18 @@ function translateWithMarkers(translator, models, paragraph, markerPrefix) {
     pieces.push(output.target.text);
   }
   const output = pieces.join(['zh', 'ja'].includes(to) ? '' : ' ');
-  const seen = Array(protectedText.length).fill(0);
-  const marker = new RegExp(prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)\\b', 'g');
-  const restored = output.replace(marker, (_, id) => {
-    const index = Number(id);
-    if (!Object.hasOwn(protectedText, index)) throw Error('translation_incomplete');
-    ++seen[index]; return protectedText[index];
-  });
-  if (seen.some(count => count !== 1)) throw Error('translation_incomplete');
+  // 按本次精确前缀分段，数字后面的正文保留原样，不把 /0/ 等后缀误当成另一组前缀。
+  const restored = output.split(prefix).map((part, index, parts) => {
+    if (index === 0) return part;
+    // 分段末尾仍要看到下一前缀的首字符，避免相邻标记凭空得到数字词边界。
+    const following = index < parts.length - 1 ? prefix.charAt(0) : '';
+    const match = /^\d+\b/.exec(part + following);
+    if (!match) return prefix + part;
+    const id = match[0], entry = protectedText.get(Number(id));
+    if (!entry) throw Error('translation_incomplete');
+    ++entry.count; return entry.text + part.slice(id.length);
+  }).join('');
+  if (Array.from(protectedText.values()).some(entry => entry.count !== 1)) throw Error('translation_incomplete');
   return restored;
 }
 function translateParagraph(translator, models, paragraph) {
@@ -201,11 +206,11 @@ async function execute(request) {
   await translator.initialize({});
   const loaded = [];
   return await (async () => {
-    for (let index = 0; index < packs.length; ++index) {
-      const {rows, files} = installedPacks[index], {from, to} = packs[index];
+    for (const [index, pack] of packs.entries()) {
+      const {rows, files} = installedPacks.at(index), {from, to, beamSize} = pack;
       const parts = Object.fromEntries(rows.map((row, i) => [row.fileType, files[i]]));
       translator.loadTranslationModel({from, to}, {model: parts.model, shortlist: parts.lex,
-        vocabs: parts.vocab ? [parts.vocab] : [parts.srcvocab, parts.trgvocab], qualityModel: null, config: {'beam-size': packs[index].beamSize, 'skip-cost': packs[index].beamSize === 1}});
+        vocabs: parts.vocab ? [parts.vocab] : [parts.srcvocab, parts.trgvocab], qualityModel: null, config: {'beam-size': beamSize, 'skip-cost': beamSize === 1}});
       loaded.push({from, to});
     }
     const to = packs.at(-1).to, translations = [];

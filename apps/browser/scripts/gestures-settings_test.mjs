@@ -2,20 +2,22 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
+import {dirname, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
-const base = new URL('../overlay/chrome/browser/resources/aegis/', import.meta.url);
+const base = resolve(dirname(fileURLToPath(import.meta.url)), '../overlay/chrome/browser/resources/aegis/');
 const ts = createRequire(new URL('../../../packages/core/package.json', import.meta.url))('typescript');
-const source = readFileSync(new URL('gestures.ts', base), 'utf8').split("if (document.getElementById('practice'))")[0];
+const source = readFileSync(resolve(base, 'gestures.ts'), 'utf8').split("if (document.getElementById('practice'))")[0];
 const code = ts.transpileModule(source, {compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS}}).outputText;
 const defaults = {enabled: true, showTrail: true, threshold: 24, bindings: {L: 'back'}, disabledSites: []};
 const actions = [{id: 'back', label: '后退', pdfOnly: false}, {id: 'forward', label: '前进', pdfOnly: false}, {id: 'close_tab', label: '关闭标签页', pdfOnly: false}];
 const flush = () => new Promise(resolve => setImmediate(resolve));
-async function harness(failedRead = false) {
-  const dom = new JSDOM(readFileSync(new URL('gestures.html', base), 'utf8'));
+async function harness(failedRead = false, useShadow = false) {
+  const dom = new JSDOM(readFileSync(resolve(base, 'gestures.html'), 'utf8'));
   const {window} = dom, {document} = window;
   let saved = structuredClone(defaults), pending = null, hold = false;
-  const calls = [], regions = [], exports = {};
+  const calls = [], regions = [], dirty = [], exports = {};
   const snapshot = () => ({settings: structuredClone(saved), defaults: structuredClone(defaults), actions});
   const send = async (method, next, expected) => {
     if (method === 'aegisGetGestureSettings') { if (failedRead) throw Error('读取失败'); return snapshot(); }
@@ -34,10 +36,16 @@ async function harness(failedRead = false) {
     ResizeObserver: class {observe() {} disconnect() {}}, chrome: {send: (...args) => regions.push(args)},
     require: () => ({sendWithPromise: send}),
   });
-  const cleanup = exports.initializeGestures(document); await flush();
-  return {window, document, calls, regions, cleanup, get saved() {return saved;},
+  let view = document;
+  if (useShadow) {
+    const nodes = [...document.body.children], host = document.createElement('div');
+    document.body.append(host); view = host.attachShadow({mode: 'open'}); view.append(...nodes);
+    host.addEventListener('aegis-form-dirty', event => dirty.push(event.detail));
+  }
+  const cleanup = exports.initializeGestures(view); await flush();
+  return {window, document: view, calls, regions, dirty, cleanup, get saved() {return saved;},
     get pending() {return pending;}, hold: () => {hold = true;}, goodRead: () => {failedRead = false;},
-    el: id => document.getElementById(id),
+    el: id => view.getElementById(id),
   };
 }
 const h = await harness();
@@ -77,4 +85,33 @@ assert.equal(failed.el('enabled').disabled, true); assert.equal(failed.el('reloa
 assert.equal(failed.el('reloadSettings').disabled, false, '读取失败后必须能点击重试');
 failed.goodRead(); failed.el('reloadSettings').click(); await flush();
 assert.equal(failed.el('enabled').disabled, false); failed.cleanup();
-console.log('手势真实 DOM 回归通过：绘制、取消、无默认动作、分组保存、保留草稿、失败重试和初读失败。');
+
+// 两处同时编辑时，后一个提交必须使用前一个成功回包作为基线；失败不清草稿。
+const queued = await harness(false, true);
+const queuedEvent = node => node.dispatchEvent(new queued.window.Event('change', {bubbles: true}));
+const first = queued.document.querySelector('[data-pattern="L"]');
+click(button(first, '编辑'));
+first.querySelector('select').value = 'forward'; queuedEvent(first.querySelector('select'));
+queued.hold(); click(button(first, '保存')); await flush();
+assert.deepEqual(queued.calls[0].expected.bindings, {L: 'back'});
+click(queued.document.querySelector('[data-direction="U"]')); click(queued.document.querySelector('[data-direction="D"]'));
+queued.el('practiceAction').value = 'close_tab'; queuedEvent(queued.el('practiceAction')); click(queued.el('savePractice')); await flush();
+assert.equal(queued.calls.length, 1, '第二处保存必须排队');
+queued.pending.resolve(); await flush();
+assert.equal(queued.calls.length, 2);
+assert.deepEqual(queued.calls[1].expected.bindings, {L: 'forward'});
+assert.deepEqual(queued.calls[1].next.bindings, {L: 'forward', UD: 'close_tab'});
+queued.pending.reject(Error('保存失败')); await flush();
+assert.deepEqual(structuredClone(queued.saved.bindings), {L: 'forward'});
+assert.equal(queued.el('practiceAction').value, 'close_tab');
+assert.equal(queued.dirty.at(-1), true, '未保存动作仍触发离页保护');
+click(queued.el('savePractice')); await flush(); queued.pending.resolve(); await flush();
+assert.deepEqual(structuredClone(queued.saved.bindings), {L: 'forward', UD: 'close_tab'});
+assert.equal(queued.dirty.at(-1), false, '成功回读后不保留过期脏状态');
+const removed = queued.document.querySelector('[data-pattern="UD"]');
+click(button(removed, '移除')); await flush(); queued.pending.resolve(); await flush();
+assert.equal(Object.hasOwn(queued.saved.bindings, 'UD'), false);
+click(queued.el('undoBinding')); await flush(); queued.pending.resolve(); await flush();
+assert.deepEqual(structuredClone(queued.saved.bindings), {L: 'forward', UD: 'close_tab'});
+queued.cleanup();
+console.log('手势真实 DOM 回归通过：绘制、取消、分组草稿、串行基线、失败重试、撤销、脏状态和初读失败。');

@@ -41,7 +41,12 @@ export class SettingsAegisPageElement extends PolymerElement {
   };
   protected isMode_(mode: string, expected: string): boolean { return mode === expected; }
   protected pageTitle_(mode: string): string {
-    return loadTimeData.getString({home: 'aegisSettingsTitle', ai: 'aegisAiTitle', experiments: 'aegisExperimentsTitle', downloads: 'aegisDownloadsTitle', tools: 'aegisToolsTitle', enhancements: 'aegisEnhancementsTitle', reading: 'aegisReadingTitle', gestures: 'aegisGesturesTitle', privacy: 'aegisPrivacyTitle'}[mode] || 'aegisEnhancementsTitle');
+    const titles = new Map([
+      ['home', 'aegisSettingsTitle'], ['ai', 'aegisAiTitle'], ['experiments', 'aegisExperimentsTitle'],
+      ['downloads', 'aegisDownloadsTitle'], ['tools', 'aegisToolsTitle'], ['enhancements', 'aegisEnhancementsTitle'],
+      ['reading', 'aegisReadingTitle'], ['gestures', 'aegisGesturesTitle'], ['privacy', 'aegisPrivacyTitle'],
+    ]);
+    return loadTimeData.getString(titles.get(mode) || 'aegisEnhancementsTitle');
   }
   override connectedCallback() {
     super.connectedCallback();
@@ -79,7 +84,7 @@ export class SettingsAegisPageElement extends PolymerElement {
   private async forwardRequest_(frame: HTMLIFrameElement, data: {id?: unknown, method?: unknown, args?: unknown}) {
     const {id, method, args} = data;
     if (typeof id !== 'string' || !/^settings-\d+$/.test(id) || typeof method !== 'string' || !Array.isArray(args)) return;
-    const signatures: Record<string, string[]> = {
+    const signatures = new Map<string, string[]>(Object.entries({
       getStatus: [], setModuleEnabled: ['string', 'boolean'],
       openBrowserAgent: [], updateFilterLists: [], summarizeActiveTab: [],
       completePreparedSummary: ['string', 'object'], cancelPreparedSummary: ['string'],
@@ -88,11 +93,13 @@ export class SettingsAegisPageElement extends PolymerElement {
       startMetalinkDownload: ['string'], parseTorrent: ['string'],
       parseMagnet: ['string'], startTorrent: ['string', 'array', 'object', 'boolean'],
       getTorrentStatus: ['string'], controlTorrent: ['string', 'string'],
-    };
-    const signature = Object.hasOwn(signatures, method) ? signatures[method] : undefined;
-    const valid = signature && args.length === signature.length && signature.every((kind, i) =>
-      kind === 'array' ? Array.isArray(args[i]) : kind === 'object' ?
-        args[i] !== null && typeof args[i] === 'object' && !Array.isArray(args[i]) : typeof args[i] === kind);
+    }));
+    const signature = signatures.get(method);
+    const valid = signature && args.length === signature.length && signature.every((kind, i) => {
+      const value = args.at(i);
+      return kind === 'array' ? Array.isArray(value) : kind === 'object' ?
+        value !== null && typeof value === 'object' && !Array.isArray(value) : typeof value === kind;
+    });
     const source = frame.contentWindow;
     const reply = (response: object) => {
       if (this.isConnected && frame.isConnected && source === frame.contentWindow) {
@@ -204,8 +211,8 @@ export class SettingsAegisPageElement extends PolymerElement {
   }
   private initializeReading_() {
     const prefs = this.state_.readingPreferences || defaultReading;
-    for (const key of ['theme', 'family', 'font', 'spacing', 'width'] as const) {
-      const control = this.input_('reading-' + key); control.value = String(prefs[key]);
+    for (const [key, value] of [['theme', prefs.theme], ['family', prefs.family], ['font', prefs.font], ['spacing', prefs.spacing], ['width', prefs.width]] as const) {
+      const control = this.input_('reading-' + key); control.value = String(value);
       control.onchange = () => { this.previewReading_(); void this.saveReading_(); };
     }
     this.element_('preview-link').onclick = event => { event.preventDefault(); };
@@ -266,7 +273,7 @@ export class SettingsAegisPageElement extends PolymerElement {
     button.disabled = true; this.input_('markdown-origin').disabled = true;
     try {
       const origin = this.source_(this.input_('markdown-origin').value);
-      const expected = this.state_.markdownSites?.[origin] ?? null;
+      const expected = new Map(Object.entries(this.state_.markdownSites || {})).get(origin) ?? null;
       this.state_ = await this.request_({op: 'markdown-site', origin, enabled: true, expected});
       this.formDirty_ = false; form.hidden = true; this.input_('markdown-origin').value = '';
       this.input_('markdown-search').value = ''; this.renderMarkdownSites_();
@@ -346,7 +353,7 @@ export class SettingsAegisPageElement extends PolymerElement {
     this.element_<HTMLSelectElement>('rule-tab').disabled = !!rule;
     this.element_<HTMLSelectElement>('rule-tab').value = '';
     this.element_('rule-inherited').hidden = true;
-    for (const key of ['menu', 'copy', 'debug', 'subdomains', 'disabled'] as const) this.input_('rule-' + key).checked = rule?.[key] || false;
+    for (const [key, value] of [['menu', rule?.menu], ['copy', rule?.copy], ['debug', rule?.debug], ['subdomains', rule?.subdomains], ['disabled', rule?.disabled]] as const) this.input_('rule-' + key).checked = value || false;
     this.input_('rule-origin').focus();
   }
   private async saveRule_() {
@@ -354,8 +361,12 @@ export class SettingsAegisPageElement extends PolymerElement {
     const controls = [...this.element_('rule-editor').querySelectorAll<HTMLInputElement>('input, select, button')];
     controls.forEach(control => control.disabled = true);
     try {
-      const rule: SiteRule = {origin: this.source_(this.input_('rule-origin').value), menu: false, copy: false, debug: false, subdomains: false, disabled: false};
-      for (const key of ['menu', 'copy', 'debug', 'subdomains', 'disabled'] as const) rule[key] = this.input_('rule-' + key).checked;
+      const rule: SiteRule = {
+        origin: this.source_(this.input_('rule-origin').value),
+        menu: this.input_('rule-menu').checked, copy: this.input_('rule-copy').checked,
+        debug: this.input_('rule-debug').checked, subdomains: this.input_('rule-subdomains').checked,
+        disabled: this.input_('rule-disabled').checked,
+      };
       const old = this.state_.sites?.find(item => item.origin === rule.origin) || null;
       if (!this.editingRule_ && old) { this.formDirty_ = false; this.editRule_(old); this.status_('rule-error', '此网站已存在，请编辑原规则。'); return; }
       this.state_ = await this.request_({op: 'site-save', rule, expected: this.editingRule_});
