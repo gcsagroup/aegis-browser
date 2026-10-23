@@ -77,3 +77,20 @@ test('网站规则继承说明、独立来源保存和重复项编辑不覆盖�
   assert.equal(calls.length,1); assert.match(el('rule-error').textContent,/已存在/);
   assert.equal(el('rule-origin').readOnly,true); assert.equal(el('rule-tab').disabled,true); dom.window.close();
 });
+
+test('网站规则五个开关的全部组合编辑后原样保存，不串写其他字段', async () => {
+  const keys = ['menu', 'copy', 'debug', 'subdomains', 'disabled'];
+  for (let mask = 0; mask < 32; ++mask) {
+    const rule = {origin: 'https://example.com', ...Object.fromEntries(keys.map((key, bit) => [key, Boolean(mask & (1 << bit))]))};
+    const {dom,h,el,calls} = harness({sites:[rule]});
+    h.initializeRules_(); h.editRule_(rule);
+    for (const [key, value] of Object.entries(rule)) {
+      if (key !== 'origin') assert.equal(el('rule-' + key).checked, value);
+    }
+    await h.saveRule_();
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].rule, rule);
+    assert.deepEqual(calls[0].expected, rule);
+    dom.window.close();
+  }
+});
