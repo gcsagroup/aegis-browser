@@ -41,8 +41,12 @@
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/common/referrer.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -673,7 +677,7 @@ void AegisAgentPageHandler::ListResearchTabs(
     item->tab_id = tab->GetHandle().raw_value();
     item->url = url.spec();
     item->title = aegis::agent::BoundedAgentObservationText(
-        base::UTF16ToUTF8(tab->GetContents()->GetTitle()), 256);
+        base::UTF16ToUTF8(tab->GetTitle()), 256);
     research_selection_urls_[item->tab_id] = url;
     result.push_back(std::move(item));
   }
@@ -737,15 +741,21 @@ void AegisAgentPageHandler::CreateSelectedTask(
 }
 
 void AegisAgentPageHandler::ShowProtection() {
+#if BUILDFLAG(IS_ANDROID)
+  // 只导航发起调用的助手页，避免返回设置时反复增加标签或替换其他标签。
+  auto* contents = ui_ ? ui_->web_ui()->GetWebContents() : nullptr;
+  if (contents && contents->GetBrowserContext() == profile_) {
+    contents->GetController().LoadURL(
+        GURL("chrome://aegis/"), content::Referrer(),
+        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+  }
+#else
   auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
   if (list && browser_->GetProfile() == profile_) {
-#if BUILDFLAG(IS_ANDROID)
-    list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
-#else
     list->OpenTab(GURL("chrome://settings/aegisPrivacy"),
                   list->GetTabCount(), true);
-#endif
   }
+#endif
 }
 
 void AegisAgentPageHandler::OpenResearchSource(
@@ -1717,7 +1727,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
               task->AllowsTab(source_tab->GetHandle().raw_value()) &&
               source_tab->GetURL() == GURL(source)) {
             title = aegis::agent::BoundedAgentObservationText(
-                base::UTF16ToUTF8(source_tab->GetContents()->GetTitle()), 256);
+                base::UTF16ToUTF8(source_tab->GetTitle()), 256);
             break;
           }
         }
