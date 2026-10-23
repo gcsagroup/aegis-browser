@@ -8,7 +8,7 @@ const root = new URL('../../overlay/chrome/browser/resources/settings/aegis_page
 const source = fs.readFileSync(new URL('aegis_page.ts', root), 'utf8');
 const tree = ts.createSourceFile('page.ts', source, ts.ScriptTarget.Latest, true);
 const cls = tree.statements.find(node => ts.isClassDeclaration(node));
-const names = ['element_','message_','status_','input_','button_','source_','initializeReading_','previewReading_',
+const names = ['checkedRoot_','element_','message_','status_','input_','button_','source_','initializeReading_','previewReading_',
   'saveReading_','addMarkdownSite_','renderMarkdownSites_','initializeRules_','ruleScope_','editRule_','saveRule_','renderRules_'];
 const methods = cls.members.filter(node => names.includes(node.name?.getText(tree)));
 assert.equal(methods.length, names.length);
