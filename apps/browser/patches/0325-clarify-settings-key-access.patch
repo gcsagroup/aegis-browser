@@ -139,7 +139,7 @@ index 75107dba73f9d882bb3f8042826b307e4ed58ce2..7caded35d7dbfce70478c22dd433d4ce
  const make = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '') => {
    const node = document.createElement(tag); node.textContent = text; return node;
 diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
-index 603e39a4f7bf9b38c03d418faac80507c2b76ca1..6e68c80df626e17ce53101c3c5b048b7cfc5b799 100644
+index 603e39a4f7bf9b38c03d418faac80507c2b76ca1..7705f969edb07e18e4b9ac2ccc10505d775e2024 100644
 --- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
 +++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
 @@ -6,8 +6,8 @@
@@ -148,13 +148,13 @@ index 603e39a4f7bf9b38c03d418faac80507c2b76ca1..6e68c80df626e17ce53101c3c5b048b7
      "worker.js": {
 -      "bytes": 12155,
 -      "sha256": "ba5a9a498dadf319fc1a613f11e84b8a4cb725ac4a10aec2d36971585104e6b9"
-+      "bytes": 12330,
-+      "sha256": "e7650328e814f5978da708f0311af0fd1eb938c289b46ea40e8297a0b19e6f64"
++      "bytes": 12528,
++      "sha256": "e706f358108a0dcd10fcaa967dc98e02494652c2d92bd23a4f76531b2577d559"
      },
      "research.js": {
        "bytes": 6934,
 diff --git a/chrome/browser/resources/aegis_agent/local_ai/worker.js b/chrome/browser/resources/aegis_agent/local_ai/worker.js
-index 972d4a35f25e2beaa1f25f2dee331f82b2e51ab3..34717a21c943108fa63e5fc86af0adae82733af7 100644
+index 972d4a35f25e2beaa1f25f2dee331f82b2e51ab3..dd9654b1b949f700bc843c8647465fd62f309f07 100644
 --- a/chrome/browser/resources/aegis_agent/local_ai/worker.js
 +++ b/chrome/browser/resources/aegis_agent/local_ai/worker.js
 @@ -51,7 +51,7 @@ async function savePack(pack, files, remove = false) {
@@ -188,7 +188,7 @@ index 972d4a35f25e2beaa1f25f2dee331f82b2e51ab3..34717a21c943108fa63e5fc86af0adae
      return prefix + id;
    });
    const pieces = [];
-@@ -150,14 +151,16 @@ function translateWithMarkers(translator, models, paragraph, markerPrefix) {
+@@ -150,14 +151,18 @@ function translateWithMarkers(translator, models, paragraph, markerPrefix) {
      pieces.push(output.target.text);
    }
    const output = pieces.join(['zh', 'ja'].includes(to) ? '' : ' ');
@@ -201,9 +201,11 @@ index 972d4a35f25e2beaa1f25f2dee331f82b2e51ab3..34717a21c943108fa63e5fc86af0adae
 -  });
 -  if (seen.some(count => count !== 1)) throw Error('translation_incomplete');
 +  // 按本次精确前缀分段，数字后面的正文保留原样，不把 /0/ 等后缀误当成另一组前缀。
-+  const restored = output.split(prefix).map((part, index) => {
++  const restored = output.split(prefix).map((part, index, parts) => {
 +    if (index === 0) return part;
-+    const match = /^\d+\b/.exec(part);
++    // 分段末尾仍要看到下一前缀的首字符，避免相邻标记凭空得到数字词边界。
++    const following = index < parts.length - 1 ? prefix.charAt(0) : '';
++    const match = /^\d+\b/.exec(part + following);
 +    if (!match) return prefix + part;
 +    const id = match[0], entry = protectedText.get(Number(id));
 +    if (!entry) throw Error('translation_incomplete');
@@ -213,7 +215,7 @@ index 972d4a35f25e2beaa1f25f2dee331f82b2e51ab3..34717a21c943108fa63e5fc86af0adae
    return restored;
  }
  function translateParagraph(translator, models, paragraph) {
-@@ -201,11 +204,11 @@ async function execute(request) {
+@@ -201,11 +206,11 @@ async function execute(request) {
    await translator.initialize({});
    const loaded = [];
    return await (async () => {

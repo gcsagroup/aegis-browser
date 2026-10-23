@@ -152,9 +152,11 @@ function translateWithMarkers(translator, models, paragraph, markerPrefix) {
   }
   const output = pieces.join(['zh', 'ja'].includes(to) ? '' : ' ');
   // 按本次精确前缀分段，数字后面的正文保留原样，不把 /0/ 等后缀误当成另一组前缀。
-  const restored = output.split(prefix).map((part, index) => {
+  const restored = output.split(prefix).map((part, index, parts) => {
     if (index === 0) return part;
-    const match = /^\d+\b/.exec(part);
+    // 分段末尾仍要看到下一前缀的首字符，避免相邻标记凭空得到数字词边界。
+    const following = index < parts.length - 1 ? prefix.charAt(0) : '';
+    const match = /^\d+\b/.exec(part + following);
     if (!match) return prefix + part;
     const id = match[0], entry = protectedText.get(Number(id));
     if (!entry) throw Error('translation_incomplete');
