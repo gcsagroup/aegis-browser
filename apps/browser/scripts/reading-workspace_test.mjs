@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
+import {dirname, resolve} from 'node:path';
 import vm from 'node:vm';
 import {fileURLToPath} from 'node:url';
 import {JSDOM} from 'jsdom';
-const root = fileURLToPath(new URL('../../../', import.meta.url));
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const ts = createRequire(root + '/packages/core/package.json')('typescript');
 const base = root + '/apps/browser/overlay/chrome/browser/resources/aegis_agent/';
 const dom = new JSDOM(readFileSync(base + 'agent.html', 'utf8'));

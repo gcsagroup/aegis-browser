@@ -49,7 +49,7 @@ export function initializeMobileSettings(
   nav.className = 'mobile-settings-nav';
   nav.setAttribute('aria-label', title);
   header.after(nav);
-  const pages = new Map<string, HTMLElement>();
+  const pages: Map<string, HTMLElement> = new Map();
   for (const group of groups) {
     const link = document.createElement('a');
     link.href = '#' + group.id;
@@ -101,8 +101,8 @@ export function initializeMobileSettings(
   main.querySelector<HTMLElement>(':scope > .note')?.setAttribute('hidden', '');
   const render = (focus: boolean) => {
     const fragment = location.hash.slice(1);
-    const legacy: Record<string, string> = {'overview-title': 'privacy', 'activity-log': 'privacy', 'fp-probe': 'privacy', 'privacy-result': 'ai'};
-    const id = legacy[fragment] || fragment;
+    const legacy = new Map([['overview-title', 'privacy'], ['activity-log', 'privacy'], ['fp-probe', 'privacy'], ['privacy-result', 'ai']]);
+    const id = legacy.get(fragment) || fragment;
     const group = groups.find(candidate => candidate.id === id);
     back.hidden = !group;
     nav.hidden = !!group;

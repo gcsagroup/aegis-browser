@@ -8,8 +8,8 @@ export function packText(zh: string, en: string, tw: string): string {
   const locale = loadTimeData.getString('aegisLocale');
   return /^zh-(TW|HK|Hant)/i.test(locale) ? tw : locale.startsWith('zh') ? zh : en;
 }
-const languageNames: Record<string, string> = {en: 'English', zh: '简体中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', ru: 'Русский'};
-const name = (code: string) => languageNames[code] || code;
+const languageNames = new Map([['en', 'English'], ['zh', '简体中文'], ['ja', '日本語'], ['ko', '한국어'], ['fr', 'Français'], ['de', 'Deutsch'], ['es', 'Español'], ['ru', 'Русский']]);
+const name = (code: string) => languageNames.get(code) || code;
 const mb = (bytes: number) => (bytes / 1000000).toFixed(1) + ' MB';
 const make = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '') => {
   const node = document.createElement(tag); node.textContent = text; return node;

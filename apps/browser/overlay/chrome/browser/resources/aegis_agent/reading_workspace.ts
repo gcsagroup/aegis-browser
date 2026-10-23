@@ -123,7 +123,7 @@ export class ReadingWorkspace {
       const response = await fetch('./local_ai/research_manifest.json');
       if (!response.ok) throw Error('unavailable');
       const manifest = await response.json() as Partial<Record<string, {bundled?: boolean}>>;
-      for (const name of ['minim', 'phishlang']) element(name + '-resource').textContent = manifest[name]?.bundled === false ?
+      for (const [name, resource] of [['minim', manifest.minim], ['phishlang', manifest.phishlang]] as const) element(name + '-resource').textContent = resource?.bundled === false ?
         packText('当前版本未包含模型资源；分发许可尚未确认，因此无法运行。开关只保存手动使用偏好，不会下载或启动分析。', 'This build does not include the model because distribution rights are unconfirmed. The toggle saves a preference only; it does not download or run analysis.', '目前版本未包含模型資源；分發許可尚未確認，因此無法執行。開關僅儲存手動使用偏好，不會下載或啟動分析。') :
         packText('模型清单已载入；手动分析时仍需校验资源。开启不会自动分析，关闭不会删除已有结果。', 'The model manifest is loaded; assets are verified when analysis is requested. Enabling does not run analysis; disabling preserves results.', '模型清單已載入；手動分析時仍需校驗資源。開啟不會自動分析，關閉不會刪除既有結果。');
     } catch { for (const name of ['minim', 'phishlang']) element(name + '-resource').textContent = packText('无法读取资源状态，请重新打开本页。', 'Cannot read resource status. Reopen this page.', '無法讀取資源狀態，請重新開啟本頁。'); }
@@ -135,8 +135,8 @@ export class ReadingWorkspace {
       const manifest = await response.json();
       const assetResponse = await fetch('./local_ai/asset_manifest.json');
       const assets = assetResponse.ok ? await assetResponse.json() : {files: {}};
-      for (const name of ['minim', 'phishlang']) {
-        if (manifest[name]?.bundled === false) continue;
+      for (const [name, resource] of [['minim', manifest.minim], ['phishlang', manifest.phishlang]] as const) {
+        if (resource?.bundled === false) continue;
         const files = name === 'minim' ? [['minim-mlp.json', manifest.minim.weights_sha256]] : [['phishlang.onnx', manifest.phishlang.onnx_sha256], ['phishlang-vocab.txt', assets.files['phishlang-vocab.txt']?.sha256]];
         element(name + '-resource').textContent = packText('正在校验本机资源…', 'Verifying local resources…', '正在校驗本機資源…');
         try {
