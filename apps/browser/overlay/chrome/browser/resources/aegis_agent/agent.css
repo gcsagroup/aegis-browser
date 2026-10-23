@@ -183,7 +183,7 @@ label {
 
 textarea,
 select,
-input:not([type='checkbox']):not([type='radio']) {
+input:not([type='checkbox'], [type='radio']) {
   background: var(--surface-strong);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -1068,7 +1068,7 @@ body.reading-workspace-only main > #reading-ai-settings[open] { display:block !i
  padding: 10px 0;
  color: var(--primary); }
 
-body[data-mobile-settings] main > :not(.hero):not(.mobile-settings-back) { display: none !important; }
+body[data-mobile-settings] main > :not(.hero, .mobile-settings-back) { display: none !important; }
 
 body[data-mobile-settings='reading'] main > #reading-ai-settings,
 body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
