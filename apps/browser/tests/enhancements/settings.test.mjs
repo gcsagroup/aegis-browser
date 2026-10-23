@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
+import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 const ts = createRequire(new URL('../../../../packages/core/package.json', import.meta.url))('typescript');
 const root = new URL('../../overlay/chrome/browser/resources/', import.meta.url);
@@ -264,6 +265,97 @@ function downloadsSettings() {
     owner[name] = new Function(compile(`return ${method.modifiers?.some(n => n.kind === ts.SyntaxKind.AsyncKeyword) ? 'async ' : ''}function(${method.parameters.map(n => n.getText(tree)).join(',')}) ${method.body.getText(tree)};`))();
   }
   return owner;
+}
+
+test('下载模板的全部事件回调保留组件上下文和实际事件控件', () => {
+  const tree = ts.createSourceFile('downloads.html.ts', read('settings/downloads_page/downloads_page.html.ts'), ts.ScriptTarget.Latest, true);
+  const callbacks = [];
+  function visit(node) {
+    if (ts.isArrowFunction(node) && ts.isBlock(node.body) && node.body.statements.length === 1) {
+      const statement = node.body.statements[0];
+      const call = ts.isExpressionStatement(statement) && statement.expression;
+      if (call && ts.isCallExpression(call) && ts.isPropertyAccessExpression(call.expression) && call.expression.expression.kind === ts.SyntaxKind.ThisKeyword) {
+        callbacks.push({node, method: call.expression.name.text, passesEvent: call.arguments.length === 1});
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(tree);
+  assert.equal(callbacks.length, 10);
+  assert.equal(new Set(callbacks.map(item => item.method)).size, 7);
+  const dom = new JSDOM();
+  const select = dom.window.document.createElement('select'), button = dom.window.document.createElement('button');
+  select.append(new dom.window.Option('自定义', 'custom'));
+  dom.window.document.body.append(select, button);
+  for (const {node, method, passesEvent} of callbacks) {
+    const calls = [];
+    const owner = Object.fromEntries([[method, function(event) { calls.push({owner: this, target: event?.currentTarget}); }]]);
+    const callback = new Function('owner', compile(`function bind() { return ${node.getText(tree)}; } return bind.call(owner);`))(owner);
+    const control = dom.window.document.querySelector(passesEvent ? 'select' : 'button');
+    const type = passesEvent ? 'change' : 'click';
+    control.addEventListener(type, callback);
+    control.dispatchEvent(new dom.window.Event(type));
+    control.removeEventListener(type, callback);
+    assert.deepEqual(calls, [{owner, target: passesEvent ? control : undefined}], method);
+  }
+  dom.window.close();
+});
+
+test('下载限速模式只接受真实选择控件，正常切换仍保存相同数值', () => {
+  const tree = ts.createSourceFile('downloads.ts', read('settings/downloads_page/downloads_page.ts'), ts.ScriptTarget.Latest, true);
+  const cls = tree.statements.find(node => ts.isClassDeclaration(node));
+  const method = cls.members.find(node => node.name?.getText(tree) === 'onAegisLimitModeChange_');
+  const dom = new JSDOM('', {runScripts: 'outside-only'});
+  const select = dom.window.document.createElement('select'), button = dom.window.document.createElement('button');
+  select.id = 'aegisDownloadMode';
+  select.append(new dom.window.Option('不限速', 'unlimited'), new dom.window.Option('自定义', 'custom'));
+  dom.window.document.body.append(select, button);
+  // 在控件所属 DOM 环境执行真实处理器，让 instanceof 检查使用同一组构造器。
+  const run = vm.runInContext(compile(`(function(event: Event) ${method.body.getText(tree)});`), dom.getInternalVMContext());
+  const saved = [], owner = {aegisTorrentDownloadLimitKib_: 128, aegisTorrentUploadLimitKib_: 64,
+    saveAegisDownloadSettings_() { saved.push([this.aegisTorrentDownloadLimitKib_, this.aegisTorrentUploadLimitKib_]); }};
+  select.value = 'unlimited'; run.call(owner, {currentTarget: select});
+  select.value = 'custom'; run.call(owner, {currentTarget: select});
+  select.id = 'aegisUploadMode'; select.value = 'unlimited'; run.call(owner, {currentTarget: select});
+  select.value = 'custom'; run.call(owner, {currentTarget: select});
+  for (const currentTarget of [null, dom.window.document.querySelector('button')]) run.call(owner, {currentTarget});
+  assert.deepEqual(saved, [[0, 64], [256, 64], [256, 0], [256, 256]]);
+  dom.window.close();
+});
+
+for (const file of ['aegis/aegis.ts', 'aegis_agent/agent.ts']) {
+  test(`${file} 搜索消息逐层拒绝伪造来源，合法搜索仍展开并定位`, () => {
+    const tree = ts.createSourceFile('settings.ts', read(file), ts.ScriptTarget.Latest, true);
+    const statement = tree.statements.find(node => ts.isExpressionStatement(node) && node.getText(tree).startsWith("window.addEventListener('message'"));
+    assert(statement);
+    const callbackName = statement.expression.arguments[1].getText(tree);
+    const callback = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.getText(tree) === callbackName);
+    assert(callback, '消息监听器使用真实的具名处理函数');
+    const dom = new JSDOM('', {runScripts: 'outside-only'});
+    const document = dom.window.document, parent = dom.window.parent;
+    const previous = document.createElement('p'), details = document.createElement('details');
+    const summary = document.createElement('summary'), label = document.createElement('label');
+    previous.dataset.searchMatch = 'true'; previous.textContent = '旧结果';
+    summary.textContent = '模型'; label.textContent = '模型密钥';
+    details.append(summary, label); document.body.append(previous, details);
+    let scrolled = 0;
+    label.scrollIntoView = () => { ++scrolled; };
+    const receive = vm.runInContext(compile(`(${callback.getText(tree)});`), dom.getInternalVMContext());
+    const valid = {source: parent, origin: 'chrome://settings', data: {type: 'aegis-settings-search', query: ' 密钥 '}};
+    for (const change of [{source: {}}, {origin: 'https://settings'}, {origin: 'chrome://settings.evil'},
+      {data: null}, {data: {type: 'other', query: '密钥'}}, {data: {type: 'aegis-settings-search', query: 1}}]) {
+      receive({...valid, ...change});
+      assert.equal(document.querySelector('[data-search-match]').textContent, '旧结果');
+      assert.equal(scrolled, 0);
+    }
+    receive(valid);
+    assert.equal(document.querySelector('[data-search-match]'), label);
+    assert.equal(document.querySelector('details').open, true);
+    assert.equal(scrolled, 1);
+    receive({...valid, data: {...valid.data, query: ''}});
+    assert.equal(document.querySelector('[data-search-match]'), null);
+    dom.window.close();
+  });
 }
 
 const initialDownloads = () => ({parallelMode: 3, reduceOnMetered: false, reduceOnBattery: true, torrentDhtEnabled: false, torrentPexEnabled: true, torrentDownloadLimitKib: 128, torrentUploadLimitKib: 64});

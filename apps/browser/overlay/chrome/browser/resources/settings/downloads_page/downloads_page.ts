@@ -322,7 +322,8 @@ export class SettingsDownloadsPageElement extends
   }
 
   protected onAegisLimitModeChange_(event: Event) {
-    const select = event.currentTarget as HTMLSelectElement;
+    const select = event.currentTarget;
+    if (!(select instanceof HTMLSelectElement)) return;
     const value = select.value === 'unlimited' ? 0 : 256;
     if (select.id === 'aegisDownloadMode') this.aegisTorrentDownloadLimitKib_ = value;
     else this.aegisTorrentUploadLimitKib_ = value;

@@ -88,4 +88,37 @@ for (const alter of [text => text.replace(/https:\/\/[^ ]+/, ''), text => text +
 }
 const retry = {translate: ({texts}) => [{target: {text: texts[0].text.replaceAll('aegis.invalid', 'changed.invalid')}}]};
 assert.equal(context.translateParagraph(retry, pair, protectedInput), protectedInput);
-console.log('翻译代码和链接保护回归通过：冲突标记、有界重试、遗漏、重复和改写检测。');
+for (const depth of [0, 1, 4, 16]) {
+  const text = 'Read https://aegis.invalid/' + '0/'.repeat(depth) + 'docs and https://example.com/' + '0/'.repeat(depth) + 'docs; keep `x = 12`.';
+  assert.equal(context.translateParagraph(echo, pair, text), text);
+  assert.equal(context.translateParagraph(retry, pair, text), text, '主标记被模型改写后，备用标记仍原样还原');
+}
+for (const id of ['999999', '9007199254740993', '9'.repeat(400)]) {
+  const corrupt = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\/\d+\b/g, '/' + id)}}]};
+  assert.throws(() => context.translateParagraph(corrupt, pair, 'Keep `value` unchanged.'), /translation_incomplete/);
+}
+const zeroPadded = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\/(\d+)\b/g, '/00$1')}}]};
+assert.equal(context.translateParagraph(zeroPadded, pair, 'Keep `value` unchanged.'), 'Keep `value` unchanged.');
+const untouchedForeignMarker = {translate: ({texts}) => [{target: {text: texts[0].text + ' https://example.com/999'}}]};
+assert.equal(context.translateParagraph(untouchedForeignMarker, pair, 'Keep `value` unchanged.'), 'Keep `value` unchanged. https://example.com/999');
+for (const suffix of ['/1', '/0', '/0/1', '.1', '?1', '-1']) {
+  const appended = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\/0\b/g, '/0' + suffix)}}]};
+  assert.equal(context.translateParagraph(appended, pair, 'Keep `value` unchanged.'), 'Keep `value`' + suffix + ' unchanged.',
+      '标记后正文不得被吞掉，也不能被误判为不同的标记前缀');
+}
+for (const text of ['`one` `two`', '`one` `two` `three`', 'https://example.org/a `two`', 'https://aegis.invalid/docs `one` `two`']) {
+  let attempts = 0;
+  const joined = {translate: ({texts}) => {
+    ++attempts;
+    return [{target: {text: texts[0].text.replace(/\s+/g, '')}}];
+  }};
+  assert.throws(() => context.translateParagraph(joined, pair, text), /translation_incomplete/,
+      '相邻标记前缀不能人为创造数字词边界；缺失边界必须保持拒绝');
+  assert.equal(attempts, 2, '主标记和备用标记均失败后停止重试');
+}
+for (const separator of ['/', '.', '-', '\u200b']) {
+  const separated = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\s+/g, separator)}}]};
+  assert.equal(context.translateParagraph(separated, pair, '`one` `two`'), '`one`' + separator + '`two`',
+      '真实存在的非单词分隔符仍保留数字词边界');
+}
+console.log('翻译代码和链接保护回归通过：前缀冲突、有界重试、遗漏、重复、越界、前导零、相邻标记词边界与其他前缀隔离。');
