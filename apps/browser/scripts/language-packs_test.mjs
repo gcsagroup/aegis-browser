@@ -2,11 +2,13 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
+import {dirname, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 import * as catalog from '../overlay/chrome/browser/resources/aegis_agent/local_ai/catalog.js';
-const base = new URL('../overlay/chrome/browser/resources/aegis_agent/', import.meta.url);
-const manifest = JSON.parse(readFileSync(new URL('local_ai/translation_manifest.json', base)));
+const base = resolve(dirname(fileURLToPath(import.meta.url)), '../overlay/chrome/browser/resources/aegis_agent/');
+const manifest = JSON.parse(readFileSync(resolve(base, 'local_ai/translation_manifest.json')));
 const packs = catalog.languagePacks(manifest), routes = catalog.translationRoutes(packs);
 assert.equal(packs.length, 14); assert.equal(routes.length, 24);
 for (const withheld of ['ja-zh', 'zh-de']) assert.equal(routes.some(route => route.id === withheld), false, '未通过质量检查的中转方向不开放');
@@ -14,7 +16,7 @@ assert.equal(routes.find(route => route.id === 'zh-fr').packs.join(','), 'zh-en,
 assert.equal(catalog.detectSource('日本語の文章です。'), 'ja');
 assert.equal(catalog.detectSource('한국어 문장입니다.'), 'ko');
 const ts = createRequire(new URL('../../../packages/core/package.json', import.meta.url))('typescript');
-const compiled = ts.transpileModule(readFileSync(new URL('language_packs.ts', base), 'utf8'), {
+const compiled = ts.transpileModule(readFileSync(resolve(base, 'language_packs.ts'), 'utf8'), {
   compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS},
 }).outputText;
 const dom = new JSDOM('<main id="packs"></main><select id="direction"></select>', {url: 'https://fixture.invalid'});
