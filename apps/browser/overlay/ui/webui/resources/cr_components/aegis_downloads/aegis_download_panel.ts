@@ -238,6 +238,22 @@ export class AegisDownloadPanelElement extends CrLitElement {
     return this.shadowRoot.querySelector<HTMLInputElement>('#descriptor');
   }
 
+  private descriptorPrompt_(): string {
+    const locale = document.documentElement.lang;
+    if (!locale.startsWith('zh')) {
+      return this.torrentSupported_ ?
+          'Choose a .meta4, .metalink, or .torrent file, or paste a Magnet link.' :
+          'Choose a .meta4 or .metalink file.';
+    }
+    const traditional = /^zh-(?:TW|HK|Hant)/i.test(locale);
+    if (this.torrentSupported_) {
+      return traditional ? '請選擇 .meta4、.metalink 或 .torrent 檔案，或貼上磁力連結。' :
+                           '请选择 .meta4、.metalink 或 .torrent 文件，或粘贴磁力链接。';
+    }
+    return traditional ? '請選擇 .meta4 或 .metalink 檔案。' :
+                         '请选择 .meta4 或 .metalink 文件。';
+  }
+
   protected onDescriptorChange_() {
     if (this.descriptor_()?.files?.length) {
       const magnet =
@@ -317,14 +333,10 @@ export class AegisDownloadPanelElement extends CrLitElement {
               await this.request_('parseMetalink', await file.text());
           this.setMetalinkPreview_(preview, zh);
         } else {
-          throw new Error(
-              zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇 Metalink 或 Torrent 檔案。' : '请选择 Metalink 或 Torrent 文件。') :
-                   'Choose a Metalink or Torrent file.');
+          throw new Error(this.descriptorPrompt_());
         }
       } else {
-        throw new Error(
-            zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇檔案或貼上 磁力連結。' : '请选择文件或粘贴 磁力链接。') :
-                 'Choose a file or paste a Magnet link.');
+        throw new Error(this.descriptorPrompt_());
       }
     } catch (error) {
       this.previewText_ = this.formatPreviewError_(error);
