@@ -62,6 +62,11 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
     store_ = EnhancementStore::Get(browser()->GetProfile());
     ASSERT_TRUE(base::test::RunUntil([&] { return store_->ready(); }));
   }
+  void TearDownOnMainThread() override {
+    // Profile 随浏览器关闭而销毁，测试夹具必须提前释放对其存储的引用。
+    store_ = nullptr;
+    InProcessBrowserTest::TearDownOnMainThread();
+  }
   content::WebContents* contents() {
     return browser()->tab_strip_model()->GetActiveWebContents();
   }
