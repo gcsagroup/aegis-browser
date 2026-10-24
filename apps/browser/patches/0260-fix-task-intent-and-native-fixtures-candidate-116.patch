@@ -439,7 +439,7 @@ index 8d4900b319fcc2ea2bb02fd767d8c70d10e92e16..a8ff29911ae7e97bc02f9ed26e8f73ae
    for (const char* goal : {"其他尚未关闭的条件", "列出尚未关闭的标签页", "关闭标签页了吗？",
         "不要关闭标签页", "把未关闭的标签页列出", "如何关闭标签页", "如果有重复就关闭标签页",
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index ae3d3cc97e28b2731052f49d73fffd1de0c598fa..813087a6bae36a4723ed479d376b78f68594fa0d 100644
+index ee73803398e82a3c575abdb9f59a66e52c1d10c0..45a32f06122acf9598cfae30890d112f31e6845c 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -616,9 +616,10 @@ IN_PROC_BROWSER_TEST_F(

@@ -95,7 +95,7 @@ index 48e6bd16294d6e52e94b07af33d571760e7fbd06..f00307ab854bb4a210523e485f9bc424
    if (!tab) {
      Transition(task_id, AgentTaskState::kFailed,
 diff --git a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
-index f594d3b3abceae50b957730efce76a3855cbd059..ca2b84f6293a6358c07ad263d21cf2ebeee82174 100644
+index 352402767d777ae294ff428f8b43b7dc0c86d268..09b0e4f3914cff569e6060e5bcaecf039fa20fd5 100644
 --- a/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
 +++ b/chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.cc
 @@ -15,6 +15,8 @@

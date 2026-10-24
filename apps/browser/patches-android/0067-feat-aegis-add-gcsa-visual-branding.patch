@@ -227211,7 +227211,7 @@ index 41c3308183b4805bf7fb6f0a3a65b23316d6d1e6..41d9a627b014317aedf17b02b82fd2e4
      <div class="product-heading">
        <div class="product-title">$i18n{aboutProductTitle}</div>
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index a1fd7102ed08696b076a2cd28bc792939cd22cd0..6db81ec22be55a3fa32fc4611f530903695d8c7f 100644
+index ede27e0b5aaf9abb759e03bce31ba3b6aa7a473e..1f2eaa8369225e66db4e7311fd3c1aa3cec96a08 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
 @@ -197,7 +197,7 @@

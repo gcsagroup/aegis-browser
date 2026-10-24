@@ -52,6 +52,7 @@
 | 按站点网站增强 | 部分 | 源码接入 | 未移植 | 部分 |
 | 用户脚本与 AI 草稿 | 部分 | 源码接入 | 未移植 | 部分 |
 | 内置 Markdown 阅读 | 部分 | 源码接入 | 未移植 | 部分 |
+| 统一设置与旧入口迁移 | 源码接入 | 源码接入 | 源码接入 | 源码接入 |
 
 ## iOS 范围与依据
 
@@ -406,5 +407,13 @@ iOS 模拟器证据：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 源码：[apps/ios/AegisApp/MarkdownReaderView.swift](../apps/ios/AegisApp/MarkdownReaderView.swift)
 
 iOS 模拟器证据：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md](../docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md)
+
+### 统一设置与旧入口迁移
+
+`unified-settings` — 保留已合入main的SwiftUI分类和表单布局；使用WebKit，本轮未重跑iOS验收。
+
+源码：[apps/ios/AegisApp/BrowserSettings.swift](../apps/ios/AegisApp/BrowserSettings.swift) · [apps/ios/AegisApp/SettingsFormControls.swift](../apps/ios/AegisApp/SettingsFormControls.swift)
+
+本项未完成本轮运行验收。
 
 维护方式：修改 JSON 后运行 `node scripts/check-platform-features.mjs --write` 生成三语页面，再运行 `node scripts/check-platform-features.mjs` 检查。现有发布合同新增功能时，缺少任意一端的说明会使仓库检查失败。

@@ -41,7 +41,7 @@ index cc1f2a30cb3c543044ad3bd603570fe2b7333176..d5270195b1aa9b26c478dec02fa5ad3e
 +    <string name="quick_action_search_widget_title" translatable="false">GCSA-aegis quick action search</string>
  </resources>
 diff --git a/chrome/browser/resources/BUILD.gn b/chrome/browser/resources/BUILD.gn
-index 1e1fa8225c446e7393fc7200839924b2ca1a4023..10165be2f440813032535080ea8dfeb37877f679 100644
+index 2a681c2f4a2219c9d912357287695dd941a435bb..c950301a35851ce91705da7e7af258dd7b5cb4be 100644
 --- a/chrome/browser/resources/BUILD.gn
 +++ b/chrome/browser/resources/BUILD.gn
 @@ -425,6 +425,7 @@ group("dev_ui_resources") {

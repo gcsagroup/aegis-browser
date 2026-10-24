@@ -29,7 +29,7 @@ index 713f8f925b408f579b1a323c060dc86dba002dbf..97feebf5d76d82bf75f4a5570e77e6d0
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
-index c13fec82ba2a5bb1dadd3ff923b329788608b252..c486029ec5f5aeaa5f0581f6c2d8743a72ea00de 100644
+index fca008af973323ca9c4a5540716b49207ae1174a..8f1c21c70be6db205629a354352efff9b262e81a 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui_browsertest.cc
 @@ -68,16 +68,17 @@ IN_PROC_BROWSER_TEST_F(SettingsUITest, AegisHidesUpstreamAiAndGoogleSettings) {

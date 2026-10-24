@@ -9,39 +9,39 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- chrome/browser/actor/BUILD.gn                 |  1 +
- chrome/browser/aegis/BUILD.gn                 | 22 ++++++++++++++++---
- chrome/browser/devtools/BUILD.gn              |  1 +
- chrome/browser/download/BUILD.gn              |  1 +
- chrome/browser/download/download_ui_model.cc  |  2 +-
- chrome/browser/policy/BUILD.gn                |  1 +
- chrome/browser/prefs/BUILD.gn                 |  1 +
- .../profile_resetter/reset_report_uploader.cc |  2 --
- chrome/browser/profiles/BUILD.gn              |  3 +++
- chrome/browser/ui/toolbar/BUILD.gn            |  1 +
- .../ui/toolbar/pinned_toolbar/BUILD.gn        |  1 +
- chrome/browser/ui/webui/aegis/BUILD.gn        |  1 +
- chrome/browser/ui/webui/downloads/BUILD.gn    |  2 ++
- .../webui/downloads/downloads_list_tracker.cc |  2 +-
- chrome/browser/ui/webui/help/BUILD.gn         |  9 ++++----
- .../ui/webui/help/aegis_github_update.h       |  6 ++---
- chrome/browser/ui/webui/settings/BUILD.gn     |  2 ++
- .../internal/common/parallel_download_utils.h |  4 +---
- .../public/common/download_features.h         |  4 ++++
+ chrome/browser/actor/BUILD.gn                      |  1 +
+ chrome/browser/aegis/BUILD.gn                      | 22 +++++++++++++++++++---
+ chrome/browser/devtools/BUILD.gn                   |  1 +
+ chrome/browser/download/BUILD.gn                   |  1 +
+ chrome/browser/download/download_ui_model.cc       |  2 +-
+ chrome/browser/policy/BUILD.gn                     |  1 +
+ chrome/browser/prefs/BUILD.gn                      |  1 +
+ .../profile_resetter/reset_report_uploader.cc      |  2 --
+ chrome/browser/profiles/BUILD.gn                   |  3 +++
+ chrome/browser/ui/toolbar/BUILD.gn                 |  1 +
+ chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn  |  1 +
+ chrome/browser/ui/webui/aegis/BUILD.gn             |  1 +
+ chrome/browser/ui/webui/downloads/BUILD.gn         |  2 ++
+ .../ui/webui/downloads/downloads_list_tracker.cc   |  2 +-
+ chrome/browser/ui/webui/help/BUILD.gn              |  9 +++++----
+ chrome/browser/ui/webui/help/aegis_github_update.h |  6 +++---
+ chrome/browser/ui/webui/settings/BUILD.gn          |  2 ++
+ .../internal/common/parallel_download_utils.h      |  4 +---
+ .../download/public/common/download_features.h     |  4 ++++
  19 files changed, 49 insertions(+), 17 deletions(-)
 
 diff --git a/chrome/browser/actor/BUILD.gn b/chrome/browser/actor/BUILD.gn
-index 1c8d2a7899d8c570dd11e085ad1bf11e9070543b..c41b224bd767dcd21b38b07c31e2c6052d5869e8 100644
+index 3a1d9b611c76ccf40cafdddfc3eac411474fbb7d..4b3065229ca312bdc940bf39d240257381701f23 100644
 --- a/chrome/browser/actor/BUILD.gn
 +++ b/chrome/browser/actor/BUILD.gn
-@@ -423,6 +423,7 @@ source_set("unit_tests") {
-     "//chrome/browser/critical_actions",
+@@ -448,6 +448,7 @@ source_set("unit_tests") {
+     "//chrome/browser/history",
      "//chrome/browser/optimization_guide",
      "//chrome/browser/optimization_guide:test_support",
 +    "//chrome/common/aegis",
      "//chrome/test:test_support",
-     "//components/actor/core:journal",
-     "//components/affiliations/core/browser:test_support",
+     "//chrome/test/base:chrome_render_view_host_test_harness",
+     "//chrome/test/base:testing_browser_process",
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index 0a6c89102a9ca5fb0f3cb1f5db43bdca848a1b00..f870d8c2233a2f64363e277a0432fef3852c6ab7 100644
 --- a/chrome/browser/aegis/BUILD.gn
@@ -97,19 +97,19 @@ index 0a6c89102a9ca5fb0f3cb1f5db43bdca848a1b00..f870d8c2233a2f64363e277a0432fef3
      "//url",
    ]
 diff --git a/chrome/browser/devtools/BUILD.gn b/chrome/browser/devtools/BUILD.gn
-index 4e8a7ee056d556c23f49512624fb4a490451e7dc..65f744e31f46680099833ae41f0c90dce051b2c3 100644
+index bc43dbf64206852b068a84686383036fdb94c616..c30addbe1afbe7e65cb397bb9cfd58c7e5ee9d00 100644
 --- a/chrome/browser/devtools/BUILD.gn
 +++ b/chrome/browser/devtools/BUILD.gn
-@@ -651,6 +651,7 @@ if (enable_devtools_frontend) {
+@@ -680,6 +680,7 @@ if (enable_devtools_frontend) {
        "//chrome/browser/search_engines",
        "//chrome/browser/sync/test/integration:sync_integration_test_support",
        "//chrome/browser/ui/autofill",
 +      "//chrome/common/aegis",
        "//chrome/test:test_support",
+       "//chrome/test/base:chrome_test_utils",
        "//components/autofill/content/browser:test_support",
-       "//components/autofill/core/browser:test_support",
 diff --git a/chrome/browser/download/BUILD.gn b/chrome/browser/download/BUILD.gn
-index 9ac45869a7bce1999f76d930f8272e9e3f35e43f..cab9d6ba6d0c2d9173410c80948939dedbda4a89 100644
+index fb1b41b07ca5296f6e62bf69dda53b5431947c0e..0ce67be7354253f192edff9397b6489f70a05eb0 100644
 --- a/chrome/browser/download/BUILD.gn
 +++ b/chrome/browser/download/BUILD.gn
 @@ -190,6 +190,7 @@ source_set("impl") {
@@ -134,10 +134,10 @@ index 820392cbcf1a31096b325c0fe2bde31ba8bfacc0..89629210b970e4dd0e60e0a9db3f7139
  #include "components/enterprise/common/proto/connectors.pb.h"
  #include "components/google/core/common/google_util.h"
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index 717b5c19ad0a9b5a3eee4743ff794253e7b4d333..8f4d5cf44f700739843cf9ea966d51615108e73f 100644
+index 2bb59d3e6217e3e126ab73b331940b2f66cdb7ff..6718eed0172216c5f8306a03c138b45ac7caa085 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
-@@ -829,6 +829,7 @@ source_set("unit_tests") {
+@@ -851,6 +851,7 @@ source_set("unit_tests") {
    deps = [
      ":impl",
      ":test_support",
@@ -146,7 +146,7 @@ index 717b5c19ad0a9b5a3eee4743ff794253e7b4d333..8f4d5cf44f700739843cf9ea966d5161
      "//chrome/browser/prefs",
      "//chrome/test:test_support",
 diff --git a/chrome/browser/prefs/BUILD.gn b/chrome/browser/prefs/BUILD.gn
-index 817cd91bdac667c3165d33c55d01ca16842b75a7..174d144fd8a911a714502d7a48c80655cae7fd73 100644
+index 831aaa964eab5ee4d7fb40c60a101dcb4083478d..4280149025bbd4c7dc91be942b73854e354cc93b 100644
 --- a/chrome/browser/prefs/BUILD.gn
 +++ b/chrome/browser/prefs/BUILD.gn
 @@ -68,6 +68,7 @@ source_set("impl") {
@@ -171,7 +171,7 @@ index 37190d277854082681196c59b7ed5b01d4a71d7b..30350b6e0beda5b7ac800bf7dd59f83b
  #include "net/base/load_flags.h"
  #include "net/http/http_response_headers.h"
 diff --git a/chrome/browser/profiles/BUILD.gn b/chrome/browser/profiles/BUILD.gn
-index 0bbbe5b517fcb8baf43007936491a77ad2b46e7e..3fccb386f2989240a9ae14e60844cf2ed11a8c7a 100644
+index 1bfc7a1988927d381c93d7ae852dcaeae7910644..705b48537b1e9af93e01891891cb443569e81bad 100644
 --- a/chrome/browser/profiles/BUILD.gn
 +++ b/chrome/browser/profiles/BUILD.gn
 @@ -362,6 +362,7 @@ source_set("renderer_updater") {
@@ -182,7 +182,7 @@ index 0bbbe5b517fcb8baf43007936491a77ad2b46e7e..3fccb386f2989240a9ae14e60844cf2e
      "//components/content_settings/common:mojom",
      "//components/content_settings/core/common",
      "//components/keyed_service/content",
-@@ -719,6 +720,7 @@ source_set("profiles_extra_parts_impl") {
+@@ -720,6 +721,7 @@ source_set("profiles_extra_parts_impl") {
      "//chrome/browser:font_pref",
      "//chrome/browser/accessibility",
      "//chrome/browser/account_settings",
@@ -190,7 +190,7 @@ index 0bbbe5b517fcb8baf43007936491a77ad2b46e7e..3fccb386f2989240a9ae14e60844cf2e
      "//chrome/browser/affiliations",
      "//chrome/browser/ai",
      "//chrome/browser/autocomplete",
-@@ -1122,6 +1124,7 @@ source_set("unit_tests") {
+@@ -1127,6 +1129,7 @@ source_set("unit_tests") {
      ":profile_downloader",
      ":profile_manager",
      ":profile_util",
@@ -199,7 +199,7 @@ index 0bbbe5b517fcb8baf43007936491a77ad2b46e7e..3fccb386f2989240a9ae14e60844cf2e
      "//base",
      "//base/test:test_support",
 diff --git a/chrome/browser/ui/toolbar/BUILD.gn b/chrome/browser/ui/toolbar/BUILD.gn
-index 661f20587666dd381dddd71f14b7e49accb15a45..a7339e636aa973cc19ae602a5bcbe539a70a9a0c 100644
+index abc9f7b16d5ff0caeff4804404a55053f501762f..41e2f9986e310c22b5af710232e5423286571ffd 100644
 --- a/chrome/browser/ui/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/toolbar/BUILD.gn
 @@ -24,6 +24,7 @@ source_set("toolbar") {
@@ -211,10 +211,10 @@ index 661f20587666dd381dddd71f14b7e49accb15a45..a7339e636aa973cc19ae602a5bcbe539
      "//components/google/core/common",
      "//components/offline_pages/buildflags",
 diff --git a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
-index 9c30ac7d1569433cbf3190489cafdc690fae24e8..6e2294d2180015b4652ff91ae20c973d974eb926 100644
+index d30dfabc7f18f27e60d27abbe4c3aa4001dab3cd..b87cf9badefee3be5ae0693fc64db2d68afe3157 100644
 --- a/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
 +++ b/chrome/browser/ui/toolbar/pinned_toolbar/BUILD.gn
-@@ -50,6 +50,7 @@ source_set("impl") {
+@@ -51,6 +51,7 @@ source_set("impl") {
        "//chrome/browser/ui/views/contextual_tasks",
        "//chrome/browser/ui/views/page_action",
        "//chrome/browser/ui/views/toolbar",
@@ -235,7 +235,7 @@ index 64781b003b0ef834284cb5a4f6bb998b4f4c2106..b7c19fea5964c163f1baf7f335f6d1e7
      "//chrome/common/aegis",
      "//chrome/services/aegis_torrent/public/mojom",
 diff --git a/chrome/browser/ui/webui/downloads/BUILD.gn b/chrome/browser/ui/webui/downloads/BUILD.gn
-index d91ccec5fd4eff397ace07333aeaf6a13c61f5c1..e7ea0a5878bb1098afd177cccaf7afcbc27460c3 100644
+index 8025dfaa86377e57e7a2f46b4260edde3f86abd0..cea1973c06effb31d1ada9233d4e38cd79f57f7b 100644
 --- a/chrome/browser/ui/webui/downloads/BUILD.gn
 +++ b/chrome/browser/ui/webui/downloads/BUILD.gn
 @@ -33,6 +33,7 @@ source_set("downloads") {
@@ -246,7 +246,7 @@ index d91ccec5fd4eff397ace07333aeaf6a13c61f5c1..e7ea0a5878bb1098afd177cccaf7afcb
      "//chrome/browser/download",
      "//chrome/browser/download:impl",
      "//chrome/browser/enterprise",
-@@ -93,6 +94,7 @@ source_set("unit_tests") {
+@@ -95,6 +96,7 @@ source_set("unit_tests") {
      ":downloads",
      "//base",
      "//base/test:test_support",
@@ -318,7 +318,7 @@ index d28415e7be0b16c452da64a4a7d584a80f7687d4..1ae65720cd7b5b186b3945b8cba8d0e0
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/BUILD.gn b/chrome/browser/ui/webui/settings/BUILD.gn
-index 9c9878f6450b4c14b71cdce0c401410fea83c308..3d0cf68f1c3107c67ca2772bcbc8c1c848cf3eb4 100644
+index 321973594dd22cb4ded84552c7e16167c2c36056..edfc5069b2452ca7c92c841bae42bafa8ab5eede 100644
 --- a/chrome/browser/ui/webui/settings/BUILD.gn
 +++ b/chrome/browser/ui/webui/settings/BUILD.gn
 @@ -193,6 +193,7 @@ source_set("impl") {
@@ -329,7 +329,7 @@ index 9c9878f6450b4c14b71cdce0c401410fea83c308..3d0cf68f1c3107c67ca2772bcbc8c1c8
      "//chrome/browser/affiliations",
      "//chrome/browser/apps/app_service",
      "//chrome/browser/autocomplete:aim_eligibility_service",
-@@ -533,6 +534,7 @@ if (!is_android) {
+@@ -540,6 +541,7 @@ if (!is_android) {
        "//base/test:test_support",
        "//chrome/browser:defaults",
        "//chrome/browser:global_features",
@@ -374,6 +374,3 @@ index 01ee84be65fc124d5860dc0ccf2d548c9c74245a..acb1610f0adfc9b7290e5b9a689bb3ed
  namespace features {
  // Whether a download can be handled by parallel jobs.
  COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kParallelDownloading);
--- 
-2.52.0
-

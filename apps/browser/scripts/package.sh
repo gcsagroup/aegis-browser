@@ -19,7 +19,7 @@ else
 fi
 
 VERSION="$(read_pinned_value "$VERSION_FILE" 2>/dev/null || echo "0.0.0")"
-APP_VERSION="${AEGIS_PACKAGE_VERSION:-5.0.0.208}"
+APP_VERSION="${AEGIS_PACKAGE_VERSION:-6.1.0.300}"
 CPU="$(uname -m)"
 [[ "$CPU" == x86_64 ]] && CPU=x64
 STAMP="$(date -u +%Y%m%d)"

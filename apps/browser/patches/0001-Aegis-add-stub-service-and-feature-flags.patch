@@ -23,7 +23,7 @@ browser-process service once the startup Profile is ready.
  create mode 100644 chrome/common/aegis/features.h
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index b58905ddb371f96377320c2948fe64bb17257663..34959a155979e60aa3c040f4b8a2cc61e8786052 100644
+index 33a6696fd803af080bb0a7d71b66e06d6950f86d..9ea9c147cb356cebca137216e3bc9cb0c1ab63ba 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
 @@ -404,6 +404,7 @@ source_set("chrome_browser_main") {
@@ -137,7 +137,7 @@ index 0000000000000000000000000000000000000000..fb76c457df3ea6db3ee3447c1ebe149f
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_SERVICE_H_
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index cbf3b6c563090a64c427e1b0ce8cbf7118aa82d2..bf35530a0f98fc0774eee7bba7ea747b2161523f 100644
+index b2619baa8f61dfc4699a27f17e44fc4a94dd94f7..8bab76f627b94d4f129648625d419cb71f1616e2 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -3,6 +3,7 @@

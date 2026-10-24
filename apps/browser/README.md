@@ -8,6 +8,8 @@ GCSA-aegis Browser integrates privacy and security controls into Chromium and it
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
+> **2026-10-22 · 安全更新源码候选：** 桌面更新至 `156.0.8078.48`，Android 更新至 `156.0.8078.47`。完整补丁回放通过；尚未进行本内核编译或实机验收。源码暂保留既有版本头 209，下一次真实构建前须核对最新产品版本并递增，不能作为新发行版本。详见[本轮证据](../../docs/audit/upstream-156-48-2026-10-22.zh-CN.md)。
+
 > **2026-10-14 · 安全更新源码候选：** 桌面更新至 `155.0.8059.80`，Android 更新至 `155.0.8059.79`，产品预备版本为 Ver 5.0 (208)。已完整回放补丁并扩展新功能验收清单；尚未编译、验收或正式发布，现有 App 不受本次源码准备影响。见[本轮证据](../../docs/audit/upstream-155-80-2026-10-14.zh-CN.md)。
 
 > **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](../../docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
@@ -22,7 +24,7 @@ The [2026-09-10 audit](../../docs/audit/main-consolidation-2026-09-10.md) record
 
 | File | Meaning |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `155.0.8059.80`，尚未正式发布 |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `156.0.8078.48`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | Exact Chromium commit used as the patch base |
 
 The pin is a fixed snapshot. It does not track newer Stable releases automatically.

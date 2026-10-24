@@ -328,7 +328,7 @@ index bcc72edff8768622556baaa0b4ac179789b60f4f..ebecb7d954fd582c742ac69ba85e2b6c
  
    // Host-rule match against builtin seed + compiled EasyList. Callers should
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 469838c949024a05476e0c3d3749dbb4c7ab0658..263f3e32737ead685659f417884d8c049368750a 100644
+index a0a0a1eab35db1099e594a2548358b3092cc18c5..c4b5f6fe365d3385e6ad353f3cea4b0a8359d349 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -4,6 +4,7 @@
@@ -958,7 +958,7 @@ index 3f33b331d03263f064fb6df31313410675cb5acd..cecaf01ebbfbe3cf2e596ca92c140389
  
  // The renderer configuration parameters are set during the process lock update
 diff --git a/chrome/renderer/url_loader_throttle_provider_impl.cc b/chrome/renderer/url_loader_throttle_provider_impl.cc
-index 32204a6cd863ec4f3dac92e221724d3708c82524..091cdda90f0720a30d8da500f1d8173707308b37 100644
+index 19b6b64fb8ac0a453b8ba5b65ef222b290c1863c..30a068fb5fd3e786f4e2061d2fb9719f653a7071 100644
 --- a/chrome/renderer/url_loader_throttle_provider_impl.cc
 +++ b/chrome/renderer/url_loader_throttle_provider_impl.cc
 @@ -265,13 +265,15 @@ URLLoaderThrottleProviderImpl::CreateThrottles(

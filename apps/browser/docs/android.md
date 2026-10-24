@@ -6,7 +6,7 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 
 ## Current evidence boundary
 
-- Android 源码候选使用正式 Stable `155.0.8059.79`；桌面为 `155.0.8059.80`。Android 保留独立的 `ci-pins/android.json` 与 `patches-android/`。Ver 5.0 (208) 的 versionCode 为 `2005000208`，高于既有 `2005000207`；本轮仅完成源码和流程检查，尚无新内核实机或签名产物验收。
+- Android 源码候选使用正式 Stable `156.0.8078.47`；桌面为 `156.0.8078.48`。Android 保留独立的 `ci-pins/android.json` 与 `patches-android/`。本轮完成 307 个 Chromium 和 3 个 V8 补丁回放，未编译 APK、签名或进行实机验收。源码现有 Ver 5.0 (209)/versionCode `2005000209` 仅为历史预备值；真实构建前须按最新产品版本递增，不能复用为新发行身份。
 - The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.
 - The 2026-10-09 source candidate is Ver 2.2 (144), versionCode `2002000144`, with 276 Chromium patches and 3 V8 patches. Full Chromium replay passed; its tree differs from the verified desktop source only in official `chrome/VERSION`. This preserves the shared Agent fixes and desktop-only gesture guards; it does not enable desktop gestures on Android. APK build, signing, package identity and physical-device acceptance remain pending.
 - There is no current identity-bound APK or AAB. A historical file such as `$HOME/Desktop/GCSA-aegis.apk` cannot be mapped to the current source and is not an RC.

@@ -370,6 +370,37 @@
           "EnhancementBrowserTest.Markdown*"
         ]
       }
+    },
+    {
+      "id": "unified-settings",
+      "name": "统一设置分类、旧入口迁移、保存与重启回读",
+      "platforms": [
+        "mac-arm64",
+        "win-x64",
+        "android-arm64"
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AegisUIHandlerTest.SettingsKeepLocalPacksWithoutExemptingWebOrigins",
+          "AegisUIHandlerTest.KeepsCnamePreferenceSeparateFromRuntimeDependency",
+          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages"
+        ],
+        "win-x64": [
+          "AegisUIHandlerTest.SettingsKeepLocalPacksWithoutExemptingWebOrigins",
+          "AegisUIHandlerTest.KeepsCnamePreferenceSeparateFromRuntimeDependency",
+          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages"
+        ]
+      },
+      "sourceRegressionTests": [
+        "apps/browser/scripts/mobile-settings_test.mjs",
+        "apps/browser/scripts/agent-model-selection_test.mjs",
+        "apps/browser/scripts/language-packs_test.mjs",
+        "apps/browser/scripts/gestures-settings_test.mjs",
+        "apps/browser/tests/enhancements/settings.test.mjs",
+        "apps/browser/tests/enhancements/settings-editing.test.mjs"
+      ],
+      "additionalChecks": "真实候选须覆盖八类设置入口、旧链接和参数保留、未保存表单、跨页来源校验、保存后重启回填、本地语言包保留与非可信来源隔离；DOM及脚本测试不能代替本次产物验收。",
+      "androidAcceptance": "按已合入main的移动设置布局验收手机、折叠内屏和横屏，覆盖返回路径、下载展开表单、阅读入口及资料保留；尚未合入的Android原生设置页面不在本候选范围。"
     }
   ]
 }
