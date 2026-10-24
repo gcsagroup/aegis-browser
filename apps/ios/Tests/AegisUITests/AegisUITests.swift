@@ -339,6 +339,9 @@ final class AegisUITests: XCTestCase {
         navigate(app, to: "http://127.0.0.1:8768/article")
         XCTAssertTrue(app.webViews.staticTexts["城市绿地观察"].waitForExistence(timeout: 20))
         app.buttons["browser-more"].tap(); app.buttons["设置"].tap()
+        let aegisSettings = app.buttons["aegis-feature-settings"]
+        XCTAssertTrue(scrollPortableControl(aegisSettings, in: app, shortScroll: true)); aegisSettings.tap()
+        app.buttons["aegis-privacy-settings"].tap()
         let filterSettings = app.buttons["content-filter-settings"]
         XCTAssertTrue(scrollPortableControl(filterSettings, in: app, shortScroll: true)); filterSettings.tap()
         XCTAssertTrue(app.staticTexts["网络规则"].waitForExistence(timeout: 10))
@@ -604,9 +607,9 @@ final class AegisUITests: XCTestCase {
     }
 
     func testEnglishAndTraditionalSettings() {
-        for (language, locale, settingsTitle, modelTitle) in [
-            ("en", "en_US", "Settings", "Model service"),
-            ("zh-Hant", "zh_TW", "設定", "模型服務")
+        for (language, locale, settingsTitle, hubTitle, modelTitle) in [
+            ("en", "en_US", "Settings", "Aegis settings", "AI and models"),
+            ("zh-Hant", "zh_TW", "設定", "Aegis 設定", "AI 與模型")
         ] {
             let app = XCUIApplication()
             app.launchArguments = ["--ui-testing", "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
@@ -615,7 +618,14 @@ final class AegisUITests: XCTestCase {
             app.buttons["browser-more"].tap()
             XCTAssertTrue(app.buttons[settingsTitle].waitForExistence(timeout: 5))
             app.buttons[settingsTitle].tap()
-            XCTAssertTrue(app.buttons[modelTitle].waitForExistence(timeout: 5))
+            let hub = app.buttons["aegis-feature-settings"]
+            XCTAssertTrue(hub.waitForExistence(timeout: 5))
+            XCTAssertTrue(hub.label.contains(hubTitle))
+            hub.tap()
+            XCTAssertTrue(app.navigationBars[hubTitle].waitForExistence(timeout: 5))
+            let model = app.buttons["model-service-settings"]
+            XCTAssertTrue(model.waitForExistence(timeout: 5))
+            XCTAssertTrue(model.label.contains(modelTitle))
             attachScreenshot("\(language)-设置", app)
             app.terminate()
         }

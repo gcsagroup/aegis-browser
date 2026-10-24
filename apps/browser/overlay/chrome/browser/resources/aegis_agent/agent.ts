@@ -1,3 +1,4 @@
+import {initializeMobileAgentSettings} from './mobile_settings.js';
 // Copyright 2026 GCSA
 
 import '/strings.m.js';
@@ -20,6 +21,7 @@ import {
   Workflow,
 } from './aegis_agent.mojom-webui.js';
 import {ReadingWorkspace} from './reading_workspace.js';
+import {packText} from './language_packs.js';
 import {BrowserProxy} from './browser_proxy.js';
 
 let proxy: BrowserProxy;
@@ -35,6 +37,11 @@ let modelRoutingBusy = false;
 let typesafeBusy = false;
 let goalUserEdited = false;
 let modelFormInitialized = false;
+let lastRenderedModelForm = '';
+let modelConnectionBaseline = '';
+let editingPoolId = '';
+let editingPoolRevision = -1;
+let poolDraftDirty = false;
 let typesafeEnabledDirty = false;
 let autoRunTaskId = '';
 let autoRunInFlight = false;
@@ -42,7 +49,11 @@ let activeView: 'task'|'automation'|'research'|'reading' = 'task';
 let researchTabs: ResearchTab[] = [];
 const selectedResearchTabs = new Set<number>();
 const launchParameters = new URLSearchParams(window.location.search);
-const launchRequest = consumeLaunchRequest();
+const settingsSection = launchParameters.get('settings') === 'experiments' ? 'experiments' :
+    launchParameters.get('settings') === 'reading' ? 'reading' :
+    launchParameters.get('settings') === '1' ? 'ai' : '';
+const settingsMode = settingsSection !== '';
+const launchRequest = settingsMode ? {goal: '', autoStart: false} : consumeLaunchRequest();
 const launchGoal = launchRequest.goal;
 const launchAutoStart = launchRequest.autoStart;
 
@@ -78,6 +89,9 @@ function text(id: string, key: string) {
 }
 
 function showStartupError() {
+  document.body.classList.remove('initializing');
+  element('startup-status').textContent = packText('配置读取失败。请重试后再修改。', 'Settings could not be loaded. Retry before editing.', '設定讀取失敗。請重試後再修改。');
+  element('startup-retry').hidden = false;
   element('status').textContent = loadTimeData.getString('statusFailed');
   element('status').dataset['tone'] = 'danger';
   const error = element('error');
@@ -942,22 +956,81 @@ function renderMonitors(monitors: MonitorSummary[]) {
   }
 }
 
+function renderModelPoolDraft(next: TaskSnapshot) {
+  const values = {
+    'pool-provider': 'openai', 'pool-base-url': 'http://127.0.0.1:8000/v1', 'pool-name': '',
+    'model-quality-score': '50', 'model-latency-score': '50', 'model-cost': '',
+    'model-efforts': '', 'model-profile-default': '', 'model-profile-basic': '',
+    'model-profile-strong': '', 'model-input-price': '', 'model-cache-price': '',
+    'model-output-price': '',
+  };
+  const checks: Record<string, boolean> = {
+    'model-supports-tools': true, 'model-supports-long-context': true,
+    'model-supports-strong-reasoning': true,
+  };
+  if (poolDraftDirty) return;
+  const entry = next.modelPool.find(candidate => candidate.id === editingPoolId);
+  editingPoolRevision = next.modelCatalogRevision;
+  if (entry) {
+    const profile = (value: {effort: string, maxOutputTokens: number}) =>
+        value.maxOutputTokens ? `${value.effort}:${value.maxOutputTokens}` : '';
+    Object.assign(values, {
+      'pool-provider': entry.provider, 'pool-base-url': entry.baseUrl, 'pool-name': entry.model,
+      'model-quality-score': String(entry.qualityScore),
+      'model-latency-score': String(entry.latencyScore),
+      'model-cost': entry.costMicrousdPerMillionTokens,
+      'model-efforts': entry.supportedEfforts.join(','),
+      'model-profile-default': profile(entry.defaultProfile),
+      'model-profile-basic': profile(entry.basicProfile),
+      'model-profile-strong': profile(entry.strongProfile),
+      'model-input-price': entry.inputPrice,
+      'model-cache-price': entry.cachedInputPrice,
+      'model-output-price': entry.outputPrice,
+    });
+    Object.assign(checks, {
+      'model-supports-tools': entry.supportsToolCalls,
+      'model-supports-long-context': entry.supportsLongContext,
+      'model-supports-strong-reasoning': entry.supportsStrongReasoning,
+    });
+  }
+  for (const [id, value] of Object.entries(values)) element<HTMLInputElement>(id).value = value;
+  for (const [id, value] of Object.entries(checks)) element<HTMLInputElement>(id).checked = value;
+  for (const key of ['default', 'basic', 'strong'] as const) {
+    const profileValue = values[`model-profile-${key}`];
+    const [effort = '', tokens = ''] = profileValue.split(':');
+    element<HTMLSelectElement>('model-profile-' + key + '-effort').value = effort;
+    element<HTMLInputElement>('model-profile-' + key + '-tokens').value = tokens;
+  }
+}
+
 function renderModel(next: TaskSnapshot) {
   const details = element<HTMLDetailsElement>('model-details');
   const provider = element<HTMLSelectElement>('model-provider');
   const baseUrl = element<HTMLInputElement>('model-base-url');
   const model = element<HTMLInputElement>('model-name');
-  if (!modelFormInitialized) {
+  const currentForm = JSON.stringify([provider.value, baseUrl.value, model.value]);
+  const untouched = currentForm === lastRenderedModelForm &&
+      !element<HTMLInputElement>('model-api-key').value;
+  // 同步另一处表单保存的共用连接，同时保留用户尚未保存的草稿。
+  if (!modelFormInitialized || untouched) {
     provider.value = next.modelConfigured ? next.modelProvider : 'openai';
     baseUrl.value = next.modelConfigured ?
         next.modelBaseUrl :
         'http://127.0.0.1:8000/v1';
     model.value = next.modelConfigured ? next.modelName : '';
+    const updatedForm = JSON.stringify([provider.value, baseUrl.value, model.value]);
+    if (modelFormInitialized && updatedForm !== lastRenderedModelForm) {
+      resetDetectedModels();
+    }
+    lastRenderedModelForm = updatedForm;
     modelFormInitialized = true;
+    modelConnectionBaseline = JSON.stringify([next.modelProvider, next.modelBaseUrl, next.modelName, next.modelConnectionRevision]);
   }
   if (!next.modelConfigured) {
     details.open = true;
   }
+  element('aegis-settings-link').textContent = loadTimeData.getString(
+      next.modelConfigured ? 'aegisSettingsTitle' : 'aegisSettingsConnectModel');
   element('model-state').textContent = next.modelConfigured ?
       `${loadTimeData.getString('modelReady')} · ${next.modelName}` :
       loadTimeData.getString('modelMissing');
@@ -968,11 +1041,19 @@ function renderModel(next: TaskSnapshot) {
   element<HTMLInputElement>('model-api-key').disabled = modelBusy;
   element<HTMLButtonElement>('detect-models-button').disabled = modelBusy;
   element<HTMLButtonElement>('save-model-button').disabled = modelBusy;
+  element<HTMLButtonElement>('cancel-model-button').disabled = modelBusy;
+  element<HTMLButtonElement>('clear-model-key-button').disabled = modelBusy || !next.modelKeyConfigured;
+  renderModelKeyState();
+  renderModelPoolDraft(next);
   const routingMode = element<HTMLSelectElement>('model-routing-mode');
   routingMode.value = String(next.modelSelectionMode);
   routingMode.disabled = modelRoutingBusy;
   element<HTMLButtonElement>('add-model-pool-button').disabled =
-      modelBusy || modelRoutingBusy || !model.value.trim();
+      modelRoutingBusy;
+  element<HTMLButtonElement>('add-model-pool-button').textContent = editingPoolId ? packText('保存该模型修改', 'Save model changes', '儲存此模型修改') : packText('添加模型', 'Add model', '新增模型');
+  for (const input of element('model-advanced').querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLButtonElement>('input, select, button')) input.disabled = modelRoutingBusy;
+  const candidates = next.modelPool.filter(entry => entry.enabled && entry.supportsToolCalls && (next.modelSelectionMode !== ModelSelectionMode.kLocalOnly || /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])([:/]|$)/i.test(entry.baseUrl)));
+  element('model-candidates-status').textContent = next.modelSelectionMode === ModelSelectionMode.kFixed ? packText('使用上方保存的默认连接。', 'Uses the default connection saved above.', '使用上方儲存的預設連線。') : candidates.length ? packText('可用候选：', 'Available candidates: ', '可用候選：') + candidates.length : packText('没有可用候选。请添加并启用支持工具调用的模型；仅本机模式还要求本机地址。', 'No eligible candidates. Add an enabled model with tool support; local-only mode also requires a local endpoint.', '沒有可用候選。請新增並啟用支援工具呼叫的模型；僅本機模式還要求本機位址。');
   const pool = element<HTMLUListElement>('model-pool');
   pool.replaceChildren();
   for (const entry of next.modelPool) {
@@ -983,16 +1064,25 @@ function renderModel(next: TaskSnapshot) {
     const cost = entry.costMicrousdPerMillionTokens ||
         loadTimeData.getString('modelCostUnknown');
     detail.textContent =
-        `Q${entry.qualityScore} · L${entry.latencyScore} · ${cost}`;
+        packText('质量评分 ', 'Quality score ', '品質評分 ') + entry.qualityScore + ' · ' + packText('速度评分 ', 'Speed score ', '速度評分 ') + entry.latencyScore + ' · ' + cost + (entry.costMicrousdPerMillionTokens ? ' μUSD / 1M tokens' : '');
+    item.classList.toggle('selected', entry.id === editingPoolId);
+    const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = packText('编辑', 'Edit', '編輯'); edit.disabled = modelRoutingBusy;
+    edit.addEventListener('click', () => { beginPoolEdit(entry.id); });
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = loadTimeData.getString('removeModelPool');
     remove.disabled = modelRoutingBusy;
     remove.addEventListener('click', () => {
+      if (!window.confirm(packText('移除模型 ', 'Remove model ', '移除模型 ') + entry.model + packText('？此操作只移出模型池；路由可能失去可用候选。', '? This removes the pool entry; routing may have no eligible candidates.', '？此操作僅移出模型池；路由可能失去可用候選。'))) return;
       void saveModelRouting(
         next.modelPool.filter(candidate => candidate.id !== entry.id));
     });
-    item.append(label, detail, remove);
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.disabled = modelRoutingBusy;
+    toggle.textContent = entry.enabled ? packText('停用', 'Disable', '停用') : packText('启用', 'Enable', '啟用');
+    toggle.addEventListener('click', () => { void saveModelRouting(next.modelPool.map(candidate => candidate.id === entry.id ? {...candidate, enabled: !candidate.enabled} : candidate)); });
+    const actions = document.createElement('div'); actions.className = 'model-pool-actions';
+    actions.append(edit, toggle, remove);
+    item.append(label, detail, actions);
     pool.append(item);
   }
 }
@@ -1148,6 +1238,12 @@ function renderRoutingObservations(next: TaskSnapshot) {
       hasRoutes ? routes : '';
 }
 
+function reportSettingsDraft() {
+  if (!settingsMode) return;
+  const form = JSON.stringify([element<HTMLSelectElement>('model-provider').value, element<HTMLInputElement>('model-base-url').value, element<HTMLInputElement>('model-name').value]);
+  const dirty = modelBusy || modelRoutingBusy || typesafeBusy || poolDraftDirty || (modelFormInitialized && form !== lastRenderedModelForm) || !!element<HTMLInputElement>('model-api-key').value || typesafeEnabledDirty || !!element<HTMLInputElement>('typesafe-api-key').value;
+  parent.postMessage({type: 'aegis-settings-dirty', dirty}, 'chrome://settings');
+}
 function render(next: TaskSnapshot) {
   if (creatingTask) {
     // 新请求有自己的等待态；旧任务事件不能带回旧结果或时间线。
@@ -1213,6 +1309,7 @@ function render(next: TaskSnapshot) {
           loadTimeData.getString('noTarget'));
   renderView();
   renderModel(next);
+  queueMicrotask(reportSettingsDraft);
   renderTypeSafe(next);
   renderPlan(next.plan || null, Boolean(next.taskId), next.state);
   renderRoutingObservations(next);
@@ -1349,6 +1446,32 @@ async function withBusy(
   }
 }
 
+function initializeSettingsPresentation() {
+  const desktop = !loadTimeData.getBoolean('isAndroid');
+  document.body.classList.toggle('settings-only', settingsMode);
+  document.body.dataset['settingsSection'] = settingsSection;
+  document.body.classList.toggle('central-settings', desktop && !settingsMode);
+  element('aegis-settings-link').textContent = loadTimeData.getString('aegisSettingsTitle');
+  element('aegis-settings-link').hidden = !desktop || settingsMode;
+  if (!settingsMode) return;
+  document.addEventListener('input', () => { queueMicrotask(reportSettingsDraft); });
+  document.addEventListener('change', () => { queueMicrotask(reportSettingsDraft); });
+  document.addEventListener('click', () => { queueMicrotask(reportSettingsDraft); });
+  // 隐藏的任务输入框不能抢走设置页焦点。
+  element('goal').removeAttribute('autofocus');
+  const sections = settingsSection === 'experiments' ? ['reading-research-settings'] :
+      settingsSection === 'reading' ? ['reading-ai-settings'] : ['model-details', 'typesafe-details'];
+  for (const id of sections) {
+    element<HTMLDetailsElement>(id).open = true;
+  }
+  const main = document.querySelector('main');
+  if (!main) throw Error('缺少助手主区域');
+  const reportHeight = () => { parent.postMessage({type: 'aegis-settings-height',
+    height: main.getBoundingClientRect().height + 24}, 'chrome://settings'); };
+  new ResizeObserver(reportHeight).observe(main);
+  reportHeight();
+}
+
 function initializeLabels() {
   const language = document.documentElement.lang;
   const traditional = /^zh-(?:TW|HK|Hant)/i.test(language);
@@ -1437,9 +1560,30 @@ function initializeLabels() {
   text('api-key-label', 'apiKeyLabel');
   text('detect-models-button', 'detectModels');
   text('save-model-button', 'saveModel');
+  element('save-model-button').textContent = packText('保存默认连接', 'Save default connection', '儲存預設連線');
+  element('cancel-model-button').textContent = packText('取消修改', 'Cancel edits', '取消修改');
+  element('clear-model-key-button').textContent = packText('清除已保存密钥', 'Clear saved key', '清除已儲存金鑰');
+  element('cancel-model-pool-button').textContent = packText('取消本组修改', 'Cancel pool edits', '取消本組修改');
+  element('new-model-pool-button').textContent = packText('添加模型', 'Add model', '新增模型');
+  element('model-pool-title').textContent = packText('模型池与选择方式', 'Model pool and selection', '模型池與選擇方式');
+  element('model-pool-help').textContent = packText('模型池独立保存，不改变上方默认连接。密钥按服务地址保存；请先为需要密钥的地址配置连接。', 'The pool saves separately and does not change the default connection. Keys belong to endpoints; configure credentials for an endpoint before using it in the pool.', '模型池獨立儲存，不改變上方預設連線。金鑰按服務位址儲存；請先為需要金鑰的位址設定連線。');
+  element('pool-provider-label').textContent = packText('协议', 'Protocol', '協定');
+  element('pool-base-label').textContent = packText('服务地址', 'Endpoint', '服務位址');
+  element('pool-name-label').textContent = packText('模型 ID', 'Model ID', '模型 ID');
+  element('pool-field-help').textContent = packText('质量与速度为自填的 0–100 分，越高越优先，不是实测结果。费用单位为每百万 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每档分别选择推理强度和最大输出 token 数，留空使用服务默认。', 'Quality and speed are user-assigned scores from 0 to 100; higher is preferred, not measured. Prices use micro-USD per million tokens (1 USD = 1,000,000 micro-USD); blank means unknown. Each profile selects reasoning effort and maximum output tokens; blank uses service defaults.', '品質與速度為自填的 0–100 分，越高越優先，並非實測結果。費用單位為每百萬 token 的微美元（1 美元＝1,000,000 微美元）；留空表示未知。每檔分別選擇推理強度及最大輸出 token 數，留空使用服務預設。');
+  for (const key of ['default', 'basic', 'strong']) {
+    const select = element<HTMLSelectElement>('model-profile-' + key + '-effort');
+    const defaultOption = select.options.item(0);
+    if (!defaultOption) throw Error('缺少默认模型强度选项：' + key);
+    defaultOption.textContent = packText('服务默认强度', 'Service default effort', '服務預設強度');
+    select.setAttribute('aria-label', packText('推理强度', 'Reasoning effort', '推理強度'));
+    element('model-profile-' + key + '-tokens').setAttribute('aria-label', packText('最大输出 token 数', 'Maximum output tokens', '最大輸出 token 數'));
+  }
+
   text('model-routing-mode-label', 'modelRoutingMode');
-  text('model-quality-label', 'modelQualityScore');
-  text('model-latency-label', 'modelLatencyScore');
+  element('model-quality-label').textContent = packText('质量评分（0–100，越高越优先）', 'Quality score (0–100; higher is preferred)', '品質評分（0–100，越高越優先）');
+  element('model-latency-label').textContent = packText('速度评分（0–100，越高越优先）', 'Speed score (0–100; higher is preferred)', '速度評分（0–100，越高越優先）');
+  element('model-pool-save-help').textContent = packText('新增或编辑只保存当前模型。评分初始值 50 是路由权重，不是评测结果。', 'Adding or editing saves only this model. The initial score of 50 is a routing weight, not a benchmark result.', '新增或編輯僅儲存目前模型。評分初始值 50 是路由權重，不是評測結果。');
   text('model-cost-label', 'modelCost');
   text('model-supports-tools-label', 'modelSupportsTools');
   text('model-supports-long-context-label', 'modelSupportsLongContext');
@@ -1599,6 +1743,7 @@ async function detectModels() {
     }
     // 侧栏中的 datalist 弹窗未能展开；独立选择框也不会按旧模型名过滤候选。
     const options = element<HTMLSelectElement>('model-options');
+    if (response.models.length) options.append(option('', packText('请选择模型', 'Choose a model', '請選擇模型')));
     for (const name of response.models) {
       options.append(option(name, name));
     }
@@ -1635,49 +1780,51 @@ function showModelSaveError(error: string) {
   element<HTMLDetailsElement>('model-details').open = true;
 }
 
-async function saveModel() {
-  if (modelBusy) {
-    return;
+function renderModelKeyState() {
+  if (!snapshot) return;
+  const pending = !!element<HTMLInputElement>('model-api-key').value;
+  const same = element<HTMLInputElement>('model-base-url').value.trim() === snapshot.modelBaseUrl && element<HTMLSelectElement>('model-provider').value === snapshot.modelProvider;
+  element('model-key-state').textContent = pending ? packText('本次保存将替换此地址的密钥。', 'Saving will replace the key for this endpoint.', '本次儲存將取代此位址的金鑰。') : same && snapshot.modelKeyConfigured ? packText('此地址已保存密钥；留空会保留。', 'A key is saved for this endpoint; leave blank to keep it.', '此位址已儲存金鑰；留空會保留。') : packText('未确认此地址的密钥。留空不会将旧地址密钥发送到新地址。', 'No key is confirmed for this endpoint. A blank field will not transfer an old endpoint’s key.', '未確認此位址的金鑰。留空不會將舊位址金鑰傳送到新位址。');
+}
+function beginPoolEdit(id: string) {
+  if (!snapshot || modelRoutingBusy) return;
+  if (poolDraftDirty && !window.confirm(packText('放弃尚未保存的模型池修改？', 'Discard unsaved pool edits?', '放棄尚未儲存的模型池修改？'))) return;
+  editingPoolId = id; poolDraftDirty = false;
+  renderModelPoolDraft(snapshot); element<HTMLDetailsElement>('model-advanced').open = true;
+  element('pool-name').focus();
+}
+async function saveModel(clearApiKey = false) {
+  if (modelBusy || !snapshot) return;
+  if (clearApiKey && !window.confirm(packText('清除已保存默认连接的密钥？依赖此地址的调用可能不可用。', 'Clear the saved default endpoint key? Calls using it may become unavailable.', '清除已儲存預設連線的金鑰？依賴此位址的呼叫可能無法使用。'))) return;
+  const provider = clearApiKey ? snapshot.modelProvider : element<HTMLSelectElement>('model-provider').value;
+  const base = clearApiKey ? snapshot.modelBaseUrl : element<HTMLInputElement>('model-base-url').value.trim();
+  const model = clearApiKey ? snapshot.modelName : element<HTMLInputElement>('model-name').value.trim();
+  if (!clearApiKey) {
+    for (const id of ['model-base-url', 'model-name']) {
+      const input = element<HTMLInputElement>(id); input.setCustomValidity('');
+      if (!input.value.trim()) input.setCustomValidity(packText('请填写此字段。', 'Complete this field.', '請填寫此欄位。'));
+      if (!input.reportValidity()) return;
+    }
+    try { const url = new URL(base); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw Error(); }
+    catch { const input = element<HTMLInputElement>('model-base-url'); input.setCustomValidity(packText('请输入不含账号密码的 HTTP 或 HTTPS 服务地址。', 'Enter an HTTP or HTTPS endpoint without credentials in the URL.', '請輸入不含帳號密碼的 HTTP 或 HTTPS 服務位址。')); input.reportValidity(); return; }
   }
-  modelBusy = true;
-  element('model-feedback').textContent = '';
-  if (snapshot) {
-    render(snapshot);
-  }
+  const key = clearApiKey ? '' : element<HTMLInputElement>('model-api-key').value.trim();
+  modelBusy = true; element('model-feedback').textContent = packText('保存中…', 'Saving…', '儲存中…'); render(snapshot);
   try {
-    const response = await proxy.handler.configureModel(
-        element<HTMLSelectElement>('model-provider').value,
-        element<HTMLInputElement>('model-base-url').value.trim(),
-        element<HTMLInputElement>('model-name').value.trim(),
-        element<HTMLInputElement>('model-api-key').value.trim(), false);
-    // 旧连接仍有效不代表这次保存成功；失败时保留非敏感草稿供用户修正。
-    const saved = response.snapshot.modelConfigured &&
-        !response.snapshot.lastError;
-    if (saved) {
-      modelFormInitialized = false;
-    }
+    const response = await proxy.handler.configureModel(provider, base, model, key, clearApiKey, modelConnectionBaseline);
+    const saved = !response.snapshot.lastError;
+    if (saved && !clearApiKey) modelFormInitialized = false;
     render(response.snapshot);
-    if (saved) {
-      element('model-feedback').textContent =
-          loadTimeData.getString('modelSaved');
-      element<HTMLDetailsElement>('model-details').open = false;
-    } else {
-      showModelSaveError(response.snapshot.lastError);
-    }
-  } catch {
-    // 响应中断时不能确认保存结果，也不向页面输出原始错误或密钥。
-    showModelSaveError('');
-  } finally {
-    element<HTMLInputElement>('model-api-key').value = '';
-    modelBusy = false;
-    if (snapshot) {
-      render(snapshot);
-    }
-  }
+    if (saved) element('model-feedback').textContent = clearApiKey ? packText('已清除密钥。', 'Key cleared.', '已清除金鑰。') : packText('默认连接已保存，摘要与助手共用。', 'Default connection saved for summaries and the assistant.', '預設連線已儲存，摘要與助手共用。');
+    else if (response.snapshot.lastError.includes('settings_changed')) element('model-feedback').textContent = packText('另一页面已修改连接。草稿仍保留；请取消草稿并读取最新配置后重试。', 'The connection changed in another page. Your draft is preserved; cancel it to load the latest settings and retry.', '另一頁面已修改連線。草稿仍保留；請取消草稿並讀取最新設定後重試。');
+    else if (response.snapshot.lastError === 'model_settings_busy') element('model-feedback').textContent = packText('另一页面正在保存连接，请稍后重试。当前输入已保留。', 'Another page is saving the connection. Your input is preserved; retry shortly.', '另一頁面正在儲存連線，請稍後重試。目前輸入已保留。');
+    else showModelSaveError(response.snapshot.lastError);
+  } catch { showModelSaveError(''); }
+  finally { element<HTMLInputElement>('model-api-key').value = ''; modelBusy = false; if (snapshot) render(snapshot); }
 }
 
-async function saveModelRouting(modelPool: ModelPoolEntry[]) {
-  if (modelRoutingBusy) {
+async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false) {
+  if (modelRoutingBusy || !snapshot) {
     return;
   }
   // Capture the user's choice before render() reapplies the persisted
@@ -1690,10 +1837,11 @@ async function saveModelRouting(modelPool: ModelPoolEntry[]) {
     render(snapshot);
   }
   try {
-    const response = await proxy.handler.configureModelRouting(mode, modelPool);
+    const response = await proxy.handler.configureModelRouting(mode, modelPool, savedDraft ? editingPoolRevision : snapshot.modelCatalogRevision);
+    if (savedDraft && !response.snapshot.lastError) { poolDraftDirty = false; }
     render(response.snapshot);
     element('model-routing-feedback').textContent =
-        response.snapshot.lastError ?
+        response.snapshot.lastError.includes('settings_changed') ? packText('模型池已在另一页面更改。请取消当前草稿、重新读取后重试。', 'The pool changed elsewhere. Cancel this draft, reload, and retry.', '模型池已在另一頁面變更。請取消目前草稿、重新讀取後重試。') : response.snapshot.lastError ?
         loadTimeData.getString('modelRoutingError') :
         loadTimeData.getString('modelRoutingSaved');
   } catch {
@@ -1725,27 +1873,32 @@ function readGenerationProfile(id: string) {
 }
 
 function addCurrentModelToPool() {
-  if (!snapshot) {
+  if (!snapshot || modelRoutingBusy) {
     return;
   }
-  const provider = element<HTMLSelectElement>('model-provider').value;
-  const baseUrl = element<HTMLInputElement>('model-base-url').value.trim();
-  const model = element<HTMLInputElement>('model-name').value.trim();
+  const provider = element<HTMLSelectElement>('pool-provider').value;
+  const baseUrl = element<HTMLInputElement>('pool-base-url').value.trim();
+  const model = element<HTMLInputElement>('pool-name').value.trim();
   if (!provider || !baseUrl || !model) {
     element('model-routing-feedback').textContent =
         loadTimeData.getString('modelRoutingError');
     return;
   }
+  for (const input of element('model-advanced').querySelectorAll<HTMLInputElement>('input[type=number], input[type=url]')) { if (!input.reportValidity()) return; }
+  for (const key of ['default', 'basic', 'strong']) {
+    const effort = element<HTMLSelectElement>('model-profile-' + key + '-effort').value;
+    const tokens = element<HTMLInputElement>('model-profile-' + key + '-tokens').value;
+    element<HTMLInputElement>('model-profile-' + key).value = tokens ? effort + ':' + tokens : '';
+  }
   const cost = element<HTMLInputElement>('model-cost').value.trim();
   const previous = snapshot.modelPool.find(
-      entry => entry.provider === provider && entry.baseUrl === baseUrl &&
-          entry.model === model);
+      entry => entry.id === editingPoolId || (entry.provider === provider && entry.baseUrl === baseUrl && entry.model === model));
   const entry: ModelPoolEntry = {
     id: previous?.id || `model-${Date.now()}`,
     provider,
     baseUrl,
     model,
-    enabled: true,
+    enabled: previous?.enabled ?? true,
     supportsToolCalls:
         element<HTMLInputElement>('model-supports-tools').checked,
     supportsLongContext:
@@ -1767,7 +1920,8 @@ function addCurrentModelToPool() {
   };
   const pool = snapshot.modelPool.filter(candidate => candidate.id !== entry.id);
   pool.push(entry);
-  void saveModelRouting(pool);
+  editingPoolId = entry.id;
+  void saveModelRouting(pool, true);
 }
 
 async function saveTypeSafe(clearApiKey = false) {
@@ -1909,7 +2063,16 @@ function bindActions() {
   element('model-name').addEventListener('input', syncDetectedModel);
   element('model-base-url').addEventListener('input', resetDetectedModels);
   element('model-api-key').addEventListener('input', resetDetectedModels);
-  element('save-model-button').addEventListener('click', saveModel);
+  element('save-model-button').addEventListener('click', () => { void saveModel(); });
+  element('clear-model-key-button').addEventListener('click', () => { void saveModel(true); });
+  element('cancel-model-button').addEventListener('click', () => {
+    if (!snapshot || modelBusy) return; modelFormInitialized = false; element<HTMLInputElement>('model-api-key').value = ''; renderModel(snapshot);
+    element('model-feedback').textContent = packText('已恢复当前保存的连接。', 'Restored the saved connection.', '已還原目前儲存的連線。');
+  });
+  element('new-model-pool-button').addEventListener('click', () => { beginPoolEdit(''); });
+  element('cancel-model-pool-button').addEventListener('click', () => { poolDraftDirty = false; if (snapshot) renderModelPoolDraft(snapshot); });
+  element('model-advanced').addEventListener('input', () => { poolDraftDirty = true; });
+  for (const id of ['model-base-url', 'model-name', 'model-api-key']) element(id).addEventListener('input', () => { element<HTMLInputElement>(id).setCustomValidity(''); renderModelKeyState(); });
   element('add-model-pool-button').addEventListener(
       'click', addCurrentModelToPool);
   element('model-routing-mode').addEventListener('change', () => {
@@ -1948,15 +2111,38 @@ function bindActions() {
         'https://api.anthropic.com/v1' :
         'https://generativelanguage.googleapis.com/v1beta';
     element<HTMLInputElement>('model-name').value = '';
-    resetDetectedModels();
+    resetDetectedModels(); renderModelKeyState();
   });
 }
 
 initializeLabels();
+element('startup-status').textContent = packText('正在读取配置…', 'Loading settings…', '正在讀取設定…');
+element('startup-retry').textContent = packText('重试', 'Retry', '重試');
+element('startup-retry').onclick = () => { location.reload(); };
+const main = document.querySelector('main');
+if (!main) throw Error('缺少助手主区域');
+main.inert = true;
 try {
   proxy = BrowserProxy.getInstance();
   bindActions();
   const reading = new ReadingWorkspace(proxy);
+  if (loadTimeData.getBoolean('isAndroid')) {
+    initializeMobileAgentSettings(() => reading.refresh(), () => {
+      activeView = 'reading'; renderView();
+    }, () => { void proxy.handler.showProtection(); });
+  }
+  initializeSettingsPresentation();
+  window.addEventListener('beforeunload', event => {
+    const form = JSON.stringify([element<HTMLSelectElement>('model-provider').value, element<HTMLInputElement>('model-base-url').value, element<HTMLInputElement>('model-name').value]);
+    if (poolDraftDirty || (modelFormInitialized && form !== lastRenderedModelForm) || element<HTMLInputElement>('model-api-key').value || typesafeEnabledDirty || element<HTMLInputElement>('typesafe-api-key').value) { event.preventDefault(); event.returnValue = ''; }
+  });
+  document.body.classList.remove('initializing');
+  if (!settingsMode && launchParameters.get('view') === 'reading') {
+    document.body.classList.add('reading-workspace-only');
+    activeView = 'reading'; renderView(); void reading.refresh();
+    const reportHeight = () => { parent.postMessage({type: 'aegis-workspace-height', height: main.getBoundingClientRect().height + 32}, 'chrome://aegis'); };
+    new ResizeObserver(reportHeight).observe(main); reportHeight();
+  }
   element('reading-view-button').addEventListener('click', () => {
     activeView = 'reading';
     renderView();
@@ -1964,8 +2150,9 @@ try {
   });
   proxy.callbackRouter.onSnapshotChanged.addListener(render);
   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
+    main.inert = false; element('startup-state').hidden = true;
     render(initial);
-    proxy.handler.showUI();
+    if (!settingsMode) proxy.handler.showUI();
     // 只有已消费的一次性原生启动请求才创建新任务。
     if (launchAutoStart && initial.modelConfigured) {
       element<HTMLButtonElement>('plan-button').click();
@@ -1974,3 +2161,19 @@ try {
 } catch {
   showStartupError();
 }
+
+// 只接受统一设置父页面的查找请求，不接受网页发送的消息。
+function handleSettingsSearchMessage(event: MessageEvent) {
+  if (event.source !== parent) { return; }
+  if (event.origin !== 'chrome://settings') { return; }
+  if (event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') { return; }
+  document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
+  const query = event.data.query.trim().toLocaleLowerCase();
+  if (!query) return;
+  const target = [...document.querySelectorAll<HTMLElement>('label, summary, h3, p, a, button')].find(node => node.textContent?.toLocaleLowerCase().includes(query));
+  if (!target) return;
+  let ancestor = target.parentElement;
+  while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
+  target.dataset['searchMatch'] = 'true'; target.scrollIntoView({block: 'center'});
+}
+window.addEventListener('message', handleSettingsSearchMessage);

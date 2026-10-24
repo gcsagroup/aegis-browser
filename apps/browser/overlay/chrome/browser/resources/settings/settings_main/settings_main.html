@@ -50,10 +50,15 @@
 
 <cr-view-manager id="switcher"
     show-all$="[[shouldShowAll_(inSearchMode_, lastRoute_)]]">
-  <div slot="view" id="aegisEnhancements"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_ENHANCEMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="enhancements"></settings-aegis-page></template></div>
-  <div slot="view" id="aegisReading"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_READING, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="reading"></settings-aegis-page></template></div>
-  <div slot="view" id="aegisGestures"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_GESTURES, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="gestures"></settings-aegis-page></template></div>
-  <div slot="view" id="aegisPrivacy"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_PRIVACY, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="privacy"></settings-aegis-page></template></div>
+  <div slot="view" id="aegis"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="home"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisAi"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_AI, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="ai"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisExperiments"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_EXPERIMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="experiments"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisDownloads"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_DOWNLOADS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="downloads"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisTools"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_TOOLS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="tools"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisEnhancements"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_ENHANCEMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="enhancements"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisReading"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_READING, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="reading"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisGestures"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_GESTURES, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="gestures"></settings-aegis-page></template></div>
+  <div slot="view" id="aegisPrivacy"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_PRIVACY, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="privacy"></settings-aegis-page></template></div>
   <template is="dom-if" if="[[showPage_(pageVisibility_.people)]]">
     <div slot="view" id="people">
       <template is="dom-if" if="[[renderPlugin_(

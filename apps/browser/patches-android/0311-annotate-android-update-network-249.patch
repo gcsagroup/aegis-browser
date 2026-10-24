@@ -1,0 +1,82 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 06:55:00 +0800
+Subject: [PATCH] 补齐 Android 更新请求说明并递增候选版本
+
+使用 Chromium 网络适配接口记录手动检查及下载请求，保留原超时、跳转和安装校验。
+修复当前 Error Prone 网络规则报错，不关闭检查或压制告警。候选递增至 Ver 6.0 (249)。
+
+---
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
+index de7c941ee1a056df210cad6a1a5b4cada2121fa0..f666cb1d6d75994d80f4a5ec9ea1a78aae3397ac 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/about_settings/AegisAndroidUpdate.java
+@@ -14,6 +14,8 @@ import org.json.JSONArray;
+ import org.json.JSONObject;
+ 
+ import org.chromium.build.annotations.NullMarked;
++import org.chromium.net.ChromiumNetworkAdapter;
++import org.chromium.net.NetworkTrafficAnnotationTag;
+ 
+ import java.io.ByteArrayOutputStream;
+ import java.io.File;
+@@ -39,6 +41,34 @@ final class AegisAndroidUpdate {
+     private static final String API =
+             "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+     private static final int SIGNATURE_FLAGS = PackageManager.GET_SIGNING_CERTIFICATES;
++    // 结构化说明使用上游提取器支持的 ASCII，避免请求审核记录出现乱码。
++    private static final NetworkTrafficAnnotationTag TRAFFIC_ANNOTATION =
++            NetworkTrafficAnnotationTag.createComplete(
++                    "aegis_android_product_update",
++                    """
++                    semantics {
++                      sender: "GCSA Aegis Android Updater"
++                      description:
++                        "Fetches official GitHub release metadata and, after user confirmation, "
++                        "downloads an Android package. The package digest, identity, version and "
++                        "signature are checked before system installation confirmation."
++                      trigger:
++                        "User presses Check Aegis updates or confirms downloading a selected release."
++                      data:
++                        "Public release URL and product User-Agent. No browsing history or account "
++                        "credentials."
++                      destination: WEBSITE
++                      internal { contacts { email: "aegis@gcsa.local" } }
++                      user_data { type: NONE }
++                      last_reviewed: "2026-10-23"
++                    }
++                    policy {
++                      cookies_allowed: NO
++                      setting: "Only explicit actions on the About page initiate requests."
++                      policy_exception_justification:
++                        "User-initiated requests; no additional enterprise policy is implemented."
++                    }
++                    """);
+ 
+     static Optional<AegisUpdatePolicy.Update> check(Context context) throws Exception {
+         AegisUpdatePolicy.require(
+@@ -177,7 +207,8 @@ final class AegisAndroidUpdate {
+     }
+ 
+     private static HttpsURLConnection connect(URL url) throws IOException {
+-        HttpsURLConnection connection = (HttpsURLConnection) url.openConnection();
++        HttpsURLConnection connection =
++                (HttpsURLConnection) ChromiumNetworkAdapter.openConnection(url, TRAFFIC_ANNOTATION);
+         connection.setConnectTimeout(15_000);
+         connection.setReadTimeout(20_000);
+         connection.setInstanceFollowRedirects(false);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 43519a7f3b7d7be7e3569347fdd52670f680d7da..f1a551fd7a3ab665c6fb74e36340cbbb1e18b0c8 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.0.0.248";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.0 (248)";
++inline constexpr char kProductVersion[] = "6.0.0.249";
++inline constexpr char kProductVersionLabel[] = "Ver 6.0 (249)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

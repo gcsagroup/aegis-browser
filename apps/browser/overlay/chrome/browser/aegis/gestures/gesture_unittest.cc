@@ -5,6 +5,7 @@
 #include "chrome/browser/aegis/gestures/gesture_settings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+#include "url/url_util.h"
 
 namespace aegis {
 TEST(AegisGestureRecognizerTest, ClickAndJitterDoNotBecomeGestures) {
@@ -112,5 +113,26 @@ TEST(AegisGestureSettingsTest, PracticeBoundsExcludeOutsideArea) {
   EXPECT_FALSE(area.Contains(.1, .4));
   EXPECT_FALSE(area.Contains(.4, .6));
   EXPECT_FALSE(area.Contains(std::numeric_limits<double>::quiet_NaN(), .4));
+}
+
+TEST(AegisGestureSettingsTest, PracticeAndSettingsAcceptOnlyCompatiblePages) {
+  url::ScopedSchemeRegistryForTests schemes;
+  url::AddStandardScheme("chrome", url::SCHEME_WITH_HOST);
+  for (const char* url : {"chrome://aegis/gestures.html",
+                          "chrome://aegis/gestures.html#practice",
+                          "chrome://settings/aegisGestures",
+                          "chrome://settings/aegisGestures?from=legacy#practice",
+                          "chrome://settings/?search=gestures"}) {
+    EXPECT_TRUE(IsGestureSettingsPage(GURL(url))) << url;
+  }
+  for (const char* url : {"https://settings/aegisGestures",
+                          "chrome://other/aegisGestures",
+                          "chrome://settings/aegis",
+                          "chrome://settings/aegisPrivacy",
+                          "chrome://settings/aegisGesturesExtra",
+                          "chrome://settings/",
+                          "chrome://settings/?notsearch=gestures"}) {
+    EXPECT_FALSE(IsGestureSettingsPage(GURL(url))) << url;
+  }
 }
 }  // namespace aegis

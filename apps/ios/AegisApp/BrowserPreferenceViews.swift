@@ -10,7 +10,7 @@ struct BrowserGeneralSettingsView: View {
     var body: some View {
         Form {
             Section("搜索") {
-                Picker("搜索引擎", selection: $draft.searchEngine) {
+                SettingsPicker("搜索引擎", selection: $draft.searchEngine, value: draft.searchEngine?.title ?? "未启用搜索") {
                     if draft.availableSearchEngines.isEmpty {
                         Text("未启用搜索").tag(Optional<SearchEngine>.none)
                     }
@@ -35,26 +35,30 @@ struct BrowserGeneralSettingsView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 if draft.searchEngine == .custom {
-                    TextField("HTTPS 搜索模板", text: $draft.customSearch)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                        .accessibilityIdentifier("custom-search-template")
+                    SettingsField("HTTPS 搜索模板") {
+                        TextField("HTTPS 搜索模板", text: $draft.customSearch)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                            .accessibilityIdentifier("custom-search-template")
+                    }
                     Text("用 {searchTerms} 表示搜索内容，例如 https://www.google.com/search?q={searchTerms}。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
             Section("主页与启动") {
-                Picker("启动时", selection: $draft.startup) {
+                SettingsPicker("启动时", selection: $draft.startup, value: draft.startup.title) {
                     ForEach(BrowserStartup.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.accessibilityIdentifier("startup-picker")
-                TextField("主页网址", text: $draft.homepage)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    .accessibilityIdentifier("homepage-field")
+                SettingsField("主页网址") {
+                    TextField("主页网址", text: $draft.homepage)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .accessibilityIdentifier("homepage-field")
+                }
                 Toggle("新标签使用主页", isOn: $draft.newTabsUseHomepage)
                 Text("启动方式在下次创建浏览窗口时生效；更改不会立即关闭当前标签。私密标签不恢复。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             Section("网页显示") {
-                Picker("默认网页缩放", selection: $draft.zoom) {
+                SettingsPicker("默认网页缩放", selection: $draft.zoom, value: "\(Int(draft.zoom * 100))%") {
                     ForEach([0.5, 0.75, 1, 1.25, 1.5, 1.75, 2], id: \.self) { Text("\(Int($0 * 100))%").tag($0) }
                 }.accessibilityIdentifier("default-zoom-picker")
                 Toggle("默认请求桌面网站", isOn: $draft.desktop).accessibilityIdentifier("desktop-default-toggle")
@@ -79,6 +83,7 @@ struct BrowserGeneralSettingsView: View {
             }
         }
         .navigationTitle("浏览设置")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear { draft = preferences.values }
     }
 }
@@ -123,7 +128,7 @@ struct ProtectionOptionsView: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if let message { Text(message).foregroundStyle(.red) }
-        }.navigationTitle("保护选项")
+        }.navigationTitle("保护选项").navigationBarTitleDisplayMode(.inline)
     }
     private func optionalBinding(_ key: WritableKeyPath<BrowserPreferenceValues, Bool?>, fallback: Bool) -> Binding<Bool> {
         Binding(get: { preferences.values[keyPath: key] ?? fallback }, set: { value in
@@ -162,7 +167,7 @@ struct WebsiteSettingsView: View {
                 Text("网站设置按协议、主机和端口分别保存。相机和麦克风的“询问”仍需系统许可；定位等权限由系统提示管理。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-        }.navigationTitle("网站设置与权限")
+        }.navigationTitle("网站设置与权限").navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -178,36 +183,36 @@ struct SitePreferenceEditor: View {
         Form {
             Section { Text(BrowserPreferences.origin(url) ?? "").textSelection(.enabled) }
             Section("网页显示") {
-                Picker("网页缩放", selection: $draft.zoom) {
+                SettingsPicker("网页缩放", selection: $draft.zoom, value: draft.zoom.map { "\(Int($0 * 100))%" } ?? "跟随默认设置") {
                     Text("跟随默认设置").tag(Optional<Double>.none)
                     ForEach([0.5, 0.75, 1, 1.25, 1.5, 2], id: \.self) { Text("\(Int($0 * 100))%").tag(Optional($0)) }
                 }
-                Picker("网站模式", selection: $draft.desktop) {
+                SettingsPicker("网站模式", selection: $draft.desktop, value: draft.desktop.map { $0 ? "桌面网站" : "移动网站" } ?? "跟随默认设置") {
                     Text("跟随默认设置").tag(Optional<Bool>.none)
                     Text("移动网站").tag(Optional(false))
                     Text("桌面网站").tag(Optional(true))
                 }
-                Picker("JavaScript", selection: $draft.javaScript) {
+                SettingsPicker("JavaScript", selection: $draft.javaScript, value: draft.javaScript.map { $0 ? "允许" : "阻止" } ?? "跟随默认设置") {
                     Text("跟随默认设置").tag(Optional<Bool>.none)
                     Text("允许").tag(Optional(true))
                     Text("阻止").tag(Optional(false))
                 }
             }
             Section("网页安全") {
-                Picker("系统加固", selection: $draft.hardenedSecurity) {
+                SettingsPicker("系统加固", selection: $draft.hardenedSecurity, value: draft.hardenedSecurity.map { $0 ? "开启" : "系统默认" } ?? "跟随默认设置") {
                     Text("跟随默认设置").tag(Optional<Bool>.none)
                     Text("开启").tag(Optional(true))
                     Text("系统默认").tag(Optional(false))
                 }
-                Picker("严格指纹限制（实验）", selection: $draft.strictFingerprinting) {
+                SettingsPicker("严格指纹限制（实验）", selection: $draft.strictFingerprinting, value: draft.strictFingerprinting.map { $0 ? "开启" : "恢复兼容" } ?? "跟随默认设置") {
                     Text("跟随默认设置").tag(Optional<Bool>.none)
                     Text("开启").tag(Optional(true))
                     Text("恢复兼容").tag(Optional(false))
                 }
             }
             Section("媒体权限") {
-                Picker("相机", selection: $draft.camera) { ForEach(SitePermission.allCases, id: \.self) { Text($0.title).tag($0) } }
-                Picker("麦克风", selection: $draft.microphone) { ForEach(SitePermission.allCases, id: \.self) { Text($0.title).tag($0) } }
+                SettingsPicker("相机", selection: $draft.camera, value: draft.camera.title) { ForEach(SitePermission.allCases, id: \.self) { Text($0.title).tag($0) } }
+                SettingsPicker("麦克风", selection: $draft.microphone, value: draft.microphone.title) { ForEach(SitePermission.allCases, id: \.self) { Text($0.title).tag($0) } }
             }
             Section {
                 Button("保存网站设置") {
@@ -221,7 +226,7 @@ struct SitePreferenceEditor: View {
                     .font(.footnote).foregroundStyle(.secondary)
                 if let message { Text(message) }
             }
-        }.navigationTitle("网站设置")
+        }.navigationTitle("网站设置").navigationBarTitleDisplayMode(.inline)
             .onAppear { draft = preferences.site(for: url) }
             .alert("保存私密网站的设置？", isPresented: $confirmsSave) {
                 Button("确认保存") { save() }
@@ -246,6 +251,7 @@ struct WebsiteDataSettingsView: View {
             Section {
                 Text("管理普通浏览的 Cookie、缓存和网站存储。清除前会关闭所有普通浏览窗口中的标签，避免页面立即重新写入；收藏、工作区和阅读资料不受影响。")
                     .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("website-data-description")
                 if browser.profile.isPrivate { Text("请切换到普通浏览后管理持久网站数据。") }
             }
             Section("网站数据") {
@@ -257,7 +263,7 @@ struct WebsiteDataSettingsView: View {
                 }
             }
             if let message { Text(message) }
-        }.navigationTitle("网站数据管理")
+        }.navigationTitle("网站数据管理").navigationBarTitleDisplayMode(.inline)
             .task { await refresh() }
             .refreshable { await refresh() }
             .alert("清除此网站的数据？", isPresented: $confirmsRemoval) {

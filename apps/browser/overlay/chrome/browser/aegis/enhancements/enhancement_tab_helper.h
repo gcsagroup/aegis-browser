@@ -13,6 +13,7 @@
 #include "content/public/browser/devtools_agent_host_client.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "url/gurl.h"
 class Profile;
 namespace aegis {
 class EnhancementStore;
@@ -42,6 +43,7 @@ class EnhancementTabHelper
   bool MayAttachToURL(const GURL& url, bool is_webui) override;
   bool MayReadLocalFiles() override;
   bool MayWriteLocalFiles() override;
+  void RenderFrameCreated(content::RenderFrameHost* frame) override;
   void DidStartNavigation(content::NavigationHandle* handle) override;
   void DidFinishLoad(content::RenderFrameHost* frame, const GURL& url) override;
   void DidFinishNavigation(content::NavigationHandle* handle) override;
@@ -81,6 +83,7 @@ class EnhancementTabHelper
                     base::Value value,
                     std::string error);
   const Context* MainContext() const;
+  void TryAutoPreviewMarkdown();
   raw_ptr<Profile> profile_;
   raw_ptr<EnhancementStore> store_;
   const std::string id_;
@@ -93,6 +96,7 @@ class EnhancementTabHelper
   base::DictValue statuses_;
   base::DictValue markdown_;
   int64_t navigation_id_ = 0;
+  GURL pending_markdown_url_;
   std::string main_frame_, error_;
   int next_id_ = 0;
   base::WeakPtrFactory<EnhancementTabHelper> weak_{this};
