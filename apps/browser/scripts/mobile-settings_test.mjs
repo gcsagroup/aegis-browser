@@ -85,6 +85,23 @@ for (const section of ['reading', 'experiments']) {
   assert.equal(click.defaultPrevented, true, '阻止不受信任页面直接跳转 chrome://');
   assert.equal(settingsOpens, 1, '点击必须实际调用原生设置入口');
 }
+
+const workspace = fixture('aegis_agent', 'agent.html', 'https://agent.test/?view=reading');
+const originalReadingView = workspace.document.getElementById('reading-view');
+let workspaceRefreshes = 0;
+let readingViews = 0;
+workspace.exports.initializeMobileAgentSettings(async () => { workspaceRefreshes++; },
+    () => { readingViews++; }, () => {});
+assert.equal(workspace.document.body.dataset.mobileSettings, 'workspace');
+assert.equal(workspace.document.title, '阅读工作区');
+assert.equal(workspace.document.getElementById('title').textContent, '阅读工作区');
+assert.equal(workspace.document.getElementById('reading-view'), originalReadingView,
+    '独立阅读视图必须保留原控件和事件，不重新创建表单');
+assert.equal(workspaceRefreshes, 1);
+assert.equal(readingViews, 1);
+assert.equal(workspace.document.getElementById('goal').hasAttribute('autofocus'), false,
+    '打开阅读工作区不得激活任务输入或弹出任务键盘');
+
 // Android 旧版把实验选项放在翻译卡片内；迁移分组必须保留这些控件。
 const legacy = fixture('aegis_agent', 'agent.html', 'https://agent.test/?mobileSettings=experiments');
 const research = legacy.document.getElementById('reading-research-settings');
@@ -97,4 +114,4 @@ research.remove();
 legacy.exports.initializeMobileAgentSettings(async () => {}, () => {}, () => {});
 assert.equal(legacy.document.getElementById('reading-minim').closest('details').id, 'reading-research-settings');
 
-console.log('PASS mobile settings: eight categories, preserved drafts, explicit actions, legacy links and agent subpages');
+console.log('PASS mobile settings: eight categories, preserved drafts, explicit actions, legacy links and dedicated reading workspace');

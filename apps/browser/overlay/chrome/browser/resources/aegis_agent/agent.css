@@ -1071,7 +1071,12 @@ body.reading-workspace-only main > #reading-ai-settings[open] { display:block !i
 body[data-mobile-settings] main > :not(.hero, .mobile-settings-back) { display: none !important; }
 
 body[data-mobile-settings='reading'] main > #reading-ai-settings,
-body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
+body[data-mobile-settings='experiments'] main > #reading-research-settings,
+body[data-mobile-settings='workspace'] main > #reading-view,
+body[data-mobile-settings='workspace'] main > #reading-ai-settings[open] { display: block !important; }
+
+body[data-mobile-settings='workspace'] .hero,
+body[data-mobile-settings='workspace'] .mobile-settings-back { display: flex !important; }
 
 body[data-mobile-settings] .hero { align-items: flex-start; }
 
@@ -1082,7 +1087,8 @@ body[data-mobile-settings] .hero .status { display: none; }
 body[data-mobile-settings] details.card { min-width: 0; }
 
 body[data-mobile-settings] details.card > label { display: flex;
- align-items: flex-start;
+ align-items: center;
+ min-height: 48px;
  gap: 12px; }
 
 body[data-mobile-settings] details.card > label > input[type='checkbox'] { flex: none;
@@ -1099,6 +1105,26 @@ body.mobile-agent-shell {
  --primary-hover: #1967d2;
   --shadow: none;
  background: var(--bg);
+}
+
+/* Android 即使接入鼠标或手写笔，也保持可读字号和完整触控面积。 */
+body.mobile-agent-shell label,
+body.mobile-agent-shell summary,
+body.mobile-agent-shell .hero p {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+body.mobile-agent-shell summary {
+  min-height: 48px;
+  padding-block: 12px;
+}
+
+body.mobile-agent-shell button,
+body.mobile-agent-shell input:not([type='checkbox']),
+body.mobile-agent-shell select {
+  min-height: 48px;
+  font-size: 16px;
 }
 @media (prefers-color-scheme: dark) {
   body.mobile-agent-shell {
