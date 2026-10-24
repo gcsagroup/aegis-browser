@@ -2,7 +2,35 @@
 // 仅翻译已知界面文字；不会观察或改写脚本、文档、用户输入。
 (function () {
   "use strict";
-  const messages = {"为以下网址启用脚本？\n": ["Enable the script on these URLs?\n", "為以下網址啟用腳本？\n"], "\n权限：": ["\nPermissions: ", "\n權限："], "\n脚本能读取和修改网页内容。": ["\nThe script can read and change page content.", "\n腳本能讀取和修改網頁內容。"], "确认持久启用脚本？\n": ["Enable this script persistently?\n", "確認持久啟用腳本？\n"], "\n将按上述网址运行；下一次页面加载生效。": ["\nRuns on the URLs above, starting with the next page load.", "\n將按上述網址執行；下一次頁面載入生效。"], "在以下真实网页试运行？\n": ["Try the script on this live page?\n", "在以下真實網頁試執行？\n"], "\n脚本会修改网页，可能产生外部请求。试运行的 GM 存储为临时值。": ["\nThe script changes the page and may make external requests. Trial GM storage is temporary.", "\n腳本會修改網頁，可能產生外部請求。試執行的 GM 儲存為臨時值。"],
+  const messages = {
+  "为以下网址启用脚本？\n": [
+    "Enable the script on these URLs?\n",
+    "為以下網址啟用腳本？\n"
+  ],
+  "\n权限：": [
+    "\nPermissions: ",
+    "\n權限："
+  ],
+  "\n脚本能读取和修改网页内容。": [
+    "\nThe script can read and change page content.",
+    "\n腳本能讀取和修改網頁內容。"
+  ],
+  "确认持久启用脚本？\n": [
+    "Enable this script persistently?\n",
+    "確認持久啟用腳本？\n"
+  ],
+  "\n将按上述网址运行；下一次页面加载生效。": [
+    "\nRuns on the URLs above, starting with the next page load.",
+    "\n將按上述網址執行；下一次頁面載入生效。"
+  ],
+  "在以下真实网页试运行？\n": [
+    "Try the script on this live page?\n",
+    "在以下真實網頁試執行？\n"
+  ],
+  "\n脚本会修改网页，可能产生外部请求。试运行的 GM 存储为临时值。": [
+    "\nThe script changes the page and may make external requests. Trial GM storage is temporary.",
+    "\n腳本會修改網頁，可能產生外部請求。試執行的 GM 儲存為臨時值。"
+  ],
   "主题": [
     "Theme",
     "主題"
@@ -1258,6 +1286,546 @@
   "{count} 张图片尚未加载。外部图片可按需加载，本地相对图片需要授权资源目录。": [
     "{count} images are blocked. Load external images as needed, or choose a folder for local images.",
     "{count} 張圖片尚未加載。外部圖片可按需加載，本地相對圖片需要授權資源目錄。"
+  ],
+  "AI 编写": [
+    "Write with AI",
+    "AI 編寫"
+  ],
+  "下载任务": [
+    "Download tasks",
+    "下載任務"
+  ],
+  "不执行操作；请画清楚的水平或垂直方向。": [
+    "No action runs. Draw a clear horizontal or vertical direction.",
+    "不執行操作；請畫清楚的水平或垂直方向。"
+  ],
+  "临时暂停防护请使用当前网站盾牌；浏览器网站权限在下方管理。": [
+    "Use the current site's shield to pause protection. Manage browser site permissions below.",
+    "暫時停止防護請使用目前網站盾牌；瀏覽器網站權限在下方管理。"
+  ],
+  "为指定网站恢复右键菜单、选取和复制。保存后重新加载网页生效。": [
+    "Restore context menus, selection and copying on selected sites. Reload the site after saving.",
+    "為指定網站還原右鍵選單、選取及複製。儲存後重新載入網頁生效。"
+  ],
+  "也可以使用下方方向按钮。": [
+    "You can also use the direction buttons below.",
+    "也可以使用下方方向按鈕。"
+  ],
+  "仅支持不含账号密码的 HTTP/HTTPS 网站。": [
+    "Use an HTTP/HTTPS address without a username or password.",
+    "僅支援不含帳號密碼的 HTTP/HTTPS 網站。"
+  ],
+  "从已打开网页选择": [
+    "Choose an open page",
+    "從已開啟網頁選擇"
+  ],
+  "使用 L / R / U / D，最多 8 个方向": [
+    "Use L / R / U / D, up to 8 directions",
+    "使用 L / R / U / D，最多 8 個方向"
+  ],
+  "使用方向按钮绘制": [
+    "Draw using direction buttons",
+    "使用方向按鈕繪製"
+  ],
+  "使用这个方向": [
+    "Use this direction",
+    "使用這個方向"
+  ],
+  "例如 DR": [
+    "For example, DR",
+    "例如 DR"
+  ],
+  "保存前请检查完整网站地址。": [
+    "Check the full site address before saving.",
+    "儲存前請檢查完整網站位址。"
+  ],
+  "保存绑定修改": [
+    "Save binding changes",
+    "儲存綁定修改"
+  ],
+  "保存网站例外": [
+    "Save site exceptions",
+    "儲存網站例外"
+  ],
+  "只在下一次访问该来源的 Markdown 原文时自动预览；不会转换普通网页，也不会授予图片权限。": [
+    "Preview Markdown source on the next visit to this origin. Ordinary pages are not converted, and image permission is not granted.",
+    "只在下次造訪該來源的 Markdown 原文時自動預覽；不會轉換一般網頁，也不會授予圖片權限。"
+  ],
+  "向上": [
+    "Up",
+    "向上"
+  ],
+  "向下": [
+    "Down",
+    "向下"
+  ],
+  "向右": [
+    "Right",
+    "向右"
+  ],
+  "向左": [
+    "Left",
+    "向左"
+  ],
+  "含子域名": [
+    "Includes subdomains",
+    "含子網域"
+  ],
+  "子域名规则优先于继承的父域规则。此处修改的是上方显示的网站来源。": [
+    "A subdomain rule takes priority over its inherited parent rule. Edits apply to the origin shown above.",
+    "子網域規則優先於繼承的父網域規則。此處修改的是上方顯示的網站來源。"
+  ],
+  "子域名需要单独添加。可以粘贴网址，保存前会提取域名。": [
+    "Add subdomains separately. Paste a URL to extract its hostname before saving.",
+    "子網域需另外新增。可以貼上網址，儲存前會擷取網域。"
+  ],
+  "字号必须是 12–28 之间的整数；尚未保存。": [
+    "Font size must be an integer from 12 to 28. Changes are not saved.",
+    "字級必須是 12–28 之間的整數；尚未儲存。"
+  ],
+  "字号（12–28 像素）": [
+    "Font size (12–28 px)",
+    "字級（12–28 像素）"
+  ],
+  "导航": [
+    "Navigation",
+    "導覽"
+  ],
+  "尚有未保存的修改。放弃修改并离开此分类？": [
+    "There are unsaved changes. Discard them and leave this category?",
+    "尚有未儲存的修改。放棄修改並離開此分類？"
+  ],
+  "尚未添加网站。点击“添加网站”开启 Markdown 自动预览。": [
+    "No sites added. Choose Add site to enable automatic Markdown previews.",
+    "尚未新增網站。點選「新增網站」開啟 Markdown 自動預覽。"
+  ],
+  "尚未绑定，请选择动作。": [
+    "Not bound yet. Choose an action.",
+    "尚未綁定，請選擇動作。"
+  ],
+  "已保存，下一次手势生效。": [
+    "Saved. Applies to the next gesture.",
+    "已儲存，下次手勢生效。"
+  ],
+  "已保存，下次访问 Markdown 原文时生效。": [
+    "Saved. Applies on the next visit to Markdown source.",
+    "已儲存，下次造訪 Markdown 原文時生效。"
+  ],
+  "已保存，新打开的文档使用此外观。": [
+    "Saved. Newly opened documents use this appearance.",
+    "已儲存，新開啟的文件使用此外觀。"
+  ],
+  "已保存，重新加载对应网页后生效。": [
+    "Saved. Reload the corresponding page to apply.",
+    "已儲存，重新載入對應網頁後生效。"
+  ],
+  "已停用": [
+    "Disabled",
+    "已停用"
+  ],
+  "已暂停": [
+    "Paused",
+    "已暫停"
+  ],
+  "已绑定，可在下方修改；练习不执行操作。": [
+    "Already bound. Edit below; practice does not run actions.",
+    "已綁定，可在下方修改；練習不執行操作。"
+  ],
+  "当前继承自：": [
+    "Currently inherited from: ",
+    "目前繼承自："
+  ],
+  "恢复": [
+    "Resume",
+    "恢復"
+  ],
+  "恢复全部默认手势绑定？自定义绑定将被替换，其他选项保持不变。": [
+    "Restore all default gesture bindings? Custom bindings will be replaced; other settings stay unchanged.",
+    "還原全部預設手勢綁定？自訂綁定將被取代，其他選項保持不變。"
+  ],
+  "恢复右键": [
+    "Restore context menu",
+    "還原右鍵"
+  ],
+  "恢复基本选项？手势绑定和网站例外保持不变。": [
+    "Restore basic options? Gesture bindings and site exceptions stay unchanged.",
+    "還原基本選項？手勢綁定與網站例外保持不變。"
+  ],
+  "恢复默认基本选项": [
+    "Restore basic defaults",
+    "還原預設基本選項"
+  ],
+  "恢复默认外观": [
+    "Restore default appearance",
+    "還原預設外觀"
+  ],
+  "恢复默认绑定": [
+    "Restore default bindings",
+    "還原預設綁定"
+  ],
+  "手动编写": [
+    "Write manually",
+    "手動編寫"
+  ],
+  "手动输入方向": [
+    "Enter directions manually",
+    "手動輸入方向"
+  ],
+  "打开 Markdown 文件 →": [
+    "Open a Markdown file →",
+    "開啟 Markdown 檔案 →"
+  ],
+  "打开下载中心 →": [
+    "Open Downloads →",
+    "開啟下載中心 →"
+  ],
+  "打开文档、管理阅读库、翻译和批注。": [
+    "Open documents, manage your library, translate and annotate.",
+    "開啟文件、管理閱讀庫、翻譯及批註。"
+  ],
+  "打开阅读工作区 →": [
+    "Open reading workspace →",
+    "開啟閱讀工作區 →"
+  ],
+  "执行动作": [
+    "Action",
+    "執行動作"
+  ],
+  "批量编辑域名": [
+    "Edit hostnames in bulk",
+    "批次編輯網域"
+  ],
+  "搜索网站": [
+    "Search sites",
+    "搜尋網站"
+  ],
+  "搜索脚本": [
+    "Search scripts",
+    "搜尋腳本"
+  ],
+  "撤销移除": [
+    "Undo removal",
+    "復原移除"
+  ],
+  "放弃尚未保存的网站规则修改？": [
+    "Discard unsaved site rule changes?",
+    "放棄尚未儲存的網站規則修改？"
+  ],
+  "新建镜像、种子或磁力下载，查看下载记录。": [
+    "Start mirror, torrent or magnet downloads and view download history.",
+    "新增鏡像、種子或磁力下載，查看下載記錄。"
+  ],
+  "方向不明确": [
+    "Direction is unclear",
+    "方向不明確"
+  ],
+  "暂无网站例外。": [
+    "No site exceptions yet.",
+    "目前沒有網站例外。"
+  ],
+  "更多操作": [
+    "More actions",
+    "更多操作"
+  ],
+  "最多添加 64 条手势。": [
+    "You can add up to 64 gestures.",
+    "最多新增 64 條手勢。"
+  ],
+  "未启用": [
+    "Not enabled",
+    "未啟用"
+  ],
+  "未启用增强选项": [
+    "No enhancements enabled",
+    "未啟用增強選項"
+  ],
+  "未画出手势": [
+    "No gesture drawn",
+    "未畫出手勢"
+  ],
+  "本机翻译语言包": [
+    "Offline translation language packs",
+    "本機翻譯語言包"
+  ],
+  "松开查看结果 · Esc 取消": [
+    "Release to see the result · Esc to cancel",
+    "放開查看結果 · Esc 取消"
+  ],
+  "查看网页运行详情": [
+    "View page execution details",
+    "查看網頁執行詳情"
+  ],
+  "查看防护详情与诊断 →": [
+    "View protection details and diagnostics →",
+    "查看防護詳情與診斷 →"
+  ],
+  "标签页": [
+    "Tabs",
+    "分頁"
+  ],
+  "正在保存…": [
+    "Saving…",
+    "正在儲存…"
+  ],
+  "正在保存，请完成后再离开。": [
+    "Saving. Wait for it to finish before leaving.",
+    "正在儲存，請完成後再離開。"
+  ],
+  "正在保存，请稍候。": [
+    "Saving. Please wait.",
+    "正在儲存，請稍候。"
+  ],
+  "正文和列表": [
+    "Body text and lists",
+    "內文與清單"
+  ],
+  "此网站已存在，请编辑原规则。": [
+    "This site already exists. Edit its existing rule.",
+    "此網站已存在，請編輯原規則。"
+  ],
+  "每条独立保存，最多 64 条。PDF 动作仅在内置阅读器中使用。": [
+    "Each binding saves separately, up to 64. PDF actions work only in the built-in reader.",
+    "每條獨立儲存，最多 64 條。PDF 動作僅在內建閱讀器中使用。"
+  ],
+  "没有匹配的网站。": [
+    "No matching sites.",
+    "沒有符合條件的網站。"
+  ],
+  "没有匹配的脚本。": [
+    "No matching scripts.",
+    "沒有符合條件的腳本。"
+  ],
+  "没有执行任何操作": [
+    "No action was performed",
+    "未執行任何操作"
+  ],
+  "添加并保存": [
+    "Add and save",
+    "新增並儲存"
+  ],
+  "添加并开启": [
+    "Add and enable",
+    "新增並開啟"
+  ],
+  "添加网站": [
+    "Add site",
+    "新增網站"
+  ],
+  "状态": [
+    "Status",
+    "狀態"
+  ],
+  "生成期间源码已修改。用生成结果替换当前源码？": [
+    "The source changed during generation. Replace it with the generated result?",
+    "產生期間原始碼已修改。用產生結果取代目前原始碼？"
+  ],
+  "用户脚本": [
+    "User scripts",
+    "使用者腳本"
+  ],
+  "用户脚本管理器": [
+    "User script manager",
+    "使用者腳本管理器"
+  ],
+  "用舒适的字号和行距阅读，让注意力留在内容上。": [
+    "Read with comfortable font size and spacing to focus on the content.",
+    "使用舒適的字級與行距閱讀，讓注意力留在內容上。"
+  ],
+  "画出上下左右方向": [
+    "Draw up, down, left or right",
+    "畫出上下左右方向"
+  ],
+  "移除此网站规则？不会删除用户脚本，也不会刷新网页。": [
+    "Remove this site rule? User scripts are kept and the page will not reload.",
+    "移除此網站規則？不會刪除使用者腳本，也不會重新整理網頁。"
+  ],
+  "移除这个网站的自动预览记录？": [
+    "Remove this site's automatic preview entry?",
+    "移除此網站的自動預覽記錄？"
+  ],
+  "管理已安装脚本，或新建与导入；试运行时再选择网页。": [
+    "Manage installed scripts, create or import. Select a page when you test a script.",
+    "管理已安裝腳本，或新增及匯入；試執行時再選擇網頁。"
+  ],
+  "管理用户脚本 →": [
+    "Manage user scripts →",
+    "管理使用者腳本 →"
+  ],
+  "绘制并设置手势": [
+    "Draw and configure a gesture",
+    "繪製並設定手勢"
+  ],
+  "编写、导入和管理脚本；试运行时再选择目标网页。": [
+    "Write, import and manage scripts; select a target page when testing.",
+    "編寫、匯入及管理腳本；試執行時再選擇目標網頁。"
+  ],
+  "编辑继承的父网站规则": [
+    "Edit the inherited parent-site rule",
+    "編輯繼承的父網站規則"
+  ],
+  "编辑网站规则": [
+    "Edit site rule",
+    "編輯網站規則"
+  ],
+  "缺少设置控件：": [
+    "Missing setting control: ",
+    "缺少設定控制項："
+  ],
+  "网站地址": [
+    "Site address",
+    "網站位址"
+  ],
+  "网站域名或地址": [
+    "Site hostname or address",
+    "網站網域或位址"
+  ],
+  "网站权限": [
+    "Site permissions",
+    "網站權限"
+  ],
+  "网站规则": [
+    "Site rules",
+    "網站規則"
+  ],
+  "网站规则在此管理；脚本操作请打开用户脚本管理器。": [
+    "Manage site rules here. Open the user script manager for script operations.",
+    "網站規則在此管理；腳本操作請開啟使用者腳本管理器。"
+  ],
+  "网站预览记录已移除。": [
+    "Site preview entry removed.",
+    "網站預覽記錄已移除。"
+  ],
+  "脚本不匹配所选网页，请修改适用网址或更换目标。": [
+    "The script does not match this page. Edit its match URLs or choose another target.",
+    "腳本不符合所選網頁，請修改適用網址或更換目標。"
+  ],
+  "自动保存，作为新打开文档的默认外观；不会改变已打开的其他文档。": [
+    "Saves automatically as the default for newly opened documents. Other open documents keep their appearance.",
+    "自動儲存，作為新開啟文件的預設外觀；不會改變已開啟的其他文件。"
+  ],
+  "自动预览": [
+    "Automatic preview",
+    "自動預覽"
+  ],
+  "草稿／待授权": [
+    "Draft / awaiting authorization",
+    "草稿／待授權"
+  ],
+  "设置尚未读取。": [
+    "Settings have not loaded yet.",
+    "設定尚未讀取。"
+  ],
+  "设置已加载": [
+    "Settings loaded",
+    "設定已載入"
+  ],
+  "设置控件不可用：": [
+    "Setting control unavailable: ",
+    "設定控制項無法使用："
+  ],
+  "设置请求无效": [
+    "Invalid settings request",
+    "設定要求無效"
+  ],
+  "请输入完整网站地址，例如 https://example.com。": [
+    "Enter a full site address, such as https://example.com.",
+    "請輸入完整網站位址，例如 https://example.com。"
+  ],
+  "请输入有效网站域名。": [
+    "Enter a valid site hostname.",
+    "請輸入有效網站網域。"
+  ],
+  "请选择动作": [
+    "Choose an action",
+    "請選擇動作"
+  ],
+  "请选择目标网页；没有网页时仍可保存草稿。": [
+    "Select a target page. You can save a draft without one.",
+    "請選擇目標網頁；沒有網頁時仍可儲存草稿。"
+  ],
+  "调试兼容": [
+    "Debugging compatibility",
+    "偵錯相容"
+  ],
+  "路径不参与匹配。": [
+    "Paths are not used for matching.",
+    "路徑不參與比對。"
+  ],
+  "路径不参与匹配，子域名需分别添加。": [
+    "Paths are not matched. Add subdomains separately.",
+    "路徑不參與比對，子網域需分別新增。"
+  ],
+  "输入域名": [
+    "Enter a hostname",
+    "輸入網域"
+  ],
+  "还没有网站规则。点击“添加网站”开始。": [
+    "No site rules yet. Choose Add site to begin.",
+    "尚無網站規則。點選「新增網站」開始。"
+  ],
+  "还没有脚本。可以手动编写、AI 编写或导入。": [
+    "No scripts yet. Write manually, use AI, or import a script.",
+    "尚無腳本。可以手動編寫、AI 編寫或匯入。"
+  ],
+  "这个方向已重新绑定，请先检查现有动作。": [
+    "This direction has been rebound. Check its current action first.",
+    "此方向已重新綁定，請先檢查現有動作。"
+  ],
+  "选取和复制": [
+    "Selection and copying",
+    "選取及複製"
+  ],
+  "选择目标网页": [
+    "Select target page",
+    "選擇目標網頁"
+  ],
+  "选择网页（可选）": [
+    "Choose a page (optional)",
+    "選擇網頁（選填）"
+  ],
+  "重新读取会放弃当前未保存的手势编辑，继续？": [
+    "Reloading discards unsaved gesture edits. Continue?",
+    "重新讀取會放棄目前未儲存的手勢編輯，繼續？"
+  ],
+  "重新读取设置": [
+    "Reload settings",
+    "重新讀取設定"
+  ],
+  "重画": [
+    "Draw again",
+    "重畫"
+  ],
+  "重试保存": [
+    "Retry saving",
+    "重試儲存"
+  ],
+  "链接样式": [
+    "Link style",
+    "連結樣式"
+  ],
+  "阅读外观预览": [
+    "Reading appearance preview",
+    "閱讀外觀預覽"
+  ],
+  "阅读工作区": [
+    "Reading workspace",
+    "閱讀工作區"
+  ],
+  "需包含 1–8 个方向，相邻方向不能相同。": [
+    "Use 1–8 directions without consecutive repeats.",
+    "需包含 1–8 個方向，相鄰方向不可相同。"
+  ],
+  "页面": [
+    "Page",
+    "頁面"
+  ],
+  "高级选项": [
+    "Advanced options",
+    "進階選項"
+  ],
+  "；保存后将建立当前网站的独立规则。": [
+    "; saving creates a separate rule for the current site.",
+    "；儲存後將建立目前網站的獨立規則。"
   ]
 };
   let locale = navigator.language || "zh-CN";

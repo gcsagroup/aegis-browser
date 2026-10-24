@@ -1,0 +1,72 @@
+/* Copyright 2026 The Chromium Authors
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file. */
+
+/* #css_wrapper_metadata_start
+ * #type=style-lit
+ * #import=chrome://resources/cr_elements/cr_shared_style_lit.css.js
+ * #import=../settings_shared_lit.css.js
+ * #include=cr-shared-style-lit settings-shared-lit
+ * #css_wrapper_metadata_end */
+
+#defaultDownloadPath {
+  word-break: break-word;
+}
+
+/* 嵌入 Aegis 设置时沿用外层内容宽度，避免与下方任务入口错位。 */
+:host([aegis-only]) {
+  display: block;
+}
+
+:host([aegis-only]) .cr-centered-card-container {
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+}
+
+.aegis-description {
+  color: var(--cr-secondary-text-color);
+  font-size: 12px;
+  line-height: 18px;
+  margin-top: 4px;
+}
+
+.aegis-heading {
+  font-weight: 500;
+}
+
+.aegis-select {
+  background: var(--cr-card-background-color);
+  border: 1px solid var(--cr-separator-color);
+  border-radius: 8px;
+  color: var(--cr-primary-text-color);
+  min-height: 36px;
+  padding: 0 12px;
+}
+
+.aegis-rate-row {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  padding: 12px 20px;
+}
+
+.aegis-rate-row > div {
+  min-width: 0;
+}
+
+.aegis-rate-row label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.aegis-rate-row .aegis-select {
+  margin-bottom: 8px;
+  max-width: 100%;
+}
+
+.aegis-fixed {
+  color: var(--cr-secondary-text-color);
+  padding: 12px 20px;
+}

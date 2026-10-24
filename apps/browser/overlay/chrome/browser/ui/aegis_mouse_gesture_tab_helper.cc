@@ -226,8 +226,7 @@ void MouseGestureTabHelper::OnWidgetDestroyed(views::Widget*) {
 
 bool MouseGestureTabHelper::InPracticeRegion(
     const blink::WebMouseEvent& event) const {
-  if (web_contents()->GetLastCommittedURL() !=
-      GURL("chrome://aegis/gestures.html")) {
+  if (!IsGestureSettingsPage(web_contents()->GetLastCommittedURL())) {
     return false;
   }
   const auto* region = static_cast<GesturePracticeRegion*>(

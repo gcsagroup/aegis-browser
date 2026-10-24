@@ -1,0 +1,1541 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Tue, 20 Oct 2026 19:00:00 +0800
+Subject: [PATCH] 统一 Aegis 功能设置，保留完整配置与旧入口
+
+---
+ chrome/browser/aegis/aegis_ui_handler_unittest.cc  |  35 +++++++
+ chrome/browser/aegis/gestures/gesture_settings.cc  |   7 ++
+ chrome/browser/aegis/gestures/gesture_settings.h   |   2 +
+ chrome/browser/aegis/gestures/gesture_unittest.cc  |  22 +++++
+ chrome/browser/chrome_content_browser_client.cc    |   5 +
+ chrome/browser/resources/aegis/aegis.css           |  59 ++++++++++++
+ chrome/browser/resources/aegis/aegis.html          |  18 ++--
+ chrome/browser/resources/aegis/aegis.ts            | 106 +++++++++++++++++----
+ chrome/browser/resources/aegis/enhancements.js     |   6 +-
+ chrome/browser/resources/aegis/gestures.ts         |   4 +-
+ chrome/browser/resources/aegis_agent/agent.css     |  56 +++++++++++
+ chrome/browser/resources/aegis_agent/agent.html    |   2 +
+ chrome/browser/resources/aegis_agent/agent.ts      |  91 +++++++++++++++++-
+ .../resources/aegis_agent/reading_workspace.ts     |   4 +
+ .../resources/settings/aegis_page/aegis_page.html  |  31 ++++--
+ .../resources/settings/aegis_page/aegis_page.ts    | 100 ++++++++++++-------
+ .../settings/downloads_page/downloads_page.html.ts |   8 +-
+ .../settings/downloads_page/downloads_page.ts      |  23 +++--
+ .../settings/privacy_page/privacy_page.html        |   4 +-
+ .../settings/privacy_page/privacy_page.ts          |   2 +-
+ chrome/browser/resources/settings/route.ts         |  12 ++-
+ chrome/browser/resources/settings/router.ts        |   4 +
+ .../settings/settings_main/settings_main.html      |  12 ++-
+ .../settings/settings_menu/settings_menu.html      |   7 +-
+ .../browser/ui/aegis_mouse_gesture_tab_helper.cc   |   3 +-
+ .../ui/webui/aegis/aegis_gesture_handler.cc        |   5 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc          |   8 +-
+ chrome/browser/ui/webui/aegis/aegis_ui_handler.cc  |  11 +++
+ .../webui/aegis_agent/aegis_agent_page_handler.cc  |   5 +
+ .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |   7 ++
+ chrome/browser/ui/webui/help/aegis_github_update.h |   4 +-
+ chrome/browser/ui/webui/settings/settings_ui.cc    |  25 ++++-
+ .../aegis_downloads/aegis_download_panel.ts        |  10 ++
+ 33 files changed, 589 insertions(+), 109 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index c3003bc190f0b9dd82cb754499ea032e032eb7ff..faea43f005857d926e11c5655653864523915bdc 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -11,6 +11,7 @@
+ #include "build/build_config.h"
+ #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
+ #include "chrome/browser/aegis/metalink_download_verifier.h"
++#include "chrome/browser/chrome_content_browser_client.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+ #include "chrome/browser/ui/browser.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+@@ -35,6 +36,18 @@ namespace {
+ 
+ class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
+ 
++TEST_F(AegisUIHandlerTest, SettingsKeepLocalPacksWithoutExemptingWebOrigins) {
++  ChromeContentBrowserClient client;
++  EXPECT_TRUE(client.ShouldUseFirstPartyStorageKey(
++      url::Origin::Create(GURL("chrome-untrusted://aegis-agent"))));
++  for (const char* url : {"https://aegis-agent", "https://example.com",
++                          "chrome-untrusted://other", "chrome://settings"}) {
++    EXPECT_FALSE(client.ShouldUseFirstPartyStorageKey(
++        url::Origin::Create(GURL(url))));
++  }
++  EXPECT_FALSE(client.ShouldUseFirstPartyStorageKey(url::Origin()));
++}
++
+ // 工作区恢复需要可编辑的标签栏；基础测试窗口默认禁止编辑。
+ class WorkspaceTestWindow : public TestBrowserWindow {
+  public:
+@@ -55,6 +68,28 @@ class TestAegisUIHandler : public AegisUIHandler {
+   using content::WebUIMessageHandler::set_web_ui;
+ };
+ 
++TEST_F(AegisUIHandlerTest, KeepsCnamePreferenceSeparateFromRuntimeDependency) {
++  profile()->GetPrefs()->SetBoolean(prefs::kTrackerBlockingEnabled, false);
++  profile()->GetPrefs()->SetBoolean(prefs::kCnameUncloakEnabled, true);
++  auto contents = content::WebContents::Create(
++      content::WebContents::CreateParams(profile()));
++  content::TestWebUI web_ui;
++  web_ui.set_web_contents(contents.get());
++  TestAegisUIHandler handler;
++  handler.set_web_ui(&web_ui);
++  handler.RegisterMessages();
++  base::ListValue args;
++  args.Append("status-test");
++  web_ui.HandleReceivedMessage("getStatus", args);
++  ASSERT_EQ(1u, web_ui.call_data().size());
++  const auto& response = *web_ui.call_data().back();
++  ASSERT_TRUE(response.arg3());
++  const auto& status = response.arg3()->GetDict();
++  EXPECT_TRUE(status.FindBool("cnameUncloakConfigured").value_or(false));
++  EXPECT_FALSE(status.FindBool("cnameUncloak").value_or(true));
++  EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kCnameUncloakEnabled));
++}
++
+ TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
+   AddTab(browser(), GURL("https://left.example/"));
+   AddTab(browser(), GURL("chrome://aegis/"));
+diff --git a/chrome/browser/aegis/gestures/gesture_settings.cc b/chrome/browser/aegis/gestures/gesture_settings.cc
+index 342aacaf376e4233c0515b29fdbad62d13e15008..4ce7cfc94dcebf4711d079e7ce544b47b3a4f7d9 100644
+--- a/chrome/browser/aegis/gestures/gesture_settings.cc
++++ b/chrome/browser/aegis/gestures/gesture_settings.cc
+@@ -9,6 +9,13 @@
+ 
+ namespace aegis {
+ 
++bool IsGestureSettingsPage(const GURL& url) {
++  return url.GetWithoutRef() == GURL("chrome://aegis/gestures.html") ||
++         (url.SchemeIs("chrome") && url.host() == "settings" &&
++          (url.path() == "/aegisGestures" ||
++           (url.path() == "/" && url.query().starts_with("search="))));
++}
++
+ const std::vector<GestureAction>& GestureActions() {
+   static const base::NoDestructor<std::vector<GestureAction>> actions({
+       {"back", "后退", false},
+diff --git a/chrome/browser/aegis/gestures/gesture_settings.h b/chrome/browser/aegis/gestures/gesture_settings.h
+index d9dfd57362688f4ac023a297bd2e8eb72a11ae71..0452d8033a54862c414c7bccdba530aa3af0da9c 100644
+--- a/chrome/browser/aegis/gestures/gesture_settings.h
++++ b/chrome/browser/aegis/gestures/gesture_settings.h
+@@ -25,6 +25,8 @@ struct GestureAction {
+ const std::vector<GestureAction>& GestureActions();
+ const GestureAction* FindGestureAction(std::string_view id);
+ bool IsGesturePattern(std::string_view pattern);
++// 设置读写与练习区拦截必须识别同一组地址，避免迁移后练习触发真实动作。
++bool IsGestureSettingsPage(const GURL& url);
+ 
+ struct GestureSettings {
+   bool enabled = true;
+diff --git a/chrome/browser/aegis/gestures/gesture_unittest.cc b/chrome/browser/aegis/gestures/gesture_unittest.cc
+index f90558dbd9b9248fbbdc233b7ee3eece9871d736..3b1b25dcad71084a06d8217aad6def8428c1b39f 100644
+--- a/chrome/browser/aegis/gestures/gesture_unittest.cc
++++ b/chrome/browser/aegis/gestures/gesture_unittest.cc
+@@ -5,6 +5,7 @@
+ #include "chrome/browser/aegis/gestures/gesture_settings.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "url/gurl.h"
++#include "url/url_util.h"
+ 
+ namespace aegis {
+ TEST(AegisGestureRecognizerTest, ClickAndJitterDoNotBecomeGestures) {
+@@ -113,4 +114,25 @@ TEST(AegisGestureSettingsTest, PracticeBoundsExcludeOutsideArea) {
+   EXPECT_FALSE(area.Contains(.4, .6));
+   EXPECT_FALSE(area.Contains(std::numeric_limits<double>::quiet_NaN(), .4));
+ }
++
++TEST(AegisGestureSettingsTest, PracticeAndSettingsAcceptOnlyCompatiblePages) {
++  url::ScopedSchemeRegistryForTests schemes;
++  url::AddStandardScheme("chrome", url::SCHEME_WITH_HOST);
++  for (const char* url : {"chrome://aegis/gestures.html",
++                          "chrome://aegis/gestures.html#practice",
++                          "chrome://settings/aegisGestures",
++                          "chrome://settings/aegisGestures?from=legacy#practice",
++                          "chrome://settings/?search=gestures"}) {
++    EXPECT_TRUE(IsGestureSettingsPage(GURL(url))) << url;
++  }
++  for (const char* url : {"https://settings/aegisGestures",
++                          "chrome://other/aegisGestures",
++                          "chrome://settings/aegis",
++                          "chrome://settings/aegisPrivacy",
++                          "chrome://settings/aegisGesturesExtra",
++                          "chrome://settings/",
++                          "chrome://settings/?notsearch=gestures"}) {
++    EXPECT_FALSE(IsGestureSettingsPage(GURL(url))) << url;
++  }
++}
+ }  // namespace aegis
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index ba07d804193a8aefd79ae57c8e543876822a4969..7d06d4b5f7c5eed0302edde1cf42a21cf6eed1d3 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -9140,6 +9140,11 @@ base::FilePath ChromeContentBrowserClient::GetChildProcessPath(int flags) {
+ 
+ bool ChromeContentBrowserClient::ShouldUseFirstPartyStorageKey(
+     const url::Origin& origin) {
++  // Aegis 助手在侧栏和设置中复用同一份本机语言包。只对这个
++  // 浏览器内部来源保持原存储键；网页的第三方存储隔离不变。
++  if (origin == url::Origin::Create(GURL("chrome-untrusted://aegis-agent"))) {
++    return true;
++  }
+ #if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
+   return origin.scheme() == extensions::kExtensionScheme;
+ #else
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index 19cfdbb252af12539c120cf111626f3371e1c828..f1f59cbe67be4a0eeb593d0b0cb63f01cad68ad0 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -618,3 +618,62 @@ textarea {
+     min-height: 64px;
+   }
+ }
++
++/* 设置中心复用原来的控件和保存逻辑，按分类显示，避免平行配置副本。 */
++body[data-settings] {
++  --bg: light-dark(#fff, #202124);
++  --fg: light-dark(#202124, #e8eaed);
++  --muted: light-dark(#5f6368, #bdc1c6);
++  --line: light-dark(#dadce0, #45474b);
++  --accent: light-dark(#185abc, #a8c7fa);
++  background: transparent;
++  font: 14px/1.55 system-ui, sans-serif;
++}
++
++body[data-settings] .page {
++  max-width: none;
++  padding: 0 0 24px;
++}
++
++body[data-settings] #enhancement-navigation,
++body[data-settings] .page > :not(dialog) {
++  display: none !important;
++}
++
++body[data-settings='privacy'] .page > .overview,
++body[data-settings='privacy'] .page > .activity,
++body[data-settings='privacy'] .page > .modules,
++body[data-settings='privacy'] .page > .filters,
++body[data-settings='ai'] .page > .privacy,
++body[data-settings='ai'] .page > .browser-agent:not([hidden]),
++body[data-settings='downloads'] .page > .downloads,
++body[data-settings='tools'] .page > .ai-control:not([hidden]) {
++  display: block !important;
++}
++
++body[data-settings] .page > section {
++  margin: 0 0 24px;
++}
++
++body[data-settings] #settings-result:not([hidden]) {
++  display: block !important;
++}
++
++body[data-settings] section {
++  padding: 20px;
++  border: 1px solid var(--line);
++  border-radius: 12px;
++  background: var(--bg);
++}
++
++body[data-settings] h2 {
++  font-size: 17px;
++  font-weight: 600;
++}
++
++body[data-settings] input[type='url'],
++body[data-settings] input[type='text'],
++body[data-settings] input[type='password'],
++body[data-settings] select {
++  max-width: 100%;
++}
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index cc82ba570fc408b91daebcdb89c90d94b8528a8e..34ec787d8ff00eb21e1c436f1721f6513376fb05 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -9,6 +9,7 @@
+   <body>
+   <nav id="enhancement-navigation" hidden style="padding: 12px 24px"><a id="enhancement-link" href="enhancements.html">网站增强与用户脚本</a> · <a id="markdown-link" href="markdown.html">Markdown 阅读</a></nav>
+     <main class="page">
++      <pre class="result" id="settings-result" role="status" hidden></pre>
+       <header class="page-header">
+         <img class="brand-mark" src="product_logo.svg" alt="">
+         <div><h1>$i18n{title}</h1>
+@@ -119,13 +120,7 @@
+           </span>
+           <input id="policy-worker" type="checkbox">
+         </label>
+-        <label class="row">
+-          <span class="copy">
+-            <span class="name">$i18n{privacyAiLabel}</span>
+-            <span class="hint">$i18n{privacyAiHint}</span>
+-          </span>
+-          <input id="privacy-ai" type="checkbox">
+-        </label>
++
+       </section>
+       <section class="filters" aria-label="$i18n{filterListTitle}">
+         <h2>$i18n{filterListTitle}</h2>
+@@ -143,12 +138,19 @@
+         <h2>$i18n{downloadsTitle}</h2>
+         <p class="meta">$i18n{downloadsMeta}</p>
+         <aegis-download-panel></aegis-download-panel>
+-        <p><a href="chrome://downloads">$i18n{downloadsHistory}</a></p>
++        <p><a href="chrome://downloads" target="_top">$i18n{downloadsHistory}</a></p>
+         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
+       </section>
+       <section class="privacy" aria-label="$i18n{privacyAiTitle}">
+         <h2>$i18n{privacyAiTitle}</h2>
+         <p class="meta" id="privacy-meta">$i18n{privacyAiMeta}</p>
++        <label class="row" id="summary-toggle">
++          <span class="copy">
++            <span class="name">$i18n{privacyAiLabel}</span>
++            <span class="hint">$i18n{privacyAiHint}</span>
++          </span>
++          <input id="privacy-ai" type="checkbox">
++        </label>
+         <div id="model-fields">
+           <p class="meta">$i18n{modelHint}</p>
+           <p class="meta" id="model-data-note">$i18n{modelDataNote}</p>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 5a19fa7d637200d8483dcfcae4e1fb995009cd7f..b1499679c81c2c90f0e102411121efd5abe4395f 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -1,6 +1,7 @@
+ // Copyright 2026 GCSA
+ 
+ import '/strings.m.js';
++import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+ import './policy_worker.js';
+ import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
+ 
+@@ -42,6 +43,7 @@ interface AegisStatus {
+   linkSanitize: boolean;
+   cookieJanitor: boolean;
+   cnameUncloak: boolean;
++  cnameUncloakConfigured?: boolean;
+   bounceTracking: boolean;
+   policyWorker: boolean;
+   policyWorkerReady: boolean;
+@@ -675,7 +677,8 @@ function applyStatus(status: AegisStatus) {
+   checkbox('miner-guard').checked = status.minerGuard;
+   checkbox('link-sanitize').checked = status.linkSanitize;
+   checkbox('cookie-janitor').checked = status.cookieJanitor;
+-  checkbox('cname-uncloak').checked = status.cnameUncloak;
++  checkbox('cname-uncloak').checked =
++      status.cnameUncloakConfigured ?? status.cnameUncloak;
+   checkbox('bounce-tracking').checked = status.bounceTracking;
+   checkbox('policy-worker').checked = status.policyWorker;
+   checkbox('privacy-ai').checked = status.privacyAi;
+@@ -725,19 +728,27 @@ function applyStatus(status: AegisStatus) {
+ 
+ async function setModule(module: ModuleName, enabled: boolean) {
+   const status: AegisStatus =
+-      await sendWithPromise('setModuleEnabled', module, enabled);
++      await requestSettings('setModuleEnabled', module, enabled);
+   applyStatus(status);
++  if (status.ok === false) throw new Error(status.error || '设置未保存');
+ }
+ 
+ function bindToggle(id: string, module: ModuleName) {
+   const el = checkbox(id);
+   el.addEventListener('change', () => {
+-    void setModule(module, el.checked);
++    const requested = el.checked;
++    el.disabled = true;
++    void setModule(module, requested).catch(error => {
++      el.checked = !requested;
++      showResult(String(error));
++    }).finally(() => { el.disabled = false; });
+   });
+ }
+ 
+ function showResult(text: string) {
+-  const el = getRequiredElement('privacy-result');
++  const section = document.body.dataset['settings'];
++  const el = getRequiredElement(section && section !== 'ai' ?
++      'settings-result' : 'privacy-result');
+   el.hidden = false;
+   el.textContent = text;
+ }
+@@ -1248,7 +1259,7 @@ async function probeFingerprint() {
+ }
+ 
+ async function summarizeActiveTab() {
+-  const captured: CapturedSummary = await sendWithPromise('summarizeActiveTab');
++  const captured: CapturedSummary = await requestSettings('summarizeActiveTab');
+   if (!captured.ok || !captured.requestId || !captured.snapshot) {
+     showResult(captured.error || 'summary capture failed');
+     return;
+@@ -1260,12 +1271,12 @@ async function summarizeActiveTab() {
+   if (!prepared) {
+     // Consume the prepared browser request even when the renderer rejects its
+     // own output; it must never remain reusable until TTL expiry.
+-    await sendWithPromise('completePreparedSummary', captured.requestId, {});
++    await requestSettings('completePreparedSummary', captured.requestId, {});
+     showResult('renderer policy worker rejected the page snapshot');
+     return;
+   }
+   const liveStatus: AegisStatus =
+-      withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
++      withRendererPolicyWorkerStatus(await requestSettings('getStatus'));
+   const status: AegisStatus = {
+     ...liveStatus,
+     modelProvider: captured.modelProvider || liveStatus.modelProvider,
+@@ -1273,7 +1284,7 @@ async function summarizeActiveTab() {
+     modelName: captured.modelName || liveStatus.modelName,
+   };
+   if (!await confirmSummaryPreview(captured, prepared, status)) {
+-    await sendWithPromise('cancelPreparedSummary', captured.requestId);
++    await requestSettings('cancelPreparedSummary', captured.requestId);
+     return;
+   }
+   const zh = (document.documentElement.lang || 'zh-CN').startsWith('zh');
+@@ -1288,7 +1299,7 @@ async function summarizeActiveTab() {
+           (zh ?
+                (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '相容模型服務正在生成，最長等待 45 秒…' : '兼容模型服务正在生成，最长等待 45 秒…') :
+                'The compatible model service is generating; allow up to 45 seconds…'));
+-  const result: SummarizeResult = await sendWithPromise(
++  const result: SummarizeResult = await requestSettings(
+       'completePreparedSummary', captured.requestId, prepared);
+   showResult(formatSummary(result, status));
+ }
+@@ -1303,7 +1314,7 @@ async function runSummaryAction() {
+   } finally {
+     summaryRequestRunning = false;
+     try {
+-      const next: AegisStatus = await sendWithPromise('getStatus');
++      const next: AegisStatus = await requestSettings('getStatus');
+       applyStatus(next);
+     } catch (err) {
+       actionButton('summarize').disabled = false;
+@@ -1378,7 +1389,7 @@ async function loadModels() {
+   actionButton('model-load').disabled = true;
+   fillModelList([], snapshot.modelName, 'loading');
+   try {
+-    const result: ModelListResult = await sendWithPromise(
++    const result: ModelListResult = await requestSettings(
+         'listModels', snapshot.format, snapshot.baseUrl, apiKey);
+     if (serial !== modelListRequestSerial ||
+         !isCurrentModelSnapshot(snapshot)) {
+@@ -1423,7 +1434,7 @@ async function saveModelSettings(clearKey: boolean) {
+   actionButton('model-save').disabled = true;
+   actionButton('model-key-clear').disabled = true;
+   try {
+-    const next: AegisStatus = await sendWithPromise(
++    const next: AegisStatus = await requestSettings(
+         'setModelSettings', snapshot.format, snapshot.baseUrl,
+         snapshot.modelName, apiKey, clearKey);
+     if (serial !== modelSettingsRequestSerial ||
+@@ -1469,7 +1480,7 @@ async function saveModelSettings(clearKey: boolean) {
+ 
+ async function init() {
+   const status: AegisStatus =
+-      withRendererPolicyWorkerStatus(await sendWithPromise('getStatus'));
++      withRendererPolicyWorkerStatus(await requestSettings('getStatus'));
+   applyStatus(status);
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+@@ -1488,7 +1499,7 @@ async function init() {
+   actionButton('filter-update').addEventListener('click', () => {
+     void (async () => {
+       actionButton('filter-update').disabled = true;
+-      const next: AegisStatus = await sendWithPromise('updateFilterLists');
++      const next: AegisStatus = await requestSettings('updateFilterLists');
+       applyStatus(next);
+     })();
+   });
+@@ -1500,14 +1511,14 @@ async function init() {
+   });
+   actionButton('browser-agent-open').addEventListener('click', () => {
+     void (async () => {
+-      const next: AegisStatus = await sendWithPromise('openBrowserAgent');
++      const next: AegisStatus = await requestSettings('openBrowserAgent');
+       fillBrowserAgent(next);
+       if (next.ok === false && next.error) {
+         getRequiredElement('browser-agent-status').textContent = next.error;
+       }
+     })();
+   });
+-  addWebUiListener('aegis-status-changed', (next: AegisStatus) => {
++  listenSettingsStatus( (next: AegisStatus) => {
+     next = withRendererPolicyWorkerStatus(next);
+     applyModelStatus(next);
+     fillOverview(next);
+@@ -1521,8 +1532,67 @@ async function init() {
+   });
+ }
+ 
++// 独立页面继续使用原接口，嵌入设置页通过经过来源校验的父框架转发。
++function requestSettings<T>(method: string, ...args: unknown[]): Promise<T> {
++  if (!embeddedSettings) return sendWithPromise<T>(method, ...args);
++  return new Promise<T>((resolve, reject) => {
++    const id = 'settings-' + (++settingsRequestId);
++    const timer = window.setTimeout(() => {
++      settingsRequests.delete(id);
++      reject(new Error(document.documentElement.lang.startsWith('zh') ?
++          '设置请求超时，请重新打开此页重试。' : 'Settings request timed out. Reopen this page to retry.'));
++    }, 180000);
++    settingsRequests.set(id, {resolve: value => resolve(value as T), reject, timer});
++    parent.postMessage({type: 'aegis-settings-request', id, method, args}, 'chrome://settings');
++  });
++}
++function listenSettingsStatus(callback: (status: AegisStatus) => void) {
++  if (embeddedSettings) settingsStatusListener = callback;
++  else addWebUiListener('aegis-status-changed', callback);
++}
++
++// 复用完整设置控件；只改变展示分组，不迁移或重写已保存的配置。
++const settingsSection = new URLSearchParams(location.search).get('settings');
++const embeddedSettings = window.parent !== window &&
++    ['privacy', 'ai', 'downloads', 'tools'].includes(settingsSection || '');
++let settingsRequestId = 0;
++const settingsRequests = new Map<string, {resolve: (value: unknown) => void, reject: (reason: Error) => void, timer: number}>();
++let settingsStatusListener: ((status: AegisStatus) => void)|undefined;
++if (embeddedSettings) {
++  document.body.dataset['settings'] = settingsSection!;
++  window.addEventListener('message', event => {
++    if (event.source !== parent || event.origin !== 'chrome://settings') return;
++    if (event.data?.type === 'aegis-settings-status') {
++      settingsStatusListener?.(event.data.status);
++      return;
++    }
++    if (event.data?.type !== 'aegis-settings-response') return;
++    const pending = settingsRequests.get(event.data.id);
++    if (!pending) return;
++    clearTimeout(pending.timer);
++    settingsRequests.delete(event.data.id);
++    if (event.data.error) pending.reject(new Error(String(event.data.error)));
++    else pending.resolve(event.data.result);
++  });
++}
++
+ document.addEventListener('DOMContentLoaded', () => {
++  if (!loadTimeData.getBoolean('isAndroid') && !embeddedSettings) {
++    const sections: Record<string, string> = {downloads: 'Downloads',
++      privacy: 'Privacy', modules: 'Privacy', filters: 'Privacy',
++      'overview-title': 'Privacy', 'model-fields': 'Ai', 'privacy-ai': 'Ai',
++      'browser-agent-section': 'Ai', 'ai-control-section': 'Tools'};
++    const section = sections[location.hash.slice(1)] || '';
++    location.replace('chrome://settings/aegis' + section);
++    return;
++  }
+   document.querySelector<AegisDownloadPanelElement>('aegis-download-panel')
+-      ?.setRequestHandler(sendWithPromise);
+-  void init();
++      ?.setRequestHandler(requestSettings);
++  if (embeddedSettings) {
++    const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
++      height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
++    new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
++    reportHeight();
++  }
++  void init().catch(error => showResult(String(error)));
+ });
+diff --git a/chrome/browser/resources/aegis/enhancements.js b/chrome/browser/resources/aegis/enhancements.js
+index fe5b28c947da5df516e8a35579884e5bd3353b97..d045e8f10d7da5b21aeca48df0232e1c8a2a9fe5 100644
+--- a/chrome/browser/resources/aegis/enhancements.js
++++ b/chrome/browser/resources/aegis/enhancements.js
+@@ -399,4 +399,8 @@ try {
+ }
+ 
+ }
+-if (document.getElementById("enhancement-root")) await initializeEnhancements();
++if (document.getElementById("enhancement-root")) {
++  if (loadTimeData.valueExists('isAndroid') && !loadTimeData.getBoolean('isAndroid')) {
++    location.replace('chrome://settings/aegisEnhancements' + location.search + location.hash);
++  } else await initializeEnhancements();
++}
+diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
+index cb074d285cb67980a8e6c0851a0f3b7f8e2b305c..b5be0e3c9ad03b2c2061657091d58ee917ca2357 100644
+--- a/chrome/browser/resources/aegis/gestures.ts
++++ b/chrome/browser/resources/aegis/gestures.ts
+@@ -302,4 +302,6 @@ void sendWithPromise<Snapshot>('aegisGetGestureSettings').then(snapshot => {
+ 
+ return () => { events.abort(); observer.disconnect(); };
+ }
+-if (document.getElementById("practice")) initializeGestures();
++if (document.getElementById("practice")) {
++  location.replace('chrome://settings/aegisGestures' + location.search + location.hash);
++}
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index f57acced0edd48300807ad86d34616601f0ee5f1..70b1e6f954ad61a23458a93d3ef76ccdef881299 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -902,3 +902,59 @@ summary {
+   }
+ 
+ }
++
++/* 桌面全局配置集中到设置中心，任务侧栏只保留前往设置的入口。 */
++body.central-settings #model-details,
++body.central-settings #typesafe-details,
++body.central-settings #reading-ai-settings {
++  display: none !important;
++}
++
++body.settings-only {
++  --bg: light-dark(#fff, #202124);
++  --surface: light-dark(#fff, #202124);
++  --surface-strong: light-dark(#f8f9fa, #292a2d);
++  --text: light-dark(#202124, #e8eaed);
++  --muted: light-dark(#5f6368, #bdc1c6);
++  --line: light-dark(#dadce0, #45474b);
++  --primary: light-dark(#185abc, #a8c7fa);
++  background: transparent;
++  color-scheme: light dark;
++  font: 14px/1.55 system-ui, sans-serif;
++}
++
++body.settings-only main {
++  max-width: none;
++  padding: 0 0 24px;
++  margin: 0;
++}
++
++body.settings-only main > * {
++  display: none !important;
++}
++
++body.settings-only main > #model-details,
++body.settings-only main > #typesafe-details,
++body.settings-only main > #reading-ai-settings {
++  display: block !important;
++}
++
++body.settings-only .card {
++  margin: 0 0 20px;
++  box-shadow: none;
++}
++
++body.settings-only input,
++body.settings-only select {
++  max-width: 100%;
++}
++
++#aegis-settings-link {
++  display: inline-block;
++  padding: 8px 0;
++  color: var(--primary);
++}
++
++#aegis-settings-link[hidden] {
++  display: none;
++}
+diff --git a/chrome/browser/resources/aegis_agent/agent.html b/chrome/browser/resources/aegis_agent/agent.html
+index efffa504f68d9ecd8accaeb1cd792cd2ebe5e518..cf53ae9e4a0dcb99128c4febbe82c75b4facd3a2 100644
+--- a/chrome/browser/resources/aegis_agent/agent.html
++++ b/chrome/browser/resources/aegis_agent/agent.html
+@@ -28,6 +28,7 @@
+         <button id="task-view-button" type="button" aria-selected="true"></button>
+       </nav>
+       <div class="workspace-tools">
++        <a id="aegis-settings-link" href="chrome://settings/aegisAi" target="_blank" rel="noopener" hidden></a>
+         <a id="enhancement-link" hidden href="chrome://aegis/enhancements.html" target="_blank" rel="noopener">网站增强与脚本</a>
+         <a id="markdown-link" hidden href="chrome://aegis/markdown.html" target="_blank" rel="noopener">Markdown 阅读</a>
+         <button id="automation-view-button" type="button" aria-selected="false"></button>
+@@ -159,6 +160,7 @@
+           </div>
+           <details id="model-advanced">
+             <summary>$i18n{modelAdvanced}</summary>
++            <p class="help">$i18n{modelPoolSaveHelp}</p>
+             <div class="field-grid">
+             <label for="model-routing-mode" id="model-routing-mode-label"></label>
+             <select id="model-routing-mode">
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 8071fe8d00074c701a69ca511718bd1d0db52d9a..be09f314c8e6cc6e89daeec37ab549cca3a9bfe8 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -35,6 +35,8 @@ let modelRoutingBusy = false;
+ let typesafeBusy = false;
+ let goalUserEdited = false;
+ let modelFormInitialized = false;
++let lastRenderedModelForm = '';
++let lastRenderedModelPoolDraft = '';
+ let typesafeEnabledDirty = false;
+ let autoRunTaskId = '';
+ let autoRunInFlight = false;
+@@ -42,7 +44,8 @@ let activeView: 'task'|'automation'|'research'|'reading' = 'task';
+ let researchTabs: ResearchTab[] = [];
+ const selectedResearchTabs = new Set<number>();
+ const launchParameters = new URLSearchParams(window.location.search);
+-const launchRequest = consumeLaunchRequest();
++const settingsMode = launchParameters.get('settings') === '1';
++const launchRequest = settingsMode ? {goal: '', autoStart: false} : consumeLaunchRequest();
+ const launchGoal = launchRequest.goal;
+ const launchAutoStart = launchRequest.autoStart;
+ 
+@@ -942,22 +945,79 @@ function renderMonitors(monitors: MonitorSummary[]) {
+   }
+ }
+ 
++function renderModelPoolDraft(next: TaskSnapshot) {
++  const values: Record<string, string> = {
++    'model-quality-score': '50', 'model-latency-score': '50', 'model-cost': '',
++    'model-efforts': '', 'model-profile-default': '', 'model-profile-basic': '',
++    'model-profile-strong': '', 'model-input-price': '', 'model-cache-price': '',
++    'model-output-price': '',
++  };
++  const checks: Record<string, boolean> = {
++    'model-supports-tools': true, 'model-supports-long-context': true,
++    'model-supports-strong-reasoning': true,
++  };
++  const draft = () => JSON.stringify([
++    ...Object.keys(values).map(id => element<HTMLInputElement>(id).value),
++    ...Object.keys(checks).map(id => element<HTMLInputElement>(id).checked),
++  ]);
++  if (lastRenderedModelPoolDraft && draft() !== lastRenderedModelPoolDraft) return;
++  const entry = next.modelPool.find(candidate =>
++    candidate.provider === element<HTMLSelectElement>('model-provider').value &&
++    candidate.baseUrl === element<HTMLInputElement>('model-base-url').value.trim() &&
++    candidate.model === element<HTMLInputElement>('model-name').value.trim());
++  if (entry) {
++    const profile = (value: {effort: string, maxOutputTokens: number}) =>
++        value.maxOutputTokens ? `${value.effort}:${value.maxOutputTokens}` : '';
++    Object.assign(values, {
++      'model-quality-score': String(entry.qualityScore),
++      'model-latency-score': String(entry.latencyScore),
++      'model-cost': entry.costMicrousdPerMillionTokens,
++      'model-efforts': entry.supportedEfforts.join(','),
++      'model-profile-default': profile(entry.defaultProfile),
++      'model-profile-basic': profile(entry.basicProfile),
++      'model-profile-strong': profile(entry.strongProfile),
++      'model-input-price': entry.inputPrice,
++      'model-cache-price': entry.cachedInputPrice,
++      'model-output-price': entry.outputPrice,
++    });
++    Object.assign(checks, {
++      'model-supports-tools': entry.supportsToolCalls,
++      'model-supports-long-context': entry.supportsLongContext,
++      'model-supports-strong-reasoning': entry.supportsStrongReasoning,
++    });
++  }
++  for (const [id, value] of Object.entries(values)) element<HTMLInputElement>(id).value = value;
++  for (const [id, value] of Object.entries(checks)) element<HTMLInputElement>(id).checked = value;
++  lastRenderedModelPoolDraft = draft();
++}
++
+ function renderModel(next: TaskSnapshot) {
+   const details = element<HTMLDetailsElement>('model-details');
+   const provider = element<HTMLSelectElement>('model-provider');
+   const baseUrl = element<HTMLInputElement>('model-base-url');
+   const model = element<HTMLInputElement>('model-name');
+-  if (!modelFormInitialized) {
++  const currentForm = JSON.stringify([provider.value, baseUrl.value, model.value]);
++  const untouched = currentForm === lastRenderedModelForm &&
++      !element<HTMLInputElement>('model-api-key').value;
++  // 同步另一处表单保存的共用连接，同时保留用户尚未保存的草稿。
++  if (!modelFormInitialized || untouched) {
+     provider.value = next.modelConfigured ? next.modelProvider : 'openai';
+     baseUrl.value = next.modelConfigured ?
+         next.modelBaseUrl :
+         'http://127.0.0.1:8000/v1';
+     model.value = next.modelConfigured ? next.modelName : '';
++    const updatedForm = JSON.stringify([provider.value, baseUrl.value, model.value]);
++    if (modelFormInitialized && updatedForm !== lastRenderedModelForm) {
++      resetDetectedModels();
++    }
++    lastRenderedModelForm = updatedForm;
+     modelFormInitialized = true;
+   }
+   if (!next.modelConfigured) {
+     details.open = true;
+   }
++  element('aegis-settings-link').textContent = loadTimeData.getString(
++      next.modelConfigured ? 'aegisSettingsTitle' : 'aegisSettingsConnectModel');
+   element('model-state').textContent = next.modelConfigured ?
+       `${loadTimeData.getString('modelReady')} · ${next.modelName}` :
+       loadTimeData.getString('modelMissing');
+@@ -968,6 +1028,7 @@ function renderModel(next: TaskSnapshot) {
+   element<HTMLInputElement>('model-api-key').disabled = modelBusy;
+   element<HTMLButtonElement>('detect-models-button').disabled = modelBusy;
+   element<HTMLButtonElement>('save-model-button').disabled = modelBusy;
++  renderModelPoolDraft(next);
+   const routingMode = element<HTMLSelectElement>('model-routing-mode');
+   routingMode.value = String(next.modelSelectionMode);
+   routingMode.disabled = modelRoutingBusy;
+@@ -1349,6 +1410,24 @@ async function withBusy(
+   }
+ }
+ 
++function initializeSettingsPresentation() {
++  const desktop = !loadTimeData.getBoolean('isAndroid');
++  document.body.classList.toggle('settings-only', settingsMode);
++  document.body.classList.toggle('central-settings', desktop && !settingsMode);
++  element('aegis-settings-link').textContent = loadTimeData.getString('aegisSettingsTitle');
++  element('aegis-settings-link').hidden = !desktop || settingsMode;
++  if (!settingsMode) return;
++  // 隐藏的任务输入框不能抢走设置页焦点。
++  element('goal').removeAttribute('autofocus');
++  for (const id of ['model-details', 'reading-ai-settings', 'typesafe-details']) {
++    element<HTMLDetailsElement>(id).open = true;
++  }
++  const reportHeight = () => parent.postMessage({type: 'aegis-settings-height',
++    height: document.querySelector('main')!.getBoundingClientRect().height + 24}, 'chrome://settings');
++  new ResizeObserver(reportHeight).observe(document.querySelector('main')!);
++  reportHeight();
++}
++
+ function initializeLabels() {
+   const language = document.documentElement.lang;
+   const traditional = /^zh-(?:TW|HK|Hant)/i.test(language);
+@@ -1676,7 +1755,7 @@ async function saveModel() {
+   }
+ }
+ 
+-async function saveModelRouting(modelPool: ModelPoolEntry[]) {
++async function saveModelRouting(modelPool: ModelPoolEntry[], savedDraft = false) {
+   if (modelRoutingBusy) {
+     return;
+   }
+@@ -1691,6 +1770,7 @@ async function saveModelRouting(modelPool: ModelPoolEntry[]) {
+   }
+   try {
+     const response = await proxy.handler.configureModelRouting(mode, modelPool);
++    if (savedDraft && !response.snapshot.lastError) lastRenderedModelPoolDraft = '';
+     render(response.snapshot);
+     element('model-routing-feedback').textContent =
+         response.snapshot.lastError ?
+@@ -1767,7 +1847,7 @@ function addCurrentModelToPool() {
+   };
+   const pool = snapshot.modelPool.filter(candidate => candidate.id !== entry.id);
+   pool.push(entry);
+-  void saveModelRouting(pool);
++  void saveModelRouting(pool, true);
+ }
+ 
+ async function saveTypeSafe(clearApiKey = false) {
+@@ -1957,6 +2037,7 @@ try {
+   proxy = BrowserProxy.getInstance();
+   bindActions();
+   const reading = new ReadingWorkspace(proxy);
++  initializeSettingsPresentation();
+   element('reading-view-button').addEventListener('click', () => {
+     activeView = 'reading';
+     renderView();
+@@ -1965,7 +2046,7 @@ try {
+   proxy.callbackRouter.onSnapshotChanged.addListener(render);
+   proxy.handler.getSnapshot().then(({snapshot: initial}) => {
+     render(initial);
+-    proxy.handler.showUI();
++    if (!settingsMode) proxy.handler.showUI();
+     // 只有已消费的一次性原生启动请求才创建新任务。
+     if (launchAutoStart && initial.modelConfigured) {
+       element<HTMLButtonElement>('plan-button').click();
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index b6cd59d846a79e5007944f00eef2ef5c4c66aa5d..b427bb50aa46f8094321ae1d69874f7932714133 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -331,6 +331,10 @@ export class ReadingWorkspace {
+       cancel.addEventListener('click', () => this.local.cancel());
+       const settings = node('button', label('ManagePacks')); settings.type = 'button';
+       settings.addEventListener('click', () => {
++        if (document.body.classList.contains('central-settings')) {
++          document.getElementById('aegis-settings-link')!.click();
++          return;
++        }
+         element<HTMLSelectElement>('direction').value = direction.value;
+         element<HTMLDetailsElement>('ai-settings').open = true;
+         element('ai-settings').scrollIntoView({block: 'nearest'});
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.html b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+index 9317eff92b232e85e328d944921069a739352524..ef46702bcdca8e69d6e7751a7a396f3b48b862b4 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.html
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+@@ -1,6 +1,14 @@
+ <link rel="stylesheet" href="aegis/enhancements.css">
+ <style>
+  :host { display:block; margin: 24px auto; max-width: 1000px; padding: 0 24px; background: transparent; }
++ iframe { display:block; width:100%; min-height:320px; border:0; color-scheme:light dark; }
++ .hub { display:grid; gap:12px; }
++ .hub a { display:flex; align-items:center; gap:16px; padding:20px; border:1px solid var(--line); border-radius:12px; color:inherit; text-decoration:none; }
++ .hub a:hover { background:var(--cr-hover-background-color); }
++ .hub a::after { content:'›'; margin-inline-start:auto; font-size:24px; color:var(--cr-secondary-text-color); }
++ .hub cr-icon { flex:none; width:24px; height:24px; }
++ .hub small { display:block; margin-top:4px; color:var(--cr-secondary-text-color); }
++ .back { display:inline-block; margin-bottom:20px; }
+  .page-title { font-size: 20px; font-weight: 500; margin: 0 0 20px; }
+  .setting-row { display:flex; gap:20px; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--line); }
+  .setting-row:last-child { border-bottom:0; }
+@@ -9,7 +17,17 @@
+  #library .item { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+  #library .item span { flex:1; min-width:150px; }
+ </style>
++<template is="dom-if" if="[[!isMode_(mode, 'home')]]"><a class="back" href="/aegis">← $i18n{aegisSettingsTitle}</a></template>
+ <h1 class="page-title">[[pageTitle_(mode)]]</h1>
++<template is="dom-if" if="[[isMode_(mode, 'home')]]"><p>$i18n{aegisSettingsDescription}</p><nav class="hub" aria-label="$i18n{aegisSettingsTitle}">
++  <a href="/aegisPrivacy"><cr-icon icon="settings:security"></cr-icon><span><strong>$i18n{aegisPrivacyTitle}</strong><small>$i18n{aegisPrivacyDescription}</small></span></a>
++  <a href="/aegisEnhancements"><cr-icon icon="settings:chrome-extension"></cr-icon><span><strong>$i18n{aegisEnhancementsTitle}</strong><small>$i18n{aegisEnhancementsDescription}</small></span></a>
++  <a href="/aegisReading"><cr-icon icon="settings:translate"></cr-icon><span><strong>$i18n{aegisReadingTitle}</strong><small>$i18n{aegisReadingDescription}</small></span></a>
++  <a href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span><strong>$i18n{aegisGesturesTitle}</strong><small>$i18n{aegisGesturesDescription}</small></span></a>
++  <a href="/aegisAi"><cr-icon icon="settings:person"></cr-icon><span><strong>$i18n{aegisAiTitle}</strong><small>$i18n{aegisAiDescription}</small></span></a>
++  <a href="/aegisDownloads"><cr-icon icon="settings:download"></cr-icon><span><strong>$i18n{aegisDownloadsTitle}</strong><small>$i18n{aegisDownloadsDescription}</small></span></a>
++  <a href="/aegisTools"><cr-icon icon="settings:build"></cr-icon><span><strong>$i18n{aegisToolsTitle}</strong><small>$i18n{aegisToolsDescription}</small></span></a>
++</nav></template>
+ <template is="dom-if" if="[[isMode_(mode, 'enhancements')]]">
+   <main id="enhancement-root">
+     <header class="page-heading" data-standalone><a href="chrome://settings/aegisEnhancements">← 返回设置</a><h1>网站增强与脚本</h1></header>
+@@ -60,8 +78,6 @@
+ <template is="dom-if" if="[[isMode_(mode, 'gestures')]]"><link rel="stylesheet" href="aegis/gestures.css">
+ 
+     <header>
+-      <div class="eyebrow">GCSA AEGIS</div>
+-      <h1>鼠标手势</h1>
+       <p>按住鼠标右键画出方向，松开执行。支持网页、设置页和内置 PDF 阅读器。</p>
+     </header>
+     <section aria-labelledby="options-title">
+@@ -91,12 +107,11 @@
+     </section>
+     <footer><button id="reset" type="button">恢复默认</button><span id="status" role="status" aria-live="polite">正在加载设置…</span><button id="save" type="button" class="primary" disabled>保存设置</button></footer>
+   </template>
+-<template is="dom-if" if="[[isMode_(mode, 'privacy')]]">
+-  <a href="/privacy">← 隐私与安全</a><p id="result" role="status"></p>
+-  <section><h2>全局保护</h2><div id="protections"></div></section>
+-  <section><h2>网站例外与权限</h2><p>临时暂停由当前网站盾牌控制，保留钓鱼防护。</p><a href="/content/all">网站权限与数据</a></section>
+-  <section><h2>防护记录</h2><ul id="events"></ul></section>
+-</template>
++<template is="dom-if" if="[[isMode_(mode, 'privacy')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=privacy" title="$i18n{aegisPrivacyTitle}"></iframe><section><h2>网站例外与权限</h2><p>临时暂停由当前网站盾牌控制，保留钓鱼防护。</p><a href="/content/all">网站权限与数据</a></section></template>
++<template is="dom-if" if="[[isMode_(mode, 'downloads')]]"><settings-downloads-page aegis-only></settings-downloads-page><iframe class="legacy-frame" src="chrome://aegis/?settings=downloads" title="$i18n{aegisDownloadsTitle}"></iframe></template>
++<template is="dom-if" if="[[isMode_(mode, 'tools')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=tools" title="$i18n{aegisToolsTitle}"></iframe></template>
++<template is="dom-if" if="[[isMode_(mode, 'ai')]]"><p>$i18n{aegisSharedModelDescription}</p><iframe class="legacy-frame" src="chrome://aegis/?settings=ai" title="$i18n{aegisAiTitle}"></iframe>
++<iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=1" title="$i18n{aegisAgentSettingsTitle}"></iframe></template>
+ <template is="dom-if" if="[[isMode_(mode, 'reading')]]">
+   <p id="result" role="status"></p>
+   <section><div class="section-heading row"><h2>阅读库</h2><a href="chrome://aegis/markdown.html">打开 Markdown 文件</a><button id="refresh-library">刷新</button></div><div id="library"></div></section>
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.ts b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+index 7a8307a48a6334062191a0c897e0b649fad61df1..37db3293d27e45ed39a4c57c34846deb336eb782 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.ts
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+@@ -1,5 +1,9 @@
+ // Copyright 2026 GCSA
+-import {sendWithPromise} from 'chrome://resources/js/cr.js';
++import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
++import '../icons.html.js';
++import '../downloads_page/downloads_page.js';
++import type {WebUiListener} from 'chrome://resources/js/cr.js';
++import {addWebUiListener, removeWebUiListener, sendWithPromise} from 'chrome://resources/js/cr.js';
+ import {flush, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+ import {loadTimeData} from '../i18n_setup.js';
+ import type {SearchResult} from '../search_settings.js';
+@@ -14,17 +18,64 @@ export class SettingsAegisPageElement extends PolymerElement {
+   static get template() { return getTemplate(); }
+   static get properties() { return {mode: {type: String}}; }
+   declare mode: string;
++  private statusListener_: WebUiListener|undefined;
+   private translate_: (value: string) => string = value => value;
+   private cleanup_: (() => void)|undefined;
+   protected isMode_(mode: string, expected: string): boolean { return mode === expected; }
+   protected pageTitle_(mode: string): string {
+-    return loadTimeData.getString({enhancements: 'aegisEnhancementsTitle', reading: 'aegisReadingTitle', gestures: 'aegisGesturesTitle', privacy: 'aegisPrivacyTitle'}[mode] || 'aegisEnhancementsTitle');
++    return loadTimeData.getString({home: 'aegisSettingsTitle', ai: 'aegisAiTitle', downloads: 'aegisDownloadsTitle', tools: 'aegisToolsTitle', enhancements: 'aegisEnhancementsTitle', reading: 'aegisReadingTitle', gestures: 'aegisGesturesTitle', privacy: 'aegisPrivacyTitle'}[mode] || 'aegisEnhancementsTitle');
+   }
+   override connectedCallback() {
+     super.connectedCallback();
++    window.addEventListener('message', this.onFrameMessage_);
++    this.statusListener_ = addWebUiListener('aegis-status-changed', (status: unknown) => {
++      this.shadowRoot?.querySelector<HTMLIFrameElement>('.legacy-frame')
++          ?.contentWindow?.postMessage({type: 'aegis-settings-status', status}, 'chrome://aegis');
++    });
+     queueMicrotask(() => { flush(); void this.initialize_().catch(error => this.message_(String(error))); });
+   }
+-  override disconnectedCallback() { this.cleanup_?.(); super.disconnectedCallback(); }
++  override disconnectedCallback() { if (this.statusListener_) removeWebUiListener(this.statusListener_); window.removeEventListener('message', this.onFrameMessage_); this.cleanup_?.(); super.disconnectedCallback(); }
++  // 子框架没有 chrome.send 通道；只为当前受信任子页转发固定接口。
++  private onFrameMessage_ = (event: MessageEvent) => {
++    for (const frame of this.shadowRoot?.querySelectorAll<HTMLIFrameElement>('iframe') || []) {
++      const origin = frame.classList.contains('agent-frame') ? 'chrome-untrusted://aegis-agent' : 'chrome://aegis';
++      if (event.source !== frame.contentWindow || event.origin !== origin) continue;
++      if (event.data?.type === 'aegis-settings-request' && origin === 'chrome://aegis') {
++        void this.forwardRequest_(frame, event.data);
++        return;
++      }
++      if (event.data?.type !== 'aegis-settings-height') continue;
++      const height = event.data.height;
++      if (typeof height === 'number' && Number.isFinite(height)) frame.style.height = Math.max(320, Math.min(24000, Math.ceil(height))) + 'px';
++    }
++  };
++  private async forwardRequest_(frame: HTMLIFrameElement, data: {id?: unknown, method?: unknown, args?: unknown}) {
++    const {id, method, args} = data;
++    if (typeof id !== 'string' || !/^settings-\d+$/.test(id) || typeof method !== 'string' || !Array.isArray(args)) return;
++    const signatures: Record<string, string[]> = {
++      getStatus: [], setModuleEnabled: ['string', 'boolean'],
++      openBrowserAgent: [], updateFilterLists: [], summarizeActiveTab: [],
++      completePreparedSummary: ['string', 'object'], cancelPreparedSummary: ['string'],
++      setModelSettings: ['string', 'string', 'string', 'string', 'boolean'],
++      listModels: ['string', 'string', 'string'], parseMetalink: ['string'],
++      startMetalinkDownload: ['string'], parseTorrent: ['string'],
++      parseMagnet: ['string'], startTorrent: ['string', 'array', 'object', 'boolean'],
++      getTorrentStatus: ['string'], controlTorrent: ['string', 'string'],
++    };
++    const signature = Object.hasOwn(signatures, method) ? signatures[method] : undefined;
++    const valid = signature && args.length === signature.length && signature.every((kind, i) =>
++      kind === 'array' ? Array.isArray(args[i]) : kind === 'object' ?
++        args[i] !== null && typeof args[i] === 'object' && !Array.isArray(args[i]) : typeof args[i] === kind);
++    const source = frame.contentWindow;
++    const reply = (response: object) => {
++      if (this.isConnected && frame.isConnected && source === frame.contentWindow) {
++        source?.postMessage({type: 'aegis-settings-response', id, ...response}, 'chrome://aegis');
++      }
++    };
++    if (!valid) { reply({error: '设置请求无效'}); return; }
++    try { reply({result: await sendWithPromise(method, ...args)}); }
++    catch (error) { reply({error: String(error)}); }
++  }
+   private element_<T extends HTMLElement = HTMLElement>(id: string): T {
+     const value = this.shadowRoot!.querySelector<T>('#' + id);
+     if (!value) throw Error('设置控件不可用：' + id);
+@@ -41,7 +92,14 @@ export class SettingsAegisPageElement extends PolymerElement {
+   }
+   searchContents(query: string): Promise<SearchResult> {
+     flush();
+-    const keywords = this.mode === 'enhancements' ? '复制 右键 脚本 user.js copy context menu scripts' : this.mode === 'reading' ? 'Markdown 阅读 字体 图片 文档 reading library' : this.mode === 'privacy' ? '跟踪 指纹 Cookie 隐私 privacy tracking fingerprint' : '鼠标 手势 mouse gestures';
++    const categoryKeywords: Record<string, string> = {
++      home: 'Aegis 功能 设置 settings',
++      privacy: '跟踪器拦截 钓鱼网站防护 指纹防护 挖矿脚本检测 清理跟踪参数 Cookie 伪装跟踪防护 跳转跟踪防护 本地隐私处理 自动更新过滤列表 广告与跟踪过滤规则 防护记录 隱私 指紋 過濾規則 phishing privacy tracking fingerprint filter lists mining',
++      ai: 'AI 助手 网页摘要 模型池 模型路由 服务地址 API 密钥 自定义模型 模型列表 质量 延迟 费用 推理档位 TypeSafe 本机翻译 语言包 实验模型 MINIM PhishLang 網頁摘要 語言包 模型連線 金鑰 model pool routing API key endpoint translation language pack',
++      downloads: '下载 镜像 种子 磁力链接 DHT PEX 限速 下载记录 下載 種子 磁力連結 torrent magnet metalink download bandwidth',
++      tools: '本机工具连接 允许本机 AI 工具读取和操作网页 连接状态 权限 本機工具連線 CDP AI tools connection permissions',
++    };
++    const keywords = categoryKeywords[this.mode] || (this.mode === 'enhancements' ? '复制 右键 脚本 user.js copy context menu scripts' : this.mode === 'reading' ? 'Markdown 阅读 字体 图片 文档 reading library' : this.mode === 'privacy' ? '跟踪 指纹 Cookie 隐私 privacy tracking fingerprint' : '鼠标 手势 mouse gestures');
+     const text = (this.shadowRoot?.textContent || '') + keywords;
+     const match = !query || text.toLocaleLowerCase().includes(query.toLocaleLowerCase());
+     // 搜索命中时展开管理分类，避免结果藏在折叠标题下。
+@@ -51,6 +109,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+   private async initialize_() {
+     const i18nModule = await import('/' + 'aegis/enhancements_shared/i18n.js');
+     void i18nModule;
++    if (!this.isConnected) return;
+     const i18n = (globalThis as unknown as {AegisI18n: {t: (value: string) => string, translate: (root: ShadowRoot) => void, setLocale: (value: string) => void}}).AegisI18n;
+     i18n.setLocale(loadTimeData.getString('aegisLocale'));
+     this.translate_ = i18n.t;
+@@ -58,12 +117,15 @@ export class SettingsAegisPageElement extends PolymerElement {
+     if (this.mode === 'enhancements') {
+       for (const path of ['aegis/enhancements_shared/core.js', 'aegis/enhancements_shared/vendor/acorn.js']) await import('/' + path);
+       const module = await import('/' + 'aegis/enhancements.js');
++      if (!this.isConnected) return;
+       await module.initializeEnhancements(this.shadowRoot);
+     } else if (this.mode === 'gestures') {
+       const module = await import('/' + 'aegis/gestures.js');
++      if (!this.isConnected) return;
+       this.cleanup_ = module.initializeGestures(this.shadowRoot);
+     } else if (this.mode === 'reading') {
+       const state = await this.request_({op: 'state'});
++      if (!this.isConnected) return;
+       const prefs = state.readingPreferences || {theme: 'system', family: 'sans', font: 17, spacing: 180, width: 820};
+       for (const key of ['theme', 'family', 'font', 'spacing', 'width'] as const) {
+         const control = this.element_<HTMLInputElement|HTMLSelectElement>('reading-' + key);
+@@ -87,8 +149,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+       if (!sites.childElementCount) sites.textContent = this.translate_('尚未授权自动预览网站。可以从在线文档的来源菜单开启。');
+       this.element_('refresh-library').onclick = () => { void this.library_().catch(error => this.message_(String(error))); };
+       await this.library_();
+-    } else if (this.mode === 'privacy') {
+-      await this.privacy_();
++
+     }
+   }
+   private async saveReading_() {
+@@ -117,31 +178,6 @@ export class SettingsAegisPageElement extends PolymerElement {
+     }
+     if (!list.childElementCount) list.textContent = this.translate_('阅读库为空。在文档的更多操作中保存原文。');
+   }
+-  private async privacy_() {
+-    const status = await sendWithPromise<Record<string, unknown>>('getStatus');
+-    const list = this.element_('protections'); list.replaceChildren();
+-    const labels: Record<string, string> = {trackerBlocking: this.translate_('拦截跟踪请求'), phishInterstitial: this.translate_('钓鱼网站保护'), fingerprintGuard: this.translate_('指纹防护'), linkSanitize: this.translate_('清理链接参数'), cookieJanitor: this.translate_('清理跟踪 Cookie'), cnameUncloak: this.translate_('识别别名跟踪'), bounceTracking: this.translate_('跳转跟踪清理'), minerGuard: this.translate_('挖矿风险观察'), filterListAutoUpdate: this.translate_('自动更新过滤规则')};
+-    for (const [key, name] of Object.entries(labels)) {
+-      const row = document.createElement('label'); row.className = 'setting-row';
+-      const title = document.createElement('span'); title.textContent = name;
+-      const control = document.createElement('input'); control.type = 'checkbox'; control.checked = status[key] === true;
+-      control.disabled = status['profileAvailable'] === false;
+-      control.onchange = async () => {
+-        control.disabled = true;
+-        try {
+-          const next = await sendWithPromise<Record<string, unknown>>('setModuleEnabled', key, control.checked);
+-          control.checked = next[key] === true;
+-          this.message_(next['ok'] === false ? '设置未保存，请重试。' : this.translate_('设置已保存。'));
+-        } catch (error) { control.checked = !control.checked; this.message_(String(error)); }
+-        finally { control.disabled = false; }
+-      };
+-      row.append(title, control); list.append(row);
+-    }
+-    const events = this.element_('events'); events.replaceChildren();
+-    for (const event of (status['recentEvents'] || []) as Array<{kind: string, domain: string, count: number}>) {
+-      const row = document.createElement('li'); row.textContent = event.domain + ' · ' + event.kind + ' × ' + event.count; events.append(row);
+-    }
+-    if (!events.childElementCount) events.textContent = this.translate_('暂无防护记录。');
+-  }
++
+ }
+ customElements.define(SettingsAegisPageElement.is, SettingsAegisPageElement);
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+index b6978b3e18601efe2373e50ad589d70eff2e363d..c68b8a736a665c7e0ce8aa3d6fc9ec41405590f6 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+@@ -8,7 +8,7 @@ import type {SettingsDownloadsPageElement} from './downloads_page.js';
+ 
+ export function getHtml(this: SettingsDownloadsPageElement) {
+   return html`<!--_html_template_start_-->
+-<settings-section page-title="$i18n{downloadsPageTitle}"
++<settings-section ?hidden="${this.aegisOnly}" page-title="$i18n{downloadsPageTitle}"
+     class="cr-centered-card-container">
+   <div class="cr-row first">
+     <div class="flex cr-padded-text">
+@@ -56,8 +56,10 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+     </settings-toggle-button>
+   ` : ''}
+ </settings-section>
++  <div class="cr-row" ?hidden="${this.aegisOnly}"><a href="/aegisDownloads">${this.aegisStrings_.link}</a></div>
++  <p role="status" aria-live="polite" ?hidden="${!this.aegisOnly}">${this.aegisSaveStatus_}</p>
+   <settings-section page-title="${this.aegisStrings_.title}"
+-      class="cr-centered-card-container" ?hidden="${!this.aegisSettingsReady_}">
++      class="cr-centered-card-container" ?hidden="${!this.aegisOnly || !this.aegisSettingsReady_}">
+     <div class="cr-row first">
+       <div class="flex cr-padded-text">
+         <div class="aegis-heading">${this.aegisStrings_.httpTitle}</div>
+@@ -124,7 +126,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+     </div>
+     <div class="aegis-fixed">
+       <div>${this.aegisStrings_.stopSeeding}</div>
+-      <div class="aegis-description">${this.aegisStrings_.saved}</div>
++
+     </div>
+   </settings-section>
+ <!--_html_template_end_-->`;
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+index a1b408051953044f78388f173fde03730135519e..63c0aa04e5eb6526b40d1d9460da14eb83c965c7 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+@@ -48,6 +48,8 @@ export class SettingsDownloadsPageElement extends
+ 
+   static override get properties() {
+     return {
++      aegisOnly: {type: Boolean, attribute: 'aegis-only'},
++      aegisSaveStatus_: {type: String},
+       autoOpenDownloads_: {type: Boolean},
+ 
+       downloadDefaultDirectoryPref_: {type: Object},
+@@ -101,6 +103,8 @@ export class SettingsDownloadsPageElement extends
+     };
+   }
+ 
++  accessor aegisOnly: boolean = false;
++  protected accessor aegisSaveStatus_: string = '';
+   protected accessor autoOpenDownloads_: boolean = false;
+   protected accessor downloadDefaultDirectoryPref_:
+       chrome.settingsPrivate.PrefObject<string>|undefined = undefined;
+@@ -141,7 +145,7 @@ export class SettingsDownloadsPageElement extends
+       downloadLimit: '預設下載上限（KiB/s，0 不限）',
+       uploadLimit: '預設上傳上限（KiB/s，0 不限）',
+       stopSeeding: '下載完成後自動停止上傳',
+-      saved: '設定會立即儲存並應用於新下載。',
++      saved: '已儲存，將應用於新下載。', saving: '正在儲存…', failed: '儲存失敗，已重新讀取設定。', link: '開啟 Aegis 下載設定',
+     } : {
+       title: '下载加速',
+       httpTitle: 'HTTP(S) 并行下载',
+@@ -161,7 +165,7 @@ export class SettingsDownloadsPageElement extends
+       downloadLimit: '默认下载上限（KiB/s，0 不限）',
+       uploadLimit: '默认上传上限（KiB/s，0 不限）',
+       stopSeeding: '下载完成后自动停止上传',
+-      saved: '设置会立即保存并应用于新下载。',
++      saved: '已保存，将应用于新下载。', saving: '正在保存…', failed: '保存失败，已重新读取设置。', link: '打开 Aegis 下载设置',
+     }) : {
+       title: 'Aegis download acceleration',
+       httpTitle: 'Parallel HTTP(S) downloads',
+@@ -181,7 +185,7 @@ export class SettingsDownloadsPageElement extends
+       downloadLimit: 'Default download limit (KiB/s, 0 unlimited)',
+       uploadLimit: 'Default upload limit (KiB/s, 0 unlimited)',
+       stopSeeding: 'Automatically stop uploading when complete',
+-      saved: 'Settings are saved immediately and apply to new downloads.',
++      saved: 'Saved. Applies to new downloads.', saving: 'Saving…', failed: 'Could not save. Settings reloaded.', link: 'Open Aegis download settings',
+     };
+   })();
+ 
+@@ -211,7 +215,9 @@ export class SettingsDownloadsPageElement extends
+         });
+ 
+     this.browserProxy_.initializeDownloads();
+-    void this.loadAegisDownloadSettings_();
++    void this.loadAegisDownloadSettings_().catch(error => {
++      this.aegisSaveStatus_ = String(error);
++    });
+   }
+ 
+   private async loadAegisDownloadSettings_() {
+@@ -247,6 +253,7 @@ export class SettingsDownloadsPageElement extends
+       return;
+     }
+     const requested = this.currentAegisDownloadSettings_();
++    this.aegisSaveStatus_ = this.aegisStrings_.saving;
+     this.aegisSaveChain_ = this.aegisSaveChain_
+                                 .then(async () => {
+                                   const saved = await this.browserProxy_
+@@ -256,9 +263,13 @@ export class SettingsDownloadsPageElement extends
+                                       JSON.stringify(
+                                           this.currentAegisDownloadSettings_())) {
+                                     this.applyAegisDownloadSettings_(saved);
++                                    this.aegisSaveStatus_ = this.aegisStrings_.saved;
+                                   }
+                                 })
+-                                .catch(() => this.loadAegisDownloadSettings_());
++                                .catch(async () => {
++                                  try { await this.loadAegisDownloadSettings_(); }
++                                  finally { this.aegisSaveStatus_ = this.aegisStrings_.failed; }
++                                }).catch(() => {});
+   }
+ 
+   protected onAegisParallelModeChange_(event: Event) {
+@@ -289,7 +300,7 @@ export class SettingsDownloadsPageElement extends
+ 
+   protected onAegisLimitChange_(event: Event) {
+     const input = event.currentTarget as CrInputElement;
+-    const value = Math.min(1000000, Math.max(0, Number(input.value) || 0));
++    const value = Math.min(1000000, Math.max(0, Math.floor(Number(input.value) || 0)));
+     if (input.id === 'aegisTorrentDownloadLimit') {
+       this.aegisTorrentDownloadLimitKib_ = value;
+     } else {
+diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
+index 9851ae4a98948d1627070c5343a970bbaa5fa764..7dab4a96ecf02e8865e1553ee86bc93fcccb4b1d 100644
+--- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
++++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
+@@ -2,8 +2,8 @@
+   <settings-section page-title="$i18n{privacyPageTitle}">
+     <cr-link-row id="aegisLinkRow"
+         start-icon="privacy:lock"
+-        label="$i18n{aegisPrivacyTitle}"
+-        sub-label="$i18n{aegisPrivacyDescription}"
++        label="$i18n{aegisSettingsTitle}"
++        sub-label="$i18n{aegisSettingsDescription}"
+         on-click="onAegisSettingsClick_"></cr-link-row>
+     <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
+       <settings-clear-browsing-data-dialog
+diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.ts b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
+index 45ff91ff570b67b93e340a658203cfa996dfd22b..da61b099bdc2d02a6ac6b08804fb9788dd4782ff 100644
+--- a/chrome/browser/resources/settings/privacy_page/privacy_page.ts
++++ b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
+@@ -127,7 +127,7 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
+ 
+   private onAegisSettingsClick_() {
+     this.interactedWithPage_();
+-    Router.getInstance().navigateTo(routes.AEGIS_PRIVACY);
++    Router.getInstance().navigateTo(routes.AEGIS);
+   }
+ 
+   private onCookiesClick_() {
+diff --git a/chrome/browser/resources/settings/route.ts b/chrome/browser/resources/settings/route.ts
+index cb4d650221579c0487d7db3caa86d513a7f56f99..10d396fe8744589810d712049b322f44ac9777c6 100644
+--- a/chrome/browser/resources/settings/route.ts
++++ b/chrome/browser/resources/settings/route.ts
+@@ -142,10 +142,14 @@ function createRoutes(): SettingsRoutes {
+ 
+   // Root page.
+   r.BASIC = new Route('/');
+-  r.AEGIS_ENHANCEMENTS = r.BASIC.createSection('/aegisEnhancements', 'aegisEnhancements', loadTimeData.getString('aegisEnhancementsTitle'));
+-  r.AEGIS_READING = r.BASIC.createSection('/aegisReading', 'aegisReading', loadTimeData.getString('aegisReadingTitle'));
+-  r.AEGIS_GESTURES = r.BASIC.createSection('/aegisGestures', 'aegisGestures', loadTimeData.getString('aegisGesturesTitle'));
+-  r.AEGIS_PRIVACY = r.BASIC.createSection('/aegisPrivacy', 'aegisPrivacy', loadTimeData.getString('aegisPrivacyTitle'));
++  r.AEGIS = r.BASIC.createSection('/aegis', 'aegis', loadTimeData.getString('aegisSettingsTitle'));
++  r.AEGIS_ENHANCEMENTS = r.AEGIS.createSection('/aegisEnhancements', 'aegisEnhancements', loadTimeData.getString('aegisEnhancementsTitle'));
++  r.AEGIS_READING = r.AEGIS.createSection('/aegisReading', 'aegisReading', loadTimeData.getString('aegisReadingTitle'));
++  r.AEGIS_GESTURES = r.AEGIS.createSection('/aegisGestures', 'aegisGestures', loadTimeData.getString('aegisGesturesTitle'));
++  r.AEGIS_PRIVACY = r.AEGIS.createSection('/aegisPrivacy', 'aegisPrivacy', loadTimeData.getString('aegisPrivacyTitle'));
++  r.AEGIS_AI = r.AEGIS.createSection('/aegisAi', 'aegisAi', loadTimeData.getString('aegisAiTitle'));
++  r.AEGIS_DOWNLOADS = r.AEGIS.createSection('/aegisDownloads', 'aegisDownloads', loadTimeData.getString('aegisDownloadsTitle'));
++  r.AEGIS_TOOLS = r.AEGIS.createSection('/aegisTools', 'aegisTools', loadTimeData.getString('aegisToolsTitle'));
+ 
+   r.ABOUT = r.BASIC.createSection(
+       '/help', 'about', loadTimeData.getString('aboutPageTitle'));
+diff --git a/chrome/browser/resources/settings/router.ts b/chrome/browser/resources/settings/router.ts
+index 6698d2f0c6ba911649f4d25c2941945823d47810..191215b138f5b0b6828d19ff31a7a5becbc11760 100644
+--- a/chrome/browser/resources/settings/router.ts
++++ b/chrome/browser/resources/settings/router.ts
+@@ -14,6 +14,10 @@ import {loadTimeData} from './i18n_setup.js';
+  * Specifies all possible routes in settings.
+  */
+ export interface SettingsRoutes {
++  AEGIS: Route;
++  AEGIS_AI: Route;
++  AEGIS_DOWNLOADS: Route;
++  AEGIS_TOOLS: Route;
+   AEGIS_ENHANCEMENTS: Route;
+   AEGIS_READING: Route;
+   AEGIS_GESTURES: Route;
+diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
+index fa43dd63cf7e8b624b3b653ed10a44dffccfe2f7..cf7fbc66dd7d8aac9476e29135c550aa0eb8e2a7 100644
+--- a/chrome/browser/resources/settings/settings_main/settings_main.html
++++ b/chrome/browser/resources/settings/settings_main/settings_main.html
+@@ -50,10 +50,14 @@
+ 
+ <cr-view-manager id="switcher"
+     show-all$="[[shouldShowAll_(inSearchMode_, lastRoute_)]]">
+-  <div slot="view" id="aegisEnhancements"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_ENHANCEMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="enhancements"></settings-aegis-page></template></div>
+-  <div slot="view" id="aegisReading"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_READING, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="reading"></settings-aegis-page></template></div>
+-  <div slot="view" id="aegisGestures"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_GESTURES, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="gestures"></settings-aegis-page></template></div>
+-  <div slot="view" id="aegisPrivacy"><template is="dom-if" if="[[renderPlugin_(routes_.AEGIS_PRIVACY, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="privacy"></settings-aegis-page></template></div>
++  <div slot="view" id="aegis"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="home"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisAi"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_AI, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="ai"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisDownloads"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_DOWNLOADS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="downloads"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisTools"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_TOOLS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="tools"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisEnhancements"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_ENHANCEMENTS, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="enhancements"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisReading"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_READING, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="reading"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisGestures"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_GESTURES, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="gestures"></settings-aegis-page></template></div>
++  <div slot="view" id="aegisPrivacy"><template is="dom-if" restamp if="[[renderPlugin_(routes_.AEGIS_PRIVACY, lastRoute_, inSearchMode_)]]"><settings-aegis-page mode="privacy"></settings-aegis-page></template></div>
+   <template is="dom-if" if="[[showPage_(pageVisibility_.people)]]">
+     <div slot="view" id="people">
+       <template is="dom-if" if="[[renderPlugin_(
+diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+index c4bd5c041cc212c57bc59acb086df2473e40661d..fb62c5655ccc00bbd095a5ea3d85ad960aba9986 100644
+--- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
++++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
+@@ -86,9 +86,10 @@
+       <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
+           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
+           on-click="onLinkClick_" selected-attribute="selected">
+-        <a role="menuitem" class="cr-nav-menu-item" href="/aegisEnhancements"><cr-icon icon="settings:code"></cr-icon><span class="menu-label">$i18n{aegisEnhancementsTitle}</span></a>
+-        <a role="menuitem" class="cr-nav-menu-item" href="/aegisReading"><cr-icon icon="settings:appearance"></cr-icon><span class="menu-label">$i18n{aegisReadingTitle}</span></a>
+-        <a role="menuitem" class="cr-nav-menu-item" href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span class="menu-label">$i18n{aegisGesturesTitle}</span></a>
++        <a role="menuitem" id="aegisSettingsLink" class="cr-nav-menu-item" href="/aegis">
++          <img src="aegis/product_logo.svg" width="20" height="20" alt="" style="margin-inline-end:16px">
++          <span class="menu-label">$i18n{aegisSettingsTitle}</span><cr-ripple></cr-ripple>
++        </a>
+         <a role="menuitem"
+             id="people" href="/people"
+             hidden="[[!showPeopleMenuItem_(
+diff --git a/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc b/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
+index 3286f21c7b5ad4eef07b253d336ec40a008e7be0..0426815680ce0c0b92886e4145b933053f268647 100644
+--- a/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
++++ b/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
+@@ -226,8 +226,7 @@ void MouseGestureTabHelper::OnWidgetDestroyed(views::Widget*) {
+ 
+ bool MouseGestureTabHelper::InPracticeRegion(
+     const blink::WebMouseEvent& event) const {
+-  if (web_contents()->GetLastCommittedURL() !=
+-      GURL("chrome://aegis/gestures.html")) {
++  if (!IsGestureSettingsPage(web_contents()->GetLastCommittedURL())) {
+     return false;
+   }
+   const auto* region = static_cast<GesturePracticeRegion*>(
+diff --git a/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
+index 9136f3721594663b7238bb5a4d992efbb3c48201..8791df85c4c9e47b0fc795cd999bc76ae83ee68e 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc
+@@ -38,9 +38,8 @@ void AegisGestureHandler::RegisterMessages() {
+ 
+ bool AegisGestureHandler::IsGesturePage() {
+   // 手势配置不向普通网页、PDF 或其他 WebUI 暴露。
+-  const auto url = web_ui()->GetWebContents()->GetLastCommittedURL().GetWithoutRef();
+-  return url == GURL("chrome://aegis/gestures.html") ||
+-         (url.SchemeIs("chrome") && url.host() == "settings" && (url.path() == "/aegisGestures" || (url.path() == "/" && url.query().starts_with("search="))));
++  return aegis::IsGestureSettingsPage(
++      web_ui()->GetWebContents()->GetLastCommittedURL());
+ }
+ 
+ base::DictValue AegisGestureHandler::Snapshot() {
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 6611773602e6e096b9e1985741131c7fd79e4894..920f300412d241c93f3698d2701720fc563a3653 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -195,7 +195,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .cookie_janitor_hint =
+             "清理已識別的廣告和分析 Cookie，並保留規則中的登入例外。",
+         .cname_uncloak_label = "偽裝跟蹤防護",
+-        .cname_uncloak_hint = "識別借用網站域名的已知跟蹤服務並攔截請求。",
++        .cname_uncloak_hint = "識別借用網站域名的已知跟蹤服務並攔截請求。需同時開啟跟蹤器攔截才會生效。",
+         .bounce_tracking_label = "跳轉跟蹤防護",
+         .bounce_tracking_hint = "識別用於跟蹤的頁面跳轉，並清理相關 Cookie。",
+         .policy_worker_label = "本地隱私處理",
+@@ -330,7 +330,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+         .cookie_janitor_hint =
+             "清理已识别的广告和分析 Cookie，并保留规则中的登录例外。",
+         .cname_uncloak_label = "伪装跟踪防护",
+-        .cname_uncloak_hint = "识别借用网站域名的已知跟踪服务并拦截请求。",
++        .cname_uncloak_hint = "识别借用网站域名的已知跟踪服务并拦截请求。需同时开启跟踪器拦截才会生效。",
+         .bounce_tracking_label = "跳转跟踪防护",
+         .bounce_tracking_hint = "识别用于跟踪的页面跳转，并清理相关 Cookie。",
+         .policy_worker_label = "本地隐私处理",
+@@ -478,7 +478,7 @@ AegisStrings StringsForLocale(const std::string& locale) {
+       .cname_uncloak_label = "Disguised tracking protection",
+       .cname_uncloak_hint =
+           "Block known tracking services that use aliases under a website’s "
+-          "domain.",
++          "domain. Requires tracker blocking to be enabled.",
+       .bounce_tracking_label = "Redirect tracking protection",
+       .bounce_tracking_hint =
+           "Detect tracking redirects and clear related cookies.",
+@@ -566,8 +566,10 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   Profile* profile = Profile::FromWebUI(web_ui);
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+       profile, chrome::kChromeUIAegisHost);
++  source->AddFrameAncestor(GURL("chrome://settings"));
+   const aegis::DownloadSettings downloads =
+       aegis::ReadDownloadSettings(*g_browser_process->local_state());
++  source->AddBoolean("isAndroid", BUILDFLAG(IS_ANDROID));
+   source->AddBoolean("aegisTorrentDhtDefault", downloads.torrent_dht_enabled);
+   source->AddBoolean("aegisTorrentPexDefault", downloads.torrent_pex_enabled);
+   source->AddInteger("aegisTorrentDownloadLimitKibDefault",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index a5cdd2e4a2aeb45f9b8a4bb6b24f7bcac5005d2f..d5968731645e0536de19f2bcbfb2eba5b374fcd1 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -18,6 +18,7 @@
+ #include "base/unguessable_token.h"
+ #include "base/values.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/aegis_download_prefs.h"
+ #include "chrome/browser/aegis/aegis_service.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #if BUILDFLAG(IS_MAC)
+@@ -468,6 +469,9 @@ base::DictValue AegisUIHandler::BuildStatus() {
+   status.Set("linkSanitize", service && service->IsLinkSanitizeEnabled());
+   status.Set("cookieJanitor", service && service->IsCookieJanitorEnabled());
+   status.Set("cnameUncloak", service && service->IsCnameUncloakEnabled());
++  status.Set("cnameUncloakConfigured",
++             supported_profile && profile && profile->GetPrefs()->GetBoolean(
++                 aegis::prefs::kCnameUncloakEnabled));
+   status.Set("bounceTracking", service && service->IsBounceTrackingEnabled());
+   status.Set("policyWorker", service && service->IsPolicyWorkerEnabled());
+   // Runtime readiness belongs to this chrome://aegis renderer and is filled
+@@ -1217,6 +1221,13 @@ void AegisUIHandler::OnTorrentValidated(
+   }
+   base::DictValue response = TorrentToPreview(*preview);
+   if (preview->ok) {
++    // 每次预览读取当前全局默认值，避免设置页打开后保存的新参数被旧值覆盖。
++    const aegis::DownloadSettings settings =
++        aegis::ReadDownloadSettings(*g_browser_process->local_state());
++    response.Set("defaultDhtEnabled", settings.torrent_dht_enabled);
++    response.Set("defaultPexEnabled", settings.torrent_pex_enabled);
++    response.Set("defaultDownloadLimitKib", settings.torrent_download_limit_kib);
++    response.Set("defaultUploadLimitKib", settings.torrent_upload_limit_kib);
+     PendingTorrent pending;
+     pending.request_id = base::UnguessableToken::Create().ToString();
+     pending.torrent_data = std::move(torrent_data);
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 758bd8658e6853d7c70e84486e70b6fc27dcd8e7..b09151ad7bc42ebdad9569783a331c5ab2d7d197 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -738,7 +738,12 @@ void AegisAgentPageHandler::CreateSelectedTask(
+ void AegisAgentPageHandler::ShowProtection() {
+   auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
+   if (list && browser_->GetProfile() == profile_) {
++#if BUILDFLAG(IS_ANDROID)
+     list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
++#else
++    list->OpenTab(GURL("chrome://settings/aegisPrivacy"),
++                  list->GetTabCount(), true);
++#endif
+   }
+ }
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 8d685377dc3f9be2755944e09178a3bd722e889b..63fa22f849b08bfe2add9dea314d9e9f17700b76 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -490,6 +490,12 @@ void AddStrings(content::WebUIDataSource *source) {
+   add("simpleHelp", "Choose a common task or describe the result you want.",
+       "选择一个常用场景，或者直接说出你想要的结果。",
+       "選擇一個常用情境，或直接說出你想要的結果。");
++  add("aegisSettingsConnectModel", "Connect a model in Aegis settings", "前往 Aegis 功能设置连接模型", "前往 Aegis 功能設定連接模型");
++  add("aegisSettingsTitle", "Aegis settings", "Aegis 功能设置", "Aegis 功能設定");
++  add("modelPoolSaveHelp",
++      "Routing changes save automatically. Capability, price and generation settings are saved with Add current model to pool; an existing entry is updated.",
++      "模型路由更改后自动保存。能力、费用和推理参数通过“将当前模型加入池”保存；已有模型会更新原条目。",
++      "模型路由變更後自動儲存。能力、費用和推理參數透過「將目前模型加入池」儲存；已有模型會更新原項目。");
+   add("modelAdvanced", "Advanced model settings", "高级模型设置", "進階模型設定");
+   add("modelSettings", "AI model", "AI 模型", "AI 模型");
+   add("modelMissing", "Connect an AI model before the first task",
+@@ -1172,6 +1178,7 @@ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
+       chrome::kChromeUIUntrustedAegisAgentURL);
+   webui::SetupWebUIDataSource(source, kAegisAgentResources,
+                               IDR_AEGIS_AGENT_AGENT_HTML);
++  source->AddFrameAncestor(GURL("chrome://settings"));
+   source->SetRequestFilter(
+       base::BindRepeating([](const std::string& path) {
+         return base::StartsWith(path, "local_ai/download/");
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1f63acb1aa1e50c49213fff37916570a3ff00740..53173610f688ae890b8956ba5bd227db7d2b57f1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "5.0.0.209";
+-inline constexpr char kProductVersionLabel[] = "Ver 5.0 (209)";
++inline constexpr char kProductVersion[] = "5.0.0.218";
++inline constexpr char kProductVersionLabel[] = "Ver 5.0 (218)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
+index eda0053f404f3e55b847a59cee0a2992f6b05bd3..39014011ba339fa6fd4f22cd5bfba6edc93b415b 100644
+--- a/chrome/browser/ui/webui/settings/settings_ui.cc
++++ b/chrome/browser/ui/webui/settings/settings_ui.cc
+@@ -249,11 +249,24 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+   const auto& locale = g_browser_process->GetApplicationLocale();
+   const bool chinese = locale.starts_with("zh");
+   const bool traditional = locale == "zh-TW" || locale == "zh-HK";
++  html_source->AddString("aegisSettingsTitle", chinese ? (traditional ? "Aegis 功能設定" : "Aegis 功能设置") : "Aegis settings");
++  html_source->AddString("aegisSettingsDescription", chinese ? (traditional ? "集中管理 Aegis 的防護、網站增強、閱讀、手勢、AI 與下載功能。" : "集中管理 Aegis 的防护、网站增强、阅读、手势、AI 与下载功能。") : "Manage Aegis protection, website enhancements, reading, gestures, AI and downloads.");
++  html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
++  html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
++  html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");
++  html_source->AddString("aegisAgentSettingsTitle", chinese ? (traditional ? "助手模型與本機翻譯" : "助手模型与本机翻译") : "Assistant models and local translation");
++  html_source->AddString("aegisSharedModelDescription", chinese ? (traditional ? "摘要與助手共用基礎模型連線；儲存任一模型表單會更新這個連線。助手的模型池與路由、TypeSafe 金鑰另行管理。" : "摘要与助手共用基础模型连接；保存任一模型表单会更新这个连接。助手的模型池与路由、TypeSafe 密钥另行管理。") : "Summaries and the assistant share the base model connection. Saving either model form updates that connection. The assistant model pool, routing and TypeSafe key are managed separately.");
++  html_source->AddString("aegisEnhancementsDescription", chinese ? (traditional ? "網站規則、使用者腳本與 AI 編寫" : "网站规则、用户脚本与 AI 编写") : "Site rules, user scripts and AI authoring");
++  html_source->AddString("aegisReadingDescription", chinese ? (traditional ? "閱讀外觀、Markdown、圖片權限與閱讀庫" : "阅读外观、Markdown、图片权限与阅读库") : "Reading appearance, Markdown, image permissions and library");
++  html_source->AddString("aegisGesturesDescription", chinese ? (traditional ? "手勢動作、軌跡、網站例外與練習" : "手势动作、轨迹、网站例外与练习") : "Actions, trails, site exceptions and practice");
++  html_source->AddString("aegisAiDescription", chinese ? (traditional ? "助手與摘要模型、模型池、本機翻譯與實驗功能" : "助手与摘要模型、模型池、本机翻译与实验功能") : "Assistant and summary models, model pool, local translation and experiments");
++  html_source->AddString("aegisDownloadsDescription", chinese ? (traditional ? "鏡像、種子、磁力連結與下載設定" : "镜像、种子、磁力链接与下载配置") : "Mirrors, torrents, magnet links and download preferences");
++  html_source->AddString("aegisToolsDescription", chinese ? (traditional ? "本機 AI 工具連線、權限與連線狀態" : "本机 AI 工具连接、权限与连接状态") : "Local AI tool access, permissions and connection status");
+   html_source->AddString("aegisEnhancementsTitle", chinese ? (traditional ? "網站增強與腳本" : "网站增强与脚本") : "Website enhancements and scripts");
+-  html_source->AddString("aegisReadingTitle", chinese ? (traditional ? "閱讀" : "阅读") : "Reading");
++  html_source->AddString("aegisReadingTitle", chinese ? (traditional ? "閱讀與 Markdown" : "阅读与 Markdown") : "Reading and Markdown");
+   html_source->AddString("aegisGesturesTitle", chinese ? (traditional ? "滑鼠手勢" : "鼠标手势") : "Mouse gestures");
+-  html_source->AddString("aegisPrivacyTitle", chinese ? (traditional ? "追蹤與指紋防護" : "跟踪与指纹防护") : "Tracking and fingerprint protection");
+-  html_source->AddString("aegisPrivacyDescription", chinese ? (traditional ? "網站例外與防護記錄" : "网站例外与防护记录") : "Site exceptions and protection history");
++  html_source->AddString("aegisPrivacyTitle", chinese ? (traditional ? "隱私與防護" : "隐私与防护") : "Privacy and protection");
++  html_source->AddString("aegisPrivacyDescription", chinese ? (traditional ? "追蹤、指紋、Cookie、過濾規則與防護記錄" : "跟踪、指纹、Cookie、过滤规则与防护记录") : "Tracking, fingerprints, cookies, filter lists and protection history");
+   // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
+   html_source->AddString("aegisLocale",
+                          g_browser_process->GetApplicationLocale());
+@@ -261,6 +274,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+       network::mojom::CSPDirectiveName::WorkerSrc,
+       "worker-src blob: chrome://resources 'self';");
+ 
++  // 设置页面只嵌入已有的 Aegis 内部界面，保留原有配置与权限边界。
++  web_ui->AddRequestableScheme("chrome-untrusted");
++  html_source->OverrideContentSecurityPolicy(
++      network::mojom::CSPDirectiveName::FrameSrc,
++      "frame-src chrome://aegis chrome-untrusted://aegis-agent;");
++
+   AddSettingsPageUIHandler(std::make_unique<AppearanceHandler>(web_ui));
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+index ace6866cfe9b2a69a812f7cba8c50824e25d5e3c..b88cd928138b47e8e0baffbe30861ecb89cf2e0a 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+@@ -31,6 +31,10 @@ interface TorrentFile {
+ }
+ 
+ interface TorrentPreview {
++  defaultDhtEnabled?: boolean;
++  defaultPexEnabled?: boolean;
++  defaultDownloadLimitKib?: number;
++  defaultUploadLimitKib?: number;
+   ok: boolean;
+   error?: string;
+   requestId?: string;
+@@ -353,6 +357,12 @@ export class AegisDownloadPanelElement extends CrLitElement {
+       this.previewText_ = this.formatPreviewError_(preview.error || 'invalid torrent');
+       return;
+     }
++    this.torrentDhtDefault_ = preview.defaultDhtEnabled ?? this.torrentDhtDefault_;
++    this.torrentPexDefault_ = preview.defaultPexEnabled ?? this.torrentPexDefault_;
++    this.torrentDownloadLimitDefault_ =
++        preview.defaultDownloadLimitKib ?? this.torrentDownloadLimitDefault_;
++    this.torrentUploadLimitDefault_ =
++        preview.defaultUploadLimitKib ?? this.torrentUploadLimitDefault_;
+     const versions = [
+       preview.hasV1 ? 'v1' : '', preview.hasV2 ? 'v2' : ''
+     ].filter(Boolean).join(' + ');

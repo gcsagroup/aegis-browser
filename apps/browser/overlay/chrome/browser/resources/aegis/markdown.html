@@ -8,7 +8,7 @@
 </head>
 <body class="reading">
   <header class="reader-toolbar">
-    <a href="chrome://settings/aegisReading" aria-label="返回阅读库">← 阅读库</a>
+    <a href="chrome://aegis/?workspace=reading" aria-label="返回阅读库">← 阅读库</a>
     <div class="document-heading"><strong id="document-title">Markdown 阅读</strong><button id="source-info" class="text-button" popovertarget="source-panel">打开文档后查看来源</button></div>
     <nav id="document-tools" aria-label="阅读工具" hidden>
       <button id="outline-toggle" aria-expanded="true">目录</button><button id="find-toggle">查找</button>
@@ -19,7 +19,7 @@
   <p id="notice" role="status" aria-live="polite"></p>
   <section id="start" class="reader-start">
     <h1>打开 Markdown 文档</h1><p>拖入文件，或打开正在浏览的在线原文。</p>
-    <div class="row"><label class="file">打开文件<input id="file" type="file" accept=".md,.markdown,text/markdown,text/plain" /></label><a href="chrome://settings/aegisReading">阅读库</a></div>
+    <div class="row"><label class="file">打开文件<input id="file" type="file" accept=".md,.markdown,text/markdown,text/plain" /></label><a href="chrome://aegis/?workspace=reading">阅读库</a></div>
     <details id="online-open"><summary>打开在线原文</summary><div class="row"><select id="tabs" aria-label="在线文本页面"></select><button id="refresh">刷新列表</button><button id="read-page">打开所选原文</button></div></details>
   </section>
   <div class="reader-workspace" id="workspace" hidden>

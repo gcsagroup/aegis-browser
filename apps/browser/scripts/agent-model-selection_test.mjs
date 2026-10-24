@@ -11,7 +11,7 @@ const html = readFileSync(new URL('agent.html', root), 'utf8');
 assert.match(html, /<select id="model-options" hidden>/);
 assert(!html.includes('<datalist') && !html.includes('list="model-options"'));
 const tree = ts.createSourceFile('agent.ts', source, ts.ScriptTarget.Latest, true);
-const names = ['option', 'renderModel', 'resetDetectedModels', 'selectDetectedModel',
+const names = ['renderModelKeyState', 'beginPoolEdit', 'option', 'renderModelPoolDraft', 'renderModel', 'resetDetectedModels', 'selectDetectedModel',
   'syncDetectedModel', 'detectModels', 'friendlyModelError', 'bindActions',
   'saveModel', 'saveModelRouting', 'showModelSaveError', 'readGenerationProfile',
   'reviewCurrentDownload'];
@@ -34,7 +34,8 @@ function harness(name = models[1]) {
       },
       append(...options) { this.children.push(...options); },
       replaceChildren(...options) { this.children = options; this._value = ''; },
-      addEventListener(event, callback) { this.listeners.set(event, callback); },
+      addEventListener(event, callback) { const previous = this.listeners.get(event); this.listeners.set(event, (...args) => { previous?.(...args); return callback(...args); }); },
+      querySelectorAll() { return []; }, setCustomValidity() {}, reportValidity() { return true; }, focus() {},
     });
     return fields.get(id);
   };
@@ -44,12 +45,13 @@ function harness(name = models[1]) {
   const savedRouting = [];
   const snapshot = {modelConfigured: true, modelProvider: 'openai',
     modelBaseUrl: 'http://127.0.0.1:8000/v1', modelName: name, lastError: '',
-    modelSelectionMode: 0, modelPool: []};
+    modelSelectionMode: 0, modelPool: [], modelCatalogRevision: 1, modelKeyConfigured: false};
   const context = vm.createContext({element: field, snapshot, modelBusy: false,
-    modelRoutingBusy: false, modelFormInitialized: false,
-    addCurrentModelToPool: () => {},
+    modelRoutingBusy: false, modelFormInitialized: false, lastRenderedModelForm: '', lastRenderedModelPoolDraft: '',
+    addCurrentModelToPool: () => {}, modelConnectionBaseline: '', editingPoolId: '', editingPoolRevision: -1, poolDraftDirty: false,
+    ModelSelectionMode: {kFixed: 0, kLocalOnly: 4}, packText: zh => zh, URL, window: {confirm: () => true},
     loadTimeData: {getString: key => key},
-    document: {createElement: () => ({})}, proxy: {handler: {
+    document: {createElement: () => ({children: [], classList: {toggle() {}}, append(...items) {this.children.push(...items);}, addEventListener() {}})}, proxy: {handler: {
       listModels: async () => {
         modelRequests++;
         if (response instanceof Error) throw response;
@@ -61,7 +63,7 @@ function harness(name = models[1]) {
       },
       configureModelRouting: async (...args) => {
         savedRouting.push(args);
-        return {snapshot: {...snapshot, modelSelectionMode: args[0]}};
+        return {snapshot: {...snapshot, modelSelectionMode: args[0], modelPool: args[1]}};
       },
     }},
   });
@@ -73,7 +75,11 @@ function harness(name = models[1]) {
   };
   context.render(snapshot);
   context.bindActions();
-  const fire = (id, event) => field(id).listeners.get(event)();
+  const fire = async (id, event) => {
+    await field(id).listeners.get(event)();
+    // DOM 事件不等待异步返回值；让显式 void 启动的保存也完成本轮任务。
+    await new Promise(resolve => setImmediate(resolve));
+  };
   return {field, context, saved, savedRouting, fire,
     respond: value => { response = value; }, requests: () => modelRequests};
 }
@@ -90,10 +96,20 @@ await check('显示已保存配置不主动请求模型服务，也不生成检�
   assert.equal(h.requests(), 1);
   assert(!h.field('model-feedback').textContent.includes('modelDetected'));
 });
+await check('共用连接从另一处保存后同步未编辑表单，保留已有草稿', async () => {
+  const h = harness();
+  const updated = {...h.context.snapshot, modelName: 'saved-from-summary'};
+  h.context.render(updated);
+  assert.equal(h.field('model-name').value, 'saved-from-summary');
+  h.field('model-name').value = 'unsaved-draft';
+  h.context.render({...updated, modelName: 'another-save'});
+  assert.equal(h.field('model-name').value, 'unsaved-draft');
+  assert.equal(h.requests(), 0);
+});
 await check('已保存的长模型名不筛掉其他候选，完整展示服务返回的五项', async () => {
   const h = harness();
   await h.fire('detect-models-button', 'click');
-  assert.deepEqual(h.field('model-options').children.map(o => o.value), models);
+  assert.deepEqual(h.field('model-options').children.map(o => o.value), ['', ...models]);
   assert.equal(h.field('model-options').value, models[1]);
   assert.equal(h.field('model-options').hidden, false);
   assert.equal(h.field('model-options-label').hidden, false);
@@ -108,8 +124,25 @@ await check('真实选择事件写入模型名，保存调用使用所选项', a
   assert.equal(h.field('model-name').value, models[3]);
   await h.fire('save-model-button', 'click');
   assert.equal(h.saved[0][2], models[3]);
-  assert.equal(h.field('model-feedback').textContent, 'modelSaved');
+  assert.equal(h.field('model-feedback').textContent, '默认连接已保存，摘要与助手共用。');
 });
+for (const id of ['save-model-button', 'clear-model-key-button']) {
+  await check(id + '异步拒绝仍显示错误、清空临时密钥并恢复操作', async () => {
+    const h = harness();
+    let rejectSave;
+    h.context.proxy.handler.configureModel = () => new Promise((resolve, reject) => { rejectSave = reject; });
+    h.field('model-api-key').value = 'test-only-key';
+    await h.fire(id, 'click');
+    assert.equal(h.context.modelBusy, true);
+    assert.equal(h.field('model-feedback').textContent, '保存中…');
+    rejectSave(Error('disconnected'));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(h.field('model-feedback').textContent, 'modelSaveError');
+    assert.equal(h.field('model-api-key').value, '');
+    assert.equal(h.context.modelBusy, false);
+    assert.equal(h.field('save-model-button').disabled, false);
+  });
+}
 await check('手动输入不被检测覆盖，匹配项同步、非列表名称允许保存', async () => {
   const h = harness('custom/model');
   await h.fire('detect-models-button', 'click');
@@ -184,5 +217,31 @@ await check('推理 profile 保留默认、解析配置并拒绝错误预算格�
   assert.deepEqual(read(':4096'), {effort: '', maxOutputTokens: 4096});
   assert.equal(read('high:invalid').maxOutputTokens, -1);
   assert.equal(read('ultra:4096').maxOutputTokens, -1);
+});
+await check('模型池高级参数重新读取并保留未保存草稿，确认保存后更新回读基线', async () => {
+  const h = harness();
+  const entry = {id: 'saved', provider: 'openai', baseUrl: h.context.snapshot.modelBaseUrl,
+    model: h.context.snapshot.modelName, enabled: true, qualityScore: 73, latencyScore: 21,
+    costMicrousdPerMillionTokens: '1200', supportedEfforts: ['low','medium','high'],
+    defaultProfile: {effort: 'medium', maxOutputTokens: 8192},
+    basicProfile: {effort: 'low', maxOutputTokens: 2048},
+    strongProfile: {effort: 'high', maxOutputTokens: 16384},
+    inputPrice: '400', cachedInputPrice: '100', outputPrice: '800',
+    supportsToolCalls: true, supportsLongContext: false, supportsStrongReasoning: true};
+  h.context.render({...h.context.snapshot, modelPool: [entry]});
+  h.context.beginPoolEdit(entry.id);
+  for (const [id,value] of Object.entries({'model-quality-score':'73','model-latency-score':'21',
+    'model-cost':'1200','model-efforts':'low,medium,high','model-profile-default':'medium:8192',
+    'model-profile-basic':'low:2048','model-profile-strong':'high:16384',
+    'model-input-price':'400','model-cache-price':'100','model-output-price':'800'})) {
+    assert.equal(h.field(id).value, value);
+  }
+  assert.equal(h.field('model-supports-long-context').checked, false);
+  h.field('model-quality-score').value = '88';
+  h.context.poolDraftDirty = true;
+  h.context.render({...h.context.snapshot, modelPool: [{...entry, qualityScore: 60}]});
+  assert.equal(h.field('model-quality-score').value, '88');
+  await h.context.saveModelRouting(h.context.snapshot.modelPool, true);
+  assert.equal(h.field('model-quality-score').value, '60');
 });
 console.log(`模型选择回归 ${passed}/${passed}，另含 HTML 结构检查；非实机验收。`);

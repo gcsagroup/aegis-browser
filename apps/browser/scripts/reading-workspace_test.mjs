@@ -2,10 +2,11 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
+import {dirname, resolve} from 'node:path';
 import vm from 'node:vm';
 import {fileURLToPath} from 'node:url';
 import {JSDOM} from 'jsdom';
-const root = fileURLToPath(new URL('../../../', import.meta.url));
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const ts = createRequire(root + '/packages/core/package.json')('typescript');
 const base = root + '/apps/browser/overlay/chrome/browser/resources/aegis_agent/';
 const dom = new JSDOM(readFileSync(base + 'agent.html', 'utf8'));
@@ -21,7 +22,14 @@ class LocalAiClient {
   cancel() {}
 }
 vm.runInNewContext(code, {exports, document, window: dom.window,
-  require: name => name.includes('local_ai_client') ? {LocalAiClient} : {loadTimeData: {getString: name => name}}});
+  fetch: async () => ({ok: true, json: async () => ({minim: {bundled: false}, phishlang: {bundled: false}})}),
+  require: name => name.includes('language_packs') ? {packText: zh => zh, LanguagePacks: class {
+    fillDirections(select, text, selected) {
+      for (const value of ['zh-en', 'fr-en']) { const option = document.createElement('option'); option.value = value; select.append(option); }
+      if (selected) select.value = selected;
+    }
+    showRoute() {}
+  }} : name.includes('local_ai_client') ? {LocalAiClient} : {loadTimeData: {getString: name => name}}});
 const fixture = {id: 'a', url: 'https://fixture.invalid/article', title: '<img src=x onerror=alert(1)>',
   kind: 'web', page: 0, text: '原文与唯一关键词', note: '批注', quote: '原文', group: '项目甲',
   paragraphs: ['原文与唯一关键词'], translation: ['unique translation'], language: 'en', archived: false, created: '1'};
@@ -52,6 +60,16 @@ const workspace = new exports.ReadingWorkspace(proxy);
 const el = id => document.getElementById('reading-' + id);
 const event = (node, type) => node.dispatchEvent(new dom.window.Event(type));
 const flush = () => new Promise(resolve => setImmediate(resolve));
+// 实验分类独立展开时回读原开关，不依赖翻译卡片，也不启动本机模型。
+reply.minimEnabled = true; reply.phishlangEnabled = false;
+el('research-settings').open = true; event(el('research-settings'), 'toggle');
+await flush();
+assert.equal(calls.at(-1).op, 'list');
+assert.equal(el('minim').checked, true);
+assert.equal(el('phishlang').checked, false);
+assert.equal(localCalls.length, 0);
+reply.minimEnabled = false;
+el('research-settings').open = false;
 await workspace.refresh();
 assert.equal(el('tabs').querySelector('img'), null);
 assert.equal(el('tabs').querySelector('span').textContent.includes(fixture.title), true);
@@ -102,14 +120,18 @@ assert.equal(calls.at(-1).minim, true);
 assert.equal(button('Analyze').disabled, false);
 assert.equal(localCalls.length, 0, '开启开关本身也不执行推理');
 el('draft-note').value = '离线翻译前的批注';
+const chosenDirection = el('draft').querySelector('.reading-local-controls select');
+chosenDirection.value = 'fr-en'; event(chosenDirection, 'change');
 localReply = {translations: ['Offline translation'], language: 'en'};
 reply = {draft: {...fixture, translation: ['Offline translation'], note: '离线翻译前的批注'}};
 event(button('LocalTranslate'), 'click'); await flush(); await flush();
 assert.equal(localCalls.at(-1).op, 'translate');
+assert.equal(localCalls.at(-1).direction, 'fr-en');
 assert.equal(calls.at(-1).op, 'translate_local');
 assert.equal(calls.at(-1).draft, true);
 assert.equal(calls.at(-1).note, '离线翻译前的批注');
 assert.equal(el('draft-note').value, '离线翻译前的批注');
+assert.equal(el('draft').querySelector('.reading-local-controls select').value, 'fr-en', '翻译回包重绘后保留用户选择的方向');
 assert.equal(el('draft').querySelector('.reading-pairs').textContent.includes('Offline translation'), true);
 assert.equal(localCalls.some(request => request.op === 'research'), false);
 // 下载管理会刷新资料列表；已保存条目里尚未提交的批注不能因此丢失。
@@ -145,5 +167,39 @@ assert.equal(opened.querySelectorAll('.reading-translation-warning').length, 2);
 assert.ok(opened.textContent.includes('readingTranslationCaution'));
 assert.ok(opened.textContent.includes('费用为人民币1,234.56元。'));
 assert.ok(opened.textContent.includes('The fee is $1,234.36.'), '提示不得改写译文');
+// 阅读器的语言包入口展开同页管理器，保留原文与批注，不触发下载。
+let settingsOpened = 0;
+const style = document.createElement('style');
+style.textContent = readFileSync(base + 'agent.css', 'utf8');
+document.head.append(style);
+document.getElementById('aegis-settings-link').addEventListener('click', event => {
+  event.preventDefault();
+  settingsOpened++;
+});
+const managePacks = [...opened.querySelectorAll('button')]
+    .find(button => button.textContent === 'readingManagePacks');
+assert.ok(managePacks);
+const callsBefore = calls.length;
+const localCallsBefore = localCalls.length;
+const noteBefore = opened.querySelectorAll('textarea')[1].value;
+for (const standalone of [false, true]) {
+  document.body.className = standalone ? 'central-settings reading-workspace-only' : 'central-settings';
+  el('view').hidden = false;
+  el('ai-settings').open = false;
+  assert.equal(dom.window.getComputedStyle(el('ai-settings')).display, 'none');
+  event(managePacks, 'click');
+  assert.equal(settingsOpened, 0);
+  assert.equal(el('ai-settings').open, true);
+  assert.equal(dom.window.getComputedStyle(el('ai-settings')).display, 'block',
+      `${standalone ? '独立工作区' : '侧栏'}的管理语言包入口必须可见`);
+  assert.equal(opened.querySelectorAll('textarea')[1].value, noteBefore);
+  if (!standalone) {
+    el('view').hidden = true;
+    assert.equal(dom.window.getComputedStyle(el('ai-settings')).display, 'none',
+        '切回其他侧栏视图时不显示阅读设置');
+  }
+}
+assert.equal(calls.length, callsBefore, '打开设置不修改资料或启动下载');
+assert.equal(localCalls.length, localCallsBefore, '打开管理器不执行本机模型或下载');
 dom.window.close();
 console.log('阅读模块真实 DOM 回归通过：选择、文本、高亮、搜索、授权、译文、冲突、实验默认关闭和本机译文保存。');

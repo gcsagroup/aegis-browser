@@ -22,3 +22,16 @@ iframe.reader { flex: 1; min-width: 0; width: 100%; height: 100%; border: 0; }
 #source-address { overflow-wrap: anywhere; }
 @media (max-width: 780px) { .reader-toolbar { flex-wrap: wrap; gap: 8px 16px; padding: 10px 14px; } .reader-toolbar nav { width: 100%; } #ai { position: absolute; inset: 100px 0 0 auto; width: min(360px,100%); max-width: 100%; z-index: 2; box-shadow: -6px 0 24px #0002; } }
 @media print { .reader-toolbar, #notice, #ai, [popover] { display:none !important; } body.reading, .reader-workspace { height:auto; overflow:visible; } }
+
+/* 阅读设置浮层允许滚动，长标签与选择值不争抢同一行。 */
+.reader-popover { max-height: calc(100dvh - 110px); overflow-y: auto; }
+.reader-popover label { display: block; }
+.reader-popover label > select, .reader-popover label > input[type=number] {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+@media (max-width: 600px) {
+  .reader-start { margin-top: 24px; padding: 20px; }
+  .reader-popover { inset: 16px 16px auto auto; max-height: calc(100dvh - 32px); }
+}

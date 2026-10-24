@@ -447,7 +447,7 @@ void EnhancementStore::Mutate(const base::DictValue& request, Completion done) {
     return;
   }
   const auto op = EnhancementField(request, "op");
-  Commit(std::move(next), op != "reading-preferences" && op != "markdown-site", std::move(done));
+  Commit(std::move(next), op != "reading-preferences" && op != "markdown-site" && op != "markdown-site-remove", std::move(done));
 }
 std::string EnhancementStore::Prepare(const base::DictValue& r,
                                       base::DictValue& next) {
@@ -455,7 +455,24 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
                     id = EnhancementField(r, "id");
   auto* scripts = next.FindList("scripts");
   auto* sites = next.FindList("sites");
-  if (op == "markdown-site") {
+  // 新设置表单携带编辑基线。旧调用保持兼容；新表单拒绝用陈旧基线覆盖其他页面的修改。
+  if (const auto* expected = r.Find("expected")) {
+    const base::Value* actual = nullptr;
+    if (op == "reading-preferences") actual = next.Find("readingPreferences");
+    else if (op == "markdown-site" || op == "markdown-site-remove") {
+      const auto* preview = next.FindDict("markdownSites");
+      if (preview) actual = preview->Find(EnhancementField(r, "origin"));
+    } else if (op == "site-save" || op == "site-remove") {
+      const auto* rule = r.FindDict("rule");
+      const auto origin = rule ? EnhancementField(*rule, "origin") : EnhancementField(r, "origin");
+      for (const auto& item : *sites) if (EnhancementField(item.GetDict(), "origin") == origin) actual = &item;
+    }
+    if (actual ? *actual != *expected : !expected->is_none())
+      return "配置已在另一处修改，请重新读取后再保存；当前输入仍保留。";
+  }
+  if (op == "markdown-site-remove") {
+    if (auto* preview = next.FindDict("markdownSites")) preview->Remove(EnhancementField(r, "origin"));
+  } else if (op == "markdown-site") {
     if (!next.FindDict("markdownSites"))
       next.Set("markdownSites", base::DictValue());
     if (!r.FindBool("enabled"))
@@ -523,6 +540,7 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
       for (auto& item : *scripts)
         if (EnhancementField(item.GetDict(), "id") == id) {
           item.GetDict().Set("enabled", Flag(r, "enabled"));
+          item.GetDict().Set("reviewed", Flag(r, "enabled") || Flag(*old, "enabled") || Flag(*old, "reviewed"));
           item.GetDict().Set("revision", old->FindInt("revision").value() + 1);
         }
     } else if (op == "script-save" || op == "script-rollback") {
@@ -560,6 +578,7 @@ std::string EnhancementStore::Prepare(const base::DictValue& r,
               .Set("world", EnhancementField(input, "world"))
               .Set("allFrames", Flag(input, "allFrames"))
               .Set("enabled", false)
+              .Set("reviewed", false)
               .Set("disabledOrigins", old && old->FindList("disabledOrigins")
                                           ? old->FindList("disabledOrigins")->Clone()
                                           : base::ListValue())

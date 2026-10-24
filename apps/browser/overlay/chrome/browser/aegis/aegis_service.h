@@ -186,6 +186,7 @@ class AegisService : public KeyedService,
   std::string ConfiguredModelProvider() const;
   std::string ConfiguredModelBaseUrl() const;
   std::string ConfiguredModelName() const;
+  uint64_t ModelSettingsRevision() const { return model_settings_revision_; }
   std::optional<std::string> ResolveModelBaseUrl(
       const std::string& provider,
       const std::string& base_url) const;
@@ -317,6 +318,8 @@ class AegisService : public KeyedService,
   std::unique_ptr<CookieJanitor> cookie_janitor_;
   std::unique_ptr<ModelProviderClient> model_client_;
   std::map<std::string, std::string> model_api_keys_;
+  uint64_t model_settings_revision_ = 0;
+  bool model_settings_write_pending_ = false;
   bool model_credentials_loading_ = false;
   bool model_credentials_loaded_ = false;
   bool model_credentials_available_ = true;

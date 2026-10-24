@@ -291,10 +291,10 @@ struct UserScriptEditor: View {
           .autocorrectionDisabled().textInputAutocapitalization(.never).accessibilityIdentifier(
             "user-script-source")
           DisclosureGroup("执行环境与子框架") {
-          Picker("执行环境", selection: $world) {
+          SettingsPicker("执行环境", selection: $world, value: world == "page" ? "页面环境（无 GM 权限）" : "隔离环境") {
             Text("隔离环境").tag("isolated")
             Text("页面环境（无 GM 权限）").tag("page")
-          }
+          }.accessibilityIdentifier("script-world-setting")
           Toggle("在匹配的子框架中运行", isOn: $allFrames)
           }
           Button("检查并保存草稿") { save() }.accessibilityIdentifier("user-script-save")

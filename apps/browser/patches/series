@@ -314,3 +314,13 @@
 0314-upstream-security-version-208.patch
 0315-codacy-local-ai-cleanup.patch
 0316-upstream-security-version-209.patch
+0317-unified-aegis-settings.patch
+0318-separate-experimental-settings.patch
+0319-rework-eight-settings-and-language-packs.patch
+0320-fix-download-settings-alignment.patch
+0321-align-settings-cards-and-forms.patch
+0322-fix-workspace-and-form-layout.patch
+0323-keep-settings-cleanup-scannable.patch
+0324-fix-settings-review-regressions.patch
+0325-audit-settings-codacy-types.patch
+0326-clarify-settings-key-access.patch

@@ -12,6 +12,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
+#include "base/json/json_reader.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/escape.h"
@@ -40,8 +41,12 @@
 #include "components/prefs/pref_service.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_ui.h"
+#include "content/public/common/referrer.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "ui/base/page_transition_types.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -672,7 +677,7 @@ void AegisAgentPageHandler::ListResearchTabs(
     item->tab_id = tab->GetHandle().raw_value();
     item->url = url.spec();
     item->title = aegis::agent::BoundedAgentObservationText(
-        base::UTF16ToUTF8(tab->GetContents()->GetTitle()), 256);
+        base::UTF16ToUTF8(tab->GetTitle()), 256);
     research_selection_urls_[item->tab_id] = url;
     result.push_back(std::move(item));
   }
@@ -736,10 +741,21 @@ void AegisAgentPageHandler::CreateSelectedTask(
 }
 
 void AegisAgentPageHandler::ShowProtection() {
+#if BUILDFLAG(IS_ANDROID)
+  // 只导航发起调用的助手页，避免返回设置时反复增加标签或替换其他标签。
+  auto* contents = ui_ ? ui_->web_ui()->GetWebContents() : nullptr;
+  if (contents && contents->GetBrowserContext() == profile_) {
+    contents->GetController().LoadURL(
+        GURL("chrome://aegis/"), content::Referrer(),
+        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+  }
+#else
   auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
   if (list && browser_->GetProfile() == profile_) {
-    list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
+    list->OpenTab(GURL("chrome://settings/aegisPrivacy"),
+                  list->GetTabCount(), true);
   }
+#endif
 }
 
 void AegisAgentPageHandler::OpenResearchSource(
@@ -897,11 +913,23 @@ void AegisAgentPageHandler::ConfigureModel(const std::string& provider,
                                            const std::string& model,
                                            const std::string& api_key,
                                            bool clear_api_key,
+                                           const std::string& expected_connection,
                                            ConfigureModelCallback callback) {
   last_error_.clear();
   aegis::AegisService* core_service = CoreServiceForProfile(profile_);
   if (!core_service) {
     last_error_ = "Model settings are unavailable for this profile";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  const auto expected = base::JSONReader::Read(expected_connection, base::JSON_PARSE_RFC);
+  base::ListValue current;
+  current.Append(core_service->ConfiguredModelProvider());
+  current.Append(core_service->ConfiguredModelBaseUrl());
+  current.Append(core_service->ConfiguredModelName());
+  current.Append(base::NumberToString(core_service->ModelSettingsRevision()));
+  if (!expected || !expected->is_list() || expected->GetList() != current) {
+    last_error_ = "settings_changed";
     std::move(callback).Run(BuildSnapshot());
     return;
   }
@@ -941,12 +969,18 @@ void AegisAgentPageHandler::ConfigureTypeSafe(
 void AegisAgentPageHandler::ConfigureModelRouting(
     aegis_agent::mojom::ModelSelectionMode mode,
     std::vector<aegis_agent::mojom::ModelPoolEntryPtr> model_pool,
+    int32_t expected_revision,
     ConfigureModelRoutingCallback callback) {
   last_error_.clear();
   aegis::AegisService* core_service = CoreServiceForProfile(profile_);
   const auto converted_mode = ConvertModelSelectionMode(mode);
   if (!core_service || !converted_mode || model_pool.size() > 8u) {
     last_error_ = "Agent model routing settings are invalid";
+    std::move(callback).Run(BuildSnapshot());
+    return;
+  }
+  if (expected_revision != core_service->AgentModelCatalogRevision()) {
+    last_error_ = "settings_changed";
     std::move(callback).Run(BuildSnapshot());
     return;
   }
@@ -1488,6 +1522,9 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
     snapshot->model_provider = core_service->ConfiguredModelProvider();
     snapshot->model_base_url = core_service->ConfiguredModelBaseUrl();
     snapshot->model_name = core_service->ConfiguredModelName();
+    snapshot->model_connection_revision = base::NumberToString(core_service->ModelSettingsRevision());
+    snapshot->model_key_configured = core_service->HasModelApiKey(
+        snapshot->model_provider, snapshot->model_base_url);
     snapshot->model_selection_mode = ConvertModelSelectionMode(
         core_service->ConfiguredAgentModelSelectionMode());
     snapshot->model_catalog_revision =
@@ -1690,7 +1727,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
               task->AllowsTab(source_tab->GetHandle().raw_value()) &&
               source_tab->GetURL() == GURL(source)) {
             title = aegis::agent::BoundedAgentObservationText(
-                base::UTF16ToUTF8(source_tab->GetContents()->GetTitle()), 256);
+                base::UTF16ToUTF8(source_tab->GetTitle()), 256);
             break;
           }
         }

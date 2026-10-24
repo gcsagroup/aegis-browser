@@ -1,0 +1,470 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 23:20:00 +0800
+Subject: [PATCH] 明确设置键访问与事件绑定并保留翻译标记行为
+
+将受控字典和字段访问写为显式结构；保留现有保存队列、失败回退及消息来源检查。
+
+---
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index cf4d1da0aa9e058f5e6e61439cd55bd58b2158cb..b08e6c42a55054d5ced3413c583bff3e3dabd5bb 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -1688,8 +1688,10 @@ document.addEventListener('DOMContentLoaded', () => {
+ });
+ 
+ // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
+-window.addEventListener('message', event => {
+-  if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
++function handleSettingsSearchMessage(event: MessageEvent) {
++  if (event.source !== parent) { return; }
++  if (event.origin !== 'chrome://settings') { return; }
++  if (event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') { return; }
+   document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
+   const query = event.data.query.trim().toLocaleLowerCase();
+   if (!query) return;
+@@ -1698,4 +1700,5 @@ window.addEventListener('message', event => {
+   let ancestor = target.parentElement;
+   while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
+   target.dataset['searchMatch'] = 'true'; target.scrollIntoView({block: 'center'});
+-});
++}
++window.addEventListener('message', handleSettingsSearchMessage);
+diff --git a/chrome/browser/resources/aegis/gestures.ts b/chrome/browser/resources/aegis/gestures.ts
+index b52627d149fdba06eec52054756bc2287ed679bf..309b4d946913ea566588c381fb463dcb6dd5cd9b 100644
+--- a/chrome/browser/resources/aegis/gestures.ts
++++ b/chrome/browser/resources/aegis/gestures.ts
+@@ -22,8 +22,11 @@ function savedSettings(): Settings {
+ }
+ let lastPattern = '', lastAction: string|undefined;
+ let practiceSaving = false, pendingSaves = 0, optionSequence = 0;
++function savedBinding(pattern: string): string|undefined {
++  return new Map(Object.entries(saved?.bindings || {})).get(pattern);
++}
+ function hasDraft() {
+-  return !!pendingSaves || drafts.size > 0 || !!element<HTMLInputElement>('newSite').value || (saved !== null && sites.value !== saved.disabledSites.join('\n')) || (!!lastPattern && !!element<HTMLSelectElement>('practiceAction').value && element<HTMLSelectElement>('practiceAction').value !== saved?.bindings[lastPattern]);
++  return !!pendingSaves || drafts.size > 0 || !!element<HTMLInputElement>('newSite').value || (saved !== null && sites.value !== saved.disabledSites.join('\n')) || (!!lastPattern && !!element<HTMLSelectElement>('practiceAction').value && element<HTMLSelectElement>('practiceAction').value !== savedBinding(lastPattern));
+ }
+ function reportDirty() {
+   if (root instanceof ShadowRoot) root.host.dispatchEvent(new CustomEvent('aegis-form-dirty', {detail: hasDraft(), bubbles: true, composed: true}));
+@@ -39,15 +42,15 @@ function message(text: string, error = false, id = 'status') {
+   target.textContent = t(text); target.classList.toggle('error', error);
+ }
+ function arrows(value: string): string {
+-  const symbols: Record<string, string> = {L: '←', R: '→', U: '↑', D: '↓'};
+-  return Array.from(value, letter => symbols[letter] || letter).join(' ');
++  const symbols = new Map([['L', '←'], ['R', '→'], ['U', '↑'], ['D', '↓']]);
++  return Array.from(value, letter => symbols.get(letter) || letter).join(' ');
+ }
+ function normalize(value: string) {
+   return value.trim().toUpperCase().replaceAll('←', 'L').replaceAll('→', 'R').replaceAll('↑', 'U').replaceAll('↓', 'D').replaceAll(' ', '');
+ }
+ function actionSelect(select: HTMLSelectElement, current = '') {
+   select.replaceChildren(new Option(t('请选择动作'), ''));
+-  const groups = new Map<string, HTMLOptGroupElement>();
++  const groups: Map<string, HTMLOptGroupElement> = new Map();
+   for (const item of actions) {
+     const name = item.pdfOnly ? 'PDF' : /tab/.test(item.id) ? t('标签页') : /back|forward|reload/.test(item.id) ? t('导航') : t('页面');
+     let group = groups.get(name);
+@@ -107,7 +110,7 @@ function renderBindings() {
+     editor.append(select, button('保存', async () => {
+       if (!select.value) { status.textContent = t('请选择动作'); return; }
+       const value = select.value;
+-      if (await persist(next => { next.bindings[pattern] = value; }, status.id)) { if (drafts.get(pattern) === value) drafts.delete(pattern); renderBindings(); reportDirty(); }
++      if (await persist(next => { next.bindings = Object.fromEntries(new Map(Object.entries(next.bindings)).set(pattern, value)); }, status.id)) { if (drafts.get(pattern) === value) drafts.delete(pattern); renderBindings(); reportDirty(); }
+     }), button('取消', () => { drafts.delete(pattern); editor.hidden = true; }), status);
+     controls.append(button('编辑', () => { drafts.set(pattern, action); editor.hidden = false; select.focus(); }), button('移除', async () => {
+       if (await persist(next => { next.bindings = Object.fromEntries(Object.entries(next.bindings).filter(([key]) => key !== pattern)); }, 'binding-status')) {
+@@ -129,7 +132,7 @@ function choosePattern(value: string) {
+   if (practiceSaving) return;
+   value = normalize(value);
+   if (!/^[LRUD]{1,8}$/.test(value) || /(.)\1/.test(value)) { clearPractice(); resultLabel.textContent = t('需包含 1–8 个方向，相邻方向不能相同。'); return; }
+-  lastPattern = value; lastAction = saved?.bindings[value];
++  lastPattern = value; lastAction = savedBinding(value);
+   patternLabel.textContent = arrows(value); resultLabel.textContent = lastAction ? t('已绑定，可在下方修改；练习不执行操作。') : t('尚未绑定，请选择动作。');
+   const select = element<HTMLSelectElement>('practiceAction'); actionSelect(select, lastAction || '');
+   element('practice-editor').hidden = false; element('savePractice').textContent = t(lastAction ? '保存绑定修改' : '添加并保存');
+@@ -144,7 +147,7 @@ element('savePractice').onclick = async () => {
+   element<HTMLButtonElement>('savePractice').disabled = true;
+   const ok = await persist(next => {
+     if (!Object.hasOwn(next.bindings, pattern) && Object.keys(next.bindings).length >= 64) throw Error(t('最多添加 64 条手势。'));
+-    next.bindings[pattern] = action;
++    next.bindings = Object.fromEntries(new Map(Object.entries(next.bindings)).set(pattern, action));
+   }, 'practice-status');
+   if (ok) { renderBindings(); lastAction = action; resultLabel.textContent = t('已绑定，可在下方修改；练习不执行操作。'); element('savePractice').textContent = t('保存绑定修改'); }
+   practiceSaving = false; element<HTMLSelectElement>('practiceAction').disabled = false;
+diff --git a/chrome/browser/resources/aegis/mobile_settings.ts b/chrome/browser/resources/aegis/mobile_settings.ts
+index b9cb8dfc6eddd1c9d85d7effb50b5ee86568895e..670b0494167763267fbae864fc30328b67703821 100644
+--- a/chrome/browser/resources/aegis/mobile_settings.ts
++++ b/chrome/browser/resources/aegis/mobile_settings.ts
+@@ -49,7 +49,7 @@ export function initializeMobileSettings(
+   nav.className = 'mobile-settings-nav';
+   nav.setAttribute('aria-label', title);
+   header.after(nav);
+-  const pages = new Map<string, HTMLElement>();
++  const pages: Map<string, HTMLElement> = new Map();
+   for (const group of groups) {
+     const link = document.createElement('a');
+     link.href = '#' + group.id;
+@@ -101,8 +101,8 @@ export function initializeMobileSettings(
+   main.querySelector<HTMLElement>(':scope > .note')?.setAttribute('hidden', '');
+   const render = (focus: boolean) => {
+     const fragment = location.hash.slice(1);
+-    const legacy: Record<string, string> = {'overview-title': 'privacy', 'activity-log': 'privacy', 'fp-probe': 'privacy', 'privacy-result': 'ai'};
+-    const id = legacy[fragment] || fragment;
++    const legacy = new Map([['overview-title', 'privacy'], ['activity-log', 'privacy'], ['fp-probe', 'privacy'], ['privacy-result', 'ai']]);
++    const id = legacy.get(fragment) || fragment;
+     const group = groups.find(candidate => candidate.id === id);
+     back.hidden = !group;
+     nav.hidden = !!group;
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 918902da6e2413e4e5d8134f1a445c517227b889..767d92c92c6e9c73ac20ee1fcec92ae1e575d219 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -2163,8 +2163,10 @@ try {
+ }
+ 
+ // 只接受统一设置父页面的查找请求，不接受网页发送的消息。
+-window.addEventListener('message', event => {
+-  if (event.source !== parent || event.origin !== 'chrome://settings' || event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') return;
++function handleSettingsSearchMessage(event: MessageEvent) {
++  if (event.source !== parent) { return; }
++  if (event.origin !== 'chrome://settings') { return; }
++  if (event.data?.type !== 'aegis-settings-search' || typeof event.data.query !== 'string') { return; }
+   document.querySelectorAll('[data-search-match]').forEach(node => { node.removeAttribute('data-search-match'); });
+   const query = event.data.query.trim().toLocaleLowerCase();
+   if (!query) return;
+@@ -2173,4 +2175,5 @@ window.addEventListener('message', event => {
+   let ancestor = target.parentElement;
+   while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
+   target.dataset['searchMatch'] = 'true'; target.scrollIntoView({block: 'center'});
+-});
++}
++window.addEventListener('message', handleSettingsSearchMessage);
+diff --git a/chrome/browser/resources/aegis_agent/language_packs.ts b/chrome/browser/resources/aegis_agent/language_packs.ts
+index 75107dba73f9d882bb3f8042826b307e4ed58ce2..7caded35d7dbfce70478c22dd433d4ceb9312b51 100644
+--- a/chrome/browser/resources/aegis_agent/language_packs.ts
++++ b/chrome/browser/resources/aegis_agent/language_packs.ts
+@@ -8,8 +8,8 @@ export function packText(zh: string, en: string, tw: string): string {
+   const locale = loadTimeData.getString('aegisLocale');
+   return /^zh-(TW|HK|Hant)/i.test(locale) ? tw : locale.startsWith('zh') ? zh : en;
+ }
+-const languageNames: Record<string, string> = {en: 'English', zh: '简体中文', ja: '日本語', ko: '한국어', fr: 'Français', de: 'Deutsch', es: 'Español', ru: 'Русский'};
+-const name = (code: string) => languageNames[code] || code;
++const languageNames = new Map([['en', 'English'], ['zh', '简体中文'], ['ja', '日本語'], ['ko', '한국어'], ['fr', 'Français'], ['de', 'Deutsch'], ['es', 'Español'], ['ru', 'Русский']]);
++const name = (code: string) => languageNames.get(code) || code;
+ const mb = (bytes: number) => (bytes / 1000000).toFixed(1) + ' MB';
+ const make = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '') => {
+   const node = document.createElement(tag); node.textContent = text; return node;
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index 603e39a4f7bf9b38c03d418faac80507c2b76ca1..7705f969edb07e18e4b9ac2ccc10505d775e2024 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -6,8 +6,8 @@
+       "sha256": "a1bfb839c4a97d6d645a9fd2d85c6d8bbf0221b6fc141506eaed9f858af837f0"
+     },
+     "worker.js": {
+-      "bytes": 12155,
+-      "sha256": "ba5a9a498dadf319fc1a613f11e84b8a4cb725ac4a10aec2d36971585104e6b9"
++      "bytes": 12528,
++      "sha256": "e706f358108a0dcd10fcaa967dc98e02494652c2d92bd23a4f76531b2577d559"
+     },
+     "research.js": {
+       "bytes": 6934,
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/worker.js b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+index 972d4a35f25e2beaa1f25f2dee331f82b2e51ab3..dd9654b1b949f700bc843c8647465fd62f309f07 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/worker.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+@@ -51,7 +51,7 @@ async function savePack(pack, files, remove = false) {
+   const metadata = await readEntries('packs', all.map(value => value.id));
+   const previous = metadata[all.findIndex(value => value.id === pack.id)];
+   const shared = new Set(all.filter(value => value.id !== pack.id).flatMap(value => value.rows.map(row => row.decompressedHash)));
+-  metadata.forEach((value, index) => { if (all[index].id !== pack.id) value?.rows?.forEach(row => shared.add(row.decompressedHash)); });
++  metadata.forEach((value, index) => { if (all.at(index).id !== pack.id) value?.rows?.forEach(row => shared.add(row.decompressedHash)); });
+   const db = await openStore();
+   return await (async () => {
+     await new Promise((resolve, reject) => {
+@@ -63,7 +63,7 @@ async function savePack(pack, files, remove = false) {
+       }
+       if (remove) transaction.objectStore('packs').delete(pack.id);
+       else {
+-        pack.rows.forEach((row, index) => store.put(files[index], row.decompressedHash));
++        pack.rows.forEach((row, index) => store.put(files.at(index), row.decompressedHash));
+         transaction.objectStore('packs').put({version: pack.version, rows: pack.rows}, pack.id);
+       }
+       transaction.oncomplete = resolve;
+@@ -137,9 +137,10 @@ function translateWithMarkers(translator, models, paragraph, markerPrefix) {
+   // 译文必须原样保留每个标记且只出现一次，否则拒绝保存，避免代码或链接被改写。
+   let prefix = markerPrefix;
+   while (paragraph.includes(prefix)) prefix += '0/';
+-  const protectedText = [];
++  const protectedText = new Map();
+   const input = paragraph.replace(/(```[\s\S]*?```|`[^`\n]+`|https?:\/\/[^\s<>\])}]+)/g, text => {
+-    const id = protectedText.push(text) - 1;
++    const id = protectedText.size;
++    protectedText.set(id, {text, count: 0});
+     return prefix + id;
+   });
+   const pieces = [];
+@@ -150,14 +151,18 @@ function translateWithMarkers(translator, models, paragraph, markerPrefix) {
+     pieces.push(output.target.text);
+   }
+   const output = pieces.join(['zh', 'ja'].includes(to) ? '' : ' ');
+-  const seen = Array(protectedText.length).fill(0);
+-  const marker = new RegExp(prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d+)\\b', 'g');
+-  const restored = output.replace(marker, (_, id) => {
+-    const index = Number(id);
+-    if (!Object.hasOwn(protectedText, index)) throw Error('translation_incomplete');
+-    ++seen[index]; return protectedText[index];
+-  });
+-  if (seen.some(count => count !== 1)) throw Error('translation_incomplete');
++  // 按本次精确前缀分段，数字后面的正文保留原样，不把 /0/ 等后缀误当成另一组前缀。
++  const restored = output.split(prefix).map((part, index, parts) => {
++    if (index === 0) return part;
++    // 分段末尾仍要看到下一前缀的首字符，避免相邻标记凭空得到数字词边界。
++    const following = index < parts.length - 1 ? prefix.charAt(0) : '';
++    const match = /^\d+\b/.exec(part + following);
++    if (!match) return prefix + part;
++    const id = match[0], entry = protectedText.get(Number(id));
++    if (!entry) throw Error('translation_incomplete');
++    ++entry.count; return entry.text + part.slice(id.length);
++  }).join('');
++  if (Array.from(protectedText.values()).some(entry => entry.count !== 1)) throw Error('translation_incomplete');
+   return restored;
+ }
+ function translateParagraph(translator, models, paragraph) {
+@@ -201,11 +206,11 @@ async function execute(request) {
+   await translator.initialize({});
+   const loaded = [];
+   return await (async () => {
+-    for (let index = 0; index < packs.length; ++index) {
+-      const {rows, files} = installedPacks[index], {from, to} = packs[index];
++    for (const [index, pack] of packs.entries()) {
++      const {rows, files} = installedPacks.at(index), {from, to, beamSize} = pack;
+       const parts = Object.fromEntries(rows.map((row, i) => [row.fileType, files[i]]));
+       translator.loadTranslationModel({from, to}, {model: parts.model, shortlist: parts.lex,
+-        vocabs: parts.vocab ? [parts.vocab] : [parts.srcvocab, parts.trgvocab], qualityModel: null, config: {'beam-size': packs[index].beamSize, 'skip-cost': packs[index].beamSize === 1}});
++        vocabs: parts.vocab ? [parts.vocab] : [parts.srcvocab, parts.trgvocab], qualityModel: null, config: {'beam-size': beamSize, 'skip-cost': beamSize === 1}});
+       loaded.push({from, to});
+     }
+     const to = packs.at(-1).to, translations = [];
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index 0ef2bc9aac69ec18e0f78088bd25ec80a62706b9..fb5b1e9f0ed078d7181a5b9e858f5810cfb65945 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -123,7 +123,7 @@ export class ReadingWorkspace {
+       const response = await fetch('./local_ai/research_manifest.json');
+       if (!response.ok) throw Error('unavailable');
+       const manifest = await response.json() as Partial<Record<string, {bundled?: boolean}>>;
+-      for (const name of ['minim', 'phishlang']) element(name + '-resource').textContent = manifest[name]?.bundled === false ?
++      for (const [name, resource] of [['minim', manifest.minim], ['phishlang', manifest.phishlang]] as const) element(name + '-resource').textContent = resource?.bundled === false ?
+         packText('当前版本未包含模型资源；分发许可尚未确认，因此无法运行。开关只保存手动使用偏好，不会下载或启动分析。', 'This build does not include the model because distribution rights are unconfirmed. The toggle saves a preference only; it does not download or run analysis.', '目前版本未包含模型資源；分發許可尚未確認，因此無法執行。開關僅儲存手動使用偏好，不會下載或啟動分析。') :
+         packText('模型清单已载入；手动分析时仍需校验资源。开启不会自动分析，关闭不会删除已有结果。', 'The model manifest is loaded; assets are verified when analysis is requested. Enabling does not run analysis; disabling preserves results.', '模型清單已載入；手動分析時仍需校驗資源。開啟不會自動分析，關閉不會刪除既有結果。');
+     } catch { for (const name of ['minim', 'phishlang']) element(name + '-resource').textContent = packText('无法读取资源状态，请重新打开本页。', 'Cannot read resource status. Reopen this page.', '無法讀取資源狀態，請重新開啟本頁。'); }
+@@ -135,8 +135,8 @@ export class ReadingWorkspace {
+       const manifest = await response.json();
+       const assetResponse = await fetch('./local_ai/asset_manifest.json');
+       const assets = assetResponse.ok ? await assetResponse.json() : {files: {}};
+-      for (const name of ['minim', 'phishlang']) {
+-        if (manifest[name]?.bundled === false) continue;
++      for (const [name, resource] of [['minim', manifest.minim], ['phishlang', manifest.phishlang]] as const) {
++        if (resource?.bundled === false) continue;
+         const files = name === 'minim' ? [['minim-mlp.json', manifest.minim.weights_sha256]] : [['phishlang.onnx', manifest.phishlang.onnx_sha256], ['phishlang-vocab.txt', assets.files['phishlang-vocab.txt']?.sha256]];
+         element(name + '-resource').textContent = packText('正在校验本机资源…', 'Verifying local resources…', '正在校驗本機資源…');
+         try {
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.ts b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+index aaeeb14891ef55cb61827c4173d0860bf0eb13a3..6575b64c627dba8ee3cdf5ea91b240afe3acc684 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.ts
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.ts
+@@ -41,7 +41,12 @@ export class SettingsAegisPageElement extends PolymerElement {
+   };
+   protected isMode_(mode: string, expected: string): boolean { return mode === expected; }
+   protected pageTitle_(mode: string): string {
+-    return loadTimeData.getString({home: 'aegisSettingsTitle', ai: 'aegisAiTitle', experiments: 'aegisExperimentsTitle', downloads: 'aegisDownloadsTitle', tools: 'aegisToolsTitle', enhancements: 'aegisEnhancementsTitle', reading: 'aegisReadingTitle', gestures: 'aegisGesturesTitle', privacy: 'aegisPrivacyTitle'}[mode] || 'aegisEnhancementsTitle');
++    const titles = new Map([
++      ['home', 'aegisSettingsTitle'], ['ai', 'aegisAiTitle'], ['experiments', 'aegisExperimentsTitle'],
++      ['downloads', 'aegisDownloadsTitle'], ['tools', 'aegisToolsTitle'], ['enhancements', 'aegisEnhancementsTitle'],
++      ['reading', 'aegisReadingTitle'], ['gestures', 'aegisGesturesTitle'], ['privacy', 'aegisPrivacyTitle'],
++    ]);
++    return loadTimeData.getString(titles.get(mode) || 'aegisEnhancementsTitle');
+   }
+   override connectedCallback() {
+     super.connectedCallback();
+@@ -79,7 +84,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+   private async forwardRequest_(frame: HTMLIFrameElement, data: {id?: unknown, method?: unknown, args?: unknown}) {
+     const {id, method, args} = data;
+     if (typeof id !== 'string' || !/^settings-\d+$/.test(id) || typeof method !== 'string' || !Array.isArray(args)) return;
+-    const signatures: Record<string, string[]> = {
++    const signatures = new Map<string, string[]>(Object.entries({
+       getStatus: [], setModuleEnabled: ['string', 'boolean'],
+       openBrowserAgent: [], updateFilterLists: [], summarizeActiveTab: [],
+       completePreparedSummary: ['string', 'object'], cancelPreparedSummary: ['string'],
+@@ -88,11 +93,13 @@ export class SettingsAegisPageElement extends PolymerElement {
+       startMetalinkDownload: ['string'], parseTorrent: ['string'],
+       parseMagnet: ['string'], startTorrent: ['string', 'array', 'object', 'boolean'],
+       getTorrentStatus: ['string'], controlTorrent: ['string', 'string'],
+-    };
+-    const signature = Object.hasOwn(signatures, method) ? signatures[method] : undefined;
+-    const valid = signature && args.length === signature.length && signature.every((kind, i) =>
+-      kind === 'array' ? Array.isArray(args[i]) : kind === 'object' ?
+-        args[i] !== null && typeof args[i] === 'object' && !Array.isArray(args[i]) : typeof args[i] === kind);
++    }));
++    const signature = signatures.get(method);
++    const valid = signature && args.length === signature.length && signature.every((kind, i) => {
++      const value = args.at(i);
++      return kind === 'array' ? Array.isArray(value) : kind === 'object' ?
++        value !== null && typeof value === 'object' && !Array.isArray(value) : typeof value === kind;
++    });
+     const source = frame.contentWindow;
+     const reply = (response: object) => {
+       if (this.isConnected && frame.isConnected && source === frame.contentWindow) {
+@@ -204,8 +211,8 @@ export class SettingsAegisPageElement extends PolymerElement {
+   }
+   private initializeReading_() {
+     const prefs = this.state_.readingPreferences || defaultReading;
+-    for (const key of ['theme', 'family', 'font', 'spacing', 'width'] as const) {
+-      const control = this.input_('reading-' + key); control.value = String(prefs[key]);
++    for (const [key, value] of [['theme', prefs.theme], ['family', prefs.family], ['font', prefs.font], ['spacing', prefs.spacing], ['width', prefs.width]] as const) {
++      const control = this.input_('reading-' + key); control.value = String(value);
+       control.onchange = () => { this.previewReading_(); void this.saveReading_(); };
+     }
+     this.element_('preview-link').onclick = event => { event.preventDefault(); };
+@@ -266,7 +273,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+     button.disabled = true; this.input_('markdown-origin').disabled = true;
+     try {
+       const origin = this.source_(this.input_('markdown-origin').value);
+-      const expected = this.state_.markdownSites?.[origin] ?? null;
++      const expected = new Map(Object.entries(this.state_.markdownSites || {})).get(origin) ?? null;
+       this.state_ = await this.request_({op: 'markdown-site', origin, enabled: true, expected});
+       this.formDirty_ = false; form.hidden = true; this.input_('markdown-origin').value = '';
+       this.input_('markdown-search').value = ''; this.renderMarkdownSites_();
+@@ -346,7 +353,7 @@ export class SettingsAegisPageElement extends PolymerElement {
+     this.element_<HTMLSelectElement>('rule-tab').disabled = !!rule;
+     this.element_<HTMLSelectElement>('rule-tab').value = '';
+     this.element_('rule-inherited').hidden = true;
+-    for (const key of ['menu', 'copy', 'debug', 'subdomains', 'disabled'] as const) this.input_('rule-' + key).checked = rule?.[key] || false;
++    for (const [key, value] of [['menu', rule?.menu], ['copy', rule?.copy], ['debug', rule?.debug], ['subdomains', rule?.subdomains], ['disabled', rule?.disabled]] as const) this.input_('rule-' + key).checked = value || false;
+     this.input_('rule-origin').focus();
+   }
+   private async saveRule_() {
+@@ -354,8 +361,12 @@ export class SettingsAegisPageElement extends PolymerElement {
+     const controls = [...this.element_('rule-editor').querySelectorAll<HTMLInputElement>('input, select, button')];
+     controls.forEach(control => control.disabled = true);
+     try {
+-      const rule: SiteRule = {origin: this.source_(this.input_('rule-origin').value), menu: false, copy: false, debug: false, subdomains: false, disabled: false};
+-      for (const key of ['menu', 'copy', 'debug', 'subdomains', 'disabled'] as const) rule[key] = this.input_('rule-' + key).checked;
++      const rule: SiteRule = {
++        origin: this.source_(this.input_('rule-origin').value),
++        menu: this.input_('rule-menu').checked, copy: this.input_('rule-copy').checked,
++        debug: this.input_('rule-debug').checked, subdomains: this.input_('rule-subdomains').checked,
++        disabled: this.input_('rule-disabled').checked,
++      };
+       const old = this.state_.sites?.find(item => item.origin === rule.origin) || null;
+       if (!this.editingRule_ && old) { this.formDirty_ = false; this.editRule_(old); this.status_('rule-error', '此网站已存在，请编辑原规则。'); return; }
+       this.state_ = await this.request_({op: 'site-save', rule, expected: this.editingRule_});
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+index 04d2fc9381719a12b806977ae936892114f88495..6fe8723901f31e7619280044103224f85937492b 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.html.ts
+@@ -28,7 +28,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+     <controlled-button id="changeDownloadsPath"
+         label="$i18n{changeDownloadLocation}"
+         aria-labelledby="locationLabel defaultDownloadPath"
+-        @click="${this.onChangeDownloadsPathClick_}"
++        @click="${() => { this.onChangeDownloadsPathClick_(); }}"
+         pref-key="download.default_directory"
+         end-justified>
+     </controlled-button>
+@@ -43,7 +43,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+       <div class="flex">$i18n{openFileTypesAutomatically}</div>
+       <div class="separator"></div>
+       <cr-button id="resetAutoOpenFileTypes"
+-          @click="${this.onClearAutoOpenFileTypesClick_}">
++          @click="${() => { this.onClearAutoOpenFileTypesClick_(); }}">
+         $i18n{clear}
+       </cr-button>
+     </div>
+@@ -58,7 +58,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+ </settings-section>
+   <div class="cr-row" ?hidden="${this.aegisOnly}"><a href="/aegisDownloads">${this.aegisStrings_.link}</a></div>
+   <p role="status" aria-live="polite" ?hidden="${!this.aegisOnly}">${this.aegisSaveStatus_}</p>
+-  <cr-button ?hidden="${!this.aegisOnly || this.aegisSettingsReady_}" @click="${this.onAegisRetryClick_}">${this.aegisStrings_.retry}</cr-button>
++  <cr-button ?hidden="${!this.aegisOnly || this.aegisSettingsReady_}" @click="${() => { this.onAegisRetryClick_(); }}">${this.aegisStrings_.retry}</cr-button>
+   <settings-section page-title="${this.aegisStrings_.title}"
+       class="cr-centered-card-container" ?hidden="${!this.aegisOnly || !this.aegisSettingsReady_}">
+     <div class="cr-row first">
+@@ -70,7 +70,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+     <div class="cr-row">
+       <div class="flex cr-padded-text">${this.aegisStrings_.mode}</div>
+       <select aria-label="${this.aegisStrings_.mode}" class="aegis-select" .value="${String(this.aegisParallelMode_)}"
+-          @change="${this.onAegisParallelModeChange_}">
++          @change="${(event: Event) => { this.onAegisParallelModeChange_(event); }}">
+         <option value="0">${this.aegisStrings_.smart}</option>
+         <option value="1">${this.aegisStrings_.single}</option>
+         <option value="3">${this.aegisStrings_.three}</option>
+@@ -81,14 +81,14 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+       <div class="flex cr-padded-text">${this.aegisStrings_.metered}</div>
+       <cr-toggle id="aegisReduceOnMetered" aria-label="${this.aegisStrings_.metered}"
+           .checked="${this.aegisReduceOnMetered_}"
+-          @change="${this.onAegisToggleChange_}">
++          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
+       </cr-toggle>
+     </div>
+     <div class="cr-row">
+       <div class="flex cr-padded-text">${this.aegisStrings_.battery}</div>
+       <cr-toggle id="aegisReduceOnBattery" aria-label="${this.aegisStrings_.battery}"
+           .checked="${this.aegisReduceOnBattery_}"
+-          @change="${this.onAegisToggleChange_}">
++          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
+       </cr-toggle>
+     </div>
+     <div class="aegis-fixed">${this.aegisStrings_.thermal}</div>
+@@ -103,14 +103,14 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+       <div class="flex cr-padded-text">${this.aegisStrings_.dht}</div>
+       <cr-toggle id="aegisTorrentDhtEnabled" aria-label="${this.aegisStrings_.dht}"
+           .checked="${this.aegisTorrentDhtEnabled_}"
+-          @change="${this.onAegisToggleChange_}">
++          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
+       </cr-toggle>
+     </div>
+     <div class="cr-row">
+       <div class="flex cr-padded-text">${this.aegisStrings_.pex}</div>
+       <cr-toggle id="aegisTorrentPexEnabled" aria-label="${this.aegisStrings_.pex}"
+           .checked="${this.aegisTorrentPexEnabled_}"
+-          @change="${this.onAegisToggleChange_}">
++          @change="${(event: Event) => { this.onAegisToggleChange_(event); }}">
+       </cr-toggle>
+     </div>
+     <div class="aegis-rate-row">
+@@ -119,7 +119,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+           <label for="aegis${kind}Mode">${kind === 'Download' ? this.aegisStrings_.downloadLimit : this.aegisStrings_.uploadLimit}</label>
+           <select id="aegis${kind}Mode" class="aegis-select"
+               .value="${(kind === 'Download' ? this.aegisTorrentDownloadLimitKib_ : this.aegisTorrentUploadLimitKib_) === 0 ? 'unlimited' : 'custom'}"
+-              @change="${this.onAegisLimitModeChange_}">
++              @change="${(event: Event) => { this.onAegisLimitModeChange_(event); }}">
+             <option value="unlimited">${this.aegisStrings_.unlimited}</option>
+             <option value="custom">${this.aegisStrings_.custom}</option>
+           </select>
+@@ -127,7 +127,7 @@ export function getHtml(this: SettingsDownloadsPageElement) {
+               max="1000000" .value="${String(kind === 'Download' ? this.aegisTorrentDownloadLimitKib_ : this.aegisTorrentUploadLimitKib_)}"
+               label="KiB/s" error-message="${this.aegisStrings_.invalidLimit}"
+               ?hidden="${(kind === 'Download' ? this.aegisTorrentDownloadLimitKib_ : this.aegisTorrentUploadLimitKib_) === 0}"
+-              @change="${this.onAegisLimitChange_}">
++              @change="${(event: Event) => { this.onAegisLimitChange_(event); }}">
+           </cr-input>
+         </div>`)}
+     </div>
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+index b81a8a28c2a33bb4ba5f5900f672c2c26cd2361e..deaeedc6e10b9243671de8067d44981f891cb180 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+@@ -322,7 +322,8 @@ export class SettingsDownloadsPageElement extends
+   }
+ 
+   protected onAegisLimitModeChange_(event: Event) {
+-    const select = event.currentTarget as HTMLSelectElement;
++    const select = event.currentTarget;
++    if (!(select instanceof HTMLSelectElement)) return;
+     const value = select.value === 'unlimited' ? 0 : 256;
+     if (select.id === 'aegisDownloadMode') this.aegisTorrentDownloadLimitKib_ = value;
+     else this.aegisTorrentUploadLimitKib_ = value;

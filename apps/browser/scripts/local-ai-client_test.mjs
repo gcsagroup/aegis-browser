@@ -16,8 +16,9 @@ class Worker {
   terminate() { this.terminated = true; }
   postMessage(request) { this.request = request; }
 }
+const cancellations = [];
 const exports = {};
-vm.runInNewContext(compiled, {exports, Worker, window: {
+vm.runInNewContext(compiled, {exports, Worker, crypto: {randomUUID: () => '00000000-0000-4000-a000-000000000001'}, fetch: async url => {cancellations.push(url);}, window: {
   setTimeout: callback => { const id = ++serial; timers.set(id, callback); return id; },
   clearTimeout: id => timers.delete(id),
 }, require: () => ({getTrustedScriptURL: strings => strings[0]})});
@@ -26,6 +27,8 @@ const first = client.run({op: 'download'}, () => {});
 client.cancel();
 await assert.rejects(first, /cancelled/);
 assert.equal(workers[0].terminated, true);
+assert.deepEqual(cancellations, ['./local_ai/cancel/00000000-0000-4000-a000-000000000001']);
+assert.equal(workers[0].request.downloadJob, '00000000-0000-4000-a000-000000000001');
 assert.equal(timers.size, 0);
 const progress = [];
 const second = client.run({op: 'status'}, text => progress.push(text));

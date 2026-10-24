@@ -228,5 +228,68 @@ TEST_F(EnhancementStoreTest, ReadingPreferencesDoNotRevokeScriptsOrGrantImages) 
   EXPECT_EQ(store.state().FindDict("readingPreferences")->FindInt("font"), 19);
 }
 
+TEST_F(EnhancementStoreTest, PreviewDisableRemoveAndStaleWrites) {
+  const auto path = directory_.GetPath().AppendASCII("preview.json");
+  EnhancementStore store(path);
+  tasks_.RunUntilIdle();
+  const char* origin = "https://example.com";
+  auto request = base::DictValue().Set("op", "markdown-site")
+      .Set("origin", origin).Set("enabled", true).Set("expected", base::Value());
+  ASSERT_TRUE(Mutate(store, request.Clone()).empty());
+  EXPECT_FALSE(Mutate(store, request.Clone()).empty());
+  request.Set("expected", true);
+  request.Set("enabled", false);
+  ASSERT_TRUE(Mutate(store, request.Clone()).empty());
+  EXPECT_EQ(store.state().FindDict("markdownSites")->FindBool(origin), false);
+  auto remove = base::DictValue().Set("op", "markdown-site-remove")
+      .Set("origin", origin).Set("expected", true);
+  EXPECT_FALSE(Mutate(store, remove.Clone()).empty());
+  EXPECT_TRUE(store.state().FindDict("markdownSites")->contains(origin));
+  remove.Set("expected", false);
+  ASSERT_TRUE(Mutate(store, remove.Clone()).empty());
+  EXPECT_FALSE(store.state().FindDict("markdownSites")->contains(origin));
+  EnhancementStore reopened(path);
+  tasks_.RunUntilIdle();
+  EXPECT_EQ(reopened.state(), store.state());
+}
+TEST_F(EnhancementStoreTest, QueuedPreferencesCompareAtCommitAndPreserveOtherGroups) {
+  EnhancementStore store(directory_.GetPath().AppendASCII("preferences.json"));
+  tasks_.RunUntilIdle();
+  auto first = base::DictValue().Set("theme", "dark").Set("family", "serif")
+      .Set("font", 19).Set("spacing", 180).Set("width", 820);
+  auto second = first.Clone(); second.Set("font", 21);
+  base::test::TestFuture<std::string> a, b;
+  store.Mutate(base::DictValue().Set("op", "reading-preferences")
+      .Set("preferences", first.Clone()).Set("expected", base::Value()), a.GetCallback());
+  store.Mutate(base::DictValue().Set("op", "reading-preferences")
+      .Set("preferences", second.Clone()).Set("expected", base::Value()), b.GetCallback());
+  EXPECT_EQ(a.Get(), "");
+  EXPECT_NE(b.Get(), "");
+  EXPECT_EQ(*store.state().FindDict("readingPreferences"), first);
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "markdown-site")
+      .Set("origin", "https://example.com").Set("enabled", true)).empty());
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "reading-preferences")
+      .Set("preferences", second.Clone()).Set("expected", first.Clone())).empty());
+  EXPECT_EQ(store.state().FindDict("markdownSites")->FindBool("https://example.com"), true);
+}
+TEST_F(EnhancementStoreTest, ReviewedStateDistinguishesDisabledScriptFromDraft) {
+  EnhancementStore store(base::FilePath{});
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-save")
+      .Set("source", Script()).Set("world", "isolated")).empty());
+  const auto id = EnhancementField(store.state().FindList("scripts")->front().GetDict(), "id");
+  EXPECT_EQ(store.Script(id)->FindBool("reviewed"), false);
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-enable")
+      .Set("id", id).Set("revision", 1).Set("enabled", true)).empty());
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-enable")
+      .Set("id", id).Set("revision", 2).Set("enabled", false)).empty());
+  EXPECT_EQ(store.Script(id)->FindBool("enabled"), false);
+  EXPECT_EQ(store.Script(id)->FindBool("reviewed"), true);
+  ASSERT_TRUE(Mutate(store, base::DictValue().Set("op", "script-save")
+      .Set("id", id).Set("revision", 3).Set("source", Script("document.title='draft';"))
+      .Set("world", "isolated")).empty());
+  EXPECT_EQ(store.Script(id)->FindBool("enabled"), false);
+  EXPECT_EQ(store.Script(id)->FindBool("reviewed"), false);
+}
+
 }  // namespace
 }  // namespace aegis

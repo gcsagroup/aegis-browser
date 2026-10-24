@@ -9,6 +9,13 @@
 
 namespace aegis {
 
+bool IsGestureSettingsPage(const GURL& url) {
+  return url.GetWithoutRef() == GURL("chrome://aegis/gestures.html") ||
+         (url.SchemeIs("chrome") && url.host() == "settings" &&
+          (url.path() == "/aegisGestures" ||
+           (url.path() == "/" && url.query().starts_with("search="))));
+}
+
 const std::vector<GestureAction>& GestureActions() {
   static const base::NoDestructor<std::vector<GestureAction>> actions({
       {"back", "后退", false},

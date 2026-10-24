@@ -254,6 +254,13 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       self->RefreshSoon();
     }, weak_.GetWeakPtr()));
   }
+  void OpenDetails() {
+    if (!source_) return;
+    source_->OpenURL(content::OpenURLParams(GURL("chrome://aegis/?workspace=protection"),
+        content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
+        ui::PAGE_TRANSITION_LINK, false), {});
+    if (GetWidget()) GetWidget()->Close();
+  }
   void OpenReading() {
     if (!Valid()) return;
     content::OpenURLParams params(GURL("chrome://aegis/markdown.html#tab=" + tab_),
@@ -265,7 +272,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   void OpenManager(std::string script) {
     if (!Valid()) return;
     content::OpenURLParams params(
-        GURL("chrome://settings/aegisEnhancements#tab=" + tab_ + "&script=" + script),
+        GURL((script.empty() ? "chrome://settings/aegisEnhancements#tab=" : "chrome://aegis/enhancements.html#tab=") + tab_ + "&script=" + script),
         content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
         ui::PAGE_TRANSITION_LINK, false);
     source_->OpenURL(params, {});
@@ -405,6 +412,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
              base::BindRepeating(&AegisPageBubble::OpenReading, base::Unretained(this)));
     Button(panel_, Copy(u"此网站的全部设置", u"All settings for this site", u"此網站的全部設定"),
            base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
+    Button(panel_, Copy(u"防护详情与本次浏览记录", u"Protection details and browsing events", u"防護詳情與本次瀏覽記錄"),
+           base::BindRepeating(&AegisPageBubble::OpenDetails, base::Unretained(this)));
     InvalidateLayout();
     SizeToContents();
   }

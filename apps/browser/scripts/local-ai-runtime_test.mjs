@@ -7,6 +7,14 @@ import vm from 'node:vm';
 
 const root = new URL('../overlay/chrome/browser/resources/aegis_agent/local_ai/', import.meta.url);
 const read = name => readFileSync(new URL(name, root), 'utf8');
+const assets = JSON.parse(read('asset_manifest.json'));
+for (const [name, expected] of Object.entries(assets.files)) {
+  const bytes = readFileSync(new URL(name, root));
+  assert.equal(bytes.length, expected.bytes, `${name} 资源大小必须与清单一致`);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), expected.sha256,
+      `${name} 资源摘要必须与清单一致`);
+}
+console.log(`本地 AI 资源清单校验通过：${Object.keys(assets.files).length} 项大小与 SHA-256 一致。`);
 const context = vm.createContext({console, TextEncoder, TextDecoder, crypto: webcrypto, URL});
 context.self = context;
 vm.runInContext(read('vendor/md5.js'), context);
@@ -69,3 +77,48 @@ for (const text of ['Version 1.2.3 is ready.', 'Meet at 9:30 a.m. tomorrow.', 'h
 assert.equal(context.splitText('').length, 0);
 assert.throws(() => context.splitText('x', 0), /invalid_input/);
 console.log('本机翻译无损分段回归通过。');
+
+// 代码与链接的保护标记必须逐一保留，不能接受丢失、重复或被模型改写的标记。
+const protectedInput = 'Read https://aegis.invalid/docs and keep `const n = 12;` unchanged.';
+const pair = [{from: 'en', to: 'zh'}];
+const echo = {translate: ({texts}) => [{target: {text: texts[0].text}}]};
+assert.equal(context.translateParagraph(echo, pair, protectedInput), protectedInput);
+for (const alter of [text => text.replace(/https:\/\/[^ ]+/, ''), text => text + ' ' + text.match(/https:\/\/[^ ]+/)[0], text => text.replaceAll('https://', 'broken://')]) {
+  assert.throws(() => context.translateParagraph({translate: ({texts}) => [{target: {text: alter(texts[0].text)}}]}, pair, protectedInput), /translation_incomplete/);
+}
+const retry = {translate: ({texts}) => [{target: {text: texts[0].text.replaceAll('aegis.invalid', 'changed.invalid')}}]};
+assert.equal(context.translateParagraph(retry, pair, protectedInput), protectedInput);
+for (const depth of [0, 1, 4, 16]) {
+  const text = 'Read https://aegis.invalid/' + '0/'.repeat(depth) + 'docs and https://example.com/' + '0/'.repeat(depth) + 'docs; keep `x = 12`.';
+  assert.equal(context.translateParagraph(echo, pair, text), text);
+  assert.equal(context.translateParagraph(retry, pair, text), text, '主标记被模型改写后，备用标记仍原样还原');
+}
+for (const id of ['999999', '9007199254740993', '9'.repeat(400)]) {
+  const corrupt = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\/\d+\b/g, '/' + id)}}]};
+  assert.throws(() => context.translateParagraph(corrupt, pair, 'Keep `value` unchanged.'), /translation_incomplete/);
+}
+const zeroPadded = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\/(\d+)\b/g, '/00$1')}}]};
+assert.equal(context.translateParagraph(zeroPadded, pair, 'Keep `value` unchanged.'), 'Keep `value` unchanged.');
+const untouchedForeignMarker = {translate: ({texts}) => [{target: {text: texts[0].text + ' https://example.com/999'}}]};
+assert.equal(context.translateParagraph(untouchedForeignMarker, pair, 'Keep `value` unchanged.'), 'Keep `value` unchanged. https://example.com/999');
+for (const suffix of ['/1', '/0', '/0/1', '.1', '?1', '-1']) {
+  const appended = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\/0\b/g, '/0' + suffix)}}]};
+  assert.equal(context.translateParagraph(appended, pair, 'Keep `value` unchanged.'), 'Keep `value`' + suffix + ' unchanged.',
+      '标记后正文不得被吞掉，也不能被误判为不同的标记前缀');
+}
+for (const text of ['`one` `two`', '`one` `two` `three`', 'https://example.org/a `two`', 'https://aegis.invalid/docs `one` `two`']) {
+  let attempts = 0;
+  const joined = {translate: ({texts}) => {
+    ++attempts;
+    return [{target: {text: texts[0].text.replace(/\s+/g, '')}}];
+  }};
+  assert.throws(() => context.translateParagraph(joined, pair, text), /translation_incomplete/,
+      '相邻标记前缀不能人为创造数字词边界；缺失边界必须保持拒绝');
+  assert.equal(attempts, 2, '主标记和备用标记均失败后停止重试');
+}
+for (const separator of ['/', '.', '-', '\u200b']) {
+  const separated = {translate: ({texts}) => [{target: {text: texts[0].text.replace(/\s+/g, separator)}}]};
+  assert.equal(context.translateParagraph(separated, pair, '`one` `two`'), '`one`' + separator + '`two`',
+      '真实存在的非单词分隔符仍保留数字词边界');
+}
+console.log('翻译代码和链接保护回归通过：前缀冲突、有界重试、遗漏、重复、越界、前导零、相邻标记词边界与其他前缀隔离。');

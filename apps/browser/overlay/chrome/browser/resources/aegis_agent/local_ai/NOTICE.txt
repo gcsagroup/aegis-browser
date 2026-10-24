@@ -4,7 +4,7 @@ Bergamot Translator 0.4.9：MPL 2.0
 来源：https://github.com/browsermt/bergamot-translator
 npm：https://registry.npmjs.org/@browsermt/bergamot-translator/-/bergamot-translator-0.4.9.tgz
 本项目将引擎包装改为由现有模块 Worker 直接载入，删除 Node 兼容层及额外 Worker 消息层，并让 Emscripten 胶水复用初始化配置并显式引用模块环境的全局对象；没有修改模型计算、放宽 eval 或新增常驻进程。
-对应许可见 bergamot/LICENSE。Mozilla 中英语言包使用 MPL 2.0，按清单下载并核对压缩与解压摘要。
+对应许可见 bergamot/LICENSE。Mozilla 英语、简体中文、日语、韩语、法语、德语、西班牙语和俄语语言包使用 MPL 2.0，按清单下载并核对压缩与解压摘要。
 模型说明：https://github.com/mozilla/translations/blob/main/README.md
 
 ONNX Runtime Web 1.20.1、fzstd 0.1.1、js-md5 0.8.3：MIT
@@ -22,3 +22,6 @@ PhishLang：MobileBERT 的 ONNX INT8 本机版本；46 条已观察试验样本�
 
 公开源码不包含 MINIM 权重、PhishLang ONNX 或配套词表，补丁中也不包含这些数据。
 已有本机实验文件保留在独立工作区；公开源码不会自动下载这些模型。
+
+模型清单来源：https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/translations-models-v2/records （核对日期：2026-10-21）。
+模型版本及压缩／解压摘要记录于 translation_manifest.json。目录仅开放已完成本机兼容性与代表语料检查的方向；日语经英语转中文因日期误译暂未开放。短标题和歧义句仍可能误译，阅读器保留原文供核对。
