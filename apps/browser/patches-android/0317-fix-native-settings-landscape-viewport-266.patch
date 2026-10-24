@@ -1,0 +1,96 @@
+From f2ad9ede0b934efcdcaebd2cf46b44d1c5a8e943 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 20:52:09 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E5=8E=9F=E7=94=9F=E8=AE=BE?=
+ =?UTF-8?q?=E7=BD=AE=E6=A8=AA=E5=B1=8F=E8=A3=81=E5=88=87=E4=B8=8E=E5=B9=B3?=
+ =?UTF-8?q?=E5=8F=B0=E8=AF=B4=E6=98=8E=E7=BC=96=E8=AF=91=E6=9D=A1=E4=BB=B6?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../chrome/browser/settings/AegisSettings.java         | 10 ++--------
+ .../browser/settings/WideDisplayPaddingApplier.java    |  3 +++
+ chrome/browser/ui/webui/aegis/aegis_ui.cc              |  7 +++++--
+ chrome/browser/ui/webui/help/aegis_github_update.h     |  4 ++--
+ 4 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java
+index 83a05a406acef5aa7d1643eb72f9e7c4c44481c7..e0c1f282fd5d0bf608950efc1614b8db8b3bb549 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java
+@@ -9,7 +9,6 @@ import android.view.LayoutInflater;
+ import android.view.MenuItem;
+ import android.view.View;
+ import android.view.ViewGroup;
+-import android.widget.FrameLayout;
+ 
+ import androidx.fragment.app.Fragment;
+ 
+@@ -110,14 +109,9 @@ public final class AegisSettings extends Fragment
+                                 && "aegis-agent".equals(restored.getHost()));
+         contents.getNavigationController()
+                 .loadUrl(new LoadUrlParams(isSettingsUrl ? url : HOME_URL));
+-        // 原生设置会给根视图添加大屏留白，由外层承接，避免渲染宽度包含留白。
+-        FrameLayout root = new FrameLayout(activity);
+-        root.addView(
+-                mThinWebView.getView(),
+-                new FrameLayout.LayoutParams(
+-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++        // 网页已有响应式留白，渲染视图直接使用设置内容区域。
+         contentView.requestFocus();
+-        return root;
++        return mThinWebView.getView();
+     }
+ 
+     private void updateBackState() {
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/WideDisplayPaddingApplier.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/WideDisplayPaddingApplier.java
+index 7f20fb151a874f9ad48ef505a1a3196cafe0e43b..331c7343728dd9d4c85aebb328b3f3c449f8f14c 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/WideDisplayPaddingApplier.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/WideDisplayPaddingApplier.java
+@@ -47,6 +47,9 @@ public class WideDisplayPaddingApplier extends FragmentManager.FragmentLifecycle
+             Fragment fragment,
+             View view,
+             @Nullable Bundle savedInstanceState) {
++        // Aegis 的网页自己管理宽度；原生横向留白会裁切合成器的内容。
++        if (fragment instanceof AegisSettings) return;
++
+         int minGapPx =
+                 mContext.getResources()
+                         .getDimensionPixelSize(R.dimen.settings_multi_column_pane_gap);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index cbb12ce047d47b300aeead772c2973644ff6ec5c..d5ecff2e16175f7e6ae34d4a185249bcc558067c 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -694,8 +694,11 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("torrentResume", strings.torrent_resume);
+   source->AddString("torrentCancel", strings.torrent_cancel);
+   source->AddString("torrentSafety", strings.torrent_safety);
+-  source->AddString("downloadsSafety", BUILDFLAG(IS_ANDROID)
+-      ? strings.metalink_safety : strings.torrent_safety);
++#if BUILDFLAG(IS_ANDROID)
++  source->AddString("downloadsSafety", strings.metalink_safety);
++#else
++  source->AddString("downloadsSafety", strings.torrent_safety);
++#endif
+   source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
+   source->AddString("linkSanitizeHint", strings.link_sanitize_hint);
+   source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index a59dd2b37c07cbe441f475b98586f06d98c36474..95ff7d16da5a2a015107d59386156bc7b91462d8 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.265";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (265)";
++inline constexpr char kProductVersion[] = "6.1.0.266";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (266)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
