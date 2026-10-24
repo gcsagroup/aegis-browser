@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 18:24:00 +0800
+Subject: [PATCH] 对齐 Android 设置候选的产品版本
+
+Android 设置候选使用与构建参数一致的 Ver 6.0 (248)，避免应用内版本仍显示 208。
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1f63acb1aa1e50c49213fff37916570a3ff00740..43519a7f3b7d7be7e3569347fdd52670f680d7da 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "5.0.0.209";
+-inline constexpr char kProductVersionLabel[] = "Ver 5.0 (209)";
++inline constexpr char kProductVersion[] = "6.0.0.248";
++inline constexpr char kProductVersionLabel[] = "Ver 6.0 (248)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

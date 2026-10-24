@@ -18,6 +18,7 @@
 #include "base/unguessable_token.h"
 #include "base/values.h"
 #include "build/build_config.h"
+#include "chrome/browser/aegis/aegis_download_prefs.h"
 #include "chrome/browser/aegis/aegis_service.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #if BUILDFLAG(IS_MAC)
@@ -468,6 +469,9 @@ base::DictValue AegisUIHandler::BuildStatus() {
   status.Set("linkSanitize", service && service->IsLinkSanitizeEnabled());
   status.Set("cookieJanitor", service && service->IsCookieJanitorEnabled());
   status.Set("cnameUncloak", service && service->IsCnameUncloakEnabled());
+  status.Set("cnameUncloakConfigured",
+             supported_profile && profile && profile->GetPrefs()->GetBoolean(
+                 aegis::prefs::kCnameUncloakEnabled));
   status.Set("bounceTracking", service && service->IsBounceTrackingEnabled());
   status.Set("policyWorker", service && service->IsPolicyWorkerEnabled());
   // Runtime readiness belongs to this chrome://aegis renderer and is filled
@@ -647,15 +651,23 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
   const base::Value& callback_id = args[0];
   base::DictValue status = BuildStatus();
 #if BUILDFLAG(IS_ANDROID)
+  const std::string section = args.size() > 1 && args[1].is_string()
+      ? args[1].GetString() : std::string();
+  const bool reading_settings = section == "reading" || section == "experiments" ||
+                                section == "workspace";
+  const char* suffix = section == "reading" ? "?mobileSettings=reading" :
+      section == "experiments" ? "?mobileSettings=experiments" :
+      section == "workspace" ? "?view=reading" : "";
   Profile* profile = Profile::FromWebUI(web_ui());
   if (!aegis::IsAegisProfileSupported(profile) ||
       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
-      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
+      (!reading_settings &&
+       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled))) {
     status.Set("ok", false);
     status.Set("error", "Enable Browser Agent before opening it");
   } else {
     web_ui()->GetWebContents()->GetController().LoadURL(
-        GURL(chrome::kChromeUIUntrustedAegisAgentURL), content::Referrer(),
+        GURL(std::string(chrome::kChromeUIUntrustedAegisAgentURL) + suffix), content::Referrer(),
         ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
     status.Set("ok", true);
   }
@@ -1217,6 +1229,13 @@ void AegisUIHandler::OnTorrentValidated(
   }
   base::DictValue response = TorrentToPreview(*preview);
   if (preview->ok) {
+    // 每次预览读取当前全局默认值，避免设置页打开后保存的新参数被旧值覆盖。
+    const aegis::DownloadSettings settings =
+        aegis::ReadDownloadSettings(*g_browser_process->local_state());
+    response.Set("defaultDhtEnabled", settings.torrent_dht_enabled);
+    response.Set("defaultPexEnabled", settings.torrent_pex_enabled);
+    response.Set("defaultDownloadLimitKib", settings.torrent_download_limit_kib);
+    response.Set("defaultUploadLimitKib", settings.torrent_upload_limit_kib);
     PendingTorrent pending;
     pending.request_id = base::UnguessableToken::Create().ToString();
     pending.torrent_data = std::move(torrent_data);

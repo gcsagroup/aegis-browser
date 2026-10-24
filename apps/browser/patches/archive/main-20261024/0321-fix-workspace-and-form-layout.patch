@@ -1,0 +1,767 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 16:00:00 +0800
+Subject: [PATCH] 统一移动设置导航与三端表单布局
+
+---
+diff --git a/chrome/browser/resources/aegis/BUILD.gn b/chrome/browser/resources/aegis/BUILD.gn
+index 7d47b5361d7ca2bf11654fafe09d582c4ea139ae..97939f0b50d5014f037f6ce9197f7afc6dc595ec 100644
+--- a/chrome/browser/resources/aegis/BUILD.gn
++++ b/chrome/browser/resources/aegis/BUILD.gn
+@@ -51,6 +51,7 @@ build_webui("build") {
+   ]
+   ts_files = [
+     "aegis.ts",
++    "mobile_settings.ts",
+     "gestures.ts",
+     "policy_worker.ts",
+   ]
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index f968a35042850a978ad19da5c9dc0c52cc4cd0f2..06917cda4dca57cd0ca46b2f4770177f13fea1ab 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -705,7 +705,7 @@ body[data-workspace='downloads'] .downloads > h2 { display:none; }
+  min-height:75vh;
+  color-scheme:light dark; }
+ 
+-body[data-workspace='reading'] .page { max-width:1100px; }
++
+ 
+ body[data-workspace='reading'] .reading-workspace { padding:0;
+  border:0;
+@@ -730,3 +730,145 @@ body[data-workspace='reading'] .reading-workspace { padding:0;
+ 
+ [data-search-match] { outline: 2px solid #3986ec;
+  outline-offset: 4px; }
++
++/* 独立工作区与设置中心共用内容边界，导航也随页面一起居中。 */
++body[data-workspace] {
++  --bg: light-dark(#fff, #202124);
++  --fg: light-dark(#202124, #e8eaed);
++  --muted: light-dark(#5f6368, #bdc1c6);
++  --line: light-dark(#dadce0, #45474b);
++  --accent: light-dark(#185abc, #a8c7fa);
++  background: light-dark(#f8f9fa, #17181b);
++  font: 14px/1.55 system-ui, sans-serif;
++}
++
++body[data-workspace] .page {
++  display: grid;
++  grid-template-columns: minmax(0, 1fr);
++  gap: 24px;
++  max-width: 1048px;
++  padding: 24px;
++}
++
++body[data-workspace] .page > section {
++  margin: 0;
++  padding: 20px;
++  border: 1px solid var(--line);
++  border-radius: 12px;
++  background: var(--bg);
++}
++
++body[data-workspace] #enhancement-navigation {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px 20px;
++}
++
++body[data-workspace] h1 { font-size: 24px;
++ font-weight: 500; }
++
++body[data-workspace] h2 { font-size: 17px;
++ font-weight: 600; }
++
++body[data-workspace] #workspace-navigation a { margin-bottom: 12px; }
++
++body[data-workspace] #enhancement-navigation a { color: var(--accent); }
++
++body[data-workspace='reading'] .page > .reading-workspace {
++  padding: 0;
++  border: 0;
++  background: transparent;
++}
++
++@media (max-width: 600px) {
++  body[data-workspace] .page {
++    gap: 16px;
++    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
++  }
++  body[data-workspace] .page > section { padding: 16px; }
++  body[data-workspace='reading'] .page > .reading-workspace { padding: 0; }
++}
++
++/* 与桌面保持同一分组，手机使用整行触控目标和独立子页。 */
++.mobile-settings { gap: 20px; }
++
++.mobile-settings [hidden] { display: none !important; }
++
++.mobile-settings .page-header { align-items: center; }
++
++.mobile-settings h1 { font-size: 1.5rem;
++ line-height: 1.35; }
++
++.mobile-settings .subtitle { margin: 6px 0 0; }
++
++.mobile-settings-back { display: inline-block;
++ width: fit-content;
++ min-height: 44px;
++ padding: 10px 0;
++ color: var(--accent); }
++
++.mobile-settings-nav { display: grid;
++ gap: 12px; }
++
++.mobile-settings-nav a { display: grid;
++ grid-template-columns: minmax(0, 1fr) auto;
++ gap: 4px 16px;
++ align-items: center;
++ padding: 18px;
++ min-height: 76px;
++ border: 1px solid var(--line);
++ border-radius: 12px;
++ color: inherit;
++ text-decoration: none;
++ background: var(--bg); }
++
++.mobile-settings-nav a::after { content: '›';
++ grid-column: 2;
++ grid-row: 1 / 3;
++ font-size: 24px;
++ color: var(--muted); }
++
++.mobile-settings-nav small { grid-column: 1;
++ color: var(--muted);
++ font-size: .85rem; }
++
++.mobile-settings-nav a:focus-visible,
++ .mobile-settings-back:focus-visible { outline: 2px solid var(--accent);
++ outline-offset: 3px; }
++
++.mobile-settings-content { display: grid;
++ gap: 20px;
++ min-width: 0; }
++
++.mobile-settings-card { padding: 20px;
++ border: 1px solid var(--line);
++ border-radius: 12px; }
++
++.mobile-settings-card button { display: block;
++ width: 100%;
++ margin-top: 12px;
++ min-height: 44px;
++ padding: 12px 16px;
++ border-radius: 8px;
++ color: var(--accent);
++ white-space: normal; }
++@media (max-width: 600px) { .mobile-settings { padding: 16px; } }
++@media (min-width: 800px) { .mobile-settings-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
++
++body.mobile-settings-shell {
++  --bg: #f8f9fa;
++ --fg: #202124;
++ --muted: #5f6368;
++ --line: #dadce0;
++ --accent: #1a73e8;
++  background: var(--bg);
++}
++@media (prefers-color-scheme: dark) {
++  body.mobile-settings-shell {
++    --bg: #202124;
++ --fg: #e8eaed;
++ --muted: #9aa0a6;
++ --line: #3c4043;
++ --accent: #8ab4f8;
++  }
++}
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index ff6ba79e462f62d96b93cd98d31179854552cc32..5b549961c08557956d0f0c3d2633e7ffa77aad72 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -7,8 +7,8 @@
+     <link rel="stylesheet" href="aegis.css">
+   </head>
+   <body>
+-  <nav id="enhancement-navigation" hidden style="padding: 12px 24px"><a id="enhancement-link" href="enhancements.html">网站增强与用户脚本</a> · <a id="markdown-link" href="markdown.html">Markdown 阅读</a></nav>
+     <main class="page">
++      <nav id="enhancement-navigation" hidden><a id="enhancement-link" href="enhancements.html">网站增强与用户脚本</a><a id="markdown-link" href="markdown.html">Markdown 阅读</a></nav>
+       <nav id="workspace-navigation" hidden><a href="chrome://settings/aegis" id="workspace-settings-link">Aegis 功能设置</a><h1 id="workspace-title"></h1></nav>
+       <section class="reading-workspace" hidden><iframe id="reading-workspace-frame" title="阅读工作区"></iframe></section>
+       <pre class="result" id="settings-result" role="status" hidden></pre>
+@@ -142,7 +142,7 @@
+       <section id="downloads" class="downloads" aria-label="$i18n{downloadsTitle}">
+         <h2>$i18n{downloadsTitle}</h2>
+         <p class="meta">$i18n{downloadsMeta}</p>
+-        <aegis-download-panel></aegis-download-panel>
++        <aegis-download-panel embedded></aegis-download-panel>
+         <p><a href="chrome://downloads" target="_top">$i18n{downloadsHistory}</a></p>
+         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
+       </section>
+diff --git a/chrome/browser/resources/aegis/aegis.ts b/chrome/browser/resources/aegis/aegis.ts
+index 3971afc63efb983bd15d6fb5a01a75de3e9457ce..cb3f7f1a72cf07377326a3cc7079085493ba864b 100644
+--- a/chrome/browser/resources/aegis/aegis.ts
++++ b/chrome/browser/resources/aegis/aegis.ts
+@@ -3,6 +3,7 @@
+ import '/strings.m.js';
+ import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+ import './policy_worker.js';
++import {initializeMobileSettings} from './mobile_settings.js';
+ import 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
+ 
+ import type {AegisDownloadPanelElement} from 'chrome://resources/cr_components/aegis_downloads/aegis_download_panel.js';
+@@ -1500,6 +1501,12 @@ async function init() {
+   const status: AegisStatus =
+       withRendererPolicyWorkerStatus(await requestSettings('getStatus'));
+   applyStatus(status);
++  if (status.isAndroid) {
++    initializeMobileSettings(async section => {
++      const result: AegisStatus = await sendWithPromise('openBrowserAgent', section);
++      if (result.ok === false) throw new Error(result.error || 'unavailable');
++    });
++  }
+   bindToggle('tracker', 'trackerBlocking');
+   bindToggle('phish', 'phishInterstitial');
+   bindToggle('fingerprint', 'fingerprintGuard');
+diff --git a/chrome/browser/resources/aegis/enhancements.css b/chrome/browser/resources/aegis/enhancements.css
+index cda4f732e0fe61a81772a726974ed50d1ef33fd2..93684e3be1b3e188301dcf43065db001d322d0e8 100644
+--- a/chrome/browser/resources/aegis/enhancements.css
++++ b/chrome/browser/resources/aegis/enhancements.css
+@@ -12,12 +12,12 @@
+ }
+ * { box-sizing: border-box; }
+ body { margin: 0; padding: 24px; }
+-#enhancement-root { max-width: 960px; margin: auto; }
++#enhancement-root { max-width: 1000px; margin: auto; }
+ h1 { font-size: 24px; font-weight: 500; margin: 16px 0; }
+ h2 { font-size: 17px; font-weight: 600; margin: 0; }
+ h3 { font-size: 15px; }
+ a { color: var(--accent); }
+-section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 14px 0; }
++section { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 24px 0; }
+ p { color: var(--muted); }
+ .hint, small { font-size: 12px; color: var(--muted); }
+ .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+@@ -57,3 +57,22 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflo
+ :host #enhancement-root { margin: 0; }
+ :host section { margin: 12px 0; }
+ @media (max-width: 650px) { body { padding: 14px; } section { padding: 14px; } .target-summary .row { align-items: stretch; } .target-summary select { flex-basis: 100%; } }
++
++/* 标签在输入后仍保持可见；窄屏字段和脚本选项使用同一左边界。 */
++#enhancement-root { min-width: 0; overflow-wrap: anywhere; }
++label > input:not([type=checkbox]):not([type=file]), label > select {
++  display: block;
++  width: 100%;
++  min-width: 0;
++  margin-top: 6px;
++}
++input[type=checkbox] { flex: none; }
++.row > *, .toggle > * { min-width: 0; }
++@media (max-width: 650px) {
++  body { padding: 16px; }
++  section { padding: 16px; margin: 16px 0; }
++  input:not([type=checkbox]), select, textarea { font-size: 16px; }
++}
++@media (pointer: coarse) {
++  button, .file, summary, input:not([type=checkbox]), select { min-height: 44px; }
++}
+diff --git a/chrome/browser/resources/aegis/markdown.css b/chrome/browser/resources/aegis/markdown.css
+index 7154f0442f89d12c6b5a9bc2317a50b77879189c..6f1156af74907b456eb2acf940da539bb22b215c 100644
+--- a/chrome/browser/resources/aegis/markdown.css
++++ b/chrome/browser/resources/aegis/markdown.css
+@@ -22,3 +22,16 @@ iframe.reader { flex: 1; min-width: 0; width: 100%; height: 100%; border: 0; }
+ #source-address { overflow-wrap: anywhere; }
+ @media (max-width: 780px) { .reader-toolbar { flex-wrap: wrap; gap: 8px 16px; padding: 10px 14px; } .reader-toolbar nav { width: 100%; } #ai { position: absolute; inset: 100px 0 0 auto; width: min(360px,100%); max-width: 100%; z-index: 2; box-shadow: -6px 0 24px #0002; } }
+ @media print { .reader-toolbar, #notice, #ai, [popover] { display:none !important; } body.reading, .reader-workspace { height:auto; overflow:visible; } }
++
++/* 阅读设置浮层允许滚动，长标签与选择值不争抢同一行。 */
++.reader-popover { max-height: calc(100dvh - 110px); overflow-y: auto; }
++.reader-popover label { display: block; }
++.reader-popover label > select, .reader-popover label > input[type=number] {
++  display: block;
++  width: 100%;
++  margin-top: 6px;
++}
++@media (max-width: 600px) {
++  .reader-start { margin-top: 24px; padding: 20px; }
++  .reader-popover { inset: 16px 16px auto auto; max-height: calc(100dvh - 32px); }
++}
+diff --git a/chrome/browser/resources/aegis/mobile_settings.ts b/chrome/browser/resources/aegis/mobile_settings.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..8286efe851725f1074620ca871f4d411d956c7cc
+--- /dev/null
++++ b/chrome/browser/resources/aegis/mobile_settings.ts
+@@ -0,0 +1,119 @@
++// Copyright 2026 GCSA
++// 移动端复用现有控件与配置，只调整入口和分组。
++export function initializeMobileSettings(
++    openAgent: (section: string) => Promise<unknown>) {
++  const main = document.querySelector<HTMLElement>('main')!;
++  if (main.classList.contains('mobile-settings')) return;
++  const language = document.documentElement.lang;
++  const text = (zh: string, en: string, tw: string) =>
++      !language.startsWith('zh') ? en : /^zh-(?:TW|HK|Hant)/i.test(language) ? tw : zh;
++  const title = text('Aegis 设置', 'Aegis settings', 'Aegis 設定');
++  const groups = [
++    {id: 'privacy', title: text('隐私与防护', 'Privacy and protection', '隱私與防護'),
++      hint: text('跟踪拦截、广告过滤与网站防护', 'Trackers, filters and website protection', '追蹤攔截、廣告過濾與網站防護'),
++      selectors: '.overview, .activity, .modules, .diagnostics, .filters'},
++    {id: 'enhancements', title: text('网站增强与脚本', 'Website enhancements and scripts', '網站增強與腳本'),
++      hint: text('Android 版暂未提供', 'Not yet available on Android', 'Android 版暫未提供'), selectors: ''},
++    {id: 'reading', title: text('阅读与 Markdown', 'Reading and Markdown', '閱讀與 Markdown'),
++      hint: text('阅读资料库、工作区与本机翻译', 'Reading library, workspaces and local translation', '閱讀資料庫、工作區與本機翻譯'), selectors: ''},
++    {id: 'gestures', title: text('鼠标手势', 'Mouse gestures', '滑鼠手勢'),
++      hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
++    {id: 'ai', title: text('AI 与模型', 'AI and models', 'AI 與模型'),
++      hint: text('模型服务、网页摘要与助手', 'Model services, page summaries and assistant', '模型服務、網頁摘要與助手'),
++      selectors: '.privacy, #browser-agent-section'},
++    {id: 'downloads', title: text('下载增强', 'Download enhancements', '下載增強'),
++      hint: text('Metalink 下载任务与下载记录', 'Metalink tasks and download history', 'Metalink 下載工作與下載記錄'), selectors: '.downloads'},
++    {id: 'tools', title: text('本机工具连接', 'Local tool connections', '本機工具連線'),
++      hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
++    {id: 'experiments', title: text('实验功能', 'Experiments', '實驗功能'),
++      hint: text('本机实验模型与使用说明', 'Local experimental models and usage notes', '本機實驗模型與使用說明'), selectors: ''},
++  ];
++  const heading = main.querySelector<HTMLElement>('.page-header h1')!;
++  heading.setAttribute('tabindex', '-1');
++  const subtitle = main.querySelector<HTMLElement>('.subtitle')!;
++  const header = main.querySelector('.page-header')!;
++  main.querySelector<HTMLElement>('.ai-control')?.setAttribute('hidden', '');
++  const downloadDescription = main.querySelector('.downloads > .meta');
++  if (downloadDescription) downloadDescription.textContent = text(
++      '管理普通下载、Metalink 镜像下载与下载记录。Android 版暂不支持种子或磁力链接。',
++      'Manage downloads, Metalink mirrors and download history. Torrents and magnet links are not supported on Android.',
++      '管理一般下載、Metalink 鏡像下載與下載記錄。Android 版暫不支援種子或磁力連結。');
++  const back = document.createElement('a');
++  back.className = 'mobile-settings-back';
++  back.href = '#home';
++  back.textContent = '← ' + title;
++  header.before(back);
++  const nav = document.createElement('nav');
++  nav.className = 'mobile-settings-nav';
++  nav.setAttribute('aria-label', title);
++  header.after(nav);
++  const pages = new Map<string, HTMLElement>();
++  for (const group of groups) {
++    const link = document.createElement('a');
++    link.href = '#' + group.id;
++    const label = document.createElement('strong');
++    label.textContent = group.title;
++    const hint = document.createElement('small');
++    hint.textContent = group.hint;
++    link.append(label, hint);
++    nav.append(link);
++    const page = document.createElement('article');
++    page.className = 'mobile-settings-content';
++    page.id = 'mobile-' + group.id;
++    page.setAttribute('aria-label', group.title);
++    if (group.selectors) {
++      for (const node of main.querySelectorAll(group.selectors)) page.append(node);
++    } else {
++      const card = document.createElement('section');
++      card.className = 'mobile-settings-card';
++      const description = document.createElement('p');
++      description.textContent = group.id === 'reading' ? text(
++          '整理已打开网页、保存阅读资料和批注，或管理本机翻译语言包。Android 版暂未提供 Markdown 阅读器。',
++          'Organize open pages, save reading material and notes, or manage local translation packs. The Markdown reader is not yet available on Android.',
++          '整理已開啟網頁、儲存閱讀資料和批註，或管理本機翻譯語言包。Android 版暫未提供 Markdown 閱讀器。') : group.hint;
++      card.append(description);
++      const actions: Array<[string, string]> = group.id === 'reading' ? [
++        ['reading', text('本机翻译设置', 'Local translation settings', '本機翻譯設定')],
++        ['workspace', text('打开阅读工作区', 'Open reading workspace', '開啟閱讀工作區')],
++      ] : group.id === 'experiments' ? [
++        ['experiments', text('管理实验模型', 'Manage experimental models', '管理實驗模型')],
++      ] : [];
++      for (const [section, caption] of actions) {
++        const button = document.createElement('button');
++        button.type = 'button';
++        button.textContent = caption;
++        button.addEventListener('click', () => {
++          void openAgent(section).catch(() => {
++            description.textContent = text('暂时无法打开，请稍后重试。', 'Unable to open. Please retry.', '暫時無法開啟，請稍後重試。');
++          });
++        });
++        card.append(button);
++      }
++      page.append(card);
++    }
++    pages.set(group.id, page);
++    main.append(page);
++  }
++  main.classList.add('mobile-settings');
++  document.body.classList.add('mobile-settings-shell');
++  main.querySelector<HTMLElement>(':scope > .note')?.setAttribute('hidden', '');
++  const render = (focus: boolean) => {
++    const fragment = location.hash.slice(1);
++    const legacy: Record<string, string> = {'overview-title': 'privacy', 'activity-log': 'privacy', 'fp-probe': 'privacy', 'privacy-result': 'ai'};
++    const id = legacy[fragment] || fragment;
++    const group = groups.find(candidate => candidate.id === id);
++    back.hidden = !group;
++    nav.hidden = !!group;
++    heading.textContent = group?.title || title;
++    subtitle.textContent = group?.hint || text(
++        '按功能分类管理浏览器设置。', 'Manage browser settings by category.', '依功能分類管理瀏覽器設定。');
++    document.title = heading.textContent;
++    for (const [key, page] of pages) page.hidden = key !== group?.id;
++    if (focus) {
++      window.scrollTo(0, 0);
++      heading.focus({preventScroll: true});
++    }
++  };
++  window.addEventListener('hashchange', () => render(true));
++  render(false);
++}
+diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn
+index eeed5027def75db0a0d7b1935a77e2505f8cf179..f56eb0f0742f52e874c4891e636f4a18e089677e 100644
+--- a/chrome/browser/resources/aegis_agent/BUILD.gn
++++ b/chrome/browser/resources/aegis_agent/BUILD.gn
+@@ -49,6 +49,7 @@ build_webui("build") {
+   ]
+   ts_files = [
+     "agent.ts",
++    "mobile_settings.ts",
+     "reading_workspace.ts",
+     "local_ai_client.ts",
+     "language_packs.ts",
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index faa56b94facaef7116e6b666e31e58292876b190..667657b4cc3e4eb6cf550f7ce19017fcbba2315e 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -1055,3 +1055,60 @@ body.reading-workspace-only main > #reading-ai-settings[open] { display:block !i
+ 
+ [data-search-match] { outline: 2px solid #3986ec;
+  outline-offset: 4px; }
++
++/* 独立设置页保留原控件，隐藏工作区导航和无关表单。 */
++.mobile-settings-back { display: inline-block;
++ width: fit-content;
++ min-height: 44px;
++ padding: 10px 0;
++ color: var(--primary); }
++
++body[data-mobile-settings] main > :not(.hero):not(.mobile-settings-back) { display: none !important; }
++
++body[data-mobile-settings='reading'] main > #reading-ai-settings,
++body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
++
++body[data-mobile-settings] .hero { align-items: flex-start; }
++
++body[data-mobile-settings] .hero h1 { font-size: 1.5rem; }
++
++body[data-mobile-settings] .hero .status { display: none; }
++
++body[data-mobile-settings] details.card { min-width: 0; }
++
++body[data-mobile-settings] details.card > label { display: flex;
++ align-items: flex-start;
++ gap: 12px; }
++
++body[data-mobile-settings] details.card > label > input[type='checkbox'] { flex: none;
++ width: 20px; }
++
++body.mobile-agent-shell {
++  --bg: #f8f9fa;
++ --surface: #fff;
++ --surface-strong: #fff;
++ --text: #202124;
++  --muted: #5f6368;
++ --line: #dadce0;
++ --primary: #1a73e8;
++ --primary-hover: #1967d2;
++  --shadow: none;
++ background: var(--bg);
++}
++@media (prefers-color-scheme: dark) {
++  body.mobile-agent-shell {
++    --bg: #202124;
++ --surface: #292a2d;
++ --surface-strong: #292a2d;
++ --text: #e8eaed;
++    --muted: #9aa0a6;
++ --line: #3c4043;
++ --primary: #8ab4f8;
++ --primary-hover: #aecbfa;
++  }
++}
++
++/* 嵌入实验设置的跳转由主设置页提供，避免不受信任子页的导航被阻止。 */
++body.settings-only[data-settings-section='experiments'] .reading-experiment-link {
++  display: none;
++}
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 3d5ba9e2c26bf1fd8eabcc49e21bcb84cd5228ed..85e16b258f2a8fac41d8bd1d9c07da545278798a 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -1,3 +1,4 @@
++import {initializeMobileAgentSettings} from './mobile_settings.js';
+ // Copyright 2026 GCSA
+ 
+ import '/strings.m.js';
+@@ -2118,6 +2119,11 @@ try {
+   proxy = BrowserProxy.getInstance();
+   bindActions();
+   const reading = new ReadingWorkspace(proxy);
++  if (loadTimeData.getBoolean('isAndroid')) {
++    initializeMobileAgentSettings(() => reading.refresh(), () => {
++      activeView = 'reading'; renderView();
++    }, () => { void proxy.handler.showProtection(); });
++  }
+   initializeSettingsPresentation();
+   window.addEventListener('beforeunload', event => {
+     const form = JSON.stringify([element<HTMLSelectElement>('model-provider').value, element<HTMLInputElement>('model-base-url').value, element<HTMLInputElement>('model-name').value]);
+diff --git a/chrome/browser/resources/aegis_agent/mobile_settings.ts b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..23df4159e1946673b888f4f4b91aafe572d128ee
+--- /dev/null
++++ b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+@@ -0,0 +1,59 @@
++// Copyright 2026 GCSA
++// Android 独立设置子页复用助手现有控件；不自动启用助手或执行模型。
++export function initializeMobileAgentSettings(
++    refresh: () => Promise<void>, showReading: () => void,
++    openSettings: () => void) {
++  const params = new URLSearchParams(location.search);
++  const section = params.get('mobileSettings');
++  const language = document.documentElement.lang;
++  const text = (zh: string, en: string, tw: string) =>
++      !language.startsWith('zh') ? en : /^zh-(?:TW|HK|Hant)/i.test(language) ? tw : zh;
++  const main = document.querySelector('main')!;
++  document.body.classList.add('mobile-agent-shell');
++  const back = document.createElement('a');
++  back.className = 'mobile-settings-back';
++  back.href = 'chrome://aegis/';
++  back.textContent = '← ' + text('Aegis 设置', 'Aegis settings', 'Aegis 設定');
++  // 不受信任页面不能直接跳转 chrome://，沿用仅打开固定设置页的原生入口。
++  back.addEventListener('click', event => {
++    event.preventDefault();
++    openSettings();
++  });
++  main.prepend(back);
++  if (params.get('view') === 'reading') {
++    document.getElementById('goal')?.removeAttribute('autofocus');
++    showReading();
++    void refresh();
++  }
++  if (section !== 'reading' && section !== 'experiments') return;
++  document.getElementById('goal')?.removeAttribute('autofocus');
++  let research = document.getElementById('reading-research-settings');
++  const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement;
++  local.querySelector('summary')!.textContent = text(
++      '本机翻译设置', 'Local translation settings', '本機翻譯設定');
++  if (!research) {
++    research = document.createElement('details');
++    research.id = 'reading-research-settings';
++    research.className = 'card';
++    const summary = document.createElement('summary');
++    const heading = local.querySelector('h3')!;
++    summary.textContent = heading.textContent;
++    research.append(summary);
++    while (heading.nextElementSibling) research.append(heading.nextElementSibling);
++    heading.remove();
++    local.after(research);
++    research.addEventListener('toggle', () => {
++      if ((research as HTMLDetailsElement).open) void refresh();
++    });
++  }
++  document.body.dataset['mobileSettings'] = section;
++  document.getElementById('title')!.textContent = section === 'reading' ?
++      text('本机翻译设置', 'Local translation settings', '本機翻譯設定') :
++      text('实验功能', 'Experiments', '實驗功能');
++  document.title = document.getElementById('title')!.textContent!;
++  document.getElementById('subtitle')!.textContent = section === 'reading' ?
++      text('先下载语言包，再按所选方向离线翻译。', 'Download a language pack to translate offline in the selected direction.', '先下載語言包，再依所選方向離線翻譯。') :
++      text('实验评分不会自动拦截网页或修改正文。', 'Experimental scores do not automatically block pages or change their content.', '實驗評分不會自動攔截網頁或修改正文。');
++  (section === 'reading' ? local : research as HTMLDetailsElement).open = true;
++  // 沿用展开事件回读配置，避免同时发起两次刷新；推理仍需用户主动发起。
++}
+diff --git a/chrome/browser/resources/settings/aegis_page/aegis_page.html b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+index 222447ac0173e23c04c5227faf1ad577a12a5647..59623439be924316095e8a1c172b405b41b862ed 100644
+--- a/chrome/browser/resources/settings/aegis_page/aegis_page.html
++++ b/chrome/browser/resources/settings/aegis_page/aegis_page.html
+@@ -117,7 +117,10 @@
+ <template is="dom-if" if="[[isMode_(mode, 'tools')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=tools" title="$i18n{aegisToolsTitle}"></iframe></template>
+ <template is="dom-if" if="[[isMode_(mode, 'ai')]]"><iframe class="legacy-frame" src="chrome://aegis/?settings=ai" title="$i18n{aegisAiTitle}"></iframe>
+ <iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=1" title="$i18n{aegisAgentSettingsTitle}"></iframe></template>
+-<template is="dom-if" if="[[isMode_(mode, 'experiments')]]"><iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=experiments" title="$i18n{aegisExperimentsTitle}"></iframe></template>
++<template is="dom-if" if="[[isMode_(mode, 'experiments')]]">
++  <iframe class="agent-frame" src="chrome-untrusted://aegis-agent/?settings=experiments" title="$i18n{aegisExperimentsTitle}"></iframe>
++  <section class="launch-row"><div><h2>阅读工作区</h2><p>打开文档、管理阅读库、翻译和批注。</p></div><a href="chrome://aegis/?workspace=reading">打开阅读工作区 →</a></section>
++</template>
+ <template is="dom-if" if="[[isMode_(mode, 'reading')]]">
+   <p id="result" role="status" aria-live="polite"></p>
+   <section><div class="section-heading row"><h2>默认阅读外观</h2><button id="reading-reset">恢复默认外观</button></div>
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+index d5968731645e0536de19f2bcbfb2eba5b374fcd1..0bf500c2b2a9b9126ddfdf793ba15b0bc44eee3c 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui_handler.cc
+@@ -651,15 +651,23 @@ void AegisUIHandler::HandleOpenBrowserAgent(const base::ListValue& args) {
+   const base::Value& callback_id = args[0];
+   base::DictValue status = BuildStatus();
+ #if BUILDFLAG(IS_ANDROID)
++  const std::string section = args.size() > 1 && args[1].is_string()
++      ? args[1].GetString() : std::string();
++  const bool reading_settings = section == "reading" || section == "experiments" ||
++                                section == "workspace";
++  const char* suffix = section == "reading" ? "?mobileSettings=reading" :
++      section == "experiments" ? "?mobileSettings=experiments" :
++      section == "workspace" ? "?view=reading" : "";
+   Profile* profile = Profile::FromWebUI(web_ui());
+   if (!aegis::IsAegisProfileSupported(profile) ||
+       !base::FeatureList::IsEnabled(aegis::features::kAegisAgent) ||
+-      !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled)) {
++      (!reading_settings &&
++       !profile->GetPrefs()->GetBoolean(aegis::prefs::kAgentEnabled))) {
+     status.Set("ok", false);
+     status.Set("error", "Enable Browser Agent before opening it");
+   } else {
+     web_ui()->GetWebContents()->GetController().LoadURL(
+-        GURL(chrome::kChromeUIUntrustedAegisAgentURL), content::Referrer(),
++        GURL(std::string(chrome::kChromeUIUntrustedAegisAgentURL) + suffix), content::Referrer(),
+         ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+     status.Set("ok", true);
+   }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index 53d8015ce55ed8f9077e32e4543c944554594757..c3bc725e7996d023c236db4ddf1f03e6ed7b5c4f 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -41,8 +41,12 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/common/referrer.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include "ui/base/page_transition_types.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
+@@ -673,7 +677,7 @@ void AegisAgentPageHandler::ListResearchTabs(
+     item->tab_id = tab->GetHandle().raw_value();
+     item->url = url.spec();
+     item->title = aegis::agent::BoundedAgentObservationText(
+-        base::UTF16ToUTF8(tab->GetContents()->GetTitle()), 256);
++        base::UTF16ToUTF8(tab->GetTitle()), 256);
+     research_selection_urls_[item->tab_id] = url;
+     result.push_back(std::move(item));
+   }
+@@ -737,15 +741,21 @@ void AegisAgentPageHandler::CreateSelectedTask(
+ }
+ 
+ void AegisAgentPageHandler::ShowProtection() {
+-  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
+-  if (list && browser_->GetProfile() == profile_) {
+ #if BUILDFLAG(IS_ANDROID)
+-    list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
++  // 只导航发起调用的助手页，避免返回设置时反复增加标签或替换其他标签。
++  auto* contents = ui_ ? ui_->web_ui()->GetWebContents() : nullptr;
++  if (contents && contents->GetBrowserContext() == profile_) {
++    contents->GetController().LoadURL(
++        GURL("chrome://aegis/"), content::Referrer(),
++        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
++  }
+ #else
++  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
++  if (list && browser_->GetProfile() == profile_) {
+     list->OpenTab(GURL("chrome://settings/aegisPrivacy"),
+                   list->GetTabCount(), true);
+-#endif
+   }
++#endif
+ }
+ 
+ void AegisAgentPageHandler::OpenResearchSource(
+@@ -1717,7 +1727,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+               task->AllowsTab(source_tab->GetHandle().raw_value()) &&
+               source_tab->GetURL() == GURL(source)) {
+             title = aegis::agent::BoundedAgentObservationText(
+-                base::UTF16ToUTF8(source_tab->GetContents()->GetTitle()), 256);
++                base::UTF16ToUTF8(source_tab->GetTitle()), 256);
+             break;
+           }
+         }
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index 53fd869c60489a7a57e837779f9c204394272c4f..d534c0b481f7a75dd4b20849d81a9e179dd39ee2 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -339,7 +339,7 @@ void AegisReadingWorkspace::Dispatch(
+       values.Append(base::DictValue().Set("id", id)
+           .Set("url", tab->GetURL().spec())
+           .Set("title", aegis::agent::BoundedAgentObservationText(
+-              base::UTF16ToUTF8(tab->GetContents()->GetTitle()), 512)));
++              base::UTF16ToUTF8(tab->GetTitle()), 512)));
+     }
+     auto state = State();
+     state.Set("tabs", std::move(values));
+@@ -383,7 +383,7 @@ void AegisReadingWorkspace::Dispatch(
+       }
+       handles.push_back(match->GetHandle());
+       auto item = NewEntry(match->GetURL(),
+-          base::UTF16ToUTF8(match->GetContents()->GetTitle()), "shelf", 0);
++          base::UTF16ToUTF8(match->GetTitle()), "shelf", 0);
+       item.Set("group", Field(request, "group"));
+       bool exists = false;
+       for (const auto& record : records_) {
+@@ -498,10 +498,15 @@ void AegisReadingWorkspace::Capture(int tab_id, int page, Callback callback) {
+   }
+   draft_.clear();
+   model_allowed_ = false;
+-  if (!source || page < 1 || page > 10000 || !AllowedUrl(source->GetURL()) ||
+-      !source->GetContents()->GetPrimaryMainFrame()) {
++  if (!source || page < 1 || page > 10000 || !AllowedUrl(source->GetURL())) {
+     Reply(std::move(callback), {}, "tabs_changed"); return;
+   }
++  // Android 恢复的后台标签可能尚未加载；仅在用户主动读取时唤醒它。
++  source->LoadIfNeeded();
++  auto* contents = source->GetContents();
++  if (!contents || !contents->GetPrimaryMainFrame()) {
++    Reply(std::move(callback), {}, "page_text_unavailable"); return;
++  }
+   auto pending = std::make_shared<Callback>(std::move(callback));
+   callback = base::BindOnce([](std::shared_ptr<Callback> done,
+                                std::string result, std::string error) {
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 786bf30bcd989a1811950ed7e00ad7c970db0715..f729efc3ccebf26d850ca384a9b00f8ffcce80bf 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.0.0.245";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.0 (245)";
++inline constexpr char kProductVersion[] = "6.0.0.255";
++inline constexpr char kProductVersionLabel[] = "Ver 6.0 (255)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+index 98ceb272b4978b795d61b2b273edaabcc89c071e..645db7d8466900a893314bfc54999d9ad2b343b5 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+@@ -224,3 +224,24 @@ button:disabled {
+     min-height: 44px;
+   }
+ }
++
++/* 已有外层卡片时沿用其边界，避免工作区里的双重缩进。 */
++:host([embedded]) {
++  width: 100%;
++  margin: 0;
++}
++
++:host([embedded]) .card {
++  background: transparent;
++  border-radius: 0;
++  box-shadow: none;
++}
++
++:host([embedded]) .header {
++  padding: 12px 0;
++}
++
++:host([embedded]) .composer,
++:host([embedded]) .task {
++  padding-inline: 0;
++}

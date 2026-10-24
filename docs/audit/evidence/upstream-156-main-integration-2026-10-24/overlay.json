@@ -1,0 +1,3548 @@
+{
+  "checkedAt": "2026-10-24T10:33:25.195605+00:00",
+  "files": 590,
+  "status": "passed",
+  "mismatches": [],
+  "overlay": [
+    {
+      "path": "base/mac/process_requirement.cc",
+      "sha256": "a9d50054ad748e275aed7a48071efd2ead3b72f333d6e7f6ea30e711f960165c",
+      "gitBlob": "8caec397ac543778abe506089433d26cf59267e7",
+      "matched": true
+    },
+    {
+      "path": "build/toolchain/win/midl.py",
+      "sha256": "ea59c9073b57cbc28bb12ce819123d995769f3c4e62aec8d29b7c0a7c40612a5",
+      "gitBlob": "3ac4c5e25c4ece5b441a2411ff72b85ec3af286d",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/drawable/themed_app_icon.xml",
+      "sha256": "90cf457657a38a188c508edb6efc634f6254b75e67c65dddaab16222941ff5b9",
+      "gitBlob": "434cc1154412ebdd9b642bf76530a179ca3a57da",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-hdpi/app_icon.png",
+      "sha256": "5e3cb6f76e2ad745a17281f68460bdca8b4de253b1f88d02e9aafcbdbf9b9096",
+      "gitBlob": "38dba32c28849afdcb96b22bc748ac0a275baa94",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-hdpi/layered_app_icon.png",
+      "sha256": "7549159a8d5d0cd6cad38bfcd9f1835eb31c181a4d2963f5a291d9ef2ed6b4ba",
+      "gitBlob": "7c9be3b18d662ff22f56882170651b296452f436",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-hdpi/layered_app_icon_background.png",
+      "sha256": "bc0e2617f7ac1f6c1f3b346f7806c60829f46bbce6ce99537561a902c6f299d4",
+      "gitBlob": "bf7e13911a1d42095c44428b8e9bcab1a5704851",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-mdpi/app_icon.png",
+      "sha256": "8ad3100b76ce3f046cced67537f4051f42af7707c8219ce6a7a681399092cbea",
+      "gitBlob": "0621faac795189fffceaceba29384799afbcd4ef",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-mdpi/layered_app_icon.png",
+      "sha256": "d640332e1b904caccfa09158a48f6695b7105d82d5d1adbd9db7855ca24e3c00",
+      "gitBlob": "e5a7f67f1664ce671a8934f7ea6c482bf7def98c",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-mdpi/layered_app_icon_background.png",
+      "sha256": "fc8c4d678ecb85f433a0da2607ce27e909721923fbd442c6b275e40715f33d33",
+      "gitBlob": "4d805e25bee648e0639e0684e8fe334225a5c89a",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-nodpi/layered_app_icon_foreground.xml",
+      "sha256": "9a07d5f97fe96901d57ef663b97320b7f105ae0be0174dcc9a2bce3827ec0f3a",
+      "gitBlob": "6de153eb8b9d9f218d575410a9e1098d0949effb",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xhdpi/app_icon.png",
+      "sha256": "3425ec461753a7c1391a2e707e5ba073020402ce6913939101da0f13c3a776c2",
+      "gitBlob": "a46cb664b676330adcef66a5968bb0f128ae60a0",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xhdpi/layered_app_icon.png",
+      "sha256": "3aa3174d7ea10a683183610e489b62153ceea542bd9352ae4c9b4637e66c74d2",
+      "gitBlob": "6fca84cd1e6b8cf2c9dfe8b345d3c0ccf92c821c",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xhdpi/layered_app_icon_background.png",
+      "sha256": "dbf493032f83595bde5c7a99580d1737ace90a85d3a0b6dec1c77565eca16007",
+      "gitBlob": "275ecdee473db32c273b5a14ae97acda800dd515",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xxhdpi/app_icon.png",
+      "sha256": "2435b2f389f6b4f688a6f94e4c09caecb31079ad9f9b1ee440902c3de031b5c3",
+      "gitBlob": "dbf56c84d1e717085cc6ec12b4f4832a6722fc55",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xxhdpi/layered_app_icon.png",
+      "sha256": "64456800744d51e02d3da520cc5f978b8c8332e8c54fd38976bda4e024476bcd",
+      "gitBlob": "d2e9147dba4e6a201b653edf9f275ba1b9322b17",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xxhdpi/layered_app_icon_background.png",
+      "sha256": "309f47c800d31fc09979912eba164dd335e29fd673a3b224148cd95c03e2b2f4",
+      "gitBlob": "6106ea6b81bac7e9b495c2b03ad397c45a50b68c",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xxxhdpi/app_icon.png",
+      "sha256": "afd0d615ecb560ceee14d30600870a8f9ad2169bf782566bc252041702074781",
+      "gitBlob": "597c9921e53b24c65f9c6eb4441f3adecb9532c0",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xxxhdpi/layered_app_icon.png",
+      "sha256": "e7a1dfd368ce9732f9cdc50126021d2c7182a2e3d7c462be2313c7e03c4ba225",
+      "gitBlob": "4d358cb8c6b3a5bf180625741e1ce3565b996fd0",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/mipmap-xxxhdpi/layered_app_icon_background.png",
+      "sha256": "bbb74eeeef56cd5eddd1e115276dcd21389d88dc24f29f6c8f2017f37e060b6a",
+      "gitBlob": "a62b8653bb6e55d83c3ad93eacb69c05775b5e85",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/res_chromium_base/values/channel_constants.xml",
+      "sha256": "526d895b676aed5ea3fba709171c40459edbc91a5e822fa096ef018b86a517ec",
+      "gitBlob": "77dc41bde53681eaaa0bcd765f5886525e07f8a1",
+      "matched": true
+    },
+    {
+      "path": "chrome/android/java/src/org/chromium/chrome/browser/about_settings/AboutChromeSettings.java",
+      "sha256": "de89648b23515f202ebf82571212c6f7cad33bd6bcccf941724fabd2c374c356",
+      "gitBlob": "65f6b6a56ccf62dab6b3846a2d1dc4aa6fc1d3b5",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/chrome_dll.rc",
+      "sha256": "dcbef24f0d9ad132cc70dfb63e0e237a62015d2231fda0422be90c7a5ce2448b",
+      "gitBlob": "42c84f485b1e5c6e7ffb01f1b413fdaae0625c87",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/chrome_exe.rc",
+      "sha256": "c615de57003e61bf1a464975e27e040f641de7a4cf5f6fc8e8aea3c0d4060339",
+      "gitBlob": "60e3b0653a946b3d24cc1f7588e198cf3fdd37e3",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/chrome_unscaled_resources.grd",
+      "sha256": "392281a2670a50009a397383e46dc3c627c1f3d838bcb54c365f0bffd271a0c3",
+      "gitBlob": "2cffbfc0e30d9d085f6a7dcff9c6ecafff0a4a86",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/favicon_password_manager.png",
+      "sha256": "36c9f44c0f3d41f01aea8f02e4c3ff725d1d89f3c5be661947fe38db17c0da6c",
+      "gitBlob": "b5644755edd9ad0d22bb908855ff246eb86c672d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/linux/product_logo_16.png",
+      "sha256": "36c9f44c0f3d41f01aea8f02e4c3ff725d1d89f3c5be661947fe38db17c0da6c",
+      "gitBlob": "b5644755edd9ad0d22bb908855ff246eb86c672d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/linux/product_logo_32.png",
+      "sha256": "e64c805c9abb946293910fa73ea6656e7869dd108e1a0723090f2088fe93b02e",
+      "gitBlob": "8e9baae602e62ecb4806990b33eb575ccb1f3830",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_16.png",
+      "sha256": "36c9f44c0f3d41f01aea8f02e4c3ff725d1d89f3c5be661947fe38db17c0da6c",
+      "gitBlob": "b5644755edd9ad0d22bb908855ff246eb86c672d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_32.png",
+      "sha256": "e64c805c9abb946293910fa73ea6656e7869dd108e1a0723090f2088fe93b02e",
+      "gitBlob": "8e9baae602e62ecb4806990b33eb575ccb1f3830",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_name_22.png",
+      "sha256": "f7dea5e4e6528ffadb53732d32d9c3a02759edd07028e2f4e70e742fdd8530b5",
+      "gitBlob": "372c792166ee7ce2300efd21e087412c55e01176",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/product_logo_name_22_white.png",
+      "sha256": "ae20780fa697f49de58417e187f8a4bc407bd192de2feb52d32a41fd6b70200b",
+      "gitBlob": "358b0a9ee64624815b32b4c3ab6d7b118060913b",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon.png",
+      "sha256": "8a4ff7381873c983a79b5ea1aa4e95115911fa7750fd82ebee5690dc21d273a5",
+      "gitBlob": "36abee394117c1447b7134ac7d971e765e815bd2",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon_16.png",
+      "sha256": "19a24c0de336363e9d0e541520301d00296b7ebdd19cb0ac1510168677eca019",
+      "gitBlob": "8cb432dc2a0ed7f1d8608b066d0dfe6e47eb6b30",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon_24.png",
+      "sha256": "09afcbaf2c4a3e61d4306737ca034a2be393dcd856f6dfad74d79f55da574d50",
+      "gitBlob": "9a8db3d0cd80898780a3209e9cd8930629e561f7",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_100_percent/gcsa_aegis/webstore_icon_32.png",
+      "sha256": "d52d50285162391dd022ae6e2e52eee8bc2a826012e09b946a87a901181c1616",
+      "gitBlob": "93873c99d3dca51068e44311c7bb2bab0c9abeca",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/favicon_password_manager.png",
+      "sha256": "e64c805c9abb946293910fa73ea6656e7869dd108e1a0723090f2088fe93b02e",
+      "gitBlob": "8e9baae602e62ecb4806990b33eb575ccb1f3830",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_16.png",
+      "sha256": "e64c805c9abb946293910fa73ea6656e7869dd108e1a0723090f2088fe93b02e",
+      "gitBlob": "8e9baae602e62ecb4806990b33eb575ccb1f3830",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_32.png",
+      "sha256": "566e9d3f77d82b1ae8b058e3ff6063f33c0b284d6c60578341eb3690da687e64",
+      "gitBlob": "f7e10f2e219193547a19cc2c04d3855e7b87f6c3",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_name_22.png",
+      "sha256": "b5fdbf14d8319e2b4eb69d8b19edd8a504a98cbbd259428b918ef38c6f7f173c",
+      "gitBlob": "ddb6b0c63fca5a8cca9e338572e6615d8f88c765",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/product_logo_name_22_white.png",
+      "sha256": "c926171466d1037d5423db029288c0682ad0758ad71e7f008d246a54c9d6318d",
+      "gitBlob": "64b6f9adc0613a03ba0558762acd69e87215e4cf",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon.png",
+      "sha256": "d924b4188db99da7dfe657b50e118f9f56c02a060d12ea50dad6b69f4c8852be",
+      "gitBlob": "10475d4c54384b616fd44e0deee10aa0aa16dffb",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon_16.png",
+      "sha256": "d52d50285162391dd022ae6e2e52eee8bc2a826012e09b946a87a901181c1616",
+      "gitBlob": "93873c99d3dca51068e44311c7bb2bab0c9abeca",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon_24.png",
+      "sha256": "7d45193bf66fa8c7b308c8cf701cde311b4f3856c2fe4abfd9fa6632fdae6275",
+      "gitBlob": "cf9a05ed085e9ee2c6b3092b5a604f19299bc1c2",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/default_200_percent/gcsa_aegis/webstore_icon_32.png",
+      "sha256": "7346d8a7f510045636a47c09df6cab2ec26fda24b85929b27860ed25fed3fe04",
+      "gitBlob": "93765a0f164493f50b1e04d0b0f1ae38966b5a59",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/BRANDING",
+      "sha256": "e5cf76c531d4c9c9e887b8123996e7546a84b6edc61375c3fc7a3a50fcc9128f",
+      "gitBlob": "dfebe2211b3594ef813399d73355509976c0140e",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/chromeos/chrome_app_icon_192.png",
+      "sha256": "30e22c93039749ca8d1a3fef2730742f6ab4d8f79b88f101c68ed3c6a0fa078a",
+      "gitBlob": "6fddece58cf1cce9f6f46709fe602b23596a4011",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/chromeos/chrome_app_icon_32.png",
+      "sha256": "e0b72f87e2a1bfaa76932efa1eee580f48e5984e825900f55b4c4e83d4058eb5",
+      "gitBlob": "50ec79c4bef2ffc053ed169ec16886e177f5038d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/chromeos/crosh_app_icon_256.png",
+      "sha256": "4e4f4320217e31750619dc781100c1048283fd376f12f408ec7786013d46b3a2",
+      "gitBlob": "2e3521c3785444467d086105977cd09ab0d4ff34",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/chromeos/webstore_app_icon_128.png",
+      "sha256": "d535192b6764409970a1ac01e9594d73d40cfdbc81b3192d246b9993b33f7b13",
+      "gitBlob": "4ef2f405f9a52492497937447f0dc5d5d294533d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/chromeos/webstore_app_icon_16.png",
+      "sha256": "743ef998bb4b371eb694ded0d9fe12898ad406e7b8236836dca709aef3fc8681",
+      "gitBlob": "1699cd631f8ba2a3d8941b7eadfa31dead032f76",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/linux/product_logo_128.png",
+      "sha256": "65afec0a72de8c175c8a72a254cecbbf6e65bf6286e9e340cfcdda9df734aa0e",
+      "gitBlob": "927b0630b98c35064f56f0ad4da770adbfc63ec7",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/linux/product_logo_24.png",
+      "sha256": "64300e5624da7701c42ef589f4647cbefe1ddcaa02b7dec1d0ce6ea8fd8a605e",
+      "gitBlob": "57e4db8d0fa11ce28ccd0303917828aca1c7b02d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/linux/product_logo_256.png",
+      "sha256": "fec6bae0400db37c7f5a14d710ba2febb6b1200f5e0354693f760f14ac3efb31",
+      "gitBlob": "313db0f43e580f0fffd34ff01775dc965818c4dd",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/linux/product_logo_32.xpm",
+      "sha256": "bbd19200d3ad5046a5ba149a55b381b63a9e5b99a38cb12fa279f1bee81c1247",
+      "gitBlob": "be13bdc33d42dcf5eb9a18dc96c5af02c5b288a3",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/linux/product_logo_48.png",
+      "sha256": "a6733ab70f079300af7654edfa28ab5ee832a5805bed3d2e3fa6193c8eec3e09",
+      "gitBlob": "01e5e6a2618721623d35f4c3609c4688beed1a7c",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/linux/product_logo_64.png",
+      "sha256": "566e9d3f77d82b1ae8b058e3ff6063f33c0b284d6c60578341eb3690da687e64",
+      "gitBlob": "f7e10f2e219193547a19cc2c04d3855e7b87f6c3",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/AppIcon.icon/Assets/gcsa-aegis-app.png",
+      "sha256": "53e9a4a77da580df25d8495539268eabd5c0a83d5d25c366ca206683472d1f4c",
+      "gitBlob": "dbe04864a77d99c08bfc82efab786f856643c73f",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/AppIcon.icon/icon.json",
+      "sha256": "9d9410ba4e2bb50f9ca86cde7442757a784465a3f812bff66bae9825ecc4a53f",
+      "gitBlob": "277624e9359a18afb65c48cd0b875ed0706e4485",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.car",
+      "sha256": "b48a2cd266065afdb584dc3e7c4398992902ae31f7b7b9d8ee919320ca9403e4",
+      "gitBlob": "7933c0570f6b5b2d77ff5d012c5498b875a373fd",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "sha256": "2f232cbb7bb1ed44e2a831ba2b2b1c4f4c01fac9d55aeed22162cc13fddb0dda",
+      "gitBlob": "c562589ec89fa1978c9f5a050ee49ce14fb75045",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_1024.png",
+      "sha256": "53e9a4a77da580df25d8495539268eabd5c0a83d5d25c366ca206683472d1f4c",
+      "gitBlob": "dbe04864a77d99c08bfc82efab786f856643c73f",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_128.png",
+      "sha256": "22873ae884da3954db07784eeeaf6a47943a9e6cbf1292d28a5942a0b3490aa7",
+      "gitBlob": "fb0fd8f9f0e4c1c681e7f1369d0dd2d1376afe6e",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_16.png",
+      "sha256": "21e12cba8e3ec4bdb80ef3fcef3d163f2b9b1409c333964a7ebf6b62bfe51beb",
+      "gitBlob": "61849a8df0bce30d1396450287a556323507d563",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_256.png",
+      "sha256": "7dac26f0a61dc95a8ebf546f347f44796ef698b38e3703542026f8c84f8d01a5",
+      "gitBlob": "168a2f7edb218270e74e67c5acd96422a2d44c1b",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_32.png",
+      "sha256": "e0b72f87e2a1bfaa76932efa1eee580f48e5984e825900f55b4c4e83d4058eb5",
+      "gitBlob": "50ec79c4bef2ffc053ed169ec16886e177f5038d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_512.png",
+      "sha256": "9a723f9f220737ea7af96d66b2966163802717093f6e857bf68e1ad3a65bbda8",
+      "gitBlob": "07fcd5245f46897feedbb0bb1c1a50a81b34e32b",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/AppIcon.appiconset/appicon_64.png",
+      "sha256": "3b1092759556cc5a11513a402527b262f6cb2a9db41ce0dc76e82d2a90ba10cd",
+      "gitBlob": "59dc08ad4c796770198f76b26b84ae7096170fa8",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Contents.json",
+      "sha256": "f5fb0e1f3a8142892ed092efb5955c1c2cc537003a89ad7bbdb9dade7fe8985f",
+      "gitBlob": "74d6a722cf39b2dd5bef11f166e6ac9b99568a01",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Icon.iconset/icon_256x256.png",
+      "sha256": "7dac26f0a61dc95a8ebf546f347f44796ef698b38e3703542026f8c84f8d01a5",
+      "gitBlob": "168a2f7edb218270e74e67c5acd96422a2d44c1b",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/Assets.xcassets/Icon.iconset/icon_256x256@2x.png",
+      "sha256": "9a723f9f220737ea7af96d66b2966163802717093f6e857bf68e1ad3a65bbda8",
+      "gitBlob": "07fcd5245f46897feedbb0bb1c1a50a81b34e32b",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/mac/app.icns",
+      "sha256": "57dfe02ab5a9209e1c797401a8fcc152a28c6c81e6bde11f8f6d95bd9f3cc445",
+      "gitBlob": "bbd350d0a4b44653477145f662abcbd4ab742b10",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo.svg",
+      "sha256": "ffd1096818ea988d5358a07273f51818ac1c07b604cfb99ebb85952f28d7724d",
+      "gitBlob": "4bb68d7322f63c4e274ca3dd8833663f51121a73",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_128.png",
+      "sha256": "65afec0a72de8c175c8a72a254cecbbf6e65bf6286e9e340cfcdda9df734aa0e",
+      "gitBlob": "927b0630b98c35064f56f0ad4da770adbfc63ec7",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_16.png",
+      "sha256": "36c9f44c0f3d41f01aea8f02e4c3ff725d1d89f3c5be661947fe38db17c0da6c",
+      "gitBlob": "b5644755edd9ad0d22bb908855ff246eb86c672d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_22_mono.png",
+      "sha256": "b3fbefecca7366f75baa4e1c422143b29e411d1696fc38f1f8bc65b41c12c1a6",
+      "gitBlob": "c78527d7d10e8ec82f74d75ac35c32a7392a38f3",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_24.png",
+      "sha256": "64300e5624da7701c42ef589f4647cbefe1ddcaa02b7dec1d0ce6ea8fd8a605e",
+      "gitBlob": "57e4db8d0fa11ce28ccd0303917828aca1c7b02d",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_256.png",
+      "sha256": "fec6bae0400db37c7f5a14d710ba2febb6b1200f5e0354693f760f14ac3efb31",
+      "gitBlob": "313db0f43e580f0fffd34ff01775dc965818c4dd",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_48.png",
+      "sha256": "a6733ab70f079300af7654edfa28ab5ee832a5805bed3d2e3fa6193c8eec3e09",
+      "gitBlob": "01e5e6a2618721623d35f4c3609c4688beed1a7c",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_64.png",
+      "sha256": "566e9d3f77d82b1ae8b058e3ff6063f33c0b284d6c60578341eb3690da687e64",
+      "gitBlob": "f7e10f2e219193547a19cc2c04d3855e7b87f6c3",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_animation.svg",
+      "sha256": "6d13c8e777cc3e411db48a2848a6d2686380c1603e01e5813c4c78a88f693f36",
+      "gitBlob": "4935acf377890b691b6f62db05847cb74f16421e",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_name.svg",
+      "sha256": "0189612d84f3ffa9c3083f6c035fad6631ecc7e5a7f629dc819c991caf84e23d",
+      "gitBlob": "51dcb8ea037396e3522abc7ba2a42f5601e11400",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/product_logo_name_white.svg",
+      "sha256": "ed3f6787368e0ed4927938d413bc81e6ca573b2c171225df047ac01e84b7d6a6",
+      "gitBlob": "7d4ebfa4f9a9d0b36f95593990f420cf2c42fe45",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/README",
+      "sha256": "1ea4fef190b6cb6d068553f820fcb327ee83957ef03ce10af80133b6abc7c5ae",
+      "gitBlob": "e80d67dcaa75acb57a6203821f7adbfa080e8609",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/app_list.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7",
+      "gitBlob": "e08c4ff289efaf8c872990da66ed6c03a6cba16f",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/chromium.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7",
+      "gitBlob": "e08c4ff289efaf8c872990da66ed6c03a6cba16f",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/chromium_doc.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7",
+      "gitBlob": "e08c4ff289efaf8c872990da66ed6c03a6cba16f",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/chromium_pdf.ico",
+      "sha256": "eff6610fa455767db464919fbeab83a465a5d702c4b7eb6be956a18d632fb0e7",
+      "gitBlob": "e08c4ff289efaf8c872990da66ed6c03a6cba16f",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/incognito.ico",
+      "sha256": "bf69980065d88a51d697fc8287fdaf37178c5725aa5ce4c55d821f486be7be32",
+      "gitBlob": "76817daa7d6d0ee1fca8a8692355691b830d0984",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/tiles/Logo.png",
+      "sha256": "769de892f646f432c6d1740af0561767769d17650e2fa77d79650e176f672ac7",
+      "gitBlob": "83ed64d31318dac73e081f91d0df0cc93f19bd1a",
+      "matched": true
+    },
+    {
+      "path": "chrome/app/theme/gcsa_aegis/win/tiles/SmallLogo.png",
+      "sha256": "8096505b1c555bac44cbf4a1179f003f25d77aa10d0ff8e726d30e1629081865",
+      "gitBlob": "a638e283f8c9470f0ccb3992d46b54260150cf00",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/actor/actor_navigation_throttle.cc",
+      "sha256": "49cf48ecce44b99422148876f5e9b1fd2c25e4d816810e8981d03d6d4090cfd6",
+      "gitBlob": "0bc41de9f30188343c61c00fe6690dc0291ed7da",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/actor/ui/actor_ui_state_manager.cc",
+      "sha256": "70286dda99584ce8df0b1c65cc2deb5e193d643b82c5cd1623185bc6f3318d27",
+      "gitBlob": "d1a7d5f89d6bc14c2aef8b95e3c3ec1cb0f06a64",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/BUILD.gn",
+      "sha256": "1188b0c01e4f2a8253a8a06be0718f7206d3fae62606cc3777959aa49191db91",
+      "gitBlob": "fb8233cbc2ed31036f4d001239678ea8dd94fdd8",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/BUILD.gn",
+      "sha256": "373b44883950327a509388d06dd722769495336cccdcc4833d3e8bd2c42f8b5a",
+      "gitBlob": "0e57c40308e470de0ce8c56fa5c8b9b4f5774114",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_browser_request_adapter.cc",
+      "sha256": "33cf55b599429c396236f15e3d03f8d195cb7e882f9c33754229251f6e131078",
+      "gitBlob": "ce418ff76e847e32168c9310ec3cdd0ea02716f5",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_browser_request_adapter.h",
+      "sha256": "be15ffa2c9970c86955961f5357e4cd4aa4b7ca707b5ef690ca56fb830fdf7d1",
+      "gitBlob": "1e269232e48eac70046c12cc631e882d9551eb97",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc",
+      "sha256": "64fb485c317cc9e5cd4415f559d4521fb3ee1722c53efc3cb0b0dade815ef3b5",
+      "gitBlob": "72b140b0dee24a4fb6bdf96bba0ebc5f2ca2747b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_browser_request_adapter_unittest.cc",
+      "sha256": "3c147ac13df337a344812c58686d346d1c7b942d0c22c1ea970c262eb41ab208",
+      "gitBlob": "fbd99039a7e2a4ab25bc03c11f6c8f8a2d670948",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_identity_generation_source.cc",
+      "sha256": "c3f172f7fd88bd0943376cb7aa67d93de1a7b619fec6c2058756d11c23f81fa2",
+      "gitBlob": "cf3621d4b4abcda30f9790006f026349dc9385b6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_identity_generation_source.h",
+      "sha256": "35c5267fbd91be78c919020bc58b30175ff880eb184c577dbf0deb6699837b58",
+      "gitBlob": "90e212a25d1052cbd5b49f9e350f74d66e05d38c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_identity_generation_source_unittest.cc",
+      "sha256": "db003bd01af3c1db95ec6f6c7435a606cffeb31a8a421507289751e60a00c4d8",
+      "gitBlob": "60a169c81bff82e99f06816358d4739dd3aa3d4c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_network_context_transport.cc",
+      "sha256": "eb2cb0d144328ebb85258e72586510ea2f81b3fac94c8605300622ddef95823a",
+      "gitBlob": "487f309c0dace566f09e64456becf1ff8e5f0fb7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_network_context_transport.h",
+      "sha256": "a1425d67ad12127f42f8a2e858eb58f32b4a481c11cb764d8bea2e88f528027c",
+      "gitBlob": "139d67279b47781e941ca79aeeb8b463ce62b0dc",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_network_context_transport_unittest.cc",
+      "sha256": "76eb85fa04190e21b164dc476402e0d454ee59b6770e69a32434bd66f788890b",
+      "gitBlob": "e9fb0e71230624243a6cde38bd4d868c1f29f64d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxy_selection_generation_source.cc",
+      "sha256": "3882714af646e25dd26aa820a50987708517238d301d72e422a59732108d75bd",
+      "gitBlob": "b65ea85326f8bb02572ed3a23d51ca29247a55f7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxy_selection_generation_source.h",
+      "sha256": "bd3862ec688e6624df67b64503731671788353ec319578a61fc4ff88c738b584",
+      "gitBlob": "e71768b116e83cb31dfb23c61bd883e8c74bff02",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxy_selection_generation_source_unittest.cc",
+      "sha256": "3eb023c6a28fc11743c95968d1aa599d6d6d8ea8dfc0f5991b0203357457d485",
+      "gitBlob": "f12a69fdc2adfdcb9a9f2b0f73dab0cb6b92314f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxying_url_loader_factory.cc",
+      "sha256": "5603a2db93991f77e8e6ba0b9c924844bcee9d22823f31dd3fd02105e59d7c70",
+      "gitBlob": "f58c3577ea82b3d6f752234d73f8bf4924a1b45d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxying_url_loader_factory.h",
+      "sha256": "9e9facbc039f163d777b14a890422303d6437953a13b62d75646aa740fa21bcb",
+      "gitBlob": "282c7a8b677922b15b835be6f3bcda18365e3e84",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc",
+      "sha256": "29c149a9a52042806ef42316ac8021bd18d4c4bc0aab82af931dc53d645b7246",
+      "gitBlob": "8612ef233fca03edf1f2d4a48df3bf3601bc604e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxying_url_tracked_request.cc",
+      "sha256": "02e8098de209b6a345ab2c1d2605879206ddb8916e86da2cd9f96037e887f21a",
+      "gitBlob": "dfe17f85fc7c4f2cdf6cc64a20728fd56c4ffe87",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_proxying_url_tracked_request.h",
+      "sha256": "732ea3e069c78a1bfd97c8cb44be05244500d96050cc1485e12b07d67e5ca158",
+      "gitBlob": "1915296d37adc794e883160ba7b82191648828c0",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_published_request_runtime.cc",
+      "sha256": "b29ae23d59d5ae76c067068b21c6c80f7c31061747a901b758346f842c14b646",
+      "gitBlob": "9a47c1831983419992df3616af979357c218812f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_published_request_runtime.h",
+      "sha256": "4c9d26d931e4399a08bfc7513c983c192f4b10954b715f281a9bb2e240b87abd",
+      "gitBlob": "48be85326f7401666a4fc34c147e65636d6ec298",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_published_request_runtime_unittest.cc",
+      "sha256": "58a1e38045d210bf7365170edbcb9e2eb465e60bec5ea77b17accdb6693fb78d",
+      "gitBlob": "bcb20edc379796a61fdc143d020c7fab313bd5e2",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_request_dispatch_state.cc",
+      "sha256": "1746e5bba69e93369b3e7db4bc2da9653ea9c9756fa94eb0af03730951d0471c",
+      "gitBlob": "e034a4bc029f36422d93ca506dcc11ec76af13ab",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_request_dispatch_state.h",
+      "sha256": "05cba814c34ce962483f40dc9cf92b4016435439428a540ac739fe83ff28d701",
+      "gitBlob": "374dc11136a22e068e44d11d7b0a4c8a88b11d09",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_request_dispatch_state_unittest.cc",
+      "sha256": "f8a0cce533dd86b1a9a60849dc929729e5e70d8628d7e5148292232c8dbfd111",
+      "gitBlob": "15c42b5d86c4587205580e143791bcb2f49fff9e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_rule_store.cc",
+      "sha256": "9942376c70e1126a8d6e49ba06b01fa6473bc34786ed6d838ef05b187e43c852",
+      "gitBlob": "108b9c891a60d089e29770865d79ab2e632e1536",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_rule_store.h",
+      "sha256": "5be4683e27de65a9dc9dc262b3a4624307d4bea425fb2a685bcd6c81f6b7150d",
+      "gitBlob": "55b18924055220eeee41921dda85d50bed931f9f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_rule_store_unittest.cc",
+      "sha256": "46e7d16770e042cff73d08e7c0fad1a32b6eacdda37006db083ce74136be455e",
+      "gitBlob": "51f763a101ca8cc78842297cc6be580a43a4de5e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_service_coordinator.cc",
+      "sha256": "586c5550175649abc1424eeeb4f7f92b517cf7f50d271a97d659ac21d602e315",
+      "gitBlob": "0ce21c40dc52118f74677e089b6b383fc7e969d2",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_service_coordinator.h",
+      "sha256": "f2ea303c415075aa578464cb06a00e1da665bdbc8564dfd2cd93ab1d9bd9ba87",
+      "gitBlob": "ee42e777e0e0338f91097c5900eeb23397e901aa",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/access/access_service_coordinator_unittest.cc",
+      "sha256": "05e83b1cc18b5835e347b4ac5714a4d45ca25a55f9a5e32fe4c055f6ddb7002d",
+      "gitBlob": "5a7bee173d1e646410da39841315f6cc1ca92bc1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/actor_journal_privacy_unittest.cc",
+      "sha256": "d37ceb2d5b66da5bc18d72d3e21dc63f874ca83b1d6d3422a21fad2b1da05193",
+      "gitBlob": "8e7dee06c27a8c973c7ade7735e127ed1e6554e5",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_ai_control.cc",
+      "sha256": "9efd6e204b1d1b1b5033f0a139121278af2875398c9b55541143fa1e3e43718e",
+      "gitBlob": "efdd816bdcee7e96ee82c118c22831bc36f2d5a1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_ai_control.h",
+      "sha256": "a8be938c0ea4e2d61ab7d113e7be0580f193f38c8bc7395bd6458b6e552bb10a",
+      "gitBlob": "866bfb47bc7b20d02b4fc491d5ad50cafb9b2377",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_ai_control_unittest.cc",
+      "sha256": "b290f65ef7dc79b08668beb7dbe0a3f6efb4ad8a654864c841977a201f3834ea",
+      "gitBlob": "96a04aa493c78b7f7a05c39fa0f48a8a1f8364ec",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_bounce_observer.cc",
+      "sha256": "d78c5df216fc2c8b32416b10942331333f4c2c1dafdc28867ca3f5f42da8ee9d",
+      "gitBlob": "442e350d89622d70494b2bb2d6d106f6e9e385d5",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_bounce_observer.h",
+      "sha256": "e3e1690353cd79896a01e0e2aab938aa5faeb335bb0e1b1de7be6c82f59f8747",
+      "gitBlob": "4c446938206b9f59e58f10b8329bc88795e169e4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_cookie_janitor.cc",
+      "sha256": "4ae45afecf3a4c137ef748f2100fd61623010abd1de6422dd46c1e5ae4aaa59e",
+      "gitBlob": "ed1992af5d707690bba217b7bc9e082738d1425e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_cookie_janitor.h",
+      "sha256": "9d26ad1f3a8c68bc59277b300027c77155b265164ec4c75e92c89cd632ef2c37",
+      "gitBlob": "ec4b06e272d26326ed909b07cce469deb0ee130c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_download_prefs.cc",
+      "sha256": "40eb3102f10b1bcfd687de946d4d5d52449c7205acdb8419272a1c1b9c26ee44",
+      "gitBlob": "239efb83ba24fc93d7018b64c4ea4fb45a5d7ff6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_download_prefs.h",
+      "sha256": "27a4a0dd301ab949b231eefa98245df1f31558d4cf859fe710792e80e010beac",
+      "gitBlob": "2172dfe704af4e596b23fc62f500fe2ef2e939c1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_download_prefs_unittest.cc",
+      "sha256": "5720ac44db0f7402db4bd126b308c047140598647199b0c6e6307e9f0ce5f9b0",
+      "gitBlob": "c33796d00d724c76364e295e4b344059e6fe9e00",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.cc",
+      "sha256": "c7b1b07cd407b655ea5b60da78dda3de1a8cf3c8e956e5a8bc1a95e170cbc4ac",
+      "gitBlob": "d67edb50669bed1f393e53b0a03e6f9e6e8a3b10",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_link_sanitize_navigation_throttle.h",
+      "sha256": "173525a69827c620032d671d2c410de745d2445eb2c3e25f6cadcaf89662cbaa",
+      "gitBlob": "0723cfc1b7f702ea3b4466f435c93ae898b6994a",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_mac_signing_unittest.cc",
+      "sha256": "f46a385dce99ddca90bfd6f2b7084385358196e22e4d61cc5c220c5968081ef6",
+      "gitBlob": "cb3d9f8229c05ae5898e5f36b61609047b0c2234",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_blocking_page.cc",
+      "sha256": "d091a49d94b03c48d3a5b8df2ac3e45c2d74e6c0302c82cdac83dab7f68edd6d",
+      "gitBlob": "81ea9e5c1d47d59fd80a8f22a40352fb683fdf99",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_blocking_page.h",
+      "sha256": "deeccf81d039316c86520980fe291ba3f87a335c778776ee76b610948029782a",
+      "gitBlob": "3e3b80844133bebd4c3cb0a929f72a89059d3e5f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_blocking_page_unittest.cc",
+      "sha256": "e40e2817c921ccf8c654d2eb9aae873349faec335ef83b677f7b80392f812ef4",
+      "gitBlob": "1bf1bb2d38ed7aa75419a732b7b816ccfaa68828",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_controller_client.cc",
+      "sha256": "0940a0a407682e952fc8c8976fb4706df6e704d2729114e11e65c75913ab307c",
+      "gitBlob": "155f6864905966d1a8b7716db6af2801121cfbd4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_controller_client.h",
+      "sha256": "287324ecdd365a2bebf0f446551fa3cce99b86a28adee82fd37edafa77f4a152",
+      "gitBlob": "948152d953a2b20a9578aec5bffe5b774799cdb9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_navigation_throttle.cc",
+      "sha256": "2f02298a73bd4b3cd880b35fc0c2585d0b2e3f37889da3fcaf1b7b5d5f7030da",
+      "gitBlob": "2a0ca5c5e39a055f2779e18313dadce25167c765",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_navigation_throttle.h",
+      "sha256": "e508c858163877fcd25a2532e24592d3106c657dfd0c073a6b7413eccc926953",
+      "gitBlob": "5275d1007b84ef1086638151ce69dc4acf8525b8",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_tab_helper.cc",
+      "sha256": "f568407ab262afa7e80b6aa5e3bd02517fd766e9ae8467a0fb97d4fb3dc3f45c",
+      "gitBlob": "cd86e0f5c0cb11ffb6c70ea131e8c19bd32f8aba",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_tab_helper.h",
+      "sha256": "42c2a351f280308cd2bf3fa16da776b0352954873813d496d770b2a26d5870f2",
+      "gitBlob": "35f3dc3c6f2bee3d9d0108666815943bf1a3a3c7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_phish_tab_helper_unittest.cc",
+      "sha256": "ab9a35a1e4c819ecd60c7c9c6539e386ebf779448d270808e8ac2cc476cd385a",
+      "gitBlob": "7399ae5b0f30defdc6b4879590de6e100c207495",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_prefs.cc",
+      "sha256": "f5a3b00787bb1b9023db96dca1bcb465ab41903e9b7ac0d7b6754c84af99e7df",
+      "gitBlob": "72f2ca7aa9acab0ac2f3a08c90e0a46dca564b16",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_prefs.h",
+      "sha256": "add8633399c5ebec5348366cfa43626409b809129719e16fd4e9417ce8df689a",
+      "gitBlob": "b29d5cbaf9b1dd82113c61e3bdc06286462271f4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_profile_support.cc",
+      "sha256": "428dfebdb3534efbf6f0861d90eba15b9f5f7bab8af77a1c605ad927cd1883c7",
+      "gitBlob": "ec3d44c8e802c0d11752b547bc894751f5e4c4d0",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_profile_support.h",
+      "sha256": "70da54b05d5dd0573104f41cb7cfb4e5098e5d8a79e5d615be1d0a5ee4bb0a6a",
+      "gitBlob": "3b2402af89454541b83fbd13d6dfbecf1330c136",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_service.cc",
+      "sha256": "eff320e5c44e5ce631d337de687fc07148c5e107e6506965d73b8db52113872b",
+      "gitBlob": "317b4d4da6ee7d97c8db58f321d5bb940aa9d0e0",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_service.h",
+      "sha256": "4bb8121b7cb5e989902da183a8e32bd65b08ab256fc0510245826a20f56d16e5",
+      "gitBlob": "1f66edae87e952ee5dadeda74f0ffb1f99fad8d6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_service_factory.cc",
+      "sha256": "547e8a7df2aaf4eab0dc280e0a88695c74b26b7ac7082ff452f6bae80b094c35",
+      "gitBlob": "9bc57aa07b7e3dad62efea6f3060b6237beb3511",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_service_factory.h",
+      "sha256": "d385fccb2f2dce127ec2d53649d262ea268f391328da8d3ab9b3e75a03a5ea31",
+      "gitBlob": "a52ff9c5b80673d2a4ff9107af2a71ebcc6c38db",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_service_factory_unittest.cc",
+      "sha256": "6b7ccba9e85e4382e5b4d42c13617843669cf5b66c8daaf7b8e42ded87bb6b74",
+      "gitBlob": "7c98848bf09a7f6e5e268011406b16aac888a503",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_service_unittest.cc",
+      "sha256": "aa09394e793186b6e3bb3820bb0bcdeb5e859c59b06ed582aded72c6da28c07e",
+      "gitBlob": "ea9064e8e7090a434d4fb17926d96d0bc8e24c27",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_torrent_client.cc",
+      "sha256": "2e08c9528a0dcec609f27a7a5d2056a40256820629484a2cef534bc3db34658a",
+      "gitBlob": "204cc61bbf406a9ec9f79e301deadf1015a2df38",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_torrent_client.h",
+      "sha256": "7fdb83b4c1013e94e868c021704c3901b05ebab573269c4024deea4522dc2d78",
+      "gitBlob": "cbc213c19f3904f69febacbfd6f5946261cf7220",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_torrent_client_unittest.cc",
+      "sha256": "6a39dd805cf7161aa0cb3b1fd5aaa3a93b33abed358b0f5658085fdd221c9f24",
+      "gitBlob": "dd2db7cadd100fef232fc18a859b07622f6a8d09",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/aegis_ui_handler_unittest.cc",
+      "sha256": "ddac3f159ef15a6909776db1affb636b54119bb3955e6dc762f54034ead66cfd",
+      "gitBlob": "faea43f005857d926e11c5655653864523915bdc",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_actor_bridge.cc",
+      "sha256": "7a923f94808c565816ecca04862ebc42af4dc0c81c40dd73b27d633c59006a4a",
+      "gitBlob": "6ab90c82c21e1ff946c6ed948175f46185edb3a6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_actor_bridge.h",
+      "sha256": "789dfee786bbde273680282d040e450fda76cca14cfa2c18d817c30d8afc0521",
+      "gitBlob": "3c467150c4f437d60e047f4313eb2aa29ba0d15b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_agent_browsertest.cc",
+      "sha256": "b090dc463f14e6ff4f35ae70edb716f3dd5afd1489e3c693848dca10cbdea5e5",
+      "gitBlob": "f2565336cdb2a7f489904a573ae5961daaf7b0e9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc",
+      "sha256": "945a756ec75ab1c24e8b0767ae1d029302f7d9948a00476f44762105ce51e1e9",
+      "gitBlob": "ea7a9e0b4208633ac8e5642dd1deed29aaeeb3fa",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_agent_service.cc",
+      "sha256": "abe59619310240011d99b1b4eb71bc79b3984c90633670b04987fbb4e2b5974c",
+      "gitBlob": "ea8dd1f1d62d5db4802d42602197192e7c9eaea8",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_agent_service.h",
+      "sha256": "b0a4b74ee7751a8acfc0fce8a7ba71ec2bb5515089dc54ecbfe5cc94dd305b65",
+      "gitBlob": "13144330fef5d3645a35ee5a357c329c3dd8f1f1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_agent_service_factory.cc",
+      "sha256": "e6a497e1098b722bb0d567b2ae77c4249f912cf630cd1ffdd543e24f7dce93c8",
+      "gitBlob": "94cd00e8f614220223dccd1cfbb31615e924198c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_agent_service_factory.h",
+      "sha256": "4797fb3a67e55669cd5bc39ed647882768bb64adaa75dc0662f7260bf856aabf",
+      "gitBlob": "766b206aa7ef4c613750a94a95b9d067002911cf",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_agent_service_unittest.cc",
+      "sha256": "c92759ac9a2ba3855a519040cfecbd948a87107f334a521f260c7c77e938c662",
+      "gitBlob": "4d45dfaa4e68d92cc968f577e8e2b7c6cd403ab1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_browser_tools.cc",
+      "sha256": "8c25693a91283f57ff5c0e45fab0adf30a6661a5f77d46703eb43c652d6147dd",
+      "gitBlob": "c0d9fb54685a36f1d097ca4f44fc590ecce628e7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/aegis_browser_tools.h",
+      "sha256": "5a30539a7e31e8ca4a161054ace2610b505aa3026f717e212c69ebd66d552756",
+      "gitBlob": "8a634261636a0f9747212da0de1e0319f10ab0ba",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_core_unittest.cc",
+      "sha256": "2bd4a74d700b5bf83089940561abda5102e408b3eb4e56261578dd959b80bc2e",
+      "gitBlob": "c986fe6d40ff4889a77f1664c68aafbe44e3af7b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_execution.cc",
+      "sha256": "8d41e185d8a2be5a34c9a922f94655fe9cfa31d00078c9aedd4c81bc0b687e72",
+      "gitBlob": "1d702977e315f32760a90f261e17cebe5d68c09d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_execution.h",
+      "sha256": "f01cbe38883ee1be7eec7b07ca5c6c0de81bc8601ad613c2b330ee69888c763a",
+      "gitBlob": "5cf0f81ac487d9883a142a6a64be3aba46807602",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_execution_unittest.cc",
+      "sha256": "e15233eb8b1db764c481561ee3e7cb75e3da7f17a1182bde49a35b7dcd6176a7",
+      "gitBlob": "8a31ea1c5bda789582d88b0f6db8be4d24fac278",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_generation_profile.h",
+      "sha256": "336ad909c720afcde0d48aebad3ca1ce38796cd26a27acaeac3be99991a6ad1b",
+      "gitBlob": "c2075aae9ac4fdab3b1940d474d62f648656370b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_generation_profile_json.h",
+      "sha256": "c7f110117892afa57baa6ddb30311ef8500215841adf891b9b10defa980b50a3",
+      "gitBlob": "ea7f2f5c0cbef3d583b6b2f3db9a5c745e028785",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_accounting.h",
+      "sha256": "0ee05270c69380832ffc616299c8725230f318c86c62a0aa0aa83a90aa214912",
+      "gitBlob": "12e7b1cb3cc0ce25dab703aedeb367d4c035e512",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_accounting_json.h",
+      "sha256": "cace8579a79a0903e1f91e42b1948521f4b9412560f5a4095c307e00ae329dbf",
+      "gitBlob": "37661b8b0ac9dfed5da312066881cfa93a81b30c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_client.cc",
+      "sha256": "2ae7434d993a90ed75506b62b8563853fe5c69f65a6b7644e27b0388351cd2b9",
+      "gitBlob": "f19f9f56b01a27705d52db992a3eef3f6fe25417",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_client.h",
+      "sha256": "3697b4cf927e99c4dc5e5ab5b350a653ea3bc5d60e033ab685df0dd6d81e8d05",
+      "gitBlob": "4b84e8c9074944accbc4ea51509466c77dfd6bbd",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_client_unittest.cc",
+      "sha256": "9299a33a15fcb4a4eb7d4b42f2a1eeca561b78484f286086117aee9e1aa7036b",
+      "gitBlob": "7c4e717c59178e6fd7ddfccc915b7a863c2ec701",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_protocol.cc",
+      "sha256": "5aef2980790026585fe374586f9b4d01ce88311288c55b52d626b3bfd804e45b",
+      "gitBlob": "e5efdae9dca2030cc6a5ecfd2980e5209566938d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_protocol.h",
+      "sha256": "92688dc8ab4b9dfe97f3910d49b1add48b509141cfdb7d74391ac8fcfe696217",
+      "gitBlob": "9a6acc4263747c1698622a4fa6862118c5faaf9b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_protocol_fuzzer.cc",
+      "sha256": "8c3e96ac1b9384d2198ab354e4a31b2102cb65407f57faf8acf07ac54958dcb3",
+      "gitBlob": "9781296c2c7b8563b24c81e9cc4c6732daa9bea8",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_protocol_unittest.cc",
+      "sha256": "2b6c1d9874f698936f8ffda32673705acc5652e3aa12282afd7a6b2687ec9c28",
+      "gitBlob": "3286a5e422f8e9123dc10fb445b8164505cb4183",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_router.cc",
+      "sha256": "f11e41c6f9d11549be7a0688895fe9e23c302cd605da0f9a51a8757a9b2eabbd",
+      "gitBlob": "58c0374631cc3b4fbb7316f47618e9bf4290d9be",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_router.h",
+      "sha256": "65295786a5ce684fb4d9d8832c4ab59d575af62939266dac9d81b5934af017f3",
+      "gitBlob": "bdf9f5d7d0de6c2376fb94e33524ea009728df5d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_model_router_unittest.cc",
+      "sha256": "1b80f3d2b1cbd8372fd011ed82de11883cda872dbee67ad47e096e88580ca930",
+      "gitBlob": "e355c8eb6b028ed0a655cd668cfd5f2a4ffe0e1e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_monitor_scheduler.cc",
+      "sha256": "14af9ff5db5837542b6dbae59545a6bfc5ef8f04e28cb0a821a5fe5d506f7971",
+      "gitBlob": "398eb65510577dd2c80dafbf5de69af1006adc65",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_monitor_scheduler.h",
+      "sha256": "726284a49a4c7da7fea752c2189eef42617a65b43d7fc9af6322b6f877593b1d",
+      "gitBlob": "e2c8218b9d0c48ce62d446e964d4b783b5f60f44",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_monitor_summary.cc",
+      "sha256": "885aa77053e42f01a007287d44527aef1792a0531bc0fd8eb18b39dd53597ba4",
+      "gitBlob": "cca1883ccb5c9823c12dc75d2bcade1e795f339e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_monitor_summary.h",
+      "sha256": "71dd5732e845c437e9afa655dc8c30c968778796e906b252eb58dd5c02b079d2",
+      "gitBlob": "e17c1ff2a0ee1a67cd0bc6079d3058a9a0b35934",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_monitor_summary_unittest.cc",
+      "sha256": "a5ee2f8886668d26d24924dbc4671d9f08ce418f5db4be78cbb73feb637fc575",
+      "gitBlob": "8450312aee4a60c6b3b53d2a7da44ce3734c81cf",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_observation.cc",
+      "sha256": "095abb4a2d8fae830514fd2b0634d9db4909bf6c2e28162a3b5707e5398f852a",
+      "gitBlob": "142e518fdc5ccd6e89cdb8dd0fd18b27c6e0d758",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_observation.h",
+      "sha256": "c3b78491b880edb166f37694f4b66de6125ef312bf8377ef960f7fc7aa4d6bfc",
+      "gitBlob": "40b2b113b7335e30f2f2633f9fc262eb94d69262",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_observation_unittest.cc",
+      "sha256": "f244e2bf7803ebef734c399e75012a49b10985bbedef34af1e8a5e1665ae658d",
+      "gitBlob": "f3b79d437ea55ddf1cc390248c7ab09adc22fdb9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_planner.cc",
+      "sha256": "9532ff935db7cf245a65781c9bba91a0407404aa1e4c1f2b9bbaf81e3526267b",
+      "gitBlob": "67b8b8ba7865f1818f2ae02aed6a2143f376c405",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_planner.h",
+      "sha256": "3db97a4dc450d9383ef7831be4c02760071a051043d9f972d2ea73084130f6df",
+      "gitBlob": "f462de02c7ad1b2e2a042b2120e0e7cd6a35402c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_planner_unittest.cc",
+      "sha256": "57f921ca72535128d0aa4c1bf2d4a930bddc627a04e3ca598d2f70594ab5239e",
+      "gitBlob": "a9da72ddc88d9623f2b53f3a976056d2e4c982c1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_policy_broker.cc",
+      "sha256": "024f872bb0cf77e3079fcaecce08b25288202924405d7788e516e96802646e57",
+      "gitBlob": "5300e1a552c1d1025ef304a83b42db376342e051",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_policy_broker.h",
+      "sha256": "ad9fe54e6afb4303e17e13435c783a9dd782df60ba17d64fdcf1524623371a91",
+      "gitBlob": "dcf1ab103b6d407dd875e845db1904b05bdd220d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_research.cc",
+      "sha256": "aa7090d1da0c62c63dcf8f78d60befcd4084ee06c9131680a8eda754cbcc0e6f",
+      "gitBlob": "25ab6ac8652c6a4185d1641b1e556ae2a5f09693",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_research.h",
+      "sha256": "b017157e259cc04412d28c4a1a936b26dc20917d0f2ebea61034905853cb3911",
+      "gitBlob": "b710eaa22e048151b4f53721c2fd6de3238ee23c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_research_unittest.cc",
+      "sha256": "bf6d4bdc3cd9b0cac450583608b14f8076a3a8ba1283e8ed6f0ee7213436b19e",
+      "gitBlob": "925060594dd3c10df4161804404a145dba7f0ec9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_result_verifier.cc",
+      "sha256": "5d3b3366ccfdd6b5d9d6d3c4bcee14bb41759c302c713da1e86e0ae85c8d32e6",
+      "gitBlob": "81dd91eba27ec87fa69272c1910ca2a6459c0e32",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_result_verifier.h",
+      "sha256": "afc75c61018bd2137cd4c265c791813d76d9cbd0baeab703bc0a378cbfcab747",
+      "gitBlob": "c300c220f9c1bc03060639ecc968a5b5d18c7523",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_scope_fuzzer.cc",
+      "sha256": "a284213a8ada61b7044299f8b3ee3bcd4d26eb34eff04359bc2367aa6eee96b6",
+      "gitBlob": "85e1d07726ec39faab3b45f25a81db36e71f2428",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_service_observer.h",
+      "sha256": "6ffc5b87f5d382744e7945c711efbaec15e079a0972d3a52616defcc9502ea1d",
+      "gitBlob": "f9be492bf2089c1e8b9c217ea88fe9eaec8b221d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_task.cc",
+      "sha256": "844313623c28def769d06804f1f94b25908a331d8613715027de775f6c1be360",
+      "gitBlob": "a5192672689b5050ce46320963ba53ded2b9c542",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_task.h",
+      "sha256": "785561d525133ecd6c27838c4d879460000768ad45c1066c9e16ac39afc2c491",
+      "gitBlob": "12872e806829cb65f698efbc56a290e3d324dcbb",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_task_store.cc",
+      "sha256": "07014c11855eb365113b5f8d45ddffdcb189b96041836ab0e61c163731b325a4",
+      "gitBlob": "e7198f34312099b52a1a5164a40aa005e767d771",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_task_store.h",
+      "sha256": "f8de3e7a67c57ccc20c53c0b08825970ceefc1d690f413b0469f59cc8aecdbac",
+      "gitBlob": "4ecf30670dbd93fafb7eeeea4daaa1415c907014",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_task_store_unittest.cc",
+      "sha256": "f377942036e9186cffe94ea9948fcc84642112ea898fb8ec60c2c290e7064d43",
+      "gitBlob": "774b9424eb5c8f0f8d2c3ef206d2bf858625076e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_tool_arguments_fuzzer.cc",
+      "sha256": "2606ea486fafb3bed8fa1c891380ec8c0bbc234fb8d578b041d28c8ecc3bd4cc",
+      "gitBlob": "bb17379c8c0607b0d6662b6dd4a52b6195288cf4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_tool_registry.cc",
+      "sha256": "53192229c36f5c966ed4113eb89f0dd5dd48bef8f05c7b2cbb57cace1641db01",
+      "gitBlob": "f4ba88346205acc3901b8c936bdb1587b0104d4e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_tool_registry.h",
+      "sha256": "6a5880ab3f0c8b3ea19a9b79e722ea68a20c69f82f8e216ce97611e466b10ca4",
+      "gitBlob": "3faa85c7feed38ad135864e278a0585fcbb200ec",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_types.cc",
+      "sha256": "b7fa3242955ec6236a01833961c51c65eeb8a0e07fe7f64f5867796ea3b669f0",
+      "gitBlob": "2863e8b486ef41c9bfd11f744af56ef143101358",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_types.h",
+      "sha256": "b4f93e388768d7e5ea21152e3efd73ca7f1ba053af05b00d6b54081857a67a20",
+      "gitBlob": "7663b8b0afdddd892fc51c755b7edfbce0315e77",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_workflow.cc",
+      "sha256": "c554baf0a9069eb7b7b68bee7e4511d0fc84cadba0e3122a462235be3d118711",
+      "gitBlob": "b0229eac00f4a0c0d613dd6b4c3630fe25f39956",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/agent_workflow.h",
+      "sha256": "0c40cd9114e40d78641c21218673e0defcb9a31ba7badff77462e70ffa43de66",
+      "gitBlob": "22431e5db66182b3601b50a7ca328585f810ebc4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/typesafe_choice_contract.cc",
+      "sha256": "73b6dda8ce5c18ab4bbb74d82b721de329a47f56d860eaadb14e8cb71709cf90",
+      "gitBlob": "9b8305bb67719c29bdb5d1628865f0a18f8a027f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/typesafe_choice_contract.h",
+      "sha256": "5ac6f2e1b01ed96ecdf12fb2ef29d3ac53d6e0464c213c4cf9c26e5d9f959410",
+      "gitBlob": "2ce991b48c3a275ba951014178bf9d189c06213f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/typesafe_goal_response_parser.cc",
+      "sha256": "2c8fa3d8b825f6a4aa0bb57970ae9c24950b9bcf48ef96f0376605058bb87f7d",
+      "gitBlob": "7b08c4b67d0ec8635cc482cf19e91ca0a6c3e443",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/typesafe_goal_response_parser.h",
+      "sha256": "f730a6d963502ef0abe3ef17f310427c6c77b6b000c1fc3b0e322761619c3453",
+      "gitBlob": "17969668dc1123c6e854547aef7964e22f038767",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/typesafe_goal_router_client.cc",
+      "sha256": "94d3a845530a1c9b0a92d08ae78f94ee267c4e66d194d978e7b6a844f3ed7dba",
+      "gitBlob": "8ff158e88b8467659af630d1bd6a8b9deb49eba1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/typesafe_goal_router_client.h",
+      "sha256": "17d3a532338e0ab0ab1ebbbe6c38a233316f2c9b457cdfb84d5b0965d5c1c34e",
+      "gitBlob": "eab6ee4134c670cb18ed7262a011a8650aff3f11",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/agent/typesafe_goal_router_client_unittest.cc",
+      "sha256": "841fc5e394eb11193d1dd12ae93055235fc83bfe50ff4f4ff8feaab73a5b35b4",
+      "gitBlob": "87be75be0f33e04a4846fe71827b379924a21ce9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/enhancements/enhancement_browsertest.cc",
+      "sha256": "478136725357161eec3cf9bd0764d2a1cfffcfaf40a03f10319d84908ae3feb9",
+      "gitBlob": "4d3aa2342e310c53f048c200f412a1c4e02bd00a",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/enhancements/enhancement_store.cc",
+      "sha256": "dc59cf3148a937ed55ea38baca477bd376db1952d6c13130dadc8b32402e6cfc",
+      "gitBlob": "f5322dbadac78aa435d1633fb4f14032c5b868a5",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/enhancements/enhancement_store.h",
+      "sha256": "89fe6f405465feab65e05d3acf5e120667896d5eee97e06ebdb97c246d70eaf8",
+      "gitBlob": "e55f9e9fcec37064dc41326bfdeb05d3449e74a9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/enhancements/enhancement_store_unittest.cc",
+      "sha256": "a466dbdef1475242d70e1f6c5c2c2f9d42cd60b0085b9502c76d3dc43723f911",
+      "gitBlob": "e538030ab8794973deef34330ad11370454c315f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/enhancements/enhancement_tab_helper.cc",
+      "sha256": "11c922167de8085577d252249cc3abba83cafffec47f945c05c1699dcae41413",
+      "gitBlob": "32ad8d9a7f48f3889b6457c0b4fe494c2c5d6d6b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/enhancements/enhancement_tab_helper.h",
+      "sha256": "25918d9336168a4d30dd75d9cdef14173fa1b27c2a95748f8bdf06740a6e3d31",
+      "gitBlob": "1ec74a50ba650c02104bac658974bdf867e29556",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/filter_list_updater.cc",
+      "sha256": "629695a176bd5eb34786ed21738845c379332223d2463f8a06126bcd5b4efe0c",
+      "gitBlob": "795717fbfa13c890edfcb9d45247d7743d4b2999",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/filter_list_updater.h",
+      "sha256": "4de164b443def4df3f1fbcea7a39e5c378acd6d83ead2ada8b1c2c220a5849ea",
+      "gitBlob": "bc12af99cf424968bd8935b218e817db0169fa4c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/filter_list_updater_unittest.cc",
+      "sha256": "3c6277aa293b83ef93517b5a9699f8fbc349a7e2c1af43a56d83276b4af9c6a2",
+      "gitBlob": "39a927989823b37b58d9ea517b6d9f321a25b3c6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/generated/policy_worker_source.inc",
+      "sha256": "33865594f68c841d1f281db82d7b42a617f6a122a62713c72c94d1bc41be8a17",
+      "gitBlob": "2bc5e22fe30a9994b80bc63fc3d6d681bbc51b5c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/gestures/gesture_interactive_uitest.cc",
+      "sha256": "5c15351101b291383019adc25b7ecbb8fcb4faff20d60e8d6bfcb307f609c560",
+      "gitBlob": "c2636fea396efd8039de53052d66d165fa33fa2a",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/gestures/gesture_recognizer.cc",
+      "sha256": "9cece142041523d634af0b31a35cb22e7c9863bfde9c1eaf4745f76f9218e760",
+      "gitBlob": "2d3b8e5dde5e2fe1a7108f411d4da6b74da0b7d9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/gestures/gesture_recognizer.h",
+      "sha256": "df6b49deb1d41e3c868f2e45cef29c06598576105225365afd10fdb16c8ea619",
+      "gitBlob": "caddf4a96a0245d85df5eac26ae1b2ce950409b8",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/gestures/gesture_settings.cc",
+      "sha256": "c7f388856986735d6fb33ce4c015449ddb24fd65e5c444bfc48cd70097b7a56a",
+      "gitBlob": "4ce7cfc94dcebf4711d079e7ce544b47b3a4f7d9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/gestures/gesture_settings.h",
+      "sha256": "e8d06be2cf0392739d463c50a76e8ad48bb36ce0b97515adaebb9d89b7dde801",
+      "gitBlob": "0452d8033a54862c414c7bccdba530aa3af0da9c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/gestures/gesture_unittest.cc",
+      "sha256": "52e70b1441ffcaf3bdb754983e79ee64bf72a9a8ae40ca2640bbdbf9590949d2",
+      "gitBlob": "3b1b25dcad71084a06d8217aad6def8428c1b39f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/google_service_prompt_browsertest.cc",
+      "sha256": "7d16086b43a3ff90fc4dfdc5882204367df6ea3582c46aa33753eeaa54ec6f91",
+      "gitBlob": "31327695a3334ba9859d588da98a0bc5d1f68403",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/metalink_download_verifier.cc",
+      "sha256": "7e0908a202251219eaace26cd6f43c93aa53b4fddd0b162fc9a3cb4ba86ee0d3",
+      "gitBlob": "f26340d4709c5662b9167c05654be05190d68667",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/metalink_download_verifier.h",
+      "sha256": "8524317f63aa62db55e5385569888112995a79ad25207fc7bfed159353914144",
+      "gitBlob": "26155d35b3faba02f63ef3996076d45b18907810",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/metalink_parser.cc",
+      "sha256": "0a6c089105274e44d8776ce166151d275f45c332487f2dcf9c307e3329a1e4ee",
+      "gitBlob": "12d8a542522da2ccd15b60bb82d2aadddbb978e7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/metalink_parser.h",
+      "sha256": "82a9afa98e899738ccd260ebd38c541d142a27b39fec0f7f2adefb51bde57766",
+      "gitBlob": "fa38b2c5fe12bfcddae145fd1d7ef76d9c530dcd",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/metalink_parser_unittest.cc",
+      "sha256": "631ed9ed7fb972a079ca974d88584d3b44f38291500cd860665d37897b3bd44d",
+      "gitBlob": "dd900b5e2a72e2820de9b7a6a784425cee2f4b1a",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/model_provider_client.cc",
+      "sha256": "f6f511de4982d052b967b081599446c3d700b6cd4fc95365ae56e532f727eb32",
+      "gitBlob": "b1070034ac1c13f72cd155b3dd45d0945b802262",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/model_provider_client.h",
+      "sha256": "4044e9ab4f39600f1a10fb289d5b9d5409aca39eeade5c32f45246d5e940271b",
+      "gitBlob": "9646321f20cd50c5c5414ce9f7e22856a277c0e4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/model_provider_client_unittest.cc",
+      "sha256": "395d2a3a4df7ec52e726282f7ba4e490727e45f56482faa0d5f073e37d4da234",
+      "gitBlob": "5eeb18411f8dbfb2d28a9d49ef7accd9507d42ed",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/model_provider_policy.cc",
+      "sha256": "c72ae8aec1d16e9c378f6e79ed8e941fb2cf98fe2e02571927beef597373b726",
+      "gitBlob": "0d06355d52865b19160e5f8feaa629012fe8e8b5",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/model_provider_policy.h",
+      "sha256": "2794694a5717b77870ad7900bab461e08f92fd0b1caafe6f0dece7dc29528152",
+      "gitBlob": "5a22445035e7ad0905e4d53d4db4cf71fd2a4d58",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/policy_worker.cc",
+      "sha256": "d184f7ac0cfe8c19d945e57f583e3bb7669113f19439b0117af5e815b9ccc947",
+      "gitBlob": "5e7bfb30dae516edc26ab402a25893bf61b8696e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/policy_worker.h",
+      "sha256": "622dd985b555876d23431183aacdd510e7553da1349f120996981c520072bf59",
+      "gitBlob": "b56475e72a0350f1e12dc23ae692d1de3ab39cae",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/privacy_event_store.cc",
+      "sha256": "dae4175deb4df274bfdb0060569622c7e48e5e88d36255b778b8475a7d80640c",
+      "gitBlob": "c667cf5db3584b4dfb625d8e53bc3906ff64ae83",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/privacy_event_store.h",
+      "sha256": "6db19e87526fe5c90e697d9bd4e83e9baab7b14ed6bf822a1589e4216937f129",
+      "gitBlob": "34f3afb5550191a6ec4612f0bf0509cd8d09f266",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/privacy_event_store_unittest.cc",
+      "sha256": "932785d3ea372b7a1cfbd2ec1dd663a1abeebcd95119ad5c9eaac5b592894f44",
+      "gitBlob": "ad87bc4b92c49ab945a45d35b0f876ea6045bcd3",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/summary_policy.cc",
+      "sha256": "ed21e7fb8c766d85b692149256d944c25758a3080720b7d8b3238e96ecc7b219",
+      "gitBlob": "670f307621963aa64245cf764df51199289f457e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/summary_policy.h",
+      "sha256": "6af866065f48a51b44e5a64d6dce748f19c3afbb1f01f1a438415e9806c897e2",
+      "gitBlob": "98be85721e1d47c501d98e31084be9d6366b00de",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/summary_policy_unittest.cc",
+      "sha256": "95f82f5fc329e9091c0ae8548825cbc2b7e0fe0659467dc8da992945e1b64c5d",
+      "gitBlob": "c343d15ef57070c6b8a4dfb139ad0bcea83cb701",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/summary_session.cc",
+      "sha256": "9907b60ea6d20aabbf967f6503e90109247803da180ae61bef91ceb899c4797e",
+      "gitBlob": "e4ab3ecdba03045ecf14c2e17d7bff799aba65b9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/summary_session.h",
+      "sha256": "b233d7a6558c52b2394cf2468b5ecda4a3fa24a354ae2d8aa64eea50448e3968",
+      "gitBlob": "2c30f53b2b1d4d710ea5c2f671bfd9fecf97095b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/summary_session_unittest.cc",
+      "sha256": "ff73d61caaff87929d41d6babbb22af27cae4aec51204ddda19c44fbc81e1ced",
+      "gitBlob": "ed5bc9d7f31dc90ab0d8f855c5cdbc7b6866b454",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/threat_feed_updater.cc",
+      "sha256": "242533c6d81ab1a58a143051594d7d65cdf10b648fada40017e67bf4978fe759",
+      "gitBlob": "07e429aa45c0948e2662e4bc2d9eb8aa5ed6f43d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/aegis/threat_feed_updater.h",
+      "sha256": "dde94d95253c8267c5ec4e699b583d5ffd51bb4296e5a12f20d9aaa615183966",
+      "gitBlob": "bb5f1b354ed66b1b06f67b97208d08ede11eeb98",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/android/tab_features.cc",
+      "sha256": "b1666b6c2c2d0f9e17e49a660c72eb089d62baf6042721e9018cc3f64f6e26a7",
+      "gitBlob": "2cb72eb75e76c162e7f07400825ed7e222e98a62",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/notifications/android/java/res/drawable/notification_permission_rationale_dialog_header.xml",
+      "sha256": "756ebc25e270e06276f23e2cdc4b150c08ac53790a92de0b955f7070d4fb2c98",
+      "gitBlob": "971abdb14a3fbc789e0df25bd08b8398602a369e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/notifications/android/java/res/drawable-ldrtl/notification_permission_rationale_dialog_header.xml",
+      "sha256": "756ebc25e270e06276f23e2cdc4b150c08ac53790a92de0b955f7070d4fb2c98",
+      "gitBlob": "971abdb14a3fbc789e0df25bd08b8398602a369e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/notifications/android/java/res/values/colors.xml",
+      "sha256": "c4127b3fe15a5e6316dcbfaa75fd14260ed8ef323d89837a32e01d6352a8f77d",
+      "gitBlob": "25ea4ae39d968a4a4d78ffbea5b39bd0f4d60f6d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/notifications/android/java/res/values-night/colors.xml",
+      "sha256": "c4127b3fe15a5e6316dcbfaa75fd14260ed8ef323d89837a32e01d6352a8f77d",
+      "gitBlob": "25ea4ae39d968a4a4d78ffbea5b39bd0f4d60f6d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.cc",
+      "sha256": "d5a2497751994bcf6d9341bf4b7fdc3e41122d30189baa5d1fa3bd28c89dd08a",
+      "gitBlob": "217e64c1f3ad2502036c8485cd953e79c96ac83b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/page_load_metrics/observers/aegis_miner_guard_page_load_metrics_observer.h",
+      "sha256": "102bd687e4e924d90fdb4d7ebcd7c9c9661d43e00e7a84e4fc7cb9c4b26435ee",
+      "gitBlob": "97f1d23b4e7beb852eb84c3137a0feceaebdb7fd",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/BUILD.gn",
+      "sha256": "35f4b11986dd9c2970f288425031d5fe92c57f516466eb6895b8f50bfa6ebaec",
+      "gitBlob": "97939f0b50d5014f037f6ce9197f7afc6dc595ec",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/aegis.css",
+      "sha256": "caae0673829506be30ab0f78823bf9430e3e4d3e67a58ba1081d30734f937ec6",
+      "gitBlob": "06917cda4dca57cd0ca46b2f4770177f13fea1ab",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/aegis.html",
+      "sha256": "d003a3a561bf4a8ccba805d4e220b33c925a6602082dcd3b85a1453ac9306ce9",
+      "gitBlob": "5b549961c08557956d0f0c3d2633e7ffa77aad72",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/aegis.ts",
+      "sha256": "822cd837dd3542a726a2046defa76f6c4d781b0f3b6d5e10f4686d7e499217e2",
+      "gitBlob": "b08e6c42a55054d5ced3413c583bff3e3dabd5bb",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements.css",
+      "sha256": "f21087f938952d5073b2cf9ffbbc1f3151c760a527344f4c8097e327eabe9eb9",
+      "gitBlob": "798b49c4d23901aa867ace7e1c4bcc094048249c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements.html",
+      "sha256": "4b8669f8da1c949507a12d3ceaa6c306572958fc5880dd11272836425106ec9a",
+      "gitBlob": "bc2d6796966988a4c7b694511b5d5c771dee4684",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements.js",
+      "sha256": "5902a383ffd28898daa6f213056e5b8f0118c029a70fb469bfb587091a61710e",
+      "gitBlob": "c93286810042d91817d53ec93a29d549190b7ddb",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/core.js",
+      "sha256": "ccc20c4f5567597eac2fc50028561eb38761e949a3e0a1046653e1ed5ec14149",
+      "gitBlob": "9b6abec77a9fcc217dfc3df805b2664647478b65",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/i18n.js",
+      "sha256": "c57ce2ddb60ed802e8daee15368e3be3154d3c644f184d8c223f426c11ce8c7a",
+      "gitBlob": "960ae5e9ffa425b5d9fc416f79a95c9873f5e61e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/script_runtime.js",
+      "sha256": "eefe2599c54be0c6d065ecd8a45ea4d9520923e9d4fe8cffa179945a0f4294cc",
+      "gitBlob": "4709c8e3af09abc7cdd70ef3aff58b2a011c632c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/site_rules.js",
+      "sha256": "5bd1249235642bab772d8b318c196147cb5fda1ddb581c579a98f6e586ad82de",
+      "gitBlob": "76623a4d5cea08462e4cb3cb65f7cb6bb270d68f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/tests/matching-vectors.json",
+      "sha256": "0087cb20c81dc61f245453116cadd8ae9cca31c9c0cd2dd88843559fdb0caa7a",
+      "gitBlob": "7b30f40cfe1e85fb5f912eeb2a1a69bc723a78a7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/DOMPurify-LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "gitBlob": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/NOTICE.txt",
+      "sha256": "6d037f29db9885e76e3d93dec41609759d50c92caa303309001e0c35ca1b67e2",
+      "gitBlob": "e015aea55d1e2026588e24e86ade62e95c2b6d66",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/acorn-LICENSE",
+      "sha256": "76a876cf886ff9be2a8b5e2e86514fed06223c8c9f0c1e9ee9606e93841e00b7",
+      "gitBlob": "9d71cc63a35e7d878787e5159b5b163739486220",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/acorn.js",
+      "sha256": "fdb08546776ec6228b03e8d02b40d4ab3255bae5f401adba7ff5dad927ac5c9c",
+      "gitBlob": "cb5628bf83cf0bcb63514b797a38e0442c383ea8",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/highlight-LICENSE",
+      "sha256": "6c081431591d9df696c82dc598fe1423765b8a299b200ed00b281afd0f64c490",
+      "gitBlob": "2250cc7eca9bfe58df2f7e0b5db32e00baadfad3",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/highlight.min.js",
+      "sha256": "e5ad08ffe8e86f140acb54acb122613305114e1058ae27323fcd36cc63aee1bc",
+      "gitBlob": "88f692d3390665a044b319870ae6bf5d7b8a118d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/manifest.json",
+      "sha256": "feaf1aa53fa25d1a4d02a766ef082417e9c959c934b3e70c6393c2cb8314006d",
+      "gitBlob": "b074bf57e3833a26108cf1ce42517890443aa73f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/markdown-it-LICENSE",
+      "sha256": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473",
+      "gitBlob": "7ffa058cb78f8fb9beb974d9fd429004d2d2e585",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/markdown-it.min.js",
+      "sha256": "635972b985228e8af9f0143647c68616b7a3bb09f6946e7e4a52e43dcf5e7be5",
+      "gitBlob": "839f325299c3e375d5f977bae437729915def4c8",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/purify.min.js",
+      "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2",
+      "gitBlob": "00742c47118a703f414f6a116ddff07965d8e59e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/task-lists-LICENSE",
+      "sha256": "e7cefb44454d371c9eddb390fb829d34fc6ffa79e63776873c34f8413bf3268b",
+      "gitBlob": "387c322c58058a53d296b5d860c8eca2860adbdc",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/vendor/task-lists.min.js",
+      "sha256": "4f3b23f41bb3787957da2602fbccc4df0d017928c1fce62583159e096b832a81",
+      "gitBlob": "c237afb5326ecc435073b2474c0482c146398563",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/viewer.css",
+      "sha256": "fa7b878b009e7ffc01edb64bd3ea2d953464fdace9c3dfba7ce8b23d2beb2561",
+      "gitBlob": "5ba3f6ebedfbb2038def02854e13d46186437cc2",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/viewer.html",
+      "sha256": "d4bba70ea5a3ae7ab40d9a20c839b685c5411490ec2cc54d2e1d47aa485a3fd7",
+      "gitBlob": "367d3d8d953cbaa5723f70604c2da8e76fd2450e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/enhancements_shared/viewer.js",
+      "sha256": "0c395cf4e041a57921ef8052a01da4695587ccd598fab80eb93c8e36467939ef",
+      "gitBlob": "8186f907d19269b5c0e84bae6f3f88274ebe8875",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/gestures.css",
+      "sha256": "9b5d49fd88235ef5495c003cfcd82a58423608b14a82c92377e17eb6ac859e8a",
+      "gitBlob": "15a82a37a8c7061401ca2366c24378a0bbce9fb5",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/gestures.html",
+      "sha256": "e27f13431481a8f953ce36b62633a64b04ee9ead57e4da95cfda83433202d1e8",
+      "gitBlob": "a3d90d7dddbb424cfc9bfb744252d58f51b939d0",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/gestures.ts",
+      "sha256": "401f99a961072754f8c09a2c78dd17206e65fbc176a6599a87bf928852a04475",
+      "gitBlob": "309b4d946913ea566588c381fb463dcb6dd5cd9b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/markdown.css",
+      "sha256": "cc791908370bf633117d383ab13ddb29fb3eebf31477543ce714e33c6f3e9264",
+      "gitBlob": "6f1156af74907b456eb2acf940da539bb22b215c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/markdown.html",
+      "sha256": "8d4065c76d7055ff154bb0281b31fc02f07ad237b465b964f1849f194738b90b",
+      "gitBlob": "fdfcea380c52c7b6749e595392dd934cbc3efebe",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/markdown.js",
+      "sha256": "16b5bb9f6c1111e28574c5eacdd3a94c12a8a22616af5971dac4c53023f336bf",
+      "gitBlob": "0069380e6c906cb25e62e43a438c5644e092722d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/mobile_settings.ts",
+      "sha256": "2d8c7452bed70495ae440d17769a75310b6c435e6e64a24fb9bf4d4ba629f9ab",
+      "gitBlob": "670b0494167763267fbae864fc30328b67703821",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/policy_worker.ts",
+      "sha256": "9800036fa9b3c91c9c63b2dac378402fd2a1a2a23f46d7a965eb0911e97fb095",
+      "gitBlob": "298c9bde9de65df944e3e92098c3a3fbd49bb9df",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis/product_logo.svg",
+      "sha256": "ffd1096818ea988d5358a07273f51818ac1c07b604cfb99ebb85952f28d7724d",
+      "gitBlob": "4bb68d7322f63c4e274ca3dd8833663f51121a73",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/BUILD.gn",
+      "sha256": "bf85f9c437ff20ca524441be4808b1f8809e4190999c3f62aef36b962f587f4d",
+      "gitBlob": "f56eb0f0742f52e874c4891e636f4a18e089677e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/agent.css",
+      "sha256": "763900676d5f1e01a0b6e881b6fbb48bcf11fb7b2db8afb6dc2474e2447e83ce",
+      "gitBlob": "73194f33d65f00497b577eb21ccb9b1679b669a7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/agent.html",
+      "sha256": "7a56da97e3a5cbc1869cc70fee2cfc0b27f63dcd2e5eb049c68e12fc79f2da26",
+      "gitBlob": "ed3327911167b5de0b58cf95adab4397285b0a58",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/agent.ts",
+      "sha256": "f7740a224943dc882901027568d9ec9856e9521e3cbd789589deecdfbc217994",
+      "gitBlob": "767d92c92c6e9c73ac20ee1fcec92ae1e575d219",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/browser_proxy.ts",
+      "sha256": "8be92e8a7439cdf89ddd4f0fa118ca24f2c7becccca69e0464c6d14ab2fedd05",
+      "gitBlob": "5a7838098e3e7a67ab882e5e7e94e768442e82fa",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/language_packs.ts",
+      "sha256": "8bd14c4ff6836087a5ac0a7ebec9ea36a3ffaf44cb33e6a66a587be225c50474",
+      "gitBlob": "7caded35d7dbfce70478c22dd433d4ceb9312b51",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt",
+      "sha256": "b454eef2730139522f54cf6a6b49a9301442095c92af8d1b74c32517f138589d",
+      "gitBlob": "d04c3fb6f7a41a69c1ac1c8896f01ff5995d1c7b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json",
+      "sha256": "710265e7d904ecedf6ba0c7315c0eb3230dffb1ba95772f84d06f07e49b350c3",
+      "gitBlob": "7705f969edb07e18e4b9ac2ccc10505d775e2024",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/bergamot/LICENSE",
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+      "gitBlob": "a612ad9813b006ce81d1ee438dd784da99a54007",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/bergamot-translator-worker.js",
+      "sha256": "67c8d8aee602d654c43ef4129a55ce361811468850287469b1a8e0cffddc333d",
+      "gitBlob": "2dc3bfe7bd0d83d864cdfc34bce364ca64a913e0",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/bergamot-translator-worker.wasm",
+      "sha256": "95a2b58dd6773bf1b3f345d71f9149928b9f75f4ec9c9064c0b3e42c298671b2",
+      "gitBlob": "43777ab25637a7fd9b2c60bad7c9e498e56c1527",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/translator-worker.js",
+      "sha256": "b5ef1df59c8fb33850a491470b755c2c3db767a04824e57488535952b5e8166f",
+      "gitBlob": "0455e5fa563f1e4a9db7bd1f596c97c9ac2914b4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/catalog.d.ts",
+      "sha256": "22b14557bf2b8e581fa5d639021f3dd337b3c0be7764b417cdfdc9190bea226c",
+      "gitBlob": "0153ad434d6435b035472e0143996bdeb0c0bae1",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/catalog.js",
+      "sha256": "2915ec804ff3d868e8d081d576528e70ba5e79c9424874aab47c2c86c3dd449d",
+      "gitBlob": "77616be0a8643dc16f6214cab5379af612a41a6d",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/research.js",
+      "sha256": "54aeb6212fa207fd44e9cafca1cd0395e240ded8efd977094abc63c7b1700493",
+      "gitBlob": "2c3085b7cd5a1ecf6a4d7f218e2b1c8827ff7360",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/research_manifest.json",
+      "sha256": "9423baea24b828f0b5d0ae5fffd1a681fea1bb1fcc1bd2903e719fd2a55652c7",
+      "gitBlob": "cd469012bcfa157a1a44d778b1b8eae1ee4f7467",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/translation_manifest.json",
+      "sha256": "a1bfb839c4a97d6d645a9fd2d85c6d8bbf0221b6fc141506eaed9f858af837f0",
+      "gitBlob": "a8623fcb238805b4bd37ea6c7d51b732f911d9e4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/fzstd-LICENSE",
+      "sha256": "62249119bb7df6e54300f37a37145c26a6d4420410aac8881a119c5b427cf751",
+      "gitBlob": "d844c26c1789b832a7bdc5d02ac15366f76ff3a6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/fzstd.js",
+      "sha256": "1a901fc5a58c349bbdb4f2aa1e688637ef56891ec58243a9f0cd863166b0d2a4",
+      "gitBlob": "5d3c01b4130fdc4cdba432b9643bbd2a1ee04226",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/js-md5-LICENSE",
+      "sha256": "ac52bd3e7b6e3155c416a6d875c5738fa2c315015fca5a70b21b6863662abd67",
+      "gitBlob": "eb8e520234f74b73ae6c227c21d488e9fb39474e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/md5.js",
+      "sha256": "e2d6d6818e2d63adc7c7e7aa13e445cd2c65da05f313ea6c9f54ee4e35733f0f",
+      "gitBlob": "e4bf0eb08c4e2ccbd1e460425320c2bce0224c93",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/onnxruntime-web-LICENSE",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "gitBlob": "48bc6bb4996ac924359e8e28b9ae88970e5ed3fc",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/ort-wasm-simd-threaded.js",
+      "sha256": "745eb7c0ce6f18a6aa521971b2877babc7ffb27eecb58ab3bc6e5ef4692672e8",
+      "gitBlob": "07faf240b04ac8e8a9b2380fdfeeab7eeec1bc40",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/ort-wasm-simd-threaded.wasm",
+      "sha256": "207d02be4591c156b0a98f024f3d58005b5b04c92274d759fb390338c63559ea",
+      "gitBlob": "953ea9848710c57c57fe25fe49717b9d2efa68d4",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/vendor/ort.js",
+      "sha256": "f53ed4792e758e7232f779d479eb8931b97ff3ab2e3b9a33ee00d1251ffdaad6",
+      "gitBlob": "fab5f5a47e76db3d6f6bc27f08f3505d0e1b7f95",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai/worker.js",
+      "sha256": "e706f358108a0dcd10fcaa967dc98e02494652c2d92bd23a4f76531b2577d559",
+      "gitBlob": "dd9654b1b949f700bc843c8647465fd62f309f07",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/local_ai_client.ts",
+      "sha256": "e32875788bda6a514ee69fb33471ddabc43c554d955e57f79fa966748a5cec90",
+      "gitBlob": "35b87fad3d97e844daa8a1cd2ba266c80486c418",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/mobile_settings.ts",
+      "sha256": "55cd8d9d5e8e3b9560aea373511e88b8c60ab60f0b60feab28fb1f4b718a24c4",
+      "gitBlob": "b96b3861c9341cb9015d9dbf4458d05d7dbcebb9",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/product_logo.svg",
+      "sha256": "ffd1096818ea988d5358a07273f51818ac1c07b604cfb99ebb85952f28d7724d",
+      "gitBlob": "4bb68d7322f63c4e274ca3dd8833663f51121a73",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/aegis_agent/reading_workspace.ts",
+      "sha256": "add89d92125bfe62e2119704bf3ef1bc28e0a5b5f0aac72cd0521879259cf6f5",
+      "gitBlob": "fb5b1e9f0ed078d7181a5b9e858f5810cfb65945",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/BUILD.gn",
+      "sha256": "0f4d74d157bbd0b8e86fec9231152b302dbb186b942195701bfc0d221334e86d",
+      "gitBlob": "3f02d3f0378868237cd8be358a6ac7ff4cb4d9c6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/about_page/about_page.html.ts",
+      "sha256": "6b2610b826796486034def19db4b6ba44e1da8ca4fbfefb03161c1e377afe31a",
+      "gitBlob": "69f1ec35ea61e97cb8a1114c33de34f072e548ea",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/about_page/about_page.ts",
+      "sha256": "4657bff7bd1389281ffdbbae49cb59c6fe66f21f2add58a76bb9423a8d07a73c",
+      "gitBlob": "a4776fcea1f50bf61ff94b9ae6a66d9238dc75d7",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/aegis_page/aegis_page.html",
+      "sha256": "2ae8872bf2c51421cf2af2fc5dc132a57000fec8b28b40e4b6bbc1e43d159d48",
+      "gitBlob": "59623439be924316095e8a1c172b405b41b862ed",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/aegis_page/aegis_page.ts",
+      "sha256": "2ddd0528d0cb729334056ebf3af144b4adce2efb4ec9b613df2958af52928f5c",
+      "gitBlob": "6575b64c627dba8ee3cdf5ea91b240afe3acc684",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/downloads_page/downloads_browser_proxy.ts",
+      "sha256": "952f2eb8e7f8cf97121559ad04e291d2105d0862a1a768632b9fabc6999b5949",
+      "gitBlob": "faebe688f5df54875f4c3c0539b4b5199cb9f483",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/downloads_page/downloads_page.css",
+      "sha256": "da84b588d45022215d0489ff3b404e428ef63cb9a43b276ebb25e11f6d249536",
+      "gitBlob": "f6bac9c13f6638a0928a6a577bbcddf7bbe16906",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/downloads_page/downloads_page.html.ts",
+      "sha256": "9f4fb7121de5fc02e32244547f22f7a9af9a731f16d7e29cd4c7756b390c3a2a",
+      "gitBlob": "6fe8723901f31e7619280044103224f85937492b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/downloads_page/downloads_page.ts",
+      "sha256": "e825155f9a5a3a60d9ba83d1b535bc74757e4557c6ce9ee4ed204f9bad47c6b5",
+      "gitBlob": "deaeedc6e10b9243671de8067d44981f891cb180",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/privacy_page/privacy_page.html",
+      "sha256": "44a54bdf35ba36399470d70711b6d3e51c0a9692ddcd6b49f95197cbb1c1286e",
+      "gitBlob": "356ea3082584691257c7c28b7e921cc92ece8249",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/privacy_page/privacy_page.ts",
+      "sha256": "00e6036653f0d7d7e55ee911ac0093d58b012275c5b50883de6d8e7aea025d6f",
+      "gitBlob": "2ea749475b1fd813057287047e6b2bf0b628b4c0",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/route.ts",
+      "sha256": "5092ede156e5e0f868bd33905a0fa77520233cd7323f071cf596d7ee3ac70cf4",
+      "gitBlob": "d06a0cf44cd2ecdeb4fdcb7e8ae705e2d3ed0ece",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/router.ts",
+      "sha256": "944da36f0c8e1075246075cb19e1d09b6b4a2085b7f6eea612eb5e972c21385d",
+      "gitBlob": "ef65c4b1abb908cb47490c4502c55f9b92a60c0e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/settings_main/settings_main.html",
+      "sha256": "c8e0835a6005aba6686c852433f487757a67f7af3eb1e6571c898956590eda80",
+      "gitBlob": "d73ad688e5da55f0e3ddc05b1469f4d015a263cd",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/settings_main/settings_main.ts",
+      "sha256": "7dcd5f92e7c72e52a588b8d217243147681d134d4f537c9d3d781d2e63bb3e2b",
+      "gitBlob": "fcfff0de40238e1829120cac30d5eff2d0becc66",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/resources/settings/settings_menu/settings_menu.html",
+      "sha256": "9a028ea70d481936cd03cd371afaec3e494cd77be8775a7c0822680fe4e4df0d",
+      "gitBlob": "fb62c5655ccc00bbd095a5ea3d85ad960aba9986",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc",
+      "sha256": "6799c304f76bca017d692168a50bdff17f1ca557b36428d3db8e564b0ac177ef",
+      "gitBlob": "0426815680ce0c0b92886e4145b933053f268647",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/aegis_mouse_gesture_tab_helper.h",
+      "sha256": "5d7aa4ad4e93e2065ddf5ccdb009fdcded53b6f993575e5b9c28ca23344f5cdc",
+      "gitBlob": "342909d65e7678bacd86b6a4f54c68c341cf38a6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/android/signin/java/res/drawable/chrome_sync_logo.xml",
+      "sha256": "756ebc25e270e06276f23e2cdc4b150c08ac53790a92de0b955f7070d4fb2c98",
+      "gitBlob": "971abdb14a3fbc789e0df25bd08b8398602a369e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/android/strings/android_chrome_strings.grd",
+      "sha256": "f2e0c37726a1ddd3f2e33730894dcc60abd3f53072bfaf72c0be74bb3a0f1559",
+      "gitBlob": "4ee8424c018865321892c324e9ce48af4d52f826",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb",
+      "sha256": "4c47ab65410212496fe9d1674fb5ffe77e3bfae432fa9f3fb9b326d466912737",
+      "gitBlob": "883e927a9166dd59538185ef4800f809b79dee6c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb",
+      "sha256": "3bb9fd918a77e059d351220bcab252d6b87ebf7580c359c85f35706a7b8741d2",
+      "gitBlob": "6a05467e4659cdfc2eab928a03406ad35e46463c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/browser_command_controller.cc",
+      "sha256": "3b1e6fddb5ee0f1ca2033c334a24fa6d2faf673ec5c4d8ae65f6b1204bdca78d",
+      "gitBlob": "c6234ee8444b1a8569a9f582f1108c44b7a534dd",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/toolbar/app_menu_model.cc",
+      "sha256": "f300727f0cb94c440fe5356492f71a5ae2b0030bcc72ce494b8c09ea65f2cd2e",
+      "gitBlob": "0defa3ca590eaf138ebf4041b756960ab6aae087",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.cc",
+      "sha256": "4c7ca9f681fb636e4223644fcead33d03ca4afe294f0e4840fae778e3fe532e8",
+      "gitBlob": "49ed9a8cbce3be621fb7107062f24649e9e8df6b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/views/side_panel/aegis_agent/aegis_agent_side_panel.h",
+      "sha256": "d4f4756a0f4977ce49ffd666af424ec67e750fc75e641a5a6f7cbd277252b13b",
+      "gitBlob": "8e898b670991ba9bfcb6b3b9c80299fba35fabdd",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc",
+      "sha256": "38fd92e7b0437aa5be26c5ce62fa458176d36ecada353bb6a5327c9b7809affb",
+      "gitBlob": "f93e0180735bfe7c77243aa8d3ee06c7cfd03830",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/views/toolbar/aegis_toolbar_button.h",
+      "sha256": "b8285c6f610b7ca5e5c8042c3d8cad0b66ae5ec79a4bf482d5918acae177eaf1",
+      "gitBlob": "b2c99912fd9640351280afd88d7018625c44f869",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/BUILD.gn",
+      "sha256": "9264e5903c8484b7349f894445960cabc3d99b12c614f59fbc1c2b998233f4b8",
+      "gitBlob": "2af2384c9831c407789fd30352d979f656dd9371",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_enhancement_handler.cc",
+      "sha256": "71c7a9b39ad5846cce84f206edc99798feffd9b69775036fcaf17c977b310ebc",
+      "gitBlob": "1d6a8b4c89f66312c0f73201ea7cbef0db2848be",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_enhancement_handler.h",
+      "sha256": "6300e1a6d01221b70245a7c2ccf39de66285bac67bae27283b866246d27a8d44",
+      "gitBlob": "50127b4158c733348794374c9a2504156d1ba17e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_gesture_handler.cc",
+      "sha256": "25a1410fc32b6ee16af25e0d331248d645be61c7d0324c44acd69afd845420f8",
+      "gitBlob": "426438b37ad2824958e18e3e6d1954b0d617ba86",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h",
+      "sha256": "22c3df261ab9cbc3f384a454ba5c7341c7b4d1671f67a3a999739323e5d29bac",
+      "gitBlob": "a8d15b4c80e0a19f168592453c99749e4f61b262",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_markdown_ui.cc",
+      "sha256": "dfc767b2704777d22db5f37241b293fc5f6e4f5f2a5e42c3fdc43d5bcaa6cc0a",
+      "gitBlob": "ad12b729547fc4cecddb4c60d4c06dc040870ac0",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_markdown_ui.h",
+      "sha256": "de5fc80a9d8830cc40bb28b6eb82374dbac11fedcbb65056b381e7025535d764",
+      "gitBlob": "cdf40c0523a3c81952d3cec8e8ec6e69ecf33dc2",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_ui.cc",
+      "sha256": "ac4a5893bd9c779a8eb23be6c04e61c3ee54ea74120e51584bd81482f21fb239",
+      "gitBlob": "297a5c42731868196c8767ee3616778382124470",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_ui.h",
+      "sha256": "9a087b04381ee5173889e09cc81da4654b7bc50ee2337db1f4bd134a0f4227ae",
+      "gitBlob": "46d34ee7b21d21b4dc8632d219ca029338728b40",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_ui_handler.cc",
+      "sha256": "b68cbc126b99115ce139e714e6635b42d439332e7fa7da2118863d8392e006bf",
+      "gitBlob": "0bf500c2b2a9b9126ddfdf793ba15b0bc44eee3c",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis/aegis_ui_handler.h",
+      "sha256": "91647db7da9cabaccba003601ac739b7c1c0da4f7f414994771c2c2aaede804a",
+      "gitBlob": "7d53f3d9f245a70bfe3eb3f0ceffa4a7724e646a",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/BUILD.gn",
+      "sha256": "2fb997bdb465476665fa094f47f78b1b0a005dca50fa0f8cb8433e753becef17",
+      "gitBlob": "2e85395210a5bc16f72c1f2926d22c0eeafdbdcd",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/aegis_agent.mojom",
+      "sha256": "19b106ed94f0e289957ccae9ceec330f6b179d9dbcbd119e9ca4745e7fe39cb2",
+      "gitBlob": "345fe80dfa8ba443d26fd1f29cbe0db60dbfef1e",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc",
+      "sha256": "c2d7bc16319517f7705ce1ef855e0e317ebffba1467b8f992831e43a1d17a9ea",
+      "gitBlob": "c3bc725e7996d023c236db4ddf1f03e6ed7b5c4f",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h",
+      "sha256": "3918fbb9d5ee790c4db533cecef3967d149d5aa280d1d796dfca5b047cb7382e",
+      "gitBlob": "ea82495a3af98c10cb22edd36331228d346d408b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc",
+      "sha256": "1f36e0f0018f236dcdb856084e1c89eaaa98b85857f35df1cc8e242d433829f6",
+      "gitBlob": "2a3d2ad1398acff2e0a27ae769ab7ad37eb2d82a",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h",
+      "sha256": "6f18f9e75f10034d5462b921aee2e5a02e6ccf07b7f9c5d3d4333485baae4503",
+      "gitBlob": "12e8bfc145acb9b2b55ad4453b8e08849c0efe05",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/reading_workspace.cc",
+      "sha256": "60bbd2e71dce8bdf7dbb0a86c649158ca767c1cf515acb10551f49873dbe7c10",
+      "gitBlob": "d534c0b481f7a75dd4b20849d81a9e179dd39ee2",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/aegis_agent/reading_workspace.h",
+      "sha256": "3e4f5b742b7faf4a6fb8a95337772964380df746fc945bd74410ed944c3e8bbd",
+      "gitBlob": "f3a52369da9e4b68a2ed3a769852ac4716ada597",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/BUILD.gn",
+      "sha256": "69bccb87c19ef44f0c00ae9a0c311f6c99e401312e920649ddc0eb8201e35650",
+      "gitBlob": "8cc6c939d5ef5cbbb0b38e7536e61e027853546b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/aegis_github_update.cc",
+      "sha256": "438f2a3928feff6c54f75f777b9c7731322421ff01ca9084e87bb10bc58b1d52",
+      "gitBlob": "2080a3a6fbca344cb659ad9ada2ebbbee42549d2",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/aegis_github_update.h",
+      "sha256": "81b7f4ec6da60847f37d8cc207bc1e9440210a2a14b217529217e7f2a0a4b026",
+      "gitBlob": "f729efc3ccebf26d850ca384a9b00f8ffcce80bf",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/aegis_github_update_unittest.cc",
+      "sha256": "070f4d1c8efbebdb2df92e2a9db1cde9933cef9791955fd51f4cca9c9879e79a",
+      "gitBlob": "eed6c5e07fcbf5e3fe6798ec21da5c8bd64d1183",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/aegis_settings_safety_unittest.cc",
+      "sha256": "19c5dd6ab50b17aa2e6617d1dbd545ebf41639a634473fdc1fe7bc557877a9d4",
+      "gitBlob": "80808c75ee26ba0ccd30ce011c33c2f5cdf058a6",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/version_updater.cc",
+      "sha256": "9a2bffde41b6524183518ceed2416fdd7a33f582960ac461ef5b546a7297b005",
+      "gitBlob": "470dac6e968ad37a7b9e468805235154f3549352",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/version_updater.h",
+      "sha256": "2d61eb1159c03534d7c7c6c778d8aea7b3135b53cd96762000fe9e6a79a71353",
+      "gitBlob": "f4878215cabe7a95b82d49fe4313671a2b4baa84",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/help/version_updater_basic.cc",
+      "sha256": "d95066c8dbbe3484753e5643f66ee158d2fddb8376c3a1052863a2f4dda8c654",
+      "gitBlob": "ab0fc9ea0d3279a60cd4bd0da8601bb16a5a1383",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/settings/BUILD.gn",
+      "sha256": "59792e0e33b76e5dbbf3ce9bc4da0a4d74817ce5e2185a7d84f94cb85ee47517",
+      "gitBlob": "5c3f8cc973dd7cd66dc3afeb47abd1208614ef21",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/settings/downloads_handler.cc",
+      "sha256": "8572c1d15556286af4cabb1ea02773e2394059a8c4b60de31ac41d02f196e1f2",
+      "gitBlob": "f1e219b0bc6fc00c151bd9497eaca8654b50118a",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/settings/settings_ui.cc",
+      "sha256": "8f7737c85c73bc73d84a08b1c74c333e1646013eee942712e8252401cee2ef35",
+      "gitBlob": "02dd55537ff85c95591895e744e58ae3286df26b",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/version/BUILD.gn",
+      "sha256": "485e6f812d129e2c64e536f6e094e19e4a38bdfd7e02548d338cb481e3faafea",
+      "gitBlob": "7fa96369f554919e6db3c13fbdd7da7f3fe9e944",
+      "matched": true
+    },
+    {
+      "path": "chrome/browser/ui/webui/version/version_ui.cc",
+      "sha256": "0b9ee48f0ed3759d2fee823d75f0f8f4009479b3448e7b1b2b7edfc161b946b5",
+      "gitBlob": "0d0326ed0f51072c1efe25deddea6febe45c7ea7",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/BUILD.gn",
+      "sha256": "9b00e035bebfb689e62cb8e9ef3f59f164e7e2f97cf63108584a209353c65c32",
+      "gitBlob": "64a0aec12210b770cd5229298db9782d1c8b2dcb",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/aegis_block_reporter.cc",
+      "sha256": "95c36da3fe4796793d5b16cc43d0eebce7d272f290f4329d2f7b82ed63970c35",
+      "gitBlob": "054c9f1d5e4496600d23ea1c5319452fab6ad067",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/aegis_block_reporter.h",
+      "sha256": "16995a017ccdfd7a237903e902fd8ecad0a2d4592ec45608d6068aa603caeac0",
+      "gitBlob": "a915762cb025b7137ea0d6bdc8613aac4ca55e17",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/aegis_block_reporter_unittest.cc",
+      "sha256": "2578fac76f4026ab4b8327f8fa6ee92a39f3cfcafd47096c3418c67038e602a7",
+      "gitBlob": "3e8aa04ad3a88e3b40f4bf9b52a93c461569e4d8",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/aegis_net_throttle.cc",
+      "sha256": "fc974f78163a3d7c9b3f3ae9e224e65f6e9e569f1d474c386c3fddb8e6c8f411",
+      "gitBlob": "91d1fa9cc37fc619142f2b0795396f56a2fe7aa1",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/aegis_net_throttle.h",
+      "sha256": "60deac538ea3d400c0b081f3f32aebb4a755aa347c02285f9b4b70aa1aade9f5",
+      "gitBlob": "11b0eff2c9c45f1503d5a6d475c1cb3cc55d4c27",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/aegis_net_throttle_unittest.cc",
+      "sha256": "d4ec85a6d5e38ce9fae69c194d45ad8e63e1474cb2af1c498c6eb1233be48583",
+      "gitBlob": "7355af410ace08134e60a4a59e9a9998434ddebf",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/builtin_phish_hosts.cc",
+      "sha256": "57b1fa23e0b2d2d249214d9ef5a1e5c0ec7bd510964d03a69cff0129f4d01c6e",
+      "gitBlob": "17a47b2d79039b21bf6df6149cfb4f8f9357364d",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/builtin_phish_hosts.h",
+      "sha256": "b905739a85bef67cdd5d040c182e379672ab9e80ad06bd4090a95e91f72798cf",
+      "gitBlob": "dc7a0bb3d2b7c6cb4c337160b191a6a75dd8b53b",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/builtin_tracker_hosts.cc",
+      "sha256": "4181ceedb7541551f1afabfec30f2610588b14bea2d25fc8c4a098d9d5e1bee0",
+      "gitBlob": "7b9f0ce829e5a6ac363025e3696205b13ccba234",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/builtin_tracker_hosts.h",
+      "sha256": "7b35dfde13d5f2ea681e64c15fb9ac2d4eab439affaf6d4269e0848f9e91a8be",
+      "gitBlob": "4a2c3cca836d03bf236db0b3ab3a0108bddf1e4e",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_infobar_copy.cc",
+      "sha256": "39e742c3de7c4d459197e8f539ed3333c1670d62d337f79461192a1f35566e2b",
+      "gitBlob": "a94abaed8acf14082329598d8436fb83fb84d7e4",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_infobar_copy.h",
+      "sha256": "94a622272f39e23e96b3b6e3c94e81174e5931671097bbd150e40d9a0ed00d04",
+      "gitBlob": "6a570e99b31f611415b4e4cf240f6e7d726bdabd",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_infobar_copy_unittest.cc",
+      "sha256": "88af66a6fe78cf4fba79d2c807a35743da520b42c05a4b46556504764a3aa916",
+      "gitBlob": "7e9b99290c87c44668fb09d059579922c305fd2c",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_target_filter.cc",
+      "sha256": "8274b5d96c9ec0389df11bff9d46211888b5cd7ae3780da5e639a46f3b0aece6",
+      "gitBlob": "0d66576c05134326095944207a4889791be53cfb",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_target_filter.h",
+      "sha256": "e8792c9ec6aed9db5e3b9078c0de93feeab14c1523a042d610bfdc03349c7492",
+      "gitBlob": "38671d385128685f9781820a7b3027541d933355",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_target_filter_unittest.cc",
+      "sha256": "9a2622b171879b43e674e0ff29feb0246525fcd233e1a9f72b81ac2935696280",
+      "gitBlob": "1ec9e36072cddc6feeb29810bdb177172389458a",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_ws_hook.cc",
+      "sha256": "f573db7e846cb74b2d2336024704e4d5e757c9a36ec2ed7b5df8efb74d4bc5dc",
+      "gitBlob": "5eb46d006e30348ef22b6838762bfeae4dca290e",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cdp_ws_hook.h",
+      "sha256": "155585148c42569b1d2bc15048ceb102522667809a49c6766a33cfa496d725b1",
+      "gitBlob": "8407761169ac4dc0fe4a53142ccc710b14695f81",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cname_cache_partition.h",
+      "sha256": "1d49a516bee7c8bf59c7303410711e7517dd5392f9c4d7a8a55cd911daeae2ea",
+      "gitBlob": "56ed49ac21bb976d664fc74ee5ae7fd29c531bc2",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cname_uncloak.cc",
+      "sha256": "840a7c3f6093724afe9170c7589ef70153c3e85a7ac1c4f908a558a5b823fef3",
+      "gitBlob": "c3e98c894cefe671b487dbab2ddd1c9f273f0ead",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cname_uncloak.h",
+      "sha256": "037b5d39984e67e200b787c9b7b5007beb555f57c5181bb75c2e1f4e114df8b0",
+      "gitBlob": "283312721a87dcf7de178b93f24f8dcd04153b44",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cookie_classify.cc",
+      "sha256": "ce46c2aa23ae462f004beb10652873ea5feb6d5685b0b10c6bf401b19f3054ef",
+      "gitBlob": "49fe47b8b6b0bc1f8b9566b0d1ca5769fb14e4b7",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cookie_classify.h",
+      "sha256": "62a798ac7bdcdfa578088f94eeb2674a8db289ff45f1d3def92ee89a2aaa29cd",
+      "gitBlob": "540f7a8739b9bc601333d1a2211e92d7f0f3a9d0",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/cookie_classify_unittest.cc",
+      "sha256": "48cb034fadfe45f950c56531ade0f9777e6ad4da78142f0da67d0f7a46eab094",
+      "gitBlob": "be26f9c9a10cc3c907ae643d37f6e09af9eb2054",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/features.cc",
+      "sha256": "59fd2814445fc704ad15b5c50d9da39e4e3835dc90115b4f47a760fa57be5fc7",
+      "gitBlob": "6bd0c902d587a17c2b46cc3d3c7628c3207951a6",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/features.h",
+      "sha256": "7c43c890209803c0fcdd8058bfd24d71c9430ca51118c1cfbc2a67d17ace957e",
+      "gitBlob": "7c975cdb0f54fd562a3f16bc9b5ca4de0a022b66",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/features_unittest.cc",
+      "sha256": "577699c145a92491b7a84cc031a37d28f8f679fbe59c4bbdee2e0a40a19bd065",
+      "gitBlob": "4abecc9adf43e8b4960b5f1f5f89e9402cf11fcb",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/filter_list.cc",
+      "sha256": "a1e68ea3e4ebfef5a76ed6c36420c210657cbe30dfd7ca3bc73d399c5b75a1bc",
+      "gitBlob": "62e85a2f75b9e0a50b01683cd30c44031c9ec7a2",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/filter_list.h",
+      "sha256": "e991167708392b023ca5849adfce2e8cc81d37f2888ea4358d47431f63f23ba0",
+      "gitBlob": "4b1c4d3994d14078e7a3d85623ffe933a9510568",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/filter_list_matcher.cc",
+      "sha256": "3ba9525c2dc47aa7b66e73cc1e41e573483a032b4aaf1af05b898d687c2a3afa",
+      "gitBlob": "d24a6c5d9cc248f1cf299f5924dd5f2029bc0c48",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/filter_list_matcher.h",
+      "sha256": "6721031f3ac7baf6d04ae189a7284b5287fa3db3a18a4f22a2a8d1b4fc27b8d8",
+      "gitBlob": "1aa1a66b2400249426ccafb8c4ba56a7144249bd",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/filter_list_matcher_unittest.cc",
+      "sha256": "3787488703de37173df4757df58bcb86cf68ae1c4cbd36cd896e2f59e75566d1",
+      "gitBlob": "8d54edd660e3548c8669a671e3241c1fc4ec12d1",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/filter_list_unittest.cc",
+      "sha256": "c2ead21443c7d4ae1d3c007cbd229eb64593753968052c35237a50d93f5f1510",
+      "gitBlob": "a6cb3076832b543e0e8be5e25daffc8108a1dbc9",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/fingerprint_guard_unittest.cc",
+      "sha256": "cb987aad0a1cca7cc2c538d152775260f91cf6f3844effd75fd367bf72f75410",
+      "gitBlob": "6444a00f7499a3e650c98dbfa24baabc8be4e2bf",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/first_party_collect.cc",
+      "sha256": "f0c45c40b12930d924b22dfc779d99ba12658f16552d7297792a2b6c7f22712e",
+      "gitBlob": "f440b1b3c0f188b6c7ecb2668c4c005d838d5af4",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/first_party_collect.h",
+      "sha256": "d1d27ffe3fc74f760b2f2c0ac337d5d097ccae77d25df63527ab82c2f3c38826",
+      "gitBlob": "07c6fc57b3da05c1ad4d6fa519155a24195f0e8d",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/generated/first_party_collect_paths.inc",
+      "sha256": "e50cc3790dae25354d3acc4db1f25aa4ea1dfff8076ec20a3a63d7aaa390d1a0",
+      "gitBlob": "477c3221e87f8805ab103d7885212759e9ebee14",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/generated/phish_brand_keywords.inc",
+      "sha256": "b35ab4ba0d3a1d68a411a1c9d4ca5923b32e0ac6bf5c00db6fe16bd955d751b5",
+      "gitBlob": "98405483d508cc1168bc771f47f8b145cba9757e",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/generated/phish_hosts.inc",
+      "sha256": "5328b30bbcaeea2878a9bb98fa5be8db43b8c05731b572fcf971eb1fcd9d7d46",
+      "gitBlob": "a9c0060b614d5159024a97ffa0000805d60ca49f",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/generated/suspicious_phish_tlds.inc",
+      "sha256": "21bbb8dc089b33120593152936b480f502bc61c1d70182d42dffb0c3bed0d500",
+      "gitBlob": "1ddd07f22bf0a6aac479740a32ea20e60bf745cc",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/generated/tracker_hosts.inc",
+      "sha256": "909f3a9fc495e8f0a18a6ef22d9e21b7294aacb2ab1c000cd3d0b4101e980cf7",
+      "gitBlob": "2f0644ddff483f664ac977a3b8ba15bb3f3f2ab1",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/generated/tracking_query_params.inc",
+      "sha256": "507bb2b44aacb783264e45cb8bd241c7590bdc3b20f7eaeb01ce1c24f81daf7a",
+      "gitBlob": "6d304db53f00552c452e3a5f1d9089eca7bbcaff",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/miner_guard_model.cc",
+      "sha256": "b07378a444a73cd650ccabd7f1f86bdaca4a6f9e7e986acb32667644343557eb",
+      "gitBlob": "78d5df59905eb4a09900a2824d21599f3d8deb4d",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/miner_guard_model.h",
+      "sha256": "ffc30fd6c638617028a19eb150341fe3aa37ffb153ce2f83838a96ec17e281b8",
+      "gitBlob": "1059621b65d5ed08bfc1f57b753ab715164c39c9",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/miner_guard_model_unittest.cc",
+      "sha256": "f3335a6725e44cf261d026b8a608f0b7d027838dfb24b7c5139a60ac825bb040",
+      "gitBlob": "8b25eed38b0ebeb7d435a0e4106002eb5755f68c",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/miner_guard_reporter.cc",
+      "sha256": "42bf1ce06599c787f18f6c99175daf9bdbef66bd10f1d756b9c90e6d1595c873",
+      "gitBlob": "61be26ac4705210aa1eddd0b605d8b29b75facfb",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/miner_guard_reporter.h",
+      "sha256": "991c024fb583f2f17f8832c8c0a9f8d2043ae9021aa2e516c6adb0eafb890b40",
+      "gitBlob": "3ea30bcc42ae74f061cd82bd292e72856b762cc4",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/miner_guard_reporter_unittest.cc",
+      "sha256": "794a1f420c34f900431e9912ede1d6a9654f7c2930707a31d4ecc08c0aa09687",
+      "gitBlob": "517c8255f2dde653bee01a7a98b4b7618dec83e3",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/phish_score.cc",
+      "sha256": "d09b1d4eba417938e6fa9d384d4a002f480910773c5369bfee905a50ac4e7e9d",
+      "gitBlob": "75928b765648b7c3299785acf927181521b84a71",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/phish_score.h",
+      "sha256": "664dc2ac4f78710c756a05438d97643890f98592f2c9128d83911f9404dd19cf",
+      "gitBlob": "285f8853d666f1c0bbe6c0b84ba8156f6dbcae35",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/phish_score_unittest.cc",
+      "sha256": "ad9e3eb374862c803aefaa48f8c329dbf34294aefd01ec7b2db60b446fe4cbb6",
+      "gitBlob": "e39d3b6cbaf1618cd5dc9672ad1e350d91d2a8b2",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/pref_names.h",
+      "sha256": "22ca399dccc723c7157427f1fb3698846b6fb9d1d435dd5101c9dc8c7721e8f0",
+      "gitBlob": "b99bae409f3c5d425b4c627f59475c8047fe585d",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/security_text.cc",
+      "sha256": "b830dc73ba7399552f883b0440de6b06a475b59c0465db8dbf4624a079d0f7ec",
+      "gitBlob": "1d837dfd1871824e3f747c5e5bb54c766b6df286",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/security_text.h",
+      "sha256": "a903ef2f76a3177d3ea3510660fff407923e55ee7e7bdc8e711aa28946f7836b",
+      "gitBlob": "7b3da751d26735046c909bb089919187565d1e5c",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/site_control.cc",
+      "sha256": "94438011caddd799e92c326014d0ed03606f4df50a57626a4b6058be7d478d90",
+      "gitBlob": "fb0919e6a70caf22eb1a6f65725d68f81a9e564d",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/site_control.h",
+      "sha256": "d3f72a71df59202c2abb8af1d9cd559a1174a9f890f39a45159a4de69305d7ee",
+      "gitBlob": "e173bc1e258a17d2308199d98e1e1ead4d77f85b",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/site_control_unittest.cc",
+      "sha256": "561e6ef655f3486e1e5703cad0cb070d3a68169902dd891044d612a803c232d3",
+      "gitBlob": "8a39baf6adbe59665835c58a96022a0a25a7aa5f",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/threat_feed_index.cc",
+      "sha256": "7b3e2d617c83f20f20f5859ef9e10fca2477317f352fcf28272924109fa5ebff",
+      "gitBlob": "cd34e539049ab599e0702bc81f89246bf6289d3f",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/threat_feed_index.h",
+      "sha256": "ac7b66642e594ad30d3a227202676e9fcfe324355a5e76b2aafef27eb362c932",
+      "gitBlob": "a1583c179cd5e5bdb5efeea9c36191eade8946fe",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/threat_feed_index_unittest.cc",
+      "sha256": "1a261987f9fca4733eeb6bdf3497d8c5db7800d56a8ccd1fbac54c327fd8c08a",
+      "gitBlob": "b4b94e76aeaac963fda9a7d57f9c1679b6a4e66c",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/tracking_query_params.cc",
+      "sha256": "15c31c8bfec542b44168bfa47eb4b75460f792a501d51999700895f0c98a1ab3",
+      "gitBlob": "47cdd59feccb7b23f6c3cf036ea6cc2749fe576a",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/tracking_query_params.h",
+      "sha256": "4beb3d131ee0bdb0fbce043a19a8ed65834d299104c78148bb77462d1565a188",
+      "gitBlob": "cd27c9ac0d2462189b7da471ab0904ea6c8a6d76",
+      "matched": true
+    },
+    {
+      "path": "chrome/common/aegis/tracking_query_params_unittest.cc",
+      "sha256": "d188010b8e76468cdef1a967b9ca363826daa1b8ddf5a047037e7b46f5da3f71",
+      "gitBlob": "05cc79d735c4165717b0259e56be2164329badea",
+      "matched": true
+    },
+    {
+      "path": "chrome/elevation_service/BUILD.gn",
+      "sha256": "058865064c50699f5845a224cc396648fc89d615655f5764dbb7527796ed9c48",
+      "gitBlob": "b3d9f4e447f3f2d4784adeca92778246238d68c6",
+      "matched": true
+    },
+    {
+      "path": "chrome/install_static/chromium_install_modes.h",
+      "sha256": "a638d78a488dd336e6e6a85a0d94cb392495b93e962a2ce920c80aee800f41f1",
+      "gitBlob": "01ad783e7a9556ae16348cdc33061feb826cc9e4",
+      "matched": true
+    },
+    {
+      "path": "chrome/install_static/install_util_unittest.cc",
+      "sha256": "f9c022188f75c4a03e900c8361d14abdc7f2654afc9527e7c34d00edca6bb284",
+      "gitBlob": "7f8642fcd296a345ca2a1582150fa975715d63ef",
+      "matched": true
+    },
+    {
+      "path": "chrome/install_static/product_install_details_unittest.cc",
+      "sha256": "91aa85d1366678a3f379da066adfade81dffeee3bc2610d0acb919e53fbea7e9",
+      "gitBlob": "71fa8895be3ff65fce4f55fc20b5223d3397fe25",
+      "matched": true
+    },
+    {
+      "path": "chrome/install_static/user_data_dir_win_unittest.cc",
+      "sha256": "6cbb6415798ce2d159c61ea849311cc144acec391532da5907c3434abbcd38c5",
+      "gitBlob": "0410d6b5caf73d0c0c922bff8c4e59cc35a7eeff",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/BUILD.gn",
+      "sha256": "7c3335d9869e0629993cf2ac9f6fd48c16ba91ea36793f048e1046b1cfca6c1e",
+      "gitBlob": "a2f54286358717626fbc26950ef0692c114d994c",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/aegis_torrent_service.cc",
+      "sha256": "a400ad1ead46dbe86d794f4b791903038cb0da334cb65be4c1d98c74715884f8",
+      "gitBlob": "c3a51bf0b295af493c607d105a7a6845b1fba776",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/aegis_torrent_service.h",
+      "sha256": "aebe20bbccbd52ff885e6941bbce51cf8505a943a2900742d1ae66e62e870dbb",
+      "gitBlob": "073207b346f85e5a3969efdf4bf199d36f4144e4",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/public/mojom/BUILD.gn",
+      "sha256": "6b9caf5c43d6786bd2e1172341659721802adf32e50794ce80f24ca11de90640",
+      "gitBlob": "5a3c54c3c0246fc6931c4eb44c4e095815c9c4d5",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/public/mojom/aegis_torrent_service.mojom",
+      "sha256": "61aa0ad23eeebc284589751dd5cb176b80ed99aa5813105fedf76d1a14de275a",
+      "gitBlob": "e1c29b67cf802013cb44f8842231a6de43c07e31",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/torrent_safety.cc",
+      "sha256": "aef5648ffb229a0a5917889c3eb644fcde5d3d7e464cda89876b22afd0f94b25",
+      "gitBlob": "e53be9d9147e7b2f7934c67c02fb03c94348ebc9",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/torrent_safety.h",
+      "sha256": "f90fa0bdc2246fefc81ce8de510f7f670285196c7c81bb900bd36fa3bd7c2080",
+      "gitBlob": "ffecdd9070527c7ffe9c2128011552fe4642597a",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/torrent_safety_unittest.cc",
+      "sha256": "17eeb5d4906e0829421e1e129c8b0a8bd0b6d2a386e715b4648edb0693a63390",
+      "gitBlob": "22972225d34e9d88774d41a8e7a96c1b865cd028",
+      "matched": true
+    },
+    {
+      "path": "chrome/services/aegis_torrent/torrent_transfer_unittest.cc",
+      "sha256": "55545382f74ba53d0a0a57b33bd6a3dacfaa1d62ba3ce0b6893d1b019b4d7115",
+      "gitBlob": "80b9f7438b6f47346fdd5cfb1c8456a3015b19c7",
+      "matched": true
+    },
+    {
+      "path": "chrome/test/data/webui/history/history_routing_test.ts",
+      "sha256": "c3982f24a7f146b0ff037c6565345a23a09987deb00839ba714d2aed11b6056c",
+      "gitBlob": "e365004822410eb12be372edafd1284a5053853a",
+      "matched": true
+    },
+    {
+      "path": "chrome/test/data/webui/settings/about_page_test.ts",
+      "sha256": "2102006ba443b133a0387ff5de830bd5b5a919614be9ee6738d6731add7e5c4c",
+      "gitBlob": "151c9573b1917441636a9ed8a9a40f0dcd916b9d",
+      "matched": true
+    },
+    {
+      "path": "chrome/updater/branding.gni",
+      "sha256": "6043531614d7cb72b54fe161c06705dbabcdf9758ce67e4b5e8addb4ae97d2ae",
+      "gitBlob": "d9cca886eb578a983f2115e6744611dc58a936ed",
+      "matched": true
+    },
+    {
+      "path": "chrome/windows_services/elevated_tracing_service/BUILD.gn",
+      "sha256": "83b2b1d2f0768a1bf1ac38c08af4589c6688c5c3a09192d6bd3ca35f35ccf765",
+      "gitBlob": "5dce8de0eaab0c81df0a2d79a6985a6ab8fb4cd5",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/BUILD.gn",
+      "sha256": "dca22afc26e572891fb5b3e2412fa8705ee46c1caeb7207da4decd08cfdc8f90",
+      "gitBlob": "01b0f6a6f2e3e96f867b981f96ef2f043c322c1f",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_base_proxy_config_generation_state.cc",
+      "sha256": "1ad5ca6f83e212f7c01f01dc36184e6f4b95fabb700a2bf2c0f3bcd1eb2b03e6",
+      "gitBlob": "6f13f19489c4e9b4bebbbec90b9f47f64d86208e",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_base_proxy_config_generation_state.h",
+      "sha256": "fcf8b9d1fd149cfbcadc35e33b9da110a7c0b6ae4bf994a11a7889181e4f7a79",
+      "gitBlob": "7f1afe8131ea1d454014bdfb4cc8ae7c9ed63399",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_base_proxy_config_generation_state_contract_test.h",
+      "sha256": "fae7dcbb2bac3072f14d6b0ddb24ca4ad5cb5f0ac6e7255c4f8d9986314354dd",
+      "gitBlob": "3f8c33df747f15ce12e298670dc104d96cf20438",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_base_proxy_config_generation_state_unittest.cc",
+      "sha256": "40f81dde3142eaee73dd3098eb4d1eec41a11d7a153e79f808fbe4c4c6505756",
+      "gitBlob": "ac8b0b21cf51357fa1321e27d996f2a03664e59f",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_identity_generation_state.cc",
+      "sha256": "831da820aec3b72968bc9c2c2c03eedc7a61100358854b945a5c6c9bc66be03b",
+      "gitBlob": "9cfaf1d058b42a55a33a745b0dab93f0d16a3ea7",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_identity_generation_state.h",
+      "sha256": "8e821fa2b7a27a133fbae1fa47f5840948e47508f08df1eb5efc19c6e2e1e069",
+      "gitBlob": "c9155cc1cc3ba2e39e45837dfbefaff819521d5e",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_identity_generation_state_contract_test.h",
+      "sha256": "100194566db3456f655a6fb07a6c1a95163078a291eb83bf1a228046381423ce",
+      "gitBlob": "e87cd1ffeebf31d74fdbce6e043484202143fdc4",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_identity_generation_state_unittest.cc",
+      "sha256": "a41913eae780fd35e4ee9140f191fb25b5a7808f326e0a43431847ea7d455b36",
+      "gitBlob": "802f6b09f9d0d18b1209881b2edc5a51d162def7",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_local_proxy_acceptance_unittest.cc",
+      "sha256": "b47ea9456cfef0b4f2a25616ba105fc94cbf02f4b9624159e56b4474926b6827",
+      "gitBlob": "a288637db2742ea4df0b5100f93c31c9f1ddc0f5",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_policy_evaluator.cc",
+      "sha256": "9ad7949e265ca6915aa11141d62dbdb144969f018fc275aaa699832daf355506",
+      "gitBlob": "5bc5803fbbf09a049bdd126ef002a7d89739f62f",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_policy_evaluator.h",
+      "sha256": "b7be7f6410a0b7eaa3d5fba70372a77d91dd8e2bbd57e73b59268ba47e692475",
+      "gitBlob": "7e4197d8b6332f6e928aac96a918dea2e708eeb9",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_policy_evaluator_unittest.cc",
+      "sha256": "b9205fe7b0cd89c9a8902bb2f0a9a9478739ff7763f966aa981cf7370f7cd383",
+      "gitBlob": "298a9d31b11c108552abe593c8e5cba6b6ad6c27",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_proxy_route_adapter.cc",
+      "sha256": "213d267a7e8a12b26db26ba47bf7d1f750d343a09f8273aef4dc6e30253117b2",
+      "gitBlob": "f427a5bb618d9c2147195ed6b249fa44cfe57fc3",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_proxy_route_adapter.h",
+      "sha256": "4de7eb2d264e131759226d2082cc795b3ea21db2240fc0c7f2f30aace34171f2",
+      "gitBlob": "0f105e33cddbfc468478bbdb9d361ebdfb782b03",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_proxy_route_adapter_unittest.cc",
+      "sha256": "12ad0e71b11429638dfd536b80e631783e49606fdfa74a4223c5306c62232afd",
+      "gitBlob": "8b1a81416b987736440c41709dd5d47654ff7ee7",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_proxy_selection_generation_state.cc",
+      "sha256": "882318c7893dfbaac9efd4b143d37fc8034d646423820bbbe169f166d93d462e",
+      "gitBlob": "30747e86d8735a2833365ffbb968785a81a9ee03",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_proxy_selection_generation_state.h",
+      "sha256": "c5cf8e469755065217bd6c7d6bc07c39f4a339528e959e6bf863df791de70ff7",
+      "gitBlob": "260237bb7d1d498ebbb20bcee9529af1397c41f2",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_proxy_selection_generation_state_contract_test.h",
+      "sha256": "76046284e9ff2f8fb066a40ec27f482d3c10ad53f3cb807ba034b2ed26755647",
+      "gitBlob": "144091c8522ee084e2c4d7b9758aba20aec14a0d",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_proxy_selection_generation_state_unittest.cc",
+      "sha256": "fcd85ec47e04d9d811d9be5e82ec7ce2de0d99a4f15249af93a7d2fc25f41784",
+      "gitBlob": "92857547f7fff06f271ff669e1130c65fd947f3c",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_route_planner.cc",
+      "sha256": "890945deadd801a1fe4e4763611bf8ebbe32a51ca59e141fb107deb6e30506d9",
+      "gitBlob": "177577694ba1ddb7885da983d0b87fa6a288eaeb",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_route_planner.h",
+      "sha256": "f92e5a692706d21001066f9a9190adfe016b3ca2c7ce8cc28e49abae1462c349",
+      "gitBlob": "ad01387077683eba71e8afac9f784fef1df08059",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_route_planner_contract_test.h",
+      "sha256": "bbf25269cac09514b6a9b1ab158fba9d42e67d88b48f55960f4dfddacb2bdc51",
+      "gitBlob": "0ec34d7a49f2eeb1041041f61e5164f2b9fd9747",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_route_planner_native_test.cc",
+      "sha256": "fd241fcad1e0d18a76f9049c53989e4d36cee4610ff4230391103ee355a422fb",
+      "gitBlob": "022baace04bb714e02962dc8704f50482e0095c3",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_route_planner_unittest.cc",
+      "sha256": "8ec61abad577b4940ea75caeee1055fa83112706409828424b169fe9bd96c461",
+      "gitBlob": "0d01482eb6595e59ba3bb0997906c3b33d57f9d0",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/access_route_types.h",
+      "sha256": "1e514b7e77d5aaff4a8723adb5af841bb68f2e9896052fdb54762756370c7e90",
+      "gitBlob": "ce0f9addcffaa3596d306e256bfb6709fae32246",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/browser_request_metadata_seed.cc",
+      "sha256": "58bc72099091d8831046c193f0ae2a1fdca1b9f04348a0c87a4e5a59512dc563",
+      "gitBlob": "c0f2296e24efe2768e91ae3674f6f370ea135961",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/browser_request_metadata_seed.h",
+      "sha256": "0b41610bae18aa0c21d4c55e09d7c5a51d92d1654b9d4d74c0737fa255429796",
+      "gitBlob": "d6cc34898fffdd3bcd25e7c5a90c78ad716927e0",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/browser_request_metadata_seed_contract_test.h",
+      "sha256": "4d7f66cbe327ee70813f24bcb4e0858455c86f48595f024995be9248f4c0f508",
+      "gitBlob": "85e43de47bebb45e12a01ff4de6ebe938e9e65dd",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/browser_request_metadata_seed_unittest.cc",
+      "sha256": "da42e5230dec7bfbcb3890aaae8f8ced3f0fb2d624a79497b93d8b643d63e7dc",
+      "gitBlob": "9a55fbbe4826fd9b0b8750525eadcd5f22348fd4",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/generate_policy_matcher_vectors.py",
+      "sha256": "df0dc07212fa32c212ab67a881dc297effc03c01ac463b165c4977a325b1e523",
+      "gitBlob": "1d8bd624f081ce85983ea6e19cbdf4c859f0f5e2",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/generate_route_planner_vectors.py",
+      "sha256": "d83cfecf79d9ef7fe4956aa8364640bc2050bf7cdf3b4b97f9483e1aa684664c",
+      "gitBlob": "75a3dd7f9c494860c1992c964ef43769320bb4c0",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/policy_publication_ack_tracker.cc",
+      "sha256": "5ab7e067219f0e0332d9f8ac71c7106327b5924a0cfb980b9ece6fd73db7c274",
+      "gitBlob": "6ef776caa71d94bc32d9fd888750b68b3b5c1fc4",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/policy_publication_ack_tracker.h",
+      "sha256": "bcc37017d7f833bf47b36ca6629092bd68d36e10fa12ebbcc44fe6e752bf575a",
+      "gitBlob": "3c64794ae5a713e6143371cc1acae850f63aa3ea",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/policy_publication_ack_tracker_contract_test.h",
+      "sha256": "44b938fd4166b1e0da92b548323f04192589779f3c2e2195c6e18bd48d3a00a0",
+      "gitBlob": "82ee1d08db4ee10b20be051341aa320710cf5cca",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/policy_publication_ack_tracker_unittest.cc",
+      "sha256": "6abcc2e9340d047347b5c65197567bcf59e2bb624789f5a671ee5a0f2109191a",
+      "gitBlob": "b547101ca9e81fd8801930ad29a2beca8cda673a",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/published_request_runtime.cc",
+      "sha256": "3adc77001e752abe7cfb89a0e9754aa42803fbb66ad08dbc7aed0835329b1021",
+      "gitBlob": "a1061acc10a4f61da585d2573e585ee3c0d43429",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/published_request_runtime.h",
+      "sha256": "204f9864b6aa6dd6db3cfdf9817977f4fa79517d9db08b22527ee19cc962b8ab",
+      "gitBlob": "63b21530a143be1e6ff356f844764e415853070d",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/published_request_runtime_contract_test.h",
+      "sha256": "71395c70b905f6c34042c91c1d3ee6748728e42de96d0d6dd8e6e33dd12c8e48",
+      "gitBlob": "4a83701dba246a855079d8d8103ccd44a03a7fa9",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/published_request_runtime_unittest.cc",
+      "sha256": "b3d1d01686b1907fbdaf01b3cfe92891488639b118bf187d480f44d278ac9302",
+      "gitBlob": "72ff232c54316df230ef1b767525b06cbb9bd84c",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_cancellation_contract_test.h",
+      "sha256": "2b900f408d025eb3d19aa49539b3bff74fa78c13ae0c3fbdc6c6fd1d824ceb7d",
+      "gitBlob": "dff66d7f31c153e11bb9c1f7cc1bae89ef849f30",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_dispatch_barrier_contract_test.h",
+      "sha256": "d4643a9e902a195bc8ba99e9a1b8501f963f47128b2d29421ecac0778be03893",
+      "gitBlob": "4fab7ecb8095e1dfc6f20ddc4f7d8d5bdbfa68e7",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_dispatch_gate.cc",
+      "sha256": "e632e72df17e6c34dd6c2437f91b78e8b80325ae0bdf11142e77051e127bcabf",
+      "gitBlob": "befaa1c45a6d8432ee03bde23c09c8fa5657f097",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_dispatch_gate.h",
+      "sha256": "14247c2bf040644218ddc4f2a193a7a5f3f89cf29d9d23c232f4cd1910efea7f",
+      "gitBlob": "fbb067f19a023421b8b65427bb3fc5ce6e37232f",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_dispatch_gate_contract_test.h",
+      "sha256": "343df5fefb2dfc626f93a661ab01695e2f3f5b8188d057ae0cc5f1f39ada5db5",
+      "gitBlob": "d4f596ed765a5f25c5a3764d396d355cfd6c3706",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_dispatch_gate_unittest.cc",
+      "sha256": "b0d6d6658d7167e27c3ee6aa0a4ceb2959033edb0e13179fb41437c5256ab28e",
+      "gitBlob": "385dbb5ee90e6a311992cb8bee5a120d5a2c82ef",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_generation_tuple_builder.cc",
+      "sha256": "68603b00186e98ff7f3a58e62673dcdf7f14fbec7fef4064ee9d2d26f81588f3",
+      "gitBlob": "4608fc275f8b5e94caebf0840840aca6c4ea22fa",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_generation_tuple_builder.h",
+      "sha256": "770727ad79fe4557afbdcc13ddba2a7a6905c2bc5d246d4a5a728f5bfe4c7e5b",
+      "gitBlob": "c0b94ee62487697de21f474a71d5650351d2ea8d",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_generation_tuple_builder_contract_test.h",
+      "sha256": "5bedf89a2923f0379a80894a11872b3f630e559ff2606fdb675c1d3ca1bbe1dc",
+      "gitBlob": "17e9b810870b2d502cd14c70d9255ead6c579ad2",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_generation_tuple_builder_unittest.cc",
+      "sha256": "5c3ad8e517efa95a3912141c20f15c4a8bbe750b9683cc6a89c8f37a03e8f1cb",
+      "gitBlob": "b9bb1d533c3b481cbbb31f08bc7ed9afeed46965",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_ownership_registry.cc",
+      "sha256": "686ce18017d953518fee48fbeb9cdf6b6de63025f77d6ea39367219f1ed2545f",
+      "gitBlob": "80a2ed567e2957a7c2af0490b00549316e993275",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_ownership_registry.h",
+      "sha256": "fc68017bcfc03a12de407a3e3fdcc72ae9235f32e171101d4f453fe2501eed24",
+      "gitBlob": "4af26307bd911349198e91ba68a8130bd2c927a3",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_ownership_registry_contract_test.h",
+      "sha256": "1c2ff9e5285d166bd4acec66504e2c731179eec0882b4b94cb68ec9ec442b5bb",
+      "gitBlob": "30454989fc31a834221eb7e54a308446c6b7124b",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_ownership_registry_test_support.cc",
+      "sha256": "34a7dbd261c93602d747987c1295b180541cb57c4ca1fc40a11cc027ba4bd7c2",
+      "gitBlob": "e9c458e15a1ae765729182d6190370e8f799fa99",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_ownership_registry_test_support.h",
+      "sha256": "1c57976dc858b70bcab51e0c171b597c824ec7f6d0059fecbf193bf27c1cd61d",
+      "gitBlob": "aa47832bd1178d017321bc75762413093c57d43c",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_ownership_registry_unit_test.h",
+      "sha256": "af2a42261b7a9bf3203abd1e274f29e63419c86b25b450b0984e07c88930e3ec",
+      "gitBlob": "a599ae90c201e327ca663b22fc4931c126cc9611",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_ownership_registry_unittest.cc",
+      "sha256": "de318445ed2c92411870979c9a67064876d53351d43ea84a719ef32667803e06",
+      "gitBlob": "a24811e1afddf4165f9b112d714269d090fd04c2",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_policy_context.cc",
+      "sha256": "f919b7c31acbf455c931e2254c7e7bce70c5f653427e71acbcd021872dffce2c",
+      "gitBlob": "270b57f4e19adcd18db10ce3e95ad6a254e0e65f",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_policy_context.h",
+      "sha256": "64f671363bbd73f185602b35e99f55ebb819d8f445b608eb390122058d4c65bd",
+      "gitBlob": "196df108091b9b6d40b15bc317a99ea7382fc11f",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/request_policy_context_unittest.cc",
+      "sha256": "d73a68c31dbdf35c987c480581c2a733ec4a024704f3bfffa5c6715a4e0b3eb0",
+      "gitBlob": "8580ebfc1787c587832669eb26285aa93974d23c",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/site_proxy_rule_group.cc",
+      "sha256": "1dc07396971c6e35597d436850301355c43b1765707d25bb5fb99c4ec8f49e25",
+      "gitBlob": "dfaad9e6f8ae377aaec852676036f0b25dd9da06",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/site_proxy_rule_group.h",
+      "sha256": "257fa16ae7c14a82ae26c6358d50e563579ad74995c1aa75affcafdf4fe217b3",
+      "gitBlob": "3a13ec2ed6f65b16bca1f67e6bf0fe6d766d93ce",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/testdata/policy_matcher_vectors.json",
+      "sha256": "db07b69683955f3cef93929429f7f26c304aa8c8bd077910db6ce0d184a91341",
+      "gitBlob": "dbaba5e3b1e79575460ff12734ab0e58f1bb7539",
+      "matched": true
+    },
+    {
+      "path": "components/aegis_access/testdata/route_planner_vectors.json",
+      "sha256": "3839e4f699599374b00597ded91dae8eacd8cc3d042dc4a9ca98d6b25bceb4a8",
+      "gitBlob": "0321e9b03f1ea349ae88c7ebb522e786f6108f24",
+      "matched": true
+    },
+    {
+      "path": "components/browser_ui/styles/android/java/res_chromium/drawable-hdpi/fre_product_logo.png",
+      "sha256": "5e3cb6f76e2ad745a17281f68460bdca8b4de253b1f88d02e9aafcbdbf9b9096",
+      "gitBlob": "38dba32c28849afdcb96b22bc748ac0a275baa94",
+      "matched": true
+    },
+    {
+      "path": "components/browser_ui/styles/android/java/res_chromium/drawable-mdpi/fre_product_logo.png",
+      "sha256": "8ad3100b76ce3f046cced67537f4051f42af7707c8219ce6a7a681399092cbea",
+      "gitBlob": "0621faac795189fffceaceba29384799afbcd4ef",
+      "matched": true
+    },
+    {
+      "path": "components/browser_ui/styles/android/java/res_chromium/drawable-xhdpi/fre_product_logo.png",
+      "sha256": "3425ec461753a7c1391a2e707e5ba073020402ce6913939101da0f13c3a776c2",
+      "gitBlob": "a46cb664b676330adcef66a5968bb0f128ae60a0",
+      "matched": true
+    },
+    {
+      "path": "components/browser_ui/styles/android/java/res_chromium/drawable-xxhdpi/fre_product_logo.png",
+      "sha256": "2435b2f389f6b4f688a6f94e4c09caecb31079ad9f9b1ee440902c3de031b5c3",
+      "gitBlob": "dbf56c84d1e717085cc6ec12b4f4832a6722fc55",
+      "matched": true
+    },
+    {
+      "path": "components/browser_ui/styles/android/java/res_chromium/drawable-xxxhdpi/fre_product_logo.png",
+      "sha256": "afd0d615ecb560ceee14d30600870a8f9ad2169bf782566bc252041702074781",
+      "gitBlob": "597c9921e53b24c65f9c6eb4441f3adecb9532c0",
+      "matched": true
+    },
+    {
+      "path": "components/policy/tools/generate_policy_source.py",
+      "sha256": "17599f0a8e2112a4db0a583b028713577048aa454d667c2b33b87586f26aa1bb",
+      "gitBlob": "da4787e0f5dcaa956f67c444ce37fe9928ae3bd6",
+      "matched": true
+    },
+    {
+      "path": "components/policy/tools/generate_policy_source_test_data.py",
+      "sha256": "29c39b11834a1eb63f2528d0117c398a3ad3697f1c11043bbe8d04937f73ea74",
+      "gitBlob": "4bd85601c290767c5cb8b977f5e8eff9fbe6347b",
+      "matched": true
+    },
+    {
+      "path": "components/policy/tools/template_writers/writer_configuration.py",
+      "sha256": "a753bb61a3d26457eb090707b58756724153d8c1fe4037adad2dbf766ddaa01d",
+      "gitBlob": "48541df6adb829fd4d0b239e625a724f69b075a4",
+      "matched": true
+    },
+    {
+      "path": "components/policy/tools/template_writers/writers/adm_writer_unittest.py",
+      "sha256": "bd6d38bde187ef319b9682218d570a03d2a53b6e25413964d45756b00c04c34d",
+      "gitBlob": "14ac76d212b45534eb0fbda6d441608a44e54e0e",
+      "matched": true
+    },
+    {
+      "path": "components/policy/tools/template_writers/writers/plist_strings_writer_unittest.py",
+      "sha256": "3729654da47b1c930e6df876c741bbebbab914770053da73cb7d4a7119e88cfb",
+      "gitBlob": "01faff6fd3836a56c8de69290427a298150e9235",
+      "matched": true
+    },
+    {
+      "path": "components/policy/tools/template_writers/writers/plist_writer_unittest.py",
+      "sha256": "b020b768764831cd35b6ec485e16ae3e76c421f359ccad9cf19c339f32180d44",
+      "gitBlob": "a3f0626c5d94c905231c3ce4898cf515b3829817",
+      "matched": true
+    },
+    {
+      "path": "components/policy/tools/template_writers/writers/reg_writer_unittest.py",
+      "sha256": "99106f7312365578948e9f172a690af329a18e6f7e75df4295dca0abb5ec97f6",
+      "gitBlob": "3b36201e2589f12a7343e340bdbd76ecebb656d8",
+      "matched": true
+    },
+    {
+      "path": "components/vector_icons/gcsa_aegis/product.icon",
+      "sha256": "b76e38d80397e6e1b43568d97570ece067596c081e565892f92cf9be53749cb5",
+      "gitBlob": "13878c1c1e3cdc07bb854aa61d7e74dc8aa1166d",
+      "matched": true
+    },
+    {
+      "path": "components/vector_icons/gcsa_aegis/product_refresh.icon",
+      "sha256": "0306bf86c2f84f4236a4f4559173e4e03e8cb37f03ba72e23a9e253c6ac4d265",
+      "gitBlob": "c8fb2b9b7bfee8a98ad2b4f32758ab8c7fc4f3b9",
+      "matched": true
+    },
+    {
+      "path": "components/webui/version/resources/BUILD.gn",
+      "sha256": "9438661c15ca9ef466cf2acfe5fb4181f1304760c3e269d002dbfc0302f48c39",
+      "gitBlob": "c8f4a30039078f51a639ad5bb504a2fc6fc76bdd",
+      "matched": true
+    },
+    {
+      "path": "components/webui/version/resources/about_version.css",
+      "sha256": "221bc5ce86c65dcc2ca80bd42331e5bbaaa2d1259cf07eb5954729b7107ae9df",
+      "gitBlob": "1d356ed319e021168260e3f9c76ee0446ac3a33f",
+      "matched": true
+    },
+    {
+      "path": "components/webui/version/resources/about_version.html",
+      "sha256": "df3e49414d2ae6de62fcabfb01da2eadb65cd525028333008feff0defadded6f",
+      "gitBlob": "158d3db2487159e13fa78f12f2e2fe2a7d64d8e3",
+      "matched": true
+    },
+    {
+      "path": "components/webui/version/resources/about_version_mobile.css",
+      "sha256": "b29ee4690ad0c5e3c309587734c21eb715dd6a7362318728b5b63bc7878c794f",
+      "gitBlob": "55eea97185a3f62ff7105923b26c05016ab8ba11",
+      "matched": true
+    },
+    {
+      "path": "components/webui/version/resources/product_logo.svg",
+      "sha256": "ffd1096818ea988d5358a07273f51818ac1c07b604cfb99ebb85952f28d7724d",
+      "gitBlob": "4bb68d7322f63c4e274ca3dd8833663f51121a73",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_libtorrent/.gitignore",
+      "sha256": "993f2c1acd60772ce21a38580740ebadba0e52538e8d5c8ddba71b7235cdc357",
+      "gitBlob": "9b892e4934868bda240e894bcfe0bf495f11342f",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_libtorrent/BUILD.gn",
+      "sha256": "131ce9ea6a8e0e15666ca6a2f7e2ea3032d9c838abfc462ef860bdc68d2f1eec",
+      "gitBlob": "6213a706417263c56453e905b0e1a475605c78e1",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_libtorrent/LICENSE",
+      "sha256": "2487bd80f7ea66eb558961de45ecd381bfb15e565e9eb3a12aebe44f58a65c20",
+      "gitBlob": "b9907cadc733fdda4eba0a21ab2bd2f5d373ef74",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_libtorrent/README.aegis",
+      "sha256": "048a1df1c22a104feb9c00605a6974780a2d3f34494a26647b592180e5277070",
+      "gitBlob": "c93f8f512026e85baaf0e91bef6fed6d93b1bda9",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_policy/BUILD.gn",
+      "sha256": "692d427e626f131df49825e7a1f7d0d4ccb52f5338d7c58b7324a7458d97f3f9",
+      "gitBlob": "f43e75194edd0af1e30b5d2de7ce3fc279dd4b30",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_policy/README.md",
+      "sha256": "6650102e593ccdf9d1d75b2c7a15400cf7007a768aef363f911605cf9d57878e",
+      "gitBlob": "ac69f7f9ad0a8c579082ca9676a2865448f544ed",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_policy/policy_snapshot.json",
+      "sha256": "737695254df83a3b105bab76ac978f7540cc68a0812459b1a0f35caf5f759d8d",
+      "gitBlob": "252ea72333585421396bd2d07073d1ad9e717713",
+      "matched": true
+    },
+    {
+      "path": "third_party/aegis_policy/policy_worker.js",
+      "sha256": "2976fd5daacc0f4d46f9f5784e3d46b8e280270cd0778949ff05ba499cd17524",
+      "gitBlob": "65ffcaa9f5f3a3dfa0d286e6328c97f05f98d0f1",
+      "matched": true
+    },
+    {
+      "path": "third_party/blink/common/aegis/fingerprint_guard.cc",
+      "sha256": "8fd59f96d267d3b681351a68bf1dddfa213da01dd0c50189e95b06c5d74f2031",
+      "gitBlob": "7153770ee8d82e568a02b5a068991d4ed0925b34",
+      "matched": true
+    },
+    {
+      "path": "third_party/blink/public/common/aegis/fingerprint_guard.h",
+      "sha256": "5fbeb1759f8b3d75934f0b48eaab9420dfdb56e39f746bca3475244aed5bac1c",
+      "gitBlob": "9b9c3eedcd662424f4e63143fe0d06a36c051e25",
+      "matched": true
+    },
+    {
+      "path": "third_party/blink/renderer/core/aegis/build.gni",
+      "sha256": "ebf9fbda0c96efbaed608266b9c2002831be0cea2b226a161c6129b57f7b526c",
+      "gitBlob": "ec4ab3873d8c58406ca09eea0f669d7658f052cf",
+      "matched": true
+    },
+    {
+      "path": "third_party/blink/renderer/core/aegis/farbling.cc",
+      "sha256": "4b4e365f2ecaf3997592ad48921eda7817a809a23ccb5b33206cc55efbb33179",
+      "gitBlob": "27bb83454fbfd17afb547816a6519526ce2e18e7",
+      "matched": true
+    },
+    {
+      "path": "third_party/blink/renderer/core/aegis/farbling.h",
+      "sha256": "5be3b802c5ef28a47e64580e74284acc7e305abea73795c43e27bef9e80d1b6e",
+      "gitBlob": "98053a34028171b86f5d89a1cc67ce4e8998c075",
+      "matched": true
+    },
+    {
+      "path": "third_party/blink/renderer/core/aegis/farbling_unittest.cc",
+      "sha256": "fc1978e827d0b0afb28ee96257b0133c0bc83339e39a54975cdfc48c2c19c1f0",
+      "gitBlob": "fe162d2f1df40ba7580f780dd78e5c7d65847874",
+      "matched": true
+    },
+    {
+      "path": "tools/gritsettings/resource_ids.spec",
+      "sha256": "e032f15c1c921729e3d317970a15ca4ca63c11c2492695df4df0b5e699b8c037",
+      "gitBlob": "c28f02dcf7c672c3c01b1a888d9164afcb52ed0d",
+      "matched": true
+    },
+    {
+      "path": "ui/webui/resources/cr_components/aegis_downloads/BUILD.gn",
+      "sha256": "a29027cb05ea4f0c78fde928c486bcca3fe67d27f21b7177f7ee485089268a83",
+      "gitBlob": "e0932bdf4ab2fcb0ab8488bed8abb6be215910b1",
+      "matched": true
+    },
+    {
+      "path": "ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css",
+      "sha256": "0269ba869788790bb088db2a021fbb3053140fa8ea1f12d2e0ad394093193421",
+      "gitBlob": "645db7d8466900a893314bfc54999d9ad2b343b5",
+      "matched": true
+    },
+    {
+      "path": "ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.html.ts",
+      "sha256": "ed8ec268e05db44eccda165d84b1574215d4f2c34726817a6cb70e866084a5f4",
+      "gitBlob": "34cc1f396c3339838b989e9eb44bb7f30aebdd9a",
+      "matched": true
+    },
+    {
+      "path": "ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts",
+      "sha256": "f0e57a4d0790c3d3840a69ab221a216bdf422ae223bd32d2c35061f801d137f9",
+      "gitBlob": "b88cd928138b47e8e0baffbe30861ecb89cf2e0a",
+      "matched": true
+    },
+    {
+      "path": "ui/webui/resources/cr_elements/cr_toolbar/cr_toolbar.html.ts",
+      "sha256": "53f3241c270173018fb545ff4696bc629d153330b53dd759730b906e7709c813",
+      "gitBlob": "32eb4adbdbdad2ea34d74baaa5a559f94f68d43e",
+      "matched": true
+    },
+    {
+      "path": "v8/src/interpreter/aegis-bytecode-shadow.cc",
+      "sha256": "8da393ed77b0054d5cee449a0dcb71776064f0e662bc7dacf664d6aa56ed5f4d",
+      "gitBlob": "2bbb9e2ad5d14bdb7e4a5c6d8e88a34de8180e94",
+      "matched": true
+    },
+    {
+      "path": "v8/src/interpreter/aegis-bytecode-shadow.h",
+      "sha256": "20857b8f55c763647eebbaff23bdd438d9f1b4a0e03f27ce0984ad577cc2dfdd",
+      "gitBlob": "103e690a65cf109bcf034e199a104f8a20b268d5",
+      "matched": true
+    }
+  ]
+}

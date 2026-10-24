@@ -86,9 +86,10 @@
       <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
           on-click="onLinkClick_" selected-attribute="selected">
-        <a role="menuitem" class="cr-nav-menu-item" href="/aegisEnhancements"><cr-icon icon="settings:code"></cr-icon><span class="menu-label">$i18n{aegisEnhancementsTitle}</span></a>
-        <a role="menuitem" class="cr-nav-menu-item" href="/aegisReading"><cr-icon icon="settings:appearance"></cr-icon><span class="menu-label">$i18n{aegisReadingTitle}</span></a>
-        <a role="menuitem" class="cr-nav-menu-item" href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span class="menu-label">$i18n{aegisGesturesTitle}</span></a>
+        <a role="menuitem" id="aegisSettingsLink" class="cr-nav-menu-item" href="/aegis">
+          <img src="aegis/product_logo.svg" width="20" height="20" alt="" style="margin-inline-end:16px">
+          <span class="menu-label">$i18n{aegisSettingsTitle}</span><cr-ripple></cr-ripple>
+        </a>
         <a role="menuitem"
             id="people" href="/people"
             hidden="[[!showPeopleMenuItem_(
