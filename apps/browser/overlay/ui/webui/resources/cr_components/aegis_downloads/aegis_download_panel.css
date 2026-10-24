@@ -187,6 +187,18 @@ button:disabled {
 }
 
 @media (max-width: 600px) {
+  button,
+  input[type='number'],
+  input[type='file'],
+  input[type='file']::file-selector-button {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  input[type='file']::file-selector-button {
+    padding: 8px 12px;
+  }
+
   .header {
     align-items: flex-start;
     flex-direction: column;
@@ -209,8 +221,14 @@ button:disabled {
 @media (pointer: coarse) {
   button,
   input[type='number'],
-  input[type='file'] {
-    min-height: 44px;
+  input[type='file'],
+  input[type='file']::file-selector-button {
+    min-height: 48px;
+  }
+
+  input[type='file']::file-selector-button {
+    padding: 8px 12px;
+    font: inherit;
   }
 
   input,

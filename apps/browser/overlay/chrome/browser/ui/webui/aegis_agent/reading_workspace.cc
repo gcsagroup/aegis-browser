@@ -33,6 +33,7 @@
 #include "crypto/sha2.h"
 #include "pdf/buildflags.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "ui/gfx/geometry/size.h"
 #if BUILDFLAG(ENABLE_PDF)
 #include "components/pdf/browser/pdf_document_helper.h"
 #endif
@@ -198,6 +199,7 @@ void AegisReadingWorkspace::Reply(Callback callback, base::DictValue value,
   capture_timer_.Stop();
   capture_factory_.InvalidateWeakPtrs();
   capture_client_.reset();
+  capture_keep_alive_.RunAndReset();
   std::move(callback).Run(base::WriteJson(value).value_or("{}"), error);
 }
 
@@ -507,6 +509,11 @@ void AegisReadingWorkspace::Capture(int tab_id, int page, Callback callback) {
   if (!contents || !contents->GetPrimaryMainFrame()) {
     Reply(std::move(callback), {}, "page_text_unavailable"); return;
   }
+  // 原生设置会隐藏来源标签；仅在主动提取期间恢复渲染调度，防止后台冻结。
+  // 不切换标签或改变视口；成功、失败、超时和页面销毁都会释放此作用域。
+  capture_keep_alive_ = contents->IncrementCapturerCount(
+      gfx::Size(), /*stay_hidden=*/false, /*stay_awake=*/false,
+      /*is_activity=*/false);
   auto pending = std::make_shared<Callback>(std::move(callback));
   callback = base::BindOnce([](std::shared_ptr<Callback> done,
                                std::string result, std::string error) {
