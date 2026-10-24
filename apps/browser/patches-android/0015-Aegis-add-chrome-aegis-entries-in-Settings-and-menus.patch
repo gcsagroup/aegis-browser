@@ -22,8 +22,7 @@ diff --git a/chrome/app/chrome_command_ids.h b/chrome/app/chrome_command_ids.h
 index a9f146ad7475522b005ba4aa940f64a7c6b12181..92c549e9dbc3d50ba0be5702196b5193c02d266f 100644
 --- a/chrome/app/chrome_command_ids.h
 +++ b/chrome/app/chrome_command_ids.h
-@@ -292,7 +292,8 @@
- #define IDC_SHOW_READING_MODE_KEYBOARD 40303
+@@ -293,6 +293,7 @@
  #define IDC_SHOW_TABS_FROM_OTHER_DEVICES_SIDE_PANEL 40304
  #define IDC_CHROME_ENTERPRISE_RELEASE_NOTES 40305
  #define IDC_SHOW_TTC_MENU 40306
@@ -103,7 +102,7 @@ diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui
 index 921461b9e9bd0423d6d180762d0a06d0a3cd9c94..50b9e17ec53e9150d74ea433a100d82b454626a1 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
-@@ -1291,6 +1291,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
+@@ -1303,6 +1303,9 @@ void BrowserCommandController::HandleCommandWithDisposition(
      case IDC_OPTIONS:
        ShowSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
@@ -113,7 +112,7 @@ index 921461b9e9bd0423d6d180762d0a06d0a3cd9c94..50b9e17ec53e9150d74ea433a100d82b
      case IDC_EDIT_SEARCH_ENGINES:
        ShowSearchEngineSettings(webui::GetBrowserForOpeningWebUi(browser_));
        break;
-@@ -2084,6 +2087,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
+@@ -2099,6 +2102,8 @@ void BrowserCommandController::UpdateSharedCommandsForIncognitoAvailability(
                                          !forced_incognito && !is_guest);
    command_updater->UpdateCommandEnabled(IDC_OPTIONS,
                                          !forced_incognito || is_guest);
@@ -122,7 +121,7 @@ index 921461b9e9bd0423d6d180762d0a06d0a3cd9c94..50b9e17ec53e9150d74ea433a100d82b
    command_updater->UpdateCommandEnabled(IDC_PERFORMANCE,
                                          !forced_incognito && !is_guest);
  }
-@@ -2404,6 +2409,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
+@@ -2410,6 +2415,7 @@ void BrowserCommandController::UpdateCommandsForFullscreenMode() {
    command_updater_->UpdateCommandEnabled(IDC_EDIT_SEARCH_ENGINES, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_VIEW_PASSWORDS, show_main_ui);
    command_updater_->UpdateCommandEnabled(IDC_ABOUT, show_main_ui);
@@ -162,7 +161,7 @@ diff --git a/chrome/browser/ui/cocoa/main_menu_builder.mm b/chrome/browser/ui/co
 index 047674248727a122fb3aee712981eefd0a4c3049..f37456f8073e430f6410d7f3efaf2700c3298b70 100644
 --- a/chrome/browser/ui/cocoa/main_menu_builder.mm
 +++ b/chrome/browser/ui/cocoa/main_menu_builder.mm
-@@ -78,6 +78,9 @@ NSMenuItem* BuildAppMenu(NSApplication* nsapp,
+@@ -62,6 +62,9 @@ NSMenuItem* BuildAppMenu(NSApplication* nsapp,
                    .target(app_delegate)
                    .action(@selector(showPreferences:))
                    .remove_if(is_pwa),
@@ -176,7 +175,7 @@ diff --git a/chrome/browser/ui/toolbar/app_menu_model.cc b/chrome/browser/ui/too
 index faaded8ad5427c95787fde91961ae6d543902336..4a051dc0958c5a301445d9c86347221bd93f6146 100644
 --- a/chrome/browser/ui/toolbar/app_menu_model.cc
 +++ b/chrome/browser/ui/toolbar/app_menu_model.cc
-@@ -2332,6 +2332,9 @@ void AppMenuModel::Build() {
+@@ -2400,6 +2400,9 @@ void AppMenuModel::Build() {
    AddItemWithStringIdAndVectorIcon(
        this, IDC_OPTIONS, IDS_SETTINGS,
        features::IsRoundedIconsEnabled() ? kSettingsIcon : kSettingsMenuOldIcon);
@@ -190,7 +189,7 @@ diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provide
 index 01763a850c07badae922065057065a2591c0e2e6..db068e5e3de0e409b9d14f30b9f9408dce44e912 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -2852,6 +2852,25 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+@@ -2901,6 +2901,25 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
         IDS_SETTINGS_SECURITY_JAVASCRIPT_GUARDRAILS_MANAGE_SITE_EXCEPTIONS_DESCRIPTION}};
    html_source->AddLocalizedStrings(kLocalizedStrings);
  
@@ -216,6 +215,3 @@ index 01763a850c07badae922065057065a2591c0e2e6..db068e5e3de0e409b9d14f30b9f9408d
    html_source->AddString("cookiesSettingsHelpCenterURL",
                           chrome::kCookiesSettingsHelpCenterURL);
  
--- 
-2.52.0
-
