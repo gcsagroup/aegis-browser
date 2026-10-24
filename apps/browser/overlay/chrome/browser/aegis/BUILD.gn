@@ -523,6 +523,10 @@ test("aegis_browser_unittests") {
       "//content/test:test_support",
     ]
   }
+  if (is_win) {
+    # 测试进程中的媒体路由也需要安装器本地化资源。
+    deps += [ "//chrome/installer/util:strings" ]
+  }
   if (is_mac) {
     sources += [
       "aegis_torrent_client_unittest.cc",
