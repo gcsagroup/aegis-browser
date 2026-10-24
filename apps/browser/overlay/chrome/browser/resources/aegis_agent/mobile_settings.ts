@@ -23,8 +23,19 @@ export function initializeMobileAgentSettings(
   main.prepend(back);
   if (params.get('view') === 'reading') {
     document.getElementById('goal')?.removeAttribute('autofocus');
+    // 设置内的阅读入口只呈现阅读操作，不混入任务、模型和自动化导航。
+    document.body.dataset['mobileSettings'] = 'workspace';
+    const title = document.getElementById('title');
+    const subtitle = document.getElementById('subtitle');
+    if (!title || !subtitle) throw Error('缺少阅读工作区标题区域');
+    const workspaceTitle = text('阅读工作区', 'Reading workspace', '閱讀工作區');
+    title.textContent = workspaceTitle;
+    document.title = workspaceTitle;
+    subtitle.textContent = text(
+        '整理网页、阅读资料和批注。', 'Organize pages, reading material and notes.', '整理網頁、閱讀資料和批註。');
     showReading();
     void refresh();
+    return;
   }
   if (section !== 'reading' && section !== 'experiments') return;
   document.getElementById('goal')?.removeAttribute('autofocus');
