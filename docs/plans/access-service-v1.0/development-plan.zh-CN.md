@@ -1,5 +1,8 @@
 # Aegis 访问服务 V1.0：当前开发计划
 
+> **2026-10-23 接续：** 当前候选、第一阻塞与责任顺序见 [ACCESS 阶段一进度与交接](handoff-20261023.zh-CN.md)。#209/#218 均已合并，实际 develop S2 的 push CI 34/34 通过，合并后质量缺口闭合。下一工作是工具链/新环境资格和真实浏览器、log-image、realPG 验收。近期目标继续是下述个人试用五步真实链路；阶段一/Tier1 未交付。下文阶段目标继续适用，旧日期的 SHA、运行状态与下一动作以新交接覆盖。
+
+
 更新日期：2026-10-09（Asia/Shanghai）。本次核验的上游为 `34dead24e880b81d482d86cf06ab67a712cf77f9`；[#205](https://github.com/quinn521/aegis-browser/pull/205) 已将上游回流到 develop `d189f27c37848d95e56989580517a898607bbbd5`，其实际 push CI 成功。当前 Chromium 目标为 **155.0.8059.40**，pin 为 `cfaadc5a132d78e1828635aa8405a499f3e14864`。这些事实不代表 Access 专项运行、真实服务或 Alpha 已验收。本轮只更新计划和交接，精确证据与未检查范围见 [Handoff](handoff-20260920.zh-CN.md)，分支与交付规则只引用 [DEV CI 指南](../../development/ci.zh-CN.md)。
 
 ## 近期唯一主目标：先跑通一条真实链路

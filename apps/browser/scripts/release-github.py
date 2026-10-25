@@ -64,10 +64,15 @@ class GitHub:
         executable = shutil.which('gh')
         require(executable is not None, '缺少 GitHub CLI，未执行远端操作')
         executable = str(Path(executable).resolve(strict=True))
+        environment = dict(os.environ)
+        exclusions = dict.fromkeys((environment.get('no_proxy', '') + ',' +
+                                    environment.get('NO_PROXY', '')).split(',') +
+                                   ['github.com', '.github.com', 'githubusercontent.com', '.githubusercontent.com'])
+        environment['no_proxy'] = environment['NO_PROXY'] = ','.join(filter(None, exclusions))
         # args 仅由下方 api/releases/mutate 生成，绝不解释成命令文本。
         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         result = subprocess.run([executable, *args], capture_output=True, text=True,  # nosec B603 - 可执行文件已解析，参数数组不经 shell。
-                                timeout=600, shell=False)
+                                timeout=600, shell=False, env=environment)
         require(result.returncode == 0, f'GitHub操作失败：{args[0]}；退出码{result.returncode}，保留草稿后重试')
         return result.stdout
 

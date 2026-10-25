@@ -26,6 +26,9 @@ function array(value) {
 
 try {
   const path = resolve(process.argv[2] ?? '.github/workflows/quality.yml');
+  const cppPath = resolve(process.argv[7] ?? '.github/workflows/cpp-unit-tests.yml');
+  const cppSource = readFileSync(cppPath, 'utf8');
+  const cppWorkflow = YAML.parse(cppSource);
   const iosPath = resolve(process.argv[3] ?? '.github/workflows/ios-coverage.yml');
   const otherPath = resolve(process.argv[4] ?? '.github/workflows/other-platform-coverage.yml');
   const androidPath = resolve(process.argv[5] ?? '.github/workflows/android-java-coverage.yml');
@@ -155,7 +158,12 @@ try {
     fail('iOS workflow job set must be exactly: ios-coverage');
   }
   if (quality.name !== 'quality') fail('Quality job check name must be quality');
-  if (quality['runs-on'] !== 'macos-15') fail('Quality job must use macos-15');
+  const testRunner = "${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"macOS\", \"ARM64\", \"aegis-test\"]') || 'macos-15' }}";
+  if (quality['runs-on'] !== testRunner) fail('Quality job must use the trusted macOS test route');
+  const pnpmSetup = array(quality.steps).find((step) => String(step.uses ?? '').startsWith('pnpm/action-setup@'));
+  if (pnpmSetup?.with?.dest !== '${{ runner.temp }}/setup-pnpm') {
+    fail('pnpm setup must use the per-job runner temporary directory');
+  }
   if (quality['timeout-minutes'] !== 40) fail('Quality job timeout must be 40 minutes');
   if ('if' in quality) fail('Required quality job may not be conditional');
   for (const [id, job, runner, timeout] of [
@@ -180,7 +188,27 @@ try {
   }
   if (gate['timeout-minutes'] !== 5) fail('quality-gate timeout must be 5 minutes');
 
-  if (gate['runs-on'] !== 'macos-15') fail('quality-gate must use macos-15');
+  if (gate['runs-on'] !== testRunner) fail('quality-gate must use the trusted macOS test route');
+  if (JSON.stringify(Object.keys(cppWorkflow?.jobs ?? {})) !== JSON.stringify(['cpp-unit-tests'])) {
+    fail('C++ workflow job set must be exactly cpp-unit-tests');
+  }
+  if (cppWorkflow?.jobs?.['cpp-unit-tests']?.['runs-on'] !== testRunner) {
+    fail('C++ tests must use the trusted macOS test route');
+  }
+  if (cppWorkflow.permissions?.contents !== 'read' || Object.values(cppWorkflow.permissions ?? {}).includes('write')) {
+    fail('C++ workflow permissions must be read-only');
+  }
+  const selfHostedPythonCheck = "python3 -c 'import sys; assert sys.version_info[:3] == (3, 11, 9), sys.version; print(sys.version)'";
+  for (const [id, job] of [['quality', quality], ['cpp-unit-tests', cppWorkflow.jobs['cpp-unit-tests']]]) {
+    const pythonSetup = array(job.steps).find((step) => String(step.uses ?? '').startsWith('actions/setup-python@'));
+    const pythonCheck = array(job.steps).find((step) => step.name === 'Verify preinstalled Python on self-hosted runner');
+    if (pythonSetup?.if !== "${{ runner.environment != 'self-hosted' }}" || String(pythonSetup?.with?.['python-version']) !== '3.11.9') {
+      fail(`${id} must install pinned Python only on hosted runners`);
+    }
+    if (pythonCheck?.if !== "${{ runner.environment == 'self-hosted' }}" || pythonCheck?.run !== selfHostedPythonCheck || 'continue-on-error' in pythonCheck) {
+      fail(`${id} must verify pinned preinstalled Python on self-hosted runners`);
+    }
+  }
   const allJobs = {...jobs, ...otherWorkflow.jobs, ...androidWorkflow.jobs, 'ios-report/ios-coverage': iosCoverage};
   for (const [id, job] of Object.entries(allJobs)) {
     if ('continue-on-error' in job) fail(`${id} may not suppress failures`);
@@ -263,7 +291,8 @@ try {
       uploads[0].with?.['retention-days'] !== 14
     ) fail(`${id} evidence upload must run always and retain artifacts for 14 days`);
   }
-  if (/pull_request_target|workflow_run|self-hosted/u.test(`${source}\n${iosSource}\n${otherSource}\n${androidSource}`)) {
+  const hostedOnlySource = [iosSource, otherSource, androidSource].join('\n');
+  if (/pull_request_target|workflow_run/u.test(`${source}\n${cppSource}\n${hostedOnlySource}`) || /self-hosted/u.test(hostedOnlySource)) {
     fail('Untrusted or self-hosted execution trigger detected');
   }
   console.log(JSON.stringify({status: 'PASS', path, iosPath, prTitlePath, jobs: Object.keys(jobs), iosJobs: Object.keys(iosJobs), prTitleJobs: Object.keys(prTitleJobs)}));
