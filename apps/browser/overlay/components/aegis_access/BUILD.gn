@@ -3,6 +3,11 @@
 
 import("//testing/test.gni")
 
+declare_args() {
+  # Dedicated test entry only. Ordinary targets retain Chromium's existing main.
+  aegis_current151_tracker_bounded = false
+}
+
 action("generate_route_planner_vectors") {
   script = "generate_route_planner_vectors.py"
   inputs = [ "testdata/route_planner_vectors.json" ]
@@ -203,9 +208,18 @@ test("policy_publication_ack_tracker_unittests") {
   ]
   deps = [
     ":policy_publication_ack_tracker",
-    "//base/test:run_all_unittests",
     "//testing/gtest",
   ]
+  if (aegis_current151_tracker_bounded) {
+    assert(is_mac, "The bounded tracker entry is Darwin-only")
+    sources += [ "policy_publication_ack_tracker_bounded_main.cc" ]
+    deps += [
+      "//base/test:test_support",
+      "//tools/aegis/current151_tracker:runtime",
+    ]
+  } else {
+    deps += [ "//base/test:run_all_unittests" ]
+  }
 }
 
 test("request_dispatch_gate_unittests") {

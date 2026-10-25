@@ -167,6 +167,8 @@ pnpm --filter @gcsa-aegis/browser package:android
 
 Local inspection, patch replay, and most repository tests can run without GitHub. Bootstrap, fetch, sync, EasyList updates, and missing Chromium dependencies may access external services. A running Chromium build may also generate network traffic independently of Git operations.
 
+The Chromium fetch helper applies direct Git proxy overrides while retaining protocol and credential settings. GitHub CLI and CI downloads bypass proxies for GitHub hosts and preserve existing `no_proxy`/`NO_PROXY` exclusions. Environment and system proxies remain available to other dependency hosts, including PyPI and Chromium tooling.
+
 Always review the exact command and candidate identity before using network, signing, packaging, or publication credentials.
 
 ### Browser updates

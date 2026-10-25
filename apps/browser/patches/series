@@ -327,3 +327,5 @@
 0327-align-mobile-ui-and-version-264.patch
 0328-fix-reading-capture-and-download-details-265.patch
 0329-fix-download-platform-build-and-version-266.patch
+0277-wire-bounded-tracker-test-entry.patch
+0278-fix-access-bounded-tracker-overlay-export.patch

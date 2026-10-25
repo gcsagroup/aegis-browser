@@ -277,13 +277,22 @@ ensure_depot_tools_on_path() {
 CHROMIUM_SRC_GOOGLESOURCE_URL="${CHROMIUM_SRC_GOOGLESOURCE_URL:-https://chromium.googlesource.com/chromium/src.git}"
 CHROMIUM_SRC_URL="${CHROMIUM_SRC_URL:-$CHROMIUM_SRC_GOOGLESOURCE_URL}"
 
+configure_github_proxy_bypass() {
+  local entry exclusions="${NO_PROXY:-}"
+  local -a entries
+  IFS=',' read -r -a entries <<< "${no_proxy:-},localhost,127.0.0.1,::1,github.com,.github.com,githubusercontent.com,.githubusercontent.com"
+  for entry in "${entries[@]}"; do
+    [[ -n "$entry" ]] || continue
+    case ",$exclusions," in
+      *,"$entry",*) ;;
+      *) exclusions="${exclusions:+$exclusions,}$entry" ;;
+    esac
+  done
+  export no_proxy="$exclusions" NO_PROXY="$exclusions"
+}
+
 detect_and_export_proxy() {
-  # Always keep loopback off the proxy path (local pypi merge proxy, etc.).
-  export NO_PROXY="${NO_PROXY:-localhost,127.0.0.1,::1}"
-  case ",$NO_PROXY," in
-    *,127.0.0.1,*) ;;
-    *) export NO_PROXY="$NO_PROXY,127.0.0.1,localhost" ;;
-  esac
+  configure_github_proxy_bypass
 
   # Honor explicit env first.
   if [[ -n "${https_proxy:-${HTTPS_PROXY:-}}" || -n "${http_proxy:-${HTTP_PROXY:-}}" ]]; then
@@ -312,19 +321,44 @@ detect_and_export_proxy() {
 
 configure_git_for_chromium_fetch() {
   detect_and_export_proxy
-  # Session-only git settings (do not touch ~/.gitconfig).
-  export GIT_CONFIG_COUNT=4
-  export GIT_CONFIG_KEY_0=protocol.version
-  export GIT_CONFIG_VALUE_0=2
-  export GIT_CONFIG_KEY_1=http.version
-  export GIT_CONFIG_VALUE_1=HTTP/1.1
-  if [[ -n "${https_proxy:-}" ]]; then
-    export GIT_CONFIG_KEY_2=http.proxy
-    export GIT_CONFIG_VALUE_2="$https_proxy"
-    export GIT_CONFIG_KEY_3=https.proxy
-    export GIT_CONFIG_VALUE_3="$https_proxy"
-  else
-    export GIT_CONFIG_COUNT=2
+  # Append session overrides so inherited hooks and credential settings survive.
+  local setting config_count="${GIT_CONFIG_COUNT:-0}"
+  local index key_name value_name config_key config_section config_variable
+  if [[ ! "$config_count" =~ ^[0-9]+$ ]]; then
+    echo 'Invalid GIT_CONFIG_COUNT' >&2
+    return 1
   fi
+  config_count="${config_count#"${config_count%%[!0]*}"}"
+  config_count="${config_count:-0}"
+  # Keep the count and six appended overrides within signed-int range.
+  if [[ "${#config_count}" -gt 10 ]] || (( config_count > 2147483641 )); then
+    echo 'Invalid GIT_CONFIG_COUNT' >&2
+    return 1
+  fi
+  for ((index = 0; index < config_count; index += 1)); do
+    key_name="GIT_CONFIG_KEY_$index"
+    value_name="GIT_CONFIG_VALUE_$index"
+    if [[ -z "${!key_name-}" || "${!value_name+x}" != x ]]; then
+      echo 'Invalid inherited Git configuration' >&2
+      return 1
+    fi
+    config_key="${!key_name}"
+    config_section="${config_key%%.*}"
+    config_variable="${config_key##*.}"
+    case "$config_section" in
+      [Hh][Tt][Tt][Pp] | [Hh][Tt][Tt][Pp][Ss] | [Rr][Ee][Mm][Oo][Tt][Ee])
+        case "$config_variable" in
+          [Pp][Rr][Oo][Xx][Yy]) export "$value_name=" ;;
+        esac
+        ;;
+    esac
+  done
+  for setting in protocol.version=2 http.version=HTTP/1.1 http.proxy= https.proxy= \
+    http.https://github.com/.proxy= http.https://api.github.com/.proxy=; do
+    export "GIT_CONFIG_KEY_${config_count}=${setting%%=*}"
+    export "GIT_CONFIG_VALUE_${config_count}=${setting#*=}"
+    config_count=$((config_count + 1))
+  done
+  export GIT_CONFIG_COUNT="$config_count"
   export GIT_TERMINAL_PROMPT=0
 }
