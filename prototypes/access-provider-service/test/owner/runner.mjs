@@ -93,7 +93,7 @@ export async function finishRuntime(runtime,{deadline=performance.now()+CAPS.cle
   };
   // Let per-resource results settle before the enclosing safety deadline so a
   // stalled handle cannot erase already observed failures from other handles.
-  try{if(resources)await local('resources',end=>resources.closeCase({deadline:end-10}));}
+  try{if(resources)await local('resources',end=>resources.closeCase({deadline:end-10}));} catch (error) { throw error; }
   finally{
     try{if(harness)await local('harness',()=>harness.close());}
     finally{
