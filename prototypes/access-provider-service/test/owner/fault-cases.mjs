@@ -39,12 +39,12 @@ export async function clockSmoke({owner,harness,bindings}){
     const {rows:[r]}=await c.query("SELECT has_database_privilege(current_user,'b1','CREATE') AS db,has_schema_privilege(current_user,'provider_b1','CREATE') AS schema");assert.deepEqual(r,{db:false,schema:false});
   });
   const store=harness.newStore(),held=await harness.holdDomain();let interval;
-  try{interval=await store.observeTime(context(harness,owner),()=>bindings.clock.observe());}
+  try{interval=await store.observeTime(context(harness,owner),()=>bindings.clock.observe());} catch (error) { throw error; }
   finally{await held.release();}
   const saved=interval.latest+1;if(!Number.isSafeInteger(saved))fail('OWNER_CLOCK_INTEGER');
   try{
     await assert.rejects(store.transaction(context(harness,owner),async tx=>{await tx.time(()=>({now:saved,uncertaintySeconds:0}));throw new ProviderError('EXPIRED');}),e=>e.code==='EXPIRED');
-  }finally{await store.close();}
+  } catch (error) { throw error; }finally{await store.close();}
   const before=await clockRow(owner,harness);assert.ok(Number(before.highwater)>=saved);assert.equal(before.pending_id,null);
   await harness.restartDatabase('clean');const after=await clockRow(owner,harness);assert.deepEqual(after,before);
   bindings.clock.now=Math.max(bindings.clock.now,Number(after.highwater));
@@ -114,7 +114,7 @@ export async function runIssuanceAckLoss(runtime){
     const retry=await prepared(f,'register',registerArgs(f),idem);assert.notEqual(retry.data.challengeId,p.data.challengeId);
     const recovered=await issue(f,retry);assert.equal(recovered.status,201);assert.deepEqual(recovered.body,committed.body);
     return owner.record('wire-issuance-ack-loss',{wire:receipt,operationId:committed.id,resultCredentialId:committed.result_credential_id,resultBodySha256:digest(committed.body),freshChallengeRecovery:true,crashRestartRetained:true});
-  }finally{owner.proxy.disarm();await f.close();}
+  } catch (error) { throw error; }finally{owner.proxy.disarm();await f.close();}
 }
 export async function runObservationAckLoss({owner,harness,bindings}){
   await owner.gate.require('run-faults');const store=harness.newStore();const sample=Math.max(bindings.clock.now,Number((await clockRow(owner,harness)).highwater))+1;
@@ -122,10 +122,10 @@ export async function runObservationAckLoss({owner,harness,bindings}){
   try{
     const observing=store.observeTime(context(harness,owner),()=>{samples++;return {now:sample,uncertaintySeconds:0};});observing.catch(()=>{});
     receipt=validateAckReceipt(await ownedRace(()=>receiptPromise,{signal:owner.signal,deadline:performance.now()+5000}),'observation');await assert.rejects(observing,isClockDisconnect);assert.equal(samples,1);
-  }finally{owner.proxy.disarm();await store.close();}
+  } catch (error) { throw error; }finally{owner.proxy.disarm();await store.close();}
   const before=await clockRow(owner,harness);assert.equal(before.pending_id,null);assert.ok(Number(before.highwater)>=sample);
   await harness.restartDatabase('clean');const after=await clockRow(owner,harness);assert.deepEqual(after,before);const restarted=harness.newStore();
-  try{await assert.rejects(restarted.observeTime(context(harness,owner),()=>({now:Number(after.highwater)-1,uncertaintySeconds:0})),e=>e.code==='CLOCK_UNTRUSTED');}
+  try{await assert.rejects(restarted.observeTime(context(harness,owner),()=>({now:Number(after.highwater)-1,uncertaintySeconds:0})),e=>e.code==='CLOCK_UNTRUSTED');} catch (error) { throw error; }
   finally{await restarted.close();}
   bindings.clock.now=Math.max(bindings.clock.now,Number(after.highwater)+1);
   return owner.record('wire-observation-ack-loss',{wire:receipt,highwater:Number(after.highwater),pending:null,samples,noAutomaticRetry:true,restartRetained:true,lowerClockRejected:true});
@@ -136,10 +136,10 @@ export async function runMarkerAckLoss({owner,harness,bindings}){
   try{
     const observing=store.observeTime(context(harness,owner),()=>{samples++;return bindings.clock.observe();});observing.catch(()=>{});
     receipt=validateAckReceipt(await ownedRace(()=>receiptPromise,{signal:owner.signal,deadline:performance.now()+5000}),'marker');await assert.rejects(observing,isClockDisconnect);assert.equal(samples,0);
-  }finally{owner.proxy.disarm();await store.close();}
+  } catch (error) { throw error; }finally{owner.proxy.disarm();await store.close();}
   const fenced=await clockRow(owner,harness);assert.notEqual(fenced.pending_id,null);assert.equal(fenced.highwater,before.highwater);
   await harness.restartDatabase('crash');const after=await clockRow(owner,harness);assert.deepEqual(after,fenced);const restarted=harness.newStore();
-  try{await assert.rejects(restarted.observeTime(context(harness,owner),()=>{samples++;return bindings.clock.observe();}),e=>e.code==='CLOCK_UNTRUSTED');assert.equal(samples,0);}
+  try{await assert.rejects(restarted.observeTime(context(harness,owner),()=>{samples++;return bindings.clock.observe();}),e=>e.code==='CLOCK_UNTRUSTED');assert.equal(samples,0);} catch (error) { throw error; }
   finally{await restarted.close();}
   assert.deepEqual(await clockRow(owner,harness),fenced);
   return owner.record('terminal-wire-marker-fence',{wire:receipt,pendingId:fenced.pending_id,highwater:Number(fenced.highwater),samples:0,noAutomaticRetry:true,crashRestartRetained:true,reconciliation:'NOT_AUTHORIZED_NOT_PERFORMED'});

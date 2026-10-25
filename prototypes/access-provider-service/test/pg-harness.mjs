@@ -101,7 +101,7 @@ export async function admitPostgres({owner,verifyOwner,connections,trust,lifecyc
       const {rows:[r]}=await client.query("SELECT current_user AS role,current_database() AS database,current_setting('server_version_num') AS version,current_setting('fsync') AS fsync,current_setting('synchronous_commit') AS synchronous_commit,current_setting('full_page_writes') AS full_page_writes,(SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser,has_database_privilege(current_user,current_database(),'CREATE') AS database_ddl,has_schema_privilege(current_user,'provider_b1','CREATE') AS schema_ddl");
       if(r.role!=='b1_app'||r.database!=='b1'||r.version!=='170011'||r.fsync!=='on'||r.synchronous_commit!=='on'||r.full_page_writes!=='on'||r.superuser!==false||r.database_ddl!==false||r.schema_ddl!==false)reject('SQL_NOT_ADMITTED');
       return {version:r.version,fsync:r.fsync,synchronous_commit:r.synchronous_commit,full_page_writes:r.full_page_writes};
-    } finally {client.release();await p.end();pools.delete(p);}
+    } catch (error) { throw error; } finally {client.release();await p.end();pools.delete(p);}
   }
   const harness={owner,trust,
     bindResources(hooks) {

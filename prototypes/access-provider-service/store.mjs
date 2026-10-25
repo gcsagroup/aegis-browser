@@ -163,7 +163,7 @@ export async function withOwnedPgClient(pool,context,prepare,work) {
     lease=await checkout(pool,scope);
     const result=await scope.wait(Promise.resolve().then(()=>{scope.check();return work(lease,scope,prepared);}));
     lease.release();scope.check();return result;
-  }finally{lease?.release();scope.end();}
+  } catch (error) { throw error; }finally{lease?.release();scope.end();}
 }
 export class PostgresStore {
   #pool;#closed=false;#gate=new Gate();#shutdown=new AbortController();#leases=new Set();#endPromise;
