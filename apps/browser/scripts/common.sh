@@ -330,8 +330,8 @@ configure_git_for_chromium_fetch() {
   fi
   config_count="${config_count#"${config_count%%[!0]*}"}"
   config_count="${config_count:-0}"
-  # Keep the count and six appended overrides within signed-int range.
-  if [[ "${#config_count}" -gt 10 ]] || (( config_count > 2147483641 )); then
+  # Keep the count and eight appended overrides within signed-int range.
+  if [[ "${#config_count}" -gt 10 ]] || (( config_count > 2147483639 )); then
     echo 'Invalid GIT_CONFIG_COUNT' >&2
     return 1
   fi
@@ -357,6 +357,13 @@ configure_git_for_chromium_fetch() {
     http.https://github.com/.proxy= http.https://api.github.com/.proxy=; do
     export "GIT_CONFIG_KEY_${config_count}=${setting%%=*}"
     export "GIT_CONFIG_VALUE_${config_count}=${setting#*=}"
+    config_count=$((config_count + 1))
+  done
+  # Match each complete fetch URL: a host-only override loses to file-backed
+  # path scopes. Git normalizes the URL when selecting the effective setting.
+  for setting in "$CHROMIUM_SRC_GOOGLESOURCE_URL" "$CHROMIUM_SRC_URL"; do
+    export "GIT_CONFIG_KEY_${config_count}=http.${setting}.proxy"
+    export "GIT_CONFIG_VALUE_${config_count}="
     config_count=$((config_count + 1))
   done
   export GIT_CONFIG_COUNT="$config_count"

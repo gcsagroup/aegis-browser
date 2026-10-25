@@ -172,13 +172,18 @@ export async function admitPostgres({owner,verifyOwner,connections,trust,lifecyc
       finally{await store.close();await other.end();pools.delete(other);}
     },
     async issuanceWorker(f,p) {
-      await admission('start-owned-worker');
+      // Capture the original owner lifetime; neither await may renew it.
+      const check=lifecycle.captureAdmission?.();
+      if(typeof check!=='function')reject('SQL_NOT_ADMITTED');
+      check();await admission('start-owned-worker');check();
       if(process.version!=='v22.23.1'||!p.data||p.path!=='/bootstrap/register'||f.config.trust.issuer!==trust.issuer)reject('SQL_NOT_ADMITTED');
       // Export before spawning so an invalid/nonextractable fixture key cannot
       // leave an unreturned worker behind. Private material uses IPC only.
-      const signingJwk=await exportJWK(f.serverKey.privateKey),release=reserve('app');
+      const signingJwk=await exportJWK(f.serverKey.privateKey);check();
+      await admission('start-owned-worker');
+      const release=reserve('app');
       const nonce=randomUUID();let child;
-      try{child=fork(new URL(import.meta.url),['--owned-b1-worker'],{execPath:process.execPath,
+      try{check();child=fork(new URL(import.meta.url),['--owned-b1-worker'],{execPath:process.execPath,
         env:{PATH:'/usr/bin:/bin'},stdio:['ignore','ignore','ignore','ipc']});}catch(error){release();throw error;}
       workers.add(child);
       const events=[],waiters=[];let exit;

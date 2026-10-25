@@ -52,13 +52,13 @@ class GitHubNetworkTests(unittest.TestCase):
         script += '"$2" -c ' + "'" + (
             'import json, os, subprocess; '
             'keys=["protocol.version","http.version","http.proxy","https.proxy",'
-            '"credential.helper","core.hooksPath"]; '
+            '"credential.helper","core.hooksPath","http.https://unrelated.invalid/project.proxy"]; '
             'config={key:subprocess.run(["/usr/bin/git","config","--get",key],'
             'capture_output=True,text=True).stdout.rstrip("\\n") for key in keys}; '
             'urls={url:subprocess.check_output(["/usr/bin/git","config","--get-urlmatch",'
             '"http.proxy",url],text=True).rstrip("\\n") '
             'for url in ["https://github.com/owner/repo.git","https://api.github.com/repos/owner/repo",'
-            '"https://chromium.googlesource.com/chromium/src.git"]}; '
+            '"https://chromium.googlesource.com/chromium/src.git",os.environ.get("CHROMIUM_SRC_URL","https://chromium.googlesource.com/chromium/src.git")]}; '
             'print(json.dumps({"config":config,"urls":urls,"session":'
             '[[os.environ.get("GIT_CONFIG_KEY_"+str(i)),os.environ.get("GIT_CONFIG_VALUE_"+str(i))] '
             'for i in range(int(os.environ["GIT_CONFIG_COUNT"]))],"env":'
@@ -117,6 +117,57 @@ class GitHubNetworkTests(unittest.TestCase):
                                              GIT_CONFIG_VALUE_0='/fixture/hooks')
         self.assertEqual(result['config']['core.hooksPath'], '/fixture/hooks')
         self.assert_direct_git(result)
+
+
+    def test_file_scoped_chromium_proxy_is_overridden_at_the_fetch_url(self):
+        config_file = self.root / 'gitconfig'
+        original = config_file.read_text()
+        scopes = [
+            'https://chromium.googlesource.com/',
+            'https://chromium.googlesource.com/chromium/',
+            'https://chromium.googlesource.com/chromium/src.git',
+            'https://chromium.googlesource.com:443/chromium/src.git',
+        ]
+        for scope in scopes:
+            with self.subTest(scope=scope):
+                contents = (original + '[http "' + scope + '"]\n proxy = ' + PROXY + '\n'
+                            '[http "https://unrelated.invalid/project"]\n proxy = fixture-unrelated\n')
+                config_file.write_text(contents)
+                result = self.configured_environment(
+                    GIT_CONFIG_COUNT='2', GIT_CONFIG_KEY_0='core.hooksPath',
+                    GIT_CONFIG_VALUE_0='/fixture/hooks',
+                    GIT_CONFIG_KEY_1='http.https://unrelated.invalid/.proxy',
+                    GIT_CONFIG_VALUE_1=PROXY)
+                self.assert_direct_git(result)
+                self.assertEqual(result['config']['core.hooksPath'], '/fixture/hooks')
+                self.assertEqual(result['config']['http.https://unrelated.invalid/project.proxy'],
+                                 'fixture-unrelated')
+                self.assertEqual(config_file.read_text(), contents)
+
+    def test_configured_fetch_url_beats_longer_file_proxy_paths(self):
+        target = 'https://chromium.googlesource.com/custom/deep/src.git'
+        config_file = self.root / 'gitconfig'
+        contents = (config_file.read_text()
+                    + '[http "https://chromium.googlesource.com/custom/deep/"]\n proxy = ' + PROXY + '\n'
+                    + '[http "' + target + '"]\n proxy = ' + PROXY + '\n')
+        config_file.write_text(contents)
+        result = self.configured_environment(CHROMIUM_SRC_URL=target)
+        self.assertEqual(result['urls'][target], '')
+        self.assert_direct_git(result)
+        self.assertEqual(config_file.read_text(), contents)
+
+    def test_eight_override_count_boundary_rejects_overflow_before_inherited_scan(self):
+        for count, message in [('2147483640', 'Invalid GIT_CONFIG_COUNT'),
+                               ('2147483639', 'Invalid inherited Git configuration')]:
+            with self.subTest(count=count):
+                script = ('source "$1"\ndetect_and_export_proxy() { :; }\n'
+                          'configure_git_for_chromium_fetch\n')
+                result = subprocess.run(['/bin/bash', '-c', script, 'count-boundary',
+                                         str(SCRIPTS / 'common.sh')],
+                                        env={**self.environment, 'GIT_CONFIG_COUNT': count},
+                                        capture_output=True, text=True, timeout=5)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
 
     def test_inherited_url_scoped_proxy_cannot_override_direct_fetch(self):
         result = self.configured_environment(
