@@ -109,12 +109,12 @@ test('fault validators reject wrong victim, synthetic class, timeout, counts and
   for(const patch of [{errorClass:'Error'},{mainSqlStates:['40001']},{helperSqlStates:['40P01']},{barrierMs:101},{begins:3},{rollbacks:0},{blockedByMain:false},{timeouts:['1s','1s','1s','20ms']}])assert.throws(()=>validateDeadlockEvidence({...d,...patch}));
   const ack={mode:'marker',connection:'a'.repeat(24),commitCommandComplete:true,readyForQuery:'I',ackForwarded:false};validateAckReceipt(ack,'marker');for(const patch of [{commitCommandComplete:false},{readyForQuery:'T'},{ackForwarded:true},{mode:'observation'},{connection:'pid'}])assert.throws(()=>validateAckReceipt({...ack,...patch},'marker'));
 });
-async function pureHarness({onAdmission}={}) {
+async function pureHarness({onAdmission,captureAdmission=()=>()=>{}}={}) {
   const bindings=await fixtureBindings(),owner={runId:U,uid:process.getuid(),imageDigest:PIN.imageDigest,platform:'linux/arm64',containerId:'a'.repeat(64),networkId:'b'.repeat(64),artifactRoot:root+'/.artifacts/b1-pg-'+U,host:'127.0.0.1',port:54321};
   const receipt={...owner,storageFreeBytes:6*1024**3,dataQuotaBytes:2*1024**3,connectionLimit:12,cpuLimit:2,memoryLimitBytes:1024**3,shmBytes:128*1024**2,wallBudgetSeconds:1800,resultsQuotaBytes:128*1024**2,durabilityMountVerified:true,loopbackPublicationVerified:true,roleGrantsVerified:true,secretFileModesVerified:true};
   // Deliberate receipt double: brand construction and pool lifecycle only.
   const connections=Object.fromEntries(['b1_bootstrap','b1_migrator','b1_app'].map(user=>[user,{host:owner.host,port:owner.port,database:'b1',user,password:'pure-test-only'}]));
-  const harness=await admitPostgres({owner,connections,trust:bindings.config.trust,verifyOwner:async(o,action)=>{if(onAdmission)await onAdmission(action);return receipt;},lifecycle:{restartDatabase:async()=>{throw new Error('NO_ENGINE');}}});
+  const harness=await admitPostgres({owner,connections,trust:bindings.config.trust,verifyOwner:async(o,action)=>{if(onAdmission)await onAdmission(action);return receipt;},lifecycle:{captureAdmission,restartDatabase:async()=>{throw new Error('NO_ENGINE');}}});
   return {harness,bindings};
 }
 test('actual frozen admitted harness accepts budgeting without replacing methods or its brand',async()=>{
@@ -758,6 +758,20 @@ test('actual cleanup calls child cancellation and clears the suite watchdog befo
 });
 
 let effectFixtureNumber=0;
+function nestedFixtureMocks(t){
+  const mocks=[],method=t.mock.method.bind(t.mock);
+  const restoreAll=()=>{
+    // Node 22 restores tracked methods in creation order. Clear its tracker first
+    // so later automatic cleanup cannot reinstall an inner mock, then unwind.
+    t.mock.reset();
+    while(mocks.length)mocks.pop().mock.restore();
+    syncBuiltinESMExports();
+  };
+  t.after(restoreAll);
+  return {after:t.after.bind(t),mock:{method(...args){const fn=method(...args);mocks.push(fn);return fn;},restoreAll}};
+}
+
+
 async function rootFilesOwner(t,authorize){
   const outerClock=performance.now,fx=await effectFixture(t,{authorizeHook:action=>authorize({action})});
   t.mock.method(performance,'now',()=>outerClock());
@@ -778,6 +792,7 @@ function inertRootFiles(t,owner,{pause=null,entered=deferred(),release=deferred(
   return {state,entered,release,files,allFiles,dirs,npmrc,held:()=>held};
 }
 for(const during of ['expiry','cancel'])test('actual provision refuses '+during+' during create-owned-root authorization with zero filesystem mutation',async t=>{
+  t=nestedFixtureMocks(t);
   let now=10;t.mock.method(performance,'now',()=>now);const entered=deferred(),release=deferred(),actions=[],{owner}=await rootFilesOwner(t,async({action})=>{actions.push(action);if(action==='create-owned-root'){entered.resolve();await release.promise;}return true;}),end=10+CAPS.setupMs;
   owner.phase='preflight';const {state}=inertRootFiles(t,owner);now=end-10;const pending=owner.provision();
   try{
@@ -787,6 +802,7 @@ for(const during of ['expiry','cancel'])test('actual provision refuses '+during+
   }finally{release.resolve();await pending.catch(()=>{});t.mock.restoreAll();}
 });
 for(const pause of ['stat','mkdir','open','write','sync','identity-open'])for(const during of ['expiry','cancel'])test('actual provision keeps the original setup boundary across inert '+pause+' await: '+during,async t=>{
+  t=nestedFixtureMocks(t);
   let now=10;t.mock.method(performance,'now',()=>now);const actions=[],{owner}=await rootFilesOwner(t,async({action})=>{actions.push(action);return true;}),end=10+CAPS.setupMs;
   owner.phase='preflight';const {state,entered,release,files,dirs,npmrc,held}=inertRootFiles(t,owner,{pause});now=end-10;const pending=owner.provision();
   try{
@@ -798,6 +814,7 @@ for(const pause of ['stat','mkdir','open','write','sync','identity-open'])for(co
   }finally{release.resolve();await pending.catch(()=>{});t.mock.restoreAll();}
 });
 test('actual provision preserves valid root and private identity admission while an external command remains denied',async t=>{
+  t=nestedFixtureMocks(t);
   let now=10;t.mock.method(performance,'now',()=>now);const actions=[],{owner}=await rootFilesOwner(t,async({action})=>{actions.push(action);return action!=='hdiutil-create';});
   owner.phase='preflight';const {state,allFiles,dirs}=inertRootFiles(t,owner);
   try{
@@ -1342,7 +1359,7 @@ async function toolInputFixture(){
   for(const [name,data] of [['bin/limactl','private-limactl'],['bin/lima','#!/bin/sh\nexec limactl shell "$@"\n'],['share/lima/lima-guestagent.Linux-aarch64','paired-guest']]){
     await fs.writeFile(prefix+'/'+name,data,{mode:0o700});
   }
-  const p={...plan,artifactRoot:run,colimaHome:dir+'/colima/c',dockerConfig:run+'/docker-config',results:run+'/results'};
+  const p={...plan,artifactRoot:run,colimaHome:dir+'/private-colima/c',dockerConfig:run+'/docker-config',results:run+'/results'};
   const provenance=dir+'/provenance.json';await fs.writeFile(provenance,JSON.stringify({kind:'INERT_UNIT_INPUT_NOT_RUNTIME_QUALIFICATION'}),{mode:0o600});
   const reference=async filename=>{const data=await fs.readFile(filename);return {path:await fs.realpath(filename),bytes:data.length,sha256:digest(data)};};
   const tools={};
@@ -1510,4 +1527,69 @@ test('M04 an unexpired finite capability retains healthy qualified provision and
     const receipt=await fx.owner.cleanup({deadline:fx.now+1000});
     assert.equal(receipt.status,'STOPPED_RETAINED');assert.equal(receipt.resourcesStopped,true);
   }finally{await fx.dispose();}
+});
+
+for(const scenario of ['positive','export-expired','reauth-expired','original-deadline','cancelled','closed','export-error','fork-error','reauth-denied'])test('worker issuance preserves final admission across '+scenario,async t=>{
+  let admissions=0,spawned=0,captures=0,now=10;
+  if(scenario==='original-deadline'){
+    t.mock.method(performance,'now',()=>now);
+    const schedule=setTimeout;
+    t.mock.method(globalThis,'setTimeout',(...args)=>{const timer=schedule(...args);if(args[1]===CAPS.suiteMs)timer.unref();return timer;});
+  }
+  const authorize=async({action})=>{
+    if(action==='start-owned-worker'){
+      admissions++;
+      if(admissions===2&&scenario==='reauth-denied')return false;
+      if(admissions===2&&scenario==='reauth-expired')await new Promise(resolve=>setTimeout(resolve,Math.max(0,authorize.expiresAt-Date.now()+5)));
+    }
+    return true;
+  };
+  const {owner}=await bindingOwner(t,authorize),end=owner.captureAdmission().deadline;
+  const {harness,bindings}=await pureHarness({
+    onAdmission:action=>owner.gate.require(action),
+    captureAdmission:()=>{captures++;const {check}=owner.captureAdmission();return ()=>{check();owner.gate.assertFresh();};},
+  });
+  const resources=budgetHarness(harness,owner),cp=createRequire(import.meta.url)('node:child_process');
+  t.mock.method(cp,'fork',()=>{
+    spawned++;
+    if(scenario==='fork-error')throw new Error('fixture fork failure');
+    const child=new EventEmitter();child.exitCode=null;child.signalCode=null;
+    child.send=()=>true;
+    child.kill=signal=>{queueMicrotask(()=>{child.signalCode=signal;child.emit('exit',null,signal);child.emit('close',null,signal);});return true;};
+    return child;
+  });
+  syncBuiltinESMExports();
+  let wait,worker,pending;
+  try{
+    if(scenario==='export-error'){
+      const keys=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},false,['sign','verify']);
+      bindings.serverKey.privateKey=keys.privateKey;
+    }else wait=pendingCrypto(t,'exportKey',args=>args[0]==='jwk'&&args[1].type==='private');
+    authorize.expiresAt=Date.now()+(['export-expired','reauth-expired'].includes(scenario)?80:60000);
+    pending=harness.issuanceWorker({...bindings,origin:'http://127.0.0.1',clock:{now:1}},{path:'/bootstrap/register',data:{},headers:{}}).then(value=>{worker=value;return value;});
+    // Observe rejection immediately while the real WebCrypto export is held.
+    pending.catch(()=>{});
+    if(wait){
+      await wait.entered.promise;
+      assert.equal(admissions,1);assert.equal(spawned,0);assert.equal(owner.budget.state.used,0);
+      if(scenario==='export-expired')await new Promise(resolve=>setTimeout(resolve,Math.max(0,authorize.expiresAt-Date.now()+5)));
+      if(scenario==='original-deadline'){now=end-1;owner.beginSql();now=end;}
+      if(scenario==='cancelled')owner.cancel();
+      if(scenario==='closed')await harness.close();
+      wait.release.resolve();
+    }
+    if(scenario==='positive'){
+      await pending;assert.equal(admissions,2);assert.equal(captures,1);assert.equal(spawned,1);
+      assert.equal(owner.budget.state.used,2);await worker.kill();worker=null;
+    }else{
+      const codes={'export-expired':'OWNER_CAPABILITY_EXPIRED','reauth-expired':'OWNER_CAPABILITY_EXPIRED','original-deadline':'OWNER_DEADLINE','cancelled':'OWNER_CANCELLED','closed':'SERVER_CLOSED','reauth-denied':'OWNER_NOT_AUTHORIZED'};
+      await assert.rejects(pending,error=>scenario==='export-error'?error instanceof Error:scenario==='fork-error'?error.message==='fixture fork failure':error.code===codes[scenario]);
+      assert.equal(spawned,scenario==='fork-error'?1:0);
+    }
+    assert.equal(owner.budget.state.used,0);assert.equal(resources.state().workers,0);
+  }catch(error){throw error;}finally{
+    wait?.release.resolve();if(pending)await pending.catch(()=>{});
+    if(worker)await worker.kill();await harness.close();await bindings.store.close();owner.cancel();
+    t.mock.restoreAll();syncBuiltinESMExports();
+  }
 });
