@@ -86,7 +86,7 @@ async function bounded(promise, context) {
     })]);
     if (context.signal.aborted || performance.now() >= context.deadline) throw failure();
     return result;
-  } finally { clearTimeout(timer); context.signal.removeEventListener('abort', abort); }
+  } catch (error) { throw error; } finally { clearTimeout(timer); context.signal.removeEventListener('abort', abort); }
 }
 export class B1Authority {
   #config;
