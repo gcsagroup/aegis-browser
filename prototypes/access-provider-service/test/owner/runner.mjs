@@ -105,7 +105,10 @@ export async function finishRuntime(runtime,{deadline=performance.now()+CAPS.cle
 }
 export async function prepareRuntime({owner}){
   await owner.preflight();await owner.provision();const bindings=await persistentBindings(owner);
-  const harness=await admitPostgres({owner:owner.owner,verifyOwner:owner.verifyOwner.bind(owner),connections:owner.connections(),trust:bindings.config.trust,lifecycle:{restartDatabase:owner.restartDatabase.bind(owner)}});
+  const harness=await admitPostgres({owner:owner.owner,verifyOwner:owner.verifyOwner.bind(owner),connections:owner.connections(),trust:bindings.config.trust,lifecycle:{
+    restartDatabase:owner.restartDatabase.bind(owner),
+    captureAdmission:()=>{const {check}=owner.captureAdmission();return ()=>{check();owner.gate.assertFresh();};},
+  }});
   const resources=budgetHarness(harness,owner);
   return {owner,harness,bindings,resources};
 }
