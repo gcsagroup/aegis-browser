@@ -30,7 +30,8 @@ concurrency:
 jobs:
   quality:
     name: quality
-    runs-on: macos-15
+    runs-on: >-
+      ${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "aegis-test"]') || 'macos-15' }}
     timeout-minutes: 40
     steps:
       - name: Check out tested source
@@ -46,11 +47,16 @@ jobs:
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
         with:
           version: 9.15.0
+          dest: ${{ runner.temp }}/setup-pnpm
           run_install: false
       - name: Install Python
+        if: ${{ runner.environment != 'self-hosted' }}
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: 3.11.9
+      - name: Verify preinstalled Python on self-hosted runner
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: python3 -c 'import sys; assert sys.version_info[:3] == (3, 11, 9), sys.version; print(sys.version)'
       - name: Install fixed ripgrep
         timeout-minutes: 5
         run: bash scripts/ci/install-ripgrep.sh
@@ -78,7 +84,8 @@ jobs:
     if: ${{ always() }}
     needs:
       - quality
-    runs-on: macos-15
+    runs-on: >-
+      ${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "aegis-test"]') || 'macos-15' }}
     timeout-minutes: 5
     steps:
       - name: Check out gate implementation

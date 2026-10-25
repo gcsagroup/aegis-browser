@@ -1,0 +1,45 @@
+version: 2
+updates:
+  # pnpm workspace only. Follow the repository's default branch.
+  - package-ecosystem: npm
+    directory: /
+    exclude-paths:
+      - prototypes/**
+      - apps/ios/Tests/Fixtures/**
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      lint-minor-patch:
+        patterns:
+          - eslint
+          - "@eslint/*"
+          - typescript-eslint
+        update-types: [minor, patch]
+      vitest-minor-patch:
+        patterns:
+          - vitest
+          - "@vitest/*"
+        update-types: [minor, patch]
+      build-minor-patch:
+        patterns:
+          - typescript
+          - "@types/node"
+          - tsup
+        update-types: [minor, patch]
+      # Keep the test runner and its coverage provider compatible on major bumps.
+      vitest-major:
+        patterns:
+          - vitest
+          - "@vitest/*"
+        update-types: [major]
+      vitest-security:
+        applies-to: security-updates
+        patterns:
+          - vitest
+          - "@vitest/*"

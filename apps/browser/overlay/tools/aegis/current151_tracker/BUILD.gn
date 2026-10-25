@@ -1,0 +1,23 @@
+# Copyright 2026 GCSA
+assert(is_mac, "The bounded tracker runtime requires separately qualified Darwin support")
+
+source_set("runtime") {
+  testonly = true
+  sources = [
+    "bounded_runtime.cc",
+    "bounded_runtime.h",
+  ]
+}
+
+executable("current151_owned_leaf") {
+  testonly = true
+  sources = [ "owned_leaf.cc" ]
+  deps = [ ":runtime" ]
+  libs = [ "sandbox" ]
+}
+
+executable("current151_tracker_support_regressions") {
+  testonly = true
+  sources = [ "native_regressions.cc" ]
+  deps = [ ":runtime" ]
+}
