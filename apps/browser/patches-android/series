@@ -322,3 +322,4 @@
 0322-fix-native-settings-landscape-viewport-266.patch
 0323-prepare-integrated-native-version-301.patch
 0324-prepare-metal-toolchain-retry-version-302.patch
+0325-prepare-go-toolchain-retry-version-303.patch
