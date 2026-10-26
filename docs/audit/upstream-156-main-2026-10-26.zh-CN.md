@@ -19,3 +19,11 @@
 本轮官方版本采集先失败、经既有系统代理恢复，成功检查时间为 2026-10-26 07:51 UTC。与上次成功观测之间存在约 44 小时缺口，普通安全更新的 72 小时验证期限已超期。
 
 当前没有正式 tag 或 Release。Mac 正式 Developer ID 身份、Release API 写权限、Android 真机与合格构建资源、Windows 发行及本候选验收仍需补齐；没有用模拟器、旧产物或源码测试替代。原生日志和本轮来源证据位于固定候选 `security-update-156.0.8078.48/heartbeat-20261026-073826`。
+
+## 302 构建续作
+
+301 已通过严格源码身份检查并实际进入编译，执行约 7,279 个构建任务后，因当前 Xcode 缺少 Metal Toolchain 停止。已保留原始日志，使用 Apple 官方 `xcodebuild -downloadComponent MetalToolchain` 安装 27A266a，回读状态为 installed，并实际编译代表性 Metal 着色器成功。
+
+按真实构建递增规则准备 Ver 6.1 (302)，只更新产品版本、Android versionCode 和包装默认版本，新增两端对应版本补丁。桌面 336、Android 324、两平台 V8 各 3，共 666 个补丁通过完整回放；590 个 overlay 文件核对通过，仓库合同、补丁格式测试与 10 项构建来源回归通过。桌面树为 `f904d8ec69edba44cd44691ee882c5d6f352a7f5`，Android 树为 `ddb396aa527a6ce3fe53dcf4c3c998dc8b0133a6`，V8 沿用同输入的已验证树。
+
+源码仍在同一草稿 PR；API 修改标题和正文返回 HTTP 404，当前 Chrome 页面未登录，预备说明保存在本轮证据中。本段是可回读的最新候选说明。302 仍须原生构建与实机验收，工具链恢复不代表 App 构建通过。

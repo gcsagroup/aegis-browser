@@ -321,3 +321,4 @@
 0321-fix-native-settings-background-capture-265.patch
 0322-fix-native-settings-landscape-viewport-266.patch
 0323-prepare-integrated-native-version-301.patch
+0324-prepare-metal-toolchain-retry-version-302.patch
