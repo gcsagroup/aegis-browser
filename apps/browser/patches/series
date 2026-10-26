@@ -333,3 +333,4 @@
 0333-fix-reading-capture-and-download-details-265.patch
 0334-fix-download-platform-build-and-version-266.patch
 0335-prepare-integrated-native-version-301.patch
+0336-prepare-metal-toolchain-retry-version-302.patch
