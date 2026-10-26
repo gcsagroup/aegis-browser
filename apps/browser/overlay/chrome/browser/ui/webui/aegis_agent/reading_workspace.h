@@ -7,6 +7,7 @@
 #include <string>
 
 #include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -62,6 +63,7 @@ class AegisReadingWorkspace {
   mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> capture_client_;
   aegis::ModelProviderClient model_client_;
   base::OneShotTimer capture_timer_;
+  base::ScopedClosureRunner capture_keep_alive_;
   base::WeakPtrFactory<AegisReadingWorkspace> capture_factory_{this};
   base::WeakPtrFactory<AegisReadingWorkspace> weak_factory_{this};
 };
