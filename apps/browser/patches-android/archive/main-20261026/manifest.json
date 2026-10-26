@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+  "reason": "保留156候选已有补丁，新主线补丁原件归档并顺序追加，不跳过功能或历史版本补丁。",
+  "patches": [
+    {
+      "platform": "patches-android",
+      "originalName": "0314-native-settings-and-single-agent-entry-263.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "ee220c0f04693be6b5a3c0ea95fd00fa098a463ed434123fe5649f400f46ce37",
+      "archive": "apps/browser/patches-android/archive/main-20261026/0314-native-settings-and-single-agent-entry-263.patch",
+      "activeName": "0319-native-settings-and-single-agent-entry-263.patch",
+      "adaptedSha256": "9b31fd46bab4aa42694a33af2fe6e02b2e32f47c86df6b84de174a1ad13da09c"
+    },
+    {
+      "platform": "patches-android",
+      "originalName": "0315-complete-mobile-ui-acceptance-264.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "e167565e63f48b3a2a0bfb6a9760137b4ba416d3f4a2f9ad16865e013d6803c4",
+      "archive": "apps/browser/patches-android/archive/main-20261026/0315-complete-mobile-ui-acceptance-264.patch",
+      "activeName": "0320-complete-mobile-ui-acceptance-264.patch",
+      "adaptedSha256": "1479d6337cd21c74b03b17b68a208b9b22f9fefaf49bdda717cda76fb39f0220"
+    },
+    {
+      "platform": "patches-android",
+      "originalName": "0316-fix-native-settings-background-capture-265.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "9e17a7527bca53ba6197e2380a6e530a59346228c23f3d273b1329eaf34edd20",
+      "archive": "apps/browser/patches-android/archive/main-20261026/0316-fix-native-settings-background-capture-265.patch",
+      "activeName": "0321-fix-native-settings-background-capture-265.patch",
+      "adaptedSha256": "7f33b9e558077af8459d64377e58604810ecd1af0d0227a3d8736938bdfa76ff"
+    },
+    {
+      "platform": "patches-android",
+      "originalName": "0317-fix-native-settings-landscape-viewport-266.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "06eaee1d9da651cfe93abdebe189be1c0139bb10febaeacdf467936cdf4f3266",
+      "archive": "apps/browser/patches-android/archive/main-20261026/0317-fix-native-settings-landscape-viewport-266.patch",
+      "activeName": "0322-fix-native-settings-landscape-viewport-266.patch",
+      "adaptedSha256": "ba980ab6f268e61ca5f5f94eaaa2fc3d969769ad8593f6cfecae1be09a9b5675"
+    }
+  ]
+}

@@ -629,6 +629,11 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
   source->AddString("torrentResume", strings.torrent_resume);
   source->AddString("torrentCancel", strings.torrent_cancel);
   source->AddString("torrentSafety", strings.torrent_safety);
+#if BUILDFLAG(IS_ANDROID)
+  source->AddString("downloadsSafety", strings.metalink_safety);
+#else
+  source->AddString("downloadsSafety", strings.torrent_safety);
+#endif
   source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
   source->AddString("linkSanitizeHint", strings.link_sanitize_hint);
   source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
