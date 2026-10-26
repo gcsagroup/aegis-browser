@@ -24,7 +24,7 @@ const element = id => {
   return elements.get(id);
 };
 let resolveCreate, rejectCreate, resolvePlan;
-const context = vm.createContext({element, document: {querySelector: element},
+const context = vm.createContext({queueMicrotask: globalThis.queueMicrotask, reportSettingsDraft: () => {}, element, document: {querySelector: element},
   loadTimeData: {getString: key => key}, busy: false, snapshot: null, selectedWorkflow: null,
   goalUserEdited: true, autoRunTaskId: '', creatingTask: false, creatingTaskPreviousId: '', selectedTaskId: null, taskCreationError: '', AgentMode: {kAct: 1}, Workflow: {kResearch: 1},
   proxy: {handler: {
@@ -75,7 +75,7 @@ const receipt = {observedAt: new Date().toISOString(), source: file,
   sourceSha256: createHash('sha256').update(source).digest('hex'),
   qualification: '真实产品按钮和渲染函数的DOM回归，非App实机验收',
   createFailurePromiseRejected: rejected,
-  cases: observations.map(({expected, ...rest}) => rest)};
+  cases: observations.map(({expected: _expected, ...rest}) => rest)};
 
 console.log(JSON.stringify(receipt,null,2));
 assert.equal(receipt.cases.length, 5);

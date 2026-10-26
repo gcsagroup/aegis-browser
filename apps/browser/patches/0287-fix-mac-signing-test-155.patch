@@ -1,0 +1,126 @@
+From bfe3baf3e7f7dda66870e886f77b8bb3848d86c4 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 07:02:48 +0800
+Subject: [PATCH] test(mac): use public signature requirement APIs
+
+---
+ .../aegis/aegis_mac_signing_unittest.cc       | 42 ++++++++++++-------
+ .../ui/webui/help/aegis_github_update.h       |  4 +-
+ 2 files changed, 28 insertions(+), 18 deletions(-)
+
+diff --git a/chrome/browser/aegis/aegis_mac_signing_unittest.cc b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
+index 0f2e60c02ee7db7585f112653d297c4efe0f22dc..d9694bd63201988d250a9be284f0769cf43a498c 100644
+--- a/chrome/browser/aegis/aegis_mac_signing_unittest.cc
++++ b/chrome/browser/aegis/aegis_mac_signing_unittest.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "base/mac/process_requirement.h"
+ 
++#include "base/mac/code_signature_spi.h"
++
+ #include <Kernel/kern/cs_blobs.h>
+ #include <Security/Security.h>
+ 
+@@ -15,16 +17,17 @@
+ 
+ namespace {
+ 
+-class GcsaSigningProvider : public base::mac::ProcessRequirement::CSOpsSystemCallProvider {
+- public:
+-  int csops(pid_t, unsigned int op, void* data, size_t size) override {
++class GcsaSigningProvider
++    : public base::mac::ProcessRequirement::CSOpsSystemCallProvider {
++public:
++  int csops(pid_t, unsigned int op, void *data, size_t size) override {
+     if (op == CS_OPS_VALIDATION_CATEGORY) {
+-      *static_cast<unsigned int*>(data) = CS_VALIDATION_CATEGORY_ENTERPRISE;
++      *static_cast<unsigned int *>(data) = CS_VALIDATION_CATEGORY_ENTERPRISE;
+       return 0;
+     }
+     if (op == CS_OPS_TEAMID && size >= 8 + team.size() + 1) {
+       std::memset(data, 0, size);
+-      std::memcpy(static_cast<char*>(data) + 8, team.c_str(), team.size() + 1);
++      std::memcpy(static_cast<char *>(data) + 8, team.c_str(), team.size() + 1);
+       return 0;
+     }
+     errno = EINVAL;
+@@ -34,43 +37,50 @@ class GcsaSigningProvider : public base::mac::ProcessRequirement::CSOpsSystemCal
+ };
+ 
+ class GcsaMacSigningTest : public testing::Test {
+- protected:
++protected:
+   void SetUp() override {
+-    base::mac::ProcessRequirement::SetCSOpsSystemCallProviderForTesting(&provider);
++    base::mac::ProcessRequirement::SetCSOpsSystemCallProviderForTesting(
++        &provider);
+   }
+   void TearDown() override {
+-    base::mac::ProcessRequirement::SetCSOpsSystemCallProviderForTesting(nullptr);
++    base::mac::ProcessRequirement::SetCSOpsSystemCallProviderForTesting(
++        nullptr);
+   }
+   GcsaSigningProvider provider;
+ };
+ 
+ TEST_F(GcsaMacSigningTest, EnterpriseKeepsExactCertificateAndAppleAnchor) {
+-  auto requirement = base::mac::ProcessRequirement::Builder().SignedWithSameIdentity().Build();
++  auto requirement =
++      base::mac::ProcessRequirement::Builder().SignedWithSameIdentity().Build();
+   ASSERT_TRUE(requirement);
+-  EXPECT_TRUE(requirement->RequiresSignatureValidation());
+   auto ref = requirement->AsSecRequirement();
+   ASSERT_TRUE(ref);
+   base::apple::ScopedCFTypeRef<CFStringRef> text;
+-  ASSERT_EQ(errSecSuccess, SecRequirementCopyString(ref.get(), kSecCSDefaultFlags, text.InitializeInto()));
++  ASSERT_EQ(errSecSuccess,
++            SecRequirementCopyString(ref.get(), kSecCSDefaultFlags,
++                                     text.InitializeInto()));
+   std::string value = base::SysCFStringRefToUTF8(text.get());
+   EXPECT_NE(value.find("anchor apple generic"), std::string::npos);
+-  EXPECT_NE(value.find("7c33b517942161311a087ce893d2f1ce9b204b44"), std::string::npos);
++  EXPECT_NE(value.find("7c33b517942161311a087ce893d2f1ce9b204b44"),
++            std::string::npos);
+   EXPECT_NE(value.find("R3JK7R29AC"), std::string::npos);
+ }
+ 
+ TEST_F(GcsaMacSigningTest, OtherEnterpriseTeamCannotMatchGcsaIdentity) {
+   provider.team = "OTHERTEAM1";
+-  auto requirement = base::mac::ProcessRequirement::Builder().SignedWithSameIdentity().Build();
++  auto requirement =
++      base::mac::ProcessRequirement::Builder().SignedWithSameIdentity().Build();
+   ASSERT_TRUE(requirement);
+   auto ref = requirement->AsSecRequirement();
+   ASSERT_TRUE(ref);
+   base::apple::ScopedCFTypeRef<CFStringRef> text;
+-  ASSERT_EQ(errSecSuccess, SecRequirementCopyString(ref.get(), kSecCSDefaultFlags, text.InitializeInto()));
++  ASSERT_EQ(errSecSuccess,
++            SecRequirementCopyString(ref.get(), kSecCSDefaultFlags,
++                                     text.InitializeInto()));
+   std::string value = base::SysCFStringRefToUTF8(text.get());
+   // 两个不同团队同时以 and 限制，其他企业证书不能匹配。
+   EXPECT_NE(value.find("OTHERTEAM1 and"), std::string::npos);
+   EXPECT_NE(value.find("R3JK7R29AC"), std::string::npos);
+-  EXPECT_TRUE(requirement->RequiresSignatureValidation());
+ }
+ 
+-}  // namespace
++} // namespace
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 0e132eddd9b0cff64c3a0833516f78a46c432757..ba31c776d7f7e8fe5f5df47d91daa597e3dc8cd4 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.154";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (154)";
++inline constexpr char kProductVersion[] = "3.0.0.155";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (155)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

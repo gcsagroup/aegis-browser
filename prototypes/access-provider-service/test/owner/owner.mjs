@@ -215,7 +215,7 @@ class Commands {
       if(cleanup)retirementSignal?.addEventListener('abort',retire,{once:true});
       const capture=(target,chunk)=>{bytes+=chunk.length;if(bytes>maximum){stop('OWNER_OUTPUT_LIMIT');return;}if(!spec.secret)target.push(chunk);};
       child.stdout.on('data',c=>capture(out,c));child.stderr.on('data',c=>capture(err,c));
-      child.stdin.on('error',()=>stop('OWNER_STDIN'));child.on('error',()=>stop('OWNER_SPAWN'));
+      child.stdin.on('error',()=>{return stop('OWNER_STDIN');});child.on('error',()=>stop('OWNER_SPAWN'));
       child.on('close',code=>{
         if(identity.done)return;identity.done=true;this.children.delete(identity);clearTimeout(timer);clearTimeout(killTimer);clearTimeout(forceTimer);this.owner.signal.removeEventListener('abort',abort);retirementSignal?.removeEventListener('abort',retire);
         this.owner.addEvent({action,exitCode:code,outputBytes:bytes,secret:spec.secret});
@@ -271,7 +271,7 @@ export function toolEnvironment(p,toolchain=null){
 }
 async function checkedToolHash(filename,check){
   const stream=createReadStream(filename),h=createHash('sha256');
-  try{for await(const chunk of stream){check();h.update(chunk);}check();return h.digest('hex');}
+  try{for await(const chunk of stream){check();h.update(chunk);}check();return h.digest('hex');} catch (error) { throw error; }
   finally{stream.destroy();}
 }
 // These are byte/identity bindings, never a source-review or runtime capability.

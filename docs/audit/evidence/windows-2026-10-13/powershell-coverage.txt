@@ -1,0 +1,7 @@
+tool=Pester 5.7.1
+tested_sha=df5ac9f9df1a944f5f64964d0b869c3c626584e0
+existing_script_test=PASS
+pester_tests_passed=4/4
+commands_covered=57
+commands_total=1014
+command_rate=5.62%

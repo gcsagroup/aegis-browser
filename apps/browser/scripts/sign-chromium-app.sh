@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Ad-hoc codesign a Chromium-family .app and its sibling Helper apps.
-# Component / linker-signed builds often fail Gatekeeper with:
-#   "code has no resources but signature indicates they must be present"
+# 固定使用用户指定的 GCSA 证书，避免每轮临时签名改变钥匙串认可的身份。
+# 此证书用于本机构建；不表示已完成 Developer ID 发行签名或公证。
 set -euo pipefail
 
 CS="${CODESIGN:-/usr/bin/codesign}"
+SIGNING_IDENTITY="7C33B517942161311A087CE893D2F1CE9B204B44"
+SIGNING_REQUIREMENT="=anchor apple generic and certificate leaf = H\"$SIGNING_IDENTITY\" and certificate leaf[subject.OU] = \"R3JK7R29AC\""
 APP="${1:-}"
 OUT_DIR="${2:-}"
 
@@ -32,11 +33,13 @@ FRAMEWORK_NAME="$APP_EXECUTABLE_NAME Framework"
 SIBLING_HELPER_PREFIX="$APP_EXECUTABLE_NAME Helper"
 
 verify_package() {
-  "$CS" --verify --deep --strict "$APP" >/dev/null 2>&1 || return 1
+  "$CS" --verify --deep --strict --test-requirement "$SIGNING_REQUIREMENT" \
+    "$APP" >/dev/null 2>&1 || return 1
   shopt -s nullglob
   local helper
   for helper in "$PARENT"/"$SIBLING_HELPER_PREFIX"*.app; do
-    if ! "$CS" --verify --deep --strict "$helper" >/dev/null 2>&1; then
+    if ! "$CS" --verify --deep --strict --test-requirement "$SIGNING_REQUIREMENT" \
+      "$helper" >/dev/null 2>&1; then
       shopt -u nullglob
       return 1
     fi
@@ -46,16 +49,16 @@ verify_package() {
 
 sign_one() {
   local path="$1"
-  "$CS" --force --sign - --timestamp=none "$path" >/dev/null 2>&1 || \
-    "$CS" --force --sign - "$path" >/dev/null
+  # 证书缺失、私钥不可访问或签名失败时直接停止，不回退到临时签名。
+  "$CS" --force --sign "$SIGNING_IDENTITY" --timestamp=none "$path"
 }
 
-echo "Ad-hoc signing $APP …"
+echo "使用固定 GCSA 证书签名 $APP …"
 
 # 只有整包 strict/deep 验证通过时才允许跳过。Chromium 的 linker-signed
 # 顶层经常能通过浅层 verify，但资源封装仍然无效。
 if verify_package; then
-  echo "Already strict/deep valid, skip codesign"
+  echo "整包及固定证书验证通过，保留现有签名。"
   if command -v xattr >/dev/null 2>&1; then
     xattr -cr "$APP" 2>/dev/null || true
   fi
@@ -87,14 +90,14 @@ for h in "$PARENT"/"$SIBLING_HELPER_PREFIX"*.app; do
 done
 shopt -u nullglob
 
-"$CS" --force --deep --sign - --timestamp=none "$APP" >/dev/null 2>&1 || \
-  "$CS" --force --deep --sign - "$APP" >/dev/null
+"$CS" --force --deep --sign "$SIGNING_IDENTITY" --timestamp=none "$APP"
 
 if ! verify_package; then
-  echo "Ad-hoc signing completed but strict/deep verification failed: $APP" >&2
+  echo "固定证书签名后校验失败：$APP" >&2
   exit 1
 fi
-"$CS" --verify --deep --strict --verbose=2 "$APP"
+"$CS" --verify --deep --strict --test-requirement "$SIGNING_REQUIREMENT" \
+  --verbose=2 "$APP"
 
 # Drop quarantine so Finder double-click works for local builds.
 if command -v xattr >/dev/null 2>&1; then
@@ -106,5 +109,5 @@ if command -v xattr >/dev/null 2>&1; then
   shopt -u nullglob
 fi
 
-echo "Signed OK (ad-hoc, strict/deep local structure only)."
-echo "This is not Developer ID signing or notarization."
+echo "GCSA 固定签名通过（R3JK7R29AC，严格整包校验）。"
+echo "此结果不代表 Developer ID 签名或公证。"

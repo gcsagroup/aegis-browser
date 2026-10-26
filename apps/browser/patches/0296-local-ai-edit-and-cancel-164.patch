@@ -1,0 +1,125 @@
+From 6b4aad8ca57c1ed495c0bd5fc963cd568c6fcbe0 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Mon, 12 Oct 2026 01:24:53 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E4=BF=9D=E7=95=99=E9=98=85=E8=AF=BB?=
+ =?UTF-8?q?=E6=89=B9=E6=B3=A8=E5=B9=B6=E9=9A=94=E7=A6=BB=E5=B7=B2=E5=8F=96?=
+ =?UTF-8?q?=E6=B6=88=E7=9A=84=E6=9C=AC=E6=9C=BA=E4=BB=BB=E5=8A=A1=20164?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../resources/aegis_agent/local_ai_client.ts   | 13 ++++++++++---
+ .../resources/aegis_agent/reading_workspace.ts | 18 ++++++++++++++++--
+ .../ui/webui/help/aegis_github_update.h        |  4 ++--
+ 3 files changed, 28 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis_agent/local_ai_client.ts b/chrome/browser/resources/aegis_agent/local_ai_client.ts
+index 03106928688ac0865cd3f84b18cae129cb11461a..9480ba20876d9e5f92d9dc7f3e79b99d7c41771d 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai_client.ts
++++ b/chrome/browser/resources/aegis_agent/local_ai_client.ts
+@@ -25,19 +25,26 @@ export class LocalAiClient {
+       this.reject = reject;
+       const worker = new Worker(getTrustedScriptURL`./local_ai/worker.js` as string, {type: 'module'});
+       this.worker = worker;
+-      this.timer = window.setTimeout(() => this.cancel('runtime_timeout'), request['op'] === 'download' ? 600000 : 180000);
++      const timer = window.setTimeout(() => {
++        if (this.worker === worker) this.cancel('runtime_timeout');
++      }, request['op'] === 'download' ? 600000 : 180000);
++      this.timer = timer;
+       const finish = () => {
+-        window.clearTimeout(this.timer);
++        window.clearTimeout(timer);
+         worker.terminate();
+         if (this.worker === worker) { this.worker = null; this.reject = null; }
+       };
+       worker.onmessage = ({data}: MessageEvent<{progress?: string, error?: string, result?: LocalAiResult}>) => {
++        if (this.worker !== worker) return;
+         if (data.progress) { progress(data.progress); return; }
+         finish();
+         if (data.error || !data.result) reject(new Error(data.error || 'invalid_result'));
+         else resolve(data.result);
+       };
+-      worker.onerror = () => { finish(); reject(new Error('runtime_unavailable')); };
++      worker.onerror = () => {
++        if (this.worker !== worker) return;
++        finish(); reject(new Error('runtime_unavailable'));
++      };
+       worker.postMessage(request);
+     });
+   }
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index dabf7928bf76c1fd38eae6be05db143843efbd55..8d53a3cfd3e235e78f171e9c8ab778e56f3d9155 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -47,6 +47,7 @@ export class ReadingWorkspace {
+   private minimEnabled = false;
+   private phishlangEnabled = false;
+   private packReady = false;
++  private edits = new Map<string, Record<string, string>>();
+   constructor(private proxy: BrowserProxy) {
+     element('refresh').addEventListener('click', () => void this.refresh());
+     element('search').addEventListener('input', () => this.renderRecords());
+@@ -152,6 +153,9 @@ export class ReadingWorkspace {
+         return false;
+       }
+       const state = JSON.parse(reply.result) as ReadingState;
++      if (['save', 'update', 'translate_local'].includes(String(request['op']))) {
++        this.edits.delete(String(request['id']));
++      }
+       if (state.minimEnabled !== undefined) this.minimEnabled = state.minimEnabled;
+       if (state.phishlangEnabled !== undefined) this.phishlangEnabled = state.phishlangEnabled;
+       element<HTMLInputElement>('minim').checked = this.minimEnabled;
+@@ -159,6 +163,8 @@ export class ReadingWorkspace {
+       if (state.revision !== undefined) this.revision = state.revision;
+       if (state.records) {
+         this.records = state.records;
++        const ids = new Set(this.records.map(record => record.id));
++        for (const id of this.edits.keys()) if (!ids.has(id)) this.edits.delete(id);
+         this.renderRecords();
+       }
+       if (state.tabs) {
+@@ -250,7 +256,12 @@ export class ReadingWorkspace {
+     const field = (name: string, value: string, limit: number) => {
+       const wrapper = node('label', label(name));
+       const input = node('textarea');
+-      input.value = value;
++      input.value = (draft ? undefined : this.edits.get(record.id)?.[name]) ?? value;
++      if (!draft) input.addEventListener('input', () => {
++        const edits = this.edits.get(record.id) || {};
++        edits[name] = input.value;
++        this.edits.set(record.id, edits);
++      });
+       input.maxLength = limit;
+       input.rows = name === 'Note' ? 3 : 2;
+       if (draft) input.id = 'reading-draft-' + name.toLowerCase();
+@@ -340,7 +351,10 @@ export class ReadingWorkspace {
+       const selection = window.getSelection();
+       const text = selection?.toString() || '';
+       if (selection?.anchorNode && original.contains(selection.anchorNode) &&
+-          text && text.length <= 2048 && record.text.includes(text)) quote.value = text;
++          text && text.length <= 2048 && record.text.includes(text)) {
++        quote.value = text;
++        quote.dispatchEvent(new Event('input'));
++      }
+     });
+     const save = (archived = record.archived) => this.run({
+       op: draft ? 'save' : 'update', id: record.id,
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7349b6444f6dadd78a420caa7e391e3af4e47c58..173d87b724328aa8352b3a7701afa2fd487a51fd 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.1.0.163";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.1 (163)";
++inline constexpr char kProductVersion[] = "3.1.0.164";
++inline constexpr char kProductVersionLabel[] = "Ver 3.1 (164)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

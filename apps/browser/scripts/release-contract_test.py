@@ -56,6 +56,79 @@ class ContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '递增'):
             contract.validate_version(self.src, self.browser, 126)
 
+    def test_current_major_uses_continuous_android_code(self):
+        for path in [self.src / self.header, self.browser / 'overlay' / self.header,
+                     self.browser / 'scripts/package.sh', self.browser / 'args/aegis-android.gn']:
+            text = path.read_text().replace('2.1.0.126', '5.0.0.208').replace(
+                'Ver 2.1 (126)', 'Ver 5.0 (208)').replace('2001000126', '2005000208')
+            path.write_text(text)
+        self.assertEqual(contract.validate_version(self.src, self.browser, 207), ('5.0.0.208', 208))
+        path = self.browser / 'args/aegis-android.gn'
+        text = path.read_text()
+        for code in ['0', '2100000001', '5000000208']:
+            path.write_text(text.replace('2005000208', code))
+            with self.assertRaisesRegex(ValueError, '超出发行范围'):
+                contract.validate_version(self.src, self.browser)
+
+    def test_android_history_rejects_equal_and_lower_code(self):
+        repo = self.root / 'history-product'
+        browser = repo / 'apps/browser'
+        shutil.copytree(self.browser, browser)
+        executable = str(Path(shutil.which('git')).resolve(strict=True))
+        def git(*args):
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            return subprocess.check_output([executable, '-C', str(repo), *args],  # nosec B603
+                                           text=True, timeout=30, shell=False)
+        git('init', '-q'); git('config', 'user.name', 'test')
+        git('config', 'user.email', 'test@example.invalid')
+        git('add', 'apps'); git('commit', '-qm', '保留既有 Android 版本')
+        for code in [2001000126, 2001000125]:
+            with self.assertRaisesRegex(ValueError, '必须高于'):
+                contract.validate_android_history(browser, code, 'Ver 5.0 (208)')
+        contract.validate_android_history(browser, 2005000208, 'Ver 5.0 (208)')
+        # 已提交当前版本时必须继续找到前一不同版本，不能与自身比较。
+        path = browser / 'args/aegis-android.gn'
+        path.write_text(path.read_text().replace('2001000126', '2005000208').replace(
+            'Ver 2.1 (126)', 'Ver 5.0 (208)'))
+        git('add', 'apps'); git('commit', '-qm', '新版本')
+        contract.validate_android_history(browser, 2005000208, 'Ver 5.0 (208)')
+        shallow = self.root / 'shallow-product'
+        git('clone', '--quiet', '--depth=1', repo.as_uri(), str(shallow))
+        with self.assertRaisesRegex(ValueError, '浅克隆'):
+            contract.validate_android_history(shallow / 'apps/browser', 2005000208,
+                                              'Ver 5.0 (208)')
+
+    def test_platform_test_selection_is_not_allowed_to_escape_scope(self):
+        row = self.features['features'][0]
+        row['platforms'] = ['mac-arm64']
+        for selection in [{'win-x64': ['ExampleTest.*']}, {'mac-arm64': []},
+                          {'mac-arm64': ['ExampleTest.*:-ImportantTest.*']}]:
+            row['testFiltersByPlatform'] = selection
+            self.save_features()
+            with self.assertRaisesRegex(ValueError, '测试'):
+                contract.load(self.browser)
+
+    def test_latest_features_have_existing_desktop_regression_entries(self):
+        browser = Path(__file__).resolve().parents[1]
+        features, _ = contract.load(browser)
+        by_id = {row['id']: row for row in features['features']}
+        import fnmatch
+        import re
+        tests = set()
+        for path in (browser / 'overlay').rglob('*test.cc'):
+            for fixture, name in re.findall(
+                    r'(?:IN_PROC_BROWSER_TEST_F|TEST_F|TEST)\s*\(\s*(\w+)\s*,\s*(\w+)\s*\)',
+                    path.read_text()):
+                tests.add(fixture + '.' + name)
+        for key in ['reading-library', 'reading-translation', 'pdf-text-notes',
+                    'foreground-page-watch', 'kAegisWebsiteEnhancements',
+                    'kAegisUserScripts', 'kAegisMarkdownReader']:
+            row = by_id[key]
+            for platform in ['mac-arm64', 'win-x64']:
+                for pattern in row['testFiltersByPlatform'][platform]:
+                    self.assertTrue(any(fnmatch.fnmatchcase(name, pattern) for name in tests), pattern)
+        self.assertNotIn('android-arm64', by_id['kAegisMarkdownReader']['platforms'])
+
     def test_single_header_bump_cannot_build(self):
         self.write(self.src / self.header, 'kProductVersion[] = "2.1.0.127"; // Ver 2.1 (127)')
         with self.assertRaisesRegex(ValueError, '版本头不一致'):

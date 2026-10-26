@@ -1,0 +1,49 @@
+From e0e6a72e45cec3b109f93a88780814585eb5c19f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 06:08:48 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E9=98=B2=E6=AD=A2=E9=98=85=E8=AF=BB?=
+ =?UTF-8?q?=E6=AD=A3=E6=96=87=E8=A2=AB=E5=8D=95=E8=8A=82=E7=82=B9=E8=A7=82?=
+ =?UTF-8?q?=E5=AF=9F=E4=B8=8A=E9=99=90=E6=88=AA=E6=96=AD=20150?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/aegis_agent/reading_workspace.cc | 5 ++++-
+ chrome/browser/ui/webui/help/aegis_github_update.h       | 4 ++--
+ 2 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index 635ecea9be074178f7481bb47294236472752684..55835bbbe519e1ce20ad8ea131280a4e41a88bae 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -477,7 +477,10 @@ void AegisReadingWorkspace::Captured(
+     Reply(std::move(callback), {}, "page_text_unavailable"); return;
+   }
+   // 文本上限明确展示为已提取范围，原网页和 PDF 不被改写。
+-  auto safe = aegis::agent::BoundedAgentObservationText(text, kMaxText);
++  // Agent 单节点清理器有更小的硬上限；阅读正文保留独立的 32 KiB 边界。
++  std::string safe(base::TruncateUTF8ToByteSize(
++      aegis::SanitizeModelContextText(base::TruncateUTF8ToByteSize(text, kMaxText)),
++      kMaxText));
+   draft_.Set("text", safe);
+   base::ListValue paragraphs;
+   for (auto line : base::SplitString(safe, "\n", base::TRIM_WHITESPACE,
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ca74a8092aab0b509bcaa35e55cf0ae0be602f2c..ab687c6747b6bb422182b791a1ff41f06f8bea17 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.149";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (149)";
++inline constexpr char kProductVersion[] = "3.0.0.150";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (150)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

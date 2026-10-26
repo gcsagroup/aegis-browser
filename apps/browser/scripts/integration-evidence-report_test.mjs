@@ -18,7 +18,7 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 
 async function fixture(action) {
   const root = await mkdtemp(join(tmpdir(), 'aegis-evidence-report-'));
-  try {
+  return await (async () => {
     const evidence = [];
     for (const kind of ['initial_state', 'native_trace', 'model_egress', 'final_state', 'cleanup']) {
       const bytes = JSON.stringify({kind, synthetic: true});
@@ -26,7 +26,7 @@ async function fixture(action) {
       evidence.push({kind, path: `${kind}.json`, sha256: digest(bytes)});
     }
     await action(root, evidence);
-  } finally { await rm(root, {recursive: true, force: true}); }
+  })().finally(async () => { await rm(root, {recursive: true, force: true}); });
 }
 
 const run = (evidence, overrides = {}) => ({taskId: 'T01', repetition: 1,
@@ -84,7 +84,7 @@ test('重复轮次、未知任务、第四次、混用身份及清单变动均�
     await assert.rejects(buildEvidenceReport({...input(), catalogSha256: '0'.repeat(64)}, root));
     await assert.rejects(buildEvidenceReport({...input(),
       identity: {...identity, apiKey: '合成测试字段，不能原样输出'}}, root));
-    const {catalogSha256, ...shortened} = structuredClone(manifest);
+    const {catalogSha256: _catalogSha256, ...shortened} = structuredClone(manifest);
     shortened.tasks.pop();
     const changed = {...shortened, catalogSha256: digest(JSON.stringify(shortened))};
     await assert.rejects(buildEvidenceReport({...input(), catalogSha256: changed.catalogSha256},

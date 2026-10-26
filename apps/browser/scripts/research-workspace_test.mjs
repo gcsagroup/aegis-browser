@@ -21,7 +21,7 @@ function dom(){return {children:[],events:{},dataset:{},value:'比较事实',dis
 const elements=new Map();const element=id=>{if(!elements.has(id))elements.set(id,dom());return elements.get(id)};
 let fail=false;
 const tabs=Array.from({length:11},(_,i)=>({tabId:i+1,title:i===0?'<script>不要执行</script>':'来源'+i,url:'https://fixture.example/'+i}));
-const ctx=vm.createContext({element,document:{createElement:dom,querySelector:()=>dom()},loadTimeData:{getString:key=>key},
+const ctx=vm.createContext({queueMicrotask: globalThis.queueMicrotask,reportSettingsDraft:()=>{},element,document:{createElement:dom,querySelector:()=>dom()},loadTimeData:{getString:key=>key},
  busy:false,researchTabs:[],selectedResearchTabs:new Set(),proxy:{handler:{listResearchTabs:async()=>{
  if(fail)throw new Error('fixture failure');return {tabs,error:''};}}}});
 vm.runInContext(compile,ctx);

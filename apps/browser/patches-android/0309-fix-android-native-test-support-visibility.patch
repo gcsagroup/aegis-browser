@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:03:00 +0800
+Subject: [PATCH] 修正 Android 原生测试支持目标的可见性
+
+Android 测试模板会在同一构建文件生成共享库、JNI、APK 和依赖校验目标。
+仅在 Android 中允许本文件的目标访问，继续由 testonly 禁止产品代码依赖。
+
+---
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 01b0f6a6f2e..05cc690b6d5 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -273,4 +273,9 @@ source_set("request_ownership_registry_test_support") {
+     ":request_dispatch_gate_unittests",
+     ":request_ownership_registry_unittests",
+   ]
++  if (is_android) {
++    # Android 测试模板在本文件生成多层内部目标；testonly
++    # 继续禁止产品依赖。
++    visibility += [ ":*" ]
++  }
+ }

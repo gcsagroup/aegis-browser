@@ -60,7 +60,8 @@ function canonicalValue(value) {
     typeof value === "object" && value !== null,
     "canonical JSON rejects unsupported values",
   );
-  const result = {};
+  // 特殊自有键也必须进入摘要，不能触发 Object 原型上的 setter。
+  const result = Object.create(null);
   for (const key of Object.keys(value).sort()) {
     assert(value[key] !== undefined, "canonical JSON rejects undefined values");
     result[key] = canonicalValue(value[key]);

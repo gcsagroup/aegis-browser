@@ -45,7 +45,8 @@ class ModelProviderClient {
                                     const std::string& model,
                                     const std::string& system,
                                     const std::string& user,
-                                    ChatCallback done);
+                                    ChatCallback done,
+                                    bool disable_local_qwen_thinking = false);
   bool CancelChat(ChatRequestId request_id);
 
   bool busy() const { return request_in_flight_; }

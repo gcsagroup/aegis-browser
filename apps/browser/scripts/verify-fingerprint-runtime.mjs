@@ -2356,7 +2356,7 @@ async function terminateOwnedProcess(
   const killTimeoutMs = timing.killTimeoutMs ?? 2_000;
   const observationMs =
     timing.observationMs ?? PROCESS_STABILITY_OBSERVATION_MS;
-  try {
+  return await (async () => {
     await tracker.sample();
     const browserClose = {
       attempted: false,
@@ -2454,9 +2454,9 @@ async function terminateOwnedProcess(
       );
     }
     return evidence;
-  } finally {
+  })().finally(async () => {
     await tracker.stopMonitoring();
-  }
+  });
 }
 
 function findFatalSignals(logText) {
@@ -4927,7 +4927,7 @@ async function main() {
   const releaseOperationLock = options.buildIdentity
     ? await acquireBuildOperationLock(dirname(appPath))
     : async () => {};
-  try {
+  return await (async () => {
     // 严格顺序：先静态验证整包与两阶段清单，再允许执行被测 Chromium。
     const sourceArtifactBinding = await verifySourceArtifactBinding(
       options,
@@ -4982,9 +4982,9 @@ async function main() {
     } else if (!report.release_eligible) {
       process.exitCode = 2;
     }
-  } finally {
+  })().finally(async () => {
     await releaseOperationLock();
-  }
+  });
 }
 
 main().catch(async (error) => {

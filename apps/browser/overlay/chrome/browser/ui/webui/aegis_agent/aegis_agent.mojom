@@ -188,6 +188,8 @@ struct TaskSnapshot {
   bool feature_enabled;
   bool agent_enabled;
   bool model_configured;
+  bool model_key_configured;
+  string model_connection_revision;
   string model_provider;
   string model_base_url;
   string model_name;
@@ -229,6 +231,7 @@ interface Page {
 
 interface PageHandler {
   ShowUI();
+  ReadingCommand(string request) => (string result, string error);
 
   GetSnapshot() => (TaskSnapshot snapshot);
   ListResearchTabs() => (array<ResearchTab> tabs, string error);
@@ -248,14 +251,16 @@ interface PageHandler {
                  string base_url,
                  string model,
                  string api_key,
-                 bool clear_api_key) => (TaskSnapshot snapshot);
+                 bool clear_api_key,
+                 string expected_connection) => (TaskSnapshot snapshot);
 
   ConfigureTypeSafe(bool enabled,
                     string api_key,
                     bool clear_api_key) => (TaskSnapshot snapshot);
 
   ConfigureModelRouting(ModelSelectionMode mode,
-                        array<ModelPoolEntry> model_pool)
+                        array<ModelPoolEntry> model_pool,
+                        int32 expected_revision)
       => (TaskSnapshot snapshot);
 
   ListModels(string provider, string base_url, string api_key)

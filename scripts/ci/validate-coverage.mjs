@@ -105,9 +105,15 @@ function parseLcovLineCoverage(lines, allowLineSummarySuperset) {
   return {total, covered};
 }
 
-function parseLcovMetricCoverage(lines, totalPrefix, coveredPrefix, metric) {
+function parseLcovMetricCoverage(lines, totalPrefix, coveredPrefix, metric, allowEmptyFunctionSummary) {
   const totalLines = lines.filter((line) => line.startsWith(totalPrefix));
   const coveredLines = lines.filter((line) => line.startsWith(coveredPrefix));
+  // coverage.py 对没有函数定义的文件省略函数汇总；仅在显式允许且无函数记录时按零处理。
+  if (allowEmptyFunctionSummary && metric === 'functions' &&
+      totalLines.length === 0 && coveredLines.length === 0 &&
+      !lines.some((line) => /^(?:FN|FNDA|FNL|FNA):/u.test(line))) {
+    return {total: 0, covered: 0};
+  }
   if (totalLines.length !== 1 || coveredLines.length !== 1) {
     fail(`lcov.info contains invalid ${metric} totals`);
   }
@@ -146,7 +152,7 @@ function recordLcovSource(lines, sourceRoot, files) {
 export function parseLcov(
   source,
   sourceRoot,
-  {allowLineSummarySuperset = false} = {},
+  {allowLineSummarySuperset = false, allowEmptyFunctionSummary = false} = {},
 ) {
   if (!source.endsWith('\n')) fail('lcov.info must end with a newline');
   const records = source.split('end_of_record\n').filter((record) => record.trim() !== '');
@@ -172,7 +178,7 @@ export function parseLcov(
       ['BRF:', 'BRH:', 'branches'],
     ]) {
       const coverage =
-        parseLcovMetricCoverage(lines, totalPrefix, coveredPrefix, metric);
+        parseLcovMetricCoverage(lines, totalPrefix, coveredPrefix, metric, allowEmptyFunctionSummary);
       totals[metric].total += coverage.total;
       totals[metric].covered += coverage.covered;
     }

@@ -1,0 +1,30 @@
+{
+  "build": {
+    "status": "building",
+    "pid": 8392,
+    "startedAt": "2026-10-12T20:24:33.253012+00:00",
+    "childPid": 1284,
+    "command": [
+      "C:\\a\\src\\third_party\\ninja\\ninja.exe",
+      "-C",
+      "out/AegisRelease",
+      "-j",
+      "3",
+      "chrome",
+      "aegis_browser_unittests",
+      "browser_tests"
+    ],
+    "checkedAt": "2026-10-12T22:58:05.424703+00:00",
+    "freeBytes": 43807293440
+  },
+  "tests": {
+    "status": "waiting_for_build",
+    "pid": 8656,
+    "productVersion": "4.0.0.186",
+    "results": [],
+    "checkedAt": "2026-10-12T22:57:58.985276+00:00"
+  },
+  "tail": "[14339/62661] CXX obj/third_party/angle/libANGLE_no_vulkan/Fence.obj\n[14340/62661] CXX obj/third_party/angle/libANGLE_no_vulkan/FramebufferAttachment.obj\n[14341/62661] CXX obj/third_party/angle/libANGLE_no_vulkan/Framebuffer.obj\n[14342/62661] CXX obj/third_party/angle/libANGLE_no_vulkan/GlobalMutex.obj\n[14343/62661] CXX obj/third_party/angle/libANGLE_no_vulkan/GLES1Renderer.obj\n[14344/62661] CXX obj/third_party/angle/libANGLE_no_vulkan/HandleAllocator.obj",
+  "freeGiB": 40.8,
+  "checkedAt": "2026-10-12T22:58:13.7987632Z"
+}

@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 18:40:00 +0800
+Subject: [PATCH] 修复移动设置返回导航与平台说明
+
+---
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index 0f3f40358543f22fcbefaca44bcae298ddf39c67..73d69bfb850d5dd59660f78fbfe8db67f6dc3652 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -715,6 +715,9 @@ textarea {
+  width: 100%;
+  margin-top: 12px;
+  min-height: 44px;
++ padding: 12px 16px;
++ border-radius: 8px;
++ color: var(--accent);
+  white-space: normal; }
+ @media (max-width: 600px) { .mobile-settings { padding: 16px; } }
+ @media (min-width: 800px) { .mobile-settings-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+diff --git a/chrome/browser/resources/aegis/mobile_settings.ts b/chrome/browser/resources/aegis/mobile_settings.ts
+index 2b626df899023efea9a4a38ab782a14a51422731..8286efe851725f1074620ca871f4d411d956c7cc 100644
+--- a/chrome/browser/resources/aegis/mobile_settings.ts
++++ b/chrome/browser/resources/aegis/mobile_settings.ts
+@@ -24,7 +24,7 @@ export function initializeMobileSettings(
+     {id: 'downloads', title: text('下载增强', 'Download enhancements', '下載增強'),
+       hint: text('Metalink 下载任务与下载记录', 'Metalink tasks and download history', 'Metalink 下載工作與下載記錄'), selectors: '.downloads'},
+     {id: 'tools', title: text('本机工具连接', 'Local tool connections', '本機工具連線'),
+-      hint: text('本机连接状态与访问控制', 'Local connection status and access control', '本機連線狀態與存取控制'), selectors: '.ai-control'},
++      hint: text('此功能适用于桌面版', 'Available on desktop', '此功能適用於桌面版'), selectors: ''},
+     {id: 'experiments', title: text('实验功能', 'Experiments', '實驗功能'),
+       hint: text('本机实验模型与使用说明', 'Local experimental models and usage notes', '本機實驗模型與使用說明'), selectors: ''},
+   ];
+@@ -32,6 +32,12 @@ export function initializeMobileSettings(
+   heading.setAttribute('tabindex', '-1');
+   const subtitle = main.querySelector<HTMLElement>('.subtitle')!;
+   const header = main.querySelector('.page-header')!;
++  main.querySelector<HTMLElement>('.ai-control')?.setAttribute('hidden', '');
++  const downloadDescription = main.querySelector('.downloads > .meta');
++  if (downloadDescription) downloadDescription.textContent = text(
++      '管理普通下载、Metalink 镜像下载与下载记录。Android 版暂不支持种子或磁力链接。',
++      'Manage downloads, Metalink mirrors and download history. Torrents and magnet links are not supported on Android.',
++      '管理一般下載、Metalink 鏡像下載與下載記錄。Android 版暫不支援種子或磁力連結。');
+   const back = document.createElement('a');
+   back.className = 'mobile-settings-back';
+   back.href = '#home';
+diff --git a/chrome/browser/resources/aegis_agent/agent.ts b/chrome/browser/resources/aegis_agent/agent.ts
+index 5f0716e629fc62a9207022ba72bc40716d13f8a3..4d105fd00de59264bbfd9f6747e46b92fc387b0b 100644
+--- a/chrome/browser/resources/aegis_agent/agent.ts
++++ b/chrome/browser/resources/aegis_agent/agent.ts
+@@ -1955,7 +1955,7 @@ try {
+   if (loadTimeData.getBoolean('isAndroid')) {
+     initializeMobileAgentSettings(() => reading.refresh(), () => {
+       activeView = 'reading'; renderView();
+-    });
++    }, () => { void proxy.handler.showProtection(); });
+   }
+   element('reading-view-button').addEventListener('click', () => {
+     activeView = 'reading';
+diff --git a/chrome/browser/resources/aegis_agent/mobile_settings.ts b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+index 956a990a1bb41dabace9c2669f97d8a07300ae01..23df4159e1946673b888f4f4b91aafe572d128ee 100644
+--- a/chrome/browser/resources/aegis_agent/mobile_settings.ts
++++ b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+@@ -1,7 +1,8 @@
+ // Copyright 2026 GCSA
+ // Android 独立设置子页复用助手现有控件；不自动启用助手或执行模型。
+ export function initializeMobileAgentSettings(
+-    refresh: () => Promise<void>, showReading: () => void) {
++    refresh: () => Promise<void>, showReading: () => void,
++    openSettings: () => void) {
+   const params = new URLSearchParams(location.search);
+   const section = params.get('mobileSettings');
+   const language = document.documentElement.lang;
+@@ -11,8 +12,13 @@ export function initializeMobileAgentSettings(
+   document.body.classList.add('mobile-agent-shell');
+   const back = document.createElement('a');
+   back.className = 'mobile-settings-back';
+-  back.href = 'chrome://aegis/#' + (section === 'experiments' ? 'experiments' : section === 'reading' || params.get('view') === 'reading' ? 'reading' : 'ai');
++  back.href = 'chrome://aegis/';
+   back.textContent = '← ' + text('Aegis 设置', 'Aegis settings', 'Aegis 設定');
++  // 不受信任页面不能直接跳转 chrome://，沿用仅打开固定设置页的原生入口。
++  back.addEventListener('click', event => {
++    event.preventDefault();
++    openSettings();
++  });
+   main.prepend(back);
+   if (params.get('view') === 'reading') {
+     document.getElementById('goal')?.removeAttribute('autofocus');
+@@ -23,6 +29,8 @@ export function initializeMobileAgentSettings(
+   document.getElementById('goal')?.removeAttribute('autofocus');
+   let research = document.getElementById('reading-research-settings');
+   const local = document.getElementById('reading-ai-settings') as HTMLDetailsElement;
++  local.querySelector('summary')!.textContent = text(
++      '本机翻译设置', 'Local translation settings', '本機翻譯設定');
+   if (!research) {
+     research = document.createElement('details');
+     research.id = 'reading-research-settings';
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index fa406a1d663ddc517cf82007c48c2adebc4f4baa..f79a16a15abc5e49aeccd5c25df92013021b3493 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -40,8 +40,12 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/search_engines/template_url_service.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_ui.h"
++#include "content/public/common/referrer.h"
+ #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
++#include "ui/base/page_transition_types.h"
+ #include "url/gurl.h"
+ #include "url/origin.h"
+ 
+@@ -736,10 +740,21 @@ void AegisAgentPageHandler::CreateSelectedTask(
+ }
+ 
+ void AegisAgentPageHandler::ShowProtection() {
++#if BUILDFLAG(IS_ANDROID)
++  // 只导航发起调用的助手页，避免返回设置时反复增加标签或替换其他标签。
++  auto* contents = ui_ ? ui_->web_ui()->GetWebContents() : nullptr;
++  if (contents && contents->GetBrowserContext() == profile_) {
++    contents->GetController().LoadURL(
++        GURL("chrome://aegis/"), content::Referrer(),
++        ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
++  }
++#else
+   auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
+   if (list && browser_->GetProfile() == profile_) {
+-    list->OpenTab(GURL("chrome://aegis/"), list->GetTabCount(), true);
++    list->OpenTab(GURL("chrome://settings/aegisPrivacy"),
++                  list->GetTabCount(), true);
+   }
++#endif
+ }
+ 
+ void AegisAgentPageHandler::OpenResearchSource(
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1ce208e4e62501906a5838efaf1d74e04d495204..f729efc3ccebf26d850ca384a9b00f8ffcce80bf 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.0.0.252";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.0 (252)";
++inline constexpr char kProductVersion[] = "6.0.0.255";
++inline constexpr char kProductVersionLabel[] = "Ver 6.0 (255)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

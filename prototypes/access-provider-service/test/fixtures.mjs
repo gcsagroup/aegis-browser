@@ -33,7 +33,7 @@ async function until(promise, context) {
       timer = setTimeout(abort,Math.max(0,context.deadline-performance.now()));
       if (context.signal.aborted) abort();
     })]);
-  } finally { clearTimeout(timer); context.signal.removeEventListener('abort',abort); }
+  } catch (error) { throw error; } finally { clearTimeout(timer); context.signal.removeEventListener('abort',abort); }
 }
 export function deferred() {let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 // Explicit synthetic session ownership shared by stores using one ledger.

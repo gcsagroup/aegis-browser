@@ -38,8 +38,8 @@ void AegisGestureHandler::RegisterMessages() {
 
 bool AegisGestureHandler::IsGesturePage() {
   // 手势配置不向普通网页、PDF 或其他 WebUI 暴露。
-  return web_ui()->GetWebContents()->GetLastCommittedURL() ==
-         GURL("chrome://aegis/gestures.html");
+  return aegis::IsGestureSettingsPage(
+      web_ui()->GetWebContents()->GetLastCommittedURL());
 }
 
 base::DictValue AegisGestureHandler::Snapshot() {
@@ -56,6 +56,7 @@ base::DictValue AegisGestureHandler::Snapshot() {
   }
   return base::DictValue()
       .Set("settings", settings.ToValue())
+      .Set("defaults", aegis::GestureSettings::Defaults().ToValue())
       .Set("actions", std::move(actions));
 }
 
@@ -68,10 +69,17 @@ void AegisGestureHandler::GetSettings(const base::ListValue& args) {
 }
 
 void AegisGestureHandler::SaveSettings(const base::ListValue& args) {
-  if (!IsGesturePage() || args.size() != 2 || !args[0].is_string()) {
+  if (!IsGesturePage() || (args.size() != 2 && args.size() != 3) || !args[0].is_string()) {
     return;
   }
   AllowJavascript();
+  if (args.size() == 3) {
+    auto current = Snapshot();
+    if (!args[2].is_dict() || args[2].GetDict() != *current.FindDict("settings")) {
+      RejectJavascriptCallback(args[0], base::Value("手势配置已在另一处修改，请重新读取后再保存。"));
+      return;
+    }
+  }
   auto settings = args[1].is_dict()
                       ? aegis::GestureSettings::Parse(args[1].GetDict())
                       : std::nullopt;
