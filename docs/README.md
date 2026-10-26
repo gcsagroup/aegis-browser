@@ -1,5 +1,10 @@
 # Documentation
 
+- [iOS WebKit fingerprinting, security hardening, phishing and mining protection plan (Simplified Chinese)](plans/ios-webkit-protection-2026-10-11.zh-CN.md)
+- [iOS Ver 4.0 portable features：User guide](ios-portable-features.en.md)
+- [Four-platform comparison](platform-features.en.md)
+- [Acceptance record](audit/ios-portable-features-2026-10-11.zh-CN.md)
+
 
 > [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
@@ -11,6 +16,8 @@ This directory contains the public product architecture, roadmap, research bound
 > **Historical boundary — 2026-09-10:** the Browser Agent v2 candidate source contains 108 top-level Chromium patches plus 2 nested V8 patches and replays exactly to Chromium source tree `319366182c31108e29e62d2f2199aff29a0b86e8`. Platform builds and acceptance remain separate gates; this source identity is not public-release qualification. Phase 2 remains a synthetic formal fixture, while Phase 3 is a 13-sample operator-blinded public pilot with recall `1/3`; neither generalizes to broad malicious-JavaScript detection. The project remains release No-Go.
 
 [2026-09-10 main consolidation and verification](audit/main-consolidation-2026-09-10.md)
+
+- [iOS Ver 5.0 Web protection](ios-webkit-protection.en.md) · [Acceptance record](audit/ios-webkit-protection-2026-10-12.zh-CN.md)
 
 ## Start here
 

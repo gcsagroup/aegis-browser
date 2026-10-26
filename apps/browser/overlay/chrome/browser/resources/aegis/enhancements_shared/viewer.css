@@ -1,0 +1,348 @@
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#f8f9fa, #17181b);
+  --paper: light-dark(#fff, #202124);
+  --ink: light-dark(#202124, #e8eaed);
+  --muted: light-dark(#5f6368, #bdc1c6);
+  --line: light-dark(#dadce0, #45474b);
+  --accent: light-dark(#185abc, #a8c7fa);
+  --code: light-dark(#f1f3f4, #292a2d);
+  --font: 17px;
+  --measure: 820px;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+header {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+header strong {
+  font-size: 18px;
+  word-break: break-word;
+}
+small {
+  display: block;
+  max-width: 65vw;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  margin-top: 5px;
+}
+nav,
+.findbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+button,
+input {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 11px;
+}
+button {
+  cursor: pointer;
+  min-height: 36px;
+}
+button:hover,
+button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.findbar {
+  padding: 10px 28px;
+}
+.findbar input {
+  width: 240px;
+  max-width: 100%;
+}
+#notice {
+  margin: 0;
+  padding: 0 28px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  min-height: 28px;
+}
+.layout {
+  display: flex;
+  max-width: 1440px;
+  margin: auto;
+  gap: 30px;
+  padding: 12px 28px 50px;
+}
+aside {
+  position: sticky;
+  top: 16px;
+  align-self: flex-start;
+  width: 210px;
+  flex-shrink: 0;
+  max-height: 80vh;
+  overflow: auto;
+  border-right: 1px solid var(--line);
+  padding-right: 18px;
+}
+aside a {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 6px 0;
+}
+aside a:hover {
+  color: var(--accent);
+}
+aside a[data-level="2"] {
+  padding-left: 10px;
+}
+aside a[data-level="3"] {
+  padding-left: 20px;
+}
+main {
+  min-width: 0;
+  width: 100%;
+  max-width: var(--measure);
+  margin: 0 auto;
+}
+article {
+  font-size: var(--font);
+  line-height: var(--spacing, 1.8);
+  font-family: var(--reading-font, system-ui, sans-serif);
+  overflow-wrap: anywhere;
+  background: var(--paper);
+  padding: 32px 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: 1.35;
+  margin: 1.8em 0 0.7em;
+  scroll-margin-top: 20px;
+}
+h1:first-child,
+h2:first-child {
+  margin-top: 0;
+}
+h1 {
+  font-size: 2em;
+}
+h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.4em;
+}
+p,
+ul,
+ol,
+blockquote,
+pre,
+table {
+  margin: 1em 0;
+}
+a {
+  color: var(--accent);
+}
+blockquote {
+  border-left: 4px solid var(--accent);
+  margin-left: 0;
+  padding: 2px 18px;
+  color: var(--muted);
+}
+table {
+  display: block;
+  overflow: auto;
+  border-collapse: collapse;
+  max-width: 100%;
+}
+th,
+td {
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+}
+th {
+  background: var(--code);
+}
+code {
+  background: var(--code);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.87em;
+}
+pre {
+  position: relative;
+  background: var(--code);
+  padding: 20px;
+  overflow: auto;
+  border-radius: 8px;
+  line-height: 1.6;
+}
+pre code {
+  padding: 0;
+  background: transparent;
+  display: block;
+  tab-size: 2;
+}
+pre .code-copy {
+  position: sticky;
+  float: right;
+  top: 0;
+  right: 0;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 2em 0;
+}
+#source {
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.empty {
+  color: var(--muted);
+  text-align: center;
+  margin: 80px 0;
+}
+mark {
+  background: #fae49f;
+  color: #302714;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal {
+  color: light-dark(#8e3580, #dfa0d1);
+}
+.hljs-string,
+.hljs-attr {
+  color: light-dark(#267443, #a8d6a6);
+}
+.hljs-comment {
+  color: var(--muted);
+}
+.hljs-number,
+.hljs-built_in {
+  color: light-dark(#956115, #ebc27c);
+}
+.hljs-title,
+.hljs-name {
+  color: light-dark(#226b9e, #98cce5);
+}
+[hidden] {
+  display: none !important;
+}
+@media (max-width: 760px) {
+  header {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 14px 16px;
+    gap: 12px;
+  }
+  .findbar {
+    padding: 10px 16px;
+  }
+  #notice {
+    padding: 0 16px 8px;
+  }
+  .layout {
+    gap: 16px;
+    padding: 8px 12px 30px;
+    display: block;
+  }
+  aside {
+    position: static;
+    width: 100%;
+    max-height: 180px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 16px;
+    padding: 0 8px 12px;
+  }
+  article {
+    padding: 22px 20px;
+  }
+  small {
+    max-width: 90vw;
+  }
+}
+@media print {
+  header nav,
+  .findbar,
+  #notice,
+  aside,
+  .code-copy {
+    display: none !important;
+  }
+  body,
+  article {
+    background: white;
+    color: black;
+  }
+  .layout {
+    display: block;
+    padding: 0;
+  }
+  main {
+    max-width: none;
+  }
+  article {
+    border: 0;
+    padding: 0;
+    font-size: 11pt;
+  }
+  pre,
+  blockquote {
+    break-inside: avoid;
+  }
+  a {
+    color: black;
+  }
+  header {
+    padding: 0 0 12px;
+  }
+  #source {
+    white-space: pre-wrap;
+  }
+  img {
+    max-height: 90vh;
+  }
+}
+
+.embedded > header { display: none; }
+#image-permissions { padding: 12px 24px; border-bottom: 1px solid var(--line); font-size: 13px; }
+#image-permissions #notice { padding: 0 0 8px; min-height: 0; }
+@media print { #image-permissions { display: none !important; } .embedded > header { display: flex; } }

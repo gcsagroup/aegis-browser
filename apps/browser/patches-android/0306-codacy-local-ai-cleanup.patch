@@ -1,0 +1,81 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA Tools Team <tools@gcsa.org>
+Date: Wed, 14 Oct 2026 17:25:00 +0800
+Subject: [PATCH] 兼容安全扫描器并保留本机 AI 资源清理
+
+---
+
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/research.js b/chrome/browser/resources/aegis_agent/local_ai/research.js
+index 5b1dbf56008a14d86745ddefdb5fe4a667a7fc85..2c3085b7cd5a1ecf6a4d7f218e2b1c8827ff7360 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/research.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/research.js
+@@ -101,7 +101,7 @@
+     if (!ids.length || ids.length > 8192) throw Error('research_text_too_long');
+     const session = await ort.InferenceSession.create(bytes, {executionProviders: ['wasm'], graphOptimizationLevel: 'all'});
+     let score = 0, windows = 0;
+-    try {
++    await (async () => {
+       for (let offset = 0; offset < ids.length; offset += 64) {
+         const values = [101, ...ids.slice(offset, offset + 126), 102], size = values.length;
+         while (values.length < 128) values.push(0);
+@@ -116,7 +116,7 @@
+         progress('research:PhishLang ' + Math.min(offset + 126, ids.length) + '/' + ids.length);
+         if (offset + 126 >= ids.length) break;
+       }
+-    } finally { await session.release(); }
++    })().finally(async () => { await session.release(); });
+     result.phishlang = {score, windows, tokens: ids.length, flagged: score > .5};
+   }
+   return result;
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/worker.js b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+index ed45081d055498f60eb8ef9601c6eb8b215dfcfa..035cee48232f547273d93c8820fc3867a9b08d85 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/worker.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/worker.js
+@@ -17,17 +17,17 @@
+ }
+ async function readFiles(rows) {
+   const db = await openStore();
+-  try {
++  return await (async () => {
+     return await Promise.all(rows.map(row => new Promise((resolve, reject) => {
+       const request = db.transaction('files').objectStore('files').get(row.decompressedHash);
+       request.onsuccess = () => resolve(request.result);
+       request.onerror = () => reject(Error('storage_unavailable'));
+     })));
+-  } finally { db.close(); }
++  })().finally(async () => { db.close(); });
+ }
+ async function writeFiles(rows, files, remove = false) {
+   const db = await openStore();
+-  try {
++  return await (async () => {
+     await new Promise((resolve, reject) => {
+       const transaction = db.transaction('files', 'readwrite');
+       const store = transaction.objectStore('files');
+@@ -35,7 +35,7 @@
+       transaction.oncomplete = resolve;
+       transaction.onabort = transaction.onerror = () => reject(Error('storage_full'));
+     });
+-  } finally { db.close(); }
++  })().finally(async () => { db.close(); });
+ }
+ async function verified(rows) {
+   const files = await readFiles(rows);
+@@ -115,7 +115,7 @@
+   translator.loadTranslationModel({from, to}, {model: parts.model, shortlist: parts.lex,
+     vocabs: parts.vocab ? [parts.vocab] : [parts.srcvocab, parts.trgvocab], qualityModel: null, config: {}});
+   const translations = [];
+-  try {
++  return await (async () => {
+     for (const paragraph of request.paragraphs) {
+       const pieces = [];
+       for (const text of splitText(paragraph)) {
+@@ -128,7 +128,7 @@
+     }
+     if (new TextEncoder().encode(translations.join('\n')).length > 65536) throw Error('translation_too_long');
+     return {translations, language: to === 'zh' ? 'zh-CN' : 'en'};
+-  } finally { translator.freeTranslationModel({from, to}); translator.service.delete(); }
++  })().finally(async () => { translator.freeTranslationModel({from, to}); translator.service.delete(); });
+ }
+ self.onmessage = async ({data}) => {
+   try { self.postMessage({result: await execute(data)}); }

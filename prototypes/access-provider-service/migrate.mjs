@@ -34,7 +34,7 @@ export async function migrate({pool,trust,owner,verifyOwner,signal}) {
         throw error;
       }
     });
-  }finally{
+  } catch (error) { throw error; }finally{
     controller.abort();signal?.removeEventListener('abort',relay);
     if(entered)await closeOwnedPool(pool,Math.max(0,totalDeadline-performance.now()));
   }

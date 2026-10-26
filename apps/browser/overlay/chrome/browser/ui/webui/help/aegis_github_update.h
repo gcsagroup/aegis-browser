@@ -20,9 +20,9 @@ class SimpleURLLoader;
 } // namespace network
 
 namespace aegis {
-// 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
-inline constexpr char kProductVersion[] = "2.2.0.144";
-inline constexpr char kProductVersionLabel[] = "Ver 2.2 (144)";
+// 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+inline constexpr char kProductVersion[] = "6.1.0.266";
+inline constexpr char kProductVersionLabel[] = "Ver 6.1 (266)";
 inline constexpr char kReleaseAPI[] =
     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
 inline constexpr char kReleasePage[] =

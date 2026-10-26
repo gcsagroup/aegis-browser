@@ -31,6 +31,10 @@ interface TorrentFile {
 }
 
 interface TorrentPreview {
+  defaultDhtEnabled?: boolean;
+  defaultPexEnabled?: boolean;
+  defaultDownloadLimitKib?: number;
+  defaultUploadLimitKib?: number;
   ok: boolean;
   error?: string;
   requestId?: string;
@@ -234,6 +238,22 @@ export class AegisDownloadPanelElement extends CrLitElement {
     return this.shadowRoot.querySelector<HTMLInputElement>('#descriptor');
   }
 
+  private descriptorPrompt_(): string {
+    const locale = document.documentElement.lang;
+    if (!locale.startsWith('zh')) {
+      return this.torrentSupported_ ?
+          'Choose a .meta4, .metalink, or .torrent file, or paste a Magnet link.' :
+          'Choose a .meta4 or .metalink file.';
+    }
+    const traditional = /^zh-(?:TW|HK|Hant)/i.test(locale);
+    if (this.torrentSupported_) {
+      return traditional ? '請選擇 .meta4、.metalink 或 .torrent 檔案，或貼上磁力連結。' :
+                           '请选择 .meta4、.metalink 或 .torrent 文件，或粘贴磁力链接。';
+    }
+    return traditional ? '請選擇 .meta4 或 .metalink 檔案。' :
+                         '请选择 .meta4 或 .metalink 文件。';
+  }
+
   protected onDescriptorChange_() {
     if (this.descriptor_()?.files?.length) {
       const magnet =
@@ -313,14 +333,10 @@ export class AegisDownloadPanelElement extends CrLitElement {
               await this.request_('parseMetalink', await file.text());
           this.setMetalinkPreview_(preview, zh);
         } else {
-          throw new Error(
-              zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇 Metalink 或 Torrent 檔案。' : '请选择 Metalink 或 Torrent 文件。') :
-                   'Choose a Metalink or Torrent file.');
+          throw new Error(this.descriptorPrompt_());
         }
       } else {
-        throw new Error(
-            zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇檔案或貼上 磁力連結。' : '请选择文件或粘贴 磁力链接。') :
-                 'Choose a file or paste a Magnet link.');
+        throw new Error(this.descriptorPrompt_());
       }
     } catch (error) {
       this.previewText_ = this.formatPreviewError_(error);
@@ -353,6 +369,12 @@ export class AegisDownloadPanelElement extends CrLitElement {
       this.previewText_ = this.formatPreviewError_(preview.error || 'invalid torrent');
       return;
     }
+    this.torrentDhtDefault_ = preview.defaultDhtEnabled ?? this.torrentDhtDefault_;
+    this.torrentPexDefault_ = preview.defaultPexEnabled ?? this.torrentPexDefault_;
+    this.torrentDownloadLimitDefault_ =
+        preview.defaultDownloadLimitKib ?? this.torrentDownloadLimitDefault_;
+    this.torrentUploadLimitDefault_ =
+        preview.defaultUploadLimitKib ?? this.torrentUploadLimitDefault_;
     const versions = [
       preview.hasV1 ? 'v1' : '', preview.hasV2 ? 'v2' : ''
     ].filter(Boolean).join(' + ');

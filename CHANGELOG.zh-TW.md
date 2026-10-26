@@ -4,7 +4,29 @@
 
 本文件記錄專案的重要變更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/)，專案計畫採用[語意化版本](https://semver.org/lang/zh-TW/)。
 
-軟體套件版本仍為 `0.1.0`；iOS 目前開發候選為 `3.2`，已發布原始碼預覽仍為 `2.2`。以下新增 iOS 原始碼預發布記錄，簽章及商店發布驗收尚未完成。
+軟體套件版本仍為 `0.1.0`；iOS 目前開發候選為 `7.0`，已發布原始碼預覽仍為 `2.2`。以下新增 iOS 原始碼預發布記錄，簽章及商店發布驗收尚未完成。
+
+## 2026-10-13 · 桌面 4.0 與 iOS 6.0 原始碼整合
+
+整合閱讀批註、本機中英翻譯與品質提示、網站增強、受控使用者腳本、Markdown 閱讀及 iOS 網頁防護；Google 服務缺少設定時僅在主動使用對應功能後提示。
+
+本次為原始碼提交，並非正式發行。公開原始碼不包含授權尚未明確的 MINIM、PhishLang 權重與配套詞表，本機實驗檔案保留。
+
+[2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md) · [2026-10-14](docs/audit/windows-actions-2026-10-13.zh-CN.md)
+
+## iOS 5.0 — 2026-10-12
+
+新增釣魚主機與頁面結構檢查、獨立挖礦／指紋資源攔截、系統強化及預設關閉的嚴格指紋限制。規則隨 App 更新；未知行為只提示。
+
+[使用說明](docs/ios-webkit-protection.zh-TW.md) · [驗收紀錄](docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md)
+
+## iOS 4.0 — 2026-10-11
+
+- 搜尋設定支援刪除預設/自訂引擎、刪除目前項目後自動切換、全部刪除後僅網址導覽，以及恢復預設清單；保留舊設定相容性和自訂範本。
+
+新增搜尋與網站設定、加密閱讀批註、PDF 文字層、翻譯確認、有限瀏覽器操作和下載網路規則。
+
+[功能使用說明](docs/ios-portable-features.zh-TW.md) · [四端功能對照](docs/platform-features.zh-TW.md) · [驗收記錄](docs/audit/ios-portable-features-2026-10-11.zh-CN.md)
 
 ## iOS 3.2 — 2026-10-09 · 主線整合
 

@@ -101,7 +101,7 @@ export async function admitPostgres({owner,verifyOwner,connections,trust,lifecyc
       const {rows:[r]}=await client.query("SELECT current_user AS role,current_database() AS database,current_setting('server_version_num') AS version,current_setting('fsync') AS fsync,current_setting('synchronous_commit') AS synchronous_commit,current_setting('full_page_writes') AS full_page_writes,(SELECT rolsuper FROM pg_roles WHERE rolname=current_user) AS superuser,has_database_privilege(current_user,current_database(),'CREATE') AS database_ddl,has_schema_privilege(current_user,'provider_b1','CREATE') AS schema_ddl");
       if(r.role!=='b1_app'||r.database!=='b1'||r.version!=='170011'||r.fsync!=='on'||r.synchronous_commit!=='on'||r.full_page_writes!=='on'||r.superuser!==false||r.database_ddl!==false||r.schema_ddl!==false)reject('SQL_NOT_ADMITTED');
       return {version:r.version,fsync:r.fsync,synchronous_commit:r.synchronous_commit,full_page_writes:r.full_page_writes};
-    } finally {client.release();await p.end();pools.delete(p);}
+    } catch (error) { throw error; } finally {client.release();await p.end();pools.delete(p);}
   }
   const harness={owner,trust,
     bindResources(hooks) {
@@ -172,13 +172,18 @@ export async function admitPostgres({owner,verifyOwner,connections,trust,lifecyc
       finally{await store.close();await other.end();pools.delete(other);}
     },
     async issuanceWorker(f,p) {
-      await admission('start-owned-worker');
+      // Capture the original owner lifetime; neither await may renew it.
+      const check=lifecycle.captureAdmission?.();
+      if(typeof check!=='function')reject('SQL_NOT_ADMITTED');
+      check();await admission('start-owned-worker');check();
       if(process.version!=='v22.23.1'||!p.data||p.path!=='/bootstrap/register'||f.config.trust.issuer!==trust.issuer)reject('SQL_NOT_ADMITTED');
       // Export before spawning so an invalid/nonextractable fixture key cannot
       // leave an unreturned worker behind. Private material uses IPC only.
-      const signingJwk=await exportJWK(f.serverKey.privateKey),release=reserve('app');
+      const signingJwk=await exportJWK(f.serverKey.privateKey);check();
+      await admission('start-owned-worker');
+      const release=reserve('app');
       const nonce=randomUUID();let child;
-      try{child=fork(new URL(import.meta.url),['--owned-b1-worker'],{execPath:process.execPath,
+      try{check();child=fork(new URL(import.meta.url),['--owned-b1-worker'],{execPath:process.execPath,
         env:{PATH:'/usr/bin:/bin'},stdio:['ignore','ignore','ignore','ipc']});}catch(error){release();throw error;}
       workers.add(child);
       const events=[],waiters=[];let exit;

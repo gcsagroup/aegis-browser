@@ -99,14 +99,18 @@ def apply_if_base(src, base, patches, log):
 
 
 def verify_tree(src, base, patches):
-    """从官方基线在临时索引重放，要求完整源码树一致。"""
+    """从官方基线在临时索引和对象库重放，要求完整源码树一致。"""
     if git(src, 'status', '--porcelain', '--ignore-submodules=all'):
         raise ValueError('源码有未保存的改动或冲突，保留现场后停止：' + str(src))
-    fd, index = tempfile.mkstemp(prefix='aegis-ci-index-')
-    os.close(fd)
-    Path(index).unlink()
-    env = dict(os.environ, GIT_INDEX_FILE=index)
-    try:
+    original_objects = git(src, 'rev-parse', '--path-format=absolute', '--git-path', 'objects')
+    with tempfile.TemporaryDirectory(prefix='aegis-ci-verify-') as directory:
+        temporary = Path(directory)
+        objects = temporary / 'objects'
+        (objects / 'info').mkdir(parents=True)
+        # 共享对象库可保持只读；补丁产生的中间对象只写入临时目录。
+        (objects / 'info/alternates').write_text(Path(original_objects).as_posix() + '\n', encoding='utf-8')
+        env = dict(os.environ, GIT_INDEX_FILE=str(temporary / 'index'),
+                   GIT_OBJECT_DIRECTORY=str(objects))
         git(src, 'read-tree', base, env=env)
         for name in series(patches):
             git(src, 'apply', '--cached', '--whitespace=nowarn', str(patches / name), env=env)
@@ -115,8 +119,6 @@ def verify_tree(src, base, patches):
         if expected != actual:
             raise ValueError('构建机源码与本次候选补丁不一致，禁止编译旧源码')
         return actual
-    finally:
-        Path(index).unlink(missing_ok=True)
 
 
 def candidate_pin(name, report, browser=BROWSER):
@@ -254,7 +256,7 @@ def build(name, evidence):
                 built = plistlib.loads(app_info.read_bytes()).get('AegisProductVersion', '')
                 if re.fullmatch(r'\d+\.\d+\.\d+\.\d+', built):
                     previous = max(previous, int(built.rsplit('.', 1)[1]))
-            version, number = contract.validate_version(src, BROWSER, previous)
+            version, number = contract.validate_version(src, BROWSER, previous, enforce_history=True)
             write_json(counter, {'number': number, 'version': version, 'runId': run_id})
             result.update(chromium=pin, sourceHead=git(src, 'rev-parse', 'HEAD'), sourceTree=source_tree,
                           v8Tree=v8_tree, productVersion=version, status='building')
@@ -289,7 +291,7 @@ def build(name, evidence):
                 artifact = evidence / ('candidate.zip' if name == 'mac' else 'candidate.exe' if name == 'windows' else 'candidate.apk')
                 if name == 'mac':
                     app = out / 'GCSA Aegis.app'
-                    run(['bash', BROWSER / 'scripts/sign-chromium-app.sh', app, out], src, evidence / 'adhoc-sign.log', src, minimum)
+                    run(['bash', BROWSER / 'scripts/sign-chromium-app.sh', app, out], src, evidence / 'gcsa-sign.log', src, minimum)
                     run(['ditto', '-c', '-k', '--sequesterRsrc', '--keepParent', app, artifact], src, evidence / 'package.log', src, minimum)
                 else:
                     built = out / ('mini_installer.exe' if name == 'windows' else 'apks/ChromePublic.apk')

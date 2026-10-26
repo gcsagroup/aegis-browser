@@ -24,18 +24,21 @@ function summarizeActions(actions) {
 
 export function actionsFromSnapshot(snapshot) {
   const actions = [];
+  const selectors = new Map(Object.entries(snapshot.xpathMap));
+  const urls = new Map(Object.entries(snapshot.urlMap));
   for (const line of snapshot.formattedTree.split('\n')) {
     const match = line.match(/^\s*\[([^\]]+)\]\s+(link|button):\s*(.+)$/iu);
     if (!match) continue;
     const [, nodeId, role, description] = match;
-    const selector = snapshot.xpathMap[nodeId];
-    if (!selector) continue;
+    const selector = selectors.get(nodeId);
+    if (typeof selector !== 'string' || !selector.trim()) continue;
+    const targetUrl = urls.get(nodeId);
     actions.push({
       selector,
       description: `${role}: ${description.trim()}`,
       method: 'click',
       arguments: [],
-      targetUrl: snapshot.urlMap[nodeId] ?? null,
+      targetUrl: typeof targetUrl === 'string' ? targetUrl : null,
     });
   }
   return actions;
@@ -130,7 +133,7 @@ async function main() {
   let lastOutcome = '任务刚开始。';
   const plannerGoal = residualGoalAfterEntry(config.goal, config.entryUrl);
 
-  try {
+  return await (async () => {
     browser = await localBrowser.launch({
       executablePath: config.browserExecutable,
       userDataDir: config.profilePath,
@@ -311,11 +314,11 @@ async function main() {
       stagehandModelCalls: stagehandModel.calls,
       revokedTabs,
     })}\n`);
-  } finally {
+  })().finally(async () => {
     if (!broker.stopped) broker.stop();
     if (stagehand) await stagehand.close();
     if (browser && !browser.closed) await browser.close();
-  }
+  });
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

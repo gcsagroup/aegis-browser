@@ -1,0 +1,195 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 16:00:00 +0800
+Subject: [PATCH] 对齐移动端设置与展开表单
+
+---
+diff --git a/chrome/browser/resources/aegis/aegis.css b/chrome/browser/resources/aegis/aegis.css
+index 19cfdbb252af12539c120cf111626f3371e1c828..96118db9328ee4c3f3a92cb8f48a97a0aae85c92 100644
+--- a/chrome/browser/resources/aegis/aegis.css
++++ b/chrome/browser/resources/aegis/aegis.css
+@@ -32,9 +32,12 @@ body {
+ 
+ .page {
+   overflow-wrap: anywhere;
+-  max-width: 42rem;
++  max-width: 1048px;
++  display: grid;
++  grid-template-columns: minmax(0, 1fr);
++  gap: 24px;
+   margin: 0 auto;
+-  padding: 3rem 1.5rem 4rem;
++  padding: 24px;
+ }
+ 
+ h1 {
+@@ -163,6 +166,7 @@ h1 {
+ }
+ 
+ .row input[type='checkbox'] {
++  flex: none;
+   width: 1.15rem;
+   height: 1.15rem;
+   margin-top: 0.2rem;
+@@ -618,3 +622,36 @@ textarea {
+     min-height: 64px;
+   }
+ }
++
++/* 手机与折叠屏共用卡片边界；页面间距由容器统一控制。 */
++
++.page > section {
++  margin: 0;
++  padding: 20px;
++  border: 1px solid var(--line);
++  border-radius: 12px;
++  background: var(--bg);
++}
++
++.page-header,
++.page-header .subtitle {
++  margin-bottom: 0;
++}
++
++.field,
++.row > *,
++.actions > * {
++  min-width: 0;
++}
++
++
++@media (max-width: 600px) {
++  .page {
++    gap: 16px;
++    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
++  }
++
++  .page > section {
++    padding: 16px;
++  }
++}
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 35a00529e8c040a0905d0581006b1835fcfc4a2a..1623ee9b5b016f6bc5247b046dbbda5571be1676 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -141,7 +141,7 @@
+       <section id="downloads" class="downloads" aria-label="$i18n{downloadsTitle}">
+         <h2>$i18n{downloadsTitle}</h2>
+         <p class="meta">$i18n{downloadsMeta}</p>
+-        <aegis-download-panel></aegis-download-panel>
++        <aegis-download-panel embedded></aegis-download-panel>
+         <p><a href="chrome://downloads">$i18n{downloadsHistory}</a></p>
+         <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
+       </section>
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 7421837bbeea9f23eef0bf084bd81f162c24a534..47a1ab3d66c35b3f14d17824c7d0530b999ee490 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -49,10 +49,10 @@ body {
+ 
+ main {
+   display: grid;
+-  gap: 12px;
++  gap: 16px;
+   grid-template-columns: minmax(0, 1fr);
+   margin: 0 auto;
+-  max-width: 720px;
++  max-width: 1048px;
+   min-width: 0;
+   overflow-wrap: anywhere;
+   padding: 18px;
+@@ -132,9 +132,9 @@ h2 {
+ .notice {
+   background: var(--surface);
+   border: 1px solid var(--line);
+-  border-radius: 15px;
++  border-radius: 12px;
+   box-shadow: var(--shadow);
+-  padding: 14px;
++  padding: 16px;
+ }
+ 
+ .composer {
+@@ -346,6 +346,7 @@ summary {
+ }
+ 
+ .toggle-row input[type='checkbox'] {
++  flex: none;
+   min-height: 18px;
+   width: 18px;
+ }
+@@ -825,7 +826,7 @@ summary {
+ 
+ .reading-pairs {
+   display: grid;
+-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
++  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+   gap: 12px;
+ }
+ 
+@@ -896,3 +897,36 @@ summary {
+   }
+ 
+ }
++
++/* 模型、阅读及自动任务表单沿同一内容边界排列。 */
++
++
++.field-grid,
++.field-grid > *,
++.model-body > *,
++.toggle-row > * {
++  min-width: 0;
++}
++
++
++.field-grid input,
++.field-grid select,
++.field-grid textarea {
++  width: 100%;
++  max-width: 100%;
++}
++
++
++@media (min-width: 601px) {
++  main {
++    padding: 24px;
++    gap: 24px;
++  }
++
++  .card,
++  .composer,
++  .target-card,
++  .notice {
++    padding: 20px;
++  }
++}
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+index 98ceb272b4978b795d61b2b273edaabcc89c071e..645db7d8466900a893314bfc54999d9ad2b343b5 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+@@ -224,3 +224,24 @@ button:disabled {
+     min-height: 44px;
+   }
+ }
++
++/* 已有外层卡片时沿用其边界，避免工作区里的双重缩进。 */
++:host([embedded]) {
++  width: 100%;
++  margin: 0;
++}
++
++:host([embedded]) .card {
++  background: transparent;
++  border-radius: 0;
++  box-shadow: none;
++}
++
++:host([embedded]) .header {
++  padding: 12px 0;
++}
++
++:host([embedded]) .composer,
++:host([embedded]) .task {
++  padding-inline: 0;
++}

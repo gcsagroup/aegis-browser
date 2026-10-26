@@ -1,0 +1,21 @@
+[
+ {"pattern":"https://example.com/*","url":"https://example.com/a?b=2","matches":true},
+ {"pattern":"https://example.com/*","url":"http://example.com/","matches":false},
+ {"pattern":"*://*.example.com/*","url":"https://example.com/","matches":true},
+ {"pattern":"*://*.example.com/*","url":"http://a.b.example.com/","matches":true},
+ {"pattern":"*://*.example.com/*","url":"https://example.com.evil.test/","matches":false},
+ {"pattern":"*://*.example.com/*","url":"https://evil-example.com/","matches":false},
+ {"pattern":"http://localhost:8768/docs/*","url":"http://localhost:8768/docs/a.md","matches":true},
+ {"pattern":"http://localhost:8768/docs/*","url":"http://localhost:8769/docs/a.md","matches":false},
+ {"pattern":"https://example.com:443/*","url":"https://example.com/a","matches":true},
+ {"pattern":"https://example.com/a?b=*","url":"https://example.com/a?b=2","matches":true},
+ {"pattern":"https://example.com/a?b=*","url":"https://example.com/axb=2","matches":false},
+ {"pattern":"https://example.com/a*","url":"https://example.com/a#b","matches":true},
+ {"pattern":"https://example.com/*","url":"https://user:password@example.com/","matches":false},
+ {"pattern":"*://*/*","url":"chrome://settings/","matches":false},
+ {"pattern":"*://*/*","url":"file:///tmp/a.html","matches":false},
+ {"pattern":"http://[::1]:8768/*","url":"http://[::1]:8768/a","matches":true},
+ {"pattern":"HTTPS://EXAMPLE.COM/*","url":"https://example.com/a","matches":true},
+ {"pattern":"https://example.com/A*","url":"https://example.com/a","matches":false},
+ {"pattern":"https://example.com/%E4%B8%AD*","url":"https://example.com/中文","matches":true}
+]

@@ -187,6 +187,18 @@ button:disabled {
 }
 
 @media (max-width: 600px) {
+  button,
+  input[type='number'],
+  input[type='file'],
+  input[type='file']::file-selector-button {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  input[type='file']::file-selector-button {
+    padding: 8px 12px;
+  }
+
   .header {
     align-items: flex-start;
     flex-direction: column;
@@ -209,8 +221,14 @@ button:disabled {
 @media (pointer: coarse) {
   button,
   input[type='number'],
-  input[type='file'] {
-    min-height: 44px;
+  input[type='file'],
+  input[type='file']::file-selector-button {
+    min-height: 48px;
+  }
+
+  input[type='file']::file-selector-button {
+    padding: 8px 12px;
+    font: inherit;
   }
 
   input,
@@ -223,4 +241,25 @@ button:disabled {
   .disclosure {
     min-height: 44px;
   }
+}
+
+/* 已有外层卡片时沿用其边界，避免工作区里的双重缩进。 */
+:host([embedded]) {
+  width: 100%;
+  margin: 0;
+}
+
+:host([embedded]) .card {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+:host([embedded]) .header {
+  padding: 12px 0;
+}
+
+:host([embedded]) .composer,
+:host([embedded]) .task {
+  padding-inline: 0;
 }

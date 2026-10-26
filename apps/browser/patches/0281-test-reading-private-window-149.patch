@@ -1,0 +1,45 @@
+From bab189952789b7e3151b7e5dfd686abba04feab4 Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 06:02:41 +0800
+Subject: [PATCH] =?UTF-8?q?test:=20=E5=AF=B9=E9=BD=90=E6=97=A0=E7=97=95?=
+ =?UTF-8?q?=E7=AA=97=E5=8F=A3=E6=B5=8B=E8=AF=95=E6=8E=A5=E5=8F=A3=20149?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/agent/aegis_agent_browsertest.cc | 2 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h    | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index bfecbe0ed8d104b2e71f8dd1737ad6d5d0f41c1e..1a2f6a0d736f354c5f66f18d89214b652a8539a2 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6067,7 +6067,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceCaptureAndAnnotati
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceRejectsPrivateProfile) {
+-  Browser* incognito = CreateIncognitoBrowser();
++  BrowserWindowInterface* incognito = CreateIncognitoBrowser(browser()->GetProfile());
+   AegisReadingWorkspace workspace(incognito->GetProfile(), incognito);
+   base::test::TestFuture<std::string, std::string> done;
+   workspace.Run("{\"op\":\"list\"}", done.GetCallback());
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 23d4655c58f1248c5dc47f6eae43f7879dabc789..ca74a8092aab0b509bcaa35e55cf0ae0be602f2c 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.148";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (148)";
++inline constexpr char kProductVersion[] = "3.0.0.149";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (149)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

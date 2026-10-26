@@ -9,6 +9,8 @@ import {
 import {dirname, extname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
+import {checkPlatformFeatures} from './check-platform-features.mjs';
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const browserRoot = join(repoRoot, 'apps/browser');
 const iosRoot = join(repoRoot, 'apps/ios');
@@ -247,6 +249,7 @@ function checkDocumentedCommands() {
   }
 }
 
+failures.push(...checkPlatformFeatures());
 checkProductTopology();
 checkPatchSeries();
 checkPinnedVersion();

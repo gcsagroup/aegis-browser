@@ -1,5 +1,10 @@
 # 文件
 
+- [iOS WebKit 指紋、深層保護、釣魚與挖礦偵測實施方案（簡體中文）](plans/ios-webkit-protection-2026-10-11.zh-CN.md)
+- [iOS Ver 4.0 可移植功能：功能使用說明](ios-portable-features.zh-TW.md)
+- [四端功能對照](platform-features.zh-TW.md)
+- [驗收記錄](audit/ios-portable-features-2026-10-11.zh-CN.md)
+
 
 > [2026-10-09：Chromium 155、鼠标手势与 Quinn 改动整合记录](audit/main-quinn-integration-2026-10-09.zh-CN.md)。最新范围以此记录及 PR #32 为准，下方旧版本数据为历史记录。
 [English](README.md) | [简体中文](README.zh-CN.md) | **繁體中文**
@@ -11,6 +16,8 @@
 > **歷史邊界 — 2026-09-10：** Browser Agent v2 候選原始碼包含 108 個頂層 Chromium 補丁和 2 個巢狀 V8 補丁，可精確重放到 Chromium 提交 原始碼樹 `319366182c31108e29e62d2f2199aff29a0b86e8`。平台建置和驗收仍是獨立門禁，這個原始碼身分不代表公開發行合格。Phase 2 仍是 synthetic formal fixture，Phase 3 是 13 樣本 operator-blinded public pilot，召回率為 `1/3`；兩者都不能泛化為廣義惡意 JavaScript 偵測結論。專案整體仍為發行 No-Go。
 
 [2026-09-10 main 合併與驗證](audit/main-consolidation-2026-09-10.md)
+
+- [iOS Ver 5.0 網頁保護](ios-webkit-protection.zh-TW.md) · [驗收紀錄](audit/ios-webkit-protection-2026-10-12.zh-CN.md)
 
 ## 從這裡開始
 

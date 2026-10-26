@@ -31,12 +31,12 @@ index f818303294cdfc4346630e167ae0141547670a4c..105d73ab36b63944514ffa3dbcc1010a
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/v8 b/v8
-index a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c..4090cdb495116ac2227708b50525f4dd16afdbb0 160000
+index 29666f90c3856a29ef669953d1325806e0f3d0b8..3b06172148cb194ea13bacd999adf6ed86ea2212 160000
 --- a/v8
 +++ b/v8
 @@ -1 +1 @@
--Subproject commit a1a3fb93fd6d7ca781e91676c8d3114c4eebeb1c
-+Subproject commit 4090cdb495116ac2227708b50525f4dd16afdbb0
+-Subproject commit 29666f90c3856a29ef669953d1325806e0f3d0b8
++Subproject commit 3b06172148cb194ea13bacd999adf6ed86ea2212
 -- 
 2.52.0
 
