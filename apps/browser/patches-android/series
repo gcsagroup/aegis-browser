@@ -316,3 +316,8 @@
 0316-prepare-native-validation-version-265.patch
 0317-prepare-native-validation-version-266.patch
 0318-prepare-native-validation-version-300.patch
+0319-native-settings-and-single-agent-entry-263.patch
+0320-complete-mobile-ui-acceptance-264.patch
+0321-fix-native-settings-background-capture-265.patch
+0322-fix-native-settings-landscape-viewport-266.patch
+0323-prepare-integrated-native-version-301.patch

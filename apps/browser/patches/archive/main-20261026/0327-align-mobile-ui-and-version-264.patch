@@ -1,0 +1,184 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 20:10:57 +0800
+Subject: [PATCH] 同步移动界面修复与产品版本
+
+---
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 73194f33d65f00497b577eb21ccb9b1679b669a7..0938005f2761c5ee0a41bc341cdbad7451f6a6de 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -1071,7 +1071,12 @@ body.reading-workspace-only main > #reading-ai-settings[open] { display:block !i
+ body[data-mobile-settings] main > :not(.hero, .mobile-settings-back) { display: none !important; }
+ 
+ body[data-mobile-settings='reading'] main > #reading-ai-settings,
+-body[data-mobile-settings='experiments'] main > #reading-research-settings { display: block !important; }
++body[data-mobile-settings='experiments'] main > #reading-research-settings,
++body[data-mobile-settings='workspace'] main > #reading-view,
++body[data-mobile-settings='workspace'] main > #reading-ai-settings[open] { display: block !important; }
++
++body[data-mobile-settings='workspace'] .hero,
++body[data-mobile-settings='workspace'] .mobile-settings-back { display: flex !important; }
+ 
+ body[data-mobile-settings] .hero { align-items: flex-start; }
+ 
+@@ -1082,7 +1087,8 @@ body[data-mobile-settings] .hero .status { display: none; }
+ body[data-mobile-settings] details.card { min-width: 0; }
+ 
+ body[data-mobile-settings] details.card > label { display: flex;
+- align-items: flex-start;
++ align-items: center;
++ min-height: 48px;
+  gap: 12px; }
+ 
+ body[data-mobile-settings] details.card > label > input[type='checkbox'] { flex: none;
+@@ -1100,6 +1106,26 @@ body.mobile-agent-shell {
+   --shadow: none;
+  background: var(--bg);
+ }
++
++/* Android 即使接入鼠标或手写笔，也保持可读字号和完整触控面积。 */
++body.mobile-agent-shell label,
++body.mobile-agent-shell summary,
++body.mobile-agent-shell .hero p {
++  font-size: 14px;
++  line-height: 1.5;
++}
++
++body.mobile-agent-shell summary {
++  min-height: 48px;
++  padding-block: 12px;
++}
++
++body.mobile-agent-shell button,
++body.mobile-agent-shell input:not([type='checkbox']),
++body.mobile-agent-shell select {
++  min-height: 48px;
++  font-size: 16px;
++}
+ @media (prefers-color-scheme: dark) {
+   body.mobile-agent-shell {
+     --bg: #202124;
+diff --git a/chrome/browser/resources/aegis_agent/mobile_settings.ts b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+index b96b3861c9341cb9015d9dbf4458d05d7dbcebb9..bae8da173e0dcd950503a131d13e39d39aedbf54 100644
+--- a/chrome/browser/resources/aegis_agent/mobile_settings.ts
++++ b/chrome/browser/resources/aegis_agent/mobile_settings.ts
+@@ -23,8 +23,19 @@ export function initializeMobileAgentSettings(
+   main.prepend(back);
+   if (params.get('view') === 'reading') {
+     document.getElementById('goal')?.removeAttribute('autofocus');
++    // 设置内的阅读入口只呈现阅读操作，不混入任务、模型和自动化导航。
++    document.body.dataset['mobileSettings'] = 'workspace';
++    const title = document.getElementById('title');
++    const subtitle = document.getElementById('subtitle');
++    if (!title || !subtitle) throw Error('缺少阅读工作区标题区域');
++    const workspaceTitle = text('阅读工作区', 'Reading workspace', '閱讀工作區');
++    title.textContent = workspaceTitle;
++    document.title = workspaceTitle;
++    subtitle.textContent = text(
++        '整理网页、阅读资料和批注。', 'Organize pages, reading material and notes.', '整理網頁、閱讀資料和批註。');
+     showReading();
+     void refresh();
++    return;
+   }
+   if (section !== 'reading' && section !== 'experiments') return;
+   document.getElementById('goal')?.removeAttribute('autofocus');
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 4ffb80865ce83cdd51c72d8aacdf40d438b50a7f..4d25b66792b66b98abf57bbc3b9b28e1f3b02e48 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.263";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (263)";
++inline constexpr char kProductVersion[] = "6.1.0.264";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (264)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+index 645db7d8466900a893314bfc54999d9ad2b343b5..b01e55d316f22e30b041082a621f02fce97e020e 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.css
+@@ -187,6 +187,18 @@ button:disabled {
+ }
+ 
+ @media (max-width: 600px) {
++  button,
++  input[type='number'],
++  input[type='file'],
++  input[type='file']::file-selector-button {
++    min-height: 48px;
++    font-size: 16px;
++  }
++
++  input[type='file']::file-selector-button {
++    padding: 8px 12px;
++  }
++
+   .header {
+     align-items: flex-start;
+     flex-direction: column;
+@@ -209,8 +221,14 @@ button:disabled {
+ @media (pointer: coarse) {
+   button,
+   input[type='number'],
+-  input[type='file'] {
+-    min-height: 44px;
++  input[type='file'],
++  input[type='file']::file-selector-button {
++    min-height: 48px;
++  }
++
++  input[type='file']::file-selector-button {
++    padding: 8px 12px;
++    font: inherit;
+   }
+ 
+   input,
+diff --git a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+index b88cd928138b47e8e0baffbe30861ecb89cf2e0a..516735f5611f1b6aab1ff9db62fcd6ad58cb86d0 100644
+--- a/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
++++ b/ui/webui/resources/cr_components/aegis_downloads/aegis_download_panel.ts
+@@ -238,6 +238,22 @@ export class AegisDownloadPanelElement extends CrLitElement {
+     return this.shadowRoot.querySelector<HTMLInputElement>('#descriptor');
+   }
+ 
++  private descriptorPrompt_(): string {
++    const locale = document.documentElement.lang;
++    if (!locale.startsWith('zh')) {
++      return this.torrentSupported_ ?
++          'Choose a .meta4, .metalink, or .torrent file, or paste a Magnet link.' :
++          'Choose a .meta4 or .metalink file.';
++    }
++    const traditional = /^zh-(?:TW|HK|Hant)/i.test(locale);
++    if (this.torrentSupported_) {
++      return traditional ? '請選擇 .meta4、.metalink 或 .torrent 檔案，或貼上磁力連結。' :
++                           '请选择 .meta4、.metalink 或 .torrent 文件，或粘贴磁力链接。';
++    }
++    return traditional ? '請選擇 .meta4 或 .metalink 檔案。' :
++                         '请选择 .meta4 或 .metalink 文件。';
++  }
++
+   protected onDescriptorChange_() {
+     if (this.descriptor_()?.files?.length) {
+       const magnet =
+@@ -317,14 +333,10 @@ export class AegisDownloadPanelElement extends CrLitElement {
+               await this.request_('parseMetalink', await file.text());
+           this.setMetalinkPreview_(preview, zh);
+         } else {
+-          throw new Error(
+-              zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇 Metalink 或 Torrent 檔案。' : '请选择 Metalink 或 Torrent 文件。') :
+-                   'Choose a Metalink or Torrent file.');
++          throw new Error(this.descriptorPrompt_());
+         }
+       } else {
+-        throw new Error(
+-            zh ? (/^zh-(?:TW|HK|Hant)/i.test(document.documentElement.lang) ? '請選擇檔案或貼上 磁力連結。' : '请选择文件或粘贴 磁力链接。') :
+-                 'Choose a file or paste a Magnet link.');
++        throw new Error(this.descriptorPrompt_());
+       }
+     } catch (error) {
+       this.previewText_ = this.formatPreviewError_(error);

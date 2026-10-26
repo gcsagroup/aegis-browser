@@ -1,0 +1,877 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 00:15:00 +0800
+Subject: [PATCH] 将 Android Aegis 设置接入原生页面栈并合并智能体入口
+
+---
+ chrome/android/chrome_java_sources.gni             |   1 +
+ .../java/res/layout/aegis_agent_bottom_sheet.xml   |   8 +
+ chrome/android/java/res/values/ids.xml             |   1 -
+ .../chrome/browser/ChromeTabbedActivity.java       |  13 +-
+ .../aegis/AegisAgentBottomSheetCoordinator.java    |  15 +-
+ .../chrome/browser/download/DownloadUtils.java     |   4 +-
+ .../chromium/chrome/browser/ntp/NewTabPage.java    |   2 +-
+ .../chrome/browser/settings/AegisSettings.java     | 190 +++++++++++++++++++++
+ .../chrome/browser/settings/MainSettings.java      |  32 ++--
+ .../TabbedAppMenuPropertiesDelegate.java           |  26 ---
+ chrome/browser/ui/webui/aegis/BUILD.gn             |   6 +
+ chrome/browser/ui/webui/aegis/aegis_ui.cc          |  71 +++++++-
+ chrome/browser/ui/webui/aegis/aegis_ui.h           |   7 +
+ chrome/browser/ui/webui/aegis_agent/BUILD.gn       |   3 +
+ .../webui/aegis_agent/aegis_agent_page_handler.cc  |  30 ++--
+ .../webui/aegis_agent/aegis_agent_page_handler.h   |   3 +-
+ .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |   6 +
+ .../ui/webui/aegis_agent/reading_workspace.cc      |   9 +-
+ .../ui/webui/aegis_agent/reading_workspace.h       |   2 +-
+ chrome/browser/ui/webui/help/aegis_github_update.h |   4 +-
+ 20 files changed, 354 insertions(+), 79 deletions(-)
+
+diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
+index b546e4598a09aa24417e1febebea926f0f71a385..4e0476cd508e45cb162337557cd9739517a81047 100644
+--- a/chrome/android/chrome_java_sources.gni
++++ b/chrome/android/chrome_java_sources.gni
+@@ -1092,6 +1092,7 @@ chrome_java_sources = [
+   "java/src/org/chromium/chrome/browser/services/gcm/GCMBackgroundServiceImpl.java",
+   "java/src/org/chromium/chrome/browser/services/gcm/GCMNativeBackgroundTask.java",
+   "java/src/org/chromium/chrome/browser/services/gcm/GcmUma.java",
++  "java/src/org/chromium/chrome/browser/settings/AegisSettings.java",
+   "java/src/org/chromium/chrome/browser/settings/FragmentDependencyProvider.java",
+   "java/src/org/chromium/chrome/browser/settings/SettingsContainmentHelper.java",
+ 
+diff --git a/chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml b/chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml
+index e3bf574d1bb935bac3e2c75689c2d348b484f67c..04e9c7f1da0c82adb37042291d6d64f407f4b4d1 100644
+--- a/chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml
++++ b/chrome/android/java/res/layout/aegis_agent_bottom_sheet.xml
+@@ -62,6 +62,14 @@
+                     android:textAppearance="@style/TextAppearance.TextLarge.Primary" />
+             </com.google.android.material.textfield.TextInputLayout>
+ 
++            <org.chromium.ui.widget.ButtonCompat
++                android:id="@+id/aegis_agent_sheet_current_page"
++                style="@style/TextButton"
++                android:layout_width="match_parent"
++                android:layout_height="wrap_content"
++                android:layout_marginTop="8dp"
++                android:text="@string/menu_aegis_agent_current_page" />
++
+             <TextView
+                 android:layout_width="match_parent"
+                 android:layout_height="wrap_content"
+diff --git a/chrome/android/java/res/values/ids.xml b/chrome/android/java/res/values/ids.xml
+index 74804e87c0e87ea444df4e4d650824c03cea25b0..c83c76f3df2ea71cd7af589f6b74f21200067620 100644
+--- a/chrome/android/java/res/values/ids.xml
++++ b/chrome/android/java/res/values/ids.xml
+@@ -290,7 +290,6 @@ found in the LICENSE file.
+     <item type="id" name="tab_groups_parent_menu_id" />
+     <item type="id" name="toggle_bookmarks_bar_menu_id" />
+     <item type="id" name="aegis_agent_menu_id" />
+-    <item type="id" name="aegis_agent_current_page_menu_id" />
+     <item type="id" name="toggle_tab_layout_menu_id" />
+     <item type="id" name="translate_id" />
+     <item type="id" name="universal_install" />
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+index c6ce994e7ef891bc8d2ff5121cc51c5f70b7c6f6..70535df174cd9847decc3a1a6421c987766a722a 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
+@@ -4374,11 +4374,14 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+                 .closeTabs(TabClosureParams.closeAllTabs().build(), /* allowDialog= */ false);
+     }
+ 
+-    private void showAegisAgentComposer(boolean currentPage) {
++    private void showAegisAgentComposer() {
++        Tab tab = getActivityTab();
++        String scheme = tab == null ? "" : tab.getUrl().getScheme();
++        boolean canProcessCurrentPage = "http".equals(scheme) || "https".equals(scheme);
+         AegisAgentBottomSheetCoordinator.show(
+                 this,
+                 assertNonNull(mRootUiCoordinator.getBottomSheetController()),
+-                currentPage,
++                canProcessCurrentPage,
+                 this::openAegisAgentWorkspace);
+     }
+ 
+@@ -4414,13 +4417,9 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+ 
+             mLocaleManager.showSearchEnginePromoIfNeeded(this, null);
+         } else if (id == R.id.aegis_agent_menu_id) {
+-            showAegisAgentComposer(/* currentPage= */ false);
++            showAegisAgentComposer();
+             RecordUserAction.record("MobileMenuAegisAgent");
+             return true;
+-        } else if (id == R.id.aegis_agent_current_page_menu_id) {
+-            showAegisAgentComposer(/* currentPage= */ true);
+-            RecordUserAction.record("MobileMenuAegisAgentCurrentPage");
+-            return true;
+         } else if (id == R.id.new_incognito_tab_menu_id) {
+             if (!mTabModelSelector.isTabStateInitialized()) {
+                 RecordUserAction.record("MobileMenuNewIncognitoTab.BeforeTabRestore");
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java b/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java
+index 18ee2a0eebdc59722033161674d95879317ed1a6..a571072288f5c1eb2d8467abd8cf9502cdc2582c 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/aegis/AegisAgentBottomSheetCoordinator.java
+@@ -28,22 +28,25 @@ public final class AegisAgentBottomSheetCoordinator {
+     /**
+      * Shows the native task composer.
+      *
+-     * @param currentPage Whether this entry was invoked for the visible HTTP(S) page.
++     * @param canProcessCurrentPage 当前页面是 HTTP(S) 网页时，显示处理当前页快捷入口。
+      */
+     public static boolean show(
+             Context context,
+             BottomSheetController controller,
+-            boolean currentPage,
++            boolean canProcessCurrentPage,
+             Launcher launcher) {
+         View view =
+                 LayoutInflater.from(context)
+                         .inflate(R.layout.aegis_agent_bottom_sheet, /* root= */ null);
+         ScrollView scrollView = view.findViewById(R.id.aegis_agent_sheet_scroll_view);
+         EditText goal = view.findViewById(R.id.aegis_agent_sheet_goal);
+-        if (currentPage) {
+-            goal.setText(R.string.aegis_agent_current_page_default_goal);
+-            goal.setSelection(goal.length());
+-        }
++        view.findViewById(R.id.aegis_agent_sheet_current_page)
++                .setVisibility(canProcessCurrentPage ? View.VISIBLE : View.GONE);
++        bindPreset(
++                view,
++                goal,
++                R.id.aegis_agent_sheet_current_page,
++                R.string.aegis_agent_current_page_default_goal);
+ 
+         bindPreset(view, goal, R.id.aegis_agent_quick_summary, R.string.aegis_agent_goal_summary);
+         bindPreset(
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
+index 9e0b2b563d9c2dd73f44c11b772e4e45fb03e3ad..ddbe90a786f7cb3ef8a6b2ba65ecaf0a4685b695 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/download/DownloadUtils.java
+@@ -66,6 +66,7 @@ import org.chromium.chrome.browser.pdf.PdfUtils;
+ import org.chromium.chrome.browser.profiles.OtrProfileId;
+ import org.chromium.chrome.browser.profiles.Profile;
+ import org.chromium.chrome.browser.profiles.ProfileManager;
++import org.chromium.chrome.browser.settings.SettingsActivity;
+ import org.chromium.chrome.browser.tab.Tab;
+ import org.chromium.chrome.browser.tab.TabLaunchType;
+ import org.chromium.chrome.browser.tabmodel.document.ChromeAsyncTabLauncher;
+@@ -169,7 +170,8 @@ public class DownloadUtils {
+             return false;
+         }
+ 
+-        if (isTablet) {
++        // 从原生设置打开时沿用 Activity 返回栈，大屏也不新增标签页。
++        if (isTablet && !(activity instanceof SettingsActivity)) {
+             LoadUrlParams params = new LoadUrlParams(UrlConstants.DOWNLOADS_URL);
+             ChromeAsyncTabLauncher delegate =
+                     new ChromeAsyncTabLauncher(
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
+index 9cc734d91ef293bbba66885980be2d76ffbcb35b..f7e02538ad3c472a6529d3d45add7088fe8371bb 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/ntp/NewTabPage.java
+@@ -546,7 +546,7 @@ public class NewTabPage
+                             AegisAgentBottomSheetCoordinator.show(
+                                     activity,
+                                     mBottomSheetController,
+-                                    /* currentPage= */ false,
++                                    /* canProcessCurrentPage= */ false,
+                                     (goal, autoStart) -> {
+                                         Uri.Builder agentUrl =
+                                                 Uri.parse("chrome-untrusted://aegis-agent/")
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..83a05a406acef5aa7d1643eb72f9e7c4c44481c7
+--- /dev/null
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/AegisSettings.java
+@@ -0,0 +1,190 @@
++// Copyright 2026 GCSA
++
++package org.chromium.chrome.browser.settings;
++
++import static org.chromium.build.NullUtil.assumeNonNull;
++
++import android.os.Bundle;
++import android.view.LayoutInflater;
++import android.view.MenuItem;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++
++import androidx.fragment.app.Fragment;
++
++import org.chromium.base.supplier.NonNullObservableSupplier;
++import org.chromium.base.supplier.ObservableSuppliers;
++import org.chromium.base.supplier.SettableNonNullObservableSupplier;
++import org.chromium.base.version_info.VersionInfo;
++import org.chromium.build.annotations.NullMarked;
++import org.chromium.build.annotations.Nullable;
++import org.chromium.chrome.browser.content.WebContentsFactory;
++import org.chromium.chrome.browser.profiles.Profile;
++import org.chromium.components.browser_ui.settings.SettingsFragment;
++import org.chromium.components.browser_ui.styles.SemanticColorUtils;
++import org.chromium.components.browser_ui.widget.gesture.BackPressHandler;
++import org.chromium.components.embedder_support.view.ContentView;
++import org.chromium.components.thinwebview.ThinWebView;
++import org.chromium.components.thinwebview.ThinWebViewAttachParams;
++import org.chromium.components.thinwebview.ThinWebViewConstraints;
++import org.chromium.components.thinwebview.ThinWebViewFactory;
++import org.chromium.content_public.browser.LoadUrlParams;
++import org.chromium.content_public.browser.NavigationHandle;
++import org.chromium.content_public.browser.Visibility;
++import org.chromium.content_public.browser.WebContents;
++import org.chromium.content_public.browser.WebContentsObserver;
++import org.chromium.ui.base.ViewAndroidDelegate;
++import org.chromium.url.GURL;
++
++/** 在原生设置页面栈内承载 Aegis 设置，复用当前用户配置且不创建浏览器标签页。 */
++@NullMarked
++public final class AegisSettings extends Fragment
++        implements SettingsFragment, ProfileDependentSetting, BackPressHandler {
++    private static final String HOME_URL = "chrome://aegis/";
++    private static final String SAVED_URL = "aegis_settings_url";
++
++    private final SettableNonNullObservableSupplier<Boolean> mCanGoBack =
++            ObservableSuppliers.createNonNull(false);
++    private @Nullable Profile mProfile;
++    private @Nullable WebContents mWebContents;
++    private @Nullable WebContentsObserver mObserver;
++    private @Nullable ThinWebView mThinWebView;
++
++    @Override
++    public void setProfile(Profile profile) {
++        mProfile = profile;
++    }
++
++    @Override
++    public int getAnimationType() {
++        return AnimationType.PROPERTY;
++    }
++
++    @Override
++    public View onCreateView(
++            LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle state) {
++        SettingsActivity activity = (SettingsActivity) requireActivity();
++        WebContents contents =
++                WebContentsFactory.createWebContents(
++                        assumeNonNull(mProfile), /* initiallyHidden= */ false, false);
++        mWebContents = contents;
++        ContentView contentView = ContentView.createContentView(activity, contents);
++        contents.setDelegates(
++                VersionInfo.getProductVersion(),
++                ViewAndroidDelegate.createBasicDelegate(contentView),
++                contentView,
++                /* windowAndroid= */ null,
++                WebContents.createDefaultInternalsHolder());
++        ThinWebViewConstraints constraints = new ThinWebViewConstraints();
++        // Fragment 切换时会调整透明度，需要可参与动画的 TextureView。
++        constraints.supportsOpacity = true;
++        constraints.backgroundColor = SemanticColorUtils.getSettingsBackgroundColor(activity);
++        mThinWebView =
++                ThinWebViewFactory.create(
++                        activity,
++                        constraints,
++                        activity.getIntentRequestTracker(),
++                        /* enablePermissionRequests= */ false);
++        mThinWebView.attachWebContents(
++                contents,
++                contentView,
++                new ThinWebViewAttachParams.Builder().setSupportTheming(true).build());
++        mObserver =
++                new WebContentsObserver(contents) {
++                    @Override
++                    public void didFinishNavigationInPrimaryMainFrame(NavigationHandle handle) {
++                        updateBackState();
++                    }
++
++                    @Override
++                    public void navigationEntriesChanged() {
++                        updateBackState();
++                    }
++                };
++        String url = state == null ? HOME_URL : state.getString(SAVED_URL, HOME_URL);
++        GURL restored = new GURL(url);
++        boolean isSettingsUrl =
++                ("chrome".equals(restored.getScheme()) && "aegis".equals(restored.getHost()))
++                        || ("chrome-untrusted".equals(restored.getScheme())
++                                && "aegis-agent".equals(restored.getHost()));
++        contents.getNavigationController()
++                .loadUrl(new LoadUrlParams(isSettingsUrl ? url : HOME_URL));
++        // 原生设置会给根视图添加大屏留白，由外层承接，避免渲染宽度包含留白。
++        FrameLayout root = new FrameLayout(activity);
++        root.addView(
++                mThinWebView.getView(),
++                new FrameLayout.LayoutParams(
++                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++        contentView.requestFocus();
++        return root;
++    }
++
++    private void updateBackState() {
++        if (mWebContents == null) return;
++        GURL url = mWebContents.getLastCommittedUrl();
++        boolean isHome =
++                "chrome".equals(url.getScheme())
++                        && "aegis".equals(url.getHost())
++                        && (url.getRef().isEmpty() || "home".equals(url.getRef()));
++        mCanGoBack.set(!url.isEmpty() && !isHome);
++    }
++
++    @Override
++    public NonNullObservableSupplier<Boolean> getHandleBackPressChangedSupplier() {
++        return mCanGoBack;
++    }
++
++    @Override
++    public int handleBackPress() {
++        if (mWebContents == null || !mCanGoBack.get()) return BackPressResult.FAILURE;
++        if (mWebContents.getNavigationController().canGoBack()) {
++            mWebContents.getNavigationController().goBack();
++        } else {
++            // 配置变化后恢复的子页没有历史记录，先回到 Aegis 设置首页。
++            mWebContents.getNavigationController().loadUrl(new LoadUrlParams(HOME_URL));
++        }
++        return BackPressResult.SUCCESS;
++    }
++
++    @Override
++    public boolean onOptionsItemSelected(MenuItem item) {
++        if (item.getItemId() == android.R.id.home && mCanGoBack.get()) {
++            return handleBackPress() == BackPressResult.SUCCESS;
++        }
++        return super.onOptionsItemSelected(item);
++    }
++
++    @Override
++    public void onResume() {
++        super.onResume();
++        requireActivity().setTitle("GCSA Aegis");
++        if (mWebContents != null) mWebContents.updateWebContentsVisibility(Visibility.VISIBLE);
++    }
++
++    @Override
++    public void onPause() {
++        if (mWebContents != null) mWebContents.updateWebContentsVisibility(Visibility.HIDDEN);
++        super.onPause();
++    }
++
++    @Override
++    public void onSaveInstanceState(Bundle state) {
++        super.onSaveInstanceState(state);
++        if (mWebContents != null) {
++            state.putString(SAVED_URL, mWebContents.getLastCommittedUrl().getSpec());
++        }
++    }
++
++    @Override
++    public void onDestroyView() {
++        if (mObserver != null) mObserver.observe(null);
++        mObserver = null;
++        if (mThinWebView != null) mThinWebView.destroy();
++        mThinWebView = null;
++        if (mWebContents != null) mWebContents.destroy();
++        mWebContents = null;
++        mCanGoBack.set(false);
++        super.onDestroyView();
++    }
++}
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
+index 7392ab9db4a368889afd18578fc35dbfb134f379..169efa33a4d11168233dd1e65b043e0b0029b933 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
+@@ -12,7 +12,6 @@ import android.content.Intent;
+ import android.content.SharedPreferences;
+ import android.content.pm.PackageManager;
+ import android.content.res.Configuration;
+-import android.net.Uri;
+ import android.os.Bundle;
+ import android.os.Handler;
+ import android.os.Parcelable;
+@@ -37,7 +36,6 @@ import org.chromium.build.annotations.Initializer;
+ import org.chromium.build.annotations.NullMarked;
+ import org.chromium.build.annotations.Nullable;
+ import org.chromium.chrome.R;
+-import org.chromium.chrome.browser.IntentHandler;
+ import org.chromium.chrome.browser.appearance.settings.AppearanceSettingsFragment;
+ import org.chromium.chrome.browser.autofill.settings.SettingsNavigationHelper;
+ import org.chromium.chrome.browser.autofill.settings.options.AutofillOptionsFragment;
+@@ -365,21 +363,25 @@ public class MainSettings extends ChromeBaseSettingsFragment
+         if (aegisSettings != null) {
+             java.util.Locale locale = getResources().getConfiguration().getLocales().get(0);
+             boolean chinese = locale.getLanguage().equals("zh");
+-            boolean traditional = locale.getScript().equals("Hant")
+-                    || locale.getCountry().equals("TW") || locale.getCountry().equals("HK")
+-                    || locale.getCountry().equals("MO");
+-            aegisSettings.setSummary(chinese
+-                    ? (traditional ? "隱私防護、閱讀、AI、下載與實驗功能" : "隐私防护、阅读、AI、下载与实验功能")
+-                    : "Protection, reading, AI, downloads and experiments");
+-            aegisSettings.setOnPreferenceClickListener(preference -> {
+-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("chrome://aegis"));
+-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+-                IntentHandler.startChromeLauncherActivityForTrustedIntent(intent);
+-                return true;
+-            });
++            boolean traditional =
++                    locale.getScript().equals("Hant")
++                            || locale.getCountry().equals("TW")
++                            || locale.getCountry().equals("HK")
++                            || locale.getCountry().equals("MO");
++            aegisSettings.setSummary(
++                    chinese
++                            ? (traditional ? "隱私防護、閱讀、AI、下載與實驗功能" : "隐私防护、阅读、AI、下载与实验功能")
++                            : "Protection, reading, AI, downloads and experiments");
++            // 显式启动原生设置页，避免双栏设置将此项自动嵌入详情区域。
++            aegisSettings.setOnPreferenceClickListener(
++                    preference -> {
++                        Context context = requireContext();
++                        SettingsNavigationFactory.createSettingsNavigation(context)
++                                .startSettings(context, AegisSettings.class);
++                        return true;
++                    });
+         }
+ 
+-
+         IdentityManager identityManager =
+                 IdentityServicesProvider.get().getIdentityManager(getProfile());
+         assert identityManager != null;
+diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+index 0d5bf1f738b8290233289338c6237ad578fc0fa1..82bad6ddd09704372ab5524878fbeb855b4625bd 100644
+--- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
++++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
+@@ -542,9 +542,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         // Divider Line
+         AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
+ 
+-        if (shouldShowAegisCurrentPageItem(currentTab)) {
+-            modelList.add(buildAegisCurrentPageItem());
+-        }
+         modelList.add(buildAegisAgentItem());
+ 
+         // Settings
+@@ -739,9 +736,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+         // Divider Line
+         AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
+ 
+-        if (shouldShowAegisCurrentPageItem(currentTab)) {
+-            modelList.add(buildAegisCurrentPageItem());
+-        }
+         modelList.add(buildAegisAgentItem());
+ 
+         // Settings
+@@ -1391,26 +1385,6 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+                         isMenuIconAtStart()));
+     }
+ 
+-    private ListItem buildAegisCurrentPageItem() {
+-        return new ListItem(
+-                AppMenuHandler.AppMenuItemType.STANDARD,
+-                AppMenuItemUtils.buildModelForStandardMenuItem(
+-                        mContext,
+-                        getAppMenuItemTheme(),
+-                        R.id.aegis_agent_current_page_menu_id,
+-                        R.string.menu_aegis_agent_current_page,
+-                        shouldShowIconBeforeItem()
+-                                ? R.drawable.draft_spark_24dp
+-                                : Resources.ID_NULL,
+-                        isMenuIconAtStart()));
+-    }
+-
+-    private boolean shouldShowAegisCurrentPageItem(@Nullable Tab currentTab) {
+-        if (currentTab == null) return false;
+-        String scheme = currentTab.getUrl().getScheme();
+-        return "http".equals(scheme) || "https".equals(scheme);
+-    }
+-
+     @Contract("null -> false")
+     private boolean shouldShowListenToFeedItem(@Nullable Tab currentTab) {
+         if (currentTab == null
+diff --git a/chrome/browser/ui/webui/aegis/BUILD.gn b/chrome/browser/ui/webui/aegis/BUILD.gn
+index 74562852cf7d0b68e995ba0c00ba4a88bbc3560b..327e8abd0e626eeb32ed793d9aeaa3803bfdc9a0 100644
+--- a/chrome/browser/ui/webui/aegis/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis/BUILD.gn
+@@ -27,6 +27,12 @@ source_set("aegis") {
+     "//ui/base",
+     "//ui/webui",
+   ]
++  if (is_android) {
++    deps += [
++      "//chrome/browser:file_select_helper",
++      "//chrome/browser/ui/webui:webui_util",
++    ]
++  }
+   if (!is_android) {
+     sources += [
+       "aegis_gesture_handler.cc",
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index b4e6bdb39e8c85181a341101291cefdbe29a4c6b..6133a998a14a31db4d7725737b6f5c4b6c993080 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -4,9 +4,20 @@
+ #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
+ 
+ #include <string>
++#include <utility>
+ 
+ #include "build/build_config.h"
+-#if !BUILDFLAG(IS_ANDROID)
++#if BUILDFLAG(IS_ANDROID)
++#include "chrome/browser/download/android/download_manager_service.h"
++#include "chrome/browser/file_select_helper.h"
++#include "chrome/browser/ui/browser_window/public/profile_browser_collection.h"
++#include "chrome/browser/ui/webui/webui_embedding_context.h"
++#include "content/public/browser/file_select_listener.h"
++#include "content/public/browser/page_navigator.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_delegate.h"
++#include "content/public/browser/web_contents_user_data.h"
++#else
+ #include "chrome/browser/ui/webui/aegis/aegis_gesture_handler.h"
+ #endif
+ #include "chrome/browser/aegis/aegis_download_prefs.h"
+@@ -23,6 +34,47 @@
+ 
+ namespace {
+ 
++#if BUILDFLAG(IS_ANDROID)
++// 原生设置的 WebContents 没有浏览器标签页，单独接入系统文件选择器。
++// 由 WebContents 持有，切换到阅读或实验子页时也保留此委托。
++class AegisSettingsDelegate
++    : public content::WebContentsDelegate,
++      public content::WebContentsUserData<AegisSettingsDelegate> {
++ public:
++  content::WebContents* OpenURLFromTab(
++      content::WebContents* source,
++      const content::OpenURLParams& params,
++      base::OnceCallback<void(content::NavigationHandle&)>) override {
++    if (params.url == GURL(chrome::kChromeUIDownloadsURL)) {
++      DownloadManagerService::GetInstance()->OpenDownloadsPage(
++          Profile::FromBrowserContext(GetWebContents().GetBrowserContext()),
++          DownloadOpenSource::kMenu);
++    }
++    return nullptr;
++  }
++
++  void ActivateContents(content::WebContents* contents) override {
++    contents->Focus();
++  }
++
++  void RunFileChooser(content::RenderFrameHost* render_frame_host,
++                      scoped_refptr<content::FileSelectListener> listener,
++                      const blink::mojom::FileChooserParams& params) override {
++    FileSelectHelper::RunFileChooser(render_frame_host, std::move(listener),
++                                     params);
++  }
++
++ private:
++  friend class content::WebContentsUserData<AegisSettingsDelegate>;
++  explicit AegisSettingsDelegate(content::WebContents* contents)
++      : content::WebContentsUserData<AegisSettingsDelegate>(*contents) {
++    contents->SetDelegate(this);
++  }
++  WEB_CONTENTS_USER_DATA_KEY_DECL();
++};
++WEB_CONTENTS_USER_DATA_KEY_IMPL(AegisSettingsDelegate);
++#endif
++
+ struct AegisStrings {
+   const char* title;
+   const char* subtitle;
+@@ -560,7 +612,24 @@ bool AegisUIConfig::IsWebUIEnabled(content::BrowserContext* browser_context) {
+   return aegis::IsAegisProfileSupported(profile);
+ }
+ 
++#if BUILDFLAG(IS_ANDROID)
++void AegisUI::InitializeSettingsContents(content::WebContents* contents) {
++  // 普通标签页继续使用原有委托，仅处理原生设置的独立容器。
++  if (contents->GetDelegate()) return;
++  AegisSettingsDelegate::CreateForWebContents(contents);
++  Profile* profile = Profile::FromBrowserContext(contents->GetBrowserContext());
++  if (!aegis::IsAegisProfileSupported(profile) || profile->IsOffTheRecord()) return;
++  // 设置页自身不是标签页；按当前用户关联最近的普通窗口，不跨隐身配置。
++  // Chromium 的嵌入上下文会在窗口关闭时自动清除此关联。
++  webui::SetBrowserWindowInterface(
++      contents, ProfileBrowserCollection::GetForProfile(profile)->FindTabbedBrowser());
++}
++#endif
++
+ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
++#if BUILDFLAG(IS_ANDROID)
++  InitializeSettingsContents(web_ui->GetWebContents());
++#endif
+   Profile* profile = Profile::FromWebUI(web_ui);
+   content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+       profile, chrome::kChromeUIAegisHost);
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.h b/chrome/browser/ui/webui/aegis/aegis_ui.h
+index 46d34ee7b21d21b4dc8632d219ca029338728b40..9aa364bf323793d124a984ed35945cba463d2456 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.h
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.h
+@@ -4,6 +4,7 @@
+ #ifndef CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_H_
+ #define CHROME_BROWSER_UI_WEBUI_AEGIS_AEGIS_UI_H_
+ 
++#include "build/build_config.h"
+ #include "chrome/common/webui_url_constants.h"
+ #include "content/public/browser/web_ui_controller.h"
+ #include "content/public/browser/webui_config.h"
+@@ -11,6 +12,7 @@
+ 
+ namespace content {
+ class WebUI;
++class WebContents;
+ }
+ 
+ class AegisUI;
+@@ -32,6 +34,11 @@ class AegisUI : public content::WebUIController {
+   AegisUI(const AegisUI&) = delete;
+   AegisUI& operator=(const AegisUI&) = delete;
+ 
++#if BUILDFLAG(IS_ANDROID)
++  // 原生设置及恢复的子页共用文件选择器和当前用户的浏览器窗口。
++  static void InitializeSettingsContents(content::WebContents* contents);
++#endif
++
+  private:
+   WEB_UI_CONTROLLER_TYPE_DECL();
+ };
+diff --git a/chrome/browser/ui/webui/aegis_agent/BUILD.gn b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+index 2e85395210a5bc16f72c1f2926d22c0eeafdbdcd..895049e02e92417492042eacdaadc755006ec57d 100644
+--- a/chrome/browser/ui/webui/aegis_agent/BUILD.gn
++++ b/chrome/browser/ui/webui/aegis_agent/BUILD.gn
+@@ -69,6 +69,9 @@ source_set("impl") {
+   if (enable_pdf) {
+     deps += [ "//components/pdf/browser" ]
+   }
++  if (is_android) {
++    deps += [ "//chrome/browser/ui/webui/aegis" ]
++  }
+   if (!is_android) {
+     deps += [ "//chrome/browser/ui/webui:theme_source" ]
+   }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+index f79a16a15abc5e49aeccd5c25df92013021b3493..6ace613eb422ff1b4e4402c1512dd69a5a1a4298 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.cc
+@@ -576,7 +576,9 @@ AegisAgentPageHandler::AegisAgentPageHandler(
+     mojo::PendingRemote<aegis_agent::mojom::Page> page,
+     mojo::PendingReceiver<aegis_agent::mojom::PageHandler> receiver)
+     : profile_(profile),
+-      browser_(browser && browser->GetProfile() == profile ? browser : nullptr),
++      browser_(browser && browser->GetProfile() == profile
++                   ? browser->GetWeakPtr()
++                   : base::WeakPtr<BrowserWindowInterface>()),
+       ui_(ui),
+       page_(std::move(page)),
+       receiver_(this, std::move(receiver)) {
+@@ -614,7 +616,7 @@ AegisAgentPageHandler::AegisAgentPageHandler(
+ void AegisAgentPageHandler::ReadingCommand(
+     const std::string& request, ReadingCommandCallback callback) {
+   if (!reading_workspace_) {
+-    reading_workspace_ = std::make_unique<AegisReadingWorkspace>(profile_, browser_);
++    reading_workspace_ = std::make_unique<AegisReadingWorkspace>(profile_, browser_.get());
+   }
+   reading_workspace_->Run(request, base::BindOnce(
+       [](ReadingCommandCallback done, std::string result, std::string error) {
+@@ -649,7 +651,7 @@ void AegisAgentPageHandler::OnAgentEnabledChanged() {
+ 
+ void AegisAgentPageHandler::OnActiveTabDidChange(
+     BrowserWindowInterface* browser) {
+-  if (browser == browser_) {
++  if (browser == browser_.get()) {
+     PushSnapshot();
+   }
+ }
+@@ -658,7 +660,7 @@ void AegisAgentPageHandler::ListResearchTabs(
+     ListResearchTabsCallback callback) {
+   std::vector<aegis_agent::mojom::ResearchTabPtr> result;
+   research_selection_urls_.clear();
+-  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
++  auto* list = browser_ ? TabListInterface::From(browser_.get()) : nullptr;
+   if (!list || browser_->GetProfile() != profile_) {
+     std::move(callback).Run(std::move(result), "当前窗口不可用");
+     return;
+@@ -703,7 +705,7 @@ void AegisAgentPageHandler::CreateSelectedTask(
+     bool group_tabs,
+     CreateResearchTaskCallback callback) {
+   last_error_.clear();
+-  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
++  auto* list = browser_ ? TabListInterface::From(browser_.get()) : nullptr;
+   if (!list || browser_->GetProfile() != profile_ ||
+       tab_ids.size() < (group_tabs ? 1u : 3u) || tab_ids.size() > 10u) {
+     last_error_ = group_tabs ? "请选择当前窗口的1–10个标签"
+@@ -749,7 +751,7 @@ void AegisAgentPageHandler::ShowProtection() {
+         ui::PAGE_TRANSITION_AUTO_TOPLEVEL, std::string());
+   }
+ #else
+-  auto* list = browser_ ? TabListInterface::From(browser_) : nullptr;
++  auto* list = browser_ ? TabListInterface::From(browser_.get()) : nullptr;
+   if (list && browser_->GetProfile() == profile_) {
+     list->OpenTab(GURL("chrome://settings/aegisPrivacy"),
+                   list->GetTabCount(), true);
+@@ -783,14 +785,14 @@ void AegisAgentPageHandler::OpenResearchSource(
+   }
+   const bool allowed =
+       url.SchemeIsHTTPOrHTTPS() && !url.has_username() && !url.has_password();
+-  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_, url));
++  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_.get(), url));
+ }
+ 
+ void AegisAgentPageHandler::ReviewResearchSource(
+     const std::string& id,
+     uint32_t source_index,
+     ReviewResearchSourceCallback callback) {
+-  auto* tab = ContentTab(browser_);
++  auto* tab = ContentTab(browser_.get());
+   if (!service_ || !tab || tab->GetProfile() != profile_ ||
+       !tab->GetContents() || tab->GetContents()->IsLoading()) {
+     std::move(callback).Run("unavailable");
+@@ -882,7 +884,7 @@ void AegisAgentPageHandler::OpenVerifiedSource(
+   const GURL url(result->source_urls[source_index]);
+   const bool allowed = url.SchemeIsHTTPOrHTTPS() && !url.has_username() &&
+                        !url.has_password() && task->scope().AllowsOrigin(url);
+-  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_, url));
++  std::move(callback).Run(allowed && OpenAutomaticTaskTab(browser_.get(), url));
+ }
+ 
+ void AegisAgentPageHandler::ReviewDownload(const std::string& task_id,
+@@ -1146,7 +1148,7 @@ void AegisAgentPageHandler::CreateResolvedTask(
+     std::move(callback).Run(BuildSnapshot());
+     return;
+   }
+-  tabs::TabInterface* tab = ContentTab(browser_);
++  tabs::TabInterface* tab = ContentTab(browser_.get());
+   GURL task_url = tab ? tab->GetURL() : GURL();
+   std::optional<std::vector<url::Origin>> origins;
+   if (use_current_page) {
+@@ -1161,7 +1163,7 @@ void AegisAgentPageHandler::CreateResolvedTask(
+     if (tab && aegis::agent::AgentGoalRequestsWorkspaceRestore(goal)) {
+       // 恢复会重新导航；范围来自浏览器已有标签，不接受模型发明来源。
+       *origins = aegis::agent::WorkspaceRestoreOrigins(
+-          profile_, browser_, tab->GetHandle().raw_value(),
++          profile_, browser_.get(), tab->GetHandle().raw_value(),
+           aegis::agent::AgentGoalRequestsWindowTabMetadata(goal) &&
+               !profile_->IsOffTheRecord());
+     }
+@@ -1174,7 +1176,7 @@ void AegisAgentPageHandler::CreateResolvedTask(
+           requested_origins
+               ? std::make_optional(requested_origins->front().GetURL())
+               : std::move(routed_url);
+-      tab = target ? OpenAutomaticTaskTab(browser_, *target) : nullptr;
++      tab = target ? OpenAutomaticTaskTab(browser_.get(), *target) : nullptr;
+       if (tab) {
+         task_url = *target;
+       }
+@@ -1544,7 +1546,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+         fixed_model_configured || automatic_model_configured;
+   }
+   snapshot->typesafe_settings_error = typesafe_settings_error_;
+-  tabs::TabInterface* tab = ContentTab(browser_);
++  tabs::TabInterface* tab = ContentTab(browser_.get());
+   if (tab) {
+     snapshot->active_tab_id = tab->GetHandle().raw_value();
+   }
+@@ -1695,7 +1697,7 @@ aegis_agent::mojom::TaskSnapshotPtr AegisAgentPageHandler::BuildSnapshot() {
+     snapshot->result_outcome = completion->outcome;
+     snapshot->result_sources = completion->source_urls;
+     auto* list = browser_ && browser_->GetProfile() == profile_
+-                     ? TabListInterface::From(browser_)
++                     ? TabListInterface::From(browser_.get())
+                      : nullptr;
+     for (const auto& source : completion->source_urls) {
+       std::string title;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+index 536af50270e3db41bc2f98374f5bc3f0810df419..37820eb4a00a1c439aaa52c64282f296dacf004b 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h
+@@ -188,7 +188,8 @@ class AegisAgentPageHandler : public aegis_agent::mojom::PageHandler,
+ 
+   std::unique_ptr<AegisReadingWorkspace> reading_workspace_;
+   raw_ptr<Profile> profile_;
+-  raw_ptr<BrowserWindowInterface> browser_ = nullptr;
++  // 原生设置可比浏览器窗口存活更久，窗口关闭后自动失效。
++  base::WeakPtr<BrowserWindowInterface> browser_;
+   raw_ptr<AegisAgentUI> ui_ = nullptr;
+   raw_ptr<aegis::agent::AegisAgentService> service_ = nullptr;
+   std::map<int32_t, GURL> research_selection_urls_;
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index 459a52ded0d0383af24645ddb96eeba0187494b5..7043bf31a2b4ed1612ed7c85b4744449f2d08483 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -23,6 +23,9 @@
+ #include "chrome/browser/browser_process.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_page_handler.h"
++#if BUILDFLAG(IS_ANDROID)
++#include "chrome/browser/ui/webui/aegis/aegis_ui.h"
++#endif
+ #if !BUILDFLAG(IS_ANDROID)
+ #include "chrome/browser/ui/webui/theme_source.h"
+ #endif
+@@ -1163,6 +1166,9 @@ bool AegisAgentUIConfig::IsWebUIEnabled(
+ 
+ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
+     : AegisAgentUIControllerBase(web_ui) {
++#if BUILDFLAG(IS_ANDROID)
++  AegisUI::InitializeSettingsContents(web_ui->GetWebContents());
++#endif
+   content::WebUIDataSource *source = content::WebUIDataSource::CreateAndAdd(
+       web_ui->GetWebContents()->GetBrowserContext(),
+       chrome::kChromeUIUntrustedAegisAgentURL);
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index f322f3637ea3c1b43d0414560d1418dbfd6bc478..035db5ac5f980b688e988fc62778533451192291 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -78,7 +78,9 @@ base::DictValue NewEntry(const GURL& url, std::string title,
+ 
+ AegisReadingWorkspace::AegisReadingWorkspace(
+     Profile* profile, BrowserWindowInterface* browser)
+-    : profile_(profile), browser_(browser) {}
++    : profile_(profile),
++      browser_(browser ? browser->GetWeakPtr()
++                       : base::WeakPtr<BrowserWindowInterface>()) {}
+ AegisReadingWorkspace::~AegisReadingWorkspace() = default;
+ 
+ bool AegisReadingWorkspace::ValidateRecords(const base::ListValue& records) {
+@@ -237,7 +239,7 @@ void AegisReadingWorkspace::Persist(
+ void AegisReadingWorkspace::Dispatch(
+     base::DictValue request, Callback callback,
+     scoped_refptr<os_crypt_async::Encryptor> encryptor) {
+-  auto* tabs = TabListInterface::From(browser_);
++  auto* tabs = browser_ ? TabListInterface::From(browser_.get()) : nullptr;
+   if (!tabs) { Reply(std::move(callback), {}, "reading_unavailable"); return; }
+   const auto op = Field(request, "op");
+   if (op == "research_settings") {
+@@ -477,7 +479,8 @@ void AegisReadingWorkspace::Dispatch(
+ }
+ 
+ void AegisReadingWorkspace::Capture(int tab_id, int page, Callback callback) {
+-  auto* tabs = TabListInterface::From(browser_);
++  auto* tabs = browser_ ? TabListInterface::From(browser_.get()) : nullptr;
++  if (!tabs) { Reply(std::move(callback), {}, "reading_unavailable"); return; }
+   tabs::TabInterface* source = nullptr;
+   for (auto* tab : tabs->GetAllTabs()) {
+     auto listed = listed_tabs_.find(tab_id);
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.h b/chrome/browser/ui/webui/aegis_agent/reading_workspace.h
+index f3a52369da9e4b68a2ed3a769852ac4716ada597..4be3ce6d5de45760290af5549237e33758006514 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.h
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.h
+@@ -49,7 +49,7 @@ class AegisReadingWorkspace {
+   base::DictValue State() const;
+ 
+   raw_ptr<Profile> profile_;
+-  raw_ptr<BrowserWindowInterface> browser_;
++  base::WeakPtr<BrowserWindowInterface> browser_;
+   bool busy_ = false;
+   std::string loaded_ciphertext_;
+   base::ListValue records_;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index b0ba1b52ebac01333c0472d19e40085bf312d822..4ffb80865ce83cdd51c72d8aacdf40d438b50a7f 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.300";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (300)";
++inline constexpr char kProductVersion[] = "6.1.0.263";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (263)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

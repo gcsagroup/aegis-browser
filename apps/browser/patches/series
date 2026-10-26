@@ -328,3 +328,8 @@
 0328-prepare-native-validation-version-265.patch
 0329-prepare-native-validation-version-266.patch
 0330-prepare-native-validation-version-300.patch
+0331-align-native-settings-product-version-263.patch
+0332-align-mobile-ui-and-version-264.patch
+0333-fix-reading-capture-and-download-details-265.patch
+0334-fix-download-platform-build-and-version-266.patch
+0335-prepare-integrated-native-version-301.patch
