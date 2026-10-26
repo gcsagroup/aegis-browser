@@ -93,7 +93,7 @@ export async function finishRuntime(runtime,{deadline=performance.now()+CAPS.cle
   };
   // Let per-resource results settle before the enclosing safety deadline so a
   // stalled handle cannot erase already observed failures from other handles.
-  try{if(resources)await local('resources',end=>resources.closeCase({deadline:end-10}));}
+  try{if(resources)await local('resources',end=>resources.closeCase({deadline:end-10}));} catch (error) { throw error; }
   finally{
     try{if(harness)await local('harness',()=>harness.close());}
     finally{
@@ -105,7 +105,10 @@ export async function finishRuntime(runtime,{deadline=performance.now()+CAPS.cle
 }
 export async function prepareRuntime({owner}){
   await owner.preflight();await owner.provision();const bindings=await persistentBindings(owner);
-  const harness=await admitPostgres({owner:owner.owner,verifyOwner:owner.verifyOwner.bind(owner),connections:owner.connections(),trust:bindings.config.trust,lifecycle:{restartDatabase:owner.restartDatabase.bind(owner)}});
+  const harness=await admitPostgres({owner:owner.owner,verifyOwner:owner.verifyOwner.bind(owner),connections:owner.connections(),trust:bindings.config.trust,lifecycle:{
+    restartDatabase:owner.restartDatabase.bind(owner),
+    captureAdmission:()=>{const {check}=owner.captureAdmission();return ()=>{check();owner.gate.assertFresh();};},
+  }});
   const resources=budgetHarness(harness,owner);
   return {owner,harness,bindings,resources};
 }

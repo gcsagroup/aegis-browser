@@ -1,0 +1,51 @@
+ninja: Entering directory `out/AegisRelease'
+[1/72] ACTION //chrome:aegis_product_app_plist(//build/toolchain/mac:clang_arm64)
+[2/72] ACTION //chrome:verify_libraries_chrome_helper_app_gpu(//build/toolchain/mac:clang_arm64)
+[3/72] ACTION //chrome:verify_libraries_chrome_helper_app_default(//build/toolchain/mac:clang_arm64)
+[4/72] ACTION //chrome:verify_libraries_chrome_helper_app_alerts(//build/toolchain/mac:clang_arm64)
+[5/72] ACTION //chrome:verify_libraries_chrome_helper_app_renderer(//build/toolchain/mac:clang_arm64)
+[6/72] ACTION //chrome/browser/resources/settings:preprocess_html_css_files(//build/toolchain/mac:clang_arm64)
+[7/72] ACTION //chrome:chrome_app_plist(//build/toolchain/mac:clang_arm64)
+[8/72] ACTION //chrome/browser/resources/aegis:resources_grit(//build/toolchain/mac:clang_arm64)
+[9/68] ACTION //chrome:chrome_app_info_plist_merge(//build/toolchain/mac:clang_arm64)
+[10/68] ACTION //chrome:chrome_app_info_plist(//build/toolchain/mac:clang_arm64)
+[11/68] ACTION //chrome/browser/resources:dev_ui_paks(//build/toolchain/mac:clang_arm64)
+[12/68] ACTION //chrome:chrome_app_pkg_info(//build/toolchain/mac:clang_arm64)
+[13/68] ACTION //chrome/browser/resources/settings:css_wrapper_files(//build/toolchain/mac:clang_arm64)
+[14/68] ACTION //chrome/browser/resources/settings:html_wrapper_files(//build/toolchain/mac:clang_arm64)
+[15/68] ACTION //chrome/browser/resources/settings:lint_css(//build/toolchain/mac:clang_arm64)
+[16/68] ACTION //chrome/browser/resources/settings:build_ts(//build/toolchain/mac:clang_arm64)
+[17/68] ACTION //chrome/test/data/webui/settings:build_ts(//build/toolchain/mac:clang_arm64)
+[18/68] CXX obj/chrome/browser/ui/webui/help/help/version_updater_basic.o
+[19/68] CXX obj/chrome/browser/ui/webui/help/aegis_github_update/aegis_github_update.o
+[20/68] ACTION //chrome/browser/resources/settings:build_bundle(//build/toolchain/mac:clang_arm64)
+[21/68] ACTION //chrome/browser/resources/settings:build_min_js(//build/toolchain/mac:clang_arm64)
+[22/68] CXX obj/chrome/browser/ui/webui/version/version/version_ui.o
+[23/68] ACTION //chrome/test/data/webui/settings:lint(//build/toolchain/mac:clang_arm64)
+[24/68] ACTION //chrome/test/data/webui/settings:build_grdp(//build/toolchain/mac:clang_arm64)
+[25/68] ACTION //chrome/test/data/webui:build_grd(//build/toolchain/mac:clang_arm64)
+[26/68] ACTION //chrome/test/data/webui:resources_grit(//build/toolchain/mac:clang_arm64)
+[27/63] ACTION //chrome:browser_tests_pak(//build/toolchain/mac:clang_arm64)
+[28/63] ACTION //chrome/browser/resources/settings:lint_ts(//build/toolchain/mac:clang_arm64)
+[29/63] ACTION //chrome/browser/resources/settings:build_grd(//build/toolchain/mac:clang_arm64)
+[30/63] ACTION //chrome/browser/resources/settings:resources_grit(//build/toolchain/mac:clang_arm64)
+[31/61] ACTION //chrome:packed_resources_extra__repack(//build/toolchain/mac:clang_arm64)
+[32/61] CXX obj/chrome/browser/ui/safety_hub/impl/safety_hub_util.o
+[33/61] CXX obj/chrome/browser/ui/webui/settings/impl/settings_localized_strings_provider.o
+[34/61] SOLINK 'obj/chrome/chrome_framework_shared_library/GCSA Aegis Framework' 'obj/chrome/chrome_framework_shared_library/GCSA Aegis Framework.TOC' 'GCSA Aegis Framework.dSYM/Contents/Info.plist' 'GCSA Aegis Framework.dSYM/Contents/Resources/DWARF/GCSA Aegis Framework' 'GCSA Aegis Framework.dSYM/Contents/Resources/Relocations/aarch64/GCSA Aegis Framework.yml'
+warning: no debug symbols in executable (-arch arm64)
+[35/47] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif(//build/toolchain/mac:clang_arm64)
+[36/47] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif_alerts(//build/toolchain/mac:clang_arm64)
+[37/47] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif_gpu(//build/toolchain/mac:clang_arm64)
+[38/47] ACTION //chrome:verify_libraries_chrome_helper_app_aperitif_renderer(//build/toolchain/mac:clang_arm64)
+[39/47] COPY_BUNDLE_DATA 'obj/chrome/chrome_framework_shared_library/GCSA Aegis Framework' 'GCSA Aegis Framework.framework/Versions/155.0.8059.40/GCSA Aegis Framework'
+[40/47] COPY_BUNDLE_DATA gen/repack/resources.pak 'GCSA Aegis Framework.framework/Versions/155.0.8059.40/Resources/resources.pak'
+[41/47] ACTION //chrome:verify_chrome_framework_order(//build/toolchain/mac:clang_arm64)
+[42/47] COPY_BUNDLE_DATA gen/chrome/chrome_app_pkg_info 'GCSA Aegis.app/Contents/PkgInfo'
+[43/47] COPY_BUNDLE_DATA gen/chrome/chrome_app_info_plist.plist 'GCSA Aegis.app/Contents/Info.plist'
+[44/47] COPY_BUNDLE_DATA 'GCSA Aegis Framework.framework' 'GCSA Aegis.app/Contents/Frameworks/GCSA Aegis Framework.framework'
+[45/47] ACTION //chrome:verify_libraries_chrome_app(//build/toolchain/mac:clang_arm64)
+[46/47] LINK ./aegis_browser_unittests
+warning: no debug symbols in executable (-arch arm64)
+[47/47] LINK ./browser_tests
+warning: no debug symbols in executable (-arch arm64)

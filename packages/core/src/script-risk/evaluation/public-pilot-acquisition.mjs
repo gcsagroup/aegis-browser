@@ -45,7 +45,8 @@ function canonicalValue(value) {
   }
   if (Array.isArray(value)) return value.map(canonicalValue);
   assert(value && typeof value === "object", "canonical JSON rejects this value");
-  const normalized = {};
+  // 特殊自有键也必须进入摘要，不能触发 Object 原型上的 setter。
+  const normalized = Object.create(null);
   for (const key of Object.keys(value).sort()) {
     assert(value[key] !== undefined, "canonical JSON rejects undefined values");
     normalized[key] = canonicalValue(value[key]);
@@ -371,7 +372,7 @@ async function readExistingBoundFile({
     localPath,
     constants.O_RDONLY | noFollowFlag(),
   );
-  try {
+  return await (async () => {
     const opened = await validateOpenedLeaf({
       canonicalRoot,
       localPath,
@@ -391,9 +392,9 @@ async function readExistingBoundFile({
       await handle.chmod(0o600);
     }
     return bytes;
-  } finally {
+  })().finally(async () => {
     await handle.close();
-  }
+  });
 }
 
 async function unlinkCreatedIfOwned(item) {

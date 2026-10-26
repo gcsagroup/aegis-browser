@@ -3,9 +3,29 @@
 #include "chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.h"
 
 #include <string>
+#include <memory>
+#include <map>
+#include <deque>
+#include <algorithm>
+#include "base/uuid.h"
+#include "base/supports_user_data.h"
+
+#include "base/functional/bind.h"
+#include "base/logging.h"
+#include "base/memory/ref_counted_memory.h"
+#include "base/time/time.h"
+#include "content/public/browser/storage_partition.h"
+#include "net/base/load_flags.h"
+#include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/cpp/simple_url_loader_stream_consumer.h"
 
 #include "base/feature_list.h"
 #include "base/strings/string_util.h"
+#include "base/json/json_reader.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
@@ -27,6 +47,135 @@
 #include "ui/webui/webui_util.h"
 
 namespace {
+
+// 下载器从内置模型清单读取白名单，与界面和推理使用相同目录。
+// 原生获取适配来源站的 CORS；客户端不能指定其他地址、正文或凭据。
+std::optional<size_t> TranslationAssetSize(const std::string& path) {
+  const auto manifest = base::JSONReader::Read(
+      ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
+          IDR_AEGIS_AGENT_LOCAL_LOCAL_AI_TRANSLATION_MANIFEST_JSON),
+      base::JSON_PARSE_RFC);
+  if (!manifest || !manifest->is_list()) return std::nullopt;
+  for (const auto& row : manifest->GetList()) {
+    if (!row.is_dict()) continue;
+    const auto* attachment = row.GetDict().FindDict("attachment");
+    if (!attachment) continue;
+    const auto* location = attachment->FindString("location");
+    const auto size = attachment->FindInt("size");
+    if (location && size && *size > 0 && path == "local_ai/download/" + *location)
+      return static_cast<size_t>(*size);
+  }
+  return std::nullopt;
+}
+class TranslationDownload;
+struct TranslationDownloads {
+  std::map<std::string, scoped_refptr<TranslationDownload>> active;
+  std::deque<std::string> cancelled;
+};
+class TranslationDownloadOwner : public base::SupportsUserData::Data {
+ public:
+  std::shared_ptr<TranslationDownloads> downloads =
+      std::make_shared<TranslationDownloads>();
+};
+std::shared_ptr<TranslationDownloads> DownloadsForContext(
+    content::BrowserContext* context) {
+  static const char key[] = "aegis-translation-downloads";
+  if (!context->GetUserData(key))
+    context->SetUserData(key, std::make_unique<TranslationDownloadOwner>());
+  return static_cast<TranslationDownloadOwner*>(context->GetUserData(key))->downloads;
+}
+// 模型超过 SimpleURLLoader 的 5 MiB 字符串上限，按固定大小流式接收。
+class TranslationDownload : public base::RefCounted<TranslationDownload>,
+                            public network::SimpleURLLoaderStreamConsumer {
+ public:
+  TranslationDownload(std::unique_ptr<network::SimpleURLLoader> loader,
+      std::shared_ptr<TranslationDownloads> downloads, std::string job, size_t size,
+      content::WebUIDataSource::GotDataCallback callback)
+      : loader_(std::move(loader)), downloads_(std::move(downloads)), job_(std::move(job)), size_(size),
+        callback_(std::move(callback)) {}
+  void Start(network::SharedURLLoaderFactory* factory) {
+    downloads_->active[job_] = this;
+    loader_->DownloadAsStream(factory, this);
+  }
+  void Cancel() { Finish(false); }
+ private:
+  friend class base::RefCounted<TranslationDownload>;
+  ~TranslationDownload() override = default;
+  void OnDataReceived(std::string_view chunk, base::OnceClosure resume) override {
+    if (chunk.size() > size_ - bytes_.size()) { Finish(false); return; }
+    bytes_.append(chunk);
+    std::move(resume).Run();
+  }
+  void OnComplete(bool success) override {
+    if (!success || bytes_.size() != size_)
+      LOG(ERROR) << "Aegis language pack download: net=" << loader_->NetError()
+                 << " bytes=" << bytes_.size() << " expected=" << size_;
+    Finish(success && bytes_.size() == size_);
+  }
+  void OnRetry(base::OnceClosure retry) override { bytes_.clear(); std::move(retry).Run(); }
+  void Finish(bool success) {
+    scoped_refptr<TranslationDownload> keep_alive(this);
+    loader_.reset();
+    downloads_->active.erase(job_);
+    std::move(callback_).Run(success ? base::MakeRefCounted<base::RefCountedString>(std::move(bytes_)) : nullptr);
+  }
+  std::unique_ptr<network::SimpleURLLoader> loader_;
+  std::shared_ptr<TranslationDownloads> downloads_;
+  const std::string job_;
+  const size_t size_;
+  std::string bytes_;
+  content::WebUIDataSource::GotDataCallback callback_;
+};
+void FetchTranslationAsset(scoped_refptr<network::SharedURLLoaderFactory> factory,
+    std::shared_ptr<TranslationDownloads> downloads, const std::string& path,
+    content::WebUIDataSource::GotDataCallback callback) {
+  const bool cancel = base::StartsWith(path, "local_ai/cancel/");
+  const std::string remainder = path.substr(cancel ? 16 : 18);
+  const size_t slash = remainder.find('/');
+  const std::string job = remainder.substr(0, slash);
+  if (!base::Uuid::ParseLowercase(job).is_valid()) {
+    std::move(callback).Run(nullptr); return;
+  }
+  if (cancel) {
+    // 只取消调用者持有的随机任务标识；保留短期墓碑处理跨进程先后顺序。
+    downloads->cancelled.push_back(job);
+    if (downloads->cancelled.size() > 256) downloads->cancelled.pop_front();
+    auto found = downloads->active.find(job);
+    if (found != downloads->active.end()) {
+      scoped_refptr<TranslationDownload> pending = found->second;
+      pending->Cancel();
+    }
+    std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>("cancelled"));
+    return;
+  }
+  if (slash == std::string::npos || downloads->active.contains(job) ||
+      std::find(downloads->cancelled.begin(), downloads->cancelled.end(), job) != downloads->cancelled.end()) {
+    std::move(callback).Run(nullptr); return;
+  }
+  const std::string asset_path = "local_ai/download/" + remainder.substr(slash + 1);
+  const auto size = TranslationAssetSize(asset_path);
+  if (!size || downloads->active.size() >= 2) { std::move(callback).Run(nullptr); return; }
+  auto request = std::make_unique<network::ResourceRequest>();
+  request->url = GURL(std::string("https://firefox-settings-attachments.cdn.mozilla.net/") +
+                      asset_path.substr(std::string("local_ai/download/").size()));
+  // CDN 不接受通用 Chromium UA；使用真实的原生下载器身份，不冒充其他浏览器。
+  request->headers.SetHeader("User-Agent", "GCSA-Aegis-LocalTranslation/1.0");
+  request->headers.SetHeader("Accept", "application/octet-stream, */*");
+  request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+  request->redirect_mode = network::mojom::RedirectMode::kError;
+  request->load_flags = net::LOAD_DISABLE_CACHE;
+  auto loader = network::SimpleURLLoader::Create(std::move(request),
+      net::DefineNetworkTrafficAnnotation("aegis_local_translation_pack", R"(
+        semantics { sender: "Aegis local translation" description: "Downloads a fixed public language pack."
+          trigger: "User clicks Download language pack." data: "No user content or credentials."
+          destination: OTHER destination_other: "Mozilla translation model CDN" }
+        policy { cookies_allowed: NO setting: "Only an explicit download action starts a request."
+          policy_exception_justification: "Optional user-triggered public asset download." }
+      )"));
+  loader->SetTimeoutDuration(base::Minutes(10));
+  base::MakeRefCounted<TranslationDownload>(std::move(loader), downloads, job, *size,
+      std::move(callback))->Start(factory.get());
+}
 
 enum class UiLanguage {
   kEnglish,
@@ -59,11 +208,90 @@ const char *Localized(UiLanguage language, const char *english,
 
 void AddStrings(content::WebUIDataSource *source) {
   const UiLanguage language = CurrentLanguage();
-  source->AddString("language", g_browser_process->GetApplicationLocale());
+  // Chromium 的 language 默认字段只保留语言子标签；保留地区以区分简繁。
+  source->AddString("aegisLocale", g_browser_process->GetApplicationLocale());
   auto add = [&](const char *key, const char *en, const char *zh_cn,
                  const char *zh_tw) {
     source->AddString(key, Localized(language, en, zh_cn, zh_tw));
   };
+  add("readingLocalSettings", "Local translation settings", "本机翻译设置", "本機翻譯設定");
+  add("readingLocalHelp", "Text stays on this device. Download a language pack once, then translate offline. Only the selected direction is supported.", "正文仅在本机处理。先下载对应语言包，之后可离线翻译；请按原文语言选择方向。", "正文僅在本機處理。先下載對應語言包，之後可離線翻譯；請按原文語言選擇方向。");
+  add("readingDirection", "Translation direction", "翻译方向", "翻譯方向");
+  add("readingDownloadPack", "Download language pack", "下载语言包", "下載語言包");
+  add("readingRemovePack", "Remove language pack", "移除语言包", "移除語言包");
+  add("readingCancel", "Cancel current task", "取消当前任务", "取消目前工作");
+  add("readingExperiments", "Experimental models (off by default)", "实验模型（默认关闭）", "實驗模型（預設關閉）");
+  add("readingResearchWarning", "Experimental scores for extracted paragraphs only, not a full DOM or safety verdict. Prior evaluation found high false positives and content loss. Predictions never block or remove content.", "仅对已提取段落做实验评分，不代表完整网页或安全结论。此前评测存在高误报和误删；分析结果不会拦截网页或删改正文。", "僅對已提取段落做實驗評分，不代表完整網頁或安全結論。此前評測存在高誤報和誤刪；分析結果不會攔截網頁或刪改正文。");
+  add("readingMinimOption", "locally trained MLP, paragraph scores", "本地训练的 MLP，段落评分", "本機訓練的 MLP，段落評分");
+  add("readingPhishlangOption", "paragraph risk experiment", "段落风险分析实验", "段落風險分析實驗");
+  add("readingSettingsSaved", "Saved. Models run only when you choose Analyze.", "设置已保存。仅点击“实验分析”时运行模型。", "設定已儲存。僅按下「實驗分析」時執行模型。");
+  add("readingLocalTranslate", "Translate on this device", "本机翻译", "本機翻譯");
+  add("readingManagePacks", "Manage language packs", "管理语言包", "管理語言包");
+  add("readingPackReady", "Language pack verified. Ready offline.", "语言包校验通过，可离线翻译。", "語言包驗證通過，可離線翻譯。");
+  add("readingPackMissing", "Language pack is missing or damaged. Download it in local model settings.", "语言包未安装或已损坏，请在本机模型设置中下载。", "語言包未安裝或已損毀，請在本機模型設定中下載。");
+  add("readingPackCorrupt", "Package verification failed. It was not installed.", "语言包校验失败，未安装。", "語言包驗證失敗，未安裝。");
+  add("readingDownloadFailed", "Download failed. Check the connection and retry.", "下载失败，请检查网络后重试。", "下載失敗，請檢查網路後重試。");
+  add("readingPackStorage", "Cannot save language pack. Check available storage.", "无法保存语言包，请检查可用存储空间。", "無法儲存語言包，請檢查可用儲存空間。");
+  add("readingCancelled", "Cancelled. Your original and notes are preserved.", "已取消，原文与批注保留。", "已取消，原文與批註保留。");
+  add("readingLocalError", "Local model failed. Your original and notes remain; retry or check the language pack.", "本机模型未完成，原文与批注仍保留；请重试或检查语言包。", "本機模型未完成，原文與批註仍保留；請重試或檢查語言包。");
+  add("readingDownloading", "Downloading language pack", "正在下载语言包", "正在下載語言包");
+  add("readingTranslating", "Translating paragraph", "正在翻译段落", "正在翻譯段落");
+  add("readingAnalyzing", "Analyzing locally", "正在本机分析", "正在本機分析");
+  add("readingTranslationSaved", "Translation of a saved item also saves its current notes.", "已保存资料的翻译会同时保存当前批注。", "已儲存資料的翻譯會同時儲存目前批註。");
+  add("readingTranslationCaution", "Machine translation may misread negation, short titles or numbers. Compare with the original; no warning does not mean the translation is correct.", "机器翻译可能误解否定句、短标题或数字。请对照原文；没有提示也不代表译文正确。", "機器翻譯可能誤解否定句、短標題或數字。請對照原文；沒有提示也不代表譯文正確。");
+  add("readingNumberWarning", "Check the numbers: their written forms differ. Numbers written as words can also trigger this reminder.", "请核对数字：原译文的数字写法不一致，数字改写成文字也可能触发此提示。", "請核對數字：原譯文的數字寫法不一致，數字改寫成文字也可能觸發此提示。");
+  add("readingUnitWarning", "Check the units or currency: a common unit marker differs from the original.", "请核对单位或币种：译文中的常见单位标记与原文不一致。", "請核對單位或幣種：譯文中的常見單位標記與原文不一致。");
+  add("readingDateWarning", "The original date may use either month/day or day/month order. Confirm it before relying on the translation.", "原文日期可能采用月/日或日/月顺序，请确认后再使用译文。", "原文日期可能採用月/日或日/月順序，請確認後再使用譯文。");
+  add("readingReadArticle", "Read article", "阅读文章", "閱讀文章");
+  add("readingReadEmail", "Read email", "阅读邮件", "閱讀郵件");
+  add("readingReadMessage", "Read message", "阅读消息", "閱讀訊息");
+  add("readingReadReviews", "Read reviews", "阅读评价", "閱讀評價");
+  add("readingResearchGoal", "Reading task for MINIM", "MINIM 阅读目标", "MINIM 閱讀目標");
+  add("readingAnalyze", "Experimental analysis", "实验分析", "實驗分析");
+  add("readingResearchTooLong", "This text exceeds the experimental 8192-token limit. No safety verdict was produced.", "正文超过实验模型 8192 token 上限，未生成风险结论。", "正文超過實驗模型 8192 token 上限，未產生風險結論。");
+  add("readingResearchDisabled", "Both experimental models are disabled. Enable one in settings.", "实验模型均已关闭，可在设置中开启。", "實驗模型均已關閉，可在設定中開啟。");
+  add("readingResearchNotDistributed", "Experimental weights are not included in this source distribution; analysis is unavailable.", "公开源码未附带实验权重，暂不能进行模型分析。", "公開原始碼未附帶實驗權重，暫不能進行模型分析。");
+  add("readingResearchFlagged", "flagged by experimental model", "实验模型提示风险", "實驗模型提示風險");
+  add("readingResearchUnflagged", "not flagged; not a safety guarantee", "实验模型未提示，不代表安全", "實驗模型未提示，不代表安全");
+  add("readingResearchWindows", "windows", "个窗口", "個視窗");
+  add("readingNecessity", "necessity", "必要性", "必要性");
+  add("readingSensitivity", "sensitivity", "敏感性", "敏感性");
+  add("readingRecommendation_remove", "suggested removal (not applied)", "建议移除（未执行）", "建議移除（未執行）");
+  add("readingRecommendation_abstract", "suggested abstraction (not applied)", "建议摘要化（未执行）", "建議摘要化（未執行）");
+  add("readingRecommendation_keep", "suggested retention", "建议保留", "建議保留");
+  add("readingLibrary", "Reading & workspaces", "阅读与工作区", "閱讀與工作區");
+  add("readingHelp", "Save selected text locally (up to 32 KiB per capture). Search saved content, notes and translations. PDF captures one page; scanned pages require a text layer.", "主动保存提取范围（每次最多 32 KiB），可搜索正文、批注和译文。PDF 每次提取一页；扫描件需要文字层。", "主動儲存提取範圍（每次最多 32 KiB），可搜尋正文、批註和譯文。PDF 每次提取一頁；掃描件需要文字層。");
+  add("readingRefresh", "Refresh tabs and library", "刷新标签与资料", "重新整理分頁與資料");
+  add("readingGroup", "Workspace name", "工作区名称", "工作區名稱");
+  add("readingStash", "Save selected tabs", "暂存所选标签", "暫存所選分頁");
+  add("readingSplit", "Split two selected tabs", "分屏所选两个标签", "分割所選兩個分頁");
+  add("readingRestore", "Open this workspace", "打开此工作区", "開啟此工作區");
+  add("readingPage", "PDF page", "PDF 页码", "PDF 頁碼");
+  add("readingCapture", "Read one selected tab", "读取所选一个标签", "讀取所選一個分頁");
+  add("readingSearch", "Search saved content", "搜索已保存内容", "搜尋已儲存內容");
+  add("readingArchived", "Show archived items", "显示已归档资料", "顯示已封存資料");
+  add("readingNote", "Note", "批注", "批註");
+  add("readingQuote", "Highlighted quote (must occur in original)", "高亮引文（必须存在于原文）", "醒目引文（必須存在於原文）");
+  add("readingQuoteSelection", "Use selected original text", "使用选中的原文", "使用選取的原文");
+  add("readingSave", "Save locally", "保存到本机", "儲存至本機");
+  add("readingTranslate", "Translate with model service", "使用模型服务翻译", "使用模型服務翻譯");
+  add("readingLanguage", "Translation language", "译文语言", "譯文語言");
+  add("readingConsent", "I agree to send the displayed extracted text to this model:", "我同意将当前显示的提取正文发送给此模型：", "我同意將目前顯示的提取正文傳送給此模型：");
+  add("readingOriginal", "Extracted original", "已提取原文", "已提取原文");
+  add("readingTranslation", "Translation", "译文", "譯文");
+  add("readingOpen", "Open source", "打开来源", "開啟來源");
+  add("readingArchive", "Archive", "归档", "封存");
+  add("readingUnarchive", "Restore item", "恢复资料", "還原資料");
+  add("readingEmpty", "No matching saved items.", "没有匹配的已保存资料。", "沒有符合的已儲存資料。");
+  add("readingBusy", "Working…", "处理中…", "處理中…");
+  add("readingDone", "Done.", "已完成。", "已完成。");
+  add("readingError", "Could not finish. Your edits remain here; refresh and retry.", "未能完成。编辑内容仍保留在这里，请刷新后重试。", "未能完成。編輯內容仍保留在此，請重新整理後重試。");
+  add("readingChanged", "Another window changed the library. Refresh before saving.", "其他窗口已修改资料库，请刷新后再保存。", "其他視窗已修改資料庫，請重新整理後再儲存。");
+  add("readingTextUnavailable", "Text unavailable, page changed, or extraction timed out. Refresh and select again.", "正文不可读、页面已变化或提取超时，请刷新并重新选择。", "正文無法讀取、頁面已變更或提取逾時，請重新整理並重新選取。");
+  add("readingTranslationUnavailable", "Translation unavailable: check privacy AI, model settings, permission and source page. Use local translation for PDF.", "无法翻译：请检查隐私 AI、模型设置、发送授权和来源页面。PDF 可使用本机翻译。", "無法翻譯：請檢查隱私 AI、模型設定、傳送授權和來源頁面。PDF 可使用本機翻譯。");
+  add("readingFull", "Storage is full or fields are invalid. Check quote and text limits.", "资料库已满或内容格式不符，请检查引文和长度限制。", "資料庫已滿或內容格式不符，請檢查引文和長度限制。");
+  add("readingSelection", "Select 1–16 tabs to save, exactly 2 to split, or 1 to read.", "暂存需选择 1–16 个标签，分屏需 2 个，读取需 1 个。", "暫存需選取 1–16 個分頁，分割需 2 個，讀取需 1 個。");
+  add("readingStorage", "Encrypted storage unavailable or unreadable. Existing data was not overwritten.", "加密存储不可用或无法读取，原有资料未被覆盖。", "加密儲存無法使用或讀取，原有資料未被覆寫。");
   add("title", "GCSA Aegis AI Assistant", "GCSA Aegis AI 助手",
       "GCSA Aegis AI 助手");
   add("subtitle", "Tell Aegis the goal. It understands, plans, then acts.",
@@ -316,6 +544,13 @@ void AddStrings(content::WebUIDataSource *source) {
   add("simpleHelp", "Choose a common task or describe the result you want.",
       "选择一个常用场景，或者直接说出你想要的结果。",
       "選擇一個常用情境，或直接說出你想要的結果。");
+  add("aegisSettingsConnectModel", "Connect a model in Aegis settings", "前往 Aegis 功能设置连接模型", "前往 Aegis 功能設定連接模型");
+  add("aegisSettingsTitle", "Aegis settings", "Aegis 功能设置", "Aegis 功能設定");
+  add("modelPoolSaveHelp",
+      "Routing changes save automatically. Capability, price and generation settings are saved with Add current model to pool; an existing entry is updated.",
+      "模型路由更改后自动保存。能力、费用和推理参数通过“将当前模型加入池”保存；已有模型会更新原条目。",
+      "模型路由變更後自動儲存。能力、費用和推理參數透過「將目前模型加入池」儲存；已有模型會更新原項目。");
+  add("modelAdvanced", "Advanced model settings", "高级模型设置", "進階模型設定");
   add("modelSettings", "AI model", "AI 模型", "AI 模型");
   add("modelMissing", "Connect an AI model before the first task",
       "首次使用前，先连接一个 AI 模型", "首次使用前，先連接一個 AI 模型");
@@ -997,18 +1232,31 @@ AegisAgentUI::AegisAgentUI(content::WebUI *web_ui)
       chrome::kChromeUIUntrustedAegisAgentURL);
   webui::SetupWebUIDataSource(source, kAegisAgentResources,
                               IDR_AEGIS_AGENT_AGENT_HTML);
+  source->AddFrameAncestor(GURL("chrome://settings"));
+  source->AddFrameAncestor(GURL("chrome://aegis"));
+  source->SetRequestFilter(
+      base::BindRepeating([](const std::string& path) {
+        return base::StartsWith(path, "local_ai/download/") || base::StartsWith(path, "local_ai/cancel/");
+      }),
+      base::BindRepeating(&FetchTranslationAsset,
+          web_ui->GetWebContents()->GetBrowserContext()->GetDefaultStoragePartition()
+              ->GetURLLoaderFactoryForBrowserProcess(),
+          DownloadsForContext(web_ui->GetWebContents()->GetBrowserContext())));
   AddStrings(source);
   source->AddBoolean("isAndroid", BUILDFLAG(IS_ANDROID));
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ScriptSrc,
-      "script-src 'self' chrome-untrusted://resources;");
+      "script-src 'self' 'wasm-unsafe-eval' chrome-untrusted://resources;");
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::StyleSrc,
       "style-src 'self' chrome-untrusted://resources;");
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ImgSrc, "img-src 'self' data:;");
   source->OverrideContentSecurityPolicy(
-      network::mojom::CSPDirectiveName::ConnectSrc, "connect-src 'none';");
+      network::mojom::CSPDirectiveName::ConnectSrc,
+      "connect-src 'self';");
+  source->OverrideContentSecurityPolicy(
+      network::mojom::CSPDirectiveName::WorkerSrc, "worker-src 'self';");
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ObjectSrc, "object-src 'none';");
   source->OverrideContentSecurityPolicy(

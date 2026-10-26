@@ -1,0 +1,154 @@
+From 5541cc985620eb43f1a3232a3947a4171eaee5ea Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Tue, 13 Oct 2026 05:25:52 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=85=AC=E5=BC=80=E6=9E=84=E5=BB=BA=E4=B8=8D?=
+ =?UTF-8?q?=E9=99=84=E5=B8=A6=E6=9C=AA=E8=8E=B7=E5=88=86=E5=8F=91=E8=AE=B8?=
+ =?UTF-8?q?=E5=8F=AF=E7=9A=84=E5=AE=9E=E9=AA=8C=E6=A8=A1=E5=9E=8B?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/resources/aegis_agent/BUILD.gn |  3 ---
+ .../resources/aegis_agent/local_ai/NOTICE.txt |  3 +++
+ .../aegis_agent/local_ai/asset_manifest.json  | 24 +++++--------------
+ .../aegis_agent/local_ai/research.js          |  3 +++
+ .../local_ai/research_manifest.json           |  6 +++--
+ .../aegis_agent/reading_workspace.ts          |  1 +
+ .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  1 +
+ 7 files changed, 18 insertions(+), 23 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis_agent/BUILD.gn b/chrome/browser/resources/aegis_agent/BUILD.gn
+index d969789c91b8c1384ffcdd9b548faa4876cd53b7..b4546be3a9b5d09e29ef7696b03d64b7b064411f 100644
+--- a/chrome/browser/resources/aegis_agent/BUILD.gn
++++ b/chrome/browser/resources/aegis_agent/BUILD.gn
+@@ -13,9 +13,6 @@ generate_grd("local_ai_resources") {
+     "local_ai/bergamot/worker/bergamot-translator-worker.js",
+     "local_ai/bergamot/worker/bergamot-translator-worker.wasm",
+     "local_ai/bergamot/worker/translator-worker.js",
+-    "local_ai/minim-mlp.json",
+-    "local_ai/phishlang-vocab.txt",
+-    "local_ai/phishlang.onnx",
+     "local_ai/research.js",
+     "local_ai/research_manifest.json",
+     "local_ai/translation_manifest.json",
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
+index beee1e84713eab99f60f76e59b035d42b32d5c8c..8c104d32a17e7189682753e76889b3fecbc22104 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
++++ b/chrome/browser/resources/aegis_agent/local_ai/NOTICE.txt
+@@ -19,3 +19,6 @@ PhishLang：MobileBERT 的 ONNX INT8 本机版本；46 条已观察试验样本
+ 两模型默认关闭。开启后仍需点击实验分析；不用于自动拦截、删除、提交表单或放宽 Agent 权限。
+ 
+ 来源摘要见 research_manifest.json 和 asset_manifest.json。
++
++公开源码不包含 MINIM 权重、PhishLang ONNX 或配套词表，补丁中也不包含这些数据。
++已有本机实验文件保留在独立工作区；公开源码不会自动下载这些模型。
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index aaa45269a72c8034b180395f9e61bce2efbbe0bc..da4c1d4a84dd3327fe3f381044ba71aaff56cd9c 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -1,10 +1,6 @@
+ {
+   "schema": 1,
+   "files": {
+-    "minim-mlp.json": {
+-      "bytes": 908132,
+-      "sha256": "15bab7e6d6a7975e8f1c098e0a05cdf73646433285166fda191f7489e4e1985c"
+-    },
+     "translation_manifest.json": {
+       "bytes": 5480,
+       "sha256": "8bc2c806918e38d7c158522b2238317c6d935b8caf57866243852e87e7763913"
+@@ -14,24 +10,16 @@
+       "sha256": "c25ca0879e8c82244353f748210e113745e76b58c5bd9b923d6a16ccc903998f"
+     },
+     "research.js": {
+-      "bytes": 6647,
+-      "sha256": "9f686cac8925dc501ad833e63591407b2968d0101ff8441109df30bcfc5fc718"
++      "bytes": 6902,
++      "sha256": "4cab59d5065b196ac0fafbd1a5e8f2e23b4e8327bd0bff2019b2599d0b4b872c"
+     },
+     "research_manifest.json": {
+-      "bytes": 967,
+-      "sha256": "d03ab72b2d09f4f11fbf47a176496cd7400c5139bae171e927dd4fdba498589c"
++      "bytes": 1011,
++      "sha256": "9423baea24b828f0b5d0ae5fffd1a681fea1bb1fcc1bd2903e719fd2a55652c7"
+     },
+     "NOTICE.txt": {
+-      "bytes": 1687,
+-      "sha256": "1a800705272df07e96a26e6d798a9595061c398dc847baed69a79dfa3c8dde20"
+-    },
+-    "phishlang-vocab.txt": {
+-      "bytes": 231508,
+-      "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+-    },
+-    "phishlang.onnx": {
+-      "bytes": 38845873,
+-      "sha256": "2e8923b6fd90647c9c79e87b51c38fa07f4011bcc360901aa22488967c707830"
++      "bytes": 1892,
++      "sha256": "98390e9043db13fe6e120efb8693f73bbc6aa8232571bf92dbbc350ddc43ceb5"
+     },
+     "bergamot/LICENSE": {
+       "bytes": 16725,
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/research.js b/chrome/browser/resources/aegis_agent/local_ai/research.js
+index b9815db558f8c912f0c4b83d10c5426f7b5f24b4..5b1dbf56008a14d86745ddefdb5fe4a667a7fc85 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/research.js
++++ b/chrome/browser/resources/aegis_agent/local_ai/research.js
+@@ -74,6 +74,9 @@ export async function analyze(request, progress) {
+       paragraphs.some(p => typeof p !== 'string') || new TextEncoder().encode(paragraphs.join('\n')).length > 32768 ||
+       typeof goal !== 'string' || goal.length > 128) throw Error('invalid_input');
+   const manifest = JSON.parse(new TextDecoder().decode(await fetchBytes('./research_manifest.json'))), result = {};
++  // 公开源码不附带许可尚未明确的实验权重，必须在加载前明确拒绝。
++  if ((minim && manifest.minim.bundled === false) ||
++      (phishlang && manifest.phishlang.bundled === false)) throw Error('research_model_not_distributed');
+   if (minim) {
+     progress('research:MINIM');
+     const bytes = await fetchBytes('./minim-mlp.json');
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/research_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/research_manifest.json
+index 95be985399d7e5d7b0d8d6dc474fb4c51f0be2ad..cd469012bcfa157a1a44d778b1b8eae1ee4f7467 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/research_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/research_manifest.json
+@@ -4,13 +4,15 @@
+     "onnx_sha256": "2e8923b6fd90647c9c79e87b51c38fa07f4011bcc360901aa22488967c707830",
+     "precision": "dynamic int8 MatMul/Gemm, ONNX opset 17",
+     "source_repository": "https://github.com/UTA-SPRLab/phishlang/tree/6b7283854ef8a6edc73f945c1ce7e51b2e1dc4fd",
+-    "license_status": "No explicit model license found; local experimental integration only"
++    "license_status": "No explicit model license found; local experimental integration only",
++    "bundled": false
+   },
+   "minim": {
+     "checkpoint_sha256": "9259bc70d469870d41ba24d0576d84b291b0f4770e8f45c415b8b979b63ceab1",
+     "weights_sha256": "15bab7e6d6a7975e8f1c098e0a05cdf73646433285166fda191f7489e4e1985c",
+     "source_repository": "https://github.com/yyyyhx/MINIM/tree/456c60b6fd47941d1e5849db573dbbcb488e3ae7",
+     "training": "450 variants; page-group split 360/45/45; seed 20261011; 10 epochs; MLP",
+-    "license_status": "Dataset MIT; upstream code license unclear; locally trained research weights"
++    "license_status": "Dataset MIT; upstream code license unclear; locally trained research weights",
++    "bundled": false
+   }
+ }
+diff --git a/chrome/browser/resources/aegis_agent/reading_workspace.ts b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+index 3a08182a3a6d889a4e938eddf32aafd8bbbe9f33..b6cd59d846a79e5007944f00eef2ef5c4c66aa5d 100644
+--- a/chrome/browser/resources/aegis_agent/reading_workspace.ts
++++ b/chrome/browser/resources/aegis_agent/reading_workspace.ts
+@@ -147,6 +147,7 @@ export class ReadingWorkspace {
+       package_corrupt: 'PackCorrupt', download_failed: 'DownloadFailed',
+       storage_full: 'PackStorage', storage_unavailable: 'PackStorage',
+       research_text_too_long: 'ResearchTooLong', research_disabled: 'ResearchDisabled',
++      research_model_not_distributed: 'ResearchNotDistributed',
+     };
+     return label(messages[key] || 'LocalError');
+   }
+diff --git a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+index f9ac23091c082e237c9c242dff4af65be942e728..8d685377dc3f9be2755944e09178a3bd722e889b 100644
+--- a/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
++++ b/chrome/browser/ui/webui/aegis_agent/aegis_agent_ui.cc
+@@ -196,6 +196,7 @@ void AddStrings(content::WebUIDataSource *source) {
+   add("readingAnalyze", "Experimental analysis", "实验分析", "實驗分析");
+   add("readingResearchTooLong", "This text exceeds the experimental 8192-token limit. No safety verdict was produced.", "正文超过实验模型 8192 token 上限，未生成风险结论。", "正文超過實驗模型 8192 token 上限，未產生風險結論。");
+   add("readingResearchDisabled", "Both experimental models are disabled. Enable one in settings.", "实验模型均已关闭，可在设置中开启。", "實驗模型均已關閉，可在設定中開啟。");
++  add("readingResearchNotDistributed", "Experimental weights are not included in this source distribution; analysis is unavailable.", "公开源码未附带实验权重，暂不能进行模型分析。", "公開原始碼未附帶實驗權重，暫不能進行模型分析。");
+   add("readingResearchFlagged", "flagged by experimental model", "实验模型提示风险", "實驗模型提示風險");
+   add("readingResearchUnflagged", "not flagged; not a safety guarantee", "实验模型未提示，不代表安全", "實驗模型未提示，不代表安全");
+   add("readingResearchWindows", "windows", "个窗口", "個視窗");
+-- 
+2.52.0
+

@@ -1,0 +1,8 @@
+网页增强内置资源
+markdown-it 15.0.2 — MIT — https://github.com/markdown-it/markdown-it
+DOMPurify 3.4.16 — Apache-2.0 OR MPL-2.0 — https://github.com/cure53/DOMPurify
+markdown-it-task-lists 2.1.1 — ISC — https://github.com/revin/markdown-it-task-lists
+acorn 8.15.0 — MIT — https://github.com/acornjs/acorn
+highlight.js 11.12.0 — BSD-3-Clause — https://github.com/highlightjs/highlight.js
+
+所有运行资源在本机打包，不使用 CDN。highlight.js 仅包含 JavaScript、TypeScript、Python、Bash、JSON、XML、CSS、C++、Swift、SQL、Markdown、YAML。各文件摘要见 manifest.json。

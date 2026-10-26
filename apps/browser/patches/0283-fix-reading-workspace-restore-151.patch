@@ -1,0 +1,118 @@
+From 1c6a17edd42e31253aa1bcbbc273e4e71e23300f Mon Sep 17 00:00:00 2001
+From: MacBook Pro <lazy@MacBook-Pro-3.local>
+Date: Sun, 11 Oct 2026 06:15:56 +0800
+Subject: [PATCH] =?UTF-8?q?fix:=20=E5=B7=A5=E4=BD=9C=E5=8C=BA=E6=81=A2?=
+ =?UTF-8?q?=E5=A4=8D=E6=8C=89=E6=9D=A5=E6=BA=90=E5=8E=BB=E9=87=8D=E5=B9=B6?=
+ =?UTF-8?q?=E8=B0=83=E6=95=B4=E5=9B=9B=E5=85=A5=E5=8F=A3=E5=B8=83=E5=B1=80?=
+ =?UTF-8?q?=20151?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../browser/aegis/agent/aegis_agent_browsertest.cc  | 12 +++++++++++-
+ chrome/browser/resources/aegis_agent/agent.css      |  2 +-
+ .../ui/webui/aegis_agent/reading_workspace.cc       | 13 +++++++++----
+ chrome/browser/ui/webui/help/aegis_github_update.h  |  4 ++--
+ 4 files changed, 23 insertions(+), 8 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 1a2f6a0d736f354c5f66f18d89214b652a8539a2..3bfced2815bd7dd852d05167139dee1bb852399a 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6051,9 +6051,19 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceCaptureAndAnnotati
+       .Set("note", "本地批注").Set("quote", "不在原文中的引文_12345")
+       .Set("group", "阅读").Set("revision", *state.FindString("revision"));
+   run(save.Clone(), "library_full_or_invalid");
+-  save.Set("quote", "");
++  save.Set("quote", "阅读末尾验证");
+   state = run(std::move(save));
+   ASSERT_EQ(state.FindList("records")->size(), 1u);
++  state = run(base::DictValue().Set("op", "stash").Set("group", "阅读")
++      .Set("tabs", base::ListValue().Append(tab))
++      .Set("revision", *state.FindString("revision")));
++  ASSERT_EQ(state.FindList("records")->size(), 2u);
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
++  auto restored = run(base::DictValue().Set("op", "restore").Set("group", "阅读"));
++  EXPECT_EQ(restored.FindInt("opened"), 1);
++  EXPECT_EQ(browser()->tab_strip_model()->count(), 2);
++  restored = run(base::DictValue().Set("op", "restore").Set("group", "阅读"));
++  EXPECT_EQ(restored.FindInt("opened"), 0);
+   auto update = base::DictValue().Set("op", "update").Set("id", id)
+       .Set("note", "更新批注").Set("quote", "").Set("group", "阅读")
+       .Set("archived", true).Set("revision", *state.FindString("revision"));
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index daed0fffaaef1d428512c7bf52f82dea5d502872..bd85b68591c8c299998f009fa156f5003d67115d 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -278,7 +278,7 @@ button:disabled {
+   border-radius: 12px;
+   display: grid;
+   gap: 4px;
+-  grid-template-columns: repeat(3, minmax(0, 1fr));
++  grid-template-columns: repeat(2, minmax(0, 1fr));
+   padding: 4px;
+ }
+ 
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index 55835bbbe519e1ce20ad8ea131280a4e41a88bae..61bfd9eab7c86804f0175bd6100e90f0af5d4f05 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -345,6 +345,7 @@ void AegisReadingWorkspace::Dispatch(
+   }
+   if (op == "open" || op == "restore") {
+     std::vector<GURL> urls;
++    std::set<std::string> unique_urls;
+     for (const auto& item : records_) {
+       const auto& r = item.GetDict();
+       if (r.FindBool("archived") != false) continue;
+@@ -353,15 +354,17 @@ void AegisReadingWorkspace::Dispatch(
+            Field(r, "group") == Field(request, "group"))) {
+         GURL url(Field(r, "url"));
+         std::string fragment;
+-        if (Field(r, "kind") == "pdf")
++        if (op == "open" && Field(r, "kind") == "pdf")
+           fragment = "page=" + base::NumberToString(*r.FindInt("page"));
+-        else if (!Field(r, "quote").empty())
++        else if (op == "open" && !Field(r, "quote").empty())
+           fragment = ":~:text=" + base::EscapeQueryParamValue(Field(r, "quote"), false);
+         if (!fragment.empty()) {
+           GURL::Replacements replacement; replacement.SetRefStr(fragment);
+           url = url.ReplaceComponents(replacement);
+         }
+-        if (AllowedUrl(url)) urls.push_back(url);
++        // 工作区按保存的来源去重；单条批注的定位片段仅在打开该条时附加。
++        if (AllowedUrl(url) && unique_urls.insert(url.spec()).second)
++          urls.push_back(url);
+       }
+     }
+     if (urls.empty() || urls.size() > 16) {
+@@ -371,7 +374,9 @@ void AegisReadingWorkspace::Dispatch(
+     for (const auto& url : urls) {
+       bool existing = false;
+       for (auto* tab : tabs->GetAllTabs()) {
+-        if (tab->GetURL() == url) {
++        const GURL current = tab->GetContents()
++            ? tab->GetContents()->GetVisibleURL() : tab->GetURL();
++        if (current == url) {
+           existing = true;
+           if (op == "open") tabs->ActivateTab(tab->GetHandle());
+           break;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index ab687c6747b6bb422182b791a1ff41f06f8bea17..29cae767da253fd893ce2d4bd0c24b8349410df1 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用 v2.0.0.40。
+-inline constexpr char kProductVersion[] = "3.0.0.150";
+-inline constexpr char kProductVersionLabel[] = "Ver 3.0 (150)";
++inline constexpr char kProductVersion[] = "3.0.0.151";
++inline constexpr char kProductVersionLabel[] = "Ver 3.0 (151)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+
