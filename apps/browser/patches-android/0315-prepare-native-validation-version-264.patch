@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Upstream <aegis-upstream@example.invalid>
+Date: Sat, 24 Oct 2026 19:00:00 +0800
+Subject: [PATCH] 为 Chromium 156 原生验收递增产品版本至 264
+
+---
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index f729efc3ccebf26d850ca384a9b00f8ffcce80bf..4d25b66792b66b98abf57bbc3b9b28e1f3b02e48 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.0.0.255";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.0 (255)";
++inline constexpr char kProductVersion[] = "6.1.0.264";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (264)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

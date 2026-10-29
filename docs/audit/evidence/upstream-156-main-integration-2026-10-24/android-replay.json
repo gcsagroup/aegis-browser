@@ -1,0 +1,1895 @@
+{
+  "startedAt": "2026-10-24T10:31:08.676739+00:00",
+  "base": "1d17a2e2ee147bb7d6ae2ab6abdb3a2510c17775",
+  "patches": [
+    {
+      "ordinal": 1,
+      "name": "0001-Aegis-add-stub-service-and-feature-flags.patch",
+      "sha256": "ccfeaf4599a2a8484efa6eba9ca0a14e4dfeaa688cf7e04c418aa4a1e69ddeaf",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 2,
+      "name": "0002-Aegis-add-net-throttle-for-built-in-tracker-hosts.patch",
+      "sha256": "c7616a7687d99aa027149340aca2d05a2a210381b11c0277c0570625c4e85111",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 3,
+      "name": "0003-Aegis-add-chrome-aegis-WebUI-and-module-prefs.patch",
+      "sha256": "a39b83bc64060a7a2c138a181af85ac66d55a6ecede542430f01c27c7227ea03",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 4,
+      "name": "0004-Aegis-add-phishing-interstitial-for-built-in-seed-hosts.patch",
+      "sha256": "72f32ae3e2e9609e8b6ab19f95cf940beabffda39f500bc84aad92bb14f2da25",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 5,
+      "name": "0005-Aegis-add-FingerprintGuard-canvas-WebGL-audio-farbling.patch",
+      "sha256": "d33140320709797e529f90b8024280e81b8484e58c4156703a2076735327a2a0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 6,
+      "name": "0006-Aegis-bundle-packages-core-policy-snapshot.patch",
+      "sha256": "9c14f06dc4619b7507f6476d7b9cfc3312d0c869aebcc8741f9756b6ed3d327e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 7,
+      "name": "0007-Aegis-add-EasyList-compiler-and-filter-list-updater.patch",
+      "sha256": "23f2a6aea8bb1968fae963621302a961b191a65f83beab0575d4aa911b3eaed4",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 8,
+      "name": "0008-Aegis-strip-tracking-params-and-reject-tracker-cookies.patch",
+      "sha256": "999dfb3647f3f44a432dbe4b2b4b6439b524ee297f1a32c4de6a22dbefcb6f06",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 9,
+      "name": "0009-Aegis-uncloak-CNAME-tracker-aliases-and-clear-bounce.patch",
+      "sha256": "fc6eb3fd5f9719a9288b61ec9a8b67f349d9711e92b93c53aec620eb1507d77b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 10,
+      "name": "0010-Aegis-score-phishing-URLs-with-explainable-heuristic.patch",
+      "sha256": "f9de1ee2b23f3c8d3db3b4e0390cde3200918a2576888f1258787da5d150ffed",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 11,
+      "name": "0011-Aegis-score-phishing-pages-after-DOMContentLoaded.patch",
+      "sha256": "781d525d49bf9e44e08868ceb4b92f008623c448d0878da8abae9e08668fdd5d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 12,
+      "name": "0012-Aegis-run-packages-core-in-a-JS-policy-worker.patch",
+      "sha256": "7de8fe064beeb2cf202185b840ae21900aa9abd299f28328ccb278e0e41b984d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 13,
+      "name": "0013-Aegis-farble-WebGPU-adapter.info-fingerprint-strings.patch",
+      "sha256": "d9caf98d9ef3ee6caeeb0a2ee0131b150f1523b120fd2155a5d59e960d2552d9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 14,
+      "name": "0014-Aegis-fix-startup-DCHECKs-and-run-policy-worker-in-c.patch",
+      "sha256": "b32066b7b7710f69bc9a0b30ce6e169cbfe2dcedecddac42cd92b648de74102a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 15,
+      "name": "0015-Aegis-add-chrome-aegis-entries-in-Settings-and-menus.patch",
+      "sha256": "bba7b3151745f3dc67ab37fdec5913d9d5b9937525303db9ac9ac53ef8af4b17",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 16,
+      "name": "0016-Aegis-explain-module-toggles-and-expose-Ollama-model.patch",
+      "sha256": "6370d5918edac5445b3b8f07eee7f1f8b7eeec6c27b2cb5c4125f3420f74af51",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 17,
+      "name": "0017-Aegis-defer-filter-list-and-cookie-work-until-after-.patch",
+      "sha256": "6d7b286846403eb7bf32a393ec4ec41aa6ca92b65863c41c096aa5aaae0aa596",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 18,
+      "name": "0018-Aegis-reuse-compiled-EasyList-cache-on-startup.patch",
+      "sha256": "7acecb26a48670770b4df1de891441b358c19a147c0de66926c08674fbad9236",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 19,
+      "name": "0019-Aegis-refresh-EasyList-cache-with-conditional-GET.patch",
+      "sha256": "d5654400110b32e119069e8b788961bffbe55ae7ceffa4d818fb948536a98b88",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 20,
+      "name": "0020-Aegis-make-phish-AI-and-cleanup-actions-visible.patch",
+      "sha256": "19f1f09c53ce7d487a8c35281714272bd30f6d78ef7f53aaf0883c7045d83f52",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 21,
+      "name": "0021-Aegis-tighten-cookie-lookup-and-block-first-party-co.patch",
+      "sha256": "d658060f87899f82c2685a5f689e1cd2e13e258dfa0dda511b65ac5663838da0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 22,
+      "name": "0022-Aegis-make-session-actions-live-and-spot-GA4-collect.patch",
+      "sha256": "3d651164234849bc234f21e988a64165d7823b42b8ee49644dec827a87c8797a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 23,
+      "name": "0023-Aegis-surface-tracker-blocks-and-add-loopback-CDP.patch",
+      "sha256": "e59cf9d3abe45f1d98e37c136c01f50a2d09d7931c92fa73fa4295a88cb19ccc",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 24,
+      "name": "0024-Aegis-hide-sensitive-CDP-targets-and-show-live-agent.patch",
+      "sha256": "943eb4b0621e4b9af887023eab0df98eb6b8dbbe5470b6bffad5bc135481bd37",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 25,
+      "name": "0025-Aegis-show-a-CDP-agent-banner-that-opens-chrome-aegi.patch",
+      "sha256": "2071a64cd5d536ca692a730dd557493772f60c4fe449a0b5c6cc60b85e187896",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 26,
+      "name": "0026-Aegis-probe-Canvas-WebGL-Audio-and-WebGPU-on-chrome-.patch",
+      "sha256": "bb715cdc04c782e4768615c7abd593546102ebb2ff8f813cfc27163d6befe118",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 27,
+      "name": "0027-Aegis-farble-Audio-fingerprints-once-per-buffer-and-.patch",
+      "sha256": "d8e8ed43ef6b033f3530b0460b9bbdc8fbcbefaa5ac52070feff120cd7cafcb6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 28,
+      "name": "0028-Aegis-farble-WebGPU-numeric-limits-per-site.patch",
+      "sha256": "24ec0b2d2747a47d3edb4aadbd683fa41781115bf73b093d28953bfe263c2f77",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 29,
+      "name": "0029-Aegis-allow-chrome-aegis-on-Android-and-reserve-Play.patch",
+      "sha256": "09636c8fb4b39c61e2f6d2a34e18de03b65d6bec7ce97148f724b18eea2035f9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 30,
+      "name": "0030-Aegis-open-chrome-aegis-from-Android-settings.patch",
+      "sha256": "c4fb17786978e684c72021476c32883074e028f65ca27250a49c405c40f8a3b1",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 31,
+      "name": "0031-Aegis-harden-local-browser-security-boundaries.patch",
+      "sha256": "bb7a59ad2fba105fa099f487495f6fdc2349e43de1b56be1e1abc5bf91eb6cda",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 32,
+      "name": "0032-checkpoint-preserve-remote-CDP-security-integration.patch",
+      "sha256": "e5e80ecfa5d4f25f2d7d8e760fb9b812f0a45ad243c9c146d556b87e71a866f3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 33,
+      "name": "0033-feat-close-remote-CDP-target-isolation-gaps.patch",
+      "sha256": "28fdf881332d80eca3faaddc4610f1cae0402487a2571ad9590a61133eb044f1",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 34,
+      "name": "0034-fix-preserve-initial-blank-ownership-across-hash-nav.patch",
+      "sha256": "bdf518aa838cb19d6dbe8f8c645d14d85036a9ceb39cf91ac71766a373b9415b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 35,
+      "name": "0035-fix-satisfy-Aegis-WebUI-type-lint.patch",
+      "sha256": "3329588619d76bb21101cee06af84b54a714c3124fe169a2e18679b9907947fc",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 36,
+      "name": "0036-test-use-explicit-CDP-notification-matcher-type.patch",
+      "sha256": "c306b651a7e26b1b349d5bab25337171280a02e673508d694f79af27e3039b6a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 37,
+      "name": "0037-fix-stabilize-Aegis-browser-unit-gates.patch",
+      "sha256": "2727938b08091cc66d0acf9c7f49043b52d80c8e68f85c27d54ed81b0d94379c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 38,
+      "name": "0038-fix-preserve-initial-CDP-documents-across-remote-cre.patch",
+      "sha256": "66438188df056b3e4b23f44379c4c723d6dd891f40b4c4ba067fc29f75291aac",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 39,
+      "name": "0039-test-verify-redacted-Ollama-request-body.patch",
+      "sha256": "919ffb36a2ec05a6e54cdbed3a0fd4a20b518d7d3345a69c3834752b91530592",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 40,
+      "name": "0040-fix-release-Aegis-profile-state-before-shutdown.patch",
+      "sha256": "60d12d3c9d2325a98e89272e53e6932b204b7cfa6ae830358fc0450e36f9c0be",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 41,
+      "name": "0041-fix-disable-Google-AIM-eligibility-requests.patch",
+      "sha256": "f9d8c95f714febbfe48343a1f88015d1f456c5ac367d20bd1b9a7bb334544752",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 42,
+      "name": "0042-fix-delay-policy-FM-until-enterprise-registration.patch",
+      "sha256": "6744fe5dc0407e1c3c40027a721dafe7906434e0357ad866f45c0683c684dd04",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 43,
+      "name": "0043-fix-route-Aegis-reports-to-owner-sequence.patch",
+      "sha256": "5e339cb3e53415b90d26edd98418dfb34ad06cddef231d7ce7d72bf7cfd0684a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 44,
+      "name": "0044-perf-aegis-index-filter-paths-and-trim-canvas-copies.patch",
+      "sha256": "1a0684d72f0c5032a0d0d3c1607f2e2b8ca4b47d606d6bbbaa4162800e133478",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 45,
+      "name": "0045-feat-structure-page-events-and-site-controls.patch",
+      "sha256": "e32d94822455ce5e61550322055f34a71b02660becd91cc0207a363e85366428",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 46,
+      "name": "0046-feat-add-native-site-protection-surface.patch",
+      "sha256": "78ee3bef52a3cffe380cced9beb4b574141e3943f09f643a0accd3f8deb02a30",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 47,
+      "name": "0047-feat-explain-privacy-actions-before-execution.patch",
+      "sha256": "6c892b12e085e18037dee21feee2cd85276e49ee201631f03605b62991f16bc8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 48,
+      "name": "0048-fix-isolate-summary-source-tab.patch",
+      "sha256": "fd56933853a0371cf1e2143588745cd0e228600ccf232509a501dcb3abfda5fb",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 49,
+      "name": "0049-feat-aegis-add-bounded-phishing-and-local-threat-fee.patch",
+      "sha256": "d6eb88341f22d4d25f87e9ea6b8a2852cf9a7a20b06992264b685defdee93bb2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 50,
+      "name": "0050-feat-aegis-integrate-accelerated-and-BT-downloads.patch",
+      "sha256": "b5546904eabc9aef4b501bc20013fb476d8b343892dd2cf76976e0a11fd7ea87",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 51,
+      "name": "0051-feat-aegis-add-native-download-settings.patch",
+      "sha256": "4c04c2c9bad669f5a88f54e7dec98b1e9f093e20c323bea935cd10cbcac2cd45",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 52,
+      "name": "0052-feat-aegis-harden-fingerprint-protection.patch",
+      "sha256": "1b4eb3c09ed9bc6d5bd0055254eab2a39f2c66cc7f9fd9f6bf1111bcc19a906f",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 53,
+      "name": "0053-feat-aegis-add-observe-only-MinerGuard.patch",
+      "sha256": "cc2a8068bf82a2cc07debfe1dc3e5844587397fac08ede8c5722cb6a5d5d1793",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 54,
+      "name": "0054-feat-aegis-add-V8-bytecode-shadow-observation.patch",
+      "sha256": "d52d91450aa3b3737ae0e380bda91371c3e1350e25efa679f78892bd2dd9f629",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 55,
+      "name": "0055-feat-aegis-support-compatible-model-APIs.patch",
+      "sha256": "60fbba7896e0b93439931527c458c3df7f2ac9aaff8c6bb9edc9a4bae73c912a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 56,
+      "name": "0056-feat-aegis-add-site-summary-shortcut.patch",
+      "sha256": "b09b119dde28c65d011ab6de5c8f1d91343d2cf56367cf4b917fd661f4d9fec0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 57,
+      "name": "0057-build-aegis-pin-bytecode-shadow-V8-revision.patch",
+      "sha256": "1a1ae5d6278517b3e2b6d1f34c8e52e044a1ace6fea07a5a1c47b6f6b2be481b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 58,
+      "name": "0058-feat-aegis-add-policy-brokered-browser-agent-core.patch",
+      "sha256": "d70c3898ae5a42605c11ff081bc5a318ff0a619b77825d2e59dfe87ea2fc004d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 59,
+      "name": "0059-feat-aegis-enforce-scoped-Actor-execution.patch",
+      "sha256": "473abfdb8cf336f59b3c7a95c688946b88430b5752d1105f2772d83b116eac1b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 60,
+      "name": "0060-feat-aegis-add-browser-agent-side-panel-and-entry-po.patch",
+      "sha256": "88df527bd798d66a9e6a4cf165715b2bbc32b6fe1ff6982f3c2591a9ebea365a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 61,
+      "name": "0061-fix-aegis-harden-agent-runtime-and-desktop-integrati.patch",
+      "sha256": "9e0e1de9b7bfad10098b66e1d8f9ac21357d36cb3345035d4f929965cc124eaa",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 62,
+      "name": "0062-fix-aegis-show-browser-agent-entry-by-default.patch",
+      "sha256": "f8b1208cf3714a8d2900e0f38534be5eaee062b896bd8d5065f96756252bf33e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 63,
+      "name": "0063-fix-aegis-migrate-agent-toolbar-entry.patch",
+      "sha256": "189fbbc099bddab859199733d7d47e123a9fd522725639440149f1289d611d9b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 64,
+      "name": "0064-fix-aegis-signal-agent-side-panel-readiness.patch",
+      "sha256": "03d094b86cc2f28c3bcf9f6c5020d71a9a38289e74935a32ee278004db51c361",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 65,
+      "name": "0065-feat-aegis-open-task-pages-automatically.patch",
+      "sha256": "8185bebb47d7cc124b75243c9b7138b23cfd8cbfec939041bf86fd36d57d8a4e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 66,
+      "name": "0066-feat-aegis-tailor-settings-and-update-status.patch",
+      "sha256": "39c3eeb71d752eeeff5a4798e7ff81aa6defd415fd5e1b3d5cc35c4c4489986e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 67,
+      "name": "0067-feat-aegis-add-gcsa-visual-branding.patch",
+      "sha256": "386ea18fbac8818c61826cec7c7a7225ac13657f2d4ebbcae3bbd8f2471caeee",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 68,
+      "name": "0068-feat-aegis-add-v2-native-hybrid-runtime-spike.patch",
+      "sha256": "2ee6f827652ddd08b8a58b4f06cf093122b3612e934b379a4527f601a27fb355",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 69,
+      "name": "0069-feat-aegis-harden-v2-autonomous-runtime-spike.patch",
+      "sha256": "183500f2aa65db66c80d7f8f04a24445f47b2833cb58634a881a4d0c0b5c08b1",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 70,
+      "name": "0070-feat-aegis-simplify-browser-agent-v2-onboarding.patch",
+      "sha256": "2b59af27182edbd70f0b96a9a6bc4a60cd714cc8482677afda9cded68f113cc6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 71,
+      "name": "0071-fix-aegis-harden-browser-agent-planning-flow.patch",
+      "sha256": "acb0ff783550bc3197db64766db5415ec64c0d874d9999b3e6f5d416451a191b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 72,
+      "name": "0072-fix-aegis-route-goals-through-model-before-browsing.patch",
+      "sha256": "13b7e2538559597f46bbfa7bbf8adea89eeba4ca305087f440e8dd7628a4e4e3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 73,
+      "name": "0073-fix-aegis-require-model-tools-and-route-named-sites.patch",
+      "sha256": "53fa35bbf0b65fb4e81d739cad028fc813581c72973446e36b7c1b282627a29c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 74,
+      "name": "0074-fix-aegis-bind-implicit-current-page-tasks.patch",
+      "sha256": "a05ced0fc8e1ec661b6a776a8dc1f3ac9489482bdfb037cbe2cf37ee4a81d949",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 75,
+      "name": "0075-feat-aegis-simplify-tasks-and-add-scheduled-automati.patch",
+      "sha256": "f1381a8bd5308bd7429ea83999a75fc42373088d45738f462346e1ad8c895a30",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 76,
+      "name": "0076-fix-aegis-correct-cross-platform-build-and-branding.patch",
+      "sha256": "d34a235fb567b2b7a9bf098791a0a5e98463124e2ad8ac55f25e9533e068d986",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 77,
+      "name": "0077-feat-aegis-complete-cross-platform-v2-runtime.patch",
+      "sha256": "63d45b7723792b147c96bb17055ead519148b60a969147bf73a3cc7eeb4bdb61",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 78,
+      "name": "0078-fix-aegis-recover-read-only-plans-after-model-format-errors.patch",
+      "sha256": "6e14866e4dcfb5df727ba390e5530ac86b12f9d9d9f3a1f6f58ddcb4822c2431",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 79,
+      "name": "0079-feat-aegis-isolate-primary-incognito-profiles.patch",
+      "sha256": "d93b04e9acd8a0d16682b7889d2e9323e3eab4644dbc2f4af27ae1a7f77e9dfd",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 80,
+      "name": "0080-fix-aegis-harden-current-page-Qwen-planning.patch",
+      "sha256": "7cde4cb4f9574eab19e15bd7ad667b9cd62ab9356f8ed4dc26359e528753780e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 81,
+      "name": "0081-fix-aegis-validate-model-plan-ordering.patch",
+      "sha256": "529e77969101f2eadf9fc9e39758a17984c4cba2b60e759f781d1b1ed2d97a07",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 82,
+      "name": "0082-fix-aegis-reject-redundant-entry-navigation.patch",
+      "sha256": "41ad2eaf1c88340d7015a9855226d61ac3e45a7e3f5e625c7f5f1fafd6689bdf",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 83,
+      "name": "0083-perf-aegis-speed-up-local-Qwen-tool-turns.patch",
+      "sha256": "78aeb2904c2281fa3bd19c9c54c50520342eaea6cc1cf6790e836c9b3797fe29",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 84,
+      "name": "0084-fix-aegis-require-durable-scheduled-automations.patch",
+      "sha256": "54e48ce67b321485a8c77a20455dde55bc3e16f71b41535c6da7e1c419bc1e75",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 85,
+      "name": "0085-fix-aegis-repair-evidence-bound-model-turns.patch",
+      "sha256": "cd78e745e00cd7df90f1f5b813aa8be6b538e4aa812e5f02b440a84773582fb6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 86,
+      "name": "0086-fix-aegis-block-non-public-model-routes.patch",
+      "sha256": "4782e1c9ce919cfd53766660f95e6b54fb2a043721a5911b25c6d6a0717a6a01",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 87,
+      "name": "0087-fix-aegis-use-product-logo-in-agent-UI.patch",
+      "sha256": "58e62618156c7acf3e215bfe637c96092467f65345b9a640eac3704005bfcb38",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 88,
+      "name": "0088-fix-aegis-brand-Android-agent-entry.patch",
+      "sha256": "128d64f1f750eed2bf1880bc9ff1881c6f76b7c2507a506781563408ad246ea6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 89,
+      "name": "0089-fix-aegis-recover-named-site-searches-from-weak-rout.patch",
+      "sha256": "8abb482c8d1cc73d3af5a3a4180330e90bde09e63cc9fbf9b8e25d2068c32119",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 90,
+      "name": "0090-fix-aegis-keep-browser-data-tasks-native.patch",
+      "sha256": "02f97f4d23294b5b24055594fb1d70b28ebe044dd80686e91d81afdd5cd4732c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 91,
+      "name": "0091-fix-aegis-tolerate-redundant-browser-only-targets.patch",
+      "sha256": "307ce6431f7180b5ff8e3d1ae1540ba5486672c8f5d9bf56a1957301d85eb7c8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 92,
+      "name": "0092-fix-aegis-validate-bookmark-goal-coverage.patch",
+      "sha256": "24dc1b1081145d0ae125a478f3448d4122457922af7468357f2863853bff0e0d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 93,
+      "name": "0093-fix-agent-support-explicit-local-fixture-url-checks.patch",
+      "sha256": "35d931c15bb0b61cfff8c69f2186090fee97d8b9c54660aafa3be6aaccfd9065",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 94,
+      "name": "0094-fix-agent-normalize-native-task-completion-evidence.patch",
+      "sha256": "31a5bb721313a47b8302a57875e5298fe27597b1722771f776b57ddc9fec64b3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 95,
+      "name": "0095-fix-agent-preserve-verified-completion-and-bookmark-undo.patch",
+      "sha256": "c3757222e6c3aafc74abee1b53dac5c3bb4c0964b65c08968a655d463c65a1c0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 96,
+      "name": "0096-fix-aegis-bind-model-browser-capabilities.patch",
+      "sha256": "6a226bdb6bc5d32a5eed83a885012763f940158e3d8935be637def0380317ee4",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 97,
+      "name": "0097-fix-agent-wait-for-scoped-navigation-and-register-se.patch",
+      "sha256": "850564140b3faecffa4981299bb6777d639214db0f129be307512cfdc5da6d74",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 98,
+      "name": "0098-fix-branding-use-gcsa-aegis-in-browser-identity-sur.patch",
+      "sha256": "110b731a58f4aaeca9f9defcdfb51b29c9b59cd5541eb7a5d5a02e941911ef45",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 99,
+      "name": "0099-fix-agent-move-task-storage-off-the-UI-sequence.patch",
+      "sha256": "fc1c06d402d6730f28a2110fe8826f905a2c1d55386cc161356b19e452265383",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 100,
+      "name": "0100-test-agent-clear-profile-pointer-before-teardown.patch",
+      "sha256": "4c680ac4d172fb9ae3655f1ece118adb72e2ee1684a2fd6ce648647528279477",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 101,
+      "name": "0101-fix-agent-finish-bookmark-checks-after-rate-limits.patch",
+      "sha256": "6419c45d157438be21d3e6402118cd5da944ede086609536e7fc1d7ab9aaf40d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 102,
+      "name": "0102-fix-agent-read-retry-after-without-coalescing.patch",
+      "sha256": "2dcddb36c27a30075a899a734d8b5dae431ae92a4bd4cd281ef3a053dcbd581e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 103,
+      "name": "0103-fix-agent-wait-for-native-download-verification.patch",
+      "sha256": "ec1748d90f9e2f9154f67b91c4f1a6c1e963eee9360d845e073ebd79aee77ad2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 104,
+      "name": "0104-fix-aegis-compile-incognito-guard-on-android.patch",
+      "sha256": "34cdecf0cdc64a0d59b58e8b0eebb6ad5d5a81b79320b99bc19d748f86eb8748",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 105,
+      "name": "0105-fix-agent-android-broker-and-scheduled-state.patch",
+      "sha256": "80f5331958a03468c75ef387431a77965628ef6d874371a58ef9b8df18cb0050",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 106,
+      "name": "0106-fix-aegis-use-cached-ui-locale-on-windows.patch",
+      "sha256": "2005dc7e1a23ebd590a2c0fda55bfd5ca37ed9a1b67001406430f866b5391d21",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 107,
+      "name": "0107-fix-agent-restore-enabled-monitors-at-startup.patch",
+      "sha256": "c86f9d8ab8fd8a41ecb680f74a35160763cec7a2559e5763abf7975ad0624289",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 108,
+      "name": "0108-fix-agent-sync-verified-runtime-and-summary.patch",
+      "sha256": "b28f33af4183f0cf67c3f3d48243137ab2341e48c151654ed4f504f992e30043",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 109,
+      "name": "0109-feat-aegis-github-browser-updates.patch",
+      "sha256": "9bb7b792b06ac87797d02b800c5bceae5edd1c2b286e4b39656170cc1ed62774",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 110,
+      "name": "0110-build-preserve-local-link-limits.patch",
+      "sha256": "5a84111dba8d47af60d68414fe09d0927232ea9452706fe7b963546503e90868",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 111,
+      "name": "0111-fix-aegis-update-download-finalization.patch",
+      "sha256": "7f4ebe7261926315439ea3d70a01f8132aa067beec4b9267f1028bc4f98721df",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 112,
+      "name": "0112-fix-aegis-update-chromium-style.patch",
+      "sha256": "4163515f2601c009cec2019dd3bf43cd7143d5334db8456090a240c3a797d6d1",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 113,
+      "name": "0113-fix-settings-copy-and-product-status.patch",
+      "sha256": "7a2a9ab3d6624771d6fa5e8809cc32f9fb23c6cc961c0f5f1c312993dc213efe",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 114,
+      "name": "0114-fix-actor-m153-policy-callback-lifetime.patch",
+      "sha256": "b22e5f7197df95a40003cfd853b300158d1af0fd1e69021a2182fb9cbbd9e5c6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 115,
+      "name": "0115-fix-build-m153-native-dependencies.patch",
+      "sha256": "5fe520ddb67b1f9e4e2f9e7169be649c05b109551239b6b995fa21a5ba67fb09",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 116,
+      "name": "0116-build-bump-m153-native-test-candidate-020.patch",
+      "sha256": "61150a228a73ca58dfcf95fb816974b3b1f1e14c2e50c153f30c67d224a00f84",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 117,
+      "name": "0117-fix-build-reset-uploader-dependency-021.patch",
+      "sha256": "7d7d2ef25647e3317b65e7311a4031a14fcf6b7c590fd220ea8d01b5f515ec9b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 118,
+      "name": "0118-build-bump-m153-v8-regression-candidate-022.patch",
+      "sha256": "a780125563c5f87075bdb4a0565ccdba592cbc58e7014be3b0c775ab24c59701",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 119,
+      "name": "0119-build-bump-m153-full-browser-candidate-023.patch",
+      "sha256": "52ddfa520d5958867cfd629b8579ca46978fc92d83b0bc541934068593d73636",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 120,
+      "name": "0120-build-bump-m153-browser-candidate-024.patch",
+      "sha256": "bf10cf15f77c057dd2347bae5012b5b018b93175086ec84c56b3be63bbcda51e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 121,
+      "name": "0121-fix-settings-download-translation-keys-025.patch",
+      "sha256": "4c9770f705a7bd8455203d47d3765fb50592b57718c0483c79eb9b9a02c2817c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 122,
+      "name": "0122-fix-settings-lit-event-and-css-lint-026.patch",
+      "sha256": "0e826a1b77543d9ffc25515d1e83c4c8040570de89901530bffd96022da36f13",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 123,
+      "name": "0123-fix-read-anything-aegis-trigger-027.patch",
+      "sha256": "d5a7f586eab477fa09dcc9c605b4377e7912891fd8792db5b824e37704b1245e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 124,
+      "name": "0124-fix-aegis-webui-browser-selection-028.patch",
+      "sha256": "467773ba406f4e8702b8888e8b8429c0f67e429a10d3b90b4377f3fbeadfdb0d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 125,
+      "name": "0125-fix-aegis-profile-access-029.patch",
+      "sha256": "032f3fe30f53593ae85138b95571fc407e33a8ee349d77ae2d47574c098e7e3e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 126,
+      "name": "0126-fix-settings-glic-visibility-030.patch",
+      "sha256": "8c2ac83281db1203a20b3cec54f2112908ba035cf5064e3da80532d1b337b3b6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 127,
+      "name": "0127-fix-history-branded-routing-tests-031.patch",
+      "sha256": "cbba7e84dfc9c2ceed54e2637c64f2338331c88d73b8582e9dcf8f8199d1a392",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 128,
+      "name": "0128-fix-history-branded-import-032.patch",
+      "sha256": "7373bde890a4c7285067a541ea1a4cde56631b605a4bd2402e573df135d8f6d3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 129,
+      "name": "0129-fix-settings-tests-lit-and-imports-033.patch",
+      "sha256": "3e4bfb02aefc27999e23990039c994c3ebcc8b501d26498285eae779c3da2060",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 130,
+      "name": "0130-fix-download-test-lit-lint-034.patch",
+      "sha256": "3bdf843e3b6455b88d413421b4095f31b1d862af8138c3042780b25b731bd4db",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 131,
+      "name": "0131-build-bind-m153-browser-candidate-035.patch",
+      "sha256": "ccfaa8bd2b07a646dcbd1ae4f63b78f098d1ba1a06f048f558ad44fd014b9cd5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 132,
+      "name": "0132-fix-about-product-version-036.patch",
+      "sha256": "04ded631a82983d6f6a05be89e40e0d94d90b6b0ecb973c555f70ce8d7bda4ae",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 133,
+      "name": "0133-fix-generated-product-plist-037.patch",
+      "sha256": "bd5079a71fe90d4f4547406e3f293c5662824e17061ab280c0c3a008903cc4c5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 134,
+      "name": "0134-fix-v8-standalone-tracing-038.patch",
+      "sha256": "33726bc6dd6cc627e859ff244e130cec15e1da95158971e6364461a6e1e99e37",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 135,
+      "name": "0135-build-sync-overlay-candidate-039.patch",
+      "sha256": "d50bb454a308900e05b5bbb2cfde393f24e37bd3012564734d3319b490a456e5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 136,
+      "name": "0136-build-sdk27-candidate-040.patch",
+      "sha256": "2ecfac384b57d816fa6d4fa7b19b3ee9bd9d8e360ed1078b8aa77b5ed826dbaf",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 137,
+      "name": "0137-build-lld-backport-candidate-041.patch",
+      "sha256": "0969d8e1013057a58d1de561cc16a5445cb767272ff363cf9365f6d9a5ff5b63",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 138,
+      "name": "0138-build-lld-sources-candidate-042.patch",
+      "sha256": "15f764c9a6a7253a97651f03514a1d362d9321127bf3e3fe70d0d4457caa369e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 139,
+      "name": "0139-build-lld-monitor-candidate-043.patch",
+      "sha256": "506f135fb3731537b8baae9b0fbd12e4ccc713adf049ae10569402e8e85b7fd1",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 140,
+      "name": "0140-build-bounded-link-parallelism-044.patch",
+      "sha256": "2dc2c181c6494292fa487a939236fd421270a968672a31a545d1320b5c72ded3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 141,
+      "name": "0141-feat-agent-lifecycle-result-verification-2-0-001.patch",
+      "sha256": "f58092e8933be7ca40171032f92f84a635908113f9dd9d26ee38ae214349df0e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 142,
+      "name": "0142-feat-task-scoped-observation-2-0-002.patch",
+      "sha256": "f2014fad5f615f411bcb14ffee8266464605ddc66f3a0f68a2389c14a63412a1",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 143,
+      "name": "0143-fix-source-extraction-contract-2-0-003.patch",
+      "sha256": "8b10afde0da2c5caa1a1ff8a0c90e91d5e8e8b47ab9965c67ee546d9bf24e138",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 144,
+      "name": "0144-feat-exact-url-transfer-approval-2-0-004.patch",
+      "sha256": "2be57052f589d2de0ec39897685772d8fc99e0f744b335325fab5ea23e3ed15e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 145,
+      "name": "0145-fix-transfer-approval-lint-2-0-005.patch",
+      "sha256": "617104bf3f3ae151e757495da1c6a850305a197d94961d798c0b9c55a955bd3d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 146,
+      "name": "0146-test-bind-url-approval-source-2-0-006.patch",
+      "sha256": "26d82694b3ad741f10a85bcd28f97c458b28edfd8d1dc31a8dd8eb38c684cfab",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 147,
+      "name": "0147-fix-click-evidence-and-risk-display-2-0-007.patch",
+      "sha256": "e40f572d9ecc9738e1bdc28808036eda918743b911ad6686c8972a8f9bcf67e2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 148,
+      "name": "0148-fix-pending-approval-risk-record-2-0-008.patch",
+      "sha256": "cb505484fbf0b51c250f6a58b71709489d3ef09446c9cbfff79ceadb91adf4e9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 149,
+      "name": "0149-feat-current-page-action-scope-2-0-009.patch",
+      "sha256": "aa2c3fad00ab3f8015f4b4df0ec5c97e09732a12a833580f79cd2a868c3384f8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 150,
+      "name": "0150-fix-observed-button-target-binding-2-0-010.patch",
+      "sha256": "077ed6df69a8c5f9148ad819332e47bbdac5d63b4f08be74c5937e6ebad01db0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 151,
+      "name": "0151-test-fix-click-fixture-dict-assignment-2-0-011.patch",
+      "sha256": "3fe20c31f3f6aa25791e73c555834f58c1cd87b88e00141df1e7bcb5c5c9d9a8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 152,
+      "name": "0152-fix-invalidated-consent-terminal-state-2-0-012.patch",
+      "sha256": "95164a67c91088ca76a1e21d7fea9d510bc3a121c5361ecf630e25630775de27",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 153,
+      "name": "0153-fix-takeover-invalidated-approval-2-0-013.patch",
+      "sha256": "bf1c65bb6d028de643f77d4015c80dbd06e14d0c22615516ab847f0c8d70d68d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 154,
+      "name": "0154-build-security-candidate-2-0-014.patch",
+      "sha256": "5b0f33fc940c3bf81f3046f59ac51e00f9fc7da52b0a13001fc61d31e9af63a2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 155,
+      "name": "0155-build-refresh-security-revision-2-0-015.patch",
+      "sha256": "a6671cdfcabb5aeb79ab16e8abb7e57f706e4a4802023cc1441c7fac6c450020",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 156,
+      "name": "0156-feat-selected-research-workspace-2-0-016.patch",
+      "sha256": "6e072db5a56de00543c5fa0819f77c682b2f3e03831738f3582ca68863759319",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 157,
+      "name": "0157-fix-research-candidate-2-0-017.patch",
+      "sha256": "c4df14454a6504eda286c1fe0b8437b1ef4ec9d10860eff630ec669c7f9b4fda",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 158,
+      "name": "0158-fix-research-candidate-2-0-018.patch",
+      "sha256": "91319274ad7b50ea2662ad371852c31e6defd8a450b84c28ed55a34a4d543a9d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 159,
+      "name": "0159-fix-research-candidate-2-0-019.patch",
+      "sha256": "80cb57650a12fea71f1be5e829df88eee237f53094e646ec72f13eec9cf71526",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 160,
+      "name": "0160-fix-research-candidate-2-0-020.patch",
+      "sha256": "7ee14caf7d1dd13aebd0e9e8a89a28c7a4634025ef2ecd0aeb11ebd18f19f001",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 161,
+      "name": "0161-fix-research-candidate-2-0-021.patch",
+      "sha256": "19a26b055ba1b2536fd2658c78f2e9bdabfc3d2992bff5e791423c1d18c4a5c9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 162,
+      "name": "0162-fix-research-candidate-2-0-022.patch",
+      "sha256": "0d3b2fa4fcbce3e49885f28a67d3a1c5f39ef9bff38b1cb36f70d9097ae8b487",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 163,
+      "name": "0163-fix-research-candidate-2-0-023.patch",
+      "sha256": "bfd176f2ef0243f1df7c868685686ef192e9392f4c8230a6ece9ca2c67941aed",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 164,
+      "name": "0164-fix-download-research-validation-2-0-023.patch",
+      "sha256": "0e09c3f475db0de813c870f8d4007e0863034a18feebcae294aa9a89b2cd9551",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 165,
+      "name": "0165-fix-research-candidate-2-0-024.patch",
+      "sha256": "bd34b909f1add8c929083010e89fc94bbec4d9dc5caafbe845a05bb2adbdf11b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 166,
+      "name": "0166-fix-research-candidate-2-0-025.patch",
+      "sha256": "f6139c49049229555e45f59539828eb415b6cb4c86f6cc94cd42f5c1393ca703",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 167,
+      "name": "0167-fix-research-candidate-2-0-026.patch",
+      "sha256": "5da5f952b7e3f04273b25d323803ed642c1369655db4566ce1c34600b918158f",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 168,
+      "name": "0168-fix-research-candidate-2-0-027.patch",
+      "sha256": "3466d6b1672018228a4c0483de5466155adcb41508415589a77e1aea3e60bfd5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 169,
+      "name": "0169-fix-research-candidate-2-0-028.patch",
+      "sha256": "783728c53fd45cb1744a7030ee48e963e44fbad4a6fc820371378fa63f439815",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 170,
+      "name": "0170-fix-research-candidate-2-0-029.patch",
+      "sha256": "864e60d7b9205af32c6bfa0f243a507ee2f08331e9e5d4bebcca2d93121853c8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 171,
+      "name": "0171-fix-research-candidate-2-0-030.patch",
+      "sha256": "0da03ac8dd413b0621b4b8c779b0d752c349089b77cf441b6cdf361b97749006",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 172,
+      "name": "0172-fix-research-candidate-2-0-031.patch",
+      "sha256": "428512f49e0749cf311c1df5ecda626b63ee853e877271264ae4b94bbfbb5034",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 173,
+      "name": "0173-fix-research-candidate-2-0-032.patch",
+      "sha256": "d2c53538a2a5e37e8dc121cda0781d9a56a1b78d822a2a03bac04231b2209fcc",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 174,
+      "name": "0174-fix-research-candidate-2-0-033.patch",
+      "sha256": "0cc6678bd09fb2823dc93afa34e1d9c763ba88f8cc460fe86c2c1110a88d9e93",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 175,
+      "name": "0175-fix-research-candidate-2-0-034.patch",
+      "sha256": "547713cb0cb00aa138829054d000d091c9ee59d9b606aee25539cc50ff4351d5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 176,
+      "name": "0176-fix-research-candidate-2-0-035.patch",
+      "sha256": "146cb0eb62ecb5b7258ddde6adc244517932494348ce1af2a15232d47fbddd63",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 177,
+      "name": "0177-fix-research-candidate-2-0-036.patch",
+      "sha256": "2bb26e358ba781af51a56d15d68ab9a91b40cae5dc7468405fe9120ea104fdb0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 178,
+      "name": "0178-fix-research-candidate-2-0-037.patch",
+      "sha256": "306d32f72f9fbb022c4031a8f1b96c6f191e3e9b1843fea8c1997a30a1cc5840",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 179,
+      "name": "0179-fix-document-lifecycle-and-retry-2-0-038.patch",
+      "sha256": "99023f08d828e196fda8b956205906e827b6a1b625d851ea2923206392e4e57a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 180,
+      "name": "0180-fix-retry-test-api-2-0-039.patch",
+      "sha256": "01a6c80abef0bc529529503624962b02245ccc5814fdc3af70db214fe3f8b8e5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 181,
+      "name": "0181-fix-native-title-only-extraction-2-0-040.patch",
+      "sha256": "81329127fa9f7357a8e5c4cfaa8b1254bfabbba4c6e1d5ba5c4e4b72f6909b6f",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 182,
+      "name": "0182-perf-deduplicate-final-page-identity-2-0-041.patch",
+      "sha256": "28778910f9dced5f0c946d68c0eb3230dcb388863888eb3375e045799734f1b5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 183,
+      "name": "0183-build-security-candidate-2-0-042.patch",
+      "sha256": "44e82d3a2209c2eb0cca55924636b5f2983cc00723683ce9b2b3435cf394845e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 184,
+      "name": "0184-perf-native-readonly-article-extraction-2-0-043.patch",
+      "sha256": "bfcd75418d4f638556d659f48deb8f987f1794e101671ea18601a0ec5f8d909a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 185,
+      "name": "0185-fix-research-save-native-receipt-2-0-044.patch",
+      "sha256": "429c436f08c7c08d1e507aabf0e3545d000fb71ad8b50b48891a6577f00e26c2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 186,
+      "name": "0186-test-research-save-valid-scope-2-0-045.patch",
+      "sha256": "bad1761cca71c0189adcfb233fca1678dd2048294b15c45d055ac4b9d5a93bc3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 187,
+      "name": "0187-fix-numeric-monitor-summary-2-0-046.patch",
+      "sha256": "2e84b7e92bd4cb71c5ea9b6aba9b9c8aad848d97cd3b5305cc390fc90a77e4bf",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 188,
+      "name": "0188-fix-research-storage-todo-2-0-047.patch",
+      "sha256": "663726dc475ca4242bc939dc7920c46da1581b85bb79c41596d635e7b294fac0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 189,
+      "name": "0189-fix-bookmark-and-research-completion-2-0-048.patch",
+      "sha256": "e4286e372001d0a937f041cc41da00469388bac3767adc572eb8555e6c13ae47",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 190,
+      "name": "0190-fix-bookmark-undo-intent-2-0-049.patch",
+      "sha256": "ad677e1135c0d707b2e1e6e8eed21b27ab494537917f0ab5e21e2605e80a8e37",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 191,
+      "name": "0191-fix-completion-regression-fixture-scope-2-0-050.patch",
+      "sha256": "66285bf2f6e4adf908e04e941820a1228aceb2280558cdab3e82fab674830a36",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 192,
+      "name": "0192-fix-research-boundary-whitespace-2-0-051.patch",
+      "sha256": "c061e8bdb74a018756c92a4086ed4cb3b85f51f68af9f890a37d0862a0ec2fb9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 193,
+      "name": "0193-fix-browser-experience-followups-2-0-052.patch",
+      "sha256": "5c1540f45a3be861994f02a5a79b43986b3b98bc3ff956bcf8091cd1fd2961db",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 194,
+      "name": "0194-fix-download-intent-and-summary-review-2-0-053.patch",
+      "sha256": "43217272e89d563b59c32067f5105819f7646d1495cc4af6133a0c9a16f4a887",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 195,
+      "name": "0195-fix-current-page-entry-binding-2-0-054.patch",
+      "sha256": "50b7ce103390523a3e1f529a70356dffa1ee092596312272bdb403058535e83e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 196,
+      "name": "0196-fix-current-page-open-reference-2-0-055.patch",
+      "sha256": "19c50b4e0846fc88a0370a239baa9170b4e4aede7a97ef84db40fc249bbd87ad",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 197,
+      "name": "0197-test-current-page-route-contract-2-0-056.patch",
+      "sha256": "edff6cde0b9b8dcb629514f0933f36c96b7b5cbb88012f99422006686f137511",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 198,
+      "name": "0198-fix-final-integration-links-approval-input-2-0-057.patch",
+      "sha256": "ac12137cd74ded2852c69324dec279608d87b8ae8a05a9876f390bc98fed8bf0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 199,
+      "name": "0199-fix-bookmark-review-language-source-2-0-058.patch",
+      "sha256": "0f90883942f64d797a87c9509e0ac7c866a0d30ad4149fbf9640dd6e3d336e6c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 200,
+      "name": "0200-fix-native-bookmark-call-builder-2-0-059.patch",
+      "sha256": "d4decadc8635c9ae28802f8df6adb8703f364696fda7a63cdf113fdb3a098dd9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 201,
+      "name": "0201-test-language-and-source-output-contracts-2-0-060.patch",
+      "sha256": "dfdb36ddced6aa45d72ca80a813066fa8faf86d4bcc0b324b365bb3a39326200",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 202,
+      "name": "0202-fix-review-visibility-and-identity-source-copy-2-0-061.patch",
+      "sha256": "c1360cb892a5d4c2bd5f206ab6c12d31c4945c0afc80795f5004f6a7c9bd6682",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 203,
+      "name": "0203-fix-agent-copy-announcements-and-input-scope-2-0-062.patch",
+      "sha256": "b421ddb4a7f2fce25aaaa24763a0a329ce8316bf1e73fbd44a1744e57b3c9093",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 204,
+      "name": "0204-fix-tab-close-intent-and-native-receipts-2-0-063.patch",
+      "sha256": "6b0bcc89ab4696c1dca8649ec54c137614e8be1228dc7cac4a47bb1a8074831f",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 205,
+      "name": "0205-preserve-negative-close-constraints-2-0-064.patch",
+      "sha256": "6b730a64df1a059146567fde36ccf8175715fdcb7bfec4108b9eb33a5b7d1013",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 206,
+      "name": "0206-bind-current-article-without-router-call-2-0-065.patch",
+      "sha256": "00f5a81b0f824a626c13597b60cc2c834bbd938cfac40b9ff7d9ddbdcc2a5b0a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 207,
+      "name": "0207-fix-android-build-dependencies-2-0-066.patch",
+      "sha256": "1a8ffe4e8a1a165bd02029cb1f4e88b074656e4ab021e91c8a28cd8e96a83016",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 208,
+      "name": "0208-bump-internal-build-retry-2-0-067.patch",
+      "sha256": "e83f89a88cd4d98019b4af8333b282547398564c46239a2260a1682f4be889b8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 209,
+      "name": "0209-fix-android-menu-model-068.patch",
+      "sha256": "c5bbcdc7a31a690a00331d1258399714912b6a964b939430cbb67a112ca18739",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 210,
+      "name": "0210-fix-android-native-test-fixture-069.patch",
+      "sha256": "744220efc5a89b9e465513a964034fc696225e0a00ba8eef86795a2d988f08c8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 211,
+      "name": "0211-internal-version-070.patch",
+      "sha256": "248578dc26c2e6d29548de8f375da9501fe6321cd4a1abba635bb5de729c9cff",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 212,
+      "name": "0212-mobile-layout-and-brand-071.patch",
+      "sha256": "a5344fcba758a3bdaae6415d627412dc3efbd5d0238b492afc5d717698989395",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 213,
+      "name": "0213-mobile-style-and-summary-scope-072.patch",
+      "sha256": "3f0275a7ed7f2aaa61765d884f193d496194fdd653db99931b7e1ae02931521f",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 214,
+      "name": "0214-remove-unused-illustration-colors-073.patch",
+      "sha256": "336d5f85b5ae072370eb5ff6e36d4701609a08ce0fcd732406fd3e8dead44a5f",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 215,
+      "name": "0215-mobile-version-and-monitor-test-074.patch",
+      "sha256": "b03d86bc1160c15056cef874e11ec6132d8fddad9678b07cafa47026e5f327b1",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 216,
+      "name": "0216-platform-workspace-summary-and-window-075.patch",
+      "sha256": "0cc886099635972e5c193a080631f62a492b70f51d204b151ec76654a7ce39dd",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 217,
+      "name": "0217-shared-mobile-download-panel-076.patch",
+      "sha256": "d9d48435cae357f295492b50d9f9bd73cbe5103a3b1141e9ae5596de692d12bb",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 218,
+      "name": "0218-shared-download-transport-and-workspace-evidence-077.patch",
+      "sha256": "f4247604fb38892dfd7541e242ca7be782a2ef53ce9929a1d007eb6c29fc2ede",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 219,
+      "name": "0219-workspace-editable-test-window-078.patch",
+      "sha256": "034fffa3aecb24c88d4e41489b906b56eb548bf0837c1c69eca5e7656d924dd8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 220,
+      "name": "0220-workspace-color-roundtrip-079.patch",
+      "sha256": "b866047e544d8d76891dafa0531ea300944d593efd3fd332ca0f7015f55b627d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 221,
+      "name": "0221-mobile-interfaces-and-native-start-receipts-080.patch",
+      "sha256": "75b9420dbbdedc7c69d9ce1dd2f46aeebd4ee83bf782aed4f003981dda3c2cf9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 222,
+      "name": "0222-download-feedback-and-workspace-fixture-081.patch",
+      "sha256": "d96ef3e69241f63e280d00931cf16c254ee6f29179dc44054246647390dda4f3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 223,
+      "name": "0223-metalink-retry-before-partial-file-082.patch",
+      "sha256": "37d9ead4176218f71b746e68a398acb2c9a07eddc6d6ff21dfa8188d564c3bf9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 224,
+      "name": "0224-explicit-url-window-intent-083.patch",
+      "sha256": "666ca9ac4cdec5a008ab0e2af16c4c1f4cac21482225209f5cfb47c898b06fc7",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 225,
+      "name": "0225-shared-toolbar-product-logo-084.patch",
+      "sha256": "5219d9e3d3aa0d8d7c17af4176ab5f8fd66e0c990410d59269ef8f6c06d6d4d5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 226,
+      "name": "0226-native-id-range-085.patch",
+      "sha256": "7c1c554020f1f5fb1db5c9526daeb313e5dd354b5444258005dbc70fb172e9c3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 227,
+      "name": "0227-window-approval-revision-086.patch",
+      "sha256": "7b759ef332accd091a0416c4df58982b939cdda7d839fad010ec078cc9af57fc",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 228,
+      "name": "0228-windows-product-identity-086.patch",
+      "sha256": "8cfb57fe45f26eb68c792868482eee8531b1a4a48b5b22c48e9a5b0267df9a06",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 229,
+      "name": "0229-window-revision-fixture-087.patch",
+      "sha256": "dbda9490991cde6a1c38c42188b62c8e404f53d0dcd563408995af57e6a5f03c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 230,
+      "name": "0230-windows-update-task-runner-088.patch",
+      "sha256": "c2ee2abc92114855dbe54d6292690394d3e61a91ae0e82e03e61135906087719",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 231,
+      "name": "0231-version-page-update-dependency-089.patch",
+      "sha256": "f87bbafaabb067a3b200c5931d87f13985f8f3639ce9392ae4b718817a0c7af8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 232,
+      "name": "0232-android-actor-tab-state-090.patch",
+      "sha256": "88dff7d98e7a0605cf3dbfdd4165d6191780662255a1bbcdbcbb85b5839b0f15",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 233,
+      "name": "0233-android-workspace-scope-091.patch",
+      "sha256": "4f2668a700a94a795c8e8f3ea6b04029884189e7206f9ef951c338803be86862",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 234,
+      "name": "0234-metalink-source-page-092.patch",
+      "sha256": "5330f890e7be916d578065f8f5275e67135b1667494717564c9859c33c7cb002",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 235,
+      "name": "0235-metalink-observer-notification-093.patch",
+      "sha256": "5f030668eb3143e832ab2023be4ea8760cd5494c6f328d50eb97b62c81e89bc0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 236,
+      "name": "0236-metalink-native-deletion-094.patch",
+      "sha256": "419f63d50255d949a0444bf0bed4559a08f7821f9363fe9cf10a8c5d2eab66e3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 237,
+      "name": "0237-windows-midl-path-095.patch",
+      "sha256": "6347658d33028a796963135baebecf43d8d3d2cf9f8a361caf74bd7fb63caf69",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 238,
+      "name": "0238-windows-midl-template-096.patch",
+      "sha256": "57d181229591c8260d6cdb086579f265ab0e64b5165f3897caf0faf1e2e30b3d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 239,
+      "name": "0239-windows-identity-expectations-097.patch",
+      "sha256": "24d90ceb44bf097d8cad10f2780fdc1aaaedb6411e3c517d92fdac17a0759843",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 240,
+      "name": "0240-merge-main-chromium-153-098.patch",
+      "sha256": "6ccd347356ff92c1741a0f8d3199c6d722ee5679361f29a4c8569101d18e584a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 241,
+      "name": "0241-fix-selected-task-model-routing-099.patch",
+      "sha256": "5f1bd69044b06e57f258c7271877b919c32660c8a42f59c36b12c5bec09c0cb9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 242,
+      "name": "0242-fix-research-scope-fixture-100.patch",
+      "sha256": "90e4d95f5a4667788f3374b7df70f21b8d7035bd9332ce3a151b162e0b97de92",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 243,
+      "name": "0243-fix-merge-review-and-mock-101.patch",
+      "sha256": "55f440ec26b4ac7e31be912fee41c2b859117b4b0c747c216a6ce92a4cb72e48",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 244,
+      "name": "0244-finalize-merge-review-102.patch",
+      "sha256": "e5035f1ba14035f205cde4950bb6763587833571415cefbcecef952cac2abd50",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 245,
+      "name": "0245-fix-selected-model-route-103.patch",
+      "sha256": "9955ad41bde5c0397877257759e02d623ba0e3f91e5e6ca566c4d54ecf985b46",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 246,
+      "name": "0246-fix-async-find-display-lock-104.patch",
+      "sha256": "8dd3f1e05b2c2bed828afb698ec0e42b1e308bf628c9e660d6bdcdfd3b416a83",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 247,
+      "name": "0247-fix-locked-simplified-layout-105.patch",
+      "sha256": "1970485af22825d05c1d702658912b44f5f80407d003e2eb06fa2dbd9f8472a8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 248,
+      "name": "0248-fix-m154-lit-settings-candidate-106.patch",
+      "sha256": "df0f3064e6f5ec5e327b76ea93ac873d9e8c1894bbfd9d1c67019de0b7cd3d0c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 249,
+      "name": "0249-fix-lit-update-types-candidate-107.patch",
+      "sha256": "59af4ae91b24532bd120beddf3482074e05f8d70bba220faa460bb500ae3ca99",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 250,
+      "name": "0250-fix-settings-test-imports-candidate-108.patch",
+      "sha256": "8d925e822809f2bd446d889946d4e27a4d027780fe331bbbbaf5ae7cc3a774e3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 251,
+      "name": "0251-fix-lit-test-assertion-candidate-109.patch",
+      "sha256": "332c07ccc368449bbc36683b17c4bf722d934f63fd1dc9b0bbc6b33ae5ffa38d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 252,
+      "name": "0252-add-android-release-updates-candidate-110.patch",
+      "sha256": "ba3746cc3bbca71a5257d84649bd4b1eedee618a304302a4bbdd473aa9238600",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 253,
+      "name": "0253-fix-toolbar-window-interface-candidate-110.patch",
+      "sha256": "c24d786bf920acb355ad55b29cad920fce4b9e9977c1eba9b3e698a219808009",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 254,
+      "name": "0254-fix-navigation-commit-test-candidate-111.patch",
+      "sha256": "54e36dc3d335f0093337ed7298e02a2dbda53de35a85c7f27ed90b5d372d2e22",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 255,
+      "name": "0255-fix-browser-test-window-interface-candidate-112.patch",
+      "sha256": "f5b52da3d254c5745852f09878f44a0952078ce754ee4b3ef29699cedeb9dc4a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 256,
+      "name": "0256-fix-tab-close-test-header-candidate-113.patch",
+      "sha256": "be0b56a7dcdaeae7c11715dbccc0eae6b9100c09dbd10fd2350415950af56eeb",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 257,
+      "name": "0257-fix-devtools-interactive-window-tests.patch",
+      "sha256": "67eb9836d1e65226588a4708a31dee300b273e419c5e5fe7d0d34e7a4272867e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 258,
+      "name": "0258-fix-policy-listener-test-candidate-114.patch",
+      "sha256": "a8b08e237f9ae198b62a1209af78ef76299ae811459983dcada7c7a8fce648f4",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 259,
+      "name": "0259-fix-prefetch-byte-size-test-candidate-115.patch",
+      "sha256": "9939b56a066388a8cb8530f5c750fe9005c68586bf9e3d62de033eb6c71ec0cc",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 260,
+      "name": "0260-fix-task-intent-and-native-fixtures-candidate-116.patch",
+      "sha256": "81771d7f3bd38bc6535f0b3f4178737adbb7df96565719f35282f71fa662b40a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 261,
+      "name": "0261-fix-version-label-and-scope-regression-candidate-117.patch",
+      "sha256": "5c72bdb73673656a88a5346b2e7229ec7150dfa60853a3f07739d4fc902ab256",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 262,
+      "name": "0262-reopen-native-side-panel-fixture-candidate-118.patch",
+      "sha256": "4d38dbf8958aa1da5239a62838ee3faf6c52aceffa2a36345ebf88f9c3077161",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 263,
+      "name": "0263-adapt-chromium-155-candidate-119.patch",
+      "sha256": "2f17c8382239989f27636c85d8f180f6c99911747e8cc1c8d3757a101c15bef5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 264,
+      "name": "0264-fix-chromium-155-policy-test-dependency.patch",
+      "sha256": "9366fc5666e983242aed20fcf188ea50ae5b83882f77a995e6b06bf43895e78d",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 265,
+      "name": "0265-fix-safety-hub-lifecycle-order-candidate-120.patch",
+      "sha256": "0dfd3902c6d932c4bc881e12847815c18858be29dd20a833a5acb37258371ab4",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 266,
+      "name": "0266-adapt-side-panel-access-candidate-121.patch",
+      "sha256": "ca7319affc0de0b97a75f70afc8a9989b1f94aed9f7fb9bdf42cab7488f688b7",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 267,
+      "name": "0267-fix-recursive-prefetch-context-candidate-122.patch",
+      "sha256": "efa295f85ee7e747bfed6864615f6575037e98820ae3c29260b616c9b12bd3e3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 268,
+      "name": "0268-restore-ui-test-injection-candidate-123.patch",
+      "sha256": "59a3550657b5e3a7f98a6e7e6ef3e8c4fce402b78d55bc671b590d1d5254bd68",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 269,
+      "name": "0269-adapt-prefetch-test-document-candidate-124.patch",
+      "sha256": "071a708d84360c439c239a92a4646337e1a7f892ab615e3288bc1e69caf68eca",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 270,
+      "name": "0270-bump-web-security-tooling-candidate-125.patch",
+      "sha256": "8f17523e8adeec60d457dd41e5a8a365fb80ad60a75d76ace645684bbb06974e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 271,
+      "name": "0271-feat-native-mouse-gestures.patch",
+      "sha256": "1a86274318f717007c5ec2a2b657d3d2666fb27b62c4a65ff4f5dbf21327055c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 272,
+      "name": "0272-fix-gesture-settings-and-frame-input.patch",
+      "sha256": "606103274a9cd18cd28e8083613e80c89e80f8cc9f94fa407bf2b11de3d834cc",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 273,
+      "name": "0273-test-align-settings-visibility-with-chromium-155.patch",
+      "sha256": "369dd79ff96f3ea8564c0918dbfbb558dc153763d4cea0639a67ebf4d4cdbccb",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 274,
+      "name": "0274-fix-quinn-agent-integration-142.patch",
+      "sha256": "d44bf2088037ecd96df7948678d477fabdfe59382074956dd32f902999c3a91b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 275,
+      "name": "0275-test-quinn-research-list-155.patch",
+      "sha256": "9beecd581aa382b25e39ba2d2a6c4ce05717fd794ac92fcd9ab5c250e2e0d346",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 276,
+      "name": "0276-test-quinn-research-fixtures.patch",
+      "sha256": "a28b8a0356be3c40a101e78a151266f796e351d2b1f82c005893ddc460dcfde5",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 277,
+      "name": "0277-feat-reading-workspace-145.patch",
+      "sha256": "c80599526f2eb62a640b8e7a7c792d3ff00339a415587859637b8402dbd0a340",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 278,
+      "name": "0278-fix-reading-extraction-146.patch",
+      "sha256": "a6007c9d70c128f5ae494c045492333a0843e02c2923865cd5202582a3cd9cee",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 279,
+      "name": "0279-fix-reading-ui-checks-147.patch",
+      "sha256": "5acbde9c647244e1e6e566c524ce5f28fe8ed75f58701bd1fb03fe377d854823",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 280,
+      "name": "0280-fix-reading-native-interfaces-148.patch",
+      "sha256": "6c1cd0f79b91ab8faab6cacba0dde8d8050beaaa98146c31bab2095820c4cda2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 281,
+      "name": "0281-test-reading-private-window-149.patch",
+      "sha256": "8dda3bfca873589e9a3eb19a6c1be6ac03e6898d76b9b90ebe3bc22b7551ab75",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 282,
+      "name": "0282-fix-reading-text-boundary-150.patch",
+      "sha256": "893fc8b05677f45c12ed81fdfb751bbb517d1f5b3c0c24135e4fcaab9094a89c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 283,
+      "name": "0283-fix-reading-workspace-restore-151.patch",
+      "sha256": "03058b61eda0ee31c9f3be220df13f4aac18e6b1b2f8cbd2d022626b7a67ba48",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 284,
+      "name": "0284-fix-reading-checkbox-layout-152.patch",
+      "sha256": "19023c3ff948df5d06b9add7ea0fd6263385c758eb24ef2e546039644212fc51",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 285,
+      "name": "0285-chore-fixed-signing-build-153.patch",
+      "sha256": "0f53781d396ae9436764e1115daf29152bc702d8b5a674f8578247fedadf2ab6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 286,
+      "name": "0286-fix-gcsa-distribution-validation-154.patch",
+      "sha256": "87c824e60452b38593e6274e8974776e7a8b803d230cf99f7c2741c87184d0c2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 287,
+      "name": "0287-fix-mac-signing-test-155.patch",
+      "sha256": "207d1d2ef843e6d6b3169c430ff1f6cfe80b2a1ac56061fbdf3970dac55731b2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 288,
+      "name": "0288-fix-mac-signing-test-bounds-156.patch",
+      "sha256": "5cac7f6ad578d08f5063179730ffb8ea53f87adbdeff7aaec8ae1697db769f8e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 289,
+      "name": "0289-fix-signing-fixture-buffer-writes-157.patch",
+      "sha256": "219b059c30d1c01092f3972cee48f50a4b3c2ed36046f0d42f30a8836c2e6c02",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 290,
+      "name": "0290-chore-signed-upgrade-acceptance-158.patch",
+      "sha256": "3a25d67ffb543b9efb9dc9590b4ceb6b9d6f5d58c8065f35178462e47198a027",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 291,
+      "name": "0291-feat-local-translation-research-159.patch",
+      "sha256": "6b82866471381bc8022fb597747f7126ce589bbb6f11cefadec95d5c13b60c0a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 292,
+      "name": "0292-fix-local-ai-resource-pipeline-160.patch",
+      "sha256": "1e6647a90cb60e04fe4b1876a572a71c19d7da96c3f04885bff773bd6a252321",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 293,
+      "name": "0293-fix-local-ai-types-and-goals-161.patch",
+      "sha256": "3cb2898dfee4549b09bb5890f178f6876098274df13d264bd673371b6979f449",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 294,
+      "name": "0294-fix-local-ai-resource-capacity-162.patch",
+      "sha256": "a5433a1dc8c05c126ed094714e49b33839ebfbe4e56bec44a4fe20cfd7963a50",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 295,
+      "name": "0295-fix-local-translation-native-dict-163.patch",
+      "sha256": "8b65119abdb7bf2c7c564adaadc481ec55e6059c6e81c86e4662c248ebbce3b3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 296,
+      "name": "0296-local-ai-edit-and-cancel-164.patch",
+      "sha256": "77a192f6157f0979494012adfbb49b370f9ba0e71dc50c0061eb6b2eee67c573",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 297,
+      "name": "0297-native-translation-pack-download-165.patch",
+      "sha256": "300299fa6aac466ccab428df2fb4b03714e3c4fd60a336663e08904462077822",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 298,
+      "name": "0298-local-pack-interceptor-test.patch",
+      "sha256": "640daf6b49002a974eec9ee608b965b992d67fca3348d08afbb02cbfac190ab6",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 299,
+      "name": "0299-bounded-language-pack-stream-166.patch",
+      "sha256": "e5c2cff368215104db741b1681db324843f63f2b4e00805b0c742f9c56134e2c",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 300,
+      "name": "0300-translation-download-product-agent-167.patch",
+      "sha256": "92d5baf5e1a1c32f2babf1a52c6994472c5079ba9837ace1fe7ee81b1a3b41bc",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 301,
+      "name": "0301-real-worker-translation-regression-168.patch",
+      "sha256": "ef63ff585f1c69e2963d607c84c99add54e7aa40ea6ba2b1680465a02a1158ff",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 302,
+      "name": "0302-single-worker-local-translation-169.patch",
+      "sha256": "0d36acd8cdc1dd5ffdf3985c2ec2bca43645fc1eba038466f1ef88fc04a28cc9",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 303,
+      "name": "0303-wasm-module-global-170.patch",
+      "sha256": "8cc66cd176f64b31ccf08e6a3720d2db151abb213cc63e19c5e23b329d8cfdf8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 304,
+      "name": "0304-public-research-assets.patch",
+      "sha256": "e5ee5b347e3c42f98415210ed4193e4ffde96d611201a8173e207f6ad449e99e",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 305,
+      "name": "0305-upstream-security-version-208.patch",
+      "sha256": "40f1a0e24ac27d403ca436a7416fbe18c688615665327fdf9e501a4f6993ecd0",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 306,
+      "name": "0306-codacy-local-ai-cleanup.patch",
+      "sha256": "c17ea226254f928a18b753e00d597573058b6b16eeabe93ca0dc0957f7ce7244",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 307,
+      "name": "0307-upstream-security-version-209.patch",
+      "sha256": "d18545fd6a38ed1eb487036f49bda90652f9fa3f50d52e8d3676455c807eabf3",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 308,
+      "name": "0308-align-mobile-settings-and-expanded-forms.patch",
+      "sha256": "41334f4f9889517c4470d3d15dc3433a6ece1f3c8dd1c02dae53642f0a45815a",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 309,
+      "name": "0309-align-mobile-settings-version-248.patch",
+      "sha256": "d3c8e17465b8ec850d0116ca81921c07759d9804d95c937827cb43faa8d9f535",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 310,
+      "name": "0310-fix-android-native-test-support-visibility.patch",
+      "sha256": "9798d5399e15217455a91f74fcfa61860a0ef4b8fd362a335e2805f233634f22",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 311,
+      "name": "0311-annotate-android-update-network-249.patch",
+      "sha256": "1ac113238d2b1de1ad76ff31268af2faedad05285e6c2053c07099ffcd68daa8",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 312,
+      "name": "0312-allocate-android-update-storage-250.patch",
+      "sha256": "626672788f72b6fa4ca1ae5ee5542999479e8119f116f4ab93abe1cfd32bb24b",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 313,
+      "name": "0313-unify-mobile-settings-and-handle-unloaded-tabs-252.patch",
+      "sha256": "0b38d8363b412646a0e262b6038eccbffc32685b6501ac222cf5e4f333ec94b7",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 314,
+      "name": "0314-fix-mobile-settings-return-and-platform-copy-255.patch",
+      "sha256": "ad483d1affaec941391b6dea08a212ebffdf6e604a5e389eb9beac0e88feab8c",
+      "exitCode": 0
+    }
+  ],
+  "status": "passed",
+  "completed": 314,
+  "tree": "2f98fb89538d1e8e7fcb379f8ac56d8b840a851b",
+  "objectScope": "官方提交的完整树索引；补丁涉及内容均存在，未改动的按需下载对象不代表完整依赖同步",
+  "finishedAt": "2026-10-24T10:32:03.919253+00:00"
+}

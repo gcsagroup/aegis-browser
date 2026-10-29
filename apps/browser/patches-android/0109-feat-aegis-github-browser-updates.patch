@@ -1112,7 +1112,7 @@ index d9b2085047ed09ed8f717f093919b1f472808e1f..108e87dfe7da6448141ad5dd8419b292
  #if BUILDFLAG(IS_MAC)
    // Promotes the updater for all users.
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index c88da50a589cd9b20f714950a7a875682469cae3..ab07496994758aaf0a23107916641d210a1e650b 100644
+index 7d6b60410a7807f70aa861d30fb2c9318d833068..1036bf22a5f8d9194dc065351f556a1cb717c1f4 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -356,11 +356,16 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {

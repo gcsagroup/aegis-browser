@@ -13,17 +13,14 @@ Content-Transfer-Encoding: 8bit
  1 file changed, 1 deletion(-)
 
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index c38f2124a6ae8301cb8f19b933d987804069f134..8f4d5cf44f700739843cf9ea966d51615108e73f 100644
+index 304f59086514736980e3bc04ab9d6595429cbcb7..6718eed0172216c5f8306a03c138b45ac7caa085 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
-@@ -835,7 +835,6 @@ source_set("unit_tests") {
-     "//chrome/test:test_support",
+@@ -858,7 +858,6 @@ source_set("unit_tests") {
+     "//chrome/test/base:testing_browser_process",
      "//components/account_id:test_support",
      "//components/enterprise:test_support",
 -    "//components/invalidation:legacy_topics_cleanup",
      "//components/invalidation:test_support",
      "//components/policy/core/browser:test_support",
      "//components/policy/core/common:test_support",
--- 
-2.52.0
-

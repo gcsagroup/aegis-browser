@@ -4,13 +4,13 @@ Date: Tue, 25 Aug 2026 01:35:43 +0800
 Subject: [PATCH] fix: delay policy FM until enterprise registration
 
 ---
- ...fm_registration_token_uploader_unittest.cc | 208 ++++++++++++++++++
- .../user_fm_registration_token_uploader.cc    |  90 +++++++-
- .../user_fm_registration_token_uploader.h     |  25 ++-
+ .../fm_registration_token_uploader_unittest.cc     | 208 +++++++++++++++++++++
+ .../cloud/user_fm_registration_token_uploader.cc   |  90 ++++++++-
+ .../cloud/user_fm_registration_token_uploader.h    |  25 ++-
  3 files changed, 315 insertions(+), 8 deletions(-)
 
 diff --git a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
-index 1ba8638d570d9128ecf3fc9db7464aeacdae5786..7e5ae56b7a825492378e1c8051239b73255f157c 100644
+index 85c009fc9ea046557891b2b1373152ec85fdd450..ce13ca764b7b718d4e40a36e1ac1e7520026702c 100644
 --- a/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 +++ b/chrome/browser/policy/cloud/fm_registration_token_uploader_unittest.cc
 @@ -6,15 +6,30 @@
@@ -101,8 +101,8 @@ index 1ba8638d570d9128ecf3fc9db7464aeacdae5786..7e5ae56b7a825492378e1c8051239b73
  }  // namespace
  
  class FmRegistrationTokenUploaderTest : public testing::Test {
-@@ -283,4 +348,147 @@ TEST_F(FmRegistrationTokenUploaderTest,
-   core_.Disconnect();
+@@ -308,4 +373,147 @@ TEST_F(FmRegistrationTokenUploaderTest, StartsListenerOnceOnCoreConnected) {
+   core_.Connect(std::make_unique<MockCloudPolicyClient>());
  }
  
 +class UserFmRegistrationTokenUploaderTest : public testing::Test {
@@ -432,6 +432,3 @@ index 8fcf54be081c72a5dc65c3030ec463d5a1b8f707..b4fce1d345a71693ef6501655720e7ca
    std::vector<std::unique_ptr<FmRegistrationTokenUploader>> uploaders_;
  };
  
--- 
-2.52.0
-

@@ -26,10 +26,10 @@ combined score crosses the block threshold.
  create mode 100644 chrome/browser/aegis/aegis_phish_tab_helper.h
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 402a33ee0430289cb6a1d96869ecfbf5a40c3313..e17d620b889bafcb8f9003fb86cf7f094658bb1c 100644
+index 9693a95a251b33c1558cd75647096e1b2d317050..29595ec7fd935480904bc8c3b9ee8353afb8da30 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
-@@ -165,6 +165,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
+@@ -167,6 +167,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
        RequestImageForContextNodeCallback callback) override {}
    void ExecuteWebUIJavaScript(const std::u16string& javascript) override {}
    void GetMediaFeedURL(GetMediaFeedURLCallback callback) override {}
@@ -352,7 +352,7 @@ index d7e92c9c73ebd8cf09582439a3d63d0feb4bb111..8c540d59a562ff567cceb020888374df
    MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
    MOCK_METHOD(void,
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index 3b1e2e30efad9959ad08252e7f7932276a820f33..02d5bf903388b93b83898fcfb2e746c5a1da2d21 100644
+index f7e2862c79baa94717de88c8a188816441be3324..e034a11cc4b3c77d43e27a11aa655ad67afe93a1 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
 @@ -15,6 +15,7 @@
@@ -363,14 +363,14 @@ index 3b1e2e30efad9959ad08252e7f7932276a820f33..02d5bf903388b93b83898fcfb2e746c5
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
  #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
  #include "chrome/browser/browser_process.h"
-@@ -446,6 +447,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+@@ -364,6 +365,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
        web_contents,
        std::make_unique<PageSpecificContentSettingsDelegate>(web_contents));
    CoreTabHelper::CreateForWebContents(web_contents);
 +  aegis::PhishTabHelper::CreateForWebContents(web_contents);
-   ExternalProtocolObserver::CreateForWebContents(web_contents);
    favicon::CreateContentFaviconDriverForWebContents(web_contents);
    FileSystemAccessPermissionRequestManager::CreateForWebContents(web_contents);
+   FileSystemAccessTabHelper::CreateForWebContents(web_contents);
 diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
 index 91c16aa6ed09666b895ac20e2d266e0ef35e10ed..440a99658701080e92bac411db96a1bd4c1b3a2b 100644
 --- a/chrome/common/aegis/phish_score.cc
@@ -598,6 +598,3 @@ index 80e224f9bc83636f5b5c80250d0e3e52075f186a..a829805460502bf5b7ca423d9123aab7
    void LoadBlockedPlugins(const std::string& identifier) override;
    void SetShouldDeferMediaLoad(bool should_defer) override;
  
--- 
-2.52.0
-

@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Upstream <aegis-upstream@example.invalid>
+Date: Mon, 26 Oct 2026 16:00:00 +0800
+Subject: [PATCH] 为整合最新主线的156候选递增至301
+
+---
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 95ff7d16da5a2a015107d59386156bc7b91462d8..72b83935edefcfc0421f22552dacf0d9ce978b11 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.266";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (266)";
++inline constexpr char kProductVersion[] = "6.1.0.301";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (301)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

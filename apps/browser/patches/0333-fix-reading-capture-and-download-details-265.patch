@@ -1,0 +1,106 @@
+From 6d0a9e70e4d59e6fec090b74dc7ddbb746013a88 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 20:42:59 +0800
+Subject: [PATCH] 修复设置内阅读提取并区分下载平台说明
+
+---
+ chrome/browser/resources/aegis/aegis.html                | 2 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc                | 2 ++
+ chrome/browser/ui/webui/aegis_agent/reading_workspace.cc | 7 +++++++
+ chrome/browser/ui/webui/aegis_agent/reading_workspace.h  | 2 ++
+ chrome/browser/ui/webui/help/aegis_github_update.h       | 4 ++--
+ 5 files changed, 14 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/resources/aegis/aegis.html b/chrome/browser/resources/aegis/aegis.html
+index 5b549961c08557956d0f0c3d2633e7ffa77aad72..f875fcfab4e183567b035e39bb5796a55904ed06 100644
+--- a/chrome/browser/resources/aegis/aegis.html
++++ b/chrome/browser/resources/aegis/aegis.html
+@@ -144,7 +144,7 @@
+         <p class="meta">$i18n{downloadsMeta}</p>
+         <aegis-download-panel embedded></aegis-download-panel>
+         <p><a href="chrome://downloads" target="_top">$i18n{downloadsHistory}</a></p>
+-        <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{torrentSafety}</p></details>
++        <details><summary>$i18n{technicalDetails}</summary><p class="scope-note">$i18n{downloadsSafety}</p></details>
+       </section>
+       <section class="privacy" aria-label="$i18n{privacyAiTitle}">
+         <h2>$i18n{privacyAiTitle}</h2>
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 297a5c42731868196c8767ee3616778382124470..070133ce61784a43b423fa1ce39adbef093ffda2 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -629,6 +629,8 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("torrentResume", strings.torrent_resume);
+   source->AddString("torrentCancel", strings.torrent_cancel);
+   source->AddString("torrentSafety", strings.torrent_safety);
++  source->AddString("downloadsSafety", BUILDFLAG(IS_ANDROID)
++      ? strings.metalink_safety : strings.torrent_safety);
+   source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
+   source->AddString("linkSanitizeHint", strings.link_sanitize_hint);
+   source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+index d534c0b481f7a75dd4b20849d81a9e179dd39ee2..7dc552fde58f6239b4ee39fade974a2c68a52f69 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.cc
+@@ -33,6 +33,7 @@
+ #include "crypto/sha2.h"
+ #include "pdf/buildflags.h"
+ #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
++#include "ui/gfx/geometry/size.h"
+ #if BUILDFLAG(ENABLE_PDF)
+ #include "components/pdf/browser/pdf_document_helper.h"
+ #endif
+@@ -198,6 +199,7 @@ void AegisReadingWorkspace::Reply(Callback callback, base::DictValue value,
+   capture_timer_.Stop();
+   capture_factory_.InvalidateWeakPtrs();
+   capture_client_.reset();
++  capture_keep_alive_.RunAndReset();
+   std::move(callback).Run(base::WriteJson(value).value_or("{}"), error);
+ }
+ 
+@@ -507,6 +509,11 @@ void AegisReadingWorkspace::Capture(int tab_id, int page, Callback callback) {
+   if (!contents || !contents->GetPrimaryMainFrame()) {
+     Reply(std::move(callback), {}, "page_text_unavailable"); return;
+   }
++  // 原生设置会隐藏来源标签；仅在主动提取期间恢复渲染调度，防止后台冻结。
++  // 不切换标签或改变视口；成功、失败、超时和页面销毁都会释放此作用域。
++  capture_keep_alive_ = contents->IncrementCapturerCount(
++      gfx::Size(), /*stay_hidden=*/false, /*stay_awake=*/false,
++      /*is_activity=*/false);
+   auto pending = std::make_shared<Callback>(std::move(callback));
+   callback = base::BindOnce([](std::shared_ptr<Callback> done,
+                                std::string result, std::string error) {
+diff --git a/chrome/browser/ui/webui/aegis_agent/reading_workspace.h b/chrome/browser/ui/webui/aegis_agent/reading_workspace.h
+index f3a52369da9e4b68a2ed3a769852ac4716ada597..a7f5cccc2d537aa150a6b7bada8e809e052aada8 100644
+--- a/chrome/browser/ui/webui/aegis_agent/reading_workspace.h
++++ b/chrome/browser/ui/webui/aegis_agent/reading_workspace.h
+@@ -7,6 +7,7 @@
+ #include <string>
+ 
+ #include "base/functional/callback.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/time/time.h"
+@@ -62,6 +63,7 @@ class AegisReadingWorkspace {
+   mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> capture_client_;
+   aegis::ModelProviderClient model_client_;
+   base::OneShotTimer capture_timer_;
++  base::ScopedClosureRunner capture_keep_alive_;
+   base::WeakPtrFactory<AegisReadingWorkspace> capture_factory_{this};
+   base::WeakPtrFactory<AegisReadingWorkspace> weak_factory_{this};
+ };
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 4d25b66792b66b98abf57bbc3b9b28e1f3b02e48..a59dd2b37c07cbe441f475b98586f06d98c36474 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.264";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (264)";
++inline constexpr char kProductVersion[] = "6.1.0.265";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (265)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

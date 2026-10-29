@@ -52,6 +52,7 @@
 | 依網站增強 | 部分 | 原始碼接入 | 未移植 | 部分 |
 | 使用者腳本與 AI 草稿 | 部分 | 原始碼接入 | 未移植 | 部分 |
 | 內建 Markdown 閱讀 | 部分 | 原始碼接入 | 未移植 | 部分 |
+| 統一設定與舊入口遷移 | 原始碼接入 | 原始碼接入 | 原始碼接入 | 原始碼接入 |
 
 ## iOS 範圍與依據
 
@@ -406,5 +407,13 @@ iOS 模擬器證據：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 原始碼：[apps/ios/AegisApp/MarkdownReaderView.swift](../apps/ios/AegisApp/MarkdownReaderView.swift)
 
 iOS 模擬器證據：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md](../docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md)
+
+### 統一設定與舊入口遷移
+
+`unified-settings` — 保留已合入main的SwiftUI分類與表單版面；使用WebKit，本輪未重跑iOS驗收。
+
+原始碼：[apps/ios/AegisApp/BrowserSettings.swift](../apps/ios/AegisApp/BrowserSettings.swift) · [apps/ios/AegisApp/SettingsFormControls.swift](../apps/ios/AegisApp/SettingsFormControls.swift)
+
+本項未完成本輪執行驗收。
 
 維護方式：修改 JSON 後執行 `node scripts/check-platform-features.mjs --write` 產生三語頁面，再執行 `node scripts/check-platform-features.mjs` 檢查。現有發行合同新增功能時，缺少任意一端的說明會使儲存庫檢查失敗。

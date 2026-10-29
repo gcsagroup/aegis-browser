@@ -9,7 +9,7 @@ Subject: [PATCH] fix(reading): classify Aegis side-panel trigger on M153
  2 files changed, 4 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/ui/read_anything/read_anything_enums.h b/chrome/browser/ui/read_anything/read_anything_enums.h
-index ce8eb221de77db52b01ad6ed2173fb09ffb3965a..a354ed1f90b29442c95799dc8024f927f7117513 100644
+index 7232f8fb7f437fab1b721ffd83c637e1a2d257a9..44c644ee5da191e39e12aa2b32ba997a317658df 100644
 --- a/chrome/browser/ui/read_anything/read_anything_enums.h
 +++ b/chrome/browser/ui/read_anything/read_anything_enums.h
 @@ -118,6 +118,7 @@ inline ReadAnythingOpenTrigger SidePanelToReadAnythingOpenTrigger(

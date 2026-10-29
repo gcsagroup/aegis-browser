@@ -10,33 +10,33 @@ Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 ---
- .../chrome/browser/ChromeTabbedActivity.java  |   2 +-
- .../TabbedAppMenuPropertiesDelegate.java      |  22 +-
- chrome/browser/aegis/BUILD.gn                 |   1 +
- .../aegis/aegis_ui_handler_unittest.cc        | 126 +++++++-
- .../aegis/agent/aegis_browser_tools.cc        | 290 +++++++++++-------
- .../browser/aegis/agent/aegis_browser_tools.h |   6 +
- .../aegis/agent/agent_core_unittest.cc        |  33 ++
- .../aegis/agent/agent_result_verifier.cc      |  17 +-
- chrome/browser/aegis/agent/agent_task.h       |   4 +
- chrome/browser/resources/aegis/aegis.ts       |  30 +-
- chrome/browser/resources/aegis_agent/agent.ts |  28 +-
- .../strings/android_chrome_strings.grd        |  30 +-
- .../android_chrome_strings_zh-CN.xtb          |  13 +
- .../android_chrome_strings_zh-TW.xtb          |  13 +
- chrome/browser/ui/webui/aegis/BUILD.gn        |   3 +-
- chrome/browser/ui/webui/aegis/aegis_ui.cc     |   4 -
- .../ui/webui/aegis/aegis_ui_handler.cc        |  87 +++---
- .../browser/ui/webui/aegis/aegis_ui_handler.h |   8 +-
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |   4 -
- .../ui/webui/help/aegis_github_update.h       |   4 +-
+ .../chrome/browser/ChromeTabbedActivity.java       |   2 +-
+ .../TabbedAppMenuPropertiesDelegate.java           |  22 +-
+ chrome/browser/aegis/BUILD.gn                      |   1 +
+ chrome/browser/aegis/aegis_ui_handler_unittest.cc  | 126 ++++++++-
+ chrome/browser/aegis/agent/aegis_browser_tools.cc  | 290 ++++++++++++---------
+ chrome/browser/aegis/agent/aegis_browser_tools.h   |   6 +
+ chrome/browser/aegis/agent/agent_core_unittest.cc  |  33 +++
+ .../browser/aegis/agent/agent_result_verifier.cc   |  17 +-
+ chrome/browser/aegis/agent/agent_task.h            |   4 +
+ chrome/browser/resources/aegis/aegis.ts            |  30 +--
+ chrome/browser/resources/aegis_agent/agent.ts      |  28 +-
+ .../ui/android/strings/android_chrome_strings.grd  |  30 +--
+ .../translations/android_chrome_strings_zh-CN.xtb  |  13 +
+ .../translations/android_chrome_strings_zh-TW.xtb  |  13 +
+ chrome/browser/ui/webui/aegis/BUILD.gn             |   3 +-
+ chrome/browser/ui/webui/aegis/aegis_ui.cc          |   4 -
+ chrome/browser/ui/webui/aegis/aegis_ui_handler.cc  |  87 +++----
+ chrome/browser/ui/webui/aegis/aegis_ui_handler.h   |   8 +-
+ .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |   4 -
+ chrome/browser/ui/webui/help/aegis_github_update.h |   4 +-
  20 files changed, 472 insertions(+), 253 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 0172c4fa2d37de7a1fe31381718677d2f83e32b8..04e5a01e818ee4c3680386dc2b8f4478bc5f2b62 100644
+index 26cd464a56922469aafa3d24fbc34c7588532d03..4187c1c67dc533eeca434330ab5b0e964a67a469 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-@@ -4368,7 +4368,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
+@@ -4388,7 +4388,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
          if (autoStart) url.appendQueryParameter("autostart", "1");
          LoadUrlParams params =
                  new LoadUrlParams(url.build().toString(), PageTransition.AUTO_TOPLEVEL);
@@ -46,10 +46,10 @@ index 0172c4fa2d37de7a1fe31381718677d2f83e32b8..04e5a01e818ee4c3680386dc2b8f4478
      }
  
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index 2f1caae456a9ff50434f31398bb1da7a478dc43c..25af9f34b55ef27873d8c4a0bbb2017cbb1d5ee6 100644
+index ea6bd99ca4a3a638a70c3ee2f7a908ab583e9278..0d5bf1f738b8290233289338c6237ad578fc0fa1 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-@@ -543,12 +543,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -542,12 +542,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -65,7 +65,7 @@ index 2f1caae456a9ff50434f31398bb1da7a478dc43c..25af9f34b55ef27873d8c4a0bbb2017c
  
          // Settings
          modelList.add(buildSettingsItem());
-@@ -742,12 +740,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -741,12 +739,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          // Divider Line
          AppMenuItemUtils.maybeAddDividerLine(modelList, R.id.divider_line_id);
  
@@ -81,7 +81,7 @@ index 2f1caae456a9ff50434f31398bb1da7a478dc43c..25af9f34b55ef27873d8c4a0bbb2017c
  
          // Settings
          modelList.add(buildSettingsItem());
-@@ -809,7 +805,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -810,7 +806,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          modelList.add(buildCloseAllTabsItem());
          if (shouldShowSelectTabsItem()) modelList.add(buildSelectTabsItem());
          if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
@@ -90,7 +90,7 @@ index 2f1caae456a9ff50434f31398bb1da7a478dc43c..25af9f34b55ef27873d8c4a0bbb2017c
          modelList.add(buildSettingsItem());
      }
  
-@@ -825,7 +821,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -826,7 +822,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
          } else {
              modelList.add(buildNewIncognitoTabItem());
          }
@@ -99,7 +99,7 @@ index 2f1caae456a9ff50434f31398bb1da7a478dc43c..25af9f34b55ef27873d8c4a0bbb2017c
          modelList.add(buildSettingsItem());
          if (shouldShowQuickDeleteItem()) modelList.add(buildQuickDeleteItem());
      }
-@@ -1413,7 +1409,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
+@@ -1410,7 +1406,7 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
      }
  
      private boolean shouldShowAegisCurrentPageItem(@Nullable Tab currentTab) {
@@ -1072,7 +1072,7 @@ index 42cc3a7baf1e265ed953d85b88e642a03825f77d..653b95fb709cbf2f86105f54bd7f100c
        element<HTMLButtonElement>('plan-button').click();
      }
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index b5efc8558f4818e59de638ba7b352728f54c55d5..6590f929f43923fc869ef61c33fe7dfd22d14969 100644
+index 89fc53c5d55263253d2f56ddb28f65f24641c476..4ee8424c018865321892c324e9ce48af4d52f826 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 @@ -325,7 +325,7 @@ CHAR_LIMIT guidelines:
@@ -1119,7 +1119,7 @@ index b5efc8558f4818e59de638ba7b352728f54c55d5..6590f929f43923fc869ef61c33fe7dfd
        </message>
        <message name="IDS_PWM_DISABLED_NO_GMS_DIALOG_DESCRIPTION_PARAGRAPH2" desc="Second paragraph of the description text for dialog shown to users without saved passowrds for whom the password manager is unavailble because they don't have access to Google Play services.">
          If you previously exported passwords, look for a CSV file on your device and import them to your preferred password manager.
-@@ -3595,7 +3595,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3608,7 +3608,7 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Welcome to GCSA Aegis
        </message>
        <message name="IDS_SIGNIN_FRE_SUBTITLE" desc="This string is the body of a promotion about signing in to Chrome with the user's Google Account. It explains the overarching user benefit of signing in (access to bookmarks, passwords, history, settings, etc.). We want users to understand why signing in is beneficial, and click 'Continue as name' to sign in to their Google Account. The tone should be informative and lightweight.">
@@ -1128,7 +1128,7 @@ index b5efc8558f4818e59de638ba7b352728f54c55d5..6590f929f43923fc869ef61c33fe7dfd
        </message>
        <message name="IDS_SIGNED_IN_FRE_TITLE" desc="Title welcoming signed-in user to Chrome.">
          Welcome back, <ph name="USER_NAME">%s<ex>Alice</ex></ph>!
-@@ -3604,10 +3604,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3617,10 +3617,10 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          Sign in to your Google Account
        </message>
        <message name="IDS_SIGNIN_FRE_TITLE_SIGNIN_FORCED_BY_POLICY" meaning="Title" desc="Title of a dialog to sign in to Chrome when sign-in is required because of an enterprise policy.">
@@ -1136,12 +1136,12 @@ index b5efc8558f4818e59de638ba7b352728f54c55d5..6590f929f43923fc869ef61c33fe7dfd
 +        Use a Google Account
        </message>
        <message name="IDS_SIGNIN_FRE_SUBTITLE_SIGNIN_FORCED_BY_POLICY" desc="Subtitle of a dialog to sign in to Chrome when sign-in is required because of an enterprise policy.">
--        Your organization requires you to sign in to use Chrome.
+-        Your organization requires you to sign in to use Chrome
 +        Your organization requires a supported Google Account to use this browser.
        </message>
        <message name="IDS_FRE_SIGNING_IN" desc="Text to show below a progress spinner in the signin FRE to notify the user that signing in is in progress and that the user's data is being fetched.">
          Getting your stuff\u2026
-@@ -3722,22 +3722,22 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
+@@ -3735,22 +3735,22 @@ To change this setting, <ph name="BEGIN_LINK">BEGIN_LINK</ph>delete the Chrome d
          <ph name="NAME">%1$s<ex>John Doe</ex></ph>, <ph name="EMAIL">%2$s<ex>john.doe@example.com</ex></ph>.
        </message>
        <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_TITLE_FOR_SEND_TAB_TO_SELF" meaning="Title" desc="The title for the bottom sheet that shows the list of accounts on the device and asks the user to select one of these accounts, when send-tab-to-self triggered the UI. [CHAR_LIMIT=27]">
@@ -1171,10 +1171,10 @@ index b5efc8558f4818e59de638ba7b352728f54c55d5..6590f929f43923fc869ef61c33fe7dfd
        <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_SIGNIN_TITLE" desc="The title of the account picker bottom sheet tells that the user is in the process of signing in with their Google Account">
          Signing in...
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index 0bc9201fc6a154339b17b82063f51c7e7492afbd..7b6f417de8b60b14b9dd5f0d75729cdc88d17c49 100644
+index b5d856e20839fc076f7fa056c2b5db1c3549bc7c..883e927a9166dd59538185ef4800f809b79dee6c 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-@@ -2179,4 +2179,17 @@
+@@ -2165,4 +2165,17 @@
  <translation id="760705049427473785">欢迎使用 GCSA Aegis</translation>
  <translation id="238675389546312674">登录你的 Google 账号</translation>
  <translation id="7491982752760169795">GCSA Aegis 通知</translation>
@@ -1193,10 +1193,10 @@ index 0bc9201fc6a154339b17b82063f51c7e7492afbd..7b6f417de8b60b14b9dd5f0d75729cdc
 +<translation id="5354352846738712842">Google 密码管理工具需要兼容的 Google Play 服务和浏览器支持，当前版本无法使用该服务。</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-index e885e61ea09ef51faa7e01827270dae697cb7896..3b342650dd26eda0f748caa11a99f997fd30d873 100644
+index dddbc0d957a4ba540dee3937f17b35726a9119ec..6a05467e4659cdfc2eab928a03406ad35e46463c 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-@@ -2181,4 +2181,17 @@
+@@ -2167,4 +2167,17 @@
  <translation id="760705049427473785">歡迎使用 GCSA Aegis</translation>
  <translation id="238675389546312674">登入你的 Google 帳戶</translation>
  <translation id="7491982752760169795">GCSA Aegis 通知</translation>
@@ -1483,6 +1483,3 @@ index 3744afe5ac326ee4e0eb3e72133b560ea359e2bc..9c12cebab32dbff2189cbe5df809892c
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

@@ -69,7 +69,7 @@ index ddbf51d9eaa5b1c044f1f0a9a31092505cbd03f3..d65f7e041df9bbc2a027285808f1371a
    void AcceptDebugging(AcceptCallback) override;
    void SetActiveWebSocketConnections(size_t count) override;
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 0df50531b1a89dd3c831d8c180c14ae73f0810b3..cf461026822509cd23325090aee49c562bc6f126 100644
+index 192db12fc36a60bfbdee72733b6d78497cc4f415..6b67f3ad9b061981caf2c245a3d72b5613c1fbf4 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -360,6 +360,19 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CreateInDefaultContextById) {
@@ -210,7 +210,7 @@ index f8a34c5276c328609f798834f1b20320a3880ead..6b1546a6a955acf04805e5341213f6bc
           target->GetType() == DevToolsAgentHost::kTypeTab);
      const WeakDocumentPtr target_document =
 diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
-index 79d9ce039498fc8c8848d42a34b7bb5f329a327b..1e332c734f78232b0ae75f6d150fce731fdb11c6 100644
+index 0eefca04924efec9a017e51f6acd16e114a7f249..4b52afc3f25681fc4fb648b322c727351654a61b 100644
 --- a/content/browser/devtools/devtools_http_handler.cc
 +++ b/content/browser/devtools/devtools_http_handler.cc
 @@ -130,6 +130,19 @@ bool RequestIsSafeToServe(const net::HttpServerRequestInfo& info) {
@@ -358,7 +358,7 @@ index d2c67238ecc1e2c802c9ad07988fc2c2e31bbaa7..b04c8f910f53b2da2129e4294d117375
    std::unique_ptr<DevToolsSocketFactory> socket_factory_;
    base::WeakPtrFactory<DevToolsHttpHandler> weak_factory_{this};
 diff --git a/content/browser/devtools/devtools_http_handler_unittest.cc b/content/browser/devtools/devtools_http_handler_unittest.cc
-index 87b2513ed5cf123930d444f2926521f9ff309372..439343260e507712b3ae6785e5170a14785ddad4 100644
+index 790ea116264e156f15612817c5179b5dadb9efb9..ca9b76e39fdb4057a8c4f3c24b8679448b5d14e8 100644
 --- a/content/browser/devtools/devtools_http_handler_unittest.cc
 +++ b/content/browser/devtools/devtools_http_handler_unittest.cc
 @@ -163,8 +163,11 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
@@ -524,7 +524,7 @@ index 9c8d41c6b845200c29a344cd9e2ff55cf292fe75..cc8de1b65af8ab14b271e7befef65f6f
      return Response::ServerError("Not supported");
    }
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index 130fe6c2401ec711081530ee1cc7ebe45fa898a6..5d0780f279972cb6ea8c67a7203b201e3a009209 100644
+index 079cc411232cdf7fdf1e75cf7f2934c234c1013e..8e1fafc7edcb659c7ecac81c7659ab2fcc6cd00e 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
 @@ -1191,7 +1191,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(
