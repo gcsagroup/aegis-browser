@@ -376,7 +376,8 @@ class ReleaseTest < ReleaseFixture
     store = AegisRelease::AppleStore.new(req, apple)
     store.instance_variable_set(:@app, Struct.new(:id).new('fixture'))
     store.define_singleton_method(:authenticate) { true }
-    store.define_singleton_method(:build) { nil }
+    store.define_singleton_method(:exact_build) { nil }
+    store.define_singleton_method(:upload_records) { [] }
     flow.define_singleton_method(:store) { store }
     capture_io { flow.upload(sha) }
     result = JSON.parse(File.read(File.join(req.directory, 'apple-upload-result.json')))['result']
@@ -408,7 +409,8 @@ class ReleaseTest < ReleaseFixture
     store = AegisRelease::AppleStore.new(req, apple)
     store.instance_variable_set(:@app, Struct.new(:id).new('fixture'))
     store.define_singleton_method(:authenticate) { true }
-    store.define_singleton_method(:build) { nil }
+    store.define_singleton_method(:exact_build) { nil }
+    store.define_singleton_method(:upload_records) { [] }
     flow.define_singleton_method(:store) { store }
     assert_raises(AegisRelease::Error) { flow.upload(sha) }
     assert File.file?(File.join(req.directory, 'apple-upload-started.json'))

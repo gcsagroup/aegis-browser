@@ -68,4 +68,19 @@ class IosReleaseCliTest < Minitest::Test
     refute status.success?
     assert_match(/run ID/i, error)
   end
+  def test_lifecycle_plan_lists_portable_explicit_stages
+    text, error, status = cli('ios', 'plan', '--profile', 'beta', '--destination', 'testflight')
+    assert status.success?, error
+    assert_includes JSON.parse(text).fetch('stages'), 'metadata'
+    assert_includes JSON.parse(text).fetch('stages'), 'compliance'
+    assert_includes JSON.parse(text).fetch('stages'), 'wait'
+  end
+
+  def test_metadata_requires_both_manifest_and_input_before_credentials
+    _text, error, status = cli('ios', 'metadata', '--profile', 'beta', '--destination', 'testflight')
+    refute status.success?
+    assert_match(/manifest-sha256/, error)
+    refute_match(/missing-test-key/, error)
+  end
+
 end

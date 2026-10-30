@@ -71,15 +71,19 @@ module AegisRelease
 
   class Request
     attr_reader :platform, :destination, :version, :build, :run_id, :tag, :root, :expected_digest,
-                :profile, :groups, :format, :repository
+                :profile, :groups, :format, :repository, :input, :timeout, :interval
 
     def initialize(platform, options = {}, root: ROOT)
       @root = root
       @platform = platform
       AegisRelease.require!(platform == 'ios', 'Platform must be ios for this release entrypoint')
-      unknown = options.keys.map(&:to_sym) - %i[destination version build run_id tag manifest_sha256 profile groups format repository]
+      unknown = options.keys.map(&:to_sym) - %i[destination version build run_id tag manifest_sha256 profile groups format repository input timeout interval]
       AegisRelease.require!(unknown.empty?, "Unknown release options: #{unknown.join(', ')}")
       options = options.transform_keys(&:to_sym)
+      @input = options[:input]&.to_s
+      @timeout = Integer(options.fetch(:timeout, 1800).to_s, exception: false)
+      @interval = Integer(options.fetch(:interval, 15).to_s, exception: false)
+      AegisRelease.require!(@timeout && (1..3600).cover?(@timeout) && @interval && (1..60).cover?(@interval), 'Invalid wait bounds')
       @destination = options.fetch(:destination, "artifacts").to_s
       AegisRelease.require!(DESTINATIONS.fetch(platform).include?(destination), "Unsupported destination for #{platform}: #{destination}")
       @profile = options.fetch(:profile, 'alpha').to_s.downcase
@@ -138,20 +142,21 @@ module AegisRelease
                      "source" => AegisRelease.source(root, clean: false), "output" => directory,
                      "host" => "macOS",
                      "groups" => groups, "repository" => repository,
-                     "stages" => %w[package upload distribute submit status],
+                     "stages" => %w[package upload wait metadata compliance distribute submit status],
+                     "nativeInputsSha256" => AegisRelease.native_inputs_digest(root),
                      "uploadSubmitsReview" => false, "releaseReady" => false)
     end
 
     def validate_stage!(stage)
-      AegisRelease.require!(%w[plan package upload release distribute submit status].include?(stage), 'Unknown release stage')
+      AegisRelease.require!(%w[plan package upload release wait metadata compliance distribute submit status].include?(stage), 'Unknown release stage')
       if %w[upload release].include?(stage)
         AegisRelease.require!(destination != 'artifacts', 'Upload requires an external destination')
       elsif stage == 'distribute'
         AegisRelease.require!(%w[testflight-internal testflight-external].include?(destination), 'Distribution requires a testing destination')
         AegisRelease.require!(!groups.empty?, 'TestFlight distribution requires explicit groups')
       elsif stage == 'submit'
-        AegisRelease.require!(profile == 'release' && %w[app-store play-production].include?(destination), 'Review submission requires a release profile and production destination')
-      elsif stage == 'status'
+        AegisRelease.require!(profile == 'release' && destination == 'app-store', 'Review submission requires a release profile and production destination')
+      elsif %w[status wait metadata compliance].include?(stage)
         AegisRelease.require!(!%w[artifacts github-draft].include?(destination), 'Status requires an Apple store destination')
       end
     end
@@ -344,12 +349,38 @@ module AegisRelease
 
     def distribute
       request.validate_stage!('distribute')
-      store_stage('distribute') { |client| client.distribute }
+      store_stage('distribute') { |client, _input, groups| client.distribute(groups) }
     end
 
     def submit
       request.validate_stage!('submit')
       store_stage('submit') { |client| client.submit }
+    end
+
+    def wait
+      client = store
+      client.authenticate
+      result = client.wait_for_processing(timeout: request.timeout, interval: request.interval)
+      puts JSON.pretty_generate(result)
+      result
+    end
+
+    def metadata
+      store_stage('metadata') { |client, value| client.metadata(value) }
+    end
+
+    def compliance
+      store_stage('compliance') { |client, value| client.compliance(value) }
+    end
+
+    def read_input(stage)
+      return nil unless %w[metadata compliance].include?(stage)
+      AegisRelease.require!(request.input, 'This stage requires --input JSON file')
+      path = AegisRelease.file!(File.expand_path(request.input))
+      AegisRelease.require!(File.size(path) <= 64_000, 'Stage input file too large')
+      JSON.parse(File.read(path))
+    rescue JSON::ParserError
+      raise Error, 'Invalid stage JSON input'
     end
 
     def store_stage(stage)
@@ -358,14 +389,18 @@ module AegisRelease
       intent = uploaded.fetch('intent')
       AegisRelease.require!(intent['manifestSha256'] == request.expected_digest && request.identity.all? { |k, v| intent[k] == v },
                             'Store mutation requires the completed upload record for this exact package')
+      value = read_input(stage)
       preflight_upload
       client = store
+      client.validate_metadata!(value) if stage == 'metadata'
+      client.validate_compliance!(value) if stage == 'compliance'
       client.authenticate
       client.wait_for_processing if ENV['GITHUB_ACTIONS'] == 'true'
-      client.ready_build
-      client.groups if stage == 'distribute'
-      parameters = { 'destination' => request.destination, 'groups' => request.groups }
-      result = Journal.new(request, request.expected_digest).perform("ios-#{stage}", parameters) { yield client }
+      %w[compliance metadata].include?(stage) ? client.processed_build : client.ready_build
+      selected = stage == 'distribute' ? client.groups : []
+      parameters = { 'destination' => request.destination, 'groupIds' => selected.map { |g| g.fetch('id') },
+                     'inputSha256' => value && Digest::SHA256.hexdigest(JSON.generate(value)) }
+      result = Journal.new(request, request.expected_digest).perform("ios-#{stage}", parameters) { yield client, value, selected }
       puts JSON.pretty_generate(result)
       result
     end
@@ -486,3 +521,5 @@ module AegisRelease
 end
 
 require_relative "stores"
+
+require_relative 'ios_lifecycle'

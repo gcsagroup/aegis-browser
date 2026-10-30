@@ -32,8 +32,8 @@ module AegisRelease
   end
 
   class AppleStore
-    def initialize(request, fastlane)
-      @request, @fastlane = request, fastlane
+    def initialize(request, fastlane, api: nil, app_id: nil)
+      @request, @fastlane, @http, @app_id = request, fastlane, api, app_id
     end
 
     def authenticate
@@ -49,76 +49,15 @@ module AegisRelease
       @api_key = @fastlane.app_store_connect_api_key(**key)
       @app = Spaceship::ConnectAPI::App.find(APP_ID)
       AegisRelease.require!(@app && @app.bundle_id == APP_ID, 'ASC application not found for the exact bundle ID')
-    end
-
-    def build
-      rows = Spaceship::ConnectAPI::Build.all(app_id: @app.id, version: @request.version,
-                                             build_number: @request.build, platform: 'IOS')
-      AegisRelease.require!(rows.length <= 1, 'Ambiguous App Store Connect build')
-      rows.first
-    end
-
-    def ready_build
-      item = build
-      AegisRelease.require!(item && item.processing_state == 'VALID' && !item.expired, 'Exact build must finish processing and remain unexpired; run status later')
-      AegisRelease.require!(!item.uses_non_exempt_encryption.nil?, 'Complete export compliance for this exact build in ASC before distribution or review')
-      item
-    end
-
-    def wait_for_processing
-      require 'fastlane_core/build_watcher'
-      FastlaneCore::BuildWatcher.wait_for_build_processing_to_be_complete(
-        app_id: @app.id, platform: 'IOS', app_version: @request.version, build_version: @request.build,
-        poll_interval: 15, timeout_duration: 1800, select_latest: false,
-        return_spaceship_testflight_build: false, wait_for_build_beta_detail_processing: true)
-    end
-
-    def groups
-      AegisRelease.require!(!@request.groups.empty?, 'Distribution requires --groups with existing TestFlight group names')
-      all = @app.get_beta_groups
-      @request.groups.map do |name|
-        matches = all.select { |group| group.name == name }
-        AegisRelease.require!(matches.size == 1, "TestFlight group missing or ambiguous: #{name}")
-        group = matches.first
-        internal = @request.destination == 'testflight-internal'
-        AegisRelease.require!(group.is_internal_group == internal, "TestFlight group type differs from destination: #{name}")
-        group
-      end
-    end
-
-    def status
-      item = build
-      version = @app.get_app_store_versions(filter: { platform: 'IOS', versionString: @request.version }).first
-      { 'appId' => @app.id, 'buildId' => item&.id, 'processingState' => item&.processing_state || 'NOT_FOUND',
-        'expired' => item&.expired, 'internalState' => item&.build_beta_detail&.internal_build_state,
-        'externalState' => item&.build_beta_detail&.external_build_state,
-        'appStoreState' => version&.app_store_state, 'appVersionState' => version&.app_version_state,
-        'releaseType' => version&.release_type, 'observedAt' => Time.now.utc.iso8601,
-        'deviceAcceptance' => 'not_verified' }
+      @http ||= AscApi.new(token: Spaceship::ConnectAPI.token)
     end
 
     def upload(ipa)
-      AegisRelease.require!(build.nil?, 'ASC already contains this version/build; inspect status instead of uploading again')
+      AegisRelease.require!(exact_build.nil? && upload_records.empty?, 'ASC already contains this build or upload; inspect status instead of uploading again')
       @fastlane.upload_to_testflight(api_key: @api_key, app_identifier: APP_ID, ipa: ipa,
                                     skip_submission: true, skip_waiting_for_build_processing: true,
                                     distribute_external: false)
-      { 'status' => 'uploaded_processing_unverified', 'appId' => @app.id, 'reviewSubmitted' => false }
-    end
-
-    def distribute
-      item = ready_build
-      selected = groups # pilot silently ignores unknown group names, so validate first.
-      external = @request.destination == 'testflight-external'
-      @fastlane.upload_to_testflight(api_key: @api_key, app_identifier: APP_ID,
-                                    app_platform: 'ios', distribute_only: true,
-                                    skip_waiting_for_build_processing: true,
-                                    app_version: @request.version, build_number: @request.build,
-                                    groups: selected.map(&:name), distribute_external: external,
-                                    submit_beta_review: external, notify_external_testers: false)
-      assigned = selected.all? { |group| group.fetch_builds.any? { |b| b.id == item.id } }
-      AegisRelease.require!(assigned, 'TestFlight group assignment not confirmed; inspect status before retrying')
-      status.merge('status' => 'testflight_groups_assigned', 'groups' => selected.map(&:name),
-                   'betaReviewRequested' => external, 'testerAvailability' => 'check_internal_or_external_state')
+      { 'status' => 'uploaded_processing_unverified', 'appId' => app_id, 'reviewSubmitted' => false }
     end
 
     def submit
