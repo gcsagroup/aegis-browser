@@ -87,17 +87,39 @@ def check_prior_stage_runs(stage, state_run):
     # A lost job/transport response is not permission to replay the mutation in another run.
     validate_mutation_attempt(stage, int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')))
     current = int(os.environ['GITHUB_RUN_ID'])
-    title = f'iOS TF {stage} {os.environ["RELEASE_MANIFEST_SHA256"]}'
+    title = f'iOS Delivery {stage} {os.environ["RELEASE_MANIFEST_SHA256"]}'
     for page in range(1, 21):
-        rows = api(f'actions/workflows/ios-testflight.yml/runs?per_page=100&page={page}')['workflow_runs']
+        rows = api(f'actions/workflows/ios-delivery.yml/runs?per_page=100&page={page}')['workflow_runs']
         for row in rows:
             if row['id'] == current or row.get('display_title') != title:
                 continue
-            if row['id'] != state_run:
+            if row['id'] != state_run and not unstarted_store_run(row):
                 raise ValueError('Earlier identical stage run exists outside imported state; read back and reconcile before retry')
         if len(rows) < 100:
             return
     raise ValueError('Cannot prove complete prior-stage inventory')
+
+
+def unstarted_store_run(row):
+    """All attempts must conclusively lack any executed store job, not just the last."""
+    record = api(f'actions/runs/{row["id"]}')
+    attempts = record.get('run_attempt')
+    if (record.get('id') != row['id'] or record.get('path') != '.github/workflows/ios-delivery.yml' or
+            not isinstance(record.get('head_sha'), str) or len(record['head_sha']) != 40 or record.get('status') != 'completed' or
+            type(attempts) is not int or not 1 <= attempts <= 20):
+        return False
+    for attempt in range(1, attempts+1):
+        inventory = api(f'actions/runs/{row["id"]}/attempts/{attempt}/jobs?per_page=100')
+        jobs = inventory.get('jobs')
+        if not isinstance(jobs, list) or inventory.get('total_count') != len(jobs) or len(jobs) > 100:
+            return False
+        for job in jobs:
+            if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
+                return False
+            if job.get('name') == 'store' and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
+                return False
+    final = api(f'actions/runs/{row["id"]}')
+    return final.get('run_attempt') == attempts and final.get('status') == 'completed' and final.get('head_sha') == record['head_sha']
 
 
 def import_package():
@@ -109,7 +131,7 @@ def import_package():
     # Explicit attempt prevents a successful historical attempt masking a later rerun.
     attempt = int(os.environ['SOURCE_ATTEMPT'])
     transport.verify_run(record, repository, sha, state_run, attempt)
-    if state_run == package_run and record['path'] not in {'.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'}:
+    if state_run == package_run and record['path'] not in transport.PACKAGE_WORKFLOWS:
         raise ValueError('Original package run is not an iOS package workflow')
     artifacts = api(f'actions/runs/{state_run}/artifacts?per_page=100')
     expected_name = f'ios-delivery-{state_run}-{attempt}'
@@ -141,7 +163,7 @@ def import_package():
         origin = json.loads((staged/'package-origin.json').read_text())
         original = api(f'actions/runs/{package_run}')
         transport.verify_run(original, repository, sha, package_run, int(origin['attempt']))
-        if original['path'] not in {'.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'} or origin['repository'] != repository or origin['runId'] != package_run or origin['sourceSha'] != sha or origin['sourceTree'] != tree or origin['manifestSha256'] != digest:
+        if original['path'] not in transport.PACKAGE_WORKFLOWS or origin['repository'] != repository or origin['runId'] != package_run or origin['sourceSha'] != sha or origin['sourceTree'] != tree or origin['manifestSha256'] != digest:
             raise ValueError('Original package run/source/manifest mismatch')
         if state_run == package_run and origin['attempt'] != attempt:
             raise ValueError('Original package attempt mismatch')

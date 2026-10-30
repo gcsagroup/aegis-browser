@@ -1,5 +1,6 @@
 """Host-independent hostile archive regressions; genuine signing is tested on macOS."""
 import json
+import importlib.util
 from pathlib import Path
 import subprocess
 import sys
@@ -13,6 +14,22 @@ SCRIPT = Path(__file__).with_name("verify-signed-ios.py")
 PROFILES = {"com.gcsa.aegis": "App Store App", "com.gcsa.aegis.safari": "App Store Safari Extension", "com.gcsa.aegis.share": "App Store Share Extension"}
 
 class SignedIpaArchiveTests(unittest.TestCase):
+    def test_encryption_declaration_matches_committed_boolean_and_rejects_missing_or_wrong_type(self):
+        spec = importlib.util.spec_from_file_location('verify_signed', SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertTrue(hasattr(module, 'verify_encryption_declaration'), 'source/export declaration comparison missing')
+        key = 'ITSAppUsesNonExemptEncryption'
+        self.assertIs(module.verify_encryption_declaration({key: False}, {key: False}), False)
+        self.assertIs(module.verify_encryption_declaration({key: True}, {key: True}), True)
+        self.assertIsNone(module.verify_encryption_declaration({}, {}))
+        for value in [{}, {key: True}, {key: 'false'}, {key: 0}]:
+            with self.subTest(exported=value), self.assertRaises(ValueError):
+                module.verify_encryption_declaration({key: False}, value)
+        for value in ['false', 0, None]:
+            with self.subTest(source=value), self.assertRaises(ValueError):
+                module.verify_encryption_declaration({key: value}, {key: False})
+
     def reject(self, members, expected):
         with tempfile.TemporaryDirectory() as directory:
             ipa = Path(directory) / "input.ipa"

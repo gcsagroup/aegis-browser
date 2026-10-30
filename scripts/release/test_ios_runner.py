@@ -2,11 +2,45 @@ import importlib.util
 import pathlib
 import tempfile
 import unittest
+from unittest.mock import patch
 
 FILE = pathlib.Path(__file__).with_name('ios-runner.py')
 
 
 class IosRunnerTests(unittest.TestCase):
+    def test_operator_requires_canonical_repository_and_actual_cli_admin(self):
+        m = self.module()
+        self.assertTrue(hasattr(m, 'authorize_operator'), 'Admin operator boundary missing')
+        user = dict(id=7, login='operator')
+        def api(repository, endpoint):
+            if endpoint == '':
+                return dict(id=1348409663, full_name=repository, default_branch='main')
+            return dict(permission='admin', user=user)
+        m.authorize_operator('gcsagroup/aegis-browser', api=api, user_api=lambda: user)
+        with self.assertRaises(ValueError):
+            m.authorize_operator('quinn521/aegis-browser', api=api, user_api=lambda: user)
+        for grant in [dict(permission='maintain', user=user), dict(permission='write', user=user),
+                      dict(permission='admin', user=dict(id=8, login='operator')), {}]:
+            def denied(repository, endpoint):
+                return api(repository, endpoint) if endpoint == '' else grant
+            with self.assertRaises(ValueError):
+                m.authorize_operator('gcsagroup/aegis-browser', api=denied, user_api=lambda: user)
+
+    def test_denied_operator_never_reaches_payload_signing_or_registration(self):
+        m = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            root.chmod(0o700)
+            args = ['ios-runner', '--repository', 'gcsagroup/aegis-browser', '--sha', 'a'*40,
+                    '--label', 'unique-ios', '--name', 'fixture', '--keychain', '/fixture',
+                    '--certificate-sha1', 'A'*40, '--run-id', '12', '--job-id', '1', '--root', tmp,
+                    '--external-volume', tmp, '--payload-archive', '/fixture', '--payload-sha256', 'a'*64]
+            with patch('sys.argv', args), patch.object(m, 'authorize_operator', create=True, side_effect=ValueError('Admin required')), \
+                 patch.object(m, 'validate_payload', side_effect=RuntimeError('privileged boundary crossed')):
+                with self.assertRaisesRegex(ValueError, 'Admin required'):
+                    m.main()
+            self.assertFalse((root/'registration-started.json').exists())
+
     def module(self):
         self.assertTrue(FILE.exists(), 'owned runner helper is missing')
         spec = importlib.util.spec_from_file_location('ios_runner', FILE)

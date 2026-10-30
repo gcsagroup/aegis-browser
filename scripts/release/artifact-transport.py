@@ -11,7 +11,8 @@ import stat
 import tempfile
 import zipfile
 
-WORKFLOWS = {'.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml', '.github/workflows/ios-testflight.yml'}
+PACKAGE_WORKFLOWS = {'.github/workflows/ios-delivery.yml', '.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'}
+WORKFLOWS = PACKAGE_WORKFLOWS | {'.github/workflows/ios-testflight.yml'}
 RECORD = re.compile(r'(?:apple-upload|ios-(?:metadata|compliance|distribute|submit))-(?:started|result)\.json\Z')
 
 
