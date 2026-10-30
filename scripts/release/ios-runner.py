@@ -83,10 +83,34 @@ def validate_start(previous, internal_free, external_free):
 
 
 def gh(repository, endpoint, method='GET'):
-    result = subprocess.run(['gh', 'api', '-X', method, 'repos/'+repository+'/'+endpoint], capture_output=True, text=True, check=False)
+    path = 'repos/'+repository+('/'+endpoint if endpoint else '')
+    result = subprocess.run(['gh', 'api', '-X', method, path], capture_output=True, text=True, check=False)
     if result.returncode:
         raise ValueError('GitHub API failed; reconcile unknown mutation before retrying')
     return json.loads(result.stdout) if result.stdout.strip() else None
+
+
+def authenticated_user():
+    result = subprocess.run(['gh', 'api', 'user'], capture_output=True, text=True, check=False, timeout=30)
+    if result.returncode:
+        raise ValueError('Cannot verify authenticated GitHub CLI operator')
+    return json.loads(result.stdout)
+
+
+def authorize_operator(repository, *, api=gh, user_api=authenticated_user):
+    if repository != 'gcsagroup/aegis-browser':
+        raise ValueError('Signing runner requires canonical upstream')
+    metadata = api(repository, '')
+    if metadata.get('id') != 1348409663 or metadata.get('full_name') != repository or metadata.get('default_branch') != 'main':
+        raise ValueError('Canonical repository identity changed')
+    user = user_api()
+    login, identity = user.get('login'), user.get('id')
+    if not isinstance(login, str) or not login or not all(c.isascii() and (c.isalnum() or c == '-') for c in login) or type(identity) is not int or identity <= 0:
+        raise ValueError('Invalid actual CLI operator identity')
+    grant = api(repository, 'collaborators/'+login+'/permission')
+    principal = grant.get('user', {})
+    if grant.get('permission') != 'admin' or principal.get('id') != identity or principal.get('login', '').lower() != login.lower():
+        raise ValueError('Actual GitHub CLI operator requires repository Admin permission')
 
 
 def write_new(path, value):
@@ -97,7 +121,7 @@ def write_new(path, value):
 
 def admit(repository, run_id, sha, job_id, label):
     run = gh(repository, f'actions/runs/{run_id}')
-    if run['head_sha'] != sha or run['repository']['full_name'] != repository or run['path'] not in {'.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'}:
+    if run['head_sha'] != sha or run['repository']['full_name'] != repository or run['path'] != '.github/workflows/ios-delivery.yml':
         raise ValueError('Wrong repository/source/workflow')
     attempt = run['run_attempt']
     jobs = gh(repository, f'actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100')
@@ -133,6 +157,7 @@ def main():
     p.add_argument('--payload-archive', type=Path, required=True)
     p.add_argument('--payload-sha256', required=True)
     args = p.parse_args()
+    authorize_operator(args.repository)
     root = args.root.resolve(strict=True)
     if args.root.is_symlink() or root.stat().st_mode & 0o077:
         raise ValueError('Runner directory must be task-owned and private')

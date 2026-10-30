@@ -1,0 +1,333 @@
+name: iOS Delivery
+run-name: iOS Delivery ${{ inputs.operation || 'package' }} ${{ inputs.manifest_sha256 || github.ref_name }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Explicit operation; package never uploads automatically
+        type: choice
+        options:
+          - package
+          - upload
+          - wait
+          - status
+          - metadata
+          - compliance
+          - distribute
+        default: package
+      profile:
+        description: Immutable package audience
+        type: choice
+        options:
+          - alpha
+          - beta
+          - release
+        default: alpha
+      version:
+        description: Marketing version
+        type: string
+        required: true
+      build:
+        description: New unused number for package; original number for store operations
+        type: string
+        required: true
+      destination:
+        description: "auto: artifacts for package, TestFlight for store; distribute requires explicit route"
+        type: choice
+        options:
+          - auto
+          - artifacts
+          - github-draft
+          - testflight
+          - testflight-internal
+          - testflight-external
+        default: auto
+      tag:
+        description: Existing candidate/ios/version-profile.build tag for Draft
+        type: string
+      package_run_id:
+        description: Original successful package workflow run
+        type: string
+        required: false
+      upload_run_id:
+        description: Latest successful store state run for subsequent stages
+        type: string
+        required: false
+      source_attempt:
+        description: Exact current attempt of the selected state or package run
+        type: string
+        required: false
+      manifest_sha256:
+        description: Independently retained original manifest digest
+        type: string
+        required: false
+      groups:
+        description: Existing group names for distribute only
+        type: string
+        required: false
+      stage_input:
+        description: Metadata or explicitly authorized compliance JSON
+        type: string
+        default: "{}"
+        required: false
+  push:
+    tags:
+      - candidate/ios/*
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ios-delivery-${{ github.repository }}
+  cancel-in-progress: false
+env:
+  AEGIS_IOS_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_RELEASE_ENABLED }}
+  FASTLANE_SKIP_UPDATE_CHECK: "1"
+  FASTLANE_HIDE_GITHUB_ISSUES: "1"
+  FASTLANE_OPT_OUT_USAGE: "1"
+  BUNDLE_FROZEN: "true"
+  RELEASE_RUN_ID: ios-gh-${{ github.run_id }}-${{ github.run_attempt }}
+jobs:
+  admission:
+    if: ${{ github.repository == 'gcsagroup/aegis-browser' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      operation: ${{ steps.plan.outputs.operation }}
+      profile: ${{ steps.plan.outputs.profile }}
+      version: ${{ steps.plan.outputs.version }}
+      build: ${{ steps.plan.outputs.build }}
+      destination: ${{ steps.plan.outputs.destination }}
+      tag: ${{ steps.plan.outputs.tag }}
+      package_run_id: ${{ steps.plan.outputs.package_run_id }}
+      upload_run_id: ${{ steps.plan.outputs.upload_run_id }}
+      source_attempt: ${{ steps.plan.outputs.source_attempt }}
+      manifest_sha256: ${{ steps.plan.outputs.manifest_sha256 }}
+      groups: ${{ steps.plan.outputs.groups }}
+      stage_input: ${{ steps.plan.outputs.stage_input }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Verify original operator and rerunner are current repository Admins
+        run: node scripts/ci/ios-operator.mjs --context delivery
+      - id: plan
+        name: Normalize exact package or existing-state route
+        run: python3 scripts/release/ios-delivery-plan.py
+      - name: Require current upstream main and successful exact-source quality
+        run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+        env:
+          RELEASE_DESTINATION: ${{ steps.plan.outputs.destination }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+  ios-package:
+    name: ios-package
+    needs:
+      - admission
+    runs-on:
+      - ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
+    environment: aegis-ios-signing
+    timeout-minutes: 35
+    outputs:
+      manifest_sha256: ${{ steps.package.outputs.manifest_sha256 }}
+    env:
+      RELEASE_STAGE: ${{ needs.admission.outputs.operation }}
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: ${{ needs.admission.outputs.destination }}
+      RELEASE_TAG: ${{ needs.admission.outputs.tag }}
+      PACKAGE_RUN_ID: ${{ needs.admission.outputs.package_run_id }}
+      UPLOAD_RUN_ID: ${{ needs.admission.outputs.upload_run_id }}
+      SOURCE_ATTEMPT: ${{ needs.admission.outputs.source_attempt }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.admission.outputs.manifest_sha256 }}
+      RELEASE_GROUPS: ${{ needs.admission.outputs.groups }}
+      RELEASE_INPUT: ${{ needs.admission.outputs.stage_input }}
+      BUNDLE_PATH: ${{ vars.AEGIS_IOS_BUNDLE_PATH }}
+      AEGIS_APPLE_TEAM_ID: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+      AEGIS_IOS_CERT_SHA1: ${{ vars.AEGIS_IOS_CERT_SHA1 }}
+      AEGIS_IOS_PROFILES: ${{ vars.AEGIS_IOS_PROFILES }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Use installed task runner tools
+        env:
+          RUBY_BIN: ${{ vars.AEGIS_IOS_RUBY_BIN }}
+          NODE_BIN: ${{ vars.AEGIS_IOS_NODE_BIN }}
+        run: |
+          test -x "$RUBY_BIN/ruby" && test -x "$NODE_BIN/node"
+          echo "$RUBY_BIN" >> "$GITHUB_PATH"
+          echo "$NODE_BIN" >> "$GITHUB_PATH"
+      - name: Revalidate source and locked runtime
+        run: |
+          node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+          bundle check
+      - id: package
+        run: python3 scripts/release/ios-action.py package
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ios-delivery/package.zip
+          if-no-files-found: error
+          retention-days: 30
+    if: ${{ needs.admission.outputs.operation == 'package' }}
+  ios-draft:
+    if: ${{ needs.admission.outputs.operation == 'package' && needs.admission.outputs.destination == 'github-draft' }}
+    needs:
+      - admission
+      - ios-package
+    runs-on: ubuntu-24.04
+    environment: aegis-ios-draft
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 15
+    env:
+      RELEASE_STAGE: draft
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: ${{ needs.admission.outputs.destination }}
+      RELEASE_TAG: ${{ needs.admission.outputs.tag }}
+      PACKAGE_RUN_ID: ${{ github.run_id }}
+      UPLOAD_RUN_ID: ${{ needs.admission.outputs.upload_run_id }}
+      SOURCE_ATTEMPT: ${{ github.run_attempt }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.ios-package.outputs.manifest_sha256 }}
+      RELEASE_GROUPS: ${{ needs.admission.outputs.groups }}
+      RELEASE_INPUT: ${{ needs.admission.outputs.stage_input }}
+      GH_TOKEN: ${{ github.token }}
+      IMPORT_KIND: draft
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+          bundler-cache: true
+      - name: Download exact package from this running package job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ios-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/download
+      - name: Verify source-bound package before Draft
+        run: |
+          python3 scripts/release/ios-restore.py
+          node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+      - run: python3 scripts/release/ios-action.py stage
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-draft-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/release/ios/*/github-upload-result.json
+          if-no-files-found: error
+          retention-days: 30
+  import:
+    name: import
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      run_id: ${{ steps.import.outputs.run_id }}
+    env:
+      RELEASE_STAGE: ${{ needs.admission.outputs.operation }}
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: ${{ needs.admission.outputs.destination }}
+      RELEASE_TAG: ${{ needs.admission.outputs.tag }}
+      PACKAGE_RUN_ID: ${{ needs.admission.outputs.package_run_id }}
+      UPLOAD_RUN_ID: ${{ needs.admission.outputs.upload_run_id }}
+      SOURCE_ATTEMPT: ${{ needs.admission.outputs.source_attempt }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.admission.outputs.manifest_sha256 }}
+      RELEASE_GROUPS: ${{ needs.admission.outputs.groups }}
+      RELEASE_INPUT: ${{ needs.admission.outputs.stage_input }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+      - id: import
+        run: python3 scripts/release/ios-action.py import
+      - name: Export validated state without credentials
+        env:
+          RELEASE_RUN_ID: ${{ steps.import.outputs.run_id }}
+        run: python3 scripts/release/ios-action.py export
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-validated-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ios-delivery/package.zip
+          if-no-files-found: error
+          retention-days: 14
+    needs:
+      - admission
+    if: ${{ needs.admission.outputs.operation != 'package' }}
+  store:
+    needs:
+      - admission
+      - import
+    runs-on: macos-26
+    environment: aegis-ios-store
+    timeout-minutes: 45
+    env:
+      RELEASE_STAGE: ${{ needs.admission.outputs.operation }}
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: ${{ needs.admission.outputs.destination }}
+      RELEASE_TAG: ${{ needs.admission.outputs.tag }}
+      PACKAGE_RUN_ID: ${{ needs.admission.outputs.package_run_id }}
+      UPLOAD_RUN_ID: ${{ needs.admission.outputs.upload_run_id }}
+      SOURCE_ATTEMPT: ${{ needs.admission.outputs.source_attempt }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.admission.outputs.manifest_sha256 }}
+      RELEASE_GROUPS: ${{ needs.admission.outputs.groups }}
+      RELEASE_INPUT: ${{ needs.admission.outputs.stage_input }}
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_RUN_ID: ${{ needs.import.outputs.run_id }}
+      IMPORT_KIND: store
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+          bundler-cache: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ios-validated-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/download
+      - name: Reverify source and immutable package before loading ASC credentials
+        run: |
+          python3 scripts/release/ios-restore.py
+          node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+      - name: Execute only the selected stage with protected ASC credentials
+        env:
+          AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
+          AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
+          AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
+        run: python3 scripts/release/ios-action.py stage
+      - name: Preserve stage intent even when a response is lost
+        if: ${{ always() }}
+        run: python3 scripts/release/ios-action.py export
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: ios-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ios-delivery/package.zip
+          if-no-files-found: error
+          retention-days: 30
+    if: ${{ needs.admission.outputs.operation != 'package' }}
