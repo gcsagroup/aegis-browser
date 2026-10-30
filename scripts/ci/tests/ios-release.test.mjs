@@ -64,3 +64,14 @@ test('iOS workflow credentials and permissions stay in their protected stage', (
     assert(!JSON.stringify(doc).includes('pull_request_target'));
   }
 });
+
+test('candidate admission bounds version components and rejects trailing data before tag lookup', async () => {
+  const {iosReleasePreflight} = await load();
+  const run = async tag => iosReleasePreflight(sha, {environment: {...environment, RELEASE_DESTINATION: 'github-draft', RELEASE_TAG: tag}, api: apiFixture(), quality: async () => true});
+  for (const tag of ['candidate/ios/1.0-alpha.6', 'candidate/ios/1.0.0-beta.7', 'candidate/ios/1.0.0-release.8']) {
+    assert.equal((await run(tag)).admission, 'upstream_quality_verified');
+  }
+  for (const tag of [`candidate/ios/${'1'.repeat(128)}.0.0-alpha.6`, 'candidate/ios/1.0.0-release.8\n', 'candidate/ios/1.0.0.0-alpha.6', 'candidate/ios/1.0.0-alpha.0']) {
+    await assert.rejects(run(tag), /candidate tag/iu);
+  }
+});

@@ -24,10 +24,14 @@ end
     lane :submit do |options|
       pipeline(product, options).submit
     end
-    %i[wait metadata compliance].each do |stage|
-      lane stage do |options|
-        pipeline(product, options).public_send(stage)
-      end
+    lane :wait do |options|
+      pipeline(product, options).wait
+    end
+    lane :metadata do |options|
+      pipeline(product, options).metadata
+    end
+    lane :compliance do |options|
+      pipeline(product, options).compliance
     end
     desc 'Read store state and local stage records without uploading'
     lane :status do |options|

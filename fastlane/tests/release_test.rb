@@ -48,6 +48,20 @@ class ReleaseFixture < Minitest::Test
 end
 
 class ReleaseTest < ReleaseFixture
+  def test_process_helpers_never_interpret_a_single_command_as_shell
+    marker = File.join(@root, 'shell-was-used')
+    command = "printf injected > #{marker}"
+    assert_raises(Errno::ENOENT) { AegisRelease.command(command, cwd: @root) }
+    refute File.exist?(marker)
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    assert_raises(Errno::ENOENT) { flow.run(command) }
+    refute File.exist?(marker)
+  end
+
+  def test_binary_command_preserves_exact_download_bytes
+    assert_equal " \x00\n".b, AegisRelease.command(RbConfig.ruby, '-e', 'STDOUT.binmode; STDOUT.write(" \\x00\\n")', cwd: @root, binary: true)
+  end
+
   def test_plan_is_read_only_and_reports_dirty_source
     write('uncommitted.txt', 'pending')
     value = request.plan
@@ -152,7 +166,28 @@ class ReleaseTest < ReleaseFixture
 
   class FakeDraft < AegisRelease::Draft
     attr_reader :mutations
-    attr_accessor :remote, :tag_sha, :assets, :corrupt_upload, :on_read, :hide_from_list, :fail_after_create
+    attr_reader :remote, :tag_sha, :assets, :corrupt_upload, :on_read, :hide_from_list, :fail_after_create
+    def remote=(value)
+      @remote = value
+    end
+    def tag_sha=(value)
+      @tag_sha = value
+    end
+    def assets=(value)
+      @assets = value
+    end
+    def corrupt_upload=(value)
+      @corrupt_upload = value
+    end
+    def on_read=(value)
+      @on_read = value
+    end
+    def hide_from_list=(value)
+      @hide_from_list = value
+    end
+    def fail_after_create=(value)
+      @fail_after_create = value
+    end
     def initialize(*args)
       super(*args, environment: {})
       @tag_sha = @receipt['source']['sha']
@@ -312,7 +347,10 @@ class ReleaseTest < ReleaseFixture
 
   class FakeApple
     attr_reader :uploads
-    attr_accessor :fail_upload
+    attr_reader :fail_upload
+    def fail_upload=(value)
+      @fail_upload = value
+    end
     def initialize
       @uploads = []
     end
@@ -342,9 +380,9 @@ class ReleaseTest < ReleaseFixture
       builder = Object.new
       builder.define_singleton_method(:update_code_signing_settings) { |**_options| }
       checks = self
-      builder.define_singleton_method(:build_app) do |**options|
-        checks.assert_equal(profile == 'alpha', options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
-        File.write(File.join(options.fetch(:output_directory), options.fetch(:output_name)), 'fixture IPA')
+      builder.define_singleton_method(:build_app) do |**build_options|
+        checks.assert_equal(profile == 'alpha', build_options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
+        File.write(File.join(build_options.fetch(:output_directory), build_options.fetch(:output_name)), 'fixture IPA')
       end
       keys = %w[AEGIS_APPLE_TEAM_ID AEGIS_IOS_PROFILES AEGIS_IOS_CERT_SHA1]
       previous = keys.to_h { |key| [key, ENV[key]] }

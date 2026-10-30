@@ -30,10 +30,13 @@ module AegisRelease
   end
 
   # Capture failures without echoing credential-bearing command output or arguments.
-  def self.command(*argv, cwd: ROOT, env: {})
-    stdout, _stderr, status = Open3.capture3({ 'PYTHONDONTWRITEBYTECODE' => '1' }.merge(env), *argv, chdir: cwd)
-    require!(status.success?, "#{File.basename(argv.first)} failed (exit #{status.exitstatus}); no success receipt written")
-    stdout.strip
+  def self.command(executable, *arguments, cwd: ROOT, env: {}, binary: false)
+    # Ruby's [executable, argv0] form always uses exec, including zero arguments.
+    # Metacharacters therefore remain literal bytes and never select a shell.
+    stdout, _stderr, status = Open3.capture3({ 'PYTHONDONTWRITEBYTECODE' => '1' }.merge(env),
+                                           [executable, executable], *arguments, chdir: cwd, binmode: binary)
+    require!(status.success?, "#{File.basename(executable)} failed (exit #{status.exitstatus}); no success receipt written")
+    binary ? stdout : stdout.strip
   end
 
   def self.source(root = ROOT, clean: true)
@@ -220,9 +223,8 @@ module AegisRelease
     end
 
     def run(*argv, env: {})
-      # Build output is streamed, but commands and environment values are never printed here.
-      ok = system({ 'PYTHONDONTWRITEBYTECODE' => '1' }.merge(env), *argv, chdir: request.root)
-      AegisRelease.require!(ok, "#{File.basename(argv.first)} failed; retain the attempt directory for diagnosis")
+      AegisRelease.command(*argv, cwd: request.root, env: env)
+      true
     end
 
     def package
@@ -474,10 +476,10 @@ module AegisRelease
     end
 
     def fetch_asset_bytes(asset)
-      bytes, _error, status = Open3.capture3('gh', 'api', "repos/#{@request.repository}/releases/assets/#{Integer(asset.fetch('id'))}",
-                                            '--header', 'Accept: application/octet-stream', binmode: true)
-      AegisRelease.require!(status.success?, 'Draft asset download failed; no completed acceptance receipt')
-      bytes
+      id = Integer(asset.fetch('id'))
+      AegisRelease.require!(id.positive?, 'Draft asset ID must be positive')
+      AegisRelease.command('gh', 'api', "repos/#{@request.repository}/releases/assets/#{id}",
+                           '--header', 'Accept: application/octet-stream', cwd: @request.root, binary: true)
     end
 
     def upload

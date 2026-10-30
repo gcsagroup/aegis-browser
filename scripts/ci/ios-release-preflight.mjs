@@ -18,7 +18,8 @@ export async function iosReleasePreflight(sha, {environment = process.env, api =
   const assertTag = async () => {
     if (environment.RELEASE_DESTINATION !== 'github-draft') return;
     const tag = environment.RELEASE_TAG;
-    if (!/^candidate\/ios\/\d+\.\d+(?:\.\d+)?-(?:alpha|beta|release)\.[1-9]\d{0,9}$/u.test(tag ?? '')) throw new Error('Exact iOS candidate tag required');
+    const match = /^candidate\/ios\/[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?-(?:alpha|beta|release)\.[1-9][0-9]{0,9}$/u.exec(tag ?? '');
+    if (!match || match[0] !== tag) throw new Error('Exact iOS candidate tag required');
     const tagged = await api(repository, `/commits/${encodeURIComponent(tag)}`, {token});
     if (tagged?.sha !== sha) throw new Error('Candidate tag changed or points to another source');
   };
