@@ -297,6 +297,19 @@ class ReleaseTest < ReleaseFixture
     assert_empty publisher.mutations
   end
 
+  def test_manual_package_admission_runs_before_signing_inputs
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    req = request
+    flow = AegisRelease::Pipeline.new(req, Object.new)
+    flow.define_singleton_method(:admit_source!) { raise AegisRelease::Error, 'Source admission denied' }
+    error = assert_raises(AegisRelease::Error) { flow.package }
+    assert_equal 'Source admission denied', error.message
+    refute File.exist?(req.directory)
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host
+  end
+
   class FakeApple
     attr_reader :uploads
     attr_accessor :fail_upload
@@ -313,6 +326,9 @@ class ReleaseTest < ReleaseFixture
   end
 
   class FixturePipeline < AegisRelease::Pipeline
+    def admit_source!
+      true # Unit builder boundary; public package admission has a separate negative test.
+    end
     def run(*_args, **_options)
       true # The separately executed Python suite tests actual IPA parsing.
     end

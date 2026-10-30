@@ -228,6 +228,7 @@ module AegisRelease
     def package
       AegisRelease.require!(RbConfig::CONFIG['host_os'].include?('darwin'), 'iOS packaging requires macOS')
       source = AegisRelease.source(request.root)
+      admit_source!
       AegisRelease.real_path!(request.directory)
       AegisRelease.require!(!File.exist?(request.directory), 'Attempt already exists; use a new run ID or upload the verified package')
       required('AEGIS_APPLE_TEAM_ID')
@@ -279,6 +280,7 @@ module AegisRelease
         run('/usr/libexec/PlistBuddy', '-c', "Add :AegisReleaseProfile string #{request.profile}", File.join(work, 'apps/ios', target, 'Info.plist'))
       end
       name = "Aegis-#{request.profile}-#{request.version}-#{request.build}-ios.ipa"
+      admit_source!
       @fastlane.build_app(project: project, scheme: 'Aegis-Release', configuration: 'Release', clean: true,
                          destination: 'generic/platform=iOS', output_directory: request.directory, output_name: name,
                          archive_path: File.join(work, 'Aegis.xcarchive'), derived_data_path: File.join(work, 'DerivedData'),
@@ -322,6 +324,10 @@ module AegisRelease
 
     def preflight_upload
       AegisRelease.require!(request.destination != 'artifacts', 'Choose an upload destination')
+      admit_source!
+    end
+
+    def admit_source!
       sha = AegisRelease.source(request.root).fetch('sha')
       run('node', File.join(request.root, 'scripts/ci/ios-release-preflight.mjs'), '--sha', sha,
             env: { 'RELEASE_DESTINATION' => request.destination, 'RELEASE_TAG' => request.tag })

@@ -72,8 +72,17 @@ def package():
     export()
 
 
+def validate_mutation_attempt(stage, attempt, directory=None):
+    if stage not in {'upload', 'metadata', 'compliance', 'distribute'} or attempt == 1:
+        return
+    receipt = 'apple-upload' if stage == 'upload' else 'ios-'+stage
+    if directory is None or not (directory/(receipt+'-result.json')).is_file():
+        raise ValueError('Mutation rerun requires recovered completed journal; reconcile prior attempt first')
+
+
 def check_prior_stage_runs(stage, state_run):
     # A lost job/transport response is not permission to replay the mutation in another run.
+    validate_mutation_attempt(stage, int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')))
     current = int(os.environ['GITHUB_RUN_ID'])
     title = f'iOS TF {stage} {os.environ["RELEASE_MANIFEST_SHA256"]}'
     for page in range(1, 21):
@@ -143,6 +152,7 @@ def import_package():
         output('run_id', origin['runIdLocal'])
         output('manifest_sha256', digest)
         stage = os.environ.get('RELEASE_STAGE', '')
+        validate_mutation_attempt(stage, int(os.environ['GITHUB_RUN_ATTEMPT']), target)
         if stage not in {'status', 'wait', 'draft', ''}:
             if stage != 'upload' and not (target/'apple-upload-result.json').is_file():
                 raise ValueError('Later mutation requires exact completed upload receipt')
@@ -153,6 +163,7 @@ def import_package():
 
 def stage():
     operation = os.environ['RELEASE_STAGE']
+    validate_mutation_attempt(operation, int(os.environ['GITHUB_RUN_ATTEMPT']), directory())
     if operation not in {'upload', 'wait', 'status', 'metadata', 'compliance', 'distribute', 'draft'}:
         raise ValueError('Action stage is not allowed')
     args = identity()

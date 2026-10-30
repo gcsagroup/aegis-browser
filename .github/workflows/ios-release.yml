@@ -68,7 +68,7 @@ jobs:
   ios-package:
     name: ios-package
     needs: preflight
-    runs-on: [self-hosted, macOS, ARM64, '${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
+    runs-on: ['${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
     environment: aegis-ios-signing
     timeout-minutes: 35
     outputs:

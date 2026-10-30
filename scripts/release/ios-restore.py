@@ -42,6 +42,7 @@ with tempfile.TemporaryDirectory(prefix='ios-restore-') as tmp:
             raise ValueError('Wrong original package workflow')
         if origin['runIdLocal'] != os.environ['RELEASE_RUN_ID']:
             raise ValueError('Validated package run identity changed')
+    action.validate_mutation_attempt(os.environ['RELEASE_STAGE'], attempt, staged)
     target = action.directory()
     if target.exists():
         raise ValueError('Refuse to overwrite restored package')

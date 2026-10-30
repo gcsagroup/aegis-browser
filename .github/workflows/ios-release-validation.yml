@@ -40,7 +40,7 @@ jobs:
           corepack pnpm run lint
       - name: Validate workflow syntax
         run: |
-          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -shellcheck= .github/workflows/ios-*.yml
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= .github/workflows/ios-*.yml
   ios-archive:
     runs-on: macos-26
     timeout-minutes: 30
