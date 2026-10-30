@@ -1,0 +1,141 @@
+name: iOS Package and Private Draft
+run-name: iOS ${{ inputs.profile || vars.AEGIS_IOS_REHEARSAL_PROFILE }} ${{ inputs.version || vars.AEGIS_IOS_REHEARSAL_VERSION }}(${{ inputs.build || vars.AEGIS_IOS_REHEARSAL_BUILD }}) ${{ inputs.destination }}
+on:
+  push:
+    branches: ['codex/ios-release-*']
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Immutable package audience
+        type: choice
+        options: [alpha, beta, release]
+        default: alpha
+      version:
+        description: Marketing version
+        type: string
+        required: true
+      build:
+        description: Unused positive build number
+        type: string
+        required: true
+      destination:
+        description: Package only or private Draft; TF uses the separate store workflow
+        type: choice
+        options: [artifacts, github-draft]
+        default: artifacts
+      tag:
+        description: Existing candidate/ios/version-profile.build tag for Draft
+        type: string
+  workflow_call:
+    inputs:
+      profile: {type: string, required: true}
+      version: {type: string, required: true}
+      build: {type: string, required: true}
+      destination: {type: string, default: artifacts}
+      tag: {type: string, default: ''}
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ios-package-${{ github.repository }}
+  cancel-in-progress: false
+env:
+  RELEASE_PROFILE: ${{ inputs.profile || vars.AEGIS_IOS_REHEARSAL_PROFILE }}
+  RELEASE_VERSION: ${{ inputs.version || vars.AEGIS_IOS_REHEARSAL_VERSION }}
+  RELEASE_BUILD: ${{ inputs.build || vars.AEGIS_IOS_REHEARSAL_BUILD }}
+  RELEASE_DESTINATION: ${{ inputs.destination || 'artifacts' }}
+  RELEASE_TAG: ${{ inputs.tag }}
+  RELEASE_RUN_ID: ios-gh-${{ github.run_id }}-${{ github.run_attempt }}
+  AEGIS_IOS_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_RELEASE_ENABLED }}
+  AEGIS_IOS_FORK_REHEARSAL: ${{ vars.AEGIS_IOS_FORK_REHEARSAL }}
+  AEGIS_IOS_FORK_REPOSITORY_ID: ${{ vars.AEGIS_IOS_FORK_REPOSITORY_ID }}
+  AEGIS_IOS_FORK_REF: ${{ vars.AEGIS_IOS_FORK_REF }}
+  FASTLANE_SKIP_UPDATE_CHECK: '1'
+  FASTLANE_HIDE_GITHUB_ISSUES: '1'
+  FASTLANE_OPT_OUT_USAGE: '1'
+  BUNDLE_FROZEN: 'true'
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: {node-version: 22.23.1}
+      - run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+        env: {GH_TOKEN: '${{ github.token }}'}
+  ios-package:
+    name: ios-package
+    needs: preflight
+    runs-on: ['${{ vars.AEGIS_IOS_RUNNER_LABEL }}']
+    environment: aegis-ios-signing
+    timeout-minutes: 35
+    outputs:
+      manifest_sha256: ${{ steps.package.outputs.manifest_sha256 }}
+    env:
+      BUNDLE_PATH: ${{ vars.AEGIS_IOS_BUNDLE_PATH }}
+      AEGIS_APPLE_TEAM_ID: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+      AEGIS_IOS_CERT_SHA1: ${{ vars.AEGIS_IOS_CERT_SHA1 }}
+      AEGIS_IOS_PROFILES: ${{ vars.AEGIS_IOS_PROFILES }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Use installed task runner tools
+        env:
+          RUBY_BIN: ${{ vars.AEGIS_IOS_RUBY_BIN }}
+          NODE_BIN: ${{ vars.AEGIS_IOS_NODE_BIN }}
+        run: |
+          test -x "$RUBY_BIN/ruby" && test -x "$NODE_BIN/node"
+          echo "$RUBY_BIN" >> "$GITHUB_PATH"
+          echo "$NODE_BIN" >> "$GITHUB_PATH"
+      - name: Revalidate source and locked runtime
+        run: |
+          node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+          bundle check
+      - id: package
+        run: python3 scripts/release/ios-action.py package
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/ios-delivery/package.zip
+          if-no-files-found: error
+          retention-days: 30
+  ios-draft:
+    if: ${{ inputs.destination == 'github-draft' }}
+    needs: ios-package
+    runs-on: ubuntu-24.04
+    environment: aegis-ios-draft
+    permissions: {contents: write, actions: read}
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_STAGE: draft
+      IMPORT_KIND: draft
+      RELEASE_MANIFEST_SHA256: ${{ needs.ios-package.outputs.manifest_sha256 }}
+      PACKAGE_RUN_ID: ${{ github.run_id }}
+      SOURCE_ATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with: {node-version: 22.23.1}
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with: {ruby-version: 3.3.6, bundler-cache: true}
+      - name: Download exact package from this running package job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ios-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/download
+      - name: Verify source-bound package before Draft
+        run: |
+          python3 scripts/release/ios-restore.py
+          node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+      - run: python3 scripts/release/ios-action.py stage
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-draft-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/release/ios/*/github-upload-result.json
+          if-no-files-found: error
+          retention-days: 30

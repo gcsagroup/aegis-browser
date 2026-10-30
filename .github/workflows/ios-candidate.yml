@@ -1,0 +1,33 @@
+name: iOS Candidate Tag
+on:
+  push:
+    tags: ['candidate/ios/*']
+permissions: {contents: read, actions: read}
+jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    outputs:
+      profile: ${{ steps.tag.outputs.profile }}
+      version: ${{ steps.tag.outputs.version }}
+      build: ${{ steps.tag.outputs.build }}
+    steps:
+      - id: tag
+        env: {CANDIDATE_TAG: '${{ github.ref_name }}'}
+        run: |
+          python3 - <<'PY'
+          import os,re
+          match=re.fullmatch(r'candidate/ios/(\d+\.\d+(?:\.\d+)?)-(alpha|beta|release)\.([1-9]\d{0,9})',os.environ['CANDIDATE_TAG'])
+          if not match: raise ValueError('Invalid exact iOS candidate tag')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output:
+              for key,value in zip(['version','profile','build'],match.groups()): output.write(key+'='+value+'\n')
+          PY
+  package:
+    needs: identity
+    uses: ./.github/workflows/ios-release.yml
+    permissions: {contents: write, actions: read}
+    with:
+      profile: ${{ needs.identity.outputs.profile }}
+      version: ${{ needs.identity.outputs.version }}
+      build: ${{ needs.identity.outputs.build }}
+      destination: github-draft
+      tag: ${{ github.ref_name }}
