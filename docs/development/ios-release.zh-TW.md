@@ -15,9 +15,11 @@ Alpha 固定僅供內部測試，原生匯出開啟 `testFlightInternalTestingOn
 
 Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Release Validation** 自動無憑證驗證與 **iOS Coverage** 模擬器覆蓋率。手動執行三個 iOS 工作流程均要求實際倉庫 Admin 權限（包含組織所有者授予的 Admin），原發起者和重跑者都必須通過驗證。Maintain/Write/Read 和權限未知均在受保護作業排隊前拒絕；GitHub 原生介面仍可能向 Write 顯示執行按鈕。本地流程驗證真實 token 使用者，runner 在簽章探測前驗證真實 CLI Admin。fork 交付入口維持停用。
 
-表單精簡為 **6 項**，欄位與操作選項中英文並列：操作 / Operation、目標產物 / Product、版本(建置號) / Version(build)、來源 / Source、測試組 / Groups、描述或合規 JSON。新封裝只需填例如 `1.0.0(33)`，括號為未使用的 build，預設產生 Alpha。目標產物可明確選 Alpha（僅內測）、Beta（內外測）、Release（通用）。後續操作選擇操作並貼入上次成功執行 Summary 的整行**交付憑據**；Product 保持 Auto、版本留空，便會沿用原產物身分。本地 CLI 使用原有介面。
+表單只保留 **4 項**且中英文並列：操作 / Operation、目標產物 / Product、版本或來源 / Version or source、完整模式配置 / Full options。操作下拉只顯示僅封裝 / Package、上傳 TestFlight / Upload、查詢狀態 / Status、完整模式 / Full。本地 CLI 使用原有介面。
 
-`package` 只封裝；`draft` 封裝至私有 Draft，依版本／包型／build 推導並核對精確已有 Tag；`upload` 上傳原 IPA 至 TF；`wait`／`status` 等待／查詢；`metadata` 更新已確認描述；`compliance` 寫入已授權合規答案；`distribute-internal`／`distribute-external` 明確選擇內測／外測並填現有 `groups`。Alpha 禁止外測。只有 metadata/compliance 需要 `stage_input` JSON。
+精簡封裝只需填例如 `1.0.0(33)`，括號為未使用的 build，預設 Alpha；Product 可明確選 Alpha 僅內測、Beta 內外測、Release 通用。上傳／查詢在同一欄貼入上次成功執行摘要的整行交付憑據，Product 維持 Auto，Full options 保持 `{}`。
+
+低頻操作選 Full，复用 Product 與版本或來源，再填 JSON，例如等待 `{"operation":"wait"}`、內測分發 `{"operation":"distribute-internal","groups":"Aegis Early access"}`。其他完整操作為私有草稿 / Draft、更新測試說明 / Metadata、加密合規 / Compliance、外測分發 / Distribute external。operation 可用英文命令或中英並列名稱，只允許 operation、groups、stage_input；完整範例見 [iOS operations](ios-release.md)。精簡模式夾帶高階參數、未知或重複鍵及身分衝突均拒絕。Alpha 禁止外測，外測 Beta Review 及正式送審仍需獨立授權。
 
 交付憑據保留包型、版本、build、原封裝 run、最新狀態 run、精確 attempt 與獨立固定的 manifest 摘要。憑據不提供權限，也不取代來源、成功生產者、完整性或防重複檢查。每次等待整次執行成功，再用最新 Summary 憑據；結果未知先讀回對帳，不可重傳。推送 `candidate/ios/版本-profile.build` 仍只封裝至私有 Draft，不自動上傳 TF，正常 Draft 優先使用 Tag 觸發。先驗證來源與產物，再載入 ASC 憑證；外測 Beta Review 與正式送審仍須獨立授權。
 

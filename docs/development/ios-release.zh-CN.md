@@ -18,31 +18,31 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 
 Actions 的打包与上传统一使用 **iOS Delivery**；独立保留 **iOS Release Validation** 自动无凭据验证与 **iOS Coverage** 模拟器覆盖率。手动运行三个 iOS 工作流均要求实际仓库 Admin 权限（包含组织所有者授予的 Admin），原发起者和重跑者都必须通过校验。Maintain/Write/Read 和权限未知均在受保护作业排队前拒绝；GitHub 原生界面仍可能向 Write 显示运行按钮。本地流程验证真实 token 用户，runner 在签名探测前验证真实 CLI Admin。fork 交付入口保持停用。
 
-表单精简为 **6 项**，字段和操作选项均中英文并列。新打包通常只填一项版本，例如 `1.0.0(33)`，括号里为未使用的构建号；其余默认，生成 Alpha 产物。后续操作只选择操作并把上次成功运行 Summary 的整行**交付凭据**复制到来源，目标产物保持自动、版本留空即可。显式填写冲突身份会拒绝。本地 CLI 使用原有接口。
+表单只保留 **4 项**，全部中英文并列。操作下拉只有**仅打包、上传 TestFlight、查询状态、完整模式**，低频操作不再逐项占据常用下拉。本地 CLI 使用原有接口。
 
-| 输入 | 用途 |
+| 输入 | 精简模式怎么填 |
 | --- | --- |
-| 操作 / Operation | 仅打包、私有草稿、TF 上传、等待、查询、更新说明、合规、内测分发、外测分发 |
-| 目标产物 / Product | Alpha（仅内测）、Beta（内外测）、Release（通用）；自动：新包为 Alpha，后续沿用来源 |
-| 版本(构建号) / Version(build) | 仅打包填写，例如 `1.0.0(33)` |
-| 来源 / Source | 上传及后续操作填上次成功运行摘要的整行交付凭据 |
-| 测试组 / Groups | 仅分发填写现有组名，多组以逗号分隔 |
-| 描述或合规 JSON | 仅对应操作填写已经确认的内容 |
+| 操作 / Operation | 默认仅打包，也可选上传 TF、查询状态 |
+| 目标产物 / Product | 自动：新包为 Alpha，后续沿用来源；也可选 Alpha 仅内测、Beta 内外测、Release 通用 |
+| 版本或来源 / Version or source | 打包填例如 `1.0.0(33)`，括号为未使用的 build；上传/查询粘贴上次成功运行的整行交付凭据 |
+| 完整模式配置 / Full options | 精简操作保持 `{}` |
 
-| 操作 | 实际作用 |
+默认 Alpha 打包只需填一项 `1.0.0(33)`。上传选择“上传 TestFlight / Upload”，把交付凭据粘贴到同一项，目标产物保持自动。仅打包不上传，上传不自动分发或送审。每次使用最新成功运行摘要的凭据继续，独立保留原始凭据。
+
+需要其他操作时选择“完整模式 / Full”，复用目标产物和版本或来源，只在完整模式配置填写 JSON。`operation` 支持英文命令或中英文并列名称；只允许 operation、现有 groups、已经确认的 stage_input 对象。未知字段、重复键、无效 JSON、身份冲突以及精简模式夹带高级参数都会拒绝。
+
+| 完整模式用途 | 配置示例 |
 | --- | --- |
-| `package` | 签名打包并保留产物，不上传 |
-| `draft` | 打包到私有 GitHub Draft；从版本、包型、构建号推导精确已有 Tag 并核对来源 |
-| `upload` | 上传凭据指定的原 IPA 到 TF，不自动分发或送审 |
-| `wait` / `status` | 等待处理 / 查询处理、受众、合规及分组状态 |
-| `metadata` | 更新指定语言的 Beta 描述、测试内容，保留反馈联系方式 |
-| `compliance` | 写入经过确认且与来源绑定的加密合规答案 |
-| `distribute-internal` | 分发到指定现有内测组 |
-| `distribute-external` | 外测分发，Alpha 禁用；涉及 Beta Review，需独立授权 |
+| 等待处理 / Wait | `{"operation":"wait"}` |
+| 私有草稿 / Draft | `{"operation":"draft"}`，版本或来源填新版本(构建号)，核对推导出的精确已有 Tag |
+| 内测分发 / Distribute internal | `{"operation":"distribute-internal","groups":"Aegis Early access"}` |
+| 外测分发 / Distribute external | `{"operation":"distribute-external","groups":"现有外测组"}`，Alpha 禁止；Beta Review 仍需独立授权 |
+| 更新测试说明 / Metadata | `{"operation":"metadata","stage_input":{"locales":{"zh-Hans":{"whatsNew":"已确认的测试内容"}}}}` |
+| 加密合规 / Compliance | `{"operation":"compliance","stage_input":{"usesNonExemptEncryption":false,"sourceSha":"精确SHA","nativeInputsSha256":"精确摘要","authorization":"已审核授权"}}}` |
 
-凭据包含不可变包型、版本、构建号、原始打包 run、最新状态 run、精确 attempt 和独立固定的 manifest 摘要，替代原来分散的来源字段。凭据只是身份定位，不是权限或信任凭证；后台仍检查 Admin、来源 SHA/tree、当前 attempt、成功生产者、产物摘要、原始来源与上传记录。每次操作等待整次运行成功，再使用它输出的新凭据；失败或结果未知先读回对账，不能换旧凭据重传。
+交付凭据保留不可变包型、版本、build、原始打包 run、最新状态 run、精确 attempt 和独立固定的 manifest 摘要，替代分散的来源字段。凭据只是身份定位；Admin、来源 SHA/tree、当前 attempt、成功生产者、摘要、原始来源和上传记录仍独立校验。凭据只在阶段成功后输出至 Summary 和日志；等待整次运行成功再使用。失败或结果未知先读回对账，不能换旧凭据重传。
 
-推送 `candidate/ios/版本-profile.build` 自动解析身份，仅打包到私有 Draft，不自动上传 TF；正常 Draft 打包优先用 Tag 触发。先验证来源和产物，再加载 ASC 凭据。被拒绝或明确未执行的旧作业不会阻塞 Admin；任何可能已开始的变更仍须先读回对账。外测 Beta Review 和正式送审均需独立授权，不在自动验收中执行。
+推送 `candidate/ios/版本-profile.build` 仍自动解析身份，仅打包到私有 Draft，不自动上传 TF。先验证来源和产物，再加载 ASC 凭据；被拒绝或明确未执行的旧作业不会阻塞 Admin，可能已开始的变更仍须对账。外测 Beta Review 和正式送审需独立授权，不在验收中执行。
 
 `metadata.json` 仅允许 `locales`，每个语言可有 `description` 和 `whatsNew`（非空、最多 4000 字符）。保留反馈联系方式和其他语言。`compliance.json` 必须显式给出布尔型 `usesNonExemptEncryption`、精确 `sourceSha`、`nativeInputsSha256` 及 `authorization`；不推断合规答案，不覆盖冲突的已有答案。
 

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 
@@ -10,7 +11,7 @@ spec.loader.exec_module(planner)
 
 class DeliveryPlanTests(unittest.TestCase):
     def plan(self, inputs=None, event='workflow_dispatch', ref='refs/heads/main'):
-        return planner.normalize(event, ref, inputs if inputs is not None else dict(version='1.0.0(33)'))
+        return planner._normalize_stage(event, ref, inputs if inputs is not None else dict(version='1.0.0(33)'))
 
     def token(self, profile='alpha', state='100', attempt='1', digest='a'*64):
         return planner.receipt.encode(profile, '1.0.0', '33', '100', state, attempt, digest)
@@ -121,6 +122,66 @@ class DeliveryPlanTests(unittest.TestCase):
             self.plan(event='pull_request')
         with self.assertRaises(ValueError):
             self.plan(ref='refs/heads/foreign')
+
+
+class SimpleFullFormTests(unittest.TestCase):
+    def form(self, **inputs):
+        return planner.normalize('workflow_dispatch', 'refs/heads/main', inputs)
+
+    def token(self, profile='beta', state=101):
+        return planner.receipt.encode(profile, '1.0.0', '33', 100, state, 1, 'a'*64)
+
+    def test_simple_package_needs_one_target_and_later_steps_need_only_receipt(self):
+        plan = self.form(target='1.0.0(33)')
+        self.assertEqual([plan[k] for k in ['operation', 'profile', 'version', 'build', 'destination']],
+                         ['package', 'alpha', '1.0.0', '33', 'artifacts'])
+        self.assertEqual(self.form(target='1.0.0(33)', product=planner.receipt.PRODUCT_LABELS['release'])['profile'], 'release')
+        for operation in ['upload', 'status']:
+            plan = self.form(operation=planner.receipt.OPERATION_LABELS[operation], target=self.token())
+            self.assertEqual([plan[k] for k in ['operation', 'profile', 'package_run_id', 'upload_run_id', 'manifest_sha256']],
+                             [operation, 'beta', '100', '101', 'a'*64])
+
+    def test_full_mode_retains_all_explicit_stages_and_bilingual_commands(self):
+        for operation, label in planner.receipt.OPERATION_LABELS.items():
+            target = '1.0.0(33)' if operation in {'package', 'draft'} else self.token()
+            options = dict(operation=label)
+            if operation.startswith('distribute-'):
+                options['groups'] = 'Aegis Early access'
+            if operation in {'metadata', 'compliance'}:
+                options['stage_input'] = {'authorization': 'explicitly reviewed'}
+            plan = self.form(operation='完整模式 / Full', target=target, advanced=json.dumps(options))
+            self.assertEqual(plan['operation'], 'package' if operation == 'draft' else
+                             'distribute' if operation.startswith('distribute-') else operation)
+            options['operation'] = operation
+            self.assertEqual(plan, self.form(operation='full', target=target, advanced=json.dumps(options)))
+        with self.assertRaises(ValueError):
+            self.form(operation='full', target=self.token('alpha'),
+                      advanced=json.dumps(dict(operation='distribute-external', groups='group')))
+
+    def test_simple_mode_cannot_hide_advanced_changes_or_override_receipt_identity(self):
+        for operation in ['wait', 'draft', 'metadata', 'compliance', 'distribute-internal']:
+            with self.assertRaises(ValueError):
+                self.form(operation=operation, target=self.token())
+        for advanced in ['{"operation":"metadata"}', '{"groups":"group"}', '{"stage_input":{"x":true}}']:
+            with self.assertRaises(ValueError):
+                self.form(operation='upload', target=self.token(), advanced=advanced)
+        for changes in [dict(product='alpha'), dict(target=self.token()+'\n'), dict(source=self.token()), dict(build='33')]:
+            with self.assertRaises(ValueError):
+                self.form(**(dict(operation='upload', target=self.token()) | changes))
+
+    def test_full_options_are_bounded_strict_objects_without_extra_identity_fields(self):
+        for options in ['[]', 'null', '{', '{}', '{"operation":"unknown"}', '{"operation":"full"}',
+                        '{"operation":"metadata","operation":"status"}', '{"operation":"metadata","stage_input":{"x":NaN}}',
+                        '{"operation":"status","build":"34"}', '{"operation":"metadata","stage_input":[]}',
+                        '{"operation":"distribute-internal","groups":true}', '{"operation":"'+'x'*64000+'"}']:
+            with self.subTest(options=options[:100]), self.assertRaises(ValueError):
+                self.form(operation='full', target=self.token(), advanced=options)
+        for event, ref in [('pull_request', 'refs/heads/main'), ('workflow_dispatch', 'refs/heads/foreign')]:
+            with self.assertRaises(ValueError):
+                planner.normalize(event, ref, dict(target='1.0.0(33)'))
+        for profile in ['alpha', 'beta', 'release']:
+            plan = planner.normalize('push', f'refs/tags/candidate/ios/1.0.0-{profile}.33', {})
+            self.assertEqual((plan['operation'], plan['profile'], plan['destination']), ('package', profile, 'github-draft'))
 
 
 if __name__ == '__main__':

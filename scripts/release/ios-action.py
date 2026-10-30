@@ -103,11 +103,10 @@ def receipt():
     output('delivery_receipt', value)
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
         summary.write(f'### iOS 交付凭据 / Delivery receipt\n\n{manifest["version"]} ({manifest["build"]}) · {manifest["profile"]}\n\n'
-                      '等待整次运行成功后，复制整行到下次操作的 **来源 / Source**；目标产物保持自动，版本留空。\n'
-                      'After the whole run succeeds, copy this line into **Source**. Keep Product on Auto and leave Version empty.\n\n'
+                      '等待整次运行成功后，复制整行到下次操作的 **版本或来源 / Version or source**；目标产物保持自动。\n'
+                      'After the whole run succeeds, copy this line into **Version or source** and keep Product on Auto.\n\n'
                       f'```text\n{value}\n```\n\n'
-                      '选择 upload 仅上传 TF；wait/status 查询处理；distribute-internal 还需现有组名；metadata/compliance 还需已确认 JSON。'
-                      '每次后续操作使用最新成功运行的凭据，保留原始凭据。\n\n'
+                      '常用操作：上传 TF、查询状态；其他选择完整模式。每次后续操作使用最新成功凭据，保留原始凭据。\n'
                       'Use the latest successful receipt for each next step; retain the original. Upload, processing, metadata/compliance and distribution remain explicit operations.\n\n'
                       '此凭据仅固定产物身份；Admin、来源、完整性及防重复检查仍独立执行。\n'
                       'This receipt pins identity only; Admin, source, integrity and replay checks remain independent.\n')

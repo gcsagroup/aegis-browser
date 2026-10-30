@@ -1,24 +1,19 @@
 name: iOS Delivery
-run-name: iOS Delivery ${{ inputs.operation || 'package' }} ${{ inputs.source || github.ref_name }}
+run-name: iOS Delivery ${{ fromJSON(inputs.advanced || '{}').operation || inputs.operation || 'package' }} ${{ inputs.target || github.ref_name }}
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "操作 / Operation"
+        description: "操作 / Operation（常用选项 / Simple；更多选完整模式 / Full for more）"
         type: choice
         options:
           - 仅打包 / Package
-          - 私有草稿 / Draft
           - 上传 TestFlight / Upload
-          - 等待处理 / Wait
           - 查询状态 / Status
-          - 更新测试说明 / Metadata
-          - 加密合规 / Compliance
-          - 内测分发 / Distribute internal
-          - 外测分发 / Distribute external
+          - 完整模式 / Full
         default: 仅打包 / Package
       product:
-        description: "目标产物 / Product（自动：新包为 Alpha；后续沿用来源 / Auto: Alpha or source）"
+        description: "目标产物 / Product（Auto: Alpha / source）"
         type: choice
         options:
           - 自动 / Auto
@@ -26,20 +21,12 @@ on:
           - Beta · 内外测 / Internal and external
           - Release · 通用 / Universal
         default: 自动 / Auto
-      version:
-        description: "版本(新构建号) / Version(build)，仅打包 / Package only，例如 1.0.0(33)"
+      target:
+        description: "版本或来源 / Version or source（打包: 1.0.0(33)；其他: 交付凭据 / receipt）"
         type: string
         required: false
-      source:
-        description: "来源 / Source（上传及后续：复制上次成功运行的交付凭据 / Copy last successful receipt）"
-        type: string
-        required: false
-      groups:
-        description: "测试组 / Groups（仅分发 / Distribution only，逗号分隔 / Comma-separated）"
-        type: string
-        required: false
-      stage_input:
-        description: "描述或合规 JSON / Metadata or compliance JSON（仅对应操作 / Corresponding operation only）"
+      advanced:
+        description: "完整模式配置 / Full options JSON（仅 Full 填写 / Full only）"
         type: string
         default: "{}"
         required: false

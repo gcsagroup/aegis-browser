@@ -10,7 +10,8 @@ spec = importlib.util.spec_from_file_location('ios_delivery_receipt', Path(__fil
 receipt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(receipt)
 
-INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
+INPUTS = {'operation', 'product', 'target', 'advanced'}
+STAGE_INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
           'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input'}
 
@@ -20,8 +21,47 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        require(key not in value, 'Duplicate Full option key')
+        value[key] = item
+    return value
+
+
+def reject_constant(_value):
+    raise ValueError('Non-finite Full JSON is not allowed')
+
+
 def normalize(event, ref, inputs):
     require(isinstance(inputs, dict) and not inputs.keys()-INPUTS and all(isinstance(v, str) for v in inputs.values()), 'Unknown or invalid delivery inputs')
+    if event == 'push':
+        return _normalize_stage(event, ref, inputs)
+    require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
+    raw_options = inputs.get('advanced') or '{}'
+    require(len(raw_options.encode()) <= 64000, 'Full options exceed bound')
+    try:
+        options = json.loads(raw_options, object_pairs_hook=unique_object, parse_constant=reject_constant)
+    except (ValueError, RecursionError) as error:
+        raise ValueError('Invalid Full options JSON') from error
+    require(isinstance(options, dict) and not options.keys()-{'operation', 'groups', 'stage_input'}, 'Unknown Full options')
+    selected = inputs.get('operation') or 'package'
+    if selected in {'full', '完整模式 / Full'}:
+        require(isinstance(options.get('operation'), str), 'Full mode requires an explicit operation')
+        operation = receipt.canonical(options['operation'], receipt.OPERATION_LABELS)
+        require(isinstance(options.get('groups', ''), str) and isinstance(options.get('stage_input', {}), dict), 'Invalid Full groups or stage input')
+    else:
+        require(not options, 'Select Full mode to use advanced options')
+        operation = receipt.canonical(selected, receipt.OPERATION_LABELS)
+        require(operation in {'package', 'upload', 'status'}, 'Select Full mode for this operation')
+    normalized = dict(operation=operation, product=inputs.get('product', ''),
+                      groups=options.get('groups', ''), stage_input=json.dumps(options.get('stage_input', {}), ensure_ascii=True))
+    normalized['version' if operation in {'package', 'draft'} else 'source'] = inputs.get('target', '')
+    return _normalize_stage(event, ref, normalized)
+
+
+def _normalize_stage(event, ref, inputs):
+    require(isinstance(inputs, dict) and not inputs.keys()-STAGE_INPUTS and all(isinstance(v, str) for v in inputs.values()), 'Unknown or invalid stage inputs')
     values = {key: inputs.get(key, '') for key in FIELDS}
     if event == 'push':
         require(not inputs, 'Tag delivery cannot accept manual overrides')
