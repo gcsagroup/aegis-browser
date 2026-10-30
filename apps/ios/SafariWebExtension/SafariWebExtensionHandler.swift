@@ -2,7 +2,7 @@ import SafariServices
 
 final class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     private static let gate = SafariReadOnlyGate(
-        expectedExtensionID: Bundle.main.bundleIdentifier ?? "com.gcsa.aegis.ios.app.safari"
+        expectedExtensionID: Bundle.main.bundleIdentifier ?? "com.gcsa.aegis.safari"
     )
 
     func beginRequest(with context: NSExtensionContext) {

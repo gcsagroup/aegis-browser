@@ -2,7 +2,7 @@ import XCTest
 @testable import Aegis
 
 final class SafariDocumentNavigationIdentityTests: XCTestCase {
-    private let extensionID = "com.gcsa.aegis.ios.app.safari"
+    private let extensionID = "com.gcsa.aegis.safari"
     private let profileID = "00000000-0000-4000-8000-000000000001"
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
