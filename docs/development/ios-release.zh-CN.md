@@ -25,3 +25,5 @@ Actions 分为无凭据验证、受保护的签名、私有 Draft、TF 四部分
 任何变更先写不可变 intent。网络失联后结果未知，必须先读回对账，不盲目重试或换 run 丢弃历史。`status` 会显示 buildUploads、处理状态、原生 audience、合规、分组和原始测试员状态；`INSTALLED` 不证明当前 build 已在真机运行。保留失败作业的产物与日志。内置盘至少保留 8 GiB、外置盘至少保留 15 GiB 真正可用空间。
 
 上游合并前必须通过必需 CI 和 iOS 验证；合并后跟进新 main CI，在新来源上复测本地 Fastlane、Actions、Tag→私有 Draft × Alpha/Beta/Release，并逐个上传同一实包、读回 TF 状态。上游验收后仅停用 fork 的 iOS 开关和 iOS 环境入口，保留历史证据与回滚快照，不影响 Android/macOS。完整配置变量、输入 JSON、保护规则、恢复及回滚步骤见 [iOS operations](ios-release.md)。
+
+当前已核验的 Apple 系统加密实现，在实际 Info.plist 中声明布尔型 `ITSAppUsesNonExemptEncryption=false`；导出验证会核对签名 App 的同一声明。加密实现或依赖改变后必须重新评估，历史 IPA 保持原样。验收先读回 TF 自动识别的 `usesNonExemptEncryption=false`，再考虑显式合规更新。
