@@ -24,6 +24,16 @@ def command(*args):
     return result.stdout
 
 
+def verify_encryption_declaration(source_info, exported_info):
+    key = 'ITSAppUsesNonExemptEncryption'
+    if key not in source_info:
+        return None  # Historical source/packages did not declare this plist key.
+    value = source_info[key]
+    if type(value) is not bool or type(exported_info.get(key)) is not bool or exported_info[key] is not value:
+        raise ValueError('Exported encryption declaration must match committed Boolean Info.plist value')
+    return value
+
+
 def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root):
     if not re.fullmatch(r"[A-Z0-9]{10}", team) or not re.fullmatch(r"[A-Fa-f0-9]{40}", certificate_sha1):
         raise ValueError("Provide the expected Apple team and certificate SHA-1")
@@ -54,6 +64,7 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
             if info.get("TFInternalTestingOnly", False) is not (profile == "alpha"):
                 raise ValueError("Native TestFlight audience marker differs from profile")
             source_root = Path(source_root).resolve()
+            declaration = verify_encryption_declaration(plistlib.loads((source_root/'apps/ios/AegisApp/Info.plist').read_bytes()), info)
             tracked = command("git", "-C", str(source_root), "ls-files", "-z", str(SHARED)).decode().split("\0")
             shared_count = 0
             for relative in filter(None, tracked):
@@ -89,6 +100,7 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
     return {"ipaSha256": hashlib.sha256(Path(ipa).read_bytes()).hexdigest(), "profile": profile,
             "version": version, "build": build, "deepSignatureVerification": True,
             "testFlightInternalTestingOnly": profile == "alpha", "sharedResourcesVerified": shared_count,
+            "usesNonExemptEncryption": declaration,
             "bundles": checked, "deviceAcceptance": "not_verified"}
 
 

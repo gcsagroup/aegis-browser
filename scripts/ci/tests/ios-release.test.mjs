@@ -8,7 +8,10 @@ const repository = 'gcsagroup/aegis-browser';
 const environment = {GH_TOKEN: 'fixture', GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: repository,
   GITHUB_REPOSITORY_ID: '1348409663', GITHUB_SHA: sha, GITHUB_REF: 'refs/heads/main',
   GITHUB_EVENT_NAME: 'workflow_dispatch', AEGIS_IOS_RELEASE_ENABLED: 'true', RELEASE_DESTINATION: 'artifacts'};
-const load = () => import('../ios-release-preflight.mjs');
+const load = async () => {
+  const {iosReleasePreflight: preflight} = await import('../ios-release-preflight.mjs');
+  return {iosReleasePreflight: (source, options) => preflight(source, {authorize: async () => true, ...options})};
+};
 function apiFixture({moved = false, parent = repository, pending = false} = {}) {
   let reads = 0;
   return async (repo, path) => {
@@ -35,33 +38,61 @@ test('disabled path and wrong repository identity cannot reach quality', async (
     await assert.rejects(iosReleasePreflight(sha, {environment: {...environment, ...changes}, api: apiFixture(), quality: async () => {throw new Error('credential boundary crossed');}}), /enabled|identity|dispatch/u);
   }
 });
-test('fork requires exact opt-in parent/ref and latest terminal validation attempt', async () => {
+test('retired fork cannot regain privileged delivery through old opt-in flags', async () => {
   const {iosReleasePreflight} = await load();
   const fork = {...environment, GITHUB_REPOSITORY: 'quinn521/aegis-browser', GITHUB_REPOSITORY_ID: '1363949860',
     GITHUB_REF: 'refs/heads/codex/ios-release-upstream-20261030', AEGIS_IOS_FORK_REPOSITORY_ID: '1363949860',
     AEGIS_IOS_FORK_REF: 'refs/heads/codex/ios-release-upstream-20261030', AEGIS_IOS_FORK_REHEARSAL: 'true'};
-  assert.equal((await iosReleasePreflight(sha, {environment: fork, api: apiFixture()})).admission, 'fork_rehearsal_only');
-  await assert.rejects(iosReleasePreflight(sha, {environment: fork, api: apiFixture({pending: true})}), /validation/u);
-  await assert.rejects(iosReleasePreflight(sha, {environment: fork, api: apiFixture({parent: 'foreign/repo'})}), /parent|fork/u);
+  await assert.rejects(iosReleasePreflight(sha, {environment: fork, api: apiFixture()}), /canonical|upstream/iu);
+});
+test('operator denial stops source admission before source and quality APIs', async () => {
+  const {iosReleasePreflight} = await load();
+  let sourceReads = 0;
+  await assert.rejects(iosReleasePreflight(sha, {environment, authorize: async () => {throw new Error('Admin required');},
+    api: async () => {sourceReads++; return {};}, quality: async () => {sourceReads++; return true;}}), /Admin required/u);
+  assert.equal(sourceReads, 0);
 });
 test('iOS workflow credentials and permissions stay in their protected stage', () => {
   const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
   const validation = workflow('ios-release-validation');
-  assert.deepEqual(validation.permissions, {contents: 'read'});
+  assert.deepEqual(validation.permissions, {contents: 'read', actions: 'read'});
   assert(!JSON.stringify(validation).includes('secrets.'));
-  const release = workflow('ios-release');
+  const release = workflow('ios-delivery');
   assert.equal(release.jobs['ios-package'].environment, 'aegis-ios-signing');
   assert.equal(release.jobs['ios-draft'].environment, 'aegis-ios-draft');
   assert.equal(release.jobs['ios-draft'].permissions.contents, 'write');
   assert(!JSON.stringify(release.jobs['ios-package']).includes('AEGIS_ASC'));
-  assert(!JSON.stringify(release.jobs.preflight).includes('secrets.'));
-  const store = workflow('ios-testflight');
+  assert(!JSON.stringify(release.jobs.admission).includes('secrets.'));
+  const store = release;
   assert.equal(store.jobs.store.environment, 'aegis-ios-store');
   assert(!JSON.stringify(store.jobs.import).includes('secrets.'));
   assert(!JSON.stringify(store).includes('contents:write'));
   for (const doc of [release, store]) {
     assert(!JSON.stringify(doc).includes('secrets:inherit'));
     assert(!JSON.stringify(doc).includes('pull_request_target'));
+  }
+});
+
+test('every protected delivery route depends on Admin admission and normalized operation', () => {
+  const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  for (const id of ['ios-package', 'ios-draft', 'import', 'store']) {
+    const job = workflow.jobs[id];
+    assert([job.needs].flat().includes('admission'), id+' must await Admin admission');
+    assert(job.if.includes('needs.admission.outputs.operation'), id+' must select normalized operation');
+    assert(!JSON.stringify(job).includes('inputs.'), id+' must not consume unverified raw inputs');
+  }
+  assert(workflow.jobs['ios-package'].if.includes("== 'package'"));
+  assert(workflow.jobs.store.if.includes("!= 'package'"));
+  assert(!JSON.stringify(workflow.on).includes('branches'));
+  for (const name of ['ios-release-validation', 'ios-coverage']) {
+    const quality = parse(readFileSync('.github/workflows/'+name+'.yml', 'utf8'));
+    for (const job of Object.values(quality.jobs)) {
+      const guard = job.steps.findIndex(s => s.run?.includes('ios-operator.mjs --context'));
+      assert(guard >= 0, name+' requires manual Admin guard');
+      if (name === 'ios-release-validation') assert.equal(job.steps[guard].if, "${{ github.event_name == 'workflow_dispatch' }}");
+      const expensive = job.steps.findIndex(s => s.run?.includes('bundle exec') || s.run?.includes('xcodebuild ') || s.run?.includes('run-simulator-tests.sh'));
+      assert(guard < expensive, name+' must authorize before expensive work');
+    }
   }
 });
 
