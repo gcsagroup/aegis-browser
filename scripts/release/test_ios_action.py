@@ -11,6 +11,43 @@ spec.loader.exec_module(action)
 
 
 class IosActionTests(unittest.TestCase):
+    def test_denied_or_skipped_runs_do_not_poison_later_admin_stage(self):
+        row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery.yml',
+                   status='completed', conclusion='failure', display_title='iOS Delivery upload '+'a'*64)
+        env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA='b'*40, RELEASE_MANIFEST_SHA256='a'*64)
+        for jobs in [[], [dict(name='store', status='completed', conclusion='skipped', steps=[])]]:
+            calls = []
+            def api(path):
+                calls.append(path)
+                if 'workflows/' in path:
+                    return dict(workflow_runs=[row])
+                if path == 'actions/runs/10':
+                    return row
+                if path.endswith('/jobs?per_page=100'):
+                    return dict(total_count=len(jobs), jobs=jobs)
+                raise AssertionError(path)
+            with patch.dict(os.environ, env), patch.object(action, 'api', api):
+                action.check_prior_stage_runs('upload', 11)
+            self.assertTrue(any('/attempts/1/jobs?' in path for path in calls), 'must prove no store steps ran')
+
+    def test_possibly_started_mutation_or_earlier_attempt_still_blocks(self):
+        row = dict(id=10, run_attempt=2, head_sha='b'*40, path='.github/workflows/ios-delivery.yml',
+                   status='completed', conclusion='failure', display_title='iOS Delivery upload '+'a'*64)
+        env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA='b'*40, RELEASE_MANIFEST_SHA256='a'*64)
+        for active in [dict(name='store', status='completed', conclusion='failure', steps=[]),
+                       dict(name='store', status='in_progress', conclusion=None, steps=[]),
+                       dict(name='store', status='completed', conclusion='skipped', steps=[dict(status='completed')])]:
+            def api(path):
+                if 'workflows/' in path:
+                    return dict(workflow_runs=[row])
+                if path == 'actions/runs/10':
+                    return row
+                if '/attempts/1/jobs?' in path:
+                    return dict(total_count=1, jobs=[active])
+                return dict(total_count=0, jobs=[])
+            with patch.dict(os.environ, env), patch.object(action, 'api', api), self.assertRaises(ValueError):
+                action.check_prior_stage_runs('upload', 11)
+
     def test_lost_response_cannot_be_replayed_in_the_same_run_next_attempt(self):
         with patch.dict(os.environ, {'GITHUB_RUN_ID': '12', 'GITHUB_RUN_ATTEMPT': '2', 'RELEASE_MANIFEST_SHA256': 'a'*64}):
             def api(_path):

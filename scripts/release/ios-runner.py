@@ -121,7 +121,7 @@ def write_new(path, value):
 
 def admit(repository, run_id, sha, job_id, label):
     run = gh(repository, f'actions/runs/{run_id}')
-    if run['head_sha'] != sha or run['repository']['full_name'] != repository or run['path'] not in {'.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'}:
+    if run['head_sha'] != sha or run['repository']['full_name'] != repository or run['path'] != '.github/workflows/ios-delivery.yml':
         raise ValueError('Wrong repository/source/workflow')
     attempt = run['run_attempt']
     jobs = gh(repository, f'actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100')

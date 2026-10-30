@@ -14,7 +14,9 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 ./release ios distribute --profile alpha --version 1.0.0 --build 6 --run-id ios-alpha-6 --destination testflight-internal --groups '现有内测组名' --manifest-sha256 MANIFEST_SHA256
 ```
 
-示例 build 仅供演示，实际先查 ASC 再选未使用的编号。独立保留 manifest 摘要、IPA、dSYM、校验文件及完成的上传记录；后续改描述和分发复用这些文件，不重新构建或上传。来源 SHA/tree 改变后必须重新打包。签名使用现有 Apple Distribution 私钥和三份 App Store profile，不导出私钥，不改共享钥匙串 ACL。凭据只能通过私密环境或受保护的 Actions secrets 注入，禁止进入参数、Git 或公开证据。
+示例 build 仅供演示，实际先查 ASC 再选未使用的编号。独立保留 manifest 摘要、IPA、dSYM、校验文件及完成的上传记录；后续改描述和分发复用这些文件，不重新构建或上传。来源 SHA/tree 改变后必须重新打包。签名使用现有 Apple Distribution 私钥和三份 App Store profile，不导出私钥，不改共享钥匙串 ACL。凭据只能通过私密环境或受保护的 Actions 的打包与上传统一使用 **iOS Delivery**；独立保留 **iOS Release Validation** 自动无凭据验证与 **iOS Coverage** 模拟器覆盖率。手动运行三个 iOS 工作流均要求实际仓库 Admin 权限（包含组织所有者授予的 Admin），原发起者和重跑者都必须通过校验。Maintain/Write/Read 和权限未知均在受保护作业排队前拒绝；GitHub 原生界面仍可能向 Write 显示运行按钮。本地流程验证真实 token 用户，runner 在签名探测前验证真实 CLI Admin。fork 交付入口保持停用。
+
+在 main 选择 `operation=package`，默认 Alpha，`destination=auto` 仅保留产物；选择 `github-draft` 必须提供精确 Tag。推送 `candidate/ios/版本-profile.build` 自动解析身份，仅打包到私有 Draft，不自动上传 TF。已有实包在同一工作流选择 `upload|wait|status|metadata|compliance|distribute`，提供原始 `package_run_id`、`manifest_sha256`、精确 `source_attempt`；后续阶段再指定最新成功状态的 `upload_run_id`。`distribute` 必须显式选择内测/外测和现有组，Alpha 外测在准入阶段拒绝。先验证来源和产物，再加载 ASC 凭据。被拒绝或明确未执行的旧作业不会阻塞 Admin；任何可能已开始的变更仍须先读回对账，不能盲目重试。外测 Beta Review 和正式送审均需独立授权，不在自动验收中执行。
 
 `metadata.json` 仅允许 `locales`，每个语言可有 `description` 和 `whatsNew`（非空、最多 4000 字符）。保留反馈联系方式和其他语言。`compliance.json` 必须显式给出布尔型 `usesNonExemptEncryption`、精确 `sourceSha`、`nativeInputsSha256` 及 `authorization`；不推断合规答案，不覆盖冲突的已有答案。
 
