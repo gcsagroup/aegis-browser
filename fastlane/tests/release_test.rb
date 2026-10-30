@@ -48,6 +48,15 @@ class ReleaseFixture < Minitest::Test
 end
 
 class ReleaseTest < ReleaseFixture
+  def test_store_readonly_stages_authorize_before_asc_authentication
+    %i[store status wait].each do |stage|
+      flow = AegisRelease::Pipeline.new(request(destination: 'testflight'), Object.new)
+      flow.define_singleton_method(:authorize_operator!) { raise AegisRelease::Error, 'Admin required' }
+      error = assert_raises(AegisRelease::Error) { flow.public_send(stage) }
+      assert_equal 'Admin required', error.message
+    end
+  end
+
   def test_process_helpers_never_interpret_a_single_command_as_shell
     marker = File.join(@root, 'shell-was-used')
     command = "printf injected > #{marker}"

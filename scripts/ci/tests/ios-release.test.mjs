@@ -8,7 +8,10 @@ const repository = 'gcsagroup/aegis-browser';
 const environment = {GH_TOKEN: 'fixture', GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: repository,
   GITHUB_REPOSITORY_ID: '1348409663', GITHUB_SHA: sha, GITHUB_REF: 'refs/heads/main',
   GITHUB_EVENT_NAME: 'workflow_dispatch', AEGIS_IOS_RELEASE_ENABLED: 'true', RELEASE_DESTINATION: 'artifacts'};
-const load = () => import('../ios-release-preflight.mjs');
+const load = async () => {
+  const {iosReleasePreflight: preflight} = await import('../ios-release-preflight.mjs');
+  return {iosReleasePreflight: (source, options) => preflight(source, {authorize: async () => true, ...options})};
+};
 function apiFixture({moved = false, parent = repository, pending = false} = {}) {
   let reads = 0;
   return async (repo, path) => {
@@ -35,14 +38,19 @@ test('disabled path and wrong repository identity cannot reach quality', async (
     await assert.rejects(iosReleasePreflight(sha, {environment: {...environment, ...changes}, api: apiFixture(), quality: async () => {throw new Error('credential boundary crossed');}}), /enabled|identity|dispatch/u);
   }
 });
-test('fork requires exact opt-in parent/ref and latest terminal validation attempt', async () => {
+test('retired fork cannot regain privileged delivery through old opt-in flags', async () => {
   const {iosReleasePreflight} = await load();
   const fork = {...environment, GITHUB_REPOSITORY: 'quinn521/aegis-browser', GITHUB_REPOSITORY_ID: '1363949860',
     GITHUB_REF: 'refs/heads/codex/ios-release-upstream-20261030', AEGIS_IOS_FORK_REPOSITORY_ID: '1363949860',
     AEGIS_IOS_FORK_REF: 'refs/heads/codex/ios-release-upstream-20261030', AEGIS_IOS_FORK_REHEARSAL: 'true'};
-  assert.equal((await iosReleasePreflight(sha, {environment: fork, api: apiFixture()})).admission, 'fork_rehearsal_only');
-  await assert.rejects(iosReleasePreflight(sha, {environment: fork, api: apiFixture({pending: true})}), /validation/u);
-  await assert.rejects(iosReleasePreflight(sha, {environment: fork, api: apiFixture({parent: 'foreign/repo'})}), /parent|fork/u);
+  await assert.rejects(iosReleasePreflight(sha, {environment: fork, api: apiFixture()}), /canonical|upstream/iu);
+});
+test('operator denial stops source admission before source and quality APIs', async () => {
+  const {iosReleasePreflight} = await load();
+  let sourceReads = 0;
+  await assert.rejects(iosReleasePreflight(sha, {environment, authorize: async () => {throw new Error('Admin required');},
+    api: async () => {sourceReads++; return {};}, quality: async () => {sourceReads++; return true;}}), /Admin required/u);
+  assert.equal(sourceReads, 0);
 });
 test('iOS workflow credentials and permissions stay in their protected stage', () => {
   const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
