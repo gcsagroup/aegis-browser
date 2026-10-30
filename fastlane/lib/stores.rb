@@ -32,8 +32,8 @@ module AegisRelease
   end
 
   class AppleStore
-    def initialize(request, fastlane, api: nil, app_id: nil)
-      @request, @fastlane, @http, @app_id = request, fastlane, api, app_id
+    def initialize(request, fastlane, api: nil, app_id: nil, admission: nil)
+      @request, @fastlane, @http, @app_id, @admission = request, fastlane, api, app_id, admission
     end
 
     def authenticate
@@ -49,11 +49,12 @@ module AegisRelease
       @api_key = @fastlane.app_store_connect_api_key(**key)
       @app = Spaceship::ConnectAPI::App.find(APP_ID)
       AegisRelease.require!(@app && @app.bundle_id == APP_ID, 'ASC application not found for the exact bundle ID')
-      @http ||= AscApi.new(token: Spaceship::ConnectAPI.token)
+      @http ||= AscApi.new(token: Spaceship::ConnectAPI.token, before_mutation: @admission)
     end
 
     def upload(ipa)
       AegisRelease.require!(exact_build.nil? && upload_records.empty?, 'ASC already contains this build or upload; inspect status instead of uploading again')
+      @admission&.call
       @fastlane.upload_to_testflight(api_key: @api_key, app_identifier: APP_ID, ipa: ipa,
                                     skip_submission: true, skip_waiting_for_build_processing: true,
                                     distribute_external: false)
@@ -68,7 +69,9 @@ module AegisRelease
       AegisRelease.require!(version && version.version_string == @request.version, 'Prepare this exact App Store version and its metadata in ASC before submitting')
       AegisRelease.require!(!@app.get_in_progress_review_submission(platform: 'IOS'), 'Another App Review is already in progress')
       # deliver skips release-type changes when skip_metadata is true.
+      @admission&.call
       version.update(attributes: { releaseType: 'MANUAL' }) unless version.release_type == 'MANUAL'
+      @admission&.call
       @fastlane.upload_to_app_store(api_key: @api_key, app_identifier: APP_ID,
                                    app_version: @request.version, build_number: @request.build,
                                    skip_binary_upload: true, skip_metadata: true, skip_screenshots: true,

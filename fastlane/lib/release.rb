@@ -302,7 +302,7 @@ module AegisRelease
       receipt = Receipt.verify(request, expected_digest)
       preflight_upload
       if request.destination == 'github-draft'
-        result = Draft.new(request, receipt, expected_digest).upload
+        result = Draft.new(request, receipt, expected_digest, admission: method(:preflight_upload)).upload
         AegisRelease.write_new(File.join(request.directory, 'github-upload-result.json'), result)
       else
         asset = receipt.fetch('assets').find { |a| a['name'].end_with?('.ipa') }
@@ -323,15 +323,13 @@ module AegisRelease
     def preflight_upload
       AegisRelease.require!(request.destination != 'artifacts', 'Choose an upload destination')
       sha = AegisRelease.source(request.root).fetch('sha')
-      if ENV['GITHUB_ACTIONS'] == 'true' || (request.destination == 'github-draft' && request.repository == REPOSITORY)
-        run('node', File.join(request.root, 'scripts/ci/ios-release-preflight.mjs'), '--sha', sha,
+      run('node', File.join(request.root, 'scripts/ci/ios-release-preflight.mjs'), '--sha', sha,
             env: { 'RELEASE_DESTINATION' => request.destination, 'RELEASE_TAG' => request.tag })
-      end
     end
 
     def store
       AegisRelease.require!(!%w[artifacts github-draft].include?(request.destination), 'Choose an Apple store destination')
-      AppleStore.new(request, @fastlane)
+      AppleStore.new(request, @fastlane, admission: method(:preflight_upload))
     end
 
     def status
@@ -407,8 +405,8 @@ module AegisRelease
   end
 
   class Draft
-    def initialize(request, receipt, expected_digest, environment: ENV)
-      @request, @receipt, @expected_digest, @environment = request, receipt, expected_digest, environment
+    def initialize(request, receipt, expected_digest, environment: ENV, admission: nil)
+      @request, @receipt, @expected_digest, @environment, @admission = request, receipt, expected_digest, environment, admission
     end
 
     def gh(*args)
@@ -459,7 +457,21 @@ module AegisRelease
         AegisRelease.require!(asset['state'] == 'uploaded' && asset['size'] == local['size'] && asset['digest'] == "sha256:#{local['sha256']}", "Existing draft asset differs: #{asset['name']}; never overwrite")
       end
       AegisRelease.require!(!complete || names.sort == expected.keys.sort, 'Draft is missing assets')
+      if complete
+        remote.each do |asset|
+          bytes = fetch_asset_bytes(asset)
+          local = expected.fetch(asset.fetch('name'))
+          AegisRelease.require!(bytes.bytesize == local['size'] && Digest::SHA256.hexdigest(bytes) == local['sha256'], 'Downloaded Draft asset bytes differ from manifest')
+        end
+      end
       names
+    end
+
+    def fetch_asset_bytes(asset)
+      bytes, _error, status = Open3.capture3('gh', 'api', "repos/#{@request.repository}/releases/assets/#{Integer(asset.fetch('id'))}",
+                                            '--header', 'Accept: application/octet-stream', binmode: true)
+      AegisRelease.require!(status.success?, 'Draft asset download failed; no completed acceptance receipt')
+      bytes
     end
 
     def upload
@@ -498,6 +510,7 @@ module AegisRelease
         end
         release = journal.perform('github-draft-create', parameters) do
           AegisRelease.require!(api("commits/#{tag}")['sha'] == sha, 'Candidate tag changed before draft creation')
+          @admission&.call
           validate_release(JSON.parse(gh('api', "repos/#{@request.repository}/releases", '--method', 'POST', '--input', input)))
         end
       end
@@ -508,6 +521,7 @@ module AegisRelease
         AegisRelease.require!(asset['size'] < 2 * 1024**3, 'GitHub asset must be smaller than 2 GiB')
         Receipt.verify(@request, @expected_digest)
         refresh(release) # Check the known ID before sending the next asset.
+        @admission&.call
         gh('release', 'upload', @request.tag, File.join(@request.directory, asset['name']), '--repo', @request.repository)
       end
       release = refresh(release)

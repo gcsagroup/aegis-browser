@@ -164,6 +164,9 @@ class ReleaseTest < ReleaseFixture
       return remote if /\Areleases\/\d+\z/.match?(path)
       assets
     end
+    def fetch_asset_bytes(asset)
+      File.binread(File.join(@request.directory, asset.fetch('name')))
+    end
     def releases
       on_read&.call
       remote && !hide_from_list ? [remote] : []
@@ -188,6 +191,19 @@ class ReleaseTest < ReleaseFixture
     req, sha = package('ios', destination: 'github-draft', tag: 'candidate/ios/3.2-release.69')
     receipt = AegisRelease::Receipt.verify(req, sha)
     FakeDraft.new(req, receipt, sha)
+  end
+
+  def test_draft_downloaded_bytes_must_match_even_when_server_digest_matches
+    publisher = draft
+    publisher.define_singleton_method(:fetch_asset_bytes) { |_asset| 'substituted bytes' }
+    assert_raises(AegisRelease::Error) { publisher.upload }
+  end
+
+  def test_admission_is_checked_at_each_draft_mutation
+    publisher = draft
+    publisher.instance_variable_set(:@admission, -> { raise AegisRelease::Error, 'Main advanced' })
+    assert_raises(AegisRelease::Error) { publisher.upload }
+    assert_empty publisher.mutations
   end
 
   def test_draft_creation_upload_readback_and_idempotent_retry

@@ -8,8 +8,8 @@ module AegisRelease
   class AscApi
     ORIGIN = 'https://api.appstoreconnect.apple.com'
 
-    def initialize(token:, transport: nil)
-      @token = token
+    def initialize(token:, transport: nil, before_mutation: nil)
+      @token, @before_mutation = token, before_mutation
       @transport = transport || lambda do |uri, request|
         Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 30, read_timeout: 90,
                         max_retries: 0) do |http|
@@ -35,6 +35,7 @@ module AegisRelease
       request['Authorization'] = "Bearer #{@token.text}"
       request['Content-Type'] = request['Accept'] = 'application/json'
       request.body = JSON.generate(body) if body
+      @before_mutation&.call unless method == :get
       result = @transport.call(uri, request)
       status = result.fetch(:status).to_i
       AegisRelease.require!((200..299).cover?(status), "ASC #{method.to_s.upcase} failed (HTTP #{status}); inspect store state before retrying")

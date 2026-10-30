@@ -1,5 +1,7 @@
 # 文件
 
+- [iOS 封裝、TestFlight 與上游遷移](development/ios-release.zh-TW.md)
+
 - [iOS WebKit 指紋、深層保護、釣魚與挖礦偵測實施方案（簡體中文）](plans/ios-webkit-protection-2026-10-11.zh-CN.md)
 - [iOS Ver 4.0 可移植功能：功能使用說明](ios-portable-features.zh-TW.md)
 - [四端功能對照](platform-features.zh-TW.md)
