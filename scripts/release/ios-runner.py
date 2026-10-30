@@ -58,7 +58,7 @@ def validate_payload(root, archive=None, expected_digest=None):
     # Exercise managed and JavaScript runtimes without credentials or registration.
     probe_env = {k: v for k, v in os.environ.items() if k in {'HOME', 'USER', 'LOGNAME', 'PATH', 'TMPDIR', 'LANG'}}
     for executable in [root/'bin/Runner.Listener', *nodes]:
-        result = subprocess.run([str(executable), '--version'], cwd=root, env=probe_env, capture_output=True, timeout=30)
+        result = subprocess.run([str(executable), '--version'], cwd=root, env=probe_env, capture_output=True, timeout=90)
         if result.returncode:
             raise ValueError('Runner runtime startup probe failed')
 

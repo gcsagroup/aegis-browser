@@ -34,6 +34,26 @@ class IosActionTests(unittest.TestCase):
             (root/'ios-metadata-result.json').write_text('{}')
             action.validate_mutation_attempt('metadata', 2, root)
 
+    def test_tag_package_keeps_draft_destination_tag_and_repository_at_cli_boundary(self):
+        env = {'RELEASE_PROFILE': 'release', 'RELEASE_VERSION': '1.0.0', 'RELEASE_BUILD': '14',
+               'RELEASE_RUN_ID': 'ios-gh-14-1', 'RELEASE_DESTINATION': 'github-draft',
+               'RELEASE_TAG': 'candidate/ios/1.0.0-release.14', 'GITHUB_REPOSITORY': 'owner/repo'}
+        calls = []
+        class StopAfterInvocation(Exception):
+            pass
+        def boundary(*args, **kwargs):
+            calls.append(list(map(str, args)))
+            raise StopAfterInvocation
+        with patch.dict(os.environ, env), patch.object(action, 'run', boundary):
+            with self.assertRaises(StopAfterInvocation):
+                action.package()
+        command = calls[0]
+        self.assertEqual(command[1:3], ['ios', 'package'])
+        self.assertEqual(command[command.index('--destination')+1], 'github-draft')
+        self.assertEqual(command[command.index('--tag')+1], env['RELEASE_TAG'])
+        self.assertEqual(command[command.index('--repository')+1], 'owner/repo')
+        self.assertNotIn('upload', command)
+
 
 if __name__ == '__main__':
     unittest.main()

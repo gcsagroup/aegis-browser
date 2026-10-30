@@ -62,7 +62,10 @@ def export():
 
 
 def package():
-    run(ROOT/'release', 'ios', 'package', *identity())
+    args = identity()+['--destination', os.environ.get('RELEASE_DESTINATION', 'artifacts')]
+    if os.environ.get('RELEASE_DESTINATION') == 'github-draft':
+        args += ['--tag', os.environ['RELEASE_TAG'], '--repository', os.environ['GITHUB_REPOSITORY']]
+    run(ROOT/'release', 'ios', 'package', *args)
     sha, tree = source()
     origin = dict(repository=os.environ['GITHUB_REPOSITORY'], runId=int(os.environ['GITHUB_RUN_ID']),
                   attempt=int(os.environ['GITHUB_RUN_ATTEMPT']), sourceSha=sha, sourceTree=tree,
