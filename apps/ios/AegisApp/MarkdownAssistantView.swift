@@ -17,6 +17,11 @@ struct MarkdownAssistantView: View {
   @State private var destination: ModelConfiguration?
   @State private var pendingInput = ""
   @State private var pendingGoal = ""
+  private var modelConsentMessage: String {
+    let endpoint = destination?.endpoint ?? ""
+    let model = destination?.model ?? ""
+    return "\(endpoint)\n\(model)\n发送已预览文本，不发送本地文件路径。"
+  }
   var body: some View {
     NavigationStack {
       Form {
@@ -59,9 +64,7 @@ struct MarkdownAssistantView: View {
         Button("发送") { generate() }
         Button("取消", role: .cancel) {}
       } message: {
-        Text(
-          (destination?.endpoint ?? "") + "\n" + (destination?.model ?? "") + "\n"
-            + "发送已预览文本，不发送本地文件路径。")
+        Text(modelConsentMessage)
       }
     }
   }
