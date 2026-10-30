@@ -114,7 +114,11 @@ module AegisRelease
       @http.post('betaAppReviewSubmissions', 'data' => { 'type' => 'betaAppReviewSubmissions',
                  'relationships' => { 'build' => { 'data' => { 'type' => 'builds', 'id' => item.fetch('id') } } } }) if external
       @http.post("builds/#{item.fetch('id')}/relationships/betaGroups", 'data' => selected.map { |g| { 'type' => 'betaGroups', 'id' => g.fetch('id') } })
-      assigned = @http.collection("builds/#{item.fetch('id')}/betaGroups").fetch('data').map { |g| g.fetch('id') }
+      # Apple permits CREATE/DELETE on this relationship, but rejects GET_RELATED.
+      # Read the exact train/build again with its included betaGroups linkage.
+      observed = processed_build
+      AegisRelease.require!(observed.fetch('id') == item.fetch('id'), 'Build identity changed during assignment')
+      assigned = (observed.dig('relationships', 'betaGroups', 'data') || []).map { |g| g.fetch('id') }
       AegisRelease.require!((selected.map { |g| g.fetch('id') } - assigned).empty?, 'Group assignment is unconfirmed; reconcile before retry')
       testers = selected.map do |g|
         rows = @http.collection("betaGroups/#{g.fetch('id')}/betaTesters").fetch('data')

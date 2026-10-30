@@ -152,4 +152,30 @@ class IosLifecycleTest < ReleaseFixture
     assert_equal 'not_verified', result.fetch('deviceAcceptance')
   end
 
+  def test_successful_internal_assignment_uses_supported_build_relationship_readback
+    doc = raw_build(audience: 'INTERNAL_ONLY')
+    selected = { 'id' => 'internal', 'attributes' => { 'name' => 'early', 'isInternalGroup' => true } }
+    api = Api.new do |path, _|
+      raise AegisRelease::Error, '403: betaGroups does not allow GET_RELATED' if path == 'builds/exact-build/betaGroups'
+      if path == 'builds'
+        doc
+      elsif path.end_with?('/betaTesters')
+        { 'data' => [{ 'id' => 'one', 'attributes' => { 'state' => 'INSTALLED' } }] }
+      else
+        { 'data' => [] }
+      end
+    end
+    api.define_singleton_method(:post) do |path, body|
+      @calls << [:post, path, body]
+      doc['data'].first['relationships']['betaGroups'] = { 'data' => body.fetch('data') }
+      doc['included'] << selected.merge('type' => 'betaGroups')
+      {}
+    end
+    result = client(api, profile: 'alpha', destination: 'testflight-internal', groups: 'early').distribute([selected])
+    assert_equal 'testflight_groups_assigned', result.fetch('status')
+    assert_equal({ 'INSTALLED' => 1 }, result.fetch('groups').first.fetch('testerStates'))
+    assert_equal 1, api.calls.count { |call| call.first == :post }
+    refute api.calls.any? { |call| call[1] == 'builds/exact-build/betaGroups' }
+  end
+
 end
