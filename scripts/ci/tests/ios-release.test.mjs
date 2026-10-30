@@ -96,6 +96,32 @@ test('every protected delivery route depends on Admin admission and normalized o
   }
 });
 
+test('simple delivery form retains explicit stages and issues receipts only on success', () => {
+  const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const inputs = workflow.on.workflow_dispatch.inputs;
+  assert.deepEqual(Object.keys(inputs), ['operation', 'product', 'target', 'advanced']);
+  assert.equal(inputs.operation.default, '仅打包 / Package');
+  assert.equal(inputs.product.default, '自动 / Auto');
+  assert.deepEqual(inputs.operation.options, ['仅打包 / Package', '上传 TestFlight / Upload', '查询状态 / Status', '完整模式 / Full']);
+  assert(!inputs.operation.options.includes('submit'));
+  assert.equal(inputs.target.required, false);
+  assert.equal(inputs.advanced.default, '{}');
+  assert(workflow['run-name'].includes('fromJSON(inputs.advanced'), 'full mode keeps the selected stage visible to replay inventory');
+  for (const input of Object.values(inputs)) assert(input.description.includes(' / '), 'each field has bilingual guidance');
+  for (const id of ['ios-package', 'store']) {
+    const steps = workflow.jobs[id].steps;
+    const emit = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py receipt');
+    assert(emit > 0);
+    assert.equal(steps[emit].if, undefined, 'receipt uses default success condition');
+    if (id === 'store') {
+      const execute = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py stage');
+      const preserve = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py export');
+      assert(execute < preserve && preserve < emit);
+      assert.equal(steps[preserve].if, '${{ always() }}');
+    }
+  }
+});
+
 test('candidate admission bounds version components and rejects trailing data before tag lookup', async () => {
   const {iosReleasePreflight} = await load();
   const run = async tag => iosReleasePreflight(sha, {environment: {...environment, RELEASE_DESTINATION: 'github-draft', RELEASE_TAG: tag}, api: apiFixture(), quality: async () => true});
