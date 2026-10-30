@@ -49,10 +49,10 @@ end
 
 class ReleaseTest < ReleaseFixture
   def test_store_readonly_stages_authorize_before_asc_authentication
-    %i[store status wait].each do |stage|
+    [->(flow) { flow.store }, ->(flow) { flow.status }, ->(flow) { flow.wait }].each do |operation|
       flow = AegisRelease::Pipeline.new(request(destination: 'testflight'), Object.new)
       flow.define_singleton_method(:authorize_operator!) { raise AegisRelease::Error, 'Admin required' }
-      error = assert_raises(AegisRelease::Error) { flow.public_send(stage) }
+      error = assert_raises(AegisRelease::Error) { operation.call(flow) }
       assert_equal 'Admin required', error.message
     end
   end

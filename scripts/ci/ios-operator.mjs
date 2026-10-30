@@ -1,10 +1,11 @@
 import {pathToFileURL} from 'node:url';
-import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
 import {isDeepStrictEqual} from 'node:util';
 
 const UPSTREAM = 'gcsagroup/aegis-browser';
 const UPSTREAM_ID = '1348409663';
-const WORKFLOWS = {delivery: '.github/workflows/ios-delivery.yml', validation: '.github/workflows/ios-release-validation.yml', coverage: '.github/workflows/ios-coverage.yml'};
+const WORKFLOWS = new Map([['delivery', '.github/workflows/ios-delivery.yml'], ['validation', '.github/workflows/ios-release-validation.yml'], ['coverage', '.github/workflows/ios-coverage.yml']]);
+const requirePolicy = createRequire(import.meta.url);
 class OperatorError extends Error {}
 function requireValue(value, message) { if (!value) throw new OperatorError(message); }
 function validUser(user) {
@@ -29,32 +30,40 @@ const repositoryApi = (repository, path, {token}) => readGithub('/repos/'+reposi
 const authenticatedUserApi = token => readGithub('/user', token);
 
 async function administratorInventory(repository, token, api) {
-  const users = [];
-  const ids = new Set();
-  for (let page = 1; page <= 20; page++) {
-    const batch = await api(repository, `/collaborators?affiliation=all&permission=admin&per_page=100&page=${page}`, {token});
-    requireValue(Array.isArray(batch) && batch.length <= 100, 'Invalid Admin permissions inventory');
-    for (const user of batch) {
-      requireValue(validUser(user) && user.permissions?.admin === true && !ids.has(user.id), 'Invalid or duplicate Admin permissions inventory');
-      ids.add(user.id); users.push(user);
+  try {
+    const users = [];
+    const ids = new Set();
+    for (let page = 1; page <= 20; page++) {
+      const batch = await api(repository, `/collaborators?affiliation=all&permission=admin&per_page=100&page=${page}`, {token});
+      requireValue(Array.isArray(batch) && batch.length <= 100, 'Invalid Admin permissions inventory');
+      for (const user of batch) {
+        requireValue(validUser(user) && user.permissions?.admin === true && !ids.has(user.id), 'Invalid or duplicate Admin permissions inventory');
+        ids.add(user.id); users.push(user);
+      }
+      if (batch.length < 100) return users;
     }
-    if (batch.length < 100) return users;
+    throw new OperatorError('Incomplete Admin permissions inventory pagination');
+  } catch (error) {
+    if (error instanceof OperatorError) throw error;
+    throw new OperatorError('Unable to read complete Admin permissions inventory');
   }
-  throw new OperatorError('Incomplete Admin permissions inventory pagination');
 }
 export async function verifyAdminMetadataCapability({repository, token, api = repositoryApi}) {
   try {
     requireValue(token, 'Token required for Admin metadata verification');
     const users = await administratorInventory(repositoryName(repository), token, api);
     return {supported: true, administratorCount: users.length};
-  } catch { throw new OperatorError('Unable to verify complete Admin permissions metadata'); }
+  } catch (error) {
+    if (error instanceof OperatorError) throw error;
+    throw new OperatorError('Unable to verify complete Admin permissions metadata');
+  }
 }
 
 export async function verifyCandidateTagPolicy({environment = process.env, api = repositoryApi} = {}) {
   const repository = environment.GITHUB_REPOSITORY || UPSTREAM;
   const token = environment.GH_TOKEN || environment.GITHUB_TOKEN;
   requireValue(repository === UPSTREAM && token, 'Canonical candidate tag policy verification requires a token');
-  const desired = JSON.parse(readFileSync(new URL('../../.github/ios-candidate-admin-ruleset.json', import.meta.url), 'utf8'));
+  const desired = requirePolicy('../../.github/ios-candidate-admin-ruleset.json');
   const matches = [];
   let complete = false;
   for (let page = 1; page <= 20; page++) {
@@ -76,7 +85,7 @@ export async function requireIosAdministrator({environment = process.env, api = 
   try {
     const repository = repositoryName(environment.GITHUB_REPOSITORY || UPSTREAM);
     const token = environment.GH_TOKEN || environment.GITHUB_TOKEN;
-    requireValue(token && Object.hasOwn(WORKFLOWS, context), 'Token and known operator context required for Admin verification');
+    requireValue(token && WORKFLOWS.has(context), 'Token and known operator context required for Admin verification');
     if (context === 'delivery') requireValue(repository === UPSTREAM, 'Privileged iOS delivery repository must be canonical upstream');
     const metadata = await api(repository, '', {token});
     requireValue(metadata?.full_name === repository && Number.isSafeInteger(metadata.id) && metadata.id > 0, 'Repository identity could not be verified');
@@ -95,7 +104,7 @@ export async function requireIosAdministrator({environment = process.env, api = 
     const run = await api(repository, `/actions/runs/${id}`, {token});
     requireValue(run?.id === id && run.run_attempt === attempt && run.head_sha === environment.GITHUB_SHA, 'Actions run/source/attempt identity changed');
     requireValue(run.repository?.full_name === repository && run.repository?.id === metadata.id && run.head_repository?.full_name === repository, 'Actions repository context changed');
-    requireValue(run.path === WORKFLOWS[context], 'Actions workflow context changed');
+    requireValue(run.path === WORKFLOWS.get(context), 'Actions workflow context changed');
     requireValue(run.event === environment.GITHUB_EVENT_NAME && (run.event === 'workflow_dispatch' ||
       (context === 'delivery' && run.event === 'push' && environment.GITHUB_REF?.startsWith('refs/tags/candidate/ios/'))), 'Unauthorized operator event context');
     const ref = run.event === 'push' ? 'refs/tags/' : 'refs/heads/';
