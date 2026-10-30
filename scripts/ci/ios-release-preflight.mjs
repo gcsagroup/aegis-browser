@@ -4,6 +4,19 @@ import {requireGreenQuality} from './promotion-quality.mjs';
 
 export const IOS_REPOSITORY = 'gcsagroup/aegis-browser';
 export const IOS_REPOSITORY_ID = '1348409663';
+
+function exactCandidateTag(tag) {
+  if (typeof tag !== 'string' || tag.length > 100) return false;
+  const parts = tag.split('/');
+  if (parts.length !== 3 || parts[0] !== 'candidate' || parts[1] !== 'ios') return false;
+  const identity = parts[2].split('-');
+  if (identity.length !== 2) return false;
+  const version = identity[0].split('.');
+  const audience = identity[1].split('.');
+  const decimal = value => value.length >= 1 && value.length <= 10 && !/[^0-9]/u.test(value);
+  return [2, 3].includes(version.length) && version.every(decimal) && audience.length === 2 &&
+    ['alpha', 'beta', 'release'].includes(audience[0]) && decimal(audience[1]) && audience[1][0] !== '0';
+}
 export async function iosReleasePreflight(sha, {environment = process.env, api = githubApi, quality = requireGreenQuality} = {}) {
   if (!/^[0-9a-f]{40}$/u.test(sha ?? '')) throw new Error('Full source SHA required');
   const token = environment.GH_TOKEN || environment.GITHUB_TOKEN;
@@ -18,8 +31,7 @@ export async function iosReleasePreflight(sha, {environment = process.env, api =
   const assertTag = async () => {
     if (environment.RELEASE_DESTINATION !== 'github-draft') return;
     const tag = environment.RELEASE_TAG;
-    const match = /^candidate\/ios\/[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?-(?:alpha|beta|release)\.[1-9][0-9]{0,9}$/u.exec(tag ?? '');
-    if (!match || match[0] !== tag) throw new Error('Exact iOS candidate tag required');
+    if (!exactCandidateTag(tag)) throw new Error('Exact iOS candidate tag required');
     const tagged = await api(repository, `/commits/${encodeURIComponent(tag)}`, {token});
     if (tagged?.sha !== sha) throw new Error('Candidate tag changed or points to another source');
   };

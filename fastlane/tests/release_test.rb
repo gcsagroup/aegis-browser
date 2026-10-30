@@ -164,34 +164,13 @@ class ReleaseTest < ReleaseFixture
     refute File.exist?(req.manifest_path)
   end
 
-  class FakeDraft < AegisRelease::Draft
+  module DraftStub
     attr_reader :mutations
-    attr_reader :remote, :tag_sha, :assets, :corrupt_upload, :on_read, :hide_from_list, :fail_after_create
-    def remote=(value)
-      @remote = value
-    end
-    def tag_sha=(value)
-      @tag_sha = value
-    end
-    def assets=(value)
-      @assets = value
-    end
-    def corrupt_upload=(value)
-      @corrupt_upload = value
-    end
-    def on_read=(value)
-      @on_read = value
-    end
-    def hide_from_list=(value)
-      @hide_from_list = value
-    end
-    def fail_after_create=(value)
-      @fail_after_create = value
-    end
-    def initialize(*args)
-      super(*args, environment: {})
+    attr_accessor :remote, :tag_sha, :assets, :corrupt_upload, :on_read, :hide_from_list, :fail_after_create
+    def configure_fixture
       @tag_sha = @receipt['source']['sha']
       @mutations, @assets = [], []
+      self
     end
     def api(path)
       on_read&.call
@@ -225,7 +204,7 @@ class ReleaseTest < ReleaseFixture
   def draft
     req, sha = package('ios', destination: 'github-draft', tag: 'candidate/ios/3.2-release.69')
     receipt = AegisRelease::Receipt.verify(req, sha)
-    FakeDraft.new(req, receipt, sha)
+    AegisRelease::Draft.new(req, receipt, sha, environment: {}).extend(DraftStub).configure_fixture
   end
 
   def test_draft_downloaded_bytes_must_match_even_when_server_digest_matches
@@ -347,10 +326,7 @@ class ReleaseTest < ReleaseFixture
 
   class FakeApple
     attr_reader :uploads
-    attr_reader :fail_upload
-    def fail_upload=(value)
-      @fail_upload = value
-    end
+    attr_accessor :fail_upload
     def initialize
       @uploads = []
     end
@@ -363,13 +339,17 @@ class ReleaseTest < ReleaseFixture
     end
   end
 
-  class FixturePipeline < AegisRelease::Pipeline
+  module PipelineStub
     def admit_source!
       true # Unit builder boundary; public package admission has a separate negative test.
     end
     def run(*_args, **_options)
       true # The separately executed Python suite tests actual IPA parsing.
     end
+  end
+
+  def fixture_pipeline(req, fastlane)
+    AegisRelease::Pipeline.new(req, fastlane).extend(PipelineStub)
   end
 
   def test_ios_alpha_export_is_internal_only_even_for_package_and_draft
@@ -390,7 +370,7 @@ class ReleaseTest < ReleaseFixture
       ENV['AEGIS_IOS_CERT_SHA1'] = 'A' * 40
       ENV['AEGIS_IOS_PROFILES'] = AegisRelease::IOS_TARGETS.values.to_h { |id| [id, 'fixture'] }.to_json
       FileUtils.mkdir_p(req.directory)
-      _paths, details = FixturePipeline.new(req, builder).package_ios
+      _paths, details = fixture_pipeline(req, builder).package_ios
       assert_equal profile == 'alpha', details.fetch('testFlightInternalTestingOnly')
       assert_equal 'ABCDEFGHIJ', details['appleTeamId']
       assert_equal 'A' * 40, details['certificateSha1']
@@ -425,7 +405,7 @@ class ReleaseTest < ReleaseFixture
     ENV['AEGIS_APPLE_TEAM_ID'] = 'ABCDEFGHIJ'
       ENV['AEGIS_IOS_CERT_SHA1'] = 'A' * 40
     ENV['AEGIS_IOS_PROFILES'] = AegisRelease::IOS_TARGETS.values.to_h { |id| [id, 'fixture'] }.to_json
-    FixturePipeline.new(req, builder).package_ios
+    fixture_pipeline(req, builder).package_ios
   ensure
     previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
   end
@@ -442,7 +422,7 @@ class ReleaseTest < ReleaseFixture
   def test_testflight_success_does_not_claim_processing_or_external_distribution
     req, sha = package('ios', destination: 'testflight')
     apple = FakeApple.new
-    flow = FixturePipeline.new(req, apple)
+    flow = fixture_pipeline(req, apple)
     store = AegisRelease::AppleStore.new(req, apple)
     store.instance_variable_set(:@app, Struct.new(:id).new('fixture'))
     store.define_singleton_method(:authenticate) { true }
@@ -461,7 +441,7 @@ class ReleaseTest < ReleaseFixture
 
   def test_invalid_ipa_cannot_load_asc_credentials
     req, sha = package('ios', destination: 'testflight')
-    flow = FixturePipeline.new(req, FakeApple.new)
+    flow = fixture_pipeline(req, FakeApple.new)
     authenticated = false
     store = Object.new
     store.define_singleton_method(:authenticate) { authenticated = true }
@@ -475,7 +455,7 @@ class ReleaseTest < ReleaseFixture
     req, sha = package('ios', destination: 'testflight')
     apple = FakeApple.new
     apple.fail_upload = true
-    flow = FixturePipeline.new(req, apple)
+    flow = fixture_pipeline(req, apple)
     store = AegisRelease::AppleStore.new(req, apple)
     store.instance_variable_set(:@app, Struct.new(:id).new('fixture'))
     store.define_singleton_method(:authenticate) { true }
