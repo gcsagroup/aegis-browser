@@ -15,7 +15,7 @@ run_id, attempt = int(os.environ['GITHUB_RUN_ID']), int(os.environ['GITHUB_RUN_A
 kind = os.environ['IMPORT_KIND']
 producer = 'ios-package' if kind == 'draft' else 'import'
 run = action.api(f'actions/runs/{run_id}')
-allowed = {'.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'} if kind == 'draft' else {'.github/workflows/ios-testflight.yml'}
+allowed = action.transport.PACKAGE_WORKFLOWS if kind == 'draft' else {'.github/workflows/ios-delivery.yml', '.github/workflows/ios-testflight.yml'}
 if run['head_sha'] != sha or run['run_attempt'] != attempt or run['repository']['full_name'] != os.environ['GITHUB_REPOSITORY'] or run['path'] not in allowed:
     raise ValueError('Current artifact producer source/workflow changed')
 jobs = action.api(f'actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100')
@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory(prefix='ios-restore-') as tmp:
     else:
         original = action.api(f'actions/runs/{expected}')
         action.transport.verify_run(original, os.environ['GITHUB_REPOSITORY'], sha, expected, int(origin['attempt']))
-        if original['path'] not in {'.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'}:
+        if original['path'] not in action.transport.PACKAGE_WORKFLOWS:
             raise ValueError('Wrong original package workflow')
         if origin['runIdLocal'] != os.environ['RELEASE_RUN_ID']:
             raise ValueError('Validated package run identity changed')

@@ -337,7 +337,12 @@ module AegisRelease
 
     def store
       AegisRelease.require!(!%w[artifacts github-draft].include?(request.destination), 'Choose an Apple store destination')
+      authorize_operator!
       AppleStore.new(request, @fastlane, admission: method(:preflight_upload))
+    end
+
+    def authorize_operator!
+      run('node', File.join(request.root, 'scripts/ci/ios-operator.mjs'), '--context', 'delivery')
     end
 
     def status

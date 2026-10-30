@@ -28,6 +28,13 @@ class ArtifactTransportTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 m.verify_run(dict(self.run_record(), **changes), 'owner/repo', 'a'*40, 12, 2)
 
+    def test_unified_delivery_keeps_exact_successful_producer_contract(self):
+        m = self.module()
+        row = dict(self.run_record(), path='.github/workflows/ios-delivery.yml')
+        m.verify_run(row, 'owner/repo', 'a'*40, 12, 2)
+        with self.assertRaises(ValueError):
+            m.verify_run(dict(row, run_attempt=3), 'owner/repo', 'a'*40, 12, 2)
+
     def test_hostile_zip_is_rejected_before_any_destination_file_exists(self):
         m = self.module()
         for name in ['../escape', '/absolute', 'work/secret.p8', 'app.ipa/child']:
