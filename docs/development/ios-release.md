@@ -42,20 +42,20 @@ Status distinguishes build absence/processing/failure/VALID, buildUploads errors
 
 `iOS Delivery` is the single packaging and TestFlight workflow. `iOS Release Validation` keeps automatic uncredentialed PR/main checks and unsigned native archives; `iOS Coverage` keeps simulator coverage. All manual iOS workflows require a current effective repository **Admin** grant, including organization-owner grants. Maintain/Write/Read/custom role titles do not qualify. GitHub may still show the Run workflow button to Write users: the uncredentialed admission gate rejects them before protected jobs are scheduled. Both the original actor and the actual rerunner must be Admins; API failures or incomplete role inventories deny access. CI uses the paginated filtered Admin collaborator API with the existing installation token, not a PAT or username allowlist. Local stages resolve the actual authenticated token user; set an authorized `GH_TOKEN`/`GITHUB_TOKEN` in the private process environment. `plan` remains uncredentialed.
 
-The dispatch form has seven inputs. For a new package, enter only `version` and an unused `build`; `operation=package` and `profile=auto` produce Alpha artifacts. Choose Beta/Release explicitly when packaging them. For an existing package, select the operation and paste the complete **delivery receipt** from the last successful run summary into `source`. Leave profile at `auto` and version/build empty: the receipt retains their immutable values. An explicit conflicting identity is rejected.
+The dispatch form has six inputs, with Chinese/English labels. For a new package, enter only `version`, for example `1.0.0(33)`; the number in parentheses is a new, unused build. The default **仅打包 / Package** operation and **自动 / Auto** product produce Alpha artifacts. Select the Beta/Release target product explicitly when packaging them. For an existing package select the operation and paste the complete **delivery receipt** from the last successful run summary into `source`; keep Product on Auto and Version empty. An explicit conflicting identity is rejected. Local CLI commands retain their existing interface.
 
 | Input | When to fill it |
 | --- | --- |
-| `operation` | `package` (default), `draft`, `upload`, `wait`, `status`, `metadata`, `compliance`, `distribute-internal`, `distribute-external` |
-| `profile` | New package audience; `auto` means Alpha for packaging, or the receipt's original audience for later stages |
-| `version`, `build` | Required only for package/draft; use a new unused build number |
-| `source` | Required for upload and subsequent stages; copy the whole receipt, keep its original copy independently |
-| `groups` | Existing comma-separated group names for distribution only |
-| `stage_input` | Reviewed JSON for metadata/compliance only |
+| Operation | Package, private Draft, TF Upload, Wait, Status, Metadata, Compliance, internal/external Distribution; every option shows both languages |
+| Product | Alpha (internal only), Beta (internal/external), Release (universal); Auto means Alpha for packaging or the source receipt's audience |
+| Version(build) | Package/draft only, e.g. `1.0.0(33)`; the build number must be unused |
+| Source | Upload and subsequent stages; copy the whole receipt and retain its original copy independently |
+| Groups | Existing comma-separated group names for distribution only |
+| Metadata or compliance JSON | Reviewed JSON for the corresponding operation only |
 
 `package` retains artifacts and never uploads. `upload` uploads the existing IPA to TF without distribution/review. `wait` waits for processing; `status` reads current state. `metadata` changes the supplied Beta description/testing notes; `compliance` applies an explicitly authorized answer. The two distribution choices select their destination directly; Alpha external testing fails in admission. Every successful package/store run emits an updated receipt in Summary. Wait for the whole run to succeed, then use its receipt for the next step; failed or uncertain mutations require reconciliation, not an older receipt or another upload.
 
-A receipt is a bounded, versioned identity pin containing profile/version/build, original package run, latest state run, exact attempt and original manifest SHA256. It grants no permission and does not replace any source, producer, journal or integrity verification. Separate run/attempt/digest/destination/tag fields have been removed from the form. A changed or stale receipt fails the existing import checks before ASC credentials are loaded.
+A receipt is a bounded, versioned identity pin containing profile/version/build, original package run, latest state run, exact attempt and original manifest SHA256. It grants no permission and does not replace any source, producer, journal or integrity verification. Separate build/run/attempt/digest/destination/tag fields have been removed from the form. A changed or stale receipt fails the existing import checks before ASC credentials are loaded.
 
 Push `candidate/ios/VERSION-PROFILE.BUILD` to derive its immutable identity and package a private Draft; it never uploads to TF. Manual `draft` derives the same exact existing tag from profile/version/build and checks its source; prefer the tag trigger for normal Draft packaging. Signing uses protected `aegis-ios-signing` on an owned ephemeral macOS ARM64 runner. Draft writes use `aegis-ios-draft` with `contents:write`, always draft/prerelease, and actual download/hash verification. Each successful store run publishes an immutable `ios-delivery-RUN-ATTEMPT` artifact; the receipt selects this state without rebuilding or uploading again to edit metadata or distribute.
 

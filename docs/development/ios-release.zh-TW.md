@@ -15,7 +15,7 @@ Alpha 固定僅供內部測試，原生匯出開啟 `testFlightInternalTestingOn
 
 Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Release Validation** 自動無憑證驗證與 **iOS Coverage** 模擬器覆蓋率。手動執行三個 iOS 工作流程均要求實際倉庫 Admin 權限（包含組織所有者授予的 Admin），原發起者和重跑者都必須通過驗證。Maintain/Write/Read 和權限未知均在受保護作業排隊前拒絕；GitHub 原生介面仍可能向 Write 顯示執行按鈕。本地流程驗證真實 token 使用者，runner 在簽章探測前驗證真實 CLI Admin。fork 交付入口維持停用。
 
-表單精簡為 7 項：`operation`、`profile`、`version`、`build`、`source`、`groups`、`stage_input`。新封裝通常只填版本與未使用的 build，預設產生 Alpha 產物；Beta/Release 明確選擇。後續操作選擇 operation，將上次成功執行 Summary 的整行**交付憑據**貼入 `source`；profile 保持 `auto`、版本與 build 留空，便會沿用原產物身分。
+表單精簡為 **6 項**，欄位與操作選項中英文並列：操作 / Operation、目標產物 / Product、版本(建置號) / Version(build)、來源 / Source、測試組 / Groups、描述或合規 JSON。新封裝只需填例如 `1.0.0(33)`，括號為未使用的 build，預設產生 Alpha。目標產物可明確選 Alpha（僅內測）、Beta（內外測）、Release（通用）。後續操作選擇操作並貼入上次成功執行 Summary 的整行**交付憑據**；Product 保持 Auto、版本留空，便會沿用原產物身分。本地 CLI 使用原有介面。
 
 `package` 只封裝；`draft` 封裝至私有 Draft，依版本／包型／build 推導並核對精確已有 Tag；`upload` 上傳原 IPA 至 TF；`wait`／`status` 等待／查詢；`metadata` 更新已確認描述；`compliance` 寫入已授權合規答案；`distribute-internal`／`distribute-external` 明確選擇內測／外測並填現有 `groups`。Alpha 禁止外測。只有 metadata/compliance 需要 `stage_input` JSON。
 

@@ -103,11 +103,14 @@ def receipt():
     output('delivery_receipt', value)
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
         summary.write(f'### iOS 交付凭据 / Delivery receipt\n\n{manifest["version"]} ({manifest["build"]}) · {manifest["profile"]}\n\n'
-                      '等待本次运行成功后，复制以下整行到下一次操作的 **source / 交付凭据**。包类型、版本和构建号可保持默认或留空。\n\n'
+                      '等待整次运行成功后，复制整行到下次操作的 **来源 / Source**；目标产物保持自动，版本留空。\n'
+                      'After the whole run succeeds, copy this line into **Source**. Keep Product on Auto and leave Version empty.\n\n'
                       f'```text\n{value}\n```\n\n'
                       '选择 upload 仅上传 TF；wait/status 查询处理；distribute-internal 还需现有组名；metadata/compliance 还需已确认 JSON。'
                       '每次后续操作使用最新成功运行的凭据，保留原始凭据。\n\n'
-                      '此凭据仅固定产物身份；Admin、来源、完整性、处理状态及防重复检查仍会独立执行。\n')
+                      'Use the latest successful receipt for each next step; retain the original. Upload, processing, metadata/compliance and distribution remain explicit operations.\n\n'
+                      '此凭据仅固定产物身份；Admin、来源、完整性及防重复检查仍独立执行。\n'
+                      'This receipt pins identity only; Admin, source, integrity and replay checks remain independent.\n')
     print(value)  # Same non-secret pin in job logs for CLI operators and evidence readback.
 
 
@@ -117,11 +120,14 @@ def matches_stage_title(title, stage, digest):
         return True  # Legacy run names remain part of the replay inventory.
     if not isinstance(title, str) or not title.startswith(prefix):
         return False
-    operation, separator, token = title[len(prefix):].partition(' ')
-    selected = 'distribute' if operation in {'distribute-internal', 'distribute-external'} else operation
-    if not separator or selected != stage:
+    operation, separator, token = title[len(prefix):].rpartition(' ')
+    if not separator:
         return False
     try:
+        operation = receipt_codec.canonical(operation, receipt_codec.OPERATION_LABELS)
+        selected = 'distribute' if operation in {'distribute-internal', 'distribute-external'} else operation
+        if selected != stage:
+            return False
         return receipt_codec.decode(token)['manifest_sha256'] == digest
     except ValueError:
         return False

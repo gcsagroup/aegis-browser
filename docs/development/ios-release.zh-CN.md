@@ -18,16 +18,16 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 
 Actions 的打包与上传统一使用 **iOS Delivery**；独立保留 **iOS Release Validation** 自动无凭据验证与 **iOS Coverage** 模拟器覆盖率。手动运行三个 iOS 工作流均要求实际仓库 Admin 权限（包含组织所有者授予的 Admin），原发起者和重跑者都必须通过校验。Maintain/Write/Read 和权限未知均在受保护作业排队前拒绝；GitHub 原生界面仍可能向 Write 显示运行按钮。本地流程验证真实 token 用户，runner 在签名探测前验证真实 CLI Admin。fork 交付入口保持停用。
 
-表单精简为 7 项。新打包通常只填 `version`、未使用的 `build`；其余保持默认，生成 Alpha 产物。后续操作只选择 `operation` 并把上次成功运行 Summary 的整行**交付凭据**复制到 `source`，包类型保持 `auto`、版本和构建号留空即可；显式填写冲突身份会拒绝。
+表单精简为 **6 项**，字段和操作选项均中英文并列。新打包通常只填一项版本，例如 `1.0.0(33)`，括号里为未使用的构建号；其余默认，生成 Alpha 产物。后续操作只选择操作并把上次成功运行 Summary 的整行**交付凭据**复制到来源，目标产物保持自动、版本留空即可。显式填写冲突身份会拒绝。本地 CLI 使用原有接口。
 
 | 输入 | 用途 |
 | --- | --- |
-| `operation` | 本次执行什么；默认 `package` 只打包 |
-| `profile` | 新包选择 Alpha/Beta/Release；`auto` 新打包默认 Alpha，后续沿用凭据 |
-| `version`、`build` | 仅打包必填，build 必须未使用 |
-| `source` | 上传及后续操作必填，从上次成功运行摘要复制整行凭据 |
-| `groups` | 仅分发填写现有组名，多组以逗号分隔 |
-| `stage_input` | 仅更新描述或合规时填写已确认 JSON |
+| 操作 / Operation | 仅打包、私有草稿、TF 上传、等待、查询、更新说明、合规、内测分发、外测分发 |
+| 目标产物 / Product | Alpha（仅内测）、Beta（内外测）、Release（通用）；自动：新包为 Alpha，后续沿用来源 |
+| 版本(构建号) / Version(build) | 仅打包填写，例如 `1.0.0(33)` |
+| 来源 / Source | 上传及后续操作填上次成功运行摘要的整行交付凭据 |
+| 测试组 / Groups | 仅分发填写现有组名，多组以逗号分隔 |
+| 描述或合规 JSON | 仅对应操作填写已经确认的内容 |
 
 | 操作 | 实际作用 |
 | --- | --- |

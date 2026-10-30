@@ -99,14 +99,14 @@ test('every protected delivery route depends on Admin admission and normalized o
 test('simple delivery form retains explicit stages and issues receipts only on success', () => {
   const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const inputs = workflow.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'profile', 'version', 'build', 'source', 'groups', 'stage_input']);
-  assert.equal(inputs.operation.default, 'package');
-  assert.equal(inputs.profile.default, 'auto');
-  assert(inputs.operation.options.includes('distribute-internal'));
-  assert(inputs.operation.options.includes('distribute-external'));
+  assert.deepEqual(Object.keys(inputs), ['operation', 'product', 'version', 'source', 'groups', 'stage_input']);
+  assert.equal(inputs.operation.default, '仅打包 / Package');
+  assert.equal(inputs.product.default, '自动 / Auto');
+  assert(inputs.operation.options.includes('内测分发 / Distribute internal'));
+  assert(inputs.operation.options.includes('外测分发 / Distribute external'));
   assert(!inputs.operation.options.includes('submit'));
   assert.equal(inputs.version.required, false);
-  assert.equal(inputs.build.required, false);
+  for (const input of Object.values(inputs)) assert(input.description.includes(' / '), 'each field has bilingual guidance');
   for (const id of ['ios-package', 'store']) {
     const steps = workflow.jobs[id].steps;
     const emit = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py receipt');

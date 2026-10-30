@@ -10,7 +10,7 @@ spec.loader.exec_module(planner)
 
 class DeliveryPlanTests(unittest.TestCase):
     def plan(self, inputs=None, event='workflow_dispatch', ref='refs/heads/main'):
-        return planner.normalize(event, ref, inputs if inputs is not None else dict(version='1.0.0', build='33'))
+        return planner.normalize(event, ref, inputs if inputs is not None else dict(version='1.0.0(33)'))
 
     def token(self, profile='alpha', state='100', attempt='1', digest='a'*64):
         return planner.receipt.encode(profile, '1.0.0', '33', '100', state, attempt, digest)
@@ -18,7 +18,7 @@ class DeliveryPlanTests(unittest.TestCase):
     def store(self, **changes):
         return dict(operation='upload', source=self.token()) | changes
 
-    def test_default_package_needs_only_version_and_build_and_never_uploads(self):
+    def test_default_package_needs_one_combined_version_and_never_uploads(self):
         plan = self.plan()
         self.assertEqual([plan[k] for k in ['operation', 'profile', 'destination', 'tag']],
                          ['package', 'alpha', 'artifacts', ''])
@@ -27,7 +27,7 @@ class DeliveryPlanTests(unittest.TestCase):
     def test_package_draft_and_store_routes_for_each_audience(self):
         for profile in ['alpha', 'beta', 'release']:
             for operation in ['package', 'draft']:
-                plan = self.plan(dict(operation=operation, version='1.0.0', build='33', profile=profile))
+                plan = self.plan(dict(operation=operation, version='1.0.0(33)', product=profile))
                 self.assertEqual(plan['operation'], 'package')
                 self.assertEqual(plan['destination'], 'github-draft' if operation == 'draft' else 'artifacts')
                 self.assertEqual(plan['tag'], 'candidate/ios/1.0.0-'+profile+'.33' if operation == 'draft' else '')
@@ -46,14 +46,27 @@ class DeliveryPlanTests(unittest.TestCase):
                                      ['distribute', 'testflight-'+route, 'Aegis Early access'])
 
     def test_receipt_keeps_independent_digest_original_run_and_exact_state_attempt(self):
-        plan = self.plan(self.store(source=self.token('beta', state='123', attempt='3'), profile='auto'))
+        plan = self.plan(self.store(source=self.token('beta', state='123', attempt='3'), product='auto'))
         self.assertEqual([plan[k] for k in ['package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']],
                          ['100', '123', '3', 'a'*64])
         self.assertEqual(self.plan(self.store())['upload_run_id'], '')
-        self.assertEqual(self.plan(self.store(profile='alpha', version='1.0.0', build='33'))['profile'], 'alpha')
-        for changes in [dict(profile='beta'), dict(version='2.0.0'), dict(build='34')]:
+        self.assertEqual(self.plan(self.store(product='alpha', version='1.0.0(33)'))['profile'], 'alpha')
+        for changes in [dict(product='beta'), dict(version='2.0.0(33)'), dict(version='1.0.0(34)')]:
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.plan(self.store(**changes))
+
+    def test_bilingual_labels_and_english_operation_ids_have_identical_guards(self):
+        for product, label in planner.receipt.PRODUCT_LABELS.items():
+            expected = 'alpha' if product == 'auto' else product
+            self.assertEqual(self.plan(dict(version='1.0.0(33)', product=label))['profile'], expected)
+        for operation, label in planner.receipt.OPERATION_LABELS.items():
+            inputs = dict(version='1.0.0(33)') if operation in {'package', 'draft'} else dict(source=self.token('beta', state='101'))
+            if operation.startswith('distribute-'):
+                inputs['groups'] = 'Aegis Early access'
+            self.assertEqual(self.plan(dict(inputs, operation=label)), self.plan(dict(inputs, operation=operation)))
+        with self.assertRaises(ValueError):
+            self.plan(dict(operation=planner.receipt.OPERATION_LABELS['distribute-external'],
+                           source=self.token(state='101'), groups='group'))
 
     def test_tag_derives_identity_and_only_packages_private_draft(self):
         for profile in ['alpha', 'beta', 'release']:
@@ -76,16 +89,17 @@ class DeliveryPlanTests(unittest.TestCase):
         for source in cases:
             with self.subTest(source=source), self.assertRaises(ValueError):
                 self.plan(self.store(source=source))
-        for name in ['destination', 'tag', 'package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256', 'unknown']:
+        for name in ['destination', 'tag', 'package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256', 'profile', 'build', 'unknown']:
             with self.subTest(name=name), self.assertRaises(ValueError):
                 self.plan(self.store(**{name: 'x'}))
 
     def test_cross_route_inputs_and_unuploaded_later_mutations_are_rejected(self):
-        cases = [dict(version='1.0.0', build='0'), dict(version='1.0.0\n', build='33'),
-                 dict(version='1.0.0', build='33', operation='submit'),
-                 dict(version='1.0.0', build='33', profile='unknown'),
-                 dict(version='1.0.0', build='33', source=self.token()),
-                 dict(version='1.0.0', build='33', groups='group'),
+        cases = [dict(version='1.0.0(0)'), dict(version='1.0.0(33)\n'),
+                 dict(version='1.0.0'), dict(version='1.0.0(33) ', operation='package'),
+                 dict(version='1.0.0(33)', operation='submit'),
+                 dict(version='1.0.0(33)', product='unknown'),
+                 dict(version='1.0.0(33)', source=self.token()),
+                 dict(version='1.0.0(33)', groups='group'),
                  self.store(groups='group'), self.store(stage_input='{"x":true}')]
         for stage in ['metadata', 'compliance', 'distribute-internal']:
             cases.append(self.store(operation=stage))

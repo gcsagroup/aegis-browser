@@ -4,46 +4,42 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "操作：package 仅打包；draft 私有草稿；upload 上传 TF；distribute 分发"
+        description: "操作 / Operation"
         type: choice
         options:
-          - package
-          - draft
-          - upload
-          - wait
-          - status
-          - metadata
-          - compliance
-          - distribute-internal
-          - distribute-external
-        default: package
-      profile:
-        description: "包类型：auto 打包默认 Alpha；后续操作自动沿用交付凭据"
+          - 仅打包 / Package
+          - 私有草稿 / Draft
+          - 上传 TestFlight / Upload
+          - 等待处理 / Wait
+          - 查询状态 / Status
+          - 更新测试说明 / Metadata
+          - 加密合规 / Compliance
+          - 内测分发 / Distribute internal
+          - 外测分发 / Distribute external
+        default: 仅打包 / Package
+      product:
+        description: "目标产物 / Product（自动：新包为 Alpha；后续沿用来源 / Auto: Alpha or source）"
         type: choice
         options:
-          - auto
-          - alpha
-          - beta
-          - release
-        default: auto
+          - 自动 / Auto
+          - Alpha · 仅内测 / Internal only
+          - Beta · 内外测 / Internal and external
+          - Release · 通用 / Universal
+        default: 自动 / Auto
       version:
-        description: "版本号（仅 package/draft 必填），例如 1.0.0"
-        type: string
-        required: false
-      build:
-        description: "新构建号（仅 package/draft 必填；先确认未使用）"
+        description: "版本(新构建号) / Version(build)，仅打包 / Package only，例如 1.0.0(33)"
         type: string
         required: false
       source:
-        description: "交付凭据（上传及后续操作必填）：复制上次成功运行 Summary 中的整行凭据"
+        description: "来源 / Source（上传及后续：复制上次成功运行的交付凭据 / Copy last successful receipt）"
         type: string
         required: false
       groups:
-        description: "现有测试组名（仅 distribute 必填），多个组用逗号分隔"
+        description: "测试组 / Groups（仅分发 / Distribution only，逗号分隔 / Comma-separated）"
         type: string
         required: false
       stage_input:
-        description: "已确认的描述或合规 JSON（仅 metadata/compliance 使用）"
+        description: "描述或合规 JSON / Metadata or compliance JSON（仅对应操作 / Corresponding operation only）"
         type: string
         default: "{}"
         required: false

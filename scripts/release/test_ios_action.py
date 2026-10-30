@@ -24,6 +24,11 @@ class IosActionTests(unittest.TestCase):
                     patch.object(action, 'api', return_value={'workflow_runs': [row]}), \
                     patch.object(action, 'unstarted_store_run', return_value=False), self.assertRaises(ValueError):
                 action.check_prior_stage_runs(stage, 11)
+        for operation in ['upload', 'metadata', 'compliance', 'distribute-internal', 'distribute-external']:
+            stage = 'distribute' if operation.startswith('distribute-') else operation
+            title = f'iOS Delivery {action.receipt_codec.OPERATION_LABELS[operation]} {token}'
+            self.assertTrue(action.matches_stage_title(title, stage, 'a'*64))
+            self.assertFalse(action.matches_stage_title(title, stage, 'b'*64))
         for title in [None, 'iOS Delivery upload invalid', 'unrelated', 'iOS Delivery status '+token]:
             self.assertFalse(action.matches_stage_title(title, 'upload', 'a'*64))
         self.assertTrue(action.matches_stage_title('iOS Delivery upload '+'a'*64, 'upload', 'a'*64))

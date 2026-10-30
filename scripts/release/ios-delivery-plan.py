@@ -10,11 +10,9 @@ spec = importlib.util.spec_from_file_location('ios_delivery_receipt', Path(__fil
 receipt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(receipt)
 
-INPUTS = {'operation', 'profile', 'version', 'build', 'source', 'groups', 'stage_input'}
+INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
           'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input'}
-OPERATIONS = {'package', 'draft', 'upload', 'wait', 'status', 'metadata', 'compliance',
-              'distribute-internal', 'distribute-external'}
 
 
 def require(condition, message):
@@ -34,10 +32,13 @@ def normalize(event, ref, inputs):
         values.update(operation='package', profile=profile, version=version, build=build, destination='github-draft', tag=tag)
     else:
         require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
-        operation = values['operation'] or 'package'
-        require(operation in OPERATIONS, 'Unknown delivery operation')
-        profile = values['profile'] or 'auto'
-        require(profile in {'auto', 'alpha', 'beta', 'release'}, 'Unknown package audience')
+        operation = receipt.canonical(values['operation'] or 'package', receipt.OPERATION_LABELS)
+        profile = receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS)
+        identity = values['version']
+        if identity:
+            match = re.fullmatch(r'([0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?)\(([1-9][0-9]{0,9})\)', identity)
+            require(match is not None, 'Use version(build), for example 1.0.0(33)')
+            values['version'], values['build'] = match.groups()
         source = inputs.get('source', '')
         if operation in {'package', 'draft'}:
             require(not source, 'Package cannot import existing state')
