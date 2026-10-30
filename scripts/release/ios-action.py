@@ -108,6 +108,7 @@ def receipt():
                       '选择 upload 仅上传 TF；wait/status 查询处理；distribute-internal 还需现有组名；metadata/compliance 还需已确认 JSON。'
                       '每次后续操作使用最新成功运行的凭据，保留原始凭据。\n\n'
                       '此凭据仅固定产物身份；Admin、来源、完整性、处理状态及防重复检查仍会独立执行。\n')
+    print(value)  # Same non-secret pin in job logs for CLI operators and evidence readback.
 
 
 def matches_stage_title(title, stage, digest):

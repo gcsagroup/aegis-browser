@@ -43,13 +43,14 @@ class IosActionTests(unittest.TestCase):
                        RELEASE_RUN_ID='ios-gh-100-1', RELEASE_MANIFEST_SHA256=digest, PACKAGE_RUN_ID='100',
                        GITHUB_OUTPUT=str(root/'output'), GITHUB_STEP_SUMMARY=str(root/'summary'))
             with patch.dict(os.environ, env), patch.object(action, 'directory', return_value=root), \
-                    patch.object(action, 'source', return_value=('a'*40, 'b'*40)):
+                    patch.object(action, 'source', return_value=('a'*40, 'b'*40)), patch('builtins.print') as printed:
                 action.receipt()
                 value = (root/'output').read_text().strip().split('=', 1)[1]
                 pinned = action.receipt_codec.decode(value)
                 self.assertEqual([pinned[k] for k in ['package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']],
                                  ['100', '101', '2', digest])
                 self.assertIn(value, (root/'summary').read_text())
+                printed.assert_called_once_with(value)
                 for changes in [dict(RELEASE_BUILD='34'), dict(PACKAGE_RUN_ID='99'), dict(RELEASE_MANIFEST_SHA256='c'*64),
                                 dict(RELEASE_STAGE='package'), dict(GITHUB_REPOSITORY='foreign/repo')]:
                     with patch.dict(os.environ, changes), self.assertRaises(ValueError):
