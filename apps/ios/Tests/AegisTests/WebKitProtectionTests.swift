@@ -282,10 +282,24 @@ final class WebKitProtectionTests: XCTestCase {
         let tab = try tab(hardened: true)
         XCTAssertTrue(tab.webView.configuration.preferences.isFraudulentWebsiteWarningEnabled)
         XCTAssertTrue(tab.webView.configuration.upgradeKnownHostsToHTTPS)
-        if #available(iOS 26.4, *) { XCTAssertEqual(tab.webView.configuration.defaultWebpagePreferences.securityRestrictionMode, .maximizeCompatibility) }
+        if #available(iOS 26.5, *) { XCTAssertEqual(tab.webView.configuration.defaultWebpagePreferences.securityRestrictionMode, .maximizeCompatibility) }
         try await load(tab, "/article")
         XCTAssertNil(tab.protectionIncident)
         let result6 = try await js(tab,"return document.querySelector('h1').textContent;") as? String
         XCTAssertEqual(result6, "城市绿地观察")
+    }
+
+    func testSystemRestrictionModeFollowsPagePreferenceAndPreservesLockdown() throws {
+        guard #available(iOS 26.5, *) else {
+            throw XCTSkip("Security restriction mode requires iOS 26.5")
+        }
+        let preferences = WKWebpagePreferences()
+        PageProtection.applySystem(preferences, hardened: true)
+        XCTAssertEqual(preferences.securityRestrictionMode, .maximizeCompatibility)
+        PageProtection.applySystem(preferences, hardened: false)
+        XCTAssertEqual(preferences.securityRestrictionMode, .none)
+        preferences.securityRestrictionMode = .lockdown
+        PageProtection.applySystem(preferences, hardened: false)
+        XCTAssertEqual(preferences.securityRestrictionMode, .lockdown)
     }
 }

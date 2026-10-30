@@ -99,7 +99,7 @@ enum PageProtection {
     @MainActor static func applySystem(_ preferences: WKWebpagePreferences, hardened: Bool) {
         preferences.preferredHTTPSNavigationPolicy = .userMediatedFallbackToHTTP
         // 从不将系统的 Lockdown 偏好设为 false。
-        if #available(iOS 26.4, *), !preferences.isLockdownModeEnabled, preferences.securityRestrictionMode != .lockdown {
+        if #available(iOS 26.5, *), !preferences.isLockdownModeEnabled, preferences.securityRestrictionMode != .lockdown {
             preferences.securityRestrictionMode = hardened ? .maximizeCompatibility : .none
         }
     }

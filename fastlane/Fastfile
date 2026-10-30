@@ -1,0 +1,59 @@
+# frozen_string_literal: true
+require_relative 'lib/release'
+
+def pipeline(platform, options)
+  AegisRelease::Pipeline.new(AegisRelease::Request.new(platform, options), self)
+end
+
+%w[ios].each do |lane_platform|
+  platform lane_platform.to_sym do
+    product = lane_platform
+    desc 'Build an iOS package and source-bound manifest without uploading'
+    lane :package do |options|
+      pipeline(product, options).package
+    end
+    desc 'Upload a verified package without distributing or submitting for review'
+    lane :upload do |options|
+      pipeline(product, options).upload
+    end
+    desc 'Distribute the exact uploaded build to TestFlight groups'
+    lane :distribute do |options|
+      pipeline(product, options).distribute
+    end
+    desc 'Submit the exact release build for store review'
+    lane :submit do |options|
+      pipeline(product, options).submit
+    end
+    lane :wait do |options|
+      pipeline(product, options).wait
+    end
+    lane :metadata do |options|
+      pipeline(product, options).metadata
+    end
+    lane :compliance do |options|
+      pipeline(product, options).compliance
+    end
+    desc 'Read store state and local stage records without uploading'
+    lane :status do |options|
+      pipeline(product, options).status
+    end
+    desc 'Package then upload the same verified artifact'
+    lane :release do |options|
+      flow = pipeline(product, options)
+      UI.user_error!('Select a destination before release') if flow.request.destination == 'artifacts'
+      flow.preflight_upload
+      digest = flow.package
+      flow.upload(digest)
+    end
+  end
+end
+
+platform :ios do
+  desc 'Install existing App Store signing material on an ephemeral CI runner'
+  lane :ci_signing do
+    UI.user_error!('ci_signing is only for GitHub-hosted macOS runners') unless ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted'
+    setup_ci(provider: 'github')
+    match(type: 'appstore', readonly: true, app_identifier: AegisRelease::IOS_TARGETS.values,
+          team_id: ENV.fetch('AEGIS_APPLE_TEAM_ID'), git_url: ENV.fetch('AEGIS_MATCH_GIT_URL'))
+  end
+end
