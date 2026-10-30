@@ -105,7 +105,7 @@ def unstarted_store_run(row):
     record = api(f'actions/runs/{row["id"]}')
     attempts = record.get('run_attempt')
     if (record.get('id') != row['id'] or record.get('path') != '.github/workflows/ios-delivery.yml' or
-            record.get('head_sha') != os.environ['GITHUB_SHA'] or record.get('status') != 'completed' or
+            not isinstance(record.get('head_sha'), str) or len(record['head_sha']) != 40 or record.get('status') != 'completed' or
             type(attempts) is not int or not 1 <= attempts <= 20):
         return False
     for attempt in range(1, attempts+1):
@@ -114,6 +114,8 @@ def unstarted_store_run(row):
         if not isinstance(jobs, list) or inventory.get('total_count') != len(jobs) or len(jobs) > 100:
             return False
         for job in jobs:
+            if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
+                return False
             if job.get('name') == 'store' and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
                 return False
     final = api(f'actions/runs/{row["id"]}')

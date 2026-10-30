@@ -14,8 +14,8 @@ class IosActionTests(unittest.TestCase):
     def test_denied_or_skipped_runs_do_not_poison_later_admin_stage(self):
         row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery.yml',
                    status='completed', conclusion='failure', display_title='iOS Delivery upload '+'a'*64)
-        env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA='b'*40, RELEASE_MANIFEST_SHA256='a'*64)
-        for jobs in [[], [dict(name='store', status='completed', conclusion='skipped', steps=[])]]:
+        env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA='c'*40, RELEASE_MANIFEST_SHA256='a'*64)
+        for jobs in [[], [dict(name='store', status='completed', conclusion='skipped', steps=[], run_id=10, run_attempt=1, head_sha='b'*40)]]:
             calls = []
             def api(path):
                 calls.append(path)
@@ -29,6 +29,16 @@ class IosActionTests(unittest.TestCase):
             with patch.dict(os.environ, env), patch.object(action, 'api', api):
                 action.check_prior_stage_runs('upload', 11)
             self.assertTrue(any('/attempts/1/jobs?' in path for path in calls), 'must prove no store steps ran')
+
+    def test_skipped_job_with_wrong_own_run_or_attempt_is_not_trusted(self):
+        row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery.yml', status='completed')
+        env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', GITHUB_SHA='b'*40, RELEASE_MANIFEST_SHA256='a'*64)
+        job = dict(name='store', status='completed', conclusion='skipped', steps=[], run_id=10, run_attempt=1, head_sha='b'*40)
+        for changes in [dict(run_id=9), dict(run_attempt=2), dict(head_sha='a'*40)]:
+            def api(path):
+                return row if path == 'actions/runs/10' else dict(total_count=1, jobs=[dict(job, **changes)])
+            with patch.dict(os.environ, env), patch.object(action, 'api', api):
+                self.assertFalse(action.unstarted_store_run(row))
 
     def test_possibly_started_mutation_or_earlier_attempt_still_blocks(self):
         row = dict(id=10, run_attempt=2, head_sha='b'*40, path='.github/workflows/ios-delivery.yml',

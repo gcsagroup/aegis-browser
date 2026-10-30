@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {URLSearchParams} from 'node:url';
+import {readFileSync} from 'node:fs';
 
 const repository = 'gcsagroup/aegis-browser';
 const sha = 'a'.repeat(40);
@@ -12,6 +13,20 @@ const environment = {GH_TOKEN: 'fixture-token', GITHUB_ACTIONS: 'true', GITHUB_R
   GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/main', GITHUB_ACTOR: original.login,
   GITHUB_ACTOR_ID: String(original.id), GITHUB_TRIGGERING_ACTOR: original.login};
 const load = () => import('../ios-operator.mjs');
+test('candidate tag policy admits only active canonical namespace restrictions with repository Admin bypass', async () => {
+  const {verifyCandidateTagPolicy} = await load();
+  assert.equal(typeof verifyCandidateTagPolicy, 'function');
+  const desired = JSON.parse(readFileSync('.github/ios-candidate-admin-ruleset.json', 'utf8'));
+  const policy = {...desired, id: 300};
+  const api = async (_repo, path) => path.startsWith('/rulesets?') ? [{id: 300, name: desired.name}] : policy;
+  assert.equal((await verifyCandidateTagPolicy({environment, api})).id, 300);
+  for (const change of [{enforcement: 'disabled'}, {target: 'branch'}, {bypass_actors: []},
+    {bypass_actors: [{actor_type: 'RepositoryRole', actor_id: 4, bypass_mode: 'always'}]},
+    {bypass_actors: [...policy.bypass_actors, {actor_type: 'User', actor_id: 7, bypass_mode: 'always'}]},
+    {conditions: {ref_name: {include: ['refs/tags/*'], exclude: []}}}, {rules: [{type: 'creation'}]}]) {
+    await assert.rejects(verifyCandidateTagPolicy({environment, api: async (_repo, path) => path.startsWith('/rulesets?') ? [{id:300,name:desired.name}] : {...policy,...change}}), /policy|ruleset/iu);
+  }
+});
 function fixture({admins = [admin(original)], trigger = original, runChanges = {}, repoChanges = {}, failure, pages} = {}) {
   const calls = [];
   const run = {id: 200, run_attempt: 1, head_sha: sha, event: 'workflow_dispatch', head_branch: 'main',

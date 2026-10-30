@@ -1,4 +1,6 @@
 import {pathToFileURL} from 'node:url';
+import {readFileSync} from 'node:fs';
+import {isDeepStrictEqual} from 'node:util';
 
 const UPSTREAM = 'gcsagroup/aegis-browser';
 const UPSTREAM_ID = '1348409663';
@@ -48,6 +50,28 @@ export async function verifyAdminMetadataCapability({repository, token, api = re
   } catch { throw new OperatorError('Unable to verify complete Admin permissions metadata'); }
 }
 
+export async function verifyCandidateTagPolicy({environment = process.env, api = repositoryApi} = {}) {
+  const repository = environment.GITHUB_REPOSITORY || UPSTREAM;
+  const token = environment.GH_TOKEN || environment.GITHUB_TOKEN;
+  requireValue(repository === UPSTREAM && token, 'Canonical candidate tag policy verification requires a token');
+  const desired = JSON.parse(readFileSync(new URL('../../.github/ios-candidate-admin-ruleset.json', import.meta.url), 'utf8'));
+  const matches = [];
+  let complete = false;
+  for (let page = 1; page <= 20; page++) {
+    const rows = await api(repository, `/rulesets?includes_parents=true&per_page=100&page=${page}`, {token});
+    requireValue(Array.isArray(rows) && rows.length <= 100, 'Incomplete candidate ruleset policy inventory');
+    matches.push(...rows.filter(row => row.name === desired.name));
+    if (rows.length < 100) {complete = true; break;}
+  }
+  requireValue(complete && matches.length === 1 && Number.isSafeInteger(matches[0].id), 'Unique candidate ruleset policy required');
+  const policy = await api(repository, `/rulesets/${matches[0].id}`, {token});
+  requireValue(policy?.id === matches[0].id && policy.name === desired.name && policy.target === desired.target && policy.enforcement === 'active' &&
+    isDeepStrictEqual(policy.conditions, desired.conditions) && isDeepStrictEqual(policy.bypass_actors, desired.bypass_actors) &&
+    Array.isArray(policy.rules) && policy.rules.length === 3 && isDeepStrictEqual(policy.rules.map(rule => rule.type).sort(), ['creation', 'deletion', 'update']),
+  'Candidate ruleset policy must restrict all candidate tag writes to repository Admin');
+  return {verified: true, id: policy.id, adminRoleId: 5};
+}
+
 export async function requireIosAdministrator({environment = process.env, api = repositoryApi, userApi = authenticatedUserApi, context = 'delivery'} = {}) {
   try {
     const repository = repositoryName(environment.GITHUB_REPOSITORY || UPSTREAM);
@@ -94,6 +118,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     if (process.argv.length === 3 && process.argv[2] === '--probe-admin-metadata') {
       console.log(JSON.stringify(await verifyAdminMetadataCapability({repository: process.env.GITHUB_REPOSITORY, token: process.env.GH_TOKEN || process.env.GITHUB_TOKEN})));
+    } else if (process.argv.length === 3 && process.argv[2] === '--verify-candidate-tag-policy') {
+      await requireIosAdministrator();
+      console.log(JSON.stringify(await verifyCandidateTagPolicy()));
     } else {
       if (process.argv.length !== 4 || process.argv[2] !== '--context') throw new OperatorError('Usage: ios-operator.mjs --context delivery|validation|coverage');
       console.log(JSON.stringify(await requireIosAdministrator({context: process.argv[3]})));

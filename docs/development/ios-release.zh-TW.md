@@ -20,3 +20,5 @@ Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Rel
 上游合併前通過必需 CI；合併後追蹤新 main CI，重新測試本地 Fastlane、Actions、Tag→私有 Draft 三種方法及 Alpha/Beta/Release 三種封裝，下載驗證每份產物並讀回 TF 結果。外測 Beta Review 與正式送審不在自動驗收中執行。上游通過後僅停用 fork 的 iOS 入口，保留歷史與回復快照，不影響其他平台。完整設定、JSON 範例及復原步驟見 [iOS operations](ios-release.md)。
 
 目前已驗證的 Apple 系統加密實作，在實際 Info.plist 中宣告布林值 `ITSAppUsesNonExemptEncryption=false`；匯出驗證會比對簽章 App 的同一宣告。加密實作或依賴變更後必須重新評估，歷史 IPA 維持原樣。驗收先讀回 TF 自動識別的 `usesNonExemptEncryption=false`，再考慮明確的合規更新。
+
+候选 Tag 还需独立于工作流代码的仓库保护：[限定规则](../../.github/ios-candidate-admin-ruleset.json) 仅覆盖 `refs/tags/candidate/ios/**/*`，创建、更新、删除只允许仓库 Admin。先以 disabled 准备，通过 GraphQL 确认 role ID5 的 `repositoryRoleName=admin`，再启用并用真实 Admin token 执行 `node scripts/ci/ios-operator.mjs --verify-candidate-tag-policy`。不扩大绕过角色或 Tag 范围。交付权限边界以通过合并流程的 main 代码可信为前提，共享 main 审核治理不在此次 iOS 改动中。

@@ -61,3 +61,5 @@ The user showed the ASC encryption prompt. This iOS source retains the previousl
 - Apple OS encryption exemption/declaration: https://developer.apple.com/documentation/Security/complying-with-encryption-export-regulations
 
 Builder check: a fresh read-only design reviewer reported "nothing important left". Inline implementation remains the preserved execution method; the user already authorized the consolidation and continuation.
+
+Security review amendment: candidate tag provenance is enforced outside workflow code with an Admin-only creation/update/deletion ruleset for refs/tags/candidate/ios/**/*, role name independently read back before activation. Passed main source is trusted; shared-main governance is outside this platform-only change. Cross-source denied runs are classified against their own authoritative source/attempt/job identities, without requiring their SHA to equal the current run.
