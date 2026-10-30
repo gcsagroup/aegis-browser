@@ -1,72 +1,32 @@
 name: iOS Delivery
-run-name: iOS Delivery ${{ inputs.operation || 'package' }} ${{ inputs.manifest_sha256 || github.ref_name }}
+run-name: iOS Delivery ${{ fromJSON(inputs.advanced || '{}').operation || inputs.operation || 'package' }} ${{ inputs.target || github.ref_name }}
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Explicit operation; package never uploads automatically
+        description: "操作 / Operation（常用选项 / Simple；更多选完整模式 / Full for more）"
         type: choice
         options:
-          - package
-          - upload
-          - wait
-          - status
-          - metadata
-          - compliance
-          - distribute
-        default: package
-      profile:
-        description: Immutable package audience
+          - 仅打包 / Package
+          - 上传 TestFlight / Upload
+          - 查询状态 / Status
+          - 完整模式 / Full
+        default: 仅打包 / Package
+      product:
+        description: "目标产物 / Product（Auto: Alpha / source）"
         type: choice
         options:
-          - alpha
-          - beta
-          - release
-        default: alpha
-      version:
-        description: Marketing version
-        type: string
-        required: true
-      build:
-        description: New unused number for package; original number for store operations
-        type: string
-        required: true
-      destination:
-        description: "auto: artifacts for package, TestFlight for store; distribute requires explicit route"
-        type: choice
-        options:
-          - auto
-          - artifacts
-          - github-draft
-          - testflight
-          - testflight-internal
-          - testflight-external
-        default: auto
-      tag:
-        description: Existing candidate/ios/version-profile.build tag for Draft
-        type: string
-      package_run_id:
-        description: Original successful package workflow run
+          - 自动 / Auto
+          - Alpha · 仅内测 / Internal only
+          - Beta · 内外测 / Internal and external
+          - Release · 通用 / Universal
+        default: 自动 / Auto
+      target:
+        description: "版本或来源 / Version or source（打包: 1.0.0(33)；其他: 交付凭据 / receipt）"
         type: string
         required: false
-      upload_run_id:
-        description: Latest successful store state run for subsequent stages
-        type: string
-        required: false
-      source_attempt:
-        description: Exact current attempt of the selected state or package run
-        type: string
-        required: false
-      manifest_sha256:
-        description: Independently retained original manifest digest
-        type: string
-        required: false
-      groups:
-        description: Existing group names for distribute only
-        type: string
-        required: false
-      stage_input:
-        description: Metadata or explicitly authorized compliance JSON
+      advanced:
+        description: "完整模式配置 / Full options JSON（仅 Full 填写 / Full only）"
         type: string
         default: "{}"
         required: false
@@ -169,6 +129,8 @@ jobs:
           bundle check
       - id: package
         run: python3 scripts/release/ios-action.py package
+      - name: Copy the delivery receipt for the next operation
+        run: python3 scripts/release/ios-action.py receipt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ios-delivery-${{ github.run_id }}-${{ github.run_attempt }}
@@ -323,6 +285,8 @@ jobs:
       - name: Preserve stage intent even when a response is lost
         if: ${{ always() }}
         run: python3 scripts/release/ios-action.py export
+      - name: Copy the delivery receipt after a successful stage
+        run: python3 scripts/release/ios-action.py receipt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() }}
         with:

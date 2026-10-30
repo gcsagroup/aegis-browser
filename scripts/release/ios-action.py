@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('artifact_transport', Path(__file__).with_name('artifact-transport.py'))
 transport = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(transport)
+receipt_spec = importlib.util.spec_from_file_location('ios_delivery_receipt', Path(__file__).with_name('ios-delivery-receipt.py'))
+receipt_codec = importlib.util.module_from_spec(receipt_spec)
+receipt_spec.loader.exec_module(receipt_codec)
 
 
 def run(*args, capture=False):
@@ -75,6 +78,60 @@ def package():
     export()
 
 
+def receipt():
+    sha, tree = source()
+    digest = transport.digest(directory()/'ios-manifest.json')
+    expected = os.environ.get('RELEASE_MANIFEST_SHA256') or digest
+    # Export already validates deliverable files; work/archive directories are not delivery members.
+    manifest = json.loads((directory()/'ios-manifest.json').read_text())
+    origin = json.loads((directory()/'package-origin.json').read_text())
+    if (digest != expected or manifest.get('source') != dict(sha=sha, tree=tree, dirty=False) or
+            manifest.get('repository') != 'gcsagroup/aegis-browser' or manifest.get('platform') != 'ios' or
+            any(manifest.get(key) != os.environ['RELEASE_'+key.upper()] for key in ['profile', 'version', 'build']) or
+            origin.get('repository') != os.environ['GITHUB_REPOSITORY'] or origin.get('sourceSha') != sha or
+            origin.get('sourceTree') != tree or origin.get('manifestSha256') != digest or
+            origin.get('runIdLocal') != os.environ['RELEASE_RUN_ID']):
+        raise ValueError('Cannot issue a receipt for mismatched package identity')
+    package_run = str(origin['runId'])
+    current, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']
+    if os.environ['RELEASE_STAGE'] == 'package':
+        if package_run != current or origin.get('attempt') != int(attempt):
+            raise ValueError('Package receipt differs from this producer attempt')
+    elif package_run != os.environ['PACKAGE_RUN_ID']:
+        raise ValueError('Store receipt differs from original package producer')
+    value = receipt_codec.encode(manifest['profile'], manifest['version'], manifest['build'], package_run, current, attempt, digest)
+    output('delivery_receipt', value)
+    with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+        summary.write(f'### iOS 交付凭据 / Delivery receipt\n\n{manifest["version"]} ({manifest["build"]}) · {manifest["profile"]}\n\n'
+                      '等待整次运行成功后，复制整行到下次操作的 **版本或来源 / Version or source**；目标产物保持自动。\n'
+                      'After the whole run succeeds, copy this line into **Version or source** and keep Product on Auto.\n\n'
+                      f'```text\n{value}\n```\n\n'
+                      '常用操作：上传 TF、查询状态；其他选择完整模式。每次后续操作使用最新成功凭据，保留原始凭据。\n'
+                      'Use the latest successful receipt for each next step; retain the original. Upload, processing, metadata/compliance and distribution remain explicit operations.\n\n'
+                      '此凭据仅固定产物身份；Admin、来源、完整性及防重复检查仍独立执行。\n'
+                      'This receipt pins identity only; Admin, source, integrity and replay checks remain independent.\n')
+    print(value)  # Same non-secret pin in job logs for CLI operators and evidence readback.
+
+
+def matches_stage_title(title, stage, digest):
+    prefix = 'iOS Delivery '
+    if title == f'{prefix}{stage} {digest}':
+        return True  # Legacy run names remain part of the replay inventory.
+    if not isinstance(title, str) or not title.startswith(prefix):
+        return False
+    operation, separator, token = title[len(prefix):].rpartition(' ')
+    if not separator:
+        return False
+    try:
+        operation = receipt_codec.canonical(operation, receipt_codec.OPERATION_LABELS)
+        selected = 'distribute' if operation in {'distribute-internal', 'distribute-external'} else operation
+        if selected != stage:
+            return False
+        return receipt_codec.decode(token)['manifest_sha256'] == digest
+    except ValueError:
+        return False
+
+
 def validate_mutation_attempt(stage, attempt, directory=None):
     if stage not in {'upload', 'metadata', 'compliance', 'distribute'} or attempt == 1:
         return
@@ -87,11 +144,11 @@ def check_prior_stage_runs(stage, state_run):
     # A lost job/transport response is not permission to replay the mutation in another run.
     validate_mutation_attempt(stage, int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')))
     current = int(os.environ['GITHUB_RUN_ID'])
-    title = f'iOS Delivery {stage} {os.environ["RELEASE_MANIFEST_SHA256"]}'
+    digest = os.environ['RELEASE_MANIFEST_SHA256']
     for page in range(1, 21):
         rows = api(f'actions/workflows/ios-delivery.yml/runs?per_page=100&page={page}')['workflow_runs']
         for row in rows:
-            if row['id'] == current or row.get('display_title') != title:
+            if row['id'] == current or not matches_stage_title(row.get('display_title'), stage, digest):
                 continue
             if row['id'] != state_run and not unstarted_store_run(row):
                 raise ValueError('Earlier identical stage run exists outside imported state; read back and reconcile before retry')
@@ -208,4 +265,4 @@ def stage():
 
 
 if __name__ == '__main__':
-    {'package': package, 'export': export, 'import': import_package, 'stage': stage}[sys.argv[1]]()
+    {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt}[sys.argv[1]]()

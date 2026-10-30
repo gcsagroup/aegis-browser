@@ -42,9 +42,33 @@ Status distinguishes build absence/processing/failure/VALID, buildUploads errors
 
 `iOS Delivery` is the single packaging and TestFlight workflow. `iOS Release Validation` keeps automatic uncredentialed PR/main checks and unsigned native archives; `iOS Coverage` keeps simulator coverage. All manual iOS workflows require a current effective repository **Admin** grant, including organization-owner grants. Maintain/Write/Read/custom role titles do not qualify. GitHub may still show the Run workflow button to Write users: the uncredentialed admission gate rejects them before protected jobs are scheduled. Both the original actor and the actual rerunner must be Admins; API failures or incomplete role inventories deny access. CI uses the paginated filtered Admin collaborator API with the existing installation token, not a PAT or username allowlist. Local stages resolve the actual authenticated token user; set an authorized `GH_TOKEN`/`GITHUB_TOKEN` in the private process environment. `plan` remains uncredentialed.
 
-Dispatch `iOS Delivery` on current `main` with explicit version/build. `operation=package` defaults to Alpha and `destination=auto` resolves to artifacts only. Choose `github-draft` with the exact existing candidate tag for a private Draft. A push of `candidate/ios/VERSION-PROFILE.BUILD` derives its immutable profile/version/build and only packages a private Draft; it never uploads to TF. Signing uses protected `aegis-ios-signing` on an owned ephemeral macOS ARM64 runner. Draft writes use `aegis-ios-draft` with `contents:write`, always draft/prerelease, and actual download/hash verification.
+The workflow UI has **four inputs**, with Chinese/English labels. The operation dropdown shows only **Package**, **Upload TestFlight**, **Status**, and **Full mode**. Local CLI commands retain their existing interface.
 
-For an existing completed package select `operation=upload|wait|status|metadata|compliance|distribute` in the same workflow. Set its original `profile/version/build`, `package_run_id`, independently retained `manifest_sha256` and exact `source_attempt`. For later stages, set `upload_run_id` to the latest successful store-state run and its attempt. `auto` resolves to `testflight`; `distribute` additionally requires explicit `testflight-internal`/`testflight-external` and existing groups. Alpha external routes fail during admission. Package and store routes cannot consume each other's inputs or credentials. Each successful store run publishes an immutable `ios-delivery-RUN-ATTEMPT` artifact. Reuse it for subsequent operations; never rebuild or upload again to edit metadata or distribute.
+| Input | Simple mode |
+| --- | --- |
+| Operation | Package (default), Upload TestFlight, or Status |
+| Product | Auto (Alpha for new packages; preserve source later), Alpha internal-only, Beta internal/external, Release universal |
+| Version or source (`target`) | New package: `1.0.0(33)`, with an unused build number. Upload/status: the complete receipt from the last successful run summary |
+| Full options (`advanced`) | Leave `{}` for simple operations |
+
+For a new default Alpha package enter only `1.0.0(33)` in Version or source. Select Beta/Release explicitly for those packages. To upload, choose Upload TestFlight and paste the delivery receipt into the same field; Product remains Auto. Package never uploads automatically; upload never distributes or requests review. Retain the original receipt independently and use the latest successful run's receipt for subsequent steps.
+
+For less frequent operations select **完整模式 / Full** and supply a JSON object in Full options. Version or source and Product are reused; no duplicate source or identity fields are accepted. `operation` accepts the English command or its bilingual UI label. Only `operation`, optional existing `groups` and a reviewed `stage_input` object are allowed. Unknown/duplicate keys, invalid JSON, conflicting identity and advanced parameters in simple mode are rejected before protected jobs.
+
+| Goal | Full options example |
+| --- | --- |
+| Wait for processing | `{"operation":"wait"}` |
+| Private Draft | `{"operation":"draft"}` (Version or source contains the new version/build; the exact derived tag must already exist at the admitted source) |
+| Internal distribution | `{"operation":"distribute-internal","groups":"Aegis Early access"}` |
+| External distribution | `{"operation":"distribute-external","groups":"Existing external group"}` (Alpha rejected; Beta Review needs separate authorization) |
+| Testing notes/description | `{"operation":"metadata","stage_input":{"locales":{"en-US":{"whatsNew":"Reviewed testing notes"}}}}` |
+| Reviewed encryption answer | `{"operation":"compliance","stage_input":{"usesNonExemptEncryption":false,"sourceSha":"EXACT_SHA","nativeInputsSha256":"EXACT_DIGEST","authorization":"Explicitly reviewed"}}` |
+
+The bilingual full-operation names are 私有草稿 / Draft, 等待处理 / Wait, 更新测试说明 / Metadata, 加密合规 / Compliance, 内测分发 / Distribute internal, 外测分发 / Distribute external. Full mode also accepts the three simple operations.
+
+A receipt is a bounded, versioned identity pin containing immutable profile/version/build, original package run, latest state run, exact attempt and original manifest SHA256. It grants no permission and replaces no source, producer, journal or integrity verification. Changed/stale receipts fail import before ASC credentials load. Receipts appear only after successful package/stage/export, in both Summary and operator logs; wait for the entire run to succeed. Uncertain mutations require readback reconciliation, not an older receipt or another upload.
+
+Push `candidate/ios/VERSION-PROFILE.BUILD` to derive its immutable identity and package a private Draft only. Signing uses protected `aegis-ios-signing` on an owned ephemeral macOS ARM64 runner. Draft writes use `aegis-ios-draft` with `contents:write`, always draft/prerelease, and actual download/hash verification. A successful store run publishes immutable `ios-delivery-RUN-ATTEMPT` state selected by its receipt, so metadata/distribution reuse the original IPA.
 
 The uncredentialed import job checks repository, admitted workflow, latest attempt, successful producer, original package origin, SHA/tree, manifest/assets and completed upload receipt. Protected jobs independently recheck identity and authorization before loading ASC credentials. External TF distribution requests Beta App Review and needs separate authorization. Formal App Store review remains a separate explicit Release-only local stage; neither review is an automatic acceptance test.
 

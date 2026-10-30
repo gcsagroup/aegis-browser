@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -11,6 +12,55 @@ spec.loader.exec_module(action)
 
 
 class IosActionTests(unittest.TestCase):
+    def test_receipt_titles_cannot_discard_unknown_prior_mutations(self):
+        token = action.receipt_codec.encode('beta', '1.0.0', '33', 100, 101, 1, 'a'*64)
+        for stage, operation in [('upload', 'upload'), ('metadata', 'metadata'), ('compliance', 'compliance'),
+                                 ('distribute', 'distribute-internal'), ('distribute', 'distribute-external')]:
+            title = f'iOS Delivery {operation} {token}'
+            self.assertTrue(action.matches_stage_title(title, stage, 'a'*64))
+            self.assertFalse(action.matches_stage_title(title, stage, 'b'*64))
+            row = dict(id=10, display_title=title)
+            with patch.dict(os.environ, {'GITHUB_RUN_ID': '12', 'GITHUB_RUN_ATTEMPT': '1', 'RELEASE_MANIFEST_SHA256': 'a'*64}), \
+                    patch.object(action, 'api', return_value={'workflow_runs': [row]}), \
+                    patch.object(action, 'unstarted_store_run', return_value=False), self.assertRaises(ValueError):
+                action.check_prior_stage_runs(stage, 11)
+        for operation in ['upload', 'metadata', 'compliance', 'distribute-internal', 'distribute-external']:
+            stage = 'distribute' if operation.startswith('distribute-') else operation
+            title = f'iOS Delivery {action.receipt_codec.OPERATION_LABELS[operation]} {token}'
+            self.assertTrue(action.matches_stage_title(title, stage, 'a'*64))
+            self.assertFalse(action.matches_stage_title(title, stage, 'b'*64))
+        for title in [None, 'iOS Delivery upload invalid', 'unrelated', 'iOS Delivery status '+token]:
+            self.assertFalse(action.matches_stage_title(title, 'upload', 'a'*64))
+        self.assertTrue(action.matches_stage_title('iOS Delivery upload '+'a'*64, 'upload', 'a'*64))
+
+    def test_receipt_pins_completed_state_without_changing_original_producer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            manifest = dict(source=dict(sha='a'*40, tree='b'*40, dirty=False), repository='gcsagroup/aegis-browser',
+                            platform='ios', profile='beta', version='1.0.0', build='33')
+            (root/'ios-manifest.json').write_text(json.dumps(manifest))
+            digest = action.transport.digest(root/'ios-manifest.json')
+            origin = dict(repository='gcsagroup/aegis-browser', sourceSha='a'*40, sourceTree='b'*40,
+                          manifestSha256=digest, runId=100, attempt=1, runIdLocal='ios-gh-100-1')
+            (root/'package-origin.json').write_text(json.dumps(origin))
+            env = dict(GITHUB_REPOSITORY='gcsagroup/aegis-browser', GITHUB_RUN_ID='101', GITHUB_RUN_ATTEMPT='2',
+                       RELEASE_PROFILE='beta', RELEASE_VERSION='1.0.0', RELEASE_BUILD='33', RELEASE_STAGE='status',
+                       RELEASE_RUN_ID='ios-gh-100-1', RELEASE_MANIFEST_SHA256=digest, PACKAGE_RUN_ID='100',
+                       GITHUB_OUTPUT=str(root/'output'), GITHUB_STEP_SUMMARY=str(root/'summary'))
+            with patch.dict(os.environ, env), patch.object(action, 'directory', return_value=root), \
+                    patch.object(action, 'source', return_value=('a'*40, 'b'*40)), patch('builtins.print') as printed:
+                action.receipt()
+                value = (root/'output').read_text().strip().split('=', 1)[1]
+                pinned = action.receipt_codec.decode(value)
+                self.assertEqual([pinned[k] for k in ['package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']],
+                                 ['100', '101', '2', digest])
+                self.assertIn(value, (root/'summary').read_text())
+                printed.assert_called_once_with(value)
+                for changes in [dict(RELEASE_BUILD='34'), dict(PACKAGE_RUN_ID='99'), dict(RELEASE_MANIFEST_SHA256='c'*64),
+                                dict(RELEASE_STAGE='package'), dict(GITHUB_REPOSITORY='foreign/repo')]:
+                    with patch.dict(os.environ, changes), self.assertRaises(ValueError):
+                        action.receipt()
+
     def test_denied_or_skipped_runs_do_not_poison_later_admin_stage(self):
         row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery.yml',
                    status='completed', conclusion='failure', display_title='iOS Delivery upload '+'a'*64)

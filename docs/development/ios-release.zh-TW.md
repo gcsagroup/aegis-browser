@@ -15,7 +15,13 @@ Alpha 固定僅供內部測試，原生匯出開啟 `testFlightInternalTestingOn
 
 Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Release Validation** 自動無憑證驗證與 **iOS Coverage** 模擬器覆蓋率。手動執行三個 iOS 工作流程均要求實際倉庫 Admin 權限（包含組織所有者授予的 Admin），原發起者和重跑者都必須通過驗證。Maintain/Write/Read 和權限未知均在受保護作業排隊前拒絕；GitHub 原生介面仍可能向 Write 顯示執行按鈕。本地流程驗證真實 token 使用者，runner 在簽章探測前驗證真實 CLI Admin。fork 交付入口維持停用。
 
-在 main 選擇 `operation=package`，預設 Alpha，`destination=auto` 僅保留產物；`github-draft` 必須提供精確 Tag。推送 `candidate/ios/版本-profile.build` 自動解析身分，僅封裝至私有 Draft，不自動上傳 TF。已有實包在同一流程選擇 `upload|wait|status|metadata|compliance|distribute`，提供原始 `package_run_id`、`manifest_sha256`、精確 `source_attempt`；後續階段再指定最新成功狀態的 `upload_run_id`。`distribute` 必須明確選擇內測／外測和現有群組，Alpha 外測在准入階段拒絕。先驗證來源與產物，再載入 ASC 憑證。被拒絕或明確未執行的舊作業不會阻擋 Admin；任何可能已開始的變更仍須先讀回對帳，不可盲目重試。外測 Beta Review 與正式送審均須獨立授權，不在自動驗收中執行。
+表單只保留 **4 項**且中英文並列：操作 / Operation、目標產物 / Product、版本或來源 / Version or source、完整模式配置 / Full options。操作下拉只顯示僅封裝 / Package、上傳 TestFlight / Upload、查詢狀態 / Status、完整模式 / Full。本地 CLI 使用原有介面。
+
+精簡封裝只需填例如 `1.0.0(33)`，括號為未使用的 build，預設 Alpha；Product 可明確選 Alpha 僅內測、Beta 內外測、Release 通用。上傳／查詢在同一欄貼入上次成功執行摘要的整行交付憑據，Product 維持 Auto，Full options 保持 `{}`。
+
+低頻操作選 Full，复用 Product 與版本或來源，再填 JSON，例如等待 `{"operation":"wait"}`、內測分發 `{"operation":"distribute-internal","groups":"Aegis Early access"}`。其他完整操作為私有草稿 / Draft、更新測試說明 / Metadata、加密合規 / Compliance、外測分發 / Distribute external。operation 可用英文命令或中英並列名稱，只允許 operation、groups、stage_input；完整範例見 [iOS operations](ios-release.md)。精簡模式夾帶高階參數、未知或重複鍵及身分衝突均拒絕。Alpha 禁止外測，外測 Beta Review 及正式送審仍需獨立授權。
+
+交付憑據保留包型、版本、build、原封裝 run、最新狀態 run、精確 attempt 與獨立固定的 manifest 摘要。憑據不提供權限，也不取代來源、成功生產者、完整性或防重複檢查。每次等待整次執行成功，再用最新 Summary 憑據；結果未知先讀回對帳，不可重傳。推送 `candidate/ios/版本-profile.build` 仍只封裝至私有 Draft，不自動上傳 TF，正常 Draft 優先使用 Tag 觸發。先驗證來源與產物，再載入 ASC 憑證；外測 Beta Review 與正式送審仍須獨立授權。
 
 上游合併前通過必需 CI；合併後追蹤新 main CI，重新測試本地 Fastlane、Actions、Tag→私有 Draft 三種方法及 Alpha/Beta/Release 三種封裝，下載驗證每份產物並讀回 TF 結果。外測 Beta Review 與正式送審不在自動驗收中執行。上游通過後僅停用 fork 的 iOS 入口，保留歷史與回復快照，不影響其他平台。完整設定、JSON 範例及復原步驟見 [iOS operations](ios-release.md)。
 
