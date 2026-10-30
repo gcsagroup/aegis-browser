@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""Normalize explicit iOS delivery routes before scheduling protected jobs."""
+"""Normalize simple iOS delivery inputs before scheduling protected jobs."""
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
 
+spec = importlib.util.spec_from_file_location('ios_delivery_receipt', Path(__file__).with_name('ios-delivery-receipt.py'))
+receipt = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(receipt)
+
+INPUTS = {'operation', 'profile', 'version', 'build', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
           'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input'}
-OPERATIONS = {'package', 'upload', 'wait', 'status', 'metadata', 'compliance', 'distribute'}
+OPERATIONS = {'package', 'draft', 'upload', 'wait', 'status', 'metadata', 'compliance',
+              'distribute-internal', 'distribute-external'}
 
 
 def require(condition, message):
@@ -15,12 +22,8 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def positive(value):
-    return re.fullmatch(r'[1-9][0-9]{0,15}', value) is not None
-
-
 def normalize(event, ref, inputs):
-    require(isinstance(inputs, dict) and not inputs.keys()-FIELDS and all(isinstance(v, str) for v in inputs.values()), 'Unknown or invalid delivery inputs')
+    require(isinstance(inputs, dict) and not inputs.keys()-INPUTS and all(isinstance(v, str) for v in inputs.values()), 'Unknown or invalid delivery inputs')
     values = {key: inputs.get(key, '') for key in FIELDS}
     if event == 'push':
         require(not inputs, 'Tag delivery cannot accept manual overrides')
@@ -31,15 +34,27 @@ def normalize(event, ref, inputs):
         values.update(operation='package', profile=profile, version=version, build=build, destination='github-draft', tag=tag)
     else:
         require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
-        values['operation'] = values['operation'] or 'package'
-        values['profile'] = values['profile'] or 'alpha'
-        values['destination'] = values['destination'] or 'auto'
-        if values['destination'] == 'auto':
-            values['destination'] = 'artifacts' if values['operation'] == 'package' else 'testflight'
+        operation = values['operation'] or 'package'
+        require(operation in OPERATIONS, 'Unknown delivery operation')
+        profile = values['profile'] or 'auto'
+        require(profile in {'auto', 'alpha', 'beta', 'release'}, 'Unknown package audience')
+        source = inputs.get('source', '')
+        if operation in {'package', 'draft'}:
+            require(not source, 'Package cannot import existing state')
+            values.update(operation='package', profile='alpha' if profile == 'auto' else profile,
+                          destination='github-draft' if operation == 'draft' else 'artifacts')
+            if operation == 'draft':
+                values['tag'] = f'candidate/ios/{values["version"]}-{values["profile"]}.{values["build"]}'
+        else:
+            pinned = receipt.decode(source)
+            require(profile == 'auto' or profile == pinned['profile'], 'Profile differs from delivery receipt')
+            require(all(not values[key] or values[key] == pinned[key] for key in ['version', 'build']), 'Version/build differs from delivery receipt')
+            values.update(pinned)
+            values['operation'] = 'distribute' if operation.startswith('distribute-') else operation
+            values['destination'] = 'testflight-'+operation.removeprefix('distribute-') if operation.startswith('distribute-') else 'testflight'
     operation, profile, destination = (values[key] for key in ['operation', 'profile', 'destination'])
-    require(operation in OPERATIONS and profile in {'alpha', 'beta', 'release'}, 'Unknown operation or audience')
     require(re.fullmatch(r'[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?', values['version']) is not None and
-            re.fullmatch(r'[1-9][0-9]{0,9}', values['build']) is not None, 'Invalid package version/build')
+            re.fullmatch(r'[1-9][0-9]{0,9}', values['build']) is not None, 'Package requires valid version and unused build number')
     raw_input = values['stage_input'] or '{}'
     require(len(raw_input.encode()) <= 64000, 'Stage input exceeds bound')
     try:
@@ -50,21 +65,15 @@ def normalize(event, ref, inputs):
     values['stage_input'] = json.dumps(stage_input, separators=(',', ':'), ensure_ascii=True)
     require(operation in {'metadata', 'compliance'} or not stage_input, 'Input is only for metadata/compliance')
     if operation == 'package':
-        require(destination in {'artifacts', 'github-draft'}, 'Package route cannot upload or distribute')
-        require(not any(values[key] for key in ['package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups']), 'Package route cannot import store state')
-        require(values['tag'] == (f'candidate/ios/{values["version"]}-{profile}.{values["build"]}' if destination == 'github-draft' else ''), 'Draft requires exact matching tag; artifacts cannot use a tag')
+        require(not values['groups'], 'Groups are only for distribution')
     else:
-        require(destination in {'testflight', 'testflight-internal', 'testflight-external'} and not values['tag'], 'Store route requires TestFlight destination without tag')
         require(profile != 'alpha' or destination != 'testflight-external', 'Alpha is internal testing only')
-        require(positive(values['package_run_id']) and positive(values['source_attempt']) and
-                re.fullmatch(r'[0-9a-f]{64}', values['manifest_sha256']) is not None, 'Exact producer run/attempt/manifest required')
-        require(not values['upload_run_id'] or positive(values['upload_run_id']), 'Invalid store-state run')
-        require(operation not in {'metadata', 'compliance', 'distribute'} or values['upload_run_id'], 'Later mutation requires completed uploaded state')
+        require(operation not in {'metadata', 'compliance', 'distribute'} or values['upload_run_id'], 'Later mutation requires completed uploaded state receipt')
         if operation == 'distribute':
             groups = [group.strip() for group in values['groups'].split(',')]
-            require(destination in {'testflight-internal', 'testflight-external'} and len(groups) <= 100 and
-                    len(set(groups)) == len(groups) and all(group and len(group) <= 100 and not any(ord(c) < 32 or ord(c) == 127 for c in group) for group in groups),
-                    'Distribution requires explicit destination and existing unique groups')
+            require(len(groups) <= 100 and len(set(groups)) == len(groups) and
+                    all(group and len(group) <= 100 and not any(ord(c) < 32 or ord(c) == 127 for c in group) for group in groups),
+                    'Distribution requires existing unique groups')
             values['groups'] = ','.join(groups)
         else:
             require(not values['groups'], 'Groups are only for distribute')

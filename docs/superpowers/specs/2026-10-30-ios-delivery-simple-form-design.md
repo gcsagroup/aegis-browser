@@ -1,0 +1,11 @@
+# iOS Delivery: seven-field dispatch
+
+Follow-up to the accepted Admin consolidation at cd6bdbd. The user requests an explanation and simpler form, then explicitly authorizes continuation and notifying the Android chat after completion.
+
+Keep one Delivery workflow plus existing Validation and Coverage. Reduce12 inputs to7: operation,profile,version,build,source,groups,stage_input. Defaults require only version/build for Alpha artifacts. Select Beta/Release explicitly for new packages. A copyable versioned delivery receipt retains immutable profile/version/build, original producer, current state, exact attempt and manifest digest; later stages need operation+receipt, with optional existing groups or reviewed JSON. Explicit conflicting identity fails. Destination moves to operation choices; exact Draft tag is derived and must already exist at the admitted source.
+
+Receipt decoding only normalizes identity pins. It never authenticates or removes checks: effective Admin for original/rerun/local operators, current upstream main and exact successful quality, successful producer and current attempt, original package identity, SHA/tree, manifest/assets, stage journals, independent protected restore and credential isolation remain required. Package never implicitly uploads; tag still creates private Draft only. The scope contains no public release, external Beta Review or formal submission.
+
+Receipts are emitted only in success-conditioned steps after package or completed stage/export. Unknown/failed stage journals are preserved but issue no usable continuation receipt. Earlier-stage replay detection recognizes both legacy digest titles and receipt titles, including both distribution routes. Live acceptance binds new source/tree and uses fresh ASC-checked build numbers; existing acceptance sources and historical TF builds remain unchanged.
+
+Alternatives considered: merely shorten labels leaves too many manual identity fields; derive trust from the downloaded artifact loses the independent digest pin; split into several workflows recreates duplication. One copied receipt preserves the existing trust contract and shortens the form without new workflows.
