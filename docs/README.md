@@ -1,5 +1,7 @@
 # Documentation
 
+- [iOS release operations](development/ios-release.md)
+
 - [iOS WebKit fingerprinting, security hardening, phishing and mining protection plan (Simplified Chinese)](plans/ios-webkit-protection-2026-10-11.zh-CN.md)
 - [iOS Ver 4.0 portable features：User guide](ios-portable-features.en.md)
 - [Four-platform comparison](platform-features.en.md)
