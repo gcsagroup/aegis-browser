@@ -335,3 +335,4 @@
 0335-prepare-integrated-native-version-301.patch
 0336-prepare-metal-toolchain-retry-version-302.patch
 0337-prepare-go-toolchain-retry-version-303.patch
+0338-fix-gesture-closure-nullability.patch
