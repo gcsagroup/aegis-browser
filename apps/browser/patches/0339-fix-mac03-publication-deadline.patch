@@ -1,0 +1,53 @@
+From 36bdf50b2a4b0388783a26a2ae3112a8e01f1d92 Mon Sep 17 00:00:00 2001
+From: quinn521 <287940781+quinn521@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 17:36:39 +0800
+Subject: [PATCH] fix(mac): enforce MAC03 deadlines through evidence
+ publication
+
+---
+ chrome/browser/aegis/agent/aegis_agent_browsertest.cc | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index b6b7f80a3fdc4f67efafa85300a92a4d7a2eb5bc..85d3d7df90318d687ebd2a61ea708eb425b393d9 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -25,6 +25,7 @@
+ #include "base/time/time.h"
+ #include "base/uuid.h"
+ #include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+ #include "base/memory/raw_ptr.h"
+@@ -6938,17 +6939,27 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalAiWorkerInWebUI) {
+       .Set("startup", std::move(*startup)).Set("events", observer.events().Clone())
+       .Set("errors", base::ListValue()).Set("terminal", "complete");
+   std::string serialized;
++  base::ScopedClosureRunner remove_unaccepted(base::BindOnce(
++      [](base::FilePath path) {
++        if (base::PathExists(path)) base::DeleteFile(path);
++      }, final_path));
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
+   ASSERT_TRUE(base::JSONWriter::Write(bundle, &serialized));
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
+   ASSERT_LE(serialized.size(), 524288u);
+   ASSERT_TRUE(observer.FinalEmpty()) << observer.error();
+   ASSERT_TRUE(Mac03PhysicalPath(evidence_dir, true));
+   ASSERT_TRUE(base::IsDirectoryEmpty(evidence_dir));
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
+   ASSERT_TRUE(base::ImportantFileWriter::WriteFileAtomically(final_path, serialized));
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
+   ASSERT_TRUE(Mac03PhysicalPath(final_path, false));
+   std::string reread;
+   ASSERT_TRUE(base::ReadFileToStringWithMaxSize(final_path, &reread, 524288));
+   ASSERT_EQ(serialized, reread);
+   ASSERT_TRUE(observer.FinalEmpty()) << observer.error();
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
++  (void)remove_unaccepted.Release();
+   // External consumer performs post-child file+directory sync and stable reads.
+ }
+ 
+-- 
+2.54.0 (Apple Git-157)
+
