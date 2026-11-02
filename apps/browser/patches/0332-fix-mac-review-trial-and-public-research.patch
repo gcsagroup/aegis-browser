@@ -1,0 +1,65 @@
+From 3c9dd0ae48a516f2db4630fb98db11a07fdbad9a Mon Sep 17 00:00:00 2001
+From: Aegis Patch Export <aegis-patch-export@invalid>
+Date: Mon, 26 Oct 2026 12:48:37 +0800
+Subject: [PATCH] fix: bind trial consent and validate public research
+ unavailability
+
+Keep the desktop patch payload aligned with the overlay.
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index f2565336cdb2a7f489904a573ae5961daaf7b0e9..6412a5cf70a637b2076c4e4f95c55fad441a1563 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -6252,18 +6252,25 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalAiWorkerInWebUI) {
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
+       GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
+   auto* page = browser()->tab_strip_model()->GetActiveWebContents();
+-  // 在真实 WebUI CSP 下检查 IDB、嵌套 Worker、WASM 与两份真实实验权重。
++  // Public assets omit research weights. Exercise the real WebUI Worker and
++  // storage path, explicit unavailable errors, and recovery after rejection.
+   EXPECT_EQ(content::EvalJs(page, R"JS(
+     (async () => {
+       const {LocalAiClient} = await import('./local_ai_client.js');
+       const client = new LocalAiClient();
+       const missing = await client.run({op: 'status', direction: 'en-zh'}, () => {});
+       if (missing.ready !== false) return 'unexpected package';
+-      const result = await client.run({op: 'research', minim: true, phishlang: true,
+-        goal: 'read_post', paragraphs: ['Save your notes before closing the browser.']}, () => {});
+-      if (result.minim.length !== 1 || !Number.isFinite(result.minim[0].necessity) ||
+-          !Number.isFinite(result.phishlang.score) || result.phishlang.windows < 1) return 'invalid scores';
+-      return 'passed';
++      for (const [minim, phishlang] of [[true, false], [false, true], [true, true]]) {
++        try {
++          await client.run({op: 'research', minim, phishlang, goal: 'read_post',
++            paragraphs: ['Save your notes before closing the browser.']}, () => {});
++          return 'unexpected research result';
++        } catch (error) {
++          if (error.message !== 'research_model_not_distributed') return error.message;
++        }
++      }
++      const after = await client.run({op: 'status', direction: 'en-zh'}, () => {});
++      return after.ready === false ? 'passed' : 'unexpected package after rejection';
+     })()
+   )JS"), "passed");
+ }
+diff --git a/chrome/browser/resources/aegis/enhancements.js b/chrome/browser/resources/aegis/enhancements.js
+index c93286810042d91817d53ec93a29d549190b7ddb..d80280584131d73c33ba21250df1c1ba0cc19c18 100644
+--- a/chrome/browser/resources/aegis/enhancements.js
++++ b/chrome/browser/resources/aegis/enhancements.js
+@@ -318,8 +318,15 @@ action("trial", async () => {
+     )
+   )
+     return;
++  // Bind consent before save() refreshes the tab list. The native handler also
++  // rejects navigation after this snapshot, including same-URL reloads.
++  const confirmed = {op: "trial", tab: t.id, url: t.url, document: t.document};
+   await save();
+-  const r = await request({ ...pageRequest("trial"), id: record.id });
++  const current = target();
++  if (!current || current.id !== confirmed.tab || current.url !== confirmed.url ||
++      current.document !== confirmed.document)
++    throw Error(uiText("目标网页已变化，请刷新列表。"));
++  const r = await request({ ...confirmed, id: record.id });
+   render(await request({op: "state"}));
+   notify(
+     uiText("已安排试运行：") + (r.result?.result?.value || uiText("请检查网页效果，并刷新运行状态。")),

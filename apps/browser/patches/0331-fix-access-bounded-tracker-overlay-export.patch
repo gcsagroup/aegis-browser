@@ -1,0 +1,1175 @@
+From f18097968ec10093198df6aedbefa6fbc259b1ba Mon Sep 17 00:00:00 2001
+From: Aegis Packaging Proposal <aegis-proposal@invalid>
+Date: Thu, 22 Oct 2026 18:50:39 +0000
+Subject: [PATCH] fix: export bounded tracker runtime and browser regressions
+
+Keep the ordered Chromium patch series synchronized with the expected overlay.
+This transports the existing overlay fixes; native acceptance remains separate.
+
+---
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index 8612ef233fca03edf1f2d4a48df3bf3601bc604e..c6f743ca3afa539757774cdbb6037ff5323a8ab4 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -6,6 +6,7 @@
+ #include <cstdint>
+ #include <limits>
+ #include <memory>
++#include <map>
+ #include <optional>
+ #include <string>
+ #include <vector>
+@@ -17,6 +18,8 @@
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/run_loop.h"
++#include "base/synchronization/lock.h"
++#include "base/unguessable_token.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+@@ -469,6 +472,12 @@
+     host_resolver()->AddRule(kTrailingDotTargetHost, "127.0.0.1");
+     host_resolver()->AddRule(kUnselectedRedirectHost, "127.0.0.1");
+ 
++    target_origin_.RegisterRequestHandler(base::BindRepeating(
++        &AccessProxyingURLLoaderFactoryBrowserTest::LifecycleReply,
++        base::Unretained(this), false));
++    proxy_server_.RegisterRequestHandler(base::BindRepeating(
++        &AccessProxyingURLLoaderFactoryBrowserTest::LifecycleReply,
++        base::Unretained(this), true));
+     target_origin_.RegisterRequestHandler(
+         base::BindRepeating(&IgnoreAutomaticFavicon));
+     target_origin_.RegisterRequestHandler(base::BindRepeating(
+@@ -1022,7 +1031,8 @@
+   }
+ 
+   void PublishCommittedRule(const std::string& destination_host,
+-                            aegis_access::AccessMode mode) {
++                            aegis_access::AccessMode mode,
++                            uint64_t policy_generation = 1) {
+     aegis_access::AccessPolicyRule rule;
+     rule.rule_id = "rule-browser-test";
+     rule.owner = *owner_;
+@@ -1035,8 +1045,8 @@
+       rule.proxy_group_id = kProxyGroup;
+     }
+     rule.protection_override = aegis_access::ProtectionOverride::kNone;
+-    rule.row_revision = 1;
+-    rule.last_operation_sequence = 1;
++    rule.row_revision = policy_generation;
++    rule.last_operation_sequence = policy_generation;
+ 
+     StoredAccessRule stored_rule;
+     stored_rule.policy = rule;
+@@ -1045,7 +1055,7 @@
+ 
+     StoredPolicySnapshot snapshot;
+     snapshot.owner = *owner_;
+-    snapshot.policy_generation = 1;
++    snapshot.policy_generation = policy_generation;
+     snapshot.independent_rules.push_back(std::move(stored_rule));
+ 
+     auto* runtime =
+@@ -1058,6 +1068,9 @@
+     const AccessPolicyPublicationResult publication =
+         runtime->PublishCommittedPolicySnapshot(snapshot);
+     EXPECT_EQ(publication.status, AccessPolicyPublicationStatus::kPublished);
++    EXPECT_EQ(publication.policy_generation, policy_generation);
++    if (publication.status == AccessPolicyPublicationStatus::kPublished)
++      last_publication_generation_ = publication.policy_generation;
+   }
+ 
+   void PublishSelectedProxyEndpoint(
+@@ -1112,13 +1125,199 @@
+         value.top_level_site(), value.exact_host(), value.scheme(), value.port()};
+   }
+ 
++  void AcknowledgeLifecyclePublication(const std::string& run,
++                                       const std::string& phase,
++                                       uint64_t generation, bool proxy) {
++    ASSERT_EQ(last_publication_generation_, generation);
++    const auto selector = CurrentSiteSelector();
++    ASSERT_TRUE(selector.has_value());
++    ASSERT_EQ(selector->owner, *owner_);
++    aegis_access::PolicyPublicationIdentity identity;
++    identity.operation_id = "lifecycle-" + run + "-" + phase;
++    identity.operation_sequence = generation;
++    identity.policy_generation = generation;
++    identity.network_epoch = transport_->network_epoch();
++    identity.selector = *selector;
++    if (proxy) {
++      const auto endpoint =
++          transport_->CaptureSelectedProxyEndpoint(*owner_, kProxyGroup, kTargetHost);
++      ASSERT_TRUE(endpoint.has_value());
++      ASSERT_EQ(endpoint->registration_id, "registration-browser-test");
++      ASSERT_EQ(endpoint->owner, *owner_);
++      ASSERT_EQ(endpoint->generations.policy_generation, generation);
++      ASSERT_EQ(endpoint->generations.network_epoch, identity.network_epoch);
++      identity.proxy_group_id = endpoint->proxy_group_id;
++      identity.selection_generation = endpoint->generations.selection_generation;
++      ASSERT_GT(identity.selection_generation, 0u);
++    } else {
++      ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
++      ASSERT_TRUE(identity.proxy_group_id.empty());
++      ASSERT_EQ(identity.selection_generation, 0u);
++    }
++    using Identity = aegis_access::PolicyPublicationIdentity;
++    auto acknowledged = std::make_shared<std::optional<Identity>>();
++    base::test::TestFuture<bool> settled;
++    const auto start = transport_->PublishPolicyCandidateWithAck(
++        identity, *owner_,
++        base::BindOnce(
++            [](Identity requested,
++               std::shared_ptr<std::optional<Identity>> acknowledged,
++               base::OnceCallback<void(bool)> completion, bool success) {
++              // This completion belongs to this exact publication call.
++              // Transport validates the identity/client era at real Mojo ACK.
++              if (success)
++                *acknowledged = std::move(requested);
++              std::move(completion).Run(success);
++            },
++            identity, acknowledged, settled.GetCallback()));
++    ASSERT_EQ(start.status, AccessNetworkConfigAckStatus::kStarted);
++    ASSERT_GT(start.required_client_acks, 0u);
++    ASSERT_TRUE(settled.Wait());
++    ASSERT_TRUE(settled.Get());
++    ASSERT_TRUE(acknowledged->has_value());
++    ASSERT_EQ(**acknowledged, identity);
++    ASSERT_EQ(transport_->network_epoch(), identity.network_epoch);
++    last_lifecycle_ack_ = **acknowledged;
++  }
++
++  std::string LifecycleBody(bool proxy, const std::string& path) const {
++    return proxy ? "proxy-endpoint:127.0.0.1:" +
++                       std::to_string(proxy_server_.port()) + ":" + path
++                 : "origin:" + path;
++  }
++
++  std::unique_ptr<net::test_server::HttpResponse> LifecycleReply(
++      bool proxy, const net::test_server::HttpRequest& request) {
++    const std::string path = request.GetURL().path();
++    if (!path.starts_with("/aegis-lifecycle/"))
++      return nullptr;
++    {
++      base::AutoLock lock(lifecycle_lock_);
++      (proxy ? lifecycle_proxy_ : lifecycle_origin_)[path]++;
++    }
++    (proxy ? proxy_requests_ : origin_requests_).fetch_add(
++        1, std::memory_order_relaxed);
++    // A controlled empty-response connection failure, not an HTTP error body.
++    // Separate fixture receiver barriers remain reachable on localhost.
++    if (proxy && lifecycle_fault_.load(std::memory_order_acquire) &&
++        path.find("/barrier-") == std::string::npos)
++      return std::make_unique<net::test_server::RawHttpResponse>("", "");
++    auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++    response->set_code(net::HTTP_OK);
++    response->set_content(LifecycleBody(proxy, path));
++    response->set_content_type("text/plain");
++    response->AddCustomHeader("Cache-Control", "no-store");
++    return response;
++  }
++
++  void ExpectLifecycleStage(const std::string& run, const std::string& phase,
++                            bool selected_proxy, bool fault) {
++    const std::string base = "/aegis-lifecycle/" + run + "/";
++    const std::string browser_path = base + phase + "-browser";
++    const std::string renderer_path = base + phase + "-renderer";
++    // The actual browser-process Prefetch loader reports network completion;
++    // a renderer link Prefetch independently supplies a positive event.
++    const auto body = FetchBrowserProcessPrefetch(
++        target_origin_.GetURL(kTargetHost, browser_path));
++    if (fault)
++      ASSERT_FALSE(body.has_value());
++    else
++      ASSERT_EQ(body, std::optional<std::string>(
++                          LifecycleBody(selected_proxy, browser_path)));
++    ASSERT_EQ(RunPrefetch(target_origin_.GetURL(kTargetHost, renderer_path)),
++              fault ? "error" : "loaded");
++
++    auto* dispatch = AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
++    ASSERT_NE(dispatch, nullptr);
++    ASSERT_TRUE(base::test::RunUntil(
++        [&] { return dispatch->ownership().size() == 0u; }));
++    // Both receivers complete an explicit tagged barrier after client
++    // completion. No-DIRECT is checked after these barriers, never by sleeping.
++    for (bool proxy : {false, true}) {
++      const std::string barrier = base + "barrier-" + phase +
++                                  (proxy ? "-proxy" : "-origin");
++      const GURL url = proxy ? proxy_server_.GetURL("localhost", barrier)
++                             : target_origin_.GetURL("localhost", barrier);
++      ASSERT_EQ(FetchBrowserProcessPrefetch(url),
++                std::optional<std::string>(LifecycleBody(proxy, barrier)));
++    }
++    ASSERT_TRUE(base::test::RunUntil(
++        [&] { return dispatch->ownership().size() == 0u; }));
++    base::AutoLock lock(lifecycle_lock_);
++    for (const std::string& path : {browser_path, renderer_path}) {
++      EXPECT_EQ(lifecycle_origin_[path], selected_proxy ? 0u : 1u) << path;
++      if (fault)
++        EXPECT_GE(lifecycle_proxy_[path], 1u) << path;
++      else
++        EXPECT_EQ(lifecycle_proxy_[path], selected_proxy ? 1u : 0u) << path;
++    }
++  }
++
+   std::atomic<size_t> origin_requests_{0};
+   std::atomic<size_t> proxy_requests_{0};
++  // Servers are destroyed before their callback state (reverse member order).
++  std::atomic<bool> lifecycle_fault_{false};
++  base::Lock lifecycle_lock_;
++  std::map<std::string, size_t> lifecycle_origin_;
++  std::map<std::string, size_t> lifecycle_proxy_;
++  uint64_t last_publication_generation_ = 0;
++  std::optional<aegis_access::PolicyPublicationIdentity> last_lifecycle_ack_;
+   net::test_server::EmbeddedTestServer target_origin_;
+   net::test_server::EmbeddedTestServer proxy_server_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+   std::optional<aegis_access::OwnershipKey> owner_;
+ };
++
++IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
++                       ControlledOnFaultRecoveryOffPreservesRoute) {
++  size_t ignored_origin = 0, ignored_proxy = 0;
++  ASSERT_NO_FATAL_FAILURE(
++      PreparePrefetchTest(&ignored_origin, &ignored_proxy));
++  Profile* const profile = browser()->GetProfile();
++  const std::string run = base::UnguessableToken::Create().ToString();
++
++  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "healthy", false, false));
++  ASSERT_EQ(browser()->GetProfile(), profile);
++
++  PublishProxyPolicy(/*publish_endpoint=*/true);
++  ASSERT_EQ(last_publication_generation_, 1u);
++  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(profile);
++  ASSERT_NE(runtime, nullptr);
++  const auto on = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
++  ASSERT_EQ(on.status, aegis_access::RequestGenerationTupleBuildStatus::kComplete);
++  ASSERT_TRUE(on.generations.has_value());
++  ASSERT_EQ(on.generations->policy_generation, 1u);
++  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "on", 1, true));
++  ASSERT_TRUE(last_lifecycle_ack_.has_value());
++  ASSERT_EQ(last_lifecycle_ack_->policy_generation, on.generations->policy_generation);
++  ASSERT_EQ(last_lifecycle_ack_->selection_generation, on.generations->selection_generation);
++  ASSERT_EQ(last_lifecycle_ack_->proxy_group_id, kProxyGroup);
++  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "on", true, false));
++
++  lifecycle_fault_.store(true, std::memory_order_release);
++  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "fault", true, true));
++  const auto fault = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
++  ASSERT_EQ(fault.generations, on.generations);
++
++  lifecycle_fault_.store(false, std::memory_order_release);
++  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "recovery", true, false));
++  const auto recovered = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
++  ASSERT_EQ(recovered.generations, on.generations);
++
++  PublishCommittedRule(kTargetHost, aegis_access::AccessMode::kDirect,
++                       /*policy_generation=*/2);
++  ASSERT_TRUE(transport_->ClearProxySelection(base::FilePath()));
++  ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
++  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "off", 2, false));
++  ASSERT_TRUE(last_lifecycle_ack_.has_value());
++  ASSERT_EQ(last_lifecycle_ack_->policy_generation, 2u);
++  ASSERT_TRUE(last_lifecycle_ack_->proxy_group_id.empty());
++  ASSERT_EQ(last_lifecycle_ack_->selection_generation, 0u);
++  ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
++  ASSERT_EQ(last_publication_generation_, 2u);
++  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "off", false, false));
++  ASSERT_EQ(browser()->GetProfile(), profile);
++}
+ 
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        NoPublishedPolicyPreservesNativePath) {
+diff --git a/tools/aegis/current151_tracker/README.md b/tools/aegis/current151_tracker/README.md
+index c4a104de0305dd10d584d257c8f4455d37bf978f..8436c2e770e6df7b618b19494c890f8d367c69fc 100644
+--- a/tools/aegis/current151_tracker/README.md
++++ b/tools/aegis/current151_tracker/README.md
+@@ -1,149 +1,165 @@
+ # Bounded tracker validation support
+ 
+-This opt-in test support preserves the existing two tracker GTest names and the
++This opt-in support preserves the original two tracker GTest names and the
+ normal target entry when `aegis_current151_tracker_bounded = false` (the default).
+-It does not change production publication, network, lease or commit behavior.
++The current151 file/target names are historical. Every executable qualification
++must bind its actual Chromium revision, applied source tree and toolchain.
++This experiment does not establish SQLite, UI, full browser or service acceptance.
+ 
+-The selected experiment tests durable publication facts and confirmation in the
+-fixed Chromium 151 candidate. It covers **two of the original 152 cases**. SQLite,
+-UI blocking, browser multiprocess behavior and the other 150 cases require their
+-own evidence. Packaging these files on a newer repository baseline does not
+-transfer native evidence between Chromium versions.
++## Source checks and private dispatch
+ 
+-## Lightweight checks
+-
+-Use the repository-pinned Python interpreter:
++With a separately admitted test window, use the repository-pinned Python:
+ 
+ ```sh
+ python3 -I -S -B apps/browser/overlay/tools/aegis/current151_tracker/regressions.py
+ ```
+ 
+-The suite exercises the actual deadline, sticky stop, command boundary, input
+-budget, result identity, sequencing and accounting code. It includes a real
+-Python startup-hook positive control and isolation check. These checks invoke no
+-GN, Ninja, compiler or native tracker binary.
++That suite checks real admission/result code and includes an inert Python
++startup-hook test. It invokes no GN, Ninja, compiler or native tracker binary.
++Tests authored in the source implementation window have not been run merely
++because their syntax has been inspected.
+ 
+-## Execution boundary
++`driver.py` intentionally has no public native dispatch entry. Its build entry
++continues to refuse B1. Private grant/producer/build/native/browser adapters are
++coordinator support, supplied and reviewed outside this product directory.
++They require an exact candidate, hash-bound inputs, fresh outputs, original boot
++and monotonic deadline, actual direct-owner wait and both output-pipe EOFs.
++A JSON receipt or a successful parser fixture cannot create OwnerCompletion.
+ 
+-The implementation is a source candidate pending independent review and native
+-qualification. `driver.py` supplies admission/result adapters; it intentionally
+-has no public native dispatch entry. The private grant loader, actual build
+-dependency/producer reconciliation and controller-to-owner dispatch integration
+-are still required. Its build entry always refuses execution with blocker B1.
++The private producer adapter supports only its explicitly bound literal producer
++manifest and conservative response/depfile/Darwin filelist grammars. Actual
++generated GN/Ninja formats require a qualified normalizer and exact provenance;
++unknown grammar, historical objects and unresolved SDK aliases still refuse.
++A direct-leaf owner does not authorize or bootstrap the compiler/build chain.
+ 
+-`current151_owned_leaf` is the sole creator and reaper of one direct child. It
+-accepts only an original monotonic deadline/boot identity, an admitted Seatbelt
+-profile, an absent terminal receipt, a working directory and a literal leaf
+-argv. It never imports a PID or signals a group. The controller keeps stdin open,
+-sends exactly one `G` after the second guard check, and cancels by closing it.
+-The child installs the profile, deadline timer and resource limits before exec;
+-the bounded entry consumes GO and retains an EOF/deadline watchdog through suite
+-and static destruction. A successful exit is provisional until retirement,
+-fresh XML, accounting, final input guards and the original deadline pass.
++## Owner and tracker protocol
+ 
+-Python admission/checks explicitly use `clock_gettime_ns(CLOCK_MONOTONIC)` and
+-native checks use `clock_gettime(CLOCK_MONOTONIC)`. The original deadline and boot
+-identity are never reconstructed. Every guard is followed by a sticky-stop and
+-deadline check. Finalization preserves an earlier accounting error even if
+-cleanup also fails; census runs after retirement and again after validation and
+-the last guard's evidence writes, before the live-deadline acceptance transition.
+-Listing admission requires zero owner and leaf exit codes, verified retirement,
+-no cancellation and exact names. Printed names alone cannot advance the sequence.
++`current151_owned_leaf` creates and exclusively reaps one direct child.
++It accepts the original deadline/boot, an exact Seatbelt base profile, an absent
++terminal receipt, a canonical working directory and literal leaf argv.
++The controller keeps stdin open and sends exactly one `G` after revalidation.
++EOF, repeated GO, other bytes, clock expiry and boot drift latch cancellation.
+ 
+-Before admitting this mechanism, real Darwin qualification must establish timer
+-inheritance, fork/vfork/spawn denial, controller/owner loss behavior, retirement
+-and bounded cleanup. The supplied qualification sources cover process-creation
+-denial, its positive control and clock reconciliation; further loss/retirement
+-qualification remains open. No successful parser
+-test or configuration boolean can replace those native observations.
++Before exec the child arms a fatal timer and resource limits and installs
++Seatbelt. The tracker path retains its detached EOF/deadline watchdog through
++suite and static destruction. Tracker arguments remain only listing or one
++exact case. No public flag or environment value declares qualification success.
+ 
+-The support target has its own narrow argument mode; tracker entry still permits
+-only listing or either exact individual case. The no-argument support command denotes denial qualification; it is currently
+-blocked together with the matching positive control. Noncreating clock and
+-owner-boundary fixtures have separate strict argument modes:
++The owner observes only its birth-derived direct child. ECHILD or any uncertain
++wait result permanently revokes signal authority. It never imports a leaf PID,
++signals a process group, or scans unrelated host processes. Qualification
++cancellation closes the channel first, allowing the qualifier to drain its known
++probe. The one fixed ten-second owner cleanup budget reserves its final three
++seconds for actual direct-child wait after a signal. Missing retirement remains
++UNVERIFIED; a signal issued at a deadline is not a wait receipt.
++
++## Cooperative process qualification
++
++The support binary accepts no arguments for denial, or one of:
+ 
+ ```text
+-current151_tracker_support_regressions --aegis-qualification-positive-control
+-current151_tracker_support_regressions --aegis-qualification-clock-probe
+-current151_tracker_support_regressions --aegis-qualification-owner-boundaries
++--aegis-qualification-positive-control
++--aegis-qualification-clock-probe
++--aegis-qualification-owner-boundaries
+ ```
+ 
+-Both process controls are **REQUIRED/BLOCKED** with
+-`LOSS_SAFE_PROBE_EXECUTOR_MISSING`. The owner refuses both before profile setup
+-or child creation. The support entry independently refuses them and direct
+-`--aegis-spawn-probe` entry; no boolean, environment or receipt can override this.
+-The paired canary source remains in `RunProcessCanaries()`, behind the same
+-unconditional blocker. It has not passed, been waived, or been replaced by a
+-scan of an empty process set.
++All modes require the inherited original boot/deadline and one-use GO channel.
++Qualification uses a cooperative session instead of the tracker's fatal
++watchdog thread. Its inherited fatal timer remains armed. A three-second drain
++reserve is subtracted from the earlier of the original lease and observed timer
++boundary. Polling cancellation stops new probes and lets their sole creator
++signal and actually wait only those positive PIDs it created.
+ 
+-The missing component is an admitted Darwin probe executor that atomically
+-protects birth, pre-exec and dyld startup with the original deadline and loss
+-termination, and retains exact birth-derived identity/exclusive reaping even
+-when qualifier or owner disappears. The current package establishes no such
+-executor. A main-body exit73, inherited channel, heartbeat or another ordinary
+-watchdog does not establish that property. An imported probe PID does not grant
+-the owner signal or reap authority.
++The paired controls use the same canonical binary, environment, exec permissions
++and identical base-profile bytes. The owner appends the intended difference:
++process-fork denial versus allowance, with network denial in both.
++Denial requires fork/vfork/posix_spawn EPERM or EACCES. Unexpected creation is
++actually waited by its creator and fails the case. Positive self-spawn requires
++exit73 and actual reap; each wait/revocation is recorded on stderr.
+ 
+-Future matching controls must execute the same canonical support binary, exact
+-argv/environment/input identities and exec permissions under separately
+-admitted profiles differing only in process-fork permission. Denial requires
+-EPERM/EACCES and a matching successful positive spawn whose exact child exits73
+-and is reaped. Qualification must cover birth-before-spawn-return, pre-exec,
+-dyld and running phases crossed with cancellation, original expiry, qualifier
+-watchdog `_exit`, qualifier SIGKILL and owner loss. Observation is at most five
+-seconds, probe retirement two seconds, within fixed ten-second owner cleanup.
+-ECHILD/uncertain retirement stays UNVERIFIED; foreign/reused PIDs must receive no
+-signals. Finding4 remains BLOCKED until that executor and native evidence exist.
++The self-probe has a separate private strict entry: inherited FIFO, one-use
++random nonce followed by EOF, unchanged boot and original deadline. It arms its
++own at-most-two-second timer capped by that original deadline. Bare
++`--aegis-spawn-probe` refuses. Directly manufacturing probe arguments or seeing
++exit73 alone never establishes coordinator admission or native qualification.
+ 
+-For the cross-language clock regression, the controller records explicit
+-CLOCK_MONOTONIC samples before/after the admitted clock-probe command and passes
+-the original deadline. `validate_clock_probe` checks the native observation's
+-domain, sample bracket, unchanged deadline and boot identity. Python tests cover
+-this reconciliation with fixture observations; all actual native qualification,
+-positive-control and clock-probe sources are **SOURCE_ONLY_NOT_COMPILED_NOT_RUN**.
+-No profile, compiler, helper or spawn probe is executed by the lightweight suite.
++This is the accepted known-process model. It does not promise arbitrary escaped
++descendant containment or atomic retirement across forced creator loss.
++If a qualifier is forcibly lost before a trusted probe wait, the result stays
++UNVERIFIED with retained raw. Normal admitted cancellation/expiry/drain,
++ECHILD/no-foreign-signal behavior and actual timing still require Darwin runs.
+ 
+-**B1 remains open:** an owned executor for the actual GN → scripts / Ninja → shell
+-/ wrappers / compiler descendants and their input lineage has not been supplied.
+-The direct leaf owner cannot bootstrap itself or authorize that build chain.
+-Build and native dispatch remain sealed until the coordinator admits a concrete
+-executor, reviewed inputs, fresh output roots and the single heavy slot.
++The clock fixture reports CLOCK_MONOTONIC samples, original deadline and boot.
++The controller brackets the actual invocation with that same clock and
++`validate_clock_probe` reconciles the observation. Owner-boundary fixtures
++exercise production gate transitions, terminal IO failures and drain-reserve
++calculations. Source fixtures do not substitute for actual native evidence.
+ 
+-Known input grammar limits remain refusals: Darwin link filelists and complete
+-generated GN/Ninja/depfile producer ingestion need additional adapters. Unknown
+-inputs and historical objects must never be silently admitted.
++## Provisional terminal and final acceptance
+ 
+-## Repair02 terminal and input contract
++The terminal schema remains version1, kind `provisional`, exact full command,
++original deadline/boot, reaped/stopped/GO observations and raw wait status.
++It has no accepted field. There is one write, fsync, close and final boundary;
++the first error remains primary even if cleanup or accounting later fails.
+ 
+-The owner validates its nonblocking controller pipe and, after all setup I/O,
+-checks pending cancellation, original deadline and boot immediately before
+-creation. At most one queued GO is retained for forwarding; EOF, errors,
+-non-GO bytes and repeated GO latch failure. The same fresh boundary runs before
+-forwarding and after terminal write, fsync and close. Terminal I/O failures latch
+-the first failure. Cancellation during terminal I/O returns125 without rewriting
+-the receipt. Cleanup has one fixed ten-second budget; EINTR returns to that
+-budgeted loop and uncertain retirement permanently revokes signal authority.
++The consumer requires its actual successful direct-owner wait, owner-recorded
++leaf reap/exit0, fresh listing then exact unit and regression XML, final input
++guards and evidence census. Repeated/out-of-order cases, preexisting output,
++duplicate/unknown terminal fields or XML, failures/skips, source drift and
++expired clocks refuse. The original deadline is never reconstructed or renewed.
+ 
+-The terminal schema is version1, kind `provisional`, exact full owner command,
+-original `deadline_ns`/`boot`, `reaped`/`stopped`/`go` observations and raw wait
+-`status`. It never contains `accepted`. This is an intentional incompatibility
+-with the prior receipt schema: old receipts are refused. `validate_terminal()`
+-rejects duplicate/unknown fields, incomplete observations, mismatched bindings
+-and receipts over32KiB. Listing, case result and finalization additionally
+-require completion from waiting for this invocation's directly owned owner,
+-actual owner exit0, owner-recorded verified leaf reap/exit0, and fresh final
+-consumer guards. The controller never imports/reaps the leaf. These completion
+-objects are trusted adapter inputs; there is still no admitted dispatch adapter,
+-so fixture values do not establish actual process completion.
++Input admission still walks original path components before reducing `..`,
++rejecting symlinks and non-directory components. Generated input lineage and
++filesystem mutation guards are additional requirements.
+ 
+-Input admission walks the original path components with `lstat` before reducing
+-`..`, refusing symlinks and non-directory intermediate components. Relative and
+-absolute `alias/../input.o` and response-file paths cannot admit a lexical current
+-neighbor while concealing historical bytes. Ordinary real-directory parent paths
+-remain eligible. Generated producers and filesystem mutation guards remain
+-separate requirements.
++## Evidence state
+ 
+-The native owner-boundary fixtures use production gate transitions for terminal
+-write/fsync/close cancellation, EOF, expiry and I/O errors; pre-create fixtures
+-require zero creation calls after cancellation/expiry, with a queued-GO success
+-control. All native fixtures remain **SOURCE_ONLY_NOT_COMPILED_NOT_RUN**.
++The cooperative source and private adapters require source-safety review,
++meaningful support tests, controlled compiler/build qualification, actual
++Darwin process controls and final native/browser tests. No build, runtime PASS,
++service/REALITY/PG acceptance, hosted CI or independent review is established by
++this README. Tracked integration creates a new candidate SHA and requires
++affected tests, review and CI to bind that candidate.
++
++
++## R1 private controller contract
++
++The private grant schema is version2. Every command declares its qualified
++kind and exact outputs. Ninja/GN/inert tool roles additionally require a
++separately supplied canonical path/hash registry; a JSON role cannot qualify
++its own tool. Ninja has exactly one explicit -j1/-j2 (or two-argument form),
++and GN has exactly one --threads=1/2, never above the grant's limit. Missing,
++unlimited, duplicate, unqualified option and wrapper forms refuse.
++The existing C++ provisional terminal remains version1.
++
++An invocation claims all its absent outputs immediately before Popen, after
++the full guards. Its actual Run binds that claim to command/grant/start clock.
++Before returning it observes declared artifacts' hashes and file identities.
++Producer reconciliation requires that exact claim/output set and current
++artifact identity; an admitted-but-later-injected output or a successful noop
++cannot inherit generated provenance.
++
++One bounded pipe/wait loop handles normal and exceptional IO. A read/select
++error does not skip draining. A raw-write error retains its bounded backlog
++while both pipes continue to be serviced. Only zero-byte reads establish EOF.
++Cap overflow, unwritten backlog and forced-close-without-EOF are explicit failed
++observations, never successful completion. Permanent IO failures remain
++UNVERIFIED, with pending/discarded counts and the first error retained.
++The evidence walk propagates enumeration errors. Final accounting is followed
++by the original boot/deadline/sticky-stop check without further evidence writes.
++
++Each listed case pins its canonical executable/hash/cwd/environment for its
++actual run, including native17. Qualification similarly pins the exact owner
++and support executables and context; the two profile files retain identical
++base hashes and only the intended owner-appended permission differs.
++
++The continuous browser fixture uses the existing identity-specific
++PublishPolicyCandidateWithAck seam with actual Mojo completion and nonzero
++required clients before ON/OFF requests. OFF clears the actual custom transport
++selection first. A local generation tuple or FlushClientsForTesting alone is
++not an ACK.
++
++R1 corrects the ten prior source-safety findings in source and adds regression
++sources. Tests, compiler/native/browser runs and independent re-review have not
++been performed in the source-only window. Unsafe real-child tests remain held
++until the original review owner/I explicitly admits the corrected candidate.
+diff --git a/tools/aegis/current151_tracker/bounded_runtime.cc b/tools/aegis/current151_tracker/bounded_runtime.cc
+index e5c01f59faf99e33d2fba5f9d53c9b494e29f814..bfbe4dcbeccc9f2c1ccfab5fbc0f08f921b43cc6 100644
+--- a/tools/aegis/current151_tracker/bounded_runtime.cc
++++ b/tools/aegis/current151_tracker/bounded_runtime.cc
+@@ -3,6 +3,7 @@
+ 
+ #include <fcntl.h>
+ #include <poll.h>
++#include <signal.h>
+ #include <sys/stat.h>
+ #include <sys/sysctl.h>
+ #include <sys/time.h>
+@@ -12,6 +13,7 @@
+ #include <cerrno>
+ #include <charconv>
+ #include <cstring>
++#include <limits>
+ #include <ctime>
+ #include <string_view>
+ #include <thread>
+@@ -48,8 +50,28 @@
+   return std::to_string(boot.tv_sec) + "." + std::to_string(boot.tv_usec);
+ }
+ 
+-const char* ProcessCanaryBlocker() {
+-  return "LOSS_SAFE_PROBE_EXECUTOR_MISSING";
++uint64_t QualificationWorkDeadline(uint64_t original_deadline, uint64_t now,
++                                   uint64_t alarm_remaining) {
++  constexpr uint64_t kDrainReserve = 3000000000ULL;
++  if (!now || !alarm_remaining || original_deadline <= now ||
++      alarm_remaining > std::numeric_limits<uint64_t>::max() - now)
++    return 0;
++  const uint64_t hard_end = std::min(original_deadline, now + alarm_remaining);
++  return hard_end - now > kDrainReserve ? hard_end - kDrainReserve : 0;
++}
++
++bool QualificationSession::Check() {
++  if (stopped)
++    return false;
++  pollfd channel{control_fd, POLLIN, 0};
++  const uint64_t now = MonotonicNowNs();
++  if (control_fd < 3 || !now || now >= work_end ||
++      now >= original_deadline || boot != BootIdentity() ||
++      poll(&channel, 1, 0) != 0) {
++    stopped = true;  // EOF, duplicate GO, cancellation and errors are sticky.
++    return false;
++  }
++  return true;
+ }
+ 
+ void OwnerGate::Fail(int reason) {
+@@ -125,7 +147,7 @@
+ 
+ namespace {
+ bool EnterChannel(int* argc, char** argv, bool (*valid_arguments)(int, char**),
+-                  uint64_t* original_deadline) {
++                  QualificationSession* qualification) {
+   uint64_t deadline = 0, descriptor = 0;
+   std::string boot;
+   int seen = 0, kept = 1;
+@@ -179,6 +201,22 @@
+       break;
+     }
+   }
++  if (qualification) {
++    // getitimer was sampled after "now"; adding it to that earlier clock
++    // underestimates the fatal timer boundary rather than extending it.
++    const uint64_t remaining =
++        static_cast<uint64_t>(alarm.it_value.tv_sec) * 1000000000ULL +
++        static_cast<uint64_t>(alarm.it_value.tv_usec) * 1000ULL;
++    const uint64_t work_end = QualificationWorkDeadline(deadline, now, remaining);
++    if (!work_end)
++      return false;
++    qualification->control_fd = fd;
++    qualification->original_deadline = deadline;
++    qualification->hard_end = work_end + 3000000000ULL;
++    qualification->work_end = work_end;
++    qualification->boot = boot;
++    return qualification->Check();
++  }
+   std::thread([fd, deadline] {
+     for (;;) {
+       const int wait = WaitMs(deadline);
+@@ -190,8 +228,6 @@
+         _exit(125);
+     }
+   }).detach();
+-  if (original_deadline)
+-    *original_deadline = deadline;
+   return true;
+ }
+ }  // namespace
+@@ -200,8 +236,81 @@
+   return EnterChannel(argc, argv, ValidTrackerArguments, nullptr);
+ }
+ 
+-bool EnterQualification(int* argc, char** argv, uint64_t* original_deadline) {
+-  return EnterChannel(argc, argv, ValidQualificationArguments, original_deadline);
++bool EnterQualification(int* argc, char** argv, QualificationSession* session) {
++  return session && EnterChannel(argc, argv, ValidQualificationArguments, session);
++}
++
++bool EnterSpawnProbe(int argc, char** argv) {
++  constexpr std::string_view kFd = "--aegis-probe-fd=";
++  constexpr std::string_view kDeadline = "--aegis-deadline-ns=";
++  constexpr std::string_view kBoot = "--aegis-boot=";
++  constexpr std::string_view kNonce = "--aegis-probe-nonce=";
++  if (argc != 6 || std::strcmp(argv[1], "--aegis-spawn-probe") != 0)
++    return false;
++  const std::string_view fd_arg(argv[2]), deadline_arg(argv[3]),
++      boot_arg(argv[4]), nonce_arg(argv[5]);
++  uint64_t descriptor = 0, deadline = 0;
++  if (!fd_arg.starts_with(kFd) || !deadline_arg.starts_with(kDeadline) ||
++      !boot_arg.starts_with(kBoot) || !nonce_arg.starts_with(kNonce) ||
++      !Number(fd_arg.substr(kFd.size()), &descriptor) ||
++      !Number(deadline_arg.substr(kDeadline.size()), &deadline) ||
++      descriptor < 3 || descriptor > 1024 ||
++      boot_arg.substr(kBoot.size()) != BootIdentity())
++    return false;
++  const std::string_view nonce = nonce_arg.substr(kNonce.size());
++  if (nonce.size() != 32 || nonce.find_first_not_of("0123456789abcdef") != std::string_view::npos)
++    return false;
++  const uint64_t now = MonotonicNowNs();
++  if (!now || deadline <= now || deadline - now > 8ULL * 3600 * 1000000000)
++    return false;
++  const uint64_t end = std::min<uint64_t>(deadline, now + 2000000000ULL);
++  if (end - now < 1000)
++    return false;  // never install a zero timer (which would disarm it)
++  struct stat info{};
++  const int fd = static_cast<int>(descriptor);
++  if (fstat(fd, &info) != 0 || !S_ISFIFO(info.st_mode) ||
++      fcntl(fd, F_SETFD, FD_CLOEXEC) != 0)
++    return false;
++  // This private exec child has its own <=2s timer, always capped by the
++  // original deadline. The admitted creator independently owns its real wait.
++  itimerval timer{};
++  timer.it_value.tv_sec = (end - now) / 1000000000ULL;
++  timer.it_value.tv_usec = ((end - now) % 1000000000ULL) / 1000;
++  struct sigaction action{};
++  action.sa_handler = SIG_DFL;
++  sigemptyset(&action.sa_mask);
++  sigset_t unblocked;
++  sigemptyset(&unblocked);
++  sigaddset(&unblocked, SIGALRM);
++  if (sigaction(SIGALRM, &action, nullptr) != 0 ||
++      sigprocmask(SIG_UNBLOCK, &unblocked, nullptr) != 0 ||
++      setitimer(ITIMER_REAL, &timer, nullptr) != 0)
++    return false;
++  std::string observed;
++  for (;;) {
++    const int wait = WaitMs(end);
++    if (!wait)
++      return false;
++    pollfd channel{fd, POLLIN, 0};
++    if (poll(&channel, 1, wait) < 0)
++      return false;
++    if (!channel.revents)
++      continue;
++    if (channel.revents & (POLLERR | POLLNVAL))
++      return false;
++    char bytes[33];
++    const ssize_t count = read(fd, bytes, sizeof(bytes));
++    if (count < 0)
++      return false;
++    if (count == 0) {
++      close(fd);
++      return observed == nonce && MonotonicNowNs() < end &&
++             boot_arg.substr(kBoot.size()) == BootIdentity();
++    }
++    if (observed.size() + count > 32)
++      return false;
++    observed.append(bytes, count);
++  }
+ }
+ 
+ bool ValidQualificationArguments(int argc, char** argv) {
+diff --git a/tools/aegis/current151_tracker/bounded_runtime.h b/tools/aegis/current151_tracker/bounded_runtime.h
+index 3b3e4063255a0dbdba9e58b53d678ee98d47c100..5c8d9622cf0837f0604ee67017ae0fb7b5f2f9df 100644
+--- a/tools/aegis/current151_tracker/bounded_runtime.h
++++ b/tools/aegis/current151_tracker/bounded_runtime.h
+@@ -15,13 +15,24 @@
+ // watchdog intentionally survives TestSuite and static destruction.
+ bool Enter(int* argc, char** argv);
+ bool ValidTrackerArguments(int argc, char** argv);
+-// Qualification is a separate, narrow argument mode. It shares the inherited
+-// channel, original deadline and watchdog, without accepting tracker arguments.
+-bool EnterQualification(int* argc, char** argv, uint64_t* original_deadline);
++// Qualification keeps cooperative cancellation until its known probes are
++// actually waited. Its inherited fatal timer remains armed and is never renewed.
++struct QualificationSession {
++  int control_fd = -1;
++  uint64_t original_deadline = 0;
++  uint64_t hard_end = 0;
++  uint64_t work_end = 0;
++  std::string boot;
++  bool stopped = false;
++  bool Check();
++};
++uint64_t QualificationWorkDeadline(uint64_t original_deadline, uint64_t now,
++                                   uint64_t alarm_remaining);
++bool EnterQualification(int* argc, char** argv, QualificationSession* session);
+ bool ValidQualificationArguments(int argc, char** argv);
+-// No boolean/environment/receipt override. Both process controls remain blocked
+-// until an admitted executor protects birth, pre-exec and supervisor loss.
+-const char* ProcessCanaryBlocker();
++// Separate private self-probe admission: exact inherited pipe + one-use nonce,
++// boot and original deadline. Direct bare --aegis-spawn-probe always refuses.
++bool EnterSpawnProbe(int argc, char** argv);
+ 
+ enum class ControllerObservation { kQuiet, kGo, kCancel, kEof, kError };
+ struct OwnerGate {
+diff --git a/tools/aegis/current151_tracker/native_regressions.cc b/tools/aegis/current151_tracker/native_regressions.cc
+index 47a3b0346b93f263267e7ea7c20dc01f964cae2f..f7d700c5372e016a9788cd2ed6ff05b06da23569 100644
+--- a/tools/aegis/current151_tracker/native_regressions.cc
++++ b/tools/aegis/current151_tracker/native_regressions.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <mach-o/dyld.h>
+ #include <limits.h>
++#include <fcntl.h>
+ #include <signal.h>
+ #include <spawn.h>
+ #include <sys/wait.h>
+@@ -14,6 +15,7 @@
+ #include <algorithm>
+ #include <cstdlib>
+ #include <cstring>
++#include <string>
+ 
+ extern char** environ;
+ 
+@@ -23,49 +25,61 @@
+ // Called only with a positive PID just returned by our own creation operation.
+ // No other thread reaps; SIGCHLD auto-reaping is disabled below. A zombie pins
+ // identity until this function's waitpid; ECHILD/uncertain errors revoke signals.
+-bool RetireCreatedProbe(pid_t pid, uint64_t original_deadline, int expected_exit) {
+-  const uint64_t end = std::min<uint64_t>(original_deadline,
+-      aegis_access::bounded::MonotonicNowNs() + 5000000000ULL);
+-  bool killed = false;
+-  uint64_t cleanup_end = end;
++bool RetireCreatedProbe(pid_t pid,
++                        aegis_access::bounded::QualificationSession* session,
++                        int expected_exit) {
++  if (pid <= 0)
++    return false;
++  const uint64_t start = aegis_access::bounded::MonotonicNowNs();
++  const uint64_t observe_end = std::min<uint64_t>(
++      session->work_end, start + 5000000000ULL);
++  const uint64_t reap_end = std::min<uint64_t>(
++      session->hard_end - 500000000ULL, observe_end + 2000000000ULL);
++  bool stopped = false, signal_sent = false;
+   for (;;) {
+     int status = 0;
+     const pid_t result = waitpid(pid, &status, WNOHANG);
+-    if (result == pid)
+-      return !killed && WIFEXITED(status) && WEXITSTATUS(status) == expected_exit;
+-    if (result < 0) {
+-      if (errno != EINTR)
+-        return false;
+-      const uint64_t now = aegis_access::bounded::MonotonicNowNs();
+-      if (!now || now >= cleanup_end)
+-        return false;
+-      continue;
++    if (result == pid) {
++      fprintf(stderr, "probe_pid=%d actual_wait=true status=%d stopped=%s\n",
++              static_cast<int>(pid), status, stopped ? "true" : "false");
++      return !stopped && session->Check() &&
++             WIFEXITED(status) && WEXITSTATUS(status) == expected_exit;
++    }
++    if (result < 0 && errno != EINTR) {
++      // In particular ECHILD irrevocably removes signal authority.
++      fprintf(stderr, "probe_pid=%d actual_wait=false errno=%d authority=revoked\n",
++              static_cast<int>(pid), errno);
++      return false;
+     }
+     const uint64_t now = aegis_access::bounded::MonotonicNowNs();
+-    if (!now)
++    if (!now || now >= reap_end) {
++      fprintf(stderr, "probe_pid=%d actual_wait=false retirement=UNVERIFIED\n",
++              static_cast<int>(pid));
+       return false;
+-    if (now >= end && !killed) {
+-      // result==0 retains our unreaped-child authority at this point.
+-      if (kill(pid, SIGKILL) != 0)
+-        return false;
+-      killed = true;
+-      cleanup_end = now + 2000000000ULL;
+-    } else if (killed && now >= cleanup_end) {
+-      return false;
++    }
++    if (!session->Check() || now >= observe_end) {
++      stopped = true;
++      session->stopped = true;
++      if (!signal_sent && result == 0) {
++        // This exact positive child was created here and has not been reaped.
++        // Keep waiting after a failed signal; never substitute an imported PID.
++        signal_sent = true;
++        if (kill(pid, SIGKILL) != 0)
++          fprintf(stderr, "probe_pid=%d kill_errno=%d\n",
++                  static_cast<int>(pid), errno);
++      }
+     }
+     usleep(1000);
+   }
+ }
+ }  // namespace
+ 
+-// SOURCE_ONLY_NOT_COMPILED_NOT_RUN: retained paired process controls. A future
+-// admitted executor must protect birth/pre-exec/dyld/running probe against
+-// cancellation, expiry, qualifier watchdog/_exit/SIGKILL and owner loss. Each
+-// case requires exact retirement, <=5s observation, <=2s probe retirement and
+-// <=10s owner cleanup, including ECHILD/foreign/reused-PID no-signal controls.
+-[[maybe_unused]] int RunProcessCanaries(bool positive_control, uint64_t original_deadline) {
+-  if (aegis_access::bounded::ProcessCanaryBlocker())
+-    return 126;
++// Known-process qualification, not arbitrary escaped-descendant containment.
++// The one creator waits each actual probe before reporting success.
++int RunProcessCanaries(bool positive_control,
++                       aegis_access::bounded::QualificationSession* session) {
++  if (!session->Check())
++    return 125;
+   char executable[PATH_MAX], self[PATH_MAX];
+   uint32_t executable_size = sizeof(executable);
+   if (_NSGetExecutablePath(executable, &executable_size) != 0 ||
+@@ -76,19 +90,21 @@
+   sigemptyset(&child_action.sa_mask);
+   if (sigaction(SIGCHLD, &child_action, nullptr) != 0)
+     return 1;
+-  bool passed = true;
+-  // If a canary unexpectedly succeeds, reap only the child we created and fail.
+   if (!positive_control) {
++    if (!session->Check())
++      return 125;
+     const pid_t forked = fork();
+     if (forked == 0)
+       _exit(kHarmlessProbeExit);
+     const int fork_error = errno;
+     if (forked > 0) {
+-      RetireCreatedProbe(forked, original_deadline, kHarmlessProbeExit);
+-      return 1;
+-    }
+-    if (forked < 0 && fork_error != EPERM && fork_error != EACCES)
+-      return 1;
++      RetireCreatedProbe(forked, session, kHarmlessProbeExit);
++      return 1;
++    }
++    if (fork_error != EPERM && fork_error != EACCES)
++      return 1;
++    if (!session->Check())
++      return 125;
+ #pragma clang diagnostic push
+ #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+     const pid_t vforked = vfork();
+@@ -97,24 +113,71 @@
+       _exit(kHarmlessProbeExit);
+     const int vfork_error = errno;
+     if (vforked > 0) {
+-      RetireCreatedProbe(vforked, original_deadline, kHarmlessProbeExit);
+-      return 1;
+-    }
+-    if (vforked < 0 && vfork_error != EPERM && vfork_error != EACCES)
+-      return 1;
+-  }
++      RetireCreatedProbe(vforked, session, kHarmlessProbeExit);
++      return 1;
++    }
++    if (vfork_error != EPERM && vfork_error != EACCES)
++      return 1;
++  }
++  int probe[2];
++  if (pipe(probe) != 0)
++    return 1;
++  constexpr int kProbeFd = 198;
++  if (probe[0] == kProbeFd || probe[1] == kProbeFd ||
++      fcntl(probe[0], F_SETFD, FD_CLOEXEC) != 0 ||
++      fcntl(probe[1], F_SETFD, FD_CLOEXEC) != 0) {
++    close(probe[0]);
++    close(probe[1]);
++    return 1;
++  }
++  unsigned char random[16];
++  arc4random_buf(random, sizeof(random));
++  std::string nonce;
++  constexpr char kHex[] = "0123456789abcdef";
++  for (unsigned char byte : random) {
++    nonce += kHex[byte >> 4];
++    nonce += kHex[byte & 15];
++  }
++  std::string fd_arg = "--aegis-probe-fd=" + std::to_string(kProbeFd);
++  std::string deadline_arg = "--aegis-deadline-ns=" +
++                            std::to_string(session->original_deadline);
++  std::string boot_arg = "--aegis-boot=" + session->boot;
++  std::string nonce_arg = "--aegis-probe-nonce=" + nonce;
++  char mode[] = "--aegis-spawn-probe";
++  char* args[] = {self, mode, fd_arg.data(), deadline_arg.data(),
++                  boot_arg.data(), nonce_arg.data(), nullptr};
++  posix_spawn_file_actions_t actions;
++  if (posix_spawn_file_actions_init(&actions) != 0) {
++    close(probe[0]);
++    close(probe[1]);
++    return 1;
++  }
++  const bool actions_ok =
++      posix_spawn_file_actions_adddup2(&actions, probe[0], kProbeFd) == 0 &&
++      posix_spawn_file_actions_addclose(&actions, probe[0]) == 0 &&
++      posix_spawn_file_actions_addclose(&actions, probe[1]) == 0;
+   pid_t spawned = -1;
+-  char mode[] = "--aegis-spawn-probe";
+-  char* args[] = {self, mode, nullptr};
+-  const int spawn_result = posix_spawn(&spawned, self, nullptr, nullptr, args, environ);
++  int spawn_result = ECANCELED;
++  if (actions_ok && session->Check())
++    spawn_result = posix_spawn(&spawned, self, &actions, nullptr, args, environ);
++  posix_spawn_file_actions_destroy(&actions);
++  close(probe[0]);
++  if (spawn_result == 0 && spawned > 0 &&
++      write(probe[1], nonce.data(), nonce.size()) != static_cast<ssize_t>(nonce.size()))
++    session->stopped = true;
++  close(probe[1]);  // private nonce must be followed by actual EOF
++  bool passed = false;
+   if (spawn_result == 0) {
+     const bool reaped = spawned > 0 &&
+-        RetireCreatedProbe(spawned, original_deadline, kHarmlessProbeExit);
+-    passed = passed && positive_control && reaped;
++        RetireCreatedProbe(spawned, session, kHarmlessProbeExit);
++    passed = positive_control && reaped;
+   } else {
+-    passed = passed && !positive_control && (spawn_result == EPERM || spawn_result == EACCES);
+-  }
+-  printf("%s=%s\n", positive_control ? "self_spawn_positive_control" : "fork_vfork_self_spawn_denied",
++    passed = !positive_control && session->Check() &&
++             (spawn_result == EPERM || spawn_result == EACCES);
++  }
++  passed = passed && session->Check();
++  printf("%s=%s\n",
++         positive_control ? "self_spawn_positive_control" : "fork_vfork_self_spawn_denied",
+          passed ? "true" : "false");
+   return passed ? 0 : 1;
+ }
+@@ -122,7 +185,30 @@
+ namespace {
+ // Pure source fixtures call the PRODUCTION transition helper; no processes or
+ // I/O are created here. Future native execution remains separately required.
++bool QualificationBoundaryFixtures() {
++  using aegis_access::bounded::QualificationWorkDeadline;
++  // A three-second probe-drain reserve is inside the original timer/lease.
++  if (QualificationWorkDeadline(20000000000ULL, 1000000000ULL,
++                                 9000000000ULL) != 7000000000ULL ||
++      QualificationWorkDeadline(5000000000ULL, 1000000000ULL,
++                                 9000000000ULL) != 2000000000ULL ||
++      QualificationWorkDeadline(4000000000ULL, 1000000000ULL,
++                                 3000000000ULL) != 0 ||
++      QualificationWorkDeadline(0, 1, 10000000000ULL) != 0)
++    return false;
++  char binary[] = "support";
++  char positive[] = "--aegis-qualification-positive-control";
++  char probe[] = "--aegis-spawn-probe";
++  char* allowed[] = {binary, positive, nullptr};
++  char* direct[] = {binary, probe, nullptr};
++  return aegis_access::bounded::ValidQualificationArguments(2, allowed) &&
++         !aegis_access::bounded::ValidQualificationArguments(2, direct) &&
++         !aegis_access::bounded::EnterSpawnProbe(2, direct);
++}
++
+ bool OwnerBoundaryFixtures() {
++  if (!QualificationBoundaryFixtures())
++    return false;
+   using aegis_access::bounded::ControllerObservation;
+   using aegis_access::bounded::OwnerGate;
+   using aegis_access::bounded::ValidateOwnerBoundary;
+@@ -189,27 +275,22 @@
+ }  // namespace
+ 
+ int main(int argc, char** argv) {
+-  // Direct entry cannot bypass the missing loss-safe executor. Exit73 is a
+-  // future probe contract, not proof of pre-exec/startup supervision.
+-  if (argc == 2 && std::strcmp(argv[1], "--aegis-spawn-probe") == 0) {
+-    fprintf(stderr, "%s\n", aegis_access::bounded::ProcessCanaryBlocker());
+-    return 126;
+-  }
+-  uint64_t original_deadline = 0;
+-  if (!aegis_access::bounded::EnterQualification(&argc, argv, &original_deadline))
++  if (argc > 1 && std::strcmp(argv[1], "--aegis-spawn-probe") == 0)
++    return aegis_access::bounded::EnterSpawnProbe(argc, argv) ? kHarmlessProbeExit : 126;
++  aegis_access::bounded::QualificationSession session;
++  if (!aegis_access::bounded::EnterQualification(&argc, argv, &session))
+     return 126;
+   if (argc == 2 && std::strcmp(argv[1], "--aegis-qualification-clock-probe") == 0) {
+     printf("{\"clock\":\"%s\",\"now_ns\":%llu,\"deadline_ns\":%llu,\"boot\":\"%s\"}\n",
+            aegis_access::bounded::kDeadlineClockName,
+            static_cast<unsigned long long>(aegis_access::bounded::MonotonicNowNs()),
+-           static_cast<unsigned long long>(original_deadline),
+-           aegis_access::bounded::BootIdentity().c_str());
+-    return 0;
++           static_cast<unsigned long long>(session.original_deadline),
++           session.boot.c_str());
++    return session.Check() ? 0 : 125;
+   }
+   if (argc == 2 && std::strcmp(argv[1], "--aegis-qualification-owner-boundaries") == 0)
+-    return OwnerBoundaryFixtures() ? 0 : 1;
+-  // Both denial and positive modes refuse; unexpected creation by a denial
+-  // canary needs the same loss protection. Neither control is waived/passed.
+-  fprintf(stderr, "%s\n", aegis_access::bounded::ProcessCanaryBlocker());
+-  return 126;
+-}
++    return OwnerBoundaryFixtures() && session.Check() ? 0 : 1;
++  const bool positive = argc == 2 &&
++      std::strcmp(argv[1], "--aegis-qualification-positive-control") == 0;
++  return RunProcessCanaries(positive, &session);
++}
+diff --git a/tools/aegis/current151_tracker/owned_leaf.cc b/tools/aegis/current151_tracker/owned_leaf.cc
+index 832618b88a82a70e8b0d4261381fe5fa9f447196..a4b43c41e6e221bc08f7c6e38588b4f0a4d91c4d 100644
+--- a/tools/aegis/current151_tracker/owned_leaf.cc
++++ b/tools/aegis/current151_tracker/owned_leaf.cc
+@@ -75,8 +75,6 @@
+ }
+ 
+ bool ReadProfile(const char* path, bool positive_control, std::string* profile) {
+-  if (positive_control && aegis_access::bounded::ProcessCanaryBlocker())
+-    return false;
+   const int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+   if (fd < 0)
+     return false;
+@@ -181,10 +179,6 @@
+   const bool noncreating_support = support && argc == 9 &&
+       (std::strcmp(argv[8], "--aegis-qualification-clock-probe") == 0 ||
+        std::strcmp(argv[8], "--aegis-qualification-owner-boundaries") == 0);
+-  if (support && !noncreating_support && aegis_access::bounded::ProcessCanaryBlocker()) {
+-    fprintf(stderr, "%s\n", aegis_access::bounded::ProcessCanaryBlocker());
+-    return 126;
+-  }
+   // Bind the receipt to this exact owner invocation before setup/birth.
+   std::string command = "[";
+   for (int i = 0; i < argc; ++i) {
+@@ -294,24 +288,31 @@
+     if (poll(&input, 1, 20) < 0)
+       gate.Fail();
+   }
+-  if (gate.failure)
+-    child.KillOwned();
++  // EOF first lets the qualification creator drain its known probe. The
++  // original deadline is never extended for new work. Cleanup has a fixed10s
++  // allowance, with the last3s reserved for actual root wait after a signal.
+   close(control[1]);
+   const uint64_t cleanup_start = MonotonicNowNs();
+   const uint64_t cleanup_end = cleanup_start + 10ULL * 1000000000;
++  const bool cooperative = support && !noncreating_support;
++  const uint64_t kill_at = cleanup_start +
++      (cooperative ? 7ULL * 1000000000 : 0);
++  bool kill_attempted = false;
+   while (child.Poll()) {
+     const uint64_t cleanup_now = MonotonicNowNs();
+     if (!cleanup_start || !cleanup_now || cleanup_now >= cleanup_end) {
+       gate.Fail();
+       break;
+     }
++    if (cleanup_now >= kill_at && !kill_attempted) {
++      gate.Fail();
++      kill_attempted = true;
++      child.KillOwned();  // only the actual unreaped direct child
++    }
+     usleep(1000);
+   }
+-  if (!child.Reaped()) {
+-    gate.Fail();
+-    if (!child.Retired())
+-      child.KillOwned();
+-  }
++  if (!child.Reaped())
++    gate.Fail();  // UNVERIFIED; never signal at the deadline without wait time.
+   FreshOwnerBoundary(STDIN_FILENO, &gate, deadline, boot);
+   const int child_status = child.Status();
+   const bool leaf_success = gate.go_sent && child.Reaped() &&
+diff --git a/tools/aegis/current151_tracker/regressions.py b/tools/aegis/current151_tracker/regressions.py
+index 26328238a2325de03abd7a43af5b60bdce5c8114..6e09d0e50cb005736208b5b1ae629e4f3344b452 100644
+--- a/tools/aegis/current151_tracker/regressions.py
++++ b/tools/aegis/current151_tracker/regressions.py
+@@ -652,5 +652,25 @@
+         self.assertFalse(marker.exists())
+ 
+ 
++class QualificationCompletionRegressionTests(Fixture):
++    def test_positive_probe_exit73_is_not_owner_or_tracker_success(self):
++        attempt = self.attempt()
++        value = self.terminal(attempt, owner_exit=73)
++        with self.assertRaises(driver.Refusal):
++            driver.validate_terminal(value["terminal"], attempt.deadline,
++                                     value["command"], value["completion"])
++
++    def test_qualification_stopped_terminal_never_accepts_even_reaped(self):
++        attempt = self.attempt()
++        value = self.terminal(attempt, stopped=True, reaped=True)
++        with self.assertRaises(driver.Refusal):
++            driver.finalize(attempt, self.root, lambda: True, lambda: "PASS", **value)
++        self.assertTrue(attempt.stopped)
++
++    def test_qualified_fixture_does_not_unseal_build_dispatch(self):
++        with self.assertRaises(driver.Refusal):
++            driver.build_dispatch(qualified=True, process_probe_exit=73)
++
++
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)

@@ -318,8 +318,15 @@ action("trial", async () => {
     )
   )
     return;
+  // Bind consent before save() refreshes the tab list. The native handler also
+  // rejects navigation after this snapshot, including same-URL reloads.
+  const confirmed = {op: "trial", tab: t.id, url: t.url, document: t.document};
   await save();
-  const r = await request({ ...pageRequest("trial"), id: record.id });
+  const current = target();
+  if (!current || current.id !== confirmed.tab || current.url !== confirmed.url ||
+      current.document !== confirmed.document)
+    throw Error(uiText("目标网页已变化，请刷新列表。"));
+  const r = await request({ ...confirmed, id: record.id });
   render(await request({op: "state"}));
   notify(
     uiText("已安排试运行：") + (r.result?.result?.value || uiText("请检查网页效果，并刷新运行状态。")),

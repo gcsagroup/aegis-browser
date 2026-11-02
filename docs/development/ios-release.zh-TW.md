@@ -1,5 +1,7 @@
 # iOS 封裝與 TestFlight
 
+倉庫提供的 `scripts/release/ios-runner.py` 簽名 runner 啟動入口已停用。即使已驗證 Admin，也會在讀取 payload、探測簽名金鑰、註冊或啟動 listener 前拒絕；沒有略過開關。佇列快照、唯一標籤與執行後的身分檢查不能保證簽名主機隔離。重新啟用必須另行實作並審查執行前授權或服務端 workflow 隔離；不得用手動註冊的共用或同標籤 runner 規避。本次只停用該原始碼入口，未變更任何現有主機、鑰匙圈或註冊；無憑據驗證、交付契約與唯讀查詢仍可用。
+
 Alpha 固定僅供內部測試，原生匯出開啟 `testFlightInternalTestingOnly`，上傳後必須讀回 `INTERNAL_ONLY`。Beta 可供內外測試，禁止正式送審。Release 可用於各目的地，每個階段均明確選擇。上傳不會自動送審或公開發佈。
 
 使用乾淨且已提交的原始碼、Ruby 3.3.6、鎖定的 Fastlane、Node 22.23.1、Python 3.11+ 與 Xcode。執行 `bundle install`，以 `./release ios plan` 讀取來源 SHA/tree 與原生輸入摘要。所有變更均需明確指定 `--profile`。
