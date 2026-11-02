@@ -1,0 +1,58 @@
+name: iOS Delivery · 完整版 / Full
+run-name: iOS Delivery ${{ inputs.operation }} ${{ inputs.source || format('{0}({1})', inputs.version, inputs.build) }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "操作 / Operation（打包不会自动上传 / Package never auto-uploads）"
+        type: choice
+        options:
+          - 仅打包 / Package
+          - 打包并上传 TF / Package and upload
+          - 私有草稿 / Draft
+          - 上传 TestFlight / Upload
+          - 等待处理 / Wait
+          - 查询状态 / Status
+          - 更新测试说明 / Metadata
+          - 加密合规 / Compliance
+          - 内测分发 / Distribute internal
+          - 外测分发 / Distribute external
+        default: 查询状态 / Status
+      version:
+        description: "版本 / Version（打包、草稿、查询必填 / Package, Draft, Status）"
+        type: string
+      build:
+        description: "构建号 / Build（打包、草稿、查询必填 / Package, Draft, Status）"
+        type: string
+      product:
+        description: "目标产物 / Product（Auto: Alpha / source；查询时忽略 / ignored for Status）"
+        type: choice
+        options:
+          - 自动 / Auto
+          - Alpha · 仅内测 / Internal only
+          - Beta · 内外测 / Internal and external
+          - Release · 通用 / Universal
+        default: 自动 / Auto
+      source:
+        description: "交付凭据 / Delivery receipt（上传及后续阶段 / Upload and later stages）"
+        type: string
+      groups:
+        description: "既有测试组 / Existing groups（仅分发 / Distribution only）"
+        type: string
+      stage_input:
+        description: "阶段 JSON / Stage JSON（仅说明、合规 / Metadata, Compliance only）"
+        type: string
+        default: "{}"
+permissions:
+  contents: write
+  actions: read
+jobs:
+  delivery:
+    uses: ./.github/workflows/ios-delivery.yml
+    with:
+      delivery_mode: full
+      delivery_inputs: ${{ toJSON(inputs) }}
+    secrets:
+      AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
+      AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
+      AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}

@@ -1,5 +1,7 @@
 # 文档
 
+- [iOS 打包、TestFlight 与上游迁移](development/ios-release.zh-CN.md)
+
 - [本地 Markdown 首次打开修复与验收](audit/markdown-first-open-2026-10-14.zh-CN.md)
 - [Windows 构建最新结果与超时修复](audit/windows-actions-2026-10-13.zh-CN.md)
 - [Windows 后续构建方案及预计费用](plans/windows-build-budget-2026-10-14.zh-CN.md)
