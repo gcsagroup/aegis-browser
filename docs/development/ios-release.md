@@ -40,35 +40,20 @@ Status distinguishes build absence/processing/failure/VALID, buildUploads errors
 
 ## Actions and candidate tags
 
-`iOS Delivery` is the single packaging and TestFlight workflow. `iOS Release Validation` keeps automatic uncredentialed PR/main checks and unsigned native archives; `iOS Coverage` keeps simulator coverage. All manual iOS workflows require a current effective repository **Admin** grant, including organization-owner grants. Maintain/Write/Read/custom role titles do not qualify. GitHub may still show the Run workflow button to Write users: the uncredentialed admission gate rejects them before protected jobs are scheduled. Both the original actor and the actual rerunner must be Admins; API failures or incomplete role inventories deny access. CI uses the paginated filtered Admin collaborator API with the existing installation token, not a PAT or username allowlist. Local stages resolve the actual authenticated token user; set an authorized `GH_TOKEN`/`GITHUB_TOKEN` in the private process environment. `plan` remains uncredentialed.
+The manual entrypoints **iOS Delivery · 精简版 / Simple** and **iOS Delivery · 完整版 / Full** share one reusable backend. Both require the original operator and rerunner to be current effective repository Admins. Signing, Apple credentials and private Draft permissions remain in their existing protected environments. Local CLI commands retain their existing interface.
 
-The workflow UI has **four inputs**, with Chinese/English labels. The operation dropdown shows only **Package**, **Upload TestFlight**, **Status**, and **Full mode**. Local CLI commands retain their existing interface.
+Simple has four bilingual fields: operation, version, build, and package product. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product is ignored for Status/Wait.
 
-| Input | Simple mode |
-| --- | --- |
-| Operation | Package (default), Upload TestFlight, or Status |
-| Product | Auto (Alpha for new packages; preserve source later), Alpha internal-only, Beta internal/external, Release universal |
-| Version or source (`target`) | New package: `1.0.0(33)`, with an unused build number. Upload/status: the complete receipt from the last successful run summary |
-| Full options (`advanced`) | Leave `{}` for simple operations |
+- Package creates a new IPA/dSYM/manifest without uploading.
+- Package and upload first checks that Apple has no matching build or upload, then uploads the same newly signed package. It never distributes, submits for review, or publicly releases. Producer digest and exact run/attempt are passed directly between protected jobs; original package and uploaded-state artifacts are retained separately. Rerunning this combined operation is rejected; reconcile unknown outcomes before choosing a new build.
+- Status directly queries the exact Apple version/build using a GET-only client. It requires no receipt, old artifact, package profile or historical source checkout. Missing builds return `NOT_FOUND`; there is no latest-build fallback. Audience cannot distinguish Beta from Release, and the query implementation SHA is not binary provenance.
+- Wait is also read-only and bounded to five minutes. Missing uploads, rejection, expired builds and timeout stop without reuploading.
 
-For a new default Alpha package enter only `1.0.0(33)` in Version or source. Select Beta/Release explicitly for those packages. To upload, choose Upload TestFlight and paste the delivery receipt into the same field; Product remains Auto. Package never uploads automatically; upload never distributes or requests review. Retain the original receipt independently and use the latest successful run's receipt for subsequent steps.
+Full adds explicit private Draft, existing-package Upload, receipt-bound Wait, Metadata, Compliance and internal/external Distribution. Use version/build for packaging, Draft or read-only queries. For existing-package store stages paste the complete **Delivery receipt** from the latest successful run Summary, keep Product on Auto, and supply existing groups or reviewed stage JSON only where needed. Version/build alone never authorizes a mutation.
 
-For less frequent operations select **完整模式 / Full** and supply a JSON object in Full options. Version or source and Product are reused; no duplicate source or identity fields are accepted. `operation` accepts the English command or its bilingual UI label. Only `operation`, optional existing `groups` and a reviewed `stage_input` object are allowed. Unknown/duplicate keys, invalid JSON, conflicting identity and advanced parameters in simple mode are rejected before protected jobs.
+The original `aegis-ios-v1` receipt remains valid. A completed upload within its original package run emits `aegis-ios-v2:...:uploaded` to preserve completed-upload state when producer and state run IDs coincide. Both retain immutable profile/version/build, original producer, exact state attempt and independently pinned manifest digest. Receipts grant no permission; repository Admin, producer success, source/tree, artifact and journal/replay checks remain independent. Wait for the whole run to succeed before using a receipt.
 
-| Goal | Full options example |
-| --- | --- |
-| Wait for processing | `{"operation":"wait"}` |
-| Private Draft | `{"operation":"draft"}` (Version or source contains the new version/build; the exact derived tag must already exist at the admitted source) |
-| Internal distribution | `{"operation":"distribute-internal","groups":"Aegis Early access"}` |
-| External distribution | `{"operation":"distribute-external","groups":"Existing external group"}` (Alpha rejected; Beta Review needs separate authorization) |
-| Testing notes/description | `{"operation":"metadata","stage_input":{"locales":{"en-US":{"whatsNew":"Reviewed testing notes"}}}}` |
-| Reviewed encryption answer | `{"operation":"compliance","stage_input":{"usesNonExemptEncryption":false,"sourceSha":"EXACT_SHA","nativeInputsSha256":"EXACT_DIGEST","authorization":"Explicitly reviewed"}}` |
-
-The bilingual full-operation names are 私有草稿 / Draft, 等待处理 / Wait, 更新测试说明 / Metadata, 加密合规 / Compliance, 内测分发 / Distribute internal, 外测分发 / Distribute external. Full mode also accepts the three simple operations.
-
-A receipt is a bounded, versioned identity pin containing immutable profile/version/build, original package run, latest state run, exact attempt and original manifest SHA256. It grants no permission and replaces no source, producer, journal or integrity verification. Changed/stale receipts fail import before ASC credentials load. Receipts appear only after successful package/stage/export, in both Summary and operator logs; wait for the entire run to succeed. Uncertain mutations require readback reconciliation, not an older receipt or another upload.
-
-Push `candidate/ios/VERSION-PROFILE.BUILD` to derive its immutable identity and package a private Draft only. Signing uses protected `aegis-ios-signing` on an owned ephemeral macOS ARM64 runner. Draft writes use `aegis-ios-draft` with `contents:write`, always draft/prerelease, and actual download/hash verification. A successful store run publishes immutable `ios-delivery-RUN-ATTEMPT` state selected by its receipt, so metadata/distribution reuse the original IPA.
+Alpha is internal-only; Beta allows internal/external testing and blocks formal App Store submission; Release requires explicit stages. External distribution requests Beta Review and needs separate authorization. Neither workflow offers formal submission or public publishing. Candidate tags still only create packages and private Drafts.
 
 The uncredentialed import job checks repository, admitted workflow, latest attempt, successful producer, original package origin, SHA/tree, manifest/assets and completed upload receipt. Protected jobs independently recheck identity and authorization before loading ASC credentials. External TF distribution requests Beta App Review and needs separate authorization. Formal App Store review remains a separate explicit Release-only local stage; neither review is an automatic acceptance test.
 

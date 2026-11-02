@@ -151,6 +151,41 @@ class IosActionTests(unittest.TestCase):
         self.assertEqual(command[command.index('--repository')+1], 'owner/repo')
         self.assertNotIn('upload', command)
 
+    def test_nested_full_store_execution_is_not_mistaken_for_unstarted(self):
+        row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery-full.yml', status='completed')
+        job = dict(name='delivery / store', status='completed', conclusion='success', steps=[{'name': 'upload'}], run_id=10, run_attempt=1, head_sha='b'*40)
+        def api(path):
+            return dict(total_count=1, jobs=[job]) if path.endswith('/jobs?per_page=100') else row
+        with patch.object(action, 'api', api):
+            self.assertFalse(action.unstarted_store_run(row))
+
+    def test_replay_inventory_checks_both_entrypoints_before_allowing_a_mutation(self):
+        calls = []
+        def api(path):
+            calls.append(path)
+            if 'ios-delivery-full.yml' in path:
+                return dict(workflow_runs=[dict(id=10, display_title='iOS Delivery upload '+'a'*64)])
+            return dict(workflow_runs=[])
+        env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', RELEASE_MANIFEST_SHA256='a'*64)
+        with patch.dict(os.environ, env), patch.object(action, 'api', api), patch.object(action, 'unstarted_store_run', return_value=False):
+            with self.assertRaises(ValueError):
+                action.check_prior_stage_runs('upload', 11)
+        self.assertTrue(any('ios-delivery.yml' in x for x in calls))
+        self.assertTrue(any('ios-delivery-full.yml' in x for x in calls))
+
+    def test_new_upload_blocks_prior_combined_or_receipt_upload_for_same_version_build(self):
+        token = action.receipt_codec.encode('beta', '1.0.0', '36', 100, 100, 1, 'a'*64)
+        for title in ['iOS Delivery package-upload 1.0.0(36)', 'iOS Delivery 打包并上传 TF / Package and upload 1.0.0(36)', 'iOS Delivery upload '+token]:
+            env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', RELEASE_VERSION='1.0.0', RELEASE_BUILD='36')
+            with patch.dict(os.environ, env), patch.object(action, 'api', return_value={'workflow_runs': [{'id': 10, 'display_title': title}]}), patch.object(action, 'unstarted_store_run', return_value=False):
+                with self.assertRaises(ValueError):
+                    action.check_new_upload_runs()
+            with patch.dict(os.environ, env), patch.object(action, 'api', return_value={'workflow_runs': [{'id': 10, 'display_title': title}]}), patch.object(action, 'unstarted_store_run', return_value=True):
+                action.check_new_upload_runs()
+        with patch.dict(os.environ, dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='2', RELEASE_VERSION='1.0.0', RELEASE_BUILD='36')), self.assertRaises(ValueError):
+            action.check_new_upload_runs()
+
+
 
 if __name__ == '__main__':
     unittest.main()
