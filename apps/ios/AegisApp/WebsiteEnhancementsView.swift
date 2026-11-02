@@ -242,6 +242,11 @@ struct UserScriptEditor: View {
   @State private var operation: Task<Void, Never>?
   @State private var generation = UUID()
   @State private var pendingModel: ModelConfiguration?
+  private var modelConsentMessage: String {
+    let endpoint = pendingModel?.endpoint ?? ""
+    let model = pendingModel?.model ?? ""
+    return "\(endpoint)\n\(model)\n发送当前需求、脚本及已预览结构。"
+  }
   @State private var pendingGoal = ""
   @State private var pendingContext = ""
   @State private var pendingSource = ""
@@ -332,9 +337,7 @@ struct UserScriptEditor: View {
         Button("发送并生成") { generate() }
         Button("取消", role: .cancel) {}
       } message: {
-        Text(
-          (pendingModel?.endpoint ?? "") + "\n" + (pendingModel?.model ?? "") + "\n发送当前需求、脚本及已预览结构。"
-        )
+        Text(modelConsentMessage)
       }
       .alert("在真实页面试运行？", isPresented: $confirmsTrial) {
         Button("试运行") {
