@@ -16,11 +16,13 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 ./release ios distribute --profile alpha --version 1.0.0 --build 6 --run-id ios-alpha-6 --destination testflight-internal --groups '现有内测组名' --manifest-sha256 MANIFEST_SHA256
 ```
 
-示例 build 仅供演示，实际先查 ASC 再选未使用的编号。独立保留 manifest 摘要、IPA、dSYM、校验文件及完成的上传记录；后续改描述和分发复用这些文件，不重新构建或上传。来源 SHA/tree 改变后必须重新打包。签名使用现有 Apple Distribution 私钥和三份 App Store profile，不导出私钥，不改共享钥匙串 ACL。凭据只能通过私密环境或受保护的 Actions secrets 提供。
+示例 build 仅供演示，实际先查 ASC 再选未使用的编号。独立保留 manifest 摘要、IPA、dSYM、校验文件及完成的上传记录；后续改描述和分发复用这些文件，不重新构建或上传。来源 SHA/tree 改变后必须重新打包。本地签名使用现有 Apple Distribution 私钥和三份 App Store profile，不导出私钥，不改共享钥匙串 ACL。凭据只能通过私密环境或受保护的 Actions secrets 提供。
 
 ## Actions 精简版与完整版
 
-完整版显式传递三个 ASC 凭据名称，由被调用任务的 `aegis-ios-store` 环境解析原值；不复制凭据、不使用 `secrets: inherit`。两个手动入口共用一套后端，全部字段与操作中英文并列，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
+打包作业使用 GitHub 托管的临时 macOS，在 `aegis-ios-signing` 环境中保留 team、证书指纹和三份 profile 名称变量，并配置五个加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二进制材料使用单行 Base64。导入前校验 profile 与现有 team、目标和证书一致；打包后清理临时钥匙串与 profiles。签名材料不得输出到日志、提交或放入上传凭据环境。
+
+完整版显式传递 ASC 和签名凭据名称，被调用任务的 `aegis-ios-store` 和 `aegis-ios-signing` 环境值优先生效；不使用 `secrets: inherit`。两个手动入口共用一套后端，全部字段与操作中英文并列，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
 
 ### 精简版 / Simple
 
