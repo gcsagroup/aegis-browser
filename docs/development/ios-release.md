@@ -40,7 +40,7 @@ Status distinguishes build absence/processing/failure/VALID, buildUploads errors
 
 ## Actions and candidate tags
 
-The manual entrypoints **iOS Delivery · 精简版 / Simple** and **iOS Delivery · 完整版 / Full** share one reusable backend. Both require the original operator and rerunner to be current effective repository Admins. Signing, Apple credentials and private Draft permissions remain in their existing protected environments. Local CLI commands retain their existing interface.
+The manual entrypoints **iOS Delivery · 精简版 / Simple** and **iOS Delivery · 完整版 / Full** share one reusable backend. Full explicitly forwards only the three ASC secret names; the called Apple jobs retain `aegis-ios-store`, whose environment values override caller values. No repository secrets are copied or widened. See [GitHub’s environment-secret forwarding rule](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow). Both require the original operator and rerunner to be current effective repository Admins. Signing, Apple credentials and private Draft permissions remain in their existing protected environments. Local CLI commands retain their existing interface.
 
 Simple has four bilingual fields: operation, version, build, and package product. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product is ignored for Status/Wait.
 

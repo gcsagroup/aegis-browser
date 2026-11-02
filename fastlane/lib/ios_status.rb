@@ -1,9 +1,21 @@
 # frozen_string_literal: true
 require_relative 'release'
+require 'base64'
 
 module AegisRelease
   # Lookup identity is deliberately independent of package profiles and retained artifacts.
   class BuildStatus
+    def self.token_options(environment = ENV)
+      names = %w[AEGIS_ASC_KEY_ID AEGIS_ASC_ISSUER_ID AEGIS_ASC_KEY_BASE64]
+      AegisRelease.require!(names.all? { |name| environment[name].is_a?(String) && !environment[name].strip.empty? },
+                            'ASC credentials missing; verify explicit reusable-workflow forwarding and protected environment')
+      key = Base64.strict_decode64(environment.fetch('AEGIS_ASC_KEY_BASE64'))
+      AegisRelease.require!(!key.empty?, 'ASC key encoding is empty')
+      { key_id: environment.fetch('AEGIS_ASC_KEY_ID'), issuer_id: environment.fetch('AEGIS_ASC_ISSUER_ID'), key: key }
+    rescue ArgumentError
+      raise Error, 'ASC key encoding is invalid'
+    end
+
     Identity = Struct.new(:version, :build, keyword_init: true)
 
     def initialize(version:, build:, api:)
