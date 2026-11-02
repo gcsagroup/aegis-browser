@@ -1,0 +1,188 @@
+From 430334e894ffb216527a57e31a88990120927ff2 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Mon, 26 Oct 2026 16:56:24 +0800
+Subject: [PATCH] test(mac): guard native evidence and draft teardown
+
+---
+ .../enhancements/enhancement_browsertest.cc   | 79 +++++++++++--------
+ 1 file changed, 46 insertions(+), 33 deletions(-)
+
+diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+index c6c9051d5c7f1e12ed6e879bf16a6bf2af9df805..f54fb3fb337d7adb3680ddb43e90a6697e63266f 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+@@ -29,6 +29,7 @@
+ #include "net/test/embedded_test_server/http_response.h"
+ #include "url/origin.h"
+ 
++#include "base/threading/thread_restrictions.h"
+ #include "base/time/time.h"
+ #include "components/viz/common/frame_sinks/copy_output_result.h"
+ #include "content/public/browser/navigation_controller.h"
+@@ -339,37 +340,40 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
+ class EnhancementTrialConsentBrowserTest
+     : public EnhancementBrowserTest,
+       public testing::WithParamInterface<std::string> {
+-protected:
+-  void CaptureEvidence(content::WebContents *page, const std::string &change) {
++ protected:
++  void CaptureEvidence(content::WebContents* page, const std::string& change) {
+     const auto directory =
+         base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+             "aegis-native-evidence-dir");
+     if (directory.empty())
+       return;
+-    ASSERT_TRUE(base::CreateDirectory(directory));
+     ASSERT_EQ(true, content::EvalJs(page, R"JS(
+       new Promise(resolve => requestAnimationFrame(() =>
+         requestAnimationFrame(() => resolve(true))))
+     )JS"));
+     content::WaitForCopyableViewInWebContents(page);
+-    auto *view = page->GetRenderWidgetHostView();
++    auto* view = page->GetRenderWidgetHostView();
+     ASSERT_NE(view, nullptr);
+     base::test::TestFuture<content::CopyFromSurfaceResult> capture;
+     view->CopyFromSurface(
+         gfx::Rect(), gfx::Size(), base::Seconds(10),
+-        capture.GetCallback<const content::CopyFromSurfaceResult &>());
++        capture.GetCallback<const content::CopyFromSurfaceResult&>());
+     ASSERT_TRUE(capture.Wait());
+     ASSERT_TRUE(capture.Get().has_value());
+     const auto png = gfx::PNGCodec::EncodeBGRASkBitmap(
+         capture.Get()->bitmap, /*discard_transparency=*/false);
+     ASSERT_TRUE(png.has_value());
+-    ASSERT_TRUE(base::WriteFile(
+-        directory.AppendASCII("mac02-" + change + ".png"), *png));
+     const auto details =
+         content::EvalJs(page, "JSON.stringify(window.__mac02.evidence)")
+             .ExtractString();
+-    ASSERT_TRUE(base::WriteFile(
+-        directory.AppendASCII("mac02-" + change + ".json"), details + "\n"));
++    {
++      base::ScopedAllowBlockingForTesting allow_blocking;
++      ASSERT_TRUE(base::CreateDirectory(directory));
++      ASSERT_TRUE(base::WriteFile(
++          directory.AppendASCII("mac02-" + change + ".png"), *png));
++      ASSERT_TRUE(base::WriteFile(
++          directory.AppendASCII("mac02-" + change + ".json"), details + "\n"));
++    }
+   }
+ };
+ 
+@@ -381,8 +385,8 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+   const GURL a_url = embedded_test_server()->GetURL("/native-trial-a");
+   const GURL b_url = embedded_test_server()->GetURL("/native-trial-b");
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), a_url));
+-  auto *a = contents();
+-  auto *a_helper = EnhancementTabHelper::FromWebContents(a);
++  auto* a = contents();
++  auto* a_helper = EnhancementTabHelper::FromWebContents(a);
+   ASSERT_NE(a_helper, nullptr);
+   const std::string original_document =
+       EnhancementField(a_helper->Snapshot(), "document");
+@@ -393,13 +397,26 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+                 browser(), b_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
+             nullptr);
+-  auto *b = contents();
++  auto* b = contents();
+   ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
+                 browser(), GURL("chrome://aegis/enhancements.html"),
+                 WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                 ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
+             nullptr);
+-  auto *page = contents();
++  auto* page = contents();
++  const auto weak_page = page->GetWeakPtr();
++  // A failed assertion must not leave beforeunload waiting during teardown.
++  base::ScopedClosureRunner cleanup(base::BindLambdaForTesting([weak_page] {
++    if (!weak_page)
++      return;
++    EXPECT_EQ(true, content::EvalJs(weak_page.get(), R"JS(
++      (() => {
++        window.confirm = () => true;
++        document.getElementById('back-list')?.click();
++        return true;
++      })()
++    )JS"));
++  }));
+ 
+   const std::string source =
+       "// ==UserScript==\n// @name Native trial consent\n"
+@@ -407,7 +424,8 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+       "// @grant none\n// ==/UserScript==\n"
+       "document.documentElement.dataset.mac02Native='executed';";
+   ASSERT_EQ("held",
+-            content::EvalJs(page, content::JsReplace(R"JS(
++            content::EvalJs(
++                page, content::JsReplace(R"JS(
+     (async () => {
+       const waitFor = predicate => new Promise(resolve => {
+         const check = () => predicate() ? resolve() : setTimeout(check, 10);
+@@ -462,8 +480,7 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+       return 'held';
+     })()
+   )JS",
+-                                                     a_url.spec(), b_url.spec(),
+-                                                     source)));
++                                         a_url.spec(), b_url.spec(), source)));
+ 
+   if (change == "selection") {
+     ASSERT_EQ(true, content::EvalJs(page, R"JS(
+@@ -497,7 +514,8 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+   }
+ 
+   ASSERT_EQ("settled",
+-            content::EvalJs(page, content::JsReplace(R"JS(
++            content::EvalJs(
++                page, content::JsReplace(R"JS(
+     (async () => {
+       const state = window.__mac02;
+       const held = state.held;
+@@ -541,9 +559,8 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+       return 'settled';
+     })()
+   )JS",
+-                                                     change, original_tab,
+-                                                     a_url.spec(),
+-                                                     original_document)));
++                                         change, original_tab, a_url.spec(),
++                                         original_document)));
+ 
+   if (change == "unchanged") {
+     ASSERT_TRUE(base::test::RunUntil([&] {
+@@ -560,22 +577,18 @@ IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+   EXPECT_EQ(change == "save_error" ? 0u : 1u,
+             store_->state().FindList("scripts")->size());
+   CaptureEvidence(page, change);
+-  // Discard the deliberately unsaved fault-case draft before fixture teardown.
+-  EXPECT_EQ(true, content::EvalJs(page, R"JS(
+-    (() => {
+-      window.confirm = () => true;
+-      document.getElementById('back-list').click();
+-      return true;
+-    })()
+-  )JS"));
+ }
+ 
+-INSTANTIATE_TEST_SUITE_P(NativeTargets, EnhancementTrialConsentBrowserTest,
+-                         testing::Values("unchanged", "selection", "navigation",
+-                                         "same_url_document", "closed",
++INSTANTIATE_TEST_SUITE_P(NativeTargets,
++                         EnhancementTrialConsentBrowserTest,
++                         testing::Values("unchanged",
++                                         "selection",
++                                         "navigation",
++                                         "same_url_document",
++                                         "closed",
+                                          "save_error"),
+-                         [](const testing::TestParamInfo<std::string> &info) {
++                         [](const testing::TestParamInfo<std::string>& info) {
+                            return info.param;
+                          });
+ 
+-} // namespace aegis
++}  // namespace aegis
+-- 
+2.54.0 (Apple Git-157)
+
