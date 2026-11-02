@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -17,6 +18,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
+#include "base/synchronization/lock.h"
+#include "base/unguessable_token.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_run_loop_timeout.h"
@@ -469,6 +472,12 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     host_resolver()->AddRule(kTrailingDotTargetHost, "127.0.0.1");
     host_resolver()->AddRule(kUnselectedRedirectHost, "127.0.0.1");
 
+    target_origin_.RegisterRequestHandler(base::BindRepeating(
+        &AccessProxyingURLLoaderFactoryBrowserTest::LifecycleReply,
+        base::Unretained(this), false));
+    proxy_server_.RegisterRequestHandler(base::BindRepeating(
+        &AccessProxyingURLLoaderFactoryBrowserTest::LifecycleReply,
+        base::Unretained(this), true));
     target_origin_.RegisterRequestHandler(
         base::BindRepeating(&IgnoreAutomaticFavicon));
     target_origin_.RegisterRequestHandler(base::BindRepeating(
@@ -1022,7 +1031,8 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
   }
 
   void PublishCommittedRule(const std::string& destination_host,
-                            aegis_access::AccessMode mode) {
+                            aegis_access::AccessMode mode,
+                            uint64_t policy_generation = 1) {
     aegis_access::AccessPolicyRule rule;
     rule.rule_id = "rule-browser-test";
     rule.owner = *owner_;
@@ -1035,8 +1045,8 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
       rule.proxy_group_id = kProxyGroup;
     }
     rule.protection_override = aegis_access::ProtectionOverride::kNone;
-    rule.row_revision = 1;
-    rule.last_operation_sequence = 1;
+    rule.row_revision = policy_generation;
+    rule.last_operation_sequence = policy_generation;
 
     StoredAccessRule stored_rule;
     stored_rule.policy = rule;
@@ -1045,7 +1055,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
     StoredPolicySnapshot snapshot;
     snapshot.owner = *owner_;
-    snapshot.policy_generation = 1;
+    snapshot.policy_generation = policy_generation;
     snapshot.independent_rules.push_back(std::move(stored_rule));
 
     auto* runtime =
@@ -1058,6 +1068,9 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
     const AccessPolicyPublicationResult publication =
         runtime->PublishCommittedPolicySnapshot(snapshot);
     EXPECT_EQ(publication.status, AccessPolicyPublicationStatus::kPublished);
+    EXPECT_EQ(publication.policy_generation, policy_generation);
+    if (publication.status == AccessPolicyPublicationStatus::kPublished)
+      last_publication_generation_ = publication.policy_generation;
   }
 
   void PublishSelectedProxyEndpoint(
@@ -1112,13 +1125,199 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
         value.top_level_site(), value.exact_host(), value.scheme(), value.port()};
   }
 
+  void AcknowledgeLifecyclePublication(const std::string& run,
+                                       const std::string& phase,
+                                       uint64_t generation, bool proxy) {
+    ASSERT_EQ(last_publication_generation_, generation);
+    const auto selector = CurrentSiteSelector();
+    ASSERT_TRUE(selector.has_value());
+    ASSERT_EQ(selector->owner, *owner_);
+    aegis_access::PolicyPublicationIdentity identity;
+    identity.operation_id = "lifecycle-" + run + "-" + phase;
+    identity.operation_sequence = generation;
+    identity.policy_generation = generation;
+    identity.network_epoch = transport_->network_epoch();
+    identity.selector = *selector;
+    if (proxy) {
+      const auto endpoint =
+          transport_->CaptureSelectedProxyEndpoint(*owner_, kProxyGroup, kTargetHost);
+      ASSERT_TRUE(endpoint.has_value());
+      ASSERT_EQ(endpoint->registration_id, "registration-browser-test");
+      ASSERT_EQ(endpoint->owner, *owner_);
+      ASSERT_EQ(endpoint->generations.policy_generation, generation);
+      ASSERT_EQ(endpoint->generations.network_epoch, identity.network_epoch);
+      identity.proxy_group_id = endpoint->proxy_group_id;
+      identity.selection_generation = endpoint->generations.selection_generation;
+      ASSERT_GT(identity.selection_generation, 0u);
+    } else {
+      ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
+      ASSERT_TRUE(identity.proxy_group_id.empty());
+      ASSERT_EQ(identity.selection_generation, 0u);
+    }
+    using Identity = aegis_access::PolicyPublicationIdentity;
+    auto acknowledged = std::make_shared<std::optional<Identity>>();
+    base::test::TestFuture<bool> settled;
+    const auto start = transport_->PublishPolicyCandidateWithAck(
+        identity, *owner_,
+        base::BindOnce(
+            [](Identity requested,
+               std::shared_ptr<std::optional<Identity>> acknowledged,
+               base::OnceCallback<void(bool)> completion, bool success) {
+              // This completion belongs to this exact publication call.
+              // Transport validates the identity/client era at real Mojo ACK.
+              if (success)
+                *acknowledged = std::move(requested);
+              std::move(completion).Run(success);
+            },
+            identity, acknowledged, settled.GetCallback()));
+    ASSERT_EQ(start.status, AccessNetworkConfigAckStatus::kStarted);
+    ASSERT_GT(start.required_client_acks, 0u);
+    ASSERT_TRUE(settled.Wait());
+    ASSERT_TRUE(settled.Get());
+    ASSERT_TRUE(acknowledged->has_value());
+    ASSERT_EQ(**acknowledged, identity);
+    ASSERT_EQ(transport_->network_epoch(), identity.network_epoch);
+    last_lifecycle_ack_ = **acknowledged;
+  }
+
+  std::string LifecycleBody(bool proxy, const std::string& path) const {
+    return proxy ? "proxy-endpoint:127.0.0.1:" +
+                       std::to_string(proxy_server_.port()) + ":" + path
+                 : "origin:" + path;
+  }
+
+  std::unique_ptr<net::test_server::HttpResponse> LifecycleReply(
+      bool proxy, const net::test_server::HttpRequest& request) {
+    const std::string path = request.GetURL().path();
+    if (!path.starts_with("/aegis-lifecycle/"))
+      return nullptr;
+    {
+      base::AutoLock lock(lifecycle_lock_);
+      (proxy ? lifecycle_proxy_ : lifecycle_origin_)[path]++;
+    }
+    (proxy ? proxy_requests_ : origin_requests_).fetch_add(
+        1, std::memory_order_relaxed);
+    // A controlled empty-response connection failure, not an HTTP error body.
+    // Separate fixture receiver barriers remain reachable on localhost.
+    if (proxy && lifecycle_fault_.load(std::memory_order_acquire) &&
+        path.find("/barrier-") == std::string::npos)
+      return std::make_unique<net::test_server::RawHttpResponse>("", "");
+    auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+    response->set_code(net::HTTP_OK);
+    response->set_content(LifecycleBody(proxy, path));
+    response->set_content_type("text/plain");
+    response->AddCustomHeader("Cache-Control", "no-store");
+    return response;
+  }
+
+  void ExpectLifecycleStage(const std::string& run, const std::string& phase,
+                            bool selected_proxy, bool fault) {
+    const std::string base = "/aegis-lifecycle/" + run + "/";
+    const std::string browser_path = base + phase + "-browser";
+    const std::string renderer_path = base + phase + "-renderer";
+    // The actual browser-process Prefetch loader reports network completion;
+    // a renderer link Prefetch independently supplies a positive event.
+    const auto body = FetchBrowserProcessPrefetch(
+        target_origin_.GetURL(kTargetHost, browser_path));
+    if (fault)
+      ASSERT_FALSE(body.has_value());
+    else
+      ASSERT_EQ(body, std::optional<std::string>(
+                          LifecycleBody(selected_proxy, browser_path)));
+    ASSERT_EQ(RunPrefetch(target_origin_.GetURL(kTargetHost, renderer_path)),
+              fault ? "error" : "loaded");
+
+    auto* dispatch = AccessRequestDispatchState::GetOrCreate(browser()->GetProfile());
+    ASSERT_NE(dispatch, nullptr);
+    ASSERT_TRUE(base::test::RunUntil(
+        [&] { return dispatch->ownership().size() == 0u; }));
+    // Both receivers complete an explicit tagged barrier after client
+    // completion. No-DIRECT is checked after these barriers, never by sleeping.
+    for (bool proxy : {false, true}) {
+      const std::string barrier = base + "barrier-" + phase +
+                                  (proxy ? "-proxy" : "-origin");
+      const GURL url = proxy ? proxy_server_.GetURL("localhost", barrier)
+                             : target_origin_.GetURL("localhost", barrier);
+      ASSERT_EQ(FetchBrowserProcessPrefetch(url),
+                std::optional<std::string>(LifecycleBody(proxy, barrier)));
+    }
+    ASSERT_TRUE(base::test::RunUntil(
+        [&] { return dispatch->ownership().size() == 0u; }));
+    base::AutoLock lock(lifecycle_lock_);
+    for (const std::string& path : {browser_path, renderer_path}) {
+      EXPECT_EQ(lifecycle_origin_[path], selected_proxy ? 0u : 1u) << path;
+      if (fault)
+        EXPECT_GE(lifecycle_proxy_[path], 1u) << path;
+      else
+        EXPECT_EQ(lifecycle_proxy_[path], selected_proxy ? 1u : 0u) << path;
+    }
+  }
+
   std::atomic<size_t> origin_requests_{0};
   std::atomic<size_t> proxy_requests_{0};
+  // Servers are destroyed before their callback state (reverse member order).
+  std::atomic<bool> lifecycle_fault_{false};
+  base::Lock lifecycle_lock_;
+  std::map<std::string, size_t> lifecycle_origin_;
+  std::map<std::string, size_t> lifecycle_proxy_;
+  uint64_t last_publication_generation_ = 0;
+  std::optional<aegis_access::PolicyPublicationIdentity> last_lifecycle_ack_;
   net::test_server::EmbeddedTestServer target_origin_;
   net::test_server::EmbeddedTestServer proxy_server_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
   std::optional<aegis_access::OwnershipKey> owner_;
 };
+
+IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                       ControlledOnFaultRecoveryOffPreservesRoute) {
+  size_t ignored_origin = 0, ignored_proxy = 0;
+  ASSERT_NO_FATAL_FAILURE(
+      PreparePrefetchTest(&ignored_origin, &ignored_proxy));
+  Profile* const profile = browser()->GetProfile();
+  const std::string run = base::UnguessableToken::Create().ToString();
+
+  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "healthy", false, false));
+  ASSERT_EQ(browser()->GetProfile(), profile);
+
+  PublishProxyPolicy(/*publish_endpoint=*/true);
+  ASSERT_EQ(last_publication_generation_, 1u);
+  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(profile);
+  ASSERT_NE(runtime, nullptr);
+  const auto on = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
+  ASSERT_EQ(on.status, aegis_access::RequestGenerationTupleBuildStatus::kComplete);
+  ASSERT_TRUE(on.generations.has_value());
+  ASSERT_EQ(on.generations->policy_generation, 1u);
+  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "on", 1, true));
+  ASSERT_TRUE(last_lifecycle_ack_.has_value());
+  ASSERT_EQ(last_lifecycle_ack_->policy_generation, on.generations->policy_generation);
+  ASSERT_EQ(last_lifecycle_ack_->selection_generation, on.generations->selection_generation);
+  ASSERT_EQ(last_lifecycle_ack_->proxy_group_id, kProxyGroup);
+  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "on", true, false));
+
+  lifecycle_fault_.store(true, std::memory_order_release);
+  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "fault", true, true));
+  const auto fault = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
+  ASSERT_EQ(fault.generations, on.generations);
+
+  lifecycle_fault_.store(false, std::memory_order_release);
+  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "recovery", true, false));
+  const auto recovered = runtime->CaptureProxyGenerationTupleOnUiThread(*owner_, kProxyGroup);
+  ASSERT_EQ(recovered.generations, on.generations);
+
+  PublishCommittedRule(kTargetHost, aegis_access::AccessMode::kDirect,
+                       /*policy_generation=*/2);
+  ASSERT_TRUE(transport_->ClearProxySelection(base::FilePath()));
+  ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
+  ASSERT_NO_FATAL_FAILURE(AcknowledgeLifecyclePublication(run, "off", 2, false));
+  ASSERT_TRUE(last_lifecycle_ack_.has_value());
+  ASSERT_EQ(last_lifecycle_ack_->policy_generation, 2u);
+  ASSERT_TRUE(last_lifecycle_ack_->proxy_group_id.empty());
+  ASSERT_EQ(last_lifecycle_ack_->selection_generation, 0u);
+  ASSERT_FALSE(transport_->CurrentEndpoint(*owner_).has_value());
+  ASSERT_EQ(last_publication_generation_, 2u);
+  ASSERT_NO_FATAL_FAILURE(ExpectLifecycleStage(run, "off", false, false));
+  ASSERT_EQ(browser()->GetProfile(), profile);
+}
 
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        NoPublishedPolicyPreservesNativePath) {

@@ -1,0 +1,2327 @@
+From c8f4bbaeafe6622f8d41072d514ffeca2bebaa10 Mon Sep 17 00:00:00 2001
+From: Aegis Packaging Proposal <aegis-proposal@invalid>
+Date: Fri, 9 Oct 2026 14:00:00 +0800
+Subject: [PATCH] test: wire bounded tracker test entry and support
+
+Private packaging proposal sourced from frozen product H c8f4bbaeafe6622f8d41072d514ffeca2bebaa10.
+Append-only transport of exact overlay bytes; no native execution or acceptance.
+Keep the bounded option default off and require Darwin when enabled.
+Both process controls remain REQUIRED/BLOCKED pending a loss-safe executor.
+
+---
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 01b0f6a6f2e3e96f867b981f96ef2f043c322c1f..4e2fe481c440ba896619ee9f383756db56849fa3 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -3,6 +3,11 @@
+ 
+ import("//testing/test.gni")
+ 
++declare_args() {
++  # Dedicated test entry only. Ordinary targets retain Chromium's existing main.
++  aegis_current151_tracker_bounded = false
++}
++
+ action("generate_route_planner_vectors") {
+   script = "generate_route_planner_vectors.py"
+   inputs = [ "testdata/route_planner_vectors.json" ]
+@@ -203,9 +208,18 @@ test("policy_publication_ack_tracker_unittests") {
+   ]
+   deps = [
+     ":policy_publication_ack_tracker",
+-    "//base/test:run_all_unittests",
+     "//testing/gtest",
+   ]
++  if (aegis_current151_tracker_bounded) {
++    assert(is_mac, "The bounded tracker entry is Darwin-only")
++    sources += [ "policy_publication_ack_tracker_bounded_main.cc" ]
++    deps += [
++      "//base/test:test_support",
++      "//tools/aegis/current151_tracker:runtime",
++    ]
++  } else {
++    deps += [ "//base/test:run_all_unittests" ]
++  }
+ }
+ 
+ test("request_dispatch_gate_unittests") {
+diff --git a/components/aegis_access/policy_publication_ack_tracker_bounded_main.cc b/components/aegis_access/policy_publication_ack_tracker_bounded_main.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0388628325e294bd1c271f914953f4f74b6c19c5
+--- /dev/null
++++ b/components/aegis_access/policy_publication_ack_tracker_bounded_main.cc
+@@ -0,0 +1,13 @@
++// Copyright 2026 GCSA
++#include "base/functional/bind.h"
++#include "base/test/launcher/unit_test_launcher.h"
++#include "base/test/test_suite.h"
++#include "tools/aegis/current151_tracker/bounded_runtime.h"
++
++int main(int argc, char** argv) {
++  if (!aegis_access::bounded::Enter(&argc, argv))
++    return 126;
++  base::TestSuite suite(argc, argv);
++  return base::LaunchUnitTests(
++      argc, argv, base::BindOnce(&base::TestSuite::Run, base::Unretained(&suite)));
++}
+diff --git a/tools/aegis/current151_tracker/BUILD.gn b/tools/aegis/current151_tracker/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..31d70af57ab7119cab734eb7f2e4995c9ff9a08d
+--- /dev/null
++++ b/tools/aegis/current151_tracker/BUILD.gn
+@@ -0,0 +1,23 @@
++# Copyright 2026 GCSA
++assert(is_mac, "The bounded tracker runtime requires separately qualified Darwin support")
++
++source_set("runtime") {
++  testonly = true
++  sources = [
++    "bounded_runtime.cc",
++    "bounded_runtime.h",
++  ]
++}
++
++executable("current151_owned_leaf") {
++  testonly = true
++  sources = [ "owned_leaf.cc" ]
++  deps = [ ":runtime" ]
++  libs = [ "sandbox" ]
++}
++
++executable("current151_tracker_support_regressions") {
++  testonly = true
++  sources = [ "native_regressions.cc" ]
++  deps = [ ":runtime" ]
++}
+diff --git a/tools/aegis/current151_tracker/README.md b/tools/aegis/current151_tracker/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4a104de0305dd10d584d257c8f4455d37bf978f
+--- /dev/null
++++ b/tools/aegis/current151_tracker/README.md
+@@ -0,0 +1,149 @@
++# Bounded tracker validation support
++
++This opt-in test support preserves the existing two tracker GTest names and the
++normal target entry when `aegis_current151_tracker_bounded = false` (the default).
++It does not change production publication, network, lease or commit behavior.
++
++The selected experiment tests durable publication facts and confirmation in the
++fixed Chromium 151 candidate. It covers **two of the original 152 cases**. SQLite,
++UI blocking, browser multiprocess behavior and the other 150 cases require their
++own evidence. Packaging these files on a newer repository baseline does not
++transfer native evidence between Chromium versions.
++
++## Lightweight checks
++
++Use the repository-pinned Python interpreter:
++
++```sh
++python3 -I -S -B apps/browser/overlay/tools/aegis/current151_tracker/regressions.py
++```
++
++The suite exercises the actual deadline, sticky stop, command boundary, input
++budget, result identity, sequencing and accounting code. It includes a real
++Python startup-hook positive control and isolation check. These checks invoke no
++GN, Ninja, compiler or native tracker binary.
++
++## Execution boundary
++
++The implementation is a source candidate pending independent review and native
++qualification. `driver.py` supplies admission/result adapters; it intentionally
++has no public native dispatch entry. The private grant loader, actual build
++dependency/producer reconciliation and controller-to-owner dispatch integration
++are still required. Its build entry always refuses execution with blocker B1.
++
++`current151_owned_leaf` is the sole creator and reaper of one direct child. It
++accepts only an original monotonic deadline/boot identity, an admitted Seatbelt
++profile, an absent terminal receipt, a working directory and a literal leaf
++argv. It never imports a PID or signals a group. The controller keeps stdin open,
++sends exactly one `G` after the second guard check, and cancels by closing it.
++The child installs the profile, deadline timer and resource limits before exec;
++the bounded entry consumes GO and retains an EOF/deadline watchdog through suite
++and static destruction. A successful exit is provisional until retirement,
++fresh XML, accounting, final input guards and the original deadline pass.
++
++Python admission/checks explicitly use `clock_gettime_ns(CLOCK_MONOTONIC)` and
++native checks use `clock_gettime(CLOCK_MONOTONIC)`. The original deadline and boot
++identity are never reconstructed. Every guard is followed by a sticky-stop and
++deadline check. Finalization preserves an earlier accounting error even if
++cleanup also fails; census runs after retirement and again after validation and
++the last guard's evidence writes, before the live-deadline acceptance transition.
++Listing admission requires zero owner and leaf exit codes, verified retirement,
++no cancellation and exact names. Printed names alone cannot advance the sequence.
++
++Before admitting this mechanism, real Darwin qualification must establish timer
++inheritance, fork/vfork/spawn denial, controller/owner loss behavior, retirement
++and bounded cleanup. The supplied qualification sources cover process-creation
++denial, its positive control and clock reconciliation; further loss/retirement
++qualification remains open. No successful parser
++test or configuration boolean can replace those native observations.
++
++The support target has its own narrow argument mode; tracker entry still permits
++only listing or either exact individual case. The no-argument support command denotes denial qualification; it is currently
++blocked together with the matching positive control. Noncreating clock and
++owner-boundary fixtures have separate strict argument modes:
++
++```text
++current151_tracker_support_regressions --aegis-qualification-positive-control
++current151_tracker_support_regressions --aegis-qualification-clock-probe
++current151_tracker_support_regressions --aegis-qualification-owner-boundaries
++```
++
++Both process controls are **REQUIRED/BLOCKED** with
++`LOSS_SAFE_PROBE_EXECUTOR_MISSING`. The owner refuses both before profile setup
++or child creation. The support entry independently refuses them and direct
++`--aegis-spawn-probe` entry; no boolean, environment or receipt can override this.
++The paired canary source remains in `RunProcessCanaries()`, behind the same
++unconditional blocker. It has not passed, been waived, or been replaced by a
++scan of an empty process set.
++
++The missing component is an admitted Darwin probe executor that atomically
++protects birth, pre-exec and dyld startup with the original deadline and loss
++termination, and retains exact birth-derived identity/exclusive reaping even
++when qualifier or owner disappears. The current package establishes no such
++executor. A main-body exit73, inherited channel, heartbeat or another ordinary
++watchdog does not establish that property. An imported probe PID does not grant
++the owner signal or reap authority.
++
++Future matching controls must execute the same canonical support binary, exact
++argv/environment/input identities and exec permissions under separately
++admitted profiles differing only in process-fork permission. Denial requires
++EPERM/EACCES and a matching successful positive spawn whose exact child exits73
++and is reaped. Qualification must cover birth-before-spawn-return, pre-exec,
++dyld and running phases crossed with cancellation, original expiry, qualifier
++watchdog `_exit`, qualifier SIGKILL and owner loss. Observation is at most five
++seconds, probe retirement two seconds, within fixed ten-second owner cleanup.
++ECHILD/uncertain retirement stays UNVERIFIED; foreign/reused PIDs must receive no
++signals. Finding4 remains BLOCKED until that executor and native evidence exist.
++
++For the cross-language clock regression, the controller records explicit
++CLOCK_MONOTONIC samples before/after the admitted clock-probe command and passes
++the original deadline. `validate_clock_probe` checks the native observation's
++domain, sample bracket, unchanged deadline and boot identity. Python tests cover
++this reconciliation with fixture observations; all actual native qualification,
++positive-control and clock-probe sources are **SOURCE_ONLY_NOT_COMPILED_NOT_RUN**.
++No profile, compiler, helper or spawn probe is executed by the lightweight suite.
++
++**B1 remains open:** an owned executor for the actual GN → scripts / Ninja → shell
++/ wrappers / compiler descendants and their input lineage has not been supplied.
++The direct leaf owner cannot bootstrap itself or authorize that build chain.
++Build and native dispatch remain sealed until the coordinator admits a concrete
++executor, reviewed inputs, fresh output roots and the single heavy slot.
++
++Known input grammar limits remain refusals: Darwin link filelists and complete
++generated GN/Ninja/depfile producer ingestion need additional adapters. Unknown
++inputs and historical objects must never be silently admitted.
++
++## Repair02 terminal and input contract
++
++The owner validates its nonblocking controller pipe and, after all setup I/O,
++checks pending cancellation, original deadline and boot immediately before
++creation. At most one queued GO is retained for forwarding; EOF, errors,
++non-GO bytes and repeated GO latch failure. The same fresh boundary runs before
++forwarding and after terminal write, fsync and close. Terminal I/O failures latch
++the first failure. Cancellation during terminal I/O returns125 without rewriting
++the receipt. Cleanup has one fixed ten-second budget; EINTR returns to that
++budgeted loop and uncertain retirement permanently revokes signal authority.
++
++The terminal schema is version1, kind `provisional`, exact full owner command,
++original `deadline_ns`/`boot`, `reaped`/`stopped`/`go` observations and raw wait
++`status`. It never contains `accepted`. This is an intentional incompatibility
++with the prior receipt schema: old receipts are refused. `validate_terminal()`
++rejects duplicate/unknown fields, incomplete observations, mismatched bindings
++and receipts over32KiB. Listing, case result and finalization additionally
++require completion from waiting for this invocation's directly owned owner,
++actual owner exit0, owner-recorded verified leaf reap/exit0, and fresh final
++consumer guards. The controller never imports/reaps the leaf. These completion
++objects are trusted adapter inputs; there is still no admitted dispatch adapter,
++so fixture values do not establish actual process completion.
++
++Input admission walks the original path components with `lstat` before reducing
++`..`, refusing symlinks and non-directory intermediate components. Relative and
++absolute `alias/../input.o` and response-file paths cannot admit a lexical current
++neighbor while concealing historical bytes. Ordinary real-directory parent paths
++remain eligible. Generated producers and filesystem mutation guards remain
++separate requirements.
++
++The native owner-boundary fixtures use production gate transitions for terminal
++write/fsync/close cancellation, EOF, expiry and I/O errors; pre-create fixtures
++require zero creation calls after cancellation/expiry, with a queued-GO success
++control. All native fixtures remain **SOURCE_ONLY_NOT_COMPILED_NOT_RUN**.
+diff --git a/tools/aegis/current151_tracker/bounded_runtime.cc b/tools/aegis/current151_tracker/bounded_runtime.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..e5c01f59faf99e33d2fba5f9d53c9b494e29f814
+--- /dev/null
++++ b/tools/aegis/current151_tracker/bounded_runtime.cc
+@@ -0,0 +1,227 @@
++// Copyright 2026 GCSA
++#include "tools/aegis/current151_tracker/bounded_runtime.h"
++
++#include <fcntl.h>
++#include <poll.h>
++#include <sys/stat.h>
++#include <sys/sysctl.h>
++#include <sys/time.h>
++#include <unistd.h>
++
++#include <algorithm>
++#include <cerrno>
++#include <charconv>
++#include <cstring>
++#include <ctime>
++#include <string_view>
++#include <thread>
++
++namespace aegis_access::bounded {
++namespace {
++bool Number(std::string_view text, uint64_t* value) {
++  const auto result = std::from_chars(text.data(), text.data() + text.size(), *value);
++  return result.ec == std::errc() && result.ptr == text.data() + text.size();
++}
++
++int WaitMs(uint64_t deadline) {
++  const uint64_t now = MonotonicNowNs();
++  if (!now || now >= deadline)
++    return 0;
++  return static_cast<int>(std::min<uint64_t>(50, (deadline - now) / 1000000 + 1));
++}
++}  // namespace
++
++uint64_t MonotonicNowNs() {
++  timespec ts{};
++  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
++    return 0;
++  return static_cast<uint64_t>(ts.tv_sec) * 1000000000 +
++         static_cast<uint64_t>(ts.tv_nsec);
++}
++
++std::string BootIdentity() {
++  timeval boot{};
++  size_t size = sizeof(boot);
++  if (sysctlbyname("kern.boottime", &boot, &size, nullptr, 0) != 0 ||
++      size != sizeof(boot))
++    return {};
++  return std::to_string(boot.tv_sec) + "." + std::to_string(boot.tv_usec);
++}
++
++const char* ProcessCanaryBlocker() {
++  return "LOSS_SAFE_PROBE_EXECUTOR_MISSING";
++}
++
++void OwnerGate::Fail(int reason) {
++  if (!failure)
++    failure = reason;
++}
++
++void OwnerGate::Observe(ControllerObservation observation) {
++  if (failure || observation == ControllerObservation::kQuiet)
++    return;
++  if (observation == ControllerObservation::kGo && !go_seen) {
++    go_seen = true;
++    return;
++  }
++  Fail();
++}
++
++void ObserveController(int fd, OwnerGate* gate) {
++  // One queued GO is preserved for forwarding after birth. Inspect a following
++  // byte/EOF too, so GO+cancel and repeated GO cannot hide behind that byte.
++  for (int i = 0; i < 2 && !gate->failure; ++i) {
++    pollfd channel{fd, POLLIN, 0};
++    const int ready = poll(&channel, 1, 0);
++    if (ready == 0)
++      return;
++    if (ready < 0 || (channel.revents & (POLLERR | POLLNVAL))) {
++      gate->Observe(ControllerObservation::kError);
++      return;
++    }
++    char byte = 0;
++    const ssize_t count = read(fd, &byte, 1);
++    if (count == 0)
++      gate->Observe(ControllerObservation::kEof);
++    else if (count == 1)
++      gate->Observe(byte == 'G' ? ControllerObservation::kGo
++                                : ControllerObservation::kCancel);
++    else if (errno != EAGAIN && errno != EWOULDBLOCK)
++      gate->Observe(ControllerObservation::kError);
++    else
++      return;
++  }
++}
++
++bool ValidateOwnerBoundary(OwnerGate* gate, uint64_t deadline,
++                           std::string_view expected_boot, uint64_t now,
++                           std::string_view current_boot) {
++  if (!now || now >= deadline || expected_boot.empty() || current_boot != expected_boot)
++    gate->Fail();
++  return !gate->failure;
++}
++
++bool FreshOwnerBoundary(int fd, OwnerGate* gate, uint64_t deadline,
++                        std::string_view expected_boot) {
++  ObserveController(fd, gate);
++  const std::string boot = BootIdentity();
++  return ValidateOwnerBoundary(gate, deadline, expected_boot, MonotonicNowNs(), boot);
++}
++
++bool FinishTerminal(OwnerGate* gate, const std::function<bool()>& write_once,
++                    const std::function<bool()>& sync_once,
++                    const std::function<bool()>& close_once,
++                    const std::function<bool()>& final_boundary) {
++  if (!write_once())
++    gate->Fail();
++  if (!sync_once())
++    gate->Fail();
++  if (!close_once())
++    gate->Fail();
++  if (!final_boundary())
++    gate->Fail();
++  return !gate->failure;
++}
++
++namespace {
++bool EnterChannel(int* argc, char** argv, bool (*valid_arguments)(int, char**),
++                  uint64_t* original_deadline) {
++  uint64_t deadline = 0, descriptor = 0;
++  std::string boot;
++  int seen = 0, kept = 1;
++  for (int i = 1; i < *argc; ++i) {
++    std::string_view arg(argv[i]);
++    if (arg.starts_with("--aegis-deadline-ns=")) {
++      if ((seen & 1) || !Number(arg.substr(20), &deadline))
++        return false;
++      seen |= 1;
++    } else if (arg.starts_with("--aegis-control-fd=")) {
++      if ((seen & 2) || !Number(arg.substr(19), &descriptor))
++        return false;
++      seen |= 2;
++    } else if (arg.starts_with("--aegis-boot=")) {
++      if (seen & 4)
++        return false;
++      boot = arg.substr(13);
++      seen |= 4;
++    } else {
++      argv[kept++] = argv[i];
++    }
++  }
++  const uint64_t now = MonotonicNowNs();
++  if (seen != 7 || descriptor < 3 || descriptor > 1024 || boot.empty() || !now ||
++      boot != BootIdentity() || deadline <= now ||
++      deadline - now > 8ULL * 3600 * 1000000000)
++    return false;
++  const int fd = static_cast<int>(descriptor);
++  struct stat info{};
++  itimerval alarm{};
++  if (fstat(fd, &info) != 0 || !S_ISFIFO(info.st_mode) ||
++      fcntl(fd, F_SETFD, FD_CLOEXEC) != 0 || getitimer(ITIMER_REAL, &alarm) != 0 ||
++      (alarm.it_value.tv_sec == 0 && alarm.it_value.tv_usec == 0))
++    return false;
++  *argc = kept;
++  argv[kept] = nullptr;
++  if (!valid_arguments(*argc, argv))
++    return false;
++  for (;;) {
++    const int wait = WaitMs(deadline);
++    if (!wait)
++      return false;
++    pollfd channel{fd, POLLIN, 0};
++    const int polled = poll(&channel, 1, wait);
++    if (polled < 0)
++      return false;
++    if (polled > 0) {
++      char go = 0;
++      if (read(fd, &go, 1) != 1 || go != 'G' || deadline <= MonotonicNowNs())
++        return false;
++      break;
++    }
++  }
++  std::thread([fd, deadline] {
++    for (;;) {
++      const int wait = WaitMs(deadline);
++      if (!wait)
++        _exit(124);
++      pollfd channel{fd, POLLIN, 0};
++      // EOF, repeated GO, any cancellation byte or poll error is terminal.
++      if (poll(&channel, 1, wait) != 0)
++        _exit(125);
++    }
++  }).detach();
++  if (original_deadline)
++    *original_deadline = deadline;
++  return true;
++}
++}  // namespace
++
++bool Enter(int* argc, char** argv) {
++  return EnterChannel(argc, argv, ValidTrackerArguments, nullptr);
++}
++
++bool EnterQualification(int* argc, char** argv, uint64_t* original_deadline) {
++  return EnterChannel(argc, argv, ValidQualificationArguments, original_deadline);
++}
++
++bool ValidQualificationArguments(int argc, char** argv) {
++  return argc == 1 ||
++         (argc == 2 &&
++          (std::strcmp(argv[1], "--aegis-qualification-positive-control") == 0 ||
++           std::strcmp(argv[1], "--aegis-qualification-clock-probe") == 0 ||
++           std::strcmp(argv[1], "--aegis-qualification-owner-boundaries") == 0));
++}
++
++bool ValidTrackerArguments(int argc, char** argv) {
++  if (argc == 3)
++    return std::strcmp(argv[1], "--single-process-tests") == 0 &&
++           std::strcmp(argv[2], "--gtest_list_tests") == 0;
++  if (argc != 5 || std::strcmp(argv[1], "--single-process-tests") != 0 ||
++      std::strcmp(argv[3], "--gtest_repeat=1") != 0)
++    return false;
++  const std::string_view filter(argv[2]), output(argv[4]);
++  return (filter == "--gtest_filter=PolicyPublicationAckTrackerTest.SharedUnitContract" ||
++          filter == "--gtest_filter=PolicyPublicationAckTrackerRegressionTest.SharedRegressionContract") &&
++         output.starts_with("--test-launcher-output=/") && output.size() > 24;
++}
++}  // namespace aegis_access::bounded
+diff --git a/tools/aegis/current151_tracker/bounded_runtime.h b/tools/aegis/current151_tracker/bounded_runtime.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..3b3e4063255a0dbdba9e58b53d678ee98d47c100
+--- /dev/null
++++ b/tools/aegis/current151_tracker/bounded_runtime.h
+@@ -0,0 +1,49 @@
++// Copyright 2026 GCSA
++#ifndef TOOLS_AEGIS_CURRENT151_TRACKER_BOUNDED_RUNTIME_H_
++#define TOOLS_AEGIS_CURRENT151_TRACKER_BOUNDED_RUNTIME_H_
++
++#include <cstdint>
++#include <functional>
++#include <string>
++#include <string_view>
++
++namespace aegis_access::bounded {
++inline constexpr char kDeadlineClockName[] = "CLOCK_MONOTONIC";
++uint64_t MonotonicNowNs();
++std::string BootIdentity();
++// Consumes the inherited one-use GO and starts an EOF/deadline watchdog. The
++// watchdog intentionally survives TestSuite and static destruction.
++bool Enter(int* argc, char** argv);
++bool ValidTrackerArguments(int argc, char** argv);
++// Qualification is a separate, narrow argument mode. It shares the inherited
++// channel, original deadline and watchdog, without accepting tracker arguments.
++bool EnterQualification(int* argc, char** argv, uint64_t* original_deadline);
++bool ValidQualificationArguments(int argc, char** argv);
++// No boolean/environment/receipt override. Both process controls remain blocked
++// until an admitted executor protects birth, pre-exec and supervisor loss.
++const char* ProcessCanaryBlocker();
++
++enum class ControllerObservation { kQuiet, kGo, kCancel, kEof, kError };
++struct OwnerGate {
++  bool go_seen = false;
++  bool go_sent = false;
++  int failure = 0;
++  void Fail(int reason = 125);
++  void Observe(ControllerObservation observation);
++};
++// fd must already be an admitted nonblocking pipe. Reads at most two bytes.
++void ObserveController(int fd, OwnerGate* gate);
++// Pure shared transition used by the owner and source-only native fixtures.
++bool ValidateOwnerBoundary(OwnerGate* gate, uint64_t deadline,
++                           std::string_view expected_boot, uint64_t now,
++                           std::string_view current_boot);
++bool FreshOwnerBoundary(int fd, OwnerGate* gate, uint64_t deadline,
++                        std::string_view expected_boot);
++// Exactly one write, sync, close and final observation, even on I/O failure.
++// Operations are private owner callbacks; never receipt/grant-supplied code.
++bool FinishTerminal(OwnerGate* gate, const std::function<bool()>& write_once,
++                    const std::function<bool()>& sync_once,
++                    const std::function<bool()>& close_once,
++                    const std::function<bool()>& final_boundary);
++}  // namespace aegis_access::bounded
++#endif
+diff --git a/tools/aegis/current151_tracker/closure.py b/tools/aegis/current151_tracker/closure.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a97758e9d529a582f9a52e4170d8d5734b0c05d9
+--- /dev/null
++++ b/tools/aegis/current151_tracker/closure.py
+@@ -0,0 +1,124 @@
++"""Conservative input admission for the bounded tracker experiment.
++
++This parser does not authorize builds. It accepts literal compiler argv, never
++shell recipes, and charges repeated references before reading response files.
++Unknown recipe syntax must be resolved before the command can be admitted.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++import os
++from pathlib import Path
++import shlex
++import stat
++
++
++class Refusal(ValueError):
++    """The supplied input cannot be admitted."""
++
++
++@dataclass
++class Budget:
++    bytes_left: int = 65536
++    items_left: int = 4096
++
++    def charge(self) -> None:
++        if self.items_left <= 0:
++            raise Refusal("dependency reference budget exhausted")
++        self.items_left -= 1
++
++
++def read_bounded(path: Path, budget: Budget) -> bytes:
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    try:
++        if not stat.S_ISREG(os.fstat(fd).st_mode):
++            raise Refusal("input is not a regular file")
++        chunks = []
++        remaining = budget.bytes_left
++        while True:
++            data = os.read(fd, min(8192, remaining + 1))
++            if not data:
++                break
++            if len(data) > remaining:
++                raise Refusal("aggregate response/file-list byte budget exhausted")
++            chunks.append(data)
++            remaining -= len(data)
++        budget.bytes_left = remaining
++        return b"".join(chunks)
++    finally:
++        os.close(fd)
++
++
++def reject_cwd_overrides(argv: list[str]) -> None:
++    # A trailing override affects earlier operands too; inspect the whole argv
++    # before resolving any path. Also reject linker and driver forwarding forms.
++    for arg in argv:
++        if "working-directory" in arg or arg == "-fdebug-compilation-dir":
++            raise Refusal("compiler working-directory override is unsupported")
++
++
++def expand(argv: list[str], cwd: Path, budget: Budget | None = None,
++           active: tuple[Path, ...] = ()) -> list[str]:
++    budget = budget if budget is not None else Budget()
++    result = []
++    for arg in argv:
++        budget.charge()
++        if not isinstance(arg, str) or not arg or "\0" in arg:
++            raise Refusal("invalid argument")
++        if arg.startswith("@"):
++            path = canonical(cwd / arg[1:])
++            if path in active or len(active) >= 8:
++                raise Refusal("response-file cycle or depth limit")
++            data = read_bounded(path, budget)
++            try:
++                nested = shlex.split(data.decode("utf-8"), posix=True)
++            except (UnicodeError, ValueError) as exc:
++                raise Refusal("invalid response-file encoding/quoting") from exc
++            result.extend(expand(nested, cwd, budget, (*active, path)))
++        elif arg in ("-filelist", "-Wl,-filelist") or "filelist," in arg:
++            # Darwin link filelists need an explicit grammar and producer
++            # binding. Refuse instead of silently treating them as options.
++            raise Refusal("link filelist requires separate admission")
++        else:
++            result.append(arg)
++    reject_cwd_overrides(result)
++    return result
++
++
++def canonical(path: Path) -> Path:
++    # Walk the ORIGINAL sequence. In alias/../input.o the alias must be
++    # examined before '..' can discard it; abspath/normpath would hide it.
++    original = path if path.is_absolute() else Path.cwd() / path
++    current = Path(original.anchor)
++    parts = original.parts[1:]
++    for index, part in enumerate(parts):
++        if part == "..":
++            current = current.parent
++            continue
++        candidate = current / part
++        info = candidate.lstat()
++        if stat.S_ISLNK(info.st_mode):
++            raise Refusal("unadmitted symlink alias")
++        if index + 1 < len(parts) and not stat.S_ISDIR(info.st_mode):
++            raise Refusal("non-directory intermediate input component")
++        current = candidate
++    return current
++
++
++def references(values: list[str], cwd: Path, admitted: dict[str, str],
++               budget: Budget | None = None) -> list[Path]:
++    """Validate explicit, implicit, order-only and depfile references alike.
++
++    The caller supplies every occurrence, including duplicates. Admission of
++    generated inputs additionally requires their producer receipt upstream.
++    """
++    budget = budget if budget is not None else Budget()
++    result = []
++    for value in values:
++        budget.charge()
++        path = canonical(cwd / value)
++        if str(path) not in admitted:
++            raise Refusal("unknown input or historical object")
++        result.append(path)
++    return result
+diff --git a/tools/aegis/current151_tracker/driver.py b/tools/aegis/current151_tracker/driver.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..5fb91e3a97cf94d65e5566ab38edd358453ab047
+--- /dev/null
++++ b/tools/aegis/current151_tracker/driver.py
+@@ -0,0 +1,422 @@
++#!/usr/bin/env python3
++"""Bounded tracker admission and result validation; build dispatch stays sealed.
++
++Run with the pinned interpreter's -I -S -B flags. The private implementation
++grant and qualified build executor are supplied separately by the coordinator.
++This module cannot turn a successful parser fixture into native acceptance.
++"""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++import hashlib
++import json
++import math
++import os
++from pathlib import Path
++import stat
++import sys
++import time
++import xml.etree.ElementTree as ET
++
++CASES = (
++    "PolicyPublicationAckTrackerTest.SharedUnitContract",
++    "PolicyPublicationAckTrackerRegressionTest.SharedRegressionContract",
++)
++XML_CAP = 1024 * 1024
++EVIDENCE_CAP = 32 * 1024 * 1024
++TERMINAL_RESERVE = 1024 * 1024
++TERMINAL_CAP = 32768
++DEADLINE_CLOCK = "CLOCK_MONOTONIC"
++
++
++class Refusal(ValueError):
++    """The attempt must stop without accepting an observation."""
++
++
++def isolated_entry() -> None:
++    if not (sys.flags.isolated and sys.flags.no_site and sys.dont_write_bytecode):
++        raise Refusal("use the pinned interpreter with -I -S -B")
++
++
++def deadline_clock_ns() -> int:
++    # Python 3.11's macOS monotonic_ns uses mach_absolute_time. Native uses
++    # clock_gettime(CLOCK_MONOTONIC), so admission and every check select that
++    # same explicit clock, including its macOS suspend semantics.
++    return time.clock_gettime_ns(time.CLOCK_MONOTONIC)
++
++
++@dataclass(frozen=True)
++class Deadline:
++    monotonic_ns: int
++    boot: str
++
++    @classmethod
++    def admit(cls, expires_utc: float, boot: str, *, utc_now: float | None = None,
++              monotonic_now: int | None = None) -> Deadline:
++        utc_now = time.time() if utc_now is None else utc_now
++        monotonic_now = deadline_clock_ns() if monotonic_now is None else monotonic_now
++        remaining = expires_utc - utc_now
++        if not math.isfinite(remaining) or not 0 < remaining <= 8 * 3600 or not boot:
++            raise Refusal("expired, invalid or excessive grant lifetime")
++        return cls(monotonic_now + int(remaining * 1_000_000_000), boot)
++
++    def check(self, boot: str, *, now_ns: int | None = None) -> None:
++        now_ns = deadline_clock_ns() if now_ns is None else now_ns
++        if boot != self.boot or now_ns >= self.monotonic_ns:
++            raise Refusal("original deadline expired or boot identity changed")
++
++
++class Attempt:
++    """Fail-first state machine. All validation errors permanently latch stop."""
++
++    def __init__(self, deadline: Deadline, boot, guard):
++        self.deadline = deadline
++        self.boot = boot
++        self.guard = guard
++        self.stopped = False
++        self.stage = 0
++
++    def cancel(self) -> None:
++        self.stopped = True
++
++    def _check_live(self) -> None:
++        if self.stopped:
++            raise Refusal("sticky stop is set")
++        self.deadline.check(self.boot())
++        if self.stopped:
++            raise Refusal("sticky stop is set")
++
++    def check(self) -> None:
++        try:
++            self._check_live()
++            self.guard()
++            self._check_live()
++        except BaseException:
++            self.stopped = True
++            raise
++
++    def before_create(self) -> None:
++        self.check()
++
++    def before_go(self) -> None:
++        self.check()
++
++    def accept(self, validate, *, retired: bool, reconcile=None) -> object:
++        try:
++            self.check()
++            if not retired:
++                raise Refusal("owned child retirement is unverified")
++            observation = validate()
++            # Validator, output accounting and terminal writes can consume the
++            # remaining lease or uncover drift. Never advance on the first check.
++            self.check()
++            if reconcile is not None:
++                reconcile()
++                # Accounting occurs after validation and the last guard's
++                # possible terminal writes. Do not run a writing guard again.
++            # The sole transition always follows a non-writing live check,
++            # including callers without an accounting callback.
++            self._check_live()
++            self.stage += 1
++            return observation
++        except BaseException:
++            self.stopped = True
++            raise
++
++
++def read_regular(path: Path, cap: int) -> bytes:
++    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++    try:
++        if not stat.S_ISREG(os.fstat(fd).st_mode):
++            raise Refusal("result is not a regular file")
++        chunks = []
++        remaining = cap
++        while True:
++            part = os.read(fd, min(8192, remaining + 1))
++            if not part:
++                return b"".join(chunks)
++            if len(part) > remaining:
++                raise Refusal("result byte cap exceeded")
++            chunks.append(part)
++            remaining -= len(part)
++    finally:
++        os.close(fd)
++
++
++def check_hashes(inputs: dict[str, str]) -> None:
++    for name, expected in inputs.items():
++        path = Path(name)
++        if not path.is_absolute() or path.resolve(strict=True) != path:
++            raise Refusal("input path is not an admitted canonical path")
++        digest = hashlib.sha256()
++        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
++        try:
++            if not stat.S_ISREG(os.fstat(fd).st_mode):
++                raise Refusal("admitted input is not a regular file")
++            while data := os.read(fd, 1024 * 1024):
++                digest.update(data)
++        finally:
++            os.close(fd)
++        if digest.hexdigest() != expected:
++            raise Refusal("source/tool/runtime input drift")
++
++
++def census(root: Path, cap: int = EVIDENCE_CAP - TERMINAL_RESERVE) -> int:
++    """Descriptor-relative accounting; vanished entries are failures."""
++    total = 0
++
++    def visit(fd: int) -> None:
++        nonlocal total
++        for name in os.listdir(fd):
++            info = os.stat(name, dir_fd=fd, follow_symlinks=False)
++            if stat.S_ISREG(info.st_mode):
++                total += info.st_size
++                if total > cap:
++                    raise Refusal("evidence cap or terminal reserve exhausted")
++            elif stat.S_ISDIR(info.st_mode):
++                child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
++                                dir_fd=fd)
++                try:
++                    visit(child)
++                finally:
++                    os.close(child)
++            else:
++                raise Refusal("unaccountable evidence entry")
++
++    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
++    try:
++        visit(fd)
++        return total
++    finally:
++        os.close(fd)
++
++
++@dataclass(frozen=True)
++class OwnerCompletion:
++    """Observation from waiting for this invocation's directly owned owner.
++
++    The sealed dispatch adapter must supply this from its actual wait result,
++    never deserialize it from terminal evidence or import the leaf PID.
++    """
++    command: tuple[str, ...]
++    exit_code: int | None
++    completed: bool
++
++
++def validate_terminal(data: bytes, deadline: Deadline, command: tuple[str, ...],
++                      completion: OwnerCompletion | None) -> int:
++    """A provisional receipt alone never establishes successful completion."""
++    if (not isinstance(completion, OwnerCompletion) or
++            completion.completed is not True or type(completion.exit_code) is not int or
++            completion.exit_code != 0 or completion.command != command or
++            not isinstance(command, tuple) or not command or
++            any(not isinstance(arg, str) or "\0" in arg for arg in command)):
++        raise Refusal("actual successful owned-owner completion is required")
++    if len(data) > TERMINAL_CAP:
++        raise Refusal("terminal receipt exceeds cap")
++    def unique(pairs):
++        result = {}
++        for key, value in pairs:
++            if key in result:
++                raise Refusal("duplicate terminal field")
++            result[key] = value
++        return result
++    try:
++        receipt = json.loads(data, object_pairs_hook=unique)
++    except (UnicodeError, ValueError) as exc:
++        raise Refusal("invalid provisional terminal receipt") from exc
++    fields = {"version", "kind", "command", "deadline_ns", "boot", "reaped",
++              "stopped", "go", "status"}
++    if not isinstance(receipt, dict) or set(receipt) != fields:
++        raise Refusal("unsupported terminal fields; accepted is never authoritative")
++    if (type(receipt["version"]) is not int or receipt["version"] != 1 or
++            receipt["kind"] != "provisional" or receipt["command"] != list(command) or
++            type(receipt["deadline_ns"]) is not int or
++            receipt["deadline_ns"] != deadline.monotonic_ns or receipt["boot"] != deadline.boot or
++            receipt["reaped"] is not True or receipt["stopped"] is not False or
++            receipt["go"] is not True or type(receipt["status"]) is not int or
++            receipt["status"] != 0):
++        raise Refusal("terminal binding, GO or successful verified leaf retirement mismatch")
++    return 0
++
++
++def finalize(attempt: Attempt, root: Path, cleanup, validate, *, terminal: bytes = b"",
++             command: tuple[str, ...] = (), completion: OwnerCompletion | None = None) -> object:
++    """Cleanup runs even if a filesystem accounting/validator exception occurs."""
++    try:
++        census(root)
++    except BaseException as first_error:
++        attempt.cancel()
++        try:
++            cleanup()
++        except BaseException as cleanup_error:
++            # Preserve the original accounting failure as the primary error.
++            raise first_error from cleanup_error
++        raise
++    try:
++        retired = cleanup()
++        census(root)
++    except BaseException:
++        attempt.cancel()
++        raise
++    def observation():
++        validate_terminal(terminal, attempt.deadline, command, completion)
++        return validate()
++    return attempt.accept(observation, retired=retired, reconcile=lambda: census(root))
++
++
++def validate_clock_probe(data: bytes, deadline: Deadline, *, before_ns: int,
++                         after_ns: int) -> int:
++    """Reconcile the separately admitted native clock-probe observation.
++
++    The controller samples this SAME clock around the native command and passes
++    the immutable deadline/boot binding; fixture bytes do not prove a native run.
++    """
++    if len(data) > 512:
++        raise Refusal("clock probe exceeds cap")
++    def unique(pairs):
++        value = {}
++        for key, item in pairs:
++            if key in value:
++                raise Refusal("duplicate clock probe field")
++            value[key] = item
++        return value
++    try:
++        probe = json.loads(data, object_pairs_hook=unique)
++    except (UnicodeError, ValueError) as exc:
++        raise Refusal("invalid clock probe") from exc
++    if not isinstance(probe, dict) or set(probe) != {"clock", "now_ns", "deadline_ns", "boot"}:
++        raise Refusal("unsupported clock probe")
++    now = probe["now_ns"]
++    if (probe["clock"] != DEADLINE_CLOCK or probe["boot"] != deadline.boot or
++            type(probe["deadline_ns"]) is not int or probe["deadline_ns"] != deadline.monotonic_ns or
++            type(now) is not int or not 0 < before_ns <= now <= after_ns < deadline.monotonic_ns):
++        raise Refusal("native clock/deadline/boot observation mismatch")
++    return now
++
++
++def validate_listing(data: bytes) -> tuple[str, ...]:
++    if len(data) > XML_CAP:
++        raise Refusal("listing cap exceeded")
++    suite = None
++    names = []
++    for raw in data.decode("utf-8").splitlines():
++        if not raw.strip():
++            continue
++        if raw.startswith("  ") and suite is not None:
++            case = raw.strip()
++            if not case.isidentifier():
++                raise Refusal("unsupported listing entry")
++            names.append(suite + case)
++        elif raw.endswith(".") and raw[:-1].isidentifier():
++            suite = raw
++        else:
++            raise Refusal("unsupported listing output")
++    if len(names) != len(CASES) or set(names) != set(CASES):
++        raise Refusal("listing differs from the original tracker2 identities")
++    return tuple(names)
++
++
++def validate_xml(data: bytes, expected: str, *, exit_code: int) -> str:
++    if exit_code != 0 or expected not in CASES or len(data) > XML_CAP:
++        raise Refusal("exit, identity or XML size refused")
++    if b"<!" in data:
++        raise Refusal("XML declarations/entities are unsupported")
++    try:
++        root = ET.fromstring(data)
++    except ET.ParseError as exc:
++        raise Refusal("incomplete XML") from exc
++    if root.tag != "testsuites" or len(root) != 1 or root[0].tag != "testsuite":
++        raise Refusal("unsupported XML root/suites")
++    if root.attrib or root[0].attrib:
++        raise Refusal("unknown XML suite attributes")
++    suite = root[0]
++    if [node.tag for node in suite] != ["x-teststart", "testcase"]:
++        raise Refusal("missing, duplicate or unknown test results")
++    start, case = suite
++    for node in (start, case):
++        if node.get("classname", "") + "." + node.get("name", "") != expected:
++            raise Refusal("XML test identity mismatch")
++    if set(start.attrib) != {"name", "classname", "timestamp"} or set(case.attrib) != {
++        "name", "classname", "timestamp", "time", "status"
++    }:
++        raise Refusal("unknown or missing XML test attributes")
++    try:
++        duration = float(case.get("time", ""))
++    except ValueError as exc:
++        raise Refusal("invalid test duration") from exc
++    if not math.isfinite(duration) or duration < 0:
++        raise Refusal("invalid test duration")
++    if len(start) or case.get("status") != "run":
++        raise Refusal("incomplete start or skipped test")
++    for part in case:
++        if part.tag != "x-test-result-part" or part.get("type") != "success":
++            raise Refusal("failure, skip or unknown result part")
++        if set(part.attrib) != {"type", "file", "line"}:
++            raise Refusal("unknown or missing result attributes")
++        if [node.tag for node in part] != ["summary", "message"]:
++            raise Refusal("unknown result detail")
++        if any(len(node) or node.attrib for node in part):
++            raise Refusal("nested result detail")
++    return expected
++
++
++class TrackerSequence:
++    """Exact listing -> unit -> regression, with fresh outputs and no retry."""
++
++    def __init__(self, attempt: Attempt):
++        self.attempt = attempt
++        self.prepared: dict[str, Path] = {}
++
++    def listing(self, data: bytes, *, owner_exit_code: int, leaf_exit_code: int,
++                retired: bool, cancelled: bool = False, terminal: bytes = b"",
++                command: tuple[str, ...] = (),
++                completion: OwnerCompletion | None = None) -> tuple[str, ...]:
++        if (self.attempt.stage != 0 or type(owner_exit_code) is not int or
++                type(leaf_exit_code) is not int or owner_exit_code != 0 or
++                leaf_exit_code != 0 or cancelled):
++            self.attempt.cancel()
++            raise Refusal("listing execution failed, cancelled or out of sequence")
++        def observation():
++            validate_terminal(terminal, self.attempt.deadline, command, completion)
++            return validate_listing(data)
++        return self.attempt.accept(observation, retired=retired)
++
++    def prepare(self, expected: str, path: Path) -> None:
++        try:
++            self.attempt.check()
++            if self.attempt.stage not in (1, 2) or expected != CASES[self.attempt.stage - 1]:
++                raise Refusal("case out of sequence")
++            if expected in self.prepared or os.path.lexists(path):
++                raise Refusal("preexisting XML or attempted retry")
++            if not path.is_absolute() or path.parent.resolve(strict=True) != path.parent:
++                raise Refusal("XML output parent is not canonical")
++            self.prepared[expected] = path
++        except BaseException:
++            self.attempt.cancel()
++            raise
++
++    def result(self, expected: str, *, exit_code: int, retired: bool,
++               terminal: bytes = b"", command: tuple[str, ...] = (),
++               completion: OwnerCompletion | None = None) -> str:
++        try:
++            if self.attempt.stage not in (1, 2) or expected != CASES[self.attempt.stage - 1]:
++                raise Refusal("case result out of sequence")
++            path = self.prepared.pop(expected)
++            def observation():
++                validate_terminal(terminal, self.attempt.deadline, command, completion)
++                return validate_xml(read_regular(path, XML_CAP), expected, exit_code=exit_code)
++            return self.attempt.accept(observation, retired=retired)
++        except BaseException:
++            self.attempt.cancel()
++            raise
++
++
++def build_dispatch(*_args, **_kwargs) -> None:
++    raise Refusal("B1: an owned GN/Ninja executor and producer lineage are required")
++
++
++if __name__ == "__main__":
++    isolated_entry()
++    raise SystemExit("No native dispatch grant is installed; build dispatch is sealed.")
+diff --git a/tools/aegis/current151_tracker/native_regressions.cc b/tools/aegis/current151_tracker/native_regressions.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..47a3b0346b93f263267e7ea7c20dc01f964cae2f
+--- /dev/null
++++ b/tools/aegis/current151_tracker/native_regressions.cc
+@@ -0,0 +1,215 @@
++// Copyright 2026 GCSA
++// Native boundary canaries. NOT qualified until an admitted Darwin run occurs.
++#include "tools/aegis/current151_tracker/bounded_runtime.h"
++
++#include <mach-o/dyld.h>
++#include <limits.h>
++#include <signal.h>
++#include <spawn.h>
++#include <sys/wait.h>
++#include <unistd.h>
++
++#include <cstdio>
++#include <cerrno>
++#include <algorithm>
++#include <cstdlib>
++#include <cstring>
++
++extern char** environ;
++
++namespace {
++constexpr int kHarmlessProbeExit = 73;
++
++// Called only with a positive PID just returned by our own creation operation.
++// No other thread reaps; SIGCHLD auto-reaping is disabled below. A zombie pins
++// identity until this function's waitpid; ECHILD/uncertain errors revoke signals.
++bool RetireCreatedProbe(pid_t pid, uint64_t original_deadline, int expected_exit) {
++  const uint64_t end = std::min<uint64_t>(original_deadline,
++      aegis_access::bounded::MonotonicNowNs() + 5000000000ULL);
++  bool killed = false;
++  uint64_t cleanup_end = end;
++  for (;;) {
++    int status = 0;
++    const pid_t result = waitpid(pid, &status, WNOHANG);
++    if (result == pid)
++      return !killed && WIFEXITED(status) && WEXITSTATUS(status) == expected_exit;
++    if (result < 0) {
++      if (errno != EINTR)
++        return false;
++      const uint64_t now = aegis_access::bounded::MonotonicNowNs();
++      if (!now || now >= cleanup_end)
++        return false;
++      continue;
++    }
++    const uint64_t now = aegis_access::bounded::MonotonicNowNs();
++    if (!now)
++      return false;
++    if (now >= end && !killed) {
++      // result==0 retains our unreaped-child authority at this point.
++      if (kill(pid, SIGKILL) != 0)
++        return false;
++      killed = true;
++      cleanup_end = now + 2000000000ULL;
++    } else if (killed && now >= cleanup_end) {
++      return false;
++    }
++    usleep(1000);
++  }
++}
++}  // namespace
++
++// SOURCE_ONLY_NOT_COMPILED_NOT_RUN: retained paired process controls. A future
++// admitted executor must protect birth/pre-exec/dyld/running probe against
++// cancellation, expiry, qualifier watchdog/_exit/SIGKILL and owner loss. Each
++// case requires exact retirement, <=5s observation, <=2s probe retirement and
++// <=10s owner cleanup, including ECHILD/foreign/reused-PID no-signal controls.
++[[maybe_unused]] int RunProcessCanaries(bool positive_control, uint64_t original_deadline) {
++  if (aegis_access::bounded::ProcessCanaryBlocker())
++    return 126;
++  char executable[PATH_MAX], self[PATH_MAX];
++  uint32_t executable_size = sizeof(executable);
++  if (_NSGetExecutablePath(executable, &executable_size) != 0 ||
++      !realpath(executable, self))
++    return 1;
++  struct sigaction child_action{};
++  child_action.sa_handler = SIG_DFL;
++  sigemptyset(&child_action.sa_mask);
++  if (sigaction(SIGCHLD, &child_action, nullptr) != 0)
++    return 1;
++  bool passed = true;
++  // If a canary unexpectedly succeeds, reap only the child we created and fail.
++  if (!positive_control) {
++    const pid_t forked = fork();
++    if (forked == 0)
++      _exit(kHarmlessProbeExit);
++    const int fork_error = errno;
++    if (forked > 0) {
++      RetireCreatedProbe(forked, original_deadline, kHarmlessProbeExit);
++      return 1;
++    }
++    if (forked < 0 && fork_error != EPERM && fork_error != EACCES)
++      return 1;
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Wdeprecated-declarations"
++    const pid_t vforked = vfork();
++#pragma clang diagnostic pop
++    if (vforked == 0)
++      _exit(kHarmlessProbeExit);
++    const int vfork_error = errno;
++    if (vforked > 0) {
++      RetireCreatedProbe(vforked, original_deadline, kHarmlessProbeExit);
++      return 1;
++    }
++    if (vforked < 0 && vfork_error != EPERM && vfork_error != EACCES)
++      return 1;
++  }
++  pid_t spawned = -1;
++  char mode[] = "--aegis-spawn-probe";
++  char* args[] = {self, mode, nullptr};
++  const int spawn_result = posix_spawn(&spawned, self, nullptr, nullptr, args, environ);
++  if (spawn_result == 0) {
++    const bool reaped = spawned > 0 &&
++        RetireCreatedProbe(spawned, original_deadline, kHarmlessProbeExit);
++    passed = passed && positive_control && reaped;
++  } else {
++    passed = passed && !positive_control && (spawn_result == EPERM || spawn_result == EACCES);
++  }
++  printf("%s=%s\n", positive_control ? "self_spawn_positive_control" : "fork_vfork_self_spawn_denied",
++         passed ? "true" : "false");
++  return passed ? 0 : 1;
++}
++
++namespace {
++// Pure source fixtures call the PRODUCTION transition helper; no processes or
++// I/O are created here. Future native execution remains separately required.
++bool OwnerBoundaryFixtures() {
++  using aegis_access::bounded::ControllerObservation;
++  using aegis_access::bounded::OwnerGate;
++  using aegis_access::bounded::ValidateOwnerBoundary;
++  using aegis_access::bounded::FinishTerminal;
++  for (int phase = 0; phase < 3; ++phase) {  // write / fsync / close
++    for (int event = 0; event < 4; ++event) {  // cancel / EOF / expiry / I/O error
++      OwnerGate gate;
++      gate.Observe(ControllerObservation::kGo);
++      gate.go_sent = true;
++      int operations = 0;
++      bool pending = false;
++      auto io = [&] {
++        const bool selected = operations++ == phase;
++        pending = pending || selected;
++        return !(selected && event == 3);
++      };
++      const bool result = FinishTerminal(&gate, io, io, io, [&] {
++        if (!pending || operations != 3)
++          return false;
++        if (event < 2)
++          gate.Observe(event == 0 ? ControllerObservation::kCancel : ControllerObservation::kEof);
++        return ValidateOwnerBoundary(&gate, 200, "boot", event == 2 ? 200 : 100, "boot");
++      });
++      if (result || operations != 3 || !gate.failure)
++        return false;
++      const int first = gate.failure;
++      gate.Fail(126);
++      if (gate.failure != first)
++        return false;
++    }
++  }
++  OwnerGate normal_terminal;
++  normal_terminal.Observe(ControllerObservation::kGo);
++  normal_terminal.go_sent = true;
++  int normal_calls = 0;
++  auto normal_io = [&] { ++normal_calls; return true; };
++  if (!FinishTerminal(&normal_terminal, normal_io, normal_io, normal_io, [&] {
++        return normal_calls == 3 && ValidateOwnerBoundary(&normal_terminal, 200, "boot", 199, "boot");
++      }))
++    return false;
++  // Simulate cancellation/expiry after setup, at the production pre-create
++  // gate. The guarded creation counter must remain zero.
++  for (int scenario = 0; scenario < 6; ++scenario) {
++    OwnerGate gate;
++    gate.Observe(ControllerObservation::kGo);
++    if (scenario < 3)
++      gate.Observe(scenario == 0 ? ControllerObservation::kCancel :
++                   scenario == 1 ? ControllerObservation::kEof : ControllerObservation::kGo);
++    int creations = 0;
++    if (ValidateOwnerBoundary(&gate, 200, "boot", scenario == 3 ? 200 :
++                              scenario == 4 ? 0 : 100, scenario == 5 ? "other" : "boot"))
++      ++creations;
++    if (creations != 0)
++      return false;
++  }
++  OwnerGate healthy;
++  healthy.Observe(ControllerObservation::kGo);  // a single pending GO survives
++  if (!ValidateOwnerBoundary(&healthy, 200, "boot", 100, "boot") ||
++      !healthy.go_seen || healthy.go_sent)
++    return false;
++  healthy.go_sent = true;
++  return ValidateOwnerBoundary(&healthy, 200, "boot", 199, "boot");
++}
++}  // namespace
++
++int main(int argc, char** argv) {
++  // Direct entry cannot bypass the missing loss-safe executor. Exit73 is a
++  // future probe contract, not proof of pre-exec/startup supervision.
++  if (argc == 2 && std::strcmp(argv[1], "--aegis-spawn-probe") == 0) {
++    fprintf(stderr, "%s\n", aegis_access::bounded::ProcessCanaryBlocker());
++    return 126;
++  }
++  uint64_t original_deadline = 0;
++  if (!aegis_access::bounded::EnterQualification(&argc, argv, &original_deadline))
++    return 126;
++  if (argc == 2 && std::strcmp(argv[1], "--aegis-qualification-clock-probe") == 0) {
++    printf("{\"clock\":\"%s\",\"now_ns\":%llu,\"deadline_ns\":%llu,\"boot\":\"%s\"}\n",
++           aegis_access::bounded::kDeadlineClockName,
++           static_cast<unsigned long long>(aegis_access::bounded::MonotonicNowNs()),
++           static_cast<unsigned long long>(original_deadline),
++           aegis_access::bounded::BootIdentity().c_str());
++    return 0;
++  }
++  if (argc == 2 && std::strcmp(argv[1], "--aegis-qualification-owner-boundaries") == 0)
++    return OwnerBoundaryFixtures() ? 0 : 1;
++  // Both denial and positive modes refuse; unexpected creation by a denial
++  // canary needs the same loss protection. Neither control is waived/passed.
++  fprintf(stderr, "%s\n", aegis_access::bounded::ProcessCanaryBlocker());
++  return 126;
++}
+diff --git a/tools/aegis/current151_tracker/owned_leaf.cc b/tools/aegis/current151_tracker/owned_leaf.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..832618b88a82a70e8b0d4261381fe5fa9f447196
+--- /dev/null
++++ b/tools/aegis/current151_tracker/owned_leaf.cc
+@@ -0,0 +1,340 @@
++// Copyright 2026 GCSA
++// Sole creator/reaper of one direct child. This is NOT a GN/Ninja executor.
++#include "tools/aegis/current151_tracker/bounded_runtime.h"
++
++#include <fcntl.h>
++#include <poll.h>
++#include <sandbox.h>
++#include <signal.h>
++#include <sys/resource.h>
++#include <sys/stat.h>
++#include <sys/time.h>
++#include <sys/wait.h>
++#include <unistd.h>
++
++#include <cerrno>
++#include <algorithm>
++#include <charconv>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <string>
++#include <string_view>
++#include <vector>
++
++namespace {
++using aegis_access::bounded::BootIdentity;
++using aegis_access::bounded::MonotonicNowNs;
++using aegis_access::bounded::OwnerGate;
++using aegis_access::bounded::FreshOwnerBoundary;
++
++class OwnedChild {
++ public:
++  OwnedChild(const OwnedChild&) = delete;
++  OwnedChild& operator=(const OwnedChild&) = delete;
++  static OwnedChild Create() { return OwnedChild(fork()); }
++  bool IsChild() const { return pid_ == 0; }
++  bool Created() const { return pid_ > 0; }
++  bool Retired() const { return retired_; }
++  bool Reaped() const { return reaped_; }
++  int Status() const { return status_; }
++
++  bool Poll() {
++    if (retired_ || pid_ <= 0)
++      return false;
++    const pid_t result = waitpid(pid_, &status_, WNOHANG);
++    // Return to the caller's fixed deadline/cleanup loop after EINTR.
++    if (result == -1 && errno == EINTR)
++      return true;
++    if (result == 0)
++      return true;
++    // A successful reap or ANY uncertain wait failure permanently revokes
++    // signal authority. ECHILD never permits importing/recovering a PID.
++    retired_ = true;
++    reaped_ = result == pid_;
++    return false;
++  }
++
++  bool KillOwned() {
++    // A zombie remains owned until our reap; no other reaper or SIGCHLD
++    // auto-reap is allowed. This is the only kill site and never targets a group.
++    return Poll() && kill(pid_, SIGKILL) == 0;
++  }
++
++ private:
++  explicit OwnedChild(pid_t pid) : pid_(pid) {}
++  const pid_t pid_;
++  bool retired_ = false;
++  bool reaped_ = false;
++  int status_ = 0;
++};
++
++bool ParseNumber(std::string_view value, uint64_t* output) {
++  const auto result = std::from_chars(value.data(), value.data() + value.size(), *output);
++  return result.ec == std::errc() && result.ptr == value.data() + value.size();
++}
++
++bool ReadProfile(const char* path, bool positive_control, std::string* profile) {
++  if (positive_control && aegis_access::bounded::ProcessCanaryBlocker())
++    return false;
++  const int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
++  if (fd < 0)
++    return false;
++  struct stat info{};
++  bool valid = fstat(fd, &info) == 0 && S_ISREG(info.st_mode) && info.st_size <= 65536;
++  char bytes[4096];
++  while (valid) {
++    const ssize_t count = read(fd, bytes, sizeof(bytes));
++    if (count == 0)
++      break;
++    if (count < 0 || profile->size() + count > 65536) {
++      valid = false;
++      break;
++    }
++    profile->append(bytes, count);
++  }
++  close(fd);
++  // The supplied exact profile defines admitted reads/private writes/services.
++  // Qualification's matching positive control permits its single harmless
++  // self-probe. Only that exact support payload selects the positive profile;
++  // tracker and ordinary qualification always enforce process-fork denial.
++  // Both profiles must be separately granted and match in all other rules.
++  profile->append(positive_control ? "\n(allow process-fork)\n" : "\n(deny process-fork)\n");
++  profile->append("(deny network*)\n");
++  return valid && profile->find('\0') == std::string::npos;
++}
++
++std::string JsonString(std::string_view value) {
++  std::string result = "\"";
++  for (unsigned char byte : value) {
++    if (byte == '"' || byte == '\\') {
++      result += '\\';
++      result += static_cast<char>(byte);
++    } else if (byte < 32) {
++      char escaped[7];
++      snprintf(escaped, sizeof(escaped), "\\u%04x", static_cast<unsigned>(byte));
++      result += escaped;
++    } else {
++      result += static_cast<char>(byte);
++    }
++  }
++  return result + "\"";
++}
++
++bool ArmDeadline(uint64_t deadline) {
++  const uint64_t now = MonotonicNowNs();
++  if (!now || now >= deadline)
++    return false;
++  const uint64_t micros = std::min<uint64_t>((deadline - now) / 1000, 120000000);
++  if (!micros)
++    return false;
++  struct sigaction alarm_action{};
++  alarm_action.sa_handler = SIG_DFL;
++  sigemptyset(&alarm_action.sa_mask);
++  if (sigaction(SIGALRM, &alarm_action, nullptr) != 0)
++    return false;
++  sigset_t alarms;
++  sigemptyset(&alarms);
++  sigaddset(&alarms, SIGALRM);
++  if (sigprocmask(SIG_UNBLOCK, &alarms, nullptr) != 0)
++    return false;
++  itimerval timer{};
++  timer.it_value.tv_sec = micros / 1000000;
++  timer.it_value.tv_usec = micros % 1000000;
++  return setitimer(ITIMER_REAL, &timer, nullptr) == 0;
++}
++
++bool InstallBoundary(const std::string& profile) {
++  const rlimit core{0, 0}, files{8 * 1024 * 1024, 8 * 1024 * 1024}, cpu{120, 120};
++  if (setrlimit(RLIMIT_CORE, &core) != 0 || setrlimit(RLIMIT_FSIZE, &files) != 0 ||
++      setrlimit(RLIMIT_CPU, &cpu) != 0 ||
++      profile.empty())
++    return false;
++  char* error = nullptr;
++#pragma clang diagnostic push
++#pragma clang diagnostic ignored "-Wdeprecated-declarations"
++  const int result = sandbox_init(profile.c_str(), 0, &error);
++  sandbox_free_error(error);
++#pragma clang diagnostic pop
++  return result == 0;
++}
++}  // namespace
++
++int main(int argc, char** argv) {
++  // Deadline/boot are the ORIGINAL values. No UTC parsing or lease renewal.
++  // argv: owner deadline-ns boot profile receipt cwd -- absolute-leaf args...
++  uint64_t deadline = 0;
++  const uint64_t now = MonotonicNowNs();
++  const std::string boot = BootIdentity();
++  if (argc < 8 || std::strcmp(argv[6], "--") != 0 || argv[7][0] != '/' ||
++      !ParseNumber(argv[1], &deadline) || boot.empty() || !now || boot != argv[2] ||
++      deadline <= now || deadline - now > 8ULL * 3600 * 1000000000)
++    return 126;
++  const std::string_view leaf(argv[7]);
++  const bool support = leaf.substr(leaf.find_last_of('/') + 1) ==
++                       "current151_tracker_support_regressions";
++  if (support ? !aegis_access::bounded::ValidQualificationArguments(argc - 7, argv + 7)
++              : !aegis_access::bounded::ValidTrackerArguments(argc - 7, argv + 7))
++    return 126;
++  const bool positive_control = support && argc == 9 &&
++      std::strcmp(argv[8], "--aegis-qualification-positive-control") == 0;
++  const bool noncreating_support = support && argc == 9 &&
++      (std::strcmp(argv[8], "--aegis-qualification-clock-probe") == 0 ||
++       std::strcmp(argv[8], "--aegis-qualification-owner-boundaries") == 0);
++  if (support && !noncreating_support && aegis_access::bounded::ProcessCanaryBlocker()) {
++    fprintf(stderr, "%s\n", aegis_access::bounded::ProcessCanaryBlocker());
++    return 126;
++  }
++  // Bind the receipt to this exact owner invocation before setup/birth.
++  std::string command = "[";
++  for (int i = 0; i < argc; ++i) {
++    if (std::strlen(argv[i]) > 16384)
++      return 126;
++    if (i)
++      command += ',';
++    command += JsonString(argv[i]);
++    if (command.size() > 16384)
++      return 126;
++  }
++  command += ']';
++  struct stat input_info{};
++  const int flags = fcntl(STDIN_FILENO, F_GETFL);
++  if (fstat(STDIN_FILENO, &input_info) != 0 || !S_ISFIFO(input_info.st_mode) ||
++      flags < 0 || fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK) != 0)
++    return 126;
++  OwnerGate gate;
++  std::string profile;
++  if (!ReadProfile(argv[3], positive_control, &profile))
++    return 126;
++  const int receipt = open(argv[4], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
++  if (receipt < 0)
++    return 126;
++  int control[2];
++  if (pipe(control) != 0) {
++    close(receipt);
++    return 126;
++  }
++  // Fail instead of inheriting a control descriptor that the bounded entry
++  // cannot validate. Typical private invocations allocate descriptors 3..10.
++  if (control[0] < 3 || control[0] > 1024) {
++    close(control[0]);
++    close(control[1]);
++    close(receipt);
++    return 126;
++  }
++  std::vector<std::string> storage;
++  storage.emplace_back(argv[7]);
++  for (int i = 8; i < argc; ++i)
++    storage.emplace_back(argv[i]);
++  storage.push_back("--aegis-control-fd=" + std::to_string(control[0]));
++  storage.push_back("--aegis-deadline-ns=" + std::to_string(deadline));
++  storage.push_back("--aegis-boot=" + std::string(argv[2]));
++  std::vector<char*> child_argv;
++  for (std::string& arg : storage)
++    child_argv.push_back(arg.data());
++  child_argv.push_back(nullptr);
++  // Single thread, default SIGCHLD, exclusive waitpid ownership throughout.
++  struct sigaction child_action{};
++  child_action.sa_handler = SIG_DFL;
++  sigemptyset(&child_action.sa_mask);
++  if (sigaction(SIGCHLD, &child_action, nullptr) != 0) {
++    close(control[0]);
++    close(control[1]);
++    close(receipt);
++    return 126;
++  }
++  if (signal(SIGPIPE, SIG_IGN) == SIG_ERR ||
++      !FreshOwnerBoundary(STDIN_FILENO, &gate, deadline, boot)) {
++    close(control[0]);
++    close(control[1]);
++    close(receipt);
++    return 125;
++  }
++  // No setup or I/O intervenes between the fresh boundary and creation.
++  OwnedChild child = OwnedChild::Create();
++  if (child.IsChild()) {
++    // Arm first, including the pre-exec descriptor/setup interval. This timer
++    // is not renewed by exec or by the bounded entry's watchdog.
++    if (!ArmDeadline(deadline))
++      _exit(126);
++    close(control[1]);
++    close(receipt);
++    // The inherited control descriptor is the only non-stdio descriptor.
++    const int highest = getdtablesize();
++    for (int fd = 3; fd < highest; ++fd) {
++      if (fd != control[0])
++        close(fd);
++    }
++    // stdin belongs to the owner/controller protocol, never to the leaf.
++    close(STDIN_FILENO);
++    if (chdir(argv[5]) != 0 || !InstallBoundary(profile))
++      _exit(126);
++    execv(child_argv[0], child_argv.data());
++    _exit(126);
++  }
++  close(control[0]);
++  if (!child.Created()) {
++    close(control[1]);
++    close(receipt);
++    return 126;
++  }
++  while (child.Poll()) {
++    if (!FreshOwnerBoundary(STDIN_FILENO, &gate, deadline, boot))
++      break;
++    if (gate.go_seen && !gate.go_sent) {
++      // The same gate rechecks queued cancellation/expiry just before GO.
++      if (!FreshOwnerBoundary(STDIN_FILENO, &gate, deadline, boot) ||
++          write(control[1], "G", 1) != 1) {
++        gate.Fail();
++        break;
++      }
++      gate.go_sent = true;
++    }
++    pollfd input{STDIN_FILENO, POLLIN, 0};
++    if (poll(&input, 1, 20) < 0)
++      gate.Fail();
++  }
++  if (gate.failure)
++    child.KillOwned();
++  close(control[1]);
++  const uint64_t cleanup_start = MonotonicNowNs();
++  const uint64_t cleanup_end = cleanup_start + 10ULL * 1000000000;
++  while (child.Poll()) {
++    const uint64_t cleanup_now = MonotonicNowNs();
++    if (!cleanup_start || !cleanup_now || cleanup_now >= cleanup_end) {
++      gate.Fail();
++      break;
++    }
++    usleep(1000);
++  }
++  if (!child.Reaped()) {
++    gate.Fail();
++    if (!child.Retired())
++      child.KillOwned();
++  }
++  FreshOwnerBoundary(STDIN_FILENO, &gate, deadline, boot);
++  const int child_status = child.Status();
++  const bool leaf_success = gate.go_sent && child.Reaped() &&
++      WIFEXITED(child_status) && WEXITSTATUS(child_status) == 0;
++  if (!leaf_success)
++    gate.Fail();
++  // Immutable provisional evidence. There is no authoritative accepted field:
++  // actual owner completion and the consumer's final guards are mandatory.
++  const std::string terminal =
++      "{\"version\":1,\"kind\":\"provisional\",\"command\":" + command +
++      ",\"deadline_ns\":" + std::to_string(deadline) + ",\"boot\":" + JsonString(boot) +
++      ",\"reaped\":" + (child.Reaped() ? "true" : "false") +
++      ",\"stopped\":" + (gate.failure ? "true" : "false") +
++      ",\"go\":" + (gate.go_sent ? "true" : "false") +
++      ",\"status\":" + std::to_string(child.Status()) + "}\n";
++  // Cancellation during ANY terminal I/O is latched after close. Never rewrite
++  // the provisional receipt or promote it when this final boundary refuses.
++  const bool finished = aegis_access::bounded::FinishTerminal(
++      &gate,
++      [&] { return terminal.size() <= 32768 &&
++          write(receipt, terminal.data(), terminal.size()) == static_cast<ssize_t>(terminal.size()); },
++      [&] { return fsync(receipt) == 0; },
++      [&] { return close(receipt) == 0; },
++      [&] { return FreshOwnerBoundary(STDIN_FILENO, &gate, deadline, boot); });
++  return finished && leaf_success ? 0 : 125;
++}
+diff --git a/tools/aegis/current151_tracker/regressions.py b/tools/aegis/current151_tracker/regressions.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..26328238a2325de03abd7a43af5b60bdce5c8114
+--- /dev/null
++++ b/tools/aegis/current151_tracker/regressions.py
+@@ -0,0 +1,656 @@
++#!/usr/bin/env python3
++"""Unit and regression tests of the actual bounded admission/result adapters.
++
++No GN, compiler or native binary is invoked by this suite. Native boundary
++qualification and the original two GTests are separate required evidence.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import time
++import unittest
++from unittest.mock import patch
++
++
++def load(name):
++    path = Path(__file__).resolve().parent / (name + ".py")
++    spec = importlib.util.spec_from_file_location("bounded_tracker_" + name, path)
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++driver = load("driver")
++closure = load("closure")
++driver.isolated_entry()
++
++
++def xml(case=driver.CASES[0], detail="", status="run"):
++    suite, name = case.split(".")
++    return (f'<testsuites><testsuite><x-teststart name="{name}" classname="{suite}" '
++            f'timestamp="2026-10-09T00:00:00Z"/><testcase name="{name}" classname="{suite}" '
++            f'status="{status}" time="0.001" timestamp="2026-10-09T00:00:00Z">'
++            f'{detail}</testcase></testsuite></testsuites>').encode()
++
++
++class Fixture(unittest.TestCase):
++    def setUp(self):
++        self.tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self.tmp.cleanup)
++        self.root = Path(self.tmp.name).resolve()
++
++    def attempt(self, guard=lambda: None):
++        return driver.Attempt(driver.Deadline(driver.deadline_clock_ns() + 10**10, "boot"),
++                              lambda: "boot", guard)
++
++
++    def terminal(self, attempt, *, command=("owner", "fixture-invocation"),
++                 owner_exit=0, completed=True, **changes):
++        # PURE fixtures: these bytes/completion objects are never native proof.
++        receipt = {"version": 1, "kind": "provisional", "command": list(command),
++                   "deadline_ns": attempt.deadline.monotonic_ns, "boot": attempt.deadline.boot,
++                   "reaped": True, "stopped": False, "go": True, "status": 0}
++        receipt.update(changes)
++        return {"terminal": json.dumps(receipt).encode(), "command": command,
++                "completion": driver.OwnerCompletion(command, owner_exit, completed)}
++
++    def finalize(self, attempt, root, cleanup, validate):
++        return driver.finalize(attempt, root, cleanup, validate, **self.terminal(attempt))
++
++
++class DeadlineUnitTests(Fixture):
++    def test_admission_and_checks_use_explicit_native_clock_domain(self):
++        # Simulate different accumulated-suspend offsets in Python's implicit
++        # mach clock and CLOCK_MONOTONIC. Only the latter may bind the grant.
++        with patch.object(driver.time, "monotonic_ns", return_value=7), \
++             patch.object(driver.time, "clock_gettime_ns", return_value=10**12) as explicit:
++            deadline = driver.Deadline.admit(110, "boot", utc_now=100)
++            self.assertEqual(deadline.monotonic_ns, 10**12 + 10**10)
++            deadline.check("boot")
++            self.assertEqual(explicit.call_count, 2)
++            self.assertEqual(explicit.call_args.args, (time.CLOCK_MONOTONIC,))
++
++    def test_clock_probe_reconciles_original_deadline_and_sample_bracket(self):
++        deadline = driver.Deadline(400, "boot")
++        probe = {"clock": "CLOCK_MONOTONIC", "now_ns": 200,
++                 "deadline_ns": 400, "boot": "boot"}
++        self.assertEqual(driver.validate_clock_probe(json.dumps(probe).encode(), deadline,
++                                                     before_ns=190, after_ns=210), 200)
++        for key, value in [("clock", "mach_absolute_time"), ("now_ns", 5),
++                           ("now_ns", 220), ("now_ns", True),
++                           ("deadline_ns", 401), ("boot", "other")]:
++            altered = dict(probe, **{key: value})
++            with self.subTest(key=key, value=value), self.assertRaises(driver.Refusal):
++                driver.validate_clock_probe(json.dumps(altered).encode(), deadline,
++                                            before_ns=190, after_ns=210)
++
++    def test_clock_probe_rejects_duplicate_fields_and_expired_bracket(self):
++        deadline = driver.Deadline(400, "boot")
++        probe = b'{"clock":"CLOCK_MONOTONIC","now_ns":200,"deadline_ns":400,"boot":"boot"}'
++        for data, after in [(probe[:-1] + b',"now_ns":200}', 210), (probe, 400)]:
++            with self.assertRaises(driver.Refusal):
++                driver.validate_clock_probe(data, deadline, before_ns=190, after_ns=after)
++
++    def test_guard_induced_cancellation_refuses_all_command_boundaries(self):
++        for operation in ["before_create", "before_go", "accept"]:
++            attempt = self.attempt()
++            attempt.guard = attempt.cancel
++            with self.subTest(operation=operation), self.assertRaises(driver.Refusal):
++                if operation == "accept":
++                    attempt.accept(lambda: "provisional", retired=True)
++                else:
++                    getattr(attempt, operation)()
++            self.assertTrue(attempt.stopped)
++            self.assertEqual(attempt.stage, 0)
++
++    def test_guard_time_advance_refuses_dispatch_and_acceptance(self):
++        for operation in ["before_create", "before_go", "accept"]:
++            clock = [100]
++            def guard():
++                clock[0] = 200
++            attempt = driver.Attempt(driver.Deadline(200, "boot"), lambda: "boot", guard)
++            with patch.object(driver, "deadline_clock_ns", side_effect=lambda: clock[0]):
++                with self.subTest(operation=operation), self.assertRaises(driver.Refusal):
++                    if operation == "accept":
++                        attempt.accept(lambda: "provisional", retired=True)
++                    else:
++                        getattr(attempt, operation)()
++            self.assertTrue(attempt.stopped)
++            self.assertEqual(attempt.stage, 0)
++
++    def test_final_guard_cancel_or_expiry_cannot_advance_acceptance(self):
++        for cancel in [True, False]:
++            clock, calls = [100], [0]
++            attempt = driver.Attempt(driver.Deadline(200, "boot"), lambda: "boot", lambda: None)
++            def guard():
++                calls[0] += 1
++                if calls[0] == 2:
++                    if cancel:
++                        attempt.cancel()
++                    else:
++                        clock[0] = 200
++            attempt.guard = guard
++            with patch.object(driver, "deadline_clock_ns", side_effect=lambda: clock[0]):
++                with self.subTest(cancel=cancel), self.assertRaises(driver.Refusal):
++                    attempt.accept(lambda: "provisional", retired=True)
++            self.assertEqual(attempt.stage, 0)
++            self.assertTrue(attempt.stopped)
++
++    def test_original_deadline_ignores_wall_clock_rollback(self):
++        deadline = driver.Deadline.admit(110, "boot", utc_now=100, monotonic_now=1000)
++        self.assertEqual(deadline.monotonic_ns, 10_000_001_000)
++        with patch.object(driver.time, "time", return_value=-10000):
++            with self.assertRaises(driver.Refusal):
++                deadline.check("boot", now_ns=deadline.monotonic_ns)
++
++    def test_boot_identity_change_refuses(self):
++        with self.assertRaises(driver.Refusal):
++            driver.Deadline(100, "first").check("second", now_ns=1)
++
++    def test_excessive_and_nonfinite_grants_refuse(self):
++        for seconds in [0, -1, 28801, float("nan"), float("inf")]:
++            with self.subTest(seconds=seconds), self.assertRaises(driver.Refusal):
++                driver.Deadline.admit(seconds, "boot", utc_now=0, monotonic_now=0)
++
++    def test_cancel_is_sticky_after_repaired_xml(self):
++        attempt = self.attempt()
++        attempt.cancel()
++        with self.assertRaises(driver.Refusal):
++            attempt.accept(lambda: driver.validate_xml(xml(), driver.CASES[0], exit_code=0),
++                           retired=True)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_validator_exception_latches_before_propagation(self):
++        attempt = self.attempt()
++        with self.assertRaises(RuntimeError):
++            attempt.accept(lambda: (_ for _ in ()).throw(RuntimeError("bad XML")), retired=True)
++        with self.assertRaises(driver.Refusal):
++            attempt.accept(lambda: "repaired", retired=True)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_final_guard_failure_cannot_advance(self):
++        calls = []
++        def guard():
++            calls.append(1)
++            if len(calls) == 2:
++                raise RuntimeError("drift during validation")
++        attempt = self.attempt(guard)
++        with self.assertRaises(RuntimeError):
++            attempt.accept(lambda: "provisional", retired=True)
++        self.assertTrue(attempt.stopped)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_guards_at_creation_and_go(self):
++        attempt = self.attempt(lambda: (_ for _ in ()).throw(RuntimeError("drift")))
++        with self.assertRaises(RuntimeError):
++            attempt.before_create()
++        with self.assertRaises(driver.Refusal):
++            attempt.before_go()
++
++    def test_unretired_child_refuses(self):
++        attempt = self.attempt()
++        with self.assertRaises(driver.Refusal):
++            attempt.accept(lambda: "success", retired=False)
++        self.assertTrue(attempt.stopped)
++
++    def test_build_is_sealed(self):
++        with self.assertRaisesRegex(driver.Refusal, "B1"):
++            driver.build_dispatch("gn", "gen", qualified=True)
++
++
++class ClosureRegressionTests(Fixture):
++    def test_bounded_read_detects_sparse_oversize(self):
++        path = self.root / "sparse.rsp"
++        with path.open("wb") as stream:
++            stream.truncate(2**30)
++        with self.assertRaises(closure.Refusal):
++            closure.expand(["@sparse.rsp"], self.root)
++
++    def test_aggregate_budget_spans_response_files(self):
++        (self.root / "a.rsp").write_text("a " * 17000)
++        (self.root / "b.rsp").write_text("b " * 17000)
++        with self.assertRaisesRegex(closure.Refusal, "byte budget"):
++            closure.expand(["@a.rsp", "@b.rsp"], self.root,
++                           closure.Budget(items_left=100000))
++
++    def test_response_cycle_refuses(self):
++        (self.root / "a.rsp").write_text("@b.rsp")
++        (self.root / "b.rsp").write_text("@a.rsp")
++        with self.assertRaisesRegex(closure.Refusal, "cycle"):
++            closure.expand(["@a.rsp"], self.root)
++
++    def test_depth_is_bounded(self):
++        for i in range(10):
++            (self.root / f"{i}.rsp").write_text(f"@{i+1}.rsp" if i < 9 else "input.cc")
++        with self.assertRaisesRegex(closure.Refusal, "depth"):
++            closure.expand(["@0.rsp"], self.root)
++
++    def test_trailing_cwd_override_refuses_before_path_resolution(self):
++        for suffix in [["-working-directory", "/old"], ["--working-directory=/old"],
++                       ["-Wl,-working-directory,/old"], ["-Xclang", "-working-directory"]]:
++            with self.subTest(suffix=suffix), self.assertRaises(closure.Refusal):
++                closure.expand(["earlier.cc", *suffix], self.root)
++
++    def test_nested_cwd_override_refuses(self):
++        (self.root / "a.rsp").write_text("input.cc --working-directory=/old")
++        with self.assertRaises(closure.Refusal):
++            closure.expand(["@a.rsp"], self.root)
++
++    def test_repeated_dependency_items_are_charged(self):
++        path = self.root / "input.cc"
++        path.write_text("input")
++        admitted = {str(path): hashlib.sha256(path.read_bytes()).hexdigest()}
++        self.assertEqual(len(closure.references(["input.cc"] * 4096, self.root, admitted)), 4096)
++        with self.assertRaisesRegex(closure.Refusal, "reference budget"):
++            closure.references(["input.cc"] * 4097, self.root, admitted)
++
++    def test_historical_alias_and_unknown_input_refuse(self):
++        path = self.root / "old.o"
++        path.write_text("old")
++        (self.root / "new.o").symlink_to(path)
++        with self.assertRaises(closure.Refusal):
++            closure.references(["new.o"], self.root, {str(path): "hash"})
++        with self.assertRaises(closure.Refusal):
++            closure.references(["old.o"], self.root, {})
++
++    def test_literal_arguments_expand_without_shell_execution(self):
++        (self.root / "a.rsp").write_text('"literal;$(touch nope).cc" -c')
++        self.assertEqual(closure.expand(["@a.rsp"], self.root), ["literal;$(touch nope).cc", "-c"])
++        self.assertFalse((self.root / "nope").exists())
++
++    def test_filelist_grammar_is_not_silently_accepted(self):
++        with self.assertRaisesRegex(closure.Refusal, "filelist"):
++            closure.expand(["-Wl,-filelist,unknown"], self.root)
++
++    def alias_fixture(self):
++        fresh = self.root / "fresh"
++        historical = self.root / "historical"
++        fresh.mkdir()
++        (historical / "subdir").mkdir(parents=True)
++        for name, fresh_bytes, old_bytes in [("input.o", "current", "historical"),
++                                            ("input.rsp", "fresh.cc", "historical.cc")]:
++            (fresh / name).write_text(fresh_bytes)
++            (historical / name).write_text(old_bytes)
++        (fresh / "alias").symlink_to(historical / "subdir", target_is_directory=True)
++        (fresh / "real").mkdir()
++        return fresh
++
++    def test_original_alias_parent_sequence_refuses_relative_and_absolute_inputs(self):
++        fresh = self.alias_fixture()
++        admitted = {str(fresh / "input.o"): "current-hash"}
++        for value in ["alias/../input.o", str(fresh / "alias/../input.o")]:
++            with self.subTest(value=value), self.assertRaisesRegex(closure.Refusal, "symlink"):
++                closure.references([value], fresh, admitted)
++        self.assertEqual(closure.references(["real/../input.o", "input.o"], fresh, admitted),
++                         [fresh / "input.o"] * 2)
++
++    def test_alias_parent_responses_refuse_before_reading_lexical_neighbor(self):
++        fresh = self.alias_fixture()
++        for value in ["alias/../input.rsp", str(fresh / "alias/../input.rsp")]:
++            with self.subTest(value=value), patch.object(closure, "read_bounded") as reader:
++                with self.assertRaisesRegex(closure.Refusal, "symlink"):
++                    closure.expand(["@" + value], fresh)
++                reader.assert_not_called()
++        (fresh / "outer.rsp").write_text("@alias/../input.rsp")
++        with self.assertRaisesRegex(closure.Refusal, "symlink"):
++            closure.expand(["@outer.rsp"], fresh)
++        self.assertEqual(closure.expand(["@real/../input.rsp"], fresh), ["fresh.cc"])
++
++    def test_same_identity_alias_and_file_parent_refuse(self):
++        fresh = self.alias_fixture()
++        (fresh / "same").symlink_to(fresh / "real", target_is_directory=True)
++        for value in ["same/../input.o", "input.o/../input.o"]:
++            with self.subTest(value=value), self.assertRaises(closure.Refusal):
++                closure.references([value], fresh, {str(fresh / "input.o"): "hash"})
++
++    def test_parent_canonicalization_keeps_direct_absolute_and_relative_controls(self):
++        (self.root / "dir").mkdir()
++        (self.root / "input.o").write_text("current")
++        self.assertEqual(closure.canonical(self.root / "dir/../input.o"), self.root / "input.o")
++        with patch.object(closure.Path, "cwd", return_value=self.root):
++            self.assertEqual(closure.canonical(Path("dir/../input.o")), self.root / "input.o")
++
++
++class TerminalRegressionTests(Fixture):
++    def listing(self, attempt, receipt):
++        sequence = driver.TrackerSequence(attempt)
++        return sequence.listing(
++            b"PolicyPublicationAckTrackerTest.\n  SharedUnitContract\n"
++            b"PolicyPublicationAckTrackerRegressionTest.\n  SharedRegressionContract\n",
++            owner_exit_code=0, leaf_exit_code=0, retired=True, **receipt)
++
++    def test_provisional_success_requires_current_owner_completion(self):
++        attempt = self.attempt()
++        self.assertEqual(self.listing(attempt, self.terminal(attempt)), driver.CASES)
++        self.assertEqual(attempt.stage, 1)
++
++    def test_stale_provisional_receipt_cannot_hide_owner_cancellation_or_loss(self):
++        for exit_code, completed in [(125, True), (-9, True), (1, True),
++                                     (None, False), (0, False), (False, True)]:
++            attempt = self.attempt()
++            with self.subTest(exit=exit_code, completed=completed), self.assertRaises(driver.Refusal):
++                self.listing(attempt, self.terminal(attempt, owner_exit=exit_code, completed=completed))
++            self.assertEqual(attempt.stage, 0)
++            self.assertTrue(attempt.stopped)
++
++    def test_terminal_leaf_failure_and_incomplete_observations_cannot_advance(self):
++        for key, value in [("status", 256), ("status", 9), ("status", False),
++                           ("reaped", False), ("stopped", True), ("go", False),
++                           ("reaped", 1), ("kind", "accepted"), ("version", True)]:
++            attempt = self.attempt()
++            with self.subTest(key=key, value=value), self.assertRaises(driver.Refusal):
++                self.listing(attempt, self.terminal(attempt, **{key: value}))
++            self.assertEqual(attempt.stage, 0)
++
++    def test_authoritative_accepted_duplicate_unknown_and_oversize_receipts_refuse(self):
++        for mutation in ["accepted", "duplicate", "unknown", "oversize", "missing"]:
++            attempt = self.attempt()
++            receipt = self.terminal(attempt)
++            data = receipt["terminal"]
++            if mutation in ("accepted", "unknown"):
++                data = data[:-1] + (b',"accepted":true}' if mutation == "accepted" else b',"extra":0}')
++            elif mutation == "duplicate":
++                data = data[:-1] + b',"status":0}'
++            elif mutation == "oversize":
++                data += b" " * driver.TERMINAL_CAP
++            else:
++                parsed = json.loads(data)
++                del parsed["reaped"]
++                data = json.dumps(parsed).encode()
++            receipt["terminal"] = data
++            with self.subTest(mutation=mutation), self.assertRaises(driver.Refusal):
++                self.listing(attempt, receipt)
++            self.assertEqual(attempt.stage, 0)
++
++    def test_original_deadline_boot_and_invocation_bindings_must_match(self):
++        for mutation in ["deadline", "boot", "receipt-command", "completion-command"]:
++            attempt = self.attempt()
++            receipt = self.terminal(attempt)
++            parsed = json.loads(receipt["terminal"])
++            if mutation == "deadline":
++                parsed["deadline_ns"] += 1
++            elif mutation == "boot":
++                parsed["boot"] = "other"
++            elif mutation == "receipt-command":
++                parsed["command"] = ["owner", "old-invocation"]
++            else:
++                receipt["completion"] = driver.OwnerCompletion(("owner", "old-invocation"), 0, True)
++            receipt["terminal"] = json.dumps(parsed).encode()
++            with self.subTest(mutation=mutation), self.assertRaises(driver.Refusal):
++                self.listing(attempt, receipt)
++            self.assertEqual(attempt.stage, 0)
++
++    def test_missing_dispatch_completion_refuses_listing_result_and_finalization(self):
++        for mode in ["listing", "result", "finalize"]:
++            attempt = self.attempt()
++            sequence = driver.TrackerSequence(attempt)
++            with self.subTest(mode=mode), self.assertRaises(driver.Refusal):
++                if mode == "listing":
++                    self.listing(attempt, {})
++                elif mode == "result":
++                    attempt.stage = 1
++                    path = self.root / "case.xml"
++                    sequence.prepare(driver.CASES[0], path)
++                    path.write_bytes(xml())
++                    sequence.result(driver.CASES[0], exit_code=0, retired=True)
++                else:
++                    driver.finalize(attempt, self.root, lambda: True, lambda: "pass")
++            self.assertEqual(attempt.stage, 1 if mode == "result" else 0)
++            self.assertTrue(attempt.stopped)
++
++    def test_result_requires_actual_successful_owner_even_with_complete_xml(self):
++        attempt = self.attempt()
++        attempt.stage = 1
++        sequence = driver.TrackerSequence(attempt)
++        path = self.root / "case.xml"
++        sequence.prepare(driver.CASES[0], path)
++        path.write_bytes(xml())
++        with self.assertRaises(driver.Refusal):
++            sequence.result(driver.CASES[0], exit_code=0, retired=True,
++                            **self.terminal(attempt, owner_exit=125))
++        self.assertEqual(attempt.stage, 1)
++        self.assertTrue(attempt.stopped)
++
++    def test_cancellation_during_final_accounting_cannot_accept_provisional_success(self):
++        attempt = self.attempt()
++        original, calls = driver.census, [0]
++        def accounting(root):
++            calls[0] += 1
++            result = original(root)
++            if calls[0] == 3:
++                attempt.cancel()
++            return result
++        with patch.object(driver, "census", side_effect=accounting):
++            with self.assertRaises(driver.Refusal):
++                self.finalize(attempt, self.root, lambda: True, lambda: "pass")
++        self.assertEqual(attempt.stage, 0)
++        self.assertTrue(attempt.stopped)
++
++
++class ResultRegressionTests(Fixture):
++    def test_sequence_requires_listing_then_unit_then_regression(self):
++        sequence = driver.TrackerSequence(self.attempt())
++        sequence.listing(b"PolicyPublicationAckTrackerTest.\n  SharedUnitContract\nPolicyPublicationAckTrackerRegressionTest.\n  SharedRegressionContract\n",
++                         owner_exit_code=0, leaf_exit_code=0, retired=True,
++                         **self.terminal(sequence.attempt))
++        for index, case in enumerate(driver.CASES):
++            path = self.root / f"{index}.xml"
++            sequence.prepare(case, path)
++            path.write_bytes(xml(case))
++            self.assertEqual(sequence.result(case, exit_code=0, retired=True,
++                                             **self.terminal(sequence.attempt, command=("owner", case))), case)
++        self.assertEqual(sequence.attempt.stage, 3)
++
++    def test_preexisting_xml_refuses_and_latches(self):
++        attempt = self.attempt()
++        attempt.stage = 1
++        sequence = driver.TrackerSequence(attempt)
++        path = self.root / "old.xml"
++        path.write_bytes(xml())
++        with self.assertRaises(driver.Refusal):
++            sequence.prepare(driver.CASES[0], path)
++        self.assertTrue(attempt.stopped)
++
++    def test_out_of_order_and_retry_refuse(self):
++        attempt = self.attempt()
++        attempt.stage = 1
++        sequence = driver.TrackerSequence(attempt)
++        with self.assertRaises(driver.Refusal):
++            sequence.prepare(driver.CASES[1], self.root / "wrong.xml")
++        attempt = self.attempt()
++        attempt.stage = 1
++        sequence = driver.TrackerSequence(attempt)
++        sequence.prepare(driver.CASES[0], self.root / "first.xml")
++        with self.assertRaises(driver.Refusal):
++            sequence.prepare(driver.CASES[0], self.root / "second.xml")
++
++    def test_unknown_xml_attributes_and_nonfinite_duration_refuse(self):
++        for data in [xml().replace(b'status="run"', b'status="run" result="skipped"'),
++                     xml().replace(b'time="0.001"', b'time="nan"')]:
++            with self.assertRaises(driver.Refusal):
++                driver.validate_xml(data, driver.CASES[0], exit_code=0)
++
++    def test_exact_listing(self):
++        listing = b"PolicyPublicationAckTrackerTest.\n  SharedUnitContract\nPolicyPublicationAckTrackerRegressionTest.\n  SharedRegressionContract\n"
++        self.assertEqual(driver.validate_listing(listing), driver.CASES)
++        with self.assertRaises(driver.Refusal):
++            driver.validate_listing(listing + b"  SharedRegressionContract\n")
++
++    def test_correct_listing_cannot_hide_failed_execution(self):
++        data = b"PolicyPublicationAckTrackerTest.\n  SharedUnitContract\nPolicyPublicationAckTrackerRegressionTest.\n  SharedRegressionContract\n"
++        for owner, leaf, retired, cancelled in [(1, 0, True, False), (0, 1, True, False),
++                                                (0, -14, True, False), (0, 0, False, False),
++                                                (0, 0, True, True), (False, 0, True, False)]:
++            sequence = driver.TrackerSequence(self.attempt())
++            with self.subTest(owner=owner, leaf=leaf, retired=retired, cancelled=cancelled, **self.terminal(sequence.attempt)), \
++                    self.assertRaises(driver.Refusal):
++                sequence.listing(data, owner_exit_code=owner, leaf_exit_code=leaf,
++                                 retired=retired, cancelled=cancelled, **self.terminal(sequence.attempt))
++            self.assertEqual(sequence.attempt.stage, 0)
++            self.assertTrue(sequence.attempt.stopped)
++            with self.assertRaises(driver.Refusal):
++                sequence.prepare(driver.CASES[0], self.root / "case.xml")
++
++    def test_failed_listing_cannot_be_repaired_and_retried(self):
++        data = b"PolicyPublicationAckTrackerTest.\n  SharedUnitContract\nPolicyPublicationAckTrackerRegressionTest.\n  SharedRegressionContract\n"
++        sequence = driver.TrackerSequence(self.attempt())
++        with self.assertRaises(driver.Refusal):
++            sequence.listing(data, owner_exit_code=0, leaf_exit_code=-9, retired=True,
++                             **self.terminal(sequence.attempt))
++        with self.assertRaises(driver.Refusal):
++            sequence.listing(data, owner_exit_code=0, leaf_exit_code=0, retired=True,
++                         **self.terminal(sequence.attempt))
++        self.assertEqual(sequence.attempt.stage, 0)
++
++    def test_each_original_case_complete_xml(self):
++        for case in driver.CASES:
++            self.assertEqual(driver.validate_xml(xml(case), case, exit_code=0), case)
++
++    def test_success_detail(self):
++        detail = '<x-test-result-part type="success" file="test.cc" line="1"><summary/><message/></x-test-result-part>'
++        driver.validate_xml(xml(detail=detail), driver.CASES[0], exit_code=0)
++
++    def test_fail_skip_unknown_and_nonzero_exit_refuse(self):
++        for detail in ['<failure/>', '<skipped/>', '<unknown/>',
++                       '<x-test-result-part type="skip"><summary/><message/></x-test-result-part>']:
++            with self.subTest(detail=detail), self.assertRaises(driver.Refusal):
++                driver.validate_xml(xml(detail=detail), driver.CASES[0], exit_code=0)
++        with self.assertRaises(driver.Refusal):
++            driver.validate_xml(xml(), driver.CASES[0], exit_code=1)
++        with self.assertRaises(driver.Refusal):
++            driver.validate_xml(xml(status="notrun"), driver.CASES[0], exit_code=0)
++
++    def test_truncated_duplicate_and_wrong_identity_refuse(self):
++        for data in [xml()[:-3], xml().replace(b"</testsuite>", b"<testcase/></testsuite>"),
++                     xml(driver.CASES[1]), b'<!DOCTYPE testsuites [<!ENTITY x "value">]>' + xml()]:
++            with self.subTest(data=data), self.assertRaises(driver.Refusal):
++                driver.validate_xml(data, driver.CASES[0], exit_code=0)
++
++    def test_symlink_and_oversized_results_refuse(self):
++        path = self.root / "result.xml"
++        path.write_bytes(xml())
++        link = self.root / "link.xml"
++        link.symlink_to(path)
++        with self.assertRaises(OSError):
++            driver.read_regular(link, driver.XML_CAP)
++        with self.assertRaises(driver.Refusal):
++            driver.read_regular(path, 4)
++
++    def test_vanished_census_entry_still_cleans_up_and_latches(self):
++        (self.root / "entry").write_text("result")
++        attempt = self.attempt()
++        cleaned = []
++        with patch.object(driver.os, "stat", side_effect=FileNotFoundError("raced")):
++            with self.assertRaises(FileNotFoundError):
++                self.finalize(attempt, self.root, lambda: cleaned.append(True), lambda: "pass")
++        self.assertEqual(cleaned, [True])
++        self.assertTrue(attempt.stopped)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_cleanup_failure_preserves_prior_accounting_exception(self):
++        (self.root / "entry").write_text("result")
++        attempt = self.attempt()
++        first = FileNotFoundError("accounting lost entry")
++        second = RuntimeError("retirement failed")
++        with patch.object(driver.os, "stat", side_effect=first):
++            with self.assertRaises(FileNotFoundError) as caught:
++                self.finalize(attempt, self.root,
++                                lambda: (_ for _ in ()).throw(second), lambda: "pass")
++        self.assertIs(caught.exception, first)
++        self.assertIs(caught.exception.__cause__, second)
++        self.assertTrue(attempt.stopped)
++
++    def test_retirement_output_growth_is_counted(self):
++        attempt = self.attempt()
++        original_census = driver.census
++        def cleanup():
++            (self.root / "terminal").write_bytes(b"12345")
++            return True
++        with patch.object(driver, "census", side_effect=lambda root: original_census(root, cap=4)):
++            with self.assertRaises(driver.Refusal):
++                self.finalize(attempt, self.root, cleanup, lambda: "pass")
++        self.assertTrue(attempt.stopped)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_validation_output_growth_is_counted(self):
++        attempt = self.attempt()
++        original_census = driver.census
++        def validate():
++            (self.root / "final").write_bytes(b"12345")
++            return "pass"
++        with patch.object(driver, "census", side_effect=lambda root: original_census(root, cap=4)):
++            with self.assertRaises(driver.Refusal):
++                self.finalize(attempt, self.root, lambda: True, validate)
++        self.assertTrue(attempt.stopped)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_final_guard_unaccountable_output_is_counted(self):
++        calls = [0]
++        def guard():
++            calls[0] += 1
++            if calls[0] == 2:
++                (self.root / "link").symlink_to(self.root)
++        attempt = self.attempt(guard)
++        with self.assertRaises(driver.Refusal):
++            self.finalize(attempt, self.root, lambda: True, lambda: "pass")
++        self.assertTrue(attempt.stopped)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_final_census_time_advance_refuses_acceptance(self):
++        clock, calls = [100], [0]
++        original_census = driver.census
++        attempt = driver.Attempt(driver.Deadline(200, "boot"), lambda: "boot", lambda: None)
++        def counting_census(root):
++            calls[0] += 1
++            result = original_census(root)
++            if calls[0] == 3:
++                clock[0] = 200
++            return result
++        with patch.object(driver, "census", side_effect=counting_census), \
++             patch.object(driver, "deadline_clock_ns", side_effect=lambda: clock[0]):
++            with self.assertRaises(driver.Refusal):
++                self.finalize(attempt, self.root, lambda: True, lambda: "pass")
++        self.assertTrue(attempt.stopped)
++        self.assertEqual(attempt.stage, 0)
++
++    def test_census_preserves_terminal_reserve(self):
++        (self.root / "entry").write_bytes(b"abcde")
++        self.assertEqual(driver.census(self.root, cap=5), 5)
++        with self.assertRaises(driver.Refusal):
++            driver.census(self.root, cap=4)
++
++    def test_source_drift_refuses(self):
++        path = self.root / "source.cc"
++        path.write_text("original")
++        inputs = {str(path): hashlib.sha256(path.read_bytes()).hexdigest()}
++        driver.check_hashes(inputs)
++        path.write_text("changed")
++        with self.assertRaises(driver.Refusal):
++            driver.check_hashes(inputs)
++
++    def test_real_python_startup_hook_isolation(self):
++        marker = self.root / "hook-ran"
++        (self.root / "sitecustomize.py").write_text(
++            "from pathlib import Path\nPath(" + repr(str(marker)) + ").write_text('ran')\n")
++        env = {"PATH": "/usr/bin:/bin", "PYTHONPATH": str(self.root)}
++        # Positive control proves the fixture is executable startup code.
++        subprocess.run([sys.executable, "-B", "-c", "pass"], env=env, cwd=self.root,
++                       check=True, timeout=5, capture_output=True)
++        self.assertTrue(marker.exists())
++        marker.unlink()
++        subprocess.run([sys.executable, "-I", "-S", "-B", "-c", "pass"],
++                       env=env, cwd=self.root, check=True, timeout=5, capture_output=True)
++        self.assertFalse(marker.exists())
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)
+-- 
+2.50.1

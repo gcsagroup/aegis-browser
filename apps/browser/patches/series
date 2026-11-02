@@ -327,3 +327,13 @@
 0327-align-mobile-ui-and-version-264.patch
 0328-fix-reading-capture-and-download-details-265.patch
 0329-fix-download-platform-build-and-version-266.patch
+0330-wire-bounded-tracker-test-entry.patch
+0331-fix-access-bounded-tracker-overlay-export.patch
+0332-fix-mac-review-trial-and-public-research.patch
+0333-test-native-trial-consent.patch
+0334-fix-native-consent-evidence-lifecycle.patch
+0335-fix-gesture-practice-polyline-capture.patch
+0336-fix-reading-research-manifest-index-access.patch
+0337-fix-download-settings-event-handler-bindings.patch
+0338-test-mac03-native-evidence.patch
+0339-fix-mac03-publication-deadline.patch

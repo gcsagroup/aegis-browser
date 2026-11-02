@@ -1,0 +1,11 @@
+{
+  "name": "@aegis-local/access-provider-contract",
+  "version": "0.0.0-stage-a",
+  "private": true,
+  "type": "module",
+  "exports": "./contract.mjs",
+  "engines": { "node": ">=22" },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": { "test": "node --test contract.test.mjs" },
+  "dependencies": { "jose": "6.2.12" }
+}

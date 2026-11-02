@@ -13,7 +13,7 @@ const code = ts.transpileModule(source, {compilerOptions: {target: ts.ScriptTarg
 const defaults = {enabled: true, showTrail: true, threshold: 24, bindings: {L: 'back'}, disabledSites: []};
 const actions = [{id: 'back', label: '后退', pdfOnly: false}, {id: 'forward', label: '前进', pdfOnly: false}, {id: 'close_tab', label: '关闭标签页', pdfOnly: false}];
 const flush = () => new Promise(resolve => setImmediate(resolve));
-async function harness(failedRead = false, useShadow = false) {
+async function harness(failedRead = false, useShadow = false, missingLine = false) {
   const dom = new JSDOM(readFileSync(resolve(base, 'gestures.html'), 'utf8'));
   const {window} = dom, {document} = window;
   let saved = structuredClone(defaults), pending = null, hold = false;
@@ -42,13 +42,18 @@ async function harness(failedRead = false, useShadow = false) {
     document.body.append(host); view = host.attachShadow({mode: 'open'}); view.append(...nodes);
     host.addEventListener('aegis-form-dirty', event => dirty.push(event.detail));
   }
+  if (missingLine) view.getElementById('practiceLine').remove();
   const cleanup = exports.initializeGestures(view); await flush();
   return {window, document: view, calls, regions, dirty, cleanup, get saved() {return saved;},
     get pending() {return pending;}, hold: () => {hold = true;}, goodRead: () => {failedRead = false;},
     el: id => view.getElementById(id),
   };
 }
+for (const useShadow of [false, true]) {
+  await assert.rejects(harness(false, useShadow, true), /缺少手势练习轨迹/);
+}
 const h = await harness();
+assert.equal(h.el('practiceLine').getAttribute('points'), '', '初读清空现有轨迹');
 const event = (node, type, init = {}) => node.dispatchEvent(new h.window.Event(type, {bubbles: true, cancelable: true, ...init}));
 const click = node => node.click();
 const button = (root, name) => [...root.querySelectorAll('button')].find(node => node.textContent === name);
@@ -67,10 +72,13 @@ h.window.dispatchEvent(new h.window.KeyboardEvent('keydown', {key: 'Escape'}));
 assert.equal(h.el('practice-editor').hidden, true); assert.equal(h.el('savePractice').disabled, true);
 // 真实右键绘制路径只产生编辑结果，不发出浏览器动作或保存请求。
 const pointer = (type, x, y) => h.el('practice').dispatchEvent(new h.window.MouseEvent(type, {button: 2, buttons: type === 'pointerup' ? 0 : 2, clientX: x, clientY: y, bubbles: true, cancelable: true}));
-pointer('pointerdown', 120, 150); pointer('pointermove', 40, 150); pointer('pointerup', 40, 150);
+pointer('pointerdown', 120, 150); pointer('pointermove', 40, 150);
+assert.equal(h.el('practiceLine').getAttribute('points'), '120,150 40,150', '绘制更新现有 SVG 轨迹');
+pointer('pointerup', 40, 150);
 assert.match(h.el('practicePattern').textContent, /←/); assert.equal(h.el('practiceAction').value, 'back');
 assert.equal(h.calls.length, 1); assert(h.regions.every(call => call[0] === 'aegisGesturePracticeRegion'));
 h.window.dispatchEvent(new h.window.Event('blur')); assert.equal(h.el('savePractice').disabled, true);
+assert.equal(h.el('practiceLine').getAttribute('points'), '', '取消经嵌套回调清空轨迹');
 pointer('pointerdown', 120, 150); pointer('pointerup', 124, 150); assert.equal(h.el('savePractice').disabled, true);
 // 保存等待期间其他组的新输入不被回包覆盖；失败后保留重试入口。
 h.hold(); click(h.document.querySelector('[data-direction="R"]')); selected.value = 'forward'; event(selected, 'change'); click(h.el('savePractice')); await flush();

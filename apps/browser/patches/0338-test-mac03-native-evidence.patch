@@ -1,0 +1,780 @@
+From ae6f0dd695500988061d3f735f92cbe598df4127 Mon Sep 17 00:00:00 2001
+From: Aegis patch fixture <aegis-patch-fixture@example.invalid>
+Date: Wed, 28 Oct 2026 12:35:23 +0000
+Subject: [PATCH] test(mac03): record independent native evidence
+
+---
+ .../aegis/agent/aegis_agent_browsertest.cc    | 718 +++++++++++++++++-
+ 1 file changed, 698 insertions(+), 20 deletions(-)
+
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 6412a5cf70a637b2076c4e4f95c55fad441a1563..b6b7f80a3fdc4f67efafa85300a92a4d7a2eb5bc 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -4,6 +4,13 @@
+ 
+ #include <algorithm>
+ #include <atomic>
++#include <cstdio>
++#include <cstdint>
++#include <limits>
++#include <optional>
++#include <set>
++#include <string_view>
++#include <variant>
+ #include <map>
+ #include <memory>
+ #include <utility>
+@@ -13,6 +20,10 @@
+ #include "content/public/test/url_loader_interceptor.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
++#include "base/files/important_file_writer.h"
++#include "base/rand_util.h"
++#include "base/time/time.h"
++#include "base/uuid.h"
+ #include "base/functional/bind.h"
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
+@@ -31,6 +42,11 @@
+ #include "base/threading/thread_restrictions.h"
+ #include "base/timer/timer.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_POSIX)
++#include <sys/stat.h>
++#include <time.h>
++#include <unistd.h>
++#endif
+ #include "chrome/app/chrome_command_ids.h"
+ #include "chrome/browser/aegis/aegis_ai_control.h"
+ #include "chrome/browser/aegis/aegis_phish_blocking_page.h"
+@@ -93,6 +109,11 @@
+ #include "components/tab_groups/tab_group_id.h"
+ #include "components/tabs/public/tab_interface.h"
+ #include "content/public/browser/devtools_agent_host.h"
++#include "content/public/browser/dedicated_worker_service.h"
++#include "content/public/browser/navigation_handle.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/storage_partition.h"
++#include "content/public/browser/web_contents_observer.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/common/content_switches.h"
+@@ -109,6 +130,7 @@
+ #include "services/network/public/cpp/weak_wrapper_shared_url_loader_factory.h"
+ #include "services/network/test/test_url_loader_factory.h"
+ #include "services/network/test/test_utils.h"
++#include "testing/gmock/include/gmock/gmock.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "ui/actions/actions.h"
+ #include "ui/message_center/public/cpp/notification.h"
+@@ -6248,33 +6270,689 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingPackDownloadScopeAndIntegri
+   EXPECT_EQ(requests.load(), 1);
+ }
+ 
++// One observer remains attached through publication. Snapshot observers are
++// registered only for their synchronous enumeration and emit no live events.
++class Mac03Snapshot : public content::DedicatedWorkerService::Observer {
++ public:
++  explicit Mac03Snapshot(content::DedicatedWorkerService* service) {
++    service->AddObserver(this);
++    service->EnumerateDedicatedWorkers(this);
++    service->RemoveObserver(this);
++  }
++  void OnWorkerCreated(const blink::DedicatedWorkerToken& token,
++                       content::ChildProcessId process_id,
++                       const url::Origin& origin,
++                       content::DedicatedWorkerCreator creator) override {
++    tokens.push_back(token.ToString());
++  }
++  void OnBeforeWorkerDestroyed(const blink::DedicatedWorkerToken&,
++                               content::DedicatedWorkerCreator) override {}
++  void OnFinalResponseURLDetermined(const blink::DedicatedWorkerToken&,
++                                    const GURL&) override {}
++  std::vector<std::string> tokens;
++};
++
++base::DictValue Mac03Frame(content::GlobalRenderFrameHostId id) {
++  return base::DictValue().Set("childId", id.child_id.value())
++      .Set("frameRoutingId", id.frame_routing_id);
++}
++
++bool Mac03Print(std::string_view prefix, const base::DictValue& value) {
++  std::string json;
++  if (!base::JSONWriter::Write(value, &json) ||
++      prefix.size() + json.size() + 1 > 16384) {
++    return false;
++  }
++  return fprintf(stdout, "%.*s%s\n", static_cast<int>(prefix.size()),
++                 prefix.data(), json.c_str()) >= 0 && fflush(stdout) == 0;
++}
++
++// The admission transfer uses an explicitly named POSIX clock, never the
++// renderer clock or the browser's relative event timestamps. Both endpoints
++// read CLOCK_MONOTONIC; the runtime samples it before calculating remaining debt.
++class Mac03Deadline {
++ public:
++  Mac03Deadline() : run_end_(base::TimeTicks::Now() + base::Seconds(600)) {}
++  bool ImportAdmission(const base::DictValue& context) {
++    const auto* clock = context.FindString("stageDeadlineClock");
++    const auto* value = context.FindString("stageDeadlineNS");
++    int64_t ns = 0;
++    if (!clock || *clock != "CLOCK_MONOTONIC" || !value || value->empty() ||
++        !std::all_of(value->begin(), value->end(), [](char c) {
++          return c >= '0' && c <= '9';
++        }) || !base::StringToInt64(*value, &ns) || ns <= 0) {
++      return false;
++    }
++    admission_end_ns_ = ns;
++    return RunRemaining().is_positive();
++  }
++  void StartPhase() {
++    phase_end_ = base::TimeTicks::Now() +
++        std::min(base::Seconds(30), RunRemaining());
++  }
++  base::TimeDelta Remaining() const {
++    return std::max(base::TimeDelta(),
++        std::min(phase_end_ - base::TimeTicks::Now(), RunRemaining()));
++  }
++ private:
++  base::TimeDelta RunRemaining() const {
++    base::TimeDelta remaining = run_end_ - base::TimeTicks::Now();
++    if (admission_end_ns_) {
++#if BUILDFLAG(IS_POSIX)
++      struct timespec value = {};
++      if (clock_gettime(CLOCK_MONOTONIC, &value) != 0 || value.tv_sec < 0 ||
++          value.tv_sec >= std::numeric_limits<int64_t>::max() / 1000000000 ||
++          value.tv_nsec < 0 || value.tv_nsec >= 1000000000) {
++        return base::TimeDelta();
++      }
++      const int64_t now_ns = static_cast<int64_t>(value.tv_sec) * 1000000000 +
++          value.tv_nsec;
++      if (now_ns >= *admission_end_ns_) return base::TimeDelta();
++      remaining = std::min(remaining,
++          base::Nanoseconds(*admission_end_ns_ - now_ns));
++#else
++      return base::TimeDelta();
++#endif
++    }
++    return std::max(base::TimeDelta(), remaining);
++  }
++  const base::TimeTicks run_end_;
++  base::TimeTicks phase_end_;
++  std::optional<int64_t> admission_end_ns_;
++};
++
++class Mac03Observer : public content::WebContentsObserver,
++                      public content::DedicatedWorkerService::Observer {
++ public:
++  Mac03Observer(content::WebContents* page, std::string run_id,
++                std::string challenge, Mac03Deadline& deadline)
++      : content::WebContentsObserver(page),
++        frame_(page->GetPrimaryMainFrame()->GetGlobalId()),
++        service_(page->GetPrimaryMainFrame()->GetStoragePartition()
++                     ->GetDedicatedWorkerService()),
++        run_id_(std::move(run_id)), challenge_(std::move(challenge)),
++        first_(base::TimeTicks::Now()), deadline_(deadline) {}
++  ~Mac03Observer() override {
++    if (attached_) service_->RemoveObserver(this);
++  }
++  void DidFinishNavigation(content::NavigationHandle* handle) override {
++    if (handle->IsInPrimaryMainFrame()) Fail("navigation after pin");
++  }
++  void PrimaryPageChanged(content::Page&) override { Fail("primary page replaced"); }
++  void RenderFrameDeleted(content::RenderFrameHost* frame) override {
++    if (frame->GetGlobalId() == frame_) Fail("pinned frame deleted");
++  }
++  void PrimaryMainFrameRenderProcessGone(base::TerminationStatus) override {
++    Fail("renderer terminated");
++  }
++  bool Healthy() const {
++    return error_.empty() && web_contents() &&
++        web_contents()->GetPrimaryMainFrame()->GetGlobalId() == frame_;
++  }
++  const std::string& error() const { return error_; }
++  content::GlobalRenderFrameHostId frame() const { return frame_; }
++  const base::ListValue& events() const { return events_; }
++  void Fail(std::string_view reason) {
++    if (error_.empty()) error_ = std::string(reason);
++  }
++  bool CheckDeadline() {
++    if (!deadline_.Remaining().is_positive()) Fail("MAC03 phase deadline");
++    return Healthy();
++  }
++  bool Drain(base::DictValue& startup) {
++    if (!CheckDeadline()) return false;
++    base::test::ScopedRunLoopTimeout drain_timeout(FROM_HERE, deadline_.Remaining());
++    service_->AddObserver(this);
++    attached_ = true;
++    // These OnWorkerCreated calls describe preexisting workers, not new births.
++    enumerating_startup_ = true;
++    service_->EnumerateDedicatedWorkers(this);
++    enumerating_startup_ = false;
++    if (preexisting_.size() > 1) Fail("multiple preexisting workers");
++    if (!base::test::RunUntil([&] { return !Healthy() || live_.empty(); }))
++      Fail("startup worker retirement timeout");
++    Mac03Snapshot snapshot(service_);
++    if (!snapshot.tokens.empty() || retired_ != preexisting_)
++      Fail("startup retirement/enumeration mismatch");
++    base::ListValue observed, retired;
++    for (const auto& token : preexisting_) observed.Append(token);
++    for (const auto& token : retired_) retired.Append(token);
++    startup.Set("observedPreexistingTokens", std::move(observed));
++    startup.Set("retiredPreexistingTokens", std::move(retired));
++    startup.Set("finalEnumeration", base::ListValue());
++    startup_ = false;
++    return CheckDeadline();
++  }
++  bool Begin(std::string_view phase) {
++    deadline_.StartPhase();
++    if (!CheckDeadline()) return false;
++    if (!phase_.empty() || !live_.empty()) Fail("overlapping phase");
++    phase_ = phase;
++    phase_count_ = 0;
++    created_ = 0;
++    Emit(base::DictValue().Set("kind", "phase_begin").Set("source", "browser-test"));
++    Snapshot("before");
++    return Healthy();
++  }
++  bool Result(base::DictValue result) {
++    if (!CheckDeadline()) return false;
++    if (result.size() != 3 || !result.FindString("runId") ||
++        *result.FindString("runId") != run_id_ ||
++        !result.FindString("challenge") ||
++        *result.FindString("challenge") != challenge_ ||
++        !result.FindDict("payload")) {
++      Fail("unbound EvalJs result");
++      return false;
++    }
++    result.Set("kind", "eval_result");
++    result.Set("source", "test-evaljs-return");
++    Emit(std::move(result));
++    return Healthy();
++  }
++  bool End() {
++    if (!CheckDeadline()) return false;
++    // EvalJs and retirement consume the same absolute phase interval.
++    base::test::ScopedRunLoopTimeout retirement_timeout(FROM_HERE, deadline_.Remaining());
++    if (!base::test::RunUntil([&] { return !Healthy() || live_.empty(); }))
++      Fail("worker retirement timeout");
++    Snapshot("after");
++    Emit(base::DictValue().Set("kind", "phase_end").Set("source", "browser-test"));
++    const bool worker = phase_[0] == 'P' || phase_[0] == 'R';
++    if (phase_count_ != (worker ? 8 : 5) || created_ != (worker ? 1 : 0))
++      Fail("phase lifecycle count");
++    phase_.clear();
++    return CheckDeadline();
++  }
++  bool FinalEmpty() {
++    Mac03Snapshot snapshot(service_);
++    if (!snapshot.tokens.empty() || !live_.empty() || !phase_.empty() ||
++        events_.size() != 125 || all_tokens_.size() != preexisting_.size() + 10)
++      Fail("final worker/event matrix");
++    return Healthy();
++  }
++  void OnWorkerCreated(const blink::DedicatedWorkerToken& token,
++                       content::ChildProcessId process_id,
++                       const url::Origin& origin,
++                       content::DedicatedWorkerCreator creator) override {
++    const std::string key = token.ToString();
++    const auto* frame = std::get_if<content::GlobalRenderFrameHostId>(&creator);
++    if (!frame || *frame != frame_ ||
++        origin.Serialize() != "chrome-untrusted://aegis-agent" ||
++        process_id.value() <= 0 || !live_.empty() ||
++        !all_tokens_.insert(key).second) {
++      Fail("unexpected Worker creator/origin/token");
++      return;
++    }
++    live_.emplace(key, false);
++    if (enumerating_startup_) {
++      preexisting_.push_back(key);
++      return;
++    }
++    if (startup_ || phase_.empty() || phase_[0] == 'S' || ++created_ != 1) {
++      Fail("unsolicited Worker creation");
++      return;
++    }
++    Emit(base::DictValue().Set("kind", "worker_created")
++        .Set("source", "dedicated-worker-service").Set("token", key)
++        .Set("processChildId", process_id.value())
++        .Set("creatorFrame", Mac03Frame(*frame))
++        .Set("securityOrigin", origin.Serialize()));
++  }
++  void OnFinalResponseURLDetermined(const blink::DedicatedWorkerToken& token,
++                                    const GURL& url) override {
++    const std::string key = token.ToString();
++    auto found = live_.find(key);
++    if (found == live_.end() || found->second ||
++        url.spec() != "chrome-untrusted://aegis-agent/local_ai/worker.js") {
++      Fail("unexpected Worker final URL");
++      return;
++    }
++    found->second = true;
++    if (startup_) return;
++    Emit(base::DictValue().Set("kind", "worker_final_url")
++        .Set("source", "dedicated-worker-service").Set("token", key)
++        .Set("url", url.spec()));
++  }
++  void OnBeforeWorkerDestroyed(const blink::DedicatedWorkerToken& token,
++                               content::DedicatedWorkerCreator creator) override {
++    const std::string key = token.ToString();
++    const auto* frame = std::get_if<content::GlobalRenderFrameHostId>(&creator);
++    auto found = live_.find(key);
++    if (!frame || *frame != frame_ || found == live_.end() ||
++        (!startup_ && !found->second)) {
++      Fail("unexpected Worker destruction");
++      return;
++    }
++    live_.erase(found);
++    if (startup_) {
++      retired_.push_back(key);
++      return;
++    }
++    Emit(base::DictValue().Set("kind", "worker_destroyed")
++        .Set("source", "dedicated-worker-service").Set("token", key)
++        .Set("creatorFrame", Mac03Frame(*frame)));
++  }
++
++ private:
++  void Snapshot(std::string_view position) {
++    Mac03Snapshot snapshot(service_);
++    if (!snapshot.tokens.empty()) Fail("nonempty phase enumeration");
++    Emit(base::DictValue().Set("kind", "enumeration")
++        .Set("source", "dedicated-worker-service-snapshot")
++        .Set("position", std::string(position)).Set("tokens", base::ListValue()));
++  }
++  void Emit(base::DictValue event) {
++    const int64_t micros = (base::TimeTicks::Now() - first_).InMicroseconds();
++    if (phase_.empty() || micros < 0 || micros > 600000000 ||
++        events_.size() >= 125) {
++      Fail("event clock/phase/capacity");
++      return;
++    }
++    event.Set("seq", static_cast<int>(events_.size()) + 1);
++    event.Set("phase", phase_);
++    event.Set("monotonicMicros", static_cast<int>(micros));
++    if (!Mac03Print("AEGIS_MAC03_V2 ", base::DictValue().Set("runId", run_id_)
++            .Set("challenge", challenge_).Set("event", event.Clone())))
++      Fail("event stdout persistence");
++    events_.Append(std::move(event));
++    ++phase_count_;
++  }
++  const content::GlobalRenderFrameHostId frame_;
++  const raw_ptr<content::DedicatedWorkerService> service_;
++  const std::string run_id_;
++  const std::string challenge_;
++  const base::TimeTicks first_;
++  Mac03Deadline& deadline_;
++  bool attached_ = false;
++  bool enumerating_startup_ = false;
++  bool startup_ = true;
++  int phase_count_ = 0;
++  int created_ = 0;
++  std::string phase_;
++  std::string error_;
++  std::set<std::string> all_tokens_;
++  std::map<std::string, bool> live_;
++  std::vector<std::string> preexisting_, retired_;
++  base::ListValue events_;
++};
++
++bool Mac03PhysicalPath(const base::FilePath& path, bool directory) {
++#if BUILDFLAG(IS_POSIX)
++  base::FilePath normalized;
++  struct stat info;
++  return path.IsAbsolute() &&
++      base::NormalizeFilePath(path, &normalized) && normalized == path &&
++      lstat(path.value().c_str(), &info) == 0 && info.st_uid == getuid() &&
++      (directory ? S_ISDIR(info.st_mode) : S_ISREG(info.st_mode) && info.st_nlink == 1);
++#else
++  return false;  // Native evidence publication is a macOS-only contract.
++#endif
++}
++
++constexpr char kMac03Bootstrap[] = R"MAC03JS(
++(async () => {
++  const runId = $1, challenge = $2;
++  const check = (ok, reason) => { if (!ok) throw Error('MAC03: ' + reason); };
++  check(!Object.hasOwn(globalThis, '__aegisMac03'), 'helper reused');
++  const hash = async bytes => Array.from(new Uint8Array(
++      await crypto.subtle.digest('SHA-256', bytes)),
++      byte => byte.toString(16).padStart(2, '0')).join('');
++  const canonical = value => Array.isArray(value) ? value.map(canonical) :
++      value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
++  const equal = (a, b, reason) => check(JSON.stringify(canonical(a)) === JSON.stringify(canonical(b)), reason);
++  const fetchBytes = async path => {
++    const response = await fetch(path, {credentials: 'omit'});
++    check(response.ok, 'manifest response');
++    const bytes = await response.arrayBuffer();
++    check(bytes.byteLength <= 262144, 'manifest capacity');
++    return bytes;
++  };
++  const {LocalAiClient} = await import('./local_ai_client.js');
++  const {languagePacks, routePacks} = await import('./local_ai/catalog.js');
++  const translation = await fetchBytes('./local_ai/translation_manifest.json');
++  const research = await fetchBytes('./local_ai/research_manifest.json');
++  const rows = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(translation));
++  const packs = languagePacks(rows), catalogPackIds = packs.map(pack => pack.id);
++  const route = routePacks(rows, 'en-zh').map(pack => pack.id);
++  equal(route, ['en-zh'], 'direct route');
++  const client = new LocalAiClient();
++  const bytes = label => new TextEncoder().encode(label + ':' + runId + ':' + challenge).buffer;
++  const stable = bytes('stable'), corrupt = bytes('corrupt'), poison = bytes('poison');
++  const ks = 'mac03:' + runId + ':sentinel', kp = 'mac03:' + runId + ':poison';
++  const kc = await hash(new TextEncoder().encode('corrupt-key:' + runId + ':' + challenge));
++  check(kc !== await hash(corrupt) && !rows.some(row => row.decompressedHash === kc),
++        'corrupt key must be separate from actual and public hashes');
++  const pack = {version: 0, rows: [
++    {fileType: 'model', decompressedHash: kc, decompressedSize: corrupt.byteLength}]};
++  const connections = [];
++  let nextPhase = 0;
++  const phases = ['P00','S00','P01','R01','P02','S01','R02','P03','S02','R03',
++                  'P04','S03','S04','S05','P05','S06','P06','S07','S08'];
++  const describe = async (value, keyResult = false) => {
++    if (value === undefined) return {type: 'absent'};
++    if (typeof value === 'number') return {type: 'number', value};
++    if (keyResult && typeof value === 'string') return {type: 'key', value};
++    if (value instanceof ArrayBuffer) {
++      check(value.byteLength > 0 && value.byteLength <= 256, 'actual buffer capacity');
++      return {type: 'array-buffer', byteLength: value.byteLength, sha256: await hash(value)};
++    }
++    check(value && typeof value === 'object', 'actual pack type');
++    equal(Object.keys(value).sort(), ['rows','version'], 'actual pack fields');
++    return {type: 'pack', ...value};
++  };
++  const transaction = async (db, index, mode, operations, abort = false) => {
++    // No await between creating the transaction and queueing all requests.
++    const tx = db.transaction(['files','packs'], mode);
++    const callbacks = [], observed = [];
++    let requestFailure = null;
++    const terminal = new Promise((resolve, reject) => {
++      tx.oncomplete = () => {
++        callbacks.push({kind: 'transaction_complete'});
++        if (requestFailure) reject(requestFailure);
++        else resolve({terminal: 'complete', error: null});
++      };
++      tx.onabort = () => {
++        callbacks.push({kind: 'transaction_abort'});
++        if (requestFailure) reject(requestFailure);
++        else resolve({terminal: 'abort', error: tx.error?.name ?? null});
++      };
++      tx.onerror = () => { requestFailure ??= Error('transaction error'); };
++      operations.forEach(([verb, store, key, value], index) => {
++        const input = verb === 'put' ? structuredClone(value) : null;
++        const request = verb === 'put' ? tx.objectStore(store).put(value, key) :
++            verb === 'count' ? tx.objectStore(store).count() : tx.objectStore(store)[verb](key);
++        const row = {id: 'q' + index, verb, store, key: key ?? null, input};
++        request.onerror = () => { requestFailure = Error('request error: ' + request.error?.name); };
++        request.onsuccess = () => {
++          row.result = structuredClone(request.result);
++          observed.push(row);
++          callbacks.push({kind: 'request_success', requestId: row.id});
++          if (abort && index === operations.length - 1) {
++            check(observed.length === operations.length, 'all puts before abort');
++            callbacks.push({kind: 'abort_called'});
++            tx.abort();
++          }
++        };
++      });
++    });
++    const result = await terminal;
++    check(result.terminal === (abort ? 'abort' : 'complete'), 'actual transaction terminal');
++    check(observed.length === operations.length, 'actual successful request count');
++    // Digest cloned native results only after transaction completion/abort.
++    const requests = [];
++    for (const row of observed) requests.push({...row,
++      input: row.input === null ? null : await describe(row.input),
++      result: await describe(row.result, row.verb === 'put')});
++    return {id: 't' + index, mode, stores: ['files','packs'], requests, callbacks, ...result};
++  };
++  const probe = async phase => {
++    const openTrace = ['open_requested'], closeTrace = [], transactions = [];
++    let openFailure = null;
++    const db = await new Promise((resolve, reject) => {
++      const request = indexedDB.open('aegis-local-translation-v1', 2);
++      request.onupgradeneeded = () => {
++        openFailure = Error('unexpected upgrade'); request.transaction.abort();
++      };
++      request.onblocked = () => { openFailure = Error('blocked'); reject(openFailure); };
++      request.onerror = () => reject(openFailure ?? Error('open error: ' + request.error?.name));
++      request.onsuccess = () => {
++        if (openFailure) { request.result.close(); reject(openFailure); return; }
++        openTrace.push('open_success'); resolve(request.result);
++      };
++    });
++    let versionChanged = false;
++    db.onversionchange = () => { versionChanged = true; db.close(); };
++    const ordinal = connections.length + 1;
++    try {
++      check(!connections.includes(db), 'actual IDB object reused');
++      connections.push(db);
++      check(db.version === 2, 'database version');
++      equal([...db.objectStoreNames], ['files','packs'], 'database stores');
++      const reads = [['get','files',ks],['get','files',kc],['get','packs','en-zh'],
++                     ['get','files',kp],['count','files'],['count','packs']];
++      if (phase === 'S00') {
++        transactions.push(await transaction(db, 0, 'readonly',
++            [['count','files'],['count','packs']]));
++        equal(transactions[0].requests.map(row => row.result),
++              [{type:'number',value:0},{type:'number',value:0}], 'fresh store');
++        transactions.push(await transaction(db, 1, 'readwrite',
++            [['put','files',ks,stable],['put','files',kc,corrupt],['put','packs','en-zh',pack]]));
++      } else if (phase === 'S04') {
++        transactions.push(await transaction(db, 0, 'readwrite',
++            [['put','files',ks,poison],['put','files',kp,poison]], true));
++      } else if (phase === 'S07') {
++        transactions.push(await transaction(db, 0, 'readwrite', [['delete','files',ks]]));
++      } else {
++        transactions.push(await transaction(db, 0, 'readonly', reads));
++        const absent = {type:'absent'};
++        const expected = phase === 'S08' ? [absent,absent,absent,absent,0,0] :
++            phase === 'S06' ? [await describe(stable),absent,absent,absent,1,0] :
++            [await describe(stable),await describe(corrupt),await describe(pack),absent,2,1];
++        expected[4] = {type:'number',value:expected[4]};
++        expected[5] = {type:'number',value:expected[5]};
++        equal(transactions[0].requests.map(row => row.result), expected, 'actual reopened data');
++      }
++      check(!versionChanged, 'version change');
++    } finally {
++      db.close(); closeTrace.push('close_requested');
++    }
++    let closedError = '';
++    try { db.transaction(['files','packs'], 'readonly'); }
++    catch (error) { closedError = error.name; }
++    check(closedError === 'InvalidStateError', 'actual post-close rejection');
++    closeTrace.push('post_close_transaction_InvalidStateError');
++    return {channel:'native-indexeddb-main-frame',connectionOrdinal:ordinal,
++      database:db.name,version:db.version,stores:[...db.objectStoreNames],
++      openTrace,transactions,closeTrace};
++  };
++  const execute = async phase => {
++    check(phases[nextPhase++] === phase, 'phase order/reuse');
++    let payload;
++    if (phase.startsWith('S')) payload = await probe(phase);
++    else {
++      const flags = {R01:[true,false],R02:[false,true],R03:[true,true]};
++      const request = phase.startsWith('R') ?
++          {op:'research',minim:flags[phase][0],phishlang:flags[phase][1],
++           goal:'read_post',paragraphs:['Save your notes before closing the browser.']} :
++          ['P02','P03','P04'].includes(phase) ? {op:'statuses'} :
++          {op:phase === 'P05' ? 'remove' : 'status',direction:'en-zh'};
++      const progress = [];
++      let outcome;
++      try { outcome = {status:'resolved',result:await client.run(request, text => progress.push(text))}; }
++      catch (error) { outcome = {status:'rejected',error:error.message}; }
++      check(progress.length === 0, 'unexpected progress');
++      const expected = phase.startsWith('R') ?
++          {status:'rejected',error:'research_model_not_distributed'} :
++          {status:'resolved',result:['P02','P03','P04'].includes(phase) ?
++            {statuses:catalogPackIds.map(id => ({id,ready:false,update:false}))} :
++            phase === 'P05' ? {ready:false} : {ready:false,update:false}};
++      equal(outcome, expected, 'production result');
++      payload = {channel:'production-local-ai-client-promise',request,outcome,progress};
++    }
++    return JSON.stringify({runId,challenge,payload});
++  };
++  globalThis.__aegisMac03 = async (phase, remainingMillis) => {
++    check(Number.isSafeInteger(remainingMillis) && remainingMillis > 0 &&
++          remainingMillis <= 30000, 'browser phase budget');
++    let timer;
++    try { return await Promise.race([execute(phase), new Promise((_,reject) => {
++      timer = setTimeout(() => { client.cancel('MAC03 phase timeout'); reject(Error('phase timeout')); }, remainingMillis);
++    })]); }
++    finally { clearTimeout(timer); }
++  };
++  return JSON.stringify({runId,challenge,bootstrap:{
++    translationManifestSHA256:await hash(translation),
++    researchManifestSHA256:await hash(research),catalogPackIds,
++    selectedPack:'en-zh',selectedRoutePackIds:route}});
++})()
++)MAC03JS";
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingLocalAiWorkerInWebUI) {
+-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
+-      GURL(chrome::kChromeUIUntrustedAegisAgentURL)));
+-  auto* page = browser()->tab_strip_model()->GetActiveWebContents();
+-  // Public assets omit research weights. Exercise the real WebUI Worker and
+-  // storage path, explicit unavailable errors, and recovery after rejection.
+-  EXPECT_EQ(content::EvalJs(page, R"JS(
++  base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Seconds(600));
++  base::ScopedAllowBlockingForTesting allow_blocking;
++  const auto* command = base::CommandLine::ForCurrentProcess();
++  const char* artifact_switches[] = {"aegis-mac03-context", "aegis-mac03-run-id",
++                                    "aegis-mac03-challenge", "aegis-native-evidence-dir"};
++  int supplied = 0;
++  for (const char* name : artifact_switches) supplied += command->HasSwitch(name);
++  ASSERT_TRUE(supplied == 0 || supplied == 4);
++  const bool publish = supplied == 4;
++  std::string run_id = base::Uuid::GenerateRandomV4().AsLowercaseString();
++  std::string challenge = base::ToLowerASCII(base::HexEncode(base::RandBytesAsString(32)));
++  base::DictValue context;
++  base::FilePath evidence_dir, final_path, user_data_dir;
++  ASSERT_TRUE(base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir));
++  if (publish) {
++    run_id = command->GetSwitchValueASCII("aegis-mac03-run-id");
++    challenge = command->GetSwitchValueASCII("aegis-mac03-challenge");
++    ASSERT_TRUE(base::Uuid::ParseLowercase(run_id).is_valid());
++    ASSERT_EQ(run_id[14], '4');
++    ASSERT_NE(std::string_view("89ab").find(run_id[19]), std::string_view::npos);
++    ASSERT_EQ(challenge.size(), 64u);
++    ASSERT_TRUE(std::all_of(challenge.begin(), challenge.end(), [](char c) {
++      return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
++    }));
++    const base::FilePath context_path = command->GetSwitchValuePath("aegis-mac03-context");
++    ASSERT_TRUE(Mac03PhysicalPath(context_path, false));
++    std::string text;
++    ASSERT_TRUE(base::ReadFileToStringWithMaxSize(context_path, &text, 65536));
++    auto parsed = base::JSONReader::ReadDict(text, base::JSON_PARSE_RFC);
++    ASSERT_TRUE(parsed);
++    context = std::move(*parsed);
++    ASSERT_TRUE(context.FindString("runId"));
++    ASSERT_EQ(*context.FindString("runId"), run_id);
++    ASSERT_TRUE(context.FindString("challenge"));
++    ASSERT_EQ(*context.FindString("challenge"), challenge);
++    ASSERT_TRUE(context.FindDict("declaredBindings"));
++    ASSERT_EQ(context.FindDict("declaredBindings")->size(), 5u);
++    ASSERT_EQ(command->GetSwitchValuePath(switches::kUserDataDir), user_data_dir);
++    ASSERT_TRUE(Mac03PhysicalPath(user_data_dir, true));
++    evidence_dir = command->GetSwitchValuePath("aegis-native-evidence-dir");
++    ASSERT_TRUE(Mac03PhysicalPath(evidence_dir, true));
++    ASSERT_TRUE(base::IsDirectoryEmpty(evidence_dir));
++    ASSERT_TRUE(context.FindString("evidenceDir"));
++    ASSERT_EQ(*context.FindString("evidenceDir"), evidence_dir.AsUTF8Unsafe());
++    ASSERT_TRUE(context.FindString("userDataDir"));
++    ASSERT_EQ(*context.FindString("userDataDir"), user_data_dir.AsUTF8Unsafe());
++    final_path = evidence_dir.AppendASCII("MAC03-independent-v2.json");
++    ASSERT_FALSE(base::PathExists(final_path));
++  }
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("chrome-untrusted://aegis-agent/")));
++  content::WebContents* page = browser()->tab_strip_model()->GetActiveWebContents();
++  ASSERT_TRUE(page);
++  const base::FilePath profile = browser()->profile()->GetPath();
++  if (publish) {
++    ASSERT_TRUE(user_data_dir.IsParent(profile));
++    ASSERT_TRUE(Mac03PhysicalPath(profile, true));
++  }
++  Mac03Deadline deadline;
++  if (publish) {
++    ASSERT_TRUE(deadline.ImportAdmission(context));
++  }
++  deadline.StartPhase();
++  Mac03Observer observer(page, run_id, challenge, deadline);
++  auto evaluate = [&](const std::string& script) {
++    base::test::ScopedRunLoopTimeout phase_timeout(FROM_HERE, deadline.Remaining());
++    return content::EvalJs(page, script);
++  };
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
++  auto ready_result = evaluate(content::JsReplace(R"JS(
+     (async () => {
+-      const {LocalAiClient} = await import('./local_ai_client.js');
+-      const client = new LocalAiClient();
+-      const missing = await client.run({op: 'status', direction: 'en-zh'}, () => {});
+-      if (missing.ready !== false) return 'unexpected package';
+-      for (const [minim, phishlang] of [[true, false], [false, true], [true, true]]) {
+-        try {
+-          await client.run({op: 'research', minim, phishlang, goal: 'read_post',
+-            paragraphs: ['Save your notes before closing the browser.']}, () => {});
+-          return 'unexpected research result';
+-        } catch (error) {
+-          if (error.message !== 'research_model_not_distributed') return error.message;
++      const deadline = performance.now() + $1;
++      while (performance.now() < deadline) {
++        const elements = document.querySelectorAll('#reading-language-packs > p[role="status"]');
++        const options = document.querySelectorAll('#reading-language-packs select option');
++        if (elements.length === 1 && elements[0].textContent === '' && options.length > 0) {
++          return JSON.stringify({
++            criterion:'#reading-language-packs > p[role="status"] empty and select options present',
++            statusElementCount:elements.length,statusText:elements[0].textContent,
++            catalogOptionCount:options.length});
+         }
++        await new Promise(resolve => setTimeout(resolve, 25));
+       }
+-      const after = await client.run({op: 'status', direction: 'en-zh'}, () => {});
+-      return after.ready === false ? 'passed' : 'unexpected package after rejection';
++      throw Error('production startup did not become ready');
+     })()
+-  )JS"), "passed");
++  )JS", static_cast<int>(deadline.Remaining().InMilliseconds())));
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
++  ASSERT_THAT(ready_result, content::EvalJsResult::IsOkAndHolds(
++      testing::Truly([](const base::Value& value) { return value.is_string(); })));
++  auto startup = base::JSONReader::ReadDict(ready_result.ExtractString(), base::JSON_PARSE_RFC);
++  ASSERT_TRUE(startup);
++  ASSERT_TRUE(observer.Drain(*startup)) << observer.error();
++  ASSERT_TRUE(Mac03Print("AEGIS_MAC03_STARTUP_V2 ", base::DictValue()
++      .Set("runId", run_id).Set("challenge", challenge).Set("startup", startup->Clone())));
++  deadline.StartPhase();
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
++  auto bootstrap_result = evaluate(content::JsReplace(kMac03Bootstrap, run_id, challenge));
++  ASSERT_TRUE(observer.CheckDeadline()) << observer.error();
++  ASSERT_THAT(bootstrap_result, content::EvalJsResult::IsOkAndHolds(
++      testing::Truly([](const base::Value& value) { return value.is_string(); })));
++  auto initial = base::JSONReader::ReadDict(bootstrap_result.ExtractString(), base::JSON_PARSE_RFC);
++  ASSERT_TRUE(initial && initial->FindDict("bootstrap"));
++  ASSERT_TRUE(initial->FindString("runId"));
++    ASSERT_EQ(*initial->FindString("runId"), run_id);
++  ASSERT_TRUE(initial->FindString("challenge"));
++    ASSERT_EQ(*initial->FindString("challenge"), challenge);
++  ASSERT_TRUE(observer.Healthy()) << observer.error();
++  if (publish) {
++    for (const char* key : {"translationManifestSHA256", "researchManifestSHA256"})
++      {
++      ASSERT_TRUE(initial->FindDict("bootstrap")->FindString(key));
++      ASSERT_TRUE(context.FindString(key));
++      ASSERT_EQ(*initial->FindDict("bootstrap")->FindString(key), *context.FindString(key));
++    }
++    ASSERT_TRUE(initial->FindDict("bootstrap")->FindList("catalogPackIds"));
++    ASSERT_TRUE(context.FindList("catalogPackIds"));
++    ASSERT_EQ(*initial->FindDict("bootstrap")->FindList("catalogPackIds"),
++              *context.FindList("catalogPackIds"));
++  }
++  base::ListValue phases;
++  for (const char* phase : {"P00","S00","P01","R01","P02","S01","R02","P03","S02",
++                            "R03","P04","S03","S04","S05","P05","S06","P06","S07","S08"}) {
++    phases.Append(phase);
++    ASSERT_TRUE(observer.Begin(phase)) << observer.error();
++    auto actual = evaluate(content::JsReplace("globalThis.__aegisMac03($1, $2)",
++        phase, static_cast<int>(deadline.Remaining().InMilliseconds())));
++    ASSERT_THAT(actual, content::EvalJsResult::IsOkAndHolds(
++      testing::Truly([](const base::Value& value) { return value.is_string(); })));
++    ASSERT_LE(actual.ExtractString().size(), 16384u);
++    auto result = base::JSONReader::ReadDict(actual.ExtractString(), base::JSON_PARSE_RFC);
++    ASSERT_TRUE(result);
++    ASSERT_TRUE(observer.Result(std::move(*result))) << observer.error();
++    ASSERT_TRUE(observer.End()) << observer.error();
++  }
++  ASSERT_TRUE(observer.FinalEmpty()) << observer.error();
++  if (!publish) return;  // Ordinary browser_tests still exercised all assertions.
++  base::DictValue bundle = base::DictValue().Set("schemaVersion", 2).Set("kind", "aegis-mac03-native-evidence")
++      .Set("producer", base::DictValue().Set("contract", "mac03-v2")
++          .Set("test", "AegisAgentBrowserTest.ReadingLocalAiWorkerInWebUI")
++          .Set("implementationVersion", "native28-mac03-v2"))
++      .Set("run", base::DictValue().Set("id", run_id).Set("challenge", challenge)
++          .Set("phaseOrder", std::move(phases)))
++      .Set("subject", base::DictValue().Set("origin", "chrome-untrusted://aegis-agent")
++          .Set("url", "chrome-untrusted://aegis-agent/").Set("frame", Mac03Frame(observer.frame()))
++          .Set("userDataDir", user_data_dir.AsUTF8Unsafe())
++          .Set("profileDir", profile.AsUTF8Unsafe()).Set("navigationEpoch", 0))
++      .Set("declaredBindings", context.FindDict("declaredBindings")->Clone())
++      .Set("bootstrap", initial->FindDict("bootstrap")->Clone())
++      .Set("startup", std::move(*startup)).Set("events", observer.events().Clone())
++      .Set("errors", base::ListValue()).Set("terminal", "complete");
++  std::string serialized;
++  ASSERT_TRUE(base::JSONWriter::Write(bundle, &serialized));
++  ASSERT_LE(serialized.size(), 524288u);
++  ASSERT_TRUE(observer.FinalEmpty()) << observer.error();
++  ASSERT_TRUE(Mac03PhysicalPath(evidence_dir, true));
++  ASSERT_TRUE(base::IsDirectoryEmpty(evidence_dir));
++  ASSERT_TRUE(base::ImportantFileWriter::WriteFileAtomically(final_path, serialized));
++  ASSERT_TRUE(Mac03PhysicalPath(final_path, false));
++  std::string reread;
++  ASSERT_TRUE(base::ReadFileToStringWithMaxSize(final_path, &reread, 524288));
++  ASSERT_EQ(serialized, reread);
++  ASSERT_TRUE(observer.FinalEmpty()) << observer.error();
++  // External consumer performs post-child file+directory sync and stable reads.
+ }
+ 
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest, ReadingWorkspaceRejectsPrivateProfile) {
+   BrowserWindowInterface* incognito = CreateIncognitoBrowser(browser()->GetProfile());
+   AegisReadingWorkspace workspace(incognito->GetProfile(), incognito);

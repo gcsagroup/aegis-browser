@@ -1,8 +1,17 @@
 import {spawnSync} from 'node:child_process';
 
+function githubEnvironment(environment) {
+  const exclusions = [...new Set([
+    ...(environment.no_proxy ?? '').split(','), ...(environment.NO_PROXY ?? '').split(','),
+    'github.com', '.github.com', 'githubusercontent.com', '.githubusercontent.com',
+  ].filter(Boolean))].join(',');
+  return {...environment, no_proxy: exclusions, NO_PROXY: exclusions};
+}
+
 export function command(name, args, {token, statuses = [0], cwd} = {}) {
   const env = token ? {...process.env, GH_TOKEN: token} : process.env;
-  const result = spawnSync(name, args, {env, cwd, encoding: 'utf8'});
+  const childEnv = ['git', 'gh'].includes(name) ? githubEnvironment(env) : env;
+  const result = spawnSync(name, args, {env: childEnv, cwd, encoding: 'utf8'});
   if (result.error) throw result.error;
   if (!statuses.includes(result.status)) throw new Error(`${name} failed (${result.status}): ${result.stderr}`);
   return result.stdout.trim();
