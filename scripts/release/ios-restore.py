@@ -13,14 +13,16 @@ spec.loader.exec_module(action)
 sha, tree = action.source()
 run_id, attempt = int(os.environ['GITHUB_RUN_ID']), int(os.environ['GITHUB_RUN_ATTEMPT'])
 kind = os.environ['IMPORT_KIND']
-producer = 'ios-package' if kind == 'draft' else 'import'
+if kind not in {'draft', 'store', 'new-upload'}:
+    raise ValueError('Unknown restore route')
+producer = 'ios-package' if kind in {'draft', 'new-upload'} else 'import'
 run = action.api(f'actions/runs/{run_id}')
-allowed = action.transport.PACKAGE_WORKFLOWS if kind == 'draft' else {'.github/workflows/ios-delivery.yml', '.github/workflows/ios-testflight.yml'}
+allowed = action.transport.PACKAGE_WORKFLOWS if kind in {'draft', 'new-upload'} else {'.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml', '.github/workflows/ios-testflight.yml'}
 if run['head_sha'] != sha or run['run_attempt'] != attempt or run['repository']['full_name'] != os.environ['GITHUB_REPOSITORY'] or run['path'] not in allowed:
     raise ValueError('Current artifact producer source/workflow changed')
 jobs = action.api(f'actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100')
 rows = [j for j in jobs['jobs'] if j['name'] == producer or j['name'].endswith(' / '+producer)]
-if jobs['total_count'] > 100 or len(rows) != 1 or rows[0]['status'] != 'completed' or rows[0]['conclusion'] != 'success' or rows[0]['head_sha'] != sha:
+if jobs['total_count'] > 100 or len(rows) != 1 or rows[0]['status'] != 'completed' or rows[0]['conclusion'] != 'success' or rows[0]['head_sha'] != sha or rows[0].get('run_id') != run_id or rows[0].get('run_attempt') != attempt:
     raise ValueError('Artifact producer job is not completed successfully at this exact source')
 with tempfile.TemporaryDirectory(prefix='ios-restore-') as tmp:
     staged = Path(tmp)/'package'
@@ -32,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='ios-restore-') as tmp:
     expected = int(os.environ['PACKAGE_RUN_ID'])
     if origin['runId'] != expected or origin['repository'] != os.environ['GITHUB_REPOSITORY'] or origin['sourceSha'] != sha or origin['sourceTree'] != tree or origin['manifestSha256'] != os.environ['RELEASE_MANIFEST_SHA256']:
         raise ValueError('Package origin mismatch')
-    if kind == 'draft':
+    if kind in {'draft', 'new-upload'}:
         if expected != run_id or origin['attempt'] != attempt or origin['runIdLocal'] != os.environ['RELEASE_RUN_ID']:
             raise ValueError('Draft origin differs from this package job')
     else:

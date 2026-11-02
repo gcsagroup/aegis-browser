@@ -10,7 +10,6 @@ spec = importlib.util.spec_from_file_location('ios_delivery_receipt', Path(__fil
 receipt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(receipt)
 
-INPUTS = {'operation', 'product', 'target', 'advanced'}
 STAGE_INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
           'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input'}
@@ -33,31 +32,53 @@ def reject_constant(_value):
     raise ValueError('Non-finite Full JSON is not allowed')
 
 
-def normalize(event, ref, inputs):
-    require(isinstance(inputs, dict) and not inputs.keys()-INPUTS and all(isinstance(v, str) for v in inputs.values()), 'Unknown or invalid delivery inputs')
+def normalize(event, ref, inputs, mode='simple'):
+    allowed = {'operation', 'product', 'version', 'build'}
+    if mode == 'full':
+        allowed |= {'source', 'groups', 'stage_input'}
+    require(mode in {'simple', 'full'}, 'Unknown delivery mode')
+    require(isinstance(inputs, dict) and not inputs.keys()-allowed and all(isinstance(v, str) for v in inputs.values()),
+            'Unknown or invalid delivery inputs')
     if event == 'push':
+        require(mode == 'simple', 'Only the canonical entrypoint accepts candidate tags')
         return _normalize_stage(event, ref, inputs)
     require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
-    raw_options = inputs.get('advanced') or '{}'
-    require(len(raw_options.encode()) <= 64000, 'Full options exceed bound')
+    operation = receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
+    require(mode == 'full' or operation in {'package', 'package-upload', 'status', 'wait'}, 'Use the Full workflow for upload and later stages')
+    version, build = inputs.get('version', ''), inputs.get('build', '')
+    if version or build or operation in {'package', 'package-upload', 'draft', 'status'} or (operation == 'wait' and not inputs.get('source')):
+        require(re.fullmatch(r'[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?', version) is not None and
+                re.fullmatch(r'[1-9][0-9]{0,9}', build) is not None,
+                '填写版本和构建号 / Enter version and build, for example 1.0.0 and 35')
+    raw_input = inputs.get('stage_input') or '{}'
+    require(len(raw_input.encode()) <= 64000, 'Stage input exceeds bound')
     try:
-        options = json.loads(raw_options, object_pairs_hook=unique_object, parse_constant=reject_constant)
+        stage_input = json.loads(raw_input, object_pairs_hook=unique_object, parse_constant=reject_constant)
     except (ValueError, RecursionError) as error:
-        raise ValueError('Invalid Full options JSON') from error
-    require(isinstance(options, dict) and not options.keys()-{'operation', 'groups', 'stage_input'}, 'Unknown Full options')
-    selected = inputs.get('operation') or 'package'
-    if selected in {'full', '完整模式 / Full'}:
-        require(isinstance(options.get('operation'), str), 'Full mode requires an explicit operation')
-        operation = receipt.canonical(options['operation'], receipt.OPERATION_LABELS)
-        require(isinstance(options.get('groups', ''), str) and isinstance(options.get('stage_input', {}), dict), 'Invalid Full groups or stage input')
-    else:
-        require(not options, 'Select Full mode to use advanced options')
-        operation = receipt.canonical(selected, receipt.OPERATION_LABELS)
-        require(operation in {'package', 'upload', 'status'}, 'Select Full mode for this operation')
+        raise ValueError('Invalid stage JSON') from error
+    require(isinstance(stage_input, dict), 'Stage input must be an object')
+    receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS)
+    if operation in {'status', 'wait'} and not inputs.get('source'):
+        require(not inputs.get('source') and not inputs.get('groups') and not stage_input,
+                '状态查询只填版本和构建号 / Status only needs version and build')
+        values = {key: '' for key in FIELDS}
+        values.update(operation='status-wait' if operation == 'wait' else 'status-query', version=version, build=build, destination='testflight', stage_input='{}')
+        return values  # Read-only Apple lookup: no inferred package identity or mutation receipt.
+    require(operation != 'status', '状态查询只填版本和构建号 / Status only needs version and build')
+    package_upload = operation == 'package-upload'
+    if package_upload:
+        require(not inputs.get('source') and not inputs.get('groups') and not stage_input, 'New package upload cannot import or distribute existing state')
+        operation = 'package'
     normalized = dict(operation=operation, product=inputs.get('product', ''),
-                      groups=options.get('groups', ''), stage_input=json.dumps(options.get('stage_input', {}), ensure_ascii=True))
-    normalized['version' if operation in {'package', 'draft'} else 'source'] = inputs.get('target', '')
-    return _normalize_stage(event, ref, normalized)
+                      groups=inputs.get('groups', ''), stage_input=json.dumps(stage_input, ensure_ascii=True))
+    if version:
+        normalized['version'] = f'{version}({build})'
+    if inputs.get('source'):
+        normalized['source'] = inputs['source']
+    values = _normalize_stage(event, ref, normalized)
+    if package_upload:
+        values.update(operation='package-upload', destination='testflight')
+    return values
 
 
 def _normalize_stage(event, ref, inputs):
@@ -124,7 +145,12 @@ def _normalize_stage(event, ref, inputs):
 
 if __name__ == '__main__':
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    values = normalize(os.environ['GITHUB_EVENT_NAME'], os.environ['GITHUB_REF'], event.get('inputs') or {})
+    raw = os.environ.get('DELIVERY_INPUTS')
+    require(raw is None or len(raw.encode()) <= 131072, 'Delivery inputs exceed bound')
+    inputs = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant) if raw else event.get('inputs') or {}
+    values = normalize(os.environ['GITHUB_EVENT_NAME'], os.environ['GITHUB_REF'], inputs, os.environ.get('DELIVERY_MODE', 'simple'))
+    require(values['operation'] != 'package-upload' or os.environ.get('GITHUB_RUN_ATTEMPT', '1') == '1',
+            'New package upload cannot be rerun; reconcile the original run before selecting a new build')
     with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
         for key, value in sorted(values.items()):
             output.write(key+'='+value+'\n')

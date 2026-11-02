@@ -8,8 +8,8 @@ module AegisRelease
   class AscApi
     ORIGIN = 'https://api.appstoreconnect.apple.com'
 
-    def initialize(token:, transport: nil, before_mutation: nil)
-      @token, @before_mutation = token, before_mutation
+    def initialize(token:, transport: nil, before_mutation: nil, read_only: false)
+      @token, @before_mutation, @read_only = token, before_mutation, read_only
       @transport = transport || lambda do |uri, request|
         Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: 30, read_timeout: 90,
                         max_retries: 0) do |http|
@@ -29,6 +29,7 @@ module AegisRelease
     end
 
     def call(method, path, body = nil, query = {})
+      AegisRelease.require!(!@read_only || method == :get, 'Read-only ASC query cannot mutate store state')
       uri = uri_for(path, query)
       @token.refresh! if @token.expired?
       request = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch }.fetch(method).new(uri)

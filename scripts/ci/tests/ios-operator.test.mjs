@@ -112,3 +112,17 @@ test('local authorization resolves real token user and ignores actor environment
   await assert.rejects(requireIosAdministrator({environment: local, api: async (r,p) => p === '' ? api(r,p) : {permission: 'write', user}, userApi: async () => user}), /admin/iu);
   await assert.rejects(requireIosAdministrator({environment: local, api: async (r,p) => p === '' ? api(r,p) : {permission: 'admin', user: {...user,id: 1}}, userApi: async () => user}), /identity|permission|admin/iu);
 });
+
+test('Full caller keeps current Admin admission; unknown workflows and full tag pushes are denied', async () => {
+  const {requireIosAdministrator} = await load();
+  const allowed = fixture({runChanges: {path: '.github/workflows/ios-delivery-full.yml'}});
+  assert.equal((await requireIosAdministrator({environment, api: allowed.api})).authorized, true);
+  for (const path of ['.github/workflows/other.yml', '.github/workflows/ios-delivery-reusable.yml']) {
+    await assert.rejects(requireIosAdministrator({environment, api: fixture({runChanges: {path}}).api}), /workflow context/iu);
+  }
+  const tag = 'candidate/ios/1.0.0-alpha.36';
+  await assert.rejects(requireIosAdministrator({environment: {...environment, GITHUB_EVENT_NAME: 'push', GITHUB_REF: 'refs/tags/'+tag},
+    api: fixture({runChanges: {path: '.github/workflows/ios-delivery-full.yml', event: 'push', head_branch: tag}}).api}), /event context/iu);
+  await assert.rejects(requireIosAdministrator({environment,
+    api: fixture({admins: [], runChanges: {path: '.github/workflows/ios-delivery-full.yml'}}).api}), /Admin grant/iu);
+});
