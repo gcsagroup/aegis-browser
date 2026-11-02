@@ -83,4 +83,17 @@ class IosStatusTest < Minitest::Test
     assert_equal 1, time
   end
 
+  def test_missing_forwarded_credentials_fail_before_token_construction_without_echoing_values
+    env = { 'AEGIS_ASC_KEY_ID' => 'fixture-id', 'AEGIS_ASC_ISSUER_ID' => 'fixture-issuer', 'AEGIS_ASC_KEY_BASE64' => Base64.strict_encode64('fixture-key') }
+    assert_equal 'fixture-key', AegisRelease::BuildStatus.token_options(env).fetch(:key)
+    env.each_key do |name|
+      ['', nil].each do |missing|
+        error = assert_raises(AegisRelease::Error) { AegisRelease::BuildStatus.token_options(env.merge(name => missing)) }
+        assert_match(/credentials missing/, error.message)
+        refute_match(/fixture-key|fixture-id|fixture-issuer/, error.message)
+      end
+    end
+    assert_raises(AegisRelease::Error) { AegisRelease::BuildStatus.token_options(env.merge('AEGIS_ASC_KEY_BASE64' => '***invalid***')) }
+  end
+
 end
