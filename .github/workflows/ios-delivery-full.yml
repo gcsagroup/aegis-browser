@@ -52,3 +52,7 @@ jobs:
     with:
       delivery_mode: full
       delivery_inputs: ${{ toJSON(inputs) }}
+    secrets:
+      AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
+      AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
+      AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
