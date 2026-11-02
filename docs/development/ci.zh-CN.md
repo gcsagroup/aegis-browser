@@ -78,6 +78,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 入口依次执行工具链预检、`pnpm install --frozen-lockfile`、`pnpm run quality:fast`、分语言覆盖率生成与校验、许可证元数据记录、修订 4 冻结文件校验、临时副本中的 13 项离线预览检查、CI 门禁回归、工作流验证与源码前后摘要比对。任一阶段非零即整体失败；报告写入被忽略的 `.artifacts/ci/`，不得提交该目录。
 
+`ci:test` 按文件串行执行 Node 回归套件，避免多个创建真实子进程的 fixture 同时争用 runner CPU。V8 覆盖率退出回归仍使用真实 Vitest worker、原有的 500ms SIGKILL 兜底和全部退出码/覆盖率断言；串行调度不延长超时，也不接受失败结果。
+
 ## Lint、单元测试与覆盖率口径
 
 根 `pnpm run lint` 使用 ESLint 9 flat config，当前 required CI 仍只分析 `packages/core/src/**/*.ts` 与 `scripts/ci/**/*.mjs`。它采用 JavaScript/TypeScript recommended 的正确性规则；`tsc --noEmit` 仍由独立 `typecheck` 执行。为了接纳现有代码，例外限制在具体范围：测试文件允许现有 `@ts-nocheck`、精度边界常量与字符串 escape；`privacy/pii.ts` 保留现有正则 escape；`structure-signature.ts` 保留两个空扩展 interface。新增 CI fixture 会证明合法代码退出 0、未定义标识符退出非 0。这里没有把 ESLint 描述成格式化器或完整风格门。
