@@ -99,14 +99,14 @@ def receipt():
             raise ValueError('Package receipt differs from this producer attempt')
     elif package_run != os.environ['PACKAGE_RUN_ID']:
         raise ValueError('Store receipt differs from original package producer')
-    value = receipt_codec.encode(manifest['profile'], manifest['version'], manifest['build'], package_run, current, attempt, digest)
+    value = receipt_codec.encode(manifest['profile'], manifest['version'], manifest['build'], package_run, current, attempt, digest, uploaded=(directory()/'apple-upload-result.json').is_file())
     output('delivery_receipt', value)
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
         summary.write(f'### iOS 交付凭据 / Delivery receipt\n\n{manifest["version"]} ({manifest["build"]}) · {manifest["profile"]}\n\n'
-                      '等待整次运行成功后，复制整行到下次操作的 **版本或来源 / Version or source**；目标产物保持自动。\n'
-                      'After the whole run succeeds, copy this line into **Version or source** and keep Product on Auto.\n\n'
+                      '等待整次运行成功后，复制整行到下次操作的 完整版的 **交付凭据 / Delivery receipt**；目标产物保持自动。\n'
+                      'After the whole run succeeds, copy this line into the Full workflow’s **Delivery receipt** and keep Product on Auto.\n\n'
                       f'```text\n{value}\n```\n\n'
-                      '常用操作：上传 TF、查询状态；其他选择完整模式。每次后续操作使用最新成功凭据，保留原始凭据。\n'
+                      '查询在精简版填版本/build 即可；上传及后续写操作在完整版使用最新成功凭据，保留原始凭据。\n'
                       'Use the latest successful receipt for each next step; retain the original. Upload, processing, metadata/compliance and distribution remain explicit operations.\n\n'
                       '此凭据仅固定产物身份；Admin、来源、完整性及防重复检查仍独立执行。\n'
                       'This receipt pins identity only; Admin, source, integrity and replay checks remain independent.\n')
@@ -145,23 +145,59 @@ def check_prior_stage_runs(stage, state_run):
     validate_mutation_attempt(stage, int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')))
     current = int(os.environ['GITHUB_RUN_ID'])
     digest = os.environ['RELEASE_MANIFEST_SHA256']
-    for page in range(1, 21):
-        rows = api(f'actions/workflows/ios-delivery.yml/runs?per_page=100&page={page}')['workflow_runs']
-        for row in rows:
-            if row['id'] == current or not matches_stage_title(row.get('display_title'), stage, digest):
-                continue
-            if row['id'] != state_run and not unstarted_store_run(row):
-                raise ValueError('Earlier identical stage run exists outside imported state; read back and reconcile before retry')
-        if len(rows) < 100:
-            return
-    raise ValueError('Cannot prove complete prior-stage inventory')
+    for workflow in ['ios-delivery.yml', 'ios-delivery-full.yml']:
+        for page in range(1, 21):
+            rows = api(f'actions/workflows/{workflow}/runs?per_page=100&page={page}')['workflow_runs']
+            for row in rows:
+                if row['id'] == current or not matches_stage_title(row.get('display_title'), stage, digest):
+                    continue
+                if row['id'] != state_run and not unstarted_store_run(row):
+                    raise ValueError('Earlier identical stage run exists outside imported state; read back and reconcile before retry')
+            if len(rows) < 100:
+                break
+        else:
+            raise ValueError('Cannot prove complete prior-stage inventory')
+
+
+def check_new_upload_runs():
+    current = int(os.environ['GITHUB_RUN_ID'])
+    if int(os.environ['GITHUB_RUN_ATTEMPT']) != 1:
+        raise ValueError('New-package upload cannot be rerun; reconcile the original run')
+    version, build = os.environ['RELEASE_VERSION'], os.environ['RELEASE_BUILD']
+    for workflow in ['ios-delivery.yml', 'ios-delivery-full.yml']:
+        for page in range(1, 21):
+            rows = api(f'actions/workflows/{workflow}/runs?per_page=100&page={page}')['workflow_runs']
+            for row in rows:
+                if row['id'] == current:
+                    continue
+                title = row.get('display_title')
+                if not isinstance(title, str) or not title.startswith('iOS Delivery '):
+                    continue
+                operation, _, identity = title[len('iOS Delivery '):].rpartition(' ')
+                try:
+                    selected = receipt_codec.canonical(operation, receipt_codec.OPERATION_LABELS)
+                    if selected == 'package-upload':
+                        matches = identity == f'{version}({build})'
+                    elif selected == 'upload':
+                        pinned = receipt_codec.decode(identity)
+                        matches = (pinned['version'], pinned['build']) == (version, build)
+                    else:
+                        matches = False
+                except ValueError:
+                    matches = False
+                if matches and not unstarted_store_run(row):
+                    raise ValueError('Earlier upload for this version/build may have executed; reconcile it before rebuilding')
+            if len(rows) < 100:
+                break
+        else:
+            raise ValueError('Cannot prove complete new-package upload inventory')
 
 
 def unstarted_store_run(row):
     """All attempts must conclusively lack any executed store job, not just the last."""
     record = api(f'actions/runs/{row["id"]}')
     attempts = record.get('run_attempt')
-    if (record.get('id') != row['id'] or record.get('path') != '.github/workflows/ios-delivery.yml' or
+    if (record.get('id') != row['id'] or record.get('path') not in {'.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml'} or
             not isinstance(record.get('head_sha'), str) or len(record['head_sha']) != 40 or record.get('status') != 'completed' or
             type(attempts) is not int or not 1 <= attempts <= 20):
         return False
@@ -173,7 +209,7 @@ def unstarted_store_run(row):
         for job in jobs:
             if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
                 return False
-            if job.get('name') == 'store' and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
+            if (job.get('name') in {'store', 'upload-new'} or any(str(job.get('name', '')).endswith(' / '+name) for name in ['store', 'upload-new'])) and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
                 return False
     final = api(f'actions/runs/{row["id"]}')
     return final.get('run_attempt') == attempts and final.get('status') == 'completed' and final.get('head_sha') == record['head_sha']
@@ -244,6 +280,8 @@ def import_package():
 
 
 def stage():
+    if os.environ.get('IMPORT_KIND') == 'new-upload':
+        check_new_upload_runs()
     operation = os.environ['RELEASE_STAGE']
     validate_mutation_attempt(operation, int(os.environ['GITHUB_RUN_ATTEMPT']), directory())
     if operation not in {'upload', 'wait', 'status', 'metadata', 'compliance', 'distribute', 'draft'}:
@@ -265,4 +303,4 @@ def stage():
 
 
 if __name__ == '__main__':
-    {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt}[sys.argv[1]]()
+    {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt, 'check-new-upload': check_new_upload_runs}[sys.argv[1]]()
