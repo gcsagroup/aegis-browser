@@ -28,3 +28,9 @@ Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Rel
 目前已驗證的 Apple 系統加密實作，在實際 Info.plist 中宣告布林值 `ITSAppUsesNonExemptEncryption=false`；匯出驗證會比對簽章 App 的同一宣告。加密實作或依賴變更後必須重新評估，歷史 IPA 維持原樣。驗收先讀回 TF 自動識別的 `usesNonExemptEncryption=false`，再考慮明確的合規更新。
 
 候选 Tag 还需独立于工作流代码的仓库保护：[限定规则](../../.github/ios-candidate-admin-ruleset.json) 仅覆盖 `refs/tags/candidate/ios/**/*`，创建、更新、删除只允许仓库 Admin。先以 disabled 准备，通过 GraphQL 确认 role ID5 的 `repositoryRoleName=admin`，再启用并用真实 Admin token 执行 `node scripts/ci/ios-operator.mjs --verify-candidate-tag-policy`。不扩大绕过角色或 Tag 范围。交付权限边界以通过合并流程的 main 代码可信为前提，共享 main 审核治理不在此次 iOS 改动中。
+
+## Actions 精簡版與完整版
+
+`iOS Delivery · 精简版 / Simple` 僅四欄：操作、版本、build、打包產物。操作為僅打包、打包並上傳 TF、查詢狀態、等待處理；查詢/等待只需版本與 build，不需憑據或舊 artifact，且只發送 GET。等待最多五分鐘，不會重傳。
+
+`iOS Delivery · 完整版 / Full` 呼叫同一 reusable workflow；舊包補傳、說明、合規及分發仍需最新成功執行的完整交付憑據。Admin、來源、producer/attempt、原始摘要與防重複校驗保留。詳見[完整操作指引](ios-release.zh-CN.md)。

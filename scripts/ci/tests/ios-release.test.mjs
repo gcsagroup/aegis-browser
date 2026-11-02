@@ -96,30 +96,49 @@ test('every protected delivery route depends on Admin admission and normalized o
   }
 });
 
-test('simple delivery form retains explicit stages and issues receipts only on success', () => {
-  const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
-  const inputs = workflow.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'product', 'target', 'advanced']);
-  assert.equal(inputs.operation.default, '仅打包 / Package');
-  assert.equal(inputs.product.default, '自动 / Auto');
-  assert.deepEqual(inputs.operation.options, ['仅打包 / Package', '上传 TestFlight / Upload', '查询状态 / Status', '完整模式 / Full']);
-  assert(!inputs.operation.options.includes('submit'));
-  assert.equal(inputs.target.required, false);
-  assert.equal(inputs.advanced.default, '{}');
-  assert(workflow['run-name'].includes('fromJSON(inputs.advanced'), 'full mode keeps the selected stage visible to replay inventory');
-  for (const input of Object.values(inputs)) assert(input.description.includes(' / '), 'each field has bilingual guidance');
-  for (const id of ['ios-package', 'store']) {
-    const steps = workflow.jobs[id].steps;
-    const emit = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py receipt');
-    assert(emit > 0);
-    assert.equal(steps[emit].if, undefined, 'receipt uses default success condition');
-    if (id === 'store') {
-      const execute = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py stage');
-      const preserve = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py export');
-      assert(execute < preserve && preserve < emit);
-      assert.equal(steps[preserve].if, '${{ always() }}');
-    }
+test('Simple and Full expose bounded bilingual forms and share the same exact-source engine', () => {
+  const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
+  const simple = workflow('ios-delivery');
+  const full = workflow('ios-delivery-full');
+  const inputs = simple.on.workflow_dispatch.inputs;
+  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product']);
+  assert.deepEqual(inputs.operation.options, ['仅打包 / Package', '打包并上传 TF / Package and upload', '查询状态 / Status', '等待处理 / Wait']);
+  assert.equal(inputs.operation.default, '查询状态 / Status');
+  assert.equal(inputs.version.required, true);
+  assert.equal(inputs.build.required, true);
+  assert(!inputs.source && !inputs.advanced);
+  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'groups', 'stage_input']);
+  assert.deepEqual(Object.keys(full.jobs), ['delivery']);
+  assert.equal(full.jobs.delivery.uses, './.github/workflows/ios-delivery.yml');
+  assert.equal(full.jobs.delivery.with.delivery_mode, 'full');
+  assert.equal(full.jobs.delivery.with.delivery_inputs, '${{ toJSON(inputs) }}');
+  assert(!full.on.push && !full.on.workflow_call);
+  assert.equal(full.permissions.contents, 'write', 'caller must allow the protected Draft job; inner jobs reduce permissions');
+  for (const doc of [simple, full]) {
+    for (const input of Object.values(doc.on.workflow_dispatch.inputs)) assert(input.description.includes(' / '));
+    assert(!JSON.stringify(doc).includes('secrets:inherit'));
+    assert(!JSON.stringify(doc.on).includes('submit'));
   }
+  for (const id of ['ios-package', 'store']) {
+    const steps = simple.jobs[id].steps;
+    const emit = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py receipt');
+    assert(emit > 0 && !steps[emit].if);
+  }
+});
+
+test('version/build-only status has no artifact, signing or mutation route', () => {
+  const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const query = doc.jobs['status-query'];
+  assert.equal(query.needs, 'admission');
+  assert(query.if.includes("== 'status-query'") && query.if.includes("== 'status-wait'"));
+  assert.equal(query.environment, 'aegis-ios-store');
+  const serialized = JSON.stringify(query);
+  for (const forbidden of ['download-artifact', 'ios-action.py', 'RELEASE_MANIFEST_SHA256', 'PACKAGE_RUN_ID', 'AEGIS_IOS_CERT', 'inputs.']) assert(!serialized.includes(forbidden));
+  const auth = query.steps.findIndex(s => s.run?.includes('ios-release-preflight.mjs'));
+  const read = query.steps.findIndex(s => s.run === 'bundle exec ruby scripts/release/ios-status.rb');
+  assert(auth >= 0 && read > auth);
+  assert(query.steps[read].env.AEGIS_ASC_KEY_BASE64.includes('secrets.'));
+  for (const id of ['import', 'store']) assert(doc.jobs[id].if.includes("!= 'status-query'"));
 });
 
 test('candidate admission bounds version components and rejects trailing data before tag lookup', async () => {
@@ -131,4 +150,26 @@ test('candidate admission bounds version components and rejects trailing data be
   for (const tag of [`candidate/ios/${'1'.repeat(128)}.0.0-alpha.6`, 'candidate/ios/1.0.0-release.8\n', 'candidate/ios/1.0.0.0-alpha.6', 'candidate/ios/1.0.0-alpha.0']) {
     await assert.rejects(run(tag), /candidate tag/iu);
   }
+});
+
+test('new-package upload is bound to the successful same-run producer and never loads ASC secrets while signing', () => {
+  const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const packageJob = doc.jobs['ios-package'];
+  assert(packageJob.needs.includes('check-unused'));
+  assert(packageJob.if.includes("needs.check-unused.result == 'success'"));
+  assert.equal(packageJob.env.RELEASE_STAGE, 'package');
+  assert(!JSON.stringify(packageJob).includes('AEGIS_ASC'));
+  const fresh = doc.jobs['check-unused'];
+  assert.equal(fresh.env.RELEASE_QUERY_MODE, 'unused');
+  assert.equal(fresh.environment, 'aegis-ios-store');
+  const upload = doc.jobs['upload-new'];
+  assert.deepEqual(upload.needs, ['admission', 'ios-package']);
+  assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' }}");
+  assert.equal(upload.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
+  assert.equal(upload.env.PACKAGE_RUN_ID, '${{ github.run_id }}');
+  assert.equal(upload.env.IMPORT_KIND, 'new-upload');
+  assert.equal(upload.env.RELEASE_STAGE, 'upload');
+  assert(upload.steps.find(s => s.run?.includes('ios-restore.py')));
+  assert(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py export').if.includes('always()'));
+  assert.equal(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py receipt').if, undefined);
 });

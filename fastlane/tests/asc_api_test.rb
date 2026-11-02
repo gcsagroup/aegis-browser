@@ -77,4 +77,15 @@ class AscApiTest < Minitest::Test
     client.get('apps')
     assert_equal 'Bearer fresh-fixture', observed
   end
+  def test_read_only_queries_reject_all_mutations_before_token_refresh_or_transport
+    calls = 0
+    token = Object.new
+    client = AegisRelease::AscApi.new(token: token, read_only: true, transport: ->(*) { calls += 1 })
+    [:post, :patch, :delete].each do |method|
+      error = assert_raises(AegisRelease::Error) { client.call(method, 'builds/example', {}) }
+      assert_match(/Read-only/, error.message)
+    end
+    assert_equal 0, calls
+  end
+
 end
