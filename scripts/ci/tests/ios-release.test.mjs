@@ -173,3 +173,19 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py export').if.includes('always()'));
   assert.equal(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py receipt').if, undefined);
 });
+
+test('Full explicitly forwards only ASC secret names so protected environment values resolve in reusable jobs', () => {
+  const simple = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const full = parse(readFileSync('.github/workflows/ios-delivery-full.yml', 'utf8'));
+  const expected = ['AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64'];
+  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), expected);
+  assert.deepEqual(Object.keys(full.jobs.delivery.secrets), expected);
+  for (const name of expected) {
+    assert.equal(simple.on.workflow_call.secrets[name].required, true);
+    assert.equal(full.jobs.delivery.secrets[name], '${{ secrets.'+name+' }}');
+  }
+  assert.notEqual(full.jobs.delivery.secrets, 'inherit');
+  for (const id of ['status-query', 'check-unused', 'store', 'upload-new']) assert.equal(simple.jobs[id].environment, 'aegis-ios-store');
+  assert(!JSON.stringify(simple.jobs.admission).includes('secrets.'));
+  assert(!JSON.stringify(simple.jobs['ios-package']).includes('AEGIS_ASC'));
+});
