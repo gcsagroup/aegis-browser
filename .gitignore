@@ -43,3 +43,19 @@ packages/core/dist-worker
 /apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/minim-mlp.json
 /apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/phishlang.onnx
 /apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/phishlang-vocab.txt
+
+# Task-local iOS dependencies and signing diagnostics.
+/.bundle/
+/vendor/bundle/
+/vendor/cache/
+/fastlane/report.xml
+/fastlane/README.md
+/fastlane/.env*
+*.p8
+*.p12
+*.mobileprovision
+*.keychain-db
+
+# Rebuildable Python interpreter caches.
+__pycache__/
+*.py[cod]
