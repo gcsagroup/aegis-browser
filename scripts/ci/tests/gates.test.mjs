@@ -411,7 +411,7 @@ test('push and dispatch identity allow main and develop while rejecting other re
 });
 
 test('workflow validator enforces Mac-only automatic gates and safe manual workflows', () => {
-  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml']
+  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml']
     .map((name) => join(root, '.github/workflows', name));
   const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
   const validate = (args) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args]);
@@ -432,7 +432,21 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
     [0, (w) => { w.jobs['quality-gate'].needs = []; }],
     [0, (w) => { w.jobs['quality-gate'].needs.push('shell-coverage'); }],
     [0, (w) => { w.jobs.quality['runs-on'] = 'ubuntu-24.04'; }],
+    ...[[0, 'quality'], [0, 'quality-gate'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
+      [index, (w) => { w.jobs[job]['runs-on'] = ['self-hosted', 'macOS', 'ARM64', 'aegis-test']; }],
+      [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace("github.event.pull_request.head.repo.full_name == github.repository", 'true'); }],
+      [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace("github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY", 'true'); }],
+      [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace('aegis-test', 'aegis-upstream'); }],
+    ]),
+    ...[[0, 'quality'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
+      [index, (w) => { delete w.jobs[job].steps.find((step) => step.uses?.startsWith('actions/setup-python@')).if; }],
+      [index, (w) => { w.jobs[job].steps.find((step) => step.name === 'Verify preinstalled Python on self-hosted runner').run = 'python3 --version'; }],
+      [index, (w) => { w.jobs[job].steps.find((step) => step.name === 'Verify preinstalled Python on self-hosted runner')['continue-on-error'] = true; }],
+      [index, (w) => { w.jobs[job].steps = w.jobs[job].steps.filter((step) => step.name !== 'Verify preinstalled Python on self-hosted runner'); }],
+    ]),
     [0, (w) => { w.jobs.quality.if = '${{ false }}'; }],
+    [0, (w) => { w.jobs.quality.steps.find((step) => step.uses?.startsWith('pnpm/action-setup@')).with.dest = '~/setup-pnpm'; }],
+    [5, (w) => { w.jobs.extra = structuredClone(w.jobs['cpp-unit-tests']); }],
     [0, (w) => { w.jobs.extra = structuredClone(w.jobs.quality); }],
     [0, (w) => { w.on.pull_request.paths = ['apps/browser/**']; }],
     ...['{}', '{"replacement":"success"}', '{"quality":"success"}', '{"quality":"${{ needs.quality.result }}","extra":"success"}'].map((value) =>
@@ -695,6 +709,13 @@ test('V8 raw validator requires real production Node subprocess evidence', () =>
     writeFileSync(join(directory, 'coverage-valid.json'), `${JSON.stringify({result: urls.map((url) => ({url}))})}\n`);
     let result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
     assert.equal(result.status, 0, result.stderr);
+    const empty = join(directory, 'coverage-empty.json');
+    writeFileSync(empty, '');
+    result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
+    assert.notEqual(result.status, 0, 'An empty report alongside valid coverage unexpectedly passed');
+    assert.match(result.stderr, /invalid JSON: coverage-empty\.json/u);
+    assert.equal(readFileSync(empty).length, 0, 'Validation must preserve the invalid evidence');
+    unlinkSync(empty);
     writeFileSync(join(directory, 'coverage-valid.json'), `${JSON.stringify({result: [{url: urls[0]}]})}\n`);
     result = run(process.execPath, [join(scripts, 'validate-v8-raw.mjs'), '--raw-dir', directory]);
     assert.notEqual(result.status, 0, 'V8 report missing an executed production subprocess unexpectedly passed');
