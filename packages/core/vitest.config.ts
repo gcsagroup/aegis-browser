@@ -8,6 +8,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    execArgv: process.env.NODE_V8_COVERAGE
+      ? ["--import", fileURLToPath(new URL("./vitest-coverage-exit.mjs", import.meta.url))]
+      : [],
     coverage: {
       provider: "v8",
       reportsDirectory: coverageDirectory,

@@ -42,7 +42,9 @@ main() {
   name="ripgrep-${version}-${target}"
   archive="${RUNNER_TEMP}/${name}.tar.gz"
   url="https://github.com/BurntSushi/ripgrep/releases/download/${version}/${name}.tar.gz"
-  curl --fail --location --proto '=https' --tlsv1.2 --retry 3 --output "$archive" "$url"
+  curl --fail --location --proto '=https' --tlsv1.2 --retry 3 \
+    --noproxy "${no_proxy:-},${NO_PROXY:-},github.com,.github.com,githubusercontent.com,.githubusercontent.com" \
+    --output "$archive" "$url"
   printf '%s  %s\n' "$expected" "$archive" | shasum -a 256 --check --status
   tar -xzf "$archive" -C "$RUNNER_TEMP"
   "${RUNNER_TEMP}/${name}/rg" --version
