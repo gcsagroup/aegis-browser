@@ -191,6 +191,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 ## Chromium 集成边界与故障分类
 
+构建身份的补丁 lineage v2 从固定 base 开始逐提交回放，要求每一步的完整树等于对应 applied commit tree，且提交数量、单父顺序及固定选项下的 canonical stable patch-ID 全部匹配。原补丁哈希、header commit SHA、raw patch-ID 和 raw 比较结果继续保留；Python/Git 对等价 diff 的上下文分组不同可以产生 raw mismatch，不将其改记为 raw 匹配。build、finalize/verify 和 status 共用同一 v2 校验；仅最终树相同、仅 blob 子集相同或仅 raw ID 相同均不能放行。v2 不把历史 raw-ID 失败改写为成功，也不替代实际编译、运行和打包验收。
+
 报告中的 `nativeIntegration` 采用保守分类：overlay、patch、C++/GN、Chromium 固定版本及关键生成/同步脚本变更为 `REQUIRED`；未明确分类的产品路径为 `REVIEW_REQUIRED`；纯文档和本基础 CI 变更可为 `NOT_APPLICABLE`。`quality:fast` 中的独立 native runner 不等于固定 Chromium workspace 的 GN/GTest 或浏览器集成证明。
 
 目前没有为公开 PR 确认安全、隔离、可销毁的专用 Chromium runner，因此 C 层保持 `BLOCKED`。不得把日常电脑注册成公开 PR runner，不得让候选 PR 自选可信标签或 SHA，也不得与正在使用 `${LOCAL_WORKSPACE_ROOT}/aegis-chromium-151/src` 的任务并发 reset、重放或构建。后续控制器必须从可信端校验产品 H、Chromium/V8 base、patched tree、patch series、GN args、目标与退出码，并隔离凭据、缓存信任域和构建锁。
