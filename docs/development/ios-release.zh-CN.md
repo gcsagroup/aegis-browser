@@ -18,7 +18,7 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 
 ## Actions 精简版与完整版
 
-两个手动入口共用一套后端，全部字段与操作中英文并列，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
+完整版显式传递三个 ASC 凭据名称，由被调用任务的 `aegis-ios-store` 环境解析原值；不复制凭据、不使用 `secrets: inherit`。两个手动入口共用一套后端，全部字段与操作中英文并列，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
 
 ### 精简版 / Simple
 

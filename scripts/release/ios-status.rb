@@ -5,9 +5,7 @@ require_relative '../../fastlane/lib/ios_status'
 source = AegisRelease.source
 AegisRelease.command('node', File.join(AegisRelease::ROOT, 'scripts/ci/ios-release-preflight.mjs'), '--sha', source.fetch('sha'))
 require 'spaceship'
-require 'base64'
-token = Spaceship::ConnectAPI::Token.create(key_id: ENV.fetch('AEGIS_ASC_KEY_ID'),
-          issuer_id: ENV.fetch('AEGIS_ASC_ISSUER_ID'), key: Base64.strict_decode64(ENV.fetch('AEGIS_ASC_KEY_BASE64')))
+token = Spaceship::ConnectAPI::Token.create(**AegisRelease::BuildStatus.token_options)
 api = AegisRelease::AscApi.new(token: token, read_only: true)
 query = AegisRelease::BuildStatus.new(version: ENV.fetch('RELEASE_VERSION'), build: ENV.fetch('RELEASE_BUILD'), api: api)
 mode = ENV.fetch('RELEASE_QUERY_MODE', 'status')

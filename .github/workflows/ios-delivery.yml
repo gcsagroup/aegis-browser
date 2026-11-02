@@ -29,6 +29,13 @@ on:
           - Release · 通用 / Universal
         default: Alpha · 仅内测 / Internal only
   workflow_call:
+    secrets:
+      AEGIS_ASC_KEY_ID:
+        required: true
+      AEGIS_ASC_ISSUER_ID:
+        required: true
+      AEGIS_ASC_KEY_BASE64:
+        required: true
     inputs:
       delivery_mode:
         type: string
