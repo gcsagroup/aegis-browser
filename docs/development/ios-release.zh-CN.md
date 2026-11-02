@@ -1,5 +1,7 @@
 # iOS 打包与 TestFlight
 
+仓库提供的 `scripts/release/ios-runner.py` 签名 runner 启动入口已禁用。即使已验证 Admin，也会在读取 payload、探测签名密钥、注册或启动 listener 前拒绝；没有绕过开关。队列快照、唯一标签和执行后的身份检查不能保证签名主机隔离。重新启用必须另行实现并审查执行前授权或服务端 workflow 隔离；不得用手动注册的共享或同标签 runner 绕过。本次只禁用该源码入口，未改动任何现存主机、钥匙串或注册；无凭据验证、交付合同和只读查询仍可用。
+
 Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上传后必须读回 `INTERNAL_ONLY`。Beta 可内外测，禁止生产目的地和正式送审。Release 可用于各目的地，每个阶段显式执行。上传不会自动分发、送审或公开发布。
 
 使用干净的已提交源码、Ruby 3.3.6、锁定的 Bundler/Fastlane、Node 22.23.1、Python 3.11+ 和 Xcode。先运行 `bundle install`，再用 `./release ios plan` 读取来源 SHA/tree、原生输入摘要及可用阶段。每次变更必须显式指定 `--profile`。
