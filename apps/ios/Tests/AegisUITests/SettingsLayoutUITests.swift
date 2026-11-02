@@ -19,6 +19,23 @@ final class SettingsLayoutUITests: XCTestCase {
         inspectSettings(largeText: true)
     }
 
+    func testAboutLinksAtLargestTextSize() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+                               "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        XCTAssertTrue(app.buttons["browser-more"].waitForExistence(timeout: 10))
+        openSettings(app)
+        for identifier in ["aegis-website-link", "aegis-support-link", "aegis-privacy-policy-link"] {
+            let link = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+            XCTAssertTrue(reveal(link, app), "关于中的链接必须可达：\(identifier)")
+            assertInsideWindow(link, app)
+            XCTAssertTrue(link.isHittable)
+        }
+        capture("支持与隐私政策入口-最大字体", app)
+        app.terminate()
+    }
+
     func testSettingsPagesInLandscape() {
         XCUIDevice.shared.orientation = .landscapeLeft
         inspectSettings(largeText: false)

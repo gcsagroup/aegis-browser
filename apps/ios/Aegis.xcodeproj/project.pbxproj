@@ -1411,7 +1411,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.agentkit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.agentkit;
 				PRODUCT_NAME = AgentKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1435,7 +1435,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.browserkit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.browserkit;
 				PRODUCT_NAME = BrowserKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1455,7 +1455,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis;
 				PRODUCT_NAME = Aegis;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1605,7 +1605,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.safari;
 				PRODUCT_NAME = SafariWebExtension;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1628,7 +1628,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.policykit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.policykit;
 				PRODUCT_NAME = AegisPolicyKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1648,7 +1648,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.share;
 				PRODUCT_NAME = ShareExtension;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1667,7 +1667,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis;
 				PRODUCT_NAME = Aegis;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -1685,7 +1685,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.tests;
 				PRODUCT_NAME = AegisTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1703,7 +1703,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.uitests;
 				PRODUCT_NAME = AegisUITests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1722,7 +1722,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.safari;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.safari;
 				PRODUCT_NAME = SafariWebExtension;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1741,7 +1741,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.app.share;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.share;
 				PRODUCT_NAME = ShareExtension;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1764,7 +1764,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.policykit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.policykit;
 				PRODUCT_NAME = AegisPolicyKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1788,7 +1788,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.agentkit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.agentkit;
 				PRODUCT_NAME = AgentKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1812,7 +1812,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.browserkit;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.browserkit;
 				PRODUCT_NAME = BrowserKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -1831,7 +1831,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.tests;
 				PRODUCT_NAME = AegisTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1849,7 +1849,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.ios.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.uitests;
 				PRODUCT_NAME = AegisUITests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
