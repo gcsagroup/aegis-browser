@@ -1,0 +1,74 @@
+name: Android Delivery · 精简版 / Simple
+run-name: Android Delivery ${{ inputs.operation }} ${{ inputs.version }}(${{ inputs.build }})
+on:
+  push:
+    branches: [ 'codex/android-release-handoff', 'codex/android-delivery-modes' ]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "操作 / Operation"
+        type: choice
+        options:
+          - 仅打包 / Package
+          - 打包并上传 / Package and upload
+          - 查询状态 / Status
+          - 等待状态 / Wait
+        default: 查询状态 / Status
+      version:
+        description: "版本 / Version（例如 / e.g. 6.1.0.266）"
+        type: string
+        required: true
+      build:
+        description: "版本代码 / Version code（例如 / e.g. 2006000266）"
+        type: string
+        required: true
+      product:
+        description: "打包产物 / Package product（查询时忽略 / ignored for Status and Wait）"
+        type: choice
+        options:
+          - Alpha · 仅内测 / Internal only
+          - Beta · 内外测 / Internal and external
+          - Release · 通用 / Universal
+        default: Alpha · 仅内测 / Internal only
+permissions:
+  contents: read
+  actions: read
+jobs:
+  contracts:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+          bundler-cache: true
+      - uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Locked dependencies and delivery regressions / 锁定依赖与交付回归
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm run ci:test
+  delivery:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/android-release-acceptance' }}
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/android-delivery-backend.yml
+    with:
+      delivery_mode: simple
+      delivery_inputs: ${{ toJSON(inputs) }}
+    secrets:
+      AEGIS_ANDROID_STORE_PASSWORD: ${{ secrets.AEGIS_ANDROID_STORE_PASSWORD }}
+      AEGIS_ANDROID_KEY_PASSWORD: ${{ secrets.AEGIS_ANDROID_KEY_PASSWORD }}
+      AEGIS_PLAY_JSON_KEY_DATA: ${{ secrets.AEGIS_PLAY_JSON_KEY_DATA }}
