@@ -1,0 +1,21 @@
+{
+  "name": "@aegis-local/access-provider-service",
+  "version": "0.0.0-b1",
+  "private": true,
+  "type": "module",
+  "exports": "./app.mjs",
+  "engines": {
+    "node": "22.23.1"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "test": "node --test test/validation.test.mjs test/owner/owner.test.mjs",
+    "test:owner": "node --test --experimental-test-isolation=none test/owner/owner.test.mjs",
+    "test:validation": "node --test test/validation.test.mjs"
+  },
+  "dependencies": {
+    "@aegis-local/access-provider-contract": "file:../access-provider-contract",
+    "jose": "6.2.12",
+    "pg": "8.23.1"
+  }
+}
