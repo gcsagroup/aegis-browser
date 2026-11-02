@@ -8,7 +8,7 @@
   "scripts": {
     "build": "pnpm --filter @gcsa-aegis/core build",
     "ci:quality": "node ./scripts/ci/run-quality.mjs",
-    "ci:test": "node --test ./scripts/ci/tests/*.test.mjs",
+    "ci:test": "node --test --test-concurrency=1 ./scripts/ci/tests/*.test.mjs",
     "ci:validate-workflow": "node ./scripts/ci/validate-workflow.mjs .github/workflows/quality.yml && node ./scripts/ci/validate-promotion-workflow.mjs",
     "ci:check-public-diff": "node ./scripts/ci/check-public-diff.mjs",
     "quality:static": "node ./scripts/dev/run-static-checks.mjs",
