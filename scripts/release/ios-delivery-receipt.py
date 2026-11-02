@@ -3,6 +3,7 @@ import re
 
 OPERATION_LABELS = {
     'package': '仅打包 / Package',
+    'package-upload': '打包并上传 TF / Package and upload',
     'draft': '私有草稿 / Draft',
     'upload': '上传 TestFlight / Upload',
     'wait': '等待处理 / Wait',
@@ -33,7 +34,10 @@ def decode(value):
     if not isinstance(value, str) or len(value) > 256:
         raise ValueError('Invalid delivery receipt')
     fields = value.split(':')
-    if len(fields) != 8 or fields[0] != 'aegis-ios-v1':
+    same_run_uploaded = len(fields) == 9 and fields[0] == 'aegis-ios-v2' and fields[-1] == 'uploaded'
+    if same_run_uploaded:
+        fields = fields[:-1]
+    if len(fields) != 8 or (fields[0] != 'aegis-ios-v1' and not same_run_uploaded):
         raise ValueError('Copy the complete delivery receipt from the last successful run summary')
     _, profile, version, build, package_run, state_run, attempt, digest = fields
     if (profile not in {'alpha', 'beta', 'release'} or
@@ -42,12 +46,16 @@ def decode(value):
             any(re.fullmatch(r'[1-9][0-9]{0,15}', item) is None for item in [package_run, state_run, attempt]) or
             re.fullmatch(r'[0-9a-f]{64}', digest) is None):
         raise ValueError('Invalid delivery receipt identity')
+    if same_run_uploaded and package_run != state_run:
+        raise ValueError('Invalid same-run uploaded receipt')
     return dict(profile=profile, version=version, build=build, package_run_id=package_run,
-                upload_run_id='' if state_run == package_run else state_run,
+                upload_run_id='' if state_run == package_run and not same_run_uploaded else state_run,
                 source_attempt=attempt, manifest_sha256=digest)
 
 
-def encode(profile, version, build, package_run, state_run, attempt, digest):
+def encode(profile, version, build, package_run, state_run, attempt, digest, uploaded=False):
     value = ':'.join(map(str, ['aegis-ios-v1', profile, version, build, package_run, state_run, attempt, digest]))
+    if uploaded and str(package_run) == str(state_run):
+        value = value.replace('aegis-ios-v1:', 'aegis-ios-v2:', 1) + ':uploaded'
     decode(value)
     return value
