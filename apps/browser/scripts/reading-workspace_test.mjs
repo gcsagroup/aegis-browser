@@ -17,12 +17,18 @@ const code = ts.transpileModule(readFileSync(base + 'reading_workspace.ts', 'utf
 const exports = {};
 const localCalls = [];
 let localReply = {ready: false};
+let researchManifest = {minim: {bundled: false}, phishlang: {bundled: false}};
+let manifestAvailable = true;
+const fetches = [];
 class LocalAiClient {
   async run(request) { localCalls.push(request); return localReply; }
   cancel() {}
 }
 vm.runInNewContext(code, {exports, document, window: dom.window,
-  fetch: async () => ({ok: true, json: async () => ({minim: {bundled: false}, phishlang: {bundled: false}})}),
+  fetch: async url => {
+    fetches.push(url);
+    return {ok: manifestAvailable, json: async () => researchManifest};
+  },
   require: name => name.includes('language_packs') ? {packText: zh => zh, LanguagePacks: class {
     fillDirections(select, text, selected) {
       for (const value of ['zh-en', 'fr-en']) { const option = document.createElement('option'); option.value = value; select.append(option); }
@@ -60,6 +66,33 @@ const workspace = new exports.ReadingWorkspace(proxy);
 const el = id => document.getElementById('reading-' + id);
 const event = (node, type) => node.dispatchEvent(new dom.window.Event(type));
 const flush = () => new Promise(resolve => setImmediate(resolve));
+// 清单使用索引签名；读取两个资源状态不下载资源，也不启动研究模型。
+await flush();
+for (const manifest of [
+  {minim: {bundled: false}, phishlang: {bundled: false}},
+  {minim: {bundled: false}, phishlang: {bundled: true}},
+  {minim: {bundled: true}, phishlang: {bundled: false}},
+  {},
+]) {
+  researchManifest = manifest;
+  await workspace.describeExperiments();
+  for (const name of ['minim', 'phishlang']) {
+    assert.equal(el(name + '-resource').textContent.includes('当前版本未包含模型资源'),
+        manifest[name]?.bundled === false);
+    assert.equal(el(name + '-resource').textContent.includes('模型清单已载入'),
+        manifest[name]?.bundled !== false);
+  }
+}
+manifestAvailable = false;
+await workspace.describeExperiments();
+for (const name of ['minim', 'phishlang']) {
+  assert.equal(el(name + '-resource').textContent, '无法读取资源状态，请重新打开本页。');
+}
+assert.ok(fetches.every(url => url === './local_ai/research_manifest.json'));
+assert.equal(localCalls.length, 0);
+manifestAvailable = true;
+researchManifest = {minim: {bundled: false}, phishlang: {bundled: false}};
+await workspace.describeExperiments();
 // 实验分类独立展开时回读原开关，不依赖翻译卡片，也不启动本机模型。
 reply.minimEnabled = true; reply.phishlangEnabled = false;
 el('research-settings').open = true; event(el('research-settings'), 'toggle');
