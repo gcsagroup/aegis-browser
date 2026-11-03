@@ -96,14 +96,24 @@ test('every protected delivery route depends on Admin admission and normalized o
   }
 });
 
-test('Simple and Full expose bounded bilingual forms and share the same exact-source engine', () => {
+test('Simple and Full expose bounded English forms and share the same exact-source engine', () => {
   const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
   const simple = workflow('ios-delivery');
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
   assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product']);
-  assert.deepEqual(inputs.operation.options, ['仅打包 / Package', '打包并上传 TF / Package and upload', '查询状态 / Status', '等待处理 / Wait']);
-  assert.equal(inputs.operation.default, '查询状态 / Status');
+  assert.equal(simple.name, 'iOS Delivery · Simple');
+  assert.equal(full.name, 'iOS Delivery · Full');
+  assert.deepEqual(inputs.operation.options, ['Package', 'Package and upload', 'Status', 'Wait']);
+  assert.deepEqual(inputs.product.options, ['Alpha', 'Beta', 'Release']);
+  assert.equal(inputs.product.default, 'Alpha');
+  const fullInputs = full.on.workflow_dispatch.inputs;
+  assert.deepEqual(fullInputs.operation.options, [
+    'Package', 'Package and upload', 'Draft', 'Upload', 'Wait', 'Status',
+    'Metadata', 'Compliance', 'Distribute internal', 'Distribute external',
+  ]);
+  assert.deepEqual(fullInputs.product.options, ['Auto', ...inputs.product.options]);
+  assert.equal(fullInputs.product.default, 'Auto');
   assert.equal(inputs.version.required, true);
   assert.equal(inputs.build.required, true);
   assert(!inputs.source && !inputs.advanced);
@@ -115,7 +125,8 @@ test('Simple and Full expose bounded bilingual forms and share the same exact-so
   assert(!full.on.push && !full.on.workflow_call);
   assert.equal(full.permissions.contents, 'write', 'caller must allow the protected Draft job; inner jobs reduce permissions');
   for (const doc of [simple, full]) {
-    for (const input of Object.values(doc.on.workflow_dispatch.inputs)) assert(input.description.includes(' / '));
+    assert.equal(doc.on.workflow_dispatch.inputs.operation.default, 'Status');
+    assert.doesNotMatch(JSON.stringify(doc.on.workflow_dispatch.inputs), /\p{Script=Han}/u);
     assert(!JSON.stringify(doc).includes('secrets:inherit'));
     assert(!JSON.stringify(doc.on).includes('submit'));
   }
