@@ -1,0 +1,21 @@
+libtorrent-rasterbar 2.1.1 — bundled routing-header source
+
+The unmodified include/libtorrent/aux_/route.h source, including its Apple/APSL
+and UC Berkeley notices, accompanies the macOS distribution in:
+  GCSA-aegis.app/Contents/Resources/AegisLibtorrentRouteSource.txt
+
+Its exact source is also retained in Aegis's source tree as UPSTREAM_ROUTE_H.txt
+next to this notice. Source SHA-256:
+  3a32fc91cdb7ea12d0acc468072ae4e9de163939872ff277391032d8d4fc8929
+
+It was imported without modification from the archive pinned in README.aegis:
+  libtorrent-rasterbar-2.1.1.tar.gz
+  SHA-256: 0f163516ecef2e3331500266751de3098835a3c3ae0c2290448046c632bc0e93
+  https://sourceforge.net/projects/libtorrent.mirror/files/v2.1.1/
+
+UPSTREAM_LICENSE.txt preserves the archive's complete top-level LICENSE,
+including bundled component notices. APSL-2.0.txt contains Apple's full terms,
+obtained from https://github.com/apple-oss-distributions/xnu/blob/main/APPLE_LICENSE
+(SHA-256 e5881019d8766c1e88a5fe1dbca4ba40c78011d41fcb18f6e9f50df60182685b).
+The source and license supplement does not qualify the mirror, host dependencies
+or the resulting application for production release.

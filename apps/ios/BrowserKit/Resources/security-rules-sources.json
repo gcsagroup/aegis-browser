@@ -4,7 +4,12 @@
     {
       "url": "https://github.com/blocklistproject/Lists",
       "file": "phishing.txt",
-      "license": "Unlicense (repository LICENSE; upstream list header still says MIT)",
+      "license": "MIT (file header); Unlicense (repository LICENSE retained)",
+      "revision": "dbf845d69d21765c2cffc1d190ed62660f08a070",
+      "sourceUrl": "https://github.com/blocklistproject/Lists/blob/dbf845d69d21765c2cffc1d190ed62660f08a070/phishing.txt",
+      "licenseNotice": "phishing-LICENSE.txt",
+      "licenseResolution": "Both upstream declarations retained with attribution and MIT terms; no dual-license grant inferred",
+      "repositoryLicenseSha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e",
       "count": 190191,
       "sha256": "4407e6b9af2fa1e4def92ed523643a3380448fde81837341ffc596c6e781f134",
       "upstreamModified": "2026-07-06"
