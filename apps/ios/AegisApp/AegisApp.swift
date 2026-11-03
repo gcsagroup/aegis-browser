@@ -3,6 +3,11 @@ import AgentKit
 import SwiftUI
 
 final class AegisAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        AegisFirebase.shared.start()
+        return true
+    }
+
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
         guard identifier == "com.gcsa.aegis.ios.downloads.v1" else { completionHandler(); return }
