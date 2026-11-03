@@ -24,14 +24,14 @@ File.write(path, JSON.pretty_generate(value) + "\n")
 puts JSON.pretty_generate(value)
 if ENV['GITHUB_STEP_SUMMARY']
   remote = value.fetch('remote')
-  fields = { '版本 / Version' => value.fetch('version'), '构建号 / Build' => value.fetch('build'),
-             '处理状态 / Processing' => remote.fetch('processingState'), 'Audience' => remote['buildAudienceType'],
-             '内测 / Internal' => remote['internalState'], '外测 / External' => remote['externalState'],
-             '过期 / Expired' => remote['expired'], '查询时间 / Observed' => remote['observedAt'] }
+  fields = { 'Version' => value.fetch('version'), 'Build' => value.fetch('build'),
+             'Processing' => remote.fetch('processingState'), 'Audience' => remote['buildAudienceType'],
+             'Internal' => remote['internalState'], 'External' => remote['externalState'],
+             'Expired' => remote['expired'], 'Observed' => remote['observedAt'] }
   File.open(ENV['GITHUB_STEP_SUMMARY'], 'a') do |summary|
-    summary.puts "## TestFlight 状态 / Status\n\n| 项目 / Field | 结果 / Value |\n|---|---|"
+    summary.puts "## TestFlight Status\n\n| Field | Value |\n|---|---|"
     fields.each { |key, item| summary.puts "| #{key} | #{item.nil? ? '-' : item.to_s.gsub('|', '&#124;').gsub(/[\r\n]/, ' ')} |" }
-    summary.puts "\n只读查询；不上传、不分发、不送审。 / Read only; no upload, distribution or submission."
-    summary.puts "\n#{remote['processingState'] == 'NOT_FOUND' ? '未找到该版本/build；没有自动选择最新 build。 / Exact version/build not found; no latest-build fallback.' : '结果来自 Apple。包型不能仅凭 audience 推断；未验证原包来源。 / Apple state only; audience does not identify Beta versus Release or verify package provenance.'}"
+    summary.puts "\nThis operation reads TestFlight status."
+    summary.puts "\n#{remote['processingState'] == 'NOT_FOUND' ? 'Apple did not return a build for this exact version and build number.' : 'Apple state only; audience does not identify Beta versus Release or verify package provenance.'}"
   end
 end
