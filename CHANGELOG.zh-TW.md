@@ -6,11 +6,19 @@
 
 軟體套件、歷史 iOS 開發候選及原始碼預覽各自使用獨立於 App Store 的版本號。
 
+## iOS / iPadOS 1.0.1 · TestFlight
+
+- 完成三種交付方式驗證：手動 Fastlane 使用 Alpha 組建 8、GitHub Actions 使用 Beta 組建 12、Tag → Draft Release 使用 Release 組建 11；三者均已完成 Apple 處理。
+- 本機簽名指令碼自動尋找下載目錄中的 App Store Connect 憑證資料，透過 API 取得應用程式與擴充功能的三份描述檔，並讀取本機密碼檔案解鎖專用簽名鑰匙圈；匯出的簽名檔案採用不含日期的固定名稱。[簽名自動化](https://github.com/gcsagroup/aegis-browser/pull/68)
+- 修復 Tag 打包成功後 Draft Release 被略過的問題，新增相依工作略過情境的回歸測試。[工作流程修復](https://github.com/gcsagroup/aegis-browser/pull/67)
+- Beta 組建 12 已關聯現有 Aegis Beta 外部測試群組，並提交 Apple Beta 審核，目前等待審核。[TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx)
+
 ## iOS / iPadOS 1.0.0 · App Store 上架
 
 - 準備應用程式與擴充功能的識別碼和送審資料。[商店審核準備](docs/releases/ios-app-store-preparation-2026-11-02.zh-CN.md)
-- 組建 38 作為 1.0.0 正式版候選通過 Apple 審核。[候選原始碼標籤](https://github.com/gcsagroup/aegis-browser/tree/candidate/ios/1.0.0-release.38)
+- 組建 38 通過 Apple 審核，並作為正式 GitHub Release 發布簽名 IPA、相符的 dSYM、清單與校驗檔案；正式標籤指向線上安裝套件的實際建置原始碼。[正式發行與下載](https://github.com/gcsagroup/aegis-browser/releases/tag/ios/1.0.0-release.38)
 - 2026-11-03 確認 iPhone 和 iPad 版已在 App Store 上架，並核實獨立的 TestFlight 外部測試邀請。[App Store](https://apps.apple.com/tw/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx)
+- 其餘 1.0.0 TestFlight 組建已設為過期，舊 iOS 測試標籤與測試發行已清理，保留線上組建 38 及其正式發行。Apple 已關閉 1.0.0 的新 Beta 審核入口，外部測試改用 1.0.1 Beta 組建 12。
 
 ## 2026-10-13 · 桌面 4.0 與 iOS 6.0 原始碼整合
 
@@ -52,7 +60,7 @@ iPhone 底部單行網址列、iPad 頂部單行工具列；網頁移除卡片�
 
 iOS Ver 3.0 開發候選：記錄備份還原、分頁按需載入和記憶體釋放、下載與資料管理、三種模型介面串流回答及鍵盤操作。尚未發佈；詳見 [Ver 3.0 驗證記錄](docs/audit/ios-3-0-2026-10-04.zh-CN.md)。
 
-## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
+## ios-v2.2.0-preview.1 · 歷史原始碼預覽 — 2026-10-03
 
 ### 新增
 
@@ -67,7 +75,7 @@ iOS Ver 3.0 開發候選：記錄備份還原、分頁按需載入和記憶體�
 
 - 修復視窗初始化期間發布共用狀態的 SwiftUI 警告；私密頁面及分組不寫入視窗記錄。
 - 保留上游 Swift 覆蓋率及輸入雜湊檢查；版本遞增及專案產生後凍結輸入，獨立工作樹可沿用固定建置目錄。
-- 三語介面、隱私清單與模擬器驗證見[發布說明](docs/releases/ios-2.2.0-preview.1.zh-CN.md)。GitHub 提供原始碼預發布，尚無可安裝的簽章 IPA；實機、VoiceOver 全流程、TestFlight 及 App Store 驗收仍待完成。
+- 三語介面、隱私清單與模擬器驗證見[歷史預覽說明](docs/releases/ios-2.2.0-preview.1.zh-CN.md)。該預覽沒有可安裝的簽章 IPA，未完成實機、VoiceOver 全流程、TestFlight 及 App Store 驗收；舊預覽 Draft Release 已隨 iOS 發行清理移除。
 
 ## [未發布]
 
