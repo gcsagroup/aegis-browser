@@ -12,33 +12,21 @@ precondition(Bundle.preferredLocalizations(from: bundle.localizations, forPrefer
 
 let tableURL = bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: resolved)!
 let table = try PropertyListSerialization.propertyList(from: Data(contentsOf: tableURL), format: nil) as! [String: String]
-let keys = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[3]))) as! [String]
-for key in keys {
-    precondition(bundle.localizedString(forKey: key, value: "MISSING", table: nil) == table[key],
+let source = try JSONDecoder().decode([String: [String: String]].self,
+    from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[3])))
+let expectedTable = source[resolved]!
+precondition(table == expectedTable, "Compiled catalog differs from source for \(locale)")
+for (key, literal) in expectedTable {
+    precondition(bundle.localizedString(forKey: key, value: "MISSING", table: nil) == literal,
                  "Failed resource lookup for \(locale): \(key)")
 }
-if !["en", "zh-Hans", "zh-Hant"].contains(resolved) {
-    let englishURL = bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: "en")!
-    let english = try PropertyListSerialization.propertyList(from: Data(contentsOf: englishURL), format: nil) as! [String: String]
-    // Check actual consent/deletion copy, not merely the existence of a resource.
-    // The catalog's needs_review entries must be emitted by xcstringstool.
-    let fallbackKeys = [
-        "将资料发送给模型？", "确认发送",
-        "你正在私密浏览。确认后，所选页面内容会离开本机，模型服务可能保留请求或回答。Aegis 不会自动保存此次任务记录。",
-        "所选页面的标题和脱敏正文将发送到 %@，使用模型 %@。服务可能按用量收费。",
-        "清除网站数据？", "清除并关闭普通标签",
-        "将关闭普通标签并清除 Cookie、网站存储和缓存。网站登录会退出，收藏和工作区会保留。",
-    ]
-    for key in fallbackKeys {
-        guard let expected = english[key], !expected.isEmpty, expected != key else {
-            preconditionFailure("Missing English regression copy: \(key)")
-        }
-        precondition(table[key] == expected, "Compiled fallback mismatch for \(locale): \(key)")
-        precondition(bundle.localizedString(forKey: key, value: nil, table: nil) == expected,
-                     "English fallback lookup failed for \(locale): \(key)")
-    }
-    print("PASS \(locale): \(fallbackKeys.count) English consent/deletion fallbacks")
+let probes = try JSONDecoder().decode([String: [String: String]].self,
+    from: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[7])))
+for (key, translations) in probes {
+    precondition(bundle.localizedString(forKey: key, value: "MISSING", table: nil) == translations[resolved],
+                 "Consent/data-boundary literal changed for \(locale): \(key)")
 }
+print("PASS \(locale): \(expectedTable.count) source/compiled lookups; \(probes.count) consent/data-boundary literals")
 for target in ["AegisApp", "ShareExtension", "SafariWebExtension"] {
     let native = Bundle(path: CommandLine.arguments[4] + "/\(target).bundle")!
     precondition(native.preferredLocalizations.first == resolved)
