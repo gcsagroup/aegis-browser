@@ -10,33 +10,19 @@
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![当前平台：macOS](https://img.shields.io/badge/current-macOS-555?logo=apple&logoColor=white)](apps/browser)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store 1.0.0](https://img.shields.io/badge/App_Store-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/cn/app/gcsa-aegis/id6827988433) [![TestFlight Beta](https://img.shields.io/badge/TestFlight-Beta-1976D2?logo=testflight&logoColor=white)](https://testflight.apple.com/join/EwUW1VDx)
 
-**一个本地优先的隐私与安全浏览器，内置可控的 AI Agent。macOS 优先，随后推进 iPhone 与 iPad。**
+**一个本地优先的隐私与安全浏览器，内置可控的 AI Agent。**
 
 [开始参与](#开始参与) · [平台进度](#平台进度) · [路线图](docs/roadmap.zh-CN.md) · [文档](docs/README.zh-CN.md)
 
-Aegis 正在开发中，尚无通过发行验收的可分发版本。
-
-> **2026-10-13 · 桌面 4.0 与 iOS 6.0 源码整合：** 整合阅读批注、本机中英翻译与质量提示、网站增强、受控用户脚本、Markdown 阅读及 iOS 网页防护；Google 服务缺少配置时仅在主动使用对应功能后提示。 本次是源码提交，不是正式发行。公开源码不包含许可尚未明确的 MINIM、PhishLang 权重及配套词表，本地实验文件保留。 [2026-10-13](docs/audit/github-source-integration-2026-10-13.zh-CN.md) · [2026-10-14](docs/audit/windows-actions-2026-10-13.zh-CN.md)
-
-> **2026-10-12 · iOS Ver 5.0 网页保护：** 钓鱼主机与页面结构检查、独立挖矿/指纹资源拦截、系统加固和默认关闭的严格指纹限制。规则随 App 更新；未知行为只提示。 [使用说明](docs/ios-webkit-protection.zh-CN.md) · [验收记录](docs/audit/ios-webkit-protection-2026-10-12.zh-CN.md)
-
-> **2026-10-11 · iOS Ver 4.0 可移植功能：** 新增搜索与网站设置、加密阅读批注、PDF 文字层、翻译确认、有限浏览器操作和下载网络规则。 [功能使用说明](docs/ios-portable-features.zh-CN.md) · [四端功能对照](docs/platform-features.zh-CN.md) · [验收记录](docs/audit/ios-portable-features-2026-10-11.zh-CN.md) 双模拟器集中测试、修复复测及实际操作已完成，该轮候选为 Ver 4.0 (82)。
-
-> **2026-10-09 · Chromium 155 与 Quinn 改动整合：** 本次源码更新统一纳入原生鼠标手势、Quinn 的 W2 双节点租约/双 relay 与 SM-00 离线预检、Agent 修复及 iOS 下载恢复修复。Mac 候选为 Ver 2.2 (144)，桌面基线 `155.0.8059.40`；整合范围、验收和保留边界见[整合记录](docs/audit/main-quinn-integration-2026-10-09.zh-CN.md)，合入路径为 [#32](https://github.com/gcsagroup/aegis-browser/pull/32)。网络计量仍是本地原型，正式跨平台发行尚未完成。
-
-> **2026-10-09 · iOS Ver 3.2 (69) 主线整合：** 紧凑界面、私密确认与下载管理已接入 main 的后台恢复保护；iPhone 194 项通过、1 项 iPad 专属检查跳过；iPad 195 项通过。范围和证据见[整合记录](docs/audit/ios-main-merge-2026-10-09.zh-CN.md)。本次没有发布签名安装包。
-
-> **2026-10-05 · iOS Ver 3.2 (63) 开发候选：** iPhone/iPad 紧凑工具栏与私密模式功能已完成模拟器验证。私密浏览不自动记录历史、会话或 AI 任务；主动保存、下载和模型发送需确认。见[工程指南](apps/ios/README.zh-CN.md)与[验证记录](docs/audit/ios-private-mode-2026-10-05.zh-CN.md)。已发布源码预览仍为 2.2。
-
-> **2026-10-03 · iOS 2.2.0 源码预发布：** 网页助手、广告过滤、下载、工作区、标签分组与独立 iPad 窗口已集成；验证范围与使用方式见[发布说明](docs/releases/ios-2.2.0-preview.1.zh-CN.md)。尚无可安装的签名 IPA。
+GCSA Aegis 1.0.0 已在 App Store 上架，支持 iPhone 和 iPad。外部 Beta 可通过 TestFlight 加入。此前的开发里程碑见[变更日志](CHANGELOG.zh-CN.md)。
 
 ## 核心能力
 
 | 能力 | 用途 | 平台与当前阶段 |
 | --- | --- | --- |
-| 隐私浏览 | 在 macOS 上通过链接、Cookie、钓鱼及部分指纹保护减少追踪与高风险导航；原生 App 隔离普通与私密配置。 | macOS：源码已包含，运行验收待完成。iOS/iPadOS：3.2 私密模式验证与 2.2 源码预发布说明见上方链接。 |
+| 隐私浏览 | 在 macOS 上通过链接、Cookie、钓鱼及部分指纹保护减少追踪与高风险导航；原生 App 隔离普通与私密配置。 | macOS：源码已包含，运行验收待完成。iOS/iPadOS：支持私密浏览，使用独立会话，保存内容或发送给模型前需要确认。 |
 | 可控 Agent | 展示计划，由浏览器策略约束操作，并在敏感操作前请求确认。 | macOS：源码已包含，运行验收待完成。iOS/iPadOS：支持确认后的网页模型请求，以及对已保存收藏的单独授权整理。 |
 | 原生下载 | 使用 Chromium 浏览器下载界面及受限的下载路径。 | macOS：源码已包含，运行验收待完成。 |
 | 访问策略 | 通过原生代理组件路由选定流量；必要路径不可用时按 fail-closed 处理。 | macOS：源码已包含，集成与真实网络验收待完成。 |
@@ -68,10 +54,10 @@ mise exec -- pnpm run quality:fast
 
 ## 平台进度
 
-| 平台 | 优先级 | 状态 |
+| 平台 | 阶段 | 状态 |
 | --- | --- | --- |
 | macOS | 当前 | Chromium 集成和 Access Service 持续推进；当前源码的运行与分发验收仍待完成。 |
-| iOS / iPadOS | 下一阶段 | 原生 SwiftUI/WKWebView 3.2 完成模拟器功能检查；源码预发布仍为 2.2，真机与分发验收待完成。 |
+| iOS / iPadOS | 已上架 | 原生 SwiftUI/WKWebView 应用。[App Store 1.0.0](https://apps.apple.com/cn/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
 | Windows / Android / Linux | 后续 | 已有源码和评估入口；当前不承诺近期发行。 |
 
 macOS 可独立于 iOS 达到发行条件。完成标准见[路线图](docs/roadmap.zh-CN.md)。
@@ -108,7 +94,8 @@ GCSA 原创源码采用 [Apache-2.0](LICENSE)。第三方组件保留各自许�
 - **CI：**公开 `main` 分支的质量检查。
 - **C++ 单元测试：**standalone Access 测试、Chromium GoogleTest 接线与补丁检查。
 - **Codacy Grade：**上游 `main` 的静态分析，不是测试覆盖率。
+- **App Store** 显示 iOS/iPadOS 公开版本。**TestFlight Beta** 链接到外部测试邀请。
 
-这些徽章不代表浏览器运行或发行验收通过。
+CI 和静态分析徽章反映源码检查结果。
 
 </details>
