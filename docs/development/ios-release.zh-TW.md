@@ -29,6 +29,12 @@ Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Rel
 
 候选 Tag 还需独立于工作流代码的仓库保护：[限定规则](../../.github/ios-candidate-admin-ruleset.json) 仅覆盖 `refs/tags/candidate/ios/**/*`，创建、更新、删除只允许仓库 Admin。先以 disabled 准备，通过 GraphQL 确认 role ID5 的 `repositoryRoleName=admin`，再启用并用真实 Admin token 执行 `node scripts/ci/ios-operator.mjs --verify-candidate-tag-policy`。不扩大绕过角色或 Tag 范围。交付权限边界以通过合并流程的 main 代码可信为前提，共享 main 审核治理不在此次 iOS 改动中。
 
+## 本地自動準備簽名
+
+在鎖定的 Ruby/Bundler 執行環境中執行 `python3 scripts/release/local-ios-signing.py --team "$AEGIS_APPLE_TEAM_ID" --certificate-sha1 "$AEGIS_IOS_CERT_SHA1" --unlock`。腳本從下載目錄讀取現有私密 ASC 設定和金鑰，只解析賦值、不執行 shell；以唯讀 Connect API 下載及校驗三份現有 App Store profile，安裝缺少的 profile。匯出名稱固定為 `Aegis-AppStore-App.mobileprovision`、`Aegis-AppStore-Safari.mobileprovision`、`Aegis-AppStore-Share.mobileprovision`，不加日期；三個產品渠道共用，遠端 profile 與 Bundle ID 名稱也沿用不含日期的命名。
+
+`--unlock` 從憑證指紋相符的材料目錄讀取私密 `EXISTING-KEYCHAIN-PASSWORD.txt`，透過 macOS Security API 解鎖現有非登入簽名鑰匙圈，密碼不進入命令列、日誌、回執或 AI 介面操作。不更動登入／系統鑰匙圈、共用 ACL、分區或搜尋清單；既有私鑰授權仍由系統執行。缺失、衝突、符號連結、非私密輸入及驗證失敗均停止，不重試密碼或退回界面自動填寫。驗證回執位於 `.artifacts/ios-signing/app-store/signing-receipt.json`。
+
 ## Actions 精簡版與完整版
 
 `iOS Delivery · Simple` 僅四欄：操作、版本、build、打包產物。操作為僅打包、打包並上傳 TF、查詢狀態、等待處理；查詢/等待只需版本與 build，不需憑據或舊 artifact，且只發送 GET。等待最多五分鐘，不會重傳。
