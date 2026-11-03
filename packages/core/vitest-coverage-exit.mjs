@@ -88,10 +88,11 @@ if (workerEntry) {
 
 // Also load this module as a parent reporter. Vitest 5 can take its run-end
 // error snapshot before receiving the stop response. onClose runs after the
-// pool has closed; throwing here feeds Vitest's close-error exit-code check.
+// pool has closed. Reject asynchronously so Vitest collects the close error
+// without aborting the remaining close hooks, cleanup and trace finalization.
 export default class CoverageHandoffReporter {
   onInit(vitest) {
-    vitest.onClose(() => {
+    vitest.onClose(async () => {
       const errors = vitest.state.getUnhandledErrors().filter(error =>
         error.message?.startsWith('V8 worker coverage handoff failed:'));
       if (errors.length) throw new AggregateError(errors, 'V8 worker coverage handoff failed during teardown');
