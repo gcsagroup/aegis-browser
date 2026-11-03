@@ -174,12 +174,14 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert.equal(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py receipt').if, undefined);
 });
 
-test('Full explicitly forwards only ASC secret names so protected environment values resolve in reusable jobs', () => {
+test('Full explicitly forwards named secrets while protected jobs resolve environment values', () => {
   const simple = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const full = parse(readFileSync('.github/workflows/ios-delivery-full.yml', 'utf8'));
   const expected = ['AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64'];
-  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), expected);
-  assert.deepEqual(Object.keys(full.jobs.delivery.secrets), expected);
+  const signing = ['AEGIS_IOS_DISTRIBUTION_P12_BASE64', 'AEGIS_IOS_DISTRIBUTION_P12_PASSWORD',
+    'AEGIS_IOS_APP_PROFILE_BASE64', 'AEGIS_IOS_SAFARI_PROFILE_BASE64', 'AEGIS_IOS_SHARE_PROFILE_BASE64'];
+  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), [...expected, ...signing]);
+  assert.deepEqual(Object.keys(full.jobs.delivery.secrets), [...expected, ...signing]);
   for (const name of expected) {
     assert.equal(simple.on.workflow_call.secrets[name].required, true);
     assert.equal(full.jobs.delivery.secrets[name], '${{ secrets.'+name+' }}');
@@ -188,4 +190,26 @@ test('Full explicitly forwards only ASC secret names so protected environment va
   for (const id of ['status-query', 'check-unused', 'store', 'upload-new']) assert.equal(simple.jobs[id].environment, 'aegis-ios-store');
   assert(!JSON.stringify(simple.jobs.admission).includes('secrets.'));
   assert(!JSON.stringify(simple.jobs['ios-package']).includes('AEGIS_ASC'));
+  for (const name of signing) {
+    assert.equal(simple.on.workflow_call.secrets[name].required, false);
+    assert.equal(full.jobs.delivery.secrets[name], '${{ secrets.'+name+' }}');
+  }
+});
+
+test('hosted signing loads only environment secrets after source admission and cleans up before artifact upload', () => {
+  const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const job = doc.jobs['ios-package'];
+  assert.equal(job['runs-on'], 'macos-26');
+  assert.equal(job.environment, 'aegis-ios-signing');
+  assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
+  const setup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py setup');
+  const source = job.steps.findIndex(s => s.run?.includes('ios-release-preflight.mjs'));
+  const pack = job.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py package');
+  const cleanup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
+  const upload = job.steps.findIndex(s => s.uses?.startsWith('actions/upload-artifact@'));
+  assert(source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
+  assert.equal(job.steps[cleanup].if, '${{ always() }}');
+  assert.equal(Object.keys(job.steps[setup].env).length, 5);
+  assert(Object.values(job.steps[setup].env).every(v => v.startsWith('${{ secrets.AEGIS_IOS_')));
+  assert(!JSON.stringify(doc.jobs.admission).includes('secrets.'));
 });
