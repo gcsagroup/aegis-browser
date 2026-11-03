@@ -3,7 +3,8 @@
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {
-  lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync,
+  closeSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync,
+  writeFileSync,
 } from 'node:fs';
 import {tmpdir} from 'node:os';
 import {basename, isAbsolute, join, resolve} from 'node:path';
@@ -21,16 +22,35 @@ function requireCondition(condition, message) {
 }
 
 function git(checkout, args, input, extraEnv = {}) {
-  const result = spawnSync('git', [
-    '--no-replace-objects', '-c', 'core.splitIndex=false', '-c', 'diff.relative=false',
-    ...args,
-  ], {
-    cwd: checkout, input, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
-    env: {...process.env, GIT_OPTIONAL_LOCKS: '0', ...extraEnv},
-  });
-  requireCondition(result.status === 0,
-    `git ${args.join(' ')} failed: ${result.stderr?.trim() || result.error?.message || result.status}`);
-  return result.stdout;
+  let inputDirectory;
+  let inputDescriptor;
+  try {
+    // Give large synchronous Git inputs a finite regular-file stdin. On macOS,
+    // pipe-backed input can leave Git and spawnSync waiting for each other.
+    if (input !== undefined) {
+      inputDirectory = mkdtempSync(join(tmpdir(), 'aegis-patch-input-'));
+      const inputPath = join(inputDirectory, 'stdin');
+      writeFileSync(inputPath, input, {flag: 'wx', mode: 0o600});
+      inputDescriptor = openSync(inputPath, 'r');
+    }
+    const result = spawnSync('git', [
+      '--no-replace-objects', '-c', 'core.splitIndex=false', '-c', 'diff.relative=false',
+      ...args,
+    ], {
+      cwd: checkout, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+      stdio: [inputDescriptor ?? 'ignore', 'pipe', 'pipe'],
+      env: {...process.env, GIT_OPTIONAL_LOCKS: '0', ...extraEnv},
+    });
+    requireCondition(result.status === 0,
+      `git ${args.join(' ')} failed: ${result.stderr?.trim() || result.error?.message || result.status}`);
+    return result.stdout;
+  } finally {
+    try {
+      if (inputDescriptor !== undefined) closeSync(inputDescriptor);
+    } finally {
+      if (inputDirectory) rmSync(inputDirectory, {recursive: true, force: true});
+    }
+  }
 }
 
 function sha256(value) {
