@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Complemento Aegis só de leitura"
+  },
+  "extensionDescription": {
+    "message": "Lê um resumo mínimo da página autorizada pelo utilizador, sem a modificar."
+  },
+  "extensionAction": {
+    "message": "Verificar e abrir no Aegis"
+  }
+}
