@@ -22,6 +22,24 @@ final class LocalizationUITests: XCTestCase {
             "zh-Hant-HK": ("搜索或輸入網址", "設定"),
             "zh-Hant": ("搜索或輸入網址", "設定"),
         ]
+        // This destination title was previously an English fallback in the added languages.
+        let browsingTitles = [
+            "de": "Browsereinstellungen",
+            "en": "Browsing settings",
+            "es": "Ajustes de navegación",
+            "fr": "Réglages de navigation",
+            "id": "Pengaturan penjelajahan",
+            "it": "Impostazioni di navigazione",
+            "ja": "閲覧設定",
+            "ko": "탐색 설정",
+            "ms": "Tetapan pelayaran",
+            "pt": "Definições de navegação",
+            "th": "การตั้งค่าการท่องเว็บ",
+            "vi": "Cài đặt duyệt web",
+            "zh-Hans": "浏览设置",
+            "zh-Hant": "瀏覽設置",
+        ]
+        let fallbacks = ["en-GB": "en", "en-HK": "en", "zh-Hant-HK": "zh-Hant"]
         for locale in labels.keys.sorted() {
             let expected = labels[locale]!
             let app = XCUIApplication()
@@ -49,12 +67,21 @@ final class LocalizationUITests: XCTestCase {
             }
             settings.tap()
             XCTAssertTrue(app.navigationBars[expected.1].waitForExistence(timeout: 5), locale)
+            let general = app.buttons["general-browser-settings"]
+            XCTAssertTrue(general.waitForExistence(timeout: 5), locale)
             let done = app.navigationBars.buttons.element(boundBy: 0)
             XCTAssertTrue(done.isHittable, locale)
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = "Localization-\(locale)-accessibility-text"
             attachment.lifetime = .keepAlways
             add(attachment)
+            general.tap()
+            let title = browsingTitles[fallbacks[locale] ?? locale]!
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5), locale)
+            let browsing = XCTAttachment(screenshot: app.screenshot())
+            browsing.name = "Localization-\(locale)-browsing-accessibility-text"
+            browsing.lifetime = .keepAlways
+            add(browsing)
             app.terminate()
         }
     }
