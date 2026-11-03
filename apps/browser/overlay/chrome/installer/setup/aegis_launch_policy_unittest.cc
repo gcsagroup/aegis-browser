@@ -22,4 +22,35 @@ TEST(AegisLaunchPolicyTest, FailureMaintenanceAndExistingLaunchNeverLaunch) {
     EXPECT_FALSE(ShouldLaunchAegisAfterInstall(status, true, false, false));
   }
 }
+TEST(AegisLaunchPolicyTest, MissingShellDoesNotInspectOrLaunch) {
+  bool inspected = false;
+  bool launched = false;
+  EXPECT_FALSE(LaunchAegisThroughDesktop(
+      [] { return 0; },
+      [&](int) { inspected = true; return true; },
+      [&] { launched = true; return true; }));
+  EXPECT_FALSE(inspected);
+  EXPECT_FALSE(launched);
+}
+
+TEST(AegisLaunchPolicyTest, ElevatedOrUnknownShellDoesNotLaunch) {
+  bool launched = false;
+  EXPECT_FALSE(LaunchAegisThroughDesktop(
+      [] { return 42; },
+      [](int pid) { EXPECT_EQ(42, pid); return false; },
+      [&] { launched = true; return true; }));
+  EXPECT_FALSE(launched);
+}
+
+TEST(AegisLaunchPolicyTest, SafeShellUsesBrokerExactlyOnceIncludingFailure) {
+  // Standard-user shells need no split token. Broker failure is terminal.
+  for (bool broker_succeeds : {false, true}) {
+    int launches = 0;
+    EXPECT_EQ(broker_succeeds, LaunchAegisThroughDesktop(
+        [] { return 42; },
+        [](int pid) { EXPECT_EQ(42, pid); return true; },
+        [&] { ++launches; return broker_succeeds; }));
+    EXPECT_EQ(1, launches);
+  }
+}
 }  // namespace installer
