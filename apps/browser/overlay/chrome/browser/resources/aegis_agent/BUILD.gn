@@ -22,6 +22,7 @@ generate_grd("local_ai_resources") {
     "local_ai/vendor/js-md5-LICENSE",
     "local_ai/vendor/md5.js",
     "local_ai/vendor/onnxruntime-web-LICENSE",
+    "local_ai/vendor/onnxruntime-web-NOTICES",
     "local_ai/vendor/ort-wasm-simd-threaded.js",
     "local_ai/vendor/ort-wasm-simd-threaded.wasm",
     "local_ai/vendor/ort.js",

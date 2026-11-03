@@ -343,3 +343,5 @@
 0343-windows-installer-visual-design.patch
 0344-windows-frameless-measured-install-progress.patch
 0345-windows-overall-progress-without-flicker.patch
+0346-fix-windows-installer-launch.patch
+0347-fix-third-party-license-credits.patch
