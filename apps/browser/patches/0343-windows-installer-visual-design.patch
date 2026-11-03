@@ -1,0 +1,641 @@
+From e3c15e92c7429887d0a6ea0a10be2c5f53900a9e Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@example.invalid>
+Date: Tue, 3 Nov 2026 13:59:00 +0800
+Subject: [PATCH] =?UTF-8?q?=E4=BC=98=E5=8C=96=20Windows=20=E5=AE=89?=
+ =?UTF-8?q?=E8=A3=85=E5=99=A8=E5=93=81=E7=89=8C=E5=B8=83=E5=B1=80=E4=B8=8E?=
+ =?UTF-8?q?=E9=AB=98=20DPI=20=E5=B1=95=E7=A4=BA?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../mini_installer/aegis_install_ui.cc        | 331 +++++++++++++++---
+ .../mini_installer/aegis_install_ui.h         |  22 ++
+ .../aegis_install_ui_unittest.cc              |  92 ++++-
+ 3 files changed, 383 insertions(+), 62 deletions(-)
+
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
+index dbf8ed40e0af0c480b523e7095312c80d415996f..3d3e2bd8dcd36a8a82a4aac8e75feeb9173928ed 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui.cc
+@@ -1,5 +1,5 @@
+ // Copyright 2026 The GCSA Aegis Authors
+-// 双击安装时显示真实阶段；没有可用总进度时使用活动条，不伪造百分比。
++// 轻量原生安装展示：品牌、阶段、活动条分层；不执行安装或依赖 CRT。
+ #include "chrome/installer/mini_installer/aegis_install_ui.h"
+ 
+ #include <commctrl.h>
+@@ -10,8 +10,25 @@ namespace mini_installer {
+ namespace {
+ constexpr UINT kInstalling = WM_APP + 1;
+ constexpr UINT kFinished = WM_APP + 2;
++constexpr UINT_PTR kCloseTimer = 1;
++constexpr UINT_PTR kAnimationTimer = 2;
++constexpr int kWidth = 620;
++constexpr int kHeight = 420;
++constexpr COLORREF kInk = RGB(23, 36, 54);
++constexpr COLORREF kMuted = RGB(102, 116, 134);
++constexpr COLORREF kAccent = RGB(0, 128, 160);
++constexpr COLORREF kTrack = RGB(231, 238, 244);
++constexpr COLORREF kError = RGB(176, 55, 49);
+ constexpr wchar_t kWindowClass[] = L"GCSAAegisInstallProgress";
+ constexpr wchar_t kTitle[] = L"GCSA Aegis 安装程序";
++
++// 使用 DC 自带画刷，不为动画每帧创建 GDI 对象；调用方负责保存/恢复 DC。
++void FillRounded(HDC dc, const RECT& rect, int radius, COLORREF color) {
++  ::SelectObject(dc, ::GetStockObject(DC_BRUSH));
++  ::SelectObject(dc, ::GetStockObject(NULL_PEN));
++  ::SetDCBrushColor(dc, color);
++  ::RoundRect(dc, rect.left, rect.top, rect.right, rect.bottom, radius, radius);
++}
+ }  // namespace
+ 
+ AegisInstallUi::AegisInstallUi(bool interactive) : interactive_(interactive) {
+@@ -55,49 +72,162 @@ int AegisInstallUi::Scale(int value) const {
+ }
+ 
+ void AegisInstallUi::CreateControls() {
+-  font_ = ::CreateFont(Scale(-15), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+-                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+-                       CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+-  title_font_ =
+-      ::CreateFont(Scale(-25), 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE,
+-                   DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+-                   CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+-  auto label = [this](const wchar_t* text, int x, int y, int w, int h) {
+-    HWND control = ::CreateWindow(L"STATIC", text, WS_CHILD | WS_VISIBLE,
+-                                  Scale(x), Scale(y), Scale(w), Scale(h),
+-                                  window_, nullptr, nullptr, nullptr);
+-    ::SendMessage(control, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
+-    return control;
++  auto label = [this](const wchar_t* text) {
++    // 保留真实 STATIC 文本供读屏读取，不把安装状态绘制成不可访问的图片。
++    return ::CreateWindow(L"STATIC", text,
++                          WS_CHILD | WS_VISIBLE | SS_CENTER | SS_NOPREFIX, 0, 0,
++                          0, 0, window_, nullptr, nullptr, nullptr);
++  };
++  logo_ = ::CreateWindow(L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON, 0,
++                         0, 0, 0, window_, nullptr, nullptr, nullptr);
++  title_ = label(L"GCSA Aegis");
++  subtitle_ = label(L"安心浏览，从此开始");
++  status_ = label(L"正在准备安装…");
++  detail_ = label(L"正在准备所需文件，请稍候");
++  progress_ = ::CreateWindow(PROGRESS_CLASS, nullptr,
++                             WS_CHILD | WS_VISIBLE | PBS_MARQUEE, 0, 0, 0, 0,
++                             window_, nullptr, nullptr, nullptr);
++  ::SetWindowSubclass(progress_, ProgressProc, 1,
++                      reinterpret_cast<DWORD_PTR>(this));
++  close_ = ::CreateWindow(
++      L"BUTTON", L"关闭", WS_CHILD | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
++      window_, reinterpret_cast<HMENU>(IDOK), nullptr, nullptr);
++  LayoutControls();
++  UpdateAppearance();
++}
++
++void AegisInstallUi::LayoutControls() {
++  auto move = [this](HWND control, int x, int y, int width, int height) {
++    ::SetWindowPos(control, nullptr, Scale(x), Scale(y), Scale(width),
++                   Scale(height), SWP_NOZORDER | SWP_NOACTIVATE);
++  };
++  move(logo_, 278, 44, 64, 64);
++  move(title_, 40, 130, 540, 44);
++  move(subtitle_, 40, 181, 540, 24);
++  move(status_, 60, 251, 500, 28);
++  move(progress_, 100, 294, 420, 4);
++  move(detail_, 60, 317, 500, 44);
++  move(close_, 256, 373, 108, 34);
++
++  // 同步替换控件字体后再释放旧字体，跨屏 DPI 变化不会遗留悬空 GDI 句柄。
++  auto replace_font = [this](HFONT* target, int size, int weight) -> HFONT {
++    HFONT replacement =
++        ::CreateFont(Scale(-size), 0, 0, 0, weight, FALSE, FALSE, FALSE,
++                     DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
++                     CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Microsoft YaHei UI");
++    // 低资源时保留已有字体，避免先丢失可读状态再尝试恢复。
++    if (!replacement)
++      return nullptr;
++    HFONT previous = *target;
++    *target = replacement;
++    return previous;
+   };
+-  HWND logo = ::CreateWindow(
+-      L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON, Scale(36), Scale(32),
+-      Scale(48), Scale(48), window_, nullptr, nullptr, nullptr);
+-  ::SendMessage(
+-      logo, STM_SETICON,
+-      reinterpret_cast<WPARAM>(::LoadImage(
+-          ::GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_MINI_INSTALLER),
+-          IMAGE_ICON, Scale(48), Scale(48), LR_SHARED)),
+-      0);
+-  HWND title = label(L"GCSA Aegis", 104, 30, 360, 36);
+-  ::SendMessage(title, WM_SETFONT, reinterpret_cast<WPARAM>(title_font_), TRUE);
+-  label(L"安全、流畅的浏览体验", 106, 70, 360, 28);
+-  status_ = label(L"正在准备安装…", 36, 132, 448, 28);
+-  progress_ = ::CreateWindow(
+-      PROGRESS_CLASS, nullptr, WS_CHILD | WS_VISIBLE | PBS_MARQUEE, Scale(36),
+-      Scale(174), Scale(448), Scale(6), window_, nullptr, nullptr, nullptr);
+-  ::SendMessage(progress_, PBM_SETMARQUEE, TRUE, 24);
+-  detail_ = label(L"正在解压安装文件，请稍候。", 36, 202, 448, 50);
+-  close_ = ::CreateWindow(L"BUTTON", L"关闭",
+-                          WS_CHILD | WS_TABSTOP | BS_DEFPUSHBUTTON, Scale(394),
+-                          Scale(260), Scale(90), Scale(34), window_,
+-                          reinterpret_cast<HMENU>(IDOK), nullptr, nullptr);
++  HFONT old_body = replace_font(&font_, 14, FW_NORMAL);
++  HFONT old_title = replace_font(&title_font_, 30, FW_SEMIBOLD);
++  HFONT old_status = replace_font(&status_font_, 16, FW_MEDIUM);
++  HFONT old_detail = replace_font(&detail_font_, 13, FW_NORMAL);
++  ::SendMessage(title_, WM_SETFONT, reinterpret_cast<WPARAM>(title_font_),
++                TRUE);
++  ::SendMessage(subtitle_, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
++  ::SendMessage(status_, WM_SETFONT, reinterpret_cast<WPARAM>(status_font_),
++                TRUE);
++  ::SendMessage(detail_, WM_SETFONT, reinterpret_cast<WPARAM>(detail_font_),
++                TRUE);
+   ::SendMessage(close_, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
++  if (old_body)
++    ::DeleteObject(old_body);
++  if (old_title)
++    ::DeleteObject(old_title);
++  if (old_status)
++    ::DeleteObject(old_status);
++  if (old_detail)
++    ::DeleteObject(old_detail);
++  HICON previous_icon = logo_icon_;
++  logo_icon_ = static_cast<HICON>(::LoadImage(
++      ::GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_MINI_INSTALLER),
++      IMAGE_ICON, Scale(64), Scale(64), 0));
++  ::SendMessage(logo_, STM_SETICON, reinterpret_cast<WPARAM>(logo_icon_), 0);
++  if (previous_icon)
++    ::DestroyIcon(previous_icon);
++}
++
++void AegisInstallUi::UpdateAppearance() {
++  HIGHCONTRAST contrast = {sizeof(contrast)};
++  high_contrast_ = ::SystemParametersInfo(SPI_GETHIGHCONTRAST, sizeof(contrast),
++                                          &contrast, 0) &&
++                   (contrast.dwFlags & HCF_HIGHCONTRASTON);
++  BOOL animations = TRUE;
++  ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
++  animate_ = animations != FALSE;
++  ::KillTimer(window_, kAnimationTimer);
++  // 活动条没有百分比；关闭系统动画时静态展示，仍由状态文字说明安装进行中。
++  if (!complete_ && animate_)
++    ::SetTimer(window_, kAnimationTimer, 30, nullptr);
++  ::RedrawWindow(window_, nullptr, nullptr,
++                 RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
++}
++
++void AegisInstallUi::PaintProgress(HWND window) {
++  PAINTSTRUCT paint;
++  HDC dc = ::BeginPaint(window, &paint);
++  int saved = ::SaveDC(dc);
++  RECT track;
++  ::GetClientRect(window, &track);
++  ::FillRect(dc, &track,
++             high_contrast_
++                 ? ::GetSysColorBrush(COLOR_WINDOW)
++                 : static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
++  FillRounded(dc, track, Scale(4),
++              high_contrast_ ? ::GetSysColor(COLOR_WINDOWTEXT) : kTrack);
++  if (!failed_) {
++    RECT segment = track;
++    if (!complete_) {
++      // 整数平滑往返只表示忙碌；不与文件数、时长或安装完成率建立虚假映射。
++      int t = animate_ ? static_cast<int>(::GetTickCount64() % 2400) : 600;
++      if (t > 1200)
++        t = 2400 - t;
++      t = t * 1000 / 1200;
++      int eased = t * t * (3000 - 2 * t) / 1000000;
++      int width = (track.right - track.left) / 4;
++      segment.left = (track.right - width) * eased / 1000;
++      segment.right = segment.left + width;
++    }
++    FillRounded(dc, segment, Scale(4),
++                high_contrast_ ? ::GetSysColor(COLOR_HIGHLIGHT) : kAccent);
++  }
++  ::RestoreDC(dc, saved);
++  ::EndPaint(window, &paint);
++}
++
++void AegisInstallUi::PaintButton(const DRAWITEMSTRUCT& item) {
++  int saved = ::SaveDC(item.hDC);
++  bool pressed = (item.itemState & ODS_SELECTED) != 0;
++  COLORREF background = high_contrast_ ? ::GetSysColor(COLOR_HIGHLIGHT)
++                        : pressed      ? RGB(0, 102, 130)
++                                       : kAccent;
++  ::FillRect(item.hDC, &item.rcItem,
++             high_contrast_
++                 ? ::GetSysColorBrush(COLOR_WINDOW)
++                 : static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
++  FillRounded(item.hDC, item.rcItem, Scale(10), background);
++  ::SetBkMode(item.hDC, TRANSPARENT);
++  ::SetTextColor(item.hDC, high_contrast_ ? ::GetSysColor(COLOR_HIGHLIGHTTEXT)
++                                          : RGB(255, 255, 255));
++  ::SelectObject(item.hDC, font_);
++  RECT text = item.rcItem;
++  ::DrawText(item.hDC, L"关闭", -1, &text,
++             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
++  if ((item.itemState & ODS_FOCUS) && !(item.itemState & ODS_NOFOCUSRECT)) {
++    ::InflateRect(&text, -Scale(4), -Scale(4));
++    ::DrawFocusRect(item.hDC, &text);
++  }
++  ::RestoreDC(item.hDC, saved);
+ }
+ 
+ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+   auto* self = static_cast<AegisInstallUi*>(context);
+-  // 使用系统 DPI，跨屏移动交由 Windows 缩放，避免固定像素字体在高 DPI 下过小。
+-  ::SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
++  // 每屏独立缩放字体、图标和间距，不让跨屏移动退化为整窗位图拉伸。
++  ::SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+   self->dpi_ = ::GetDpiForSystem();
+   INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_PROGRESS_CLASS};
+   ::InitCommonControlsEx(&controls);
+@@ -106,13 +236,12 @@ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+   wc.hInstance = ::GetModuleHandle(nullptr);
+   wc.hIcon = ::LoadIcon(wc.hInstance, MAKEINTRESOURCE(IDI_MINI_INSTALLER));
+   wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
+-  wc.hbrBackground = static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH));
+   wc.lpszClassName = kWindowClass;
+   ::RegisterClass(&wc);
+   constexpr DWORD style =
+       WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+-  RECT bounds = {0, 0, self->Scale(520), self->Scale(320)};
+-  ::AdjustWindowRect(&bounds, style, FALSE);
++  RECT bounds = {0, 0, self->Scale(kWidth), self->Scale(kHeight)};
++  ::AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, self->dpi_);
+   RECT work = {};
+   ::SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0);
+   self->window_ = ::CreateWindow(
+@@ -122,8 +251,9 @@ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+       bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr,
+       wc.hInstance, self);
+   if (self->window_) {
++    self->dpi_ = ::GetDpiForWindow(self->window_);
+     self->CreateControls();
+-    // 解压/提交文件期间不允许关闭窗口来中断安装；失败后恢复关闭入口。
++    // 保留系统标题栏、最小化和键盘语义；文件提交期间禁止关闭，完成后恢复。
+     ::EnableMenuItem(::GetSystemMenu(self->window_, FALSE), SC_CLOSE,
+                      MF_BYCOMMAND | MF_GRAYED);
+     ::ShowWindow(self->window_, SW_SHOWNORMAL);
+@@ -144,10 +274,34 @@ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+     ::DeleteObject(self->font_);
+   if (self->title_font_)
+     ::DeleteObject(self->title_font_);
++  if (self->status_font_)
++    ::DeleteObject(self->status_font_);
++  if (self->detail_font_)
++    ::DeleteObject(self->detail_font_);
++  if (self->logo_icon_)
++    ::DestroyIcon(self->logo_icon_);
+   ::UnregisterClass(kWindowClass, wc.hInstance);
+   return 0;
+ }
+ 
++LRESULT CALLBACK AegisInstallUi::ProgressProc(HWND window,
++                                              UINT message,
++                                              WPARAM wparam,
++                                              LPARAM lparam,
++                                              UINT_PTR subclass_id,
++                                              DWORD_PTR context) {
++  auto* self = reinterpret_cast<AegisInstallUi*>(context);
++  if (message == WM_PAINT) {
++    self->PaintProgress(window);
++    return 0;
++  }
++  if (message == WM_ERASEBKGND)
++    return 1;
++  if (message == WM_NCDESTROY)
++    ::RemoveWindowSubclass(window, ProgressProc, subclass_id);
++  return ::DefSubclassProc(window, message, wparam, lparam);
++}
++
+ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+                                             UINT message,
+                                             WPARAM wparam,
+@@ -162,44 +316,105 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+   if (!self)
+     return ::DefWindowProc(window, message, wparam, lparam);
+   switch (message) {
+-    case WM_CTLCOLORSTATIC:
+-      ::SetTextColor(reinterpret_cast<HDC>(wparam), RGB(40, 44, 52));
++    case WM_ERASEBKGND: {
++      RECT client;
++      ::GetClientRect(window, &client);
++      ::FillRect(reinterpret_cast<HDC>(wparam), &client,
++                 self->high_contrast_
++                     ? ::GetSysColorBrush(COLOR_WINDOW)
++                     : static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
++      return 1;
++    }
++    case WM_CTLCOLORSTATIC: {
++      HWND control = reinterpret_cast<HWND>(lparam);
++      COLORREF color = control == self->subtitle_ || control == self->detail_
++                           ? kMuted
++                           : kInk;
++      if (control == self->status_ && self->complete_)
++        color = self->failed_ ? kError : kAccent;
++      ::SetTextColor(
++          reinterpret_cast<HDC>(wparam),
++          self->high_contrast_ ? ::GetSysColor(COLOR_WINDOWTEXT) : color);
+       ::SetBkMode(reinterpret_cast<HDC>(wparam), TRANSPARENT);
+-      return reinterpret_cast<LRESULT>(::GetStockObject(WHITE_BRUSH));
++      return reinterpret_cast<LRESULT>(
++          self->high_contrast_
++              ? ::GetSysColorBrush(COLOR_WINDOW)
++              : static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
++    }
++    case WM_DRAWITEM:
++      if (wparam == IDOK) {
++        self->PaintButton(*reinterpret_cast<DRAWITEMSTRUCT*>(lparam));
++        return TRUE;
++      }
++      break;
++    case WM_DPICHANGED: {
++      self->dpi_ = HIWORD(wparam);
++      const auto* bounds = reinterpret_cast<RECT*>(lparam);
++      ::SetWindowPos(window, nullptr, bounds->left, bounds->top,
++                     bounds->right - bounds->left, bounds->bottom - bounds->top,
++                     SWP_NOZORDER | SWP_NOACTIVATE);
++      if (self->title_)
++        self->LayoutControls();
++      return 0;
++    }
++    case WM_SETTINGCHANGE:
++    case WM_SYSCOLORCHANGE:
++      self->UpdateAppearance();
++      return 0;
+     case kInstalling:
+-      ::SetWindowText(self->status_, L"正在安装 GCSA Aegis…");
+-      ::SetWindowText(self->detail_, L"正在安装浏览器并创建快捷方式，请稍候。");
++      if (!self->complete_) {
++        ::SetWindowText(self->status_, L"正在安装…");
++        ::SetWindowText(self->detail_, L"正在配置浏览器，请稍候");
++      }
+       return 0;
+     case kFinished: {
++      if (self->complete_)
++        return 0;
+       self->complete_ = true;
+-      ::SendMessage(self->progress_, PBM_SETMARQUEE, FALSE, 0);
+-      ::ShowWindow(self->progress_, SW_HIDE);
++      self->failed_ = wparam != 0;
++      ::KillTimer(window, kAnimationTimer);
++      // 只有成功才显示满条；失败隐藏活动条，避免把错误误读为安装已完成。
++      if (self->failed_)
++        ::ShowWindow(self->progress_, SW_HIDE);
++      else {
++        ::SetWindowLongPtr(
++            self->progress_, GWL_STYLE,
++            ::GetWindowLongPtr(self->progress_, GWL_STYLE) & ~PBS_MARQUEE);
++        ::SendMessage(self->progress_, PBM_SETPOS, 100, 0);
++        ::InvalidateRect(self->progress_, nullptr, FALSE);
++      }
+       ::EnableMenuItem(::GetSystemMenu(window, FALSE), SC_CLOSE,
+                        MF_BYCOMMAND | MF_ENABLED);
+-      if (wparam == 0) {
++      if (!self->failed_) {
+         ::SetWindowText(self->status_, L"安装完成");
+-        ::SetWindowText(self->detail_, L"GCSA Aegis 已准备就绪。");
+-        ::SetTimer(window, 1, 1400, nullptr);
++        ::SetWindowText(self->detail_, L"GCSA Aegis 已准备就绪");
++        // 低资源导致计时器创建失败时直接收起，不能让安装线程永久等待 UI。
++        if (!::SetTimer(window, kCloseTimer, 1400, nullptr))
++          ::DestroyWindow(window);
+       } else {
+         wchar_t detail[160] = {};
+-        // FormatMessage 使用系统格式化，保持 mini_installer 不链接 CRT 的边界。
++        // 使用系统格式化保留数字错误码；不引入 CRT 或暴露安装路径等细节。
+         DWORD_PTR code = wparam;
+         ::FormatMessage(
+             FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
+-            L"安装未完成（错误代码：%1!u!"
+-            L"）。请关闭浏览器后重试。\n若仍失败，请保留此错误代码以便排查。",
++            L"请关闭浏览器后重试。错误代码：%1!u!\n"
++            L"若仍失败，请保留错误代码以便排查。",
+             0, 0, detail, sizeof(detail) / sizeof(detail[0]),
+             reinterpret_cast<va_list*>(&code));
+         ::SetWindowText(self->status_, L"安装未完成");
+-        ::SetWindowText(self->detail_, detail[0] ? detail : L"安装未完成，请重新运行安装程序。");
++        ::SetWindowText(self->detail_,
++                        detail[0] ? detail : L"请重新运行安装程序");
+         ::ShowWindow(self->close_, SW_SHOW);
+         ::SetFocus(self->close_);
+       }
+       return 0;
+     }
+     case WM_TIMER:
+-      if (wparam == 1 && self->complete_)
++      if (wparam == kCloseTimer && self->complete_ && !self->failed_)
+         ::DestroyWindow(window);
++      else if (wparam == kAnimationTimer && !self->complete_ &&
++               !::IsIconic(window))
++        ::InvalidateRect(self->progress_, nullptr, FALSE);
+       return 0;
+     case WM_COMMAND:
+       if (LOWORD(wparam) == IDOK && self->complete_)
+@@ -210,6 +425,8 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+         ::DestroyWindow(window);
+       return 0;
+     case WM_DESTROY:
++      ::KillTimer(window, kAnimationTimer);
++      ::KillTimer(window, kCloseTimer);
+       ::PostQuitMessage(0);
+       return 0;
+   }
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.h b/chrome/installer/mini_installer/aegis_install_ui.h
+index 9280fbf633d23a9e2682a587e7812f28aba89f5c..3a96bcfb197c6bff7d25a729ff0ba440d725163c 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.h
++++ b/chrome/installer/mini_installer/aegis_install_ui.h
+@@ -16,7 +16,9 @@ class AegisInstallUi {
+   AegisInstallUi(const AegisInstallUi&) = delete;
+   AegisInstallUi& operator=(const AegisInstallUi&) = delete;
+ 
++  // 只投递阶段通知，不阻塞安装线程；最终状态之后的迟到通知会被忽略。
+   void Installing();
++  // 0 表示成功并自动收起；非 0 保留数字错误码，等待用户确认关闭。
+   void Finish(DWORD exit_code);
+ 
+  private:
+@@ -25,21 +27,41 @@ class AegisInstallUi {
+                                      UINT message,
+                                      WPARAM wparam,
+                                      LPARAM lparam);
++  // 保留原生进度控件的辅助功能角色，仅接管绘制。
++  static LRESULT CALLBACK ProgressProc(HWND window,
++                                       UINT message,
++                                       WPARAM wparam,
++                                       LPARAM lparam,
++                                       UINT_PTR subclass_id,
++                                       DWORD_PTR context);
+   void CreateControls();
++  void LayoutControls();
++  void UpdateAppearance();
++  void PaintProgress(HWND window);
++  void PaintButton(const DRAWITEMSTRUCT& item);
+   int Scale(int value) const;
+ 
+   HANDLE thread_ = nullptr;
+   HANDLE ready_ = nullptr;
+   HWND window_ = nullptr;
++  HWND logo_ = nullptr;
++  HWND title_ = nullptr;
++  HWND subtitle_ = nullptr;
+   HWND status_ = nullptr;
+   HWND detail_ = nullptr;
+   HWND progress_ = nullptr;
+   HWND close_ = nullptr;
+   HFONT font_ = nullptr;
+   HFONT title_font_ = nullptr;
++  HFONT status_font_ = nullptr;
++  HFONT detail_font_ = nullptr;
++  HICON logo_icon_ = nullptr;
+   UINT dpi_ = 96;
+   bool interactive_;
+   bool complete_ = false;
++  bool failed_ = false;
++  bool high_contrast_ = false;
++  bool animate_ = true;
+ };
+ 
+ }  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+index 72798c08cfbe3fc6bf86d3fdd5383afb403f13a3..5ca37807e01a82d406c8b1b1eef4e3bc054330ac 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+@@ -2,6 +2,8 @@
+ // 验证真实 Win32 窗口的阶段与生命周期，不启动安装或写入用户注册表。
+ #include "chrome/installer/mini_installer/aegis_install_ui.h"
+ 
++#include <commctrl.h>
++
+ #include <string>
+ 
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -9,10 +11,16 @@
+ namespace mini_installer {
+ namespace {
+ HWND OwnWindow() {
+-  HWND window = ::FindWindow(L"GCSAAegisInstallProgress", nullptr);
+-  DWORD pid = 0;
+-  ::GetWindowThreadProcessId(window, &pid);
+-  return pid == ::GetCurrentProcessId() ? window : nullptr;
++  // 允许桌面存在其他安装预览；只读取当前测试进程的窗口，避免干扰用户。
++  HWND window = nullptr;
++  while ((window = ::FindWindowEx(nullptr, window, L"GCSAAegisInstallProgress",
++                                  nullptr))) {
++    DWORD pid = 0;
++    ::GetWindowThreadProcessId(window, &pid);
++    if (pid == ::GetCurrentProcessId())
++      return window;
++  }
++  return nullptr;
+ }
+ 
+ bool WaitForText(HWND window, const wchar_t* expected) {
+@@ -28,6 +36,39 @@ bool WaitForText(HWND window, const wchar_t* expected) {
+   }
+   return false;
+ }
++
++// 验证各 DPI 下的真实控件与文字可完整容纳，尤其是两行最大错误码提示。
++void ExpectReadableLayout(HWND window) {
++  RECT client = {};
++  ASSERT_TRUE(::GetClientRect(window, &client));
++  for (HWND child = ::GetWindow(window, GW_CHILD); child;
++       child = ::GetWindow(child, GW_HWNDNEXT)) {
++    RECT bounds = {};
++    ::GetWindowRect(child, &bounds);
++    ::MapWindowPoints(nullptr, window, reinterpret_cast<POINT*>(&bounds), 2);
++    EXPECT_GE(bounds.left, 0);
++    EXPECT_GE(bounds.top, 0);
++    EXPECT_LE(bounds.right, client.right);
++    EXPECT_LE(bounds.bottom, client.bottom);
++    wchar_t name[32] = {};
++    ::GetClassName(child, name, 32);
++    if (std::wstring(name) != L"Static" ||
++        (::GetWindowLongPtr(child, GWL_STYLE) & SS_TYPEMASK) == SS_ICON)
++      continue;
++    wchar_t text[256] = {};
++    ::GetWindowText(child, text, 256);
++    HDC dc = ::GetDC(child);
++    HGDIOBJ previous = ::SelectObject(
++        dc, reinterpret_cast<HFONT>(::SendMessage(child, WM_GETFONT, 0, 0)));
++    RECT measured = {0, 0, bounds.right - bounds.left, 0};
++    ::DrawText(dc, text, -1, &measured,
++               DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_CENTER);
++    EXPECT_LE(measured.bottom, bounds.bottom - bounds.top);
++    EXPECT_LE(measured.right, bounds.right - bounds.left);
++    ::SelectObject(dc, previous);
++    ::ReleaseDC(child, dc);
++  }
++}
+ }  // namespace
+ 
+ TEST(AegisInstallUiTest, SilentDoesNotCreateWindow) {
+@@ -46,9 +87,14 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
+     ::SendMessage(window, WM_CLOSE, 0, 0);
+     EXPECT_TRUE(::IsWindow(window));  // 安装提交期间关闭窗口不能中断文件写入。
+     ui.Installing();
+-    EXPECT_TRUE(WaitForText(window, L"正在安装 GCSA Aegis"));
++    EXPECT_TRUE(WaitForText(window, L"正在安装…"));
++    HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
++    EXPECT_TRUE(::IsWindowVisible(progress));
++    EXPECT_NE(0, ::GetWindowLongPtr(progress, GWL_STYLE) & PBS_MARQUEE);
++    EXPECT_FALSE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
+     ui.Finish(0);
+     EXPECT_TRUE(WaitForText(window, L"安装完成"));
++    EXPECT_EQ(100, ::SendMessage(progress, PBM_GETPOS, 0, 0));
+   }
+   EXPECT_EQ(nullptr, OwnWindow());
+ }
+@@ -59,10 +105,46 @@ TEST(AegisInstallUiTest, FailureRemainsUntilAcknowledged) {
+     HWND window = OwnWindow();
+     ui.Finish(31);
+     EXPECT_TRUE(WaitForText(window, L"错误代码：31"));
++    EXPECT_FALSE(::IsWindowVisible(
++        ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr)));
++    EXPECT_TRUE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
+     ::Sleep(1800);  // 超过成功页收起时间，失败仍应可读。
+     EXPECT_TRUE(::IsWindow(window));
+     ::SendMessage(window, WM_CLOSE, 0, 0);
+   }
+   EXPECT_EQ(nullptr, OwnWindow());
+ }
++
++TEST(AegisInstallUiTest, FailureRemainsReadableAcrossDpiChanges) {
++  AegisInstallUi ui(true);
++  HWND window = OwnWindow();
++  ui.Finish(MAXDWORD);
++  EXPECT_TRUE(WaitForText(window, L"错误代码：4294967295"));
++  // 只给本测试窗口发送跨屏 DPI 消息，不修改用户显示设置。
++  auto previous_context = ::SetThreadDpiAwarenessContext(
++      DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
++  for (UINT dpi : {96U, 120U, 144U, 192U, 96U}) {
++    RECT bounds = {0, 0, ::MulDiv(620, dpi, 96), ::MulDiv(420, dpi, 96)};
++    ::AdjustWindowRectExForDpi(
++        &bounds, static_cast<DWORD>(::GetWindowLongPtr(window, GWL_STYLE)),
++        FALSE, 0, dpi);
++    ::SendMessage(window, WM_DPICHANGED, MAKELONG(dpi, dpi),
++                  reinterpret_cast<LPARAM>(&bounds));
++    ExpectReadableLayout(window);
++  }
++  ::SetThreadDpiAwarenessContext(previous_context);
++  ::SendMessage(window, WM_COMMAND, IDOK, 0);
++}
++
++TEST(AegisInstallUiTest, TerminalStateIgnoresLateInstallingMessage) {
++  AegisInstallUi ui(true);
++  HWND window = OwnWindow();
++  ui.Finish(31);
++  EXPECT_TRUE(WaitForText(window, L"错误代码：31"));
++  // 安装线程迟到的阶段消息不能覆盖失败结果或重新启动动画。
++  ui.Installing();
++  EXPECT_FALSE(WaitForText(window, L"正在安装…"));
++  EXPECT_TRUE(WaitForText(window, L"错误代码：31"));
++  ::SendMessage(window, WM_COMMAND, IDOK, 0);
++}
+ }  // namespace mini_installer
+-- 
+2.56.0.windows.4
+
