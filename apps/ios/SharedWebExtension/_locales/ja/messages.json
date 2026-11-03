@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Aegis読み取り専用コンパニオン"
+  },
+  "extensionDescription": {
+    "message": "ユーザーが現在許可しているページの最小限の要約を読み取り、ページへの書き込みは行いません。"
+  },
+  "extensionAction": {
+    "message": "確認してAegisで開く"
+  }
+}
