@@ -18,6 +18,18 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 
 示例 build 仅供演示，实际先查 ASC 再选未使用的编号。独立保留 manifest 摘要、IPA、dSYM、校验文件及完成的上传记录；后续改描述和分发复用这些文件，不重新构建或上传。来源 SHA/tree 改变后必须重新打包。本地签名使用现有 Apple Distribution 私钥和三份 App Store profile，不导出私钥，不改共享钥匙串 ACL。凭据只能通过私密环境或受保护的 Actions secrets 提供。
 
+## 本地自动准备签名
+
+在安装好锁定 Ruby/Bundler 依赖的环境中运行：
+
+```sh
+python3 scripts/release/local-ios-signing.py --team "$AEGIS_APPLE_TEAM_ID" --certificate-sha1 "$AEGIS_IOS_CERT_SHA1" --unlock
+```
+
+脚本从下载目录自动发现现有共享 ASC 配置和私钥，只解析配置赋值、不执行 shell。通过只读 App Store Connect API 下载三份现有 App Store profile，校验 team、bundle ID、证书、有效期与 entitlement，再安装缺失的 profile。文件固定命名为 `Aegis-AppStore-App.mobileprovision`、`Aegis-AppStore-Safari.mobileprovision`、`Aegis-AppStore-Share.mobileprovision`，不加日期。三个产品渠道共用这些 profile，由导出参数控制渠道。ASC 的既有 profile 和 Bundle ID 显示名称也沿用不含日期的命名；脚本不创建或重命名远端资源。
+
+`--unlock` 从证书指纹匹配的材料目录读取私密 `EXISTING-KEYCHAIN-PASSWORD.txt`，通过 macOS Security API 解锁现有非登录签名钥匙串。密码不进入命令行、日志、回执或 AI 操作。脚本不解锁登录/系统钥匙串，不修改共享 ACL、分区列表或搜索列表；既有私钥访问授权仍由系统执行。缺失、冲突、符号链接、非私密凭据和校验失败均停止，不猜密码、不重复尝试、不退回界面自动填写。公有校验回执写入 `.artifacts/ios-signing/app-store/signing-receipt.json`。
+
 ## Actions 精简版与完整版
 
 表单英文选项与中英文操作步骤见 [Actions 操作指南](ios-delivery-actions.md)。
