@@ -37,6 +37,8 @@ class VerifyIPATests(unittest.TestCase):
             image = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 48, 48, 8, 6, 0, 0, 0))
             image += chunk(b"IDAT", zlib.compress((b"\x00" + b"\x00\x40\x80\xff" * 48) * 48))
             archive.writestr(safari + "icon.png", icon_data if icon_data is not None else image + chunk(b"IEND", b""))
+            for name, content in ipa.notices.ipa_members().items():
+                archive.writestr(name, content)
 
     def test_identity_and_extensions(self):
         with tempfile.TemporaryDirectory() as temp:

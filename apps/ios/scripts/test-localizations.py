@@ -141,6 +141,11 @@ def validate_project(locales):
             assert (ROOT / folder / objects[key]["path"]).is_file()
         if target in {"Aegis", "ShareExtension"}:
             assert any(objects[key].get("path") == "Localizable.xcstrings" for key in refs)
+        notice_refs = [key for key in refs if objects[key].get("path") == "ThirdPartyNotices.txt"]
+        assert len(notice_refs) == (1 if target == "Aegis" else 0), f"Acknowledgements must belong to the main App: {target}"
+        if target == "Aegis":
+            sources = next(objects[key] for key in target_object["buildPhases"] if objects[key]["isa"] == "PBXSourcesBuildPhase")
+            assert any(objects[objects[key]["fileRef"]].get("path") == "ThirdPartyNoticesView.swift" for key in sources["files"])
         if target in {"Aegis", "SafariWebExtension"}:
             assert any(objects[key].get("path") == "_locales" and objects[key].get("lastKnownFileType") == "folder" for key in refs)
     spec = (ROOT / "project.yml").read_text()

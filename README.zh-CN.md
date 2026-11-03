@@ -10,13 +10,13 @@
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store 1.0.0](https://img.shields.io/badge/App_Store-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/cn/app/gcsa-aegis/id6827988433) [![TestFlight Beta](https://img.shields.io/badge/TestFlight-Beta-1976D2?logo=testflight&logoColor=white)](https://testflight.apple.com/join/EwUW1VDx)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store 1.0.0](https://img.shields.io/badge/App_Store-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/cn/app/gcsa-aegis/id6827988433)
 
 **一个本地优先的隐私与安全浏览器，内置可控的 AI Agent。**
 
 [开始参与](#开始参与) · [平台进度](#平台进度) · [路线图](docs/roadmap.zh-CN.md) · [文档](docs/README.zh-CN.md)
 
-GCSA Aegis 1.0.0 已在 App Store 上架，支持 iPhone 和 iPad。外部 Beta 可通过 TestFlight 加入。此前的开发里程碑见[变更日志](CHANGELOG.zh-CN.md)。
+GCSA Aegis 1.0.0 已在 App Store 上架，支持 iPhone 和 iPad。外部 Beta 可通过 [TestFlight](https://testflight.apple.com/join/EwUW1VDx) 加入。此前的开发里程碑见[变更日志](CHANGELOG.zh-CN.md)。
 
 ## 核心能力
 
@@ -94,7 +94,7 @@ GCSA 原创源码采用 [Apache-2.0](LICENSE)。第三方组件保留各自许�
 - **CI：**公开 `main` 分支的质量检查。
 - **C++ 单元测试：**standalone Access 测试、Chromium GoogleTest 接线与补丁检查。
 - **Codacy Grade：**上游 `main` 的静态分析，不是测试覆盖率。
-- **App Store** 显示 iOS/iPadOS 公开版本。**TestFlight Beta** 链接到外部测试邀请。
+- **App Store** 显示 iOS/iPadOS 公开版本。
 
 CI 和静态分析徽章反映源码检查结果。
 

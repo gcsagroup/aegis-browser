@@ -817,6 +817,9 @@ test('quality entrypoint returns nonzero and writes FAIL when the test command f
   cpSync(join(scripts, 'check-license-metadata.mjs'), join(cwd, 'scripts/ci/check-license-metadata.mjs'));
   cpSync(join(root, 'LICENSE'), join(cwd, 'LICENSE'));
   cpSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(cwd, 'THIRD_PARTY_NOTICES.md'));
+  for (const name of ['CHROMIUM_VERSION', 'CHROMIUM_COMMIT']) {
+    cpSync(join(root, 'apps/browser', name), join(cwd, 'apps/browser', name));
+  }
   for (const path of ['package.json', 'packages/core/package.json', 'apps/browser/package.json']) {
     writeFileSync(join(cwd, path), '{"license":"Apache-2.0"}\n');
   }
