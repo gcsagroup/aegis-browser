@@ -102,14 +102,11 @@ def receipt():
     value = receipt_codec.encode(manifest['profile'], manifest['version'], manifest['build'], package_run, current, attempt, digest, uploaded=(directory()/'apple-upload-result.json').is_file())
     output('delivery_receipt', value)
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-        summary.write(f'### iOS 交付凭据 / Delivery receipt\n\n{manifest["version"]} ({manifest["build"]}) · {manifest["profile"]}\n\n'
-                      '等待整次运行成功后，复制整行到下次操作的 完整版的 **交付凭据 / Delivery receipt**；目标产物保持自动。\n'
-                      'After the whole run succeeds, copy this line into the Full workflow’s **Delivery receipt** and keep Product on Auto.\n\n'
+        summary.write(f'### iOS Delivery receipt\n\n{manifest["version"]} ({manifest["build"]}) · {manifest["profile"]}\n\n'
+                      'After the whole run succeeds, copy the line below into **Delivery receipt** in the Full workflow and keep **Product** on **Auto**.\n\n'
                       f'```text\n{value}\n```\n\n'
-                      '查询在精简版填版本/build 即可；上传及后续写操作在完整版使用最新成功凭据，保留原始凭据。\n'
-                      'Use the latest successful receipt for each next step; retain the original. Upload, processing, metadata/compliance and distribution remain explicit operations.\n\n'
-                      '此凭据仅固定产物身份；Admin、来源、完整性及防重复检查仍独立执行。\n'
-                      'This receipt pins identity only; Admin, source, integrity and replay checks remain independent.\n')
+                      'Keep the original receipt and use the latest successful receipt for each next step. Upload, processing, metadata/compliance and distribution remain explicit operations.\n\n'
+                      'This receipt pins package identity. Admin, source, integrity and replay checks run separately.\n')
     print(value)  # Same non-secret pin in job logs for CLI operators and evidence readback.
 
 

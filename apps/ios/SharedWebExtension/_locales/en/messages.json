@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Aegis Read-Only Companion"
+  },
+  "extensionDescription": {
+    "message": "Reads a minimal summary of the page currently authorized by the user without modifying the page."
+  },
+  "extensionAction": {
+    "message": "Check and open in Aegis"
+  }
+}
