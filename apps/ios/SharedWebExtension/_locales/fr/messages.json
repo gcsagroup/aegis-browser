@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Compagnon Aegis en lecture seule"
+  },
+  "extensionDescription": {
+    "message": "Lit un résumé minimal de la page autorisée par l’utilisateur sans la modifier."
+  },
+  "extensionAction": {
+    "message": "Vérifier et ouvrir dans Aegis"
+  }
+}
