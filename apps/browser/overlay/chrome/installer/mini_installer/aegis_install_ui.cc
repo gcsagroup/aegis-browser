@@ -15,6 +15,8 @@
 namespace mini_installer {
 namespace {
 constexpr UINT kFinished = WM_APP + 2;
+// setup 的稳定退出码 installer::EXISTING_VERSION_LAUNCHED；避免引入 util/CRT 依赖。
+constexpr DWORD kExistingVersionLaunched = 3;
 constexpr UINT kProgress = WM_APP + 3;
 constexpr UINT_PTR kCloseTimer = 1;
 constexpr UINT_PTR kAnimationTimer = 2;
@@ -111,7 +113,8 @@ void AegisInstallUi::UpdateProgress(aegis_installer::Progress progress) {
 void AegisInstallUi::Finish(DWORD exit_code) {
   if (window_) {
     ::PostMessage(window_, kFinished, exit_code, 0);
-  } else if (interactive_ && exit_code != 0) {
+  } else if (interactive_ && exit_code != 0 &&
+             exit_code != kExistingVersionLaunched) {
     // 窗口创建失败也不能把安装失败变成无声退出；不改变安装器原有退出码。
     ::MessageBox(nullptr, L"安装未完成，请重新运行安装程序。", kTitle,
                  MB_OK | MB_ICONERROR);
@@ -522,17 +525,19 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
       if (self->complete_)
         return 0;
       self->complete_ = true;
-      self->failed_ = wparam != 0;
+      const bool existing_version = wparam == kExistingVersionLaunched;
+      self->failed_ = wparam != 0 && !existing_version;
       ::KillTimer(window, kAnimationTimer);
-      // 只有成功才显示满条；失败隐藏活动条，避免把错误误读为安装已完成。
-      if (self->failed_)
+      // 仅实际安装成功显示满条；打开现有版本没有执行安装，也不是错误。
+      if (self->failed_ || existing_version)
         ::ShowWindow(self->progress_, SW_HIDE);
       else {
         ::SendMessage(self->progress_, PBM_SETPOS, 100, 0);
         ::InvalidateRect(self->progress_, nullptr, FALSE);
       }
       if (!self->failed_) {
-        ::SetWindowText(self->status_, L"安装完成");
+        ::SetWindowText(self->status_, existing_version
+            ? L"已打开现有版本（本次未执行安装）" : L"安装完成");
         // 低资源导致计时器创建失败时直接收起，不能让安装线程永久等待 UI。
         if (!::SetTimer(window, kCloseTimer, 1400, nullptr))
           ::DestroyWindow(window);
