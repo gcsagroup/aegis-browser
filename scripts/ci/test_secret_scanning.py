@@ -38,7 +38,7 @@ class SecretScanningTests(unittest.TestCase):
 
     def git(self, *arguments):
         # Arguments are constructed only by this synthetic fixture; no shell.
-        return subprocess.run(  # nosec B603
+        return subprocess.run(  # nosec B603,B607
             [GIT, "-C", str(self.repository), *arguments],
             check=True, capture_output=True, text=True,
         )
@@ -48,7 +48,7 @@ class SecretScanningTests(unittest.TestCase):
         self.git("commit", "--quiet", "-m", "Synthetic scanner fixture")
 
     def scan(self, repository=None):
-        return subprocess.run(
+        return subprocess.run(  # nosec B603,B607
             [BASH, str(SCANNER), str(repository or self.repository)],
             capture_output=True, text=True, timeout=60,
         )
@@ -67,7 +67,7 @@ class SecretScanningTests(unittest.TestCase):
         )
         target.parent.mkdir(parents=True)
         # Fixed operation and locally generated temporary path; no external input.
-        subprocess.run(  # nosec B603
+        subprocess.run(  # nosec B603,B607
             [OPENSSL, "genpkey", "-algorithm", "RSA", "-pkeyopt",
              "rsa_keygen_bits:2048", "-out", str(target)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -94,7 +94,7 @@ class SecretScanningTests(unittest.TestCase):
 
     def test_shallow_history_fails_closed(self):
         clone = Path(self.temporary.name) / "shallow"
-        subprocess.run(
+        subprocess.run(  # nosec B603,B607
             [GIT, "clone", "--quiet", "--depth", "1",
              self.repository.as_uri(), str(clone)],
             check=True, capture_output=True, text=True,
