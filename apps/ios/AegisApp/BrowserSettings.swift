@@ -197,10 +197,12 @@ private struct AegisProtectionSettingsView: View {
             if firebase.status == .active {
                 Section {
                     Toggle("发送崩溃报告", isOn: Binding(
-                        get: { firebase.crashReportsEnabled }, set: firebase.setCrashReportsEnabled
+                        get: { firebase.crashReportsEnabled },
+                        set: { firebase.setCrashReportsEnabled($0) }
                     ))
                     Toggle("发送使用分析", isOn: Binding(
-                        get: { firebase.analyticsEnabled }, set: firebase.setAnalyticsEnabled
+                        get: { firebase.analyticsEnabled },
+                        set: { firebase.setAnalyticsEnabled($0) }
                     ))
                 } header: {
                     Text("诊断与使用分析")
