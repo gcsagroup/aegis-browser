@@ -4,7 +4,7 @@
 
 A native SwiftUI and system WebKit browser for iOS 18.4 and later, developed for worldwide App Store technical requirements, including mainland China. Functionality and testing come first; submission materials will be supplied later. Simulator results do not establish release qualification.
 
-[Localization first slice](./LOCALIZATION.md): 17 language preferences through 14 resource languages, with explicit coverage, regional fallbacks, extension/WebView gaps and test instructions. This is not full-app localization.
+[Catalog localization](./LOCALIZATION.md): all 1,068 entries translated in 14 resource languages, serving 17 language preferences. Regional fallbacks, remaining call-site/WebView gaps and validation scope are documented separately.
 
 ## iOS Ver 6.0 · Site enhancements and Markdown
 
