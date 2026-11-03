@@ -137,6 +137,52 @@ test('accepts a genuine binary patch and rejects a later byte change', (t) => {
   assert.throws(() => f.collect(), /ordered exact patch tree/u);
 });
 
+test('large binary inputs reach real Git as finite files and are cleaned on failure', (t) => {
+  const f = fixture(t);
+  const bytes = Buffer.alloc(512 * 1024);
+  for (let offset = 0; offset < bytes.length; offset += 32) {
+    createHash('sha256').update(String(offset)).digest().copy(bytes, offset);
+  }
+  writeFileSync(join(f.src, 'binary.dat'), bytes);
+  f.commit('large binary change', true);
+  f.exportPatch();
+  assert.ok(readFileSync(f.patch).length > 64 * 1024);
+  const realGit = execFileSync('bash', ['-c', 'command -v git'], {encoding: 'utf8'}).trim();
+  const bin = join(f.root, 'git-wrapper');
+  const scratch = join(f.root, 'input-tmp');
+  const marker = join(f.root, 'finite-inputs');
+  mkdirSync(bin);
+  mkdirSync(scratch);
+  writeFileSync(join(bin, 'git'), [
+    '#!/bin/bash',
+    'for lineage_arg in "$@"; do',
+    '  if [[ "$lineage_arg" == apply || "$lineage_arg" == patch-id ]]; then',
+    '    [[ -f /dev/stdin ]] || exit 86',
+    '    printf "%s\\n" "$lineage_arg" >> "$LINEAGE_TEST_INPUT_LOG"',
+    '    [[ "$LINEAGE_TEST_FAIL_INPUT" != 1 ]] || exit 43',
+    '    break',
+    '  fi',
+    'done',
+    'exec "$LINEAGE_TEST_REAL_GIT" "$@"',
+    '',
+  ].join('\n'), {mode: 0o755});
+  const env = {...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, TMPDIR: scratch,
+    LINEAGE_TEST_REAL_GIT: realGit, LINEAGE_TEST_INPUT_LOG: marker};
+  const result = cli(f, 'json', undefined, f.root, env);
+  assert.equal(result.status, 0, result.stderr);
+  const evidence = JSON.parse(result.stdout);
+  assert.equal(isVerifiedPatchLineage(evidence.lineage), true);
+  assert.equal(evidence.patches[0].sha256, digest(readFileSync(f.patch)));
+  assert.equal(evidence.patches[0].expectedTree, f.git('rev-parse', 'HEAD^{tree}'));
+  assert.match(readFileSync(marker, 'utf8'), /apply\npatch-id\n/u);
+  assert.deepEqual(readdirSync(scratch), []);
+  const failed = cli(f, 'json', undefined, f.root, {...env, LINEAGE_TEST_FAIL_INPUT: '1'});
+  assert.equal(failed.status, 1, failed.stdout);
+  assert.match(failed.stderr, /git apply.*failed/u);
+  assert.equal(failed.stdout, '');
+  assert.deepEqual(readdirSync(scratch), []);
+});
+
 test('intermediate drift is rejected even when a later commit restores the same final tree', (t) => {
   const f = fixture(t);
   writeFileSync(join(f.src, 'value.txt'), 'A\n\nD\n\nB\n');
