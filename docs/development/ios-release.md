@@ -22,6 +22,18 @@ Set `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` (JSON 
 
 ASC stages use `AEGIS_ASC_KEY_ID`, `AEGIS_ASC_ISSUER_ID` and either a private mode-600 `AEGIS_ASC_KEY_PATH` or `AEGIS_ASC_KEY_BASE64`. Supply credentials through a private environment/secret provider; never through command arguments, Git or public evidence. GitHub admission uses `GH_TOKEN` with read access, or a stage-specific token for Draft writes. Set `AEGIS_IOS_RELEASE_ENABLED=true`; upstream delivery requires the exact current main SHA and latest terminal successful `quality` and `quality-gate` jobs. Main/tag are read again immediately before mutation.
 
+## Local signing preparation
+
+With the locked Ruby/Bundler runtime available, run:
+
+```sh
+python3 scripts/release/local-ios-signing.py --team "$AEGIS_APPLE_TEAM_ID" --certificate-sha1 "$AEGIS_IOS_CERT_SHA1" --unlock
+```
+
+The script discovers the existing private ASC configuration/key in Downloads without executing shell configuration. GET-only App Store Connect requests download the three existing App Store profiles. Team, bundle IDs, certificate, expiry and entitlements are validated before missing profiles are installed. Exported filenames are `Aegis-AppStore-App.mobileprovision`, `Aegis-AppStore-Safari.mobileprovision` and `Aegis-AppStore-Share.mobileprovision`; names contain the signing channel and target, without dates. Alpha/Beta/Release share these profiles and select their audience during export. Existing remote profile and bundle display names remain date-free; this preparation does not create or rename remote resources.
+
+`--unlock` reads the private `EXISTING-KEYCHAIN-PASSWORD.txt` beside the fingerprint-matched certificate and uses the native Security API to unlock the matching non-login signing keychain. Passwords never enter command arguments, logs, receipts or AI UI automation. Login/system keychains, shared ACLs, key partitions and search lists are unchanged; existing private-key access controls remain enforced. Missing/ambiguous inputs, symlinks, public credential files and validation errors stop without password retries or UI fallback. The public verification receipt is `.artifacts/ios-signing/app-store/signing-receipt.json`.
+
 ## Explicit inputs
 
 `metadata.json` may contain only `locales`, with `description` (Beta app description) and/or `whatsNew` (this build's testing notes). Fields are nonempty strings up to 4000 characters. Existing feedback contacts, listing fields and other locales are preserved.
