@@ -1,0 +1,2057 @@
+From 15ddcd4d1f64a6cfff2bfddea41960869fce070b Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@example.invalid>
+Date: Tue, 3 Nov 2026 15:17:25 +0800
+Subject: [PATCH] Refine frameless installer and report measured stage progress
+
+---
+ chrome/installer/BUILD.gn                     |   8 +
+ chrome/installer/aegis_install_progress.h     | 139 +++++++
+ chrome/installer/mini_installer/BUILD.gn      |   7 +-
+ .../mini_installer/aegis_install_ui.cc        | 346 +++++++++++++-----
+ .../mini_installer/aegis_install_ui.h         |  23 +-
+ .../aegis_install_ui_unittest.cc              |  64 +++-
+ .../mini_installer/mini_installer.cc          |  54 ++-
+ chrome/installer/setup/BUILD.gn               |   2 +
+ .../setup/aegis_install_progress_unittest.cc  | 259 +++++++++++++
+ chrome/installer/setup/install.cc             |   5 +
+ chrome/installer/setup/installer_state.cc     |  59 +++
+ chrome/installer/setup/installer_state.h      |   8 +
+ chrome/installer/setup/unpack_archive.cc      |  44 ++-
+ chrome/installer/util/lzma_util.cc            |  20 +-
+ chrome/installer/util/lzma_util.h             |  14 +-
+ chrome/installer/util/work_item_list.cc       |  13 +
+ chrome/installer/util/work_item_list.h        |  10 +-
+ .../lzma_sdk/google/seven_zip_reader.cc       | 152 +++++++-
+ .../lzma_sdk/google/seven_zip_reader.h        |   9 +
+ 19 files changed, 1088 insertions(+), 148 deletions(-)
+ create mode 100644 chrome/installer/aegis_install_progress.h
+ create mode 100644 chrome/installer/setup/aegis_install_progress_unittest.cc
+
+diff --git a/chrome/installer/BUILD.gn b/chrome/installer/BUILD.gn
+index a4ad87db54e3c5a6b6022f3d9c1878db0b74e3ad..f0e54d69bfbf9a47efc64b3ec965370d0b5ece20 100644
+--- a/chrome/installer/BUILD.gn
++++ b/chrome/installer/BUILD.gn
+@@ -14,3 +14,11 @@ group("installer") {
+     deps = [ "//chrome/installer/mac" ]
+   }
+ }
++
++# 仅共享 Win32 进度协议，不引入 Chromium UI 或 CRT；setup 和
++# mini_installer 单向展示使用。
++if (is_win) {
++  source_set("aegis_install_progress") {
++    sources = [ "aegis_install_progress.h" ]
++  }
++}
+diff --git a/chrome/installer/aegis_install_progress.h b/chrome/installer/aegis_install_progress.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..af3a2ce289a49437954834e61dcc5be59b7dc4c7
+--- /dev/null
++++ b/chrome/installer/aegis_install_progress.h
+@@ -0,0 +1,139 @@
++// Copyright 2026 The GCSA Aegis Authors
++// mini_installer 与 setup 的单向展示通道；不传路径、命令或安装决策，不依赖
++// CRT。
++#ifndef CHROME_INSTALLER_AEGIS_INSTALL_PROGRESS_H_
++#define CHROME_INSTALLER_AEGIS_INSTALL_PROGRESS_H_
++
++#include <windows.h>
++
++namespace aegis_installer {
++
++inline constexpr char kProgressSwitch[] = "aegis-install-progress";
++inline constexpr wchar_t kProgressNamePrefix[] = L"Local\\GCSA.Aegis.Progress.";
++
++// 百分比仅描述当前可计量阶段；-1 表示无可靠分母，不能据此推测剩余时间。
++enum class Phase : unsigned {
++  kPreparing,
++  kDecompressing,
++  kUnpacking,
++  kInstalling,
++  kConfiguring,
++  kFinishing,
++  kRollingBack
++};
++struct Progress {
++  Phase phase = Phase::kPreparing;
++  int percent = -1;
++};
++
++// 随机名称限于当前会话，沿用创建者默认 DACL；不放宽权限给 Everyone。
++// 每次安装使用独立的 128 位随机名称；UAC 之后无权连接时退回无百分比展示。
++// 映射仅有一个原子 DWORD，避免读到不同阶段和百分比的撕裂组合。
++class ProgressChannel {
++ public:
++  ProgressChannel() = default;
++  ~ProgressChannel() { Close(); }
++  ProgressChannel(const ProgressChannel&) = delete;
++  ProgressChannel& operator=(const ProgressChannel&) = delete;
++
++  static bool IsValidName(const wchar_t* name) {
++    const int prefix_length = ::lstrlenW(kProgressNamePrefix);
++    if (!name || ::lstrlenW(name) != prefix_length + 32 ||
++        ::CompareStringOrdinal(name, prefix_length, kProgressNamePrefix,
++                               prefix_length, FALSE) != CSTR_EQUAL)
++      return false;
++    const wchar_t* digit = name;
++    for (int index = 0; index < prefix_length; ++index)
++      digit = ::CharNextW(digit);
++    for (int index = 0; index < 32; ++index, digit = ::CharNextW(digit)) {
++      if (!((*digit >= L'0' && *digit <= L'9') ||
++            (*digit >= L'a' && *digit <= L'f')))
++        return false;
++    }
++    return true;
++  }
++
++  // 名称冲突时拒绝复用现存对象；参数句柄不继承给其他子进程。
++  bool Create(const wchar_t* name) {
++    Close();
++    if (!IsValidName(name))
++      return false;
++    mapping_ = ::CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr,
++                                    PAGE_READWRITE, 0, sizeof(LONG), name);
++    if (!mapping_ || ::GetLastError() == ERROR_ALREADY_EXISTS) {
++      Close();
++      return false;
++    }
++    if (!Map())
++      return false;
++    Write(Phase::kPreparing, -1);
++    return true;
++  }
++
++  // setup 只打开父安装器预先创建的对象；失败不会创建对象或改变安装结果。
++  bool Open(const wchar_t* name) {
++    Close();
++    if (!IsValidName(name))
++      return false;
++    mapping_ = ::OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, name);
++    return mapping_ && Map();
++  }
++
++  // 释放当前进程持有的映射；最后一个进程关闭后由内核回收，不留下磁盘文件。
++  void Close() {
++    if (packet_)
++      ::UnmapViewOfFile(const_cast<LONG*>(packet_));
++    if (mapping_)
++      ::CloseHandle(mapping_);
++    packet_ = nullptr;
++    mapping_ = nullptr;
++  }
++
++  // 100% 只由父进程确认安装退出成功后展示；阶段内最多 99%，保留最终校验。
++  void Write(Phase phase, int percent) const {
++    if (!packet_ ||
++        static_cast<unsigned>(phase) >
++            static_cast<unsigned>(Phase::kRollingBack) ||
++        percent < -1 || percent > 99)
++      return;
++    DWORD value = 0xa6010000u | (static_cast<unsigned>(phase) << 8) |
++                  (percent < 0 ? 255u : static_cast<unsigned>(percent));
++    ::InterlockedExchange(packet_, static_cast<LONG>(value));
++  }
++
++  // 拒绝损坏或未知版本的数据；本通道不能用来宣告安装成功或驱动任何系统操作。
++  bool Read(Progress* progress) const {
++    if (!packet_ || !progress)
++      return false;
++    DWORD value =
++        static_cast<DWORD>(::InterlockedCompareExchange(packet_, 0, 0));
++    unsigned phase = (value >> 8) & 255;
++    unsigned percent = value & 255;
++    if ((value & 0xffff0000u) != 0xa6010000u ||
++        phase > static_cast<unsigned>(Phase::kRollingBack) ||
++        (percent > 99 && percent != 255))
++      return false;
++    *progress = {static_cast<Phase>(phase),
++                 percent == 255 ? -1 : static_cast<int>(percent)};
++    return true;
++  }
++
++ private:
++  bool Map() {
++    packet_ = static_cast<volatile LONG*>(::MapViewOfFile(
++        mapping_, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, sizeof(LONG)));
++    if (!packet_)
++      Close();
++    return packet_ != nullptr;
++  }
++  HANDLE mapping_ = nullptr;
++  // MapViewOfFile 地址由内核管理，不属于 PartitionAlloc；不能用 raw_ptr 管理。
++  // 直接标注以保持此协议头不依赖 Chromium 分配器或 CRT。
++#if defined(__clang__)
++  __attribute__((annotate("raw_ptr_exclusion")))
++#endif
++  volatile LONG* packet_ = nullptr;
++};
++}  // namespace aegis_installer
++
++#endif  // CHROME_INSTALLER_AEGIS_INSTALL_PROGRESS_H_
+diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
+index ed1a7bc2f3841ee6d3ac081d7c2165020733392c..2ad853eb77a9813a20c6bb15d06eddb13a29f4a1 100644
+--- a/chrome/installer/mini_installer/BUILD.gn
++++ b/chrome/installer/mini_installer/BUILD.gn
+@@ -76,10 +76,15 @@ source_set("lib") {
+     "//build:branding_buildflags",
+   ]
+ 
+-  # 安装窗口只使用系统控件，不引入 Chromium UI 或 CRT。
++  # 展示协议只有 Win32 类型，保持无 CRT 的轻量安装器边界。
++  public_deps = [ "//chrome/installer:aegis_install_progress" ]
++
++  # 安装窗口只使用系统控件和 DWM，不引入 Chromium UI 或 CRT。
+   libs = [
+     "comctl32.lib",
+     "gdi32.lib",
++    "gdiplus.lib",
++    "dwmapi.lib",
+     "user32.lib",
+   ]
+ 
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
+index 3d3e2bd8dcd36a8a82a4aac8e75feeb9173928ed..d8c3fa7f12d01d906965371b606e189c9eba0be8 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui.cc
+@@ -3,17 +3,23 @@
+ #include "chrome/installer/mini_installer/aegis_install_ui.h"
+ 
+ #include <commctrl.h>
++#include <dwmapi.h>
++#include <objidl.h>
++#include <windowsx.h>
++
++// GDI+ 的图像接口依赖 objidl 中的 COM 类型，必须在其后包含。
++#include <gdiplus.h>
+ 
+ #include "chrome/installer/mini_installer/mini_installer_resource.h"
+ 
+ namespace mini_installer {
+ namespace {
+-constexpr UINT kInstalling = WM_APP + 1;
+ constexpr UINT kFinished = WM_APP + 2;
++constexpr UINT kProgress = WM_APP + 3;
+ constexpr UINT_PTR kCloseTimer = 1;
+ constexpr UINT_PTR kAnimationTimer = 2;
+-constexpr int kWidth = 620;
+-constexpr int kHeight = 420;
++constexpr int kWidth = 640;
++constexpr int kHeight = 400;
+ constexpr COLORREF kInk = RGB(23, 36, 54);
+ constexpr COLORREF kMuted = RGB(102, 116, 134);
+ constexpr COLORREF kAccent = RGB(0, 128, 160);
+@@ -22,8 +28,47 @@ constexpr COLORREF kError = RGB(176, 55, 49);
+ constexpr wchar_t kWindowClass[] = L"GCSAAegisInstallProgress";
+ constexpr wchar_t kTitle[] = L"GCSA Aegis 安装程序";
+ 
+-// 使用 DC 自带画刷，不为动画每帧创建 GDI 对象；调用方负责保存/恢复 DC。
++// 使用系统 GDI+ 抗锯齿；资源不足时退回 GDI，不影响安装或文字可读性。
++// 图形对象在本次绘制内释放，文字仍使用 ClearType，不缩放整块位图。
+ void FillRounded(HDC dc, const RECT& rect, int radius, COLORREF color) {
++  using namespace Gdiplus;
++  using namespace Gdiplus::DllExports;
++  if (rect.right <= rect.left || rect.bottom <= rect.top)
++    return;
++  GpGraphics* graphics = nullptr;
++  GpPath* path = nullptr;
++  GpSolidFill* brush = nullptr;
++  ARGB argb = 0xff000000u | (GetRValue(color) << 16) | (GetGValue(color) << 8) |
++              GetBValue(color);
++  bool painted = false;
++  if (GdipCreateFromHDC(dc, &graphics) == Ok &&
++      GdipCreatePath(FillModeWinding, &path) == Ok &&
++      GdipCreateSolidFill(argb, &brush) == Ok) {
++    REAL x = static_cast<REAL>(rect.left), y = static_cast<REAL>(rect.top);
++    REAL w = static_cast<REAL>(rect.right - rect.left),
++         h = static_cast<REAL>(rect.bottom - rect.top);
++    REAL d = static_cast<REAL>(radius);
++    if (d > w)
++      d = w;
++    if (d > h)
++      d = h;
++    GdipSetSmoothingMode(graphics, SmoothingModeAntiAlias);
++    GdipSetPixelOffsetMode(graphics, PixelOffsetModeHalf);
++    if (GdipAddPathArc(path, x, y, d, d, 180, 90) == Ok &&
++        GdipAddPathArc(path, x + w - d, y, d, d, 270, 90) == Ok &&
++        GdipAddPathArc(path, x + w - d, y + h - d, d, d, 0, 90) == Ok &&
++        GdipAddPathArc(path, x, y + h - d, d, d, 90, 90) == Ok &&
++        GdipClosePathFigure(path) == Ok)
++      painted = GdipFillPath(graphics, brush, path) == Ok;
++  }
++  if (brush)
++    GdipDeleteBrush(brush);
++  if (path)
++    GdipDeletePath(path);
++  if (graphics)
++    GdipDeleteGraphics(graphics);
++  if (painted)
++    return;
+   ::SelectObject(dc, ::GetStockObject(DC_BRUSH));
+   ::SelectObject(dc, ::GetStockObject(NULL_PEN));
+   ::SetDCBrushColor(dc, color);
+@@ -53,8 +98,13 @@ AegisInstallUi::~AegisInstallUi() {
+ }
+ 
+ void AegisInstallUi::Installing() {
++  UpdateProgress({aegis_installer::Phase::kInstalling, -1});
++}
++
++void AegisInstallUi::UpdateProgress(aegis_installer::Progress progress) {
+   if (window_)
+-    ::PostMessage(window_, kInstalling, 0, 0);
++    ::PostMessage(window_, kProgress, static_cast<WPARAM>(progress.phase),
++                  static_cast<LPARAM>(progress.percent));
+ }
+ 
+ void AegisInstallUi::Finish(DWORD exit_code) {
+@@ -72,28 +122,30 @@ int AegisInstallUi::Scale(int value) const {
+ }
+ 
+ void AegisInstallUi::CreateControls() {
+-  auto label = [this](const wchar_t* text) {
+-    // 保留真实 STATIC 文本供读屏读取，不把安装状态绘制成不可访问的图片。
+-    return ::CreateWindow(L"STATIC", text,
++  // 正文仅两处可访问文本：品牌名与一行真实状态，不叠加宣传或重复说明。
++  auto label = [this](const wchar_t* value) {
++    return ::CreateWindow(L"STATIC", value,
+                           WS_CHILD | WS_VISIBLE | SS_CENTER | SS_NOPREFIX, 0, 0,
+                           0, 0, window_, nullptr, nullptr, nullptr);
+   };
+   logo_ = ::CreateWindow(L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON, 0,
+                          0, 0, 0, window_, nullptr, nullptr, nullptr);
+   title_ = label(L"GCSA Aegis");
+-  subtitle_ = label(L"安心浏览，从此开始");
+-  status_ = label(L"正在准备安装…");
+-  detail_ = label(L"正在准备所需文件，请稍候");
++  status_ = label(L"正在准备");
+   progress_ = ::CreateWindow(PROGRESS_CLASS, nullptr,
+                              WS_CHILD | WS_VISIBLE | PBS_MARQUEE, 0, 0, 0, 0,
+                              window_, nullptr, nullptr, nullptr);
+   ::SetWindowSubclass(progress_, ProgressProc, 1,
+                       reinterpret_cast<DWORD_PTR>(this));
++  // 正常安装和成功态没有窗口按钮；失败时才出现可键盘操作的关闭入口。
+   close_ = ::CreateWindow(
+       L"BUTTON", L"关闭", WS_CHILD | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
+       window_, reinterpret_cast<HMENU>(IDOK), nullptr, nullptr);
++  ::SetWindowSubclass(close_, CloseButtonProc, 1,
++                      reinterpret_cast<DWORD_PTR>(this));
+   LayoutControls();
+   UpdateAppearance();
++  UpdateFrame();
+ }
+ 
+ void AegisInstallUi::LayoutControls() {
+@@ -101,54 +153,119 @@ void AegisInstallUi::LayoutControls() {
+     ::SetWindowPos(control, nullptr, Scale(x), Scale(y), Scale(width),
+                    Scale(height), SWP_NOZORDER | SWP_NOACTIVATE);
+   };
+-  move(logo_, 278, 44, 64, 64);
+-  move(title_, 40, 130, 540, 44);
+-  move(subtitle_, 40, 181, 540, 24);
+-  move(status_, 60, 251, 500, 28);
+-  move(progress_, 100, 294, 420, 4);
+-  move(detail_, 60, 317, 500, 44);
+-  move(close_, 256, 373, 108, 34);
++  move(logo_, 280, 62, 80, 80);
++  move(title_, 40, 164, 560, 48);
++  move(progress_, 96, 280, 448, 4);
++  move(status_, 60, 308, 520, 28);
++  move(close_, 264, 344, 112, 40);
+ 
+-  // 同步替换控件字体后再释放旧字体，跨屏 DPI 变化不会遗留悬空 GDI 句柄。
+-  auto replace_font = [this](HFONT* target, int size, int weight) -> HFONT {
++  // 先替换字体、图标再释放旧资源；低资源时沿用原资源保持可读。
++  auto font = [this](HFONT* target, int size, int weight, const wchar_t* face) {
+     HFONT replacement =
+         ::CreateFont(Scale(-size), 0, 0, 0, weight, FALSE, FALSE, FALSE,
+                      DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+-                     CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Microsoft YaHei UI");
+-    // 低资源时保留已有字体，避免先丢失可读状态再尝试恢复。
+-    if (!replacement)
+-      return nullptr;
+-    HFONT previous = *target;
+-    *target = replacement;
++                     CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
++    HFONT previous = replacement ? *target : nullptr;
++    if (replacement)
++      *target = replacement;
+     return previous;
+   };
+-  HFONT old_body = replace_font(&font_, 14, FW_NORMAL);
+-  HFONT old_title = replace_font(&title_font_, 30, FW_SEMIBOLD);
+-  HFONT old_status = replace_font(&status_font_, 16, FW_MEDIUM);
+-  HFONT old_detail = replace_font(&detail_font_, 13, FW_NORMAL);
++  HFONT old_title = font(&title_font_, 34, FW_SEMIBOLD, L"Segoe UI");
++  HFONT old_body = font(&font_, 14, FW_NORMAL, L"Microsoft YaHei UI");
+   ::SendMessage(title_, WM_SETFONT, reinterpret_cast<WPARAM>(title_font_),
+                 TRUE);
+-  ::SendMessage(subtitle_, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
+-  ::SendMessage(status_, WM_SETFONT, reinterpret_cast<WPARAM>(status_font_),
+-                TRUE);
+-  ::SendMessage(detail_, WM_SETFONT, reinterpret_cast<WPARAM>(detail_font_),
+-                TRUE);
++  ::SendMessage(status_, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
+   ::SendMessage(close_, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
+-  if (old_body)
+-    ::DeleteObject(old_body);
+   if (old_title)
+     ::DeleteObject(old_title);
+-  if (old_status)
+-    ::DeleteObject(old_status);
+-  if (old_detail)
+-    ::DeleteObject(old_detail);
+-  HICON previous_icon = logo_icon_;
+-  logo_icon_ = static_cast<HICON>(::LoadImage(
+-      ::GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_MINI_INSTALLER),
+-      IMAGE_ICON, Scale(64), Scale(64), 0));
+-  ::SendMessage(logo_, STM_SETICON, reinterpret_cast<WPARAM>(logo_icon_), 0);
+-  if (previous_icon)
+-    ::DestroyIcon(previous_icon);
++  if (old_body)
++    ::DeleteObject(old_body);
++  HICON replacement = nullptr;
++  // 非标准尺寸从较大图标缩小，避免 80px 品牌图标被低分辨率资源放大模糊。
++  ::LoadIconWithScaleDown(::GetModuleHandle(nullptr),
++                          MAKEINTRESOURCE(IDI_MINI_INSTALLER), Scale(80),
++                          Scale(80), &replacement);
++  if (replacement) {
++    ::SendMessage(logo_, STM_SETICON, reinterpret_cast<WPARAM>(replacement), 0);
++    if (logo_icon_)
++      ::DestroyIcon(logo_icon_);
++    logo_icon_ = replacement;
++  }
++}
++
++void AegisInstallUi::UpdateFrame() {
++  // 窗口不带系统边框样式，仅请求 DWM 圆角和阴影；不能用 THICKFRAME 模拟无边框。
++  DWM_WINDOW_CORNER_PREFERENCE corner = DWMWCP_ROUND;
++  HRESULT rounded = ::DwmSetWindowAttribute(
++      window_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof(corner));
++  MARGINS margins = {1, 1, 1, 1};
++  ::DwmExtendFrameIntoClientArea(window_, &margins);
++  COLORREF border =
++      high_contrast_ ? ::GetSysColor(COLOR_WINDOWTEXT) : DWMWA_COLOR_NONE;
++  ::DwmSetWindowAttribute(window_, DWMWA_BORDER_COLOR, &border, sizeof(border));
++  if (FAILED(rounded)) {
++    RECT bounds;
++    ::GetWindowRect(window_, &bounds);
++    HRGN region = ::CreateRoundRectRgn(0, 0, bounds.right - bounds.left + 1,
++                                       bounds.bottom - bounds.top + 1,
++                                       Scale(18), Scale(18));
++    if (region && !::SetWindowRgn(window_, region, TRUE))
++      ::DeleteObject(region);
++  }
++}
++
++void AegisInstallUi::ShowProgress(aegis_installer::Progress progress) {
++  using aegis_installer::Phase;
++  if (complete_ ||
++      static_cast<unsigned>(progress.phase) >
++          static_cast<unsigned>(Phase::kRollingBack) ||
++      progress.percent < -1 || progress.percent > 99)
++    return;
++  // 同一阶段不倒退；阶段变化会更换文字及分母，不能把它冒充整次安装百分比。
++  if (progress.phase == phase_ && progress.percent >= 0 && percent_ >= 0 &&
++      progress.percent < percent_)
++    return;
++  phase_ = progress.phase;
++  percent_ = progress.percent;
++  const wchar_t* label = L"正在准备";
++  switch (phase_) {
++    case Phase::kPreparing:
++      break;
++    case Phase::kDecompressing:
++      label = L"正在解压";
++      break;
++    case Phase::kUnpacking:
++      label = L"正在展开文件";
++      break;
++    case Phase::kInstalling:
++      label = L"正在安装";
++      break;
++    case Phase::kConfiguring:
++      label = L"正在配置";
++      break;
++    case Phase::kFinishing:
++      label = L"正在完成安装";
++      break;
++    case Phase::kRollingBack:
++      label = L"正在回滚";
++      break;
++  }
++  wchar_t value[80] = {};
++  if (percent_ >= 0) {
++    DWORD_PTR arguments[] = {reinterpret_cast<DWORD_PTR>(label),
++                             static_cast<DWORD_PTR>(percent_)};
++    ::FormatMessage(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
++                    L"%1!s!  %2!u!%%", 0, 0, value,
++                    sizeof(value) / sizeof(value[0]),
++                    reinterpret_cast<va_list*>(arguments));
++  }
++  ::SetWindowText(status_, value[0] ? value : label);
++  LONG_PTR style = ::GetWindowLongPtr(progress_, GWL_STYLE);
++  ::SetWindowLongPtr(progress_, GWL_STYLE,
++                     percent_ < 0 ? style | PBS_MARQUEE : style & ~PBS_MARQUEE);
++  if (percent_ >= 0)
++    ::SendMessage(progress_, PBM_SETPOS, percent_, 0);
++  UpdateAppearance();
+ }
+ 
+ void AegisInstallUi::UpdateAppearance() {
+@@ -161,7 +278,7 @@ void AegisInstallUi::UpdateAppearance() {
+   animate_ = animations != FALSE;
+   ::KillTimer(window_, kAnimationTimer);
+   // 活动条没有百分比；关闭系统动画时静态展示，仍由状态文字说明安装进行中。
+-  if (!complete_ && animate_)
++  if (!complete_ && percent_ < 0 && animate_)
+     ::SetTimer(window_, kAnimationTimer, 30, nullptr);
+   ::RedrawWindow(window_, nullptr, nullptr,
+                  RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+@@ -181,8 +298,10 @@ void AegisInstallUi::PaintProgress(HWND window) {
+               high_contrast_ ? ::GetSysColor(COLOR_WINDOWTEXT) : kTrack);
+   if (!failed_) {
+     RECT segment = track;
+-    if (!complete_) {
+-      // 整数平滑往返只表示忙碌；不与文件数、时长或安装完成率建立虚假映射。
++    if (!complete_ && percent_ >= 0) {
++      segment.right = track.right * percent_ / 100;
++    } else if (!complete_) {
++      // 仅无可靠分母时使用忙碌动画，动画本身不改变百分比。
+       int t = animate_ ? static_cast<int>(::GetTickCount64() % 2400) : 600;
+       if (t > 1200)
+         t = 2400 - t;
+@@ -199,53 +318,89 @@ void AegisInstallUi::PaintProgress(HWND window) {
+   ::EndPaint(window, &paint);
+ }
+ 
+-void AegisInstallUi::PaintButton(const DRAWITEMSTRUCT& item) {
++void AegisInstallUi::PaintCloseButton(const DRAWITEMSTRUCT& item) {
+   int saved = ::SaveDC(item.hDC);
+-  bool pressed = (item.itemState & ODS_SELECTED) != 0;
+-  COLORREF background = high_contrast_ ? ::GetSysColor(COLOR_HIGHLIGHT)
+-                        : pressed      ? RGB(0, 102, 130)
+-                                       : kAccent;
++  const bool focused =
++      (item.itemState & ODS_FOCUS) && !(item.itemState & ODS_NOFOCUSRECT);
++  const bool pressed = (item.itemState & ODS_SELECTED) != 0;
++  COLORREF fill = pressed        ? RGB(0, 96, 126)
++                  : close_hover_ ? RGB(0, 110, 141)
++                  : focused      ? RGB(0, 116, 148)
++                                 : kAccent;
++  if (high_contrast_)
++    fill = ::GetSysColor(COLOR_HIGHLIGHT);
++  // 清空整个控件，不保留默认底纹或外圈；焦点使用内部颜色和下划线表示。
+   ::FillRect(item.hDC, &item.rcItem,
+              high_contrast_
+                  ? ::GetSysColorBrush(COLOR_WINDOW)
+                  : static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
+-  FillRounded(item.hDC, item.rcItem, Scale(10), background);
++  RECT body = item.rcItem;
++  ::InflateRect(&body, -Scale(2), -Scale(2));
++  FillRounded(item.hDC, body, Scale(12), fill);
+   ::SetBkMode(item.hDC, TRANSPARENT);
+   ::SetTextColor(item.hDC, high_contrast_ ? ::GetSysColor(COLOR_HIGHLIGHTTEXT)
+                                           : RGB(255, 255, 255));
+   ::SelectObject(item.hDC, font_);
+-  RECT text = item.rcItem;
+-  ::DrawText(item.hDC, L"关闭", -1, &text,
+-             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+-  if ((item.itemState & ODS_FOCUS) && !(item.itemState & ODS_NOFOCUSRECT)) {
+-    ::InflateRect(&text, -Scale(4), -Scale(4));
+-    ::DrawFocusRect(item.hDC, &text);
++  ::DrawText(item.hDC, L"关闭", -1, &body,
++             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
++  if (focused) {
++    RECT marker = {body.left + (body.right - body.left - Scale(24)) / 2,
++                   body.bottom - Scale(6), 0, body.bottom - Scale(5)};
++    marker.right = marker.left + Scale(24);
++    ::FillRect(item.hDC, &marker,
++               high_contrast_
++                   ? ::GetSysColorBrush(COLOR_HIGHLIGHTTEXT)
++                   : static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
+   }
+   ::RestoreDC(item.hDC, saved);
+ }
+ 
++LRESULT CALLBACK AegisInstallUi::CloseButtonProc(HWND window,
++                                                 UINT message,
++                                                 WPARAM wparam,
++                                                 LPARAM lparam,
++                                                 UINT_PTR subclass_id,
++                                                 DWORD_PTR context) {
++  auto* self = reinterpret_cast<AegisInstallUi*>(context);
++  if (message == WM_MOUSEMOVE && !self->close_hover_) {
++    self->close_hover_ = true;
++    TRACKMOUSEEVENT tracking = {sizeof(tracking), TME_LEAVE, window, 0};
++    ::TrackMouseEvent(&tracking);
++    ::InvalidateRect(window, nullptr, FALSE);
++  } else if (message == WM_MOUSELEAVE) {
++    self->close_hover_ = false;
++    ::InvalidateRect(window, nullptr, FALSE);
++  } else if (message == WM_NCDESTROY) {
++    ::RemoveWindowSubclass(window, CloseButtonProc, subclass_id);
++  }
++  return ::DefSubclassProc(window, message, wparam, lparam);
++}
++
+ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+   auto* self = static_cast<AegisInstallUi*>(context);
++  Gdiplus::GdiplusStartupInput graphics_input;
++  // 只初始化系统绘图，不加载外部图像解码器；退出 UI 线程前统一释放。
++  graphics_input.SuppressExternalCodecs = TRUE;
++  Gdiplus::GdiplusStartup(&self->graphics_token_, &graphics_input, nullptr);
+   // 每屏独立缩放字体、图标和间距，不让跨屏移动退化为整窗位图拉伸。
+   ::SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+   self->dpi_ = ::GetDpiForSystem();
+   INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_PROGRESS_CLASS};
+   ::InitCommonControlsEx(&controls);
+   WNDCLASS wc = {};
++  wc.style = CS_DROPSHADOW;
+   wc.lpfnWndProc = WindowProc;
+   wc.hInstance = ::GetModuleHandle(nullptr);
+   wc.hIcon = ::LoadIcon(wc.hInstance, MAKEINTRESOURCE(IDI_MINI_INSTALLER));
+   wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
+   wc.lpszClassName = kWindowClass;
+   ::RegisterClass(&wc);
+-  constexpr DWORD style =
+-      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
++  constexpr DWORD style = WS_POPUP;
+   RECT bounds = {0, 0, self->Scale(kWidth), self->Scale(kHeight)};
+-  ::AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, self->dpi_);
+   RECT work = {};
+   ::SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0);
+-  self->window_ = ::CreateWindow(
+-      kWindowClass, kTitle, style,
++  self->window_ = ::CreateWindowEx(
++      WS_EX_APPWINDOW, kWindowClass, kTitle, style,
+       work.left + (work.right - work.left - (bounds.right - bounds.left)) / 2,
+       work.top + (work.bottom - work.top - (bounds.bottom - bounds.top)) / 2,
+       bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr,
+@@ -253,9 +408,6 @@ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+   if (self->window_) {
+     self->dpi_ = ::GetDpiForWindow(self->window_);
+     self->CreateControls();
+-    // 保留系统标题栏、最小化和键盘语义；文件提交期间禁止关闭，完成后恢复。
+-    ::EnableMenuItem(::GetSystemMenu(self->window_, FALSE), SC_CLOSE,
+-                     MF_BYCOMMAND | MF_GRAYED);
+     ::ShowWindow(self->window_, SW_SHOWNORMAL);
+     ::UpdateWindow(self->window_);
+   }
+@@ -274,13 +426,11 @@ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+     ::DeleteObject(self->font_);
+   if (self->title_font_)
+     ::DeleteObject(self->title_font_);
+-  if (self->status_font_)
+-    ::DeleteObject(self->status_font_);
+-  if (self->detail_font_)
+-    ::DeleteObject(self->detail_font_);
+   if (self->logo_icon_)
+     ::DestroyIcon(self->logo_icon_);
+   ::UnregisterClass(kWindowClass, wc.hInstance);
++  if (self->graphics_token_)
++    Gdiplus::GdiplusShutdown(self->graphics_token_);
+   return 0;
+ }
+ 
+@@ -316,6 +466,20 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+   if (!self)
+     return ::DefWindowProc(window, message, wparam, lparam);
+   switch (message) {
++    case WM_NCCALCSIZE:
++      return 0;  // 客户区占满整个窗口，DWM 继续管理阴影和圆角。
++    case WM_NCHITTEST: {
++      POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
++      ::ScreenToClient(window, &point);
++      return point.y < self->Scale(52) ? HTCAPTION : HTCLIENT;
++    }
++    case WM_NCLBUTTONDBLCLK:
++      return 0;  // 固定尺寸安装窗不接受标题区双击最大化。
++    case WM_SYSCOMMAND:
++      if ((wparam & 0xfff0) == SC_SIZE || (wparam & 0xfff0) == SC_MAXIMIZE ||
++          ((wparam & 0xfff0) == SC_CLOSE && !self->complete_))
++        return 0;
++      break;
+     case WM_ERASEBKGND: {
+       RECT client;
+       ::GetClientRect(window, &client);
+@@ -327,9 +491,7 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+     }
+     case WM_CTLCOLORSTATIC: {
+       HWND control = reinterpret_cast<HWND>(lparam);
+-      COLORREF color = control == self->subtitle_ || control == self->detail_
+-                           ? kMuted
+-                           : kInk;
++      COLORREF color = control == self->status_ ? kMuted : kInk;
+       if (control == self->status_ && self->complete_)
+         color = self->failed_ ? kError : kAccent;
+       ::SetTextColor(
+@@ -343,7 +505,7 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+     }
+     case WM_DRAWITEM:
+       if (wparam == IDOK) {
+-        self->PaintButton(*reinterpret_cast<DRAWITEMSTRUCT*>(lparam));
++        self->PaintCloseButton(*reinterpret_cast<DRAWITEMSTRUCT*>(lparam));
+         return TRUE;
+       }
+       break;
+@@ -353,19 +515,19 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+       ::SetWindowPos(window, nullptr, bounds->left, bounds->top,
+                      bounds->right - bounds->left, bounds->bottom - bounds->top,
+                      SWP_NOZORDER | SWP_NOACTIVATE);
+-      if (self->title_)
++      if (self->title_) {
+         self->LayoutControls();
++        self->UpdateFrame();
++      }
+       return 0;
+     }
+     case WM_SETTINGCHANGE:
+     case WM_SYSCOLORCHANGE:
+       self->UpdateAppearance();
+       return 0;
+-    case kInstalling:
+-      if (!self->complete_) {
+-        ::SetWindowText(self->status_, L"正在安装…");
+-        ::SetWindowText(self->detail_, L"正在配置浏览器，请稍候");
+-      }
++    case kProgress:
++      self->ShowProgress({static_cast<aegis_installer::Phase>(wparam),
++                          static_cast<int>(lparam)});
+       return 0;
+     case kFinished: {
+       if (self->complete_)
+@@ -383,11 +545,8 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+         ::SendMessage(self->progress_, PBM_SETPOS, 100, 0);
+         ::InvalidateRect(self->progress_, nullptr, FALSE);
+       }
+-      ::EnableMenuItem(::GetSystemMenu(window, FALSE), SC_CLOSE,
+-                       MF_BYCOMMAND | MF_ENABLED);
+       if (!self->failed_) {
+         ::SetWindowText(self->status_, L"安装完成");
+-        ::SetWindowText(self->detail_, L"GCSA Aegis 已准备就绪");
+         // 低资源导致计时器创建失败时直接收起，不能让安装线程永久等待 UI。
+         if (!::SetTimer(window, kCloseTimer, 1400, nullptr))
+           ::DestroyWindow(window);
+@@ -397,13 +556,10 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+         DWORD_PTR code = wparam;
+         ::FormatMessage(
+             FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
+-            L"请关闭浏览器后重试。错误代码：%1!u!\n"
+-            L"若仍失败，请保留错误代码以便排查。",
+-            0, 0, detail, sizeof(detail) / sizeof(detail[0]),
++            L"安装未完成（错误代码：%1!u!）", 0, 0, detail,
++            sizeof(detail) / sizeof(detail[0]),
+             reinterpret_cast<va_list*>(&code));
+-        ::SetWindowText(self->status_, L"安装未完成");
+-        ::SetWindowText(self->detail_,
+-                        detail[0] ? detail : L"请重新运行安装程序");
++        ::SetWindowText(self->status_, detail[0] ? detail : L"安装未完成");
+         ::ShowWindow(self->close_, SW_SHOW);
+         ::SetFocus(self->close_);
+       }
+@@ -413,7 +569,7 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+       if (wparam == kCloseTimer && self->complete_ && !self->failed_)
+         ::DestroyWindow(window);
+       else if (wparam == kAnimationTimer && !self->complete_ &&
+-               !::IsIconic(window))
++               self->percent_ < 0 && !::IsIconic(window))
+         ::InvalidateRect(self->progress_, nullptr, FALSE);
+       return 0;
+     case WM_COMMAND:
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.h b/chrome/installer/mini_installer/aegis_install_ui.h
+index 3a96bcfb197c6bff7d25a729ff0ba440d725163c..f3c7111747b4f7d374564da1e776b8e6563c6958 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.h
++++ b/chrome/installer/mini_installer/aegis_install_ui.h
+@@ -5,6 +5,8 @@
+ 
+ #include <windows.h>
+ 
++#include "chrome/installer/aegis_install_progress.h"
++
+ namespace mini_installer {
+ 
+ // 安装工作留在调用线程；窗口和控件仅由独立消息线程持有。
+@@ -18,6 +20,8 @@ class AegisInstallUi {
+ 
+   // 只投递阶段通知，不阻塞安装线程；最终状态之后的迟到通知会被忽略。
+   void Installing();
++  // 接收当前阶段实测进度，调用方不持有窗口或跨线程 UI 状态。
++  void UpdateProgress(aegis_installer::Progress progress);
+   // 0 表示成功并自动收起；非 0 保留数字错误码，等待用户确认关闭。
+   void Finish(DWORD exit_code);
+ 
+@@ -34,11 +38,20 @@ class AegisInstallUi {
+                                        LPARAM lparam,
+                                        UINT_PTR subclass_id,
+                                        DWORD_PTR context);
++  // 保留原生按钮的键盘/辅助功能语义，仅补充悬停与绘制。
++  static LRESULT CALLBACK CloseButtonProc(HWND window,
++                                          UINT message,
++                                          WPARAM wparam,
++                                          LPARAM lparam,
++                                          UINT_PTR subclass_id,
++                                          DWORD_PTR context);
+   void CreateControls();
++  void UpdateFrame();
++  void ShowProgress(aegis_installer::Progress progress);
+   void LayoutControls();
+   void UpdateAppearance();
+   void PaintProgress(HWND window);
+-  void PaintButton(const DRAWITEMSTRUCT& item);
++  void PaintCloseButton(const DRAWITEMSTRUCT& item);
+   int Scale(int value) const;
+ 
+   HANDLE thread_ = nullptr;
+@@ -46,22 +59,22 @@ class AegisInstallUi {
+   HWND window_ = nullptr;
+   HWND logo_ = nullptr;
+   HWND title_ = nullptr;
+-  HWND subtitle_ = nullptr;
+   HWND status_ = nullptr;
+-  HWND detail_ = nullptr;
+   HWND progress_ = nullptr;
+   HWND close_ = nullptr;
+   HFONT font_ = nullptr;
+   HFONT title_font_ = nullptr;
+-  HFONT status_font_ = nullptr;
+-  HFONT detail_font_ = nullptr;
+   HICON logo_icon_ = nullptr;
++  ULONG_PTR graphics_token_ = 0;
+   UINT dpi_ = 96;
+   bool interactive_;
+   bool complete_ = false;
+   bool failed_ = false;
+   bool high_contrast_ = false;
+   bool animate_ = true;
++  bool close_hover_ = false;
++  aegis_installer::Phase phase_ = aegis_installer::Phase::kPreparing;
++  int percent_ = -1;
+ };
+ 
+ }  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+index 5ca37807e01a82d406c8b1b1eef4e3bc054330ac..21a504b00ac83a7e161fd489c13e0ce48b88969b 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+@@ -37,7 +37,7 @@ bool WaitForText(HWND window, const wchar_t* expected) {
+   return false;
+ }
+ 
+-// 验证各 DPI 下的真实控件与文字可完整容纳，尤其是两行最大错误码提示。
++// 验证各 DPI 下的真实控件与单行最大错误码提示可完整容纳。
+ void ExpectReadableLayout(HWND window) {
+   RECT client = {};
+   ASSERT_TRUE(::GetClientRect(window, &client));
+@@ -83,11 +83,11 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
+     AegisInstallUi ui(true);
+     HWND window = OwnWindow();
+     EXPECT_TRUE(window);
+-    EXPECT_TRUE(WaitForText(window, L"正在准备安装"));
++    EXPECT_TRUE(WaitForText(window, L"正在准备"));
+     ::SendMessage(window, WM_CLOSE, 0, 0);
+     EXPECT_TRUE(::IsWindow(window));  // 安装提交期间关闭窗口不能中断文件写入。
+     ui.Installing();
+-    EXPECT_TRUE(WaitForText(window, L"正在安装…"));
++    EXPECT_TRUE(WaitForText(window, L"正在安装"));
+     HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
+     EXPECT_TRUE(::IsWindowVisible(progress));
+     EXPECT_NE(0, ::GetWindowLongPtr(progress, GWL_STYLE) & PBS_MARQUEE);
+@@ -124,10 +124,7 @@ TEST(AegisInstallUiTest, FailureRemainsReadableAcrossDpiChanges) {
+   auto previous_context = ::SetThreadDpiAwarenessContext(
+       DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+   for (UINT dpi : {96U, 120U, 144U, 192U, 96U}) {
+-    RECT bounds = {0, 0, ::MulDiv(620, dpi, 96), ::MulDiv(420, dpi, 96)};
+-    ::AdjustWindowRectExForDpi(
+-        &bounds, static_cast<DWORD>(::GetWindowLongPtr(window, GWL_STYLE)),
+-        FALSE, 0, dpi);
++    RECT bounds = {0, 0, ::MulDiv(640, dpi, 96), ::MulDiv(400, dpi, 96)};
+     ::SendMessage(window, WM_DPICHANGED, MAKELONG(dpi, dpi),
+                   reinterpret_cast<LPARAM>(&bounds));
+     ExpectReadableLayout(window);
+@@ -143,8 +140,59 @@ TEST(AegisInstallUiTest, TerminalStateIgnoresLateInstallingMessage) {
+   EXPECT_TRUE(WaitForText(window, L"错误代码：31"));
+   // 安装线程迟到的阶段消息不能覆盖失败结果或重新启动动画。
+   ui.Installing();
+-  EXPECT_FALSE(WaitForText(window, L"正在安装…"));
++  EXPECT_FALSE(WaitForText(window, L"正在安装"));
+   EXPECT_TRUE(WaitForText(window, L"错误代码：31"));
+   ::SendMessage(window, WM_COMMAND, IDOK, 0);
+ }
++TEST(AegisInstallUiTest, MeasuredProgressStaysStillUntilActualWorkArrives) {
++  AegisInstallUi ui(true);
++  HWND window = OwnWindow();
++  HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
++  ui.UpdateProgress({aegis_installer::Phase::kDecompressing, 42});
++  EXPECT_TRUE(WaitForText(window, L"正在解压  42%"));
++  EXPECT_EQ(42, ::SendMessage(progress, PBM_GETPOS, 0, 0));
++  EXPECT_EQ(0, ::GetWindowLongPtr(progress, GWL_STYLE) & PBS_MARQUEE);
++  ::Sleep(150);
++  EXPECT_EQ(42, ::SendMessage(progress, PBM_GETPOS, 0, 0));
++  // 同阶段倒退和未确认的 100% 都被拒绝；阶段更换才允许使用新的分母。
++  ui.UpdateProgress({aegis_installer::Phase::kDecompressing, 20});
++  ui.UpdateProgress({aegis_installer::Phase::kDecompressing, 100});
++  ::Sleep(100);
++  EXPECT_EQ(42, ::SendMessage(progress, PBM_GETPOS, 0, 0));
++  ui.UpdateProgress({aegis_installer::Phase::kInstalling, 10});
++  EXPECT_TRUE(WaitForText(window, L"正在安装  10%"));
++  EXPECT_EQ(10, ::SendMessage(progress, PBM_GETPOS, 0, 0));
++  ui.Finish(0);
++}
++
++TEST(AegisInstallUiTest, FramelessWindowKeepsDraggingWithoutWindowButtons) {
++  AegisInstallUi ui(true);
++  HWND window = OwnWindow();
++  EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_CAPTION);
++  EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_THICKFRAME);
++  EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_BORDER);
++  EXPECT_EQ(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_MINIMIZEBOX);
++  EXPECT_EQ(nullptr, ::GetDlgItem(window, 100));
++  EXPECT_FALSE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
++  int text_count = 0;
++  for (HWND child = ::GetWindow(window, GW_CHILD); child;
++       child = ::GetWindow(child, GW_HWNDNEXT)) {
++    wchar_t name[32] = {};
++    ::GetClassName(child, name, 32);
++    if (std::wstring(name) == L"Static" &&
++        (::GetWindowLongPtr(child, GWL_STYLE) & SS_TYPEMASK) != SS_ICON)
++      ++text_count;
++  }
++  EXPECT_EQ(2, text_count);  // 品牌和状态各一处，不重复展示说明文案。
++  POINT drag = {30, 20};
++  ::ClientToScreen(window, &drag);
++  EXPECT_EQ(HTCAPTION,
++            ::SendMessage(window, WM_NCHITTEST, 0, MAKELPARAM(drag.x, drag.y)));
++  ::SendMessage(window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
++  EXPECT_FALSE(::IsZoomed(window));
++  ui.Finish(0);
++  // 本测试专注框架与命中；同步关闭避免跨线程窗口激活与析构等待互锁。
++  EXPECT_TRUE(WaitForText(window, L"安装完成"));
++  ::SendMessage(window, WM_CLOSE, 0, 0);
++}
+ }  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/mini_installer.cc b/chrome/installer/mini_installer/mini_installer.cc
+index 4947d2f73e399af55de72bbbc73cc113c3d4d313..7660788c529cd4278d5bfe5d33ac72054f6f042e 100644
+--- a/chrome/installer/mini_installer/mini_installer.cc
++++ b/chrome/installer/mini_installer/mini_installer.cc
+@@ -162,7 +162,9 @@ ProcessExitResult RunProcessAndWait(const wchar_t* exe_path,
+                                     wchar_t* cmdline,
+                                     DWORD file_not_found_code,
+                                     DWORD path_not_found_code,
+-                                    DWORD generic_failure_code) {
++                                    DWORD generic_failure_code,
++                                    aegis_installer::ProgressChannel* channel,
++                                    AegisInstallUi& ui) {
+   STARTUPINFOW si = {sizeof(si)};
+   PROCESS_INFORMATION pi = {0};
+   if (!::CreateProcess(exe_path, cmdline, nullptr, nullptr, FALSE,
+@@ -189,12 +191,27 @@ ProcessExitResult RunProcessAndWait(const wchar_t* exe_path,
+   ::CloseHandle(pi.hThread);
+ 
+   DWORD exit_code = SUCCESS_EXIT_CODE;
+-  DWORD wr = ::WaitForSingleObject(pi.hProcess, INFINITE);
++  DWORD wr;
++  aegis_installer::Progress previous;
++  do {
++    // 进度通道丢失不阻塞安装；轮询只更新展示，退出码仍来自真实 setup 进程。
++    wr = ::WaitForSingleObject(pi.hProcess, channel ? 100 : INFINITE);
++    if (channel && wr == WAIT_TIMEOUT) {
++      aegis_installer::Progress progress;
++      if (channel->Read(&progress) && (progress.phase != previous.phase ||
++                                       progress.percent != previous.percent)) {
++        ui.UpdateProgress(progress);
++        previous = progress;
++      }
++    }
++  } while (wr == WAIT_TIMEOUT);
+   if (WAIT_OBJECT_0 != wr || !::GetExitCodeProcess(pi.hProcess, &exit_code)) {
+     // Note:  We've assumed that WAIT_OBJCT_0 != wr means a failure.  The call
+     // could return a different object but since we never spawn more than one
+     // sub-process at a time that case should never happen.
+-    return ProcessExitResult(WAIT_FOR_PROCESS_FAILED, ::GetLastError());
++    DWORD error = ::GetLastError();
++    ::CloseHandle(pi.hProcess);
++    return ProcessExitResult(WAIT_FOR_PROCESS_FAILED, error);
+   }
+ 
+   ::CloseHandle(pi.hProcess);
+@@ -458,7 +475,24 @@ ProcessExitResult RunSetup(const Configuration& configuration,
+                            HMODULE module,
+                            const wchar_t* archive_name,
+                            const wchar_t* archive_type,
+-                           const wchar_t* setup_path) {
++                           const wchar_t* setup_path,
++                           AegisInstallUi& ui) {
++  // 当前安装独享随机命名映射；不继承句柄，不更改默认 DACL。
++  aegis_installer::ProgressChannel channel;
++  wchar_t channel_name[80] = {};
++  bool channel_ready = false;
++  if (configuration.is_interactive_install()) {
++    DWORD random[4] = {};
++    if (::RtlGenRandom(random, sizeof(random))) {
++      DWORD_PTR parts[] = {random[0], random[1], random[2], random[3]};
++      if (::FormatMessage(
++              FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
++              L"Local\\GCSA.Aegis.Progress.%1!08x!%2!08x!%3!08x!%4!08x!", 0, 0,
++              channel_name, _countof(channel_name),
++              reinterpret_cast<va_list*>(parts)))
++        channel_ready = channel.Create(channel_name);
++    }
++  }
+   // Get the path to mini_installer.
+   PathString mini_installer_path;
+   DWORD len =
+@@ -506,10 +540,17 @@ ProcessExitResult RunSetup(const Configuration& configuration,
+                            : L" --do-not-launch-chrome")) {
+     return ProcessExitResult(COMMAND_STRING_OVERFLOW);
+   }
++  // 放在透传参数之后，防止调用方的同名参数覆盖本次安装专属通道。
++  if (channel_ready && (!cmd_line.append(L" --aegis-install-progress=") ||
++                        !cmd_line.append(channel_name)))
++    return ProcessExitResult(COMMAND_STRING_OVERFLOW);
++  // 通道无法建立时仍显示通用安装状态；可靠的阶段数据到达后会替换此提示。
++  ui.Installing();
+   return RunProcessAndWait(setup_exe.get(), cmd_line.get(),
+                            RUN_SETUP_FAILED_FILE_NOT_FOUND,
+                            RUN_SETUP_FAILED_PATH_NOT_FOUND,
+-                           RUN_SETUP_FAILED_COULD_NOT_CREATE_PROCESS);
++                           RUN_SETUP_FAILED_COULD_NOT_CREATE_PROCESS,
++                           channel_ready ? &channel : nullptr, ui);
+ }
+ 
+ // Deletes the files extracted by UnpackBinaryResources and the work directory
+@@ -755,9 +796,8 @@ ProcessExitResult WMain(HMODULE module) {
+   ::SetProcessWorkingSetSize(::GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+ 
+   if (exit_code.IsSuccess()) {
+-    ui.Installing();
+     exit_code = RunSetup(configuration, module, archive_name.get(),
+-                         archive_type.get(), setup_path.get());
++                         archive_type.get(), setup_path.get(), ui);
+   }
+ 
+   if (configuration.should_delete_extracted_files()) {
+diff --git a/chrome/installer/setup/BUILD.gn b/chrome/installer/setup/BUILD.gn
+index 48882781b772692dc75a0d77387a640cdb6eacb9..d4357b9cb6bd8ec55eecc255c38e14de33765f9e 100644
+--- a/chrome/installer/setup/BUILD.gn
++++ b/chrome/installer/setup/BUILD.gn
+@@ -104,6 +104,7 @@ if (is_win) {
+ 
+     public_deps = [
+       "//base",
++      "//chrome/installer:aegis_install_progress",
+       "//chrome/installer/util:with_rc_strings",
+     ]
+ 
+@@ -154,6 +155,7 @@ if (is_win) {
+   # This test covers the mini installer and setup tests.
+   test("setup_unittests") {
+     sources = [
++      "aegis_install_progress_unittest.cc",
+       "aegis_launch_policy.h",
+       "aegis_launch_policy_unittest.cc",
+       "configure_app_container_sandbox_unittest.cc",
+diff --git a/chrome/installer/setup/aegis_install_progress_unittest.cc b/chrome/installer/setup/aegis_install_progress_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..4c862a31758114fc434695ff7d5bb4cbb1ec08d8
+--- /dev/null
++++ b/chrome/installer/setup/aegis_install_progress_unittest.cc
+@@ -0,0 +1,259 @@
++// Copyright 2026 The GCSA Aegis Authors
++// 验证进度通道、实际解包计量和事务边界；仅使用临时文件及隔离注册表。
++#include "chrome/installer/aegis_install_progress.h"
++
++#include <algorithm>
++#include <memory>
++#include <string>
++#include <utility>
++#include <vector>
++
++#include "base/command_line.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/path_service.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/test/bind.h"
++#include "base/test/multiprocess_test.h"
++#include "base/test/test_reg_util_win.h"
++#include "base/time/time.h"
++#include "base/uuid.h"
++#include "chrome/common/chrome_paths.h"
++#include "chrome/installer/setup/installer_state.h"
++#include "chrome/installer/util/initial_preferences.h"
++#include "chrome/installer/util/installation_state.h"
++#include "chrome/installer/util/lzma_util.h"
++#include "chrome/installer/util/work_item_list.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "testing/multiprocess_func_list.h"
++
++namespace aegis_installer {
++namespace {
++std::wstring NewName() {
++  std::string nonce = base::Uuid::GenerateRandomV4().AsLowercaseString();
++  std::erase(nonce, '-');
++  return kProgressNamePrefix + base::ASCIIToWide(nonce);
++}
++
++TEST(AegisInstallProgressTest, IsolatedChannelRejectsCollisionAndInvalidData) {
++  std::wstring name = NewName();
++  ProgressChannel parent, child, collision;
++  ASSERT_TRUE(parent.Create(name.c_str()));
++  EXPECT_FALSE(collision.Create(name.c_str()));
++  ASSERT_TRUE(child.Open(name.c_str()));
++  child.Write(Phase::kDecompressing, 42);
++  Progress progress;
++  ASSERT_TRUE(parent.Read(&progress));
++  EXPECT_EQ(Phase::kDecompressing, progress.phase);
++  EXPECT_EQ(42, progress.percent);
++  // 未知协议、越界阶段或伪造完成值都不能改变有效的展示状态。
++  child.Write(Phase::kInstalling, 100);
++  child.Write(static_cast<Phase>(255), 30);
++  child.Write(Phase::kInstalling, -2);
++  ASSERT_TRUE(parent.Read(&progress));
++  EXPECT_EQ(42, progress.percent);
++  HANDLE mapping = ::OpenFileMappingW(FILE_MAP_WRITE, FALSE, name.c_str());
++  ASSERT_NE(nullptr, mapping);
++  auto* packet = static_cast<LONG*>(
++      ::MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, sizeof(LONG)));
++  ASSERT_NE(nullptr, packet);
++  for (DWORD value : {0u, 0xa602002au, 0xa601ff2au, 0xa6010064u}) {
++    ::InterlockedExchange(packet, static_cast<LONG>(value));
++    EXPECT_FALSE(parent.Read(&progress));
++  }
++  ::UnmapViewOfFile(packet);
++  ::CloseHandle(mapping);
++  child.Close();
++  parent.Close();
++  EXPECT_FALSE(child.Open(name.c_str()));
++  EXPECT_FALSE(child.Open(
++      L"Global\\GCSA.Aegis.Progress.0123456789abcdef0123456789abcdef"));
++  EXPECT_FALSE(parent.Create(L"Local\\GCSA.Aegis.Progress.invalid"));
++  EXPECT_FALSE(parent.Create(nullptr));
++}
++
++MULTIPROCESS_TEST_MAIN(AegisProgressWriter) {
++  ProgressChannel channel;
++  if (!channel.Open(base::CommandLine::ForCurrentProcess()
++                        ->GetSwitchValueNative(kProgressSwitch)
++                        .c_str()))
++    return 1;
++  channel.Write(Phase::kInstalling, 73);
++  return 0;
++}
++
++TEST(AegisInstallProgressTest, ChildPublishesWithoutInheritedHandles) {
++  // 通过名称建立进程间通道，子进程不继承父句柄；生命周期由各自句柄独立维持。
++  std::wstring name = NewName();
++  ProgressChannel channel;
++  ASSERT_TRUE(channel.Create(name.c_str()));
++  auto command = base::GetMultiProcessTestChildBaseCommandLine();
++  command.AppendSwitchNative(kProgressSwitch, name);
++  base::LaunchOptions options;
++  options.start_hidden = true;
++  auto child =
++      base::SpawnMultiProcessTestChild("AegisProgressWriter", command, options);
++  ASSERT_TRUE(child.IsValid());
++  int code = -1;
++  bool exited =
++      base::WaitForMultiprocessTestChildExit(child, base::Seconds(20), &code);
++  if (!exited)
++    base::TerminateMultiProcessTestChild(child, 1, true);
++  ASSERT_TRUE(exited);
++  ASSERT_EQ(0, code);
++  Progress progress;
++  ASSERT_TRUE(channel.Read(&progress));
++  EXPECT_EQ(Phase::kInstalling, progress.phase);
++  EXPECT_EQ(73, progress.percent);
++}
++
++TEST(AegisInstallProgressTest, MeasuredStagesNeverDeclareOverallSuccess) {
++  registry_util::RegistryOverrideManager registry;
++  ASSERT_NO_FATAL_FAILURE(registry.OverrideRegistry(HKEY_CURRENT_USER));
++  ASSERT_NO_FATAL_FAILURE(registry.OverrideRegistry(HKEY_LOCAL_MACHINE));
++  std::wstring name = NewName();
++  ProgressChannel channel;
++  ASSERT_TRUE(channel.Create(name.c_str()));
++  base::CommandLine command(base::FilePath(L"setup.exe"));
++  command.AppendSwitch("aegis-interactive-install");
++  command.AppendSwitchNative(kProgressSwitch, name);
++  installer::InitialPreferences preferences(command);
++  installer::InstallationState machine;
++  installer::InstallerState state;
++  state.Initialize(command, preferences, machine);
++  state.SetStage(installer::UNCOMPRESSING);
++  state.ReportUnpackProgress(42, 100);
++  Progress progress;
++  ASSERT_TRUE(channel.Read(&progress));
++  EXPECT_EQ(Phase::kDecompressing, progress.phase);
++  EXPECT_EQ(42, progress.percent);
++  state.ReportUnpackProgress(100, 100);
++  ASSERT_TRUE(channel.Read(&progress));
++  EXPECT_EQ(99, progress.percent);
++  state.SetStage(installer::EXECUTING);
++  state.ReportInstallProgress(1, 4);
++  ASSERT_TRUE(channel.Read(&progress));
++  EXPECT_EQ(25, progress.percent);
++  state.ReportInstallProgress(4, 0);
++  state.ReportInstallProgress(5, 4);
++  state.ReportUnpackProgress(3, 4);
++  ASSERT_TRUE(channel.Read(&progress));
++  EXPECT_EQ(25, progress.percent);
++  state.SetStage(installer::ROLLINGBACK);
++  ASSERT_TRUE(channel.Read(&progress));
++  EXPECT_EQ(Phase::kRollingBack, progress.phase);
++  EXPECT_EQ(-1, progress.percent);
++  // 静默调用即便携带通道参数也不应写入交互 UI。
++  command.RemoveSwitch("aegis-interactive-install");
++  state.Initialize(command, preferences, machine);
++  state.SetStage(installer::EXECUTING);
++  state.ReportInstallProgress(4, 4);
++  ASSERT_TRUE(channel.Read(&progress));
++  EXPECT_EQ(Phase::kRollingBack, progress.phase);
++}
++
++TEST(AegisInstallProgressTest, FileAndMemoryUnpackReportActualPayload) {
++  base::FilePath data;
++  ASSERT_TRUE(base::PathService::Get(chrome::DIR_TEST_DATA, &data));
++  auto archive = data.AppendASCII("installer/archive1.7z");
++  auto bytes = base::ReadFileToBytes(archive);
++  ASSERT_TRUE(bytes);
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  std::string reference;
++  for (bool memory : {false, true}) {
++    auto output = temp.GetPath().AppendASCII(memory ? "memory" : "file");
++    ASSERT_TRUE(base::CreateDirectory(output));
++    std::vector<std::pair<uint64_t, uint64_t>> observed;
++    auto callback =
++        base::BindLambdaForTesting([&](uint64_t completed, uint64_t total) {
++          observed.emplace_back(completed, total);
++        });
++    auto status = memory
++                      ? UnPackArchiveBuffer(*bytes, output, nullptr, callback)
++                      : UnPackArchive(archive, output, nullptr, callback);
++    ASSERT_EQ(UNPACK_NO_ERROR, status);
++    ASSERT_GE(observed.size(), 2u);
++    EXPECT_EQ(0u, observed.front().first);
++    EXPECT_GT(observed.front().second, 0u);
++    EXPECT_LT(observed.front().second, bytes->size());
++    EXPECT_EQ(observed.back().first, observed.back().second);
++    for (size_t i = 1; i < observed.size(); ++i) {
++      EXPECT_GE(observed[i].first, observed[i - 1].first);
++      EXPECT_EQ(observed[i].second, observed.front().second);
++      EXPECT_LE(observed[i].first, observed[i].second);
++    }
++    std::string extracted;
++    ASSERT_TRUE(
++        base::ReadFileToString(output.AppendASCII("a.exe"), &extracted));
++    EXPECT_FALSE(extracted.empty());
++    if (memory)
++      EXPECT_EQ(reference, extracted);
++    else
++      reference = extracted;
++  }
++}
++
++TEST(AegisInstallProgressTest, CorruptArchiveCannotReportCompletedExtraction) {
++  base::FilePath data;
++  ASSERT_TRUE(base::PathService::Get(chrome::DIR_TEST_DATA, &data));
++  auto bytes = base::ReadFileToBytes(data.AppendASCII("installer/archive1.7z"));
++  ASSERT_TRUE(bytes);
++  ASSERT_GT(bytes->size(), 100u);
++  // 保留有效容器头，破坏压缩数据，验证观察者不把消费完字节当作解包成功。
++  (*bytes)[50] ^= 0xff;
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  int reports = 0;
++  auto callback =
++      base::BindLambdaForTesting([&](uint64_t completed, uint64_t total) {
++        ++reports;
++        EXPECT_LE(completed, total);
++      });
++  EXPECT_NE(UNPACK_NO_ERROR,
++            UnPackArchiveBuffer(*bytes, temp.GetPath(), nullptr, callback));
++  EXPECT_GT(reports, 0);
++}
++
++TEST(AegisInstallProgressTest, FailedWorkIsNotCountedAndRollbackIsUnchanged) {
++  // 只计已提交的顶层事务；失败项参与回滚，但不会把完成计数向前推进。
++  std::unique_ptr<WorkItemList> owner(WorkItem::CreateWorkItemList());
++  WorkItemList& list = *owner;
++  std::vector<std::pair<size_t, size_t>> observed;
++  list.set_progress_callback(base::BindLambdaForTesting(
++      [&](size_t done, size_t total) { observed.emplace_back(done, total); }));
++  std::vector<int> actions;
++  for (int id : {1, 2, 3}) {
++    list.AddCallbackWorkItem(
++        base::BindLambdaForTesting([&, id](const CallbackWorkItem&) {
++          actions.push_back(id);
++          return id != 2;
++        }),
++        base::BindLambdaForTesting(
++            [&, id](const CallbackWorkItem&) { actions.push_back(-id); }));
++  }
++  EXPECT_FALSE(list.Do());
++  list.Rollback();
++  EXPECT_EQ((std::vector<int>{1, 2, -2, -1}), actions);
++  EXPECT_EQ((std::vector<std::pair<size_t, size_t>>{{0, 3}, {1, 3}}), observed);
++}
++
++TEST(AegisInstallProgressTest, SuccessfulWorkPublishesFinalMeasuredCount) {
++  std::unique_ptr<WorkItemList> owner(WorkItem::CreateWorkItemList());
++  WorkItemList& list = *owner;
++  std::vector<size_t> observed;
++  list.set_progress_callback(
++      base::BindLambdaForTesting([&](size_t done, size_t total) {
++        EXPECT_EQ(2u, total);
++        observed.push_back(done);
++      }));
++  for (int i = 0; i != 2; ++i) {
++    list.AddCallbackWorkItem(base::BindLambdaForTesting(
++                                 [](const CallbackWorkItem&) { return true; }),
++                             {});
++  }
++  EXPECT_TRUE(list.Do());
++  EXPECT_EQ((std::vector<size_t>{0, 1, 2}), observed);
++}
++}  // namespace
++}  // namespace aegis_installer
+diff --git a/chrome/installer/setup/install.cc b/chrome/installer/setup/install.cc
+index 3743671c97e5ce0fe894fc0fc0bed0a4c0480129..fcf9a457b52f219939365a88d0693b35b06407f4 100644
+--- a/chrome/installer/setup/install.cc
++++ b/chrome/installer/setup/install.cc
+@@ -16,6 +16,7 @@
+ #include "base/debug/dump_without_crashing.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
++#include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "base/process/launch.h"
+ #include "base/rand_util.h"
+@@ -205,6 +206,10 @@ InstallStatus InstallNewVersion(const InstallParams& install_params,
+   std::unique_ptr<WorkItemList> install_list(WorkItem::CreateWorkItemList());
+ 
+   AddInstallWorkItems(install_params, install_list.get());
++  // 安装状态覆盖本次同步事务执行；回调不会逃逸或持有 UI 窗口。
++  install_list->set_progress_callback(
++      base::BindRepeating(&InstallerState::ReportInstallProgress,
++                          base::Unretained(&installer_state)));
+ 
+   base::FilePath new_chrome_exe(
+       installer_state.target_path().Append(kChromeNewExe));
+diff --git a/chrome/installer/setup/installer_state.cc b/chrome/installer/setup/installer_state.cc
+index 93c827d5e3e5fba27f7a248b4a7019cc097da6d3..6da4d0277da3b219888ef099a14246b3a76de2c8 100644
+--- a/chrome/installer/setup/installer_state.cc
++++ b/chrome/installer/setup/installer_state.cc
+@@ -61,6 +61,12 @@ void InstallerState::Initialize(const base::CommandLine& command_line,
+                                 const InitialPreferences& prefs,
+                                 const InstallationState& machine_state) {
+   Clear();
++  if (command_line.HasSwitch("aegis-interactive-install") &&
++      !command_line.HasSwitch(switches::kUninstall)) {
++    progress_channel_.Open(
++        command_line.GetSwitchValueNative(aegis_installer::kProgressSwitch)
++            .c_str());
++  }
+ 
+   set_level(GetMasterPreference(prefs, initial_preferences::kSystemLevel, false)
+                 ? SYSTEM_LEVEL
+@@ -154,6 +160,8 @@ base::FilePath InstallerState::GetInstallerDirectory(
+ }
+ 
+ void InstallerState::Clear() {
++  progress_channel_.Close();
++  progress_phase_ = aegis_installer::Phase::kPreparing;
+   operation_ = UNINITIALIZED;
+   target_path_.clear();
+   state_key_.clear();
+@@ -165,10 +173,61 @@ void InstallerState::Clear() {
+ }
+ 
+ void InstallerState::SetStage(InstallerStage stage) const {
++  using aegis_installer::Phase;
++  switch (stage) {
++    case UNCOMPRESSING:
++      progress_phase_ = Phase::kDecompressing;
++      break;
++    case UNPACKING:
++      progress_phase_ = Phase::kUnpacking;
++      break;
++    case EXECUTING:
++      progress_phase_ = Phase::kInstalling;
++      break;
++    case COPYING_PREFERENCES_FILE:
++    case CREATING_SHORTCUTS:
++    case REGISTERING_CHROME:
++      progress_phase_ = Phase::kConfiguring;
++      break;
++    case REMOVING_OLD_VERSIONS:
++    case FINISHING:
++      progress_phase_ = Phase::kFinishing;
++      break;
++    case ROLLINGBACK:
++      progress_phase_ = Phase::kRollingBack;
++      break;
++    default:
++      progress_phase_ = Phase::kPreparing;
++      break;
++  }
++  // 保留上游更新器兼容字段，但 Aegis UI 不使用其按阶段估算的百分比。
++  progress_channel_.Write(progress_phase_, -1);
+   GoogleUpdateSettings::SetProgress(system_install(), state_key_,
+                                     progress_calculator_.Calculate(stage));
+ }
+ 
++void InstallerState::ReportUnpackProgress(uint64_t completed,
++                                          uint64_t total) const {
++  if (progress_phase_ != aegis_installer::Phase::kDecompressing &&
++      progress_phase_ != aegis_installer::Phase::kUnpacking)
++    return;
++  if (!total || completed > total)
++    return;
++  int percent =
++      static_cast<int>(100.0 * static_cast<double>(completed) / total);
++  progress_channel_.Write(progress_phase_, percent < 99 ? percent : 99);
++}
++
++void InstallerState::ReportInstallProgress(size_t completed,
++                                           size_t total) const {
++  if (progress_phase_ != aegis_installer::Phase::kInstalling || !total ||
++      completed > total)
++    return;
++  int percent =
++      static_cast<int>(100.0 * static_cast<double>(completed) / total);
++  progress_channel_.Write(progress_phase_, percent < 99 ? percent : 99);
++}
++
+ void InstallerState::WriteInstallerResult(
+     InstallStatus status,
+     int string_resource_id,
+diff --git a/chrome/installer/setup/installer_state.h b/chrome/installer/setup/installer_state.h
+index d8d444e6857346ddbd820b6c04413a47b95d0e1d..6e2e322bdba3a69bb3c8557b44c968355fa6605b 100644
+--- a/chrome/installer/setup/installer_state.h
++++ b/chrome/installer/setup/installer_state.h
+@@ -12,6 +12,7 @@
+ #include "base/version.h"
+ #include "base/win/windows_types.h"
+ #include "build/build_config.h"
++#include "chrome/installer/aegis_install_progress.h"
+ #include "chrome/installer/setup/progress_calculator.h"
+ #include "chrome/installer/util/util_constants.h"
+ 
+@@ -100,6 +101,10 @@ class InstallerState {
+   // Google Update for presentation to a user.
+   void SetStage(InstallerStage stage) const;
+ 
++  // 同步接收真实解码字节/已成功执行的事务数量；仅更新展示，不修改安装结果。
++  void ReportUnpackProgress(uint64_t completed, uint64_t total) const;
++  void ReportInstallProgress(size_t completed, size_t total) const;
++
+   // Sets installer result information in the registry for consumption by Google
+   // Update. The InstallerResult value is set to 0 (SUCCESS) or 1
+   // (FAILED_CUSTOM_ERROR) depending on whether |status| maps to success or not.
+@@ -126,6 +131,9 @@ class InstallerState {
+   std::wstring state_key_;
+   base::Version critical_update_version_;
+   ProgressCalculator progress_calculator_;
++  aegis_installer::ProgressChannel progress_channel_;
++  mutable aegis_installer::Phase progress_phase_ =
++      aegis_installer::Phase::kPreparing;
+   Level level_;
+   HKEY root_key_;
+   bool msi_;
+diff --git a/chrome/installer/setup/unpack_archive.cc b/chrome/installer/setup/unpack_archive.cc
+index df6c3f2f83d1655d50f0925c6dd864d3f0122451..8b2275a256abca23d1317f09239417fd67c65f2c 100644
+--- a/chrome/installer/setup/unpack_archive.cc
++++ b/chrome/installer/setup/unpack_archive.cc
+@@ -19,6 +19,7 @@
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
+ #include "base/files/file_path.h"
++#include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "base/memory/page_size.h"
+ #include "base/scoped_native_library.h"
+@@ -176,7 +177,8 @@ template <typename ArchiveSource>
+ UnPackStatus Unpack(UnPackConsumer consumer,
+                     const ArchiveSource& source,
+                     const base::FilePath& destination,
+-                    base::FilePath* last_output_file) {
++                    base::FilePath* last_output_file,
++                    const UnpackProgressCallback& progress) {
+   // UMA tells us the following about the time required to uncompress the
+   // archive from a file as of M75:
+   // --- Foreground (<10%) ---
+@@ -214,9 +216,11 @@ UnPackStatus Unpack(UnPackConsumer consumer,
+   // 0.01% ERROR_IO_DEVICE
+   UnPackStatus unpack_status = UNPACK_NO_ERROR;
+   if constexpr (std::is_same_v<ArchiveSource, base::FilePath>) {
+-    unpack_status = UnPackArchive(source, destination, last_output_file);
++    unpack_status =
++        UnPackArchive(source, destination, last_output_file, progress);
+   } else {
+-    unpack_status = UnPackArchiveBuffer(source, destination, last_output_file);
++    unpack_status =
++        UnPackArchiveBuffer(source, destination, last_output_file, progress);
+   }
+   // Record success or failure on completion. Note additional calls elsewhere
+   // when extracting from a resource (e.g., handling page errors).
+@@ -230,7 +234,8 @@ UnPackStatus UnpackFromMiniInstallerImpl(
+     const std::wstring& archive_resource_name,
+     const std::wstring& archive_resource_type,
+     const base::FilePath& unpack_path,
+-    base::FilePath* uncompressed_archive) {
++    base::FilePath* uncompressed_archive,
++    const UnpackProgressCallback& progress) {
+   base::span<const uint8_t> archive_span =
+       GetResourceSpan(module, archive_resource_name, archive_resource_type);
+   const bool is_compressed_archive =
+@@ -244,7 +249,8 @@ UnPackStatus UnpackFromMiniInstallerImpl(
+   }
+ 
+   return Unpack(consumer, archive_span, unpack_path,
+-                is_compressed_archive ? uncompressed_archive : nullptr);
++                is_compressed_archive ? uncompressed_archive : nullptr,
++                progress);
+ }
+ 
+ // Calls UnpackFromMiniInstallerImpl within an SEH handler to catch in-page
+@@ -255,12 +261,13 @@ UnPackStatus UnpackFromMiniInstallerWithSEH(
+     const std::wstring& archive_resource_name,
+     const std::wstring& archive_resource_type,
+     const base::FilePath& unpack_path,
+-    base::FilePath* uncompressed_archive) {
++    base::FilePath* uncompressed_archive,
++    const UnpackProgressCallback& progress) {
+   int32_t ntstatus = 0;
+   __try {
+     return UnpackFromMiniInstallerImpl(module, archive_resource_name,
+                                        archive_resource_type, unpack_path,
+-                                       uncompressed_archive);
++                                       uncompressed_archive, progress);
+   } __except (FilterPageError(module_span, GetExceptionCode(),
+                               GetExceptionInformation(), ntstatus)) {
+     LOG(ERROR) << "EXCEPTION_IN_PAGE_ERROR while accessing mapped module; "
+@@ -281,7 +288,8 @@ UnPackStatus UnpackFromMiniInstaller(const base::FilePath& mini_installer_path,
+                                      const std::wstring& archive_resource_name,
+                                      const std::wstring& archive_resource_type,
+                                      const base::FilePath& unpack_path,
+-                                     base::FilePath& uncompressed_archive) {
++                                     base::FilePath& uncompressed_archive,
++                                     const UnpackProgressCallback& progress) {
+   // --archive-resource-name and --archive-resource-type are required.
+   CHECK(!archive_resource_name.empty() && !archive_resource_type.empty());
+ 
+@@ -326,7 +334,7 @@ UnPackStatus UnpackFromMiniInstaller(const base::FilePath& mini_installer_path,
+ 
+   return UnpackFromMiniInstallerWithSEH(
+       module_span, module.get(), archive_resource_name, archive_resource_type,
+-      unpack_path, &uncompressed_archive);
++      unpack_path, &uncompressed_archive, progress);
+ }
+ 
+ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+@@ -334,6 +342,10 @@ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+     const base::FilePath& setup_exe,
+     const base::CommandLine& cmd_line,
+     const InstallerState& installer_state) {
++  // 解包同步结束后回调即失效；InstallerState 在整个安装调用期间保持有效。
++  auto progress = base::BindRepeating(&InstallerState::ReportUnpackProgress,
++                                      base::Unretained(&installer_state));
++
+   base::FilePath mini_installer_path =
+       cmd_line.GetSwitchValuePath(switches::kMiniInstallerPath);
+   base::FilePath install_archive =
+@@ -355,8 +367,8 @@ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+     if (UnpackFromMiniInstaller(
+             mini_installer_path,
+             cmd_line.GetSwitchValueNative(switches::kArchiveResourceName),
+-            resource_type, unpack_path,
+-            uncompressed_archive) != UNPACK_NO_ERROR) {
++            resource_type, unpack_path, uncompressed_archive,
++            progress) != UNPACK_NO_ERROR) {
+       return base::unexpected(is_compressed_archive ? UNCOMPRESSION_FAILED
+                                                     : UNPACKING_FAILED);
+     }
+@@ -384,7 +396,8 @@ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+       VLOG(1) << "Installing Chrome from compressed archive "
+               << install_archive;
+       if (Unpack(UnPackConsumer::COMPRESSED_CHROME_ARCHIVE, install_archive,
+-                 unpack_path, &uncompressed_archive) != UNPACK_NO_ERROR) {
++                 unpack_path, &uncompressed_archive,
++                 progress) != UNPACK_NO_ERROR) {
+         return base::unexpected(UNCOMPRESSION_FAILED);
+       }
+       if (uncompressed_archive.empty()) {
+@@ -398,7 +411,7 @@ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+       installer_state.SetStage(UNPACKING);
+       UnPackStatus status = Unpack(UnPackConsumer::UNCOMPRESSED_CHROME_ARCHIVE,
+                                    setup_exe.DirName().Append(kChromeArchive),
+-                                   unpack_path, nullptr);
++                                   unpack_path, nullptr, progress);
+       if (status == UNPACK_NO_ERROR) {
+         return base::ok();  // Success.
+       }
+@@ -414,7 +427,8 @@ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+       installer_state.SetStage(UNCOMPRESSING);
+       if (Unpack(UnPackConsumer::COMPRESSED_CHROME_ARCHIVE,
+                  setup_exe.DirName().Append(kChromeCompressedArchive),
+-                 unpack_path, &uncompressed_archive) != UNPACK_NO_ERROR) {
++                 unpack_path, &uncompressed_archive,
++                 progress) != UNPACK_NO_ERROR) {
+         return base::unexpected(UNCOMPRESSION_FAILED);
+       }
+       if (uncompressed_archive.empty()) {
+@@ -432,7 +446,7 @@ base::expected<void, InstallStatus> UnpackChromeArchiveImpl(
+ 
+   installer_state.SetStage(UNPACKING);
+   if (Unpack(UnPackConsumer::UNCOMPRESSED_CHROME_ARCHIVE, uncompressed_archive,
+-             unpack_path, nullptr) != UNPACK_NO_ERROR) {
++             unpack_path, nullptr, progress) != UNPACK_NO_ERROR) {
+     return base::unexpected(UNPACKING_FAILED);
+   }
+ 
+diff --git a/chrome/installer/util/lzma_util.cc b/chrome/installer/util/lzma_util.cc
+index 15e477dadc6e8c2ac32cbe9d4924f868acadc1cc..fcdefa495970386ffde93f4ec58d8e5622effffd 100644
+--- a/chrome/installer/util/lzma_util.cc
++++ b/chrome/installer/util/lzma_util.cc
+@@ -231,7 +231,8 @@ bool SevenZipDelegateImpl::EntryDone(seven_zip::Result result,
+ template <typename ArchiveSource>
+ UnPackStatus UnPackArchiveImpl(const ArchiveSource& archive,
+                                const base::FilePath& output_dir,
+-                               base::FilePath* output_file) {
++                               base::FilePath* output_file,
++                               const UnpackProgressCallback& progress) {
+   LzmaUtilImpl lzma_util;
+   UnPackStatus status;
+   if ((status = lzma_util.OpenArchive(archive)) != UNPACK_NO_ERROR) {
+@@ -242,7 +243,7 @@ UnPackStatus UnPackArchiveImpl(const ArchiveSource& archive,
+     }
+   } else {
+     VLOG(1) << "Uncompressing archive to path " << output_dir.value();
+-    if ((status = lzma_util.UnPack(output_dir, output_file)) !=
++    if ((status = lzma_util.UnPack(output_dir, output_file, progress)) !=
+         UNPACK_NO_ERROR) {
+       if constexpr (std::is_same_v<ArchiveSource, base::FilePath>) {
+         PLOG(ERROR) << "Unable to uncompress archive: " << archive.value();
+@@ -268,16 +269,18 @@ UnPackStatus UnPackArchiveImpl(const ArchiveSource& archive,
+ 
+ UnPackStatus UnPackArchive(const base::FilePath& archive,
+                            const base::FilePath& output_dir,
+-                           base::FilePath* output_file) {
++                           base::FilePath* output_file,
++                           const UnpackProgressCallback& progress) {
+   VLOG(1) << "Opening archive " << archive.value();
+-  return UnPackArchiveImpl(archive, output_dir, output_file);
++  return UnPackArchiveImpl(archive, output_dir, output_file, progress);
+ }
+ 
+ UnPackStatus UnPackArchiveBuffer(base::span<const uint8_t> archive_buffer,
+                                  const base::FilePath& output_dir,
+-                                 base::FilePath* output_file) {
++                                 base::FilePath* output_file,
++                                 const UnpackProgressCallback& progress) {
+   VLOG(1) << "Opening in-memory archive";
+-  return UnPackArchiveImpl(archive_buffer, output_dir, output_file);
++  return UnPackArchiveImpl(archive_buffer, output_dir, output_file, progress);
+ }
+ 
+ LzmaUtilImpl::LzmaUtilImpl() = default;
+@@ -314,7 +317,8 @@ UnPackStatus LzmaUtilImpl::UnPack(const base::FilePath& location) {
+ }
+ 
+ UnPackStatus LzmaUtilImpl::UnPack(const base::FilePath& location,
+-                                  base::FilePath* output_file) {
++                                  base::FilePath* output_file,
++                                  const UnpackProgressCallback& progress) {
+   DCHECK(archive_file_.IsValid() || !archive_buffer_.empty());
+ 
+   SevenZipDelegateImpl delegate(location, output_file);
+@@ -326,6 +330,8 @@ UnPackStatus LzmaUtilImpl::UnPack(const base::FilePath& location,
+         seven_zip::SevenZipReader::Create(archive_file_.Duplicate(), delegate);
+   }
+   if (reader) {
++    if (!progress.is_null())
++      reader->SetReadProgressCallback(progress);
+     reader->Extract();
+   }  // else the delegate's OnOpenError() has saved the error for use below.
+   error_code_ = delegate.error_code();
+diff --git a/chrome/installer/util/lzma_util.h b/chrome/installer/util/lzma_util.h
+index ec0e61f448e1c2ed1f1501a7c51d74ad25f5286a..b266a729871f5f0780c40e294b43e2df517985f5 100644
+--- a/chrome/installer/util/lzma_util.h
++++ b/chrome/installer/util/lzma_util.h
+@@ -10,9 +10,14 @@
+ #include "base/containers/span.h"
+ #include "base/files/file.h"
+ #include "base/files/file_path.h"
++#include "base/functional/callback.h"
+ #include "base/memory/raw_span.h"
+ #include "base/win/windows_types.h"
+ 
++// 解码已消费字节和本包压缩载荷总量；同步回调，调用结束后不再持有。
++using UnpackProgressCallback =
++    base::RepeatingCallback<void(uint64_t, uint64_t)>;
++
+ // The error status of LzmaUtil::Unpack which is used to publish metrics. Do not
+ // change the order.
+ enum UnPackStatus {
+@@ -41,7 +46,8 @@ enum UnPackStatus {
+ // are not overwritten.
+ UnPackStatus UnPackArchive(const base::FilePath& archive,
+                            const base::FilePath& output_dir,
+-                           base::FilePath* output_file);
++                           base::FilePath* output_file,
++                           const UnpackProgressCallback& progress = {});
+ 
+ // Unpacks the contents of `archive_buffer` into `output_dir`. `output_file`, if
+ // not null, is populated with the name of the last (or only) member extracted
+@@ -50,7 +56,8 @@ UnPackStatus UnPackArchive(const base::FilePath& archive,
+ // `output_dir` are not overwritten.
+ UnPackStatus UnPackArchiveBuffer(base::span<const uint8_t> archive_buffer,
+                                  const base::FilePath& output_dir,
+-                                 base::FilePath* output_file);
++                                 base::FilePath* output_file,
++                                 const UnpackProgressCallback& progress = {});
+ 
+ // A utility class that wraps LZMA SDK library. Prefer UnPackArchive over using
+ // this class directly.
+@@ -77,7 +84,8 @@ class LzmaUtilImpl {
+   // Unpacks the archive to the given location and returns the last file
+   // extracted from archive.
+   UnPackStatus UnPack(const base::FilePath& location,
+-                      base::FilePath* output_file);
++                      base::FilePath* output_file,
++                      const UnpackProgressCallback& progress = {});
+ 
+   std::optional<DWORD> GetErrorCode() { return error_code_; }
+ 
+diff --git a/chrome/installer/util/work_item_list.cc b/chrome/installer/util/work_item_list.cc
+index 8e7f1968547ae78f4518117edd78cb332a504746..6be98071edcacbfafe4cc1faba99b2222ea2a619 100644
+--- a/chrome/installer/util/work_item_list.cc
++++ b/chrome/installer/util/work_item_list.cc
+@@ -28,10 +28,20 @@ WorkItemList::~WorkItemList() {
+ 
+ WorkItemList::WorkItemList() = default;
+ 
++void WorkItemList::set_progress_callback(
++    base::RepeatingCallback<void(size_t, size_t)> callback) {
++  DCHECK_EQ(BEFORE_DO, state());
++  progress_callback_ = std::move(callback);
++}
++
+ bool WorkItemList::DoImpl() {
+   VLOG(1) << "Beginning execution of work item list " << log_message();
+ 
+   bool result = true;
++  const size_t total = list_.size();
++  size_t completed = 0;
++  if (progress_callback_)
++    progress_callback_.Run(completed, total);
+   while (!list_.empty()) {
+     WorkItem* work_item = list_.front();
+     list_.pop_front();
+@@ -47,6 +57,9 @@ bool WorkItemList::DoImpl() {
+       result = false;
+       break;
+     }
++    ++completed;
++    if (progress_callback_)
++      progress_callback_.Run(completed, total);
+   }
+ 
+   if (result)
+diff --git a/chrome/installer/util/work_item_list.h b/chrome/installer/util/work_item_list.h
+index 34af43e5a2e0356249673da6f73a2206e2a0cf00..8d9b89d2585ceba98bd19680fe6981ea40cdba63 100644
+--- a/chrome/installer/util/work_item_list.h
++++ b/chrome/installer/util/work_item_list.h
+@@ -15,7 +15,7 @@
+ #include <vector>
+ 
+ #include "base/files/file_path.h"
+-#include "base/functional/callback_forward.h"
++#include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "chrome/installer/util/work_item.h"
+ 
+@@ -30,6 +30,11 @@ class WorkItemList : public WorkItem {
+  public:
+   ~WorkItemList() override;
+ 
++  // 观察本列表实际完成的顶层事务数，不估算字节量或执行时长。
++  // 仅在 Do 前设置；回调不改变执行/回滚结果，失败项不会计入完成数。
++  void set_progress_callback(
++      base::RepeatingCallback<void(size_t, size_t)> callback);
++
+   // Add a WorkItem to the list.
+   // A WorkItem can only be added to the list before the list's DO() is called.
+   // Once a WorkItem is added to the list. The list owns the WorkItem.
+@@ -140,6 +145,9 @@ class WorkItemList : public WorkItem {
+   // The list of executed WorkItems, in the reverse order of them being
+   // executed.
+   WorkItems executed_list_;
++
++ private:
++  base::RepeatingCallback<void(size_t, size_t)> progress_callback_;
+ };
+ 
+ #endif  // CHROME_INSTALLER_UTIL_WORK_ITEM_LIST_H_
+diff --git a/third_party/lzma_sdk/google/seven_zip_reader.cc b/third_party/lzma_sdk/google/seven_zip_reader.cc
+index bdbf69b9fa79603071cf4236e6c6bde406ef97de..3af46fc5ad41589206e7148c0ca67b49b7d42551 100644
+--- a/third_party/lzma_sdk/google/seven_zip_reader.cc
++++ b/third_party/lzma_sdk/google/seven_zip_reader.cc
+@@ -7,6 +7,7 @@
+ #include <stdint.h>
+ 
+ #include <algorithm>
++#include <map>
+ #include <memory>
+ #include <string>
+ #include <utility>
+@@ -246,6 +247,104 @@ class MemoryLookInStream {
+   size_t position_ = 0;
+ };
+ 
++// 只观察解码器实际消费的压缩载荷，不把缓冲预读、头部解析或 seek
++// 跳跃当作完成量。
++// 合并已消费区间，重复读取不会重复计数；所有原流返回值保持不变。
++class ReadProgressStream {
++ public:
++  ReadProgressStream(ILookInStreamPtr source,
++                     uint64_t start,
++                     uint64_t total,
++                     ReadProgressCallback callback)
++      : source_(source),
++        start_(start),
++        total_(total),
++        callback_(std::move(callback)) {}
++  ILookInStreamPtr stream() { return &bridge_.vtable; }
++
++  // SDK 在 LZMA/LZMA2 最后一次解码后直接返回，不调用 Skip。
++  // 仅在该 folder 解码及 SDK 校验成功后补齐它的载荷区间，失败不得补计。
++  void FolderDecoded(uint64_t first, uint64_t last) {
++    AccountRange(first, last);
++  }
++
++ private:
++  struct Bridge {
++    ILookInStream vtable;
++    ReadProgressStream* owner;
++  };
++  static_assert(std::is_standard_layout_v<Bridge>);
++  static ReadProgressStream& Owner(ILookInStreamPtr stream) {
++    return *reinterpret_cast<const Bridge*>(stream)->owner;
++  }
++  static SRes Look(ILookInStreamPtr stream, const void** buffer, size_t* size) {
++    return ILookInStream_Look(Owner(stream).source_, buffer, size);
++  }
++  static SRes Skip(ILookInStreamPtr stream, size_t size) {
++    auto& self = Owner(stream);
++    SRes result = ILookInStream_Skip(self.source_, size);
++    if (result == SZ_OK)
++      self.Consumed(size);
++    return result;
++  }
++  static SRes Read(ILookInStreamPtr stream, void* buffer, size_t* size) {
++    auto& self = Owner(stream);
++    SRes result = ILookInStream_Read(self.source_, buffer, size);
++    if (result == SZ_OK)
++      self.Consumed(*size);
++    return result;
++  }
++  static SRes Seek(ILookInStreamPtr stream, int64_t* position, ESzSeek origin) {
++    auto& self = Owner(stream);
++    SRes result = ILookInStream_Seek(self.source_, position, origin);
++    if (result == SZ_OK && *position >= 0)
++      self.position_ = static_cast<uint64_t>(*position);
++    return result;
++  }
++  void Consumed(uint64_t count) {
++    if (count > UINT64_MAX - position_)
++      return;
++    uint64_t first = position_;
++    position_ += count;
++    AccountRange(first, position_);
++  }
++  void AccountRange(uint64_t first, uint64_t last) {
++    first = std::max(first, start_);
++    last = std::min(last, start_ + total_);
++    if (first >= last)
++      return;
++    auto range = consumed_.lower_bound(first);
++    if (range != consumed_.begin()) {
++      auto previous = std::prev(range);
++      if (previous->second >= first)
++        range = previous;
++    }
++    while (range != consumed_.end() && range->first <= last) {
++      first = std::min(first, range->first);
++      last = std::max(last, range->second);
++      completed_ -= range->second - range->first;
++      range = consumed_.erase(range);
++    }
++    consumed_.emplace(first, last);
++    completed_ += last - first;
++    int percent =
++        static_cast<int>(100.0 * static_cast<double>(completed_) / total_);
++    if (percent != last_percent_) {
++      last_percent_ = percent;
++      callback_.Run(completed_, total_);
++    }
++  }
++  ILookInStreamPtr source_;
++  const uint64_t start_;
++  const uint64_t total_;
++  ReadProgressCallback callback_;
++  Bridge bridge_{{&Look, &Skip, &Read, &Seek}, this};
++  std::map<uint64_t, uint64_t> consumed_;
++  uint64_t position_ = 0;
++  uint64_t completed_ = 0;
++  int last_percent_ = -1;
++};
++
+ class SevenZipReaderImpl {
+  public:
+   SevenZipReaderImpl(
+@@ -260,6 +359,19 @@ class SevenZipReaderImpl {
+   SevenZipReaderImpl& operator=(const SevenZipReaderImpl&) = delete;
+ 
+   Result Open();
++  void SetReadProgressCallback(ReadProgressCallback callback) {
++    if (callback.is_null() || db_.db.NumPackStreams == 0)
++      return;
++    // SAFETY: SzArEx_Open 成功后，SDK 拥有 NumPackStreams + 1 个合法位置元素。
++    auto positions = UNSAFE_BUFFERS(base::span(
++        db_.db.PackPositions, static_cast<size_t>(db_.db.NumPackStreams) + 1));
++    uint64_t total = positions.back();
++    if (!total || total > UINT64_MAX - db_.dataPos)
++      return;
++    callback.Run(0, total);
++    progress_stream_ = std::make_unique<ReadProgressStream>(
++        raw_in_stream(), db_.dataPos, total, std::move(callback));
++  }
+   size_t num_entries() const { return db_.NumFiles; }
+   base::span<uint8_t> mapped_span() {
+     return temp_file_mapped_ ? temp_file_mapped_->mutable_bytes()
+@@ -285,11 +397,16 @@ class SevenZipReaderImpl {
+                                   base::File temp_file);
+ 
+   ILookInStreamPtr in_stream() {
++    return progress_stream_ ? progress_stream_->stream() : raw_in_stream();
++  }
++  ILookInStreamPtr raw_in_stream() {
+     return std::visit([](auto& stream) { return stream.AsILookInStream(); },
+                       in_stream_);
+   }
+ 
+   Result ExtractIntoTempFile(size_t folder_index);
++  // 两种输出路径共享解码确认，避免漏计 SDK 不执行 Skip 的最终载荷。
++  SRes DecodeFolder(size_t folder_index, base::span<uint8_t> output);
+ 
+   bool IsFolderEncrypted(size_t folder_index) const;
+ 
+@@ -299,6 +416,7 @@ class SevenZipReaderImpl {
+   base::File temp_file_;
+   std::variant<FileLookInStream, MemoryLookInStream> in_stream_;
+   CSzArEx db_{};
++  std::unique_ptr<ReadProgressStream> progress_stream_;
+ 
+   // The index of the folder that has been decoded into the temp file via
+   // `temp_file_mapped`, or `kNoFolder` if no folder has been extracted.
+@@ -483,9 +601,7 @@ Result SevenZipReaderImpl::ExtractFile(size_t entry_index,
+         file_offset_in_folder, output.size()));
+   } else {
+     // Extract directly into `output`.
+-    SRes sz_res =
+-        SzAr_DecodeFolder(&db_.db, folder_index, in_stream(), db_.dataPos,
+-                          output.data(), output.size(), &alloc_temp_);
++    SRes sz_res = DecodeFolder(folder_index, output);
+     if (sz_res != SZ_OK)
+       return SResToResult(sz_res);
+   }
+@@ -691,9 +807,7 @@ Result SevenZipReaderImpl::ExtractIntoTempFile(size_t folder_index) {
+   }
+ 
+   const base::span<uint8_t> temp_file_span = temp_file_mapped_->mutable_bytes();
+-  SRes sz_res = SzAr_DecodeFolder(&db_.db, folder_index, in_stream(),
+-                                  db_.dataPos, temp_file_span.data(),
+-                                  temp_file_span.size(), &alloc_temp_);
++  SRes sz_res = DecodeFolder(folder_index, temp_file_span);
+ 
+   if (sz_res != SZ_OK) {
+     temp_file_mapped_.reset();
+@@ -704,6 +818,26 @@ Result SevenZipReaderImpl::ExtractIntoTempFile(size_t folder_index) {
+   return Result::kSuccess;
+ }
+ 
++SRes SevenZipReaderImpl::DecodeFolder(size_t folder_index,
++                                      base::span<uint8_t> output) {
++  SRes result =
++      SzAr_DecodeFolder(&db_.db, folder_index, in_stream(), db_.dataPos,
++                        output.data(), output.size(), &alloc_temp_);
++  if (result == SZ_OK && progress_stream_) {
++    // SAFETY: Open 校验过 SDK 元数据；folder_index 来自合法文件条目的 folder。
++    auto folder_streams =
++        UNSAFE_BUFFERS(base::span(db_.db.FoStartPackStreamIndex,
++                                  static_cast<size_t>(db_.db.NumFolders) + 1));
++    auto positions = UNSAFE_BUFFERS(base::span(
++        db_.db.PackPositions, static_cast<size_t>(db_.db.NumPackStreams) + 1));
++    progress_stream_->FolderDecoded(
++        db_.dataPos + positions[folder_streams[folder_index]],
++        db_.dataPos + positions[folder_streams[folder_index + 1]]);
++  }
++
++  return result;
++}
++
+ bool SevenZipReaderImpl::IsFolderEncrypted(size_t folder_index) const {
+   if (folder_index == kNoFolder) {
+     return false;
+@@ -813,6 +947,12 @@ std::unique_ptr<SevenZipReader> SevenZipReader::Create(
+ 
+ SevenZipReader::~SevenZipReader() = default;
+ 
++void SevenZipReader::SetReadProgressCallback(ReadProgressCallback callback) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  DCHECK_EQ(entry_index_, 0u);
++  impl_->SetReadProgressCallback(std::move(callback));
++}
++
+ void SevenZipReader::Extract() {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   while (entry_index_ < impl_->num_entries()) {
+diff --git a/third_party/lzma_sdk/google/seven_zip_reader.h b/third_party/lzma_sdk/google/seven_zip_reader.h
+index f4992dfc8f5ab4866f8e453b9692f103978bead7..e5595ac86bc43eddce924ecacd3b0d60dfc09f8c 100644
+--- a/third_party/lzma_sdk/google/seven_zip_reader.h
++++ b/third_party/lzma_sdk/google/seven_zip_reader.h
+@@ -13,6 +13,7 @@
+ #include "base/containers/span.h"
+ #include "base/files/file.h"
+ #include "base/files/file_path.h"
++#include "base/functional/callback_forward.h"
+ #include "base/sequence_checker.h"
+ 
+ namespace seven_zip {
+@@ -80,6 +81,10 @@ class Delegate {
+   virtual bool EntryDone(Result result, const EntryInfo &entry) = 0;
+ };
+ 
++// 统计本次解码实际消费的唯一压缩载荷字节；不等同于
++// CRC、文件提交或整个安装完成。
++using ReadProgressCallback = base::RepeatingCallback<void(uint64_t, uint64_t)>;
++
+ // Encapsulates the state of the 7z unpacker. This class supports asynchronous
+ // unpacking. `delegate` can stop unpacking at any time and resume it with later
+ // calls to `Extract`.
+@@ -111,6 +116,10 @@ class SevenZipReader {
+   // or once the archive is completely extracted.
+   void Extract();
+ 
++  // 可选同步观察者，仅安装器使用；默认不创建观察器，不改变其他解包消费者。
++  // 必须在首次 Extract 前设置；回调生命周期不得短于本 reader。
++  void SetReadProgressCallback(ReadProgressCallback callback);
++
+  private:
+   SevenZipReader(std::unique_ptr<internal::SevenZipReaderImpl> impl,
+                  Delegate& delegate);
+-- 
+2.56.0.windows.4
+
