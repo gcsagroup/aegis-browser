@@ -170,6 +170,12 @@
 		FB00BBEBB93684B899A3C380 /* AegisPolicyKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; };
 		FC29A4E60162F5F98F194385 /* ExternalPageLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */; };
 		FF0A91425480299B9A465E34 /* ExternalPageLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E2D2FFC6E99254E69EFC1E7 /* ExternalPageLink.swift */; };
+		8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */; };
+		8FD2D054E50FB8A71B6DD664 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = 236A78E8476AD80D95EA97AD /* FirebaseAnalyticsCore */; };
+		A3D7B09E532CEACA66A14C52 /* FirebaseInstallPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */; };
+		AB71E30ECA77D90F1491D3CF /* FirebaseInstallPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90ED978B671DD9BF0DD0B06 /* FirebaseInstallPreferences.swift */; };
+		B476B93C48CADA7296ECFD2A /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5224075A1D4C0EDFCEC28D92 /* FirebaseCore */; };
+		D1C2243D03BB921A6E2289B3 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 97A6C8AC0261AA587DF2909D /* FirebaseCrashlytics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -451,6 +457,9 @@
 		FB0BDB1071C646F6F85D5065 /* ShareInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareInboxTests.swift; sourceTree = "<group>"; };
 		FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCenterView.swift; sourceTree = "<group>"; };
 		FDEB860E4BF7C92C09B917CB /* BrowserOperationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserOperationsView.swift; sourceTree = "<group>"; };
+		A90ED978B671DD9BF0DD0B06 /* FirebaseInstallPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseInstallPreferences.swift; sourceTree = "<group>"; };
+		C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AegisFirebase.swift; sourceTree = "<group>"; };
+		F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseInstallPreferencesTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -476,6 +485,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B476B93C48CADA7296ECFD2A /* FirebaseCore in Frameworks */,
+				D1C2243D03BB921A6E2289B3 /* FirebaseCrashlytics in Frameworks */,
+				8FD2D054E50FB8A71B6DD664 /* FirebaseAnalyticsCore in Frameworks */,
 				6839DB2DB6046A431BA96024 /* BrowserKit.framework in Frameworks */,
 				E9D9727EEFB4A51552E29209 /* AegisPolicyKit.framework in Frameworks */,
 				A1774B0BEA41E54381DA0432 /* AgentKit.framework in Frameworks */,
@@ -598,6 +610,7 @@
 				7DA26E91B481872DFF7904C7 /* ContentFilterTests.swift */,
 				C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */,
 				E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */,
+				F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */,
 				1788A0AC56CB3EC57FF15DD6 /* NavigationPolicyIntegrationTests.swift */,
 				EBDAA30CA770583FBD2F98FC /* PortableFeatureTests.swift */,
 				4E644741C584B4E982328A7B /* RecordRecoveryTests.swift */,
@@ -793,6 +806,7 @@
 			isa = PBXGroup;
 			children = (
 				397CB2F7CB8A372260242996 /* AegisApp.swift */,
+				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
 				ABC674B39EE41277890C67F8 /* AegisRootView.swift */,
 				EC9C02A3624F938F17E6ABDE /* AgentCenterModel.swift */,
 				FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */,
@@ -809,6 +823,7 @@
 				A4B4D9F94AAEDB08545CAF89 /* ContentFilterSettingsView.swift */,
 				E78E3F01D2FB48ECD1891483 /* DownloadsView.swift */,
 				703E353F7347BAE796D9FBAE /* FindQueryField.swift */,
+				A90ED978B671DD9BF0DD0B06 /* FirebaseInstallPreferences.swift */,
 				5007B7312B96A7E4042826FF /* Localizable.xcstrings */,
 				DA8804A2D0B751FBE59682A2 /* MarkdownAssistantView.swift */,
 				F0A2CF06F4CE8F740E55AED0 /* MarkdownReaderView.swift */,
@@ -921,6 +936,7 @@
 				DECD2D07A291A4A02847F866 /* Frameworks */,
 				651F0D4DBE487052A2BAA841 /* Embed Foundation Extensions */,
 				7CFE6D1BEF3420D6A2B7DEAC /* Embed Frameworks */,
+				410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */,
 			);
 			buildRules = (
 			);
@@ -933,6 +949,9 @@
 			);
 			name = Aegis;
 			packageProductDependencies = (
+				5224075A1D4C0EDFCEC28D92 /* FirebaseCore */,
+				97A6C8AC0261AA587DF2909D /* FirebaseCrashlytics */,
+				236A78E8476AD80D95EA97AD /* FirebaseAnalyticsCore */,
 			);
 			productName = Aegis;
 			productReference = 8062DAFB759A5F4F2DEA7F6B /* Aegis.app */;
@@ -1075,6 +1094,9 @@
 				"zh-Hant",
 			);
 			mainGroup = 75D3091B55C949DC25CD1851;
+			packageReferences = (
+				F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 50D0A2A1E229FE1B56E19372 /* Products */;
@@ -1186,6 +1208,33 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/scripts/firebase_config.py",
+				"$(SRCROOT)/Firebase/identities.json",
+				"$(SRCROOT)/Firebase/dev/GoogleService-Info.plist",
+				"$(SRCROOT)/Firebase/prod/GoogleService-Info.plist",
+			);
+			name = "Select Aegis Firebase registration";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisFirebase.plist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/scripts/firebase_config.py\" install \\\n  --root \"${SRCROOT}/Firebase\" --channel \"${AEGIS_FIREBASE_CHANNEL}\" \\\n  --artifact \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AegisFirebase.plist\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		1630230A53274E9D47F068BF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -1282,6 +1331,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
+				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
 				8783373417B125F59C243517 /* AegisRootView.swift in Sources */,
 				81ED16A4B85AF8ADA0FB67A3 /* AgentCenterModel.swift in Sources */,
 				A221FA759498782B5C07292B /* AgentCenterView.swift in Sources */,
@@ -1298,6 +1348,7 @@
 				4A5E0ED5967D285295EE1C0E /* DownloadsView.swift in Sources */,
 				FF0A91425480299B9A465E34 /* ExternalPageLink.swift in Sources */,
 				EB09549B7D9D8B0006E3480F /* FindQueryField.swift in Sources */,
+				AB71E30ECA77D90F1491D3CF /* FirebaseInstallPreferences.swift in Sources */,
 				F6934EA900FA9B7F99A595DD /* MarkdownAssistantView.swift in Sources */,
 				6010939F102376A554F2AAC6 /* MarkdownReaderView.swift in Sources */,
 				0A5D2417E5C3DD374F22D850 /* MarkdownShareInbox.swift in Sources */,
@@ -1326,6 +1377,7 @@
 				8FD86E55938A81B726515530 /* ContentFilterTests.swift in Sources */,
 				F1DB30017933EE43C6660F04 /* DownloadPlanTests.swift in Sources */,
 				FC29A4E60162F5F98F194385 /* ExternalPageLinkTests.swift in Sources */,
+				A3D7B09E532CEACA66A14C52 /* FirebaseInstallPreferencesTests.swift in Sources */,
 				C7F29894ACF611B73F67D456 /* LinkSanitizerTests.swift in Sources */,
 				86BF60B407B9E218F98DCAE5 /* ModelClientTests.swift in Sources */,
 				EA29042BE23A97415588FBDE /* ModelStreamingTests.swift in Sources */,
@@ -1483,14 +1535,17 @@
 		4C690ABEB5A9286A91E7B6AD /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AEGIS_FIREBASE_CHANNEL = dev;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				INFOPLIST_FILE = AegisApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis;
 				PRODUCT_NAME = Aegis;
 				SDKROOT = iphoneos;
@@ -1695,6 +1750,7 @@
 		67F8921229C0A0B1FBF8DBAA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AEGIS_FIREBASE_CHANNEL = disabled;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
@@ -1703,6 +1759,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				OTHER_LDFLAGS = "$(inherited) -ObjC";
 				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis;
 				PRODUCT_NAME = Aegis;
 				SDKROOT = iphoneos;
@@ -1978,6 +2035,35 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = exactVersion;
+				version = 13.1.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		236A78E8476AD80D95EA97AD /* FirebaseAnalyticsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAnalyticsCore;
+		};
+		5224075A1D4C0EDFCEC28D92 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		97A6C8AC0261AA587DF2909D /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 070B476F714B6395707EF14A /* Project object */;
 }
