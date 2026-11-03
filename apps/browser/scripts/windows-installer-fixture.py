@@ -50,6 +50,20 @@ def download(url, destination, expected):
     destination.write_bytes(data)
 
 
+def verify_inputs(root, head, overlay):
+    for name in SOURCES:
+        relative = f"apps/browser/overlay/{name}"
+        committed = subprocess.check_output(
+            ["git", "rev-parse", f"{head}:{relative}"], cwd=root).strip()
+        # Honor Git's clean conversion for text (e.g. Windows autocrlf), but
+        # require byte identity for the icon. hash-object without -w is read-only.
+        options = ["--no-filters"] if name.endswith(".ico") else ["--path", relative]
+        actual = subprocess.check_output(
+            ["git", "hash-object", *options, str(overlay / name)], cwd=root).strip()
+        if committed != actual:
+            raise RuntimeError(f"Fixture input differs from tested SHA: {name}")
+
+
 def validate_results(tests, expected_tests):
     actual_tests = []
     for suite in tests["testsuites"]:
@@ -90,11 +104,7 @@ def main():
         if (root / "apps/browser/CHROMIUM_COMMIT").read_text().strip() != CHROMIUM:
             raise RuntimeError("Update pinned fixture inputs for the new Chromium pin")
         overlay = root / "apps/browser/overlay"
-        for name in SOURCES:
-            committed = subprocess.check_output(
-                ["git", "show", f"{head}:apps/browser/overlay/{name}"], cwd=root)
-            if committed != (overlay / name).read_bytes():
-                raise RuntimeError(f"Fixture input differs from tested SHA: {name}")
+        verify_inputs(root, head, overlay)
         hashes = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
         report["inputHashes"] = hashes
         fixture = report_dir / "fixture"
