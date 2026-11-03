@@ -20,26 +20,28 @@ Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上
 
 ## Actions 精简版与完整版
 
+表单英文选项与中英文操作步骤见 [Actions 操作指南](ios-delivery-actions.md)。
+
 打包作业使用 GitHub 托管的临时 macOS，在 `aegis-ios-signing` 环境中保留 team、证书指纹和三份 profile 名称变量，并配置五个加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二进制材料使用单行 Base64。导入前校验 profile 与现有 team、目标和证书一致；打包后清理临时钥匙串与 profiles。签名材料不得输出到日志、提交或放入上传凭据环境。
 
-完整版显式传递 ASC 和签名凭据名称，被调用任务的 `aegis-ios-store` 和 `aegis-ios-signing` 环境值优先生效；不使用 `secrets: inherit`。两个手动入口共用一套后端，全部字段与操作中英文并列，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
+完整版显式传递 ASC 和签名凭据名称，被调用任务的 `aegis-ios-store` 和 `aegis-ios-signing` 环境值优先生效；不使用 `secrets: inherit`。两个手动入口共用一套后端，表单字段与操作使用英文，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
 
 ### 精简版 / Simple
 
-选择 `iOS Delivery · 精简版 / Simple`，填写版本（例如 `1.0.0`）与 build（例如 `35`）。表单仅四项：操作、版本、build、目标产物；查询和等待时忽略目标产物。
+选择 `iOS Delivery · Simple`，填写版本（例如 `1.0.0`）与 build（例如 `35`）。表单仅四项：操作、版本、build、目标产物；查询和等待时忽略目标产物。
 
 | 操作 | 结果 |
 |---|---|
-| 仅打包 / Package | 新 build 的 IPA、dSYM 和清单，不自动上传 |
-| 打包并上传 TF / Package and upload | 先确认 Apple 无该 build/上传，打包并上传同一份新 IPA，不分发、不送审 |
-| 查询状态 / Status | 直接按版本/build 查询 Apple；不需要凭据、旧 artifact 或历史源码 |
-| 等待处理 / Wait | 最多等 5 分钟处理完成；失败、未上传、过期或超时会说明结果，不重传 |
+| Package | 新 build 的 IPA、dSYM 和清单，不自动上传 |
+| Package and upload | 先确认 Apple 无该 build/上传，打包并上传同一份新 IPA，不分发、不送审 |
+| Status | 直接按版本/build 查询 Apple；不需要凭据、旧 artifact 或历史源码 |
+| Wait | 最多等 5 分钟处理完成；失败、未上传、过期或超时会说明结果，不重传 |
 
 查询不会自动选择最新 build，也不会从 `APP_STORE_ELIGIBLE` 猜测 Beta/Release。报告的 `querySource` 是查询代码来源，不是被查询二进制的源码证明。查不到会明确显示 `NOT_FOUND`。查询使用只允许 GET 的 Apple 客户端。
 
 ### 完整版 / Full
 
-选择 `iOS Delivery · 完整版 / Full`。它通过本地 reusable workflow 调用同一后端，不复制签名/上传实现。版本/build 供打包、草稿、查询、直接等待使用；**已有包上传、带原包记录的等待、说明、合规与分发**填写最新成功运行 Summary 的完整 **交付凭据 / Delivery receipt**。目标产物可用 Auto，分发填写既有组名，说明/合规单独填写审核过的阶段 JSON。
+选择 `iOS Delivery · Full`。它通过本地 reusable workflow 调用同一后端，不复制签名/上传实现。版本/build 供打包、草稿、查询、直接等待使用；**已有包上传、带原包记录的等待、说明、合规与分发**填写最新成功运行 Summary 的完整 **Delivery receipt**。目标产物可用 Auto，分发填写既有组名，说明/合规单独填写审核过的阶段 JSON。
 
 凭据仍固定包型、版本/build、原始 producer、最新状态 run/attempt 与原始清单摘要；不授予权限。旧 `aegis-ios-v1` 凭据继续可用。同一次运行完成新包上传时输出 `aegis-ios-v2:...:uploaded`，用来区分“只有原包”和“同一 run 已上传”；它同样依赖成功 producer、清单和上传记录独立复验。仅版本/build 不能授权上传或其他写操作。
 
