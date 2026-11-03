@@ -26,9 +26,10 @@ class IosActionTests(unittest.TestCase):
                 action.check_prior_stage_runs(stage, 11)
         for operation in ['upload', 'metadata', 'compliance', 'distribute-internal', 'distribute-external']:
             stage = 'distribute' if operation.startswith('distribute-') else operation
-            title = f'iOS Delivery {action.receipt_codec.OPERATION_LABELS[operation]} {token}'
-            self.assertTrue(action.matches_stage_title(title, stage, 'a'*64))
-            self.assertFalse(action.matches_stage_title(title, stage, 'b'*64))
+            for label in action.receipt_codec.OPERATION_LABELS[operation]:
+                title = f'iOS Delivery {label} {token}'
+                self.assertTrue(action.matches_stage_title(title, stage, 'a'*64))
+                self.assertFalse(action.matches_stage_title(title, stage, 'b'*64))
         for title in [None, 'iOS Delivery upload invalid', 'unrelated', 'iOS Delivery status '+token]:
             self.assertFalse(action.matches_stage_title(title, 'upload', 'a'*64))
         self.assertTrue(action.matches_stage_title('iOS Delivery upload '+'a'*64, 'upload', 'a'*64))
@@ -54,7 +55,9 @@ class IosActionTests(unittest.TestCase):
                 pinned = action.receipt_codec.decode(value)
                 self.assertEqual([pinned[k] for k in ['package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']],
                                  ['100', '101', '2', digest])
-                self.assertIn(value, (root/'summary').read_text())
+                summary = (root/'summary').read_text()
+                self.assertTrue(summary.startswith('### iOS Delivery receipt\n'))
+                self.assertIn(value, summary)
                 printed.assert_called_once_with(value)
                 for changes in [dict(RELEASE_BUILD='34'), dict(PACKAGE_RUN_ID='99'), dict(RELEASE_MANIFEST_SHA256='c'*64),
                                 dict(RELEASE_STAGE='package'), dict(GITHUB_REPOSITORY='foreign/repo')]:
@@ -175,7 +178,12 @@ class IosActionTests(unittest.TestCase):
 
     def test_new_upload_blocks_prior_combined_or_receipt_upload_for_same_version_build(self):
         token = action.receipt_codec.encode('beta', '1.0.0', '36', 100, 100, 1, 'a'*64)
-        for title in ['iOS Delivery package-upload 1.0.0(36)', 'iOS Delivery 打包并上传 TF / Package and upload 1.0.0(36)', 'iOS Delivery upload '+token]:
+        titles = ['iOS Delivery package-upload 1.0.0(36)',
+                  'iOS Delivery Package and upload 1.0.0(36)',
+                  'iOS Delivery 打包并上传 TF / Package and upload 1.0.0(36)',
+                  f'iOS Delivery upload {token}',
+                  f'iOS Delivery Upload {token}']
+        for title in titles:
             env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', RELEASE_VERSION='1.0.0', RELEASE_BUILD='36')
             with patch.dict(os.environ, env), patch.object(action, 'api', return_value={'workflow_runs': [{'id': 10, 'display_title': title}]}), patch.object(action, 'unstarted_store_run', return_value=False):
                 with self.assertRaises(ValueError):
