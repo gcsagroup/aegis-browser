@@ -57,14 +57,20 @@ def system_tool(name):
 
 
 def git_executable():
-    """解析原生 Git 入口；Windows 批处理会改写 ^ 等合法对象表达式，不能用于校验。"""
-    return system_tool('git.exe' if os.name == 'nt' else 'git')
+    """从构建机可信 PATH 解析原生 Git；Windows 拒绝批处理入口及指向批处理的链接。"""
+    executable = system_tool('git.exe' if os.name == 'nt' else 'git')
+    if os.name == 'nt' and Path(executable).suffix.lower() != '.exe':
+        raise ValueError('Windows Git 必须是原生 EXE，不能经过批处理解释器')
+    return executable
 
 
 def git(src, *args, env=None):
-    """按字面传递 Git 参数，并保留调用方指定的隔离环境。"""
-    return subprocess.check_output(
-        [git_executable(), '-C', str(src), *args], env=env, text=True).strip()
+    """执行脚本选定的 Git 操作；参数保持独立字面值，不接受远端提供的命令或工具。"""
+    # 可执行文件来自构建机可信 PATH 并解析为绝对路径；调用方固定 Git 操作，环境仅承载隔离设置。
+    # 路径和对象表达式必须保持原值，不能 shell 引号转义；真实进程回归覆盖空格、& 和 ^。
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    return subprocess.check_output(  # nosec B603 - 已核对原生绝对入口，argv 不经 shell。
+        [git_executable(), '-C', str(src), *args], env=env, text=True, shell=False).strip()
 
 
 def product_status(root):
@@ -97,9 +103,12 @@ def apply_if_base(src, base, patches, log):
         for name in series(patches):
             output.write('正在应用：' + name + '\n')
             output.flush()
-            result = subprocess.run([git_executable(), '-C', str(src), '-c', 'user.name=Aegis CI',
+            # 固定 am 子命令；series 已拒绝目录穿越，补丁来自本次已审查的产品输入。
+            # 构建机 PATH 与源码配置属于本机信任边界，不能借此执行远端提供的工具或 shell 文本。
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+            result = subprocess.run([git_executable(), '-C', str(src), '-c', 'user.name=Aegis CI',  # nosec B603
                 '-c', 'user.email=aegis-ci@users.noreply.github.com', 'am', '--3way', str(patches / name)],
-                stdout=output, stderr=subprocess.STDOUT)
+                stdout=output, stderr=subprocess.STDOUT, shell=False)
             if result.returncode:
                 raise RuntimeError('补丁冲突已保留：' + name)
 
