@@ -115,5 +115,6 @@ jobs:
             .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}/coverage/powershell
             .artifacts/ci/windows-installer-fixture/report.json
             .artifacts/ci/windows-installer-fixture/tests.json
+            .artifacts/ci/windows-installer-fixture/loader-diagnostics/
           if-no-files-found: error
           retention-days: 14
