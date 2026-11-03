@@ -1,0 +1,27 @@
+From c084af7936a7aa1c59304a05537dc8c1579b0f5c Mon Sep 17 00:00:00 2001
+From: Aegis Patch Export <aegis-patch-export@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 10:20:54 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=E6=A1=8C=E9=9D=A2=E5=8D=95?=
+ =?UTF-8?q?=E5=85=83=E6=B5=8B=E8=AF=95=E7=9A=84=20BrowserClient=20?=
+ =?UTF-8?q?=E7=9B=B4=E6=8E=A5=E4=BE=9D=E8=B5=96?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/aegis/BUILD.gn | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 2c749ed858d92c6cc179abf97938ba411133f32f..e1c7ce98acd908d0d5e6501ff99794a91903b344 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -510,6 +510,8 @@ test("aegis_browser_unittests") {
+       "summary_session_unittest.cc",
+     ]
+     deps += [
++      # 桌面测试直接引用 BrowserClient；test_support 的私有依赖不会透传头文件。
++      "//chrome/browser:chrome_content_browser_client",
+       "//chrome/browser/actor",
+       "//chrome/browser/actor/ui:event_dispatcher",
+       "//chrome/browser/actor/ui:test_support",
