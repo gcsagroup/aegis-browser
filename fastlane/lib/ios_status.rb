@@ -21,7 +21,7 @@ module AegisRelease
     def initialize(version:, build:, api:)
       AegisRelease.require!(version.is_a?(String) && /\A[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?\z/.match?(version) &&
                             build.is_a?(String) && /\A[1-9][0-9]{0,9}\z/.match?(build),
-                            '填写版本和构建号 / Enter version and build')
+                            'Enter a valid version and build number')
       @identity, @api = Identity.new(version: version, build: build), api
     end
 
