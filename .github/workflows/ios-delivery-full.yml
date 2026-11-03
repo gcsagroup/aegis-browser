@@ -1,46 +1,46 @@
-name: iOS Delivery · 完整版 / Full
+name: iOS Delivery · Full
 run-name: iOS Delivery ${{ inputs.operation }} ${{ inputs.source || format('{0}({1})', inputs.version, inputs.build) }}
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "操作 / Operation（打包不会自动上传 / Package never auto-uploads）"
+        description: "Operation (Package creates artifacts only)"
         type: choice
         options:
-          - 仅打包 / Package
-          - 打包并上传 TF / Package and upload
-          - 私有草稿 / Draft
-          - 上传 TestFlight / Upload
-          - 等待处理 / Wait
-          - 查询状态 / Status
-          - 更新测试说明 / Metadata
-          - 加密合规 / Compliance
-          - 内测分发 / Distribute internal
-          - 外测分发 / Distribute external
-        default: 查询状态 / Status
+          - Package
+          - Package and upload
+          - Draft
+          - Upload
+          - Wait
+          - Status
+          - Metadata
+          - Compliance
+          - Distribute internal
+          - Distribute external
+        default: Status
       version:
-        description: "版本 / Version（打包、草稿、查询必填 / Package, Draft, Status）"
+        description: "Version (required without a delivery receipt, e.g. 1.0.0)"
         type: string
       build:
-        description: "构建号 / Build（打包、草稿、查询必填 / Package, Draft, Status）"
+        description: "Build (required without a delivery receipt, e.g. 35)"
         type: string
       product:
-        description: "目标产物 / Product（Auto: Alpha / source；查询时忽略 / ignored for Status）"
+        description: "Product (Auto uses Alpha for new packages and the receipt profile for existing packages)"
         type: choice
         options:
-          - 自动 / Auto
-          - Alpha · 仅内测 / Internal only
-          - Beta · 内外测 / Internal and external
-          - Release · 通用 / Universal
-        default: 自动 / Auto
+          - Auto
+          - Alpha
+          - Beta
+          - Release
+        default: Auto
       source:
-        description: "交付凭据 / Delivery receipt（上传及后续阶段 / Upload and later stages）"
+        description: "Delivery receipt (existing-package operations)"
         type: string
       groups:
-        description: "既有测试组 / Existing groups（仅分发 / Distribution only）"
+        description: "Existing TestFlight groups (distribution only)"
         type: string
       stage_input:
-        description: "阶段 JSON / Stage JSON（仅说明、合规 / Metadata, Compliance only）"
+        description: "Stage JSON (Metadata and Compliance only)"
         type: string
         default: "{}"
 permissions:

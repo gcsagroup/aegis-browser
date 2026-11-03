@@ -56,18 +56,20 @@ class DeliveryPlanTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.plan(self.store(**changes))
 
-    def test_bilingual_labels_and_english_operation_ids_have_identical_guards(self):
-        for product, label in planner.receipt.PRODUCT_LABELS.items():
+    def test_display_labels_and_operation_ids_have_identical_guards(self):
+        for product, labels in planner.receipt.PRODUCT_LABELS.items():
             expected = 'alpha' if product == 'auto' else product
-            self.assertEqual(self.plan(dict(version='1.0.0(33)', product=label))['profile'], expected)
-        for operation, label in planner.receipt.OPERATION_LABELS.items():
+            for label in labels:
+                self.assertEqual(self.plan(dict(version='1.0.0(33)', product=label))['profile'], expected)
+        for operation, labels in planner.receipt.OPERATION_LABELS.items():
             inputs = dict(version='1.0.0(33)') if operation in {'package', 'draft'} else dict(source=self.token('beta', state='101'))
             if operation.startswith('distribute-'):
                 inputs['groups'] = 'Aegis Early access'
-            self.assertEqual(self.plan(dict(inputs, operation=label)), self.plan(dict(inputs, operation=operation)))
-        with self.assertRaises(ValueError):
-            self.plan(dict(operation=planner.receipt.OPERATION_LABELS['distribute-external'],
-                           source=self.token(state='101'), groups='group'))
+            for label in labels:
+                self.assertEqual(self.plan(dict(inputs, operation=label)), self.plan(dict(inputs, operation=operation)))
+        for label in planner.receipt.OPERATION_LABELS['distribute-external']:
+            with self.assertRaises(ValueError):
+                self.plan(dict(operation=label, source=self.token(state='101'), groups='group'))
 
     def test_tag_derives_identity_and_only_packages_private_draft(self):
         for profile in ['alpha', 'beta', 'release']:
@@ -133,8 +135,8 @@ class SimpleFullFormTests(unittest.TestCase):
 
     def test_status_uses_exact_version_build_without_any_package_provenance(self):
         for mode in ['simple', 'full']:
-            for profile in ['auto', 'alpha', 'beta', 'release']:
-                value = self.form(mode, operation='查询状态 / Status', version='1.0.0', build='35', product=profile)
+            for profile in ['Auto', 'Alpha', 'Beta', 'Release']:
+                value = self.form(mode, operation='Status', version='1.0.0', build='35', product=profile)
                 self.assertEqual((value['operation'], value['version'], value['build']), ('status-query', '1.0.0', '35'))
                 for field in ['profile', 'package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']:
                     self.assertEqual(value[field], '', 'Status cannot invent package provenance')
