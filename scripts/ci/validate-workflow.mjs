@@ -25,12 +25,12 @@ function array(value) {
 }
 
 try {
+  if (process.argv.length > 8) fail('Unexpected workflow path argument');
   const path = resolve(process.argv[2] ?? '.github/workflows/quality.yml');
   const cppPath = resolve(process.argv[7] ?? '.github/workflows/cpp-unit-tests.yml');
   const cppSource = readFileSync(cppPath, 'utf8');
   const cppWorkflow = YAML.parse(cppSource);
-  const iosValidationPath = resolve(process.argv[8] ?? '.github/workflows/ios-release-validation.yml');
-  const iosValidationWorkflow = YAML.parse(readFileSync(iosValidationPath, 'utf8'));
+  const iosValidationWorkflow = YAML.parse(readFileSync('.github/workflows/ios-release-validation.yml', 'utf8'));
   const iosPath = resolve(process.argv[3] ?? '.github/workflows/ios-coverage.yml');
   const otherPath = resolve(process.argv[4] ?? '.github/workflows/other-platform-coverage.yml');
   const androidPath = resolve(process.argv[5] ?? '.github/workflows/android-java-coverage.yml');

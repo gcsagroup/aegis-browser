@@ -414,9 +414,11 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
   const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml']
     .map((name) => join(root, '.github/workflows', name));
   const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
-  const validate = (args) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args]);
-  const result = validate(paths);
+  const validate = (args, cwd) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args], {cwd});
+  const fixedPaths = paths.slice(0, -1);
+  const result = validate(fixedPaths);
   assert.equal(result.status, 0, result.stderr);
+  assert.notEqual(validate(paths).status, 0, 'the iOS workflow path cannot be overridden');
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
   const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'];
   const automaticJobs = [[0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive']];
@@ -510,14 +512,19 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
     [4, (w) => { w.jobs['normalize-title'].steps.push({name: 'unsafe', run: 'node candidate.mjs'}); }],
   ];
   try {
+    const iosFixture = join(directory, '.github/workflows/ios-release-validation.yml');
+    mkdirSync(dirname(iosFixture), {recursive: true});
+    writeFileSync(iosFixture, readFileSync(paths[6]));
+    const control = validate(fixedPaths, directory);
+    assert.equal(control.status, 0, control.stderr);
     for (const [number, [index, mutate, reason]] of mutations.entries()) {
       const copy = structuredClone(originals[index]);
       mutate(copy);
-      const path = join(directory, `mutation-${number}.yml`);
+      const path = index === 6 ? iosFixture : join(directory, `mutation-${number}.yml`);
       writeFileSync(path, YAML.stringify(copy));
-      const args = [...paths];
-      args[index] = path;
-      assert.notEqual(validate(args).status, 0, `workflow mutation ${number} (${paths[index]}: ${reason ?? 'existing contract'}) unexpectedly passed`);
+      const args = [...fixedPaths];
+      if (index !== 6) args[index] = path;
+      assert.notEqual(validate(args, index === 6 ? directory : root).status, 0, `workflow mutation ${number} (${paths[index]}: ${reason ?? 'existing contract'}) unexpectedly passed`);
     }
   } finally {
     rmSync(directory, {recursive: true, force: true});
