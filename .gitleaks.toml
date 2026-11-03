@@ -1,0 +1,4 @@
+title = "Aegis Browser secret scanning"
+
+[extend]
+useDefault = true
