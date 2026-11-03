@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Tiện ích Aegis chỉ đọc"
+  },
+  "extensionDescription": {
+    "message": "Đọc bản tóm tắt tối thiểu của trang hiện được người dùng cho phép mà không sửa đổi trang."
+  },
+  "extensionAction": {
+    "message": "Kiểm tra và mở trong Aegis"
+  }
+}
