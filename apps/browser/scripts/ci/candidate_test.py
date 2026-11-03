@@ -130,7 +130,12 @@ class CandidateTests(unittest.TestCase):
                 ['git', '-C', str(src), 'format-patch', '-1', '--stdout']))
             (patches / 'series').write_text('fix.patch\n')
             fresh = root / 'fresh'
-            subprocess.run(['git', 'clone', '-q', str(src), str(fresh)], check=True)
+            # 克隆首次检出就必须固定 LF；之后再关闭 autocrlf 会把已检出的 CRLF 视为脏文件。
+            # 模拟宿主启用自动换行，验证夹具不借用用户的 Git 配置才能通过。
+            with patch.dict(ci.os.environ, {'GIT_CONFIG_COUNT': '1',
+                    'GIT_CONFIG_KEY_0': 'core.autocrlf', 'GIT_CONFIG_VALUE_0': 'true'}):
+                subprocess.run(['git', '-c', 'core.autocrlf=false', 'clone', '-q',
+                                str(src), str(fresh)], check=True)
             subprocess.run(['git', '-C', str(fresh), 'config', 'core.autocrlf', 'false'], check=True)
             subprocess.run(['git', '-C', str(fresh), 'checkout', '-q', '--detach', base], check=True)
             ci.apply_if_base(fresh, base, patches, root / 'apply.log')
