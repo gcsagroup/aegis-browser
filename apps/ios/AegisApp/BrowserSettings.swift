@@ -64,6 +64,8 @@ struct BrowserSettingsView: View {
                     LabeledContent("应用", value: "GCSA Aegis")
                     LabeledContent("版本", value: version)
                     LabeledContent("网页引擎") { Text("系统 WebKit") }
+                    NavigationLink("开源许可与鸣谢") { ThirdPartyNoticesView() }
+                        .accessibilityIdentifier("third-party-notices-link")
                     if let website = URL(string: "https://browser.erjinyi.com/") {
                         Link("官方网站", destination: website)
                             .accessibilityIdentifier("aegis-website-link")

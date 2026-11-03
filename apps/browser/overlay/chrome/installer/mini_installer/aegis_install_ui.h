@@ -23,10 +23,11 @@ class AegisInstallUi {
   void Installing();
   // 用当前阶段观测校准整体预估进度，调用方不持有窗口或跨线程 UI 状态。
   void UpdateProgress(aegis_installer::Progress progress);
-  // 0 表示成功并自动收起；非 0 保留数字错误码，等待用户确认关闭。
+  // 0 表示安装成功；3 表示已打开现有版本，均自动收起；其他值显示错误码。
   void Finish(DWORD exit_code);
 
  private:
+  friend class AegisInstallUiTestPeer;
   static DWORD WINAPI ThreadMain(void* context);
   static LRESULT CALLBACK WindowProc(HWND window,
                                      UINT message,
