@@ -26,13 +26,20 @@ final class SettingsLayoutUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["browser-more"].waitForExistence(timeout: 10))
         openSettings(app)
-        for identifier in ["aegis-website-link", "aegis-support-link", "aegis-privacy-policy-link"] {
+        for identifier in ["aegis-website-link", "aegis-support-link", "aegis-privacy-policy-link", "third-party-notices-link"] {
             let link = app.descendants(matching: .any).matching(identifier: identifier).firstMatch
             XCTAssertTrue(reveal(link, app), "关于中的链接必须可达：\(identifier)")
             assertInsideWindow(link, app)
             XCTAssertTrue(link.isHittable)
         }
         capture("支持与隐私政策入口-最大字体", app)
+        let notices = app.buttons["third-party-notices-link"]
+        XCTAssertTrue(reveal(notices, app))
+        notices.tap()
+        let text = app.staticTexts["third-party-notices-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 5))
+        XCTAssertTrue(text.label.contains("Phishing Block List"))
+        XCTAssertTrue(text.label.contains("Permission is hereby granted"))
         app.terminate()
     }
 
