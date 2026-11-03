@@ -59,3 +59,6 @@ packages/core/dist-worker
 # Rebuildable Python interpreter caches.
 __pycache__/
 *.py[cod]
+
+# Local Firebase registrations staged by the operator.
+/apps/ios/Firebase/*/GoogleService-Info.plist

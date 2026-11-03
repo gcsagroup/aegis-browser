@@ -71,7 +71,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
       - name: Compile uncredentialed native archive
         run: |
-          xcodebuild -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Aegis.xcarchive" -derivedDataPath "$RUNNER_TEMP/DerivedData" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 archive > "$RUNNER_TEMP/xcodebuild.log" 2>&1
+          xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Aegis.xcarchive" -derivedDataPath "$RUNNER_TEMP/DerivedData" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 archive > "$RUNNER_TEMP/xcodebuild.log" 2>&1
           python3 scripts/release/verify-ios-archive.py "$RUNNER_TEMP/Aegis.xcarchive" 1.0.0 1
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() }}
