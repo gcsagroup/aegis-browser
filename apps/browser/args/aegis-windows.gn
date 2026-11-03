@@ -1,5 +1,5 @@
-# GCSA-aegis Windows x64 release build.
-# Run from a Windows Chromium checkout:
+# GCSA Aegis Windows x64 用户发行构建参数；在已应用产品补丁的 Chromium 源码中运行。
+# 调试构建应使用独立输出目录，不能复用本安装包的编译参数。
 #   gn gen out/AegisRelease --args="<contents of this file>"
 #   autoninja -C out/AegisRelease chrome
 
@@ -8,6 +8,10 @@ target_cpu = "x64"
 is_debug = false
 is_component_build = false
 is_official_build = false
+# 非官方 Chromium 即使使用 Release 也默认启用 DCHECK 和昂贵一致性检查。
+# 面向用户的安装包显式关闭调试检查，避免样式与布局热路径重复验证；保留普通 CHECK 和沙箱。
+dcheck_always_on = false
+enable_expensive_dchecks = false
 symbol_level = 0
 blink_symbol_level = 0
 v8_symbol_level = 0
