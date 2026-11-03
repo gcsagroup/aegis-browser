@@ -22,6 +22,18 @@ Set `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` (JSON 
 
 ASC stages use `AEGIS_ASC_KEY_ID`, `AEGIS_ASC_ISSUER_ID` and either a private mode-600 `AEGIS_ASC_KEY_PATH` or `AEGIS_ASC_KEY_BASE64`. Supply credentials through a private environment/secret provider; never through command arguments, Git or public evidence. GitHub admission uses `GH_TOKEN` with read access, or a stage-specific token for Draft writes. Set `AEGIS_IOS_RELEASE_ENABLED=true`; upstream delivery requires the exact current main SHA and latest terminal successful `quality` and `quality-gate` jobs. Main/tag are read again immediately before mutation.
 
+## Local signing preparation
+
+With the locked Ruby/Bundler runtime available, run:
+
+```sh
+python3 scripts/release/local-ios-signing.py --team "$AEGIS_APPLE_TEAM_ID" --certificate-sha1 "$AEGIS_IOS_CERT_SHA1" --unlock
+```
+
+The script discovers the existing private ASC configuration/key in Downloads without executing shell configuration. GET-only App Store Connect requests download the three existing App Store profiles. Team, bundle IDs, certificate, expiry and entitlements are validated before missing profiles are installed. Exported filenames are `Aegis-AppStore-App.mobileprovision`, `Aegis-AppStore-Safari.mobileprovision` and `Aegis-AppStore-Share.mobileprovision`; names contain the signing channel and target, without dates. Alpha/Beta/Release share these profiles and select their audience during export. Existing remote profile and bundle display names remain date-free; this preparation does not create or rename remote resources.
+
+`--unlock` reads the private `EXISTING-KEYCHAIN-PASSWORD.txt` beside the fingerprint-matched certificate and uses the native Security API to unlock the matching non-login signing keychain. Passwords never enter command arguments, logs, receipts or AI UI automation. Login/system keychains, shared ACLs, key partitions and search lists are unchanged; existing private-key access controls remain enforced. Missing/ambiguous inputs, symlinks, public credential files and validation errors stop without password retries or UI fallback. The public verification receipt is `.artifacts/ios-signing/app-store/signing-receipt.json`.
+
 ## Explicit inputs
 
 `metadata.json` may contain only `locales`, with `description` (Beta app description) and/or `whatsNew` (this build's testing notes). Fields are nonempty strings up to 4000 characters. Existing feedback contacts, listing fields and other locales are preserved.
@@ -40,9 +52,11 @@ Status distinguishes build absence/processing/failure/VALID, buildUploads errors
 
 ## Actions and candidate tags
 
-The manual entrypoints **iOS Delivery · 精简版 / Simple** and **iOS Delivery · 完整版 / Full** share one reusable backend. Full explicitly forwards only the three ASC secret names; the called Apple jobs retain `aegis-ios-store`, whose environment values override caller values. No repository secrets are copied or widened. See [GitHub’s environment-secret forwarding rule](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow). Both require the original operator and rerunner to be current effective repository Admins. Signing, Apple credentials and private Draft permissions remain in their existing protected environments. Local CLI commands retain their existing interface.
+The manual entrypoints **iOS Delivery · Simple** and **iOS Delivery · Full** share one reusable backend. Full explicitly forwards the ASC and signing secret names; the called jobs retain `aegis-ios-store` and `aegis-ios-signing`, whose environment values override caller values. See [GitHub’s environment-secret rule](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow). Both require the original operator and rerunner to be current effective repository Admins. Signing, Apple credentials and private Draft permissions remain in their existing protected environments. Local CLI commands retain their existing interface.
 
-Simple has four bilingual fields: operation, version, build, and package product. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product is ignored for Status/Wait.
+See the [bilingual Actions operator guide](ios-delivery-actions.md) for the English form labels and required inputs.
+
+Simple has four fields for operation, version, build and product. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product is ignored for Status/Wait.
 
 - Package creates a new IPA/dSYM/manifest without uploading.
 - Package and upload first checks that Apple has no matching build or upload, then uploads the same newly signed package. It never distributes, submits for review, or publicly releases. Producer digest and exact run/attempt are passed directly between protected jobs; original package and uploaded-state artifacts are retained separately. Rerunning this combined operation is rejected; reconcile unknown outcomes before choosing a new build.
@@ -57,7 +71,7 @@ Alpha is internal-only; Beta allows internal/external testing and blocks formal 
 
 The uncredentialed import job checks repository, admitted workflow, latest attempt, successful producer, original package origin, SHA/tree, manifest/assets and completed upload receipt. Protected jobs independently recheck identity and authorization before loading ASC credentials. External TF distribution requests Beta App Review and needs separate authorization. Formal App Store review remains a separate explicit Release-only local stage; neither review is an automatic acceptance test.
 
-Configure repository variable `AEGIS_IOS_RELEASE_ENABLED=false` first. Configure protected environments with custom deployment branch/tag policies, exact approved branch/main and `candidate/ios/*` tags as appropriate; no PR deployment refs. Add signing environment variables `AEGIS_IOS_RUNNER_LABEL`, `AEGIS_IOS_RUBY_BIN`, `AEGIS_IOS_NODE_BIN`, `AEGIS_IOS_BUNDLE_PATH`, `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1`, `AEGIS_IOS_PROFILES`. Routing label is a repository variable so scheduling can resolve it before entering the signing environment. Add only ASC key ID/issuer/base64 key as encrypted secrets in `aegis-ios-store`. Never put the signing key there. Enable iOS only after passed main CI and configuration readback.
+Configure repository variable `AEGIS_IOS_RELEASE_ENABLED=false` first. Configure protected environments with custom deployment branch/tag policies, exact approved branch/main and `candidate/ios/*` tags as appropriate; no PR deployment refs. In `aegis-ios-signing`, retain `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` as variables. Add encrypted environment secrets `AEGIS_IOS_DISTRIBUTION_P12_BASE64` (single-line base64 of the existing Apple Distribution certificate and private key), `AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`, and `AEGIS_IOS_APP_PROFILE_BASE64`, `AEGIS_IOS_SAFARI_PROFILE_BASE64`, `AEGIS_IOS_SHARE_PROFILE_BASE64` (single-line base64 of the respective existing App Store provisioning profiles). The package job uses an ephemeral GitHub-hosted Mac, validates each profile against the configured team, name, target and certificate, and removes its temporary keychain and profiles after packaging. Do not print, commit, or put these secrets in artifacts or the store environment. Add only ASC key ID/issuer/base64 key as encrypted secrets in `aegis-ios-store`. Enable iOS only after passed main CI and configuration readback.
 
 Privileged fork delivery is retired. The delivery gate, local admission and owned signing-runner launcher accept only canonical `gcsagroup/aegis-browser` repository ID1348409663; old rehearsal flags cannot reopen it. Fork PR/quality checks remain uncredentialed. Historical workflows, runs, tags and artifacts remain evidence, rather than active duplicate delivery entrypoints.
 

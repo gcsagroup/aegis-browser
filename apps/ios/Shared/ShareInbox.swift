@@ -19,11 +19,11 @@ enum ShareInboxError: Error, Equatable, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedScheme: "只接受 HTTP(S) 链接"
-        case .payloadTooLarge: "分享内容超过 8 KiB"
-        case .invalidEnvelope: "分享内容格式无效"
-        case .expired: "分享内容已过期"
-        case .unavailableContainer: "专用 Share Inbox 不可用"
+        case .unsupportedScheme: String(localized: "只接受 HTTP(S) 链接")
+        case .payloadTooLarge: String(localized: "分享内容超过 8 KiB")
+        case .invalidEnvelope: String(localized: "分享内容格式无效")
+        case .expired: String(localized: "分享内容已过期")
+        case .unavailableContainer: String(localized: "专用 Share Inbox 不可用")
         }
     }
 }

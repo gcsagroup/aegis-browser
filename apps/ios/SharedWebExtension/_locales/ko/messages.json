@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Aegis 읽기 전용 도우미"
+  },
+  "extensionDescription": {
+    "message": "사용자가 현재 허용한 페이지의 최소한의 요약을 읽으며 페이지를 수정하지 않습니다."
+  },
+  "extensionAction": {
+    "message": "확인 후 Aegis에서 열기"
+  }
+}
