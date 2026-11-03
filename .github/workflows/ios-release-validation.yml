@@ -1,6 +1,7 @@
 name: iOS Release Validation
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
     branches:
       - main
   push:
@@ -20,6 +21,7 @@ env:
   BUNDLE_FROZEN: "true"
 jobs:
   contracts:
+    if: ${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -55,6 +57,7 @@ jobs:
         run: |
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= .github/workflows/ios-*.yml
   ios-archive:
+    if: ${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false' }}
     runs-on: macos-26
     timeout-minutes: 30
     steps:
