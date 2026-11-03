@@ -1,0 +1,10 @@
+{
+  "dev": {
+    "project": "gcsa-aegis-dev",
+    "app": "1:900780112649:ios:9d813933a01b6949b4f1d8"
+  },
+  "prod": {
+    "project": "gcsa-aegis-prod",
+    "app": "1:586213916293:ios:71ad01d74ed3ba80eb73ec"
+  }
+}
