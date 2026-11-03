@@ -56,9 +56,15 @@ def system_tool(name):
     return str(Path(found).resolve(strict=True))
 
 
+def git_executable():
+    """解析原生 Git 入口；Windows 批处理会改写 ^ 等合法对象表达式，不能用于校验。"""
+    return system_tool('git.exe' if os.name == 'nt' else 'git')
+
+
 def git(src, *args, env=None):
+    """按字面传递 Git 参数，并保留调用方指定的隔离环境。"""
     return subprocess.check_output(
-        [system_tool('git'), '-C', str(src), *args], env=env, text=True).strip()
+        [git_executable(), '-C', str(src), *args], env=env, text=True).strip()
 
 
 def product_status(root):
@@ -91,7 +97,7 @@ def apply_if_base(src, base, patches, log):
         for name in series(patches):
             output.write('正在应用：' + name + '\n')
             output.flush()
-            result = subprocess.run([system_tool('git'), '-C', str(src), '-c', 'user.name=Aegis CI',
+            result = subprocess.run([git_executable(), '-C', str(src), '-c', 'user.name=Aegis CI',
                 '-c', 'user.email=aegis-ci@users.noreply.github.com', 'am', '--3way', str(patches / name)],
                 stdout=output, stderr=subprocess.STDOUT)
             if result.returncode:
@@ -99,23 +105,26 @@ def apply_if_base(src, base, patches, log):
 
 
 def verify_tree(src, base, patches):
-    """从官方基线在临时索引和对象库重放，要求完整源码树一致。"""
-    if git(src, 'status', '--porcelain', '--ignore-submodules=all'):
+    """从已同步的官方基线离线重放补丁，要求完整源码树一致，不自动补取缺失对象。"""
+    offline_env = dict(os.environ, GIT_NO_LAZY_FETCH='1')
+    if git(src, 'status', '--porcelain', '--ignore-submodules=all', env=offline_env):
         raise ValueError('源码有未保存的改动或冲突，保留现场后停止：' + str(src))
-    original_objects = git(src, 'rev-parse', '--path-format=absolute', '--git-path', 'objects')
+    original_objects = git(src, 'rev-parse', '--path-format=absolute', '--git-path', 'objects', env=offline_env)
     with tempfile.TemporaryDirectory(prefix='aegis-ci-verify-') as directory:
         temporary = Path(directory)
         objects = temporary / 'objects'
         (objects / 'info').mkdir(parents=True)
-        # 共享对象库可保持只读；补丁产生的中间对象只写入临时目录。
-        (objects / 'info/alternates').write_text(Path(original_objects).as_posix() + '\n', encoding='utf-8')
-        env = dict(os.environ, GIT_INDEX_FILE=str(temporary / 'index'),
+        # 共享对象库保持只读；路径文件固定 LF，避免 Windows 的 CR 被 Git 当作路径的一部分。
+        # 缺失对象应使校验失败，不能通过自动联网掩盖不完整输入；中间对象只写入临时目录。
+        (objects / 'info/alternates').write_text(
+            Path(original_objects).as_posix() + '\n', encoding='utf-8', newline='\n')
+        env = dict(offline_env, GIT_INDEX_FILE=str(temporary / 'index'),
                    GIT_OBJECT_DIRECTORY=str(objects))
         git(src, 'read-tree', base, env=env)
         for name in series(patches):
             git(src, 'apply', '--cached', '--whitespace=nowarn', str(patches / name), env=env)
         expected = git(src, 'write-tree', env=env)
-        actual = git(src, 'rev-parse', 'HEAD^{tree}')
+        actual = git(src, 'rev-parse', 'HEAD^{tree}', env=offline_env)
         if expected != actual:
             raise ValueError('构建机源码与本次候选补丁不一致，禁止编译旧源码')
         return actual
