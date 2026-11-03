@@ -270,6 +270,10 @@ module AegisRelease
         FileUtils.mkdir_p(File.dirname(target))
         FileUtils.cp(original, target)
       end
+      firebase_script = File.join(work, 'apps/ios/scripts/firebase_config.py')
+      firebase_root = File.join(work, 'apps/ios/Firebase')
+      firebase_args = ['--root', firebase_root, '--channel', request.profile]
+      run('python3', firebase_script, 'stage', *firebase_args)
       project = File.join(work, 'apps/ios/Aegis.xcodeproj')
       team = required('AEGIS_APPLE_TEAM_ID')
       @fastlane.update_code_signing_settings(path: project, use_automatic_signing: false,
@@ -287,11 +291,13 @@ module AegisRelease
                          destination: 'generic/platform=iOS', output_directory: request.directory, output_name: name,
                          archive_path: File.join(work, 'Aegis.xcarchive'), derived_data_path: File.join(work, 'DerivedData'),
                          buildlog_path: File.join(work, 'logs'), export_method: 'app-store',
-                         skip_profile_detection: true, xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build}",
+                         skip_profile_detection: true, disable_package_automatic_updates: true,
+                         xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile}",
                          export_options: { method: 'app-store-connect', teamID: team, signingStyle: 'manual',
                                            provisioningProfiles: profiles, manageAppVersionAndBuildNumber: false,
                                            testFlightInternalTestingOnly: request.profile == 'alpha' })
       ipa = File.join(request.directory, name)
+      run('python3', firebase_script, 'verify-ipa', *firebase_args, '--artifact', ipa)
       run('python3', File.join(request.root, 'scripts/release/verify-ipa.py'), ipa, request.version, request.build, request.profile)
       certificate = required('AEGIS_IOS_CERT_SHA1')
       run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), ipa, request.version, request.build, request.profile,
