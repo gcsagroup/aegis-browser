@@ -6,6 +6,70 @@ import WebKit
 final class LocalizationTests: XCTestCase {
     private let locales = ["de", "en", "es", "fr", "id", "it", "ja", "ko", "ms", "pt", "th", "vi", "zh-Hans", "zh-Hant"]
 
+    private struct Coverage: Decodable {
+        struct Exception: Decodable { let value: String; let reason: String }
+        let catalogKeyCount: Int
+        let identicalEnglishAllowlist: [String: [String: Exception]]
+    }
+
+    private func fixture<T: Decodable>(_ name: String, as type: T.Type) throws -> T {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: "json",
+                                                          subdirectory: "Fixtures/Localization"))
+        return try JSONDecoder().decode(type, from: Data(contentsOf: url))
+    }
+
+    private func table(in bundle: Bundle, locale: String) throws -> [String: String] {
+        let url = try XCTUnwrap(bundle.url(forResource: "Localizable", withExtension: "strings",
+                                          subdirectory: nil, localization: locale))
+        return try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as? [String: String])
+    }
+
+    func testEveryCompiledAppAndShareEntryIsTranslated() throws {
+        let coverage = try fixture("coverage", as: Coverage.self)
+        let plugins = try XCTUnwrap(Bundle.main.builtInPlugInsURL)
+        let share = try XCTUnwrap(Bundle(url: plugins.appendingPathComponent("ShareExtension.appex")))
+        let english = try table(in: Bundle.main, locale: "en")
+        XCTAssertEqual(english.count, coverage.catalogKeyCount)
+        for bundle in [Bundle.main, share] {
+            for locale in locales {
+                let values = try table(in: bundle, locale: locale)
+                XCTAssertEqual(Set(values.keys), Set(english.keys), "\(bundle.bundleIdentifier ?? "")/\(locale)")
+                let path = try XCTUnwrap(bundle.path(forResource: locale, ofType: "lproj"))
+                let localized = try XCTUnwrap(Bundle(path: path))
+                for (key, value) in values {
+                    XCTAssertFalse(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "\(locale)/\(key)")
+                    XCTAssertEqual(localized.localizedString(forKey: key, value: "MISSING", table: nil), value, "\(locale)/\(key)")
+                    if !["en", "zh-Hans", "zh-Hant"].contains(locale), value == english[key] {
+                        let exception = coverage.identicalEnglishAllowlist[locale]?[key]
+                        XCTAssertEqual(value, exception?.value, "Untranslated English: \(locale)/\(key)")
+                        XCTAssertFalse(exception?.reason.isEmpty ?? true, "Unjustified exception: \(locale)/\(key)")
+                    }
+                }
+            }
+        }
+    }
+
+    func testActiveLanguageResolvesEveryEntryAndConsentLiteral() throws {
+        let locale = try XCTUnwrap(Bundle.main.preferredLocalizations.first)
+        if let requested = ProcessInfo.processInfo.environment["AEGIS_EXPECTED_LANGUAGE"] {
+            let regional = ["en-GB": "en", "en-HK": "en", "zh-Hant-HK": "zh-Hant"]
+            XCTAssertEqual(locale, regional[requested] ?? requested, "Requested language did not reach the test host")
+            print("Localization requested=\(requested) resolved=\(locale)")
+        }
+        let values = try table(in: Bundle.main, locale: locale)
+        let coverage = try fixture("coverage", as: Coverage.self)
+        XCTAssertEqual(values.count, coverage.catalogKeyCount)
+        for (key, value) in values {
+            XCTAssertEqual(Bundle.main.localizedString(forKey: key, value: "MISSING", table: nil), value, "\(locale)/\(key)")
+        }
+        let probes = try fixture("literal-probes", as: [String: [String: String]].self)
+        XCTAssertEqual(probes.count, 7)
+        for (key, translations) in probes {
+            let literal = try XCTUnwrap(translations[locale])
+            XCTAssertEqual(Bundle.main.localizedString(forKey: key, value: "MISSING", table: nil), literal, "\(locale)/\(key)")
+        }
+    }
+
     func testRegionalLanguagesSelectExistingTranslations() {
         for (preferred, resource) in [("en-GB", "en"), ("en-HK", "en"), ("zh-Hant-HK", "zh-Hant")] {
             XCTAssertEqual(Bundle.preferredLocalizations(from: Bundle.main.localizations,
