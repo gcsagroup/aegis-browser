@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Run real Win32 UI/policy tests without installing Aegis or modifying a profile.
+
+This fixture uses a FilePath character-type shim for installer constants. It is
+not a Chromium GN build, a setup/mini_installer binary, or Explorer/token proof.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import urllib.request
+import zipfile
+
+CHROMIUM = "43a195105613ac83c21d3f14de279f4a045c7da0"
+GTEST = "4fe3307fb2d9f86d19777c7eb0e4809e9694dde7"
+GTEST_SHA256 = "7da5cbd7991e88e61a2e2142475041fe6685484ad13013401e8f1e3fb5f3001a"
+HEADERS = {
+    "chrome/installer/util/util_constants.h":
+        "f40b2e5872bb326970857f23949b411964a902fa76f9feabe07b40bfaec2c749",
+    "chrome/installer/mini_installer/mini_installer_resource.h":
+        "294851fd8c62a5ff0ee9ace34473a6a498a68c32ff6d4713036d30aaffd89caf",
+    "testing/gtest/include/gtest/gtest.h":
+        "e65bc0f551d8016c5027352b013ecd90f0ee3c61ff0ddd9d1f8e7ba6676dee58",
+}
+SOURCES = [
+    "chrome/installer/mini_installer/aegis_install_ui.cc",
+    "chrome/installer/mini_installer/aegis_install_ui.h",
+    "chrome/installer/mini_installer/aegis_install_ui_unittest.cc",
+    "chrome/installer/setup/aegis_launch_policy.h",
+    "chrome/installer/setup/aegis_launch_policy_unittest.cc",
+]
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def download(url, destination, expected):
+    with urllib.request.urlopen(url, timeout=60) as response:
+        data = response.read()
+    if digest(data) != expected:
+        raise RuntimeError(f"Pinned download mismatch: {destination.name}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(data)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tested-sha", required=True)
+    parser.add_argument("--report-dir", required=True)
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[3]
+    report_dir = Path(args.report_dir).resolve()
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report = {"result": "FAIL", "testedSha": args.tested_sha,
+              "chromiumPin": CHROMIUM, "googletestPin": GTEST,
+              "nativeWindows": os.name == "nt", "fullChromiumBuild": False,
+              "installerExecuted": False, "explorerTokenAcceptance": False,
+              "shim": "base::FilePath::CharType and FILE_PATH_LITERAL only",
+              "commands": []}
+    try:
+        if os.name != "nt":
+            raise RuntimeError("Native Windows is required")
+        head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+        if head != args.tested_sha:
+            raise RuntimeError("Tested SHA does not match checkout")
+        if (root / "apps/browser/CHROMIUM_COMMIT").read_text().strip() != CHROMIUM:
+            raise RuntimeError("Update pinned fixture inputs for the new Chromium pin")
+        overlay = root / "apps/browser/overlay"
+        hashes = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
+        report["inputHashes"] = hashes
+        fixture = report_dir / "fixture"
+        fixture.mkdir(exist_ok=False)
+        for name in SOURCES:
+            destination = fixture / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes((overlay / name).read_bytes())
+        for name, expected in HEADERS.items():
+            download(f"https://raw.githubusercontent.com/chromium/chromium/{CHROMIUM}/{name}",
+                     fixture / name, expected)
+        archive = fixture / "googletest.zip"
+        download(f"https://codeload.github.com/google/googletest/zip/{GTEST}",
+                 archive, GTEST_SHA256)
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(fixture / "download")
+        gtest = fixture / "third_party/googletest/src"
+        gtest.parent.mkdir(parents=True, exist_ok=True)
+        (fixture / "download" / f"googletest-{GTEST}").rename(gtest)
+        shim = fixture / "base/files/file_path.h"
+        shim.parent.mkdir(parents=True, exist_ok=True)
+        shim.write_text('#pragma once\nnamespace base { struct FilePath { '
+                        'using CharType = wchar_t; }; }\n'
+                        '#define FILE_PATH_LITERAL(x) L##x\n')
+        (fixture / "CMakeLists.txt").write_text('''cmake_minimum_required(VERSION 3.20)
+project(AegisInstallerFixture LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+add_subdirectory(third_party/googletest/src)
+add_executable(installer_fixture
+  chrome/installer/mini_installer/aegis_install_ui.cc
+  chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+  chrome/installer/setup/aegis_launch_policy_unittest.cc)
+target_include_directories(installer_fixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(installer_fixture PRIVATE UNICODE _UNICODE NOMINMAX)
+target_compile_options(installer_fixture PRIVATE /utf-8)
+target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32)
+''')
+        build = fixture / "build"
+        commands = [
+            ["cmake", "-S", str(fixture), "-B", str(build), "-A", "x64"],
+            ["cmake", "--build", str(build), "--config", "Release", "--parallel", "2"],
+            [str(build / "Release/installer_fixture.exe"),
+             "--gtest_output=json:" + str(report_dir / "tests.json")],
+        ]
+        for command in commands:
+            completed = subprocess.run(command, cwd=root, timeout=300, check=False)
+            report["commands"].append({"argv": command, "exitCode": completed.returncode})
+            if completed.returncode:
+                raise RuntimeError(f"Fixture command failed: {command[0]}")
+        tests = json.loads((report_dir / "tests.json").read_text())
+        if tests["tests"] != 10 or tests["failures"] or tests["disabled"]:
+            raise RuntimeError("Expected all ten native UI/policy tests to pass")
+        report["finalHashes"] = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
+        if hashes != report["finalHashes"]:
+            raise RuntimeError("Source changed during fixture")
+        report["result"] = "PASS"
+    finally:
+        (report_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+    print("PASS: ten Win32 UI/policy fixture tests; full Chromium/token gates remain separate")
+
+
+if __name__ == "__main__":
+    main()

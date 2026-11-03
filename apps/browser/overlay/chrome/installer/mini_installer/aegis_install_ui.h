@@ -20,6 +20,7 @@ class AegisInstallUi {
   void Finish(DWORD exit_code);
 
  private:
+  friend class AegisInstallUiTestPeer;
   static DWORD WINAPI ThreadMain(void* context);
   static LRESULT CALLBACK WindowProc(HWND window,
                                      UINT message,

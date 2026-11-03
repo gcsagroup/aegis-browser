@@ -10,6 +10,8 @@ namespace mini_installer {
 namespace {
 constexpr UINT kInstalling = WM_APP + 1;
 constexpr UINT kFinished = WM_APP + 2;
+// setup 的稳定退出码 installer::EXISTING_VERSION_LAUNCHED；避免引入 util/CRT 依赖。
+constexpr DWORD kExistingVersionLaunched = 3;
 constexpr wchar_t kWindowClass[] = L"GCSAAegisInstallProgress";
 constexpr wchar_t kTitle[] = L"GCSA Aegis 安装程序";
 }  // namespace
@@ -43,7 +45,8 @@ void AegisInstallUi::Installing() {
 void AegisInstallUi::Finish(DWORD exit_code) {
   if (window_) {
     ::PostMessage(window_, kFinished, exit_code, 0);
-  } else if (interactive_ && exit_code != 0) {
+  } else if (interactive_ && exit_code != 0 &&
+             exit_code != kExistingVersionLaunched) {
     // 窗口创建失败也不能把安装失败变成无声退出；不改变安装器原有退出码。
     ::MessageBox(nullptr, L"安装未完成，请重新运行安装程序。", kTitle,
                  MB_OK | MB_ICONERROR);
@@ -179,6 +182,11 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
       if (wparam == 0) {
         ::SetWindowText(self->status_, L"安装完成");
         ::SetWindowText(self->detail_, L"GCSA Aegis 已准备就绪。");
+        ::SetTimer(window, 1, 1400, nullptr);
+      } else if (wparam == kExistingVersionLaunched) {
+        ::SetWindowText(self->status_, L"已打开现有版本");
+        ::SetWindowText(self->detail_,
+                        L"已启动已安装的 GCSA Aegis，本次未执行安装。");
         ::SetTimer(window, 1, 1400, nullptr);
       } else {
         wchar_t detail[160] = {};
