@@ -1,31 +1,32 @@
 """Copyable identity pins; never a substitute for producer or operator verification."""
 import re
 
+# Historical labels also appear in run titles used by replay checks.
 OPERATION_LABELS = {
-    'package': '仅打包 / Package',
-    'package-upload': '打包并上传 TF / Package and upload',
-    'draft': '私有草稿 / Draft',
-    'upload': '上传 TestFlight / Upload',
-    'wait': '等待处理 / Wait',
-    'status': '查询状态 / Status',
-    'metadata': '更新测试说明 / Metadata',
-    'compliance': '加密合规 / Compliance',
-    'distribute-internal': '内测分发 / Distribute internal',
-    'distribute-external': '外测分发 / Distribute external',
+    'package': ('Package', '仅打包 / Package'),
+    'package-upload': ('Package and upload', '打包并上传 TF / Package and upload'),
+    'draft': ('Draft', '私有草稿 / Draft'),
+    'upload': ('Upload', '上传 TestFlight / Upload'),
+    'wait': ('Wait', '等待处理 / Wait'),
+    'status': ('Status', '查询状态 / Status'),
+    'metadata': ('Metadata', '更新测试说明 / Metadata'),
+    'compliance': ('Compliance', '加密合规 / Compliance'),
+    'distribute-internal': ('Distribute internal', '内测分发 / Distribute internal'),
+    'distribute-external': ('Distribute external', '外测分发 / Distribute external'),
 }
 PRODUCT_LABELS = {
-    'auto': '自动 / Auto',
-    'alpha': 'Alpha · 仅内测 / Internal only',
-    'beta': 'Beta · 内外测 / Internal and external',
-    'release': 'Release · 通用 / Universal',
+    'auto': ('Auto', '自动 / Auto'),
+    'alpha': ('Alpha', 'Alpha · 仅内测 / Internal only'),
+    'beta': ('Beta', 'Beta · 内外测 / Internal and external'),
+    'release': ('Release', 'Release · 通用 / Universal'),
 }
 
 
 def canonical(value, labels):
     if value in labels:
         return value
-    for command, label in labels.items():
-        if value == label:
+    for command, accepted_labels in labels.items():
+        if value in accepted_labels:
             return command
     raise ValueError('Unknown operation or target product')
 

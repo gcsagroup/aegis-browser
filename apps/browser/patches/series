@@ -337,3 +337,10 @@
 0337-fix-download-settings-event-handler-bindings.patch
 0338-test-mac03-native-evidence.patch
 0339-fix-mac03-publication-deadline.patch
+0340-fix-desktop-test-browser-client-dependency.patch
+0341-windows-interactive-installer.patch
+0342-windows-installer-temp-directory.patch
+0343-windows-installer-visual-design.patch
+0344-windows-frameless-measured-install-progress.patch
+0345-windows-overall-progress-without-flicker.patch
+0346-fix-windows-installer-launch.patch

@@ -1,33 +1,33 @@
-name: iOS Delivery · 精简版 / Simple
+name: iOS Delivery · Simple
 run-name: iOS Delivery ${{ inputs.operation || 'package' }} ${{ inputs.version && format('{0}({1})', inputs.version, inputs.build) || github.ref_name }}
 on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "操作 / Operation"
+        description: "Operation"
         type: choice
         options:
-          - 仅打包 / Package
-          - 打包并上传 TF / Package and upload
-          - 查询状态 / Status
-          - 等待处理 / Wait
-        default: 查询状态 / Status
+          - Package
+          - Package and upload
+          - Status
+          - Wait
+        default: Status
       version:
-        description: "版本 / Version（例如 / e.g. 1.0.0）"
+        description: "Version (e.g. 1.0.0)"
         type: string
         required: true
       build:
-        description: "构建号 / Build（例如 / e.g. 35）"
+        description: "Build (e.g. 35)"
         type: string
         required: true
       product:
-        description: "打包产物 / Package product（查询时忽略 / ignored for Status）"
+        description: "Product (ignored for Status and receipt-free Wait)"
         type: choice
         options:
-          - Alpha · 仅内测 / Internal only
-          - Beta · 内外测 / Internal and external
-          - Release · 通用 / Universal
-        default: Alpha · 仅内测 / Internal only
+          - Alpha
+          - Beta
+          - Release
+        default: Alpha
   workflow_call:
     secrets:
       AEGIS_ASC_KEY_ID:
