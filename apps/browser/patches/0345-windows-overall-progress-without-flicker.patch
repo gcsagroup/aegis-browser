@@ -1,0 +1,640 @@
+From bc100b4b5b7b61cf42aea553b569d2bc2be4cf9d Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@example.invalid>
+Date: Tue, 3 Nov 2026 15:40:14 +0800
+Subject: [PATCH] Show overall installer progress without repainting the whole
+ window
+
+---
+ chrome/installer/mini_installer/BUILD.gn      |   1 +
+ .../mini_installer/aegis_install_ui.cc        | 142 +++++++---------
+ .../mini_installer/aegis_install_ui.h         |  13 +-
+ .../aegis_install_ui_unittest.cc              | 160 ++++++++++++++++--
+ .../mini_installer/aegis_overall_progress.h   | 116 +++++++++++++
+ 5 files changed, 335 insertions(+), 97 deletions(-)
+ create mode 100644 chrome/installer/mini_installer/aegis_overall_progress.h
+
+diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
+index 2ad853eb77a9813a20c6bb15d06eddb13a29f4a1..1b3638ada8b6b558bdce130cb6f89ec9b7bfa6b7 100644
+--- a/chrome/installer/mini_installer/BUILD.gn
++++ b/chrome/installer/mini_installer/BUILD.gn
+@@ -43,6 +43,7 @@ source_set("lib") {
+   sources = [
+     "aegis_install_ui.cc",
+     "aegis_install_ui.h",
++    "aegis_overall_progress.h",
+     "appid.h",
+     "chrome_appid.cc",
+     "configuration.cc",
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
+index d8c3fa7f12d01d906965371b606e189c9eba0be8..f683cbcfdc46376625705c91b7b8ba839f3c8914 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui.cc
+@@ -98,7 +98,8 @@ AegisInstallUi::~AegisInstallUi() {
+ }
+ 
+ void AegisInstallUi::Installing() {
+-  UpdateProgress({aegis_installer::Phase::kInstalling, -1});
++  // setup 启动不等于进入文件提交阶段；真实解压观测到达前保留准备预算。
++  UpdateProgress({aegis_installer::Phase::kPreparing, -1});
+ }
+ 
+ void AegisInstallUi::UpdateProgress(aegis_installer::Progress progress) {
+@@ -131,10 +132,9 @@ void AegisInstallUi::CreateControls() {
+   logo_ = ::CreateWindow(L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON, 0,
+                          0, 0, 0, window_, nullptr, nullptr, nullptr);
+   title_ = label(L"GCSA Aegis");
+-  status_ = label(L"正在准备");
+-  progress_ = ::CreateWindow(PROGRESS_CLASS, nullptr,
+-                             WS_CHILD | WS_VISIBLE | PBS_MARQUEE, 0, 0, 0, 0,
+-                             window_, nullptr, nullptr, nullptr);
++  status_ = label(L"正在安装  0%");
++  progress_ = ::CreateWindow(PROGRESS_CLASS, nullptr, WS_CHILD | WS_VISIBLE, 0,
++                             0, 0, 0, window_, nullptr, nullptr, nullptr);
+   ::SetWindowSubclass(progress_, ProgressProc, 1,
+                       reinterpret_cast<DWORD_PTR>(this));
+   // 正常安装和成功态没有窗口按钮；失败时才出现可键盘操作的关闭入口。
+@@ -215,57 +215,34 @@ void AegisInstallUi::UpdateFrame() {
+ }
+ 
+ void AegisInstallUi::ShowProgress(aegis_installer::Progress progress) {
+-  using aegis_installer::Phase;
+-  if (complete_ ||
+-      static_cast<unsigned>(progress.phase) >
+-          static_cast<unsigned>(Phase::kRollingBack) ||
+-      progress.percent < -1 || progress.percent > 99)
++  if (complete_)
+     return;
+-  // 同一阶段不倒退；阶段变化会更换文字及分母，不能把它冒充整次安装百分比。
+-  if (progress.phase == phase_ && progress.percent >= 0 && percent_ >= 0 &&
+-      progress.percent < percent_)
++  overall_progress_.Update(progress, ::GetTickCount64());
++  RefreshProgress();
++}
++
++void AegisInstallUi::RefreshProgress() {
++  if (complete_)
+     return;
+-  phase_ = progress.phase;
+-  percent_ = progress.percent;
+-  const wchar_t* label = L"正在准备";
+-  switch (phase_) {
+-    case Phase::kPreparing:
+-      break;
+-    case Phase::kDecompressing:
+-      label = L"正在解压";
+-      break;
+-    case Phase::kUnpacking:
+-      label = L"正在展开文件";
+-      break;
+-    case Phase::kInstalling:
+-      label = L"正在安装";
+-      break;
+-    case Phase::kConfiguring:
+-      label = L"正在配置";
+-      break;
+-    case Phase::kFinishing:
+-      label = L"正在完成安装";
+-      break;
+-    case Phase::kRollingBack:
+-      label = L"正在回滚";
+-      break;
+-  }
++  // 阶段观测只校准目标值；动画/预估都不触发整窗背景擦除。
++  if (overall_progress_.Advance(::GetTickCount64(), animate_))
++    ::InvalidateRect(progress_, nullptr, FALSE);
++  int percent = overall_progress_.percent();
++  bool rolling_back = overall_progress_.rolling_back();
++  if (percent == displayed_percent_ && rolling_back == displayed_rollback_)
++    return;
++  displayed_percent_ = percent;
++  displayed_rollback_ = rolling_back;
+   wchar_t value[80] = {};
+-  if (percent_ >= 0) {
+-    DWORD_PTR arguments[] = {reinterpret_cast<DWORD_PTR>(label),
+-                             static_cast<DWORD_PTR>(percent_)};
+-    ::FormatMessage(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
+-                    L"%1!s!  %2!u!%%", 0, 0, value,
+-                    sizeof(value) / sizeof(value[0]),
+-                    reinterpret_cast<va_list*>(arguments));
+-  }
+-  ::SetWindowText(status_, value[0] ? value : label);
+-  LONG_PTR style = ::GetWindowLongPtr(progress_, GWL_STYLE);
+-  ::SetWindowLongPtr(progress_, GWL_STYLE,
+-                     percent_ < 0 ? style | PBS_MARQUEE : style & ~PBS_MARQUEE);
+-  if (percent_ >= 0)
+-    ::SendMessage(progress_, PBM_SETPOS, percent_, 0);
+-  UpdateAppearance();
++  DWORD_PTR arguments[] = {
++      reinterpret_cast<DWORD_PTR>(rolling_back ? L"正在回滚" : L"正在安装"),
++      static_cast<DWORD_PTR>(percent)};
++  ::FormatMessage(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
++                  L"%1!s!  %2!u!%%", 0, 0, value, _countof(value),
++                  reinterpret_cast<va_list*>(arguments));
++  ::SetWindowText(status_, value);
++  // 原生控件保留可访问百分比；实际像素由本窗口的离屏帧绘制。
++  ::SendMessage(progress_, PBM_SETPOS, percent, 0);
+ }
+ 
+ void AegisInstallUi::UpdateAppearance() {
+@@ -277,9 +254,9 @@ void AegisInstallUi::UpdateAppearance() {
+   ::SystemParametersInfo(SPI_GETCLIENTAREAANIMATION, 0, &animations, 0);
+   animate_ = animations != FALSE;
+   ::KillTimer(window_, kAnimationTimer);
+-  // 活动条没有百分比；关闭系统动画时静态展示，仍由状态文字说明安装进行中。
+-  if (!complete_ && percent_ < 0 && animate_)
+-    ::SetTimer(window_, kAnimationTimer, 30, nullptr);
++  // 系统外观只在初始化/设置变化时读取；关闭动画时跳过插值但保留整体估算。
++  if (!complete_)
++    ::SetTimer(window_, kAnimationTimer, animate_ ? 30 : 100, nullptr);
+   ::RedrawWindow(window_, nullptr, nullptr,
+                  RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+ }
+@@ -287,9 +264,31 @@ void AegisInstallUi::UpdateAppearance() {
+ void AegisInstallUi::PaintProgress(HWND window) {
+   PAINTSTRUCT paint;
+   HDC dc = ::BeginPaint(window, &paint);
+-  int saved = ::SaveDC(dc);
+   RECT track;
+   ::GetClientRect(window, &track);
++  // 背景、轨道和前景先在内存绘完，再一次性提交，避免白底中间帧可见。
++  // 缓冲仅有进度条大小；每帧释放，DPI 改变后不会复用错误尺寸的位图。
++  HDC buffer = ::CreateCompatibleDC(dc);
++  HBITMAP bitmap = buffer
++                       ? ::CreateCompatibleBitmap(dc, track.right, track.bottom)
++                       : nullptr;
++  HGDIOBJ previous = bitmap ? ::SelectObject(buffer, bitmap) : nullptr;
++  bool buffered = previous && previous != HGDI_ERROR;
++  // 位图创建或选入失败均退回直接绘制，不能把空缓冲提交到窗口。
++  DrawProgressFrame(buffered ? buffer : dc, track);
++  if (buffered) {
++    ::BitBlt(dc, 0, 0, track.right, track.bottom, buffer, 0, 0, SRCCOPY);
++    ::SelectObject(buffer, previous);
++  }
++  if (bitmap)
++    ::DeleteObject(bitmap);
++  if (buffer)
++    ::DeleteDC(buffer);
++  ::EndPaint(window, &paint);
++}
++
++void AegisInstallUi::DrawProgressFrame(HDC dc, const RECT& track) {
++  int saved = ::SaveDC(dc);
+   ::FillRect(dc, &track,
+              high_contrast_
+                  ? ::GetSysColorBrush(COLOR_WINDOW)
+@@ -298,24 +297,12 @@ void AegisInstallUi::PaintProgress(HWND window) {
+               high_contrast_ ? ::GetSysColor(COLOR_WINDOWTEXT) : kTrack);
+   if (!failed_) {
+     RECT segment = track;
+-    if (!complete_ && percent_ >= 0) {
+-      segment.right = track.right * percent_ / 100;
+-    } else if (!complete_) {
+-      // 仅无可靠分母时使用忙碌动画，动画本身不改变百分比。
+-      int t = animate_ ? static_cast<int>(::GetTickCount64() % 2400) : 600;
+-      if (t > 1200)
+-        t = 2400 - t;
+-      t = t * 1000 / 1200;
+-      int eased = t * t * (3000 - 2 * t) / 1000000;
+-      int width = (track.right - track.left) / 4;
+-      segment.left = (track.right - width) * eased / 1000;
+-      segment.right = segment.left + width;
+-    }
++    int position = complete_ ? 10000 : overall_progress_.position();
++    segment.right = track.left + (track.right - track.left) * position / 10000;
+     FillRounded(dc, segment, Scale(4),
+                 high_contrast_ ? ::GetSysColor(COLOR_HIGHLIGHT) : kAccent);
+   }
+   ::RestoreDC(dc, saved);
+-  ::EndPaint(window, &paint);
+ }
+ 
+ void AegisInstallUi::PaintCloseButton(const DRAWITEMSTRUCT& item) {
+@@ -378,6 +365,7 @@ LRESULT CALLBACK AegisInstallUi::CloseButtonProc(HWND window,
+ 
+ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+   auto* self = static_cast<AegisInstallUi*>(context);
++  self->overall_progress_ = AegisOverallProgress(::GetTickCount64());
+   Gdiplus::GdiplusStartupInput graphics_input;
+   // 只初始化系统绘图，不加载外部图像解码器；退出 UI 线程前统一释放。
+   graphics_input.SuppressExternalCodecs = TRUE;
+@@ -395,7 +383,8 @@ DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
+   wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
+   wc.lpszClassName = kWindowClass;
+   ::RegisterClass(&wc);
+-  constexpr DWORD style = WS_POPUP;
++  // 父窗口擦背景时排除子控件，防止进度变化把品牌、文字和图标一同擦白。
++  constexpr DWORD style = WS_POPUP | WS_CLIPCHILDREN;
+   RECT bounds = {0, 0, self->Scale(kWidth), self->Scale(kHeight)};
+   RECT work = {};
+   ::SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0);
+@@ -446,7 +435,7 @@ LRESULT CALLBACK AegisInstallUi::ProgressProc(HWND window,
+     return 0;
+   }
+   if (message == WM_ERASEBKGND)
+-    return 1;
++    return 1;  // 整个控件由完整离屏帧覆盖，不允许系统先擦白。
+   if (message == WM_NCDESTROY)
+     ::RemoveWindowSubclass(window, ProgressProc, subclass_id);
+   return ::DefSubclassProc(window, message, wparam, lparam);
+@@ -539,9 +528,6 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+       if (self->failed_)
+         ::ShowWindow(self->progress_, SW_HIDE);
+       else {
+-        ::SetWindowLongPtr(
+-            self->progress_, GWL_STYLE,
+-            ::GetWindowLongPtr(self->progress_, GWL_STYLE) & ~PBS_MARQUEE);
+         ::SendMessage(self->progress_, PBM_SETPOS, 100, 0);
+         ::InvalidateRect(self->progress_, nullptr, FALSE);
+       }
+@@ -569,8 +555,8 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+       if (wparam == kCloseTimer && self->complete_ && !self->failed_)
+         ::DestroyWindow(window);
+       else if (wparam == kAnimationTimer && !self->complete_ &&
+-               self->percent_ < 0 && !::IsIconic(window))
+-        ::InvalidateRect(self->progress_, nullptr, FALSE);
++               !::IsIconic(window))
++        self->RefreshProgress();
+       return 0;
+     case WM_COMMAND:
+       if (LOWORD(wparam) == IDOK && self->complete_)
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.h b/chrome/installer/mini_installer/aegis_install_ui.h
+index f3c7111747b4f7d374564da1e776b8e6563c6958..271bd7b160687b7ca443e872aa314cbbf18d9492 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.h
++++ b/chrome/installer/mini_installer/aegis_install_ui.h
+@@ -6,6 +6,7 @@
+ #include <windows.h>
+ 
+ #include "chrome/installer/aegis_install_progress.h"
++#include "chrome/installer/mini_installer/aegis_overall_progress.h"
+ 
+ namespace mini_installer {
+ 
+@@ -18,9 +19,9 @@ class AegisInstallUi {
+   AegisInstallUi(const AegisInstallUi&) = delete;
+   AegisInstallUi& operator=(const AegisInstallUi&) = delete;
+ 
+-  // 只投递阶段通知，不阻塞安装线程；最终状态之后的迟到通知会被忽略。
++  // 通知 setup 启动，不预判其阶段；最终状态之后的迟到通知会被忽略。
+   void Installing();
+-  // 接收当前阶段实测进度，调用方不持有窗口或跨线程 UI 状态。
++  // 用当前阶段观测校准整体预估进度，调用方不持有窗口或跨线程 UI 状态。
+   void UpdateProgress(aegis_installer::Progress progress);
+   // 0 表示成功并自动收起；非 0 保留数字错误码，等待用户确认关闭。
+   void Finish(DWORD exit_code);
+@@ -50,7 +51,10 @@ class AegisInstallUi {
+   void ShowProgress(aegis_installer::Progress progress);
+   void LayoutControls();
+   void UpdateAppearance();
++  // 仅更新变化的进度条和状态文字，不使品牌、图标或父窗口失效。
++  void RefreshProgress();
+   void PaintProgress(HWND window);
++  void DrawProgressFrame(HDC dc, const RECT& track);
+   void PaintCloseButton(const DRAWITEMSTRUCT& item);
+   int Scale(int value) const;
+ 
+@@ -73,8 +77,9 @@ class AegisInstallUi {
+   bool high_contrast_ = false;
+   bool animate_ = true;
+   bool close_hover_ = false;
+-  aegis_installer::Phase phase_ = aegis_installer::Phase::kPreparing;
+-  int percent_ = -1;
++  AegisOverallProgress overall_progress_{0};
++  int displayed_percent_ = -1;
++  bool displayed_rollback_ = false;
+ };
+ 
+ }  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+index 21a504b00ac83a7e161fd489c13e0ce48b88969b..b0205a342f6937340c93a0c610e5ac6ab2b0299d 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <commctrl.h>
+ 
++#include <atomic>
+ #include <string>
+ 
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -69,6 +70,20 @@ void ExpectReadableLayout(HWND window) {
+     ::ReleaseDC(child, dc);
+   }
+ }
++// 消息观察器只记录本测试窗口；原子字段允许 UI 线程与断言线程安全通信。
++std::atomic<HWND> observed_parent = nullptr;
++std::atomic<HWND> observed_brand = nullptr;
++std::atomic<int> unrelated_paints = 0;
++LRESULT CALLBACK ObservePaint(int code, WPARAM wparam, LPARAM lparam) {
++  if (code >= 0) {
++    const auto& message = *reinterpret_cast<const CWPSTRUCT*>(lparam);
++    if ((message.hwnd == observed_parent.load() &&
++         message.message == WM_ERASEBKGND) ||
++        (message.hwnd == observed_brand.load() && message.message == WM_PAINT))
++      ++unrelated_paints;
++  }
++  return ::CallNextHookEx(nullptr, code, wparam, lparam);
++}
+ }  // namespace
+ 
+ TEST(AegisInstallUiTest, SilentDoesNotCreateWindow) {
+@@ -83,14 +98,14 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
+     AegisInstallUi ui(true);
+     HWND window = OwnWindow();
+     EXPECT_TRUE(window);
+-    EXPECT_TRUE(WaitForText(window, L"正在准备"));
++    EXPECT_TRUE(WaitForText(window, L"正在安装"));
+     ::SendMessage(window, WM_CLOSE, 0, 0);
+     EXPECT_TRUE(::IsWindow(window));  // 安装提交期间关闭窗口不能中断文件写入。
+     ui.Installing();
+     EXPECT_TRUE(WaitForText(window, L"正在安装"));
+     HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
+     EXPECT_TRUE(::IsWindowVisible(progress));
+-    EXPECT_NE(0, ::GetWindowLongPtr(progress, GWL_STYLE) & PBS_MARQUEE);
++    EXPECT_EQ(0, ::GetWindowLongPtr(progress, GWL_STYLE) & PBS_MARQUEE);
+     EXPECT_FALSE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
+     ui.Finish(0);
+     EXPECT_TRUE(WaitForText(window, L"安装完成"));
+@@ -144,25 +159,37 @@ TEST(AegisInstallUiTest, TerminalStateIgnoresLateInstallingMessage) {
+   EXPECT_TRUE(WaitForText(window, L"错误代码：31"));
+   ::SendMessage(window, WM_COMMAND, IDOK, 0);
+ }
+-TEST(AegisInstallUiTest, MeasuredProgressStaysStillUntilActualWorkArrives) {
++TEST(AegisInstallUiTest, OverallProgressDoesNotRestartWhenStageChanges) {
+   AegisInstallUi ui(true);
+   HWND window = OwnWindow();
+   HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
+-  ui.UpdateProgress({aegis_installer::Phase::kDecompressing, 42});
+-  EXPECT_TRUE(WaitForText(window, L"正在解压  42%"));
+-  EXPECT_EQ(42, ::SendMessage(progress, PBM_GETPOS, 0, 0));
++  ui.Installing();  // 通用启动通知不能抢占后续真实解压阶段的预算。
++  ui.UpdateProgress({aegis_installer::Phase::kDecompressing, 50});
++  auto reaches = [&](int minimum) {
++    for (int i = 0; i != 100; ++i) {
++      if (::SendMessage(progress, PBM_GETPOS, 0, 0) >= minimum)
++        return true;
++      ::Sleep(25);
++    }
++    return false;
++  };
++  EXPECT_TRUE(reaches(30));
++  EXPECT_LT(::SendMessage(progress, PBM_GETPOS, 0, 0), 60);
++  EXPECT_TRUE(WaitForText(window, L"正在安装"));
+   EXPECT_EQ(0, ::GetWindowLongPtr(progress, GWL_STYLE) & PBS_MARQUEE);
+-  ::Sleep(150);
+-  EXPECT_EQ(42, ::SendMessage(progress, PBM_GETPOS, 0, 0));
+-  // 同阶段倒退和未确认的 100% 都被拒绝；阶段更换才允许使用新的分母。
+-  ui.UpdateProgress({aegis_installer::Phase::kDecompressing, 20});
+-  ui.UpdateProgress({aegis_installer::Phase::kDecompressing, 100});
++  // 阶段内 0% 进入整体下一段，不得将用户看到的进度清零。
++  ui.UpdateProgress({aegis_installer::Phase::kUnpacking, 0});
++  EXPECT_TRUE(reaches(59));
++  ui.UpdateProgress({aegis_installer::Phase::kInstalling, 0});
++  EXPECT_TRUE(reaches(77));
++  ui.UpdateProgress({aegis_installer::Phase::kPreparing, -1});
++  ui.UpdateProgress({aegis_installer::Phase::kFinishing, 100});
+   ::Sleep(100);
+-  EXPECT_EQ(42, ::SendMessage(progress, PBM_GETPOS, 0, 0));
+-  ui.UpdateProgress({aegis_installer::Phase::kInstalling, 10});
+-  EXPECT_TRUE(WaitForText(window, L"正在安装  10%"));
+-  EXPECT_EQ(10, ::SendMessage(progress, PBM_GETPOS, 0, 0));
++  EXPECT_GE(::SendMessage(progress, PBM_GETPOS, 0, 0), 77);
++  EXPECT_LT(::SendMessage(progress, PBM_GETPOS, 0, 0), 100);
+   ui.Finish(0);
++  EXPECT_TRUE(WaitForText(window, L"安装完成"));
++  ::SendMessage(window, WM_CLOSE, 0, 0);
+ }
+ 
+ TEST(AegisInstallUiTest, FramelessWindowKeepsDraggingWithoutWindowButtons) {
+@@ -195,4 +222,107 @@ TEST(AegisInstallUiTest, FramelessWindowKeepsDraggingWithoutWindowButtons) {
+   EXPECT_TRUE(WaitForText(window, L"安装完成"));
+   ::SendMessage(window, WM_CLOSE, 0, 0);
+ }
++// 进度变化不得擦除整窗或重画无关品牌区域，防止只修进度条而留下整页闪烁。
++TEST(AegisInstallUiTest, ProgressUpdatesDoNotRepaintUnrelatedContent) {
++  AegisInstallUi ui(true);
++  HWND window = OwnWindow();
++  HWND brand = ::FindWindowEx(window, nullptr, L"Static", L"GCSA Aegis");
++  observed_parent = window;
++  observed_brand = brand;
++  HHOOK hook = ::SetWindowsHookEx(WH_CALLWNDPROC, ObservePaint, nullptr,
++                                  ::GetWindowThreadProcessId(window, nullptr));
++  EXPECT_NE(nullptr, hook);
++  if (hook) {
++    ::RedrawWindow(
++        window, nullptr, nullptr,
++        RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
++    EXPECT_GT(unrelated_paints.load(), 0);  // 先证明观察器能发现真实整窗重绘。
++    ::Sleep(100);
++    unrelated_paints = 0;
++    for (int percent : {10, 20, 30, 40, 50, 60}) {
++      ui.UpdateProgress({aegis_installer::Phase::kDecompressing, percent});
++      ::Sleep(60);
++    }
++    ::SendMessage(window, WM_NULL, 0, 0);
++    EXPECT_EQ(0, unrelated_paints.load());
++    observed_parent = nullptr;
++    observed_brand = nullptr;
++    ::UnhookWindowsHookEx(hook);
++  }
++  EXPECT_NE(0, ::GetWindowLongPtr(window, GWL_STYLE) & WS_CLIPCHILDREN);
++  ui.Finish(0);
++  EXPECT_TRUE(WaitForText(window, L"安装完成"));
++  ::SendMessage(window, WM_CLOSE, 0, 0);
++}
++
++TEST(AegisOverallProgressTest, WeightsMapStagesToOneContinuousRange) {
++  AegisOverallProgress progress(0);
++  progress.Update({aegis_installer::Phase::kDecompressing, 50}, 100);
++  progress.Advance(100, false);
++  EXPECT_EQ(3200, progress.position());
++  progress.Update({aegis_installer::Phase::kUnpacking, 0}, 200);
++  progress.Advance(200, false);
++  EXPECT_EQ(6000, progress.position());
++  progress.Update({aegis_installer::Phase::kInstalling, 50}, 300);
++  progress.Advance(300, false);
++  EXPECT_EQ(8600, progress.position());
++}
++
++TEST(AegisOverallProgressTest, UnknownDurationStaysWithinItsPhaseBudget) {
++  AegisOverallProgress progress(0);
++  progress.Advance(3000, false);
++  EXPECT_EQ(200, progress.position());
++  progress.Advance(10000000, false);
++  EXPECT_LT(progress.position(), 400);
++  progress.Update({aegis_installer::Phase::kFinishing, -1}, 10000000);
++  progress.Advance(20000000, false);
++  EXPECT_EQ(99, progress.percent());  // 长时间等待也不能伪造安装成功。
++}
++
++TEST(AegisOverallProgressTest, LateOrInvalidObservationsNeverResetProgress) {
++  AegisOverallProgress progress(0);
++  progress.Update({aegis_installer::Phase::kInstalling, 60}, 100);
++  progress.Advance(100, false);
++  int previous = progress.position();
++  for (aegis_installer::Progress input :
++       {aegis_installer::Progress{aegis_installer::Phase::kInstalling, 10},
++        {aegis_installer::Phase::kPreparing, -1},
++        {aegis_installer::Phase::kFinishing, 100},
++        {static_cast<aegis_installer::Phase>(99), 50}}) {
++    progress.Update(input, 200);
++    progress.Advance(200, false);
++    EXPECT_EQ(previous, progress.position());
++  }
++}
++
++TEST(AegisOverallProgressTest,
++     RollbackFreezesEstimateAndRejectsLateSuccessHints) {
++  AegisOverallProgress progress(0);
++  progress.Update({aegis_installer::Phase::kInstalling, 60}, 100);
++  progress.Advance(100, false);
++  int previous = progress.position();
++  progress.Update({aegis_installer::Phase::kRollingBack, -1}, 200);
++  progress.Update({aegis_installer::Phase::kFinishing, 99}, 300);
++  EXPECT_FALSE(progress.Advance(10000));
++  EXPECT_TRUE(progress.rolling_back());
++  EXPECT_EQ(previous, progress.position());
++}
++
++TEST(AegisOverallProgressTest, SmoothingAndClockRegressionCannotMoveBackwards) {
++  AegisOverallProgress progress(0);
++  progress.Update({aegis_installer::Phase::kInstalling, 0}, 10);
++  EXPECT_TRUE(progress.Advance(30));
++  EXPECT_GT(progress.position(), 0);
++  EXPECT_LT(progress.position(), 7800);
++  int previous = progress.position();
++  EXPECT_FALSE(progress.Advance(20));
++  EXPECT_EQ(previous, progress.position());
++  for (ULONGLONG now = 60; now < 3000; now += 30) {
++    progress.Advance(now);
++    EXPECT_GE(progress.position(), previous);
++    EXPECT_LE(progress.position(), 7800);
++    previous = progress.position();
++  }
++  EXPECT_EQ(7800, progress.position());
++}
+ }  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/aegis_overall_progress.h b/chrome/installer/mini_installer/aegis_overall_progress.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a71691a2bc735555cc4c4e32957335ffdb7b2d36
+--- /dev/null
++++ b/chrome/installer/mini_installer/aegis_overall_progress.h
+@@ -0,0 +1,116 @@
++// Copyright 2026 The GCSA Aegis Authors
++// 安装整体进度的保守预估模型；只负责展示，不判断安装结果或改变安装工作。
++#ifndef CHROME_INSTALLER_MINI_INSTALLER_AEGIS_OVERALL_PROGRESS_H_
++#define CHROME_INSTALLER_MINI_INSTALLER_AEGIS_OVERALL_PROGRESS_H_
++
++#include "chrome/installer/aegis_install_progress.h"
++
++namespace mini_installer {
++
++// 用实测阶段完成量校准固定权重，无分母时按耗时缓慢接近阶段上限。
++// 状态只由 UI 线程持有；时间由调用方传入，使用单调时钟的毫秒值。
++class AegisOverallProgress {
++ public:
++  explicit AegisOverallProgress(ULONGLONG now)
++      : phase_started_(now), last_tick_(now) {}
++
++  // 接收阶段观测；忽略无效值、倒退值及回滚后的迟到消息。
++  void Update(aegis_installer::Progress progress, ULONGLONG now) {
++    using aegis_installer::Phase;
++    if (rolling_back_ || progress.percent < -1 || progress.percent > 99 ||
++        static_cast<unsigned>(progress.phase) >
++            static_cast<unsigned>(Phase::kRollingBack))
++      return;
++    if (progress.phase == Phase::kRollingBack) {
++      rolling_back_ = true;
++      return;
++    }
++    // setup 的短暂辅助步骤可能回报 preparing；不能让整体完成量重置。
++    if (progress.phase < phase_)
++      return;
++    if (progress.phase != phase_) {
++      phase_ = progress.phase;
++      phase_started_ = now;
++      reported_ = -1;
++    }
++    if (progress.percent > reported_)
++      reported_ = progress.percent;
++  }
++
++  // 推进显示值并返回是否变化；关闭系统动画时直接显示当前估计值。
++  // 即使阶段耗时远超预期也不越过该阶段上限，最终 100% 只能由成功结果显示。
++  bool Advance(ULONGLONG now, bool animate = true) {
++    if (now < last_tick_)
++      return false;
++    ULONGLONG delta = now - last_tick_;
++    last_tick_ = now;
++    if (rolling_back_)
++      return false;
++    Range range = CurrentRange();
++    ULONGLONG elapsed = now >= phase_started_ ? now - phase_started_ : 0;
++    if (elapsed > 3600000)
++      elapsed = 3600000;
++    int fraction =
++        reported_ >= 0
++            ? reported_ * 100
++            : static_cast<int>(elapsed * 10000 / (elapsed + range.expected_ms));
++    int estimate = range.begin + (range.end - range.begin) * fraction / 10000;
++    if (estimate > 9900)
++      estimate = 9900;
++    if (estimate > target_)
++      target_ = estimate;
++    int previous = position_;
++    if (!animate) {
++      position_ = target_;
++    } else if (delta && position_ < target_) {
++      // 使用百分之一百分点平滑趋近，不卡在整数跳变；恢复窗口时限制单帧跃迁。
++      if (delta > 250)
++        delta = 250;
++      int step =
++          static_cast<int>((target_ - position_) * delta / (180 + delta));
++      position_ += step > 0 ? step : 1;
++    }
++    return position_ != previous;
++  }
++
++  // 以百分之一百分点表示，范围为 0..9900；文本百分比向下取整。
++  int position() const { return position_; }
++  int percent() const { return position_ / 100; }
++  bool rolling_back() const { return rolling_back_; }
++
++ private:
++  struct Range {
++    int begin;
++    int end;
++    ULONGLONG expected_ms;
++  };
++  Range CurrentRange() const {
++    using aegis_installer::Phase;
++    // 解压占主要预算，文件提交次之；配置与收尾保留空间，阶段切换不回到零。
++    switch (phase_) {
++      case Phase::kDecompressing:
++        return {400, 6000, 30000};
++      case Phase::kUnpacking:
++        return {6000, 7800, 10000};
++      case Phase::kInstalling:
++        return {7800, 9400, 12000};
++      case Phase::kConfiguring:
++        return {9400, 9700, 3000};
++      case Phase::kFinishing:
++        return {9700, 10000, 5000};
++      default:
++        return {0, 400, 3000};
++    }
++  }
++
++  aegis_installer::Phase phase_ = aegis_installer::Phase::kPreparing;
++  ULONGLONG phase_started_;
++  ULONGLONG last_tick_;
++  int reported_ = -1;
++  int target_ = 0;
++  int position_ = 0;
++  bool rolling_back_ = false;
++};
++}  // namespace mini_installer
++
++#endif  // CHROME_INSTALLER_MINI_INSTALLER_AEGIS_OVERALL_PROGRESS_H_
+-- 
+2.56.0.windows.4
+
