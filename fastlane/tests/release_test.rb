@@ -371,6 +371,7 @@ class ReleaseTest < ReleaseFixture
       checks = self
       builder.define_singleton_method(:build_app) do |**build_options|
         checks.assert_equal(profile == 'alpha', build_options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
+        checks.assert_includes(build_options.fetch(:xcargs).split, "AEGIS_FIREBASE_CHANNEL=#{profile}")
         File.write(File.join(build_options.fetch(:output_directory), build_options.fetch(:output_name)), 'fixture IPA')
       end
       keys = %w[AEGIS_APPLE_TEAM_ID AEGIS_IOS_PROFILES AEGIS_IOS_CERT_SHA1]

@@ -13939,6 +13939,121 @@
         }
       }
     },
+    "诊断与使用分析": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics & Analytics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "诊断与使用分析"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "診斷與使用分析"
+          }
+        }
+      }
+    },
+    "发送崩溃报告": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Crash Reports"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送崩溃报告"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送當機報告"
+          }
+        }
+      }
+    },
+    "发送使用分析": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send Usage Analytics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送使用分析"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送使用分析"
+          }
+        }
+      }
+    },
+    "通过 Firebase 发送崩溃诊断和应用使用统计。崩溃报告在下次启动时发送。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Firebase receives crash diagnostics and app usage statistics. Crash reports are sent the next time Aegis opens."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通过 Firebase 发送崩溃诊断和应用使用统计。崩溃报告在下次启动时发送。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "透過 Firebase 傳送當機診斷和 App 使用統計。當機報告會在下次啟動時傳送。"
+          }
+        }
+      }
+    },
+    "此安装曾连接其他诊断环境。崩溃报告与使用分析已暂停。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crash reports and analytics are paused because this installation used a different diagnostics environment."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此安装曾连接其他诊断环境。崩溃报告与使用分析已暂停。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此安裝曾連線至其他診斷環境。當機報告與使用分析已暫停。"
+          }
+        }
+      }
+    },
     "网站数据已清除。": {
       "extractionState": "manual",
       "localizations": {
