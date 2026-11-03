@@ -1,0 +1,289 @@
+From 83318ccc5124e5dfea0ddfa9a3768bbd0c609c1c Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Tue, 3 Nov 2026 12:59:14 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=B0=86=E5=AE=89=E8=A3=85=E8=A7=A3=E5=8E=8B?=
+ =?UTF-8?q?=E7=9B=AE=E5=BD=95=E7=A7=BB=E8=87=B3=20Windows=20=E4=B8=B4?=
+ =?UTF-8?q?=E6=97=B6=E7=9B=AE=E5=BD=95?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../mini_installer/mini_installer.cc          |  64 ++++-----
+ .../installer/mini_installer/mini_installer.h |   7 +-
+ .../mini_installer/mini_installer_unittest.cc | 123 +++++++++++++++++-
+ 3 files changed, 155 insertions(+), 39 deletions(-)
+
+diff --git a/chrome/installer/mini_installer/mini_installer.cc b/chrome/installer/mini_installer/mini_installer.cc
+index be6dcd562455d18ebb33ffda576d4883a12496c8..4947d2f73e399af55de72bbbc73cc113c3d4d313 100644
+--- a/chrome/installer/mini_installer/mini_installer.cc
++++ b/chrome/installer/mini_installer/mini_installer.cc
+@@ -605,24 +605,6 @@ bool SetSecurityDescriptor(const wchar_t* path, PSECURITY_DESCRIPTOR* sd) {
+   return result;
+ }
+ 
+-bool GetModuleDir(HMODULE module, PathString* directory) {
+-  DWORD len = ::GetModuleFileName(module, directory->get(),
+-                                  static_cast<DWORD>(directory->capacity()));
+-  if (!len || len >= directory->capacity()) {
+-    return false;  // Failed to get module path.
+-  }
+-
+-  // Chop off the basename of the path.
+-  wchar_t* name = GetNameFromPathExt(directory->get(), len);
+-  if (name == directory->get()) {
+-    return false;  // No path separator found.
+-  }
+-
+-  *name = L'\0';
+-
+-  return true;
+-}
+-
+ // Creates a temporary directory under |base_path| and returns the full path
+ // of created directory in |work_dir|. If successful return true, otherwise
+ // false.  When successful, the returned |work_dir| will always have a trailing
+@@ -698,18 +680,40 @@ bool CreateWorkDir(const wchar_t* base_path,
+   return exit_code->IsSuccess();
+ }
+ 
+-// Creates and returns a temporary directory in |work_dir| that can be used to
+-// extract mini_installer payload. |work_dir| ends with a path separator.
+-// Returns true if |work_dir| is available for use, or false in case of error
+-// (indicated by |exit_code|).
+-bool GetWorkDir(HMODULE module,
+-                PathString* work_dir,
+-                ProcessExitResult* exit_code) {
++// 只在 Windows 指定的临时目录下创建独占子目录；目录不可用时失败，
++// 不回退到安装包所在目录，也不在当前目录留下解压文件。
++bool GetWorkDir(PathString* work_dir, ProcessExitResult* exit_code) {
++  work_dir->clear();
+   PathString base_path;
+-
+-  // Create a directory next to the current module.
+-  return GetModuleDir(module, &base_path) &&
+-         CreateWorkDir(base_path.get(), work_dir, exit_code);
++  // 新系统优先使用按进程权限选择目录的 API（SYSTEM 使用受保护的 SystemTemp）。
++  // 动态解析保持旧 Windows 10 兼容；仅在 API 不存在时使用 GetTempPathW。
++  const auto get_temp_path2 = reinterpret_cast<decltype(&::GetTempPathW)>(
++      ::GetProcAddress(::GetModuleHandleW(L"kernel32.dll"), "GetTempPath2W"));
++  const auto get_temp_path = get_temp_path2 ? get_temp_path2 : &::GetTempPathW;
++  const DWORD length =
++      get_temp_path(static_cast<DWORD>(base_path.capacity()), base_path.get());
++  if (!length || length >= base_path.capacity()) {
++    *exit_code = ProcessExitResult(
++        UNABLE_TO_GET_WORK_DIRECTORY,
++        length ? ERROR_INSUFFICIENT_BUFFER : ::GetLastError());
++    return false;
++  }
++  // Windows API 不检查目录存在性；先拒绝不存在的路径和普通文件，
++  // 可写性由带原有私有 ACL 的原子 CreateDirectory 操作实际验证。
++  const DWORD attributes = ::GetFileAttributesW(base_path.get());
++  if (attributes == INVALID_FILE_ATTRIBUTES ||
++      !(attributes & FILE_ATTRIBUTE_DIRECTORY)) {
++    *exit_code = ProcessExitResult(UNABLE_TO_GET_WORK_DIRECTORY,
++                                   attributes == INVALID_FILE_ATTRIBUTES
++                                       ? ::GetLastError()
++                                       : ERROR_DIRECTORY);
++    return false;
++  }
++  if (!CreateWorkDir(base_path.get(), work_dir, exit_code)) {
++    work_dir->clear();
++    return false;
++  }
++  return true;
+ }
+ 
+ ProcessExitResult WMain(HMODULE module) {
+@@ -731,7 +735,7 @@ ProcessExitResult WMain(HMODULE module) {
+ 
+   // First get a path where we can extract payload
+   PathString base_path;
+-  if (!GetWorkDir(module, &base_path, &exit_code)) {
++  if (!GetWorkDir(&base_path, &exit_code)) {
+     ui.Finish(exit_code.exit_code);
+     return exit_code;
+   }
+diff --git a/chrome/installer/mini_installer/mini_installer.h b/chrome/installer/mini_installer/mini_installer.h
+index 1465871632c58c59a8967fb4558cab7017d83b13..bec045cd734cd4ac035a4c26e468f484fb110152 100644
+--- a/chrome/installer/mini_installer/mini_installer.h
++++ b/chrome/installer/mini_installer/mini_installer.h
+@@ -46,10 +46,9 @@ ProcessExitResult GetPreviousSetupExePath(const Configuration& configuration,
+                                           wchar_t* path,
+                                           size_t size);
+ 
+-// Populates |directory| with the directory portion of the path to |module|.
+-// Returns false in case of failure, in which case the contents of |directory|
+-// are undefined and may have been modified.
+-bool GetModuleDir(HMODULE module, PathString* directory);
++// 在 Windows 临时目录中创建带私有 ACL 的独立工作目录，成功路径以反斜杠结尾。
++// 失败清空 work_dir 并给出退出错误；不会写入安装包目录或清理其他临时目录。
++bool GetWorkDir(PathString* work_dir, ProcessExitResult* exit_code);
+ 
+ // Appends everything following the path to the executable in |command_line|
+ // verbatim to |buffer|, including all whitespace, quoted arguments,
+diff --git a/chrome/installer/mini_installer/mini_installer_unittest.cc b/chrome/installer/mini_installer/mini_installer_unittest.cc
+index cf14a1341758e682bf5f5053d6f69cb1b4014173..7f510fb500813f1eac963166e5e303a8589ddf09 100644
+--- a/chrome/installer/mini_installer/mini_installer_unittest.cc
++++ b/chrome/installer/mini_installer/mini_installer_unittest.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/installer/mini_installer/mini_installer.h"
+ 
++#include <aclapi.h>
++
+ #include <string>
+ 
+ #include "base/base_paths.h"
+@@ -12,11 +14,13 @@
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/path_service.h"
++#include "base/scoped_environment_variable_override.h"
+ #include "base/scoped_native_library.h"
+ #include "base/test/test_reg_util_win.h"
+ #include "base/win/registry.h"
+ #include "chrome/install_static/install_details.h"
+ #include "chrome/installer/mini_installer/configuration.h"
++#include "chrome/installer/mini_installer/delete_with_retry.h"
+ #include "chrome/installer/mini_installer/mini_installer_constants.h"
+ #include "chrome/installer/mini_installer/path_string.h"
+ #include "chrome/installer/util/util_constants.h"
+@@ -35,6 +39,20 @@ base::FilePath GetTestFileRootPath() {
+       .Append(FILE_PATH_LITERAL("installer"));
+ }
+ 
++// 测试只修改自身进程环境；SYSTEM 和普通用户均定向到夹具创建的私有目录。
++class ScopedInstallerTempEnvironment {
++ public:
++  explicit ScopedInstallerTempEnvironment(const std::string& path)
++      : tmp_("TMP", path),
++        temp_("TEMP", path),
++        system_temp_("SystemTemp", path) {}
++
++ private:
++  base::ScopedEnvironmentVariableOverride tmp_;
++  base::ScopedEnvironmentVariableOverride temp_;
++  base::ScopedEnvironmentVariableOverride system_temp_;
++};
++
+ }  // namespace
+ 
+ TEST(MiniInstallerTest, AppendCommandLineFlags) {
+@@ -64,13 +82,108 @@ TEST(MiniInstallerTest, AppendCommandLineFlags) {
+   }
+ }
+ 
+-TEST(MiniInstallerTest, GetModuleDir) {
++// 当前目录与安装包位置不参与选择；空格/中文路径、并发独立目录和私有 ACL
++// 均须保留。
++TEST(MiniInstallerTest, WorkDirUsesWindowsTempAndPrivateAcl) {
++  base::ScopedTempDir root;
++  ASSERT_TRUE(root.CreateUniqueTempDir());
++  const auto temp = root.GetPath().Append(FILE_PATH_LITERAL("安装 临时目录"));
++  ASSERT_TRUE(base::CreateDirectory(temp));
++  const auto unrelated = temp.Append(FILE_PATH_LITERAL("keep.txt"));
++  ASSERT_TRUE(base::WriteFile(unrelated, "keep"));
++  ScopedInstallerTempEnvironment environment(temp.AsUTF8Unsafe());
++  PathString first, second;
++  ProcessExitResult result(UNABLE_TO_GET_WORK_DIRECTORY);
++  ASSERT_TRUE(GetWorkDir(&first, &result));
++  EXPECT_TRUE(result.IsSuccess());
++  ASSERT_TRUE(GetWorkDir(&second, &result));
++  const base::FilePath first_path =
++      base::FilePath(first.get()).StripTrailingSeparators();
++  const base::FilePath second_path =
++      base::FilePath(second.get()).StripTrailingSeparators();
++  EXPECT_EQ(first_path.DirName(), temp);
++  EXPECT_EQ(second_path.DirName(), temp);
++  EXPECT_NE(first_path, second_path);
++  EXPECT_TRUE(base::DirectoryExists(first_path));
++  EXPECT_TRUE(base::DirectoryExists(second_path));
++
++  PSECURITY_DESCRIPTOR descriptor = nullptr;
++  PACL dacl = nullptr;
++  ASSERT_EQ(static_cast<DWORD>(ERROR_SUCCESS),
++            ::GetNamedSecurityInfoW(first.get(), SE_FILE_OBJECT,
++                                    DACL_SECURITY_INFORMATION, nullptr, nullptr,
++                                    &dacl, nullptr, &descriptor));
++  SECURITY_DESCRIPTOR_CONTROL control = 0;
++  DWORD revision = 0;
++  EXPECT_TRUE(::GetSecurityDescriptorControl(descriptor, &control, &revision));
++  EXPECT_TRUE(control & SE_DACL_PROTECTED);
++  EXPECT_NE(nullptr, dacl);
++  ::LocalFree(descriptor);
++
++  // 使用安装器既有删除原语，只清理本次独占目录；共享临时根及其他文件必须保留。
++  int attempts = 0;
++  EXPECT_TRUE(DeleteWithRetry(first.get(), attempts));
++  EXPECT_TRUE(DeleteWithRetry(second.get(), attempts));
++  EXPECT_FALSE(base::PathExists(first_path));
++  EXPECT_FALSE(base::PathExists(second_path));
++  EXPECT_TRUE(base::DirectoryExists(temp));
++  EXPECT_TRUE(base::PathExists(unrelated));
++}
++
++TEST(MiniInstallerTest, WorkDirRejectsMissingTempDirectory) {
++  base::ScopedTempDir root;
++  ASSERT_TRUE(root.CreateUniqueTempDir());
++  const auto missing = root.GetPath().Append(FILE_PATH_LITERAL("missing"));
++  ScopedInstallerTempEnvironment environment(missing.AsUTF8Unsafe());
+   PathString directory;
++  ASSERT_TRUE(directory.assign(L"stale"));
++  ProcessExitResult result(SUCCESS_EXIT_CODE);
++  EXPECT_FALSE(GetWorkDir(&directory, &result));
++  EXPECT_EQ(UNABLE_TO_GET_WORK_DIRECTORY, result.exit_code);
++  EXPECT_NE(static_cast<DWORD>(ERROR_SUCCESS), result.windows_error);
++  EXPECT_TRUE(directory.empty());
++  EXPECT_FALSE(base::PathExists(missing));
++}
+ 
+-  ASSERT_TRUE(GetModuleDir(/*module=*/nullptr, &directory));
+-  ASSERT_NE(directory.length(), 0U);
+-  EXPECT_LT(directory.length(), directory.capacity());
+-  EXPECT_EQ(UNSAFE_TODO(directory.get()[directory.length() - 1]), L'\\');
++TEST(MiniInstallerTest, WorkDirRejectsFileAsTempDirectory) {
++  base::ScopedTempDir root;
++  ASSERT_TRUE(root.CreateUniqueTempDir());
++  const auto file = root.GetPath().Append(FILE_PATH_LITERAL("not-a-directory"));
++  ASSERT_TRUE(base::WriteFile(file, "keep"));
++  ScopedInstallerTempEnvironment environment(file.AsUTF8Unsafe());
++  PathString directory;
++  ProcessExitResult result(SUCCESS_EXIT_CODE);
++  EXPECT_FALSE(GetWorkDir(&directory, &result));
++  EXPECT_EQ(UNABLE_TO_GET_WORK_DIRECTORY, result.exit_code);
++  EXPECT_TRUE(directory.empty());
++  std::string contents;
++  ASSERT_TRUE(base::ReadFileToString(file, &contents));
++  EXPECT_EQ("keep", contents);
++}
++
++TEST(MiniInstallerTest, WorkDirRejectsTempPathWithoutRoomForChild) {
++  // 使用真实存在的长目录验证子目录容量；Windows 会忽略某些无效的超长环境值，
++  // 不能把无效 TMP 等同于 API 返回超长路径。失败不得截断路径或在其他位置创建目录。
++  base::ScopedTempDir root;
++  ASSERT_TRUE(root.CreateUniqueTempDir());
++  const auto prefix_length = root.GetPath().value().length() + 1;
++  ASSERT_LT(prefix_length, static_cast<size_t>(MAX_PATH - 14));
++  const auto temp = root.GetPath().Append(
++      std::wstring(MAX_PATH - 14 - prefix_length, L'x'));
++  ASSERT_TRUE(base::CreateDirectory(temp));
++  ScopedInstallerTempEnvironment environment(temp.AsUTF8Unsafe());
++  PathString directory;
++  ProcessExitResult result(SUCCESS_EXIT_CODE);
++  const bool created = GetWorkDir(&directory, &result);
++  EXPECT_FALSE(created);
++  EXPECT_EQ(PATH_STRING_OVERFLOW, result.exit_code);
++  EXPECT_TRUE(directory.empty());
++  if (created) {
++    // 断言失败时也回收本夹具创建的空目录，避免测试本身留下残留。
++    int attempts = 0;
++    EXPECT_TRUE(DeleteWithRetry(directory.get(), attempts));
++  }
++  EXPECT_TRUE(base::DirectoryExists(temp));
+ }
+ 
+ struct UnpackParams {
+-- 
+2.56.0.windows.4
+
