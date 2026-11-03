@@ -8,6 +8,8 @@
 
 ## iOS / iPadOS 1.0.1 · TestFlight
 
+- 已基於上游 main（`93ead15`）完成 Beta 組建 13 打包，並依交付回執核驗簽名 IPA 與 dSYM。此組建未上傳 TestFlight。[打包紀錄](https://github.com/gcsagroup/aegis-browser/actions/runs/41714005704)
+- 在「設定 → 關於」中新增「開源授權與鳴謝」，隨應用程式提供可離線查看的授權說明。[原始碼變更](https://github.com/gcsagroup/aegis-browser/pull/70)
 - 完成三種交付方式驗證：手動 Fastlane 使用 Alpha 組建 8、GitHub Actions 使用 Beta 組建 12、Tag → Draft Release 使用 Release 組建 11；三者均已完成 Apple 處理。
 - 本機簽名指令碼自動尋找下載目錄中的 App Store Connect 憑證資料，透過 API 取得應用程式與擴充功能的三份描述檔，並讀取本機密碼檔案解鎖專用簽名鑰匙圈；匯出的簽名檔案採用不含日期的固定名稱。[簽名自動化](https://github.com/gcsagroup/aegis-browser/pull/68)
 - 修復 Tag 打包成功後 Draft Release 被略過的問題，新增相依工作略過情境的回歸測試。[工作流程修復](https://github.com/gcsagroup/aegis-browser/pull/67)
