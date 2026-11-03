@@ -13,7 +13,7 @@ const core = resolve(root, 'packages/core');
 const preload = join(core, 'vitest-coverage-exit.mjs');
 
 function runFork(body, {enabled = true, coverage = true, traceExit = false, vitestCoverage = false,
-  rawDirectory = 'existing'} = {}) {
+  rawDirectory = 'existing', delayStop = false, cleanupProbe = false, githubActions} = {}) {
   mkdirSync(join(core, '.artifacts'), {recursive: true});
   const directory = mkdtempSync(join(core, '.artifacts', 'v8-exit-'));
   const raw = rawDirectory === 'existing' ? join(directory, 'raw') : join(directory, 'nested', 'raw');
@@ -27,17 +27,67 @@ function runFork(body, {enabled = true, coverage = true, traceExit = false, vite
     "import {test, expect} from 'vitest';",
     "import {existsSync, writeFileSync} from 'node:fs';",
     production ? "import {exercisedProduction} from './owned-production.mjs';" : '',
+    // Hold only teardown, after the test result, so the parent can finish its
+    // initial error snapshot before the real worker sends its stop response.
+    delayStop ? `process.on('message', message => {
+      if (message?.__vitest_worker_request__ && message.type === 'stop')
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    });` : '',
     'process.on("exit", code => writeFileSync(' + JSON.stringify(receipt) + ', JSON.stringify({code})));',
     'function executedBeforeStop() { return ' + (production ? 'exercisedProduction()' : '42') + '; }',
     "test('owned fork fixture', async () => { " + body + ' });',
   ].join('\n'));
   const config = join(directory, 'vitest.config.mjs');
-  writeFileSync(config, 'export default ' + JSON.stringify({root: directory, test: {
+  const cleanupReporter = join(directory, 'observe-cleanup.mjs');
+  const globalSetup = join(directory, 'global-setup.mjs');
+  if (cleanupProbe) {
+    writeFileSync(globalSetup, `export default () => () => {
+      throw new Error('independent global teardown failure');
+    };`);
+    writeFileSync(cleanupReporter, `
+      import {appendFileSync, existsSync, mkdirSync, writeFileSync} from 'node:fs';
+      import {join} from 'node:path';
+      const record = value => appendFileSync(${JSON.stringify(join(directory, 'cleanup.jsonl'))},
+        JSON.stringify(value) + '\\n');
+      export default class CleanupObserver {
+        onInit(vitest) {
+          // This fixture may not need Vitest's lazy temporary module copies.
+          // Seed its owned directory so removal is observable, not vacuous.
+          mkdirSync(vitest._tmpDir, {recursive: true});
+          writeFileSync(join(vitest._tmpDir, 'cleanup-sentinel'), 'owned fixture');
+          // Observe the real methods and await their work; do not replace cleanup.
+          const clear = vitest._clearTmpDir.bind(vitest);
+          vitest._clearTmpDir = async () => {
+            const temporary = vitest._tmpDir;
+            const existed = existsSync(temporary);
+            await clear();
+            record({stage: 'temporary-cleanup', temporary, existed,
+              removed: !existsSync(temporary), cleared: vitest._tmpDir === undefined});
+          };
+          const finish = vitest._traces.finish.bind(vitest._traces);
+          vitest._traces.finish = async () => {
+            await finish();
+            record({stage: 'trace-finalization'});
+          };
+          // Registered after the production handoff hook.
+          vitest.onClose(async () => record({stage: 'subsequent-close-hook'}));
+        }
+      }
+    `);
+  }
+  writeFileSync(config, 'import productionConfig from ' + JSON.stringify(join(core, 'vitest.config.ts')) +
+    ';\nimport {configDefaults} from "vitest/config";\nconst config = ' + JSON.stringify({root: directory, test: {
     include: ['fixture.test.mjs'], pool: 'forks', maxWorkers: 1, testTimeout: 200,
     execArgv: enabled ? ['--import', preload] : [],
+    ...(cleanupProbe ? {globalSetup} : {}),
     ...(vitestCoverage ? {coverage: {enabled: true, provider: 'v8', reporter: ['json-summary'],
       reportsDirectory: join(directory, 'core-coverage'), include: ['owned-production.mjs']}} : {}),
-  }}) + ';\n');
+  }}) + ';\n' +
+    // Exercise the actual production reporter selection in the child environment.
+    (enabled ? 'config.test.reporters = productionConfig.test.reporters;\n' : '') +
+    (cleanupProbe ? 'config.test.reporters = [...(config.test.reporters ?? configDefaults.reporters), ' +
+      JSON.stringify(cleanupReporter) + '];\n' : '') +
+    'export default config;\n');
   // Observe the real Vitest-owned child without changing its arguments or lifecycle.
   const observer = join(directory, 'observe-exit.mjs');
   if (traceExit) writeFileSync(observer, [
@@ -56,7 +106,8 @@ function runFork(body, {enabled = true, coverage = true, traceExit = false, vite
   const result = spawnSync(process.execPath, [...(traceExit ? ['--import', observer] : []),
     join(core, 'node_modules/vitest/vitest.mjs'),
     'run', '--config', config], {
-    cwd: core, env: {...process.env, NODE_V8_COVERAGE: coverage ? raw : ''},
+    cwd: core, env: {...process.env, NODE_V8_COVERAGE: coverage ? raw : '',
+      ...(githubActions === undefined ? {} : {GITHUB_ACTIONS: String(githubActions)})},
     encoding: 'utf8', timeout: 15_000,
   });
   // Keep actual subprocess output and raw reports, including failure fixtures.
@@ -154,6 +205,55 @@ test('a real fork killed at the 500 ms exit boundary already handed off coverage
       fn.ranges.some(range => range.count > 0)));
   }
 });
+}
+
+for (const vitestCoverage of [false, true]) {
+  for (const rawDirectory of ['blocked', 'existing']) {
+    test('late coverage handoff failure fails the parent; path=' + rawDirectory +
+      '; Vitest V8=' + vitestCoverage, () => {
+      const {result} = runFork(`
+        ${rawDirectory === 'existing' ? "const {stopCoverage} = await import('node:v8'); stopCoverage();" : ''}
+        expect(executedBeforeStop()).toBe(42);
+      `, {rawDirectory, vitestCoverage, delayStop: true});
+      assert.notEqual(result.status, 0, 'Late handoff failure was silently accepted: ' + result.stderr);
+      assert.match(result.stderr, /V8 worker coverage handoff failed:/);
+    });
+  }
+}
+
+test('handoff failure preserves subsequent close hooks, teardown errors and final cleanup', () => {
+  const {result, directory} = runFork('expect(executedBeforeStop()).toBe(42);', {
+    rawDirectory: 'blocked', delayStop: true, cleanupProbe: true,
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /V8 worker coverage handoff failed:/);
+  assert.doesNotMatch(result.stderr, /Startup Error/);
+  assert.match(result.stderr, /error during close/);
+  assert.match(result.stderr, /independent global teardown failure/);
+  const events = readFileSync(join(directory, 'cleanup.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(events.map(event => event.stage), [
+    'subsequent-close-hook', 'temporary-cleanup', 'trace-finalization',
+  ]);
+  assert.equal(events[1].existed, true);
+  assert.equal(events[1].removed, true);
+  assert.equal(events[1].cleared, true);
+});
+
+for (const coverage of [false, true]) {
+  for (const githubActions of [false, true]) {
+    test('production reporters retain failure diagnostics; raw=' + coverage +
+      '; GitHub Actions=' + githubActions, () => {
+      const {result} = runFork("expect(executedBeforeStop(), 'owned annotation regression').toBe(0);",
+        {coverage, githubActions});
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /owned annotation regression/);
+      if (githubActions) {
+        assert.match(result.stdout, /::error file=[^\n]*fixture\.test\.mjs[^\n]*owned annotation regression/);
+      } else {
+        assert.doesNotMatch(result.stdout, /::error /);
+      }
+    });
+  }
 }
 
 test('a worker that cannot hand off coverage is an explicit failed Vitest run', () => {
