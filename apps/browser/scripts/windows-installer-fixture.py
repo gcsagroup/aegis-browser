@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import urllib.request
@@ -18,6 +19,8 @@ CHROMIUM = "43a195105613ac83c21d3f14de279f4a045c7da0"
 GTEST = "4fe3307fb2d9f86d19777c7eb0e4809e9694dde7"
 GTEST_SHA256 = "7da5cbd7991e88e61a2e2142475041fe6685484ad13013401e8f1e3fb5f3001a"
 HEADERS = {
+    "build/win/common_controls.manifest":
+        "3a8ca9721b476635b2bb6567f61c74adc85fdc168d4fd762d9b08414bb3f35c6",
     "chrome/installer/util/util_constants.h":
         "f40b2e5872bb326970857f23949b411964a902fa76f9feabe07b40bfaec2c749",
     "chrome/installer/mini_installer/mini_installer_resource.h":
@@ -78,6 +81,40 @@ def validate_results(tests, expected_tests):
             tests["tests"] != len(expected_tests) or tests["failures"] or
             tests["disabled"] or tests.get("skipped", 0) or tests.get("errors", 0)):
         raise RuntimeError("Expected the complete exact UI/progress/policy suite to pass")
+
+
+def collect_loader_diagnostics(build, report_dir):
+    """Preserve the actual PE and bounded, read-only SDK diagnostics before launch."""
+    destination = report_dir / "loader-diagnostics"
+    destination.mkdir(exist_ok=False)
+    executable = build / "Release/installer_fixture.exe"
+    shutil.copyfile(executable, destination / executable.name)
+    cache = (build / "CMakeCache.txt").read_text(encoding="utf-8")
+    tools = dict(re.findall(r"^(CMAKE_LINKER|CMAKE_MT):FILEPATH=(.+)$", cache, re.M))
+    commands = []
+    if "CMAKE_LINKER" in tools:
+        commands.append(("imports", [str(Path(tools["CMAKE_LINKER"]).with_name(
+            "dumpbin.exe")), "/IMPORTS", str(executable)]))
+    if "CMAKE_MT" in tools:
+        commands.append(("manifest", [tools["CMAKE_MT"], "-nologo",
+            f"-inputresource:{executable};#1",
+            f"-out:{destination / 'embedded.manifest'}"]))
+    diagnostics = {"executableSha256": digest(executable.read_bytes()),
+                   "tools": tools, "commands": []}
+    for name, command in commands:
+        record = {"argv": command}
+        try:
+            with (destination / f"{name}.log").open("wb") as output:
+                completed = subprocess.run(command, stdout=output,
+                    stderr=subprocess.STDOUT, timeout=30, check=False)
+            record["exitCode"] = completed.returncode
+        except (OSError, subprocess.TimeoutExpired) as error:
+            record["error"] = str(error)
+        diagnostics["commands"].append(record)
+    # Missing SDK diagnostic tools never suppress the actual test execution.
+    # The retained PE still contains the exact import and resource tables.
+    (destination / "report.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
+    return diagnostics
 
 
 def main():
@@ -143,6 +180,9 @@ target_include_directories(installer_fixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR
 target_compile_definitions(installer_fixture PRIVATE UNICODE _UNICODE NOMINMAX)
 target_compile_options(installer_fixture PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
 target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32 dwmapi gdiplus)
+# Match Chromium mini_installer's default_exe_manifest Common Controls v6 dependency.
+target_link_options(installer_fixture PRIVATE /MANIFEST:EMBED
+  "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/build/win/common_controls.manifest")
 ''')
         (fixture / "installer_fixture.rc").write_text(
             '#include "chrome/installer/mini_installer/mini_installer_resource.h"\n'
@@ -168,7 +208,9 @@ target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32
             [str(build / "Release/installer_fixture.exe"),
              "--gtest_output=json:" + str(report_dir / "tests.json")],
         ]
-        for command in commands:
+        for index, command in enumerate(commands):
+            if index == 2:
+                report["loaderDiagnostics"] = collect_loader_diagnostics(build, report_dir)
             completed = subprocess.run(command, cwd=root, timeout=300, check=False)
             report["commands"].append({"argv": command, "exitCode": completed.returncode})
             if completed.returncode:
