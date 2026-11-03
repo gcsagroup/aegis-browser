@@ -1,0 +1,54 @@
+Name: libtorrent-rasterbar
+URL: https://www.libtorrent.org/
+Version: 2.1.1
+License: BSD-3-Clause, APSL-2.0
+License File: LICENSE, UPSTREAM_LICENSE.txt, APSL-2.0.txt, SOURCE_OFFER.txt
+Security Critical: yes
+Shipped: yes
+
+Description:
+Optional macOS torrent integration. Source provenance remains documented in
+README.aegis; adding credit metadata does not qualify it for production release.
+The complete upstream LICENSE preserves the macOS routing-header notices.
+The corresponding original header accompanies the staged App as described in SOURCE_OFFER.txt.
+
+-------------------- DEPENDENCY DIVIDER --------------------
+
+Name: Boost headers (Aegis libtorrent integration)
+URL: https://www.boost.org/
+Version: host-provided; see build toolchain evidence
+License: BSL-1.0
+License File: BOOST_LICENSE_1_0.txt
+Security Critical: yes
+Shipped: yes
+
+Description:
+Header-only dependency of the macOS libtorrent integration. This records the
+license, not a reproducible Boost version or release qualification.
+
+-------------------- DEPENDENCY DIVIDER --------------------
+
+Name: try_signal (bundled with libtorrent)
+URL: https://github.com/arvidn/try_signal
+Version: bundled with libtorrent-rasterbar 2.1.1
+License: BSD-3-Clause
+License File: TRY_SIGNAL_LICENSE.txt
+Security Critical: yes
+Shipped: yes
+
+Description:
+The two implementation files are compiled by the macOS libtorrent GN target.
+License imported from the archive hash pinned in README.aegis.
+
+-------------------- DEPENDENCY DIVIDER --------------------
+
+Name: ed25519 (bundled with libtorrent)
+URL: https://ed25519.cr.yp.to/software.html
+Version: bundled with libtorrent-rasterbar 2.1.1
+License: Zlib, Public Domain
+License File: ED25519_LICENSE.txt
+Security Critical: yes
+Shipped: yes
+
+Description:
+License imported from the archive hash pinned in README.aegis.

@@ -18,8 +18,8 @@
       "sha256": "9423baea24b828f0b5d0ae5fffd1a681fea1bb1fcc1bd2903e719fd2a55652c7"
     },
     "NOTICE.txt": {
-      "bytes": 2402,
-      "sha256": "b454eef2730139522f54cf6a6b49a9301442095c92af8d1b74c32517f138589d"
+      "bytes": 2572,
+      "sha256": "efda1fbac6d1d38428dcc16079f0edd10330574645c0a8906d33fcf3170d81d7"
     },
     "bergamot/LICENSE": {
       "bytes": 16725,
@@ -72,6 +72,10 @@
     "catalog.js": {
       "bytes": 2812,
       "sha256": "2915ec804ff3d868e8d081d576528e70ba5e79c9424874aab47c2c86c3dd449d"
+    },
+    "vendor/onnxruntime-web-NOTICES": {
+      "bytes": 338538,
+      "sha256": "cf7342f7ba482ef715ae58f5f497a8d3564fa255164175aea324cd293c5701a0"
     }
   }
 }
