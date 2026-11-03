@@ -8,6 +8,8 @@ The workspace package, historical iOS development candidates and source previews
 
 ## iOS / iPadOS 1.0.1 · TestFlight
 
+- Packaged Beta build 13 from upstream main (`93ead15`) and verified the signed IPA and dSYM against the delivery receipt. [TestFlight upload run](https://github.com/gcsagroup/aegis-browser/actions/runs/41715274104). [Packaging run](https://github.com/gcsagroup/aegis-browser/actions/runs/41714005704)
+- Added Open Source Licenses & Acknowledgements in Settings → About, with bundled notices available offline. [Source changes](https://github.com/gcsagroup/aegis-browser/pull/70)
 - Verified three delivery methods: manual Fastlane with Alpha build 8, GitHub Actions with Beta build 12, and Tag → Draft Release with Release build 11. Apple processing completed for all three builds.
 - Local signing scripts discover App Store Connect credentials in Downloads, retrieve the three app/extension provisioning profiles through the API, and unlock the dedicated signing keychain using its local password file. Exported signing files use stable names without dates. [Signing automation](https://github.com/gcsagroup/aegis-browser/pull/68)
 - Fixed Tag → Draft Release being skipped after packaging succeeded; added regression coverage for skipped dependency jobs. [Workflow fix](https://github.com/gcsagroup/aegis-browser/pull/67)
