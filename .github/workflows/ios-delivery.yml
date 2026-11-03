@@ -184,7 +184,7 @@ jobs:
           retention-days: 30
     if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
   ios-draft:
-    if: ${{ needs.admission.outputs.operation == 'package' && needs.admission.outputs.destination == 'github-draft' }}
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.ios-package.result == 'success' && needs.admission.outputs.operation == 'package' && needs.admission.outputs.destination == 'github-draft' }}
     needs:
       - admission
       - ios-package
