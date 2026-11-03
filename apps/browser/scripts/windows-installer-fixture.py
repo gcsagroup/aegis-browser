@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import urllib.request
@@ -25,6 +26,9 @@ HEADERS = {
         "e65bc0f551d8016c5027352b013ecd90f0ee3c61ff0ddd9d1f8e7ba6676dee58",
 }
 SOURCES = [
+    "chrome/installer/aegis_install_progress.h",
+    "chrome/installer/mini_installer/aegis_overall_progress.h",
+    "chrome/app/theme/gcsa_aegis/win/chromium.ico",
     "chrome/installer/mini_installer/aegis_install_ui.cc",
     "chrome/installer/mini_installer/aegis_install_ui.h",
     "chrome/installer/mini_installer/aegis_install_ui_unittest.cc",
@@ -44,6 +48,22 @@ def download(url, destination, expected):
         raise RuntimeError(f"Pinned download mismatch: {destination.name}")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(data)
+
+
+def validate_results(tests, expected_tests):
+    actual_tests = []
+    for suite in tests["testsuites"]:
+        for test in suite["testsuite"]:
+            actual_tests.append(f"{suite['name']}.{test['name']}")
+            if (test.get("status") != "RUN" or
+                    test.get("result") != "COMPLETED" or
+                    test.get("failures") or test.get("skipped")):
+                raise RuntimeError("Fixture test failed, skipped or did not complete")
+    if (set(actual_tests) != expected_tests or
+            len(actual_tests) != len(expected_tests) or
+            tests["tests"] != len(expected_tests) or tests["failures"] or
+            tests["disabled"] or tests.get("skipped", 0) or tests.get("errors", 0)):
+        raise RuntimeError("Expected the complete exact UI/progress/policy suite to pass")
 
 
 def main():
@@ -70,6 +90,11 @@ def main():
         if (root / "apps/browser/CHROMIUM_COMMIT").read_text().strip() != CHROMIUM:
             raise RuntimeError("Update pinned fixture inputs for the new Chromium pin")
         overlay = root / "apps/browser/overlay"
+        for name in SOURCES:
+            committed = subprocess.check_output(
+                ["git", "show", f"{head}:apps/browser/overlay/{name}"], cwd=root)
+            if committed != (overlay / name).read_bytes():
+                raise RuntimeError(f"Fixture input differs from tested SHA: {name}")
         hashes = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
         report["inputHashes"] = hashes
         fixture = report_dir / "fixture"
@@ -95,19 +120,37 @@ def main():
                         'using CharType = wchar_t; }; }\n'
                         '#define FILE_PATH_LITERAL(x) L##x\n')
         (fixture / "CMakeLists.txt").write_text('''cmake_minimum_required(VERSION 3.20)
-project(AegisInstallerFixture LANGUAGES CXX)
+project(AegisInstallerFixture LANGUAGES CXX RC)
 set(CMAKE_CXX_STANDARD 20)
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 add_subdirectory(third_party/googletest/src)
 add_executable(installer_fixture
+  installer_fixture.rc
   chrome/installer/mini_installer/aegis_install_ui.cc
   chrome/installer/mini_installer/aegis_install_ui_unittest.cc
   chrome/installer/setup/aegis_launch_policy_unittest.cc)
 target_include_directories(installer_fixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_definitions(installer_fixture PRIVATE UNICODE _UNICODE NOMINMAX)
-target_compile_options(installer_fixture PRIVATE /utf-8)
-target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32)
+target_compile_options(installer_fixture PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/utf-8>)
+target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32 dwmapi gdiplus)
 ''')
+        (fixture / "installer_fixture.rc").write_text(
+            '#include "chrome/installer/mini_installer/mini_installer_resource.h"\n'
+            'IDI_MINI_INSTALLER ICON "chrome/app/theme/gcsa_aegis/win/chromium.ico"\n')
+        # Bind the result to every actual test in the copied production suites.
+        expected_tests = set()
+        for name in SOURCES:
+            if name.endswith("_unittest.cc"):
+                expected_tests.update(
+                    f"{suite}.{test}" for suite, test in re.findall(
+                        r"TEST\(\s*(\w+)\s*,\s*(\w+)\s*\)",
+                        (fixture / name).read_text()))
+        if not expected_tests or any("DISABLED_" in name for name in expected_tests):
+            raise RuntimeError("Empty or disabled fixture suite")
+        report["expectedTests"] = sorted(expected_tests)
+        report["excludedNativeSuites"] = [
+            "AegisInstallProgressTest requires full Chromium setup_unittests",
+            "LzmaUtilTest and WorkItemListTest require installer_util_unittests"]
         build = fixture / "build"
         commands = [
             ["cmake", "-S", str(fixture), "-B", str(build), "-A", "x64"],
@@ -121,15 +164,14 @@ target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32
             if completed.returncode:
                 raise RuntimeError(f"Fixture command failed: {command[0]}")
         tests = json.loads((report_dir / "tests.json").read_text())
-        if tests["tests"] != 10 or tests["failures"] or tests["disabled"]:
-            raise RuntimeError("Expected all ten native UI/policy tests to pass")
+        validate_results(tests, expected_tests)
         report["finalHashes"] = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
         if hashes != report["finalHashes"]:
             raise RuntimeError("Source changed during fixture")
         report["result"] = "PASS"
     finally:
         (report_dir / "report.json").write_text(json.dumps(report, indent=2) + "\n")
-    print("PASS: ten Win32 UI/policy fixture tests; full Chromium/token gates remain separate")
+    print("PASS: complete Win32 UI/progress/policy fixture suite; full Chromium/token gates remain separate")
 
 
 if __name__ == "__main__":
