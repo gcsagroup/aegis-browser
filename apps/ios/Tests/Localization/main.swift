@@ -1,0 +1,103 @@
+import Foundation
+import WebKit
+
+// Run in a fresh process for each -AppleLanguages value: Bundle caches language choices.
+let bundle = Bundle(path: CommandLine.arguments[1])!
+let locale = CommandLine.arguments[2]
+let expected: [String: String] = ["en-GB": "en", "en-HK": "en", "zh-Hant-HK": "zh-Hant"]
+let resolved = expected[locale] ?? locale
+precondition(bundle.preferredLocalizations.first == resolved,
+             "Unexpected selection for \(locale): \(bundle.preferredLocalizations)")
+precondition(Bundle.preferredLocalizations(from: bundle.localizations, forPreferences: [locale]).first == resolved)
+
+let tableURL = bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: resolved)!
+let table = try PropertyListSerialization.propertyList(from: Data(contentsOf: tableURL), format: nil) as! [String: String]
+let keys = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[3]))) as! [String]
+for key in keys {
+    precondition(bundle.localizedString(forKey: key, value: "MISSING", table: nil) == table[key],
+                 "Failed resource lookup for \(locale): \(key)")
+}
+if !["en", "zh-Hans", "zh-Hant"].contains(resolved) {
+    let englishURL = bundle.url(forResource: "Localizable", withExtension: "strings", subdirectory: nil, localization: "en")!
+    let english = try PropertyListSerialization.propertyList(from: Data(contentsOf: englishURL), format: nil) as! [String: String]
+    // Check actual consent/deletion copy, not merely the existence of a resource.
+    // The catalog's needs_review entries must be emitted by xcstringstool.
+    let fallbackKeys = [
+        "将资料发送给模型？", "确认发送",
+        "你正在私密浏览。确认后，所选页面内容会离开本机，模型服务可能保留请求或回答。Aegis 不会自动保存此次任务记录。",
+        "所选页面的标题和脱敏正文将发送到 %@，使用模型 %@。服务可能按用量收费。",
+        "清除网站数据？", "清除并关闭普通标签",
+        "将关闭普通标签并清除 Cookie、网站存储和缓存。网站登录会退出，收藏和工作区会保留。",
+    ]
+    for key in fallbackKeys {
+        guard let expected = english[key], !expected.isEmpty, expected != key else {
+            preconditionFailure("Missing English regression copy: \(key)")
+        }
+        precondition(table[key] == expected, "Compiled fallback mismatch for \(locale): \(key)")
+        precondition(bundle.localizedString(forKey: key, value: nil, table: nil) == expected,
+                     "English fallback lookup failed for \(locale): \(key)")
+    }
+    print("PASS \(locale): \(fallbackKeys.count) English consent/deletion fallbacks")
+}
+for target in ["AegisApp", "ShareExtension", "SafariWebExtension"] {
+    let native = Bundle(path: CommandLine.arguments[4] + "/\(target).bundle")!
+    precondition(native.preferredLocalizations.first == resolved)
+    let key = target == "AegisApp" ? "NSCameraUsageDescription" : "CFBundleDisplayName"
+    let value = native.object(forInfoDictionaryKey: key) as? String
+    precondition(value != nil && value != "UNLOCALIZED", "System strings failed: \(target)/\(locale)")
+    let expectedInfo = native.localizedString(forKey: key, value: "MISSING", table: "InfoPlist")
+    precondition(value == expectedInfo)
+    if target == "AegisApp" {
+        for extra in ["NSMicrophoneUsageDescription", "Markdown 文档"] {
+            precondition(native.localizedString(forKey: extra, value: "MISSING", table: "InfoPlist") != "MISSING")
+        }
+    }
+}
+
+let number = String(format: bundle.localizedString(forKey: "标签 %lld", value: nil, table: nil), Int64(7))
+precondition(number.contains("7") && !number.contains("%"))
+let failure = String(format: bundle.localizedString(forKey: "页面加载失败：%@", value: nil, table: nil), "example.test")
+precondition(failure.contains("example.test") && !failure.contains("%@"))
+let html = FixtureSchemeHandler.html(for: URL(string: "aegis://start")!, bundle: bundle)
+precondition(html.contains("<html lang=\"\(resolved)\""))
+let title = table["安心浏览，清楚掌控。"]!
+precondition(html.contains(title), "Localized start page is missing its heading")
+
+// A separate fixture checks that translated content cannot become markup.
+let hostile = Bundle(path: CommandLine.arguments[5])!
+let hostileHTML = FixtureSchemeHandler.html(for: URL(string: "aegis://start")!, bundle: hostile)
+precondition(hostileHTML.contains("&lt;script&gt; &amp; &quot; &#39;"))
+precondition(!hostileHTML.contains("<script>"))
+
+// Localization must not change URL acceptance, payload limits, or expiration.
+let inbox = try ShareInbox(baseURL: URL(fileURLWithPath: CommandLine.arguments[4]))
+for input in ["file:///private/file", "javascript:alert(1)", "https://user:secret@example.test/"] {
+    do { _ = try inbox.makeEnvelope(from: input); preconditionFailure("Accepted unsafe URL") }
+    catch { precondition(error as? ShareInboxError == .unsupportedScheme) }
+}
+do { _ = try inbox.makeEnvelope(from: String(repeating: "a", count: 8193)); preconditionFailure("Accepted oversized content") }
+catch { precondition(error as? ShareInboxError == .payloadTooLarge) }
+let now = Date(timeIntervalSince1970: 1_800_000_000)
+let envelope = try inbox.makeEnvelope(from: "https://example.test/", now: now)
+precondition(envelope.expiresAt.timeIntervalSince(now) == 60)
+for (error, key) in [
+    (ShareInboxError.unsupportedScheme, "只接受 HTTP(S) 链接"), (.payloadTooLarge, "分享内容超过 8 KiB"),
+    (.invalidEnvelope, "分享内容格式无效"), (.expired, "分享内容已过期"),
+    (.unavailableContainer, "专用 Share Inbox 不可用"),
+] {
+    precondition(error.errorDescription == bundle.localizedString(forKey: key, value: nil, table: nil))
+}
+if #available(macOS 15.4, *) {
+    let extensionRoot = URL(fileURLWithPath: CommandLine.arguments[6])
+    let webExtension = try await WKWebExtension(resourceBaseURL: extensionRoot)
+    let extensionLocale = ["zh-Hans": "zh_CN", "zh-Hant": "zh_TW", "pt": "pt_PT"][resolved] ?? resolved
+    let messagesURL = extensionRoot.appendingPathComponent("_locales/\(extensionLocale)/messages.json")
+    let messages = try JSONSerialization.jsonObject(with: Data(contentsOf: messagesURL)) as! [String: [String: String]]
+    precondition(webExtension.displayName == messages["extensionName"]?["message"], "WebExtension name mismatch: \(locale), \(webExtension.displayName ?? "nil")")
+    precondition(webExtension.displayDescription == messages["extensionDescription"]?["message"])
+    precondition(webExtension.displayActionLabel == messages["extensionAction"]?["message"])
+    precondition(webExtension.errors.isEmpty, "Manifest errors: \(webExtension.errors)")
+} else {
+    preconditionFailure("WebKit metadata checks require macOS 15.4 or later")
+}
+print("PASS \(locale) -> \(resolved): lookup, system strings, formatting, HTML, share validation, WebKit metadata")
