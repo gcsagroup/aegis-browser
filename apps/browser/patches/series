@@ -339,4 +339,5 @@
 0339-fix-mac03-publication-deadline.patch
 0340-fix-desktop-test-browser-client-dependency.patch
 0341-windows-interactive-installer.patch
-0342-fix-windows-installer-launch.patch
+0342-windows-installer-temp-directory.patch
+0343-fix-windows-installer-launch.patch

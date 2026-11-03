@@ -40,9 +40,11 @@ Status distinguishes build absence/processing/failure/VALID, buildUploads errors
 
 ## Actions and candidate tags
 
-The manual entrypoints **iOS Delivery · 精简版 / Simple** and **iOS Delivery · 完整版 / Full** share one reusable backend. Full explicitly forwards the ASC and signing secret names; the called jobs retain `aegis-ios-store` and `aegis-ios-signing`, whose environment values override caller values. See [GitHub’s environment-secret rule](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow). Both require the original operator and rerunner to be current effective repository Admins. Signing, Apple credentials and private Draft permissions remain in their existing protected environments. Local CLI commands retain their existing interface.
+The manual entrypoints **iOS Delivery · Simple** and **iOS Delivery · Full** share one reusable backend. Full explicitly forwards the ASC and signing secret names; the called jobs retain `aegis-ios-store` and `aegis-ios-signing`, whose environment values override caller values. See [GitHub’s environment-secret rule](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-inputs-and-secrets-in-a-reusable-workflow). Both require the original operator and rerunner to be current effective repository Admins. Signing, Apple credentials and private Draft permissions remain in their existing protected environments. Local CLI commands retain their existing interface.
 
-Simple has four bilingual fields: operation, version, build, and package product. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product is ignored for Status/Wait.
+See the [bilingual Actions operator guide](ios-delivery-actions.md) for the English form labels and required inputs.
+
+Simple has four fields for operation, version, build and product. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product is ignored for Status/Wait.
 
 - Package creates a new IPA/dSYM/manifest without uploading.
 - Package and upload first checks that Apple has no matching build or upload, then uploads the same newly signed package. It never distributes, submits for review, or publicly releases. Producer digest and exact run/attempt are passed directly between protected jobs; original package and uploaded-state artifacts are retained separately. Rerunning this combined operation is rejected; reconcile unknown outcomes before choosing a new build.
