@@ -5,6 +5,9 @@
 
 #include <windows.h>
 
+#include "chrome/installer/aegis_install_progress.h"
+#include "chrome/installer/mini_installer/aegis_overall_progress.h"
+
 namespace mini_installer {
 
 // 安装工作留在调用线程；窗口和控件仅由独立消息线程持有。
@@ -16,7 +19,11 @@ class AegisInstallUi {
   AegisInstallUi(const AegisInstallUi&) = delete;
   AegisInstallUi& operator=(const AegisInstallUi&) = delete;
 
+  // 通知 setup 启动，不预判其阶段；最终状态之后的迟到通知会被忽略。
   void Installing();
+  // 用当前阶段观测校准整体预估进度，调用方不持有窗口或跨线程 UI 状态。
+  void UpdateProgress(aegis_installer::Progress progress);
+  // 0 表示成功并自动收起；非 0 保留数字错误码，等待用户确认关闭。
   void Finish(DWORD exit_code);
 
  private:
@@ -25,21 +32,54 @@ class AegisInstallUi {
                                      UINT message,
                                      WPARAM wparam,
                                      LPARAM lparam);
+  // 保留原生进度控件的辅助功能角色，仅接管绘制。
+  static LRESULT CALLBACK ProgressProc(HWND window,
+                                       UINT message,
+                                       WPARAM wparam,
+                                       LPARAM lparam,
+                                       UINT_PTR subclass_id,
+                                       DWORD_PTR context);
+  // 保留原生按钮的键盘/辅助功能语义，仅补充悬停与绘制。
+  static LRESULT CALLBACK CloseButtonProc(HWND window,
+                                          UINT message,
+                                          WPARAM wparam,
+                                          LPARAM lparam,
+                                          UINT_PTR subclass_id,
+                                          DWORD_PTR context);
   void CreateControls();
+  void UpdateFrame();
+  void ShowProgress(aegis_installer::Progress progress);
+  void LayoutControls();
+  void UpdateAppearance();
+  // 仅更新变化的进度条和状态文字，不使品牌、图标或父窗口失效。
+  void RefreshProgress();
+  void PaintProgress(HWND window);
+  void DrawProgressFrame(HDC dc, const RECT& track);
+  void PaintCloseButton(const DRAWITEMSTRUCT& item);
   int Scale(int value) const;
 
   HANDLE thread_ = nullptr;
   HANDLE ready_ = nullptr;
   HWND window_ = nullptr;
+  HWND logo_ = nullptr;
+  HWND title_ = nullptr;
   HWND status_ = nullptr;
-  HWND detail_ = nullptr;
   HWND progress_ = nullptr;
   HWND close_ = nullptr;
   HFONT font_ = nullptr;
   HFONT title_font_ = nullptr;
+  HICON logo_icon_ = nullptr;
+  ULONG_PTR graphics_token_ = 0;
   UINT dpi_ = 96;
   bool interactive_;
   bool complete_ = false;
+  bool failed_ = false;
+  bool high_contrast_ = false;
+  bool animate_ = true;
+  bool close_hover_ = false;
+  AegisOverallProgress overall_progress_{0};
+  int displayed_percent_ = -1;
+  bool displayed_rollback_ = false;
 };
 
 }  // namespace mini_installer
