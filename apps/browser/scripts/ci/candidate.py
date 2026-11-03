@@ -69,8 +69,8 @@ def git(src, *args, env=None):
     # 可执行文件来自构建机可信 PATH 并解析为绝对路径；调用方固定 Git 操作，环境仅承载隔离设置。
     # 路径和对象表达式必须保持原值，不能 shell 引号转义；真实进程回归覆盖空格、& 和 ^。
     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
-    return subprocess.check_output(  # nosec B603 - 已核对原生绝对入口，argv 不经 shell。
-        [git_executable(), '-C', str(src), *args], env=env, text=True, shell=False).strip()
+    return subprocess.check_output([git_executable(), '-C', str(src), *args],  # nosec B603
+                                   env=env, text=True, shell=False).strip()
 
 
 def product_status(root):
