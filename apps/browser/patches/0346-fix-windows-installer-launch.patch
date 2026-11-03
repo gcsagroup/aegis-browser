@@ -1,0 +1,259 @@
+From d1aa37eafda7100395e08f8d14af84713e2d3f39 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Tue, 3 Nov 2026 16:52:45 +0800
+Subject: [PATCH] Integrate safe desktop launch and existing-version outcome
+ with measured installer UI
+
+---
+ .../mini_installer/aegis_install_ui.cc        | 15 +++--
+ .../mini_installer/aegis_install_ui.h         |  3 +-
+ .../aegis_install_ui_unittest.cc              | 62 +++++++++++++++++++
+ chrome/installer/setup/aegis_launch_policy.h  | 12 ++++
+ .../setup/aegis_launch_policy_unittest.cc     | 31 ++++++++++
+ chrome/installer/setup/setup_main.cc          | 21 +++++--
+ 6 files changed, 132 insertions(+), 12 deletions(-)
+
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
+index f683cbcfdc46376625705c91b7b8ba839f3c8914..d2d248b3a6c3cf0282dd6ac8d3812b9e55296e95 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui.cc
+@@ -15,6 +15,8 @@
+ namespace mini_installer {
+ namespace {
+ constexpr UINT kFinished = WM_APP + 2;
++// setup 的稳定退出码 installer::EXISTING_VERSION_LAUNCHED；避免引入 util/CRT 依赖。
++constexpr DWORD kExistingVersionLaunched = 3;
+ constexpr UINT kProgress = WM_APP + 3;
+ constexpr UINT_PTR kCloseTimer = 1;
+ constexpr UINT_PTR kAnimationTimer = 2;
+@@ -111,7 +113,8 @@ void AegisInstallUi::UpdateProgress(aegis_installer::Progress progress) {
+ void AegisInstallUi::Finish(DWORD exit_code) {
+   if (window_) {
+     ::PostMessage(window_, kFinished, exit_code, 0);
+-  } else if (interactive_ && exit_code != 0) {
++  } else if (interactive_ && exit_code != 0 &&
++             exit_code != kExistingVersionLaunched) {
+     // 窗口创建失败也不能把安装失败变成无声退出；不改变安装器原有退出码。
+     ::MessageBox(nullptr, L"安装未完成，请重新运行安装程序。", kTitle,
+                  MB_OK | MB_ICONERROR);
+@@ -522,17 +525,19 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+       if (self->complete_)
+         return 0;
+       self->complete_ = true;
+-      self->failed_ = wparam != 0;
++      const bool existing_version = wparam == kExistingVersionLaunched;
++      self->failed_ = wparam != 0 && !existing_version;
+       ::KillTimer(window, kAnimationTimer);
+-      // 只有成功才显示满条；失败隐藏活动条，避免把错误误读为安装已完成。
+-      if (self->failed_)
++      // 仅实际安装成功显示满条；打开现有版本没有执行安装，也不是错误。
++      if (self->failed_ || existing_version)
+         ::ShowWindow(self->progress_, SW_HIDE);
+       else {
+         ::SendMessage(self->progress_, PBM_SETPOS, 100, 0);
+         ::InvalidateRect(self->progress_, nullptr, FALSE);
+       }
+       if (!self->failed_) {
+-        ::SetWindowText(self->status_, L"安装完成");
++        ::SetWindowText(self->status_, existing_version
++            ? L"已打开现有版本（本次未执行安装）" : L"安装完成");
+         // 低资源导致计时器创建失败时直接收起，不能让安装线程永久等待 UI。
+         if (!::SetTimer(window, kCloseTimer, 1400, nullptr))
+           ::DestroyWindow(window);
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.h b/chrome/installer/mini_installer/aegis_install_ui.h
+index 271bd7b160687b7ca443e872aa314cbbf18d9492..8dccc4ad613a68441d50226991fee29d302f2e22 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui.h
++++ b/chrome/installer/mini_installer/aegis_install_ui.h
+@@ -23,10 +23,11 @@ class AegisInstallUi {
+   void Installing();
+   // 用当前阶段观测校准整体预估进度，调用方不持有窗口或跨线程 UI 状态。
+   void UpdateProgress(aegis_installer::Progress progress);
+-  // 0 表示成功并自动收起；非 0 保留数字错误码，等待用户确认关闭。
++  // 0 表示安装成功；3 表示已打开现有版本，均自动收起；其他值显示错误码。
+   void Finish(DWORD exit_code);
+ 
+  private:
++  friend class AegisInstallUiTestPeer;
+   static DWORD WINAPI ThreadMain(void* context);
+   static LRESULT CALLBACK WindowProc(HWND window,
+                                      UINT message,
+diff --git a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+index b0205a342f6937340c93a0c610e5ac6ab2b0299d..1ea06b8aefac53f321cd00e11e03f51d96d374c9 100644
+--- a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
++++ b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+@@ -7,9 +7,20 @@
+ #include <atomic>
+ #include <string>
+ 
++#include "chrome/installer/util/util_constants.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace mini_installer {
++static_assert(installer::EXISTING_VERSION_LAUNCHED == 3);
++
++class AegisInstallUiTestPeer {
++ public:
++  static void SimulateWindowCreationFailure(AegisInstallUi& ui) {
++    // Constructed silently: no worker or window exists. Exercise the same
++    // interactive fallback reached when creating the production window fails.
++    ui.interactive_ = true;
++  }
++};
+ namespace {
+ HWND OwnWindow() {
+   // 允许桌面存在其他安装预览；只读取当前测试进程的窗口，避免干扰用户。
+@@ -114,6 +125,57 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
+   EXPECT_EQ(nullptr, OwnWindow());
+ }
+ 
++TEST(AegisInstallUiTest, ExistingVersionShowsInformationAndClosesAutomatically) {
++  {
++    AegisInstallUi ui(true);
++    HWND window = OwnWindow();
++    EXPECT_TRUE(window);
++    ui.Finish(3);
++    EXPECT_TRUE(WaitForText(window, L"已打开现有版本"));
++    EXPECT_TRUE(WaitForText(window, L"本次未执行安装"));
++    HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
++    EXPECT_FALSE(::IsWindowVisible(progress));
++    EXPECT_LT(::SendMessage(progress, PBM_GETPOS, 0, 0), 100);
++    ExpectReadableLayout(window);
++    ui.UpdateProgress({aegis_installer::Phase::kFinishing, 99});
++    ::SendMessage(window, WM_NULL, 0, 0);
++    EXPECT_TRUE(WaitForText(window, L"本次未执行安装"));
++    EXPECT_FALSE(::IsWindowVisible(progress));
++    EXPECT_FALSE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
++    for (int attempt = 0; attempt < 120 && ::IsWindow(window); ++attempt)
++      ::Sleep(25);
++    EXPECT_FALSE(::IsWindow(window));
++    // 回归为错误页时也关闭窗口，避免析构等待阻塞整个测试进程。
++    if (::IsWindow(window))
++      ::SendMessage(window, WM_CLOSE, 0, 0);
++  }
++  EXPECT_EQ(nullptr, OwnWindow());
++}
++
++TEST(AegisInstallUiTest, ExistingVersionWithoutWindowDoesNotShowError) {
++  AegisInstallUi ui(false);
++  AegisInstallUiTestPeer::SimulateWindowCreationFailure(ui);
++  // A regressed MessageBox pumps this thread's timers. Dismiss it so the
++  // regression fails promptly instead of leaving the suite blocked on a dialog.
++  static bool dismissed_error = false;
++  dismissed_error = false;
++  const UINT_PTR timer = ::SetTimer(nullptr, 0, 100,
++      [](HWND, UINT, UINT_PTR, DWORD) {
++        HWND dialog = ::FindWindow(L"#32770", L"GCSA Aegis 安装程序");
++        DWORD pid = 0;
++        const DWORD thread = ::GetWindowThreadProcessId(dialog, &pid);
++        if (pid == ::GetCurrentProcessId() &&
++            thread == ::GetCurrentThreadId()) {
++          dismissed_error = true;
++          ::EndDialog(dialog, IDCANCEL);
++        }
++      });
++  ASSERT_NE(0u, timer);
++  ui.Finish(3);
++  ::KillTimer(nullptr, timer);
++  EXPECT_FALSE(dismissed_error);
++}
++
+ TEST(AegisInstallUiTest, FailureRemainsUntilAcknowledged) {
+   {
+     AegisInstallUi ui(true);
+diff --git a/chrome/installer/setup/aegis_launch_policy.h b/chrome/installer/setup/aegis_launch_policy.h
+index 9cef1fa2abd88e70ba3943b577e263b902e7c19a..8831c2af51ab2b927dcec7cdc719fb2751aa7229 100644
+--- a/chrome/installer/setup/aegis_launch_policy.h
++++ b/chrome/installer/setup/aegis_launch_policy.h
+@@ -16,5 +16,17 @@ constexpr bool ShouldLaunchAegisAfterInstall(InstallStatus status,
+           status == NEW_VERSION_UPDATED || status == IN_USE_UPDATED ||
+           status == OLD_VERSION_DOWNGRADE || status == IN_USE_DOWNGRADE);
+ }
++// Use only the desktop broker. A missing, elevated or unverifiable shell must
++// never fall back to launching with the installer's token. Callbacks keep this
++// decision testable without starting a browser or changing the desktop.
++template <typename GetShell, typename IsSafeShell, typename LaunchViaShell>
++bool LaunchAegisThroughDesktop(GetShell get_shell,
++                              IsSafeShell is_safe_shell,
++                              LaunchViaShell launch_via_shell) {
++  const auto shell = get_shell();
++  if (!shell || !is_safe_shell(shell))
++    return false;
++  return launch_via_shell();
++}
+ }  // namespace installer
+ #endif  // CHROME_INSTALLER_SETUP_AEGIS_LAUNCH_POLICY_H_
+diff --git a/chrome/installer/setup/aegis_launch_policy_unittest.cc b/chrome/installer/setup/aegis_launch_policy_unittest.cc
+index 56485db6187abe8de8e456aa1c3555b7f8a65dcd..e838e80e07673dcf6512e29bdb3036cd253be41d 100644
+--- a/chrome/installer/setup/aegis_launch_policy_unittest.cc
++++ b/chrome/installer/setup/aegis_launch_policy_unittest.cc
+@@ -22,4 +22,35 @@ TEST(AegisLaunchPolicyTest, FailureMaintenanceAndExistingLaunchNeverLaunch) {
+     EXPECT_FALSE(ShouldLaunchAegisAfterInstall(status, true, false, false));
+   }
+ }
++TEST(AegisLaunchPolicyTest, MissingShellDoesNotInspectOrLaunch) {
++  bool inspected = false;
++  bool launched = false;
++  EXPECT_FALSE(LaunchAegisThroughDesktop(
++      [] { return 0; },
++      [&](int) { inspected = true; return true; },
++      [&] { launched = true; return true; }));
++  EXPECT_FALSE(inspected);
++  EXPECT_FALSE(launched);
++}
++
++TEST(AegisLaunchPolicyTest, ElevatedOrUnknownShellDoesNotLaunch) {
++  bool launched = false;
++  EXPECT_FALSE(LaunchAegisThroughDesktop(
++      [] { return 42; },
++      [](int pid) { EXPECT_EQ(42, pid); return false; },
++      [&] { launched = true; return true; }));
++  EXPECT_FALSE(launched);
++}
++
++TEST(AegisLaunchPolicyTest, SafeShellUsesBrokerExactlyOnceIncludingFailure) {
++  // Standard-user shells need no split token. Broker failure is terminal.
++  for (bool broker_succeeds : {false, true}) {
++    int launches = 0;
++    EXPECT_EQ(broker_succeeds, LaunchAegisThroughDesktop(
++        [] { return 42; },
++        [](int pid) { EXPECT_EQ(42, pid); return true; },
++        [&] { ++launches; return broker_succeeds; }));
++    EXPECT_EQ(1, launches);
++  }
++}
+ }  // namespace installer
+diff --git a/chrome/installer/setup/setup_main.cc b/chrome/installer/setup/setup_main.cc
+index 08fe851c02ec759e77b73f3851c70007a5b0575f..2059cf684977135ce973900f7592645685234ee3 100644
+--- a/chrome/installer/setup/setup_main.cc
++++ b/chrome/installer/setup/setup_main.cc
+@@ -1431,12 +1431,21 @@ InstallStatus InstallProductsHelper(InstallationState& original_state,
+       if (ShouldLaunchAegisAfterInstall(install_status, interactive, silent,
+                                         do_not_launch_chrome)) {
+         // 仅使用已验证的安装目录；系统级/提升安装也必须以桌面用户权限启动。
+-        // 降权失败不回退为高权限运行，避免浏览器继承安装器的管理员令牌。
+-        auto launched = base::win::RunDeElevated(
+-            GetPostInstallLaunchCommand(installer_state.target_path()));
+-        if (!launched.has_value()) {
+-          LOG(ERROR) << "Aegis installed, browser launch failed: "
+-                     << launched.error();
++        // 通过 Explorer COM 启动，兼容无 split token 的标准桌面用户。
++        // 桌面缺失、提升或降权失败时禁止直接启动，避免继承安装器管理员令牌。
++        HRESULT launch_result = E_ACCESSDENIED;
++        const bool launched = LaunchAegisThroughDesktop(
++            [] { return base::win::GetExplorerPid(); },
++            [](base::ProcessId pid) {
++              return base::win::IsProcessRunningAtMediumOrLower(pid);
++            },
++            [&] {
++              launch_result = base::win::RunDeElevatedNoWait(
++                  GetPostInstallLaunchCommand(installer_state.target_path()));
++              return SUCCEEDED(launch_result);
++            });
++        if (!launched) {
++          LOG(ERROR) << "Aegis installed, browser launch failed: " << launch_result;
+           ::MessageBoxW(nullptr,
+                         L"安装已完成，但未能自动打开浏览器。请从桌面快捷方式启"
+                         L"动 GCSA Aegis。",
+-- 
+2.54.0 (Apple Git-157)
+
