@@ -12,6 +12,7 @@ import shlex
 import stat
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE_NAMES = {'com.gcsa.aegis': 'App Store App',
@@ -37,6 +38,28 @@ def private_file(path):
 
 def physical_file(path):
     return not any(current.is_symlink() for current in [path, *path.parents])
+
+
+def receipt_path(directory):
+    path = directory / 'signing-receipt.json'
+    if not physical_file(path) or (path.exists() and not path.is_file()):
+        raise ValueError('Signing receipt cannot be a symlink or non-file')
+    return path
+
+
+def write_receipt(directory, value):
+    target = receipt_path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix='.signing-receipt-', dir=directory)
+    try:
+        with os.fdopen(descriptor, 'w') as output:
+            output.write(json.dumps(value, indent=2) + '\n')
+            output.flush()
+            os.fsync(output.fileno())
+        receipt_path(directory)
+        os.replace(temporary, target)  # Replace the directory entry; never truncate its target.
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
 def parse_credentials(text):
@@ -163,6 +186,7 @@ def main():
     fingerprint = (args.certificate_sha1 or '').upper()
     if not re.fullmatch(r'[A-Z0-9]{10}', args.team or '') or not re.fullmatch(r'[0-9A-F]{40}', fingerprint):
         raise ValueError('Explicit expected Apple team and certificate fingerprint required')
+    receipt_path(args.state_directory)  # Reject unsafe output before credentials or host mutations.
     environment = credentials(args.downloads, os.environ)
     environment['AEGIS_IOS_PROFILES'] = json.dumps(PROFILE_NAMES)
     certificate, password = signing_material(args.downloads, fingerprint)
@@ -198,8 +222,7 @@ def main():
             raise ValueError('Expected installed Distribution private-key identity is unavailable')
     receipt = dict(downloaded, team=args.team, certificateSha1=fingerprint, keychain=str(keychain),
                    keychainUnlocked=args.unlock, sharedAclChanged=False, searchListChanged=False)
-    args.state_directory.mkdir(parents=True, exist_ok=True)
-    (args.state_directory / 'signing-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    write_receipt(args.state_directory, receipt)
     print(json.dumps(receipt, indent=2))
 
 
