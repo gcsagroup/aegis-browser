@@ -177,6 +177,7 @@ try {
     'apps/browser/scripts/translation-quality-opus.py',
     'apps/browser/scripts/translation-quality-report.py',
     'apps/browser/scripts/verify-build-source.py',
+    'apps/browser/scripts/windows-installer-fixture.py',
   ];
   if (JSON.stringify(Object.keys(pythonJson.files ?? {}).sort()) !== JSON.stringify(pythonFiles)) fail('Python coverage scope does not match the declared production tools');
   const pythonLcovPath = join(coverageRoot, 'python/lcov.info');

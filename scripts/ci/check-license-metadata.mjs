@@ -20,7 +20,9 @@ try {
     if (manifest.license !== 'Apache-2.0') fail(`${path} must declare Apache-2.0`);
   }
   const notices = readFileSync(resolve(repoRoot, 'THIRD_PARTY_NOTICES.md'), 'utf8');
-  for (const reference of ['151.0.7922.77', 'aegis_libtorrent/LICENSE', 'aegis_libtorrent/README.aegis']) {
+  const chromiumVersion = readFileSync(resolve(repoRoot, 'apps/browser/CHROMIUM_VERSION'), 'utf8').trim();
+  const chromiumCommit = readFileSync(resolve(repoRoot, 'apps/browser/CHROMIUM_COMMIT'), 'utf8').trim();
+  for (const reference of [chromiumVersion, chromiumCommit, 'aegis_libtorrent/LICENSE', 'aegis_libtorrent/README.aegis']) {
     if (!notices.includes(reference)) fail(`THIRD_PARTY_NOTICES.md is missing ${reference}`);
   }
   const dependencies = packages.map((name) => {
