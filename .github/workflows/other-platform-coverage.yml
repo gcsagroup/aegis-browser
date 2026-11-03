@@ -69,6 +69,17 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
+      - name: Install Python for native installer fixtures
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: 3.11.9
+      - name: Run native installer UI and policy fixtures without installation
+        shell: pwsh
+        run: |
+          python apps/browser/scripts/windows-installer-fixture.py `
+            --tested-sha $env:GITHUB_SHA `
+            --report-dir .artifacts/ci/windows-installer-fixture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Download and verify Pester 5.7.1 without global installation
         shell: powershell
         run: |
@@ -100,6 +111,10 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: powershell-coverage-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}/coverage/powershell
+          path: |
+            .artifacts/ci/github-${{ github.run_id }}-${{ github.run_attempt }}/coverage/powershell
+            .artifacts/ci/windows-installer-fixture/report.json
+            .artifacts/ci/windows-installer-fixture/tests.json
+            .artifacts/ci/windows-installer-fixture/loader-diagnostics/
           if-no-files-found: error
           retention-days: 14

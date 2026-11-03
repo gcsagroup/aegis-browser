@@ -52,18 +52,24 @@ selected_series="$fixture_root/selected-series"
 printf '0001-selected.patch\n' > "$selected_series"
 cp "$lineage_patches/0001-fixture.patch" "$fixture_root/original.patch"
 sed 's/^+current$/+selected-drift/' "$fixture_root/original.patch" > "$lineage_patches/0001-selected.patch"
+# kcov's inherited Bash DEBUG trap reads BASH_SOURCE. A file-backed child
+# retains that stack entry after status.sh enables nounset; bash -c does not.
+selector_fixture="$fixture_root/status-selector-fixture.sh"
+cat > "$selector_fixture" <<'SELECTOR'
+#!/usr/bin/env bash
+source "$1"
+if [[ "$4" == V8 ]]; then
+  selected="$V8_SERIES_FILE"; patches="$V8_PATCH_DIR"
+else
+  selected="$SERIES_FILE"; patches="$PATCH_DIR"
+fi
+patch_lineage_kind "$2" "$3" "$patches" "$4" "$selected"
+SELECTOR
 run_selected_lineage() {
   env AEGIS_STATUS_SOURCE_ONLY=1 AEGIS_PATCH_DIR="$lineage_patches" \
     AEGIS_V8_PATCH_DIR="$lineage_patches" AEGIS_SERIES_FILE="$selected_series" \
-    AEGIS_V8_SERIES_FILE="$selected_series" bash -c '
-      source "$1"
-      if [[ "$4" == V8 ]]; then
-        selected="$V8_SERIES_FILE"; patches="$V8_PATCH_DIR"
-      else
-        selected="$SERIES_FILE"; patches="$PATCH_DIR"
-      fi
-      patch_lineage_kind "$2" "$3" "$patches" "$4" "$selected"
-    ' status-selector-fixture "$SCRIPT_DIR/status.sh" "$lineage_src" "$lineage_base" "$1"
+    AEGIS_V8_SERIES_FILE="$selected_series" bash "$selector_fixture" \
+    "$SCRIPT_DIR/status.sh" "$lineage_src" "$lineage_base" "$1"
 }
 selector_errors=0
 for lineage_label in Chromium V8; do

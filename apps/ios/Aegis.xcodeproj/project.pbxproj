@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A311F5AD95F4121B099AA002 /* ThirdPartyNoticesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A311F5AD95F4121B099AA001 /* ThirdPartyNoticesView.swift */; };
+		A311F5AD95F4121B099AA004 /* ThirdPartyNotices.txt in Resources */ = {isa = PBXBuildFile; fileRef = A311F5AD95F4121B099AA003 /* ThirdPartyNotices.txt */; };
 		012B3EDD5F30D3A2AAEF74D9 /* icon-128.png in Resources */ = {isa = PBXBuildFile; fileRef = 14F823D2E2B29019142C6CFA /* icon-128.png */; };
 		083247805FAA0E8A1E91E650 /* WebsiteEnhancementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB49E0A8796D0A287F0110AC /* WebsiteEnhancementTests.swift */; };
 		08AB738ECED584ACD8EEFD90 /* AegisPolicyKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -320,6 +322,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A311F5AD95F4121B099AA001 /* ThirdPartyNoticesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThirdPartyNoticesView.swift; sourceTree = "<group>"; };
+		A311F5AD95F4121B099AA003 /* ThirdPartyNotices.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdPartyNotices.txt; sourceTree = "<group>"; };
 		0193749B7636A106F72F9642 /* WorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkflowTests.swift; sourceTree = "<group>"; };
 		01D7E15A595D78AE85CA380C /* ActionCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionCapability.swift; sourceTree = "<group>"; };
 		0510756A74BFFCEF7ECFDE21 /* SettingsLayoutUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsLayoutUITests.swift; sourceTree = "<group>"; };
@@ -886,6 +890,8 @@
 				68CA4E473918E734EC9A1E48 /* RecordRecoveryView.swift */,
 				8082F09623C73FCCCE2FD4D7 /* SettingsFormControls.swift */,
 				8505E24B26D61C484EF0E7E8 /* TabSwitcher.swift */,
+				A311F5AD95F4121B099AA001 /* ThirdPartyNoticesView.swift */,
+				A311F5AD95F4121B099AA003 /* ThirdPartyNotices.txt */,
 				B5DFA8B92557D78E2EFD667C /* WebsiteEnhancementsView.swift */,
 				EAB3E0EE5DAAC62A328954CE /* InfoPlist.strings */,
 			);
@@ -1206,6 +1212,7 @@
 				DC77D9043FD789C47428971A /* Assets.xcassets in Resources */,
 				966EA9CF1919C20609D86F5A /* InfoPlist.strings in Resources */,
 				F8BA4DB858988A9CEDBA5BB9 /* Localizable.xcstrings in Resources */,
+				A311F5AD95F4121B099AA004 /* ThirdPartyNotices.txt in Resources */,
 				C97391F838CD807B58557C14 /* PrivacyInfo.xcprivacy in Resources */,
 				58DBFB099C3AEB133708A0FD /* background.js in Resources */,
 				506B25D23A79E9EEB668B1DE /* manifest.json in Resources */,
@@ -1428,6 +1435,7 @@
 				EF9FD91A54EB1C28D06D9F0E /* SettingsFormControls.swift in Sources */,
 				4696882FA847A55B0776C99F /* ShareInbox.swift in Sources */,
 				C69FB9E5886048C9656EA64D /* TabSwitcher.swift in Sources */,
+				A311F5AD95F4121B099AA002 /* ThirdPartyNoticesView.swift in Sources */,
 				BF733973E4705255928BF8A3 /* WebsiteEnhancementsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

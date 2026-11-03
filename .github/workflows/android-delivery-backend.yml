@@ -1,0 +1,240 @@
+name: Android Delivery Backend
+on:
+  workflow_call:
+    inputs:
+      delivery_mode:
+        type: string
+        required: true
+      delivery_inputs:
+        type: string
+        required: true
+    secrets:
+      AEGIS_ANDROID_STORE_PASSWORD:
+        required: false
+      AEGIS_ANDROID_KEY_PASSWORD:
+        required: false
+      AEGIS_PLAY_JSON_KEY_DATA:
+        required: false
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: aegis-release-${{ github.repository }}
+  cancel-in-progress: false
+env:
+  ANDROID_DELIVERY_MODE: ${{ inputs.delivery_mode }}
+  ANDROID_DELIVERY_INPUTS: ${{ inputs.delivery_inputs }}
+  GH_TOKEN: ${{ github.token }}
+  AEGIS_RELEASE_ENABLED: ${{ vars.AEGIS_RELEASE_ENABLED }}
+  AEGIS_RELEASE_REHEARSAL: ${{ vars.AEGIS_RELEASE_REHEARSAL }}
+  AEGIS_RELEASE_TEST_REPOSITORY_ID: ${{ vars.AEGIS_RELEASE_TEST_REPOSITORY_ID }}
+  AEGIS_ANDROID_REHEARSAL_ENABLED: ${{ vars.AEGIS_ANDROID_REHEARSAL_ENABLED }}
+  AEGIS_ANDROID_RELEASE_ENABLED: ${{ vars.AEGIS_ANDROID_RELEASE_ENABLED }}
+  AEGIS_ANDROID_REHEARSAL_SOURCE_SHA: ${{ vars.AEGIS_ANDROID_REHEARSAL_SOURCE_SHA }}
+  FASTLANE_SKIP_UPDATE_CHECK: '1'
+  FASTLANE_HIDE_GITHUB_ISSUES: '1'
+  FASTLANE_OPT_OUT_USAGE: '1'
+  BUNDLE_FROZEN: 'true'
+  BUNDLE_PATH: vendor/bundle
+  RELEASE_PLATFORM: android
+jobs:
+  admission:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      plan: ${{ steps.plan.outputs.plan }}
+      runner: ${{ steps.runner.outputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+      - name: Verify current repository Admin / 核验当前仓库管理员
+        run: node scripts/ci/android-operator.mjs
+      - id: plan
+        name: Normalize exact AAB or existing state / 校验产物或原交付凭据
+        run: python3 scripts/release/android-delivery-plan.py
+      - name: Require authoritative unused versionCode before new upload / 新上传核验
+        if: ${{ fromJSON(steps.plan.outputs.plan).operation == 'package-upload' }}
+        env:
+          ANDROID_DELIVERY_PLAN: ${{ steps.plan.outputs.plan }}
+        run: python3 scripts/release/android-delivery.py check-new-upload
+      - name: Require exact-source admission / 核验来源与质量门禁
+        env:
+          RELEASE_DESTINATION: ${{ fromJSON(steps.plan.outputs.plan).destination }}
+          RELEASE_TAG: ${{ fromJSON(steps.plan.outputs.plan).tag }}
+        run: node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA"
+      - id: runner
+        if: ${{ fromJSON(steps.plan.outputs.plan).operation == 'package' }}
+        name: Require dedicated Android runner / 核验 Android 专用构建机
+        env:
+          ANDROID_RUNNERS_READY: ${{ vars.AEGIS_ANDROID_RELEASE_RUNNERS_READY }}
+          AEGIS_ANDROID_RUNNER_ARCH: ${{ vars.AEGIS_ANDROID_RUNNER_ARCH }}
+          AEGIS_ANDROID_EXPERIMENTAL_ARM64: ${{ vars.AEGIS_ANDROID_EXPERIMENTAL_ARM64 }}
+        run: ruby scripts/release/runner.rb >> "$GITHUB_OUTPUT"
+  package:
+    needs: admission
+    if: ${{ fromJSON(needs.admission.outputs.plan).operation == 'package' }}
+    runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
+    environment: aegis-release-android
+    timeout-minutes: 1440
+    env:
+      ANDROID_DELIVERY_PLAN: ${{ needs.admission.outputs.plan }}
+      RELEASE_DESTINATION: ${{ fromJSON(needs.admission.outputs.plan).destination }}
+      RELEASE_TAG: ${{ fromJSON(needs.admission.outputs.plan).tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+          bundler: 2.5.22
+      - run: bundle install --jobs 4 --retry 2
+      - name: Recheck Admin before signing / 签名前复核管理员
+        run: |
+          node scripts/ci/android-operator.mjs
+          node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA"
+      - name: Build real AAB and verify Upload signature / 真实打包并验签
+        env:
+          CHROMIUM_ROOT: ${{ vars.AEGIS_CHROMIUM_ROOT }}
+          DEPOT_TOOLS_DIR: ${{ vars.AEGIS_DEPOT_TOOLS_DIR }}
+          AEGIS_ANDROID_EXPERIMENTAL_ARM64: ${{ vars.AEGIS_ANDROID_EXPERIMENTAL_ARM64 }}
+          AEGIS_BUNDLETOOL_JAR: ${{ vars.AEGIS_BUNDLETOOL_JAR }}
+          AEGIS_ANDROID_KEYSTORE: ${{ vars.AEGIS_ANDROID_KEYSTORE }}
+          AEGIS_ANDROID_KEY_ALIAS: ${{ vars.AEGIS_ANDROID_KEY_ALIAS }}
+          AEGIS_ANDROID_CERT_SHA256: ${{ vars.AEGIS_ANDROID_CERT_SHA256 }}
+          AEGIS_ANDROID_STORE_PASSWORD: ${{ secrets.AEGIS_ANDROID_STORE_PASSWORD }}
+          AEGIS_ANDROID_KEY_PASSWORD: ${{ secrets.AEGIS_ANDROID_KEY_PASSWORD }}
+        run: python3 scripts/release/android-delivery.py package
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: android-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/android-delivery/package.zip
+          if-no-files-found: error
+          retention-days: 30
+  store:
+    needs: admission
+    if: ${{ contains(fromJSON('["upload","status","distribute","submit"]'), fromJSON(needs.admission.outputs.plan).operation) && fromJSON(needs.admission.outputs.plan).destination != 'github-draft' }}
+    runs-on: ubuntu-24.04
+    environment: ${{ fromJSON(needs.admission.outputs.plan).operation == 'submit' && 'aegis-android-submit' || fromJSON(needs.admission.outputs.plan).operation == 'distribute' && 'aegis-android-distribute' || 'aegis-play' }}
+    timeout-minutes: 60
+    env:
+      ANDROID_DELIVERY_PLAN: ${{ needs.admission.outputs.plan }}
+      RELEASE_DESTINATION: ${{ fromJSON(needs.admission.outputs.plan).destination }}
+      RELEASE_TAG: ${{ fromJSON(needs.admission.outputs.plan).tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+          bundler-cache: true
+      - name: Import exact successful producer and current attempt / 校验原生产运行与当前尝试
+        run: python3 scripts/release/android-delivery.py import
+      - name: Recheck Admin and source before Play credentials / 读取 Play 凭据前复核
+        run: |
+          node scripts/ci/android-operator.mjs
+          node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA"
+      - name: Execute selected Play stage / 仅执行所选 Play 阶段
+        env:
+          AEGIS_PLAY_JSON_KEY_DATA: ${{ secrets.AEGIS_PLAY_JSON_KEY_DATA }}
+        run: ruby scripts/release/android-delivery-store.rb
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: android-delivery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/android-delivery/package.zip
+          if-no-files-found: warn
+          retention-days: 30
+  draft:
+    needs: admission
+    if: ${{ fromJSON(needs.admission.outputs.plan).operation == 'upload' && fromJSON(needs.admission.outputs.plan).destination == 'github-draft' }}
+    runs-on: ubuntu-24.04
+    environment: aegis-android-draft
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 60
+    env:
+      ANDROID_DELIVERY_PLAN: ${{ needs.admission.outputs.plan }}
+      RELEASE_DESTINATION: github-draft
+      RELEASE_TAG: ${{ fromJSON(needs.admission.outputs.plan).tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+          bundler-cache: true
+      - run: python3 scripts/release/android-delivery.py import
+      - run: node scripts/ci/android-operator.mjs
+      - run: python3 scripts/release/android-delivery.py stage
+      - name: Download and hash the exact admitted Android Draft
+        run: python3 scripts/release/android-draft-verify.py --delivery
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: android-draft-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/release/android/*/github-*.json
+            .artifacts/release/android/*/android-draft-download-*.json
+          if-no-files-found: warn
+          retention-days: 30
+  query:
+    needs: admission
+    if: ${{ contains(fromJSON('["status-query","status-wait"]'), fromJSON(needs.admission.outputs.plan).operation) }}
+    runs-on: ubuntu-24.04
+    environment: aegis-play
+    timeout-minutes: 15
+    env:
+      ANDROID_DELIVERY_PLAN: ${{ needs.admission.outputs.plan }}
+      RELEASE_DESTINATION: play-internal
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+        with:
+          ruby-version: 3.3.6
+          bundler-cache: true
+      - name: Recheck Admin, query and source before Play credentials / 查询前复核
+        run: |
+          python3 scripts/release/android-delivery.py validate-query
+          node scripts/ci/release-preflight.mjs --sha "$GITHUB_SHA"
+      - name: Read exact versionCode using GET only / 只读查询版本代码
+        env:
+          AEGIS_PLAY_JSON_KEY_DATA: ${{ secrets.AEGIS_PLAY_JSON_KEY_DATA }}
+        run: bundle exec ruby scripts/release/android-status.rb
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: android-status-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/android-status/status.json
+          if-no-files-found: warn
+          retention-days: 30
