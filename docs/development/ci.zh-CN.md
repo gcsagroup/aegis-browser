@@ -166,6 +166,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 上游合并后记录真实 S 和 push CI。个人 main 快进镜像到上游已有提交，不制造同步 commit。之后从 S 创建 `codex/backflow-<S完整SHA>` 分支，PR 到 develop；允许为冲突追加修复，所有产品修复、测试和共享规则必须回流。回流使用 merge commit，再验证实际 develop push CI；下一批必须包含上游祖先且该 develop 来源验证通过。提前 backport 的重要修复保留映射，不能用局部 cherry-pick 代替最终祖先对齐。
 
+上游晋升 PR 确认为 `MERGED` 且合并提交 S 已进入 `upstream/main` 后，由协调者清理该 PR 在来源 Fork 上的临时远端分支。按 PR 记录核对来源仓库、分支名和最终 HEAD SHA，确认没有其他开放 PR 使用该分支，再以该 SHA 为条件删除，并回读确认远端引用已消失。分支已不存在时记为已清理；若分支已前移、仍被其他 PR 使用，或 PR 关闭但未合并，则保留。清理范围仅限临时源分支，`main`、`develop`、受保护分支和本地工作树须保留。
+
 ### 串行控制器
 
 `.github/workflows/promotion-orchestrator.yml` 只从个人仓库 develop 的 push、每 15 分钟 schedule 或 develop 手动 dispatch 运行，使用固定 concurrency。校验必填仓库变量 `AEGIS_PROMOTION_FORK_REPOSITORY` 与当前仓库完全一致、ref、事件和版本变量 `AEGIS_PROMOTION_AUTOMATION=direct-upstream-v2`；旧值 `enabled` 不启动新控制器，新值不启动旧控制器。PR、main、上游仓库或未知事件不能执行带写权限的转换。仓库变量缺失、格式无效、与当前仓库不符或指向上游时拒绝执行；具体 Fork 身份仅在仓库设置中配置，不写入共享源码。候选源码只作为 Git 对象读取，不在凭据环境执行。
