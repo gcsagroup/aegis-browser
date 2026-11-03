@@ -82,24 +82,48 @@ class CandidateTests(unittest.TestCase):
         self.assertTrue(resolved.is_absolute())
         self.assertTrue(resolved.is_file())
 
+    def test_git_keeps_literal_arguments_and_isolated_environment_without_shell(self):
+        # argv 和隔离环境原样传入；命令中的元字符不能被包装成 shell 文本。
+        executable = ci.git_executable()
+        environment = {'GIT_NO_LAZY_FETCH': '1'}
+        with patch.object(ci.subprocess, 'check_output', return_value='value\n') as output:
+            self.assertEqual(ci.git('repo & data', 'rev-parse', 'HEAD^{tree}', env=environment), 'value')
+        output.assert_called_once_with(
+            [executable, '-C', 'repo & data', 'rev-parse', 'HEAD^{tree}'],
+            env=environment, text=True, shell=False)
+
+    @unittest.skipUnless(ci.os.name == 'nt', 'Windows 原生 Git 入口契约')
+    def test_windows_git_rejects_resolved_batch_entry(self):
+        # 即使名为 git.exe 的入口解析到了批处理，也必须拒绝进入命令解释器。
+        with patch.object(ci, 'system_tool', return_value='C:/tools/git.cmd'):
+            with self.assertRaisesRegex(ValueError, '原生 EXE'):
+                ci.git_executable()
+
     @unittest.skipUnless(ci.os.name == 'nt', 'Windows 原生 Git 入口契约')
     def test_windows_git_preserves_tree_expression_with_batch_shadowing(self):
         # depot_tools 可将 git.bat 放在 PATH 前端；对象表达式必须按原样交给原生 Git。
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            source, wrapper = root / 'source', root / 'wrapper'
+            source, wrapper = root / 'source & literal', root / 'wrapper'
             wrapper.mkdir()
             (wrapper / 'git.bat').write_text('@echo off\nexit /b 87\n', encoding='ascii')
             native_git = ci.system_tool('git.exe')
-            subprocess.run([native_git, 'init', '-q', str(source)], check=True)
-            subprocess.run([native_git, '-C', str(source), '-c', 'user.name=CI test',
+            # 以下三个进程只建立本测试的临时仓库；原生绝对入口与固定子命令均不经 shell。
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            subprocess.run([native_git, 'init', '-q', str(source)], check=True, shell=False)  # nosec B603
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            subprocess.run([native_git, '-C', str(source), '-c', 'user.name=CI test',  # nosec B603
                             '-c', 'user.email=ci@example.invalid', 'commit',
-                            '--allow-empty', '-qm', 'base'], check=True)
-            expected = subprocess.check_output(
-                [native_git, '-C', str(source), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+                            '--allow-empty', '-qm', 'base'], check=True, shell=False)
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            expected = subprocess.check_output(  # nosec B603
+                [native_git, '-C', str(source), 'rev-parse', 'HEAD^{tree}'], text=True, shell=False).strip()
             with patch.dict(ci.os.environ, {'PATH': str(wrapper) + ci.os.pathsep + ci.os.environ['PATH']}):
                 self.assertEqual(Path(ci.system_tool('git')).suffix.lower(), '.bat')
                 self.assertEqual(ci.git(source, 'rev-parse', 'HEAD^{tree}'), expected)
+                literal = 'literal & caret ^ value'
+                ci.git(source, 'config', 'fixture.literal', literal)
+                self.assertEqual(ci.git(source, 'config', '--get', 'fixture.literal'), literal)
 
     def test_windows_system_tool_uses_system_root(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
@@ -134,8 +158,10 @@ class CandidateTests(unittest.TestCase):
             # 模拟宿主启用自动换行，验证夹具不借用用户的 Git 配置才能通过。
             with patch.dict(ci.os.environ, {'GIT_CONFIG_COUNT': '1',
                     'GIT_CONFIG_KEY_0': 'core.autocrlf', 'GIT_CONFIG_VALUE_0': 'true'}):
-                subprocess.run(['git', '-c', 'core.autocrlf=false', 'clone', '-q',
-                                str(src), str(fresh)], check=True)
+                # 克隆源与目的地均为本测试创建的临时目录；使用已解析的原生 Git，禁用 shell。
+                # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+                subprocess.run([ci.git_executable(), '-c', 'core.autocrlf=false', 'clone', '-q',  # nosec B603
+                                str(src), str(fresh)], check=True, shell=False)
             subprocess.run(['git', '-C', str(fresh), 'config', 'core.autocrlf', 'false'], check=True)
             subprocess.run(['git', '-C', str(fresh), 'checkout', '-q', '--detach', base], check=True)
             ci.apply_if_base(fresh, base, patches, root / 'apply.log')
