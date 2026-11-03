@@ -1,0 +1,68 @@
+# Reviewed historical false positives only. Each entry binds commit, file, rule and line.
+# No directory, file-wide, private-key-rule or future-commit exclusions.
+# Rationale: docs/development/secret-scanning.zh-CN.md
+
+# apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc
+a5235763f92f7852c40caabb47d7fbc4b943256d:apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc:generic-api-key:244
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc:generic-api-key:244
+
+# apps/browser/overlay/chrome/browser/aegis/summary_policy_unittest.cc
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/overlay/chrome/browser/aegis/summary_policy_unittest.cc:aws-access-token:78
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/overlay/chrome/browser/aegis/summary_policy_unittest.cc:aws-access-token:95
+
+# apps/browser/overlay/third_party/blink/renderer/core/aegis/farbling_unittest.cc
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/overlay/third_party/blink/renderer/core/aegis/farbling_unittest.cc:generic-api-key:17
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/overlay/third_party/blink/renderer/core/aegis/farbling_unittest.cc:generic-api-key:35
+
+# apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch
+40c1757dc4936b648d3607c5e90e21d247d410c6:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1414
+40c1757dc4936b648d3607c5e90e21d247d410c6:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1432
+
+# apps/browser/patches-android/0142-feat-task-scoped-observation-2-0-002.patch
+40c1757dc4936b648d3607c5e90e21d247d410c6:apps/browser/patches-android/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+
+# apps/browser/patches/0052-feat-aegis-harden-fingerprint-protection.patch
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/patches/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1414
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/patches/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1432
+
+# apps/browser/patches/0056-feat-aegis-add-site-summary-shortcut.patch
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/patches/0056-feat-aegis-add-site-summary-shortcut.patch:aws-access-token:1027
+93c7ad2405c57afd3e93cb740428b52c98dcc629:apps/browser/patches/0056-feat-aegis-add-site-summary-shortcut.patch:aws-access-token:1044
+
+# apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch
+a5235763f92f7852c40caabb47d7fbc4b943256d:apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+
+# apps/browser/patches/archive/main-151/manifest.json
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:28
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:58
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:66
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:90
+
+# apps/ios/BrowserKit/Resources/easylist.txt
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+e2afae65d82e67d481092cfa6212a5d93bc401ce:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+fb69e313780e32a1d56395311d4cc9d588c6ca42:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+fb69e313780e32a1d56395311d4cc9d588c6ca42:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+fb69e313780e32a1d56395311d4cc9d588c6ca42:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+
+# apps/ios/BrowserKit/Resources/security-rules.json
+74699ff2144e7ab3a90eb34ab0d61d41db3e65b5:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+c4274de400cb7d4e0685b7f22ba495e26b1d1779:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+
+# apps/ios/Tests/AegisPolicyKitTests/PIIScannerTests.swift
+59b116f8c41ada15a7bbb8c504cdd62a279a5f52:apps/ios/Tests/AegisPolicyKitTests/PIIScannerTests.swift:generic-api-key:22
+
+# apps/ios/Tests/Fixtures/Localization/coverage.json
+191e1d695486991cc31c4913df3964085d406557:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+9f041fecaa1b5e0e3658b41e93a777fbe195a7f2:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+d13d4a8ffb8f73eb28715fdb83528463d834b6bf:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+d6420184ca46631c8a355bd68f6d7123f5cde729:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+
+# packages/core/src/privacy/pii.test.ts
+93c7ad2405c57afd3e93cb740428b52c98dcc629:packages/core/src/privacy/pii.test.ts:generic-api-key:23
+
+# prototypes/access-metering/sm00_synthetic_manifest.json
+3e95678bfaf7452e6ea785d30e661ece0f5fb0b7:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32
+6eefbf606ac935e6e0f1df8d7b3899d28335d172:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32
