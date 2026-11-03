@@ -96,6 +96,17 @@ test('every protected delivery route depends on Admin admission and normalized o
   }
 });
 
+test('candidate Draft survives its skipped upload-only ancestor while requiring successful admission and package', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  assert(jobs['ios-package'].needs.includes('check-unused'));
+  assert(jobs['check-unused'].if.includes("== 'package-upload'"));
+  const draft = jobs['ios-draft'];
+  assert.deepEqual(draft.needs, ['admission', 'ios-package']);
+  assert(draft.if.includes('!cancelled()'), 'override implicit success() for the skipped ancestor');
+  for (const dependency of draft.needs) assert(draft.if.includes(`needs.${dependency}.result == 'success'`));
+  assert(draft.if.includes("outputs.destination == 'github-draft'"));
+});
+
 test('Simple and Full expose bounded English forms and share the same exact-source engine', () => {
   const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
   const simple = workflow('ios-delivery');
