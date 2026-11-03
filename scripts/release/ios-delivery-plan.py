@@ -49,7 +49,7 @@ def normalize(event, ref, inputs, mode='simple'):
     if version or build or operation in {'package', 'package-upload', 'draft', 'status'} or (operation == 'wait' and not inputs.get('source')):
         require(re.fullmatch(r'[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?', version) is not None and
                 re.fullmatch(r'[1-9][0-9]{0,9}', build) is not None,
-                '填写版本和构建号 / Enter version and build, for example 1.0.0 and 35')
+                'Enter version and build, for example 1.0.0 and 35')
     raw_input = inputs.get('stage_input') or '{}'
     require(len(raw_input.encode()) <= 64000, 'Stage input exceeds bound')
     try:
@@ -60,11 +60,11 @@ def normalize(event, ref, inputs, mode='simple'):
     receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS)
     if operation in {'status', 'wait'} and not inputs.get('source'):
         require(not inputs.get('source') and not inputs.get('groups') and not stage_input,
-                '状态查询只填版本和构建号 / Status only needs version and build')
+                'Status only needs version and build')
         values = {key: '' for key in FIELDS}
         values.update(operation='status-wait' if operation == 'wait' else 'status-query', version=version, build=build, destination='testflight', stage_input='{}')
         return values  # Read-only Apple lookup: no inferred package identity or mutation receipt.
-    require(operation != 'status', '状态查询只填版本和构建号 / Status only needs version and build')
+    require(operation != 'status', 'Status only needs version and build')
     package_upload = operation == 'package-upload'
     if package_upload:
         require(not inputs.get('source') and not inputs.get('groups') and not stage_input, 'New package upload cannot import or distribute existing state')
