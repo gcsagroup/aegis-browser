@@ -13,7 +13,7 @@ const core = resolve(root, 'packages/core');
 const preload = join(core, 'vitest-coverage-exit.mjs');
 
 function runFork(body, {enabled = true, coverage = true, traceExit = false, vitestCoverage = false,
-  rawDirectory = 'existing'} = {}) {
+  rawDirectory = 'existing', delayStop = false} = {}) {
   mkdirSync(join(core, '.artifacts'), {recursive: true});
   const directory = mkdtempSync(join(core, '.artifacts', 'v8-exit-'));
   const raw = rawDirectory === 'existing' ? join(directory, 'raw') : join(directory, 'nested', 'raw');
@@ -27,6 +27,12 @@ function runFork(body, {enabled = true, coverage = true, traceExit = false, vite
     "import {test, expect} from 'vitest';",
     "import {existsSync, writeFileSync} from 'node:fs';",
     production ? "import {exercisedProduction} from './owned-production.mjs';" : '',
+    // Hold only teardown, after the test result, so the parent can finish its
+    // initial error snapshot before the real worker sends its stop response.
+    delayStop ? `process.on('message', message => {
+      if (message?.__vitest_worker_request__ && message.type === 'stop')
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    });` : '',
     'process.on("exit", code => writeFileSync(' + JSON.stringify(receipt) + ', JSON.stringify({code})));',
     'function executedBeforeStop() { return ' + (production ? 'exercisedProduction()' : '42') + '; }',
     "test('owned fork fixture', async () => { " + body + ' });',
@@ -35,6 +41,7 @@ function runFork(body, {enabled = true, coverage = true, traceExit = false, vite
   writeFileSync(config, 'export default ' + JSON.stringify({root: directory, test: {
     include: ['fixture.test.mjs'], pool: 'forks', maxWorkers: 1, testTimeout: 200,
     execArgv: enabled ? ['--import', preload] : [],
+    reporters: enabled && coverage ? ['default', preload] : ['default'],
     ...(vitestCoverage ? {coverage: {enabled: true, provider: 'v8', reporter: ['json-summary'],
       reportsDirectory: join(directory, 'core-coverage'), include: ['owned-production.mjs']}} : {}),
   }}) + ';\n');
@@ -154,6 +161,20 @@ test('a real fork killed at the 500 ms exit boundary already handed off coverage
       fn.ranges.some(range => range.count > 0)));
   }
 });
+}
+
+for (const vitestCoverage of [false, true]) {
+  for (const rawDirectory of ['blocked', 'existing']) {
+    test('late coverage handoff failure fails the parent; path=' + rawDirectory +
+      '; Vitest V8=' + vitestCoverage, () => {
+      const {result} = runFork(`
+        ${rawDirectory === 'existing' ? "const {stopCoverage} = await import('node:v8'); stopCoverage();" : ''}
+        expect(executedBeforeStop()).toBe(42);
+      `, {rawDirectory, vitestCoverage, delayStop: true});
+      assert.notEqual(result.status, 0, 'Late handoff failure was silently accepted: ' + result.stderr);
+      assert.match(result.stderr, /V8 worker coverage handoff failed:/);
+    });
+  }
 }
 
 test('a worker that cannot hand off coverage is an explicit failed Vitest run', () => {
