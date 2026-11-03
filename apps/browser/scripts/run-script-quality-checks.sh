@@ -17,6 +17,8 @@ run_check '构建容量' python3 -B ./scripts/build_capacity_test.py
 run_check '构建进程' python3 -B ./scripts/build_processes_test.py
 run_check 'Chromium 上游监测' python3 -B ./scripts/check-chromium-upstream_test.py
 run_check '发行资产一致性' python3 -B ./scripts/release-assets_test.py
+run_check '第三方许可资源' python3 -B ../../scripts/licenses/third_party_notices.py check
+run_check '第三方许可打包回归' python3 -B -m unittest discover -s ../../scripts/licenses -p 'test_*.py'
 run_check 'GitHub发行编排' python3 -B ./scripts/release-github_test.py
 run_check 'Git/GitHub network policy' python3 -B ./scripts/github-network_test.py
 run_check '候选编排' python3 -B -m unittest discover -s ./scripts/ci -p "*_test.py"

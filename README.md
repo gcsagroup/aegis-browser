@@ -10,13 +10,13 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store 1.0.0](https://img.shields.io/badge/App_Store-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) [![TestFlight Beta](https://img.shields.io/badge/TestFlight-Beta-1976D2?logo=testflight&logoColor=white)](https://testflight.apple.com/join/EwUW1VDx)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store 1.0.0](https://img.shields.io/badge/App_Store-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/us/app/gcsa-aegis/id6827988433)
 
 **A local-first privacy and security browser with a controllable AI Agent.**
 
 [Getting started](#getting-started) · [Platform progress](#platform-progress) · [Roadmap](docs/roadmap.md) · [Documentation](docs/README.md)
 
-GCSA Aegis 1.0.0 is available for iPhone and iPad. Join the external beta through TestFlight. See the [changelog](CHANGELOG.md) for earlier development milestones.
+GCSA Aegis 1.0.0 is available for iPhone and iPad. Join the external beta through [TestFlight](https://testflight.apple.com/join/EwUW1VDx). See the [changelog](CHANGELOG.md) for earlier development milestones.
 
 ## Core capabilities
 
@@ -94,7 +94,7 @@ GCSA-authored source uses [Apache-2.0](LICENSE). Third-party components retain t
 - **CI:** public `main` quality checks.
 - **C++ Unit Tests:** standalone Access tests, Chromium GoogleTest wiring and patch checks.
 - **Codacy Grade:** upstream `main` static analysis, not test coverage.
-- **App Store:** the public iOS/iPadOS version. **TestFlight Beta:** the external testing invitation.
+- **App Store:** the public iOS/iPadOS version.
 
 The CI and analysis badges describe source checks.
 
