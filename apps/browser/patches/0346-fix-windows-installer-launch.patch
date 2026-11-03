@@ -1,32 +1,32 @@
-From 75a3ed6b54751b098f3add06c8b81fea0e48bce3 Mon Sep 17 00:00:00 2001
+From d1aa37eafda7100395e08f8d14af84713e2d3f39 Mon Sep 17 00:00:00 2001
 From: GCSA Aegis <aegis@gcsa.local>
-Date: Tue, 3 Nov 2026 15:25:41 +0800
-Subject: [PATCH] Fix Windows desktop-user launch and existing-version outcome
- with regressions
+Date: Tue, 3 Nov 2026 16:52:45 +0800
+Subject: [PATCH] Integrate safe desktop launch and existing-version outcome
+ with measured installer UI
 
 ---
- .../mini_installer/aegis_install_ui.cc        | 10 +++-
- .../mini_installer/aegis_install_ui.h         |  1 +
- .../aegis_install_ui_unittest.cc              | 54 +++++++++++++++++++
- chrome/installer/setup/aegis_launch_policy.h  | 12 +++++
- .../setup/aegis_launch_policy_unittest.cc     | 31 +++++++++++
- chrome/installer/setup/setup_main.cc          | 21 +++++---
- 6 files changed, 122 insertions(+), 7 deletions(-)
+ .../mini_installer/aegis_install_ui.cc        | 15 +++--
+ .../mini_installer/aegis_install_ui.h         |  3 +-
+ .../aegis_install_ui_unittest.cc              | 62 +++++++++++++++++++
+ chrome/installer/setup/aegis_launch_policy.h  | 12 ++++
+ .../setup/aegis_launch_policy_unittest.cc     | 31 ++++++++++
+ chrome/installer/setup/setup_main.cc          | 21 +++++--
+ 6 files changed, 132 insertions(+), 12 deletions(-)
 
 diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
-index dbf8ed40e0af0c480b523e7095312c80d415996f..8fbf8844b6e421ee1dee6cffe203e2c6f94679de 100644
+index f683cbcfdc46376625705c91b7b8ba839f3c8914..d2d248b3a6c3cf0282dd6ac8d3812b9e55296e95 100644
 --- a/chrome/installer/mini_installer/aegis_install_ui.cc
 +++ b/chrome/installer/mini_installer/aegis_install_ui.cc
-@@ -10,6 +10,8 @@ namespace mini_installer {
+@@ -15,6 +15,8 @@
+ namespace mini_installer {
  namespace {
- constexpr UINT kInstalling = WM_APP + 1;
  constexpr UINT kFinished = WM_APP + 2;
 +// setup 的稳定退出码 installer::EXISTING_VERSION_LAUNCHED；避免引入 util/CRT 依赖。
 +constexpr DWORD kExistingVersionLaunched = 3;
- constexpr wchar_t kWindowClass[] = L"GCSAAegisInstallProgress";
- constexpr wchar_t kTitle[] = L"GCSA Aegis 安装程序";
- }  // namespace
-@@ -43,7 +45,8 @@ void AegisInstallUi::Installing() {
+ constexpr UINT kProgress = WM_APP + 3;
+ constexpr UINT_PTR kCloseTimer = 1;
+ constexpr UINT_PTR kAnimationTimer = 2;
+@@ -111,7 +113,8 @@ void AegisInstallUi::UpdateProgress(aegis_installer::Progress progress) {
  void AegisInstallUi::Finish(DWORD exit_code) {
    if (window_) {
      ::PostMessage(window_, kFinished, exit_code, 0);
@@ -36,23 +36,40 @@ index dbf8ed40e0af0c480b523e7095312c80d415996f..8fbf8844b6e421ee1dee6cffe203e2c6
      // 窗口创建失败也不能把安装失败变成无声退出；不改变安装器原有退出码。
      ::MessageBox(nullptr, L"安装未完成，请重新运行安装程序。", kTitle,
                   MB_OK | MB_ICONERROR);
-@@ -180,6 +183,11 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
-         ::SetWindowText(self->status_, L"安装完成");
-         ::SetWindowText(self->detail_, L"GCSA Aegis 已准备就绪。");
-         ::SetTimer(window, 1, 1400, nullptr);
-+      } else if (wparam == kExistingVersionLaunched) {
-+        ::SetWindowText(self->status_, L"已打开现有版本");
-+        ::SetWindowText(self->detail_,
-+                        L"已启动已安装的 GCSA Aegis，本次未执行安装。");
-+        ::SetTimer(window, 1, 1400, nullptr);
-       } else {
-         wchar_t detail[160] = {};
-         // FormatMessage 使用系统格式化，保持 mini_installer 不链接 CRT 的边界。
+@@ -522,17 +525,19 @@ LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
+       if (self->complete_)
+         return 0;
+       self->complete_ = true;
+-      self->failed_ = wparam != 0;
++      const bool existing_version = wparam == kExistingVersionLaunched;
++      self->failed_ = wparam != 0 && !existing_version;
+       ::KillTimer(window, kAnimationTimer);
+-      // 只有成功才显示满条；失败隐藏活动条，避免把错误误读为安装已完成。
+-      if (self->failed_)
++      // 仅实际安装成功显示满条；打开现有版本没有执行安装，也不是错误。
++      if (self->failed_ || existing_version)
+         ::ShowWindow(self->progress_, SW_HIDE);
+       else {
+         ::SendMessage(self->progress_, PBM_SETPOS, 100, 0);
+         ::InvalidateRect(self->progress_, nullptr, FALSE);
+       }
+       if (!self->failed_) {
+-        ::SetWindowText(self->status_, L"安装完成");
++        ::SetWindowText(self->status_, existing_version
++            ? L"已打开现有版本（本次未执行安装）" : L"安装完成");
+         // 低资源导致计时器创建失败时直接收起，不能让安装线程永久等待 UI。
+         if (!::SetTimer(window, kCloseTimer, 1400, nullptr))
+           ::DestroyWindow(window);
 diff --git a/chrome/installer/mini_installer/aegis_install_ui.h b/chrome/installer/mini_installer/aegis_install_ui.h
-index 9280fbf633d23a9e2682a587e7812f28aba89f5c..8b43859ce03333d17878a270161986a982db45a5 100644
+index 271bd7b160687b7ca443e872aa314cbbf18d9492..8dccc4ad613a68441d50226991fee29d302f2e22 100644
 --- a/chrome/installer/mini_installer/aegis_install_ui.h
 +++ b/chrome/installer/mini_installer/aegis_install_ui.h
-@@ -20,6 +20,7 @@ class AegisInstallUi {
+@@ -23,10 +23,11 @@ class AegisInstallUi {
+   void Installing();
+   // 用当前阶段观测校准整体预估进度，调用方不持有窗口或跨线程 UI 状态。
+   void UpdateProgress(aegis_installer::Progress progress);
+-  // 0 表示成功并自动收起；非 0 保留数字错误码，等待用户确认关闭。
++  // 0 表示安装成功；3 表示已打开现有版本，均自动收起；其他值显示错误码。
    void Finish(DWORD exit_code);
  
   private:
@@ -61,11 +78,11 @@ index 9280fbf633d23a9e2682a587e7812f28aba89f5c..8b43859ce03333d17878a270161986a9
    static LRESULT CALLBACK WindowProc(HWND window,
                                       UINT message,
 diff --git a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
-index 72798c08cfbe3fc6bf86d3fdd5383afb403f13a3..56f462800fb552df8ed3efa95c95ddd28d3b3ace 100644
+index b0205a342f6937340c93a0c610e5ac6ab2b0299d..1ea06b8aefac53f321cd00e11e03f51d96d374c9 100644
 --- a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
 +++ b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
-@@ -4,9 +4,20 @@
- 
+@@ -7,9 +7,20 @@
+ #include <atomic>
  #include <string>
  
 +#include "chrome/installer/util/util_constants.h"
@@ -84,8 +101,8 @@ index 72798c08cfbe3fc6bf86d3fdd5383afb403f13a3..56f462800fb552df8ed3efa95c95ddd2
 +};
  namespace {
  HWND OwnWindow() {
-   HWND window = ::FindWindow(L"GCSAAegisInstallProgress", nullptr);
-@@ -53,6 +64,49 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
+   // 允许桌面存在其他安装预览；只读取当前测试进程的窗口，避免干扰用户。
+@@ -114,6 +125,57 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
    EXPECT_EQ(nullptr, OwnWindow());
  }
  
@@ -97,6 +114,14 @@ index 72798c08cfbe3fc6bf86d3fdd5383afb403f13a3..56f462800fb552df8ed3efa95c95ddd2
 +    ui.Finish(3);
 +    EXPECT_TRUE(WaitForText(window, L"已打开现有版本"));
 +    EXPECT_TRUE(WaitForText(window, L"本次未执行安装"));
++    HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
++    EXPECT_FALSE(::IsWindowVisible(progress));
++    EXPECT_LT(::SendMessage(progress, PBM_GETPOS, 0, 0), 100);
++    ExpectReadableLayout(window);
++    ui.UpdateProgress({aegis_installer::Phase::kFinishing, 99});
++    ::SendMessage(window, WM_NULL, 0, 0);
++    EXPECT_TRUE(WaitForText(window, L"本次未执行安装"));
++    EXPECT_FALSE(::IsWindowVisible(progress));
 +    EXPECT_FALSE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
 +    for (int attempt = 0; attempt < 120 && ::IsWindow(window); ++attempt)
 +      ::Sleep(25);
