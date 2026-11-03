@@ -144,7 +144,7 @@ target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32
                 expected_tests.update(
                     f"{suite}.{test}" for suite, test in re.findall(
                         r"TEST\(\s*(\w+)\s*,\s*(\w+)\s*\)",
-                        (fixture / name).read_text()))
+                        (fixture / name).read_text(encoding="utf-8")))
         if not expected_tests or any("DISABLED_" in name for name in expected_tests):
             raise RuntimeError("Empty or disabled fixture suite")
         report["expectedTests"] = sorted(expected_tests)
@@ -163,7 +163,7 @@ target_link_libraries(installer_fixture PRIVATE gtest_main user32 gdi32 comctl32
             report["commands"].append({"argv": command, "exitCode": completed.returncode})
             if completed.returncode:
                 raise RuntimeError(f"Fixture command failed: {command[0]}")
-        tests = json.loads((report_dir / "tests.json").read_text())
+        tests = json.loads((report_dir / "tests.json").read_text(encoding="utf-8"))
         validate_results(tests, expected_tests)
         report["finalHashes"] = {name: digest((overlay / name).read_bytes()) for name in SOURCES}
         if hashes != report["finalHashes"]:
