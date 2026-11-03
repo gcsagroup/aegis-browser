@@ -275,6 +275,7 @@ if [[ "$component" -eq 1 ]]; then
   done
   shopt -u nullglob
   APP_PATH="$STAGE/$AEGIS_MAC_APP_BUNDLE_NAME"
+  python3 -B "$REPO_ROOT/scripts/licenses/third_party_notices.py" install-macos "$APP_PATH"
   bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$APP_PATH" "$STAGE"
 else
   # Single self-contained app.
@@ -285,6 +286,9 @@ else
     "$APP_PATH/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string GCSA-aegis" \
       "$APP_PATH/Contents/Info.plist" || true
+  # Keep Aegis-added licenses inside the App so app-only ZIP/DMG copies retain them.
+  # This changes only the staged copy and must precede signing.
+  python3 -B "$REPO_ROOT/scripts/licenses/third_party_notices.py" install-macos "$APP_PATH"
   bash "$ROOT_DIR/scripts/sign-chromium-app.sh" "$APP_PATH" "$STAGE"
 fi
 
