@@ -29,6 +29,8 @@ try {
   const cppPath = resolve(process.argv[7] ?? '.github/workflows/cpp-unit-tests.yml');
   const cppSource = readFileSync(cppPath, 'utf8');
   const cppWorkflow = YAML.parse(cppSource);
+  const iosValidationPath = resolve(process.argv[8] ?? '.github/workflows/ios-release-validation.yml');
+  const iosValidationWorkflow = YAML.parse(readFileSync(iosValidationPath, 'utf8'));
   const iosPath = resolve(process.argv[3] ?? '.github/workflows/ios-coverage.yml');
   const otherPath = resolve(process.argv[4] ?? '.github/workflows/other-platform-coverage.yml');
   const androidPath = resolve(process.argv[5] ?? '.github/workflows/android-java-coverage.yml');
@@ -46,6 +48,25 @@ try {
   if (!workflow || typeof workflow !== 'object') fail('Workflow must be a YAML object');
   if (!iosWorkflow || typeof iosWorkflow !== 'object') fail('iOS workflow must be a YAML object');
   if (!prTitleWorkflow || typeof prTitleWorkflow !== 'object') fail('PR title workflow must be a YAML object');
+  const ready = "github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false'";
+  const readyCondition = '${{ ' + ready + ' }}';
+  const summaryCondition = '${{ always() && (' + ready + ') }}';
+  const summaryName = '${{ (' + ready + ") && 'quality-gate' || 'quality-deferred-draft-or-missing-metadata' }}";
+  const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'].sort();
+  for (const [label, automatic] of [['Quality', workflow], ['C++', cppWorkflow], ['iOS validation', iosValidationWorkflow]]) {
+    if (JSON.stringify(array(automatic?.on?.pull_request?.types).sort()) !== JSON.stringify(prTypes)) {
+      fail(`${label} PR event types must be exactly opened, reopened, synchronize, ready_for_review and converted_to_draft`);
+    }
+    for (const [id, job] of Object.entries(automatic.jobs ?? {})) {
+      if (id === 'quality-gate' || job.name === 'quality-gate') {
+        fail(`${label}/${id} may not use the required check name or ID for a skipped Draft job`);
+      }
+      const expectedCondition = automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
+      if (job.if !== expectedCondition) {
+        fail(`${label}/${id} must require explicit Ready PR metadata, preserve non-PR execution and summary always()`);
+      }
+    }
+  }
   const triggers = workflow.on ?? {};
   const triggerNames = Object.keys(triggers).sort();
   if (JSON.stringify(triggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {
@@ -147,8 +168,8 @@ try {
   const iosCoverage = iosJobs['ios-coverage'];
   const shellCoverage = otherWorkflow.jobs?.['shell-coverage'];
   const powershellCoverage = otherWorkflow.jobs?.['powershell-coverage'];
-  const gate = jobs['quality-gate'];
-  const expectedJobs = ['quality', 'quality-gate'];
+  const gate = jobs['quality-summary'];
+  const expectedJobs = ['quality', 'quality-summary'];
   if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
   if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {})) !== JSON.stringify(['android-java-coverage'])) fail('Android job set must be exactly android-java-coverage');
   if (JSON.stringify(Object.keys(jobs).sort()) !== JSON.stringify(expectedJobs)) {
@@ -165,7 +186,6 @@ try {
     fail('pnpm setup must use the per-job runner temporary directory');
   }
   if (quality['timeout-minutes'] !== 40) fail('Quality job timeout must be 40 minutes');
-  if ('if' in quality) fail('Required quality job may not be conditional');
   for (const [id, job, runner, timeout] of [
     ['shell-coverage', shellCoverage, 'ubuntu-24.04', 30],
     ['powershell-coverage', powershellCoverage, 'windows-2025', 20],
@@ -180,8 +200,7 @@ try {
   if (iosCoverage?.['timeout-minutes'] !== 60) fail('iOS report timeout must be 60 minutes');
   if ('if' in iosCoverage) fail('iOS report job may not be conditional within its manual workflow');
   if ('continue-on-error' in iosCoverage) fail('iOS report job must preserve test failures');
-  if (gate.name !== 'quality-gate') fail('Required summary check name must be quality-gate');
-  if (gate.if !== '${{ always() }}') fail('quality-gate must run with always()');
+  if (gate.name !== summaryName) fail('Required summary check name must be quality-gate only for non-PR or explicit Ready PR; otherwise use the deferred label');
   const expectedNeeds = ['quality'];
   if (JSON.stringify(array(gate.needs).sort()) !== JSON.stringify(expectedNeeds)) {
     fail(`quality-gate needs must be exactly: ${expectedNeeds.join(', ')}`);

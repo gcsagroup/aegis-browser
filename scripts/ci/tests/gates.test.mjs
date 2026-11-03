@@ -411,14 +411,51 @@ test('push and dispatch identity allow main and develop while rejecting other re
 });
 
 test('workflow validator enforces Mac-only automatic gates and safe manual workflows', () => {
-  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml']
+  const paths = ['quality.yml', 'ios-coverage.yml', 'other-platform-coverage.yml', 'android-java-coverage.yml', 'pr-title.yml', 'cpp-unit-tests.yml', 'ios-release-validation.yml']
     .map((name) => join(root, '.github/workflows', name));
   const originals = paths.map((path) => YAML.parse(readFileSync(path, 'utf8')));
   const validate = (args) => run(process.execPath, [join(scripts, 'validate-workflow.mjs'), ...args]);
   const result = validate(paths);
   assert.equal(result.status, 0, result.stderr);
   const directory = mkdtempSync(join(tmpdir(), 'aegis-workflow-test-'));
+  const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'];
+  const automaticJobs = [[0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests'], [6, 'contracts'], [6, 'ios-archive']];
   const mutations = [
+    ...[0, 5, 6].flatMap((index) => [
+      [index, (w) => { delete w.on.pull_request.types; }, 'missing PR event selection'],
+      ...prTypes.map((type) => [index, (w) => {
+        w.on.pull_request.types = prTypes.filter((value) => value !== type);
+      }, `missing PR event ${type}`]),
+      [index, (w) => { w.on.pull_request.types = [...prTypes, 'edited']; }, 'unexpected PR event'],
+    ]),
+    ...automaticJobs.flatMap(([index, job]) => [
+      [index, (w) => { delete w.jobs[job].if; }, `${job} missing readiness guard`],
+      ...[
+        '${{ true }}',
+        '${{ !github.event.pull_request.draft }}',
+        "${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}",
+        "${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) != 'true' }}",
+        "${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'true' }}",
+        "${{ toJSON(github.event.pull_request.draft) == 'false' }}",
+      ].map((condition) => [index, (w) => {
+        w.jobs[job].if = job === 'quality-summary'
+          ? condition.replace('${{ ', '${{ always() && (').replace(' }}', ') }}')
+          : condition;
+      }, `${job} unsafe readiness guard: ${condition}`]),
+    ]),
+    [0, (w) => { w.jobs['quality-summary'].if = "${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false' }}"; }, 'summary missing always()'],
+    [0, (w) => { w.jobs['quality-summary'].if = '${{ always() }}'; }, 'summary ignores readiness'],
+    [0, (w) => { w.jobs['quality-gate'] = w.jobs['quality-summary']; delete w.jobs['quality-summary']; }, 'skipped summary uses required check ID'],
+    [0, (w) => { delete w.jobs['quality-summary'].name; }, 'summary missing conditional check name'],
+    ...[
+      'quality-gate',
+      "${{ (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') && 'quality-gate' || 'quality-gate' }}",
+      "${{ (github.event_name != 'pull_request' || github.event.pull_request.draft == false) && 'quality-gate' || 'quality-deferred-draft-or-missing-metadata' }}",
+      "${{ !github.event.pull_request.draft && 'quality-gate' || 'quality-deferred-draft-or-missing-metadata' }}",
+      "${{ (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') && 'quality-renamed' || 'quality-deferred-draft-or-missing-metadata' }}",
+    ].map((name) => [0, (w) => { w.jobs['quality-summary'].name = name; }, 'unsafe required check name']),
+    ...automaticJobs.filter(([, job]) => job !== 'quality-summary').map(([index, job]) =>
+      [index, (w) => { w.jobs[job].name = 'quality-gate'; }, `${job} impersonates required check`]),
     ...['pull_request', 'push'].flatMap((event) => [
       [0, (w) => { w.on[event].branches = ['main']; }],
       [0, (w) => { w.on[event].branches = ['develop']; }],
@@ -428,11 +465,11 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
     [0, (w) => { w.concurrency.group = 'main'; }],
     [0, (w) => { w.concurrency['cancel-in-progress'] = true; }],
     [0, (w) => { w.jobs.quality.steps[0].uses = 'actions/checkout@v7'; }],
-    [0, (w) => { w.jobs['quality-gate'].if = '${{ success() }}'; }],
-    [0, (w) => { w.jobs['quality-gate'].needs = []; }],
-    [0, (w) => { w.jobs['quality-gate'].needs.push('shell-coverage'); }],
+    [0, (w) => { w.jobs['quality-summary'].if = '${{ success() }}'; }],
+    [0, (w) => { w.jobs['quality-summary'].needs = []; }],
+    [0, (w) => { w.jobs['quality-summary'].needs.push('shell-coverage'); }],
     [0, (w) => { w.jobs.quality['runs-on'] = 'ubuntu-24.04'; }],
-    ...[[0, 'quality'], [0, 'quality-gate'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
+    ...[[0, 'quality'], [0, 'quality-summary'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
       [index, (w) => { w.jobs[job]['runs-on'] = ['self-hosted', 'macOS', 'ARM64', 'aegis-test']; }],
       [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace("github.event.pull_request.head.repo.full_name == github.repository", 'true'); }],
       [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace("github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY", 'true'); }],
@@ -450,9 +487,9 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
     [0, (w) => { w.jobs.extra = structuredClone(w.jobs.quality); }],
     [0, (w) => { w.on.pull_request.paths = ['apps/browser/**']; }],
     ...['{}', '{"replacement":"success"}', '{"quality":"success"}', '{"quality":"${{ needs.quality.result }}","extra":"success"}'].map((value) =>
-      [0, (w) => { w.jobs['quality-gate'].steps[1].env.REQUIRED_RESULTS = value; }]),
-    [0, (w) => { w.jobs['quality-gate'].steps[1].run += ' || true'; }],
-    [0, (w) => { w.jobs['quality-gate'].steps[1].if = '${{ false }}'; }],
+      [0, (w) => { w.jobs['quality-summary'].steps[1].env.REQUIRED_RESULTS = value; }]),
+    [0, (w) => { w.jobs['quality-summary'].steps[1].run += ' || true'; }],
+    [0, (w) => { w.jobs['quality-summary'].steps[1].if = '${{ false }}'; }],
     ...[1, 2, 3].flatMap((index) => [
       [index, (w) => { w.on.push = {branches: ['main']}; }],
       [index, (w) => { w.permissions.contents = 'write'; }],
@@ -473,14 +510,14 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
     [4, (w) => { w.jobs['normalize-title'].steps.push({name: 'unsafe', run: 'node candidate.mjs'}); }],
   ];
   try {
-    for (const [number, [index, mutate]] of mutations.entries()) {
+    for (const [number, [index, mutate, reason]] of mutations.entries()) {
       const copy = structuredClone(originals[index]);
       mutate(copy);
       const path = join(directory, `mutation-${number}.yml`);
       writeFileSync(path, YAML.stringify(copy));
       const args = [...paths];
       args[index] = path;
-      assert.notEqual(validate(args).status, 0, `workflow mutation ${number} unexpectedly passed`);
+      assert.notEqual(validate(args).status, 0, `workflow mutation ${number} (${paths[index]}: ${reason ?? 'existing contract'}) unexpectedly passed`);
     }
   } finally {
     rmSync(directory, {recursive: true, force: true});
