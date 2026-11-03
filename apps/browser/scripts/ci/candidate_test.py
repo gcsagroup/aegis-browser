@@ -82,6 +82,25 @@ class CandidateTests(unittest.TestCase):
         self.assertTrue(resolved.is_absolute())
         self.assertTrue(resolved.is_file())
 
+    @unittest.skipUnless(ci.os.name == 'nt', 'Windows 原生 Git 入口契约')
+    def test_windows_git_preserves_tree_expression_with_batch_shadowing(self):
+        # depot_tools 可将 git.bat 放在 PATH 前端；对象表达式必须按原样交给原生 Git。
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, wrapper = root / 'source', root / 'wrapper'
+            wrapper.mkdir()
+            (wrapper / 'git.bat').write_text('@echo off\nexit /b 87\n', encoding='ascii')
+            native_git = ci.system_tool('git.exe')
+            subprocess.run([native_git, 'init', '-q', str(source)], check=True)
+            subprocess.run([native_git, '-C', str(source), '-c', 'user.name=CI test',
+                            '-c', 'user.email=ci@example.invalid', 'commit',
+                            '--allow-empty', '-qm', 'base'], check=True)
+            expected = subprocess.check_output(
+                [native_git, '-C', str(source), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+            with patch.dict(ci.os.environ, {'PATH': str(wrapper) + ci.os.pathsep + ci.os.environ['PATH']}):
+                self.assertEqual(Path(ci.system_tool('git')).suffix.lower(), '.bat')
+                self.assertEqual(ci.git(source, 'rev-parse', 'HEAD^{tree}'), expected)
+
     def test_windows_system_tool_uses_system_root(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
                 ci.os.environ, {'SystemRoot': directory}, clear=False):
@@ -154,11 +173,26 @@ class CandidateTests(unittest.TestCase):
             intermediate = git('rev-parse', 'HEAD^:value')
             missing_object = objects / intermediate[:2] / intermediate[2:]
             # 最终树与基线仍完整，只有重放过程需要的中间对象不存在。
+            # Windows 的 Git 松散对象带只读属性；仅解除本测试创建的目标对象再模拟缺失。
+            missing_object.chmod(0o600)
             missing_object.unlink()
             before = {p.relative_to(objects): p.read_bytes() for p in objects.rglob('*') if p.is_file()}
+            expected_tree = git('rev-parse', 'HEAD^{tree}')
+            real_git = ci.git
+
+            def offline_git(source, *args, env=None):
+                # 缺失对象不能让校验阶段自动联网；临时共享路径必须使用 LF，兼容 Windows Git。
+                self.assertIsNotNone(env)
+                self.assertEqual(env.get('GIT_NO_LAZY_FETCH'), '1')
+                if 'GIT_OBJECT_DIRECTORY' in env:
+                    alternate = Path(env['GIT_OBJECT_DIRECTORY']) / 'info/alternates'
+                    self.assertEqual(alternate.read_bytes(), (objects.resolve().as_posix() + '\n').encode())
+                return real_git(source, *args, env=env)
+
             for checkout in (src, linked):
                 with self.subTest(checkout=checkout.name):
-                    self.assertEqual(ci.verify_tree(checkout, base, patches), git('rev-parse', 'HEAD^{tree}'))
+                    with patch.dict(ci.os.environ, {'GIT_NO_LAZY_FETCH': '0'}), patch.object(ci, 'git', offline_git):
+                        self.assertEqual(ci.verify_tree(checkout, base, patches), expected_tree)
                     self.assertFalse(missing_object.exists())
                     self.assertEqual(
                         {p.relative_to(objects): p.read_bytes() for p in objects.rglob('*') if p.is_file()}, before)

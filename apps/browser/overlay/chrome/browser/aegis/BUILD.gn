@@ -510,6 +510,8 @@ test("aegis_browser_unittests") {
       "summary_session_unittest.cc",
     ]
     deps += [
+      # 桌面测试直接引用 BrowserClient；test_support 的私有依赖不会透传头文件。
+      "//chrome/browser:chrome_content_browser_client",
       "//chrome/browser/actor",
       "//chrome/browser/actor/ui:event_dispatcher",
       "//chrome/browser/actor/ui:test_support",
