@@ -13,7 +13,9 @@ Alpha 固定僅供內部測試，原生匯出開啟 `testFlightInternalTestingOn
 ./release ios status --profile alpha --version 1.0.0 --build 6 --destination testflight
 ```
 
-範例編號僅供示意，實際先查 ASC，再選未使用的 build。`compliance`、`metadata`、`distribute` 必須保留原始 manifest 摘要、run ID 與完成的上傳記錄，重用同一產物。合規 JSON 需有明確布林答案、來源 SHA、原生輸入摘要及授權說明；中繼資料 JSON 僅允許語言別的 `description`／`whatsNew`，保留回饋聯絡資訊及其他語言。不匯出私鑰，不改共用鑰匙圈 ACL，憑證資料不得進入參數、Git 或公開證據。
+範例編號僅供示意，實際先查 ASC，再選未使用的 build。`compliance`、`metadata`、`distribute` 必須保留原始 manifest 摘要、run ID 與完成的上傳記錄，重用同一產物。合規 JSON 需有明確布林答案、來源 SHA、原生輸入摘要及授權說明；中繼資料 JSON 僅允許語言別的 `description`／`whatsNew`，保留回饋聯絡資訊及其他語言。本地簽名不匯出私鑰、不改共用鑰匙圈 ACL，憑證資料不得進入 Git 或公開證據。
+
+Actions 打包使用 GitHub 託管的臨時 macOS。在 `aegis-ios-signing` 保留 team、憑證指紋和三份 profile 名稱變數，並設定加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二進位材料使用單行 Base64，打包後清理臨時鑰匙圈與 profiles；簽名材料不得進入日誌、Git、artifact 或上傳憑據環境。
 
 Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Release Validation** 自動無憑證驗證與 **iOS Coverage** 模擬器覆蓋率。手動執行三個 iOS 工作流程均要求實際倉庫 Admin 權限（包含組織所有者授予的 Admin），原發起者和重跑者都必須通過驗證。Maintain/Write/Read 和權限未知均在受保護作業排隊前拒絕；GitHub 原生介面仍可能向 Write 顯示執行按鈕。本地流程驗證真實 token 使用者，runner 在簽章探測前驗證真實 CLI Admin。fork 交付入口維持停用。
 
