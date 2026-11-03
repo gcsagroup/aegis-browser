@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "ตัวช่วย Aegis แบบอ่านอย่างเดียว"
+  },
+  "extensionDescription": {
+    "message": "อ่านข้อมูลสรุปขั้นต่ำของหน้าที่ผู้ใช้อนุญาตในขณะนี้ โดยไม่แก้ไขหน้า"
+  },
+  "extensionAction": {
+    "message": "ตรวจสอบและเปิดใน Aegis"
+  }
+}
