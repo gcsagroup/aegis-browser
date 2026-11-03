@@ -53,6 +53,25 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
   EXPECT_EQ(nullptr, OwnWindow());
 }
 
+TEST(AegisInstallUiTest, ExistingVersionShowsInformationAndClosesAutomatically) {
+  {
+    AegisInstallUi ui(true);
+    HWND window = OwnWindow();
+    EXPECT_TRUE(window);
+    ui.Finish(3);
+    EXPECT_TRUE(WaitForText(window, L"已打开现有版本"));
+    EXPECT_TRUE(WaitForText(window, L"本次未执行安装"));
+    EXPECT_FALSE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
+    for (int attempt = 0; attempt < 120 && ::IsWindow(window); ++attempt)
+      ::Sleep(25);
+    EXPECT_FALSE(::IsWindow(window));
+    // 回归为错误页时也关闭窗口，避免析构等待阻塞整个测试进程。
+    if (::IsWindow(window))
+      ::SendMessage(window, WM_CLOSE, 0, 0);
+  }
+  EXPECT_EQ(nullptr, OwnWindow());
+}
+
 TEST(AegisInstallUiTest, FailureRemainsUntilAcknowledged) {
   {
     AegisInstallUi ui(true);
