@@ -14,6 +14,11 @@ configs:
   Debug: debug
   Release: release
 
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    exactVersion: "13.1.1"
+
 settings:
   base:
     CLANG_ENABLE_MODULES: YES
@@ -50,6 +55,11 @@ targets:
       - path: SharedWebExtension
         buildPhase: resources
     dependencies:
+      - package: Firebase
+        products:
+          - FirebaseCore
+          - FirebaseCrashlytics
+          - FirebaseAnalyticsCore
       - target: BrowserKit
         embed: true
       - target: AegisPolicyKit
@@ -60,8 +70,29 @@ targets:
         embed: true
       - target: ShareExtension
         embed: true
+    postBuildScripts:
+      - name: Select Aegis Firebase registration
+        script: |
+          /usr/bin/python3 -B "${SRCROOT}/scripts/firebase_config.py" install \
+            --root "${SRCROOT}/Firebase" --channel "${AEGIS_FIREBASE_CHANNEL}" \
+            --artifact "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AegisFirebase.plist"
+        inputFiles:
+          - $(SRCROOT)/scripts/firebase_config.py
+          - $(SRCROOT)/Firebase/identities.json
+          - $(SRCROOT)/Firebase/dev/GoogleService-Info.plist
+          - $(SRCROOT)/Firebase/prod/GoogleService-Info.plist
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisFirebase.plist
+        basedOnDependencyAnalysis: false
     settings:
+      configs:
+        Debug:
+          AEGIS_FIREBASE_CHANNEL: dev
+          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+        Release:
+          AEGIS_FIREBASE_CHANNEL: disabled
       base:
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
         CODE_SIGN_ENTITLEMENTS: AegisApp/Aegis.entitlements
         INFOPLIST_FILE: AegisApp/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis
