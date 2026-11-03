@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 const coverageDirectory = process.env.CORE_COVERAGE_DIR ?? "../../.artifacts/coverage/core";
@@ -8,6 +8,9 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    reporters: process.env.NODE_V8_COVERAGE
+      ? [...configDefaults.reporters, fileURLToPath(new URL("./vitest-coverage-exit.mjs", import.meta.url))]
+      : configDefaults.reporters,
     execArgv: process.env.NODE_V8_COVERAGE
       ? ["--import", fileURLToPath(new URL("./vitest-coverage-exit.mjs", import.meta.url))]
       : [],

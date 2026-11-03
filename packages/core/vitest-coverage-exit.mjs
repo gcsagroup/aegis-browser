@@ -2,7 +2,7 @@ import {mkdirSync, readFileSync, readdirSync, realpathSync} from 'node:fs';
 import {join, resolve} from 'node:path';
 import {stopCoverage, takeCoverage} from 'node:v8';
 
-// Vitest 4 acknowledges fork teardown over IPC before its parent sends SIGTERM.
+// Vitest acknowledges fork teardown over IPC before its parent sends SIGTERM.
 // Preload before its process.exit interception, only in that exact worker.
 let workerEntry;
 const isEval = process.execArgv.some(arg => arg.startsWith('-e') || arg.startsWith('-p') ||
@@ -84,4 +84,18 @@ if (workerEntry) {
     const code = process.exitCode ?? 0;
     exit(Number(code) !== 0 ? code : stopped ? 0 : 143);
   });
+}
+
+// Also load this module as a parent reporter. Vitest 5 can take its run-end
+// error snapshot before receiving the stop response. onClose runs after the
+// pool has closed. Reject asynchronously so Vitest collects the close error
+// without aborting the remaining close hooks, cleanup and trace finalization.
+export default class CoverageHandoffReporter {
+  onInit(vitest) {
+    vitest.onClose(async () => {
+      const errors = vitest.state.getUnhandledErrors().filter(error =>
+        error.message?.startsWith('V8 worker coverage handoff failed:'));
+      if (errors.length) throw new AggregateError(errors, 'V8 worker coverage handoff failed during teardown');
+    });
+  }
 }
