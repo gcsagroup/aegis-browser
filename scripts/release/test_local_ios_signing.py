@@ -11,6 +11,30 @@ spec.loader.exec_module(signing)
 
 
 class LocalSigningTests(unittest.TestCase):
+    def test_symlinked_receipt_stops_main_before_credentials_or_host_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            victim = root / 'private-material'
+            victim.write_bytes(b'preserve this material')
+            (root / 'signing-receipt.json').symlink_to(victim)
+            arguments = ['local-ios-signing.py', '--team', 'ABCDEFGHIJ', '--certificate-sha1', 'A' * 40,
+                         '--state-directory', str(root), '--unlock']
+            with patch.object(signing.sys, 'argv', arguments), patch.object(signing, 'credentials') as credentials:
+                with self.assertRaises(ValueError):
+                    signing.main()
+                credentials.assert_not_called()
+            self.assertEqual(victim.read_bytes(), b'preserve this material')
+
+    def test_receipt_replacement_does_not_truncate_hardlinked_material(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            victim = root / 'private-material'
+            victim.write_bytes(b'preserve this material')
+            (root / 'signing-receipt.json').hardlink_to(victim)
+            signing.write_receipt(root, {'verified': True})
+            self.assertEqual(victim.read_bytes(), b'preserve this material')
+            self.assertIn('verified', (root / 'signing-receipt.json').read_text())
+
     def test_credentials_are_parsed_without_executing_shell(self):
         value = signing.parse_credentials('export APP_STORE_CONNECT_API_KEY_KEY_ID="ABCDEFGHIJ"\n'
                                           'export APP_STORE_CONNECT_API_KEY_ISSUER_ID="issuer"\n')
