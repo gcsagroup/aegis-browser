@@ -2,6 +2,7 @@
 # Policy snapshot data exported from packages/core.
 
 copy("policy_snapshot") {
+  deps = [ "//third_party/aegis_webui_licenses" ]
   sources = [ "policy_snapshot.json" ]
   outputs = [ "$root_out_dir/aegis_policy/{{source_file_part}}" ]
 }

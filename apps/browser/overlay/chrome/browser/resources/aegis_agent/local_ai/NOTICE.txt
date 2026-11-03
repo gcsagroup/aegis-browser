@@ -9,6 +9,8 @@ npm：https://registry.npmjs.org/@browsermt/bergamot-translator/-/bergamot-trans
 
 ONNX Runtime Web 1.20.1、fzstd 0.1.1、js-md5 0.8.3：MIT
 对应许可位于 vendor 目录。没有修改这些包的推理或解压实现。
+ONNX Runtime 的上游第三方声明另见 vendor/onnxruntime-web-NOTICES，原文取自
+https://github.com/microsoft/onnxruntime/blob/v1.20.1/ThirdPartyNotices.txt 。
 
 MINIM：使用本机训练的 MLP 权重；仅对提取段落评分，不是完整 AX 树策略。
 上游代码：https://github.com/yyyyhx/MINIM/tree/456c60b6fd47941d1e5849db573dbbcb488e3ae7

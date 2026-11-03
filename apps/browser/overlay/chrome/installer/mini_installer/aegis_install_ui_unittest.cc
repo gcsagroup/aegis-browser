@@ -7,9 +7,20 @@
 #include <atomic>
 #include <string>
 
+#include "chrome/installer/util/util_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mini_installer {
+static_assert(installer::EXISTING_VERSION_LAUNCHED == 3);
+
+class AegisInstallUiTestPeer {
+ public:
+  static void SimulateWindowCreationFailure(AegisInstallUi& ui) {
+    // Constructed silently: no worker or window exists. Exercise the same
+    // interactive fallback reached when creating the production window fails.
+    ui.interactive_ = true;
+  }
+};
 namespace {
 HWND OwnWindow() {
   // 允许桌面存在其他安装预览；只读取当前测试进程的窗口，避免干扰用户。
@@ -112,6 +123,57 @@ TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
     EXPECT_EQ(100, ::SendMessage(progress, PBM_GETPOS, 0, 0));
   }
   EXPECT_EQ(nullptr, OwnWindow());
+}
+
+TEST(AegisInstallUiTest, ExistingVersionShowsInformationAndClosesAutomatically) {
+  {
+    AegisInstallUi ui(true);
+    HWND window = OwnWindow();
+    EXPECT_TRUE(window);
+    ui.Finish(3);
+    EXPECT_TRUE(WaitForText(window, L"已打开现有版本"));
+    EXPECT_TRUE(WaitForText(window, L"本次未执行安装"));
+    HWND progress = ::FindWindowEx(window, nullptr, PROGRESS_CLASS, nullptr);
+    EXPECT_FALSE(::IsWindowVisible(progress));
+    EXPECT_LT(::SendMessage(progress, PBM_GETPOS, 0, 0), 100);
+    ExpectReadableLayout(window);
+    ui.UpdateProgress({aegis_installer::Phase::kFinishing, 99});
+    ::SendMessage(window, WM_NULL, 0, 0);
+    EXPECT_TRUE(WaitForText(window, L"本次未执行安装"));
+    EXPECT_FALSE(::IsWindowVisible(progress));
+    EXPECT_FALSE(::IsWindowVisible(::GetDlgItem(window, IDOK)));
+    for (int attempt = 0; attempt < 120 && ::IsWindow(window); ++attempt)
+      ::Sleep(25);
+    EXPECT_FALSE(::IsWindow(window));
+    // 回归为错误页时也关闭窗口，避免析构等待阻塞整个测试进程。
+    if (::IsWindow(window))
+      ::SendMessage(window, WM_CLOSE, 0, 0);
+  }
+  EXPECT_EQ(nullptr, OwnWindow());
+}
+
+TEST(AegisInstallUiTest, ExistingVersionWithoutWindowDoesNotShowError) {
+  AegisInstallUi ui(false);
+  AegisInstallUiTestPeer::SimulateWindowCreationFailure(ui);
+  // A regressed MessageBox pumps this thread's timers. Dismiss it so the
+  // regression fails promptly instead of leaving the suite blocked on a dialog.
+  static bool dismissed_error = false;
+  dismissed_error = false;
+  const UINT_PTR timer = ::SetTimer(nullptr, 0, 100,
+      [](HWND, UINT, UINT_PTR, DWORD) {
+        HWND dialog = ::FindWindow(L"#32770", L"GCSA Aegis 安装程序");
+        DWORD pid = 0;
+        const DWORD thread = ::GetWindowThreadProcessId(dialog, &pid);
+        if (pid == ::GetCurrentProcessId() &&
+            thread == ::GetCurrentThreadId()) {
+          dismissed_error = true;
+          ::EndDialog(dialog, IDCANCEL);
+        }
+      });
+  ASSERT_NE(0u, timer);
+  ui.Finish(3);
+  ::KillTimer(nullptr, timer);
+  EXPECT_FALSE(dismissed_error);
 }
 
 TEST(AegisInstallUiTest, FailureRemainsUntilAcknowledged) {
