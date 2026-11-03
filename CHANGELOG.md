@@ -4,7 +4,13 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/).
 
-The workspace package remains `0.1.0`; the current iOS development candidate uses `7.0` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
+The workspace package, historical iOS development candidates and source previews use version numbers independent of the App Store version.
+
+## iOS / iPadOS 1.0.0 · App Store
+
+- Prepared the app and extension identities and the review materials. [App Store preparation](docs/releases/ios-app-store-preparation-2026-11-02.zh-CN.md)
+- Build 38 was the release candidate for version 1.0.0 and passed App Review. [Source tag](https://github.com/gcsagroup/aegis-browser/tree/candidate/ios/1.0.0-release.38)
+- Confirmed public App Store availability for iPhone and iPad and a separate external TestFlight invitation on 2026-11-03. [App Store](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx)
 
 ## 2026-10-13 · Desktop 4.0 and iOS 6.0 source integration
 
