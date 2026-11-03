@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Assistente Aegis di sola lettura"
+  },
+  "extensionDescription": {
+    "message": "Legge un riepilogo minimo della pagina autorizzata dall’utente senza modificarla."
+  },
+  "extensionAction": {
+    "message": "Controlla e apri in Aegis"
+  }
+}

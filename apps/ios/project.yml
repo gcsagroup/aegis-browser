@@ -54,6 +54,11 @@ targets:
       - path: Shared/SafariReadOnlyGate.swift
       - path: SharedWebExtension
         buildPhase: resources
+        excludes:
+          - _locales
+      - path: SharedWebExtension/_locales
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: Firebase
         products:
@@ -163,6 +168,11 @@ targets:
           - SafariWebExtension.entitlements
       - path: Shared/SafariReadOnlyGate.swift
       - path: SharedWebExtension
+        buildPhase: resources
+        excludes:
+          - _locales
+      - path: SharedWebExtension/_locales
+        type: folder
         buildPhase: resources
     settings:
       base:
