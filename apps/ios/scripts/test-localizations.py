@@ -5,6 +5,7 @@ This is a macOS host check, not an iOS Simulator/device acceptance result.
 All temporary files stay in the chosen --work-dir (default: a new /tmp directory).
 """
 import argparse
+import copy
 import hashlib
 import json
 import pathlib
@@ -16,6 +17,8 @@ import tempfile
 from collections import Counter
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+FIXTURES = ROOT / "Tests/Fixtures/Localization"
+FORMAT = re.compile(r"%(?:\d+\$)?[-+#0 ]*(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:hh|ll|[hljztL])?[@diuoxXfFeEgGaAcCsSpn%]")
 
 
 def run(*args):
@@ -31,38 +34,62 @@ def plist(path):
     return json.loads(run("plutil", "-convert", "json", "-o", "-", path))
 
 
-def validate_sources(contract, catalog):
+def numbers(value):
+    value = FORMAT.sub("", value)
+    # Normalize localized thousands separators without dropping decimal points.
+    value = re.sub(r"(?<=\d)[ .,\u00a0\u202f](?=\d{3}(?:\D|$))", "", value)
+    return Counter(re.findall(r"\d+(?:\.\d+)?", value))
+
+
+def validate_catalog(contract, catalog, probes):
     strings = catalog["strings"]
     locales = set(contract["resourceLocales"])
     assert catalog["sourceLanguage"] == "zh-Hans"
+    assert len(strings) == contract["catalogKeyCount"]
+    assert digest(sorted(strings)) == contract["catalogKeysSHA256"], "Catalog key inventory changed"
     assert set(contract["requestedLocales"]) == locales | set(contract["regionalFallbacks"])
     assert {locale for entry in strings.values() for locale in entry["localizations"]} == locales
     for locale, expected in contract["preservedLocalizationsSHA256"].items():
         original = {key: strings[key]["localizations"][locale] for key in contract["preservedKeys"]}
         assert digest(original) == expected, f"Existing {locale} translations changed"
+    for locale, expected in contract["preservedAddedLocalizationsSHA256"].items():
+        original = {key: strings[key]["localizations"][locale] for key in contract["preservedAddedLocaleKeys"]}
+        assert digest(original) == expected, f"Existing {locale} translations changed"
+    added = locales - {"en", "zh-Hans", "zh-Hant"}
+    seen_identical = {locale: set() for locale in added}
+    for key, entry in strings.items():
+        assert set(entry["localizations"]) == locales, key
+        english = strings[key]["localizations"]["en"]["stringUnit"]["value"]
+        expected_formats = FORMAT.findall(key)
+        for locale in locales:
+            unit = entry["localizations"][locale]["stringUnit"]
+            value = unit["value"]
+            assert unit["state"] == "translated" and value.strip(), (locale, key)
+            assert FORMAT.findall(value) == expected_formats, (locale, key, "Format type/order/position changed")
+            if locale in added:
+                extra = contract["numericAdditions"].get(locale, {}).get(key, {})
+                assert numbers(value) == numbers(key) + Counter(extra.get("tokens", [])), (locale, key, "Numeric constraint changed")
+                if value.strip() == english.strip():
+                    allowed = contract["identicalEnglishAllowlist"][locale].get(key, {})
+                    assert value == allowed.get("value") and allowed.get("reason"), (locale, key, "English placeholder")
+                    seen_identical[locale].add(key)
+                # Also reject a copied English sentence hidden behind a locale prefix.
+                if len(english.strip()) >= 24 and len(english.split()) >= 4:
+                    assert english.strip() not in value, (locale, key, "Copied English prose")
+    for locale in added:
+        assert seen_identical[locale] == set(contract["identicalEnglishAllowlist"][locale]), (locale, "Stale English exception")
+    for key, translations in probes.items():
+        assert set(translations) == locales, key
+        for locale, literal in translations.items():
+            assert strings[key]["localizations"][locale]["stringUnit"]["value"] == literal, (locale, key, "Literal regression")
+
+
+def validate_sources(contract, catalog, probes):
+    validate_catalog(contract, catalog, probes)
+    locales = set(contract["resourceLocales"])
     for locale, expected in contract["preservedInfoPlistPrefixes"].items():
         content = (ROOT / f"AegisApp/{locale}.lproj/InfoPlist.strings").read_bytes()
         assert hashlib.sha256(content[:expected["byteCount"]]).hexdigest() == expected["sha256"]
-    # Foundation does not fall through to en per missing key in a selected locale.
-    # Every entry outside the translated slice must be an explicit English fallback.
-    fallback_locales = locales - {"en", "zh-Hans", "zh-Hant"}
-    for key in strings.keys() - set(contract["sliceKeys"]):
-        english = strings[key]["localizations"]["en"]["stringUnit"]["value"]
-        for locale in fallback_locales:
-            unit = strings[key]["localizations"].get(locale, {}).get("stringUnit", {})
-            assert unit.get("state") == "needs_review", (locale, key, "Fallback must remain needs_review")
-            assert unit.get("value") == english, (locale, key, "Fallback must match en")
-    for key in contract["sliceKeys"]:
-        expected_formats = Counter(re.findall(r"%(?:\d+\$)?(?:lld|ld|@|d|f|s)", key))
-        for locale in locales:
-            unit = strings[key]["localizations"][locale]["stringUnit"]
-            value = unit["value"]
-            assert unit["state"] == "translated" and value.strip(), (locale, key)
-            assert Counter(re.findall(r"%(?:\d+\$)?(?:lld|ld|@|d|f|s)", value)) == expected_formats, (locale, key)
-            if locale not in {"en", "zh-Hans", "zh-Hant"}:
-                english = strings[key]["localizations"]["en"]["stringUnit"]["value"]
-                if value == english:
-                    assert key in contract["identicalEnglishAllowlist"].get(locale, []), (locale, key, "English placeholder")
     for target in ["AegisApp", "ShareExtension", "SafariWebExtension"]:
         assert {p.stem for p in (ROOT / target).glob("*.lproj")} == locales
         assert plist(ROOT / target / "Info.plist")["CFBundleDevelopmentRegion"] == "zh-Hans"
@@ -70,6 +97,31 @@ def validate_sources(contract, catalog):
             values = plist(ROOT / target / f"{locale}.lproj/InfoPlist.strings")
             expected = {"NSCameraUsageDescription", "NSMicrophoneUsageDescription", "Markdown 文档"} if target == "AegisApp" else {"CFBundleDisplayName"}
             assert set(values) == expected and all(values.values()), (target, locale)
+
+
+def verify_regression_detection(contract, catalog, probes):
+    """Prove the guards reject representative fallback and safety-copy regressions."""
+    consent = "将资料发送给模型？"
+    private = "你正在私密浏览。确认后，所选页面内容会离开本机，模型服务可能保留请求或回答。Aegis 不会自动保存此次任务记录。"
+    destination = "所选页面的标题和脱敏正文将发送到 %@，使用模型 %@。服务可能按用量收费。"
+    mutations = [
+        (consent, "state", "needs_review"),
+        (consent, "value", ""),
+        (consent, "value", catalog["strings"][consent]["localizations"]["en"]["stringUnit"]["value"]),
+        (private, "value", "[de] " + catalog["strings"][private]["localizations"]["en"]["stringUnit"]["value"]),
+        (private, "value", catalog["strings"][private]["localizations"]["de"]["stringUnit"]["value"].replace("nicht automatisch", "automatisch")),
+        (destination, "value", catalog["strings"][destination]["localizations"]["de"]["stringUnit"]["value"].replace("%@", "%lld", 1)),
+        ("1 GB", "value", "2 GB"),
+    ]
+    for key, field, value in mutations:
+        changed = copy.deepcopy(catalog)
+        changed["strings"][key]["localizations"]["de"]["stringUnit"][field] = value
+        try:
+            validate_catalog(contract, changed, probes)
+        except AssertionError:
+            continue
+        raise AssertionError(f"Guard accepted mutation: {key}/{field}")
+    print(f"PASS: {len(mutations)} negative catalog regressions rejected", flush=True)
 
 
 def validate_project(locales):
@@ -135,15 +187,17 @@ def exercise_bundles(work, contract, catalog):
         directory = hostile / f"{locale}.lproj"
         directory.mkdir()
         (directory / "Localizable.strings").write_bytes(plistlib.dumps({"安心浏览，清楚掌控。": '<script> & " \''}))
-    keys = work / "keys.json"
-    keys.write_text(json.dumps(contract["sliceKeys"], ensure_ascii=False))
+    expected = work / "expected.json"
+    expected.write_text(json.dumps({locale: {key: entry["localizations"][locale]["stringUnit"]["value"]
+                                            for key, entry in catalog["strings"].items()}
+                                    for locale in contract["resourceLocales"]}, ensure_ascii=False))
     executable = app / "Contents/MacOS/bundle-probe"
     executable.parent.mkdir()
     run("xcrun", "swiftc", "-swift-version", "6", "-module-cache-path", work / "module-cache",
         ROOT / "Tests/Localization/main.swift", ROOT / "BrowserKit/FixtureSchemeHandler.swift",
         ROOT / "Shared/ShareInbox.swift", "-o", executable)
     for locale in contract["requestedLocales"]:
-        print(run(executable, app, locale, keys, work, hostile, ROOT / "SharedWebExtension",
+        print(run(executable, app, locale, expected, work, hostile, ROOT / "SharedWebExtension", FIXTURES / "literal-probes.json",
                   "-AppleLanguages", f"({locale})").strip(), flush=True)
     # Resource availability is not translation completion: report the states separately.
     for locale in contract["resourceLocales"]:
@@ -164,9 +218,11 @@ def main():
     else:
         work = pathlib.Path(tempfile.mkdtemp(prefix="aegis-ios-localization-", dir="/tmp"))
     print(f"Artifacts: {work}", flush=True)
-    contract = json.loads((ROOT / "Tests/Localization/coverage.json").read_text())
+    contract = json.loads((FIXTURES / "coverage.json").read_text())
     catalog = json.loads((ROOT / "AegisApp/Localizable.xcstrings").read_text())
-    validate_sources(contract, catalog)
+    probes = json.loads((FIXTURES / "literal-probes.json").read_text())
+    validate_sources(contract, catalog, probes)
+    verify_regression_detection(contract, catalog, probes)
     validate_project(contract["resourceLocales"])
     validate_web_extension()
     exercise_bundles(work, contract, catalog)
