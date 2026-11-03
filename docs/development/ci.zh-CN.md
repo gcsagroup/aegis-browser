@@ -50,7 +50,7 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 个人 `main` 保留为后续发布 Action 入口。为了保持 SHA 镜像，未来 workflow 源码须先进入上游，再同步到个人 main；执行可通过仓库变量 `AEGIS_PROMOTION_FORK_REPOSITORY` 与 `github.repository` 的精确匹配限定个人仓库，签名与发布凭据仅配置在个人仓库受保护 environment。发布默认手动触发，校验 main 与 upstream/main、选定 SHA、适用测试及制品来源；镜像 push 本身不授权发布。当前流程变更不添加发布、打包、签名或上传动作。
 
-`quality.yml` 继续验证 develop/main PR 与 push，检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
+`quality.yml` 继续验证 develop/main 的 Ready PR 与 push；Draft PR 暂缓自动测试，转为 Ready 后触发。检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
 
 ## Dependabot 第一阶段
 
@@ -120,7 +120,11 @@ Codacy 正式分析范围为上游 `gcsagroup/aegis-browser` 的 main 及以 mai
 
 ## PR、develop/main 与证据身份
 
-`.github/workflows/quality.yml` 对所有目标为 `develop` 或 `main` 的 PR（含 Draft）和这两个分支的 push 运行 macOS 优先基础门；普通开发分支不重复执行 push 全量门。固定汇总检查名是 `quality-gate`。它仅在唯一必需执行 job `quality` 明确为 `success` 时成功，结果映射必须恰好包含 `quality`；failure、cancelled、skipped、timeout 或缺失均不得放行。
+开发 Fork 的 `develop` 与上游 `main` 共用 Draft/Ready 规则：`.github/workflows/quality.yml`、`cpp-unit-tests.yml` 和 `ios-release-validation.yml` 的自动 PR 测试 job 只在 `github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false'` 时运行。PR 必须显式带有布尔值 `draft: false`；Draft 或缺失该元数据时跳过测试，不分配测试 runner。三个 workflow 都监听 `opened`、`reopened`、`synchronize`、`ready_for_review`、`converted_to_draft`；转为 Ready 会触发测试，转回 Draft 则通过现有 PR concurrency 取消同一 PR 的旧运行。各 workflow 原有分支、路径过滤、push 和手动入口保持不变：quality 覆盖 develop/main，C++ 保留路径过滤，iOS release validation 的 PR 仍只面向 main。PR Title Policy 元数据处理和 Codacy 策略独立，分支保护与 required checks 不因 Draft 暂缓而放宽。
+
+quality 汇总 job 使用中性 ID `quality-summary`，条件为 `always() && (上述就绪条件)`，因此 Ready PR、push 和手动运行仍会在依赖失败时执行汇总。仅非 PR 或显式 Ready PR 使用 required check 显示名 `quality-gate`；Draft 或元数据缺失时配置备用名 `quality-deferred-draft-or-missing-metadata`。GitHub 可能直接显示跳过 job 的名称表达式；无论如何，跳过记录的检查名都不能等于 `quality-gate`，避免被计作必需检查通过。实际运行的 `quality-gate` 仅在唯一必需执行 job `quality` 明确为 `success` 时成功，结果映射必须恰好包含 `quality`；failure、cancelled、skipped、timeout 或缺失均不得放行。普通开发分支不重复执行 push 全量门。
+
+本地 workflow validator 与 mutation 回归校验事件集合、严格 Ready 条件、汇总名称和失败传播合同。GitHub 上仍需以同一 head 的 Draft → Ready 实际运行验证触发与 check 身份；本地检查不能替代该托管证据。
 
 常规 macOS 测试支持仓库级 opt-in：将 `AEGIS_SELF_HOSTED_TEST_REPOSITORY` 设置为当前个人仓库的精确 `owner/repo` 后，`quality`、`quality-gate` 与 C++ 单元测试使用 `[self-hosted, macOS, ARM64, aegis-test]`。变量为空、身份不匹配或 PR 来自外部 fork 时继续使用 `macos-15`。个人仓库部署两个独立测试 runner，预安装并核验固定 Node/Python；托管 runner 继续通过固定 setup actions 安装工具，本地 runner 验证预安装的 Python `3.11.9`，避免 setup-python 在 macOS 上强制使用托管账号路径。在本机 job-start hook 拒绝仓库身份不匹配、外部 fork PR 及非 `main`/`develop` 的 push/手动事件；拒绝时必须在返回前终止经本机路径与用户校验的所属 `Runner.Worker`，阻断包括 `always()` 在内的后续步骤；只返回非零不足以构成安全边界。无法确认所属 Worker 时阻塞作业并等待服务检查，不能继续执行。workflow 条件不能替代这个主机端边界。禁用变量即可让后续测试恢复托管路由，既有运行仍保留原 runner 与证据身份。iOS、Android、Linux、Windows、Chromium 构建和晋升控制器保持原路线；测试 runner 不使用 `aegis-upstream` 构建标签。
 
@@ -165,6 +169,8 @@ mise exec -- node scripts/ci/run-quality.mjs \
 公开差异校验同时检查最终差异和每个新提交，拒绝 `AGENTS.md`、`agent.md` 及大小写变体的变动；不能先提交后删除或依赖 ignore 掩盖。
 
 上游合并后记录真实 S 和 push CI。个人 main 快进镜像到上游已有提交，不制造同步 commit。之后从 S 创建 `codex/backflow-<S完整SHA>` 分支，PR 到 develop；允许为冲突追加修复，所有产品修复、测试和共享规则必须回流。回流使用 merge commit，再验证实际 develop push CI；下一批必须包含上游祖先且该 develop 来源验证通过。提前 backport 的重要修复保留映射，不能用局部 cherry-pick 代替最终祖先对齐。
+
+上游晋升 PR 确认为 `MERGED` 且合并提交 S 已进入 `upstream/main` 后，由协调者清理该 PR 在来源 Fork 上的临时远端分支。按 PR 记录核对来源仓库、分支名和最终 HEAD SHA，确认没有其他开放 PR 使用该分支，再以该 SHA 为条件删除，并回读确认远端引用已消失。分支已不存在时记为已清理；若分支已前移、仍被其他 PR 使用，或 PR 关闭但未合并，则保留。清理范围仅限临时源分支，`main`、`develop`、受保护分支和本地工作树须保留。
 
 ### 串行控制器
 

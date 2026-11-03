@@ -4,7 +4,13 @@
 
 本文件记录项目的重要变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，项目计划采用[语义化版本](https://semver.org/lang/zh-CN/)。
 
-软件包版本仍为 `0.1.0`；iOS 当前开发候选为 `7.0`，已发布源码预览仍为 `2.2`。以下新增 iOS 源码预发布记录，未完成签名和商店发行验收。
+软件包、历史 iOS 开发候选和源码预览各自使用独立于 App Store 的版本号。
+
+## iOS / iPadOS 1.0.0 · App Store 上架
+
+- 准备应用及扩展的标识和提审资料。[商店审核准备](docs/releases/ios-app-store-preparation-2026-11-02.zh-CN.md)
+- 构建 38 作为 1.0.0 正式版候选通过 Apple 审核。[候选源码标签](https://github.com/gcsagroup/aegis-browser/tree/candidate/ios/1.0.0-release.38)
+- 2026-11-03 确认 iPhone 和 iPad 版已在 App Store 上架，并核实独立的 TestFlight 外部测试邀请。[App Store](https://apps.apple.com/cn/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx)
 
 ## 2026-10-13 · 桌面 4.0 与 iOS 6.0 源码整合
 
