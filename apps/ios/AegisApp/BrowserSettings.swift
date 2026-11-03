@@ -57,13 +57,13 @@ struct BrowserSettingsView: View {
                         Text("浅色").tag("light")
                         Text("深色").tag("dark")
                     }
-                    Text("界面语言跟随系统的 App 语言设置。支持简体中文、繁體中文和 English。")
+                    Text("界面语言跟随系统的 App 语言设置。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("关于") {
                     LabeledContent("应用", value: "GCSA Aegis")
                     LabeledContent("版本", value: version)
-                    LabeledContent("网页引擎", value: "系统 WebKit")
+                    LabeledContent("网页引擎") { Text("系统 WebKit") }
                     if let website = URL(string: "https://browser.erjinyi.com/") {
                         Link("官方网站", destination: website)
                             .accessibilityIdentifier("aegis-website-link")

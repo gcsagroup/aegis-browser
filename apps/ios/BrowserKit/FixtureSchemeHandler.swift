@@ -22,12 +22,17 @@ final class FixtureSchemeHandler: NSObject, WKURLSchemeHandler {
 
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 
-    private static func html(for url: URL) -> String {
+    static func html(for url: URL, bundle: Bundle = .main) -> String {
         let page = url.host ?? "start"
         let content: String
+        var language = bundle.preferredLocalizations.first ?? bundle.developmentLocalization ?? "zh-Hans"
+        func text(_ key: String.LocalizationValue) -> String {
+            escapeHTML(String(localized: key, bundle: bundle))
+        }
         switch page {
         #if DEBUG
         case "research":
+            language = "zh-Hans"
             content = """
             <p class="eyebrow">RESEARCH FIXTURE</p>
             <h1>可信研究，从边界开始</h1>
@@ -35,6 +40,7 @@ final class FixtureSchemeHandler: NSObject, WKURLSchemeHandler {
             <div class="card"><strong>10 个受控来源</strong><span>注入指令不会扩大工具权限</span></div>
             """
         case "shop":
+            language = "zh-Hans"
             content = """
             <p class="eyebrow">SHOPPING FIXTURE</p>
             <h1>Aegis Key</h1>
@@ -42,6 +48,7 @@ final class FixtureSchemeHandler: NSObject, WKURLSchemeHandler {
             <div class="card"><strong>结算边界</strong><span>Agent 会在最终提交前停止并交还给你</span></div>
             """
         case "injection":
+            language = "zh-Hans"
             content = """
             <p class="eyebrow danger">UNTRUSTED PAGE</p>
             <h1>页面提示注入已隔离</h1>
@@ -52,17 +59,17 @@ final class FixtureSchemeHandler: NSObject, WKURLSchemeHandler {
         default:
             content = """
             <p class="eyebrow">GCSA AEGIS</p>
-            <h1>\(String(localized: "安心浏览，清楚掌控。"))</h1>
-            <p>\(String(localized: "在地址栏搜索或输入网址。需要整理信息时，从更多菜单打开 AI 助手。"))</p>
+            <h1>\(text("安心浏览，清楚掌控。"))</h1>
+            <p>\(text("在地址栏搜索或输入网址。需要整理信息时，从更多菜单打开 AI 助手。"))</p>
             <div class="grid">
-              <div class="card"><strong>\(String(localized: "网页摘要与研究"))</strong><span>\(String(localized: "选择页面，确认范围，再查看分析和原文引用。"))</span></div>
-              <div class="card"><strong>\(String(localized: "收藏与工作区"))</strong><span>\(String(localized: "把相关页面保存到一起，下次继续。"))</span></div>
-              <div class="card"><strong>\(String(localized: "由你决定"))</strong><span>\(String(localized: "发送资料、修改收藏和下载文件前，操作范围都会清楚呈现。"))</span></div>
+              <div class="card"><strong>\(text("网页摘要与研究"))</strong><span>\(text("选择页面，确认范围，再查看分析和原文引用。"))</span></div>
+              <div class="card"><strong>\(text("收藏与工作区"))</strong><span>\(text("把相关页面保存到一起，下次继续。"))</span></div>
+              <div class="card"><strong>\(text("由你决定"))</strong><span>\(text("发送资料、修改收藏和下载文件前，操作范围都会清楚呈现。"))</span></div>
             </div>
             """
         }
         return """
-        <!doctype html><html lang="zh-CN"><head><meta name="viewport" content="width=device-width,initial-scale=1">
+        <!doctype html><html lang="\(escapeHTML(language))"><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8">
         <style>
         :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
         body{margin:0;padding:34px 22px 48px;background:linear-gradient(145deg,#f5f8ff,#eef9f5);color:#142038}
@@ -74,5 +81,13 @@ final class FixtureSchemeHandler: NSObject, WKURLSchemeHandler {
         @media(prefers-color-scheme:dark){body{background:linear-gradient(145deg,#101722,#12251f);color:#edf3ff}p,.card span{color:#aeb9c8}.card{background:rgba(31,42,55,.75);border-color:#34465c}}
         </style><title>Aegis</title></head><body>\(content)</body></html>
         """
+    }
+
+    private static func escapeHTML(_ value: String) -> String {
+        value.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 }

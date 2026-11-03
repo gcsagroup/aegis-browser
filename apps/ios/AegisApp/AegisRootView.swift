@@ -61,7 +61,9 @@ struct AegisRootView: View {
                         Task { @MainActor in
                             do {
                                 let result = try await browser.activeTab?.webView.find(findText, configuration: .init())
-                                findMessage = result?.matchFound == true ? "已找到匹配内容。" : "未找到匹配内容。"
+                                findMessage = result?.matchFound == true
+                                    ? String(localized: "已找到匹配内容。")
+                                    : String(localized: "未找到匹配内容。")
                             } catch { findMessage = error.localizedDescription }
                         }
                     }.disabled(findText.isEmpty)
@@ -431,7 +433,7 @@ private struct NavigationPolicyBanner: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: decision.kind == .blocked ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
             VStack(alignment: .leading, spacing: 3) {
-                Text(decision.kind == .blocked ? blockedTitle : "已清理追踪参数")
+                Text(decision.kind == .blocked ? blockedTitle : String(localized: "已清理追踪参数"))
                     .font(.callout.weight(.semibold))
                     .accessibilityIdentifier(
                         decision.kind == .blocked
@@ -499,7 +501,7 @@ struct TabRow: View {
                 Image(systemName: tab.profile.isPrivate ? "eye.slash" : "globe")
                 VStack(alignment: .leading) {
                     Text(tab.title).lineLimit(2)
-                    Text(tab.url?.host ?? "起始页").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(tab.url?.host ?? String(localized: "起始页")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     if tab.isSuspended { Text("已休眠，切换时加载").font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()
