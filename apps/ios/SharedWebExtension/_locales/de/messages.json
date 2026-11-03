@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Aegis-Begleiter mit Lesezugriff"
+  },
+  "extensionDescription": {
+    "message": "Liest eine minimale Zusammenfassung der aktuell freigegebenen Seite, ohne die Seite zu verändern."
+  },
+  "extensionAction": {
+    "message": "Prüfen und in Aegis öffnen"
+  }
+}
