@@ -12,6 +12,18 @@ ROOT = Path(__file__).resolve().parents[2]
 SCANNER = ROOT / "scripts/ci/scan-secrets.sh"
 
 
+def executable(name):
+    found = shutil.which(name)
+    if found is None:
+        raise RuntimeError(f"Required test executable is missing: {name}")
+    return str(Path(found).resolve(strict=True))
+
+
+GIT = executable("git")
+OPENSSL = executable("openssl")
+BASH = executable("bash")
+
+
 class SecretScanningTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="aegis-secret-test-")
@@ -25,8 +37,9 @@ class SecretScanningTests(unittest.TestCase):
         self.commit()
 
     def git(self, *arguments):
-        return subprocess.run(
-            ["git", "-C", str(self.repository), *arguments],
+        # Arguments are constructed only by this synthetic fixture; no shell.
+        return subprocess.run(  # nosec B603
+            [GIT, "-C", str(self.repository), *arguments],
             check=True, capture_output=True, text=True,
         )
 
@@ -36,7 +49,7 @@ class SecretScanningTests(unittest.TestCase):
 
     def scan(self, repository=None):
         return subprocess.run(
-            ["bash", str(SCANNER), str(repository or self.repository)],
+            [BASH, str(SCANNER), str(repository or self.repository)],
             capture_output=True, text=True, timeout=60,
         )
 
@@ -53,8 +66,9 @@ class SecretScanningTests(unittest.TestCase):
             "agent_observation_unittest.cc"
         )
         target.parent.mkdir(parents=True)
-        subprocess.run(
-            ["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt",
+        # Fixed operation and locally generated temporary path; no external input.
+        subprocess.run(  # nosec B603
+            [OPENSSL, "genpkey", "-algorithm", "RSA", "-pkeyopt",
              "rsa_keygen_bits:2048", "-out", str(target)],
             check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
@@ -81,7 +95,7 @@ class SecretScanningTests(unittest.TestCase):
     def test_shallow_history_fails_closed(self):
         clone = Path(self.temporary.name) / "shallow"
         subprocess.run(
-            ["git", "clone", "--quiet", "--depth", "1",
+            [GIT, "clone", "--quiet", "--depth", "1",
              self.repository.as_uri(), str(clone)],
             check=True, capture_output=True, text=True,
         )
