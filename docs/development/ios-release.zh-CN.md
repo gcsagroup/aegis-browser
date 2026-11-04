@@ -4,10 +4,18 @@
 
 Alpha 固定仅内测，原生导出开启 `testFlightInternalTestingOnly`，上传后必须读回 `INTERNAL_ONLY`。Beta 可内外测，禁止生产目的地和正式送审。Release 可用于各目的地，每个阶段显式执行。上传不会自动分发、送审或公开发布。
 
+## cloud 默认与显式 manual 回退
+
+CLI、Fastlane、Simple/Full Actions 和 candidate tag 创建的新 iOS 包默认使用 `cloud`。云签名在获准的 GitHub-hosted macOS runner 上使用 Xcode 26.6 和有 cloud-managed Distribution 权限的 ASC key，执行新的 archive→export，不导入分发 P12。
+
+需要回退时显式选择：CLI 使用 `--signing-mode manual`，Fastlane 使用 `signing_mode:manual`，Actions 将 **Signing mode** 选为 **manual**。本机打包使用此显式回退。cloud 失败会停止当前尝试；核对回执和远端状态后，使用未占用 build 与新 run ID 发起 manual 打包，不自动重试上传。
+
+签名选择仅用于新包。Status/Wait 及已有包的后续阶段按原有身份和签名收据工作；旧 manual 收据继续校验证书指纹与 profile。manual tag 使用[云签名指南](ios-cloud-signing-poc.md#current-signing-default-and-manual-fallback)中的来源绑定注释。
+
 使用干净的已提交源码、Ruby 3.3.6、锁定的 Bundler/Fastlane、Node 22.23.1、Python 3.11+ 和 Xcode。先运行 `bundle install`，再用 `./release ios plan` 读取来源 SHA/tree、原生输入摘要及可用阶段。每次变更必须显式指定 `--profile`。
 
 ```sh
-./release ios package --profile alpha --version 1.0.0 --build 6 --run-id ios-alpha-6
+./release ios package --profile alpha --signing-mode manual --version 1.0.0 --build 6 --run-id ios-alpha-6
 ./release ios upload --profile alpha --version 1.0.0 --build 6 --run-id ios-alpha-6 --destination testflight --manifest-sha256 MANIFEST_SHA256
 ./release ios wait --profile alpha --version 1.0.0 --build 6 --destination testflight
 ./release ios status --profile alpha --version 1.0.0 --build 6 --destination testflight
@@ -34,13 +42,15 @@ python3 scripts/release/local-ios-signing.py --team "$AEGIS_APPLE_TEAM_ID" --cer
 
 表单英文选项与中英文操作步骤见 [Actions 操作指南](ios-delivery-actions.md)。
 
-打包作业使用 GitHub 托管的临时 macOS，在 `aegis-ios-signing` 环境中保留 team、证书指纹和三份 profile 名称变量，并配置五个加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二进制材料使用单行 Base64。导入前校验 profile 与现有 team、目标和证书一致；打包后清理临时钥匙串与 profiles。签名材料不得输出到日志、提交或放入上传凭据环境。
+默认 cloud 使用 `AEGIS_APPLE_TEAM_ID` 和受保护的 ASC key：`AEGIS_ASC_KEY_ID`、`AEGIS_ASC_ISSUER_ID`、`AEGIS_ASC_KEY_BASE64`。仅显式选择 manual 时导入分发 P12 和 profiles。
+
+显式选择 `manual` 时，打包作业使用 GitHub 托管的临时 macOS，在 `aegis-ios-signing` 环境中保留 team、证书指纹和三份 profile 名称变量，并配置五个加密 secrets：`AEGIS_IOS_DISTRIBUTION_P12_BASE64`、`AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`、`AEGIS_IOS_APP_PROFILE_BASE64`、`AEGIS_IOS_SAFARI_PROFILE_BASE64`、`AEGIS_IOS_SHARE_PROFILE_BASE64`。二进制材料使用单行 Base64。导入前校验 profile 与现有 team、目标和证书一致；打包后清理临时钥匙串与 profiles。签名材料不得输出到日志、提交或放入上传凭据环境。
 
 完整版显式传递 ASC 和签名凭据名称，被调用任务的 `aegis-ios-store` 和 `aegis-ios-signing` 环境值优先生效；不使用 `secrets: inherit`。两个手动入口共用一套后端，表单字段与操作使用英文，本地 CLI 保持原接口。所有手动操作（包括查询）仅限当前仓库 Admin；原操作人和重跑人均需校验。签名、Apple、私有 Draft 各自使用原有受保护环境。
 
 ### 精简版 / Simple
 
-选择 `iOS Delivery · Simple`，填写版本（例如 `1.0.0`）与 build（例如 `35`）。表单仅四项：操作、版本、build、目标产物；查询和等待时忽略目标产物。
+选择 `iOS Delivery · Simple`，填写版本（例如 `1.0.0`）与 build（例如 `35`）。表单包含操作、版本、build、目标产物和签名模式；新包默认 cloud，查询和等待时忽略目标产物与签名模式。
 
 | 操作 | 结果 |
 |---|---|
@@ -65,7 +75,7 @@ Actions 保留无凭据验证、受保护签名、私有 Draft、TF 四类作业
 
 任何变更先写不可变 intent。网络失联后结果未知，必须先读回对账，不盲目重试或换 run 丢弃历史。`status` 会显示 buildUploads、处理状态、原生 audience、合规、分组和原始测试员状态；`INSTALLED` 不证明当前 build 已在真机运行。保留失败作业的产物与日志。内置盘至少保留 8 GiB、外置盘至少保留 15 GiB 真正可用空间。
 
-上游合并前必须通过必需 CI 和 iOS 验证；合并后跟进新 main CI，在新来源上复测本地 Fastlane、Actions、Tag→私有 Draft × Alpha/Beta/Release，并逐个上传同一实包、读回 TF 状态。上游验收后仅停用 fork 的 iOS 开关和 iOS 环境入口，保留历史证据与回滚快照，不影响 Android/macOS。完整配置变量、输入 JSON、保护规则、恢复及回滚步骤见 [iOS operations](ios-release.md)。
+上游合并前必须通过必需 CI 和 iOS 验证；合并后跟进新 main CI，在新来源上复测托管 Fastlane、Actions、Tag→私有 Draft × Alpha/Beta/Release，并逐个上传同一实包、读回 TF 状态。上游验收后仅停用 fork 的 iOS 开关和 iOS 环境入口，保留历史证据与回滚快照，不影响 Android/macOS。完整配置变量、输入 JSON、保护规则、恢复及回滚步骤见 [iOS operations](ios-release.md)。
 
 当前已核验的 Apple 系统加密实现，在实际 Info.plist 中声明布尔型 `ITSAppUsesNonExemptEncryption=false`；导出验证会核对签名 App 的同一声明。加密实现或依赖改变后必须重新评估，历史 IPA 保持原样。验收先读回 TF 自动识别的 `usesNonExemptEncryption=false`，再考虑显式合规更新。
 

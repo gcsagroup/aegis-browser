@@ -29,10 +29,10 @@ on:
           - Release
         default: Alpha
       signing_mode:
-        description: "Signing mode for new packages (manual remains default)"
+        description: "Signing mode for new packages (cloud default; manual fallback)"
         type: choice
-        options: [manual, cloud]
-        default: manual
+        options: [cloud, manual]
+        default: cloud
   workflow_call:
     secrets:
       AEGIS_ASC_KEY_ID:
