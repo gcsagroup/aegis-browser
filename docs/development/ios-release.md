@@ -2,12 +2,32 @@
 
 One package has one immutable profile. Alpha is exported with native TestFlight internal testing only and must read back as `INTERNAL_ONLY`. Beta can use internal or external testing, but cannot enter production destinations or formal review. Release supports all destinations through explicit stages. Package, upload, processing, compliance, metadata, distribution and review are separate operations. No upload automatically requests review or releases publicly.
 
+## Cloud default and explicit manual fallback
+
+New iOS packages default to `cloud` in the CLI, Fastlane, Simple/Full Actions
+and candidate-tag deliveries. Cloud packaging uses an admitted GitHub-hosted
+macOS runner with Xcode 26.6 and an ASC key allowed to use cloud-managed
+Distribution certificates. Each run creates a fresh archive and exports without
+importing a Distribution P12.
+
+Select `manual` explicitly for the existing Distribution key/profile flow:
+`--signing-mode manual` in the CLI, `signing_mode:manual` in Fastlane, or
+**Signing mode → manual** in Actions. Local packaging uses this explicit
+fallback. A cloud failure stops that attempt; selecting manual is a separate
+operator action with an unused build and a new run ID. Read prior receipts and
+store state before an upload retry.
+
+Status/Wait and existing-package stages use retained package identity and
+signing evidence. Legacy manual receipts retain their certificate/profile
+checks. For a manual candidate tag, use the source-bound annotation in the
+[cloud signing guide](ios-cloud-signing-poc.md#current-signing-default-and-manual-fallback).
+
 ## Local stages
 
 Use Ruby 3.3.6, the locked Bundler/Fastlane dependencies, Node 22.23.1, Python 3.11+ and Xcode on macOS. Start from a clean committed source. `bundle install` installs the pinned dependencies; `./release ios plan` prints source SHA/tree, native input digest and available stages without credentials. Every mutation requires an explicit profile.
 
 ```sh
-./release ios package --profile alpha --version 1.0.0 --build 6 --run-id ios-alpha-6
+./release ios package --profile alpha --signing-mode manual --version 1.0.0 --build 6 --run-id ios-alpha-6
 ./release ios upload --profile alpha --version 1.0.0 --build 6 --run-id ios-alpha-6 --destination testflight --manifest-sha256 MANIFEST_SHA256
 ./release ios wait --profile alpha --version 1.0.0 --build 6 --destination testflight
 ./release ios status --profile alpha --version 1.0.0 --build 6 --destination testflight
@@ -18,7 +38,7 @@ Use Ruby 3.3.6, the locked Bundler/Fastlane dependencies, Node 22.23.1, Python 3
 
 Examples use an illustrative build number: query ASC first and choose an unused identity. Keep the digest independently from the package directory. The IPA, dSYM, manifest/checksum and completed upload journal must survive later stages. Moving to another source SHA/tree requires a new package. Package output is `.artifacts/release/ios/RUN_ID`; work/archive/DerivedData in that directory are rebuildable, delivery files and receipts are evidence. Do not remove an active directory. Verify the actual signed IPA, embedded profiles, certificate fingerprint, audience flag and committed shared resources; an unsigned archive does not qualify an IPA.
 
-Set `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` (JSON mapping all three bundle IDs to existing App Store profile names) for packaging. The installed Apple Distribution key remains in its existing local keychain. Export no private signing key and change no shared keychain ACL/search list. Material names should describe their type, such as `Distribution.cer` or `AppStore.mobileprovision`.
+For manual packaging, set `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` (JSON mapping all three bundle IDs to existing App Store profile names) for packaging. The installed Apple Distribution key remains in its existing local keychain. Export no private signing key and change no shared keychain ACL/search list. Material names should describe their type, such as `Distribution.cer` or `AppStore.mobileprovision`.
 
 ASC stages use `AEGIS_ASC_KEY_ID`, `AEGIS_ASC_ISSUER_ID` and either a private mode-600 `AEGIS_ASC_KEY_PATH` or `AEGIS_ASC_KEY_BASE64`. Supply credentials through a private environment/secret provider; never through command arguments, Git or public evidence. GitHub admission uses `GH_TOKEN` with read access, or a stage-specific token for Draft writes. Set `AEGIS_IOS_RELEASE_ENABLED=true`; upstream delivery requires the exact current main SHA and latest terminal successful `quality` and `quality-gate` jobs. Main/tag are read again immediately before mutation.
 
@@ -56,7 +76,7 @@ The manual entrypoints **iOS Delivery · Simple** and **iOS Delivery · Full** s
 
 See the [bilingual Actions operator guide](ios-delivery-actions.md) for the English form labels and required inputs.
 
-Simple has four fields for operation, version, build and product. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product is ignored for Status/Wait.
+Simple has operation, version, build, product and signing mode. Cloud is the signing default for new packages. Select **Package**, **Package and upload**, **Status**, or **Wait**. Enter a version such as `1.0.0` and build such as `35`; product and signing mode are ignored for Status/Wait.
 
 - Package creates a new IPA/dSYM/manifest without uploading.
 - Package and upload first checks that Apple has no matching build or upload, then uploads the same newly signed package. It never distributes, submits for review, or publicly releases. Producer digest and exact run/attempt are passed directly between protected jobs; original package and uploaded-state artifacts are retained separately. Rerunning this combined operation is rejected; reconcile unknown outcomes before choosing a new build.
@@ -71,7 +91,11 @@ Alpha is internal-only; Beta allows internal/external testing and blocks formal 
 
 The uncredentialed import job checks repository, admitted workflow, latest attempt, successful producer, original package origin, SHA/tree, manifest/assets and completed upload receipt. Protected jobs independently recheck identity and authorization before loading ASC credentials. External TF distribution requests Beta App Review and needs separate authorization. Formal App Store review remains a separate explicit Release-only local stage; neither review is an automatic acceptance test.
 
-Configure repository variable `AEGIS_IOS_RELEASE_ENABLED=false` first. Configure protected environments with custom deployment branch/tag policies, exact approved branch/main and `candidate/ios/*` tags as appropriate; no PR deployment refs. In `aegis-ios-signing`, retain `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` as variables. Add encrypted environment secrets `AEGIS_IOS_DISTRIBUTION_P12_BASE64` (single-line base64 of the existing Apple Distribution certificate and private key), `AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`, and `AEGIS_IOS_APP_PROFILE_BASE64`, `AEGIS_IOS_SAFARI_PROFILE_BASE64`, `AEGIS_IOS_SHARE_PROFILE_BASE64` (single-line base64 of the respective existing App Store provisioning profiles). The package job uses an ephemeral GitHub-hosted Mac, validates each profile against the configured team, name, target and certificate, and removes its temporary keychain and profiles after packaging. Do not print, commit, or put these secrets in artifacts or the store environment. Add only ASC key ID/issuer/base64 key as encrypted secrets in `aegis-ios-store`. Enable iOS only after passed main CI and configuration readback.
+Cloud packaging requires `AEGIS_APPLE_TEAM_ID` and the protected ASC key inputs `AEGIS_ASC_KEY_ID`, `AEGIS_ASC_ISSUER_ID`, `AEGIS_ASC_KEY_BASE64`. Distribution P12/profile imports run only when manual is explicitly selected.
+
+Configure repository variable `AEGIS_IOS_RELEASE_ENABLED=false` first. Configure protected environments with custom deployment branch/tag policies, exact approved branch/main and `candidate/ios/*` tags as appropriate; no PR deployment refs.
+
+For explicit `manual` signing, in `aegis-ios-signing` retain `AEGIS_APPLE_TEAM_ID`, `AEGIS_IOS_CERT_SHA1` and `AEGIS_IOS_PROFILES` as variables. Add encrypted environment secrets `AEGIS_IOS_DISTRIBUTION_P12_BASE64` (single-line base64 of the existing Apple Distribution certificate and private key), `AEGIS_IOS_DISTRIBUTION_P12_PASSWORD`, and `AEGIS_IOS_APP_PROFILE_BASE64`, `AEGIS_IOS_SAFARI_PROFILE_BASE64`, `AEGIS_IOS_SHARE_PROFILE_BASE64` (single-line base64 of the respective existing App Store provisioning profiles). The package job uses an ephemeral GitHub-hosted Mac, validates each profile against the configured team, name, target and certificate, and removes its temporary keychain and profiles after packaging. Do not print, commit, or put these secrets in artifacts or the store environment. Add only ASC key ID/issuer/base64 key as encrypted secrets in `aegis-ios-store`. Enable iOS only after passed main CI and configuration readback.
 
 Privileged fork delivery is retired. The delivery gate, local admission and owned signing-runner launcher accept only canonical `gcsagroup/aegis-browser` repository ID1348409663; old rehearsal flags cannot reopen it. Fork PR/quality checks remain uncredentialed. Historical workflows, runs, tags and artifacts remain evidence, rather than active duplicate delivery entrypoints.
 
@@ -81,7 +105,7 @@ The repository-provided `scripts/release/ios-runner.py` launcher is **disabled**
 
 A mutation writes an immutable started record before the call and a result after verified completion. A lost response leaves an unknown intent. Mutation reruns are rejected at both import and protected restore unless the completed identical journal has been recovered and independently verified; failed attempts require explicit readback reconciliation. Reusing a completed identical stage is idempotent; changed parameters or an unresolved intent are rejected. Actions also checks earlier runs of the identical stage/manifest to prevent a new job silently discarding an unknown journal. An earlier denied dispatch or skipped store job does not block a later Admin only when every attempt conclusively contains no executed store job. Any possibly started mutation or incomplete inventory remains blocked. Do not rerun a failed upload blindly: read exact buildUploads/build/group/metadata state and inspect the failed run's preserved artifact. Reconcile known remote results with independently retained evidence before restoring a receipt; otherwise stop and use a new explicitly chosen build. No command fabricates a completion receipt automatically.
 
-Merge only after required upstream checks and iOS validation pass, follow fresh merged-main CI, then repeat all methods on the new merged source: manual Fastlane, Actions package and Tag/private Draft, each with Alpha/Beta/Release and unique unused builds. Download and verify each artifact; upload that same IPA to TF and read back VALID plus its audience. Reuse completed uploads for representative compliance, metadata and internal distribution checks. Report package, Actions, Draft, upload, processing, group availability, device proof and review states independently. Contract coverage of review routes is not a real review submission.
+Merge only after required upstream checks and iOS validation pass, follow fresh merged-main CI, then repeat all methods on the new merged source: Fastlane, Actions package and Tag/private Draft with signing mode omitted, each with Alpha/Beta/Release and unique unused builds. Also verify an explicitly selected manual fallback package. Download and verify each artifact; upload that same IPA to TF and read back VALID plus its audience. Reuse completed uploads for representative compliance, metadata and internal distribution checks. Report package, Actions, Draft, upload, processing, group availability, device proof and review states independently. Contract coverage of review routes is not a real review submission.
 
 After upstream delivery passes, read and snapshot fork iOS settings, disable only `AEGIS_IOS_RELEASE_ENABLED` on the fork and retire its iOS-specific environment admission. Retain source, tags, Drafts, TF builds and evidence. Rollback consists of restoring the reviewed iOS environment policies and iOS activation variables against a newly verified source; repeat admission and delivery checks. Do not change shared all-platform release flags or another platform's state/services.
 
