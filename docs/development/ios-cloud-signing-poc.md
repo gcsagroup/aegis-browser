@@ -1,0 +1,291 @@
+# iOS cloud signing PoC
+
+## Hosted primary, local fallback, and 0.8.0 acceptance matrix
+
+The next acceptance target is version **0.8.0** across Alpha/Beta/Release and
+Fastlane/Actions/Tag-to-Draft (nine combinations). The user authorized uploading
+the resulting test builds and waiting for ASC processing, without App Review
+submission. Native-device acceptance remains a separate gate.
+
+Production package inputs now expose `signing_mode: manual|cloud`, with **manual
+still the default**. The CLI accepts `--signing-mode`, and Fastlane accepts
+`signing_mode:cloud`. Cloud production packaging runs only on GitHub-hosted
+macOS; the isolated-keychain local command is an explicit fallback, never an
+automatic retry after a cloud failure.
+
+The hosted proof must use Xcode 26.6, a clean runner without installed profiles or
+Distribution identities, and a newly created archive. Hosted archive signing is
+ad-hoc, then export performs Apple cloud distribution signing. This avoids
+creating disposable development certificates for every matrix build. Ad-hoc
+archives themselves are not accepted as distributable packages; the exported
+IPA must pass the full Apple-trusted distribution signature/profile/entitlement
+checks. Local fallback retains development-signed archiving by default.
+
+Each package contains a source-bound receipt, IPA, dSYM ZIP and independent
+signature/dSYM checks. Every target's dSYM UUID must match its archived binary.
+Cloud upload re-verifies artifact hashes and actual signing identities against
+the retained receipt, refuses upload replay, and keeps upload and processing
+receipts separate.
+
+Xcode cloud export can create an empty ASC `AWAITING_UPLOAD` reservation even
+with `destination=export`. Cloud packages retain the exact reservation ID after
+an unused-build preflight, and upload checks it again before invoking transport.
+Only that recorded reservation, with no upload files or uploaded date, may pass.
+Other IDs, any file activity, a processed build, or a changed state stop upload.
+Manual uploads keep rejecting every existing upload record.
+
+Cloud verification applies a per-target Apple anchor, exact certificate Team OU
+and iOS Distribution marker requirement, while allowing certificate rotation.
+Profiles are decoded only after native CMS verification under Apple's iPhone
+Provisioning Profile Signing trust policy. A successful `security cms -D` exit
+alone is insufficient: it can decode altered signed content. The macOS native
+validation job includes real self-signed CMS and ad-hoc signature rejection
+regressions without importing any signing identity.
+
+The existing iOS Release Validation workflow has an explicit `cloud-poc` manual
+exercise on `macos-26`. It uses a dedicated environment restricted to the exact
+candidate branch, with the candidate SHA frozen in an environment variable and
+repeatedly checked against the dispatch, checkout and remote branch. Both the
+original operator and rerunner must be repository Admins. Credentialed work is
+never triggered by a fork PR. Production current-main admission is unchanged.
+The first probe is a 0.8.0 Beta build; evidence is not transferable from this
+candidate to a later merged source SHA.
+
+The three delivery paths are exercised as follows after integration:
+
+| Entry | Explicit selection | Profiles |
+| --- | --- | --- |
+| Fastlane | Full workflow, `package_entrypoint=fastlane`, `signing_mode=cloud` | Alpha, Beta, Release |
+| Actions | Simple workflow, `signing_mode=cloud` | Alpha, Beta, Release |
+| Tag → private Draft | Annotated candidate tag selecting cloud signing | Alpha, Beta, Release |
+
+The Fastlane entry runs the actual `bundle exec fastlane ios package` command on
+a hosted runner; it does not substitute the local fallback for hosted evidence.
+Existing lightweight tags and ordinary annotations keep manual signing. An
+explicit cloud tag points directly at the admitted current-main SHA and has this
+annotation (replace the placeholder with that full SHA):
+
+```text
+aegis-ios-signing-v1
+{"signingMode":"cloud","sourceSha":"FULL_MAIN_SHA"}
+```
+
+Tag deliveries first verify private Draft assets and remote hashes. ASC uploads
+of those exact packages use the retained delivery receipt in a separate Full
+Upload stage; no publishing, tester-group assignment or review submission is
+implicit. The 0.8.0 train exists in ASC, while 1.0.0 is already on sale and 1.0.1
+is waiting for review; a real upload must establish whether Apple accepts a new
+0.8.0 build. A server version rejection is retained rather than changing bundle
+identity/version or reporting processing success.
+
+### First hosted probe, 2026-11-04
+
+[Run 41826833453](https://github.com/gcsagroup/aegis-browser/actions/runs/41826833453)
+used candidate `8dc1c4b3db1a85f263b942f7da23ed8bd9b581e4`, tree
+`628124db16c6f5227e969248e8fd265a28e4a9e0`, Xcode 26.6 (17F113), Beta 0.8.0 (500).
+The clean runner started with no installed profiles or Distribution identity,
+verified three ad-hoc archive signatures, then completed cloud export. All three
+IPA signatures, entitlements, shared resources, Firebase registration and dSYM
+UUIDs passed. No Distribution P12 was imported, no Distribution private identity
+was visible after export, and the original keychain state was restored.
+
+The retained IPA SHA-256 is
+`bfeb2dc609bba6fb4a3fb7b61f21c51a1ca33cc5acbf0712fe715019c5773cdc`;
+the dSYM ZIP SHA-256 is
+`838f87c32d3d75deb7cb3792a0952d4f99666811d31b5be30d20a4aef108c156`.
+Downloaded artifact bytes matched the GitHub artifact digest and all receipt
+members; independent local signature re-verification also passed.
+
+The run stopped before transport because the original duplicate-upload guard
+rejected Xcode's new reservation `b155cd7e-17a1-41a9-9749-6ba2a58b9ea6`.
+ASC readback showed `AWAITING_UPLOAD`, no upload files, no uploaded date and no
+processed build. No upload-started or upload-result receipt exists. The run is
+retained as hosted package proof and a guard failure, not upload/processing or
+final merged-source matrix acceptance. The reservation handling above is the
+targeted correction; build 500 is not automatically replayed.
+
+### ASC upload probe, 2026-11-04
+
+[Run 41829391901](https://github.com/gcsagroup/aegis-browser/actions/runs/41829391901)
+used source `ae16b209ad021ade558dd14d8151d3b4ebd60d4d` for Beta 0.8.0 (510).
+Fresh hosted archive/export and verification passed again. The new reservation
+guard accepted only its own empty export reservation and invoked upload once.
+Apple rejected transport validation: `90186` (0.8.0 train closed), `90478`
+(version no longer importable), and `90062` (0.8.0 is below approved 1.0.0).
+Processing therefore cannot be accepted for new 0.8.0 packages. The immutable
+upload intent and Apple errors are retained; no upload replay or review
+submission is performed. A version choice is required before the nine-way
+upload/processing matrix can continue.
+
+Independent review found a P2 in the earlier verifier's signer trust boundary.
+The Apple Team/Distribution requirement and native profile CMS checks above
+address it. The unchanged build 500 IPA passed those stronger checks locally;
+altered CMS, self-signed CMS and ad-hoc signatures are rejected. These verifier
+results are bound separately from the source that built the artifact.
+
+## Local isolated-keychain fallback
+
+The local fallback produces artifacts only and has no upload or TestFlight
+operation. The hosted validation exercise above has a separate explicit upload
+selection. To return production packaging to manual signing, select `manual`
+in the existing iOS Delivery Package operation.
+
+Run from an idle macOS host with Xcode 26.6 and at least 10 GiB free:
+
+```sh
+python3 scripts/release/cloud-signing-poc.py --signing-mode cloud-poc \
+  --version 1.0.1 --build 16 --team R3JK7R29AC --run-id cloud-poc-01
+```
+
+Commit the experimental source first. The command binds receipts to its exact
+clean SHA/tree and builds only tracked inputs in a separate output directory.
+Supply `AEGIS_ASC_KEY_ID`, `AEGIS_ASC_ISSUER_ID`, `AEGIS_ASC_KEY_PATH` and
+`AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64`. If ASC credentials are absent, the existing
+local credential parser can discover the unique private credential configuration
+in Downloads; it never evaluates shell code or reads a P12/password file.
+
+The PoC temporarily selects a fresh keychain as the user default and entire user
+search list, restoring both on success, failure, SIGINT, SIGTERM and SIGHUP. Do
+not run concurrent native signing jobs on this host. No existing keychain is
+unlocked or imported, and no ACL is changed. Automatic archive signing may create
+a development certificate/key and provisioning profiles in the Apple account;
+automatic export may create managed distribution assets. The temporary local key
+is deleted afterward; account-side assets are retained for inspection.
+
+The experiment refuses visible Distribution private identities before archive,
+before export and after export. It uses automatic development signing for archive
+and automatic `app-store-connect` signing with `destination=export`. Both native
+commands use the ASC key and `-allowProvisioningUpdates`; no distribution P12 is
+imported, and the build number is never automatically changed.
+
+Evidence lives under `.artifacts/cloud-signing-poc/<run-id>/`: archive/export
+logs, archive, exported IPA, signature verification and a source-bound receipt.
+On failure the receipt retains the failure stage; never label an archive-only
+result a signed IPA. Verification checks all three bundle identities, signature,
+Apple-trusted signing chain, actual signed entitlements, App Store profile
+expiration/type, signer membership in each profile, shared resources and selected
+Firebase registration. Actual certificate fingerprints/profile UUIDs are recorded
+per artifact to support certificate rotation. Manual verification keeps requiring
+its configured fingerprint and profile names.
+
+This local PoC does not establish hosted-CI acceptance, Apple upload/processing,
+TestFlight availability or device acceptance. Those results require their own
+source-bound runs through the hosted integration above.
+
+Targeted checks:
+
+```sh
+python3 -m unittest discover -s scripts/release -p test_cloud_signing_poc.py
+python3 -m unittest discover -s scripts/release -p test_verify_signed_ios.py
+git diff --check
+```
+
+## First execution, 2026-11-04
+
+Archive source: `4a1c8d8068ec8928a7040fc1bfbaafddcae9c118`, tree
+`c0f626e437731f3a9884901198c556f191678e6f`, based on upstream main
+`dad8953280fccb2f241a553ee8e83ee7685bab6a`. Xcode 26.6 (17F113),
+version 1.0.1, build 16, beta configuration.
+
+The complete archive passed with `Apple Development: Created via API` and no
+Distribution private identity available. Export failed with exit 70 and Apple
+HTTP 403 `FORBIDDEN_ERROR`: the existing Fastlane-CICD App Manager Team API key
+does not have access to cloud-managed distribution certificates. No IPA was
+produced and no upload was attempted. The original keychain search list/default
+were restored and the disposable keychain was removed. Automatic provisioning
+created development signing assets; account-side assets are retained.
+
+The initial receipt writer incorrectly passed `opener` to `Path.open`; the
+failure receipt was reconstructed from retained native logs and an explicit host
+readback, with that reconstruction marked in the receipt. The writer is fixed
+and covered by an exclusive-write/private-permissions regression test.
+
+The successful archive and per-file hashes are retained in
+`.artifacts/cloud-signing-poc/cloud-poc-01/`. After authorized credentials are
+available, reuse the archive without repeating compilation:
+
+```sh
+python3 scripts/release/cloud-signing-poc.py --signing-mode cloud-poc \
+  --version 1.0.1 --build 16 --team R3JK7R29AC --run-id cloud-export-02 \
+  --archive-from cloud-poc-01
+```
+
+The retry verifies every archive file hash, prior identity and no-P12 evidence,
+and rejects changed native source inputs. Its receipt preserves the original
+archive source separately from the export/verifier execution source. Set the
+three `AEGIS_ASC_*` variables explicitly when using a different Team API key;
+the command does not change shared CI secrets or the default manual flow.
+
+## Accepted cloud IPA, 2026-11-04
+
+The user authorized a separate Admin Team API key named `Tools-Coud-PoC`
+(`A9AQKA2C48`). Export attempt 02 passed the cloud permission gate but received an
+HTML response where Xcode expected JSON while obtaining the Share profile.
+Attempt 03 reused the same hashed archive and completed `EXPORT SUCCEEDED`.
+
+The first verifier incorrectly required Safari's signed entitlements to contain
+an App Group, although its committed entitlements are empty. Commit
+`8ac40fc156411db11dede83411ac385a7b2ccebd` checks each target against its own
+committed entitlement file. The unchanged IPA then passed the independent
+verification; the earlier failure receipt is retained alongside a separate
+`poc-acceptance.json`.
+
+- Archive source: `4a1c8d8068ec8928a7040fc1bfbaafddcae9c118`.
+- Export execution source: `05f45bd0191120dba3f21455228317f6bb4b550f`.
+- Verifier source: `8ac40fc156411db11dede83411ac385a7b2ccebd`.
+- IPA: `.artifacts/cloud-signing-poc/cloud-export-03/Aegis-cloud-poc-1.0.1-16.ipa`.
+- IPA SHA-256: `211d5acd77dd5db0c93d873b9a9236893baeebd826837ee6f2854d900cb5818b`.
+- All three signers: `56CA47A01A967A31A21787EA913655AAC70A9241`.
+- Three App Store profiles, signed entitlements, Apple-trusted certificate chains,
+  deep signatures, 20 shared resources and Firebase registration passed.
+- No Distribution P12 imported; no Distribution identity visible before/after
+  export; original keychain/default restored. No Apple upload or device test.
+
+Manual remains the production default. This historical result is local Xcode
+proof; the later hosted probe is recorded separately above.
+
+## Shared Fastlane credential rotation
+
+On 2026-11-04 the user authorized replacing the previous Fastlane-CICD key
+`J3T6XW486V` with `Tools-Coud-PoC / A9AQKA2C48` across the current iOS/macOS
+consumers. The old key was subsequently revoked in App Store Connect.
+
+| Consumer | Repository credential names |
+| --- | --- |
+| HomeGuard-iOS | `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, `ASC_API_KEY_CONTENT_BASE64` |
+| MacCleaner | `APP_STORE_CONNECT_API_KEY_KEY_ID`, `APP_STORE_CONNECT_API_KEY_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY_KEY_CONTENT_BASE64` |
+| Watermark | `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, `ASC_API_KEY_CONTENT_BASE64` |
+| Aegis | `AEGIS_ASC_KEY_ID`, `AEGIS_ASC_ISSUER_ID`, `AEGIS_ASC_KEY_BASE64` |
+| apple-signing | `APPLE_PORTAL_KEY_ID`, `APPLE_PORTAL_ISSUER_ID`, `APPLE_PORTAL_KEY_CONTENT` |
+
+All 15 repository aliases were written and their metadata read back. Nine
+existing environment secrets were also updated across HomeGuard's `ios-release`
+and `ios-testflight`, and Aegis's `aegis-ios-store`. Reusable workflow callers
+resolve repository/organization credentials before the protected jobs start, so
+their repository aliases are included. No signing certificate/profile defaults
+or manual-signing behavior changed.
+
+GitHub still denied organization-secret administration after the CLI received
+`admin:org`. Existing organization values were not edited: repository aliases
+cover the identified consumers, while environment values retain priority, per
+the [GitHub secrets precedence rules](https://docs.github.com/en/actions/reference/security/secrets).
+Organization-level stale ciphertext cleanup requires an authorized owner.
+
+The new credential passed ASC `GET /v1/apps` (six apps), macOS `notarytool history`,
+and the existing Aegis hosted Status workflow
+[41818053939](https://github.com/gcsagroup/aegis-browser/actions/runs/41818053939)
+at main `dad8953280fccb2f241a553ee8e83ee7685bab6a`. That workflow only queried
+the existing 1.0.1 (15) build; it did not package/upload the PoC IPA.
+
+Seven local shared/project parameter files were updated, and their referenced
+private key files were checked for matching bytes and private permissions.
+Detailed mutation/readback, active-run inventory and cleanup receipts are kept
+locally under `.artifacts/asc-rotation/`; no private keys are committed.
+
+After revocation, fresh ASC read-only requests returned HTTP 401 for the old key
+and HTTP 200 for the new key. Downloads cleanup removed exactly two fingerprinted
+files (708 bytes): the revoked key's `.p8` and a superseded shared configuration
+backup. The current shared/project parameter files, standard Fastlane aliases,
+new private key and README remain in the local credentials directory. Other
+certificates/profiles were retained. Detailed deletion hashes are in
+`downloads-cleanup-receipt.json` and the Downloads `rotation-receipt-20261104.json`.

@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+require_relative 'cloud_reservations'
 
 module AegisRelease
   # A process lock plus an immutable intent survives a lost network response. Never
@@ -52,8 +53,17 @@ module AegisRelease
       @http ||= AscApi.new(token: Spaceship::ConnectAPI.token, before_mutation: @admission)
     end
 
-    def upload(ipa)
-      AegisRelease.require!(exact_build.nil? && upload_records.empty?, 'ASC already contains this build or upload; inspect status instead of uploading again')
+    def upload_files(id)
+      AegisRelease.require!(/\A[0-9a-fA-F-]{36}\z/.match?(id), 'Invalid build upload identity')
+      @http.collection("buildUploads/#{id}/buildUploadFiles").fetch('data')
+    end
+
+    def upload(ipa, cloud_reservations: nil, source: nil)
+      if cloud_reservations
+        CloudReservations.verify!(self, @request, source, cloud_reservations)
+      else
+        AegisRelease.require!(exact_build.nil? && upload_records.empty?, 'ASC already contains this build or upload; inspect status instead of uploading again')
+      end
       @admission&.call
       @fastlane.upload_to_testflight(api_key: @api_key, app_identifier: APP_ID, ipa: ipa,
                                     skip_submission: true, skip_waiting_for_build_processing: true,
