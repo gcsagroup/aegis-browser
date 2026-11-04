@@ -21,6 +21,19 @@ verifier = load('cloud_verifier', 'verify-signed-ios.py')
 
 
 class CloudSigningTests(unittest.TestCase):
+    def test_hosted_proof_requires_a_fresh_github_runner_and_refuses_archive_reuse(self):
+        good = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'macOS'}
+        poc.validate_runtime('github-hosted', good, None)
+        for environment, archive in [({}, None), ({**good, 'RUNNER_ENVIRONMENT': 'self-hosted'}, None), (good, 'prior')]:
+            with self.assertRaises(ValueError):
+                poc.validate_runtime('github-hosted', environment, archive)
+        with self.assertRaises(ValueError):
+            poc.validate_runtime('local-fallback', good, None)
+
+    def test_alpha_cloud_export_retains_internal_only_audience(self):
+        self.assertIs(poc.export_options('ABCDEFGHIJ', 'alpha')['testFlightInternalTestingOnly'], True)
+        self.assertIs(poc.export_options('ABCDEFGHIJ', 'release')['testFlightInternalTestingOnly'], False)
+
     def test_reused_archive_rejects_modified_files_and_native_source_changes(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(poc, 'ROOT', Path(directory).resolve()):
             previous = Path(directory).resolve() / '.artifacts/cloud-signing-poc/first'
