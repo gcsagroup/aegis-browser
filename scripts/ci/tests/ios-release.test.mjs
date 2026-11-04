@@ -160,6 +160,12 @@ test('version/build-only status has no artifact, signing or mutation route', () 
   const read = query.steps.findIndex(s => s.run === 'bundle exec ruby scripts/release/ios-status.rb');
   assert(auth >= 0 && read > auth);
   assert(query.steps[read].env.AEGIS_ASC_KEY_BASE64.includes('secrets.'));
+  assert.equal(query['timeout-minutes'], 40, 'allow the 30-minute wait plus setup and report upload');
+  assert(!query['continue-on-error'] && !query.steps[read]['continue-on-error'], 'timeout must remain a failure');
+  const report = query.steps.find(s => s.uses?.startsWith('actions/upload-artifact@'));
+  assert.equal(report.if, "${{ !cancelled() && hashFiles('.artifacts/ios-status/status.json') != '' }}");
+  assert.equal(report.with.path, '.artifacts/ios-status/status.json');
+  assert.equal(report.with['if-no-files-found'], 'error');
   for (const id of ['import', 'store']) assert(doc.jobs[id].if.includes("!= 'status-query'"));
 });
 
