@@ -61,7 +61,12 @@ try {
       if (id === 'quality-gate' || job.name === 'quality-gate') {
         fail(`${label}/${id} may not use the required check name or ID for a skipped Draft job`);
       }
-      const expectedCondition = automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
+      const cloudExercise = automatic === iosValidationWorkflow && id === 'cloud-poc';
+      const iosContracts = automatic === iosValidationWorkflow && ['contracts', 'ios-archive'].includes(id);
+      const expectedCondition = cloudExercise
+        ? "${{ github.event_name == 'workflow_dispatch' && inputs.exercise == 'cloud-poc' && github.repository == 'gcsagroup/aegis-browser' }}"
+        : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') }}'
+          : automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
       if (job.if !== expectedCondition) {
         fail(`${label}/${id} must require explicit Ready PR metadata, preserve non-PR execution and summary always()`);
       }

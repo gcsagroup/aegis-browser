@@ -19,7 +19,8 @@ test('cloud PoC binds an Admin dispatch to an exact frozen candidate without cha
 test('forks, other branches, unpinned source and malformed native inputs fail before secret-consuming work', async () => {
   for (const changes of [{GITHUB_REPOSITORY: 'fork/aegis-browser'}, {GITHUB_EVENT_NAME: 'pull_request'},
     {GITHUB_REF: 'refs/heads/main'}, {GITHUB_REPOSITORY_ID: '1'}, {POC_SOURCE_SHA: 'b'.repeat(40)},
-    {AEGIS_IOS_CLOUD_POC_SOURCE_SHA: ''}, {POC_VERSION: '0.8.0;touch'}, {POC_BUILD: '0'}]) {
+    {AEGIS_IOS_CLOUD_POC_SOURCE_SHA: ''}, {POC_VERSION: '0.8.0;touch'}, {POC_VERSION: '0.8.'},
+    {POC_VERSION: '0.8.0.1'}, {POC_VERSION: '0.12345678901.0'}, {POC_BUILD: '0'}]) {
     await assert.rejects(admitCloudPoc({environment: {...env, ...changes}, authorize: async () => { throw Error('should not authorize'); }}), /canonical manual dispatch/u);
   }
 });
