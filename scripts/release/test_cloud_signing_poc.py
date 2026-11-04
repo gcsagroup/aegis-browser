@@ -111,6 +111,14 @@ class CloudSigningTests(unittest.TestCase):
         profile, signed, fingerprint = self.profile()
         verifier.validate_cloud_profile(profile, signed, 'com.gcsa.aegis', 'ABCDEFGHIJ', fingerprint)
 
+    def test_safari_without_app_group_matches_its_committed_entitlements(self):
+        profile, signed, fingerprint = self.profile()
+        signed.pop('com.apple.security.application-groups')
+        verifier.validate_cloud_profile(profile, signed, 'com.gcsa.aegis', 'ABCDEFGHIJ', fingerprint, requested_entitlements={})
+        signed['com.apple.security.application-groups'] = ['unexpected']
+        with self.assertRaises(ValueError):
+            verifier.validate_cloud_profile(profile, signed, 'com.gcsa.aegis', 'ABCDEFGHIJ', fingerprint, requested_entitlements={})
+
     def test_cloud_rejects_device_enterprise_expired_and_wrong_team_profiles(self):
         for change in ({'ProvisionedDevices': ['phone']}, {'ProvisionsAllDevices': True},
                        {'ExpirationDate': datetime.datetime(2000, 1, 1)}, {'TeamIdentifier': ['OTHERTEAM1']},
