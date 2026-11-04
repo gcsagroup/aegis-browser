@@ -13,10 +13,15 @@ No App Review or Beta Review was submitted, no tester groups were assigned, and
 the three releases remain private Drafts. Native-device acceptance remains a
 separate gate.
 
-Production package inputs now expose `signing_mode: manual|cloud`, with **manual
-still the default**. The CLI accepts `--signing-mode`, and Fastlane accepts
-`signing_mode:cloud`. Cloud production packaging runs only on GitHub-hosted
-macOS; the isolated-keychain local command is an explicit fallback, never an
+### Current signing default and manual fallback
+
+New packages default to **cloud** in the CLI, Fastlane, Simple/Full Actions and
+candidate-tag entrypoints. The CLI accepts `--signing-mode manual`, Fastlane
+accepts `signing_mode:manual`, and Actions exposes an explicit manual selection.
+Cloud failure stops the current attempt; manual is never an automatic retry.
+Only new-package operations consume this selector. Status/Wait and retained
+package stages use their original identity and signing evidence. Cloud production
+packaging runs only on GitHub-hosted macOS; the isolated-keychain local command is an explicit fallback, never an
 automatic retry after a cloud failure.
 
 The hosted proof must use Xcode 26.6, a clean runner without installed profiles or
@@ -57,7 +62,8 @@ never triggered by a fork PR. Production current-main admission is unchanged.
 The first probe used a 0.8.0 Beta build; its evidence is not transferable from
 that candidate to the later merged-source matrix.
 
-The three delivery paths are exercised as follows after integration:
+The original nine-way integration selected cloud explicitly as follows; the
+current entrypoints use cloud when the signing choice is omitted:
 
 | Entry | Explicit selection | Profiles |
 | --- | --- | --- |
@@ -67,14 +73,19 @@ The three delivery paths are exercised as follows after integration:
 
 The Fastlane entry runs the actual `bundle exec fastlane ios package` command on
 a hosted runner; it does not substitute the local fallback for hosted evidence.
-Existing lightweight tags and ordinary annotations keep manual signing. An
-explicit cloud tag points directly at the admitted current-main SHA and has this
-annotation (replace the placeholder with that full SHA):
+New lightweight tags and ordinary annotations use cloud signing. For an explicit
+manual fallback tag, create an annotated candidate directly at the admitted
+current-main SHA with this annotation (replace the placeholder with that full
+SHA, preserve the first line and use LF newlines):
 
 ```text
 aegis-ios-signing-v1
-{"signingMode":"cloud","sourceSha":"FULL_MAIN_SHA"}
+{"signingMode":"manual","sourceSha":"FULL_MAIN_SHA"}
 ```
+
+The same annotation accepts `cloud` when an explicit source-bound choice is
+wanted. Malformed reserved signing annotations, source mismatches and unknown
+modes stop delivery. An existing tag's prior artifact receipts are not changed.
 
 Tag deliveries first verify private Draft assets and remote hashes. ASC uploads
 of those exact packages use the retained delivery receipt in a separate Full
@@ -152,9 +163,9 @@ The local acceptance bundle includes all nine IPAs and dSYM ZIPs, original
 delivery/upload receipts, per-package independent verification, final ASC
 processing/review-linkage readbacks, Draft asset readbacks, an `acceptance.json`
 index and `evidence-sha256.json`. The rejected 0.8.0 upload logs and receipt are
-preserved in a separate failure directory. Manual remains the default and an
-explicit fallback; the isolated-keychain local proof remains separately bound
-to 1.0.1 (16). No release was published and no device acceptance is claimed.
+preserved in a separate failure directory. Manual was the default during that
+source-bound acceptance; it is now the explicit fallback. The isolated-keychain
+local proof remains separately bound to 1.0.1 (16). No release was published and no device acceptance is claimed.
 
 ### First hosted probe, 2026-11-04
 
@@ -292,7 +303,7 @@ The retry verifies every archive file hash, prior identity and no-P12 evidence,
 and rejects changed native source inputs. Its receipt preserves the original
 archive source separately from the export/verifier execution source. Set the
 three `AEGIS_ASC_*` variables explicitly when using a different Team API key;
-the command does not change shared CI secrets or the default manual flow.
+the command does not change shared CI secrets or the production signing selection.
 
 ## Accepted cloud IPA, 2026-11-04
 
@@ -319,8 +330,9 @@ verification; the earlier failure receipt is retained alongside a separate
 - No Distribution P12 imported; no Distribution identity visible before/after
   export; original keychain/default restored. No Apple upload or device test.
 
-Manual remains the production default. This historical result is local Xcode
-proof; the later hosted probe is recorded separately above.
+Manual was the production default at this historical execution. This result is
+local Xcode proof; the later hosted probe and current cloud default are recorded
+separately above.
 
 ## Shared Fastlane credential rotation
 

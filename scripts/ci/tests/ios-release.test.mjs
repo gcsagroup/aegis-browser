@@ -122,14 +122,16 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
   assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode']);
-  assert.equal(inputs.signing_mode.default, 'manual');
-  assert.deepEqual(inputs.signing_mode.options, ['manual', 'cloud']);
+  assert.equal(inputs.signing_mode.default, 'cloud');
+  assert.deepEqual(inputs.signing_mode.options, ['cloud', 'manual']);
   assert.equal(simple.name, 'iOS Delivery · Simple');
   assert.equal(full.name, 'iOS Delivery · Full');
   assert.deepEqual(inputs.operation.options, ['Package', 'Package and upload', 'Status', 'Wait']);
   assert.deepEqual(inputs.product.options, ['Alpha', 'Beta', 'Release']);
   assert.equal(inputs.product.default, 'Alpha');
   const fullInputs = full.on.workflow_dispatch.inputs;
+  assert.equal(fullInputs.signing_mode.default, 'cloud');
+  assert.deepEqual(fullInputs.signing_mode.options, ['cloud', 'manual']);
   assert.deepEqual(fullInputs.operation.options, [
     'Package', 'Package and upload', 'Draft', 'Upload', 'Wait', 'Status',
     'Metadata', 'Compliance', 'Distribute internal', 'Distribute external',
