@@ -1,5 +1,68 @@
 # iOS cloud signing PoC
 
+## Hosted primary, local fallback, and 0.8.0 acceptance matrix
+
+The next acceptance target is version **0.8.0** across Alpha/Beta/Release and
+Fastlane/Actions/Tag-to-Draft (nine combinations). The user authorized uploading
+the resulting test builds and waiting for ASC processing, without App Review
+submission. Native-device acceptance remains a separate gate.
+
+Production package inputs now expose `signing_mode: manual|cloud`, with **manual
+still the default**. The CLI accepts `--signing-mode`, and Fastlane accepts
+`signing_mode:cloud`. Cloud production packaging runs only on GitHub-hosted
+macOS; the isolated-keychain local command is an explicit fallback, never an
+automatic retry after a cloud failure.
+
+The hosted proof must use Xcode 26.6, a clean runner without installed profiles or
+Distribution identities, and a newly created archive. Hosted archive signing is
+ad-hoc, then export performs Apple cloud distribution signing. This avoids
+creating disposable development certificates for every matrix build. Ad-hoc
+archives themselves are not accepted as distributable packages; the exported
+IPA must pass the full Apple-trusted distribution signature/profile/entitlement
+checks. Local fallback retains development-signed archiving by default.
+
+Each package contains a source-bound receipt, IPA, dSYM ZIP and independent
+signature/dSYM checks. Every target's dSYM UUID must match its archived binary.
+Cloud upload re-verifies artifact hashes and actual signing identities against
+the retained receipt, refuses upload replay, and keeps upload and processing
+receipts separate.
+
+The existing iOS Release Validation workflow has an explicit `cloud-poc` manual
+exercise on `macos-26`. It uses a dedicated environment restricted to the exact
+candidate branch, with the candidate SHA frozen in an environment variable and
+repeatedly checked against the dispatch, checkout and remote branch. Both the
+original operator and rerunner must be repository Admins. Credentialed work is
+never triggered by a fork PR. Production current-main admission is unchanged.
+The first probe is a 0.8.0 Beta build; evidence is not transferable from this
+candidate to a later merged source SHA.
+
+The three delivery paths are exercised as follows after integration:
+
+| Entry | Explicit selection | Profiles |
+| --- | --- | --- |
+| Fastlane | Full workflow, `package_entrypoint=fastlane`, `signing_mode=cloud` | Alpha, Beta, Release |
+| Actions | Simple workflow, `signing_mode=cloud` | Alpha, Beta, Release |
+| Tag → private Draft | Annotated candidate tag selecting cloud signing | Alpha, Beta, Release |
+
+The Fastlane entry runs the actual `bundle exec fastlane ios package` command on
+a hosted runner; it does not substitute the local fallback for hosted evidence.
+Existing lightweight tags and ordinary annotations keep manual signing. An
+explicit cloud tag points directly at the admitted current-main SHA and has this
+annotation (replace the placeholder with that full SHA):
+
+```text
+aegis-ios-signing-v1
+{"signingMode":"cloud","sourceSha":"FULL_MAIN_SHA"}
+```
+
+Tag deliveries first verify private Draft assets and remote hashes. ASC uploads
+of those exact packages use the retained delivery receipt in a separate Full
+Upload stage; no publishing, tester-group assignment or review submission is
+implicit. The 0.8.0 train exists in ASC, while 1.0.0 is already on sale and 1.0.1
+is waiting for review; a real upload must establish whether Apple accepts a new
+0.8.0 build. A server version rejection is retained rather than changing bundle
+identity/version or reporting processing success.
+
 The production delivery workflows and Fastlane entrypoints continue to use manual
 signing by default. This separate, explicit experiment produces local artifacts
 only. It has no upload, release, review-submission or TestFlight operation. To

@@ -149,13 +149,24 @@ def main():
     for name in ("ipa", "version", "build", "profile"):
         parser.add_argument(name)
     parser.add_argument("--team", required=True)
-    parser.add_argument("--certificate-sha1", required=True)
-    parser.add_argument("--profiles-json", required=True)
+    parser.add_argument("--signing-mode", choices=['manual', 'cloud'], default='manual')
+    parser.add_argument("--certificate-sha1")
+    parser.add_argument("--profiles-json")
+    parser.add_argument("--expected-verification", type=Path)
     parser.add_argument("--source-root", required=True)
     options = parser.parse_args()
     try:
+        if options.signing_mode == 'manual' and (not options.certificate_sha1 or not options.profiles_json):
+            raise ValueError('Manual verification requires the expected certificate and profile names')
+        if options.signing_mode == 'cloud' and options.expected_verification is None:
+            raise ValueError('Cloud re-verification requires the source-bound expected verification receipt')
         result = verify(options.ipa, options.version, options.build, options.profile, options.team,
-                        options.certificate_sha1, json.loads(options.profiles_json), options.source_root)
+                        options.certificate_sha1, json.loads(options.profiles_json) if options.profiles_json else None,
+                        options.source_root, cloud_poc=options.signing_mode == 'cloud')
+        if options.signing_mode == 'cloud':
+            expected = json.loads(options.expected_verification.read_text())
+            if any(result[key] != expected[key] for key in ['ipaSha256', 'version', 'build', 'profile', 'bundles']):
+                raise ValueError('Cloud signature differs from the expected artifact receipt')
         print(json.dumps(result, sort_keys=True))
     except (ValueError, KeyError, OSError, zipfile.BadZipFile, plistlib.InvalidFileException):
         # Explicit diagnostic text is useful but never echo subprocess output or credentials.
