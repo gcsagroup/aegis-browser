@@ -68,7 +68,7 @@ def package():
     if os.environ.get('RELEASE_PACKAGE_ENTRYPOINT', 'actions') not in {'actions', 'fastlane'}:
         raise ValueError('Unsupported package entrypoint')
     args = identity()+['--destination', os.environ.get('RELEASE_DESTINATION', 'artifacts'),
-                       '--signing-mode', os.environ.get('RELEASE_SIGNING_MODE', 'manual')]
+                       '--signing-mode', os.environ.get('RELEASE_SIGNING_MODE', 'cloud')]
     if os.environ.get('RELEASE_DESTINATION') == 'github-draft':
         args += ['--tag', os.environ['RELEASE_TAG'], '--repository', os.environ['GITHUB_REPOSITORY']]
     if os.environ.get('RELEASE_PACKAGE_ENTRYPOINT', 'actions') == 'fastlane':
