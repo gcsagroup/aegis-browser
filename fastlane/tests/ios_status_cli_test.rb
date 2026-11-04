@@ -9,7 +9,7 @@ class IosStatusCliTest < Minitest::Test
   ROOT = File.expand_path('../..', __dir__)
 
   def run_query(state: 'PROCESSING', mode: 'wait', failure: nil)
-    Dir.mktmpdir('aegis-status-cli-') do |directory|
+    Dir.mktmpdir('aegis status cli-') do |directory|
       value = { 'platform' => 'ios', 'version' => '1.0.1', 'build' => '14', 'readOnly' => true,
                 'packageProvenanceVerified' => false,
                 'remote' => { 'processingState' => state, 'uploadState' => 'COMPLETE', 'expired' => false,
@@ -50,13 +50,16 @@ class IosStatusCliTest < Minitest::Test
         end
       RUBY
       summary_path = File.join(directory, 'summary.md')
-      environment = { 'STATUS_TEST_ROOT' => directory, 'STATUS_TEST_VALUE' => JSON.generate(value),
-                      'STATUS_TEST_FAILURE' => failure, 'RELEASE_VERSION' => '1.0.1', 'RELEASE_BUILD' => '14',
-                      'RELEASE_QUERY_MODE' => mode, 'GITHUB_STEP_SUMMARY' => summary_path,
-                      'AEGIS_ASC_KEY_ID' => 'fixture-id', 'AEGIS_ASC_ISSUER_ID' => 'fixture-issuer',
-                      'AEGIS_ASC_KEY_BASE64' => ['fixture-key'].pack('m0') }
-      text, error, process = Open3.capture3(environment, RbConfig.ruby, '-I', directory, '-r', preload,
-                                            File.join(ROOT, 'scripts/release/ios-status.rb'))
+      # Keep the environment separate from the executable/argv; no shell parses fixture paths.
+      text, error, process = Open3.capture3(
+        { 'STATUS_TEST_ROOT' => directory, 'STATUS_TEST_VALUE' => JSON.generate(value),
+          'STATUS_TEST_FAILURE' => failure, 'RELEASE_VERSION' => '1.0.1', 'RELEASE_BUILD' => '14',
+          'RELEASE_QUERY_MODE' => mode, 'GITHUB_STEP_SUMMARY' => summary_path,
+          'AEGIS_ASC_KEY_ID' => 'fixture-id', 'AEGIS_ASC_ISSUER_ID' => 'fixture-issuer',
+          'AEGIS_ASC_KEY_BASE64' => ['fixture-key'].pack('m0') },
+        [RbConfig.ruby, 'ruby'], '-I', directory, '-r', preload,
+        File.join(ROOT, 'scripts/release/ios-status.rb')
+      )
       report_path = File.join(directory, '.artifacts/ios-status/status.json')
       yield({ text: text, error: error, process: process,
               report: File.file?(report_path) ? JSON.parse(File.read(report_path)) : nil,
