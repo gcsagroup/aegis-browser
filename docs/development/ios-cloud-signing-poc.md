@@ -157,3 +157,11 @@ Seven local shared/project parameter files were updated, and their referenced
 private key files were checked for matching bytes and private permissions.
 Detailed mutation/readback, active-run inventory and cleanup receipts are kept
 locally under `.artifacts/asc-rotation/`; no private keys are committed.
+
+After revocation, fresh ASC read-only requests returned HTTP 401 for the old key
+and HTTP 200 for the new key. Downloads cleanup removed exactly two fingerprinted
+files (708 bytes): the revoked key's `.p8` and a superseded shared configuration
+backup. The current shared/project parameter files, standard Fastlane aliases,
+new private key and README remain in the local credentials directory. Other
+certificates/profiles were retained. Detailed deletion hashes are in
+`downloads-cleanup-receipt.json` and the Downloads `rotation-receipt-20261104.json`.
