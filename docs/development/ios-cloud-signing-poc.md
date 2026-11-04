@@ -119,3 +119,41 @@ verification; the earlier failure receipt is retained alongside a separate
 
 Manual remains the production default. This is local Xcode proof; hosted CI is
 not yet exercised by the PoC entrypoint.
+
+## Shared Fastlane credential rotation
+
+On 2026-11-04 the user authorized replacing the previous Fastlane-CICD key
+`J3T6XW486V` with `Tools-Coud-PoC / A9AQKA2C48` across the current iOS/macOS
+consumers. The old key was subsequently revoked in App Store Connect.
+
+| Consumer | Repository credential names |
+| --- | --- |
+| HomeGuard-iOS | `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, `ASC_API_KEY_CONTENT_BASE64` |
+| MacCleaner | `APP_STORE_CONNECT_API_KEY_KEY_ID`, `APP_STORE_CONNECT_API_KEY_ISSUER_ID`, `APP_STORE_CONNECT_API_KEY_KEY_CONTENT_BASE64` |
+| Watermark | `ASC_API_KEY_ID`, `ASC_API_ISSUER_ID`, `ASC_API_KEY_CONTENT_BASE64` |
+| Aegis | `AEGIS_ASC_KEY_ID`, `AEGIS_ASC_ISSUER_ID`, `AEGIS_ASC_KEY_BASE64` |
+| apple-signing | `APPLE_PORTAL_KEY_ID`, `APPLE_PORTAL_ISSUER_ID`, `APPLE_PORTAL_KEY_CONTENT` |
+
+All 15 repository aliases were written and their metadata read back. Nine
+existing environment secrets were also updated across HomeGuard's `ios-release`
+and `ios-testflight`, and Aegis's `aegis-ios-store`. Reusable workflow callers
+resolve repository/organization credentials before the protected jobs start, so
+their repository aliases are included. No signing certificate/profile defaults
+or manual-signing behavior changed.
+
+GitHub still denied organization-secret administration after the CLI received
+`admin:org`. Existing organization values were not edited: repository aliases
+cover the identified consumers, while environment values retain priority, per
+the [GitHub secrets precedence rules](https://docs.github.com/en/actions/reference/security/secrets).
+Organization-level stale ciphertext cleanup requires an authorized owner.
+
+The new credential passed ASC `GET /v1/apps` (six apps), macOS `notarytool history`,
+and the existing Aegis hosted Status workflow
+[41818053939](https://github.com/gcsagroup/aegis-browser/actions/runs/41818053939)
+at main `dad8953280fccb2f241a553ee8e83ee7685bab6a`. That workflow only queried
+the existing 1.0.1 (15) build; it did not package/upload the PoC IPA.
+
+Seven local shared/project parameter files were updated, and their referenced
+private key files were checked for matching bytes and private permissions.
+Detailed mutation/readback, active-run inventory and cleanup receipts are kept
+locally under `.artifacts/asc-rotation/`; no private keys are committed.
