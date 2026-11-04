@@ -70,6 +70,23 @@ class IosStatusTest < Minitest::Test
     assert_equal 15, time
   end
 
+  def test_default_wait_allows_apple_processing_beyond_five_minutes_without_mutation
+    document = raw_build
+    document['data'].first['attributes']['processingState'] = 'PROCESSING'
+    api = query_api(document)
+    query = AegisRelease::BuildStatus.new(version: '3.2', build: '69', api: api)
+    time = 0
+    result = query.wait(clock: -> { time }, sleeper: lambda { |seconds|
+      time += seconds
+      document['data'].first['attributes']['processingState'] = 'VALID' if time >= 900
+    })
+    assert_equal 900, time
+    assert_equal 'VALID', result.dig('remote', 'processingState')
+    assert_equal ['3.2', '69'], result.values_at('version', 'build')
+    assert_equal false, result.fetch('packageProvenanceVerified')
+    assert api.calls.all? { |row| row.first == :get }
+  end
+
   def test_wait_rejects_absent_failed_expired_and_times_out_without_upload
     [ ['NOT_FOUND', 'NOT_FOUND', false], ['INVALID', 'COMPLETE', false], ['PROCESSING', 'FAILED', false], ['VALID', 'COMPLETE', true] ].each do |state, upload, expired|
       query = AegisRelease::BuildStatus.new(version: '3.2', build: '69', api: query_api)
@@ -79,8 +96,31 @@ class IosStatusTest < Minitest::Test
     query = AegisRelease::BuildStatus.new(version: '3.2', build: '69', api: query_api)
     query.define_singleton_method(:call) { { 'remote' => { 'processingState' => 'PROCESSING', 'uploadState' => 'COMPLETE' } } }
     time = 0
-    assert_raises(AegisRelease::Error) { query.wait(timeout: 1, interval: 1, clock: -> { time }, sleeper: ->(seconds) { time += seconds }) }
+    error = assert_raises(AegisRelease::BuildStatus::WaitTimeout) { query.wait(timeout: 1, interval: 1, clock: -> { time }, sleeper: ->(seconds) { time += seconds }) }
     assert_equal 1, time
+    assert_equal 1, error.timeout
+    assert_equal 'PROCESSING', error.status.dig('remote', 'processingState')
+    assert_match(/no upload or retry performed/, error.message)
+  end
+
+  def test_default_wait_still_expires_and_rejects_unbounded_waits
+    document = raw_build
+    document['data'].first['attributes']['processingState'] = 'PROCESSING'
+    api = query_api(document)
+    query = AegisRelease::BuildStatus.new(version: '3.2', build: '69', api: api)
+    time = 0
+    error = assert_raises(AegisRelease::BuildStatus::WaitTimeout) do
+      query.wait(clock: -> { time }, sleeper: ->(seconds) { time += seconds })
+    end
+    assert_equal 1800, time
+    assert_equal 1800, error.timeout
+    assert_equal ['3.2', '69'], error.status.values_at('version', 'build')
+    assert api.calls.all? { |row| row.first == :get }
+    [[0, 15], [1801, 15], [30, 0], [30, 31]].each do |timeout, interval|
+      before = api.calls.size
+      assert_raises(AegisRelease::Error) { query.wait(timeout: timeout, interval: interval) }
+      assert_equal before, api.calls.size
+    end
   end
 
   def test_missing_forwarded_credentials_fail_before_token_construction_without_echoing_values

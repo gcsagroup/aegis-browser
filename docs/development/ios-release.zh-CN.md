@@ -47,7 +47,7 @@ python3 scripts/release/local-ios-signing.py --team "$AEGIS_APPLE_TEAM_ID" --cer
 | Package | 新 build 的 IPA、dSYM 和清单，不自动上传 |
 | Package and upload | 先确认 Apple 无该 build/上传，打包并上传同一份新 IPA，不分发、不送审 |
 | Status | 直接按版本/build 查询 Apple；不需要凭据、旧 artifact 或历史源码 |
-| Wait | 最多等 5 分钟处理完成；失败、未上传、过期或超时会说明结果，不重传 |
+| Wait | 最多等 30 分钟处理完成；失败、未上传、过期或超时均停止，不重传。超时仍为失败，在 Summary 和状态 artifact 保留最后一次 Apple 状态，可用 Status 或 Wait 再查同一构建 |
 
 查询不会自动选择最新 build，也不会从 `APP_STORE_ELIGIBLE` 猜测 Beta/Release。报告的 `querySource` 是查询代码来源，不是被查询二进制的源码证明。查不到会明确显示 `NOT_FOUND`。查询使用只允许 GET 的 Apple 客户端。
 
