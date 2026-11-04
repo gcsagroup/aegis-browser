@@ -35,13 +35,14 @@ def verify_encryption_declaration(source_info, exported_info):
     return value
 
 
-def validate_cloud_profile(provision, signed, identifier, team, fingerprint):
+def validate_cloud_profile(provision, signed, identifier, team, fingerprint, *, requested_entitlements=None):
     """Accept rotation, while enforcing the actual signed App Store identity."""
     expiration = provision.get('ExpirationDate')
     expected = {'application-identifier': team + '.' + identifier,
                 'com.apple.developer.team-identifier': team,
-                'get-task-allow': False,
-                'com.apple.security.application-groups': ['group.com.gcsa.aegis.ios.share-inbox']}
+                'get-task-allow': False}
+    requested = ({'com.apple.security.application-groups': ['group.com.gcsa.aegis.ios.share-inbox']}
+                 if requested_entitlements is None else requested_entitlements)
     if (provision.get('TeamIdentifier') != [team]
             or not isinstance(expiration, datetime.datetime)
             or expiration <= datetime.datetime.utcnow()
@@ -52,6 +53,13 @@ def validate_cloud_profile(provision, signed, identifier, team, fingerprint):
         if (type(signed.get(key)) is not type(value) or signed[key] != value
                 or provision.get('Entitlements', {}).get(key) != value):
             raise ValueError('Cloud signed entitlement differs: ' + identifier + ' ' + key)
+    for key, value in requested.items():
+        if type(signed.get(key)) is not type(value) or signed[key] != value:
+            raise ValueError('Cloud signed entitlement differs from source: ' + identifier + ' ' + key)
+    group_key = 'com.apple.security.application-groups'
+    if (signed.get(group_key) != requested.get(group_key)
+            or provision.get('Entitlements', {}).get(group_key) != ['group.com.gcsa.aegis.ios.share-inbox']):
+        raise ValueError('Cloud App Group differs from source/profile: ' + identifier)
     if not any(hashlib.sha1(c).hexdigest().upper() == fingerprint for c in provision.get('DeveloperCertificates', [])):
         raise ValueError('Cloud signing certificate absent from profile: ' + identifier)
 
@@ -120,7 +128,11 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
                     raise ValueError("Signing certificate absent from profile: " + identifier)
                 if cloud_poc:
                     signed = plistlib.loads(command('codesign', '-d', '--entitlements', ':-', str(bundle)))
-                    validate_cloud_profile(provision, signed, identifier, team, fingerprint)
+                    entitlement_paths = {APP_ID: 'AegisApp/Aegis.entitlements',
+                                         APP_ID + '.safari': 'SafariWebExtension/SafariWebExtension.entitlements',
+                                         APP_ID + '.share': 'ShareExtension/ShareExtension.entitlements'}
+                    requested = plistlib.loads((source_root / 'apps/ios' / entitlement_paths[identifier]).read_bytes())
+                    validate_cloud_profile(provision, signed, identifier, team, fingerprint, requested_entitlements=requested)
                     # Require an Apple-trusted code-signing chain, independently of the profile.
                     chain = sorted(certificates.glob('Distribution*'))
                     command('security', 'verify-cert', '-p', 'codeSign', *[v for c in chain for v in ('-c', str(c))])
