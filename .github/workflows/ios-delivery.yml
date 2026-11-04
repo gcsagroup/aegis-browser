@@ -406,7 +406,7 @@ jobs:
     if: ${{ needs.admission.outputs.operation == 'status-query' || needs.admission.outputs.operation == 'status-wait' }}
     runs-on: ubuntu-24.04
     environment: aegis-ios-store
-    timeout-minutes: 10
+    timeout-minutes: 40
     env:
       RELEASE_VERSION: ${{ needs.admission.outputs.version }}
       RELEASE_BUILD: ${{ needs.admission.outputs.build }}
@@ -432,6 +432,7 @@ jobs:
           AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
         run: bundle exec ruby scripts/release/ios-status.rb
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ !cancelled() && hashFiles('.artifacts/ios-status/status.json') != '' }}
         with:
           name: ios-status-${{ github.run_id }}-${{ github.run_attempt }}
           path: .artifacts/ios-status/status.json
