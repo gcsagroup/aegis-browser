@@ -1,5 +1,6 @@
 """Verify an exported iOS IPA without signing, credentials or source modification."""
 import argparse
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -34,10 +35,31 @@ def verify_encryption_declaration(source_info, exported_info):
     return value
 
 
-def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root):
-    if not re.fullmatch(r"[A-Z0-9]{10}", team) or not re.fullmatch(r"[A-Fa-f0-9]{40}", certificate_sha1):
+def validate_cloud_profile(provision, signed, identifier, team, fingerprint):
+    """Accept rotation, while enforcing the actual signed App Store identity."""
+    expiration = provision.get('ExpirationDate')
+    expected = {'application-identifier': team + '.' + identifier,
+                'com.apple.developer.team-identifier': team,
+                'get-task-allow': False,
+                'com.apple.security.application-groups': ['group.com.gcsa.aegis.ios.share-inbox']}
+    if (provision.get('TeamIdentifier') != [team]
+            or not isinstance(expiration, datetime.datetime)
+            or expiration <= datetime.datetime.utcnow()
+            or not re.fullmatch(r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}', provision.get('UUID', ''))
+            or not provision.get('Name') or 'ProvisionedDevices' in provision or 'ProvisionsAllDevices' in provision):
+        raise ValueError('Invalid cloud App Store profile: ' + identifier)
+    for key, value in expected.items():
+        if (type(signed.get(key)) is not type(value) or signed[key] != value
+                or provision.get('Entitlements', {}).get(key) != value):
+            raise ValueError('Cloud signed entitlement differs: ' + identifier + ' ' + key)
+    if not any(hashlib.sha1(c).hexdigest().upper() == fingerprint for c in provision.get('DeveloperCertificates', [])):
+        raise ValueError('Cloud signing certificate absent from profile: ' + identifier)
+
+
+def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root, *, cloud_poc=False):
+    if not re.fullmatch(r"[A-Z0-9]{10}", team) or (not cloud_poc and not re.fullmatch(r"[A-Fa-f0-9]{40}", certificate_sha1)):
         raise ValueError("Provide the expected Apple team and certificate SHA-1")
-    if sorted(profiles) != sorted(TARGETS):
+    if not cloud_poc and sorted(profiles) != sorted(TARGETS):
         raise ValueError("Expected App Store profile names for all three targets")
     with zipfile.ZipFile(ipa) as archive:
         infos = archive.infolist()
@@ -81,7 +103,7 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
                 bundle = app / relative
                 provision = plistlib.loads(command("security", "cms", "-D", "-i", str(bundle / "embedded.mobileprovision")))
                 entitlements = provision.get("Entitlements", {})
-                if (provision.get("TeamIdentifier") != [team] or provision.get("Name") != profiles[identifier]
+                if not cloud_poc and (provision.get("TeamIdentifier") != [team] or provision.get("Name") != profiles[identifier]
                         or entitlements.get("application-identifier") != team + "." + identifier
                         or entitlements.get("get-task-allow") is not False
                         or "ProvisionedDevices" in provision or "ProvisionsAllDevices" in provision
@@ -92,10 +114,16 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
                 prefix = certificates / "Distribution"
                 command("codesign", "-d", "--extract-certificates=" + str(prefix), str(bundle))
                 fingerprint = hashlib.sha1(Path(str(prefix) + "0").read_bytes()).hexdigest().upper()
-                if fingerprint != certificate_sha1.upper():
+                if not cloud_poc and fingerprint != certificate_sha1.upper():
                     raise ValueError("Signing certificate differs: " + identifier)
                 if not any(hashlib.sha1(c).hexdigest().upper() == fingerprint for c in provision.get("DeveloperCertificates", [])):
                     raise ValueError("Signing certificate absent from profile: " + identifier)
+                if cloud_poc:
+                    signed = plistlib.loads(command('codesign', '-d', '--entitlements', ':-', str(bundle)))
+                    validate_cloud_profile(provision, signed, identifier, team, fingerprint)
+                    # Require an Apple-trusted code-signing chain, independently of the profile.
+                    chain = sorted(certificates.glob('Distribution*'))
+                    command('security', 'verify-cert', '-p', 'codeSign', *[v for c in chain for v in ('-c', str(c))])
                 checked.append({"applicationId": identifier, "profileName": provision["Name"], "profileUuid": provision["UUID"], "certificateSha1": fingerprint})
     return {"ipaSha256": hashlib.sha256(Path(ipa).read_bytes()).hexdigest(), "profile": profile,
             "version": version, "build": build, "deepSignatureVerification": True,
