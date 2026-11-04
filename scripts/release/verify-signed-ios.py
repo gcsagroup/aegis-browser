@@ -1,5 +1,6 @@
 """Verify an exported iOS IPA without signing, credentials or source modification."""
 import argparse
+import ctypes
 import datetime
 import hashlib
 import importlib.util
@@ -23,6 +24,58 @@ def command(*args):
     if result.returncode:
         raise ValueError(Path(args[0]).name + " verification failed")
     return result.stdout
+
+
+def verified_profile(raw):
+    """Verify CMS and the Apple provisioning signer, then decode the verified bytes."""
+    if sys.platform != 'darwin' or not raw or len(raw) > 5 * 1024 * 1024:
+        raise ValueError('Apple provisioning profile trust verification requires macOS and bounded CMS data')
+    core = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+    security = ctypes.CDLL('/System/Library/Frameworks/Security.framework/Security')
+    try:
+        policy_factory = security.SecPolicyCreateiPhoneProvisioningProfileSigning
+        verify_cms = security.SecCMSVerifyCopyDataAndAttributes
+    except AttributeError:
+        raise ValueError('Required Apple provisioning verification policy is unavailable') from None
+    core.CFDataCreate.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+    core.CFDataCreate.restype = ctypes.c_void_p
+    core.CFDataGetLength.argtypes = [ctypes.c_void_p]
+    core.CFDataGetLength.restype = ctypes.c_long
+    core.CFDataGetBytePtr.argtypes = [ctypes.c_void_p]
+    core.CFDataGetBytePtr.restype = ctypes.c_void_p
+    core.CFRelease.argtypes = [ctypes.c_void_p]
+    core.CFRelease.restype = None
+    policy_factory.argtypes = []
+    policy_factory.restype = ctypes.c_void_p
+    verify_cms.argtypes = [ctypes.c_void_p] * 6
+    verify_cms.restype = ctypes.c_int
+    data, policy, content = None, None, ctypes.c_void_p()
+    try:
+        data = core.CFDataCreate(None, ctypes.create_string_buffer(raw), len(raw))
+        policy = policy_factory()
+        if not data or not policy:
+            raise ValueError('Apple provisioning verification policy could not be created')
+        # A NULL policy only decodes; a non-NULL trust output defers trust evaluation.
+        # Keep the explicit Apple profile policy and NULL trust output to verify both.
+        status = verify_cms(data, None, policy, None, ctypes.byref(content), None)
+        if status or not content:
+            raise ValueError('Apple provisioning CMS signature or signer trust failed')
+        length, pointer = core.CFDataGetLength(content), core.CFDataGetBytePtr(content)
+        if not pointer or not 0 < length <= 5 * 1024 * 1024:
+            raise ValueError('Invalid verified provisioning content')
+        return plistlib.loads(ctypes.string_at(pointer, length))
+    finally:
+        for reference in [content, policy, data]:
+            if reference:
+                core.CFRelease(reference)
+
+
+def verify_distribution_signer(bundle, team):
+    if not re.fullmatch(r'[A-Z0-9]{10}', team):
+        raise ValueError('Explicit Apple signer team required')
+    requirement = ('anchor apple generic and certificate leaf[subject.OU] = "' + team +
+                   '" and certificate leaf[field.1.2.840.113635.100.6.1.4] exists')
+    command('codesign', '--verify', '--strict', '-R', '=' + requirement, str(bundle))
 
 
 def verify_encryption_declaration(source_info, exported_info):
@@ -109,7 +162,8 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
             checked = []
             for identifier, relative in TARGETS.items():
                 bundle = app / relative
-                provision = plistlib.loads(command("security", "cms", "-D", "-i", str(bundle / "embedded.mobileprovision")))
+                provision = (verified_profile((bundle / 'embedded.mobileprovision').read_bytes()) if cloud_poc else
+                             plistlib.loads(command("security", "cms", "-D", "-i", str(bundle / "embedded.mobileprovision"))))
                 entitlements = provision.get("Entitlements", {})
                 if not cloud_poc and (provision.get("TeamIdentifier") != [team] or provision.get("Name") != profiles[identifier]
                         or entitlements.get("application-identifier") != team + "." + identifier
@@ -127,6 +181,7 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
                 if not any(hashlib.sha1(c).hexdigest().upper() == fingerprint for c in provision.get("DeveloperCertificates", [])):
                     raise ValueError("Signing certificate absent from profile: " + identifier)
                 if cloud_poc:
+                    verify_distribution_signer(bundle, team)
                     signed = plistlib.loads(command('codesign', '-d', '--entitlements', ':-', str(bundle)))
                     entitlement_paths = {APP_ID: 'AegisApp/Aegis.entitlements',
                                          APP_ID + '.safari': 'SafariWebExtension/SafariWebExtension.entitlements',
@@ -137,11 +192,14 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
                     chain = sorted(certificates.glob('Distribution*'))
                     command('security', 'verify-cert', '-p', 'codeSign', *[v for c in chain for v in ('-c', str(c))])
                 checked.append({"applicationId": identifier, "profileName": provision["Name"], "profileUuid": provision["UUID"], "certificateSha1": fingerprint})
-    return {"ipaSha256": hashlib.sha256(Path(ipa).read_bytes()).hexdigest(), "profile": profile,
+    result = {"ipaSha256": hashlib.sha256(Path(ipa).read_bytes()).hexdigest(), "profile": profile,
             "version": version, "build": build, "deepSignatureVerification": True,
             "testFlightInternalTestingOnly": profile == "alpha", "sharedResourcesVerified": shared_count,
             "usesNonExemptEncryption": declaration,
             "bundles": checked, "deviceAcceptance": "not_verified"}
+    if cloud_poc:
+        result.update(profileCmsTrustVerified=True, distributionSignerTeamVerified=True)
+    return result
 
 
 def main():

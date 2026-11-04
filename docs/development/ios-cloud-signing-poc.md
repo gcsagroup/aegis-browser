@@ -34,6 +34,14 @@ Only that recorded reservation, with no upload files or uploaded date, may pass.
 Other IDs, any file activity, a processed build, or a changed state stop upload.
 Manual uploads keep rejecting every existing upload record.
 
+Cloud verification applies a per-target Apple anchor, exact certificate Team OU
+and iOS Distribution marker requirement, while allowing certificate rotation.
+Profiles are decoded only after native CMS verification under Apple's iPhone
+Provisioning Profile Signing trust policy. A successful `security cms -D` exit
+alone is insufficient: it can decode altered signed content. The macOS native
+validation job includes real self-signed CMS and ad-hoc signature rejection
+regressions without importing any signing identity.
+
 The existing iOS Release Validation workflow has an explicit `cloud-poc` manual
 exercise on `macos-26`. It uses a dedicated environment restricted to the exact
 candidate branch, with the candidate SHA frozen in an environment variable and
@@ -95,6 +103,25 @@ processed build. No upload-started or upload-result receipt exists. The run is
 retained as hosted package proof and a guard failure, not upload/processing or
 final merged-source matrix acceptance. The reservation handling above is the
 targeted correction; build 500 is not automatically replayed.
+
+### ASC upload probe, 2026-11-04
+
+[Run 41829391901](https://github.com/gcsagroup/aegis-browser/actions/runs/41829391901)
+used source `ae16b209ad021ade558dd14d8151d3b4ebd60d4d` for Beta 0.8.0 (510).
+Fresh hosted archive/export and verification passed again. The new reservation
+guard accepted only its own empty export reservation and invoked upload once.
+Apple rejected transport validation: `90186` (0.8.0 train closed), `90478`
+(version no longer importable), and `90062` (0.8.0 is below approved 1.0.0).
+Processing therefore cannot be accepted for new 0.8.0 packages. The immutable
+upload intent and Apple errors are retained; no upload replay or review
+submission is performed. A version choice is required before the nine-way
+upload/processing matrix can continue.
+
+Independent review found a P2 in the earlier verifier's signer trust boundary.
+The Apple Team/Distribution requirement and native profile CMS checks above
+address it. The unchanged build 500 IPA passed those stronger checks locally;
+altered CMS, self-signed CMS and ad-hoc signatures are rejected. These verifier
+results are bound separately from the source that built the artifact.
 
 ## Local isolated-keychain fallback
 
