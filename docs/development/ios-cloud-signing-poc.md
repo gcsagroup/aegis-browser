@@ -91,3 +91,31 @@ and rejects changed native source inputs. Its receipt preserves the original
 archive source separately from the export/verifier execution source. Set the
 three `AEGIS_ASC_*` variables explicitly when using a different Team API key;
 the command does not change shared CI secrets or the default manual flow.
+
+## Accepted cloud IPA, 2026-11-04
+
+The user authorized a separate Admin Team API key named `Tools-Coud-PoC`
+(`A9AQKA2C48`). Export attempt 02 passed the cloud permission gate but received an
+HTML response where Xcode expected JSON while obtaining the Share profile.
+Attempt 03 reused the same hashed archive and completed `EXPORT SUCCEEDED`.
+
+The first verifier incorrectly required Safari's signed entitlements to contain
+an App Group, although its committed entitlements are empty. Commit
+`8ac40fc156411db11dede83411ac385a7b2ccebd` checks each target against its own
+committed entitlement file. The unchanged IPA then passed the independent
+verification; the earlier failure receipt is retained alongside a separate
+`poc-acceptance.json`.
+
+- Archive source: `4a1c8d8068ec8928a7040fc1bfbaafddcae9c118`.
+- Export execution source: `05f45bd0191120dba3f21455228317f6bb4b550f`.
+- Verifier source: `8ac40fc156411db11dede83411ac385a7b2ccebd`.
+- IPA: `.artifacts/cloud-signing-poc/cloud-export-03/Aegis-cloud-poc-1.0.1-16.ipa`.
+- IPA SHA-256: `211d5acd77dd5db0c93d873b9a9236893baeebd826837ee6f2854d900cb5818b`.
+- All three signers: `56CA47A01A967A31A21787EA913655AAC70A9241`.
+- Three App Store profiles, signed entitlements, Apple-trusted certificate chains,
+  deep signatures, 20 shared resources and Firebase registration passed.
+- No Distribution P12 imported; no Distribution identity visible before/after
+  export; original keychain/default restored. No Apple upload or device test.
+
+Manual remains the production default. This is local Xcode proof; hosted CI is
+not yet exercised by the PoC entrypoint.
