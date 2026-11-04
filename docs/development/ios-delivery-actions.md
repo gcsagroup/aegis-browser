@@ -13,13 +13,17 @@ Enter **Version** and **Build** separately. For a new package, choose **Product*
 | Operation | English | 中文 |
 | --- | --- | --- |
 | **Status** (default) | Query the exact version and build in TestFlight. Leave **Product** at its default. | 查询指定版本和构建号的 TestFlight 状态，**Product** 保持默认。 |
-| **Wait** | Wait up to five minutes for processing. Leave **Product** at its default. | 等待处理，最多五分钟，**Product** 保持默认。 |
+| **Wait** | Wait up to 30 minutes for processing. Leave **Product** at its default. | 等待处理，最多 30 分钟，**Product** 保持默认。 |
 | **Package** | Produce an IPA, dSYM and manifest for an unused build number. | 使用未占用的构建号，生成 IPA、dSYM 和清单。 |
 | **Package and upload** | Check availability, package once and upload that IPA to TestFlight. Check **Status** before retrying after an uncertain result. | 检查构建号是否可用，打包后将同一份 IPA 上传至 TestFlight。结果不明时，先用 **Status** 核对状态。 |
 
 **Status** and receipt-free **Wait** use only the exact version and build. Both are read-only.
 
 **Status** 和不使用凭据的 **Wait** 均为只读查询，只需填写准确的版本和构建号。
+
+If **Wait** times out, the run fails and retains the last observed Apple state in its Summary and status artifact. Use **Status** or **Wait** again to check that same build; do not upload it again.
+
+**Wait** 超时仍会失败，并在 Summary 和状态 artifact 中保留最后一次 Apple 状态。使用 **Status** 或 **Wait** 再次查询同一构建，不要重新上传。
 
 ## Full / 分阶段交付
 

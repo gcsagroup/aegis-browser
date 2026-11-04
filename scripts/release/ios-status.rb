@@ -10,7 +10,14 @@ api = AegisRelease::AscApi.new(token: token, read_only: true)
 query = AegisRelease::BuildStatus.new(version: ENV.fetch('RELEASE_VERSION'), build: ENV.fetch('RELEASE_BUILD'), api: api)
 mode = ENV.fetch('RELEASE_QUERY_MODE', 'status')
 AegisRelease.require!(%w[status wait unused].include?(mode), 'Unknown read-only query mode')
-value = mode == 'wait' ? query.wait : query.call
+wait_error = nil
+begin
+  value = mode == 'wait' ? query.wait : query.call
+rescue AegisRelease::BuildStatus::WaitTimeout => wait_error
+  value = wait_error.status
+  value['waitOutcome'] = 'timed_out'
+  value['waitTimeoutSeconds'] = wait_error.timeout
+end
 if mode == 'unused'
   remote = value.fetch('remote')
   AegisRelease.require!(remote['buildId'].nil? && remote.fetch('uploads').empty?,
@@ -31,7 +38,9 @@ if ENV['GITHUB_STEP_SUMMARY']
   File.open(ENV['GITHUB_STEP_SUMMARY'], 'a') do |summary|
     summary.puts "## TestFlight Status\n\n| Field | Value |\n|---|---|"
     fields.each { |key, item| summary.puts "| #{key} | #{item.nil? ? '-' : item.to_s.gsub('|', '&#124;').gsub(/[\r\n]/, ' ')} |" }
+    summary.puts "\n**Wait timed out after #{wait_error.timeout} seconds.** This is the last observed Apple state. Use Status or Wait to check again; no upload was retried." if wait_error
     summary.puts "\nThis operation reads TestFlight status."
     summary.puts "\n#{remote['processingState'] == 'NOT_FOUND' ? 'Apple did not return a build for this exact version and build number.' : 'Apple state only; audience does not identify Beta versus Release or verify package provenance.'}"
   end
 end
+raise wait_error if wait_error
