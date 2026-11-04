@@ -4,6 +4,24 @@ In the upstream `gcsagroup/aegis-browser` repository, open **Actions**, select *
 
 在上游仓库 `gcsagroup/aegis-browser` 打开 **Actions**，选择 **iOS Delivery · Simple** 或 **iOS Delivery · Full**，点击 **Run workflow** 并选择 `main` 分支。首次发起与重新运行均要求实际的仓库 Admin 权限。
 
+## Signing mode / 签名模式
+
+New packages default to **cloud** in both forms, the CLI, Fastlane and candidate
+tags. Use **manual** explicitly for the existing certificate/profile fallback:
+Actions **Signing mode → manual**, CLI `--signing-mode manual`, Fastlane
+`signing_mode:manual`. Cloud packaging runs on an admitted GitHub-hosted macOS
+runner without importing a Distribution P12. Cloud failure stops the attempt;
+manual is an operator selection, with a new run ID and an unused build.
+
+两个表单、CLI、Fastlane 和 candidate tag 的新包均默认 **cloud**。显式回退选择：Actions 的 **Signing mode → manual**、CLI 的 `--signing-mode manual`、Fastlane 的 `signing_mode:manual`。cloud 使用获准的 GitHub-hosted macOS runner，不导入分发 P12；失败后停止，由操作者核对状态并选择 manual、未占用 build 与新 run ID。
+
+Signing mode applies only to **Package**, **Package and upload**, and **Draft**.
+Leave it at the default for **Status**, **Wait** and existing-package stages;
+those routes use the retained package evidence. Lightweight and ordinary
+annotated tags select cloud; see the [explicit manual tag format](ios-cloud-signing-poc.md#current-signing-default-and-manual-fallback).
+
+签名模式仅作用于 **Package**、**Package and upload** 和 **Draft**。**Status**、**Wait** 及已有包阶段可保持默认，按保留的包身份和签名证据处理。轻量或普通注释 tag 默认 cloud；显式 manual tag 格式见上述指南。
+
 ## Simple / 日常操作
 
 Enter **Version** and **Build** separately. For a new package, choose **Product**. **Alpha** is internal-only, **Beta** supports internal and external testing, and **Release** supports release destinations through explicit stages.
