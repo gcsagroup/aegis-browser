@@ -1,13 +1,113 @@
 # iOS cloud signing PoC
 
-## Hosted primary, local fallback, and accepted 1.0.2 matrix
+## Default-cloud acceptance, 2026-11-05 (Asia/Shanghai)
+
+[PR #77](https://github.com/gcsagroup/aegis-browser/pull/77) switched new iOS
+packages to cloud by default and retained explicit manual fallback. The runtime
+acceptance below uses merged source `b6f0e680b25e64a33109f24ba982e3b9aee68e46`,
+tree `5cb91a5eecb81c143f00522bd2e8606ed5028ced`. This documentation backfill
+does not produce or relabel any package.
+
+Version **1.0.3 starts at build 1**. All nine cloud combinations omitted the
+signing selector, including lightweight Alpha/Release tags and an ordinary
+annotated Beta tag with no signing directive. Each used Xcode 26.6 (17F113),
+a fresh hosted runner and archive, zero initially installed provisioning
+profiles and no Distribution identity. No Distribution P12 was imported.
+Archive signing was ad-hoc; export completed Apple cloud Distribution signing.
+The ephemeral keychain state was restored.
+
+The explicit manual Beta fallback used `signing_mode=manual`, installed and
+cleaned up the existing certificate/profile material, then uploaded the exact
+verified package through its retained receipt. The Upload form retained its
+default cloud value, confirming that existing-package operations use the
+manifest signing mode. No automatic cloud-to-manual retry occurred.
+
+Independent downloaded-byte verification checked the GitHub artifact digest,
+manifest hashes and all three targets: Apple-trusted Distribution signatures,
+exact Team OU, provisioning CMS, entitlements and delivered IPA/dSYM UUIDs.
+All ten uploads are `COMPLETE`, builds `VALID` and unexpired, with the correct
+audience. Review-linkage readback found no Beta Review, App Store version or
+tester-group relationship. Physical-device acceptance remains unverified.
+
+The exact-source [quality gate](https://github.com/gcsagroup/aegis-browser/actions/runs/41887005986),
+[iOS validation](https://github.com/gcsagroup/aegis-browser/actions/runs/41887005934)
+and [secret scan](https://github.com/gcsagroup/aegis-browser/actions/runs/41887005903)
+passed independently of package and ASC acceptance.
+
+| Entry | Profile | Build | Signing | Package run | Upload run | ASC processing / audience |
+| --- | --- | --- | --- | --- | --- | --- |
+| Fastlane | Alpha | 1 | cloud | [41894252527](https://github.com/gcsagroup/aegis-browser/actions/runs/41894252527) | same run | `VALID` / `INTERNAL_ONLY` |
+| Fastlane | Beta | 2 | cloud | [41895618369](https://github.com/gcsagroup/aegis-browser/actions/runs/41895618369) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Fastlane | Release | 3 | cloud | [41897615023](https://github.com/gcsagroup/aegis-browser/actions/runs/41897615023) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Actions | Alpha | 5 | cloud | [41901851000](https://github.com/gcsagroup/aegis-browser/actions/runs/41901851000) | same run | `VALID` / `INTERNAL_ONLY` |
+| Actions | Beta | 6 | cloud | [41903454151](https://github.com/gcsagroup/aegis-browser/actions/runs/41903454151) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Actions | Release | 7 | cloud | [41905273732](https://github.com/gcsagroup/aegis-browser/actions/runs/41905273732) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Tag → private Draft | Alpha | 9 | cloud | [41909079606](https://github.com/gcsagroup/aegis-browser/actions/runs/41909079606) | [41910558537](https://github.com/gcsagroup/aegis-browser/actions/runs/41910558537) | `VALID` / `INTERNAL_ONLY` |
+| Tag → private Draft | Beta | 10 | cloud | [41911251650](https://github.com/gcsagroup/aegis-browser/actions/runs/41911251650) | [41912854175](https://github.com/gcsagroup/aegis-browser/actions/runs/41912854175) | `VALID` / `APP_STORE_ELIGIBLE` |
+| Tag → private Draft | Release | 11 | cloud | [41913533143](https://github.com/gcsagroup/aegis-browser/actions/runs/41913533143) | [41914893911](https://github.com/gcsagroup/aegis-browser/actions/runs/41914893911) | `VALID` / `APP_STORE_ELIGIBLE` |
+| Explicit manual fallback | Beta | 12 | manual | [41915508670](https://github.com/gcsagroup/aegis-browser/actions/runs/41915508670) | [41916645037](https://github.com/gcsagroup/aegis-browser/actions/runs/41916645037) | `VALID` / `APP_STORE_ELIGIBLE` |
+
+Retained IPA SHA-256 values:
+
+| Entry / profile | Build | IPA SHA-256 |
+| --- | --- | --- |
+| fastlane / alpha | 1 | `74fdf4201e121322e4e3823cdb404d5bea6cf234f805aa97471a99c6eec03291` |
+| fastlane / beta | 2 | `6fd8803b7b61b35c0e178870d6a1007e4c9736d99d0e3ab515a6d44191184062` |
+| fastlane / release | 3 | `55c445274ccb70ba2d66a51b49ff21ab28941cf506f1d881f540aad898372766` |
+| actions / alpha | 5 | `0fd72c5585a9622504e02e29799adfec322d6481b10b33be6d97e7eb75a5fe98` |
+| actions / beta | 6 | `f95520ea73cd89716ca102b933708543c73c8bad101382c3b1f6e648d9612bf5` |
+| actions / release | 7 | `58c0a6e517b93b5f627393c1a4c8bff14f340c8e5c60e0de8e032e5cdf2a96cf` |
+| tag-draft / alpha | 9 | `662e487b9f27098872c4af8fffdcdf1e805314beb0d859826b61d52dac9b0885` |
+| tag-draft / beta | 10 | `e02542f7be9dbd77d2f7347383eb9144f601cb2ed3b659a297e218c31c9d95c5` |
+| tag-draft / release | 11 | `a9a794647d036d57dff35c0a062081b9016af55547c7b14be8a6962435414bb3` |
+| manual-fallback / beta | 12 | `f252e39df85690f25edb16d7a435a9087bbedcb962ffa09c418bf44e9f8c41be` |
+
+The three tag releases remain private Drafts. Each retained eight assets
+whose remote digest and size matched the verified local manifest:
+
+- [Alpha 1.0.3 (9)](https://github.com/gcsagroup/aegis-browser/releases/tag/untagged-51a61191b5ac5807f08d), tag `candidate/ios/1.0.3-alpha.9`.
+- [Beta 1.0.3 (10)](https://github.com/gcsagroup/aegis-browser/releases/tag/untagged-077b9dae164d41ac425c), tag `candidate/ios/1.0.3-beta.10`.
+- [Release 1.0.3 (11)](https://github.com/gcsagroup/aegis-browser/releases/tag/untagged-5c16148b9ad467cb5f30), tag `candidate/ios/1.0.3-release.11`.
+
+[Actions Alpha build 4](https://github.com/gcsagroup/aegis-browser/actions/runs/41899341044)
+completed cloud archive/export and independent signature/dSYM checks, but
+`actions/download-artifact` failed with `ECONNRESET` before the upload
+command ran. ASC had no build or upload files, only an empty
+`AWAITING_UPLOAD` export reservation. The failed workflow, package and
+readbacks are retained separately. Recovery created a fresh package at
+build 5; no failed producer was replayed or imported. The ten accepted
+packages above exclude build 4.
+
+[Lightweight Tag Alpha build 8](https://github.com/gcsagroup/aegis-browser/actions/runs/41906988524)
+completed a fresh ad-hoc archive, then Xcode cloud export returned exit 70
+(data format read error and provisioning profile not found). No IPA,
+Draft or upload completed; the keychain was restored. The signing
+configuration matched successful Alpha build 5, and an authenticated API read found
+the existing App Store profiles active. Recovery used a fresh build 9
+on a lightweight tag with the same signing configuration. Build 8 and its
+empty export reservation are retained separately and excluded from the
+ten accepted packages; the original export error is not relabelled as
+a successful run.
+
+The initial default-cloud run `1.0.2 (11)` also reached `COMPLETE` / `VALID`.
+Build 12 was cancelled before its upload job executed when numbering was
+corrected; only its empty `AWAITING_UPLOAD` export reservation remained.
+The complete matrix moved to the unused version 1.0.3 rather than resetting
+or reusing accepted 1.0.2 build identities. New versions begin at build 1;
+subsequent uploads within a version use increasing, unused build numbers.
+The original 1.0.2 matrix and 0.8.0 failure evidence below retain their
+original source identities. Local receipts include every IPA/dSYM, delivery
+and upload journal, independent verification, final ASC and private Draft
+readback, and SHA-256 inventories.
+
+## Hosted primary, local fallback, and historical 1.0.2 matrix
 
 Version **1.0.2 (2–10)** passed all nine Alpha/Beta/Release ×
 Fastlane/Actions/Tag-to-Draft combinations on 2026-11-04. Each package completed
 a fresh hosted archive, cloud export, independent three-target verification,
 ASC upload and processing (`COMPLETE` / `VALID`). The earlier **0.8.0** upload
-was rejected by Apple; its failure evidence is retained below. The user selected
-1.0.2 for the matrix, starting at build 2.
+was rejected by Apple; its failure evidence is retained below. That historical
+matrix used builds 2–10; its accepted identities are retained.
 
 No App Review or Beta Review was submitted, no tester groups were assigned, and
 the three releases remain private Drafts. Native-device acceptance remains a
