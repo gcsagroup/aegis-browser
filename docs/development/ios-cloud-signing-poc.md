@@ -1,11 +1,17 @@
 # iOS cloud signing PoC
 
-## Hosted primary, local fallback, and 0.8.0 acceptance matrix
+## Hosted primary, local fallback, and accepted 1.0.2 matrix
 
-The next acceptance target is version **0.8.0** across Alpha/Beta/Release and
-Fastlane/Actions/Tag-to-Draft (nine combinations). The user authorized uploading
-the resulting test builds and waiting for ASC processing, without App Review
-submission. Native-device acceptance remains a separate gate.
+Version **1.0.2 (2–10)** passed all nine Alpha/Beta/Release ×
+Fastlane/Actions/Tag-to-Draft combinations on 2026-11-04. Each package completed
+a fresh hosted archive, cloud export, independent three-target verification,
+ASC upload and processing (`COMPLETE` / `VALID`). The earlier **0.8.0** upload
+was rejected by Apple; its failure evidence is retained below. The user selected
+1.0.2 for the matrix, starting at build 2.
+
+No App Review or Beta Review was submitted, no tester groups were assigned, and
+the three releases remain private Drafts. Native-device acceptance remains a
+separate gate.
 
 Production package inputs now expose `signing_mode: manual|cloud`, with **manual
 still the default**. The CLI accepts `--signing-mode`, and Fastlane accepts
@@ -48,8 +54,8 @@ candidate branch, with the candidate SHA frozen in an environment variable and
 repeatedly checked against the dispatch, checkout and remote branch. Both the
 original operator and rerunner must be repository Admins. Credentialed work is
 never triggered by a fork PR. Production current-main admission is unchanged.
-The first probe is a 0.8.0 Beta build; evidence is not transferable from this
-candidate to a later merged source SHA.
+The first probe used a 0.8.0 Beta build; its evidence is not transferable from
+that candidate to the later merged-source matrix.
 
 The three delivery paths are exercised as follows after integration:
 
@@ -73,10 +79,82 @@ aegis-ios-signing-v1
 Tag deliveries first verify private Draft assets and remote hashes. ASC uploads
 of those exact packages use the retained delivery receipt in a separate Full
 Upload stage; no publishing, tester-group assignment or review submission is
-implicit. The 0.8.0 train exists in ASC, while 1.0.0 is already on sale and 1.0.1
-is waiting for review; a real upload must establish whether Apple accepts a new
-0.8.0 build. A server version rejection is retained rather than changing bundle
-identity/version or reporting processing success.
+implicit. Apple rejected new 0.8.0 uploads because that train is closed and
+below approved 1.0.0. The rejection is retained separately from the authorized
+1.0.2 matrix; it is never reported as processing success.
+
+### Merged-source nine-way acceptance, 2026-11-04
+
+Implementation [PR #75](https://github.com/gcsagroup/aegis-browser/pull/75) merged
+as `1b347068a62382e3ed9cc21a57f24192541a8873`, tree
+`0e2d20039ea29dda2a3110e99ab1bb904dae567a`. All nine packages and their upload
+receipts use exactly that source. The independently reviewed implementation head
+was `6850c5ae13c22ac6a2b8b2075c88f0a0c4647d83`, with the same tree and no remaining
+P1/P2 findings. This later documentation update is not a package producer.
+
+The merge-source [quality gate](https://github.com/gcsagroup/aegis-browser/actions/runs/41833649706),
+[iOS contracts/native validation](https://github.com/gcsagroup/aegis-browser/actions/runs/41833649760)
+and [secret scan](https://github.com/gcsagroup/aegis-browser/actions/runs/41833649992)
+passed independently of the delivery matrix.
+
+Every row used Xcode 26.6 (17F113), began with zero installed profiles and no
+Distribution identity, created a new ad-hoc archive, and completed Apple cloud
+Distribution export without importing a Distribution P12. Each run restored the
+original keychain search list/default and deleted its disposable keychain.
+Downloaded artifact bytes matched the GitHub artifact
+digest and every manifest member. Independent local verification then checked
+the app, Safari extension and Share extension: Apple-trusted Distribution signer
+and exact Team OU, signed entitlements, trusted provisioning CMS, profile signer
+membership, shared resources and actual delivered IPA/dSYM UUID equality.
+
+| Entry | Profile | Build | Package run | Upload run | ASC processing / audience |
+| --- | --- | --- | --- | --- | --- |
+| Fastlane | Alpha | 2 | [41835100103](https://github.com/gcsagroup/aegis-browser/actions/runs/41835100103) | same run | `VALID` / `INTERNAL_ONLY` |
+| Fastlane | Beta | 3 | [41837325591](https://github.com/gcsagroup/aegis-browser/actions/runs/41837325591) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Fastlane | Release | 4 | [41841951471](https://github.com/gcsagroup/aegis-browser/actions/runs/41841951471) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Actions | Alpha | 5 | [41843651373](https://github.com/gcsagroup/aegis-browser/actions/runs/41843651373) | same run | `VALID` / `INTERNAL_ONLY` |
+| Actions | Beta | 6 | [41845318571](https://github.com/gcsagroup/aegis-browser/actions/runs/41845318571) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Actions | Release | 7 | [41847442429](https://github.com/gcsagroup/aegis-browser/actions/runs/41847442429) | same run | `VALID` / `APP_STORE_ELIGIBLE` |
+| Tag → private Draft | Alpha | 8 | [41849328220](https://github.com/gcsagroup/aegis-browser/actions/runs/41849328220) | [41851206863](https://github.com/gcsagroup/aegis-browser/actions/runs/41851206863) | `VALID` / `INTERNAL_ONLY` |
+| Tag → private Draft | Beta | 9 | [41851984373](https://github.com/gcsagroup/aegis-browser/actions/runs/41851984373) | [41853468470](https://github.com/gcsagroup/aegis-browser/actions/runs/41853468470) | `VALID` / `APP_STORE_ELIGIBLE` |
+| Tag → private Draft | Release | 10 | [41854133972](https://github.com/gcsagroup/aegis-browser/actions/runs/41854133972) | [41856478088](https://github.com/gcsagroup/aegis-browser/actions/runs/41856478088) | `VALID` / `APP_STORE_ELIGIBLE` |
+
+All nine server readbacks showed upload `COMPLETE`, processing `VALID`, unexpired
+builds and no tester groups. Fresh review-linkage queries found no Beta Review
+submission or App Store version relationship for any matrix build. Alpha is
+`INTERNAL_ONLY`; Beta and Release are `APP_STORE_ELIGIBLE`. These are upload and
+processing results, not TestFlight installation or physical-device proof.
+
+Each tag's separate Upload operation consumed the original package receipt;
+it did not rebuild or resign the IPA. The three private Drafts each retained
+eight assets; every remote asset digest and size matched the independently
+verified local manifest, including the manifest and its checksum:
+
+- [Alpha 1.0.2 (8)](https://github.com/gcsagroup/aegis-browser/releases/tag/untagged-e7a013c4b4feff47ccd5), tag `candidate/ios/1.0.2-alpha.8`.
+- [Beta 1.0.2 (9)](https://github.com/gcsagroup/aegis-browser/releases/tag/untagged-3cf735062327789ac173), tag `candidate/ios/1.0.2-beta.9`.
+- [Release 1.0.2 (10)](https://github.com/gcsagroup/aegis-browser/releases/tag/untagged-7af48edc026edbff2e12), tag `candidate/ios/1.0.2-release.10`.
+
+Retained IPA SHA-256 values:
+
+| Entry / profile | Build | IPA SHA-256 |
+| --- | --- | --- |
+| Fastlane / alpha | 2 | `e159f9305868fb4a7b6d4e8b302f591bd5854b0841e8e40d948333152286a8cc` |
+| Fastlane / beta | 3 | `500cdc55d8761cf95b89ee4863b98ae92bfa9091c106b140a68d2a59f4115159` |
+| Fastlane / release | 4 | `4fe2df41add87b1b188832eb696ad752c82840156513282ce51f0039455d3dd7` |
+| Actions / alpha | 5 | `b5643b879c96fd0c080da2ddc9129bbfffc1f5d83fcf1e552bbcb765241f4c4b` |
+| Actions / beta | 6 | `35a33cc799a565506d1d40e81b585844405b2aae47d53868e669ec27c2f4e615` |
+| Actions / release | 7 | `c9f0b48477a580f0f5dc3c51b01b49d0eabddfdb2571b562085d209cd8abacb0` |
+| Tag → private Draft / alpha | 8 | `25de3181b35483d4beb666d06c5c2d0a6851dda7bbf580ea11f7229f0630b38f` |
+| Tag → private Draft / beta | 9 | `7cebdd5d20ff8a0da0774f2dfdc123b650f088cb6456685b019ad7b21802cfae` |
+| Tag → private Draft / release | 10 | `fbdde047171755c9ac6a6cc8f6f20afd9f279e4f7aece6a44019eb0913fb427f` |
+
+The local acceptance bundle includes all nine IPAs and dSYM ZIPs, original
+delivery/upload receipts, per-package independent verification, final ASC
+processing/review-linkage readbacks, Draft asset readbacks, an `acceptance.json`
+index and `evidence-sha256.json`. The rejected 0.8.0 upload logs and receipt are
+preserved in a separate failure directory. Manual remains the default and an
+explicit fallback; the isolated-keychain local proof remains separately bound
+to 1.0.1 (16). No release was published and no device acceptance is claimed.
 
 ### First hosted probe, 2026-11-04
 
@@ -114,8 +192,8 @@ Apple rejected transport validation: `90186` (0.8.0 train closed), `90478`
 (version no longer importable), and `90062` (0.8.0 is below approved 1.0.0).
 Processing therefore cannot be accepted for new 0.8.0 packages. The immutable
 upload intent and Apple errors are retained; no upload replay or review
-submission is performed. A version choice is required before the nine-way
-upload/processing matrix can continue.
+submission was performed. The user then authorized 1.0.2 for the nine-way
+upload/processing matrix recorded above.
 
 Independent review found a P2 in the earlier verifier's signer trust boundary.
 The Apple Team/Distribution requirement and native profile CMS checks above
