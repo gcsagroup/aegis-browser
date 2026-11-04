@@ -5,6 +5,17 @@ require 'base64'
 module AegisRelease
   # Lookup identity is deliberately independent of package profiles and retained artifacts.
   class BuildStatus
+    WAIT_TIMEOUT = 1800
+
+    class WaitTimeout < Error
+      attr_reader :status, :timeout
+
+      def initialize(status, timeout)
+        @status, @timeout = status, timeout
+        super("Processing wait timed out after #{timeout} seconds; inspect Status or run Wait again; no upload or retry performed")
+      end
+    end
+
     def self.token_options(environment = ENV)
       names = %w[AEGIS_ASC_KEY_ID AEGIS_ASC_ISSUER_ID AEGIS_ASC_KEY_BASE64]
       AegisRelease.require!(names.all? { |name| environment[name].is_a?(String) && !environment[name].strip.empty? },
@@ -34,8 +45,8 @@ module AegisRelease
       { 'platform' => 'ios', 'applicationId' => APP_ID, 'version' => @identity.version, 'build' => @identity.build,
         'readOnly' => true, 'packageProvenanceVerified' => false, 'remote' => remote }
     end
-    def wait(timeout: 300, interval: 15, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, sleeper: ->(seconds) { sleep(seconds) })
-      AegisRelease.require!((1..300).cover?(timeout) && (1..30).cover?(interval), 'Invalid read-only wait bounds')
+    def wait(timeout: WAIT_TIMEOUT, interval: 15, clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, sleeper: ->(seconds) { sleep(seconds) })
+      AegisRelease.require!((1..WAIT_TIMEOUT).cover?(timeout) && (1..30).cover?(interval), 'Invalid read-only wait bounds')
       deadline = clock.call + timeout
       loop do
         value = call
@@ -50,7 +61,7 @@ module AegisRelease
         AegisRelease.require!(remote['processingState'] != 'NOT_FOUND' || remote['uploadState'] != 'NOT_FOUND',
                               'Exact version/build has no upload; nothing to wait for')
         remaining = deadline - clock.call
-        AegisRelease.require!(remaining.positive?, 'Processing wait timed out; no upload or retry performed')
+        raise WaitTimeout.new(value, timeout) unless remaining.positive?
         sleeper.call([interval, remaining].min)
       end
     end

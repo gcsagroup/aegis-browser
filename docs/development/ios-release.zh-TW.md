@@ -37,6 +37,6 @@ Actions 的封裝與上傳統一使用 **iOS Delivery**；獨立保留 **iOS Rel
 
 ## Actions 精簡版與完整版
 
-`iOS Delivery · Simple` 僅四欄：操作、版本、build、打包產物。操作為僅打包、打包並上傳 TF、查詢狀態、等待處理；查詢/等待只需版本與 build，不需憑據或舊 artifact，且只發送 GET。等待最多五分鐘，不會重傳。
+`iOS Delivery · Simple` 僅四欄：操作、版本、build、打包產物。操作為僅打包、打包並上傳 TF、查詢狀態、等待處理；查詢/等待只需版本與 build，不需憑據或舊 artifact，且只發送 GET。等待最多 30 分鐘，不會重傳。逾時仍為失敗，Summary 與狀態 artifact 保留最後一次 Apple 狀態，可用 Status 或 Wait 再查同一構建。
 
 `iOS Delivery · Full` 呼叫同一 reusable workflow；舊包補傳、說明、合規及分發仍需最新成功執行的完整交付憑據。Admin、來源、producer/attempt、原始摘要與防重複校驗保留。詳見[完整操作指引](ios-release.zh-CN.md)。
