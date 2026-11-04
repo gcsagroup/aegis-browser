@@ -1,15 +1,40 @@
 # frozen_string_literal: true
 require 'minitest/autorun'
 require 'tmpdir'
-require 'open3'
 require 'json'
 require 'fileutils'
 
 class IosStatusCliTest < Minitest::Test
   ROOT = File.expand_path('../..', __dir__)
 
+  def run_cli(directory, environment, preload)
+    stdout_path = File.join(directory, 'stdout')
+    stderr_path = File.join(directory, 'stderr')
+    # Isolate CLI globals and exceptions without launching an external command.
+    pid = fork do
+      exit_code = 1
+      begin
+        $stdout.reopen(stdout_path, 'w')
+        $stderr.reopen(stderr_path, 'w')
+        ENV.update(environment)
+        $LOAD_PATH.unshift(directory)
+        require preload
+        load File.join(ROOT, 'scripts/release/ios-status.rb')
+        exit_code = 0
+      rescue StandardError => error
+        warn error.full_message
+      ensure
+        $stdout.flush
+        $stderr.flush
+        Process.exit!(exit_code) # Do not run the inherited Minitest at_exit hook.
+      end
+    end
+    _, process = Process.wait2(pid)
+    [File.read(stdout_path), File.read(stderr_path), process]
+  end
+
   def run_query(state: 'PROCESSING', mode: 'wait', failure: nil)
-    Dir.mktmpdir('aegis-status-cli-') do |directory|
+    Dir.mktmpdir('aegis status cli-') do |directory|
       value = { 'platform' => 'ios', 'version' => '1.0.1', 'build' => '14', 'readOnly' => true,
                 'packageProvenanceVerified' => false,
                 'remote' => { 'processingState' => state, 'uploadState' => 'COMPLETE', 'expired' => false,
@@ -50,13 +75,14 @@ class IosStatusCliTest < Minitest::Test
         end
       RUBY
       summary_path = File.join(directory, 'summary.md')
-      environment = { 'STATUS_TEST_ROOT' => directory, 'STATUS_TEST_VALUE' => JSON.generate(value),
-                      'STATUS_TEST_FAILURE' => failure, 'RELEASE_VERSION' => '1.0.1', 'RELEASE_BUILD' => '14',
-                      'RELEASE_QUERY_MODE' => mode, 'GITHUB_STEP_SUMMARY' => summary_path,
-                      'AEGIS_ASC_KEY_ID' => 'fixture-id', 'AEGIS_ASC_ISSUER_ID' => 'fixture-issuer',
-                      'AEGIS_ASC_KEY_BASE64' => ['fixture-key'].pack('m0') }
-      text, error, process = Open3.capture3(environment, RbConfig.ruby, '-I', directory, '-r', preload,
-                                            File.join(ROOT, 'scripts/release/ios-status.rb'))
+      text, error, process = run_cli(directory,
+        { 'STATUS_TEST_ROOT' => directory, 'STATUS_TEST_VALUE' => JSON.generate(value),
+          'STATUS_TEST_FAILURE' => failure, 'RELEASE_VERSION' => '1.0.1', 'RELEASE_BUILD' => '14',
+          'RELEASE_QUERY_MODE' => mode, 'GITHUB_STEP_SUMMARY' => summary_path,
+          'AEGIS_ASC_KEY_ID' => 'fixture-id', 'AEGIS_ASC_ISSUER_ID' => 'fixture-issuer',
+          'AEGIS_ASC_KEY_BASE64' => ['fixture-key'].pack('m0') },
+        preload
+      )
       report_path = File.join(directory, '.artifacts/ios-status/status.json')
       yield({ text: text, error: error, process: process,
               report: File.file?(report_path) ? JSON.parse(File.read(report_path)) : nil,
