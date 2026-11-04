@@ -93,6 +93,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         if: ${{ github.event_name == 'workflow_dispatch' }}
+      - name: Verify Apple profile trust regressions without credentials
+        run: python3 -B -m unittest discover -s scripts/release -p test_ios_profile_trust.py -v
       - name: Compile uncredentialed native archive
         run: |
           xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Aegis.xcarchive" -derivedDataPath "$RUNNER_TEMP/DerivedData" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 archive > "$RUNNER_TEMP/xcodebuild.log" 2>&1
