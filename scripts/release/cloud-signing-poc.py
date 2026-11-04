@@ -52,7 +52,7 @@ def run(*args, env=None, log=None, timeout=120):
 
 
 def write(path, value):
-    with path.open('x', opener=lambda p, flags: os.open(p, flags, 0o600)) as output:
+    with open(path, 'x', opener=lambda p, flags: os.open(p, flags, 0o600)) as output:
         json.dump(value, output, indent=2)
         output.write('\n')
 
@@ -113,6 +113,47 @@ def source():
             'tree': run('git', 'rev-parse', 'HEAD^{tree}').decode().strip()}
 
 
+def archive_files(archive):
+    files = {}
+    for path in sorted(archive.rglob('*')):
+        if path.is_symlink():
+            raise ValueError('Archive symlink refused')
+        if path.is_file():
+            files[str(path.relative_to(archive))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    if 'Info.plist' not in files or not any(p.startswith('Products/Applications/Aegis.app/') for p in files):
+        raise ValueError('Missing completed native archive')
+    return files
+
+
+def snapshot_archive(directory, identity):
+    value = {'source': identity, 'files': archive_files(directory / 'work/Aegis.xcarchive')}
+    write(directory / 'archive-provenance.json', value)
+
+
+def reusable_archive(run_id, version, build, team):
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}', run_id):
+        raise ValueError('Unsafe archive run ID')
+    directory = ROOT / '.artifacts/cloud-signing-poc' / run_id
+    if any(p.is_symlink() for p in [directory, *directory.parents]):
+        raise ValueError('Archive path must be physical')
+    receipt = json.loads((directory / 'poc-receipt.json').read_text())
+    provenance = json.loads((directory / 'archive-provenance.json').read_text())
+    archive = directory / 'work/Aegis.xcarchive'
+    if (receipt.get('archiveCompleted') is not True or receipt.get('distributionP12Imported') is not False
+            or receipt.get('distributionIdentityAbsentBeforeArchive') is not True
+            or (receipt.get('version'), receipt.get('build'), receipt.get('team')) != (version, build, team)
+            or provenance['source'] != receipt['source'] or provenance['files'] != archive_files(archive)):
+        raise ValueError('Prior archive proof or identity differs')
+    old_sha = receipt['source']['sha']
+    if not re.fullmatch(r'[0-9a-f]{40}', old_sha):
+        raise ValueError('Invalid archive source SHA')
+    if run('git', 'diff', old_sha, 'HEAD', '--', 'apps/ios',
+           'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared',
+           'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json').strip():
+        raise ValueError('Native inputs changed; a fresh archive is required')
+    return directory, receipt['source']
+
+
 def stage(directory, environment):
     work = directory / 'work'
     files = run('git', 'ls-files', '-z', 'apps/ios',
@@ -159,22 +200,32 @@ def experiment(options, environment):
         # Xcode needs the path, not a base64 copy of the key in its environment.
         environment.pop('AEGIS_ASC_KEY_BASE64', None)
         evidence['xcode'] = run('xcodebuild', '-version').decode().strip()
-        work = stage(directory, environment)
+        if options.archive_from:
+            previous, archive_source = reusable_archive(options.archive_from, options.version, options.build, options.team)
+            work = previous / 'work'
+            evidence.update(source=archive_source, executionSource=identity, reusedArchiveFrom=options.archive_from,
+                            archiveCompleted=True, distributionIdentityAbsentBeforeArchive=True,
+                            archiveManifestSha256=hashlib.sha256((previous / 'archive-provenance.json').read_bytes()).hexdigest())
+        else:
+            work = stage(directory, environment)
         archive = work / 'Aegis.xcarchive'
         auth = ['-allowProvisioningUpdates', '-authenticationKeyPath', environment['AEGIS_ASC_KEY_PATH'],
                 '-authenticationKeyID', environment['AEGIS_ASC_KEY_ID'],
                 '-authenticationKeyIssuerID', environment['AEGIS_ASC_ISSUER_ID']]
         with isolated_keychain(directory, evidence):
-            print('Archiving with automatic development signing and no Distribution identity', flush=True)
-            run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'), '-scheme', 'Aegis-Release',
-                '-configuration', 'Release', '-destination', 'generic/platform=iOS',
-                '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
-                '-disableAutomaticPackageResolution', *auth, 'archive',
-                'CODE_SIGN_STYLE=Automatic', 'CODE_SIGN_IDENTITY=Apple Development',
-                'PROVISIONING_PROFILE_SPECIFIER=', 'DEVELOPMENT_TEAM=' + options.team,
-                'MARKETING_VERSION=' + options.version, 'CURRENT_PROJECT_VERSION=' + options.build,
-                'AEGIS_FIREBASE_CHANNEL=beta', env=environment, log=directory / 'archive.log', timeout=2400)
-            evidence['archiveCompleted'] = True
+            if not options.archive_from:
+                print('Archiving with automatic development signing and no Distribution identity', flush=True)
+                run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'), '-scheme', 'Aegis-Release',
+                    '-configuration', 'Release', '-destination', 'generic/platform=iOS',
+                    '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
+                    '-disableAutomaticPackageResolution', *auth, 'archive',
+                    'CODE_SIGN_STYLE=Automatic', 'CODE_SIGN_IDENTITY=Apple Development',
+                    'PROVISIONING_PROFILE_SPECIFIER=', 'DEVELOPMENT_TEAM=' + options.team,
+                    'MARKETING_VERSION=' + options.version, 'CURRENT_PROJECT_VERSION=' + options.build,
+                    'AEGIS_FIREBASE_CHANNEL=beta', env=environment, log=directory / 'archive.log', timeout=2400)
+                evidence['archiveCompleted'] = True
+                snapshot_archive(directory, identity)
+                evidence['archiveManifestSha256'] = hashlib.sha256((directory / 'archive-provenance.json').read_bytes()).hexdigest()
             no_distribution_identity()
             evidence['distributionIdentityAbsentBeforeExport'] = True
             plist = directory / 'ExportOptions.plist'
@@ -215,6 +266,7 @@ def main():
     parser.add_argument('--build', required=True)
     parser.add_argument('--team', required=True)
     parser.add_argument('--run-id', required=True)
+    parser.add_argument('--archive-from', help='Reuse a prior source-bound archive; retry export only')
     parser.add_argument('--downloads', type=Path, default=Path.home() / 'Downloads')
     options = parser.parse_args()
     # Coordinate this entrypoint and refuse a busy native signing host before changing keychain state.

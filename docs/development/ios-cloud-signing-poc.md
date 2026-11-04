@@ -55,3 +55,39 @@ python3 -m unittest discover -s scripts/release -p test_cloud_signing_poc.py
 python3 -m unittest discover -s scripts/release -p test_verify_signed_ios.py
 git diff --check
 ```
+
+## First execution, 2026-11-04
+
+Archive source: `4a1c8d8068ec8928a7040fc1bfbaafddcae9c118`, tree
+`c0f626e437731f3a9884901198c556f191678e6f`, based on upstream main
+`dad8953280fccb2f241a553ee8e83ee7685bab6a`. Xcode 26.6 (17F113),
+version 1.0.1, build 16, beta configuration.
+
+The complete archive passed with `Apple Development: Created via API` and no
+Distribution private identity available. Export failed with exit 70 and Apple
+HTTP 403 `FORBIDDEN_ERROR`: the existing Fastlane-CICD App Manager Team API key
+does not have access to cloud-managed distribution certificates. No IPA was
+produced and no upload was attempted. The original keychain search list/default
+were restored and the disposable keychain was removed. Automatic provisioning
+created development signing assets; account-side assets are retained.
+
+The initial receipt writer incorrectly passed `opener` to `Path.open`; the
+failure receipt was reconstructed from retained native logs and an explicit host
+readback, with that reconstruction marked in the receipt. The writer is fixed
+and covered by an exclusive-write/private-permissions regression test.
+
+The successful archive and per-file hashes are retained in
+`.artifacts/cloud-signing-poc/cloud-poc-01/`. After authorized credentials are
+available, reuse the archive without repeating compilation:
+
+```sh
+python3 scripts/release/cloud-signing-poc.py --signing-mode cloud-poc \
+  --version 1.0.1 --build 16 --team R3JK7R29AC --run-id cloud-export-02 \
+  --archive-from cloud-poc-01
+```
+
+The retry verifies every archive file hash, prior identity and no-P12 evidence,
+and rejects changed native source inputs. Its receipt preserves the original
+archive source separately from the export/verifier execution source. Set the
+three `AEGIS_ASC_*` variables explicitly when using a different Team API key;
+the command does not change shared CI secrets or the default manual flow.
