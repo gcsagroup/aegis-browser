@@ -316,6 +316,9 @@ module AegisRelease
     def package_ios_cloud
       AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted',
                             'Cloud production packaging requires a GitHub-hosted runner; use the explicit local fallback separately')
+      source = AegisRelease.source(request.root)
+      client = AppleStore.new(request, @fastlane, admission: method(:preflight_upload)).tap(&:authenticate)
+      before = CloudReservations.preflight(client, request, source)
       engine_run_id = 'production-' + Digest::SHA256.hexdigest(request.run_id)[0,32]
       run('python3', File.join(request.root, 'scripts/release/cloud-signing-poc.py'), '--signing-mode', 'cloud',
           '--runtime', 'github-hosted', '--profile', request.profile, '--version', request.version, '--build', request.build,
@@ -344,8 +347,11 @@ module AegisRelease
       target_receipt = File.join(request.directory, 'cloud-package-receipt.json')
       FileUtils.cp(receipt_path, target_receipt)
       paths << target_receipt
+      reservation = File.join(request.directory, 'cloud-upload-reservation.json')
+      AegisRelease.write_new(reservation, CloudReservations.capture(client, request, source, before))
+      paths << reservation
       [paths, { 'signing' => 'cloud-app-store-export', 'signingMode' => 'cloud', 'appleTeamId' => receipt.fetch('team'),
-                'cloudVerification' => 'signature-verification.json', 'testflight' => 'not_uploaded',
+                'cloudVerification' => 'signature-verification.json', 'cloudReservation' => 'cloud-upload-reservation.json', 'testflight' => 'not_uploaded',
                 'deviceAcceptance' => 'not_verified', 'testFlightInternalTestingOnly' => request.profile == 'alpha' }]
     end
 
@@ -369,7 +375,14 @@ module AegisRelease
         run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), path, request.version, request.build, request.profile, *verification_args)
         client = store
         client.authenticate
-        result = Journal.new(request, expected_digest).perform('apple-upload') { client.upload(path) }
+        result = Journal.new(request, expected_digest).perform('apple-upload') do
+          if details.fetch('signingMode', 'manual') == 'cloud'
+            proof = JSON.parse(File.read(AegisRelease.file!(File.join(request.directory, details.fetch('cloudReservation')))))
+            client.upload(path, cloud_reservations: proof, source: receipt.fetch('source'))
+          else
+            client.upload(path)
+          end
+        end
       end
       puts JSON.pretty_generate(result)
       result

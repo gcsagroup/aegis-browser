@@ -14,7 +14,7 @@ import zipfile
 PACKAGE_WORKFLOWS = {'.github/workflows/ios-delivery-full.yml', '.github/workflows/ios-delivery.yml', '.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'}
 WORKFLOWS = PACKAGE_WORKFLOWS | {'.github/workflows/ios-testflight.yml'}
 RECORD = re.compile(r'(?:apple-upload|ios-(?:metadata|compliance|distribute|submit))-(?:started|result)\.json\Z')
-CLOUD_EVIDENCE = {'signature-verification.json', 'dsym-verification.json', 'cloud-package-receipt.json'}
+CLOUD_EVIDENCE = {'signature-verification.json', 'dsym-verification.json', 'cloud-package-receipt.json', 'cloud-upload-reservation.json'}
 
 
 def verify_run(run, repository, sha, run_id, attempt):

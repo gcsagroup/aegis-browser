@@ -27,6 +27,13 @@ Cloud upload re-verifies artifact hashes and actual signing identities against
 the retained receipt, refuses upload replay, and keeps upload and processing
 receipts separate.
 
+Xcode cloud export can create an empty ASC `AWAITING_UPLOAD` reservation even
+with `destination=export`. Cloud packages retain the exact reservation ID after
+an unused-build preflight, and upload checks it again before invoking transport.
+Only that recorded reservation, with no upload files or uploaded date, may pass.
+Other IDs, any file activity, a processed build, or a changed state stop upload.
+Manual uploads keep rejecting every existing upload record.
+
 The existing iOS Release Validation workflow has an explicit `cloud-poc` manual
 exercise on `macos-26`. It uses a dedicated environment restricted to the exact
 candidate branch, with the candidate SHA frozen in an environment variable and
@@ -63,10 +70,38 @@ is waiting for review; a real upload must establish whether Apple accepts a new
 0.8.0 build. A server version rejection is retained rather than changing bundle
 identity/version or reporting processing success.
 
-The production delivery workflows and Fastlane entrypoints continue to use manual
-signing by default. This separate, explicit experiment produces local artifacts
-only. It has no upload, release, review-submission or TestFlight operation. To
-return to manual signing, use the existing iOS Delivery Package operation.
+### First hosted probe, 2026-11-04
+
+[Run 41826833453](https://github.com/gcsagroup/aegis-browser/actions/runs/41826833453)
+used candidate `8dc1c4b3db1a85f263b942f7da23ed8bd9b581e4`, tree
+`628124db16c6f5227e969248e8fd265a28e4a9e0`, Xcode 26.6 (17F113), Beta 0.8.0 (500).
+The clean runner started with no installed profiles or Distribution identity,
+verified three ad-hoc archive signatures, then completed cloud export. All three
+IPA signatures, entitlements, shared resources, Firebase registration and dSYM
+UUIDs passed. No Distribution P12 was imported, no Distribution private identity
+was visible after export, and the original keychain state was restored.
+
+The retained IPA SHA-256 is
+`bfeb2dc609bba6fb4a3fb7b61f21c51a1ca33cc5acbf0712fe715019c5773cdc`;
+the dSYM ZIP SHA-256 is
+`838f87c32d3d75deb7cb3792a0952d4f99666811d31b5be30d20a4aef108c156`.
+Downloaded artifact bytes matched the GitHub artifact digest and all receipt
+members; independent local signature re-verification also passed.
+
+The run stopped before transport because the original duplicate-upload guard
+rejected Xcode's new reservation `b155cd7e-17a1-41a9-9749-6ba2a58b9ea6`.
+ASC readback showed `AWAITING_UPLOAD`, no upload files, no uploaded date and no
+processed build. No upload-started or upload-result receipt exists. The run is
+retained as hosted package proof and a guard failure, not upload/processing or
+final merged-source matrix acceptance. The reservation handling above is the
+targeted correction; build 500 is not automatically replayed.
+
+## Local isolated-keychain fallback
+
+The local fallback produces artifacts only and has no upload or TestFlight
+operation. The hosted validation exercise above has a separate explicit upload
+selection. To return production packaging to manual signing, select `manual`
+in the existing iOS Delivery Package operation.
 
 Run from an idle macOS host with Xcode 26.6 and at least 10 GiB free:
 
@@ -107,9 +142,8 @@ per artifact to support certificate rotation. Manual verification keeps requirin
 its configured fingerprint and profile names.
 
 This local PoC does not establish hosted-CI acceptance, Apple upload/processing,
-TestFlight availability or device acceptance. Hosted integration remains a
-separate change after this experiment passes, with protected credentials and the
-existing trusted-source admission rules.
+TestFlight availability or device acceptance. Those results require their own
+source-bound runs through the hosted integration above.
 
 Targeted checks:
 
@@ -180,8 +214,8 @@ verification; the earlier failure receipt is retained alongside a separate
 - No Distribution P12 imported; no Distribution identity visible before/after
   export; original keychain/default restored. No Apple upload or device test.
 
-Manual remains the production default. This is local Xcode proof; hosted CI is
-not yet exercised by the PoC entrypoint.
+Manual remains the production default. This historical result is local Xcode
+proof; the later hosted probe is recorded separately above.
 
 ## Shared Fastlane credential rotation
 

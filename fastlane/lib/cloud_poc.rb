@@ -47,12 +47,10 @@ module AegisRelease
 
     def preflight
       source = admission!
-      state = store.status
-      AegisRelease.require!(state['processingState'] == 'NOT_FOUND' && state['uploadState'] == 'NOT_FOUND',
-                            'Version/build already exists in ASC; do not rebuild or reupload it')
+      before = CloudReservations.preflight(store, identity, source)
       AegisRelease.write_new(state_file('preflight.json'), 'source' => source, 'version' => identity.version,
-                            'build' => identity.build, 'remote' => state, 'uploadAttempted' => false)
-      state
+                            'build' => identity.build, 'cloudExportPreflight' => before, 'uploadAttempted' => false)
+      before
     end
 
     def verify_package(source)
@@ -91,14 +89,17 @@ module AegisRelease
       receipt, ipa = verify_package(source)
       started = state_file('upload-started.json')
       AegisRelease.require!(!File.exist?(started) && !File.exist?(state_file('upload-result.json')), 'Upload already attempted; reconcile ASC instead of retrying')
-      remote = store.status
-      AegisRelease.require!(remote['processingState'] == 'NOT_FOUND' && remote['uploadState'] == 'NOT_FOUND', 'Exact upload/build already exists')
+      before = JSON.parse(File.read(AegisRelease.file!(state_file('preflight.json')))).fetch('cloudExportPreflight')
+      reservation = CloudReservations.capture(store, identity, source, before)
+      reservation_path = state_file('cloud-upload-reservation.json')
+      AegisRelease.write_new(reservation_path, reservation)
       intent = {'source' => source, 'version' => identity.version, 'build' => identity.build,
                 'ipaSha256' => receipt.fetch('ipaSha256'), 'dsymSha256' => receipt.fetch('dsymSha256'),
                 'packageReceiptSha256' => AegisRelease.digest(File.join(directory, 'poc-receipt.json')),
+                'cloudReservationSha256' => AegisRelease.digest(reservation_path),
                 'outcome' => 'unknown', 'reviewSubmitted' => false}
       AegisRelease.write_new(started, intent)
-      result = store.upload(ipa)
+      result = store.upload(ipa, cloud_reservations: reservation, source: source)
       AegisRelease.write_new(state_file('upload-result.json'), intent.merge('result' => result))
       processed = store.wait_for_processing(timeout: 1800, interval: 15)
       AegisRelease.write_new(state_file('processing-result.json'), intent.merge('result' => processed, 'outcome' => 'processing_valid', 'deviceAcceptance' => 'not_verified'))
