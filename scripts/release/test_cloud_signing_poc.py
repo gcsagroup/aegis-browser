@@ -2,6 +2,7 @@
 import datetime
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -20,6 +21,37 @@ verifier = load('cloud_verifier', 'verify-signed-ios.py')
 
 
 class CloudSigningTests(unittest.TestCase):
+    def test_reused_archive_rejects_modified_files_and_native_source_changes(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(poc, 'ROOT', Path(directory).resolve()):
+            previous = Path(directory).resolve() / '.artifacts/cloud-signing-poc/first'
+            archive = previous / 'work/Aegis.xcarchive'
+            app = archive / 'Products/Applications/Aegis.app/Info.plist'
+            app.parent.mkdir(parents=True)
+            app.write_bytes(b'app fixture')
+            (archive / 'Info.plist').write_bytes(b'archive fixture')
+            identity = {'sha': 'a' * 40, 'tree': 'b' * 40}
+            poc.snapshot_archive(previous, identity)
+            receipt = {'source': identity, 'version': '1.0.1', 'build': '16', 'team': 'ABCDEFGHIJ',
+                       'archiveCompleted': True, 'distributionP12Imported': False,
+                       'distributionIdentityAbsentBeforeArchive': True}
+            poc.write(previous / 'poc-receipt.json', receipt)
+            with patch.object(poc, 'run', return_value=b''):
+                self.assertEqual(poc.reusable_archive('first', '1.0.1', '16', 'ABCDEFGHIJ')[1], identity)
+            with patch.object(poc, 'run', return_value=b'native source differs'), self.assertRaisesRegex(ValueError, 'Native inputs'):
+                poc.reusable_archive('first', '1.0.1', '16', 'ABCDEFGHIJ')
+            app.write_bytes(b'tampered')
+            with self.assertRaisesRegex(ValueError, 'proof or identity'):
+                poc.reusable_archive('first', '1.0.1', '16', 'ABCDEFGHIJ')
+
+    def test_receipt_is_private_and_cannot_overwrite_previous_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'receipt.json'
+            poc.write(path, {'status': 'failed'})
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertIn('failed', path.read_text())
+            with self.assertRaises(FileExistsError):
+                poc.write(path, {'status': 'success'})
+
     def test_export_is_artifact_only_and_disables_version_mutation(self):
         value = poc.export_options('ABCDEFGHIJ')
         self.assertEqual(value['destination'], 'export')
