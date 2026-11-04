@@ -10,6 +10,34 @@ spec.loader.exec_module(planner)
 
 
 class DeliveryPlanTests(unittest.TestCase):
+    def test_annotated_cloud_tag_is_explicit_and_cannot_change_source(self):
+        sha = 'a' * 40
+        def fixture(message, target=sha):
+            return lambda path: ({'object': {'type': 'tag', 'sha': 'b' * 40}} if path.startswith('git/ref/') else
+                                 {'object': {'type': 'commit', 'sha': target}, 'message': message})
+        tag = 'candidate/ios/0.8.0-beta.501'
+        message = 'aegis-ios-signing-v1\n' + json.dumps({'signingMode': 'cloud', 'sourceSha': sha})
+        self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message)), 'cloud')
+        self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture('legacy candidate')), 'manual')
+        with self.assertRaises(ValueError):
+            planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message, 'c'*40))
+        with self.assertRaises(ValueError):
+            planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message.replace(sha, 'c'*40)))
+
+    def test_full_fastlane_entrypoint_does_not_change_package_destination(self):
+        value = planner.normalize('workflow_dispatch', 'refs/heads/main',
+                                  dict(operation='Package', version='0.8.0', build='501', product='Beta',
+                                       signing_mode='cloud', package_entrypoint='fastlane'), 'full')
+        self.assertEqual((value['package_entrypoint'], value['destination'], value['signing_mode']), ('fastlane', 'artifacts', 'cloud'))
+
+    def test_manual_remains_default_and_cloud_is_explicit_for_new_packages_only(self):
+        base = {'version': '0.8.0', 'build': '101', 'operation': 'Package'}
+        self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', base)['signing_mode'], 'manual')
+        self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', dict(base, signing_mode='cloud'))['signing_mode'], 'cloud')
+        for operation, mode in [('Status', 'cloud'), ('Package', 'fallback')]:
+            with self.assertRaises(ValueError):
+                planner.normalize('workflow_dispatch', 'refs/heads/main', dict(base, operation=operation, signing_mode=mode))
+
     def plan(self, inputs=None, event='workflow_dispatch', ref='refs/heads/main'):
         return planner._normalize_stage(event, ref, inputs if inputs is not None else dict(version='1.0.0(33)'))
 

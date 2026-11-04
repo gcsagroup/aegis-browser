@@ -48,6 +48,18 @@ class ReleaseFixture < Minitest::Test
 end
 
 class ReleaseTest < ReleaseFixture
+  def test_signing_mode_defaults_to_manual_and_cloud_cannot_fall_back_implicitly
+    assert_equal 'manual', request.signing_mode
+    assert_equal 'cloud', request(signing_mode: 'cloud').plan.fetch('signingMode')
+    assert_raises(AegisRelease::Error) { request(signing_mode: 'automatic') }
+    previous = ENV['GITHUB_ACTIONS']
+    ENV.delete('GITHUB_ACTIONS')
+    flow = AegisRelease::Pipeline.new(request(signing_mode: 'cloud'), Object.new)
+    assert_raises(AegisRelease::Error) { flow.package_ios }
+  ensure
+    previous ? ENV['GITHUB_ACTIONS'] = previous : ENV.delete('GITHUB_ACTIONS')
+  end
+
   def test_store_readonly_stages_authorize_before_asc_authentication
     [->(flow) { flow.store }, ->(flow) { flow.status }, ->(flow) { flow.wait }].each do |operation|
       flow = AegisRelease::Pipeline.new(request(destination: 'testflight'), Object.new)
