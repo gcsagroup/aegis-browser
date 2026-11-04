@@ -45,12 +45,12 @@ def normalize(event, ref, inputs, mode='simple'):
         return _normalize_stage(event, ref, inputs)
     require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
     operation = receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
-    signing_mode = inputs.get('signing_mode') or 'manual'
+    new_package = operation in {'package', 'package-upload', 'draft'}
+    signing_mode = inputs.get('signing_mode') or 'cloud'
     entrypoint = inputs.get('package_entrypoint') or 'actions'
     require(entrypoint in {'actions', 'fastlane'}, 'Unknown package entrypoint')
     require(entrypoint == 'actions' or operation in {'package', 'package-upload', 'draft'}, 'Entrypoint applies only to a new package')
     require(signing_mode in {'manual', 'cloud'}, 'Signing mode must be manual or cloud')
-    require(signing_mode == 'manual' or operation in {'package', 'package-upload', 'draft'}, 'Signing mode is selected only for a new package')
     require(mode == 'full' or operation in {'package', 'package-upload', 'status', 'wait'}, 'Use the Full workflow for upload and later stages')
     version, build = inputs.get('version', ''), inputs.get('build', '')
     if version or build or operation in {'package', 'package-upload', 'draft', 'status'} or (operation == 'wait' and not inputs.get('source')):
@@ -69,7 +69,7 @@ def normalize(event, ref, inputs, mode='simple'):
         require(not inputs.get('source') and not inputs.get('groups') and not stage_input,
                 'Status only needs version and build')
         values = {key: '' for key in FIELDS}
-        values.update(operation='status-wait' if operation == 'wait' else 'status-query', version=version, build=build, destination='testflight', stage_input='{}', signing_mode='manual', package_entrypoint='actions')
+        values.update(operation='status-wait' if operation == 'wait' else 'status-query', version=version, build=build, destination='testflight', stage_input='{}', signing_mode='', package_entrypoint='actions')
         return values  # Read-only Apple lookup: no inferred package identity or mutation receipt.
     require(operation != 'status', 'Status only needs version and build')
     package_upload = operation == 'package-upload'
@@ -83,7 +83,9 @@ def normalize(event, ref, inputs, mode='simple'):
     if inputs.get('source'):
         normalized['source'] = inputs['source']
     values = _normalize_stage(event, ref, normalized)
-    values['signing_mode'] = signing_mode
+    # Workflow defaults accompany every operation. Existing packages select their
+    # actual signing verifier from the retained manifest, not this new-package input.
+    values['signing_mode'] = signing_mode if new_package else ''
     values['package_entrypoint'] = entrypoint
     if package_upload:
         values.update(operation='package-upload', destination='testflight')
@@ -100,7 +102,7 @@ def _normalize_stage(event, ref, inputs):
         require(match is not None, 'Invalid exact iOS candidate tag')
         tag, version, profile, build = match.groups()
         values.update(operation='package', profile=profile, version=version, build=build, destination='github-draft', tag=tag)
-        values['signing_mode'] = 'manual'
+        values['signing_mode'] = 'cloud'
         values['package_entrypoint'] = 'actions'
     else:
         require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
@@ -161,15 +163,17 @@ def tag_signing_mode(repository, tag, sha, api):
     item = ref['object']
     if item['type'] == 'commit':
         require(item['sha'] == sha, 'Candidate commit differs')
-        return 'manual'  # Existing lightweight candidate tags retain manual defaults.
+        return 'cloud'
     require(item['type'] == 'tag' and re.fullmatch(r'[0-9a-f]{40}', item['sha']) is not None, 'Unsupported candidate object')
     annotation = api('git/tags/' + item['sha'])
     require(annotation.get('object', {}).get('type') == 'commit' and annotation['object'].get('sha') == sha,
             'Annotated candidate points to another source')
     message = annotation.get('message', '')
+    require(isinstance(message, str), 'Invalid candidate signing annotation')
     marker = 'aegis-ios-signing-v1\n'
     if not message.startswith(marker):
-        return 'manual'
+        require(not message.startswith('aegis-ios-signing-'), 'Unsupported candidate signing annotation')
+        return 'cloud'
     options = json.loads(message[len(marker):], object_pairs_hook=unique_object, parse_constant=reject_constant)
     require(isinstance(options, dict) and set(options) == {'signingMode', 'sourceSha'} and
             options['sourceSha'] == sha and options['signingMode'] in {'manual', 'cloud'}, 'Invalid candidate signing annotation')

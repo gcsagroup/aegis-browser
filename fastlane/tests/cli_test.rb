@@ -12,6 +12,16 @@ class IosReleaseCliTest < Minitest::Test
                   RbConfig.ruby, CLI, *args, chdir: ROOT)
   end
 
+  def test_cli_defaults_to_cloud_and_preserves_explicit_manual_fallback_for_every_profile
+    %w[alpha beta release].each do |profile|
+      [[], ['--signing-mode', 'manual']].each do |selection|
+        text, error, status = cli('ios', 'plan', '--profile', profile, *selection)
+        assert status.success?, error
+        assert_equal(selection.empty? ? 'cloud' : 'manual', JSON.parse(text).fetch('signingMode'))
+      end
+    end
+  end
+
   # Removing the profile destination guard must make these policy tests fail.
   def test_alpha_internal_plan_is_source_bound_and_read_only
     text, error, status = cli('ios', 'plan', '--profile', 'alpha', '--destination', 'testflight-internal',

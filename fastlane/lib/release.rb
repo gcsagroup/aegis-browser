@@ -83,7 +83,7 @@ module AegisRelease
       unknown = options.keys.map(&:to_sym) - %i[destination version build run_id tag manifest_sha256 profile groups format repository input timeout interval signing_mode]
       AegisRelease.require!(unknown.empty?, "Unknown release options: #{unknown.join(', ')}")
       options = options.transform_keys(&:to_sym)
-      @signing_mode = options.fetch(:signing_mode, 'manual').to_s
+      @signing_mode = options.fetch(:signing_mode, 'cloud').to_s
       AegisRelease.require!(%w[manual cloud].include?(signing_mode), 'Signing mode must be manual or cloud')
       @input = options[:input]&.to_s
       @timeout = Integer(options.fetch(:timeout, 1800).to_s, exception: false)
