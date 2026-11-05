@@ -5,13 +5,13 @@ struct FirebaseControlsView: View {
 
     var body: some View {
         Section {
-            Toggle(isOn: Binding(get: { firebase.crashReportsEnabled }, set: firebase.setCrashReportsEnabled)) {
+            Toggle(isOn: Binding(get: { firebase.crashReportsEnabled }, set: { firebase.setCrashReportsEnabled($0) })) {
                 Text("发送崩溃报告")
                 if firebase.status == .active && firebase.crashReportsEnabled && !firebase.crashReportingActive {
                     Text("远程配置已暂停此项").font(.caption).foregroundStyle(.secondary)
                 }
             }.accessibilityIdentifier("firebase-crash-reports")
-            Toggle(isOn: Binding(get: { firebase.analyticsEnabled }, set: firebase.setAnalyticsEnabled)) {
+            Toggle(isOn: Binding(get: { firebase.analyticsEnabled }, set: { firebase.setAnalyticsEnabled($0) })) {
                 Text("发送使用分析")
                 if firebase.status == .active && firebase.analyticsEnabled && !firebase.analyticsActive {
                     Text("远程配置已暂停此项").font(.caption).foregroundStyle(.secondary)
@@ -27,7 +27,7 @@ struct FirebaseControlsView: View {
         }
         Section {
             Toggle("允许远程诊断配置", isOn: Binding(
-                get: { firebase.remoteConfigurationEnabled }, set: firebase.setRemoteConfigurationEnabled
+                get: { firebase.remoteConfigurationEnabled }, set: { firebase.setRemoteConfigurationEnabled($0) }
             )).accessibilityIdentifier("firebase-remote-configuration")
             if let remote = firebase.remoteConfiguration {
                 RemoteDiagnosticsStatusView(controller: remote)
