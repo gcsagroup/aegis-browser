@@ -8,6 +8,7 @@ begin
   parser = OptionParser.new do |p|
     p.banner = "Usage: ./release ios <plan|package|upload|release|wait|metadata|compliance|distribute|submit|status> [options]"
     p.on("--profile NAME", "alpha (internal testing only), beta, release") { |v| options[:profile] = v }
+    p.on("--signing-mode NAME", "cloud (default; GitHub-hosted packaging) or manual (explicit fallback)") { |v| options[:signing_mode] = v }
     p.on("--destination NAME", "artifacts, testflight[-internal|-external], asc, app-store, github-draft") { |v| options[:destination] = v }
     p.on("--groups NAMES", "Comma-separated existing TestFlight group names") { |v| options[:groups] = v }
     p.on("--format NAME", "ipa") { |v| options[:format] = v }

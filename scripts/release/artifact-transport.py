@@ -14,6 +14,7 @@ import zipfile
 PACKAGE_WORKFLOWS = {'.github/workflows/ios-delivery-full.yml', '.github/workflows/ios-delivery.yml', '.github/workflows/ios-release.yml', '.github/workflows/ios-candidate.yml'}
 WORKFLOWS = PACKAGE_WORKFLOWS | {'.github/workflows/ios-testflight.yml'}
 RECORD = re.compile(r'(?:apple-upload|ios-(?:metadata|compliance|distribute|submit))-(?:started|result)\.json\Z')
+CLOUD_EVIDENCE = {'signature-verification.json', 'dsym-verification.json', 'cloud-package-receipt.json', 'cloud-upload-reservation.json'}
 
 
 def verify_run(run, repository, sha, run_id, attempt):
@@ -28,7 +29,7 @@ def verify_run(run, repository, sha, run_id, attempt):
 def allowed_name(name):
     return (re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name) is not None and '..' not in name
             and (name.endswith(('.ipa', '.dSYM.zip')) or name in {'ios-manifest.json', 'ios-manifest.json.sha256', 'package-origin.json'}
-                 or RECORD.fullmatch(name)))
+                 or name in CLOUD_EVIDENCE or RECORD.fullmatch(name)))
 
 
 def extract_flat(archive, destination):
@@ -67,9 +68,14 @@ def verify_package(directory, sha, tree, expected_digest):
     if len({a['name'] for a in assets}) != len(assets) or sum(a['name'].endswith('.ipa') for a in assets) != 1:
         raise ValueError('Ambiguous artifacts')
     permitted = {'ios-manifest.json', 'ios-manifest.json.sha256', 'package-origin.json'}
+    evidence = {a['name'] for a in assets} & CLOUD_EVIDENCE
+    if evidence and (value.get('details', {}).get('signingMode') != 'cloud' or evidence != CLOUD_EVIDENCE):
+        raise ValueError('Cloud package evidence must be complete and explicitly cloud-signed')
+    if value.get('details', {}).get('signingMode') == 'cloud' and evidence != CLOUD_EVIDENCE:
+        raise ValueError('Missing cloud package evidence')
     for asset in assets:
         name = asset['name']
-        if not allowed_name(name) or not name.endswith(('.ipa', '.dSYM.zip')):
+        if not allowed_name(name) or not (name.endswith(('.ipa', '.dSYM.zip')) or name in CLOUD_EVIDENCE):
             raise ValueError('Invalid manifest asset')
         path = directory/name
         if digest(path) != asset['sha256'] or path.stat().st_size != asset['size']:

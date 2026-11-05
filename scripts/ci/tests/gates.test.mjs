@@ -484,6 +484,8 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [index, (w) => { w.jobs[job].steps = w.jobs[job].steps.filter((step) => step.name !== 'Verify preinstalled Python on self-hosted runner'); }],
     ]),
     [0, (w) => { w.jobs.quality.if = '${{ false }}'; }],
+    ...['${{ true }}', "${{ inputs.exercise == 'cloud-poc' }}", "${{ github.event_name != 'pull_request' }}"].map((condition) =>
+      [6, (w) => { w.jobs['cloud-poc'].if = condition; }, 'cloud credentials require explicit canonical manual exercise']),
     [0, (w) => { w.jobs.quality.steps.find((step) => step.uses?.startsWith('pnpm/action-setup@')).with.dest = '~/setup-pnpm'; }],
     [5, (w) => { w.jobs.extra = structuredClone(w.jobs['cpp-unit-tests']); }],
     [0, (w) => { w.jobs.extra = structuredClone(w.jobs.quality); }],

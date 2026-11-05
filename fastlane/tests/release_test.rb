@@ -48,6 +48,31 @@ class ReleaseFixture < Minitest::Test
 end
 
 class ReleaseTest < ReleaseFixture
+  def test_signing_mode_defaults_to_cloud_and_manual_requires_explicit_selection
+    assert_equal 'cloud', request.signing_mode
+    assert_equal 'manual', request(signing_mode: 'manual').plan.fetch('signingMode')
+    assert_raises(AegisRelease::Error) { request(signing_mode: 'automatic') }
+    previous = ENV['GITHUB_ACTIONS']
+    ENV.delete('GITHUB_ACTIONS')
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    assert_raises(AegisRelease::Error) { flow.package_ios }
+  ensure
+    previous ? ENV['GITHUB_ACTIONS'] = previous : ENV.delete('GITHUB_ACTIONS')
+  end
+
+  def test_cloud_failure_never_retries_manual_signing_implicitly
+    attempts = []
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:package_ios_cloud) do
+      attempts << :cloud
+      raise AegisRelease::Error, 'cloud signing unavailable'
+    end
+    flow.define_singleton_method(:required) { |_key| attempts << :manual; raise 'manual fallback was implicit' }
+    error = assert_raises(AegisRelease::Error) { flow.package_ios }
+    assert_equal 'cloud signing unavailable', error.message
+    assert_equal [:cloud], attempts
+  end
+
   def test_store_readonly_stages_authorize_before_asc_authentication
     [->(flow) { flow.store }, ->(flow) { flow.status }, ->(flow) { flow.wait }].each do |operation|
       flow = AegisRelease::Pipeline.new(request(destination: 'testflight'), Object.new)
@@ -323,7 +348,7 @@ class ReleaseTest < ReleaseFixture
   def test_manual_package_admission_runs_before_signing_inputs
     original_host = RbConfig::CONFIG['host_os']
     RbConfig::CONFIG['host_os'] = 'darwin'
-    req = request
+    req = request(signing_mode: 'manual')
     flow = AegisRelease::Pipeline.new(req, Object.new)
     flow.define_singleton_method(:admit_source!) { raise AegisRelease::Error, 'Source admission denied' }
     error = assert_raises(AegisRelease::Error) { flow.package }
@@ -363,7 +388,7 @@ class ReleaseTest < ReleaseFixture
 
   def test_ios_alpha_export_is_internal_only_even_for_package_and_draft
     [%w[alpha artifacts], %w[alpha github-draft], %w[beta artifacts], %w[release artifacts]].each do |profile, destination|
-      options = { profile: profile, destination: destination }
+      options = { profile: profile, destination: destination, signing_mode: 'manual' }
       options[:tag] = "candidate/ios/3.2-#{profile}.69" if destination == 'github-draft'
       req = request(**options)
       builder = Object.new
@@ -398,7 +423,7 @@ class ReleaseTest < ReleaseFixture
     git('add', '.')
     git('commit', '-qm', 'shared iOS resource inputs')
     write("#{shared}/local-only.js", 'must not enter the archive')
-    req = request
+    req = request(signing_mode: 'manual')
     builder = Object.new
     builder.define_singleton_method(:update_code_signing_settings) { |**_options| }
     checks = self
@@ -431,8 +456,12 @@ class ReleaseTest < ReleaseFixture
 
   def test_testflight_success_does_not_claim_processing_or_external_distribution
     req, sha = package('ios', destination: 'testflight')
+    assert_equal 'cloud', req.signing_mode
+    refute JSON.parse(File.read(req.manifest_path)).fetch('details').key?('signingMode')
     apple = FakeApple.new
     flow = fixture_pipeline(req, apple)
+    commands = []
+    flow.define_singleton_method(:run) { |*args, **_options| commands << args; true }
     store = AegisRelease::AppleStore.new(req, apple)
     store.instance_variable_set(:@app, Struct.new(:id).new('fixture'))
     store.define_singleton_method(:authenticate) { true }
@@ -440,6 +469,10 @@ class ReleaseTest < ReleaseFixture
     store.define_singleton_method(:upload_records) { [] }
     flow.define_singleton_method(:store) { store }
     capture_io { flow.upload(sha) }
+    verification = commands.find { |args| args[1].end_with?('/verify-signed-ios.py') }
+    assert_includes verification, '--certificate-sha1'
+    assert_includes verification, 'A'*40
+    refute_includes verification, '--signing-mode'
     result = JSON.parse(File.read(File.join(req.directory, 'apple-upload-result.json')))['result']
     assert_equal 'uploaded_processing_unverified', result['status']
     assert_equal false, apple.uploads.first[:distribute_external]

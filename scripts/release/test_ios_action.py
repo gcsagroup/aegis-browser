@@ -12,6 +12,32 @@ spec.loader.exec_module(action)
 
 
 class IosActionTests(unittest.TestCase):
+    def test_package_entrypoints_use_cloud_default_and_forward_explicit_manual_fallback(self):
+        base = dict(RELEASE_PROFILE='beta', RELEASE_VERSION='1.0.2', RELEASE_BUILD='12',
+                    RELEASE_RUN_ID='ios-gh-12-1', RELEASE_DESTINATION='artifacts')
+        class StopAfterInvocation(Exception):
+            pass
+        for entrypoint in ['actions', 'fastlane']:
+            for selection in [None, 'manual']:
+                calls = []
+                env = dict(base, RELEASE_PACKAGE_ENTRYPOINT=entrypoint)
+                if selection is not None:
+                    env['RELEASE_SIGNING_MODE'] = selection
+                def boundary(*args, **_kwargs):
+                    calls.append(list(map(str, args)))
+                    raise StopAfterInvocation
+                with self.subTest(entrypoint=entrypoint, selection=selection), \
+                        patch.dict(os.environ, env, clear=True), patch.object(action, 'run', boundary):
+                    with self.assertRaises(StopAfterInvocation):
+                        action.package()
+                command = calls[0]
+                if entrypoint == 'fastlane':
+                    self.assertEqual(command[:5], ['bundle', 'exec', 'fastlane', 'ios', 'package'])
+                    self.assertIn('signing_mode:'+(selection or 'cloud'), command)
+                else:
+                    self.assertEqual(command[1:3], ['ios', 'package'])
+                    self.assertEqual(command[command.index('--signing-mode')+1], selection or 'cloud')
+
     def test_receipt_titles_cannot_discard_unknown_prior_mutations(self):
         token = action.receipt_codec.encode('beta', '1.0.0', '33', 100, 101, 1, 'a'*64)
         for stage, operation in [('upload', 'upload'), ('metadata', 'metadata'), ('compliance', 'compliance'),
