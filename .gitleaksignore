@@ -55,6 +55,8 @@ c4274de400cb7d4e0685b7f22ba495e26b1d1779:apps/ios/BrowserKit/Resources/security-
 59b116f8c41ada15a7bbb8c504cdd62a279a5f52:apps/ios/Tests/AegisPolicyKitTests/PIIScannerTests.swift:generic-api-key:22
 
 # apps/ios/Tests/Fixtures/Localization/coverage.json
+# catalogKeysSHA256 is a generated digest of sorted localization keys, not a credential.
+885856b1f0389e0fef0f7ac35f80fcee7d96c93f:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
 191e1d695486991cc31c4913df3964085d406557:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
 9f041fecaa1b5e0e3658b41e93a777fbe195a7f2:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
 d13d4a8ffb8f73eb28715fdb83528463d834b6bf:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
