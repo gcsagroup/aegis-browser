@@ -56,12 +56,21 @@ test('iOS workflow credentials and permissions stay in their protected stage', (
   const workflow = name => parse(readFileSync(`.github/workflows/${name}.yml`, 'utf8'));
   const validation = workflow('ios-release-validation');
   assert.deepEqual(validation.permissions, {contents: 'read', actions: 'read'});
-  assert(!JSON.stringify(validation).includes('secrets.'));
+  for (const id of ['contracts', 'ios-archive']) assert(!JSON.stringify(validation.jobs[id]).includes('secrets.'));
+  const poc = validation.jobs['cloud-poc'];
+  assert.equal(poc.environment, 'aegis-ios-cloud-poc');
+  assert(poc.if.includes("github.event_name == 'workflow_dispatch'"));
+  assert(poc.steps.find(s => s.run === 'node scripts/ci/ios-cloud-poc-admission.mjs'));
+  assert(!JSON.stringify(poc).includes('DISTRIBUTION_P12'));
   const release = workflow('ios-delivery');
   assert.equal(release.jobs['ios-package'].environment, 'aegis-ios-signing');
   assert.equal(release.jobs['ios-draft'].environment, 'aegis-ios-draft');
   assert.equal(release.jobs['ios-draft'].permissions.contents, 'write');
-  assert(!JSON.stringify(release.jobs['ios-package']).includes('AEGIS_ASC'));
+  const packageStep = release.jobs['ios-package'].steps.find(s => s.id === 'package');
+  for (const name of ['AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64']) {
+    assert(packageStep.env[name].includes("outputs.signing_mode == 'cloud'"));
+    assert(!Object.hasOwn(release.jobs['ios-package'].env, name));
+  }
   assert(!JSON.stringify(release.jobs.admission).includes('secrets.'));
   const store = release;
   assert.equal(store.jobs.store.environment, 'aegis-ios-store');
@@ -87,9 +96,9 @@ test('every protected delivery route depends on Admin admission and normalized o
   for (const name of ['ios-release-validation', 'ios-coverage']) {
     const quality = parse(readFileSync('.github/workflows/'+name+'.yml', 'utf8'));
     for (const job of Object.values(quality.jobs)) {
-      const guard = job.steps.findIndex(s => s.run?.includes('ios-operator.mjs --context'));
+      const guard = job.steps.findIndex(s => s.run?.includes('ios-operator.mjs --context') || s.run?.includes('ios-cloud-poc-admission.mjs'));
       assert(guard >= 0, name+' requires manual Admin guard');
-      if (name === 'ios-release-validation') assert.equal(job.steps[guard].if, "${{ github.event_name == 'workflow_dispatch' }}");
+      if (name === 'ios-release-validation' && job.environment !== 'aegis-ios-cloud-poc') assert.equal(job.steps[guard].if, "${{ github.event_name == 'workflow_dispatch' }}");
       const expensive = job.steps.findIndex(s => s.run?.includes('bundle exec') || s.run?.includes('xcodebuild ') || s.run?.includes('run-simulator-tests.sh'));
       assert(guard < expensive, name+' must authorize before expensive work');
     }
@@ -112,13 +121,17 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   const simple = workflow('ios-delivery');
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product']);
+  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode']);
+  assert.equal(inputs.signing_mode.default, 'cloud');
+  assert.deepEqual(inputs.signing_mode.options, ['cloud', 'manual']);
   assert.equal(simple.name, 'iOS Delivery · Simple');
   assert.equal(full.name, 'iOS Delivery · Full');
   assert.deepEqual(inputs.operation.options, ['Package', 'Package and upload', 'Status', 'Wait']);
   assert.deepEqual(inputs.product.options, ['Alpha', 'Beta', 'Release']);
   assert.equal(inputs.product.default, 'Alpha');
   const fullInputs = full.on.workflow_dispatch.inputs;
+  assert.equal(fullInputs.signing_mode.default, 'cloud');
+  assert.deepEqual(fullInputs.signing_mode.options, ['cloud', 'manual']);
   assert.deepEqual(fullInputs.operation.options, [
     'Package', 'Package and upload', 'Draft', 'Upload', 'Wait', 'Status',
     'Metadata', 'Compliance', 'Distribute internal', 'Distribute external',
@@ -128,7 +141,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   assert.equal(inputs.version.required, true);
   assert.equal(inputs.build.required, true);
   assert(!inputs.source && !inputs.advanced);
-  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'groups', 'stage_input']);
+  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'package_entrypoint', 'groups', 'stage_input']);
   assert.deepEqual(Object.keys(full.jobs), ['delivery']);
   assert.equal(full.jobs.delivery.uses, './.github/workflows/ios-delivery.yml');
   assert.equal(full.jobs.delivery.with.delivery_mode, 'full');
@@ -186,7 +199,8 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert(packageJob.needs.includes('check-unused'));
   assert(packageJob.if.includes("needs.check-unused.result == 'success'"));
   assert.equal(packageJob.env.RELEASE_STAGE, 'package');
-  assert(!JSON.stringify(packageJob).includes('AEGIS_ASC'));
+  assert(!JSON.stringify(packageJob.env).includes('AEGIS_ASC'));
+  assert(packageJob.steps.find(s => s.name === 'Install signing material on the ephemeral runner').if.includes("== 'manual'"));
   const fresh = doc.jobs['check-unused'];
   assert.equal(fresh.env.RELEASE_QUERY_MODE, 'unused');
   assert.equal(fresh.environment, 'aegis-ios-store');
@@ -217,7 +231,7 @@ test('Full explicitly forwards named secrets while protected jobs resolve enviro
   assert.notEqual(full.jobs.delivery.secrets, 'inherit');
   for (const id of ['status-query', 'check-unused', 'store', 'upload-new']) assert.equal(simple.jobs[id].environment, 'aegis-ios-store');
   assert(!JSON.stringify(simple.jobs.admission).includes('secrets.'));
-  assert(!JSON.stringify(simple.jobs['ios-package']).includes('AEGIS_ASC'));
+  assert(!JSON.stringify(simple.jobs['ios-package'].env).includes('AEGIS_ASC'));
   for (const name of signing) {
     assert.equal(simple.on.workflow_call.secrets[name].required, false);
     assert.equal(full.jobs.delivery.secrets[name], '${{ secrets.'+name+' }}');
@@ -236,7 +250,7 @@ test('hosted signing loads only environment secrets after source admission and c
   const cleanup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
   const upload = job.steps.findIndex(s => s.uses?.startsWith('actions/upload-artifact@'));
   assert(source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
-  assert.equal(job.steps[cleanup].if, '${{ always() }}');
+  assert.equal(job.steps[cleanup].if, "${{ always() && needs.admission.outputs.signing_mode == 'manual' }}");
   assert.equal(Object.keys(job.steps[setup].env).length, 5);
   assert(Object.values(job.steps[setup].env).every(v => v.startsWith('${{ secrets.AEGIS_IOS_')));
   assert(!JSON.stringify(doc.jobs.admission).includes('secrets.'));
