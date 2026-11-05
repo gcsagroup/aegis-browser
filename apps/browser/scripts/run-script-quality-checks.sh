@@ -22,6 +22,7 @@ run_check '第三方许可打包回归' python3 -B -m unittest discover -s ../..
 run_check 'GitHub发行编排' python3 -B ./scripts/release-github_test.py
 run_check 'Git/GitHub network policy' python3 -B ./scripts/github-network_test.py
 run_check '候选编排' python3 -B -m unittest discover -s ./scripts/ci -p "*_test.py"
+run_check 'terminal receipt unit and regression tests' python3 -B ./scripts/native_validation/terminal_receipt_test.py
 run_check '进程测量' python3 -B ./scripts/measure-browser-processes_test.py
 run_check 'workspace-paths' node --test ./scripts/workspace-paths_test.mjs
 run_check 'public-link-fixture' node --test ./scripts/public-link-fixture_test.mjs
