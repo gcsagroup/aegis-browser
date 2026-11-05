@@ -65,6 +65,8 @@ targets:
           - FirebaseCore
           - FirebaseCrashlytics
           - FirebaseAnalyticsCore
+          - FirebaseRemoteConfig
+          - FirebaseInstallations
       - target: BrowserKit
         embed: true
       - target: AegisPolicyKit

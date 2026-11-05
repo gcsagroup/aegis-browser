@@ -184,6 +184,15 @@
 		AB9604E6B3D19A450330A214 /* _locales in Resources */ = {isa = PBXBuildFile; fileRef = C18084EEBDAAFA9352DADB41 /* _locales */; };
 		B73A5A07B20C241BA780BBBD /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E2C19F643D87331E7B4E34 /* LocalizationTests.swift */; };
 		D959C852EB8127E186F3B441 /* LocalizationUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E56A8F0A54EFFAE2CF7CDD /* LocalizationUITests.swift */; };
+		AE104CCC28A6C705B29F5434 /* RemoteDiagnosticsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D149BE2DFC5DE1F9AE12F1D /* RemoteDiagnosticsPolicy.swift */; };
+		E303FB951E5797A2D93FB218 /* FirebaseInstallationCleanup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 151475053A5FB1402C9E3803 /* FirebaseInstallationCleanup.swift */; };
+		43F34B2694DFFEE1AC516D0B /* RemoteDiagnosticsController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBCC2C1C622124BE376E78B5 /* RemoteDiagnosticsController.swift */; };
+		3BB026E7DD1A640C185C5BEC /* FirebaseRemoteDiagnosticsSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 510DA8D712A38313B1242AA9 /* FirebaseRemoteDiagnosticsSource.swift */; };
+		EA17336CE13C643EFF37AD29 /* FirebaseControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */; };
+		44546AD01B900248C4A1765D /* RemoteDiagnosticsPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA4BDED775546246853D21C9 /* RemoteDiagnosticsPolicyTests.swift */; };
+		D135455F301C94F942653081 /* RemoteDiagnosticsControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9111833A652D88B7A7911657 /* RemoteDiagnosticsControllerTests.swift */; };
+		228686737287987D33357995 /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 0D026E316E3C9B908759D083 /* FirebaseRemoteConfig */; };
+		281625E6CA491BDD947E3687 /* FirebaseInstallations in Frameworks */ = {isa = PBXBuildFile; productRef = 42C9E8ECECC6479BFE13E9DB /* FirebaseInstallations */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -512,6 +521,13 @@
 		C18084EEBDAAFA9352DADB41 /* _locales */ = {isa = PBXFileReference; lastKnownFileType = folder; path = _locales; sourceTree = "<group>"; };
 		19E2C19F643D87331E7B4E34 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		C2E56A8F0A54EFFAE2CF7CDD /* LocalizationUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationUITests.swift; sourceTree = "<group>"; };
+		3D149BE2DFC5DE1F9AE12F1D /* RemoteDiagnosticsPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsPolicy.swift; sourceTree = "<group>"; };
+		151475053A5FB1402C9E3803 /* FirebaseInstallationCleanup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseInstallationCleanup.swift; sourceTree = "<group>"; };
+		DBCC2C1C622124BE376E78B5 /* RemoteDiagnosticsController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsController.swift; sourceTree = "<group>"; };
+		510DA8D712A38313B1242AA9 /* FirebaseRemoteDiagnosticsSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseRemoteDiagnosticsSource.swift; sourceTree = "<group>"; };
+		9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseControlsView.swift; sourceTree = "<group>"; };
+		CA4BDED775546246853D21C9 /* RemoteDiagnosticsPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsPolicyTests.swift; sourceTree = "<group>"; };
+		9111833A652D88B7A7911657 /* RemoteDiagnosticsControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsControllerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -540,6 +556,8 @@
 				B476B93C48CADA7296ECFD2A /* FirebaseCore in Frameworks */,
 				D1C2243D03BB921A6E2289B3 /* FirebaseCrashlytics in Frameworks */,
 				8FD2D054E50FB8A71B6DD664 /* FirebaseAnalyticsCore in Frameworks */,
+				281625E6CA491BDD947E3687 /* FirebaseInstallations in Frameworks */,
+				228686737287987D33357995 /* FirebaseRemoteConfig in Frameworks */,
 				6839DB2DB6046A431BA96024 /* BrowserKit.framework in Frameworks */,
 				E9D9727EEFB4A51552E29209 /* AegisPolicyKit.framework in Frameworks */,
 				A1774B0BEA41E54381DA0432 /* AgentKit.framework in Frameworks */,
@@ -665,6 +683,8 @@
 				C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */,
 				E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */,
 				F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */,
+				9111833A652D88B7A7911657 /* RemoteDiagnosticsControllerTests.swift */,
+				CA4BDED775546246853D21C9 /* RemoteDiagnosticsPolicyTests.swift */,
 				1788A0AC56CB3EC57FF15DD6 /* NavigationPolicyIntegrationTests.swift */,
 				EBDAA30CA770583FBD2F98FC /* PortableFeatureTests.swift */,
 				4E644741C584B4E982328A7B /* RecordRecoveryTests.swift */,
@@ -864,6 +884,11 @@
 			children = (
 				397CB2F7CB8A372260242996 /* AegisApp.swift */,
 				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
+				9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */,
+				510DA8D712A38313B1242AA9 /* FirebaseRemoteDiagnosticsSource.swift */,
+				DBCC2C1C622124BE376E78B5 /* RemoteDiagnosticsController.swift */,
+				3D149BE2DFC5DE1F9AE12F1D /* RemoteDiagnosticsPolicy.swift */,
+				151475053A5FB1402C9E3803 /* FirebaseInstallationCleanup.swift */,
 				ABC674B39EE41277890C67F8 /* AegisRootView.swift */,
 				EC9C02A3624F938F17E6ABDE /* AgentCenterModel.swift */,
 				FDD2FCA82FA95816988BFBFD /* AgentCenterView.swift */,
@@ -1011,6 +1036,8 @@
 				5224075A1D4C0EDFCEC28D92 /* FirebaseCore */,
 				97A6C8AC0261AA587DF2909D /* FirebaseCrashlytics */,
 				236A78E8476AD80D95EA97AD /* FirebaseAnalyticsCore */,
+				42C9E8ECECC6479BFE13E9DB /* FirebaseInstallations */,
+				0D026E316E3C9B908759D083 /* FirebaseRemoteConfig */,
 			);
 			productName = Aegis;
 			productReference = 8062DAFB759A5F4F2DEA7F6B /* Aegis.app */;
@@ -1408,6 +1435,11 @@
 			files = (
 				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
 				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
+				EA17336CE13C643EFF37AD29 /* FirebaseControlsView.swift in Sources */,
+				3BB026E7DD1A640C185C5BEC /* FirebaseRemoteDiagnosticsSource.swift in Sources */,
+				43F34B2694DFFEE1AC516D0B /* RemoteDiagnosticsController.swift in Sources */,
+				AE104CCC28A6C705B29F5434 /* RemoteDiagnosticsPolicy.swift in Sources */,
+				E303FB951E5797A2D93FB218 /* FirebaseInstallationCleanup.swift in Sources */,
 				8783373417B125F59C243517 /* AegisRootView.swift in Sources */,
 				81ED16A4B85AF8ADA0FB67A3 /* AgentCenterModel.swift in Sources */,
 				A221FA759498782B5C07292B /* AgentCenterView.swift in Sources */,
@@ -1456,6 +1488,8 @@
 				F1DB30017933EE43C6660F04 /* DownloadPlanTests.swift in Sources */,
 				FC29A4E60162F5F98F194385 /* ExternalPageLinkTests.swift in Sources */,
 				A3D7B09E532CEACA66A14C52 /* FirebaseInstallPreferencesTests.swift in Sources */,
+				D135455F301C94F942653081 /* RemoteDiagnosticsControllerTests.swift in Sources */,
+				44546AD01B900248C4A1765D /* RemoteDiagnosticsPolicyTests.swift in Sources */,
 				C7F29894ACF611B73F67D456 /* LinkSanitizerTests.swift in Sources */,
 				86BF60B407B9E218F98DCAE5 /* ModelClientTests.swift in Sources */,
 				EA29042BE23A97415588FBDE /* ModelStreamingTests.swift in Sources */,
@@ -2193,6 +2227,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseCrashlytics;
+		};
+		0D026E316E3C9B908759D083 /* FirebaseRemoteConfig */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseRemoteConfig;
+		};
+		42C9E8ECECC6479BFE13E9DB /* FirebaseInstallations */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F21D08B58E0563EB3E0D8CF0 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseInstallations;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

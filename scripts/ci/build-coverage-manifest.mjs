@@ -169,6 +169,7 @@ try {
     'apps/browser/scripts/local-pypi-proxy.py',
     'apps/browser/scripts/measure-browser-processes.py',
     'apps/browser/scripts/minim-real-data-pilot.py',
+    'apps/browser/scripts/native_validation/terminal_receipt.py',
     'apps/browser/scripts/phishlang-model-probe.py',
     'apps/browser/scripts/phishlang-real-data-pilot.py',
     'apps/browser/scripts/release-assets.py',

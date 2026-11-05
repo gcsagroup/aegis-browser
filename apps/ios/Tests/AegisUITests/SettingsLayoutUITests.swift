@@ -48,6 +48,72 @@ final class SettingsLayoutUITests: XCTestCase {
         inspectSettings(largeText: false)
     }
 
+    func testFirebaseControlsAreIndependentAtLargestTextSize() {
+        inspectFirebaseControls(largeText: true)
+    }
+
+    func testFirebaseControlsThroughSettingsMenu() {
+        inspectFirebaseControls(largeText: false)
+    }
+
+    private func inspectFirebaseControls(largeText: Bool) {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        if largeText {
+            // Focus the large-type check on the settings controls. The separate
+            // menu test verifies the production entry without a launch shortcut.
+            app.launchArguments += ["--ui-testing-settings", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        } else {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL"]
+        }
+        app.launch()
+        if !largeText {
+            XCTAssertTrue(app.buttons["browser-more"].waitForExistence(timeout: 10))
+            openSettings(app)
+        } else {
+            XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 10))
+        }
+        enterFeatureSettings(app)
+        app.buttons["aegis-privacy-settings"].tap()
+        let crashes = app.switches["firebase-crash-reports"]
+        let analytics = app.switches["firebase-analytics"]
+        let remote = app.switches["firebase-remote-configuration"]
+        for control in [crashes, analytics, remote] {
+            XCTAssertTrue(reveal(control, app))
+            assertInsideWindow(control, app)
+            XCTAssertEqual(control.value as? String, "0")
+        }
+        XCTAssertTrue(reveal(analytics, app, scrollDown: true))
+        capture("Firebase-使用分析-点击前", app)
+        let controls = XCTAttachment(string: app.debugDescription)
+        controls.name = "Firebase-开关层级"
+        controls.lifetime = .keepAlways
+        add(controls)
+        tapFirebaseSwitch(analytics)
+        capture("Firebase-使用分析-点击后", app)
+        XCTAssertEqual(analytics.value as? String, "1")
+        XCTAssertEqual(crashes.value as? String, "0")
+        XCTAssertTrue(reveal(remote, app)); tapFirebaseSwitch(remote)
+        XCTAssertEqual(remote.value as? String, "1")
+        tapFirebaseSwitch(remote)
+        XCTAssertEqual(remote.value as? String, "0")
+        XCTAssertTrue(reveal(analytics, app, scrollDown: true))
+        XCTAssertEqual(analytics.value as? String, "1")
+        tapFirebaseSwitch(analytics)
+        let disclosure = app.staticTexts["已获准发送的崩溃报告无法撤回。"]
+        XCTAssertTrue(reveal(disclosure, app))
+        assertInsideWindow(disclosure, app)
+        capture(largeText ? "Firebase-独立开关-最大字体" : "Firebase-独立开关-普通字体", app)
+        app.terminate()
+    }
+
+    private func tapFirebaseSwitch(_ control: XCUIElement) {
+        // SwiftUI exposes the whole label row as the switch accessibility frame.
+        // Tap the trailing native switch rather than the center of its text.
+        XCTAssertTrue(control.isHittable)
+        control.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+    }
+
     func testExpandedSettingsAtLargestTextSize() {
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
@@ -197,7 +263,7 @@ final class SettingsLayoutUITests: XCTestCase {
         settings.tap()
     }
 
-    private func reveal(_ element: XCUIElement, _ app: XCUIApplication) -> Bool {
+    private func reveal(_ element: XCUIElement, _ app: XCUIApplication, scrollDown: Bool? = nil) -> Bool {
         _ = element.waitForExistence(timeout: 3)
         for _ in 0..<14 {
             // 导航动画期间集合视图会被替换，滚动坐标固定绑定应用窗口。
@@ -205,7 +271,9 @@ final class SettingsLayoutUITests: XCTestCase {
             let top = max(bounds.minY, app.navigationBars.allElementsBoundByIndex.last?.frame.maxY ?? bounds.minY) + 8
             let bottom = bounds.maxY - 8
             if element.exists, element.isHittable, element.frame.midY >= top, element.frame.midY <= bottom { return true }
-            let down = element.exists && !element.frame.isEmpty && element.frame.midY < top
+            // Virtualized rows may have no frame. A caller returning to an earlier row
+            // can supply the known direction instead of scrolling farther away.
+            let down = scrollDown ?? (element.exists && !element.frame.isEmpty && element.frame.midY < top)
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.35 : 0.75))
                 .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: down ? 0.75 : 0.35)))
         }

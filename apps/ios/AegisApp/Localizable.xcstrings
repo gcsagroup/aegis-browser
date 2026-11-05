@@ -95230,6 +95230,1163 @@
           }
         }
       }
+    },
+    "仅允许远程暂停诊断上报，不能开启你关闭的采集项。获取配置会向 Firebase 发送安装标识；关闭后恢复本机选择并清理该标识，已开始的请求无法撤回。": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Fernkonfiguration kann Diagnoseberichte nur pausieren, nicht von dir deaktivierte Erfassung aktivieren. Beim Abruf wird eine Installationskennung an Firebase gesendet. Beim Ausschalten gelten wieder deine lokalen Einstellungen und die Kennung wird entfernt. Bereits gestartete Anfragen lassen sich nicht zurücknehmen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote configuration can only pause diagnostics, never enable collection you turned off. Fetching sends an installation identifier to Firebase. Turning this off restores your local choices and removes that identifier; requests already started cannot be recalled."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuración remota solo puede pausar diagnósticos, nunca activar una recopilación que desactivaste. Obtenerla envía un identificador de instalación a Firebase. Al desactivarla se restauran tus opciones locales y se elimina ese identificador; las solicitudes ya iniciadas no pueden retirarse."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuration distante peut seulement suspendre les diagnostics, jamais activer une collecte que vous avez désactivée. Sa récupération envoie un identifiant d’installation à Firebase. La désactivation rétablit vos choix locaux et supprime cet identifiant ; les requêtes déjà lancées ne peuvent pas être rappelées."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi jarak jauh hanya dapat menjeda diagnostik, bukan mengaktifkan pengumpulan yang Anda matikan. Pengambilan mengirim pengenal instalasi ke Firebase. Menonaktifkannya memulihkan pilihan lokal dan menghapus pengenal tersebut; permintaan yang sudah dimulai tidak dapat ditarik kembali."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configurazione remota può solo sospendere la diagnostica, mai attivare una raccolta che hai disattivato. Il recupero invia un identificatore di installazione a Firebase. Disattivandola si ripristinano le scelte locali e si rimuove l’identificatore; le richieste già avviate non possono essere ritirate."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモート設定は診断の送信を一時停止するだけで、オフにした収集を有効にすることはありません。設定の取得時にインストール識別子が Firebase に送信されます。オフにすると端末での選択に戻り、識別子を削除します。開始済みのリクエストは取り消せません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 설정은 진단을 일시 중지할 수만 있으며, 사용자가 끈 수집을 켤 수 없습니다. 설정을 가져올 때 설치 식별자를 Firebase에 보냅니다. 이 기능을 끄면 기기의 선택을 복원하고 식별자를 삭제합니다. 이미 시작된 요청은 회수할 수 없습니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi jauh hanya boleh menjeda diagnostik, bukan mengaktifkan pengumpulan yang anda matikan. Pengambilan menghantar pengecam pemasangan kepada Firebase. Mematikannya memulihkan pilihan setempat dan mengalih keluar pengecam itu; permintaan yang telah bermula tidak boleh ditarik balik."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A configuração remota só pode pausar diagnósticos, nunca ativar uma coleta que você desativou. A busca envia um identificador de instalação ao Firebase. Ao desativar, suas escolhas locais são restauradas e o identificador é removido; solicitações já iniciadas não podem ser retiradas."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การกำหนดค่าระยะไกลทำได้เพียงหยุดการวินิจฉัยชั่วคราว ไม่สามารถเปิดการเก็บข้อมูลที่คุณปิดไว้ การดึงค่าจะส่งตัวระบุการติดตั้งไปยัง Firebase เมื่อปิดจะกลับไปใช้ตัวเลือกในเครื่องและลบตัวระบุ คำขอที่เริ่มไปแล้วไม่สามารถเรียกคืนได้"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cấu hình từ xa chỉ có thể tạm dừng chẩn đoán, không thể bật việc thu thập mà bạn đã tắt. Khi lấy cấu hình, mã định danh cài đặt được gửi đến Firebase. Tắt tính năng sẽ khôi phục lựa chọn trên thiết bị và xóa mã định danh; không thể thu hồi yêu cầu đã bắt đầu."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅允许远程暂停诊断上报，不能开启你关闭的采集项。获取配置会向 Firebase 发送安装标识；关闭后恢复本机选择并清理该标识，已开始的请求无法撤回。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "僅允許遠端暫停診斷回報，不能開啟你關閉的蒐集項目。取得設定會向 Firebase 傳送安裝識別碼；關閉後恢復本機選擇並清理該識別碼，已開始的請求無法撤回。"
+          }
+        }
+      }
+    },
+    "使用最近一次有效配置": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Letzte gültige Konfiguration wird verwendet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using the last valid configuration"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa la última configuración válida"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisation de la dernière configuration valide"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menggunakan konfigurasi valid terakhir"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uso dell’ultima configurazione valida"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "前回の有効な設定を使用中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 유효한 설정 사용 중"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menggunakan konfigurasi sah terakhir"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usando a última configuração válida"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "กำลังใช้การกำหนดค่าที่ใช้ได้ล่าสุด"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang dùng cấu hình hợp lệ gần nhất"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用最近一次有效配置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用最近一次有效設定"
+          }
+        }
+      }
+    },
+    "使用本机选择": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lokale Auswahl wird verwendet"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using your local choices"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usan tus opciones locales"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisation de vos choix locaux"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menggunakan pilihan lokal Anda"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uso delle tue scelte locali"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末での選択を使用中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기의 선택 사용 중"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menggunakan pilihan setempat anda"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usando suas escolhas locais"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "กำลังใช้ตัวเลือกในเครื่องของคุณ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang dùng lựa chọn trên thiết bị"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用本机选择"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用本機選擇"
+          }
+        }
+      }
+    },
+    "允许远程诊断配置": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ferndiagnose-Konfiguration erlauben"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow remote diagnostics configuration"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir configuración remota de diagnósticos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser la configuration distante des diagnostics"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Izinkan konfigurasi diagnostik jarak jauh"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consenti configurazione remota della diagnostica"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "診断のリモート設定を許可"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 진단 설정 허용"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Benarkan konfigurasi diagnostik jauh"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir configuração remota de diagnóstico"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "อนุญาตการกำหนดค่าการวินิจฉัยระยะไกล"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cho phép cấu hình chẩn đoán từ xa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许远程诊断配置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許遠端診斷設定"
+          }
+        }
+      }
+    },
+    "安装标识清理未完成，请重试。": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Installationskennung wurde noch nicht entfernt. Bitte erneut versuchen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The installation identifier could not be removed. Please retry."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo eliminar el identificador de instalación. Inténtalo de nuevo."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’identifiant d’installation n’a pas pu être supprimé. Réessayez."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengenal instalasi belum dapat dihapus. Coba lagi."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossibile rimuovere l’identificatore di installazione. Riprova."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール識別子を削除できませんでした。再試行してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 식별자를 삭제하지 못했습니다. 다시 시도해 주세요."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pengecam pemasangan belum dapat dialih keluar. Sila cuba lagi."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível remover o identificador de instalação. Tente novamente."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ไม่สามารถลบตัวระบุการติดตั้งได้ โปรดลองอีกครั้ง"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chưa thể xóa mã định danh cài đặt. Vui lòng thử lại."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装标识清理未完成，请重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安裝識別碼尚未清理完成，請重試。"
+          }
+        }
+      }
+    },
+    "正在清理远程配置标识": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kennung der Fernkonfiguration wird entfernt"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removing the remote configuration identifier"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminando el identificador de configuración remota"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suppression de l’identifiant de configuration distante"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menghapus pengenal konfigurasi jarak jauh"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rimozione dell’identificatore della configurazione remota"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモート設定の識別子を削除中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 설정 식별자 삭제 중"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mengalih keluar pengecam konfigurasi jauh"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Removendo o identificador da configuração remota"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "กำลังลบตัวระบุการกำหนดค่าระยะไกล"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang xóa mã định danh cấu hình từ xa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在清理远程配置标识"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在清理遠端設定識別碼"
+          }
+        }
+      }
+    },
+    "正在获取远程配置": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fernkonfiguration wird geladen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fetching remote configuration"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obteniendo configuración remota"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récupération de la configuration distante"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mengambil konfigurasi jarak jauh"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recupero della configurazione remota"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモート設定を取得中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 설정 가져오는 중"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mendapatkan konfigurasi jauh"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Obtendo configuração remota"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "กำลังดึงการกำหนดค่าระยะไกล"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đang lấy cấu hình từ xa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在获取远程配置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在取得遠端設定"
+          }
+        }
+      }
+    },
+    "此构建未启用诊断服务，已保存的选择将在服务可用时生效。": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In diesem Build ist der Diagnosedienst deaktiviert. Gespeicherte Einstellungen gelten, sobald er verfügbar ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics are unavailable in this build. Saved choices apply when the service is available."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los diagnósticos no están disponibles en esta compilación. Las opciones guardadas se aplicarán cuando el servicio esté disponible."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les diagnostics sont indisponibles dans cette version. Les choix enregistrés seront appliqués lorsque le service sera disponible."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostik tidak tersedia dalam build ini. Pilihan tersimpan berlaku saat layanan tersedia."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La diagnostica non è disponibile in questa build. Le scelte salvate saranno applicate quando il servizio sarà disponibile."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このビルドでは診断サービスを利用できません。保存した設定はサービスが利用可能になったときに適用されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 빌드에서는 진단 서비스를 사용할 수 없습니다. 저장된 선택은 서비스를 사용할 수 있을 때 적용됩니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostik tidak tersedia dalam binaan ini. Pilihan tersimpan digunakan apabila perkhidmatan tersedia."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O diagnóstico não está disponível nesta compilação. As escolhas salvas serão aplicadas quando o serviço estiver disponível."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "รุ่นนี้ไม่มีบริการวินิจฉัย ตัวเลือกที่บันทึกไว้จะมีผลเมื่อบริการพร้อมใช้งาน"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bản dựng này chưa có dịch vụ chẩn đoán. Lựa chọn đã lưu sẽ được áp dụng khi dịch vụ khả dụng."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此构建未启用诊断服务，已保存的选择将在服务可用时生效。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此版本未啟用診斷服務，已儲存的選擇將在服務可用時生效。"
+          }
+        }
+      }
+    },
+    "远程诊断配置": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ferndiagnose-Konfiguration"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote diagnostics configuration"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuración remota de diagnósticos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuration distante des diagnostics"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi diagnostik jarak jauh"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurazione remota della diagnostica"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "診断のリモート設定"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 진단 설정"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi diagnostik jauh"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuração remota de diagnóstico"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การกำหนดค่าการวินิจฉัยระยะไกล"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cấu hình chẩn đoán từ xa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程诊断配置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遠端診斷設定"
+          }
+        }
+      }
+    },
+    "远程配置不可用，诊断上报已暂停。": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fernkonfiguration nicht verfügbar. Diagnoseberichte sind pausiert."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote configuration is unavailable. Diagnostic reporting is paused."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuración remota no está disponible. Los informes de diagnóstico están pausados."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuration distante est indisponible. L’envoi des diagnostics est suspendu."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi jarak jauh tidak tersedia. Pelaporan diagnostik dijeda."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configurazione remota non disponibile. L’invio della diagnostica è sospeso."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモート設定を利用できないため、診断の送信を一時停止しています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 설정을 사용할 수 없어 진단 보고가 일시 중지되었습니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi jauh tidak tersedia. Pelaporan diagnostik dijeda."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A configuração remota está indisponível. O envio de diagnósticos está pausado."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การกำหนดค่าระยะไกลไม่พร้อมใช้งาน การส่งข้อมูลวินิจฉัยหยุดชั่วคราว"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cấu hình từ xa không khả dụng. Việc gửi chẩn đoán đã tạm dừng."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程配置不可用，诊断上报已暂停。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遠端設定無法使用，診斷回報已暫停。"
+          }
+        }
+      }
+    },
+    "远程配置已暂停此项": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durch Fernkonfiguration pausiert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused by remote configuration"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausado por la configuración remota"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suspendu par la configuration distante"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dijeda oleh konfigurasi jarak jauh"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sospeso dalla configurazione remota"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモート設定により一時停止中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 설정에 의해 일시 중지됨"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dijeda oleh konfigurasi jauh"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausado pela configuração remota"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "หยุดชั่วคราวโดยการกำหนดค่าระยะไกล"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Đã tạm dừng theo cấu hình từ xa"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程配置已暂停此项"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遠端設定已暫停此項"
+          }
+        }
+      }
+    },
+    "远程配置已生效": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fernkonfiguration ist aktiv"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote configuration is active"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuración remota está activa"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configuration distante est active"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi jarak jauh aktif"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La configurazione remota è attiva"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リモート設定を適用済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원격 설정이 적용됨"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konfigurasi jauh aktif"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A configuração remota está ativa"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "การกำหนดค่าระยะไกลมีผลแล้ว"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cấu hình từ xa đang có hiệu lực"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程配置已生效"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "遠端設定已生效"
+          }
+        }
+      }
+    },
+    "已获准发送的崩溃报告无法撤回。": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bereits zum Senden freigegebene Absturzberichte können nicht zurückgerufen werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crash reports already authorized for sending cannot be recalled."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los informes de fallos ya autorizados para envío no pueden retirarse."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les rapports de plantage déjà autorisés à l’envoi ne peuvent pas être rappelés."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laporan kerusakan yang sudah diizinkan untuk dikirim tidak dapat ditarik kembali."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I rapporti di arresto anomalo già autorizzati all’invio non possono essere ritirati."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信を許可済みのクラッシュレポートは取り消せません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미 전송이 승인된 비정상 종료 보고서는 회수할 수 없습니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laporan ranap yang telah dibenarkan untuk dihantar tidak boleh ditarik balik."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relatórios de falhas já autorizados para envio não podem ser retirados."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "รายงานข้อขัดข้องที่อนุญาตให้ส่งแล้วไม่สามารถเรียกคืนได้"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Không thể thu hồi báo cáo sự cố đã được cho phép gửi."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已获准发送的崩溃报告无法撤回。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已獲准傳送的當機報告無法撤回。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

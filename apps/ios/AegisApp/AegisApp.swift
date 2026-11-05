@@ -18,6 +18,7 @@ final class AegisAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct AegisApp: App {
     @UIApplicationDelegateAdaptor(AegisAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var windows: BrowserWindowStore
     private let dataStore: BrowserDataStore
     private let workspaceStore: WorkspaceStore
@@ -103,6 +104,9 @@ struct AegisApp: App {
             windows.defaultWindowID()
         }
         .commands { BrowserKeyboardCommands() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { AegisFirebase.shared.refreshOnForeground() }
+        }
     }
 
 #if DEBUG
