@@ -225,6 +225,7 @@ try {
     'apps/browser/scripts/release-contract_test.py',
     'apps/browser/scripts/release-github_test.py',
     'apps/browser/scripts/ci/candidate_test.py',
+    'apps/browser/scripts/native_validation/terminal_receipt_test.py',
   ]) {
     await command(`python-coverage-${test.split('/').at(-1)}`, coverageExecutable, [
       'run', '--parallel-mode', '--branch',
