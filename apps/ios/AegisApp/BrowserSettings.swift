@@ -168,7 +168,6 @@ private struct AegisFeatureSettingsView: View {
 }
 
 private struct AegisProtectionSettingsView: View {
-    @ObservedObject private var firebase = AegisFirebase.shared
     @EnvironmentObject private var browser: BrowserSession
     @State private var clearing = false
     @State private var clearingWebsites = false
@@ -196,26 +195,7 @@ private struct AegisProtectionSettingsView: View {
                 Button("清除网站数据", role: .destructive) { clearingWebsites = true }
                     .disabled(browser.profile.isPrivate || deletingWebsites)
             }
-            if firebase.status == .active {
-                Section {
-                    Toggle("发送崩溃报告", isOn: Binding(
-                        get: { firebase.crashReportsEnabled },
-                        set: { firebase.setCrashReportsEnabled($0) }
-                    ))
-                    Toggle("发送使用分析", isOn: Binding(
-                        get: { firebase.analyticsEnabled },
-                        set: { firebase.setAnalyticsEnabled($0) }
-                    ))
-                } header: {
-                    Text("诊断与使用分析")
-                } footer: {
-                    Text("通过 Firebase 发送崩溃诊断和应用使用统计。崩溃报告在下次启动时发送。")
-                }
-            } else if firebase.status == .registrationChanged {
-                Text("此安装曾连接其他诊断环境。崩溃报告与使用分析已暂停。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            FirebaseControlsView()
             if let message { Text(message).foregroundStyle(.secondary) }
         }
         .navigationTitle("隐私与防护")

@@ -47,6 +47,14 @@ struct AegisRootView: View {
         }
         .sheet(isPresented: $showsData) { BrowserLibraryView(dataStore: browser.dataStore, workspaces: browser.workspaceStore) }
         .sheet(isPresented: $showsSettings) { BrowserSettingsView() }
+#if DEBUG
+        .task {
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("--ui-testing"), arguments.contains("--ui-testing-settings") {
+                showsSettings = true
+            }
+        }
+#endif
         .sheet(isPresented: $showsReading) { ReadingLibraryView() }
         .sheet(item: $browser.pendingMarkdown) { document in MarkdownReaderView(initial: document) }
         .sheet(isPresented: $showsFilters) { CurrentWebsiteView() }
