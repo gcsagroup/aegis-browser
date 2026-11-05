@@ -1975,8 +1975,8 @@
     "th": "cdfb006f322e28a9bf4a979a983bfa6d4520e8c829d0049d4c48c83889e3abc4",
     "vi": "be142f9f64d4645c27ee66c10f928792cbd8389a339050d2d0b5d9303fa81087"
   },
-  "catalogKeyCount": 1070,
-  "catalogKeysSHA256": "de25721cd443472a2314dcabce3eb979f5af101f0e884b72fbc9178b4e569081",
+  "catalogKeyCount": 1083,
+  "catalogInventorySHA256": "1ab231e2d463e72dd315db008c9ac1c0a04f475228c12ee6ca1d26c0f319b1a6",
   "numericAdditions": {
     "ja": {
       "SHA-256 应为 64 位十六进制字符。": {

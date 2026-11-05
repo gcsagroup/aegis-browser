@@ -46,7 +46,7 @@ def validate_catalog(contract, catalog, probes):
     locales = set(contract["resourceLocales"])
     assert catalog["sourceLanguage"] == "zh-Hans"
     assert len(strings) == contract["catalogKeyCount"]
-    assert digest(sorted(strings)) == contract["catalogKeysSHA256"], "Catalog key inventory changed"
+    assert digest(sorted(strings)) == contract["catalogInventorySHA256"], "Catalog key inventory changed"
     assert set(contract["requestedLocales"]) == locales | set(contract["regionalFallbacks"])
     assert {locale for entry in strings.values() for locale in entry["localizations"]} == locales
     for locale, expected in contract["preservedLocalizationsSHA256"].items():
