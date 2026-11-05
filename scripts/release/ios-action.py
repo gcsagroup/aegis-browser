@@ -65,10 +65,19 @@ def export():
 
 
 def package():
-    args = identity()+['--destination', os.environ.get('RELEASE_DESTINATION', 'artifacts')]
+    if os.environ.get('RELEASE_PACKAGE_ENTRYPOINT', 'actions') not in {'actions', 'fastlane'}:
+        raise ValueError('Unsupported package entrypoint')
+    args = identity()+['--destination', os.environ.get('RELEASE_DESTINATION', 'artifacts'),
+                       '--signing-mode', os.environ.get('RELEASE_SIGNING_MODE', 'cloud')]
     if os.environ.get('RELEASE_DESTINATION') == 'github-draft':
         args += ['--tag', os.environ['RELEASE_TAG'], '--repository', os.environ['GITHUB_REPOSITORY']]
-    run(ROOT/'release', 'ios', 'package', *args)
+    if os.environ.get('RELEASE_PACKAGE_ENTRYPOINT', 'actions') == 'fastlane':
+        names = {'--profile': 'profile', '--version': 'version', '--build': 'build', '--run-id': 'run_id',
+                 '--destination': 'destination', '--signing-mode': 'signing_mode', '--tag': 'tag', '--repository': 'repository'}
+        pairs = [names[args[i]] + ':' + args[i+1] for i in range(0, len(args), 2)]
+        run('bundle', 'exec', 'fastlane', 'ios', 'package', *pairs)
+    else:
+        run(ROOT/'release', 'ios', 'package', *args)
     sha, tree = source()
     origin = dict(repository=os.environ['GITHUB_REPOSITORY'], runId=int(os.environ['GITHUB_RUN_ID']),
                   attempt=int(os.environ['GITHUB_RUN_ATTEMPT']), sourceSha=sha, sourceTree=tree,

@@ -10,6 +10,73 @@ spec.loader.exec_module(planner)
 
 
 class DeliveryPlanTests(unittest.TestCase):
+    def test_tags_default_to_cloud_and_explicit_modes_cannot_change_source(self):
+        sha = 'a' * 40
+        def fixture(message, target=sha):
+            return lambda path: ({'object': {'type': 'tag', 'sha': 'b' * 40}} if path.startswith('git/ref/') else
+                                 {'object': {'type': 'commit', 'sha': target}, 'message': message})
+        tag = 'candidate/ios/0.8.0-beta.501'
+        for mode in ['cloud', 'manual']:
+            message = 'aegis-ios-signing-v1\n' + json.dumps({'signingMode': mode, 'sourceSha': sha})
+            self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message)), mode)
+            with self.assertRaises(ValueError):
+                planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message, 'c'*40))
+            with self.assertRaises(ValueError):
+                planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message.replace(sha, 'c'*40)))
+        self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture('ordinary candidate')), 'cloud')
+        lightweight = lambda _path: {'object': {'type': 'commit', 'sha': sha}}
+        self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, lightweight), 'cloud')
+        with self.assertRaises(ValueError):
+            planner.tag_signing_mode('gcsagroup/aegis-browser', tag, 'c'*40, lightweight)
+
+    def test_malformed_manual_override_stops_instead_of_using_cloud_default(self):
+        sha = 'a'*40
+        messages = ['aegis-ios-signing-v1\r\n{}', 'aegis-ios-signing-v2\n{}',
+                    'aegis-ios-signing-v1\n{}',
+                    'aegis-ios-signing-v1\n'+json.dumps({'signingMode': 'fallback', 'sourceSha': sha}),
+                    'aegis-ios-signing-v1\n'+json.dumps({'signingMode': 'manual', 'sourceSha': sha, 'extra': True}),
+                    'aegis-ios-signing-v1\n'+f'{{"signingMode":"cloud","signingMode":"manual","sourceSha":"{sha}"}}']
+        for message in messages:
+            def api(path):
+                return ({'object': {'type': 'tag', 'sha': 'b'*40}} if path.startswith('git/ref/') else
+                        {'object': {'type': 'commit', 'sha': sha}, 'message': message})
+            with self.subTest(message=message), self.assertRaises(ValueError):
+                planner.tag_signing_mode('gcsagroup/aegis-browser', 'candidate/ios/1.0.2-beta.12', sha, api)
+
+    def test_full_fastlane_entrypoint_does_not_change_package_destination(self):
+        value = planner.normalize('workflow_dispatch', 'refs/heads/main',
+                                  dict(operation='Package', version='0.8.0', build='501', product='Beta',
+                                       package_entrypoint='fastlane'), 'full')
+        self.assertEqual((value['package_entrypoint'], value['destination'], value['signing_mode']), ('fastlane', 'artifacts', 'cloud'))
+
+    def test_new_packages_default_to_cloud_with_explicit_manual_fallback(self):
+        base = {'version': '0.8.0', 'build': '101', 'operation': 'Package'}
+        for form in ['simple', 'full']:
+            for profile in ['Alpha', 'Beta', 'Release']:
+                for operation in ['Package', 'Package and upload', *(['Draft'] if form == 'full' else [])]:
+                    values = dict(base, product=profile, operation=operation)
+                    self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', values, form)['signing_mode'], 'cloud')
+                    self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', dict(values, signing_mode='manual'), form)['signing_mode'], 'manual')
+        for operation in ['Status', 'Package']:
+            with self.assertRaises(ValueError):
+                planner.normalize('workflow_dispatch', 'refs/heads/main', dict(base, operation=operation, signing_mode='fallback'))
+
+    def test_cloud_form_default_cannot_block_reads_or_reinterpret_existing_package_stages(self):
+        for form in ['simple', 'full']:
+            for operation in ['Status', 'Wait']:
+                value = planner.normalize('workflow_dispatch', 'refs/heads/main',
+                                          dict(operation=operation, version='1.0.2', build='10', signing_mode='cloud'), form)
+                self.assertEqual(value['signing_mode'], '')
+                self.assertEqual(value['manifest_sha256'], '')
+        token = self.token(profile='beta', state='101')
+        for operation in ['Upload', 'Wait', 'Metadata', 'Compliance', 'Distribute internal', 'Distribute external']:
+            values = dict(operation=operation, source=token, signing_mode='cloud')
+            if operation.startswith('Distribute'):
+                values['groups'] = 'Existing group'
+            plan = planner.normalize('workflow_dispatch', 'refs/heads/main', values, 'full')
+            self.assertEqual(plan['signing_mode'], '')
+            self.assertEqual(plan['manifest_sha256'], 'a'*64)
+
     def plan(self, inputs=None, event='workflow_dispatch', ref='refs/heads/main'):
         return planner._normalize_stage(event, ref, inputs if inputs is not None else dict(version='1.0.0(33)'))
 
@@ -76,6 +143,7 @@ class DeliveryPlanTests(unittest.TestCase):
             plan = self.plan({}, event='push', ref='refs/tags/candidate/ios/1.0.0-'+profile+'.33')
             self.assertEqual([plan[k] for k in ['operation', 'profile', 'version', 'build', 'destination']],
                              ['package', profile, '1.0.0', '33', 'github-draft'])
+            self.assertEqual(plan['signing_mode'], 'cloud')
         for ref in ['refs/heads/main', 'refs/tags/v1.0.0', 'refs/tags/candidate/ios/1.0.0-release.0',
                     'refs/tags/candidate/ios/1.0.0-release.33\n', 'refs/tags/candidate/ios/'+('1'*100)+'.0-alpha.33']:
             with self.assertRaises(ValueError):

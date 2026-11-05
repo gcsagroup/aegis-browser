@@ -74,15 +74,17 @@ module AegisRelease
 
   class Request
     attr_reader :platform, :destination, :version, :build, :run_id, :tag, :root, :expected_digest,
-                :profile, :groups, :format, :repository, :input, :timeout, :interval
+                :profile, :groups, :format, :repository, :input, :timeout, :interval, :signing_mode
 
     def initialize(platform, options = {}, root: ROOT)
       @root = root
       @platform = platform
       AegisRelease.require!(platform == 'ios', 'Platform must be ios for this release entrypoint')
-      unknown = options.keys.map(&:to_sym) - %i[destination version build run_id tag manifest_sha256 profile groups format repository input timeout interval]
+      unknown = options.keys.map(&:to_sym) - %i[destination version build run_id tag manifest_sha256 profile groups format repository input timeout interval signing_mode]
       AegisRelease.require!(unknown.empty?, "Unknown release options: #{unknown.join(', ')}")
       options = options.transform_keys(&:to_sym)
+      @signing_mode = options.fetch(:signing_mode, 'cloud').to_s
+      AegisRelease.require!(%w[manual cloud].include?(signing_mode), 'Signing mode must be manual or cloud')
       @input = options[:input]&.to_s
       @timeout = Integer(options.fetch(:timeout, 1800).to_s, exception: false)
       @interval = Integer(options.fetch(:interval, 15).to_s, exception: false)
@@ -147,7 +149,7 @@ module AegisRelease
                      "groups" => groups, "repository" => repository,
                      "stages" => %w[package upload wait metadata compliance distribute submit status],
                      "nativeInputsSha256" => AegisRelease.native_inputs_digest(root),
-                     "uploadSubmitsReview" => false, "releaseReady" => false)
+                     "signingMode" => signing_mode, "uploadSubmitsReview" => false, "releaseReady" => false)
     end
 
     def validate_stage!(stage)
@@ -234,9 +236,11 @@ module AegisRelease
       AegisRelease.real_path!(request.directory)
       AegisRelease.require!(!File.exist?(request.directory), 'Attempt already exists; use a new run ID or upload the verified package')
       required('AEGIS_APPLE_TEAM_ID')
-      certificate = required('AEGIS_IOS_CERT_SHA1')
-      AegisRelease.require!(/\A[0-9A-Fa-f]{40}\z/.match?(certificate), 'Provide AEGIS_IOS_CERT_SHA1')
-      ios_profiles
+      if request.signing_mode == 'manual'
+        certificate = required('AEGIS_IOS_CERT_SHA1')
+        AegisRelease.require!(/\A[0-9A-Fa-f]{40}\z/.match?(certificate), 'Provide AEGIS_IOS_CERT_SHA1')
+        ios_profiles
+      end
       run('python3', File.join(request.root, 'scripts/release/safari_manifest.py'), File.join(request.root, 'apps/ios/SharedWebExtension'))
       FileUtils.mkdir_p(File.dirname(request.directory))
       Dir.mkdir(request.directory, 0o700)
@@ -256,6 +260,7 @@ module AegisRelease
     end
 
     def package_ios
+      return package_ios_cloud if request.signing_mode == 'cloud'
       profiles = ios_profiles
       work = File.join(request.directory, 'work')
       # Copy only committed inputs; ignored local files must not enter the archive.
@@ -303,9 +308,51 @@ module AegisRelease
       run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), ipa, request.version, request.build, request.profile,
           '--team', team, '--certificate-sha1', certificate, '--profiles-json', JSON.generate(profiles), '--source-root', request.root)
       paths = [ipa] + Dir.glob(File.join(request.directory, '*.dSYM.zip'))
-      [paths, { 'signing' => 'app-store-export', 'appleTeamId' => team, 'certificateSha1' => certificate.upcase,
+      [paths, { 'signing' => 'app-store-export', 'signingMode' => 'manual', 'appleTeamId' => team, 'certificateSha1' => certificate.upcase,
                 'provisioningProfiles' => profiles, 'testflight' => 'not_uploaded', 'deviceAcceptance' => 'not_verified',
                 'testFlightInternalTestingOnly' => request.profile == 'alpha' }]
+    end
+
+    def package_ios_cloud
+      AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted',
+                            'Cloud production packaging requires a GitHub-hosted runner; use the explicit local fallback separately')
+      source = AegisRelease.source(request.root)
+      client = AppleStore.new(request, @fastlane, admission: method(:preflight_upload)).tap(&:authenticate)
+      before = CloudReservations.preflight(client, request, source)
+      engine_run_id = 'production-' + Digest::SHA256.hexdigest(request.run_id)[0,32]
+      run('python3', File.join(request.root, 'scripts/release/cloud-signing-poc.py'), '--signing-mode', 'cloud',
+          '--runtime', 'github-hosted', '--profile', request.profile, '--version', request.version, '--build', request.build,
+          '--team', required('AEGIS_APPLE_TEAM_ID'), '--run-id', engine_run_id)
+      root = File.join(request.root, '.artifacts/cloud-signing-poc', engine_run_id)
+      receipt_path = File.join(root, 'poc-receipt.json')
+      receipt = JSON.parse(File.read(AegisRelease.file!(receipt_path)))
+      AegisRelease.require!(receipt['status'] == 'ipa_verified' && receipt['signingMode'] == 'cloud' &&
+                            receipt['source'] == AegisRelease.source(request.root).reject { |key, _| key == 'dirty' } &&
+                            receipt.values_at('profile', 'version', 'build') == [request.profile, request.version, request.build] &&
+                            receipt['distributionP12Imported'] == false && receipt['keychainRestored'] == true,
+                            'Cloud package receipt differs from requested source/identity')
+      assets = receipt.fetch('assets')
+      AegisRelease.require!(assets.is_a?(Array) && assets.size == 4 && assets.map { |a| a['name'] }.uniq.size == 4,
+                            'Cloud receipt must include IPA, dSYM and verification evidence')
+      paths = assets.map do |asset|
+        name = asset.fetch('name')
+        AegisRelease.require!(/\A[A-Za-z0-9][A-Za-z0-9_.-]*\z/.match?(name) && !name.include?('..'), 'Unsafe cloud asset name')
+        original = File.join(root, name)
+        AegisRelease.require!(AegisRelease.digest(original) == asset.fetch('sha256') && File.size(original) == asset.fetch('size'),
+                              'Cloud asset differs from verified receipt')
+        target = File.join(request.directory, name)
+        FileUtils.cp(original, target)
+        target
+      end
+      target_receipt = File.join(request.directory, 'cloud-package-receipt.json')
+      FileUtils.cp(receipt_path, target_receipt)
+      paths << target_receipt
+      reservation = File.join(request.directory, 'cloud-upload-reservation.json')
+      AegisRelease.write_new(reservation, CloudReservations.capture(client, request, source, before))
+      paths << reservation
+      [paths, { 'signing' => 'cloud-app-store-export', 'signingMode' => 'cloud', 'appleTeamId' => receipt.fetch('team'),
+                'cloudVerification' => 'signature-verification.json', 'cloudReservation' => 'cloud-upload-reservation.json', 'testflight' => 'not_uploaded',
+                'deviceAcceptance' => 'not_verified', 'testFlightInternalTestingOnly' => request.profile == 'alpha' }]
     end
 
     def upload(expected_digest = request.expected_digest)
@@ -319,12 +366,23 @@ module AegisRelease
         path = File.join(request.directory, asset.fetch('name'))
         run('python3', File.join(request.root, 'scripts/release/verify-ipa.py'), path, request.version, request.build, request.profile)
         details = receipt.fetch('details')
-        run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), path, request.version, request.build, request.profile,
-            '--team', details.fetch('appleTeamId'), '--certificate-sha1', details.fetch('certificateSha1'),
-            '--profiles-json', JSON.generate(details.fetch('provisioningProfiles')), '--source-root', request.root)
+        verification_args = ['--team', details.fetch('appleTeamId'), '--source-root', request.root]
+        if details.fetch('signingMode', 'manual') == 'cloud'
+          verification_args += ['--signing-mode', 'cloud', '--expected-verification', File.join(request.directory, details.fetch('cloudVerification'))]
+        else
+          verification_args += ['--certificate-sha1', details.fetch('certificateSha1'), '--profiles-json', JSON.generate(details.fetch('provisioningProfiles'))]
+        end
+        run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), path, request.version, request.build, request.profile, *verification_args)
         client = store
         client.authenticate
-        result = Journal.new(request, expected_digest).perform('apple-upload') { client.upload(path) }
+        result = Journal.new(request, expected_digest).perform('apple-upload') do
+          if details.fetch('signingMode', 'manual') == 'cloud'
+            proof = JSON.parse(File.read(AegisRelease.file!(File.join(request.directory, details.fetch('cloudReservation')))))
+            client.upload(path, cloud_reservations: proof, source: receipt.fetch('source'))
+          else
+            client.upload(path)
+          end
+        end
       end
       puts JSON.pretty_generate(result)
       result

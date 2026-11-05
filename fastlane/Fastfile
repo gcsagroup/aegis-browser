@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 require_relative 'lib/release'
+require_relative 'lib/cloud_poc'
 
 def pipeline(platform, options)
   AegisRelease::Pipeline.new(AegisRelease::Request.new(platform, options), self)
@@ -8,7 +9,7 @@ end
 %w[ios].each do |lane_platform|
   platform lane_platform.to_sym do
     product = lane_platform
-    desc 'Build an iOS package and source-bound manifest without uploading'
+    desc 'Build an iOS package (cloud by default; signing_mode:manual for fallback) without uploading'
     lane :package do |options|
       pipeline(product, options).package
     end
@@ -49,7 +50,15 @@ end
 end
 
 platform :ios do
-  desc 'Install existing App Store signing material on an ephemeral CI runner'
+  desc 'Read-only unused-build preflight for the frozen hosted cloud PoC'
+  lane :cloud_poc_preflight do
+    AegisRelease::CloudPocStore.new(self).preflight
+  end
+  desc 'Upload only the admitted hosted cloud IPA and wait for processing; never submit review'
+  lane :cloud_poc_upload do
+    AegisRelease::CloudPocStore.new(self).upload_and_wait
+  end
+  desc 'Prepare existing App Store signing material for explicit manual fallback on an ephemeral CI runner'
   lane :ci_signing do
     UI.user_error!('ci_signing is only for GitHub-hosted macOS runners') unless ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted'
     setup_ci(provider: 'github')
