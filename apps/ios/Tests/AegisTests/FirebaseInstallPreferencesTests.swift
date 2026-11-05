@@ -18,7 +18,7 @@ final class FirebaseInstallPreferencesTests: XCTestCase {
         XCTAssertTrue(try preferences.bind(to: "1:123:ios:abc"))
     }
 
-    func testCollectionDefaultsOnAndChoicesPersistIndependently() throws {
+    func testCollectionDefaultsOffAndChoicesPersistIndependently() throws {
         let suite = UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -26,9 +26,11 @@ final class FirebaseInstallPreferencesTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let registration = directory.appending(path: "registration")
         let preferences = FirebaseInstallPreferences(defaults: defaults, registration: registration)
-        XCTAssertTrue(preferences.isEnabled(.crashes))
-        XCTAssertTrue(preferences.isEnabled(.analytics))
+        XCTAssertFalse(preferences.isEnabled(.crashes))
+        XCTAssertFalse(preferences.isEnabled(.analytics))
+        XCTAssertFalse(preferences.isEnabled(.remoteConfiguration))
 
+        preferences.setEnabled(true, for: .crashes)
         preferences.setEnabled(false, for: .analytics)
         let restored = FirebaseInstallPreferences(defaults: defaults, registration: registration)
         XCTAssertTrue(restored.isEnabled(.crashes))
