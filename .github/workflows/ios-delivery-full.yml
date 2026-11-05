@@ -36,6 +36,16 @@ on:
       source:
         description: "Delivery receipt (existing-package operations)"
         type: string
+      signing_mode:
+        description: "Signing mode for new packages only (cloud default; manual fallback)"
+        type: choice
+        options: [cloud, manual]
+        default: cloud
+      package_entrypoint:
+        description: "Package through the Actions CLI adapter or directly through Fastlane"
+        type: choice
+        options: [actions, fastlane]
+        default: actions
       groups:
         description: "Existing TestFlight groups (distribution only)"
         type: string
