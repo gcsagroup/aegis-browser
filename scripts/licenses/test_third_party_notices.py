@@ -157,9 +157,12 @@ print("Validated \(document.notices.count) notice sections and \(data.count) ori
             source.write_text(program)
             resource = directory / "ThirdPartyNotices.txt"
             resource.write_bytes(generated)
-            subprocess.run(["swift", "-module-cache-path", str(directory / "module-cache"),
+            # Resolve only the Swift toolchain selected by the host, never a caller-supplied command.
+            swift = Path(shutil.which("swift")).resolve(strict=True)
+            self.assertTrue(swift.is_file())
+            subprocess.run([str(swift), "-module-cache-path", str(directory / "module-cache"),
                             str(source), str(resource), str(len(expected_sources))],
-                           check=True, timeout=120)
+                           check=True, shell=False, timeout=120)
 
     def test_new_sdk_pin_cannot_silently_reuse_old_notices(self):
         with tempfile.TemporaryDirectory() as temp:

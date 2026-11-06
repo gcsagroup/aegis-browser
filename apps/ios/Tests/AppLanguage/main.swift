@@ -20,7 +20,12 @@ final class MemoryDefaults: AegisLanguageDefaults {
 
 func table(_ owner: Bundle, _ language: String, _ name: String) throws -> [String: String] {
     let url = owner.resourceURL!.appendingPathComponent("\(language).lproj/\(name).strings")
-    return try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil) as! [String: String]
+    let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), format: nil)
+    guard let strings = plist as? [String: String] else {
+        throw NSError(domain: "AegisLanguageProbe", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Expected a string-to-string table at \(url.path)"])
+    }
+    return strings
 }
 
 let args = CommandLine.arguments
@@ -28,6 +33,15 @@ let cases = try JSONDecoder().decode([PolicyCase].self, from: Data(contentsOf: U
 let app = Bundle(url: URL(fileURLWithPath: args[2]))!
 let agent = Bundle(url: URL(fileURLWithPath: args[3]))!
 let share = Bundle(url: URL(fileURLWithPath: args[4]))!
+for name in ["BadArray", "BadValue"] {
+    do {
+        _ = try table(app, "en", name)
+        preconditionFailure("Malformed resource accepted: \(name)")
+    } catch let error as NSError {
+        precondition(error.domain == "AegisLanguageProbe" && error.code == 1, "Expected checked table conversion failure")
+        precondition(error.localizedDescription.contains("\(name).strings"))
+    }
+}
 for item in cases {
     let snapshot = AegisLocalizationSnapshot.resolve(family: item.selected.flatMap(AegisLanguageFamily.init(rawValue:)),
         preferences: item.preferences, systemLocale: Locale(identifier: item.systemLocale))

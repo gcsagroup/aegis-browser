@@ -21,8 +21,10 @@ FIXTURES = ROOT / "Tests/Fixtures/Localization"
 FORMAT = re.compile(r"%(?:\d+\$)?[-+#0 ]*(?:\d+|\*)?(?:\.(?:\d+|\*))?(?:hh|ll|[hljztL])?[@diuoxXfFeEgGaAcCsSpn%]")
 
 
-def run(*args):
-    return subprocess.check_output([str(arg) for arg in args], text=True)
+def require(condition, message):
+    """Validation must remain active even when Python optimization is enabled."""
+    if not condition:
+        raise ValueError(message)
 
 
 def digest(value):
@@ -31,7 +33,8 @@ def digest(value):
 
 
 def plist(path):
-    return json.loads(run("plutil", "-convert", "json", "-o", "-", path))
+    return json.loads(subprocess.check_output(["/usr/bin/plutil", "-convert", "json", "-o", "-", str(path)],
+                                              text=True, shell=False))
 
 
 def numbers(value):
@@ -44,47 +47,47 @@ def numbers(value):
 def validate_catalog(contract, catalog, probes):
     strings = catalog["strings"]
     locales = set(contract["resourceLocales"])
-    assert catalog["sourceLanguage"] == "zh-Hans"
+    require(catalog["sourceLanguage"] == "zh-Hans", 'Guard failed: catalog["sourceLanguage"] == "zh-Hans"')
     additions = set(contract.get("languageSelectorAddedKeys", []))
-    assert additions == {"语言", "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"}
-    assert additions <= set(strings)
-    assert len(strings) == contract["catalogKeyCount"] + len(additions)
-    assert digest(sorted(set(strings) - additions)) == contract["catalogInventorySHA256"], "Catalog key inventory changed"
-    assert set(contract["requestedLocales"]) == locales | set(contract["regionalFallbacks"])
-    assert {locale for entry in strings.values() for locale in entry["localizations"]} == locales
+    require(additions == {"语言", "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"}, 'Guard failed: additions == {"语言", "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"}')
+    require(additions <= set(strings), 'Guard failed: additions <= set(strings)')
+    require(len(strings) == contract["catalogKeyCount"] + len(additions), 'Guard failed: len(strings) == contract["catalogKeyCount"] + len(additions)')
+    require(digest(sorted(set(strings) - additions)) == contract["catalogInventorySHA256"], "Catalog key inventory changed")
+    require(set(contract["requestedLocales"]) == locales | set(contract["regionalFallbacks"]), 'Guard failed: set(contract["requestedLocales"]) == locales | set(contract["regionalFallbacks"])')
+    require({locale for entry in strings.values() for locale in entry["localizations"]} == locales, 'Guard failed: {locale for entry in strings.values() for locale in entry["localizations"]} == locales')
     for locale, expected in contract["preservedLocalizationsSHA256"].items():
         original = {key: strings[key]["localizations"][locale] for key in contract["preservedKeys"]}
-        assert digest(original) == expected, f"Existing {locale} translations changed"
+        require(digest(original) == expected, f"Existing {locale} translations changed")
     for locale, expected in contract["preservedAddedLocalizationsSHA256"].items():
         original = {key: strings[key]["localizations"][locale] for key in contract["preservedAddedLocaleKeys"]}
-        assert digest(original) == expected, f"Existing {locale} translations changed"
+        require(digest(original) == expected, f"Existing {locale} translations changed")
     added = locales - {"en", "zh-Hans", "zh-Hant"}
     seen_identical = {locale: set() for locale in added}
     for key, entry in strings.items():
-        assert set(entry["localizations"]) == locales, key
+        require(set(entry["localizations"]) == locales, key)
         english = strings[key]["localizations"]["en"]["stringUnit"]["value"]
         expected_formats = FORMAT.findall(key)
         for locale in locales:
             unit = entry["localizations"][locale]["stringUnit"]
             value = unit["value"]
-            assert unit["state"] == "translated" and value.strip(), (locale, key)
-            assert FORMAT.findall(value) == expected_formats, (locale, key, "Format type/order/position changed")
+            require(unit["state"] == "translated" and value.strip(), (locale, key))
+            require(FORMAT.findall(value) == expected_formats, (locale, key, "Format type/order/position changed"))
             if locale in added:
                 extra = contract["numericAdditions"].get(locale, {}).get(key, {})
-                assert numbers(value) == numbers(key) + Counter(extra.get("tokens", [])), (locale, key, "Numeric constraint changed")
+                require(numbers(value) == numbers(key) + Counter(extra.get("tokens", [])), (locale, key, "Numeric constraint changed"))
                 if value.strip() == english.strip():
                     allowed = contract["identicalEnglishAllowlist"][locale].get(key, {})
-                    assert value == allowed.get("value") and allowed.get("reason"), (locale, key, "English placeholder")
+                    require(value == allowed.get("value") and allowed.get("reason"), (locale, key, "English placeholder"))
                     seen_identical[locale].add(key)
                 # Also reject a copied English sentence hidden behind a locale prefix.
                 if len(english.strip()) >= 24 and len(english.split()) >= 4:
-                    assert english.strip() not in value, (locale, key, "Copied English prose")
+                    require(english.strip() not in value, (locale, key, "Copied English prose"))
     for locale in added:
-        assert seen_identical[locale] == set(contract["identicalEnglishAllowlist"][locale]), (locale, "Stale English exception")
+        require(seen_identical[locale] == set(contract["identicalEnglishAllowlist"][locale]), (locale, "Stale English exception"))
     for key, translations in probes.items():
-        assert set(translations) == locales, key
+        require(set(translations) == locales, key)
         for locale, literal in translations.items():
-            assert strings[key]["localizations"][locale]["stringUnit"]["value"] == literal, (locale, key, "Literal regression")
+            require(strings[key]["localizations"][locale]["stringUnit"]["value"] == literal, (locale, key, "Literal regression"))
 
 
 def validate_sources(contract, catalog, probes):
@@ -92,14 +95,14 @@ def validate_sources(contract, catalog, probes):
     locales = set(contract["resourceLocales"])
     for locale, expected in contract["preservedInfoPlistPrefixes"].items():
         content = (ROOT / f"AegisApp/{locale}.lproj/InfoPlist.strings").read_bytes()
-        assert hashlib.sha256(content[:expected["byteCount"]]).hexdigest() == expected["sha256"]
+        require(hashlib.sha256(content[:expected["byteCount"]]).hexdigest() == expected["sha256"], 'Guard failed: hashlib.sha256(content[:expected["byteCount"]]).hexdigest() == expected["sha256"]')
     for target in ["AegisApp", "ShareExtension", "SafariWebExtension"]:
-        assert {p.stem for p in (ROOT / target).glob("*.lproj")} == locales
-        assert plist(ROOT / target / "Info.plist")["CFBundleDevelopmentRegion"] == "zh-Hans"
+        require({p.stem for p in (ROOT / target).glob("*.lproj")} == locales, 'Guard failed: {p.stem for p in (ROOT / target).glob("*.lproj")} == locales')
+        require(plist(ROOT / target / "Info.plist")["CFBundleDevelopmentRegion"] == "zh-Hans", 'Guard failed: plist(ROOT / target / "Info.plist")["CFBundleDevelopmentRegion"] == "zh-Hans"')
         for locale in locales:
             values = plist(ROOT / target / f"{locale}.lproj/InfoPlist.strings")
             expected = {"NSCameraUsageDescription", "NSMicrophoneUsageDescription", "Markdown 文档"} if target == "AegisApp" else {"CFBundleDisplayName"}
-            assert set(values) == expected and all(values.values()), (target, locale)
+            require(set(values) == expected and all(values.values()), (target, locale))
 
 
 def verify_regression_detection(contract, catalog, probes):
@@ -121,55 +124,55 @@ def verify_regression_detection(contract, catalog, probes):
         changed["strings"][key]["localizations"]["de"]["stringUnit"][field] = value
         try:
             validate_catalog(contract, changed, probes)
-        except AssertionError:
+        except ValueError:
             continue
-        raise AssertionError(f"Guard accepted mutation: {key}/{field}")
+        raise ValueError(f"Guard accepted mutation: {key}/{field}")
     print(f"PASS: {len(mutations)} negative catalog regressions rejected", flush=True)
 
 
 def validate_agent_errors(contract):
     catalog = json.loads((ROOT / "AgentKit/AgentErrors.xcstrings").read_text())
     languages = set(contract["requestedLocales"])
-    assert catalog["sourceLanguage"] == "zh-Hans"
+    require(catalog["sourceLanguage"] == "zh-Hans", 'Guard failed: catalog["sourceLanguage"] == "zh-Hans"')
     for key, entry in catalog["strings"].items():
-        assert key.startswith("agent.error.") and entry["extractionState"] == "manual", key
+        require(key.startswith("agent.error.") and entry["extractionState"] == "manual", key)
         translations = entry["localizations"]
-        assert set(translations) == languages, key
+        require(set(translations) == languages, key)
         source = translations[catalog["sourceLanguage"]]["stringUnit"]["value"]
         for language, translation in translations.items():
             unit = translation["stringUnit"]
             value = unit["value"]
-            assert unit["state"] == "translated" and value.strip() and value != key, (key, language)
-            assert FORMAT.findall(value) == FORMAT.findall(source), (key, language)
-            assert numbers(value) == numbers(source), (key, language)
+            require(unit["state"] == "translated" and value.strip() and value != key, (key, language))
+            require(FORMAT.findall(value) == FORMAT.findall(source), (key, language))
+            require(numbers(value) == numbers(source), (key, language))
             if language not in {"en", "en-GB", "en-HK"}:
-                assert value != translations["en"]["stringUnit"]["value"], (key, language)
+                require(value != translations["en"]["stringUnit"]["value"], (key, language))
 
 
 def validate_project(locales):
     project = plist(ROOT / "Aegis.xcodeproj/project.pbxproj")
     objects = project["objects"]
-    assert set(objects[project["rootObject"]]["knownRegions"]) == set(locales) | {"Base"}
-    assert objects[project["rootObject"]]["developmentRegion"] == "zh-Hans"
+    require(set(objects[project["rootObject"]]["knownRegions"]) == set(locales) | {"Base"}, 'Guard failed: set(objects[project["rootObject"]]["knownRegions"]) == set(locales) | {"Base"}')
+    require(objects[project["rootObject"]]["developmentRegion"] == "zh-Hans", 'Guard failed: objects[project["rootObject"]]["developmentRegion"] == "zh-Hans"')
     for target, folder in [("Aegis", "AegisApp"), ("ShareExtension", "ShareExtension"), ("SafariWebExtension", "SafariWebExtension")]:
         target_object = next(v for v in objects.values() if v["isa"] == "PBXNativeTarget" and v["name"] == target)
         phase = next(objects[key] for key in target_object["buildPhases"] if objects[key]["isa"] == "PBXResourcesBuildPhase")
         refs = [objects[key]["fileRef"] for key in phase["files"]]
         group = next(v for v in objects.values() if v["isa"] == "PBXGroup" and v.get("path") == folder)
         variant_id = next(key for key in group["children"] if objects[key]["isa"] == "PBXVariantGroup")
-        assert variant_id in refs, f"Unbundled InfoPlist.strings: {target}"
-        assert {objects[key]["name"] for key in objects[variant_id]["children"]} == set(locales)
+        require(variant_id in refs, f"Unbundled InfoPlist.strings: {target}")
+        require({objects[key]["name"] for key in objects[variant_id]["children"]} == set(locales), 'Guard failed: {objects[key]["name"] for key in objects[variant_id]["children"]} == set(locales)')
         for key in objects[variant_id]["children"]:
-            assert (ROOT / folder / objects[key]["path"]).is_file()
+            require((ROOT / folder / objects[key]["path"]).is_file(), 'Guard failed: (ROOT / folder / objects[key]["path"]).is_file()')
         if target in {"Aegis", "ShareExtension"}:
-            assert any(objects[key].get("path") == "Localizable.xcstrings" for key in refs)
+            require(any(objects[key].get("path") == "Localizable.xcstrings" for key in refs), 'Guard failed: any(objects[key].get("path") == "Localizable.xcstrings" for key in refs)')
         notice_refs = [key for key in refs if objects[key].get("path") == "ThirdPartyNotices.txt"]
-        assert len(notice_refs) == (1 if target == "Aegis" else 0), f"Acknowledgements must belong to the main App: {target}"
+        require(len(notice_refs) == (1 if target == "Aegis" else 0), f"Acknowledgements must belong to the main App: {target}")
         if target == "Aegis":
             sources = next(objects[key] for key in target_object["buildPhases"] if objects[key]["isa"] == "PBXSourcesBuildPhase")
-            assert any(objects[objects[key]["fileRef"]].get("path") == "ThirdPartyNoticesView.swift" for key in sources["files"])
+            require(any(objects[objects[key]["fileRef"]].get("path") == "ThirdPartyNoticesView.swift" for key in sources["files"]), 'Guard failed: any(objects[objects[key]["fileRef"]].get("path") == "ThirdPartyNoticesView.swift" for key in sources["files"])')
         if target in {"Aegis", "SafariWebExtension"}:
-            assert any(objects[key].get("path") == "_locales" and objects[key].get("lastKnownFileType") == "folder" for key in refs)
+            require(any(objects[key].get("path") == "_locales" and objects[key].get("lastKnownFileType") == "folder" for key in refs), 'Guard failed: any(objects[key].get("path") == "_locales" and objects[key].get("lastKnownFileType") == "folder" for key in refs)')
     helper_targets = set()
     for value in objects.values():
         if value["isa"] != "PBXNativeTarget":
@@ -177,25 +180,25 @@ def validate_project(locales):
         sources = next((objects[key] for key in value["buildPhases"] if objects[key]["isa"] == "PBXSourcesBuildPhase"), None)
         if sources and any(objects[objects[key]["fileRef"]].get("path") == "AppLocalization.swift" for key in sources["files"]):
             helper_targets.add(value["name"])
-    assert helper_targets == {"Aegis", "BrowserKit", "AgentKit", "ShareExtension"}
+    require(helper_targets == {"Aegis", "BrowserKit", "AgentKit", "ShareExtension"}, 'Guard failed: helper_targets == {"Aegis", "BrowserKit", "AgentKit", "ShareExtension"}')
     spec = (ROOT / "project.yml").read_text()
-    assert spec.count("path: Shared/AppLocalization.swift") == 4
+    require(spec.count("path: Shared/AppLocalization.swift") == 4, 'Guard failed: spec.count("path: Shared/AppLocalization.swift") == 4')
     # Keep the directory hierarchy: flattening messages.json breaks WebExtension i18n.
-    assert spec.count("path: SharedWebExtension/_locales\n        type: folder\n        buildPhase: resources") == 2
+    require(spec.count("path: SharedWebExtension/_locales\n        type: folder\n        buildPhase: resources") == 2, 'Guard failed: spec.count("path: SharedWebExtension/_locales\\n        type: folder\\n        buildPhase: resources") == 2')
 
 
 def validate_web_extension():
     manifest = json.loads((ROOT / "SharedWebExtension/manifest.json").read_text())
-    assert manifest["default_locale"] == "en"
-    assert manifest["permissions"] == ["activeTab", "scripting", "nativeMessaging", "webNavigation"]
-    assert manifest["content_security_policy"]["extension_pages"] == "script-src 'self'; object-src 'none'"
+    require(manifest["default_locale"] == "en", 'Guard failed: manifest["default_locale"] == "en"')
+    require(manifest["permissions"] == ["activeTab", "scripting", "nativeMessaging", "webNavigation"], 'Guard failed: manifest["permissions"] == ["activeTab", "scripting", "nativeMessaging", "webNavigation"]')
+    require(manifest["content_security_policy"]["extension_pages"] == "script-src 'self'; object-src 'none'", 'Guard failed: manifest["content_security_policy"]["extension_pages"] == "script-src \'self\'; object-src \'none\'"')
     tokens = [manifest["name"], manifest["description"], manifest["action"]["default_title"]]
     expected = {re.fullmatch(r"__MSG_(\w+)__", token).group(1) for token in tokens}
     directories = ROOT / "SharedWebExtension/_locales"
-    assert {p.name for p in directories.iterdir()} == set("de en es fr id it ja ko ms pt_BR pt_PT th vi zh_CN zh_TW".split())
+    require({p.name for p in directories.iterdir()} == set("de en es fr id it ja ko ms pt_BR pt_PT th vi zh_CN zh_TW".split()), 'Guard failed: {p.name for p in directories.iterdir()} == set("de en es fr id it ja ko ms pt_BR pt_PT th vi zh_CN zh_TW".split())')
     for path in directories.glob("*/messages.json"):
         messages = json.loads(path.read_text())
-        assert set(messages) == expected and all(item["message"].strip() for item in messages.values())
+        require(set(messages) == expected and all(item["message"].strip() for item in messages.values()), 'Guard failed: set(messages) == expected and all(item["message"].strip() for item in messages.values())')
 
 
 def exercise_bundles(work, contract, catalog):
@@ -205,8 +208,9 @@ def exercise_bundles(work, contract, catalog):
     info = {"CFBundleIdentifier": "test.aegis.localizations", "CFBundleDevelopmentRegion": "zh-Hans",
             "CFBundleExecutable": "bundle-probe", "CFBundlePackageType": "APPL"}
     (app / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
-    run("xcrun", "xcstringstool", "compile", ROOT / "AegisApp/Localizable.xcstrings", "--output-directory", resources)
-    assert {p.stem for p in resources.glob("*.lproj")} == set(contract["resourceLocales"])
+    subprocess.run(["/usr/bin/xcrun", "xcstringstool", "compile", str(ROOT / "AegisApp/Localizable.xcstrings"),
+                    "--output-directory", str(resources)], check=True, shell=False)
+    require({p.stem for p in resources.glob("*.lproj")} == set(contract["resourceLocales"]), 'Guard failed: {p.stem for p in resources.glob("*.lproj")} == set(contract["resourceLocales"])')
     for target in ["AegisApp", "ShareExtension", "SafariWebExtension"]:
         bundle = work / f"{target}.bundle"
         bundle.mkdir()
@@ -229,12 +233,17 @@ def exercise_bundles(work, contract, catalog):
                                     for locale in contract["resourceLocales"]}, ensure_ascii=False))
     executable = app / "Contents/MacOS/bundle-probe"
     executable.parent.mkdir()
-    run("xcrun", "swiftc", "-swift-version", "6", "-D", "DEBUG", "-module-cache-path", work / "module-cache",
-        ROOT / "Tests/Localization/main.swift", ROOT / "BrowserKit/FixtureSchemeHandler.swift",
-        ROOT / "Shared/ShareInbox.swift", ROOT / "Shared/AppLocalization.swift", "-o", executable)
+    subprocess.run(["/usr/bin/xcrun", "swiftc", "-swift-version", "6", "-D", "DEBUG",
+                    "-module-cache-path", str(work / "module-cache"), str(ROOT / "Tests/Localization/main.swift"),
+                    str(ROOT / "BrowserKit/FixtureSchemeHandler.swift"), str(ROOT / "Shared/ShareInbox.swift"),
+                    str(ROOT / "Shared/AppLocalization.swift"), "-o", str(executable)], check=True, shell=False)
+    require(executable.is_file() and not executable.is_symlink() and executable.parent == app / "Contents/MacOS",
+            "Expected freshly compiled task-owned bundle probe")
     for locale in contract["requestedLocales"]:
-        print(run(executable, app, locale, expected, work, hostile, ROOT / "SharedWebExtension", FIXTURES / "literal-probes.json",
-                  "-AppleLanguages", f"({locale})", "--ui-testing", "-browser.languageFamily.v1", "system").strip(), flush=True)
+        print(subprocess.check_output([str(executable), str(app), locale, str(expected), str(work), str(hostile),
+                                       str(ROOT / "SharedWebExtension"), str(FIXTURES / "literal-probes.json"),
+                                       "-AppleLanguages", f"({locale})", "--ui-testing",
+                                       "-browser.languageFamily.v1", "system"], text=True, shell=False).strip(), flush=True)
     # Resource availability is not translation completion: report the states separately.
     for locale in contract["resourceLocales"]:
         states = Counter(entry["localizations"][locale]["stringUnit"]["state"]
