@@ -323,3 +323,5 @@
 0323-prepare-integrated-native-version-301.patch
 0324-prepare-metal-toolchain-retry-version-302.patch
 0325-prepare-go-toolchain-retry-version-303.patch
+0326-wire-bounded-tracker-test-entry.patch
+0327-fix-desktop-test-browser-client-dependency.patch

@@ -56,9 +56,21 @@ def system_tool(name):
     return str(Path(found).resolve(strict=True))
 
 
+def git_executable():
+    """从构建机可信 PATH 解析原生 Git；Windows 拒绝批处理入口及指向批处理的链接。"""
+    executable = system_tool('git.exe' if os.name == 'nt' else 'git')
+    if os.name == 'nt' and Path(executable).suffix.lower() != '.exe':
+        raise ValueError('Windows Git 必须是原生 EXE，不能经过批处理解释器')
+    return executable
+
+
 def git(src, *args, env=None):
-    return subprocess.check_output(
-        [system_tool('git'), '-C', str(src), *args], env=env, text=True).strip()
+    """执行脚本选定的 Git 操作；参数保持独立字面值，不接受远端提供的命令或工具。"""
+    # 可执行文件来自构建机可信 PATH 并解析为绝对路径；调用方固定 Git 操作，环境仅承载隔离设置。
+    # 路径和对象表达式必须保持原值，不能 shell 引号转义；真实进程回归覆盖空格、& 和 ^。
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+    return subprocess.check_output([git_executable(), '-C', str(src), *args],  # nosec B603
+                                   env=env, text=True, shell=False).strip()
 
 
 def product_status(root):
@@ -91,31 +103,37 @@ def apply_if_base(src, base, patches, log):
         for name in series(patches):
             output.write('正在应用：' + name + '\n')
             output.flush()
-            result = subprocess.run([system_tool('git'), '-C', str(src), '-c', 'user.name=Aegis CI',
+            # 固定 am 子命令；series 已拒绝目录穿越，补丁来自本次已审查的产品输入。
+            # 构建机 PATH 与源码配置属于本机信任边界，不能借此执行远端提供的工具或 shell 文本。
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args
+            result = subprocess.run([git_executable(), '-C', str(src), '-c', 'user.name=Aegis CI',  # nosec B603
                 '-c', 'user.email=aegis-ci@users.noreply.github.com', 'am', '--3way', str(patches / name)],
-                stdout=output, stderr=subprocess.STDOUT)
+                stdout=output, stderr=subprocess.STDOUT, shell=False)
             if result.returncode:
                 raise RuntimeError('补丁冲突已保留：' + name)
 
 
 def verify_tree(src, base, patches):
-    """从官方基线在临时索引和对象库重放，要求完整源码树一致。"""
-    if git(src, 'status', '--porcelain', '--ignore-submodules=all'):
+    """从已同步的官方基线离线重放补丁，要求完整源码树一致，不自动补取缺失对象。"""
+    offline_env = dict(os.environ, GIT_NO_LAZY_FETCH='1')
+    if git(src, 'status', '--porcelain', '--ignore-submodules=all', env=offline_env):
         raise ValueError('源码有未保存的改动或冲突，保留现场后停止：' + str(src))
-    original_objects = git(src, 'rev-parse', '--path-format=absolute', '--git-path', 'objects')
+    original_objects = git(src, 'rev-parse', '--path-format=absolute', '--git-path', 'objects', env=offline_env)
     with tempfile.TemporaryDirectory(prefix='aegis-ci-verify-') as directory:
         temporary = Path(directory)
         objects = temporary / 'objects'
         (objects / 'info').mkdir(parents=True)
-        # 共享对象库可保持只读；补丁产生的中间对象只写入临时目录。
-        (objects / 'info/alternates').write_text(Path(original_objects).as_posix() + '\n', encoding='utf-8')
-        env = dict(os.environ, GIT_INDEX_FILE=str(temporary / 'index'),
+        # 共享对象库保持只读；路径文件固定 LF，避免 Windows 的 CR 被 Git 当作路径的一部分。
+        # 缺失对象应使校验失败，不能通过自动联网掩盖不完整输入；中间对象只写入临时目录。
+        (objects / 'info/alternates').write_text(
+            Path(original_objects).as_posix() + '\n', encoding='utf-8', newline='\n')
+        env = dict(offline_env, GIT_INDEX_FILE=str(temporary / 'index'),
                    GIT_OBJECT_DIRECTORY=str(objects))
         git(src, 'read-tree', base, env=env)
         for name in series(patches):
             git(src, 'apply', '--cached', '--whitespace=nowarn', str(patches / name), env=env)
         expected = git(src, 'write-tree', env=env)
-        actual = git(src, 'rev-parse', 'HEAD^{tree}')
+        actual = git(src, 'rev-parse', 'HEAD^{tree}', env=offline_env)
         if expected != actual:
             raise ValueError('构建机源码与本次候选补丁不一致，禁止编译旧源码')
         return actual

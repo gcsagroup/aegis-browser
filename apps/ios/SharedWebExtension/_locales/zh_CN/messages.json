@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Aegis 只读助手"
+  },
+  "extensionDescription": {
+    "message": "读取用户当前授权页面的最小摘要，不执行页面写操作。"
+  },
+  "extensionAction": {
+    "message": "检查并在 Aegis 中打开"
+  }
+}

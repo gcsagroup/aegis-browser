@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "Webサイトがカメラを使用する前に、Aegisが許可を求めます。";
+"NSMicrophoneUsageDescription" = "Webサイトがマイクを使用する前に、Aegisが許可を求めます。";
+"Markdown 文档" = "Markdown書類";

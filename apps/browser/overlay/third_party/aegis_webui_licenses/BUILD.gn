@@ -1,0 +1,5 @@
+# Copyright 2026 GCSA
+# Make Aegis's resource-only dependencies discoverable by Chromium's GN-based
+# license inventory. No executable code is added by this target.
+group("aegis_webui_licenses") {
+}

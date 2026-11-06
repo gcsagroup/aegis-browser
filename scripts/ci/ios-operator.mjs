@@ -4,7 +4,7 @@ import {isDeepStrictEqual} from 'node:util';
 
 const UPSTREAM = 'gcsagroup/aegis-browser';
 const UPSTREAM_ID = '1348409663';
-const WORKFLOWS = new Map([['delivery', '.github/workflows/ios-delivery.yml'], ['validation', '.github/workflows/ios-release-validation.yml'], ['coverage', '.github/workflows/ios-coverage.yml']]);
+const WORKFLOWS = new Map([['delivery', ['.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml']], ['validation', '.github/workflows/ios-release-validation.yml'], ['coverage', '.github/workflows/ios-coverage.yml']]);
 const requirePolicy = createRequire(import.meta.url);
 class OperatorError extends Error {}
 function requireValue(value, message) { if (!value) throw new OperatorError(message); }
@@ -104,9 +104,9 @@ export async function requireIosAdministrator({environment = process.env, api = 
     const run = await api(repository, `/actions/runs/${id}`, {token});
     requireValue(run?.id === id && run.run_attempt === attempt && run.head_sha === environment.GITHUB_SHA, 'Actions run/source/attempt identity changed');
     requireValue(run.repository?.full_name === repository && run.repository?.id === metadata.id && run.head_repository?.full_name === repository, 'Actions repository context changed');
-    requireValue(run.path === WORKFLOWS.get(context), 'Actions workflow context changed');
+    requireValue([WORKFLOWS.get(context)].flat().includes(run.path), 'Actions workflow context changed');
     requireValue(run.event === environment.GITHUB_EVENT_NAME && (run.event === 'workflow_dispatch' ||
-      (context === 'delivery' && run.event === 'push' && environment.GITHUB_REF?.startsWith('refs/tags/candidate/ios/'))), 'Unauthorized operator event context');
+      (context === 'delivery' && run.path === '.github/workflows/ios-delivery.yml' && run.event === 'push' && environment.GITHUB_REF?.startsWith('refs/tags/candidate/ios/'))), 'Unauthorized operator event context');
     const ref = run.event === 'push' ? 'refs/tags/' : 'refs/heads/';
     requireValue(environment.GITHUB_REF === ref+run.head_branch, 'Actions run/ref context changed');
     requireValue(validUser(run.actor) && validUser(run.triggering_actor), 'Actions actor identity is incomplete');

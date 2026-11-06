@@ -1,0 +1,48 @@
+name: Android Delivery · 完整版 / Full
+run-name: Android Full ${{ inputs.operation }} ${{ github.ref_name }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "操作 / Operation（其他阶段用 Full JSON / stage in JSON）"
+        type: choice
+        options:
+          - 仅打包 / Package
+          - 上传 Play 草稿 / Upload
+          - 查询状态 / Status
+          - 完整模式 / Full
+        default: 查询状态 / Status
+      product:
+        description: "目标产物 / Product（Auto follows receipt / 跟随凭据）"
+        type: choice
+        options:
+          - 自动 / Auto
+          - Alpha · 仅内测 / Internal only
+          - Beta · 内外测 / Internal and external
+          - Release · 通用 / Universal
+        default: 自动 / Auto
+      target:
+        description: "完整交付凭据 / Complete receipt（打包可填版本 / version for package）"
+        type: string
+        required: true
+      advanced:
+        description: "阶段与轨道 / Stage and track JSON（仅 Full / Full only）"
+        type: string
+        default: "{}"
+permissions:
+  contents: read
+  actions: read
+jobs:
+  delivery:
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/android-delivery-backend.yml
+    with:
+      delivery_mode: full
+      delivery_inputs: ${{ toJSON(inputs) }}
+    secrets:
+      AEGIS_ANDROID_STORE_PASSWORD: ${{ secrets.AEGIS_ANDROID_STORE_PASSWORD }}
+      AEGIS_ANDROID_KEY_PASSWORD: ${{ secrets.AEGIS_ANDROID_KEY_PASSWORD }}
+      AEGIS_PLAY_JSON_KEY_DATA: ${{ secrets.AEGIS_PLAY_JSON_KEY_DATA }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/android-release-acceptance' }}

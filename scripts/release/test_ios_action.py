@@ -12,6 +12,32 @@ spec.loader.exec_module(action)
 
 
 class IosActionTests(unittest.TestCase):
+    def test_package_entrypoints_use_cloud_default_and_forward_explicit_manual_fallback(self):
+        base = dict(RELEASE_PROFILE='beta', RELEASE_VERSION='1.0.2', RELEASE_BUILD='12',
+                    RELEASE_RUN_ID='ios-gh-12-1', RELEASE_DESTINATION='artifacts')
+        class StopAfterInvocation(Exception):
+            pass
+        for entrypoint in ['actions', 'fastlane']:
+            for selection in [None, 'manual']:
+                calls = []
+                env = dict(base, RELEASE_PACKAGE_ENTRYPOINT=entrypoint)
+                if selection is not None:
+                    env['RELEASE_SIGNING_MODE'] = selection
+                def boundary(*args, **_kwargs):
+                    calls.append(list(map(str, args)))
+                    raise StopAfterInvocation
+                with self.subTest(entrypoint=entrypoint, selection=selection), \
+                        patch.dict(os.environ, env, clear=True), patch.object(action, 'run', boundary):
+                    with self.assertRaises(StopAfterInvocation):
+                        action.package()
+                command = calls[0]
+                if entrypoint == 'fastlane':
+                    self.assertEqual(command[:5], ['bundle', 'exec', 'fastlane', 'ios', 'package'])
+                    self.assertIn('signing_mode:'+(selection or 'cloud'), command)
+                else:
+                    self.assertEqual(command[1:3], ['ios', 'package'])
+                    self.assertEqual(command[command.index('--signing-mode')+1], selection or 'cloud')
+
     def test_receipt_titles_cannot_discard_unknown_prior_mutations(self):
         token = action.receipt_codec.encode('beta', '1.0.0', '33', 100, 101, 1, 'a'*64)
         for stage, operation in [('upload', 'upload'), ('metadata', 'metadata'), ('compliance', 'compliance'),
@@ -26,9 +52,10 @@ class IosActionTests(unittest.TestCase):
                 action.check_prior_stage_runs(stage, 11)
         for operation in ['upload', 'metadata', 'compliance', 'distribute-internal', 'distribute-external']:
             stage = 'distribute' if operation.startswith('distribute-') else operation
-            title = f'iOS Delivery {action.receipt_codec.OPERATION_LABELS[operation]} {token}'
-            self.assertTrue(action.matches_stage_title(title, stage, 'a'*64))
-            self.assertFalse(action.matches_stage_title(title, stage, 'b'*64))
+            for label in action.receipt_codec.OPERATION_LABELS[operation]:
+                title = f'iOS Delivery {label} {token}'
+                self.assertTrue(action.matches_stage_title(title, stage, 'a'*64))
+                self.assertFalse(action.matches_stage_title(title, stage, 'b'*64))
         for title in [None, 'iOS Delivery upload invalid', 'unrelated', 'iOS Delivery status '+token]:
             self.assertFalse(action.matches_stage_title(title, 'upload', 'a'*64))
         self.assertTrue(action.matches_stage_title('iOS Delivery upload '+'a'*64, 'upload', 'a'*64))
@@ -54,7 +81,9 @@ class IosActionTests(unittest.TestCase):
                 pinned = action.receipt_codec.decode(value)
                 self.assertEqual([pinned[k] for k in ['package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']],
                                  ['100', '101', '2', digest])
-                self.assertIn(value, (root/'summary').read_text())
+                summary = (root/'summary').read_text()
+                self.assertTrue(summary.startswith('### iOS Delivery receipt\n'))
+                self.assertIn(value, summary)
                 printed.assert_called_once_with(value)
                 for changes in [dict(RELEASE_BUILD='34'), dict(PACKAGE_RUN_ID='99'), dict(RELEASE_MANIFEST_SHA256='c'*64),
                                 dict(RELEASE_STAGE='package'), dict(GITHUB_REPOSITORY='foreign/repo')]:
@@ -150,6 +179,46 @@ class IosActionTests(unittest.TestCase):
         self.assertEqual(command[command.index('--tag')+1], env['RELEASE_TAG'])
         self.assertEqual(command[command.index('--repository')+1], 'owner/repo')
         self.assertNotIn('upload', command)
+
+    def test_nested_full_store_execution_is_not_mistaken_for_unstarted(self):
+        row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery-full.yml', status='completed')
+        job = dict(name='delivery / store', status='completed', conclusion='success', steps=[{'name': 'upload'}], run_id=10, run_attempt=1, head_sha='b'*40)
+        def api(path):
+            return dict(total_count=1, jobs=[job]) if path.endswith('/jobs?per_page=100') else row
+        with patch.object(action, 'api', api):
+            self.assertFalse(action.unstarted_store_run(row))
+
+    def test_replay_inventory_checks_both_entrypoints_before_allowing_a_mutation(self):
+        calls = []
+        def api(path):
+            calls.append(path)
+            if 'ios-delivery-full.yml' in path:
+                return dict(workflow_runs=[dict(id=10, display_title='iOS Delivery upload '+'a'*64)])
+            return dict(workflow_runs=[])
+        env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', RELEASE_MANIFEST_SHA256='a'*64)
+        with patch.dict(os.environ, env), patch.object(action, 'api', api), patch.object(action, 'unstarted_store_run', return_value=False):
+            with self.assertRaises(ValueError):
+                action.check_prior_stage_runs('upload', 11)
+        self.assertTrue(any('ios-delivery.yml' in x for x in calls))
+        self.assertTrue(any('ios-delivery-full.yml' in x for x in calls))
+
+    def test_new_upload_blocks_prior_combined_or_receipt_upload_for_same_version_build(self):
+        token = action.receipt_codec.encode('beta', '1.0.0', '36', 100, 100, 1, 'a'*64)
+        titles = ['iOS Delivery package-upload 1.0.0(36)',
+                  'iOS Delivery Package and upload 1.0.0(36)',
+                  'iOS Delivery 打包并上传 TF / Package and upload 1.0.0(36)',
+                  f'iOS Delivery upload {token}',
+                  f'iOS Delivery Upload {token}']
+        for title in titles:
+            env = dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1', RELEASE_VERSION='1.0.0', RELEASE_BUILD='36')
+            with patch.dict(os.environ, env), patch.object(action, 'api', return_value={'workflow_runs': [{'id': 10, 'display_title': title}]}), patch.object(action, 'unstarted_store_run', return_value=False):
+                with self.assertRaises(ValueError):
+                    action.check_new_upload_runs()
+            with patch.dict(os.environ, env), patch.object(action, 'api', return_value={'workflow_runs': [{'id': 10, 'display_title': title}]}), patch.object(action, 'unstarted_store_run', return_value=True):
+                action.check_new_upload_runs()
+        with patch.dict(os.environ, dict(GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='2', RELEASE_VERSION='1.0.0', RELEASE_BUILD='36')), self.assertRaises(ValueError):
+            action.check_new_upload_runs()
+
 
 
 if __name__ == '__main__':

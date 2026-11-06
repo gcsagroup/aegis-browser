@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {downloadBindings, assertDownloadDispatch} from './downloads-template-bindings.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
@@ -268,37 +269,40 @@ function downloadsSettings() {
 }
 
 test('下载模板的全部事件回调保留组件上下文和实际事件控件', () => {
-  const tree = ts.createSourceFile('downloads.html.ts', read('settings/downloads_page/downloads_page.html.ts'), ts.ScriptTarget.Latest, true);
-  const callbacks = [];
-  function visit(node) {
-    if (ts.isArrowFunction(node) && ts.isBlock(node.body) && node.body.statements.length === 1) {
-      const statement = node.body.statements[0];
-      const call = ts.isExpressionStatement(statement) && statement.expression;
-      if (call && ts.isCallExpression(call) && ts.isPropertyAccessExpression(call.expression) && call.expression.expression.kind === ts.SyntaxKind.ThisKeyword) {
-        callbacks.push({node, method: call.expression.name.text, passesEvent: call.arguments.length === 1});
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(tree);
-  assert.equal(callbacks.length, 10);
-  assert.equal(new Set(callbacks.map(item => item.method)).size, 7);
+  const callbacks = downloadBindings(ts, read('settings/downloads_page/downloads_page.html.ts'));
   const dom = new JSDOM();
-  const select = dom.window.document.createElement('select'), button = dom.window.document.createElement('button');
-  select.append(new dom.window.Option('自定义', 'custom'));
-  dom.window.document.body.append(select, button);
-  for (const {node, method, passesEvent} of callbacks) {
-    const calls = [];
-    const owner = Object.fromEntries([[method, function(event) { calls.push({owner: this, target: event?.currentTarget}); }]]);
-    const callback = new Function('owner', compile(`function bind() { return ${node.getText(tree)}; } return bind.call(owner);`))(owner);
-    const control = dom.window.document.querySelector(passesEvent ? 'select' : 'button');
-    const type = passesEvent ? 'change' : 'click';
-    control.addEventListener(type, callback);
-    control.dispatchEvent(new dom.window.Event(type));
-    control.removeEventListener(type, callback);
-    assert.deepEqual(calls, [{owner, target: passesEvent ? control : undefined}], method);
+  try {
+    for (const {type, method, markup} of callbacks) {
+      const template = dom.window.document.createElement('template');
+      template.innerHTML = markup;
+      const control = template.content.firstElementChild;
+      assert(control, 'dispatch uses the parsed template control');
+      const tag = control.localName;
+      if (tag === 'select') {
+        if (!control.querySelector('option[value="custom"]')) control.append(new dom.window.Option('自定义', 'custom'));
+        control.value = 'custom';
+      } else control.value = tag === 'cr-input' ? '128' : 'retry';
+      control.id = control.id.replace('${kind}', 'Download');
+      if (tag === 'cr-toggle') control.checked = true;
+      dom.window.document.body.append(control);
+      const calls = [];
+      const owner = {[method]: function(event) {
+        calls.push({owner: this, event, target: event?.currentTarget, value: event?.currentTarget?.value});
+      }};
+      // Resolve the actual checked template method reference, then apply Lit's
+      // host receiver contract. This unit test is not the native15 Lit renderer.
+      const callback = owner[method];
+      const listener = event => callback.call(owner, event);
+      const event = new dom.window.Event(type);
+      control.addEventListener(type, listener);
+      control.dispatchEvent(event);
+      control.removeEventListener(type, listener);
+      assertDownloadDispatch(owner, control, event, calls);
+      control.remove();
+    }
+  } finally {
+    dom.window.close();
   }
-  dom.window.close();
 });
 
 test('下载限速模式只接受真实选择控件，正常切换仍保存相同数值', () => {

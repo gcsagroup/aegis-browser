@@ -1,4 +1,6 @@
 import importlib.util
+import hashlib
+import json
 import pathlib
 import tempfile
 import unittest
@@ -8,6 +10,31 @@ FILE = pathlib.Path(__file__).with_name('artifact-transport.py')
 
 
 class ArtifactTransportTests(unittest.TestCase):
+    def test_cloud_evidence_is_complete_and_cannot_enter_a_manual_manifest(self):
+        m = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            assets = []
+            for name in ['app.ipa', 'app.dSYM.zip', *sorted(m.CLOUD_EVIDENCE)]:
+                (root / name).write_bytes(b'fixture')
+                assets.append({'name': name, 'size': 7, 'sha256': hashlib.sha256(b'fixture').hexdigest()})
+            manifest = {'source': dict(sha='a'*40, tree='b'*40, dirty=False), 'repository': 'gcsagroup/aegis-browser',
+                        'platform': 'ios', 'assets': assets, 'details': {'signingMode': 'cloud'}}
+            def save():
+                path = root / 'ios-manifest.json'
+                path.write_text(json.dumps(manifest))
+                digest = m.digest(path)
+                (root/'ios-manifest.json.sha256').write_text(f'{digest}  ios-manifest.json\n')
+                return digest
+            m.verify_package(root, 'a'*40, 'b'*40, save())
+            manifest['details']['signingMode'] = 'manual'
+            with self.assertRaisesRegex(ValueError, 'Cloud package evidence'):
+                m.verify_package(root, 'a'*40, 'b'*40, save())
+            manifest['details']['signingMode'] = 'cloud'
+            manifest['assets'] = assets[:-1]
+            with self.assertRaisesRegex(ValueError, 'Cloud package evidence'):
+                m.verify_package(root, 'a'*40, 'b'*40, save())
+
     def module(self):
         self.assertTrue(FILE.exists(), 'portable artifact importer is missing')
         spec = importlib.util.spec_from_file_location('artifact_transport', FILE)

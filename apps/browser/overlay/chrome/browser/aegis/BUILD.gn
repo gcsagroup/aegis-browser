@@ -360,6 +360,7 @@ if (!is_android) {
       "//components/search_engines",
       "//components/signin/public/base",
       "//components/translate/core/browser",
+      "//components/viz/common",
       "//content/public/common",
       "//content/test:test_support",
       "//google_apis",
@@ -367,8 +368,11 @@ if (!is_android) {
       "//net:test_support",
       "//services/network:test_support",
       "//services/network/public/cpp",
+      "//skia",
       "//testing/gtest",
       "//ui/base",
+      "//ui/gfx/codec",
+      "//ui/gfx/geometry",
       "//ui/message_center/public/cpp",
       "//url",
     ]
@@ -506,6 +510,8 @@ test("aegis_browser_unittests") {
       "summary_session_unittest.cc",
     ]
     deps += [
+      # 桌面测试直接引用 BrowserClient；test_support 的私有依赖不会透传头文件。
+      "//chrome/browser:chrome_content_browser_client",
       "//chrome/browser/actor",
       "//chrome/browser/actor/ui:event_dispatcher",
       "//chrome/browser/actor/ui:test_support",
