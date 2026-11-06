@@ -7,7 +7,9 @@ struct ContentFilterSettingsView: View {
     @State private var enabled = TrackingProtection.enabled
     @State private var exceptions = TrackingProtection.exceptionHosts
     @State private var updateTask: Task<Void, Never>?
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Form {
             Section("广告与跟踪过滤") {
                 Toggle("启用过滤", isOn: $enabled).accessibilityIdentifier("content-filter-toggle")
@@ -56,7 +58,7 @@ struct ContentFilterSettingsView: View {
                 }
             }
         }
-        .navigationTitle("广告过滤")
+        .localizedNavigationTitle("广告过滤")
         .task { _ = try? await protection.ruleList() }
         .onDisappear { updateTask?.cancel() }
     }

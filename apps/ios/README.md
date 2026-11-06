@@ -1,6 +1,6 @@
 [**English**](./README.md) | [简体中文](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
-# GCSA Aegis for iPhone and iPad
+# Aegis Browser for iPhone and iPad
 
 A native SwiftUI and system WebKit browser for iOS 18.4 and later, developed for worldwide App Store technical requirements, including mainland China. Functionality and testing come first; submission materials will be supplied later. Simulator results do not establish release qualification.
 

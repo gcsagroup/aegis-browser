@@ -1,0 +1,551 @@
+[
+  {
+    "name": "manual-de",
+    "selected": "de",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "de",
+    "dialect": "de",
+    "appResource": "de",
+    "agentResource": "de"
+  },
+  {
+    "name": "manual-en",
+    "selected": "en",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-US",
+    "appResource": "en",
+    "agentResource": "en"
+  },
+  {
+    "name": "manual-es",
+    "selected": "es",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "es",
+    "dialect": "es",
+    "appResource": "es",
+    "agentResource": "es"
+  },
+  {
+    "name": "manual-fr",
+    "selected": "fr",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "fr",
+    "dialect": "fr-FR",
+    "appResource": "fr",
+    "agentResource": "fr"
+  },
+  {
+    "name": "manual-id",
+    "selected": "id",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "id",
+    "dialect": "id",
+    "appResource": "id",
+    "agentResource": "id"
+  },
+  {
+    "name": "manual-it",
+    "selected": "it",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "it",
+    "dialect": "it",
+    "appResource": "it",
+    "agentResource": "it"
+  },
+  {
+    "name": "manual-ja",
+    "selected": "ja",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "ja",
+    "dialect": "ja",
+    "appResource": "ja",
+    "agentResource": "ja"
+  },
+  {
+    "name": "manual-ko",
+    "selected": "ko",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "ko",
+    "dialect": "ko",
+    "appResource": "ko",
+    "agentResource": "ko"
+  },
+  {
+    "name": "manual-ms",
+    "selected": "ms",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "ms",
+    "dialect": "ms",
+    "appResource": "ms",
+    "agentResource": "ms"
+  },
+  {
+    "name": "manual-pt",
+    "selected": "pt",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "pt",
+    "dialect": "pt",
+    "appResource": "pt",
+    "agentResource": "pt"
+  },
+  {
+    "name": "manual-th",
+    "selected": "th",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "th",
+    "dialect": "th",
+    "appResource": "th",
+    "agentResource": "th"
+  },
+  {
+    "name": "manual-vi",
+    "selected": "vi",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "vi",
+    "dialect": "vi",
+    "appResource": "vi",
+    "agentResource": "vi"
+  },
+  {
+    "name": "manual-zh-Hans",
+    "selected": "zh-Hans",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "zh-Hans",
+    "dialect": "zh-Hans-US",
+    "appResource": "zh-Hans",
+    "agentResource": "zh-Hans"
+  },
+  {
+    "name": "manual-zh-Hant",
+    "selected": "zh-Hant",
+    "preferences": [
+      "fr-FR"
+    ],
+    "systemLocale": "en_US",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-US",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "None-en-US-en_GB14",
+    "selected": null,
+    "preferences": [
+      "en-US"
+    ],
+    "systemLocale": "en_GB",
+    "family": "en",
+    "dialect": "en-US",
+    "appResource": "en",
+    "agentResource": "en"
+  },
+  {
+    "name": "None-en-GB-en_US15",
+    "selected": null,
+    "preferences": [
+      "en-GB"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
+  },
+  {
+    "name": "None-en-HK-en_US16",
+    "selected": null,
+    "preferences": [
+      "en-HK"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-HK",
+    "appResource": "en",
+    "agentResource": "en-HK"
+  },
+  {
+    "name": "None-en-en_GB17",
+    "selected": null,
+    "preferences": [
+      "en"
+    ],
+    "systemLocale": "en_GB",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
+  },
+  {
+    "name": "None-en-en_HK18",
+    "selected": null,
+    "preferences": [
+      "en"
+    ],
+    "systemLocale": "en_HK",
+    "family": "en",
+    "dialect": "en-HK",
+    "appResource": "en",
+    "agentResource": "en-HK"
+  },
+  {
+    "name": "None-en-AU-en_GB19",
+    "selected": null,
+    "preferences": [
+      "en-AU"
+    ],
+    "systemLocale": "en_GB",
+    "family": "en",
+    "dialect": "en-AU",
+    "appResource": "en",
+    "agentResource": "en"
+  },
+  {
+    "name": "None-en-en_US20",
+    "selected": null,
+    "preferences": [
+      "en",
+      "en-HK",
+      "en-GB"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-HK",
+    "appResource": "en",
+    "agentResource": "en-HK"
+  },
+  {
+    "name": "None-en-GB-en_HK21",
+    "selected": null,
+    "preferences": [
+      "en-GB",
+      "en-HK"
+    ],
+    "systemLocale": "en_HK",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
+  },
+  {
+    "name": "en-en-US-en_GB22",
+    "selected": "en",
+    "preferences": [
+      "en-US"
+    ],
+    "systemLocale": "en_GB",
+    "family": "en",
+    "dialect": "en-US",
+    "appResource": "en",
+    "agentResource": "en"
+  },
+  {
+    "name": "en-en-GB-en_US23",
+    "selected": "en",
+    "preferences": [
+      "en-GB"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
+  },
+  {
+    "name": "en-en-HK-en_US24",
+    "selected": "en",
+    "preferences": [
+      "en-HK"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-HK",
+    "appResource": "en",
+    "agentResource": "en-HK"
+  },
+  {
+    "name": "en-en-en_GB25",
+    "selected": "en",
+    "preferences": [
+      "en"
+    ],
+    "systemLocale": "en_GB",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
+  },
+  {
+    "name": "en-en-en_HK26",
+    "selected": "en",
+    "preferences": [
+      "en"
+    ],
+    "systemLocale": "en_HK",
+    "family": "en",
+    "dialect": "en-HK",
+    "appResource": "en",
+    "agentResource": "en-HK"
+  },
+  {
+    "name": "en-en-AU-en_GB27",
+    "selected": "en",
+    "preferences": [
+      "en-AU"
+    ],
+    "systemLocale": "en_GB",
+    "family": "en",
+    "dialect": "en-AU",
+    "appResource": "en",
+    "agentResource": "en"
+  },
+  {
+    "name": "en-en-en_US28",
+    "selected": "en",
+    "preferences": [
+      "en",
+      "en-HK",
+      "en-GB"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-HK",
+    "appResource": "en",
+    "agentResource": "en-HK"
+  },
+  {
+    "name": "en-en-GB-en_HK29",
+    "selected": "en",
+    "preferences": [
+      "en-GB",
+      "en-HK"
+    ],
+    "systemLocale": "en_HK",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
+  },
+  {
+    "name": "alias-zh-HK",
+    "selected": null,
+    "preferences": [
+      "zh-HK"
+    ],
+    "systemLocale": "en_GB",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-HK",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant-HK"
+  },
+  {
+    "name": "alias-zh-Hant-HK",
+    "selected": null,
+    "preferences": [
+      "zh-Hant-HK"
+    ],
+    "systemLocale": "en_GB",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-HK",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant-HK"
+  },
+  {
+    "name": "alias-zh_HK",
+    "selected": null,
+    "preferences": [
+      "zh_HK"
+    ],
+    "systemLocale": "en_GB",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-HK",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant-HK"
+  },
+  {
+    "name": "alias-zh-TW",
+    "selected": null,
+    "preferences": [
+      "zh-TW"
+    ],
+    "systemLocale": "en_GB",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-TW",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "alias-zh-Hant-TW",
+    "selected": null,
+    "preferences": [
+      "zh-Hant-TW"
+    ],
+    "systemLocale": "en_GB",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-TW",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "chinese-zh-en_HK",
+    "selected": null,
+    "preferences": [
+      "zh"
+    ],
+    "systemLocale": "en_HK",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-HK",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant-HK"
+  },
+  {
+    "name": "chinese-zh-en_TW",
+    "selected": null,
+    "preferences": [
+      "zh"
+    ],
+    "systemLocale": "en_TW",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-TW",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "chinese-zh-en_CN",
+    "selected": null,
+    "preferences": [
+      "zh"
+    ],
+    "systemLocale": "en_CN",
+    "family": "zh-Hans",
+    "dialect": "zh-Hans-CN",
+    "appResource": "zh-Hans",
+    "agentResource": "zh-Hans"
+  },
+  {
+    "name": "chinese-zh-Hans-HK-en_TW",
+    "selected": null,
+    "preferences": [
+      "zh-Hans-HK"
+    ],
+    "systemLocale": "en_TW",
+    "family": "zh-Hans",
+    "dialect": "zh-Hans-HK",
+    "appResource": "zh-Hans",
+    "agentResource": "zh-Hans"
+  },
+  {
+    "name": "chinese-zh-Hant-CN-en_HK",
+    "selected": null,
+    "preferences": [
+      "zh-Hant-CN"
+    ],
+    "systemLocale": "en_HK",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-CN",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "manual-family-secondary",
+    "selected": "en",
+    "preferences": [
+      "fr-FR",
+      "en-GB"
+    ],
+    "systemLocale": "fr_FR",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
+  },
+  {
+    "name": "manual-traditional",
+    "selected": "zh-Hant",
+    "preferences": [
+      "zh-CN",
+      "zh-HK"
+    ],
+    "systemLocale": "en_US",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-HK",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant-HK"
+  },
+  {
+    "name": "manual-traditional-region",
+    "selected": "zh-Hant",
+    "preferences": [
+      "de"
+    ],
+    "systemLocale": "en_HK",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-HK",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant-HK"
+  },
+  {
+    "name": "skip-unsupported",
+    "selected": null,
+    "preferences": [
+      "ar",
+      "de"
+    ],
+    "systemLocale": "en_US",
+    "family": "de",
+    "dialect": "de",
+    "appResource": "de",
+    "agentResource": "de"
+  },
+  {
+    "name": "unsupported-default",
+    "selected": null,
+    "preferences": [
+      "ar"
+    ],
+    "systemLocale": "en_US",
+    "family": "zh-Hans",
+    "dialect": "zh-Hans-US",
+    "appResource": "zh-Hans",
+    "agentResource": "zh-Hans"
+  }
+]

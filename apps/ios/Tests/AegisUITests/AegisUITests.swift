@@ -254,6 +254,42 @@ final class AegisUITests: XCTestCase {
         XCTAssertFalse(app.buttons["analyze-pages"].exists)
     }
 
+    func testExpiredActionDisplaysLocalizedError() async throws {
+        let variants = [
+            ("en", "The action confirmation has expired."),
+            ("zh-Hans", "动作确认已过期"),
+            ("zh-Hant-HK", "操作確認已過期"),
+        ]
+        for (language, expected) in variants {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-testing", "-AppleLanguages", "(\(language))"]
+            app.launch()
+            app.buttons["browser-more"].tap()
+            let assistant = app.buttons[language == "en" ? "AI Assistant" : "AI 助手"]
+            XCTAssertTrue(assistant.waitForExistence(timeout: 5))
+            if !assistant.isHittable {
+                app.collectionViews.firstMatch.swipeDown()
+            }
+            assistant.tap()
+            let organizer = app.buttons["bookmark-organizer"]
+            XCTAssertTrue(scrollUntilVisible(organizer, in: app))
+            organizer.tap()
+            app.buttons["workflow-browserManager"].tap()
+            app.buttons["approve-task-button"].tap()
+            let confirm = app.buttons["confirm-bookmark-action"]
+            XCTAssertTrue(confirm.waitForExistence(timeout: 10))
+            XCTAssertTrue(scrollUntilVisible(confirm, in: app))
+            // Exercise the production 60-second approval lifetime.
+            try await Task.sleep(for: .seconds(61))
+            confirm.tap()
+            let message = app.staticTexts[expected]
+            XCTAssertTrue(message.waitForExistence(timeout: 10), language)
+            XCTAssertTrue(scrollUntilVisible(message, in: app), language)
+            attachScreenshot("Expired-action-\(language)", app)
+            app.terminate()
+        }
+    }
+
     func testBrowserManagerCanUndo() {
         let app = launchApp()
         openAgent(app)

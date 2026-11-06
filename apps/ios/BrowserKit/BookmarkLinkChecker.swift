@@ -9,10 +9,10 @@ public struct BookmarkLinkResult: Identifiable, Sendable {
         case reachable, missing, restricted, unknown
         public var title: String {
             switch self {
-            case .reachable: String(localized: "可以访问")
-            case .missing: String(localized: "页面不存在")
-            case .restricted: String(localized: "需要登录或访问许可")
-            case .unknown: String(localized: "暂时无法判断")
+            case .reachable: AegisLocalization.string("可以访问")
+            case .missing: AegisLocalization.string("页面不存在")
+            case .restricted: AegisLocalization.string("需要登录或访问许可")
+            case .unknown: AegisLocalization.string("暂时无法判断")
             }
         }
     }
