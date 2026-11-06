@@ -17,6 +17,8 @@ import signal
 import subprocess
 import sys
 import time
+import re
+import uuid
 
 REGIONS = {
     "de": "DE", "en": "US", "en-GB": "GB", "en-HK": "HK", "es": "ES",
@@ -92,7 +94,14 @@ def main():
     parser.add_argument("--policy-case", action="append", choices=policy_by_name,
                         help="Run an independent generic/region/manual fixture instead of the default 17 hosts; repeat as needed")
     args = parser.parse_args()
+    # The destination is an identifier, never extra xcodebuild options.
+    try:
+        device = str(uuid.UUID(args.device))
+    except ValueError:
+        parser.error("Expected a simulator UUID")
     base_path = args.xctestrun.resolve(strict=True)
+    if not base_path.is_file() or base_path.suffix != ".xctestrun":
+        parser.error("Expected an existing .xctestrun file")
     base_bytes = base_path.read_bytes()
     base = plistlib.loads(base_bytes)
     if (base.get("__xctestrun_metadata__", {}).get("FormatVersion") != 1
@@ -119,6 +128,8 @@ def main():
         resolved = resolve_testroot(base, base_path.parent)
         for case in cases:
             name = case["name"]
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", name):
+                raise ValueError("Unsafe locale case filename")
             language = case["preferences"][0]
             configuration = copy.deepcopy(resolved)
             target = configuration["AegisTests"]
@@ -144,8 +155,8 @@ def main():
             language = run["language"]
             log = work / f"{language}.log"
             command = [
-                "xcodebuild", "test-without-building", "-xctestrun", run["configuration"],
-                "-destination", f"platform=iOS Simulator,id={args.device}",
+                "/usr/bin/xcrun", "xcodebuild", "test-without-building", "-xctestrun", run["configuration"],
+                "-destination", f"platform=iOS Simulator,id={device}",
                 "-only-testing:AegisTests/AgentContractTests",
                 "-only-testing:AegisTests/LocalizationTests",
                 "-parallel-testing-enabled", "NO",
@@ -157,8 +168,16 @@ def main():
             print(f"Running {language}", flush=True)
             started = time.monotonic()
             with log.open("wb") as output:
-                process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
-                                           start_new_session=True)
+                config = Path(run["configuration"])
+                if config.parent != work or config.is_symlink() or not config.is_file():
+                    raise ValueError("Expected generated task-owned xctestrun configuration")
+                process = subprocess.Popen(
+                    ["/usr/bin/xcrun", "xcodebuild", "test-without-building", "-xctestrun", str(config),
+                     "-destination", f"platform=iOS Simulator,id={device}",
+                     "-only-testing:AegisTests/AgentContractTests", "-only-testing:AegisTests/LocalizationTests",
+                     "-parallel-testing-enabled", "NO", "-collect-test-diagnostics", "never",
+                     "-resultBundlePath", str(work / f"{language}.xcresult")],
+                    stdout=output, stderr=subprocess.STDOUT, shell=False, start_new_session=True)
                 try:
                     run["exit_code"] = process.wait(timeout=900)
                 except subprocess.TimeoutExpired:
