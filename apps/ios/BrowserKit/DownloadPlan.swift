@@ -40,9 +40,9 @@ public enum DownloadPlanError: LocalizedError {
     case invalidMetalink, invalidMirrors, sizeMismatch
     public var errorDescription: String? {
         switch self {
-        case .invalidMetalink: String(localized: "Metalink 无效：需要单个文件、公开 HTTP(S) 镜像及 SHA-256 或 SHA-512 校验值。")
-        case .invalidMirrors: String(localized: "请提供 1 至 16 个不同的文件镜像地址。")
-        case .sizeMismatch: String(localized: "文件大小与 Metalink 不一致，已丢弃本次文件。")
+        case .invalidMetalink: AegisLocalization.string("Metalink 无效：需要单个文件、公开 HTTP(S) 镜像及 SHA-256 或 SHA-512 校验值。")
+        case .invalidMirrors: AegisLocalization.string("请提供 1 至 16 个不同的文件镜像地址。")
+        case .sizeMismatch: AegisLocalization.string("文件大小与 Metalink 不一致，已丢弃本次文件。")
         }
     }
 }

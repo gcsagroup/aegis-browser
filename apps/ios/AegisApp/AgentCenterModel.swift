@@ -17,14 +17,26 @@ final class AgentCenterModel: ObservableObject {
     @Published private(set) var consent: ConsentDraft?
     @Published private(set) var result: WorkflowResult?
     @Published private(set) var wireState: AgentState = .draft
-    @Published private(set) var errorMessage: String?
+    @Published private var errorMessagePresentation: AegisLocalizedMessage?
+    var errorMessage: String? {
+        get { errorMessagePresentation?.text }
+        set { errorMessagePresentation = newValue.map(AegisLocalizedMessage.verbatim) }
+    }
     @Published private(set) var undoLineage: UndoLineage?
     @Published private(set) var pendingActionApproval: PendingActionApproval?
     @Published private(set) var pendingBookmarkPlan: BookmarkOrganizationPlan?
     @Published private(set) var recoveredUndoReceipt: BookmarkTransactionReceipt?
-    @Published private(set) var bookmarkJournalNotice: String?
+    @Published private var bookmarkJournalNoticePresentation: AegisLocalizedMessage?
+    var bookmarkJournalNotice: String? {
+        get { bookmarkJournalNoticePresentation?.text }
+        set { bookmarkJournalNoticePresentation = newValue.map(AegisLocalizedMessage.verbatim) }
+    }
     @Published var undoWasApplied = false
-    @Published var recoveryNotice: String?
+    @Published private var recoveryNoticePresentation: AegisLocalizedMessage?
+    var recoveryNotice: String? {
+        get { recoveryNoticePresentation?.text }
+        set { recoveryNoticePresentation = newValue.map(AegisLocalizedMessage.verbatim) }
+    }
 
     private enum ExecutionError: LocalizedError, Equatable {
         case nativeCommitRequiresRecovery
@@ -33,9 +45,9 @@ final class AgentCenterModel: ObservableObject {
         var errorDescription: String? {
             switch self {
             case .nativeCommitRequiresRecovery:
-                String(localized: "收藏已更新，但结果确认失败。请重启 App 查看恢复提示。")
+                AegisLocalization.string("收藏已更新，但结果确认失败。请重启 App 查看恢复提示。")
             case .receiptVerificationFailed:
-                String(localized: "无法核对收藏整理结果，已停止后续操作。")
+                AegisLocalization.string("无法核对收藏整理结果，已停止后续操作。")
             }
         }
     }
@@ -84,7 +96,7 @@ final class AgentCenterModel: ObservableObject {
             forKey: "aegis.incompleteTask"
         )
         if !isPrivateProfile, hasInjectedRecovery || hasPersistentRecovery {
-            recoveryNotice = String(localized: "发现中断任务。操作不会自动恢复，请重新确认。")
+            recoveryNoticePresentation = .resource("发现中断任务。操作不会自动恢复，请重新确认。")
             wireState = .recovering
             recoveryMustRemainPersistent = hasPersistentRecovery
         }
@@ -115,7 +127,7 @@ final class AgentCenterModel: ObservableObject {
             guard let self else { return }
             do {
                 let draft = try await activeBroker.makeLocalConsentDraft(
-                    goal: String(localized: "撤销上次已完成的收藏夹整理"),
+                    goal: AegisLocalization.string("撤销上次已完成的收藏夹整理"),
                     origins: ["aegis://native"],
                     tools: ["bookmarks.undo"],
                     dataClasses: ["bookmark_metadata"],
@@ -491,7 +503,7 @@ final class AgentCenterModel: ObservableObject {
             guard let self else { return }
             do {
                 let draft = try await activeBroker.makeLocalConsentDraft(
-                    goal: String(localized: "撤销刚才的收藏夹离线事务"),
+                    goal: AegisLocalization.string("撤销刚才的收藏夹离线事务"),
                     origins: ["aegis://native"],
                     tools: ["bookmarks.undo"],
                     dataClasses: ["bookmark_metadata"],
@@ -725,7 +737,7 @@ final class AgentCenterModel: ObservableObject {
             bookmarkJournalNotice = nil
         } catch {
             recoveredUndoReceipt = nil
-            bookmarkJournalNotice = String(localized: "无法读取收藏撤销记录：\(error.localizedDescription)")
+            bookmarkJournalNoticePresentation = .resource("无法读取收藏撤销记录：\(error.localizedDescription)")
         }
     }
 
@@ -751,7 +763,7 @@ final class AgentCenterModel: ObservableObject {
             UserDefaults.standard.set(true, forKey: "aegis.incompleteTask")
             clearPendingAction()
             refreshRecoveredUndo()
-            errorMessage = error.localizedDescription
+            errorMessagePresentation = .error(error)
             screen = .catalog
             operationTask = nil
             return
@@ -763,7 +775,7 @@ final class AgentCenterModel: ObservableObject {
         wireState = cancelledState
         UserDefaults.standard.set(false, forKey: "aegis.incompleteTask")
         clearPendingAction()
-        errorMessage = error.localizedDescription
+        errorMessagePresentation = .error(error)
         screen = fallback
         operationTask = nil
     }
@@ -793,8 +805,8 @@ final class AgentCenterModel: ObservableObject {
         }
         clearPendingAction()
         refreshRecoveredUndo()
-        recoveryNotice = String(localized: "收藏更新需要恢复，重启 App 后会核对记录，不会自动重复操作。")
-        errorMessage = error.localizedDescription
+        recoveryNoticePresentation = .resource("收藏更新需要恢复，重启 App 后会核对记录，不会自动重复操作。")
+        errorMessagePresentation = .error(error)
         screen = fallback
         operationTask = nil
     }
@@ -822,7 +834,7 @@ final class AgentCenterModel: ObservableObject {
         switch kind {
         case .research:
             WorkflowScope(
-                goal: String(localized: "读取受控来源并生成可核对引用"),
+                goal: AegisLocalization.string("读取受控来源并生成可核对引用"),
                 tools: ["page.observe", "page.extract"],
                 dataClasses: ["visible_text", "page_metadata"],
                 risk: .readOnly,
@@ -830,7 +842,7 @@ final class AgentCenterModel: ObservableObject {
             )
         case .browserManager:
             WorkflowScope(
-                goal: String(localized: "预览并整理 Aegis 收藏夹"),
+                goal: AegisLocalization.string("预览并整理 Aegis 收藏夹"),
                 tools: ["bookmarks.list", "bookmarks.plan", "bookmarks.apply"],
                 dataClasses: ["bookmark_metadata"],
                 risk: .localReversible,
@@ -838,7 +850,7 @@ final class AgentCenterModel: ObservableObject {
             )
         case .safeDownload:
             WorkflowScope(
-                goal: String(localized: "检查官方候选并核对下载证据"),
+                goal: AegisLocalization.string("检查官方候选并核对下载证据"),
                 tools: ["downloads.verify"],
                 dataClasses: ["download_metadata"],
                 risk: .readOnly,
@@ -846,7 +858,7 @@ final class AgentCenterModel: ObservableObject {
             )
         case .shopping:
             WorkflowScope(
-                goal: String(localized: "比较报价并停在最终提交前"),
+                goal: AegisLocalization.string("比较报价并停在最终提交前"),
                 tools: ["page.observe", "page.extract"],
                 dataClasses: ["product", "price", "shipping"],
                 risk: .readOnly,
