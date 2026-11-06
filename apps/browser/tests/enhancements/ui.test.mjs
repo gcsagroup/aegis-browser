@@ -69,7 +69,56 @@ async function manager(locale = 'zh-CN', enabled = false) {
   const code = read('enhancements.js').replace(/^import .*;\n/gm, '').replace('export async function initializeEnhancements', 'globalThis.initializeEnhancements = async function').split('if (document.getElementById("enhancement-root"))')[0];
   w.eval(code);
   await w.initializeEnhancements(w.document);
-  return {dom, requests};
+  return {dom, requests, state};
+}
+
+for (const change of ['unchanged', 'selection', 'navigation', 'same-url-document', 'closed', 'save-error']) {
+  test(`试运行绑定确认时的标签和文档：${change}`, async () => {
+    const {dom, requests, state} = await manager(), w = dom.window, doc = w.document;
+    try {
+      // Both pages match; target authorization must not rely on URL matching alone.
+      doc.getElementById('source').value = state.scripts[0].source.replace('https://second.test/*', '*://*/*');
+      let resolveSave, rejectSave;
+      w.sendWithPromise = async (_, request) => {
+        requests.push(structuredClone(request));
+        if (request.op === 'script-save') {
+          state.scripts[0].source = request.source;
+          return new Promise((resolve, reject) => { resolveSave = resolve; rejectSave = reject; });
+        }
+        return structuredClone(state);
+      };
+      const confirmations = [];
+      w.confirm = text => { confirmations.push(text); return true; };
+      const pending = doc.getElementById('trial').onclick();
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(typeof resolveSave, 'function');
+      assert.equal(confirmations.length, 1);
+      assert.match(confirmations[0], /https:\/\/second\.test\//);
+      assert.equal(requests.filter(r => r.op === 'trial').length, 0);
+      if (change === 'selection') {
+        doc.getElementById('tabs').value = 'first';
+        doc.getElementById('tabs').dispatchEvent(new w.Event('change'));
+      } else if (change === 'navigation') {
+        state.tabs[1] = {...state.tabs[1], url: 'https://second.test/next', document: 'next'};
+      } else if (change === 'same-url-document') {
+        state.tabs[1] = {...state.tabs[1], document: 'reloaded'};
+      } else if (change === 'closed') {
+        state.tabs = state.tabs.filter(tab => tab.id !== 'second');
+      }
+      if (change === 'save-error') rejectSave(Error('save failed'));
+      else resolveSave(structuredClone(state));
+      await pending;
+      const trials = requests.filter(r => r.op === 'trial');
+      if (change === 'unchanged') {
+        assert.equal(trials.length, 1);
+        assert.deepEqual(trials[0], {op: 'trial', tab: 'second', url: 'https://second.test/', document: 'new', id: 'script-1'});
+      } else {
+        assert.equal(trials.length, 0, '未确认的新目标或保存失败均不能发起试运行');
+        assert.ok(doc.getElementById('notice').textContent);
+      }
+      assert.equal(doc.getElementById('trial').disabled, false);
+    } finally { dom.window.close(); }
+  });
 }
 test('从盾牌深链接到准确标签及脚本，命令保留文档标识且按脚本分组', async () => {
   const {dom, requests} = await manager(), w = dom.window, doc = w.document;

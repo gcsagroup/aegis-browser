@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Aegis 唯讀助手"
+  },
+  "extensionDescription": {
+    "message": "讀取使用者目前授權頁面的最小摘要，不執行頁面寫入操作。"
+  },
+  "extensionAction": {
+    "message": "檢查並在 Aegis 中打開"
+  }
+}

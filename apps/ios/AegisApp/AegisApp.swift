@@ -3,6 +3,11 @@ import AgentKit
 import SwiftUI
 
 final class AegisAppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        AegisFirebase.shared.start()
+        return true
+    }
+
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
         guard identifier == "com.gcsa.aegis.ios.downloads.v1" else { completionHandler(); return }
@@ -13,6 +18,7 @@ final class AegisAppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct AegisApp: App {
     @UIApplicationDelegateAdaptor(AegisAppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var windows: BrowserWindowStore
     private let dataStore: BrowserDataStore
     private let workspaceStore: WorkspaceStore
@@ -98,6 +104,9 @@ struct AegisApp: App {
             windows.defaultWindowID()
         }
         .commands { BrowserKeyboardCommands() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { AegisFirebase.shared.refreshOnForeground() }
+        }
     }
 
 #if DEBUG

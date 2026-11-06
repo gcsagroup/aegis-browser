@@ -1,3 +1,51 @@
+Phishing Block List — The Block List Project
+Source: https://github.com/blocklistproject/Lists/blob/dbf845d69d21765c2cffc1d190ed62660f08a070/phishing.txt
+Source SHA-256: 4407e6b9af2fa1e4def92ed523643a3380448fde81837341ffc596c6e781f134
+
+Upstream file header (trailing whitespace omitted):
+# Title: Phishing Block List
+# Description: Phishing domains
+# Homepage: https://github.com/blocklistproject/Lists
+# License: MIT
+# Last modified: 2026-07-06 00:40:29 UTC
+# Format: hosts
+# Entries: 190,215
+# URL:
+#
+# This list is maintained by The Block List Project
+# https://github.com/blocklistproject/Lists
+#
+
+Aegis converts the hosts file into the phishing host entries in security-rules.json,
+normalizes host names and removes duplicates. This notice does not change the data.
+The file declares MIT, while LICENSE at the same upstream commit contains the
+Unlicense. Both declarations are retained below; Aegis does not assert that the
+upstream has granted a choice of licenses. The header supplies the maintainer
+attribution above but does not supply a separate copyright year.
+
+MIT terms accompanying the upstream file-level declaration:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Repository LICENSE at the same upstream commit (Unlicense, preserved verbatim):
+https://github.com/blocklistproject/Lists/blob/dbf845d69d21765c2cffc1d190ed62660f08a070/LICENSE
+
 This is free and unencumbered software released into the public domain.
 
 Anyone is free to copy, modify, publish, use, compile, sell, or

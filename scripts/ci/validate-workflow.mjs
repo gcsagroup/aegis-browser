@@ -25,7 +25,12 @@ function array(value) {
 }
 
 try {
+  if (process.argv.length > 8) fail('Unexpected workflow path argument');
   const path = resolve(process.argv[2] ?? '.github/workflows/quality.yml');
+  const cppPath = resolve(process.argv[7] ?? '.github/workflows/cpp-unit-tests.yml');
+  const cppSource = readFileSync(cppPath, 'utf8');
+  const cppWorkflow = YAML.parse(cppSource);
+  const iosValidationWorkflow = YAML.parse(readFileSync('.github/workflows/ios-release-validation.yml', 'utf8'));
   const iosPath = resolve(process.argv[3] ?? '.github/workflows/ios-coverage.yml');
   const otherPath = resolve(process.argv[4] ?? '.github/workflows/other-platform-coverage.yml');
   const androidPath = resolve(process.argv[5] ?? '.github/workflows/android-java-coverage.yml');
@@ -43,6 +48,30 @@ try {
   if (!workflow || typeof workflow !== 'object') fail('Workflow must be a YAML object');
   if (!iosWorkflow || typeof iosWorkflow !== 'object') fail('iOS workflow must be a YAML object');
   if (!prTitleWorkflow || typeof prTitleWorkflow !== 'object') fail('PR title workflow must be a YAML object');
+  const ready = "github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false'";
+  const readyCondition = '${{ ' + ready + ' }}';
+  const summaryCondition = '${{ always() && (' + ready + ') }}';
+  const summaryName = '${{ (' + ready + ") && 'quality-gate' || 'quality-deferred-draft-or-missing-metadata' }}";
+  const prTypes = ['opened', 'reopened', 'synchronize', 'ready_for_review', 'converted_to_draft'].sort();
+  for (const [label, automatic] of [['Quality', workflow], ['C++', cppWorkflow], ['iOS validation', iosValidationWorkflow]]) {
+    if (JSON.stringify(array(automatic?.on?.pull_request?.types).sort()) !== JSON.stringify(prTypes)) {
+      fail(`${label} PR event types must be exactly opened, reopened, synchronize, ready_for_review and converted_to_draft`);
+    }
+    for (const [id, job] of Object.entries(automatic.jobs ?? {})) {
+      if (id === 'quality-gate' || job.name === 'quality-gate') {
+        fail(`${label}/${id} may not use the required check name or ID for a skipped Draft job`);
+      }
+      const cloudExercise = automatic === iosValidationWorkflow && id === 'cloud-poc';
+      const iosContracts = automatic === iosValidationWorkflow && ['contracts', 'ios-archive'].includes(id);
+      const expectedCondition = cloudExercise
+        ? "${{ github.event_name == 'workflow_dispatch' && inputs.exercise == 'cloud-poc' && github.repository == 'gcsagroup/aegis-browser' }}"
+        : iosContracts ? '${{ inputs.exercise != \'cloud-poc\' && (' + ready + ') }}'
+          : automatic === workflow && id === 'quality-summary' ? summaryCondition : readyCondition;
+      if (job.if !== expectedCondition) {
+        fail(`${label}/${id} must require explicit Ready PR metadata, preserve non-PR execution and summary always()`);
+      }
+    }
+  }
   const triggers = workflow.on ?? {};
   const triggerNames = Object.keys(triggers).sort();
   if (JSON.stringify(triggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {
@@ -144,8 +173,8 @@ try {
   const iosCoverage = iosJobs['ios-coverage'];
   const shellCoverage = otherWorkflow.jobs?.['shell-coverage'];
   const powershellCoverage = otherWorkflow.jobs?.['powershell-coverage'];
-  const gate = jobs['quality-gate'];
-  const expectedJobs = ['quality', 'quality-gate'];
+  const gate = jobs['quality-summary'];
+  const expectedJobs = ['quality', 'quality-summary'];
   if (JSON.stringify(Object.keys(otherWorkflow.jobs ?? {}).sort()) !== JSON.stringify(['powershell-coverage', 'shell-coverage'])) fail('Other platform job set must be exactly shell-coverage and powershell-coverage');
   if (JSON.stringify(Object.keys(androidWorkflow.jobs ?? {})) !== JSON.stringify(['android-java-coverage'])) fail('Android job set must be exactly android-java-coverage');
   if (JSON.stringify(Object.keys(jobs).sort()) !== JSON.stringify(expectedJobs)) {
@@ -155,9 +184,13 @@ try {
     fail('iOS workflow job set must be exactly: ios-coverage');
   }
   if (quality.name !== 'quality') fail('Quality job check name must be quality');
-  if (quality['runs-on'] !== 'macos-15') fail('Quality job must use macos-15');
+  const testRunner = "${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"macOS\", \"ARM64\", \"aegis-test\"]') || 'macos-15' }}";
+  if (quality['runs-on'] !== testRunner) fail('Quality job must use the trusted macOS test route');
+  const pnpmSetup = array(quality.steps).find((step) => String(step.uses ?? '').startsWith('pnpm/action-setup@'));
+  if (pnpmSetup?.with?.dest !== '${{ runner.temp }}/setup-pnpm') {
+    fail('pnpm setup must use the per-job runner temporary directory');
+  }
   if (quality['timeout-minutes'] !== 40) fail('Quality job timeout must be 40 minutes');
-  if ('if' in quality) fail('Required quality job may not be conditional');
   for (const [id, job, runner, timeout] of [
     ['shell-coverage', shellCoverage, 'ubuntu-24.04', 30],
     ['powershell-coverage', powershellCoverage, 'windows-2025', 20],
@@ -172,15 +205,34 @@ try {
   if (iosCoverage?.['timeout-minutes'] !== 60) fail('iOS report timeout must be 60 minutes');
   if ('if' in iosCoverage) fail('iOS report job may not be conditional within its manual workflow');
   if ('continue-on-error' in iosCoverage) fail('iOS report job must preserve test failures');
-  if (gate.name !== 'quality-gate') fail('Required summary check name must be quality-gate');
-  if (gate.if !== '${{ always() }}') fail('quality-gate must run with always()');
+  if (gate.name !== summaryName) fail('Required summary check name must be quality-gate only for non-PR or explicit Ready PR; otherwise use the deferred label');
   const expectedNeeds = ['quality'];
   if (JSON.stringify(array(gate.needs).sort()) !== JSON.stringify(expectedNeeds)) {
     fail(`quality-gate needs must be exactly: ${expectedNeeds.join(', ')}`);
   }
   if (gate['timeout-minutes'] !== 5) fail('quality-gate timeout must be 5 minutes');
 
-  if (gate['runs-on'] !== 'macos-15') fail('quality-gate must use macos-15');
+  if (gate['runs-on'] !== testRunner) fail('quality-gate must use the trusted macOS test route');
+  if (JSON.stringify(Object.keys(cppWorkflow?.jobs ?? {})) !== JSON.stringify(['cpp-unit-tests'])) {
+    fail('C++ workflow job set must be exactly cpp-unit-tests');
+  }
+  if (cppWorkflow?.jobs?.['cpp-unit-tests']?.['runs-on'] !== testRunner) {
+    fail('C++ tests must use the trusted macOS test route');
+  }
+  if (cppWorkflow.permissions?.contents !== 'read' || Object.values(cppWorkflow.permissions ?? {}).includes('write')) {
+    fail('C++ workflow permissions must be read-only');
+  }
+  const selfHostedPythonCheck = "python3 -c 'import sys; assert sys.version_info[:3] == (3, 11, 9), sys.version; print(sys.version)'";
+  for (const [id, job] of [['quality', quality], ['cpp-unit-tests', cppWorkflow.jobs['cpp-unit-tests']]]) {
+    const pythonSetup = array(job.steps).find((step) => String(step.uses ?? '').startsWith('actions/setup-python@'));
+    const pythonCheck = array(job.steps).find((step) => step.name === 'Verify preinstalled Python on self-hosted runner');
+    if (pythonSetup?.if !== "${{ runner.environment != 'self-hosted' }}" || String(pythonSetup?.with?.['python-version']) !== '3.11.9') {
+      fail(`${id} must install pinned Python only on hosted runners`);
+    }
+    if (pythonCheck?.if !== "${{ runner.environment == 'self-hosted' }}" || pythonCheck?.run !== selfHostedPythonCheck || 'continue-on-error' in pythonCheck) {
+      fail(`${id} must verify pinned preinstalled Python on self-hosted runners`);
+    }
+  }
   const allJobs = {...jobs, ...otherWorkflow.jobs, ...androidWorkflow.jobs, 'ios-report/ios-coverage': iosCoverage};
   for (const [id, job] of Object.entries(allJobs)) {
     if ('continue-on-error' in job) fail(`${id} may not suppress failures`);
@@ -263,7 +315,8 @@ try {
       uploads[0].with?.['retention-days'] !== 14
     ) fail(`${id} evidence upload must run always and retain artifacts for 14 days`);
   }
-  if (/pull_request_target|workflow_run|self-hosted/u.test(`${source}\n${iosSource}\n${otherSource}\n${androidSource}`)) {
+  const hostedOnlySource = [iosSource, otherSource, androidSource].join('\n');
+  if (/pull_request_target|workflow_run/u.test(`${source}\n${cppSource}\n${hostedOnlySource}`) || /self-hosted/u.test(hostedOnlySource)) {
     fail('Untrusted or self-hosted execution trigger detected');
   }
   console.log(JSON.stringify({status: 'PASS', path, iosPath, prTitlePath, jobs: Object.keys(jobs), iosJobs: Object.keys(iosJobs), prTitleJobs: Object.keys(prTitleJobs)}));

@@ -1,6 +1,8 @@
 import importlib.util
+import os
 import pathlib
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -8,6 +10,38 @@ FILE = pathlib.Path(__file__).with_name('ios-runner.py')
 
 
 class IosRunnerTests(unittest.TestCase):
+    def test_valid_admin_cannot_start_unisolated_signing_runner(self):
+        m = self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            root.chmod(0o700)
+            commands = root/'fixture-bin'
+            commands.mkdir()
+            # A real subprocess boundary, without accessing an installed key.
+            signing = commands/'codesign'
+            signing.write_text('#!/bin/sh\nexit 1\n')
+            signing.chmod(0o700)
+            args = ['ios-runner', '--repository', 'gcsagroup/aegis-browser',
+                    '--sha', 'a'*40, '--label', 'unique-ios', '--name', 'fixture',
+                    '--keychain', '/fixture', '--certificate-sha1', 'A'*40,
+                    '--run-id', '12', '--job-id', '1', '--root', tmp,
+                    '--external-volume', tmp, '--payload-archive', '/fixture',
+                    '--payload-sha256', 'a'*64]
+            # Treat all existing admission prerequisites as satisfied. The real
+            # launch path must still refuse before creating its signing probe.
+            with patch('sys.argv', args), patch.dict(os.environ, PATH=str(commands)+os.pathsep+os.environ['PATH']), \
+                 patch.object(m, 'authorize_operator', return_value=None), \
+                 patch.object(m, 'validate_payload', return_value=None), \
+                 patch.object(m, 'admit', return_value=2), \
+                 patch.object(m, 'gh', return_value={'total_count': 0, 'runners': []}), \
+                 patch('shutil.disk_usage', return_value=SimpleNamespace(free=100*1024**3)):
+                with self.assertRaises(ValueError):
+                    m.main()
+            self.assertFalse((root/'signing-probe').exists(),
+                             'Unisolated launcher reached installed-key probe setup')
+            self.assertFalse((root/'registration-started.json').exists())
+            self.assertFalse((root/'config.log').exists())
+
     def test_operator_requires_canonical_repository_and_actual_cli_admin(self):
         m = self.module()
         self.assertTrue(hasattr(m, 'authorize_operator'), 'Admin operator boundary missing')

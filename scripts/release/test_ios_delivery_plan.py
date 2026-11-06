@@ -10,6 +10,73 @@ spec.loader.exec_module(planner)
 
 
 class DeliveryPlanTests(unittest.TestCase):
+    def test_tags_default_to_cloud_and_explicit_modes_cannot_change_source(self):
+        sha = 'a' * 40
+        def fixture(message, target=sha):
+            return lambda path: ({'object': {'type': 'tag', 'sha': 'b' * 40}} if path.startswith('git/ref/') else
+                                 {'object': {'type': 'commit', 'sha': target}, 'message': message})
+        tag = 'candidate/ios/0.8.0-beta.501'
+        for mode in ['cloud', 'manual']:
+            message = 'aegis-ios-signing-v1\n' + json.dumps({'signingMode': mode, 'sourceSha': sha})
+            self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message)), mode)
+            with self.assertRaises(ValueError):
+                planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message, 'c'*40))
+            with self.assertRaises(ValueError):
+                planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture(message.replace(sha, 'c'*40)))
+        self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, fixture('ordinary candidate')), 'cloud')
+        lightweight = lambda _path: {'object': {'type': 'commit', 'sha': sha}}
+        self.assertEqual(planner.tag_signing_mode('gcsagroup/aegis-browser', tag, sha, lightweight), 'cloud')
+        with self.assertRaises(ValueError):
+            planner.tag_signing_mode('gcsagroup/aegis-browser', tag, 'c'*40, lightweight)
+
+    def test_malformed_manual_override_stops_instead_of_using_cloud_default(self):
+        sha = 'a'*40
+        messages = ['aegis-ios-signing-v1\r\n{}', 'aegis-ios-signing-v2\n{}',
+                    'aegis-ios-signing-v1\n{}',
+                    'aegis-ios-signing-v1\n'+json.dumps({'signingMode': 'fallback', 'sourceSha': sha}),
+                    'aegis-ios-signing-v1\n'+json.dumps({'signingMode': 'manual', 'sourceSha': sha, 'extra': True}),
+                    'aegis-ios-signing-v1\n'+f'{{"signingMode":"cloud","signingMode":"manual","sourceSha":"{sha}"}}']
+        for message in messages:
+            def api(path):
+                return ({'object': {'type': 'tag', 'sha': 'b'*40}} if path.startswith('git/ref/') else
+                        {'object': {'type': 'commit', 'sha': sha}, 'message': message})
+            with self.subTest(message=message), self.assertRaises(ValueError):
+                planner.tag_signing_mode('gcsagroup/aegis-browser', 'candidate/ios/1.0.2-beta.12', sha, api)
+
+    def test_full_fastlane_entrypoint_does_not_change_package_destination(self):
+        value = planner.normalize('workflow_dispatch', 'refs/heads/main',
+                                  dict(operation='Package', version='0.8.0', build='501', product='Beta',
+                                       package_entrypoint='fastlane'), 'full')
+        self.assertEqual((value['package_entrypoint'], value['destination'], value['signing_mode']), ('fastlane', 'artifacts', 'cloud'))
+
+    def test_new_packages_default_to_cloud_with_explicit_manual_fallback(self):
+        base = {'version': '0.8.0', 'build': '101', 'operation': 'Package'}
+        for form in ['simple', 'full']:
+            for profile in ['Alpha', 'Beta', 'Release']:
+                for operation in ['Package', 'Package and upload', *(['Draft'] if form == 'full' else [])]:
+                    values = dict(base, product=profile, operation=operation)
+                    self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', values, form)['signing_mode'], 'cloud')
+                    self.assertEqual(planner.normalize('workflow_dispatch', 'refs/heads/main', dict(values, signing_mode='manual'), form)['signing_mode'], 'manual')
+        for operation in ['Status', 'Package']:
+            with self.assertRaises(ValueError):
+                planner.normalize('workflow_dispatch', 'refs/heads/main', dict(base, operation=operation, signing_mode='fallback'))
+
+    def test_cloud_form_default_cannot_block_reads_or_reinterpret_existing_package_stages(self):
+        for form in ['simple', 'full']:
+            for operation in ['Status', 'Wait']:
+                value = planner.normalize('workflow_dispatch', 'refs/heads/main',
+                                          dict(operation=operation, version='1.0.2', build='10', signing_mode='cloud'), form)
+                self.assertEqual(value['signing_mode'], '')
+                self.assertEqual(value['manifest_sha256'], '')
+        token = self.token(profile='beta', state='101')
+        for operation in ['Upload', 'Wait', 'Metadata', 'Compliance', 'Distribute internal', 'Distribute external']:
+            values = dict(operation=operation, source=token, signing_mode='cloud')
+            if operation.startswith('Distribute'):
+                values['groups'] = 'Existing group'
+            plan = planner.normalize('workflow_dispatch', 'refs/heads/main', values, 'full')
+            self.assertEqual(plan['signing_mode'], '')
+            self.assertEqual(plan['manifest_sha256'], 'a'*64)
+
     def plan(self, inputs=None, event='workflow_dispatch', ref='refs/heads/main'):
         return planner._normalize_stage(event, ref, inputs if inputs is not None else dict(version='1.0.0(33)'))
 
@@ -56,24 +123,27 @@ class DeliveryPlanTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 self.plan(self.store(**changes))
 
-    def test_bilingual_labels_and_english_operation_ids_have_identical_guards(self):
-        for product, label in planner.receipt.PRODUCT_LABELS.items():
+    def test_display_labels_and_operation_ids_have_identical_guards(self):
+        for product, labels in planner.receipt.PRODUCT_LABELS.items():
             expected = 'alpha' if product == 'auto' else product
-            self.assertEqual(self.plan(dict(version='1.0.0(33)', product=label))['profile'], expected)
-        for operation, label in planner.receipt.OPERATION_LABELS.items():
+            for label in labels:
+                self.assertEqual(self.plan(dict(version='1.0.0(33)', product=label))['profile'], expected)
+        for operation, labels in planner.receipt.OPERATION_LABELS.items():
             inputs = dict(version='1.0.0(33)') if operation in {'package', 'draft'} else dict(source=self.token('beta', state='101'))
             if operation.startswith('distribute-'):
                 inputs['groups'] = 'Aegis Early access'
-            self.assertEqual(self.plan(dict(inputs, operation=label)), self.plan(dict(inputs, operation=operation)))
-        with self.assertRaises(ValueError):
-            self.plan(dict(operation=planner.receipt.OPERATION_LABELS['distribute-external'],
-                           source=self.token(state='101'), groups='group'))
+            for label in labels:
+                self.assertEqual(self.plan(dict(inputs, operation=label)), self.plan(dict(inputs, operation=operation)))
+        for label in planner.receipt.OPERATION_LABELS['distribute-external']:
+            with self.assertRaises(ValueError):
+                self.plan(dict(operation=label, source=self.token(state='101'), groups='group'))
 
     def test_tag_derives_identity_and_only_packages_private_draft(self):
         for profile in ['alpha', 'beta', 'release']:
             plan = self.plan({}, event='push', ref='refs/tags/candidate/ios/1.0.0-'+profile+'.33')
             self.assertEqual([plan[k] for k in ['operation', 'profile', 'version', 'build', 'destination']],
                              ['package', profile, '1.0.0', '33', 'github-draft'])
+            self.assertEqual(plan['signing_mode'], 'cloud')
         for ref in ['refs/heads/main', 'refs/tags/v1.0.0', 'refs/tags/candidate/ios/1.0.0-release.0',
                     'refs/tags/candidate/ios/1.0.0-release.33\n', 'refs/tags/candidate/ios/'+('1'*100)+'.0-alpha.33']:
             with self.assertRaises(ValueError):
@@ -125,63 +195,94 @@ class DeliveryPlanTests(unittest.TestCase):
 
 
 class SimpleFullFormTests(unittest.TestCase):
-    def form(self, **inputs):
-        return planner.normalize('workflow_dispatch', 'refs/heads/main', inputs)
+    def token(self, profile='alpha', state='100', attempt='1', digest='a'*64):
+        return planner.receipt.encode(profile, '1.0.0', '33', '100', state, attempt, digest)
 
-    def token(self, profile='beta', state=101):
-        return planner.receipt.encode(profile, '1.0.0', '33', 100, state, 1, 'a'*64)
+    def form(self, mode='simple', **inputs):
+        return planner.normalize('workflow_dispatch', 'refs/heads/main', inputs, mode)
 
-    def test_simple_package_needs_one_target_and_later_steps_need_only_receipt(self):
-        plan = self.form(target='1.0.0(33)')
-        self.assertEqual([plan[k] for k in ['operation', 'profile', 'version', 'build', 'destination']],
-                         ['package', 'alpha', '1.0.0', '33', 'artifacts'])
-        self.assertEqual(self.form(target='1.0.0(33)', product=planner.receipt.PRODUCT_LABELS['release'])['profile'], 'release')
-        for operation in ['upload', 'status']:
-            plan = self.form(operation=planner.receipt.OPERATION_LABELS[operation], target=self.token())
-            self.assertEqual([plan[k] for k in ['operation', 'profile', 'package_run_id', 'upload_run_id', 'manifest_sha256']],
-                             [operation, 'beta', '100', '101', 'a'*64])
+    def test_status_uses_exact_version_build_without_any_package_provenance(self):
+        for mode in ['simple', 'full']:
+            for profile in ['Auto', 'Alpha', 'Beta', 'Release']:
+                value = self.form(mode, operation='Status', version='1.0.0', build='35', product=profile)
+                self.assertEqual((value['operation'], value['version'], value['build']), ('status-query', '1.0.0', '35'))
+                for field in ['profile', 'package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']:
+                    self.assertEqual(value[field], '', 'Status cannot invent package provenance')
 
-    def test_full_mode_retains_all_explicit_stages_and_bilingual_commands(self):
-        for operation, label in planner.receipt.OPERATION_LABELS.items():
-            target = '1.0.0(33)' if operation in {'package', 'draft'} else self.token()
-            options = dict(operation=label)
+    def test_simple_package_remains_package_only_with_explicit_product(self):
+        for profile in ['alpha', 'beta', 'release']:
+            value = self.form(operation='package', product=profile, version='1.0.0', build='36')
+            self.assertEqual((value['operation'], value['profile'], value['destination']), ('package', profile, 'artifacts'))
+
+    def test_new_package_upload_has_no_external_source_and_wait_is_read_only(self):
+        for mode in ['simple', 'full']:
+            value = self.form(mode, operation='package-upload', version='1.0.0', build='36', product='beta')
+            self.assertEqual((value['operation'], value['profile'], value['destination']), ('package-upload', 'beta', 'testflight'))
+            self.assertFalse(value['package_run_id'] or value['manifest_sha256'])
+            wait = self.form(mode, operation='wait', version='1.0.0', build='35')
+            self.assertEqual(wait['operation'], 'status-wait')
+            for extra in [dict(source=self.token()), dict(groups='group'), dict(stage_input='{"x":1}')]:
+                with self.assertRaises(ValueError):
+                    self.form('full', operation='package-upload', version='1.0.0', build='36', **extra)
+
+    def test_same_run_uploaded_receipt_keeps_completed_state_distinct_from_package_only(self):
+        before = planner.receipt.encode('alpha', '1.0.0', '36', 100, 100, 1, 'a'*64)
+        after = planner.receipt.encode('alpha', '1.0.0', '36', 100, 100, 1, 'a'*64, uploaded=True)
+        self.assertEqual(planner.receipt.decode(before)['upload_run_id'], '')
+        self.assertEqual(planner.receipt.decode(after)['upload_run_id'], '100')
+        value = self.form('full', operation='metadata', source=after)
+        self.assertEqual((value['package_run_id'], value['upload_run_id'], value['manifest_sha256']), ('100', '100', 'a'*64))
+        for bad in [after.replace(':uploaded', ':unknown'), after.replace(':100:100:', ':100:101:'), after.replace(':uploaded', '')]:
+            with self.assertRaises(ValueError):
+                planner.receipt.decode(bad)
+
+    def test_missing_or_malicious_identity_is_rejected_before_credentials(self):
+        for changes in [dict(version=''), dict(build=''), dict(version='1.0.0(35)'), dict(version='1.0.0\n'),
+                        dict(build='01'), dict(build='0'), dict(build='1;uname'), dict(version='$(id)'), dict(build='1'*11)]:
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.form(**(dict(operation='status', version='1.0.0', build='35') | changes))
+
+    def test_version_build_never_authorizes_upload_or_later_mutation(self):
+        for mode in ['simple', 'full']:
+            for op in ['upload', 'metadata', 'compliance', 'distribute-internal', 'distribute-external']:
+                with self.subTest(mode=mode, op=op), self.assertRaises(ValueError):
+                    self.form(mode, operation=op, version='1.0.0', build='35')
+
+    def test_full_mode_pins_original_package_and_state_for_all_mutations(self):
+        for operation in ['upload', 'wait', 'metadata', 'compliance', 'distribute-internal', 'distribute-external']:
+            fields = dict(operation=operation, source=self.token('beta', state='123', attempt='3'))
             if operation.startswith('distribute-'):
-                options['groups'] = 'Aegis Early access'
-            if operation in {'metadata', 'compliance'}:
-                options['stage_input'] = {'authorization': 'explicitly reviewed'}
-            plan = self.form(operation='完整模式 / Full', target=target, advanced=json.dumps(options))
-            self.assertEqual(plan['operation'], 'package' if operation == 'draft' else
-                             'distribute' if operation.startswith('distribute-') else operation)
-            options['operation'] = operation
-            self.assertEqual(plan, self.form(operation='full', target=target, advanced=json.dumps(options)))
+                fields['groups'] = 'Existing group'
+            if operation in ['metadata', 'compliance']:
+                fields['stage_input'] = '{"authorization":"reviewed"}'
+            value = self.form('full', **fields)
+            self.assertEqual([value[x] for x in ['package_run_id', 'upload_run_id', 'source_attempt', 'manifest_sha256']],
+                             ['100', '123', '3', 'a'*64])
+            with self.assertRaises(ValueError):
+                self.form('full', **(fields | dict(build='34', version='1.0.0')))
         with self.assertRaises(ValueError):
-            self.form(operation='full', target=self.token('alpha'),
-                      advanced=json.dumps(dict(operation='distribute-external', groups='group')))
+            self.form('full', operation='distribute-external', source=self.token('alpha', state='123'), groups='group')
 
-    def test_simple_mode_cannot_hide_advanced_changes_or_override_receipt_identity(self):
-        for operation in ['wait', 'draft', 'metadata', 'compliance', 'distribute-internal']:
+    def test_status_cannot_smuggle_state_or_stage_configuration(self):
+        for extra in [dict(source=self.token()), dict(groups='group'), dict(stage_input='{"usesNonExemptEncryption":false}')]:
             with self.assertRaises(ValueError):
-                self.form(operation=operation, target=self.token())
-        for advanced in ['{"operation":"metadata"}', '{"groups":"group"}', '{"stage_input":{"x":true}}']:
-            with self.assertRaises(ValueError):
-                self.form(operation='upload', target=self.token(), advanced=advanced)
-        for changes in [dict(product='alpha'), dict(target=self.token()+'\n'), dict(source=self.token()), dict(build='33')]:
-            with self.assertRaises(ValueError):
-                self.form(**(dict(operation='upload', target=self.token()) | changes))
+                self.form('full', operation='status', version='1.0.0', build='35', **extra)
 
-    def test_full_options_are_bounded_strict_objects_without_extra_identity_fields(self):
-        for options in ['[]', 'null', '{', '{}', '{"operation":"unknown"}', '{"operation":"full"}',
-                        '{"operation":"metadata","operation":"status"}', '{"operation":"metadata","stage_input":{"x":NaN}}',
-                        '{"operation":"status","build":"34"}', '{"operation":"metadata","stage_input":[]}',
-                        '{"operation":"distribute-internal","groups":true}', '{"operation":"'+'x'*64000+'"}']:
-            with self.subTest(options=options[:100]), self.assertRaises(ValueError):
-                self.form(operation='full', target=self.token(), advanced=options)
+    def test_full_json_and_both_entrypoint_boundaries_are_strict(self):
+        for raw in ['[]', 'null', '{', '{"x":1,"x":2}', '{"x":NaN}', ' '*64001]:
+            with self.assertRaises(ValueError):
+                self.form('full', operation='metadata', source=self.token(state='123'), stage_input=raw)
+        for mode in ['unknown', 'Simple']:
+            with self.assertRaises(ValueError):
+                self.form(mode, version='1.0.0', build='35')
         for event, ref in [('pull_request', 'refs/heads/main'), ('workflow_dispatch', 'refs/heads/foreign')]:
             with self.assertRaises(ValueError):
-                planner.normalize(event, ref, dict(target='1.0.0(33)'))
+                planner.normalize(event, ref, dict(version='1.0.0', build='35'))
         for profile in ['alpha', 'beta', 'release']:
-            plan = planner.normalize('push', f'refs/tags/candidate/ios/1.0.0-{profile}.33', {})
-            self.assertEqual((plan['operation'], plan['profile'], plan['destination']), ('package', profile, 'github-draft'))
+            value = planner.normalize('push', f'refs/tags/candidate/ios/1.0.0-{profile}.36', {})
+            self.assertEqual((value['operation'], value['profile'], value['destination']), ('package', profile, 'github-draft'))
+        with self.assertRaises(ValueError):
+            planner.normalize('push', 'refs/tags/candidate/ios/1.0.0-alpha.36', {}, 'full')
 
 
 if __name__ == '__main__':

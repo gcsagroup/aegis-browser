@@ -5,15 +5,15 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 
 spec = importlib.util.spec_from_file_location('ios_delivery_receipt', Path(__file__).with_name('ios-delivery-receipt.py'))
 receipt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(receipt)
 
-INPUTS = {'operation', 'product', 'target', 'advanced'}
 STAGE_INPUTS = {'operation', 'product', 'version', 'source', 'groups', 'stage_input'}
 FIELDS = {'operation', 'profile', 'version', 'build', 'destination', 'tag', 'package_run_id',
-          'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input'}
+          'upload_run_id', 'source_attempt', 'manifest_sha256', 'groups', 'stage_input', 'signing_mode', 'package_entrypoint'}
 
 
 def require(condition, message):
@@ -33,31 +33,63 @@ def reject_constant(_value):
     raise ValueError('Non-finite Full JSON is not allowed')
 
 
-def normalize(event, ref, inputs):
-    require(isinstance(inputs, dict) and not inputs.keys()-INPUTS and all(isinstance(v, str) for v in inputs.values()), 'Unknown or invalid delivery inputs')
+def normalize(event, ref, inputs, mode='simple'):
+    allowed = {'operation', 'product', 'version', 'build', 'signing_mode'}
+    if mode == 'full':
+        allowed |= {'source', 'groups', 'stage_input', 'package_entrypoint'}
+    require(mode in {'simple', 'full'}, 'Unknown delivery mode')
+    require(isinstance(inputs, dict) and not inputs.keys()-allowed and all(isinstance(v, str) for v in inputs.values()),
+            'Unknown or invalid delivery inputs')
     if event == 'push':
+        require(mode == 'simple', 'Only the canonical entrypoint accepts candidate tags')
         return _normalize_stage(event, ref, inputs)
     require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
-    raw_options = inputs.get('advanced') or '{}'
-    require(len(raw_options.encode()) <= 64000, 'Full options exceed bound')
+    operation = receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
+    new_package = operation in {'package', 'package-upload', 'draft'}
+    signing_mode = inputs.get('signing_mode') or 'cloud'
+    entrypoint = inputs.get('package_entrypoint') or 'actions'
+    require(entrypoint in {'actions', 'fastlane'}, 'Unknown package entrypoint')
+    require(entrypoint == 'actions' or operation in {'package', 'package-upload', 'draft'}, 'Entrypoint applies only to a new package')
+    require(signing_mode in {'manual', 'cloud'}, 'Signing mode must be manual or cloud')
+    require(mode == 'full' or operation in {'package', 'package-upload', 'status', 'wait'}, 'Use the Full workflow for upload and later stages')
+    version, build = inputs.get('version', ''), inputs.get('build', '')
+    if version or build or operation in {'package', 'package-upload', 'draft', 'status'} or (operation == 'wait' and not inputs.get('source')):
+        require(re.fullmatch(r'[0-9]{1,10}\.[0-9]{1,10}(?:\.[0-9]{1,10})?', version) is not None and
+                re.fullmatch(r'[1-9][0-9]{0,9}', build) is not None,
+                'Enter version and build, for example 1.0.0 and 35')
+    raw_input = inputs.get('stage_input') or '{}'
+    require(len(raw_input.encode()) <= 64000, 'Stage input exceeds bound')
     try:
-        options = json.loads(raw_options, object_pairs_hook=unique_object, parse_constant=reject_constant)
+        stage_input = json.loads(raw_input, object_pairs_hook=unique_object, parse_constant=reject_constant)
     except (ValueError, RecursionError) as error:
-        raise ValueError('Invalid Full options JSON') from error
-    require(isinstance(options, dict) and not options.keys()-{'operation', 'groups', 'stage_input'}, 'Unknown Full options')
-    selected = inputs.get('operation') or 'package'
-    if selected in {'full', '完整模式 / Full'}:
-        require(isinstance(options.get('operation'), str), 'Full mode requires an explicit operation')
-        operation = receipt.canonical(options['operation'], receipt.OPERATION_LABELS)
-        require(isinstance(options.get('groups', ''), str) and isinstance(options.get('stage_input', {}), dict), 'Invalid Full groups or stage input')
-    else:
-        require(not options, 'Select Full mode to use advanced options')
-        operation = receipt.canonical(selected, receipt.OPERATION_LABELS)
-        require(operation in {'package', 'upload', 'status'}, 'Select Full mode for this operation')
+        raise ValueError('Invalid stage JSON') from error
+    require(isinstance(stage_input, dict), 'Stage input must be an object')
+    receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS)
+    if operation in {'status', 'wait'} and not inputs.get('source'):
+        require(not inputs.get('source') and not inputs.get('groups') and not stage_input,
+                'Status only needs version and build')
+        values = {key: '' for key in FIELDS}
+        values.update(operation='status-wait' if operation == 'wait' else 'status-query', version=version, build=build, destination='testflight', stage_input='{}', signing_mode='', package_entrypoint='actions')
+        return values  # Read-only Apple lookup: no inferred package identity or mutation receipt.
+    require(operation != 'status', 'Status only needs version and build')
+    package_upload = operation == 'package-upload'
+    if package_upload:
+        require(not inputs.get('source') and not inputs.get('groups') and not stage_input, 'New package upload cannot import or distribute existing state')
+        operation = 'package'
     normalized = dict(operation=operation, product=inputs.get('product', ''),
-                      groups=options.get('groups', ''), stage_input=json.dumps(options.get('stage_input', {}), ensure_ascii=True))
-    normalized['version' if operation in {'package', 'draft'} else 'source'] = inputs.get('target', '')
-    return _normalize_stage(event, ref, normalized)
+                      groups=inputs.get('groups', ''), stage_input=json.dumps(stage_input, ensure_ascii=True))
+    if version:
+        normalized['version'] = f'{version}({build})'
+    if inputs.get('source'):
+        normalized['source'] = inputs['source']
+    values = _normalize_stage(event, ref, normalized)
+    # Workflow defaults accompany every operation. Existing packages select their
+    # actual signing verifier from the retained manifest, not this new-package input.
+    values['signing_mode'] = signing_mode if new_package else ''
+    values['package_entrypoint'] = entrypoint
+    if package_upload:
+        values.update(operation='package-upload', destination='testflight')
+    return values
 
 
 def _normalize_stage(event, ref, inputs):
@@ -70,6 +102,8 @@ def _normalize_stage(event, ref, inputs):
         require(match is not None, 'Invalid exact iOS candidate tag')
         tag, version, profile, build = match.groups()
         values.update(operation='package', profile=profile, version=version, build=build, destination='github-draft', tag=tag)
+        values['signing_mode'] = 'cloud'
+        values['package_entrypoint'] = 'actions'
     else:
         require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
         operation = receipt.canonical(values['operation'] or 'package', receipt.OPERATION_LABELS)
@@ -122,9 +156,44 @@ def _normalize_stage(event, ref, inputs):
     return values
 
 
+def tag_signing_mode(repository, tag, sha, api):
+    require(repository == 'gcsagroup/aegis-browser' and re.fullmatch(r'[0-9a-f]{40}', sha) is not None,
+            'Canonical tag/source required')
+    ref = api('git/ref/tags/' + tag)
+    item = ref['object']
+    if item['type'] == 'commit':
+        require(item['sha'] == sha, 'Candidate commit differs')
+        return 'cloud'
+    require(item['type'] == 'tag' and re.fullmatch(r'[0-9a-f]{40}', item['sha']) is not None, 'Unsupported candidate object')
+    annotation = api('git/tags/' + item['sha'])
+    require(annotation.get('object', {}).get('type') == 'commit' and annotation['object'].get('sha') == sha,
+            'Annotated candidate points to another source')
+    message = annotation.get('message', '')
+    require(isinstance(message, str), 'Invalid candidate signing annotation')
+    marker = 'aegis-ios-signing-v1\n'
+    if not message.startswith(marker):
+        require(not message.startswith('aegis-ios-signing-'), 'Unsupported candidate signing annotation')
+        return 'cloud'
+    options = json.loads(message[len(marker):], object_pairs_hook=unique_object, parse_constant=reject_constant)
+    require(isinstance(options, dict) and set(options) == {'signingMode', 'sourceSha'} and
+            options['sourceSha'] == sha and options['signingMode'] in {'manual', 'cloud'}, 'Invalid candidate signing annotation')
+    return options['signingMode']
+
+
 if __name__ == '__main__':
     event = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text())
-    values = normalize(os.environ['GITHUB_EVENT_NAME'], os.environ['GITHUB_REF'], event.get('inputs') or {})
+    raw = os.environ.get('DELIVERY_INPUTS')
+    require(raw is None or len(raw.encode()) <= 131072, 'Delivery inputs exceed bound')
+    inputs = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant) if raw else event.get('inputs') or {}
+    values = normalize(os.environ['GITHUB_EVENT_NAME'], os.environ['GITHUB_REF'], inputs, os.environ.get('DELIVERY_MODE', 'simple'))
+    if os.environ['GITHUB_EVENT_NAME'] == 'push':
+        def github(path):
+            result = subprocess.run(['gh', 'api', 'repos/' + os.environ['GITHUB_REPOSITORY'] + '/' + path], capture_output=True)
+            require(result.returncode == 0, 'Cannot read candidate signing annotation')
+            return json.loads(result.stdout)
+        values['signing_mode'] = tag_signing_mode(os.environ['GITHUB_REPOSITORY'], values['tag'], os.environ['GITHUB_SHA'], github)
+    require(values['operation'] != 'package-upload' or os.environ.get('GITHUB_RUN_ATTEMPT', '1') == '1',
+            'New package upload cannot be rerun; reconcile the original run before selecting a new build')
     with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
         for key, value in sorted(values.items()):
             output.write(key+'='+value+'\n')

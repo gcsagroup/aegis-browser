@@ -1,0 +1,705 @@
+From 179f115ba672602c3bd787f0b824591ba657d8d8 Mon Sep 17 00:00:00 2001
+From: GCSA Aegis <aegis@gcsa.local>
+Date: Tue, 3 Nov 2026 11:46:56 +0800
+Subject: [PATCH] =?UTF-8?q?=E8=A1=A5=E9=BD=90=20Windows=20=E4=BA=A4?=
+ =?UTF-8?q?=E4=BA=92=E5=AE=89=E8=A3=85=E8=BF=9B=E5=BA=A6=E4=B8=8E=E5=AE=8C?=
+ =?UTF-8?q?=E6=88=90=E8=87=AA=E5=8A=A8=E5=90=AF=E5=8A=A8?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/installer/mini_installer/BUILD.gn      |  10 +
+ .../mini_installer/aegis_install_ui.cc        | 218 ++++++++++++++++++
+ .../mini_installer/aegis_install_ui.h         |  46 ++++
+ .../aegis_install_ui_unittest.cc              |  68 ++++++
+ .../installer/mini_installer/configuration.cc |  10 +
+ .../installer/mini_installer/configuration.h  |   4 +
+ .../mini_installer/configuration_test.cc      |  16 ++
+ .../mini_installer/mini_installer.cc          |  12 +
+ .../mini_installer/mini_installer.rc          |   2 +-
+ chrome/installer/setup/BUILD.gn               |   3 +
+ chrome/installer/setup/aegis_launch_policy.h  |  20 ++
+ .../setup/aegis_launch_policy_unittest.cc     |  25 ++
+ chrome/installer/setup/setup_main.cc          |  40 +++-
+ 13 files changed, 463 insertions(+), 11 deletions(-)
+ create mode 100644 chrome/installer/mini_installer/aegis_install_ui.cc
+ create mode 100644 chrome/installer/mini_installer/aegis_install_ui.h
+ create mode 100644 chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+ create mode 100644 chrome/installer/setup/aegis_launch_policy.h
+ create mode 100644 chrome/installer/setup/aegis_launch_policy_unittest.cc
+
+diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
+index ce1f5a5711eeba1109bef0169a80cbe29373a843..ed1a7bc2f3841ee6d3ac081d7c2165020733392c 100644
+--- a/chrome/installer/mini_installer/BUILD.gn
++++ b/chrome/installer/mini_installer/BUILD.gn
+@@ -41,6 +41,8 @@ config("mini_installer_compiler_flags") {
+ 
+ source_set("lib") {
+   sources = [
++    "aegis_install_ui.cc",
++    "aegis_install_ui.h",
+     "appid.h",
+     "chrome_appid.cc",
+     "configuration.cc",
+@@ -74,6 +76,13 @@ source_set("lib") {
+     "//build:branding_buildflags",
+   ]
+ 
++  # 安装窗口只使用系统控件，不引入 Chromium UI 或 CRT。
++  libs = [
++    "comctl32.lib",
++    "gdi32.lib",
++    "user32.lib",
++  ]
++
+   # Initialization may insert unexpected memset calls.
+   configs -= [ "//build/config/compiler:default_init_stack_vars" ]
+   configs += [ ":mini_installer_compiler_flags" ]
+@@ -91,6 +100,7 @@ source_set("unit_tests") {
+   testonly = true
+ 
+   sources = [
++    "aegis_install_ui_unittest.cc",
+     "configuration_test.cc",
+     "decompress_test.cc",
+     "delete_with_retry_test.cc",
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.cc b/chrome/installer/mini_installer/aegis_install_ui.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..dbf8ed40e0af0c480b523e7095312c80d415996f
+--- /dev/null
++++ b/chrome/installer/mini_installer/aegis_install_ui.cc
+@@ -0,0 +1,218 @@
++// Copyright 2026 The GCSA Aegis Authors
++// 双击安装时显示真实阶段；没有可用总进度时使用活动条，不伪造百分比。
++#include "chrome/installer/mini_installer/aegis_install_ui.h"
++
++#include <commctrl.h>
++
++#include "chrome/installer/mini_installer/mini_installer_resource.h"
++
++namespace mini_installer {
++namespace {
++constexpr UINT kInstalling = WM_APP + 1;
++constexpr UINT kFinished = WM_APP + 2;
++constexpr wchar_t kWindowClass[] = L"GCSAAegisInstallProgress";
++constexpr wchar_t kTitle[] = L"GCSA Aegis 安装程序";
++}  // namespace
++
++AegisInstallUi::AegisInstallUi(bool interactive) : interactive_(interactive) {
++  if (!interactive_)
++    return;
++  ready_ = ::CreateEvent(nullptr, TRUE, FALSE, nullptr);
++  if (ready_) {
++    thread_ = ::CreateThread(nullptr, 0, ThreadMain, this, 0, nullptr);
++    if (thread_)
++      ::WaitForSingleObject(ready_, INFINITE);
++  }
++}
++
++AegisInstallUi::~AegisInstallUi() {
++  // 等待消息线程退出后才释放实例，禁止回调访问已销毁的状态。
++  if (thread_) {
++    ::WaitForSingleObject(thread_, INFINITE);
++    ::CloseHandle(thread_);
++  }
++  if (ready_)
++    ::CloseHandle(ready_);
++}
++
++void AegisInstallUi::Installing() {
++  if (window_)
++    ::PostMessage(window_, kInstalling, 0, 0);
++}
++
++void AegisInstallUi::Finish(DWORD exit_code) {
++  if (window_) {
++    ::PostMessage(window_, kFinished, exit_code, 0);
++  } else if (interactive_ && exit_code != 0) {
++    // 窗口创建失败也不能把安装失败变成无声退出；不改变安装器原有退出码。
++    ::MessageBox(nullptr, L"安装未完成，请重新运行安装程序。", kTitle,
++                 MB_OK | MB_ICONERROR);
++  }
++}
++
++int AegisInstallUi::Scale(int value) const {
++  return ::MulDiv(value, static_cast<int>(dpi_), 96);
++}
++
++void AegisInstallUi::CreateControls() {
++  font_ = ::CreateFont(Scale(-15), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
++                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
++                       CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
++  title_font_ =
++      ::CreateFont(Scale(-25), 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE,
++                   DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
++                   CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
++  auto label = [this](const wchar_t* text, int x, int y, int w, int h) {
++    HWND control = ::CreateWindow(L"STATIC", text, WS_CHILD | WS_VISIBLE,
++                                  Scale(x), Scale(y), Scale(w), Scale(h),
++                                  window_, nullptr, nullptr, nullptr);
++    ::SendMessage(control, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
++    return control;
++  };
++  HWND logo = ::CreateWindow(
++      L"STATIC", nullptr, WS_CHILD | WS_VISIBLE | SS_ICON, Scale(36), Scale(32),
++      Scale(48), Scale(48), window_, nullptr, nullptr, nullptr);
++  ::SendMessage(
++      logo, STM_SETICON,
++      reinterpret_cast<WPARAM>(::LoadImage(
++          ::GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_MINI_INSTALLER),
++          IMAGE_ICON, Scale(48), Scale(48), LR_SHARED)),
++      0);
++  HWND title = label(L"GCSA Aegis", 104, 30, 360, 36);
++  ::SendMessage(title, WM_SETFONT, reinterpret_cast<WPARAM>(title_font_), TRUE);
++  label(L"安全、流畅的浏览体验", 106, 70, 360, 28);
++  status_ = label(L"正在准备安装…", 36, 132, 448, 28);
++  progress_ = ::CreateWindow(
++      PROGRESS_CLASS, nullptr, WS_CHILD | WS_VISIBLE | PBS_MARQUEE, Scale(36),
++      Scale(174), Scale(448), Scale(6), window_, nullptr, nullptr, nullptr);
++  ::SendMessage(progress_, PBM_SETMARQUEE, TRUE, 24);
++  detail_ = label(L"正在解压安装文件，请稍候。", 36, 202, 448, 50);
++  close_ = ::CreateWindow(L"BUTTON", L"关闭",
++                          WS_CHILD | WS_TABSTOP | BS_DEFPUSHBUTTON, Scale(394),
++                          Scale(260), Scale(90), Scale(34), window_,
++                          reinterpret_cast<HMENU>(IDOK), nullptr, nullptr);
++  ::SendMessage(close_, WM_SETFONT, reinterpret_cast<WPARAM>(font_), TRUE);
++}
++
++DWORD WINAPI AegisInstallUi::ThreadMain(void* context) {
++  auto* self = static_cast<AegisInstallUi*>(context);
++  // 使用系统 DPI，跨屏移动交由 Windows 缩放，避免固定像素字体在高 DPI 下过小。
++  ::SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE);
++  self->dpi_ = ::GetDpiForSystem();
++  INITCOMMONCONTROLSEX controls = {sizeof(controls), ICC_PROGRESS_CLASS};
++  ::InitCommonControlsEx(&controls);
++  WNDCLASS wc = {};
++  wc.lpfnWndProc = WindowProc;
++  wc.hInstance = ::GetModuleHandle(nullptr);
++  wc.hIcon = ::LoadIcon(wc.hInstance, MAKEINTRESOURCE(IDI_MINI_INSTALLER));
++  wc.hCursor = ::LoadCursor(nullptr, IDC_ARROW);
++  wc.hbrBackground = static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH));
++  wc.lpszClassName = kWindowClass;
++  ::RegisterClass(&wc);
++  constexpr DWORD style =
++      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
++  RECT bounds = {0, 0, self->Scale(520), self->Scale(320)};
++  ::AdjustWindowRect(&bounds, style, FALSE);
++  RECT work = {};
++  ::SystemParametersInfo(SPI_GETWORKAREA, 0, &work, 0);
++  self->window_ = ::CreateWindow(
++      kWindowClass, kTitle, style,
++      work.left + (work.right - work.left - (bounds.right - bounds.left)) / 2,
++      work.top + (work.bottom - work.top - (bounds.bottom - bounds.top)) / 2,
++      bounds.right - bounds.left, bounds.bottom - bounds.top, nullptr, nullptr,
++      wc.hInstance, self);
++  if (self->window_) {
++    self->CreateControls();
++    // 解压/提交文件期间不允许关闭窗口来中断安装；失败后恢复关闭入口。
++    ::EnableMenuItem(::GetSystemMenu(self->window_, FALSE), SC_CLOSE,
++                     MF_BYCOMMAND | MF_GRAYED);
++    ::ShowWindow(self->window_, SW_SHOWNORMAL);
++    ::UpdateWindow(self->window_);
++  }
++  // 发布 window_ 和控件后再放行安装线程；此后 UI 状态只在此线程改变。
++  ::SetEvent(self->ready_);
++  if (self->window_) {
++    MSG message;
++    while (::GetMessage(&message, nullptr, 0, 0) > 0) {
++      if (!::IsDialogMessage(self->window_, &message)) {
++        ::TranslateMessage(&message);
++        ::DispatchMessage(&message);
++      }
++    }
++  }
++  if (self->font_)
++    ::DeleteObject(self->font_);
++  if (self->title_font_)
++    ::DeleteObject(self->title_font_);
++  ::UnregisterClass(kWindowClass, wc.hInstance);
++  return 0;
++}
++
++LRESULT CALLBACK AegisInstallUi::WindowProc(HWND window,
++                                            UINT message,
++                                            WPARAM wparam,
++                                            LPARAM lparam) {
++  if (message == WM_NCCREATE) {
++    auto* creation = reinterpret_cast<CREATESTRUCT*>(lparam);
++    ::SetWindowLongPtr(window, GWLP_USERDATA,
++                       reinterpret_cast<LONG_PTR>(creation->lpCreateParams));
++  }
++  auto* self = reinterpret_cast<AegisInstallUi*>(
++      ::GetWindowLongPtr(window, GWLP_USERDATA));
++  if (!self)
++    return ::DefWindowProc(window, message, wparam, lparam);
++  switch (message) {
++    case WM_CTLCOLORSTATIC:
++      ::SetTextColor(reinterpret_cast<HDC>(wparam), RGB(40, 44, 52));
++      ::SetBkMode(reinterpret_cast<HDC>(wparam), TRANSPARENT);
++      return reinterpret_cast<LRESULT>(::GetStockObject(WHITE_BRUSH));
++    case kInstalling:
++      ::SetWindowText(self->status_, L"正在安装 GCSA Aegis…");
++      ::SetWindowText(self->detail_, L"正在安装浏览器并创建快捷方式，请稍候。");
++      return 0;
++    case kFinished: {
++      self->complete_ = true;
++      ::SendMessage(self->progress_, PBM_SETMARQUEE, FALSE, 0);
++      ::ShowWindow(self->progress_, SW_HIDE);
++      ::EnableMenuItem(::GetSystemMenu(window, FALSE), SC_CLOSE,
++                       MF_BYCOMMAND | MF_ENABLED);
++      if (wparam == 0) {
++        ::SetWindowText(self->status_, L"安装完成");
++        ::SetWindowText(self->detail_, L"GCSA Aegis 已准备就绪。");
++        ::SetTimer(window, 1, 1400, nullptr);
++      } else {
++        wchar_t detail[160] = {};
++        // FormatMessage 使用系统格式化，保持 mini_installer 不链接 CRT 的边界。
++        DWORD_PTR code = wparam;
++        ::FormatMessage(
++            FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY,
++            L"安装未完成（错误代码：%1!u!"
++            L"）。请关闭浏览器后重试。\n若仍失败，请保留此错误代码以便排查。",
++            0, 0, detail, sizeof(detail) / sizeof(detail[0]),
++            reinterpret_cast<va_list*>(&code));
++        ::SetWindowText(self->status_, L"安装未完成");
++        ::SetWindowText(self->detail_, detail[0] ? detail : L"安装未完成，请重新运行安装程序。");
++        ::ShowWindow(self->close_, SW_SHOW);
++        ::SetFocus(self->close_);
++      }
++      return 0;
++    }
++    case WM_TIMER:
++      if (wparam == 1 && self->complete_)
++        ::DestroyWindow(window);
++      return 0;
++    case WM_COMMAND:
++      if (LOWORD(wparam) == IDOK && self->complete_)
++        ::DestroyWindow(window);
++      return 0;
++    case WM_CLOSE:
++      if (self->complete_)
++        ::DestroyWindow(window);
++      return 0;
++    case WM_DESTROY:
++      ::PostQuitMessage(0);
++      return 0;
++  }
++  return ::DefWindowProc(window, message, wparam, lparam);
++}
++}  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/aegis_install_ui.h b/chrome/installer/mini_installer/aegis_install_ui.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..9280fbf633d23a9e2682a587e7812f28aba89f5c
+--- /dev/null
++++ b/chrome/installer/mini_installer/aegis_install_ui.h
+@@ -0,0 +1,46 @@
++// Copyright 2026 The GCSA Aegis Authors
++// 安装器的轻量原生界面；不依赖 CRT，不执行安装、提权或浏览器启动。
++#ifndef CHROME_INSTALLER_MINI_INSTALLER_AEGIS_INSTALL_UI_H_
++#define CHROME_INSTALLER_MINI_INSTALLER_AEGIS_INSTALL_UI_H_
++
++#include <windows.h>
++
++namespace mini_installer {
++
++// 安装工作留在调用线程；窗口和控件仅由独立消息线程持有。
++// Finish 必须在销毁前调用：成功短暂展示完成状态，失败保留窗口供用户关闭。
++class AegisInstallUi {
++ public:
++  explicit AegisInstallUi(bool interactive);
++  ~AegisInstallUi();
++  AegisInstallUi(const AegisInstallUi&) = delete;
++  AegisInstallUi& operator=(const AegisInstallUi&) = delete;
++
++  void Installing();
++  void Finish(DWORD exit_code);
++
++ private:
++  static DWORD WINAPI ThreadMain(void* context);
++  static LRESULT CALLBACK WindowProc(HWND window,
++                                     UINT message,
++                                     WPARAM wparam,
++                                     LPARAM lparam);
++  void CreateControls();
++  int Scale(int value) const;
++
++  HANDLE thread_ = nullptr;
++  HANDLE ready_ = nullptr;
++  HWND window_ = nullptr;
++  HWND status_ = nullptr;
++  HWND detail_ = nullptr;
++  HWND progress_ = nullptr;
++  HWND close_ = nullptr;
++  HFONT font_ = nullptr;
++  HFONT title_font_ = nullptr;
++  UINT dpi_ = 96;
++  bool interactive_;
++  bool complete_ = false;
++};
++
++}  // namespace mini_installer
++#endif  // CHROME_INSTALLER_MINI_INSTALLER_AEGIS_INSTALL_UI_H_
+diff --git a/chrome/installer/mini_installer/aegis_install_ui_unittest.cc b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..72798c08cfbe3fc6bf86d3fdd5383afb403f13a3
+--- /dev/null
++++ b/chrome/installer/mini_installer/aegis_install_ui_unittest.cc
+@@ -0,0 +1,68 @@
++// Copyright 2026 The GCSA Aegis Authors
++// 验证真实 Win32 窗口的阶段与生命周期，不启动安装或写入用户注册表。
++#include "chrome/installer/mini_installer/aegis_install_ui.h"
++
++#include <string>
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace mini_installer {
++namespace {
++HWND OwnWindow() {
++  HWND window = ::FindWindow(L"GCSAAegisInstallProgress", nullptr);
++  DWORD pid = 0;
++  ::GetWindowThreadProcessId(window, &pid);
++  return pid == ::GetCurrentProcessId() ? window : nullptr;
++}
++
++bool WaitForText(HWND window, const wchar_t* expected) {
++  for (int attempt = 0; attempt < 100; ++attempt) {
++    for (HWND child = ::GetWindow(window, GW_CHILD); child;
++         child = ::GetWindow(child, GW_HWNDNEXT)) {
++      wchar_t text[256] = {};
++      ::GetWindowText(child, text, sizeof(text) / sizeof(text[0]));
++      if (std::wstring(text).find(expected) != std::wstring::npos)
++        return true;
++    }
++    ::Sleep(25);
++  }
++  return false;
++}
++}  // namespace
++
++TEST(AegisInstallUiTest, SilentDoesNotCreateWindow) {
++  AegisInstallUi ui(false);
++  ui.Installing();
++  ui.Finish(0);
++  EXPECT_EQ(nullptr, OwnWindow());
++}
++
++TEST(AegisInstallUiTest, SuccessShowsStagesAndClosesAutomatically) {
++  {
++    AegisInstallUi ui(true);
++    HWND window = OwnWindow();
++    EXPECT_TRUE(window);
++    EXPECT_TRUE(WaitForText(window, L"正在准备安装"));
++    ::SendMessage(window, WM_CLOSE, 0, 0);
++    EXPECT_TRUE(::IsWindow(window));  // 安装提交期间关闭窗口不能中断文件写入。
++    ui.Installing();
++    EXPECT_TRUE(WaitForText(window, L"正在安装 GCSA Aegis"));
++    ui.Finish(0);
++    EXPECT_TRUE(WaitForText(window, L"安装完成"));
++  }
++  EXPECT_EQ(nullptr, OwnWindow());
++}
++
++TEST(AegisInstallUiTest, FailureRemainsUntilAcknowledged) {
++  {
++    AegisInstallUi ui(true);
++    HWND window = OwnWindow();
++    ui.Finish(31);
++    EXPECT_TRUE(WaitForText(window, L"错误代码：31"));
++    ::Sleep(1800);  // 超过成功页收起时间，失败仍应可读。
++    EXPECT_TRUE(::IsWindow(window));
++    ::SendMessage(window, WM_CLOSE, 0, 0);
++  }
++  EXPECT_EQ(nullptr, OwnWindow());
++}
++}  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/configuration.cc b/chrome/installer/mini_installer/configuration.cc
+index c23d61dfd8376c9f515762abc5e50a518339e17c..1ec6cde1c9ad91a00473ea119ec7cb9b5045f6f6 100644
+--- a/chrome/installer/mini_installer/configuration.cc
++++ b/chrome/installer/mini_installer/configuration.cc
+@@ -60,6 +60,7 @@ void Configuration::Clear() {
+   command_line_ = nullptr;
+   argument_count_ = 0;
+   is_system_level_ = false;
++  is_interactive_install_ = true;
+   has_invalid_switch_ = false;
+   should_delete_extracted_files_ = true;
+ }
+@@ -74,6 +75,15 @@ bool Configuration::ParseCommandLine(const wchar_t* command_line) {
+     return false;
+ 
+   for (int i = 1; i < argument_count_; ++i) {
++    // 精确匹配 argv，路径中的 silent 字样不能误触发静默模式。
++    const wchar_t* arg = UNSAFE_TODO(args_[i]);
++    if (::lstrcmpi(arg, L"--silent") == 0 ||
++        ::lstrcmpi(arg, L"--unattended") == 0 ||
++        ::lstrcmpi(arg, L"--update") == 0 ||
++        ::lstrcmpi(arg, L"--uninstall") == 0 ||
++        ::lstrcmpi(arg, L"/silent") == 0 || ::lstrcmpi(arg, L"/S") == 0) {
++      is_interactive_install_ = false;
++    }
+     if (0 == ::lstrcmpi(UNSAFE_TODO(args_[i]), L"--system-level")) {
+       is_system_level_ = true;
+     }
+diff --git a/chrome/installer/mini_installer/configuration.h b/chrome/installer/mini_installer/configuration.h
+index e2b6155fe43fc37cb9e17ccc1e0163e01ddd0366..6919e6076389c424e1dbb993bdae0c58d93dec70 100644
+--- a/chrome/installer/mini_installer/configuration.h
++++ b/chrome/installer/mini_installer/configuration.h
+@@ -39,6 +39,9 @@ class Configuration {
+   // Returns true if any invalid switch is found on the command line.
+   bool has_invalid_switch() const { return has_invalid_switch_; }
+ 
++  // 静默部署、更新和卸载不显示安装界面，也不自动打开浏览器。
++  bool is_interactive_install() const { return is_interactive_install_; }
++
+   // Returns true if extracted files should be deleted prior to exit.
+   bool should_delete_extracted_files() const {
+     return should_delete_extracted_files_;
+@@ -54,6 +57,7 @@ class Configuration {
+   const wchar_t* command_line_;
+   int argument_count_;
+   bool is_system_level_;
++  bool is_interactive_install_;
+   bool has_invalid_switch_;
+   bool should_delete_extracted_files_;
+ 
+diff --git a/chrome/installer/mini_installer/configuration_test.cc b/chrome/installer/mini_installer/configuration_test.cc
+index 744340a2fe3371b027f1021e7d71d5199b369d4e..bda18650ca3ecfc183f54e067acac560bafe0957 100644
+--- a/chrome/installer/mini_installer/configuration_test.cc
++++ b/chrome/installer/mini_installer/configuration_test.cc
+@@ -165,4 +165,20 @@ TEST_F(MiniInstallerConfigurationTest, DeleteExtractedFilesBogusValues) {
+   EXPECT_TRUE(TestConfiguration(L"spam.exe").should_delete_extracted_files());
+ }
+ 
++// 双击与系统级安装显示进度；自动部署/更新不弹窗，路径不参与开关匹配。
++TEST_F(MiniInstallerConfigurationTest, AegisInteractiveInstall) {
++  EXPECT_TRUE(TestConfiguration(L"setup.exe").is_interactive_install());
++  EXPECT_TRUE(
++      TestConfiguration(L"setup.exe --system-level").is_interactive_install());
++  EXPECT_TRUE(
++      TestConfiguration(L"\"C:\\silent folder\\setup.exe\" --verbose-logging")
++          .is_interactive_install());
++  for (const wchar_t* command :
++       {L"setup.exe --silent", L"setup.exe --unattended", L"setup.exe --update",
++        L"setup.exe /S", L"setup.exe /silent", L"setup.exe --uninstall",
++        L"setup.exe --SILENT --system-level"}) {
++    EXPECT_FALSE(TestConfiguration(command).is_interactive_install());
++  }
++}
++
+ }  // namespace mini_installer
+diff --git a/chrome/installer/mini_installer/mini_installer.cc b/chrome/installer/mini_installer/mini_installer.cc
+index c37d8d1409b309740c917a9e957d8b199f7ddec5..be6dcd562455d18ebb33ffda576d4883a12496c8 100644
+--- a/chrome/installer/mini_installer/mini_installer.cc
++++ b/chrome/installer/mini_installer/mini_installer.cc
+@@ -20,6 +20,7 @@
+ //   linker: /SAFESEH:NO
+ 
+ #include "chrome/installer/mini_installer/mini_installer.h"
++#include "chrome/installer/mini_installer/aegis_install_ui.h"
+ 
+ #include <windows.h>
+ 
+@@ -499,6 +500,12 @@ ProcessExitResult RunSetup(const Configuration& configuration,
+   // on to setup.exe
+   AppendCommandLineFlags(configuration.command_line(), &cmd_line);
+ 
++  // 标记显式交互安装；静默模式传递禁止启动，覆盖上游首次安装默认启动行为。
++  if (!cmd_line.append(configuration.is_interactive_install()
++                           ? L" --aegis-interactive-install"
++                           : L" --do-not-launch-chrome")) {
++    return ProcessExitResult(COMMAND_STRING_OVERFLOW);
++  }
+   return RunProcessAndWait(setup_exe.get(), cmd_line.get(),
+                            RUN_SETUP_FAILED_FILE_NOT_FOUND,
+                            RUN_SETUP_FAILED_PATH_NOT_FOUND,
+@@ -720,9 +727,12 @@ ProcessExitResult WMain(HMODULE module) {
+     return ProcessExitResult(INVALID_OPTION);
+   }
+ 
++  AegisInstallUi ui(configuration.is_interactive_install());
++
+   // First get a path where we can extract payload
+   PathString base_path;
+   if (!GetWorkDir(module, &base_path, &exit_code)) {
++    ui.Finish(exit_code.exit_code);
+     return exit_code;
+   }
+ 
+@@ -741,6 +751,7 @@ ProcessExitResult WMain(HMODULE module) {
+   ::SetProcessWorkingSetSize(::GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+ 
+   if (exit_code.IsSuccess()) {
++    ui.Installing();
+     exit_code = RunSetup(configuration, module, archive_name.get(),
+                          archive_type.get(), setup_path.get());
+   }
+@@ -763,6 +774,7 @@ ProcessExitResult WMain(HMODULE module) {
+   }
+ #endif
+ 
++  ui.Finish(exit_code.exit_code);
+   return exit_code;
+ }
+ 
+diff --git a/chrome/installer/mini_installer/mini_installer.rc b/chrome/installer/mini_installer/mini_installer.rc
+index fff6a53c69130651cafd844a76a5d0e882689d56..e33ab60b5b783c8cb6da68ea794c25319a0d75d4 100644
+--- a/chrome/installer/mini_installer/mini_installer.rc
++++ b/chrome/installer/mini_installer/mini_installer.rc
+@@ -29,7 +29,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+ 
+ // Icon with lowest ID value placed first to ensure application icon
+ // remains consistent on all systems.
+-IDI_MINI_INSTALLER      ICON                    "mini_installer.ico"
++IDI_MINI_INSTALLER      ICON                    "../../app/theme/gcsa_aegis/win/chromium.ico"
+ 
+ #ifdef APSTUDIO_INVOKED
+ /////////////////////////////////////////////////////////////////////////////
+diff --git a/chrome/installer/setup/BUILD.gn b/chrome/installer/setup/BUILD.gn
+index 8967d1094ffe3d0e6bc5eb4bfe38e302e4ac26a6..48882781b772692dc75a0d77387a640cdb6eacb9 100644
+--- a/chrome/installer/setup/BUILD.gn
++++ b/chrome/installer/setup/BUILD.gn
+@@ -11,6 +11,7 @@ import("//testing/test.gni")
+ if (is_win) {
+   executable("setup") {
+     sources = [
++      "aegis_launch_policy.h",
+       "setup.rc",
+       "setup_main.cc",
+       "setup_main.h",
+@@ -153,6 +154,8 @@ if (is_win) {
+   # This test covers the mini installer and setup tests.
+   test("setup_unittests") {
+     sources = [
++      "aegis_launch_policy.h",
++      "aegis_launch_policy_unittest.cc",
+       "configure_app_container_sandbox_unittest.cc",
+       "downgrade_cleanup_unittest.cc",
+       "generate_visual_elements_manifest_work_item_unittest.cc",
+diff --git a/chrome/installer/setup/aegis_launch_policy.h b/chrome/installer/setup/aegis_launch_policy.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..9cef1fa2abd88e70ba3943b577e263b902e7c19a
+--- /dev/null
++++ b/chrome/installer/setup/aegis_launch_policy.h
+@@ -0,0 +1,20 @@
++// Copyright 2026 The GCSA Aegis Authors
++// 交互式安装后的启动策略；只允许成功安装状态，不把失败或维护任务当作安装成功。
++#ifndef CHROME_INSTALLER_SETUP_AEGIS_LAUNCH_POLICY_H_
++#define CHROME_INSTALLER_SETUP_AEGIS_LAUNCH_POLICY_H_
++
++#include "chrome/installer/util/util_constants.h"
++
++namespace installer {
++// 显式静默或禁止启动始终优先；覆盖首次安装、修复和升级，不重复启动已有实例分支。
++constexpr bool ShouldLaunchAegisAfterInstall(InstallStatus status,
++                                             bool interactive,
++                                             bool silent,
++                                             bool do_not_launch) {
++  return interactive && !silent && !do_not_launch &&
++         (status == FIRST_INSTALL_SUCCESS || status == INSTALL_REPAIRED ||
++          status == NEW_VERSION_UPDATED || status == IN_USE_UPDATED ||
++          status == OLD_VERSION_DOWNGRADE || status == IN_USE_DOWNGRADE);
++}
++}  // namespace installer
++#endif  // CHROME_INSTALLER_SETUP_AEGIS_LAUNCH_POLICY_H_
+diff --git a/chrome/installer/setup/aegis_launch_policy_unittest.cc b/chrome/installer/setup/aegis_launch_policy_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..56485db6187abe8de8e456aa1c3555b7f8a65dcd
+--- /dev/null
++++ b/chrome/installer/setup/aegis_launch_policy_unittest.cc
+@@ -0,0 +1,25 @@
++// Copyright 2026 The GCSA Aegis Authors
++// 安装结果和用户启动意图的契约测试，不写注册表或启动真实浏览器。
++#include "chrome/installer/setup/aegis_launch_policy.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace installer {
++TEST(AegisLaunchPolicyTest, LaunchesAfterFreshRepairAndUpdate) {
++  for (auto status :
++       {FIRST_INSTALL_SUCCESS, INSTALL_REPAIRED, NEW_VERSION_UPDATED,
++        IN_USE_UPDATED, OLD_VERSION_DOWNGRADE, IN_USE_DOWNGRADE}) {
++    EXPECT_TRUE(ShouldLaunchAegisAfterInstall(status, true, false, false));
++    EXPECT_FALSE(ShouldLaunchAegisAfterInstall(status, false, false, false));
++    EXPECT_FALSE(ShouldLaunchAegisAfterInstall(status, true, true, false));
++    EXPECT_FALSE(ShouldLaunchAegisAfterInstall(status, true, false, true));
++  }
++}
++
++TEST(AegisLaunchPolicyTest, FailureMaintenanceAndExistingLaunchNeverLaunch) {
++  for (auto status : {INSTALL_FAILED, SAME_VERSION_REPAIR_FAILED, OS_ERROR,
++                      UNINSTALL_SUCCESSFUL, EXISTING_VERSION_LAUNCHED,
++                      RENAME_SUCCESSFUL, INVALID_ARCHIVE}) {
++    EXPECT_FALSE(ShouldLaunchAegisAfterInstall(status, true, false, false));
++  }
++}
++}  // namespace installer
+diff --git a/chrome/installer/setup/setup_main.cc b/chrome/installer/setup/setup_main.cc
+index 8689571a44a1393ac6afde429d7302cf336d1814..08fe851c02ec759e77b73f3851c70007a5b0575f 100644
+--- a/chrome/installer/setup/setup_main.cc
++++ b/chrome/installer/setup/setup_main.cc
+@@ -54,6 +54,7 @@
+ #include "base/values.h"
+ #include "base/version.h"
+ #include "base/win/current_module.h"
++#include "base/win/elevation_util.h"
+ #include "base/win/process_startup_helper.h"
+ #include "base/win/registry.h"
+ #include "base/win/resource_exhaustion.h"
+@@ -71,6 +72,7 @@
+ #include "chrome/common/chrome_switches.h"
+ #include "chrome/install_static/install_details.h"
+ #include "chrome/install_static/install_util.h"
++#include "chrome/installer/setup/aegis_launch_policy.h"
+ #include "chrome/installer/setup/brand_behaviors.h"
+ #include "chrome/installer/setup/configure_app_container_sandbox.h"
+ #include "chrome/installer/setup/downgrade_cleanup.h"
+@@ -1420,17 +1422,35 @@ InstallStatus InstallProductsHelper(InstallationState& original_state,
+           install_status, install_msg_base,
+           write_chrome_launch_string ? &quoted_chrome_exe : nullptr);
+ 
+-      if (install_status == FIRST_INSTALL_SUCCESS) {
+-        VLOG(1) << "First install successful.";
+-        // We never want to launch Chrome in system level install mode.
+-        bool do_not_launch_chrome = false;
+-        prefs.GetBool(initial_preferences::kDoNotLaunchChrome,
+-                      &do_not_launch_chrome);
+-        if (!system_install && !do_not_launch_chrome) {
+-          LaunchChromeBrowser(installer_state.target_path());
++      bool do_not_launch_chrome = false;
++      prefs.GetBool(initial_preferences::kDoNotLaunchChrome,
++                    &do_not_launch_chrome);
++      const bool interactive = cmd_line.HasSwitch("aegis-interactive-install");
++      const bool silent =
++          cmd_line.HasSwitch("silent") || cmd_line.HasSwitch("unattended");
++      if (ShouldLaunchAegisAfterInstall(install_status, interactive, silent,
++                                        do_not_launch_chrome)) {
++        // 仅使用已验证的安装目录；系统级/提升安装也必须以桌面用户权限启动。
++        // 降权失败不回退为高权限运行，避免浏览器继承安装器的管理员令牌。
++        auto launched = base::win::RunDeElevated(
++            GetPostInstallLaunchCommand(installer_state.target_path()));
++        if (!launched.has_value()) {
++          LOG(ERROR) << "Aegis installed, browser launch failed: "
++                     << launched.error();
++          ::MessageBoxW(nullptr,
++                        L"安装已完成，但未能自动打开浏览器。请从桌面快捷方式启"
++                        L"动 GCSA Aegis。",
++                        L"GCSA Aegis 安装程序",
++                        MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+         }
+-      } else if ((install_status == NEW_VERSION_UPDATED) ||
+-                 (install_status == IN_USE_UPDATED)) {
++      } else if (!interactive && !silent &&
++                 install_status == FIRST_INSTALL_SUCCESS && !system_install &&
++                 !do_not_launch_chrome) {
++        // 保留直接调用上游 setup 的首次安装契约。
++        LaunchChromeBrowser(installer_state.target_path());
++      }
++      if ((install_status == NEW_VERSION_UPDATED) ||
++          (install_status == IN_USE_UPDATED)) {
+         DCHECK_NE(chrome_exe.value(), std::wstring());
+         RemoveChromeLegacyRegistryKeys(chrome_exe);
+       }
+-- 
+2.56.0.windows.4
+

@@ -1,8 +1,12 @@
 """Read IPA metadata without extracting arbitrary archive paths or changing a package."""
 import plistlib
+from pathlib import Path
 import sys
 import zipfile
 from safari_manifest import verify as verify_safari_manifest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "licenses"))
+import third_party_notices as notices
 
 APP_ID = "com.gcsa.aegis"
 
@@ -39,6 +43,7 @@ def verify(path, version, build, release_profile=None):
             return archive.read(member)
 
         verify_safari_manifest(resource)
+        notices.verify_ipa(archive)
     return True
 
 

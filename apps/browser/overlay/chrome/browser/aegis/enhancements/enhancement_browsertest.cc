@@ -29,6 +29,19 @@
 #include "net/test/embedded_test_server/http_response.h"
 #include "url/origin.h"
 
+#include "base/threading/thread_restrictions.h"
+#include "base/time/time.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/reload_type.h"
+#include "content/public/test/test_navigation_observer.h"
+#include "content/public/test/test_utils.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/window_open_disposition.h"
+#include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
+
 namespace aegis {
 class EnhancementBrowserTest : public InProcessBrowserTest {
  protected:
@@ -321,4 +334,261 @@ IN_PROC_BROWSER_TEST_F(EnhancementBrowserTest,
       false,
       content::EvalJs(frame, "AegisMarkdown.load({text:'x'.repeat(2097153)})"));
 }
+
+// Use the in-process browser test's trusted WebContents access. The production
+// remote-CDP policy intentionally excludes chrome:// WebUI targets.
+class EnhancementTrialConsentBrowserTest
+    : public EnhancementBrowserTest,
+      public testing::WithParamInterface<std::string> {
+ protected:
+  void CaptureEvidence(content::WebContents* page, const std::string& change) {
+    const auto directory =
+        base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+            "aegis-native-evidence-dir");
+    if (directory.empty())
+      return;
+    ASSERT_EQ(true, content::EvalJs(page, R"JS(
+      new Promise(resolve => requestAnimationFrame(() =>
+        requestAnimationFrame(() => resolve(true))))
+    )JS"));
+    content::WaitForCopyableViewInWebContents(page);
+    auto* view = page->GetRenderWidgetHostView();
+    ASSERT_NE(view, nullptr);
+    base::test::TestFuture<content::CopyFromSurfaceResult> capture;
+    view->CopyFromSurface(
+        gfx::Rect(), gfx::Size(), base::Seconds(10),
+        capture.GetCallback<const content::CopyFromSurfaceResult&>());
+    ASSERT_TRUE(capture.Wait());
+    ASSERT_TRUE(capture.Get().has_value());
+    const auto png = gfx::PNGCodec::EncodeBGRASkBitmap(
+        capture.Get()->bitmap, /*discard_transparency=*/false);
+    ASSERT_TRUE(png.has_value());
+    const auto details =
+        content::EvalJs(page, "JSON.stringify(window.__mac02.evidence)")
+            .ExtractString();
+    {
+      base::ScopedAllowBlockingForTesting allow_blocking;
+      ASSERT_TRUE(base::CreateDirectory(directory));
+      ASSERT_TRUE(base::WriteFile(
+          directory.AppendASCII("mac02-" + change + ".png"), *png));
+      ASSERT_TRUE(base::WriteFile(
+          directory.AppendASCII("mac02-" + change + ".json"), details + "\n"));
+    }
+  }
+};
+
+IN_PROC_BROWSER_TEST_P(EnhancementTrialConsentBrowserTest,
+                       TrialConsentIsBoundAcrossAsyncSave) {
+  const std::string change = GetParam();
+  SCOPED_TRACE(change);
+  ASSERT_TRUE(store_->state().FindList("scripts")->empty());
+  const GURL a_url = embedded_test_server()->GetURL("/native-trial-a");
+  const GURL b_url = embedded_test_server()->GetURL("/native-trial-b");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), a_url));
+  auto* a = contents();
+  auto* a_helper = EnhancementTabHelper::FromWebContents(a);
+  ASSERT_NE(a_helper, nullptr);
+  const std::string original_document =
+      EnhancementField(a_helper->Snapshot(), "document");
+  const std::string original_tab = EnhancementField(a_helper->Snapshot(), "id");
+  ASSERT_FALSE(original_document.empty());
+  ASSERT_FALSE(original_tab.empty());
+  ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
+                browser(), b_url, WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
+            nullptr);
+  auto* b = contents();
+  ASSERT_NE(ui_test_utils::NavigateToURLWithDisposition(
+                browser(), GURL("chrome://aegis/enhancements.html"),
+                WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP),
+            nullptr);
+  auto* page = contents();
+  const auto weak_page = page->GetWeakPtr();
+  // A failed assertion must not leave beforeunload waiting during teardown.
+  base::ScopedClosureRunner cleanup(base::BindLambdaForTesting([weak_page] {
+    if (!weak_page)
+      return;
+    EXPECT_EQ(true, content::EvalJs(weak_page.get(), R"JS(
+      (() => {
+        window.confirm = () => true;
+        document.getElementById('back-list')?.click();
+        return true;
+      })()
+    )JS"));
+  }));
+
+  const std::string source =
+      "// ==UserScript==\n// @name Native trial consent\n"
+      "// @match http://127.0.0.1/*\n// @run-at document-end\n"
+      "// @grant none\n// ==/UserScript==\n"
+      "document.documentElement.dataset.mac02Native='executed';";
+  ASSERT_EQ("held",
+            content::EvalJs(
+                page, content::JsReplace(R"JS(
+    (async () => {
+      const waitFor = predicate => new Promise(resolve => {
+        const check = () => predicate() ? resolve() : setTimeout(check, 10);
+        check();
+      });
+      await waitFor(() => [$1, $2].every(url =>
+        [...document.querySelectorAll('#tabs option')].some(o => o.title === url)));
+      const tabs = document.getElementById('tabs');
+      const options = [...tabs.options];
+      window.__mac02 = {
+        requests: [], responses: [], confirmations: [], held: null,
+        a: options.find(o => o.title === $1).value,
+        b: options.find(o => o.title === $2).value,
+        source: $3, waitFor,
+      };
+      const state = window.__mac02;
+      tabs.value = state.a;
+      tabs.dispatchEvent(new Event('change'));
+      document.getElementById('new').click();
+      document.getElementById('source').value = state.source;
+      const metadata = AegisEnhancementsCore.parse(state.source);
+      if (![ $1, $2 ].every(url =>
+          AegisEnhancementsCore.applies(metadata, url, true, false)))
+        throw Error('Both real target documents must match the fixture');
+      // Automate only the confirmation decision; retain the exact prompt.
+      window.confirm = message => {
+        state.confirmations.push(message);
+        return true;
+      };
+      state.originalSend = chrome.send.bind(chrome);
+      const originalResponse = cr.webUIResponse.bind(cr);
+      cr.webUIResponse = (id, success, response) => {
+        state.responses.push({id, success, response: structuredClone(response)});
+        return originalResponse(id, success, response);
+      };
+      chrome.send = (name, args) => {
+        if (name === 'aegisEnhancements') {
+          state.requests.push(structuredClone(args[1]));
+          if (args[1]?.op === 'script-save') {
+            state.held = {name, args};
+            return;
+          }
+        }
+        return state.originalSend(name, args);
+      };
+      document.getElementById('trial').click();
+      await waitFor(() => state.held !== null);
+      if (state.confirmations.length !== 1 ||
+          !state.confirmations[0].includes($1) ||
+          state.requests.some(request => request.op === 'trial'))
+        throw Error('Consent must precede the pending real native save');
+      return 'held';
+    })()
+  )JS",
+                                         a_url.spec(), b_url.spec(), source)));
+
+  if (change == "selection") {
+    ASSERT_EQ(true, content::EvalJs(page, R"JS(
+      (() => {
+        const tabs = document.getElementById('tabs');
+        tabs.value = __mac02.b;
+        tabs.dispatchEvent(new Event('change'));
+        return true;
+      })()
+    )JS"));
+  } else if (change == "navigation") {
+    ASSERT_TRUE(content::NavigateToURL(
+        a, embedded_test_server()->GetURL("/native-trial-next")));
+    EXPECT_NE(original_document,
+              EnhancementField(a_helper->Snapshot(), "document"));
+  } else if (change == "same_url_document") {
+    content::TestNavigationObserver reloaded(a);
+    a->GetController().Reload(content::ReloadType::NORMAL,
+                              /*check_for_repost=*/false);
+    reloaded.Wait();
+    ASSERT_TRUE(reloaded.last_navigation_succeeded());
+    ASSERT_EQ(a_url, a->GetLastCommittedURL());
+    EXPECT_NE(original_document,
+              EnhancementField(a_helper->Snapshot(), "document"));
+  } else if (change == "closed") {
+    content::WebContentsDestroyedWatcher closed(a);
+    browser()->tab_strip_model()->CloseWebContents(a, /*close_types=*/0);
+    closed.Wait();
+    a = nullptr;
+    a_helper = nullptr;
+  }
+
+  ASSERT_EQ("settled",
+            content::EvalJs(
+                page, content::JsReplace(R"JS(
+    (async () => {
+      const state = window.__mac02;
+      const held = state.held;
+      // This is a documented native-backend validation fault, not a fake reply.
+      if ($1 === 'save_error')
+        held.args[1].source = '';
+      state.releasedSave = structuredClone(held.args[1]);
+      state.originalSend(held.name, held.args);
+      await state.waitFor(() => !document.getElementById('trial').disabled);
+      const saved = state.responses.find(reply => reply.id === held.args[0]);
+      if (!saved || saved.success !== true)
+        throw Error('Missing successful native transport response');
+      const nativeError = typeof saved.response.error === 'string'
+        ? saved.response.error : saved.response.error?.message;
+      const trials = state.requests.filter(request => request.op === 'trial');
+      const notice = document.getElementById('notice').textContent;
+      if ($1 === 'save_error') {
+        if (nativeError !== '脚本元数据、网址或权限不受支持。' ||
+            notice !== nativeError || trials.length !== 0)
+          throw Error('Expected the injected native save validation failure');
+      } else {
+        if (nativeError || !saved.response.scripts?.some(script =>
+            script.source === state.source && script.enabled === false))
+          throw Error('The native draft save must succeed before target validation');
+        if ($1 === 'unchanged') {
+          if (trials.length !== 1 || trials[0].tab !== $2 ||
+              trials[0].url !== $3 || trials[0].document !== $4)
+            throw Error('Trial must retain the exact confirmed native document');
+        } else if (trials.length !== 0 ||
+            notice !== AegisI18n.t('目标网页已变化，请刷新列表。')) {
+          throw Error('Expected a target-change rejection after successful saving');
+        }
+      }
+      state.evidence = {
+        change: $1, confirmations: state.confirmations,
+        releasedSave: state.releasedSave, saveResponse: saved,
+        requests: state.requests, notice,
+        originalTab: $2, originalUrl: $3, originalDocument: $4,
+        confirmationDecisionAutomated: true, nativeBackendTested: true,
+      };
+      return 'settled';
+    })()
+  )JS",
+                                         change, original_tab, a_url.spec(),
+                                         original_document)));
+
+  if (change == "unchanged") {
+    ASSERT_TRUE(base::test::RunUntil([&] {
+      return content::EvalJs(
+                 a, "document.documentElement.dataset.mac02Native || ''")
+                 .ExtractString() == "executed";
+    }));
+  } else if (a) {
+    EXPECT_EQ("", content::EvalJs(
+                      a, "document.documentElement.dataset.mac02Native || ''"));
+  }
+  EXPECT_EQ("", content::EvalJs(
+                    b, "document.documentElement.dataset.mac02Native || ''"));
+  EXPECT_EQ(change == "save_error" ? 0u : 1u,
+            store_->state().FindList("scripts")->size());
+  CaptureEvidence(page, change);
+}
+
+INSTANTIATE_TEST_SUITE_P(NativeTargets,
+                         EnhancementTrialConsentBrowserTest,
+                         testing::Values("unchanged",
+                                         "selection",
+                                         "navigation",
+                                         "same_url_document",
+                                         "closed",
+                                         "save_error"),
+                         [](const testing::TestParamInfo<std::string>& info) {
+                           return info.param;
+                         });
+
 }  // namespace aegis
