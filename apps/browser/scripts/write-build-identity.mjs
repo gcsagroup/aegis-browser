@@ -36,6 +36,7 @@ import {
   macAppExecutablePath,
   macAppFrameworkExecutablePath,
 } from './aegis-mac-app.mjs';
+import {collectPatchEvidence, isVerifiedPatchLineage} from './patch-lineage.mjs';
 
 const scriptPath = realpathSync(fileURLToPath(import.meta.url));
 const scriptDir = dirname(scriptPath);
@@ -300,89 +301,6 @@ function configuredChromiumSource() {
   return realpathSync(process.env.CHROMIUM_SRC?.trim() || join(configuredRoot, 'src'));
 }
 
-function stablePatchId(value, cwd) {
-  const output = runWithInput('git', ['patch-id', '--stable'], cwd, value).trim();
-  const patchId = output.match(/^([0-9a-f]{40})\s/u)?.[1];
-  assert(patchId, 'git patch-id did not return a stable patch identifier');
-  return patchId;
-}
-
-function patchEvidence(
-  checkout,
-  baseCommit,
-  patchRoot = join(browserRoot, 'patches'),
-  label = 'Chromium',
-) {
-  const seriesPath = join(patchRoot, 'series');
-  const names = readFileSync(seriesPath, 'utf8')
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-  const seen = new Set();
-  const patches = names.map((name) => {
-    assert(
-      basename(name) === name && name !== '.' && name !== '..',
-      `unsafe patch path: ${name}`,
-    );
-    assert(!seen.has(name), `duplicate patch in series: ${name}`);
-    seen.add(name);
-    const path = join(patchRoot, name);
-    const firstLine = readFileSync(path, 'utf8').split(/\r?\n/u, 1)[0];
-    const commit = firstLine.match(/^From ([0-9a-f]{40}) /u)?.[1];
-    assert(commit, `patch does not contain a format-patch commit header: ${name}`);
-    return {
-      name,
-      commit,
-      stablePatchId: stablePatchId(readFileSync(path, 'utf8'), repoRoot),
-      ...fileEvidence(path),
-    };
-  });
-  run('git', ['merge-base', '--is-ancestor', baseCommit, 'HEAD'], checkout);
-  const appliedCommits = run(
-    'git',
-    ['rev-list', '--reverse', `${baseCommit}..HEAD`],
-    checkout,
-  )
-    .split(/\r?\n/u)
-    .filter(Boolean);
-  const patchCommits = patches.map((entry) => entry.commit);
-  assert(
-    appliedCommits.length === patchCommits.length,
-    `${label} commit count does not match ${relative(browserRoot, seriesPath)}`,
-  );
-  for (let index = 0; index < patches.length; index += 1) {
-    const patch = patches[index];
-    const appliedCommit = appliedCommits[index];
-    const commitDiff = run(
-      'git',
-      ['show', '--pretty=format:', '--no-ext-diff', '--binary', appliedCommit],
-      checkout,
-    );
-    assert(
-      stablePatchId(commitDiff, checkout) === patch.stablePatchId,
-      `ordered patch content does not match ${label} commit: ${patch.name}`,
-    );
-  }
-  const exactCommitIdsMatch = canonical(appliedCommits) === canonical(patchCommits);
-  return {
-    series: fileEvidence(seriesPath),
-    patchCount: patches.length,
-    patches,
-    manifestSha256: sha256Buffer(
-      patches.map((entry) => `${entry.name}\0${entry.sha256}\0`).join(''),
-    ),
-    lineage: {
-      base: baseCommit,
-      head: appliedCommits.at(-1) ?? baseCommit,
-      exactSeriesMatch: exactCommitIdsMatch,
-      exactCommitIdsMatch,
-      orderedStablePatchIdsMatch: true,
-      stablePatchIdsMatch: true,
-      appliedCommits,
-    },
-  };
-}
-
 function mappedTreeEvidence(sourceRoot, targetRoot) {
   const realSourceRoot = realpathSync(sourceRoot);
   const realTargetRoot = realpathSync(targetRoot);
@@ -455,6 +373,7 @@ function buildDriverEvidence() {
     'scripts/apply-patches.sh',
     'scripts/build-release.sh',
     'scripts/common.sh',
+    'scripts/patch-lineage.mjs',
     'scripts/status.sh',
     'scripts/write-build-identity.mjs',
   ].map((name) => ({name, ...fileEvidence(join(browserRoot, name))}));
@@ -507,7 +426,7 @@ function collectSourceSnapshot(outDir) {
     v8: {
       base: v8Base,
       checkout: gitIdentity(v8Source, true),
-      patches: patchEvidence(
+      patches: collectPatchEvidence(
         v8Source,
         v8Base,
         join(browserRoot, 'patches', 'v8'),
@@ -516,7 +435,7 @@ function collectSourceSnapshot(outDir) {
     },
     chromiumBase,
     chromiumVersion: readFileSync(join(browserRoot, 'CHROMIUM_VERSION'), 'utf8').trim(),
-    patches: patchEvidence(chromiumSrc, chromiumBase),
+    patches: collectPatchEvidence(chromiumSrc, chromiumBase, join(browserRoot, 'patches')),
     overlay: {
       repository: overlayRepository,
       applied: overlayApplied,
@@ -1099,8 +1018,8 @@ function verifyBuild(args) {
       currentBuildGraphMatches: true,
       artifactTreeMatches: true,
       patchLineageMatches:
-        manifest.source.patches.lineage.orderedStablePatchIdsMatch === true &&
-        manifest.source.v8.patches.lineage.orderedStablePatchIdsMatch === true,
+        isVerifiedPatchLineage(manifest.source.patches.lineage) &&
+        isVerifiedPatchLineage(manifest.source.v8.patches.lineage),
       overlayMatches: manifest.source.overlay.exactCheckoutMatch === true,
       gnArgsMatch: manifest.build.expectedGnArgsMatch === true,
       localWorkflowConstructionObserved: true,

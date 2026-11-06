@@ -56,6 +56,12 @@ class ContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '递增'):
             contract.validate_version(self.src, self.browser, 126)
 
+    def test_repository_package_default_matches_product_version(self):
+        # Read the actual product files, not a self-consistent synthetic version.
+        browser = Path(__file__).resolve().parents[1]
+        version, number = contract.validate_version(browser / 'overlay', browser)
+        self.assertEqual(int(version.split('.')[-1]), number)
+
     def test_current_major_uses_continuous_android_code(self):
         for path in [self.src / self.header, self.browser / 'overlay' / self.header,
                      self.browser / 'scripts/package.sh', self.browser / 'args/aegis-android.gn']:

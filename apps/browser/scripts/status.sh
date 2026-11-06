@@ -56,17 +56,8 @@ read_patch_id() {
 }
 
 patch_lineage_kind() {
-  local exact_commit_identity="$1"
-  local all_patch_ids_match="$2"
-
-  if [[ "$exact_commit_identity" == true &&
-        "$all_patch_ids_match" == true ]]; then
-    printf 'exact\n'
-  elif [[ "$all_patch_ids_match" == true ]]; then
-    printf 'replay\n'
-  else
-    printf 'mismatch\n'
-  fi
+  node "$ROOT_DIR/scripts/patch-lineage.mjs" \
+    --checkout "$1" --base "$2" --patch-root "$3" --label "$4" --series "$5" --format status
 }
 
 chromium_checkout_status() {
@@ -135,14 +126,10 @@ check_v8_patch_lineage() {
   local chromium_base="$1"
   local v8_src="$SRC/v8"
   local v8_base v8_head dirty_status
-  local patch_name patch_path header_sha expected_id actual_id commit
+  local patch_name patch_path header_sha expected_id lineage_result
   local index=0
-  local exact_lineage=true
-  local all_patch_ids_match=true
+  local validated_count=0
   local -a patch_names=()
-  local -a expected_shas=()
-  local -a expected_ids=()
-  local -a commits=()
 
   if [[ ! -s "$V8_SERIES_FILE" ]]; then
     fail "缺少 V8 补丁序列：$V8_SERIES_FILE"
@@ -186,10 +173,9 @@ check_v8_patch_lineage() {
       fail "V8 补丁缺少有效 commit SHA 或 patch-id：$patch_name"
       continue
     fi
-    expected_shas+=("$header_sha")
-    expected_ids+=("$expected_id")
+    validated_count=$((validated_count + 1))
   done
-  if [[ "${#expected_ids[@]}" -ne "${#patch_names[@]}" ]]; then
+  if [[ "$validated_count" -ne "${#patch_names[@]}" ]]; then
     return
   fi
 
@@ -198,30 +184,16 @@ check_v8_patch_lineage() {
     fail "V8 HEAD 不是钉扎 V8 base 的后代"
     return
   fi
-  while IFS= read -r commit; do
-    [[ -n "$commit" ]] && commits+=("$commit")
-  done < <(git -C "$v8_src" rev-list --reverse "${v8_base}..${v8_head}")
-  if [[ "${#commits[@]}" -ne "${#patch_names[@]}" ]]; then
-    fail "V8 checkout 在 base 后有 ${#commits[@]} 个提交，补丁序列为 ${#patch_names[@]} 个"
+  if ! lineage_result="$(patch_lineage_kind "$v8_src" "$v8_base" "$V8_PATCH_DIR" V8 "$V8_SERIES_FILE" 2>&1)"; then
+    fail "V8 补丁身份校验失败：$lineage_result"
   else
-    for ((index = 0; index < ${#commits[@]}; index++)); do
-      commit="${commits[$index]}"
-      actual_id="$(git -C "$v8_src" show --pretty=email --binary "$commit" 2>/dev/null |
-        git patch-id --stable 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
-      if [[ "$actual_id" != "${expected_ids[$index]}" ]]; then
-        all_patch_ids_match=false
-        fail "V8 补丁 $(printf '%04d' $((index + 1))) 内容不匹配"
-      fi
-      if [[ "$commit" != "${expected_shas[$index]}" ]]; then
-        exact_lineage=false
-      fi
-    done
-    if [[ "$all_patch_ids_match" == true ]]; then
-      if [[ "$exact_lineage" == true ]]; then
-        ok "V8 checkout 精确匹配 ${#patch_names[@]} 个嵌套补丁提交"
-      else
-        ok "V8 checkout 等价重放 ${#patch_names[@]} 个嵌套补丁"
-      fi
+    case "${lineage_result%-normalized}" in
+      exact) ok "V8 原始提交身份及逐提交精确树/规范化 ID 匹配" ;;
+      replay) ok "V8 等价重放的逐提交精确树/规范化 ID 匹配" ;;
+      *) fail "V8 身份校验返回未知结果：$lineage_result" ;;
+    esac
+    if [[ "$lineage_result" == *-normalized ]]; then
+      warn "V8 raw patch-ID 表达不同；原始差异保留，按 v2 逐提交精确树/规范化 ID 验证"
     fi
   fi
 
@@ -401,7 +373,6 @@ else
 fi
 
 expected_patch_shas=()
-expected_patch_ids=()
 seen_patch_names=""
 index=0
 for patch_name in "${patch_files[@]}"; do
@@ -432,7 +403,6 @@ for patch_name in "${patch_files[@]}"; do
     fail "$patch_name 无法生成稳定 patch-id"
   fi
   expected_patch_shas+=("$header_sha")
-  expected_patch_ids+=("$patch_id")
 done
 
 series_origin_head=""
@@ -494,33 +464,20 @@ else
       fail "checkout 在 base 后有 ${#commits[@]} 个提交，补丁序列为 ${#patch_files[@]} 个"
     else
       ok "checkout 含预期的 ${#patch_files[@]} 个补丁提交"
-      exact_lineage=true
-      all_patch_ids_match=true
-      for ((i = 0; i < ${#patch_files[@]}; i++)); do
-        commit="${commits[$i]}"
-        expected_sha="${expected_patch_shas[$i]:-}"
-        expected_id="${expected_patch_ids[$i]:-}"
-        actual_id="$(git -C "$SRC" show --pretty=email --binary "$commit" 2>/dev/null | \
-          git patch-id --stable 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
-        if [[ "$actual_id" != "$expected_id" ]]; then
-          all_patch_ids_match=false
-          fail "补丁 $(printf '%04d' $((i + 1))) 的内容与 ${patch_files[$i]} 不符"
+      if ! lineage_result="$(patch_lineage_kind "$SRC" "$base_sha" "$PATCH_DIR" Chromium "$SERIES_FILE" 2>&1)"; then
+        fail "Chromium 补丁身份校验失败：$lineage_result"
+        lineage_kind=mismatch
+      else
+        lineage_kind="${lineage_result%-normalized}"
+        case "$lineage_kind" in
+          exact) ok "checkout 原始提交身份及逐提交精确树/规范化 ID 匹配" ;;
+          replay) ok "checkout 等价重放的逐提交精确树/规范化 ID 匹配" ;;
+          *) fail "Chromium 身份校验返回未知结果：$lineage_result" ;;
+        esac
+        if [[ "$lineage_result" == *-normalized ]]; then
+          warn "raw patch-ID 表达不同；原始差异保留，按 v2 逐提交精确树/规范化 ID 验证"
         fi
-        if [[ "$commit" != "$expected_sha" ]]; then
-          exact_lineage=false
-        fi
-      done
-      lineage_kind="$(patch_lineage_kind "$exact_lineage" \
-        "$all_patch_ids_match")"
-      case "$lineage_kind" in
-        exact)
-          ok "checkout 保留补丁导出时的原始 commit 身份，且 patch-id 全部匹配"
-          ;;
-        replay)
-          ok "checkout commit 身份由本地重放生成，稳定 patch-id 全部匹配"
-          ;;
-        mismatch) ;;
-      esac
+      fi
     fi
   else
     fail "checkout HEAD 不是钉扎 base 的后代"

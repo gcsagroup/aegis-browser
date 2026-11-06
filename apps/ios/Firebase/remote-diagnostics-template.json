@@ -1,0 +1,20 @@
+{
+  "conditions": [],
+  "parameters": {
+    "aegis_diagnostics_schema": {
+      "defaultValue": { "value": "1" },
+      "valueType": "STRING",
+      "description": "Client diagnostics-policy schema; unsupported values pause diagnostics."
+    },
+    "aegis_crash_reports_allowed": {
+      "defaultValue": { "value": "true" },
+      "valueType": "BOOLEAN",
+      "description": "false pauses crash reporting; true still requires the user's local choice."
+    },
+    "aegis_analytics_allowed": {
+      "defaultValue": { "value": "true" },
+      "valueType": "BOOLEAN",
+      "description": "false pauses usage analytics; true still requires the user's local choice."
+    }
+  }
+}

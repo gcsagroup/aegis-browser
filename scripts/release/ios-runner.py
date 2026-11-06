@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Run one verified queued iOS signing job on an existing task-owned runner payload.
+"""Disabled iOS signing-runner launcher: pre-execution isolation is required.
 
-Supply a new private directory containing the verified official runner payload.
-This helper never downloads code, exports a key, unlocks a keychain or changes ACLs.
-An unknown registration requires manual readback before another registration.
+Queue snapshots and post-execution identity checks cannot authorize a signing
+host. This entrypoint refuses before payload access, key probes or registration.
+The remaining validation helpers are not proof of execution isolation.
 """
 import argparse
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
-import signal
 import subprocess
-import time
 import tarfile
 
 
@@ -113,15 +110,9 @@ def authorize_operator(repository, *, api=gh, user_api=authenticated_user):
         raise ValueError('Actual GitHub CLI operator requires repository Admin permission')
 
 
-def write_new(path, value):
-    with path.open('x') as output:
-        path.chmod(0o600)
-        json.dump(value, output, indent=2)
-
-
 def admit(repository, run_id, sha, job_id, label):
     run = gh(repository, f'actions/runs/{run_id}')
-    if run['head_sha'] != sha or run['repository']['full_name'] != repository or run['path'] != '.github/workflows/ios-delivery.yml':
+    if run['head_sha'] != sha or run['repository']['full_name'] != repository or run['path'] not in {'.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml'}:
         raise ValueError('Wrong repository/source/workflow')
     attempt = run['run_attempt']
     jobs = gh(repository, f'actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100')
@@ -158,84 +149,7 @@ def main():
     p.add_argument('--payload-sha256', required=True)
     args = p.parse_args()
     authorize_operator(args.repository)
-    root = args.root.resolve(strict=True)
-    if args.root.is_symlink() or root.stat().st_mode & 0o077:
-        raise ValueError('Runner directory must be task-owned and private')
-    validate_payload(root, args.payload_archive, args.payload_sha256)
-    intent_path = root/'registration-started.json'
-    validate_start(json.loads(intent_path.read_text()) if intent_path.exists() else None,
-                   shutil.disk_usage(Path.home()).free, shutil.disk_usage(args.external_volume).free)
-    if any((root/name).exists() for name in ['.runner', '.credentials']):
-        raise ValueError('Existing registration requires readback')
-    attempt = admit(args.repository, args.run_id, args.sha, args.job_id, args.label)
-    runners = gh(args.repository, 'actions/runners?per_page=100')
-    if runners['total_count'] > 100 or any(r['name'] == args.name for r in runners['runners']):
-        raise ValueError('Runner name already exists or inventory incomplete')
-    probe = root/'signing-probe'
-    shutil.copyfile('/usr/bin/true', probe)
-    probe.chmod(0o700)
-    signed = subprocess.run(['codesign', '--force', '--sign', args.certificate_sha1, '--keychain', args.keychain,
-                             '--timestamp=none', str(probe)], capture_output=True, timeout=30)
-    if signed.returncode:
-        raise ValueError('Installed-key signing probe failed; no registration performed')
-    intent = dict(repository=args.repository, runId=args.run_id, jobId=args.job_id, sourceSha=args.sha,
-                  name=args.name, label=args.label, root=str(root), ephemeral=True, attempt=attempt, outcome='unknown')
-    write_new(intent_path, intent)
-    token = gh(args.repository, 'actions/runners/registration-token', 'POST')['token']
-    # No local gh credentials, ASC secrets or registration token reach the job process.
-    environment = {k: v for k, v in os.environ.items() if k in {'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'LANG', 'PATH', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy'}}
-    empty = root/'.gh-empty'
-    empty.mkdir(mode=0o700)
-    environment.update(GH_CONFIG_DIR=str(empty), GH_PROMPT_DISABLED='1')
-    with (root/'config.log').open('x') as log:
-        (root/'config.log').chmod(0o600)
-        result = subprocess.run(['./config.sh', '--unattended', '--url', 'https://github.com/'+args.repository,
-                                 '--name', args.name, '--labels', args.label, '--no-default-labels', '--work', '_work', '--ephemeral', '--disableupdate'],
-                                cwd=root, env=dict(environment, ACTIONS_RUNNER_INPUT_TOKEN=token), stdout=log, stderr=subprocess.STDOUT, timeout=180)
-    token = None
-    if result.returncode:
-        raise ValueError('Registration result uncertain; inspect private state and remote inventory')
-    settings = json.loads((root/'.runner').read_text(encoding='utf-8-sig'))
-    if settings['agentName'] != args.name or settings.get('ephemeral') is not True:
-        raise ValueError('Unexpected runner identity')
-    runner_id = settings['agentId']
-    for name in ['.runner', '.credentials', '.credentials_rsaparams', '.env', '.path']:
-        if (root/name).exists():
-            (root/name).chmod(0o600)
-    registered = gh(args.repository, f'actions/runners/{runner_id}')
-    if {r['name'].lower() for r in registered['labels']} != {args.label.lower()}:
-        raise ValueError('Runner registration includes unexpected routing labels')
-    write_new(root/'registration-result.json', dict(intent, runnerId=runner_id, outcome='registered', privateKeyExported=False))
-    # Re-read queued job after registration, before the listener can claim anything.
-    if admit(args.repository, args.run_id, args.sha, args.job_id, args.label) != attempt:
-        raise ValueError('Run attempt changed before listener startup')
-    with (root/'runner.log').open('x') as log:
-        (root/'runner.log').chmod(0o600)
-        process = subprocess.Popen(['./run.sh'], cwd=root, env=environment, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-        while process.poll() is None:
-            if shutil.disk_usage(Path.home()).free < 8*1024**3 or shutil.disk_usage(args.external_volume).free < 15*1024**3:
-                os.killpg(process.pid, signal.SIGINT)
-                try:
-                    process.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
-                    process.wait()
-                raise ValueError('Disk reserve breached; owned listener stopped; reconcile job outcome')
-            time.sleep(5)
-    inventory = gh(args.repository, 'actions/runners?per_page=100')
-    if inventory['total_count'] > 100:
-        raise ValueError('Runner inventory incomplete')
-    remaining = [r for r in inventory['runners'] if r['id'] == runner_id]
-    if remaining:
-        if remaining[0]['name'] != args.name or remaining[0]['busy'] or remaining[0]['status'] != 'offline':
-            raise ValueError('Runner outcome is not safely idle; reconcile before removal')
-        gh(args.repository, f'actions/runners/{runner_id}', 'DELETE')
-    job = gh(args.repository, f'actions/jobs/{args.job_id}')
-    if job.get('runner_name') != args.name or job.get('run_id') != args.run_id or job.get('head_sha') != args.sha or job.get('run_attempt') != attempt:
-        raise ValueError('Target job was not claimed by this runner')
-    result = dict(intent, runnerId=runner_id, jobStatus=job['status'], jobConclusion=job['conclusion'], listenerExit=process.returncode, runnerDeregistered=True)
-    write_new(root/'execution-result.json', result)
-    print(json.dumps(result))
+    raise ValueError('Signing runner launcher is disabled until fail-closed pre-execution isolation is implemented')
 
 
 if __name__ == '__main__':

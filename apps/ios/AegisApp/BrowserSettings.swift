@@ -57,13 +57,23 @@ struct BrowserSettingsView: View {
                         Text("浅色").tag("light")
                         Text("深色").tag("dark")
                     }
-                    Text("界面语言跟随系统的 App 语言设置。支持简体中文、繁體中文和 English。")
+                    Text("界面语言跟随系统的 App 语言设置。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("关于") {
                     LabeledContent("应用", value: "GCSA Aegis")
                     LabeledContent("版本", value: version)
-                    LabeledContent("网页引擎", value: "系统 WebKit")
+                    LabeledContent("网页引擎") { Text("系统 WebKit") }
+                    NavigationLink("开源许可与鸣谢") { ThirdPartyNoticesView() }
+                        .accessibilityIdentifier("third-party-notices-link")
+                    if let website = URL(string: "https://browser.erjinyi.com/") {
+                        Link("官方网站", destination: website)
+                            .accessibilityIdentifier("aegis-website-link")
+                        Link("技术支持", destination: website.appendingPathComponent("support"))
+                            .accessibilityIdentifier("aegis-support-link")
+                        Link("隐私政策", destination: website.appendingPathComponent("privacy"))
+                            .accessibilityIdentifier("aegis-privacy-policy-link")
+                    }
 #if DEBUG
                     Text("开发测试版")
 #endif
@@ -185,6 +195,7 @@ private struct AegisProtectionSettingsView: View {
                 Button("清除网站数据", role: .destructive) { clearingWebsites = true }
                     .disabled(browser.profile.isPrivate || deletingWebsites)
             }
+            FirebaseControlsView()
             if let message { Text(message).foregroundStyle(.secondary) }
         }
         .navigationTitle("隐私与防护")

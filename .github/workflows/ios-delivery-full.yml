@@ -1,0 +1,73 @@
+name: iOS Delivery · Full
+run-name: iOS Delivery ${{ inputs.operation }} ${{ inputs.source || format('{0}({1})', inputs.version, inputs.build) }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Operation (Package creates artifacts only)"
+        type: choice
+        options:
+          - Package
+          - Package and upload
+          - Draft
+          - Upload
+          - Wait
+          - Status
+          - Metadata
+          - Compliance
+          - Distribute internal
+          - Distribute external
+        default: Status
+      version:
+        description: "Version (required without a delivery receipt, e.g. 1.0.0)"
+        type: string
+      build:
+        description: "Build (required without a delivery receipt, e.g. 35)"
+        type: string
+      product:
+        description: "Product (Auto uses Alpha for new packages and the receipt profile for existing packages)"
+        type: choice
+        options:
+          - Auto
+          - Alpha
+          - Beta
+          - Release
+        default: Auto
+      source:
+        description: "Delivery receipt (existing-package operations)"
+        type: string
+      signing_mode:
+        description: "Signing mode for new packages only (cloud default; manual fallback)"
+        type: choice
+        options: [cloud, manual]
+        default: cloud
+      package_entrypoint:
+        description: "Package through the Actions CLI adapter or directly through Fastlane"
+        type: choice
+        options: [actions, fastlane]
+        default: actions
+      groups:
+        description: "Existing TestFlight groups (distribution only)"
+        type: string
+      stage_input:
+        description: "Stage JSON (Metadata and Compliance only)"
+        type: string
+        default: "{}"
+permissions:
+  contents: write
+  actions: read
+jobs:
+  delivery:
+    uses: ./.github/workflows/ios-delivery.yml
+    with:
+      delivery_mode: full
+      delivery_inputs: ${{ toJSON(inputs) }}
+    secrets:
+      AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
+      AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
+      AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
+      AEGIS_IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.AEGIS_IOS_DISTRIBUTION_P12_BASE64 }}
+      AEGIS_IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.AEGIS_IOS_DISTRIBUTION_P12_PASSWORD }}
+      AEGIS_IOS_APP_PROFILE_BASE64: ${{ secrets.AEGIS_IOS_APP_PROFILE_BASE64 }}
+      AEGIS_IOS_SAFARI_PROFILE_BASE64: ${{ secrets.AEGIS_IOS_SAFARI_PROFILE_BASE64 }}
+      AEGIS_IOS_SHARE_PROFILE_BASE64: ${{ secrets.AEGIS_IOS_SHARE_PROFILE_BASE64 }}

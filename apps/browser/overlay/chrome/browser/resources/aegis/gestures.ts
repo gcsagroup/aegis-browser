@@ -13,9 +13,12 @@ const enabled = element<HTMLInputElement>('enabled'), trail = element<HTMLInputE
 const threshold = element<HTMLInputElement>('threshold'), sites = element<HTMLTextAreaElement>('disabledSites');
 const bindings = element('bindings'), practice = element('practice');
 const patternLabel = element('practicePattern'), resultLabel = element('practiceResult');
-const practiceLine = root.querySelector<SVGPolylineElement>('#practiceLine');
-if (!practiceLine) throw Error('缺少手势练习轨迹');
-const line = practiceLine;
+function practiceLine(): SVGPolylineElement {
+  const result = root.querySelector<SVGPolylineElement>('#practiceLine');
+  if (!result) throw Error('缺少手势练习轨迹');
+  return result;
+}
+const line = practiceLine();
 let saved: Settings|null = null, defaults: Settings|null = null, actions: Action[] = [];
 function savedSettings(): Settings {
   if (!saved) throw Error('手势设置尚未加载');
