@@ -119,7 +119,7 @@ class LocalizationGuardTests(unittest.TestCase):
             base.write_bytes(plistlib.dumps({"__xctestrun_metadata__": {"FormatVersion": 1},
                                             "AegisTests": {}, "AegisUITests": {}}))
             work = root / "run"
-            device = "00000000-0000-4000-8000-000000000001"
+            device = "d5367c00-914d-4ed9-89f1-746c5ed9277a"
             with patch("sys.argv", ["runner", "--device", device, "--xctestrun", str(base),
                                     "--work-dir", str(work), "--language", "en"]), \
                     patch.object(self.runner.subprocess, "Popen") as process:
@@ -128,11 +128,46 @@ class LocalizationGuardTests(unittest.TestCase):
                 argv = process.call_args.args[0]
                 self.assertEqual(argv[:4], ["/usr/bin/xcrun", "xcodebuild", "test-without-building", "-xctestrun"])
                 self.assertEqual(argv[4], str(work / "en.xctestrun"))
-                self.assertIn(f"platform=iOS Simulator,id={device}", argv)
+                self.assertEqual(argv[argv.index("-destination") + 1],
+                                 "platform=iOS Simulator,id=D5367C00-914D-4ED9-89F1-746C5ED9277A")
                 self.assertIs(process.call_args.kwargs["shell"], False)
                 manifest = json.loads((work / "results.json").read_text())
                 self.assertEqual(manifest["runs"][0]["command"], argv)
                 self.assertEqual(manifest["status"], "failed")
+
+    def test_native_runner_nonzero_process_persists_terminal_failure(self):
+        import plistlib
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            base = root / "base.xctestrun"
+            base.write_bytes(plistlib.dumps({"__xctestrun_metadata__": {"FormatVersion": 1},
+                                            "AegisTests": {}, "AegisUITests": {}}))
+            work = root / "run"
+            def exit_with_destination_failure(timeout):
+                self.assertEqual(timeout, 900)
+                active = json.loads((work / "results.json").read_text())
+                self.assertEqual(active["status"], "running")
+                self.assertEqual(active["runs"][0]["status"], "running")
+                return 70
+            with patch("sys.argv", ["runner", "--device", "0581734b-dea4-4da5-8617-30c1f2012622",
+                                    "--xctestrun", str(base), "--work-dir", str(work), "--language", "en-GB"]), \
+                    patch.object(self.runner.subprocess, "Popen") as process, \
+                    patch.object(self.runner, "read_evidence") as evidence:
+                process.return_value.wait.side_effect = exit_with_destination_failure
+                self.assertEqual(self.runner.main(), 1)
+                evidence.assert_not_called()
+                manifest = json.loads((work / "results.json").read_text())
+                run = manifest["runs"][0]
+                self.assertEqual(manifest["device"], "0581734B-DEA4-4DA5-8617-30C1F2012622")
+                self.assertEqual(manifest["status"], "failed")
+                self.assertEqual(run["status"], "failed")
+                self.assertEqual(run["exit_code"], 70)
+                self.assertEqual(run["error"], "en-GB: xcodebuild exit 70")
+                self.assertEqual(manifest["error"], run["error"])
+                self.assertGreaterEqual(run["elapsed_seconds"], 0)
+                self.assertEqual(run["command"], process.call_args.args[0])
+                self.assertIs(process.call_args.kwargs["shell"], False)
+                self.assertIs(process.call_args.kwargs["start_new_session"], True)
 
     def test_missing_and_mismatched_native_evidence_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
