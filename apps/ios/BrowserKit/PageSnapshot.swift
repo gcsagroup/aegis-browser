@@ -15,9 +15,9 @@ public enum PageSnapshotError: LocalizedError {
     case unavailable, changed, sensitive
     public var errorDescription: String? {
         switch self {
-        case .unavailable: String(localized: "此页面暂时无法读取，请等待加载完成或换一个普通网页。")
-        case .changed: String(localized: "页面已经变化，请重新确认要使用的页面。")
-        case .sensitive: String(localized: "此页面包含登录或支付表单，请换一个不含敏感表单的页面。")
+        case .unavailable: AegisLocalization.string("此页面暂时无法读取，请等待加载完成或换一个普通网页。")
+        case .changed: AegisLocalization.string("页面已经变化，请重新确认要使用的页面。")
+        case .sensitive: AegisLocalization.string("此页面包含登录或支付表单，请换一个不含敏感表单的页面。")
         }
     }
 }

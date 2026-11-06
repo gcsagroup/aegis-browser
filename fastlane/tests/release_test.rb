@@ -48,6 +48,54 @@ class ReleaseFixture < Minitest::Test
 end
 
 class ReleaseTest < ReleaseFixture
+  def test_native_identity_accepts_quoted_and_unquoted_scalars_in_supported_schemas
+    ['1.0', '1.10', '1.0.1', '"1.0"', "'1.0'"].each do |version|
+      ['127', '"127"', "'127'"].each do |build|
+        ["MARKETING_VERSION: #{version}\nCURRENT_PROJECT_VERSION: #{build}\n",
+         "settings:\n  base:\n    MARKETING_VERSION: #{version} # default\n    CURRENT_PROJECT_VERSION: #{build}\n"].each do |yaml|
+          write('apps/ios/project.yml', yaml)
+          req = request
+          assert_equal version.delete("\"'"), req.version
+          assert_equal '127', req.build
+        end
+      end
+    end
+  end
+
+  def test_actual_xcodegen_default_and_explicit_delivery_identity
+    write('apps/ios/project.yml', File.read(File.join(AegisRelease::ROOT, 'apps/ios/project.yml')))
+    assert_equal '1.0', request.version
+    delivery = request(version: '1.0.1', build: '16')
+    assert_equal '1.0.1', delivery.version
+    assert_equal '16', delivery.build
+    assert_equal 'release', delivery.profile
+    ['1.0suffix', '1', '1.0.1.2', '1.0;echo'].each do |invalid|
+      assert_raises(AegisRelease::Error) { request(version: invalid, build: '16') }
+    end
+    assert_raises(AegisRelease::Error) { request(version: '1.0.1', build: '0') }
+  end
+
+  def test_native_identity_rejects_malformed_or_ambiguous_yaml
+    invalid = [
+      'MARKETING_VERSION: "1.0',
+      "MARKETING_VERSION: 1.0suffix\nCURRENT_PROJECT_VERSION: 16",
+      "MARKETING_VERSION: 1.0\nCURRENT_PROJECT_VERSION: 16suffix",
+      "MARKETING_VERSION: [1, 0]\nCURRENT_PROJECT_VERSION: 16",
+      "MARKETING_VERSION: !!bool true\nCURRENT_PROJECT_VERSION: 16",
+      "MARKETING_VERSION: &version 1.0\nCURRENT_PROJECT_VERSION: *version",
+      "MARKETING_VERSION: 1.0\nMARKETING_VERSION: 2.0\nCURRENT_PROJECT_VERSION: 16",
+      "settings:\n  base: []",
+      "settings:\n  base:\n    MARKETING_VERSION: 1.0\n    CURRENT_PROJECT_VERSION: 16\n  base: {}",
+      "MARKETING_VERSION: 1.0\nCURRENT_PROJECT_VERSION: 16\nsettings: {base: {}}",
+      "MARKETING_VERSION: 1.0\nCURRENT_PROJECT_VERSION: 16\n---\nMARKETING_VERSION: 2.0",
+      "settings:\n  base:\n    MARKETING_VERSION: 1.0\n    CURRENT_PROJECT_VERSION: 0"
+    ]
+    invalid.each do |yaml|
+      write('apps/ios/project.yml', yaml)
+      assert_raises(AegisRelease::Error, yaml) { request }
+    end
+  end
+
   def test_signing_mode_defaults_to_cloud_and_manual_requires_explicit_selection
     assert_equal 'cloud', request.signing_mode
     assert_equal 'manual', request(signing_mode: 'manual').plan.fetch('signingMode')

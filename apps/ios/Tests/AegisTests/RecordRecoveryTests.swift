@@ -165,7 +165,7 @@ import XCTest
         }
         try await waitUntil { manager.items.first?.state == .completed }
         let item = try XCTUnwrap(manager.items.first)
-        XCTAssertEqual(item.received, Int64("GCSA Aegis simulator download verification\n".utf8.count * 1024 * 32))
+        XCTAssertEqual(item.received, Int64("Aegis Browser simulator download verification\n".utf8.count * 1024 * 32))
         XCTAssertEqual(try DownloadManager.hashFile(manager.fileURL(item)), item.sha256)
     }
 }
