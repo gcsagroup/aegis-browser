@@ -345,3 +345,4 @@
 0345-windows-overall-progress-without-flicker.patch
 0346-fix-windows-installer-launch.patch
 0347-fix-third-party-license-credits.patch
+0348-p01-control-v2-two-hop-tls-transport.patch

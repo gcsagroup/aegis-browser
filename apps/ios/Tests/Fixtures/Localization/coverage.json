@@ -63,7 +63,7 @@
     "Aegis 私密浏览器",
     "Aegis 设置",
     "English",
-    "GCSA Aegis",
+    "Aegis Browser",
     "HTTPS 搜索模板",
     "JavaScript",
     "Markdown 文档将在这里显示。",
@@ -1111,9 +1111,9 @@
     "＋ 添加手势"
   ],
   "preservedLocalizationsSHA256": {
-    "en": "18dcef5abc93a4b5bd5f724dcd87e1eebd163feb7df2f0b141882eb8194aac8c",
-    "zh-Hans": "561232ba5267bf54527277eb1dcae7664902aeb4bb8b7ad7ec523aedcb9c1457",
-    "zh-Hant": "e359d1cc33284fa046e9caf77865de087befe898b94e222b7ea44855625ad58f"
+    "en": "bb45f19e912885f2714c0e062b0cc168ecf8c3dc4f212afc148a6929b58ae1df",
+    "zh-Hans": "a59c98e2990aa95eab143752beaad339531e65f66b29372052b0d15db8ec9c79",
+    "zh-Hant": "ffa7e856564e734b9774856cb227cad4c369bddb49acff79a9d9feaa0246d450"
   },
   "identicalEnglishAllowlist": {
     "de": {
@@ -1145,8 +1145,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1227,8 +1227,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1285,8 +1285,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1379,8 +1379,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1437,8 +1437,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1503,8 +1503,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1553,8 +1553,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1607,8 +1607,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1673,8 +1673,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1731,8 +1731,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1785,8 +1785,8 @@
         "value": "English",
         "reason": "Language autonym retained in the language picker."
       },
-      "GCSA Aegis": {
-        "value": "GCSA Aegis",
+      "Aegis Browser": {
+        "value": "Aegis Browser",
         "reason": "Product name."
       },
       "JavaScript": {
@@ -1976,7 +1976,7 @@
     "vi": "be142f9f64d4645c27ee66c10f928792cbd8389a339050d2d0b5d9303fa81087"
   },
   "catalogKeyCount": 1083,
-  "catalogInventorySHA256": "1ab231e2d463e72dd315db008c9ac1c0a04f475228c12ee6ca1d26c0f319b1a6",
+  "catalogInventorySHA256": "779cd9f5d4d4a3793fa5d7eec82d607a84d263923a9109400d3443e362e404c0",
   "numericAdditions": {
     "ja": {
       "SHA-256 应为 64 位十六进制字符。": {
@@ -2045,5 +2045,9 @@
         "reason": "The source first minute is written with the digit 1."
       }
     }
-  }
+  },
+  "languageSelectorAddedKeys": [
+    "语言",
+    "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"
+  ]
 }

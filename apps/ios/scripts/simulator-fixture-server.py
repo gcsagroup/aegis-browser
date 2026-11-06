@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.client import HTTPConnection
 from urllib.parse import parse_qs, urlsplit
 
-PAYLOAD = b"GCSA Aegis simulator download verification\n" * 1024
+PAYLOAD = b"Aegis Browser simulator download verification\n" * 1024
 ARTICLE = """<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>模拟器验收文章</title><style>body{font:20px -apple-system;margin:24px;line-height:1.6}a{display:block;margin:20px 0}</style>
 <main><h1>城市绿地观察</h1><p>这是一份合成验收资料。青林公园面积为 12 公顷，开放时间为每天 06:00 至 21:00，步道总长 3 公里。</p>

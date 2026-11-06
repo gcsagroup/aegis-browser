@@ -3,7 +3,9 @@ import SwiftUI
 struct FirebaseControlsView: View {
     @ObservedObject private var firebase = AegisFirebase.shared
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Section {
             Toggle(isOn: Binding(get: { firebase.crashReportsEnabled }, set: { firebase.setCrashReportsEnabled($0) })) {
                 Text("发送崩溃报告")
@@ -48,7 +50,9 @@ struct FirebaseControlsView: View {
 private struct RemoteDiagnosticsStatusView: View {
     @ObservedObject var controller: RemoteDiagnosticsController
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Group {
             switch controller.state {
             case .off:
