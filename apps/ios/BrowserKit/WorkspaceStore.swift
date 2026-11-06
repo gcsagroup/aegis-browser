@@ -180,10 +180,10 @@ public enum WorkspaceError: LocalizedError {
     case noPages, invalidImport, unreadableRecords, capacity
     public var errorDescription: String? {
         switch self {
-        case .noPages: String(localized: "请先打开普通网页，再保存工作区。")
-        case .invalidImport: String(localized: "工作区文件无效或超出容量：最多 100 个工作区，每组 50 个页面。")
-        case .unreadableRecords: String(localized: "工作区记录无法读取，原文件已保留，暂时无法保存更改。")
-        case .capacity: String(localized: "工作区存储已满，请先导出并删除不需要的工作区，或减少页面数量。")
+        case .noPages: AegisLocalization.string("请先打开普通网页，再保存工作区。")
+        case .invalidImport: AegisLocalization.string("工作区文件无效或超出容量：最多 100 个工作区，每组 50 个页面。")
+        case .unreadableRecords: AegisLocalization.string("工作区记录无法读取，原文件已保留，暂时无法保存更改。")
+        case .capacity: AegisLocalization.string("工作区存储已满，请先导出并删除不需要的工作区，或减少页面数量。")
         }
     }
 }

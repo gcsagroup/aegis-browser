@@ -23,7 +23,9 @@ struct AgentCenterView: View {
         ))
     }
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -46,7 +48,7 @@ struct AgentCenterView: View {
                 .padding(20)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("整理收藏")
+            .localizedNavigationTitle("整理收藏")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -337,10 +339,10 @@ struct AgentCenterView: View {
 
     private func subtitle(for kind: AgentWorkflowKind) -> String {
         switch kind {
-        case .research: String(localized: "多来源比较与可核对引用")
-        case .browserManager: String(localized: "标签、收藏差异与一键撤销")
-        case .safeDownload: String(localized: "官方来源、MIME 与哈希证据")
-        case .shopping: String(localized: "比价、结算预览与最终接管")
+        case .research: AegisLocalization.string("多来源比较与可核对引用")
+        case .browserManager: AegisLocalization.string("标签、收藏差异与一键撤销")
+        case .safeDownload: AegisLocalization.string("官方来源、MIME 与哈希证据")
+        case .shopping: AegisLocalization.string("比价、结算预览与最终接管")
         }
     }
 
@@ -355,16 +357,16 @@ struct AgentCenterView: View {
 
     private var stateTitle: String {
         switch model.wireState {
-        case .draft, .planning: String(localized: "准备中")
-        case .awaitingTaskConsent, .awaitingActionApproval: String(localized: "等待确认")
-        case .running, .reflecting, .verifying: String(localized: "正在处理")
-        case .pausedByUser: String(localized: "已暂停")
-        case .userTakeover: String(localized: "需要你操作")
-        case .recovering: String(localized: "发现中断任务")
-        case .completed: String(localized: "已完成")
-        case .failed: String(localized: "处理失败")
-        case .cancelled: String(localized: "已取消")
-        case .expired: String(localized: "确认已过期，请重试")
+        case .draft, .planning: AegisLocalization.string("准备中")
+        case .awaitingTaskConsent, .awaitingActionApproval: AegisLocalization.string("等待确认")
+        case .running, .reflecting, .verifying: AegisLocalization.string("正在处理")
+        case .pausedByUser: AegisLocalization.string("已暂停")
+        case .userTakeover: AegisLocalization.string("需要你操作")
+        case .recovering: AegisLocalization.string("发现中断任务")
+        case .completed: AegisLocalization.string("已完成")
+        case .failed: AegisLocalization.string("处理失败")
+        case .cancelled: AegisLocalization.string("已取消")
+        case .expired: AegisLocalization.string("确认已过期，请重试")
         }
     }
 }

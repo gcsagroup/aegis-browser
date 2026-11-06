@@ -1,15 +1,15 @@
 # iOS catalog localization
 
-All **1,068 catalog entries** are translated in each of the **14 resource
-languages**. This completes the 937 previously untranslated entries in each of
+All **1,085 catalog entries** are translated in each of the **14 resource
+languages**. The original 1,068-entry completion covered the 937 previously untranslated entries in each of
 the 11 added languages: **10,307 new translations**, with no `needs_review`
 English prose fallbacks. The existing 131 translations in each added language
 and all English, Simplified Chinese and Traditional Chinese entries are preserved.
 
 | Resource languages | Translated per language | English fallback (`needs_review`) | Total per language |
 | --- | ---: | ---: | ---: |
-| de, es, fr, id, it, ja, ko, ms, pt, th, vi | 1,068 | 0 | 1,068 |
-| en, zh-Hans, zh-Hant | 1,068 | 0 | 1,068 |
+| de, es, fr, id, it, ja, ko, ms, pt, th, vi | 1,085 | 0 | 1,085 |
+| en, zh-Hans, zh-Hant | 1,085 | 0 | 1,085 |
 
 The preservation baseline is `c7f45b21972bfc33c53c0c90bc0a48e9e517103e`.
 Changes are confined to `apps/ios`. Catalog completion does not establish full-app
@@ -60,6 +60,107 @@ per-key identical-English allowlist records exact values and reasons, including
 legitimate shared words such as French “Source” and German “Version”; it does not
 allow untranslated sentences or locale-prefixed English text.
 
+## Agent contract errors (iOS 1.0.1)
+
+The 16 user-facing contract errors use stable semantic keys in AgentKit's
+`AgentErrors.xcstrings`. The framework owns the table and the generated Swift
+symbols, so lookup follows the framework bundle. Editing a translation does
+not rename a Swift reference. The app and share extension continue to use
+their existing shared catalog for their own UI.
+
+The error table has all 17 requested localizations. UK and Hong Kong English
+use British spelling such as “authorisation”. Hong Kong Traditional Chinese
+uses 身份 for page identity, and Taiwan Traditional Chinese uses 身分. Identical
+wording across regional variants is intentional where the meaning and usage agree.
+
+`AgentContractError.errorDescription` uses the shared family/dialect resolver and
+typed adapter while retaining the generated resource's framework bundle and table.
+The adapter checks compiled table key membership, selects the regional resource,
+and supplies an explicit resource locale with system formatting overrides.
+Ordinary literal resources use an explicit `.lproj` bundle: supplying only a locale
+to `String(localized:bundle:locale:)` does not switch its resource language.
+Generated semantic resources retain their keys and bindings; Foundation renders
+interpolation and plurals. A value identical to its key is a valid translation,
+not a missing-key signal. Fallback is regional resource, family, then English;
+Traditional Chinese never falls back to Simplified Chinese.
+
+`testContractErrorDescriptionsHonorRequestedSystemLocale` compares all 16 actual
+`errorDescription` and bridged `NSError.localizedDescription` results with the
+selected compiled AgentKit table and records requested/selected locales. Run it
+in fresh test hosts for all 17 preferences; explicit-resource-locale tests alone
+do not validate this default caller path.
+
+For this batch, prefer String Catalogs over converting to per-language
+`.strings` files. The framework builds with generated symbols, existing app
+translations keep their inventory and regression checks, and the simulator
+can exercise the compiled framework table in each locale. Per-language files
+would isolate translation diffs, but replacing the existing catalogs would
+require migrating their checks and supplying a separate typed lookup mechanism.
+Use semantic keys incrementally as features change.
+
+## In-app language selection
+
+Settings → Language offers Follow System and the 14 language autonyms, with one
+English and one Traditional Chinese choice. `AppLanguageSettings` observes an
+injectable preference store. Only the family is persisted under
+`browser.languageFamily.v1` in `group.com.gcsa.aegis.ios.share-inbox`; Follow System
+removes it. Other preferences, credentials and content keep their existing stores.
+The Share Extension rereads the choice on appearance and before new messages.
+
+`Shared/AppLocalization.swift` is compiled internally into the app, BrowserKit,
+AgentKit and Share Extension. Ordered explicit same-family language preferences
+choose the dialect before generic preferences use the system region. An explicit
+en-US remains US with a GB region; an unsupported specific English region falls
+back within English. zh-HK/zh-TW aliases select Traditional Chinese, while explicit
+zh-Hans-HK remains Simplified. Main app/share regional wording still reuses the
+14 base resources; only AgentKit has the 17 regional tables described above.
+Translation language is separate from system region, calendar, hour cycle,
+numbering and time-zone formatting. Fixed POSIX/ISO8601 codecs remain unchanged.
+
+SwiftUI views observe locale changes. Translated navigation titles use a locale-observing
+modifier that materializes a typed resource into verbatim text for native navigation
+chrome, without replacing destination identity. Commands observe the controller revision,
+and UIKit updates placeholders/accessibility without replacing text fields or
+first responders. Presentation-owned cached messages retain typed resources or
+errors until displayed. Recorded/user/model content is not rewritten. New model
+requests capture the effective language; requests already running keep their inputs.
+Sessions, windows, tabs, WebViews, drafts, downloads and agents retain their identity.
+Loaded app-owned start pages update text nodes through structured WebKit arguments
+with exact native/JavaScript URL, document-token and revision checks. External
+pages are neither modified nor reloaded. iOS-owned permission and Safari metadata
+presentation remains system-managed.
+
+The only catalog additions are Language and the regional matching note, each with
+14 translations. `coverage.json` records these separately from the historical
+1,083-key inventory; existing values and preservation hashes at branding baseline
+`3eea1244651d881ec506a5b1c2dab0661095e15f` remain unchanged.
+
+Focused host checks (use a new output directory):
+
+```sh
+python3 apps/ios/scripts/test-app-language.py --work-dir /path/to/new/task-cache-output
+```
+
+This compiles actual catalogs and checks 45 independent policy fixtures, owners,
+fallback, persistence, formatting, interpolation/plurals, typed compiler extraction,
+catalog rejection guards and native-evidence rejection guards. `--plist-fixtures`
+is an explicit fallback for environments without the catalog compiler and is not
+compiled-catalog evidence. Pure tests inject in-memory defaults. DEBUG app/framework
+providers use `com.gcsa.aegis.ios.ui-tests`; reset precedes store construction and
+`--ui-testing-preferences-keep` preserves only the intended test-run preferences.
+
+The 17-host Agent runner additionally accepts repeatable `--policy-case` names
+from `language-policy.json` to cover manual families, generic preferences and region
+conflicts. Expected family/resource/region evidence is supplied independently and
+mismatches are rejected. `AppLanguageTests` covers native runtime continuity,
+start-page ownership, UIKit editing and active download/model work.
+`AppLanguageUITests` covers same-process selection, unique family entries, Settings,
+address/find/start-page refresh, external form continuity and relaunch persistence.
+Run on both iPhone and iPad, including large Dynamic Type. The UIKit editing test
+requires an isolated `--ui-testing` host without a fixed language-family argument
+override. Host tests do not establish iOS compilation, XCTest/UI acceptance, CI or
+independent review; those remain separate candidate verification gates.
+
 ## Remaining gaps
 
 | Surface | Remaining work |
@@ -92,7 +193,7 @@ explicit `--work-dir`. It validates:
    exact printf tokens, numeric constraints and justified identical-English values.
    Negative mutations test blank values, review-state regressions, copied or
    prefixed English, changed limits, broken placeholders and removed negations.
-2. All 1,068 source values against the actual compiled `.strings` table and
+2. All 1,085 source values against the actual compiled `.strings` table and
    Foundation lookup in a fresh process for each of the 17 preferences.
 3. Seven literal consent, deletion, recovery and data-boundary probes per
    preference. These fixtures freeze audited text independently of runtime lookup.
