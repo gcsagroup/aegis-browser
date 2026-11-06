@@ -112,9 +112,11 @@ class LocalizationGuardTests(unittest.TestCase):
             with self.subTest(name=case["name"]):
                 self.runner.validate_case_name(case["name"])
                 self.assertEqual(Path(case["name"]).name, case["name"])
-        for unsafe in ["", "../en", "en/GB", "en\\GB", "--option", "-en", "/tmp/en", "en..GB", "en;echo", "en\nGB", None]:
-            with self.subTest(unsafe=unsafe), self.assertRaises(ValueError):
-                self.runner.validate_case_name(unsafe)
+        with tempfile.TemporaryDirectory() as temp:
+            absolute_case = str(Path(temp) / "en")
+            for unsafe in ["", "../en", "en/GB", "en\\GB", "--option", "-en", absolute_case, "en..GB", "en;echo", "en\nGB", None]:
+                with self.subTest(unsafe=unsafe), self.assertRaises(ValueError):
+                    self.runner.validate_case_name(unsafe)
 
     def test_existing_underscore_policy_runs_with_independent_evidence(self):
         import plistlib
@@ -146,12 +148,17 @@ class LocalizationGuardTests(unittest.TestCase):
                 self.assertEqual(result["runs"][0]["evidence"][0]["requested"], ["en"])
 
     def test_native_runner_rejects_non_uuid_destination_before_execution(self):
-        with patch("sys.argv", ["runner", "--device", "UUID,-only-testing:Other", "--xctestrun", "/missing.xctestrun",
-                                "--work-dir", "/unused"]), patch.object(self.runner.subprocess, "Popen") as process:
-            with self.assertRaises(SystemExit) as error:
-                self.runner.main()
-            self.assertEqual(error.exception.code, 2)
-            process.assert_not_called()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            work = root / "unused"
+            with patch("sys.argv", ["runner", "--device", "UUID,-only-testing:Other",
+                                    "--xctestrun", str(root / "missing.xctestrun"), "--work-dir", str(work)]), \
+                    patch.object(self.runner.subprocess, "Popen") as process:
+                with self.assertRaises(SystemExit) as error:
+                    self.runner.main()
+                self.assertEqual(error.exception.code, 2)
+                process.assert_not_called()
+                self.assertFalse(work.exists())
 
     def test_native_runner_fixed_command_and_missing_evidence_fail_closed(self):
         import plistlib
