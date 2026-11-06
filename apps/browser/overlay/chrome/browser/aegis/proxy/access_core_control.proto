@@ -1,0 +1,56 @@
+syntax = "proto3";
+package aegis.proxy.wire;
+option optimize_for = LITE_RUNTIME;
+
+// Private AF_UNIX socketpair only. Big-endian uint32 frame length, max 256KiB.
+// No public socket name, command line credentials, or JSON config import.
+message Owner { uint32 channel = 1; string profile = 2; string partition = 3; }
+message Group {
+  Owner owner = 1; string id = 2; uint64 selection = 3;
+  uint32 transport = 4; string server_ip = 5; uint32 server_port = 6;
+  string vless_id = 7; string server_name = 8; string reality_key = 9;
+  string short_id = 10; string ws_path = 11;
+  // Version 2 supplies every semantic field. Older/missing fields are rejected.
+  // server_ip retains its legacy field name, but carries address_kind text.
+  uint32 configuration_version = 12;
+  uint32 address_kind = 13; // 1=DNS, 2=IPv4, 3=IPv6; 0 is invalid.
+  uint32 fingerprint = 14; // 1=chrome (D08 enum 0 + presence offset).
+  bytes alpn = 15; // Ordered D08 bytes 0=h2, 1=http/1.1; empty is explicit v2.
+  string ws_host = 16;
+}
+message Inbound {
+  uint32 group_index = 1; uint32 transport = 2;
+  string username = 3; string password = 4;
+  string listener_id = 5; string registration_id = 6; string credential_slot = 7;
+}
+message Launch {
+  string profile = 1; uint32 channel = 2; string lease_id = 3;
+  int64 expiry_unix_ms = 4; uint64 network_epoch = 5;
+  repeated Group groups = 6; repeated Inbound inbounds = 7;
+  string probe_host = 8; uint32 probe_port = 9; string probe_path = 10;
+  string xray_path = 11; string session_id = 12;
+  uint32 remaining_ms = 13; uint64 group_set_version = 14;
+  // Required and exactly 2 in Control v2; forbidden (even zero) in v1.
+  uint32 local_proxy_tls_version = 15;
+}
+message Lifecycle {
+  enum Kind { INVALID = 0; ACTIVATE = 1; REVALIDATE = 2; RETIRE = 3; STOP = 4; }
+  Kind kind = 1; string attempt = 2; uint64 epoch = 3;
+  uint32 remaining_ms = 4; uint32 reason = 5;
+}
+message Endpoint {
+  string listener_id = 1; uint32 front_port = 2;
+  // Exact public leaf DER for the new HTTP-only TLS path. Not emitted in v1.
+  bytes front_tls_certificate_der = 3;
+}
+message Reply {
+  uint32 error = 1; string session_id = 2; string asset_digest = 3;
+  string config_digest = 4; string probe_digest = 5; uint64 epoch = 6;
+  repeated Endpoint endpoints = 7; bool child_reaped = 8;
+  int64 child_pid = 9; int64 child_parent = 10;
+  uint64 child_birth_seconds = 11; uint64 child_birth_microseconds = 12;
+}
+message Control {
+  uint32 version = 1; uint64 sequence = 2; string session_id = 3;
+  oneof payload { Launch launch = 4; Lifecycle lifecycle = 5; Reply reply = 6; }
+}

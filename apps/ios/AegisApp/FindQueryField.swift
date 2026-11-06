@@ -2,13 +2,17 @@ import SwiftUI
 
 /// 等查找面板完成显示后再交接键盘焦点，避免网页仍占用响应链。
 struct FindQueryField: UIViewControllerRepresentable {
+    @Environment(\.locale) private var localizationLocale
     @Binding var text: String
 
     func makeUIViewController(context: Context) -> Controller { Controller(text: $text) }
 
     func updateUIViewController(_ controller: Controller, context: Context) {
+        let _ = localizationLocale
+        controller.field.placeholder = AegisLocalization.string("查找文字")
+        controller.field.accessibilityLabel = controller.field.placeholder
         controller.text = $text
-        if controller.field.text != text { controller.field.text = text }
+        if controller.field.text != text, controller.field.markedTextRange == nil { controller.field.text = text }
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Controller, context: Context) -> CGSize? {
@@ -28,7 +32,7 @@ struct FindQueryField: UIViewControllerRepresentable {
 
         override func loadView() {
             field.text = text.wrappedValue
-            field.placeholder = String(localized: "查找文字")
+            field.placeholder = AegisLocalization.string("查找文字")
             field.accessibilityIdentifier = "find-text"
             field.font = .preferredFont(forTextStyle: .body)
             field.adjustsFontForContentSizeCategory = true

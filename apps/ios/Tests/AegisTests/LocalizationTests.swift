@@ -9,6 +9,7 @@ final class LocalizationTests: XCTestCase {
     private struct Coverage: Decodable {
         struct Exception: Decodable { let value: String; let reason: String }
         let catalogKeyCount: Int
+        let languageSelectorAddedKeys: [String]
         let identicalEnglishAllowlist: [String: [String: Exception]]
     }
 
@@ -29,7 +30,7 @@ final class LocalizationTests: XCTestCase {
         let plugins = try XCTUnwrap(Bundle.main.builtInPlugInsURL)
         let share = try XCTUnwrap(Bundle(url: plugins.appendingPathComponent("ShareExtension.appex")))
         let english = try table(in: Bundle.main, locale: "en")
-        XCTAssertEqual(english.count, coverage.catalogKeyCount)
+        XCTAssertEqual(english.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count)
         for bundle in [Bundle.main, share] {
             for locale in locales {
                 let values = try table(in: bundle, locale: locale)
@@ -50,7 +51,10 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testActiveLanguageResolvesEveryEntryAndConsentLiteral() throws {
-        let locale = try XCTUnwrap(Bundle.main.preferredLocalizations.first)
+        let snapshot = Aegis.AegisLocalization.current
+        let locale = try XCTUnwrap(Aegis.AegisLocalization.resourceLocalization(in: .main, snapshot: snapshot))
+        let directory = try XCTUnwrap(Bundle.main.url(forResource: locale, withExtension: "lproj"))
+        let selectedBundle = try XCTUnwrap(Bundle(url: directory))
         if let requested = ProcessInfo.processInfo.environment["AEGIS_EXPECTED_LANGUAGE"] {
             let regional = ["en-GB": "en", "en-HK": "en", "zh-Hant-HK": "zh-Hant"]
             XCTAssertEqual(locale, regional[requested] ?? requested, "Requested language did not reach the test host")
@@ -58,15 +62,15 @@ final class LocalizationTests: XCTestCase {
         }
         let values = try table(in: Bundle.main, locale: locale)
         let coverage = try fixture("coverage", as: Coverage.self)
-        XCTAssertEqual(values.count, coverage.catalogKeyCount)
+        XCTAssertEqual(values.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count)
         for (key, value) in values {
-            XCTAssertEqual(Bundle.main.localizedString(forKey: key, value: "MISSING", table: nil), value, "\(locale)/\(key)")
+            XCTAssertEqual(selectedBundle.localizedString(forKey: key, value: "MISSING", table: nil), value, "\(locale)/\(key)")
         }
         let probes = try fixture("literal-probes", as: [String: [String: String]].self)
         XCTAssertEqual(probes.count, 7)
         for (key, translations) in probes {
             let literal = try XCTUnwrap(translations[locale])
-            XCTAssertEqual(Bundle.main.localizedString(forKey: key, value: "MISSING", table: nil), literal, "\(locale)/\(key)")
+            XCTAssertEqual(selectedBundle.localizedString(forKey: key, value: "MISSING", table: nil), literal, "\(locale)/\(key)")
         }
     }
 
@@ -100,22 +104,24 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testShareErrorsUseTheActiveAppLanguage() {
+    func testShareErrorsUseTheActiveAppLanguage() throws {
+        let language = try XCTUnwrap(Aegis.AegisLocalization.resourceLocalization(in: .main, snapshot: Aegis.AegisLocalization.current))
+        let selected = try XCTUnwrap(Bundle(url: Bundle.main.bundleURL.appendingPathComponent("\(language).lproj")))
         let cases: [(ShareInboxError, String)] = [
             (.unsupportedScheme, "只接受 HTTP(S) 链接"), (.payloadTooLarge, "分享内容超过 8 KiB"),
             (.invalidEnvelope, "分享内容格式无效"), (.expired, "分享内容已过期"),
             (.unavailableContainer, "专用 Share Inbox 不可用"),
         ]
         for (error, key) in cases {
-            XCTAssertEqual(error.errorDescription, Bundle.main.localizedString(forKey: key, value: nil, table: nil))
+            XCTAssertEqual(error.errorDescription, selected.localizedString(forKey: key, value: nil, table: nil))
         }
     }
 
     func testStartPageUsesTheAppLanguage() {
         let html = FixtureSchemeHandler.html(for: URL(string: "aegis://start")!)
-        let language = Bundle.main.preferredLocalizations.first ?? "zh-Hans"
+        let language = Aegis.AegisLocalization.current.family.rawValue
         XCTAssertTrue(html.contains("<html lang=\"\(language)\""))
-        XCTAssertTrue(html.contains(String(localized: "安心浏览，清楚掌控。")))
+        XCTAssertTrue(html.contains(Aegis.AegisLocalization.string("安心浏览，清楚掌控。")))
     }
 
     @MainActor

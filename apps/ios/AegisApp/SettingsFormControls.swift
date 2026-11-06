@@ -15,7 +15,9 @@ struct SettingsPicker<Value: Hashable, Options: View>: View {
         options = content()
     }
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Menu {
             Picker(title, selection: $selection) { options }
         } label: {
@@ -47,7 +49,9 @@ struct SettingsField<Content: View>: View {
         self.content = content
     }
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.subheadline).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

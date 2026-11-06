@@ -54,17 +54,17 @@ public enum DownloadError: LocalizedError {
     case invalidURL, invalidHash, http(Int), hashMismatch, tooLarge, missingFile, storageNotReady, invalidManifest, unreadableRecords, recordsTooLarge, insufficientSpace
     public var errorDescription: String? {
         switch self {
-        case .unreadableRecords: String(localized: "下载记录无法读取，原文件已保留，暂时无法开始或更改下载。")
-        case .recordsTooLarge: String(localized: "下载记录超过存储容量，未保存本次更改。")
-        case .insufficientSpace: String(localized: "可用空间不足，下载已停止。请释放空间后继续。")
-        case .storageNotReady: String(localized: "下载记录尚未恢复，请稍后重试。")
-        case .invalidManifest: String(localized: "下载记录无法读取，原始记录已保留。")
-        case .invalidURL: String(localized: "此下载地址无法安全使用，请输入普通 HTTP 或 HTTPS 文件链接。")
-        case .invalidHash: String(localized: "SHA-256 应为 64 位十六进制字符。")
-        case let .http(status): String(localized: "下载服务器返回错误（\(status)）。")
-        case .hashMismatch: String(localized: "文件校验不一致，已丢弃本次文件。")
-        case .tooLarge: String(localized: "文件超过此任务的下载容量限制，已停止下载。")
-        case .missingFile: String(localized: "下载文件已不可用，请重新下载。")
+        case .unreadableRecords: AegisLocalization.string("下载记录无法读取，原文件已保留，暂时无法开始或更改下载。")
+        case .recordsTooLarge: AegisLocalization.string("下载记录超过存储容量，未保存本次更改。")
+        case .insufficientSpace: AegisLocalization.string("可用空间不足，下载已停止。请释放空间后继续。")
+        case .storageNotReady: AegisLocalization.string("下载记录尚未恢复，请稍后重试。")
+        case .invalidManifest: AegisLocalization.string("下载记录无法读取，原始记录已保留。")
+        case .invalidURL: AegisLocalization.string("此下载地址无法安全使用，请输入普通 HTTP 或 HTTPS 文件链接。")
+        case .invalidHash: AegisLocalization.string("SHA-256 应为 64 位十六进制字符。")
+        case let .http(status): AegisLocalization.string("下载服务器返回错误（\(status)）。")
+        case .hashMismatch: AegisLocalization.string("文件校验不一致，已丢弃本次文件。")
+        case .tooLarge: AegisLocalization.string("文件超过此任务的下载容量限制，已停止下载。")
+        case .missingFile: AegisLocalization.string("下载文件已不可用，请重新下载。")
         }
     }
 }
@@ -102,7 +102,11 @@ struct PendingDownloadReceipt: Codable {
 @MainActor
 public final class DownloadManager: NSObject, ObservableObject, URLSessionDownloadDelegate {
     @Published public private(set) var items: [BrowserDownload] = []
-    @Published public private(set) var storageError: String?
+    @Published private var storageErrorPresentation: AegisLocalizedMessage?
+    public private(set) var storageError: String? {
+        get { storageErrorPresentation?.text }
+        set { storageErrorPresentation = newValue.map(AegisLocalizedMessage.verbatim) }
+    }
     @Published public private(set) var maximumConcurrentDownloads: Int
     @Published public private(set) var transferPreferences: DownloadTransferPreferences
     private let preferenceDefaults: UserDefaults?
@@ -337,7 +341,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             for index in items.indices where [.running, .pausing].contains(items[index].state) && tasks[items[index].id] == nil && !pausingTransfers.contains(description(items[index])) {
                 items[index].inferredInterruption = items[index].state == .running ? true : nil
                 items[index].state = .paused
-                items[index].message = String(localized: "上次下载已中断，可继续或重新下载。")
+                items[index].message = AegisLocalization.string("上次下载已中断，可继续或重新下载。")
             }
             for index in items.indices where items[index].state == .completed {
                 if !FileManager.default.fileExists(atPath: fileURL(items[index]).path) {
@@ -354,7 +358,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
                 if let index = itemIndex(name), [.running, .pausing].contains(items[index].state) {
                     items[index].state = .paused
                     items[index].inferredInterruption = true
-                    items[index].message = String(localized: "完成回执未保存，文件已保留，请重试下载。")
+                    items[index].message = AegisLocalization.string("完成回执未保存，文件已保留，请重试下载。")
                 }
                 let unresolved = directory.appendingPathComponent("Unresolved", isDirectory: true)
                 try FileManager.default.createDirectory(at: unresolved, withIntermediateDirectories: true)
@@ -362,7 +366,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
                 preservedUnresolvedFile = true
             }
             try persist(items)
-            storageError = preservedUnresolvedFile ? String(localized: "有下载文件缺少完成回执，原始文件已保留。") : nil
+            storageError = preservedUnresolvedFile ? AegisLocalization.string("有下载文件缺少完成回执，原始文件已保留。") : nil
             isReady = true
         } catch { reportStorage(error) }
     }
@@ -550,7 +554,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
     }
     private func reportStorage(_ error: any Error) {
         isReady = false
-        storageError = String(localized: "下载记录保存或恢复失败：\(error.localizedDescription)")
+        storageErrorPresentation = .resource("下载记录保存或恢复失败：\(error.localizedDescription)")
     }
     private func saveOrReport() {
         do { try persist(items) } catch { reportStorage(error) }
@@ -644,7 +648,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             var item = item
             if [.running, .queued, .pausing].contains(item.state) {
                 item.state = .paused
-                item.message = String(localized: "记录已恢复，请确认后继续下载。")
+                item.message = AegisLocalization.string("记录已恢复，请确认后继续下载。")
             }
             item.transferID = UUID()
             item.userStopState = nil
@@ -706,7 +710,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             guard generation == recordGeneration else { throw RecordRecoveryError.busy }
             if valid, tasks[id] == nil {
                 item.received = Int64(values.fileSize ?? 0)
-                item.message = String(localized: "已按文件校验值恢复记录。")
+                item.message = AegisLocalization.string("已按文件校验值恢复记录。")
                 recovered.append(item)
             }
         }
@@ -1083,7 +1087,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             if [.running, .pausing].contains(items[index].state) && !pausingTransfers.contains(receipt.taskDescription) {
                 items[index].inferredInterruption = items[index].state == .running ? true : nil
                 items[index].state = .paused
-                items[index].message = String(localized: "下载文件保存被中断，可重试下载。")
+                items[index].message = AegisLocalization.string("下载文件保存被中断，可重试下载。")
             }
             try persist(items)
             try FileManager.default.removeItem(at: url)
@@ -1211,7 +1215,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
                 items[index].userStopState = .paused
                 items[index].resumeDataUsable = false
                 items[index].inferredInterruption = nil
-                items[index].message = String(localized: "网络连接中断。连接恢复后可继续下载。")
+                items[index].message = AegisLocalization.string("网络连接中断。连接恢复后可继续下载。")
                 tasks[items[index].id] = nil
                 recordStop(name, state: .paused)
                 let receiptURL = pendingDirectory.appendingPathComponent(name + "--resume-" + UUID().uuidString + ".json")
@@ -1272,7 +1276,7 @@ public final class DownloadManager: NSObject, ObservableObject, URLSessionDownlo
             candidate[index].received = 0; candidate[index].expected = 0
             candidate[index].transferID = UUID()
             candidate[index].state = .queued
-            candidate[index].message = String(localized: "上个镜像失败，正在尝试备用镜像。")
+            candidate[index].message = AegisLocalization.string("上个镜像失败，正在尝试备用镜像。")
             try persist(candidate)
             items = candidate
             releasePause(name)

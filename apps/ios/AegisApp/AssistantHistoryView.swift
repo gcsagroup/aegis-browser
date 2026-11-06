@@ -5,13 +5,15 @@ struct AssistantHistoryView: View {
     @EnvironmentObject private var tasks: AssistantTaskStore
     @Environment(\.dismiss) private var dismiss
     let resume: (AssistantTaskRecord) -> Void
-    @State private var error: String?
+    @State private var error: AegisLocalizedMessage?
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             List {
                 Text("记录会保留目标和来源。继续任务时需重新读取网页、确认发送。只有主动保存的研究结果才会保留。")
                     .font(.footnote).foregroundStyle(.secondary)
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { Text(error.text).foregroundStyle(.red) }
                 if tasks.records.isEmpty { ContentUnavailableView("暂无任务记录", systemImage: "clock") }
                 ForEach(tasks.records) { record in
                     DisclosureGroup {
@@ -23,7 +25,7 @@ struct AssistantHistoryView: View {
                             ShareLink(item: report) { Label("分享研究结果", systemImage: "square.and.arrow.up") }
                         }
                         Button("删除记录", role: .destructive) {
-                            do { try tasks.remove(record.id) } catch { self.error = error.localizedDescription }
+                            do { try tasks.remove(record.id) } catch { self.error = .error(error) }
                         }
                     } label: {
                         VStack(alignment: .leading) {
@@ -33,16 +35,16 @@ struct AssistantHistoryView: View {
                     }
                 }
             }
-            .navigationTitle("任务记录")
+            .localizedNavigationTitle("任务记录")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
     }
     private func stateTitle(_ state: AssistantTaskRecord.State) -> String {
         switch state {
-        case .running: String(localized: "正在分析")
-        case .completed: String(localized: "已完成")
-        case .interrupted: String(localized: "已暂停，可重新运行")
-        case .failed: String(localized: "分析失败")
+        case .running: AegisLocalization.string("正在分析")
+        case .completed: AegisLocalization.string("已完成")
+        case .interrupted: AegisLocalization.string("已暂停，可重新运行")
+        case .failed: AegisLocalization.string("分析失败")
         }
     }
 }

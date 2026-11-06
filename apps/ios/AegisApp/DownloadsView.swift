@@ -13,9 +13,9 @@ struct DownloadsView: View {
     @State private var mirrorAddresses = ""
     @State private var importingMetalink = false
     @State private var importedPlan: DownloadPlan?
-    @State private var error: String?
+    @State private var error: AegisLocalizedMessage?
     @State private var exportFile: ExportedFile?
-    @State private var savedMessage: String?
+    @State private var savedMessage: AegisLocalizedMessage?
     @State private var query = ""
     @State private var filter: DownloadFilter = .all
     @State private var sort: DownloadSort = .newest
@@ -35,10 +35,10 @@ struct DownloadsView: View {
         case all, active, completed, interrupted
         var title: String {
             switch self {
-            case .all: String(localized: "全部")
-            case .active: String(localized: "进行中")
-            case .completed: String(localized: "已完成")
-            case .interrupted: String(localized: "暂停或失败")
+            case .all: AegisLocalization.string("全部")
+            case .active: AegisLocalization.string("进行中")
+            case .completed: AegisLocalization.string("已完成")
+            case .interrupted: AegisLocalization.string("暂停或失败")
             }
         }
         func includes(_ item: BrowserDownload) -> Bool {
@@ -54,9 +54,9 @@ struct DownloadsView: View {
         case newest, name, size
         var title: String {
             switch self {
-            case .newest: String(localized: "最新优先")
-            case .name: String(localized: "按名称")
-            case .size: String(localized: "按文件大小")
+            case .newest: AegisLocalization.string("最新优先")
+            case .name: AegisLocalization.string("按名称")
+            case .size: AegisLocalization.string("按文件大小")
             }
         }
     }
@@ -72,7 +72,9 @@ struct DownloadsView: View {
         }
     }
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             List(selection: $selection) {
                 if let error = downloads.storageError {
@@ -82,8 +84,8 @@ struct DownloadsView: View {
                 }
                 newDownloadSection
                 if let plan = importedPlan { metalinkSection(plan) }
-                if let error, error != downloads.storageError { Text(error).foregroundStyle(.red) }
-                if let savedMessage { Text(savedMessage).accessibilityIdentifier("download-export-result") }
+                if let error, error.text != downloads.storageError { Text(error.text).foregroundStyle(.red) }
+                if let savedMessage { Text(savedMessage.text).accessibilityIdentifier("download-export-result") }
                 storageSection
                 Section("筛选与排序") {
                     Picker("下载状态", selection: $filter) {
@@ -106,7 +108,7 @@ struct DownloadsView: View {
                     }
                 }
             }
-            .navigationTitle("下载")
+            .localizedNavigationTitle("下载")
             .searchable(text: $query, prompt: "搜索文件名或网址")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.keyboardShortcut(.escape, modifiers: []) }
@@ -127,7 +129,7 @@ struct DownloadsView: View {
                 }
                 Button("取消", role: .cancel) { privateDownloadPlan = nil }
             } message: {
-                Text(String(localized: "文件、下载链接和下载记录会保留在设备上，退出私密浏览后不会自动删除。")
+                Text(AegisLocalization.string("文件、下载链接和下载记录会保留在设备上，退出私密浏览后不会自动删除。")
                      + "\n\n" + (privateDownloadPlan?.urls.map(\.absoluteString).joined(separator: "\n") ?? ""))
             }
             .confirmationDialog("如何移除下载？", isPresented: $confirmsRemoval, titleVisibility: .visible) {
@@ -136,8 +138,8 @@ struct DownloadsView: View {
             } message: { Text("记录会先备份。保留的文件可重新识别，回收站文件在清空前可以恢复。正在下载的项目需要先暂停。") }
             .confirmationDialog("永久清空回收站？", isPresented: $confirmsEmpty, titleVisibility: .visible) {
                 Button("永久删除回收站文件", role: .destructive) {
-                    do { try downloads.emptyRecycleBin(); savedMessage = String(localized: "回收站已清空。") }
-                    catch { self.error = error.localizedDescription }
+                    do { try downloads.emptyRecycleBin(); savedMessage = .resource("回收站已清空。") }
+                    catch { self.error = .error(error) }
                 }
             } message: { Text("只删除回收站中的文件，不能撤销。当前下载列表和其他备份不受影响。") }
         }
@@ -148,7 +150,7 @@ struct DownloadsView: View {
                 defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                 guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 1_048_576 else { throw DownloadPlanError.invalidMetalink }
                 importedPlan = try DownloadPlan.metalink(Data(contentsOf: url)); error = nil
-            } catch { self.error = error.localizedDescription }
+            } catch { self.error = .error(error) }
         }
         .onAppear { address = initialURL?.absoluteString ?? ""; downloads.refreshStorageUsage() }
         .quickLookPreview($previewURL)
@@ -156,7 +158,7 @@ struct DownloadsView: View {
         .sheet(item: $exportFile) { file in
             FileExportPicker(url: file.url) { saved in
                 exportFile = nil
-                if saved { savedMessage = String(localized: "文件已保存。") }
+                if saved { savedMessage = .resource("文件已保存。") }
             }
         }
     }
@@ -187,7 +189,7 @@ struct DownloadsView: View {
                     let inputs = [address] + mirrorAddresses.split(whereSeparator: \.isNewline).map(String.init)
                     let urls = try inputs.map { try DownloadManager.validatedURL($0) }
                     requestDownload(DownloadPlan(urls: urls, sha256: expectedHash))
-                } catch { self.error = error.localizedDescription }
+                } catch { self.error = .error(error) }
             } label: { Text("开始下载").frame(maxWidth: .infinity) }
             .buttonStyle(.borderedProminent).disabled(address.isEmpty || !downloads.isReady).accessibilityIdentifier("start-download")
             Text("仅下载你指定的文件，不会执行或安装。登录后才能访问的文件可能需要网站提供直接下载链接。")
@@ -218,13 +220,13 @@ struct DownloadsView: View {
 
     private func start(_ plan: DownloadPlan) {
         do { _ = try downloads.start(plan); importedPlan = nil; error = nil }
-        catch { self.error = error.localizedDescription }
+        catch { self.error = .error(error) }
     }
 
     private var storageSection: some View {
         Section {
             DisclosureGroup("下载设置与存储") {
-                SettingsPicker("同时下载数量", selection: Binding(get: { downloads.maximumConcurrentDownloads }, set: { downloads.setConcurrencyLimit($0) }), value: String(localized: "\(downloads.maximumConcurrentDownloads) 个任务")) {
+                SettingsPicker("同时下载数量", selection: Binding(get: { downloads.maximumConcurrentDownloads }, set: { downloads.setConcurrencyLimit($0) }), value: AegisLocalization.string("\(downloads.maximumConcurrentDownloads) 个任务")) {
                     ForEach(1...4, id: \.self) { Text("\($0) 个任务").tag($0) }
                 }.accessibilityIdentifier("download-concurrency")
                 Toggle("允许蜂窝网络下载", isOn: transferBinding(\.allowsCellular))
@@ -232,7 +234,7 @@ struct DownloadsView: View {
                 Toggle("允许低数据模式下载", isOn: transferBinding(\.allowsConstrained))
                 SettingsPicker("单文件容量上限", selection: Binding(get: { downloads.transferPreferences.boundedMaximumBytes }, set: { value in
                     var next = downloads.transferPreferences; next.maximumBytes = value
-                    do { try downloads.setTransferPreferences(next) } catch { self.error = error.localizedDescription }
+                    do { try downloads.setTransferPreferences(next) } catch { self.error = .error(error) }
                 }), value: ByteCountFormatter.string(fromByteCount: downloads.transferPreferences.boundedMaximumBytes, countStyle: .file)) {
                     Text("100 MB").tag(Int64(100_000_000)); Text("500 MB").tag(Int64(500_000_000))
                     Text("1 GB").tag(Int64(1_000_000_000)); Text("5 GB").tag(Int64(5_000_000_000))
@@ -264,7 +266,7 @@ struct DownloadsView: View {
     private func transferBinding(_ key: WritableKeyPath<DownloadTransferPreferences, Bool>) -> Binding<Bool> {
         Binding(get: { downloads.transferPreferences[keyPath: key] }, set: { value in
             var next = downloads.transferPreferences; next[keyPath: key] = value
-            do { try downloads.setTransferPreferences(next) } catch { self.error = error.localizedDescription }
+            do { try downloads.setTransferPreferences(next) } catch { self.error = .error(error) }
         })
     }
 
@@ -299,7 +301,7 @@ struct DownloadsView: View {
                     .labelStyle(.titleAndIcon)
             } else {
                 Button(item.state == .paused ? "继续下载" : "重新下载") {
-                    do { try downloads.resume(item.id) } catch { self.error = error.localizedDescription }
+                    do { try downloads.resume(item.id) } catch { self.error = .error(error) }
                 }.disabled(!downloads.isReady)
             }
         }.padding(.vertical, 8).buttonStyle(.bordered).accessibilityElement(children: .contain)
@@ -313,16 +315,16 @@ struct DownloadsView: View {
     }
     private func showFile(_ item: BrowserDownload, preview: Bool) {
         let url = downloads.fileURL(item)
-        guard FileManager.default.fileExists(atPath: url.path) else { error = DownloadError.missingFile.localizedDescription; return }
+        guard FileManager.default.fileExists(atPath: url.path) else { error = .error(DownloadError.missingFile); return }
         if preview, MarkdownDocument.accepts(url) {
-            do { markdownDocument = try MarkdownDocument.read(url) } catch { self.error = error.localizedDescription }
+            do { markdownDocument = try MarkdownDocument.read(url) } catch { self.error = .error(error) }
         } else if preview { previewURL = url } else { exportFile = ExportedFile(url: url) }
     }
     private func remove(includingFiles: Bool) {
         do {
             try downloads.removeDownloads(pendingRemoval, includingFiles: includingFiles)
-            selection.subtract(pendingRemoval); savedMessage = String(localized: "下载记录已备份并移除。"); error = nil
-        } catch { self.error = error.localizedDescription }
+            selection.subtract(pendingRemoval); savedMessage = .resource("下载记录已备份并移除。"); error = nil
+        } catch { self.error = .error(error) }
     }
     private func recoverFiles(fromRecycleBin: Bool) {
         recoveringFiles = true; error = nil
@@ -331,20 +333,20 @@ struct DownloadsView: View {
                 let count: Int
                 if fromRecycleBin { count = try await downloads.restoreRecycledFiles() }
                 else { count = try await downloads.recoverCompletedFiles() }
-                savedMessage = String(localized: "已恢复 \(count) 个文件的记录。")
-            } catch { self.error = error.localizedDescription }
+                savedMessage = .resource("已恢复 \(count) 个文件的记录。")
+            } catch { self.error = .error(error) }
             recoveringFiles = false
         }
     }
     private func stateTitle(_ state: BrowserDownload.State) -> String {
         switch state {
-        case .queued: String(localized: "等待下载")
-        case .running: String(localized: "正在下载")
-        case .pausing: String(localized: "正在暂停")
-        case .paused: String(localized: "已暂停")
-        case .completed: String(localized: "已完成")
-        case .failed: String(localized: "下载失败")
-        case .cancelled: String(localized: "已取消")
+        case .queued: AegisLocalization.string("等待下载")
+        case .running: AegisLocalization.string("正在下载")
+        case .pausing: AegisLocalization.string("正在暂停")
+        case .paused: AegisLocalization.string("已暂停")
+        case .completed: AegisLocalization.string("已完成")
+        case .failed: AegisLocalization.string("下载失败")
+        case .cancelled: AegisLocalization.string("已取消")
         }
     }
 }
