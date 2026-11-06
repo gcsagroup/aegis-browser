@@ -96,7 +96,7 @@ def main():
     args = parser.parse_args()
     # The destination is an identifier, never extra xcodebuild options.
     try:
-        device = str(uuid.UUID(args.device))
+        device = str(uuid.UUID(args.device)).upper()
     except ValueError:
         parser.error("Expected a simulator UUID")
     base_path = args.xctestrun.resolve(strict=True)
@@ -117,7 +117,7 @@ def main():
     work.mkdir(parents=True, exist_ok=False)
     manifest = {
         "base": str(base_path), "base_sha256": hashlib.sha256(base_bytes).hexdigest(),
-        "device": args.device, "languages": languages, "cases": cases, "status": "running", "runs": [],
+        "device": device, "languages": languages, "cases": cases, "status": "running", "runs": [],
     }
 
     def save():
@@ -188,7 +188,13 @@ def main():
                 finally:
                     run["elapsed_seconds"] = round(time.monotonic() - started, 2)
             if run["exit_code"] != 0:
-                raise RuntimeError(f"{language}: XCTest exit {run['exit_code']}")
+                error = f"{language}: xcodebuild exit {run['exit_code']}"
+                run.update(status="failed", error=error)
+                manifest.update(status="failed", error=error)
+                # Persist the observed process failure before propagating it;
+                # a process exit alone never establishes that XCTest ran.
+                save()
+                raise RuntimeError(error)
             run["evidence"] = read_evidence(log, run["expected"], run["family"], run["preferences"], run["region"])
             run["status"] = "passed"
             save()
@@ -197,8 +203,10 @@ def main():
         manifest["status"] = "failed"
         manifest["error"] = str(error)
         for run in manifest["runs"]:
-            if run["status"] == "running":
-                run["status"] = "failed"
+            if run["status"] in {"running", "timeout"}:
+                if run["status"] == "running":
+                    run["status"] = "failed"
+                run["error"] = str(error)
         print(str(error), file=sys.stderr)
     finally:
         save()
