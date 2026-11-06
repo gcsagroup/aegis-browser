@@ -9,7 +9,7 @@ struct MarkdownAssistantView: View {
   @State private var goal = "总结文档要点，并保留必要来源引用。"
   @State private var input = ""
   @State private var output = ""
-  @State private var error = ""
+  @State private var error: AegisLocalizedMessage = .verbatim("")
   @State private var confirms = false
   @State private var busy = false
   @State private var operation: Task<Void, Never>?
@@ -22,7 +22,9 @@ struct MarkdownAssistantView: View {
     let model = destination?.model ?? ""
     return "\(endpoint)\n\(model)\n发送已预览文本，不发送本地文件路径。"
   }
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     NavigationStack {
       Form {
         Section("处理范围") {
@@ -43,7 +45,7 @@ struct MarkdownAssistantView: View {
           ProgressView("正在处理…")
           Button("取消") { cancel() }
         }
-        if !error.isEmpty { Text(error).foregroundStyle(.red) }
+        if !error.text.isEmpty { Text(error.text).foregroundStyle(.red) }
         if !output.isEmpty {
           Section("结果") {
             Text(output).textSelection(.enabled)
@@ -51,7 +53,7 @@ struct MarkdownAssistantView: View {
           }
         }
       }
-      .navigationTitle("文档助手").navigationBarTitleDisplayMode(.inline)
+      .localizedNavigationTitle("文档助手").navigationBarTitleDisplayMode(.inline)
       .toolbar {
         Button("完成") {
           cancel()
@@ -72,7 +74,7 @@ struct MarkdownAssistantView: View {
     guard let destination else { return }
     cancel()
     busy = true
-    error = ""
+    error = .verbatim("")
     let token = UUID()
     generation = token
     let goal = pendingGoal
@@ -81,10 +83,10 @@ struct MarkdownAssistantView: View {
       do {
         let result = try await ModelClient(
           configuration: destination, key: ModelCredentialStore.read(for: destination)
-        ).complete(goal: goal, sources: [input], language: "中文")
+        ).complete(goal: goal, sources: [input], language: AegisLocalization.current.dialect)
         try Task.checkCancellation()
         if generation == token { output = result }
-      } catch { if generation == token { self.error = error.localizedDescription } }
+      } catch { if generation == token { self.error = .error(error) } }
       if generation == token {
         busy = false
         operation = nil

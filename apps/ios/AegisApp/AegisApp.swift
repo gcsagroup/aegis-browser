@@ -22,12 +22,23 @@ struct AegisApp: App {
     @StateObject private var windows: BrowserWindowStore
     private let dataStore: BrowserDataStore
     private let workspaceStore: WorkspaceStore
+    @StateObject private var language: AppLanguageSettings
     @StateObject private var settings: BrowserSettings
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
     @StateObject private var readingLibrary: ReadingLibrary
 
     init() {
+#if DEBUG
+        let isTest = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+#else
+        let isTest = false
+#endif
+        // UI 验收数据与用户配置、下载目录分开。
+        let defaults = isTest ? UserDefaults(suiteName: "com.gcsa.aegis.ios.ui-tests")! : .standard
+        if isTest && !ProcessInfo.processInfo.arguments.contains("--ui-testing-preferences-keep") { defaults.removePersistentDomain(forName: "com.gcsa.aegis.ios.ui-tests") }
+        if isTest && ProcessInfo.processInfo.arguments.contains("--ui-testing-dark") { defaults.set("dark", forKey: "browser.appearance") }
+        _language = StateObject(wrappedValue: AppLanguageSettings())
         let store: BrowserDataStore
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -41,15 +52,6 @@ struct AegisApp: App {
 #else
         store = BrowserDataStore()
 #endif
-#if DEBUG
-        let isTest = ProcessInfo.processInfo.arguments.contains("--ui-testing")
-#else
-        let isTest = false
-#endif
-        // UI 验收数据与用户配置、下载目录分开。
-        let defaults = isTest ? UserDefaults(suiteName: "com.gcsa.aegis.ios.ui-tests")! : .standard
-        if isTest && !ProcessInfo.processInfo.arguments.contains("--ui-testing-preferences-keep") { defaults.removePersistentDomain(forName: "com.gcsa.aegis.ios.ui-tests") }
-        if isTest && ProcessInfo.processInfo.arguments.contains("--ui-testing-dark") { defaults.set("dark", forKey: "browser.appearance") }
         _settings = StateObject(wrappedValue: BrowserSettings(defaults: defaults))
         let downloadDirectory = isTest ? FileManager.default.temporaryDirectory.appendingPathComponent("ui-downloads-" + UUID().uuidString) : nil
 #if DEBUG
@@ -93,6 +95,11 @@ struct AegisApp: App {
         WindowGroup(id: "browser", for: UUID.self) { $windowID in
             AegisWindowView(id: windowID, dataStore: dataStore, workspaces: workspaceStore, windows: windows,
                             preferences: settings.browserPreferences)
+                .environmentObject(language)
+                .environment(\.locale, language.snapshot.locale)
+                .environment(\.calendar, Calendar.autoupdatingCurrent)
+                .environment(\.timeZone, TimeZone.autoupdatingCurrent)
+                .onReceive(NotificationCenter.default.publisher(for: NSLocale.currentLocaleDidChangeNotification)) { _ in language.refresh() }
                 .environmentObject(windows)
                 .environmentObject(settings)
                 .environmentObject(downloads)
@@ -103,9 +110,9 @@ struct AegisApp: App {
         } defaultValue: {
             windows.defaultWindowID()
         }
-        .commands { BrowserKeyboardCommands() }
+        .commands { BrowserKeyboardCommands(language: language) }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { AegisFirebase.shared.refreshOnForeground() }
+            if phase == .active { language.refresh(); AegisFirebase.shared.refreshOnForeground() }
         }
     }
 
@@ -162,6 +169,7 @@ struct AegisApp: App {
 
 /// 浏览会话的生命周期跟随窗口，公共资料与下载仍由 App 持有。
 private struct AegisWindowView: View {
+    @EnvironmentObject private var language: AppLanguageSettings
     @StateObject private var browser: BrowserSession
     @ObservedObject var windows: BrowserWindowStore
     init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore,
@@ -170,9 +178,12 @@ private struct AegisWindowView: View {
         _browser = StateObject(wrappedValue: BrowserSession(dataStore: dataStore, workspaceStore: workspaces,
             windowID: id, windowStore: windows, preferences: preferences))
     }
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         AegisRootView()
             .environmentObject(browser)
+            .onChange(of: language.revision) { _, _ in browser.refreshLocalizedPresentation() }
             .onAppear {
                 windows.register(browser.windowID)
                 browser.persistSession()

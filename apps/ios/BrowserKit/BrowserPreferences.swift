@@ -9,7 +9,7 @@ public enum SearchEngine: String, CaseIterable, Codable, Sendable {
         case .google: "Google"
         case .bing: "Bing"
         case .baidu: "百度"
-        case .custom: String(localized: "自定义搜索")
+        case .custom: AegisLocalization.string("自定义搜索")
         }
     }
 }
@@ -18,16 +18,16 @@ public enum BrowserStartup: String, CaseIterable, Codable, Sendable {
     case restore, startPage, homePage
     public var title: String {
         switch self {
-        case .restore: String(localized: "恢复上次普通标签")
-        case .startPage: String(localized: "打开起始页")
-        case .homePage: String(localized: "打开主页")
+        case .restore: AegisLocalization.string("恢复上次普通标签")
+        case .startPage: AegisLocalization.string("打开起始页")
+        case .homePage: AegisLocalization.string("打开主页")
         }
     }
 }
 
 public enum SitePermission: String, CaseIterable, Codable, Sendable {
     case ask, deny
-    public var title: String { self == .ask ? String(localized: "每次询问") : String(localized: "阻止") }
+    public var title: String { self == .ask ? AegisLocalization.string("每次询问") : AegisLocalization.string("阻止") }
 }
 
 public struct SitePreferences: Codable, Equatable, Sendable {
@@ -87,10 +87,10 @@ public enum BrowserPreferenceError: LocalizedError {
     case invalidSearch, invalidHomepage, invalidSite, tooManySites
     public var errorDescription: String? {
         switch self {
-        case .invalidSearch: String(localized: "搜索模板必须是 HTTPS 地址，并在查询参数中包含一次 {searchTerms}。")
-        case .invalidHomepage: String(localized: "主页必须是有效的 HTTP 或 HTTPS 地址，不能包含账号或密码。")
-        case .invalidSite: String(localized: "只能为 HTTP 或 HTTPS 网站保存设置。")
-        case .tooManySites: String(localized: "网站设置已达到 200 项，请先移除不用的设置。")
+        case .invalidSearch: AegisLocalization.string("搜索模板必须是 HTTPS 地址，并在查询参数中包含一次 {searchTerms}。")
+        case .invalidHomepage: AegisLocalization.string("主页必须是有效的 HTTP 或 HTTPS 地址，不能包含账号或密码。")
+        case .invalidSite: AegisLocalization.string("只能为 HTTP 或 HTTPS 网站保存设置。")
+        case .tooManySites: AegisLocalization.string("网站设置已达到 200 项，请先移除不用的设置。")
         }
     }
 }
@@ -99,7 +99,11 @@ public enum BrowserPreferenceError: LocalizedError {
 @MainActor
 public final class BrowserPreferences: ObservableObject {
     @Published public private(set) var values: BrowserPreferenceValues
-    @Published public private(set) var error: String?
+    @Published private var errorPresentation: AegisLocalizedMessage?
+    public private(set) var error: String? {
+        get { errorPresentation?.text }
+        set { errorPresentation = newValue.map(AegisLocalizedMessage.verbatim) }
+    }
     private let defaults: UserDefaults
     private let key = "browser.preferences.v1"
 
@@ -111,7 +115,7 @@ public final class BrowserPreferences: ObservableObject {
                 values = try Self.validated(decoded)
             } catch {
                 values = BrowserPreferenceValues()
-                self.error = String(localized: "浏览设置无法读取，暂用默认值。原设置已保留，保存新设置前请先检查。")
+                self.errorPresentation = .resource("浏览设置无法读取，暂用默认值。原设置已保留，保存新设置前请先检查。")
             }
         } else { values = BrowserPreferenceValues() }
     }

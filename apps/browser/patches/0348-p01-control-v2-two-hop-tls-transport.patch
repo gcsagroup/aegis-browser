@@ -1,0 +1,1767 @@
+From dd95ffe125fc77991dfe78b21554688027387d56 Mon Sep 17 00:00:00 2001
+From: P01 source owner <p01-source@localhost>
+Date: Wed, 4 Nov 2026 09:49:03 +0800
+Subject: [PATCH] feat(proxy): package P01 control v2 and two-hop TLS transport
+
+Source-only draft. GN, compilation, fourteen test definitions and independent review await separate admission.
+
+diff --git a/chrome/browser/aegis/proxy/BUILD.gn b/chrome/browser/aegis/proxy/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..502fedcec93ebbf17854a9c77d99ec90002a7ea3
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/BUILD.gn
+@@ -0,0 +1,38 @@
++# Copyright 2026 GCSA
++import("//testing/test.gni")
++import("//third_party/protobuf/proto_library.gni")
++
++if (is_mac) {
++  proto_library("access_core_control") {
++    sources = [ "access_core_control.proto" ]
++  }
++
++  source_set("p01_transport") {
++    sources = [
++      "core_control_limits.h",
++      "core_control_wire_guard.cc",
++      "core_control_wire_guard.h",
++      "core_relay_pair.cc",
++      "core_relay_pair.h",
++      "core_tls.cc",
++      "core_tls.h",
++    ]
++    public_deps = [
++      ":access_core_control",
++      "//base",
++      "//crypto",
++      "//third_party/boringssl",
++    ]
++    deps = [ "//net" ]
++  }
++
++  test("p01_transport_unittests") {
++    sources = [ "core_tls_unittest.cc" ]
++    deps = [
++      ":p01_transport",
++      "//base/test:run_all_unittests",
++      "//base/test:test_support",
++      "//testing/gtest",
++    ]
++  }
++}
+diff --git a/chrome/browser/aegis/proxy/access_core_control.proto b/chrome/browser/aegis/proxy/access_core_control.proto
+new file mode 100644
+index 0000000000000000000000000000000000000000..9f32ddb5eecf720625f43845deedf9c4242c0bc8
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/access_core_control.proto
+@@ -0,0 +1,56 @@
++syntax = "proto3";
++package aegis.proxy.wire;
++option optimize_for = LITE_RUNTIME;
++
++// Private AF_UNIX socketpair only. Big-endian uint32 frame length, max 256KiB.
++// No public socket name, command line credentials, or JSON config import.
++message Owner { uint32 channel = 1; string profile = 2; string partition = 3; }
++message Group {
++  Owner owner = 1; string id = 2; uint64 selection = 3;
++  uint32 transport = 4; string server_ip = 5; uint32 server_port = 6;
++  string vless_id = 7; string server_name = 8; string reality_key = 9;
++  string short_id = 10; string ws_path = 11;
++  // Version 2 supplies every semantic field. Older/missing fields are rejected.
++  // server_ip retains its legacy field name, but carries address_kind text.
++  uint32 configuration_version = 12;
++  uint32 address_kind = 13; // 1=DNS, 2=IPv4, 3=IPv6; 0 is invalid.
++  uint32 fingerprint = 14; // 1=chrome (D08 enum 0 + presence offset).
++  bytes alpn = 15; // Ordered D08 bytes 0=h2, 1=http/1.1; empty is explicit v2.
++  string ws_host = 16;
++}
++message Inbound {
++  uint32 group_index = 1; uint32 transport = 2;
++  string username = 3; string password = 4;
++  string listener_id = 5; string registration_id = 6; string credential_slot = 7;
++}
++message Launch {
++  string profile = 1; uint32 channel = 2; string lease_id = 3;
++  int64 expiry_unix_ms = 4; uint64 network_epoch = 5;
++  repeated Group groups = 6; repeated Inbound inbounds = 7;
++  string probe_host = 8; uint32 probe_port = 9; string probe_path = 10;
++  string xray_path = 11; string session_id = 12;
++  uint32 remaining_ms = 13; uint64 group_set_version = 14;
++  // Required and exactly 2 in Control v2; forbidden (even zero) in v1.
++  uint32 local_proxy_tls_version = 15;
++}
++message Lifecycle {
++  enum Kind { INVALID = 0; ACTIVATE = 1; REVALIDATE = 2; RETIRE = 3; STOP = 4; }
++  Kind kind = 1; string attempt = 2; uint64 epoch = 3;
++  uint32 remaining_ms = 4; uint32 reason = 5;
++}
++message Endpoint {
++  string listener_id = 1; uint32 front_port = 2;
++  // Exact public leaf DER for the new HTTP-only TLS path. Not emitted in v1.
++  bytes front_tls_certificate_der = 3;
++}
++message Reply {
++  uint32 error = 1; string session_id = 2; string asset_digest = 3;
++  string config_digest = 4; string probe_digest = 5; uint64 epoch = 6;
++  repeated Endpoint endpoints = 7; bool child_reaped = 8;
++  int64 child_pid = 9; int64 child_parent = 10;
++  uint64 child_birth_seconds = 11; uint64 child_birth_microseconds = 12;
++}
++message Control {
++  uint32 version = 1; uint64 sequence = 2; string session_id = 3;
++  oneof payload { Launch launch = 4; Lifecycle lifecycle = 5; Reply reply = 6; }
++}
+diff --git a/chrome/browser/aegis/proxy/core_control_limits.h b/chrome/browser/aegis/proxy/core_control_limits.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..e83682e1cf7c359244d351cf0115e83143089a1f
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_control_limits.h
+@@ -0,0 +1,11 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_PROXY_CORE_CONTROL_LIMITS_H_
++#define CHROME_BROWSER_AEGIS_PROXY_CORE_CONTROL_LIMITS_H_
++
++#include <cstddef>
++
++namespace aegis::proxy {
++inline constexpr std::size_t kCoreControlMaxBytes = 262144;
++}  // namespace aegis::proxy
++
++#endif  // CHROME_BROWSER_AEGIS_PROXY_CORE_CONTROL_LIMITS_H_
+diff --git a/chrome/browser/aegis/proxy/core_control_wire_guard.cc b/chrome/browser/aegis/proxy/core_control_wire_guard.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..afaab9edf515e0a6db5af1fa264d9661723c7d51
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_control_wire_guard.cc
+@@ -0,0 +1,430 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/proxy/core_control_wire_guard.h"
++#include <cstdint>
++#include <bit>
++#include <limits>
++#include "chrome/browser/aegis/proxy/core_control_limits.h"
++namespace aegis::proxy::internal {
++namespace {
++enum class Message { kControl, kLaunch, kGroup, kInbound, kOwner, kLifecycle,
++                     kReply, kEndpoint, kNone };
++enum class Kind { kInvalid, kVarint, kString, kBytes, kMessage };
++struct Rule {
++  Kind kind = Kind::kInvalid;
++  Message child = Message::kNone;
++  unsigned repeated_limit = 0;
++  uint64_t maximum = std::numeric_limits<uint64_t>::max();
++};
++constexpr Rule Scalar(uint64_t maximum = std::numeric_limits<uint64_t>::max()) {
++  return {Kind::kVarint, Message::kNone, 0, maximum};
++}
++constexpr Rule Text() { return {Kind::kString}; }
++constexpr Rule Nested(Message child, unsigned limit = 0) {
++  return {Kind::kMessage, child, limit};
++}
++Rule Field(Message message, unsigned field, uint32_t version) {
++  switch (message) {
++    case Message::kOwner:
++      switch (field) {
++        case 1: return Scalar(0xffffffffu);
++        case 2: return Text();
++        case 3: return Text();
++      }
++      break;
++    case Message::kGroup:
++      switch (field) {
++        case 1: return Nested(Message::kOwner);
++        case 2: return Text();
++        case 3: return Scalar();
++        case 4: return Scalar(0xffffffffu);
++        case 5: return Text();
++        case 6: return Scalar(0xffffffffu);
++        case 7: return Text();
++        case 8: return Text();
++        case 9: return Text();
++        case 10: return Text();
++        case 11: return Text();
++        case 12: return Scalar(2);
++        case 13: return Scalar(3);
++        case 14: return Scalar(1);
++        case 15: return {Kind::kString, Message::kNone, 0, 2};
++        case 16: return {Kind::kString, Message::kNone, 0, 259};
++      }
++      break;
++    case Message::kInbound:
++      switch (field) {
++        case 1: return Scalar(0xffffffffu);
++        case 2: return Scalar(0xffffffffu);
++        case 3: return Text();
++        case 4: return Text();
++        case 5: return Text();
++        case 6: return Text();
++        case 7: return Text();
++      }
++      break;
++    case Message::kLaunch:
++      switch (field) {
++        case 1: return Text();
++        case 2: return Scalar(0xffffffffu);
++        case 3: return Text();
++        case 4: return Scalar();
++        case 5: return Scalar();
++        case 6: return Nested(Message::kGroup, 16);
++        case 7: return Nested(Message::kInbound, 32);
++        case 8: return Text();
++        case 9: return Scalar(0xffffffffu);
++        case 10: return Text();
++        case 11: return Text();
++        case 12: return Text();
++        case 13: return Scalar(0xffffffffu);
++        case 14: return Scalar();
++        case 15: return version == 2 ? Scalar(2) : Rule{};
++      }
++      break;
++    case Message::kLifecycle:
++      switch (field) {
++        case 1: return Scalar(0xffffffffu);
++        case 2: return Text();
++        case 3: return Scalar();
++        case 4: return Scalar(0xffffffffu);
++        case 5: return Scalar(0xffffffffu);
++      }
++      break;
++    case Message::kEndpoint:
++      switch (field) {
++        case 1: return Text();
++        case 2: return Scalar(0xffffffffu);
++        case 3: return version == 2
++            ? Rule{Kind::kBytes, Message::kNone, 0, 4096} : Rule{};
++      }
++      break;
++    case Message::kReply:
++      switch (field) {
++        case 1: return Scalar(0xffffffffu);
++        case 2: return Text();
++        case 3: return Text();
++        case 4: return Text();
++        case 5: return Text();
++        case 6: return Scalar();
++        case 7: return Nested(Message::kEndpoint, 32);
++        case 8: return Scalar(1);
++        case 9: return Scalar();
++        case 10: return Scalar();
++        case 11: return Scalar();
++        case 12: return Scalar();
++      }
++      break;
++    case Message::kControl:
++      switch (field) {
++        case 1: return Scalar(0xffffffffu);
++        case 2: return Scalar();
++        case 3: return Text();
++        case 4: return Nested(Message::kLaunch);
++        case 5: return Nested(Message::kLifecycle);
++        case 6: return Nested(Message::kReply);
++      }
++      break;
++    case Message::kNone: break;
++  }
++  return {};
++}
++bool Varint(std::string_view& input, uint64_t& value) {
++  value = 0;
++  for (unsigned shift = 0; shift < 64; shift += 7) {
++    if (input.empty()) return false;
++    const auto byte = static_cast<uint8_t>(input.front());
++    input.remove_prefix(1);
++    if (shift == 63 && byte > 1) return false;
++    value |= static_cast<uint64_t>(byte & 0x7f) << shift;
++    if (!(byte & 0x80)) return true;
++  }
++  return false;
++}
++// The generated parser must never allocate/log a malformed UTF-8 string.
++bool UTF8(std::string_view text) {
++  size_t i = 0;
++  auto continuation = [&](size_t index) {
++    return index < text.size() &&
++           (static_cast<uint8_t>(text[index]) & 0xc0) == 0x80;
++  };
++  while (i < text.size()) {
++    const auto lead = static_cast<uint8_t>(text[i++]);
++    if (lead < 0x80) continue;
++    if (lead >= 0xc2 && lead <= 0xdf) {
++      if (!continuation(i)) return false;
++      ++i;
++    } else if (lead >= 0xe0 && lead <= 0xef) {
++      if (!continuation(i) || !continuation(i + 1)) return false;
++      const auto next = static_cast<uint8_t>(text[i]);
++      if ((lead == 0xe0 && next < 0xa0) || (lead == 0xed && next > 0x9f))
++        return false;
++      i += 2;
++    } else if (lead >= 0xf0 && lead <= 0xf4) {
++      if (!continuation(i) || !continuation(i + 1) || !continuation(i + 2))
++        return false;
++      const auto next = static_cast<uint8_t>(text[i]);
++      if ((lead == 0xf0 && next < 0x90) || (lead == 0xf4 && next > 0x8f))
++        return false;
++      i += 3;
++    } else {
++      return false;
++    }
++  }
++  return true;
++}
++bool Scan(std::string_view input, Message message, unsigned depth,
++          uint32_t version) {
++  if (depth > 4) return false;  // Control / Launch / Group / Owner.
++  uint32_t seen = 0;
++  unsigned groups = 0, inbounds = 0, endpoints = 0, payloads = 0;
++  while (!input.empty()) {
++    uint64_t tag = 0;
++    if (!Varint(input, tag) || tag == 0 || (tag >> 3) > 16) return false;
++    const auto field = static_cast<unsigned>(tag >> 3);
++    if (field == 0) return false;
++    const Rule rule = Field(message, field, version);
++    if (rule.kind == Kind::kInvalid) return false;
++    const uint32_t bit = uint32_t{1} << field;
++    if (rule.repeated_limit) {
++      unsigned& count = message == Message::kReply ? endpoints :
++                        field == 6 ? groups : inbounds;
++      if (++count > rule.repeated_limit) return false;
++    } else {
++      if (seen & bit) return false;
++      seen |= bit;
++    }
++    if (message == Message::kControl && field >= 4 && ++payloads != 1)
++      return false;
++    if (rule.kind == Kind::kVarint) {
++      uint64_t ignored = 0;
++      if ((tag & 7) != 0 || !Varint(input, ignored) || ignored > rule.maximum)
++        return false;
++      if (message == Message::kGroup &&
++          ((field == 12 && ignored != 2) ||
++           (field == 13 && ignored == 0) ||
++           (field == 14 && ignored != 1))) return false;
++      if (message == Message::kLaunch && field == 15 && ignored != 2)
++        return false;
++      continue;
++    }
++    uint64_t length = 0;
++    if ((tag & 7) != 2 || !Varint(input, length) || length > input.size())
++      return false;
++    const auto nested = input.substr(0, static_cast<size_t>(length));
++    input.remove_prefix(static_cast<size_t>(length));
++    if (rule.kind == Kind::kBytes && (!length || length > rule.maximum))
++      return false;
++    if (rule.kind == Kind::kString &&
++        (length > rule.maximum || !UTF8(nested))) return false;
++    if (message == Message::kGroup && field == 15) {
++      if (nested.size() > 2 || (nested.size() == 2 && nested[0] == nested[1]))
++        return false;
++      for (unsigned char value : nested) if (value > 1) return false;
++    }
++    if (rule.kind == Kind::kMessage && !Scan(nested, rule.child, depth + 1, version))
++      return false;
++  }
++  if (message == Message::kLaunch && version == 2 && !(seen & (1u << 15)))
++    return false;
++  if (message == Message::kGroup) {
++    constexpr uint32_t required = (1u << 12) | (1u << 13) | (1u << 14);
++    if ((seen & required) != required) return false;
++  }
++  return message != Message::kControl || payloads == 1;
++}
++
++// A second allocation-free walk fills fresh, retained protobuf fields directly.
++// Do not call protobuf's generic parser: its patch/string parser buffers are
++// outside delivery's erasure custody. Every destination string is empty and
++// written exactly once after the entire frame has passed preflight.
++struct WireField { unsigned number = 0; uint64_t scalar = 0; std::string_view bytes; };
++bool NextField(std::string_view& input, WireField& field) {
++  uint64_t tag = 0;
++  if (!Varint(input, tag)) return false;
++  field.number = static_cast<unsigned>(tag >> 3);
++  if ((tag & 7) == 0) return Varint(input, field.scalar);
++  uint64_t length = 0;
++  if ((tag & 7) != 2 || !Varint(input, length) || length > input.size())
++    return false;
++  field.bytes = input.substr(0, static_cast<size_t>(length));
++  input.remove_prefix(static_cast<size_t>(length)); return true;
++}
++bool Fill(wire::Owner&, std::string_view);
++bool Fill(wire::Group&, std::string_view);
++bool Fill(wire::Inbound&, std::string_view);
++bool Fill(wire::Launch&, std::string_view);
++bool Fill(wire::Lifecycle&, std::string_view);
++bool Fill(wire::Endpoint&, std::string_view);
++bool Fill(wire::Reply&, std::string_view);
++bool Fill(wire::Control&, std::string_view);
++bool Fill(wire::Owner& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: output.set_channel(static_cast<uint32_t>(field.scalar)); break;
++      case 2: output.mutable_profile()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 3: output.mutable_partition()->assign(field.bytes.data(), field.bytes.size()); break;
++      default: return false;
++    }
++  }
++  return true;
++}
++bool Fill(wire::Group& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: if (!Fill(*output.mutable_owner(), field.bytes)) return false; break;
++      case 2: output.mutable_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 3: output.set_selection(static_cast<uint64_t>(field.scalar)); break;
++      case 4: output.set_transport(static_cast<uint32_t>(field.scalar)); break;
++      case 5: output.mutable_server_ip()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 6: output.set_server_port(static_cast<uint32_t>(field.scalar)); break;
++      case 7: output.mutable_vless_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 8: output.mutable_server_name()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 9: output.mutable_reality_key()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 10: output.mutable_short_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 11: output.mutable_ws_path()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 12: output.set_configuration_version(static_cast<uint32_t>(field.scalar)); break;
++      case 13: output.set_address_kind(static_cast<uint32_t>(field.scalar)); break;
++      case 14: output.set_fingerprint(static_cast<uint32_t>(field.scalar)); break;
++      case 15: output.mutable_alpn()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 16: output.mutable_ws_host()->assign(field.bytes.data(), field.bytes.size()); break;
++      default: return false;
++    }
++  }
++  return true;
++}
++bool Fill(wire::Inbound& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: output.set_group_index(static_cast<uint32_t>(field.scalar)); break;
++      case 2: output.set_transport(static_cast<uint32_t>(field.scalar)); break;
++      case 3: output.mutable_username()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 4: output.mutable_password()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 5: output.mutable_listener_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 6: output.mutable_registration_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 7: output.mutable_credential_slot()->assign(field.bytes.data(), field.bytes.size()); break;
++      default: return false;
++    }
++  }
++  return true;
++}
++bool Fill(wire::Launch& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: output.mutable_profile()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 2: output.set_channel(static_cast<uint32_t>(field.scalar)); break;
++      case 3: output.mutable_lease_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 4: output.set_expiry_unix_ms(std::bit_cast<int64_t>(field.scalar)); break;
++      case 5: output.set_network_epoch(static_cast<uint64_t>(field.scalar)); break;
++      case 6: if (!Fill(*output.add_groups(), field.bytes)) return false; break;
++      case 7: if (!Fill(*output.add_inbounds(), field.bytes)) return false; break;
++      case 8: output.mutable_probe_host()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 9: output.set_probe_port(static_cast<uint32_t>(field.scalar)); break;
++      case 10: output.mutable_probe_path()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 11: output.mutable_xray_path()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 12: output.mutable_session_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 13: output.set_remaining_ms(static_cast<uint32_t>(field.scalar)); break;
++      case 14: output.set_group_set_version(static_cast<uint64_t>(field.scalar)); break;
++      case 15: output.set_local_proxy_tls_version(static_cast<uint32_t>(field.scalar)); break;
++      default: return false;
++    }
++  }
++  return true;
++}
++bool Fill(wire::Lifecycle& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: output.set_kind(static_cast<wire::Lifecycle::Kind>(field.scalar)); break;
++      case 2: output.mutable_attempt()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 3: output.set_epoch(static_cast<uint64_t>(field.scalar)); break;
++      case 4: output.set_remaining_ms(static_cast<uint32_t>(field.scalar)); break;
++      case 5: output.set_reason(static_cast<uint32_t>(field.scalar)); break;
++      default: return false;
++    }
++  }
++  return true;
++}
++bool Fill(wire::Endpoint& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: output.mutable_listener_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 2: output.set_front_port(static_cast<uint32_t>(field.scalar)); break;
++      case 3: output.mutable_front_tls_certificate_der()->assign(field.bytes.data(), field.bytes.size()); break;
++      default: return false;
++    }
++  }
++  return true;
++}
++bool Fill(wire::Reply& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: output.set_error(static_cast<uint32_t>(field.scalar)); break;
++      case 2: output.mutable_session_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 3: output.mutable_asset_digest()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 4: output.mutable_config_digest()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 5: output.mutable_probe_digest()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 6: output.set_epoch(static_cast<uint64_t>(field.scalar)); break;
++      case 7: if (!Fill(*output.add_endpoints(), field.bytes)) return false; break;
++      case 8: output.set_child_reaped(field.scalar != 0); break;
++      case 9: output.set_child_pid(std::bit_cast<int64_t>(field.scalar)); break;
++      case 10: output.set_child_parent(std::bit_cast<int64_t>(field.scalar)); break;
++      case 11: output.set_child_birth_seconds(static_cast<uint64_t>(field.scalar)); break;
++      case 12: output.set_child_birth_microseconds(static_cast<uint64_t>(field.scalar)); break;
++      default: return false;
++    }
++  }
++  return true;
++}
++bool Fill(wire::Control& output, std::string_view input) {
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    switch (field.number) {
++      case 1: output.set_version(static_cast<uint32_t>(field.scalar)); break;
++      case 2: output.set_sequence(static_cast<uint64_t>(field.scalar)); break;
++      case 3: output.mutable_session_id()->assign(field.bytes.data(), field.bytes.size()); break;
++      case 4: if (!Fill(*output.mutable_launch(), field.bytes)) return false; break;
++      case 5: if (!Fill(*output.mutable_lifecycle(), field.bytes)) return false; break;
++      case 6: if (!Fill(*output.mutable_reply(), field.bytes)) return false; break;
++      default: return false;
++    }
++  }
++  return true;
++}
++}  // namespace
++bool HasUnambiguousCoreControlWire(std::string_view frame) noexcept {
++  if (frame.empty() || frame.size() > kCoreControlMaxBytes) return false;
++  // Establish the envelope version without allocations, independently of field
++  // order. The full scan below still rejects every duplicate and unknown tag.
++  uint32_t version = 0;
++  auto input = frame;
++  while (!input.empty()) {
++    WireField field;
++    if (!NextField(input, field)) return false;
++    if (field.number == 1) {
++      if (version || (field.scalar != 1 && field.scalar != 2)) return false;
++      version = static_cast<uint32_t>(field.scalar);
++    }
++  }
++  return version && Scan(frame, Message::kControl, 1, version);
++}
++bool DecodeCoreControlWire(std::string_view frame, wire::Control& output) noexcept {
++  // Never replace an existing payload or populated string owned by a caller.
++  if (output.ByteSizeLong() != 0 || !HasUnambiguousCoreControlWire(frame))
++    return false;
++  return Fill(output, frame);
++}
++}  // namespace aegis::proxy::internal
+diff --git a/chrome/browser/aegis/proxy/core_control_wire_guard.h b/chrome/browser/aegis/proxy/core_control_wire_guard.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..f862aa015c64555272f45c72541ee100fbe873e5
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_control_wire_guard.h
+@@ -0,0 +1,16 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_PROXY_CORE_CONTROL_WIRE_GUARD_H_
++#define CHROME_BROWSER_AEGIS_PROXY_CORE_CONTROL_WIRE_GUARD_H_
++#include <string_view>
++#include "chrome/browser/aegis/proxy/access_core_control.pb.h"
++namespace aegis::proxy::internal {
++// Allocation-free structural preflight for the fixed Control schema. Rejects
++// unknown fields, wrong wire types, singular replacements and any repeated
++// oneof payload before protobuf may allocate a secret-bearing message.
++// This accepts data only; it verifies no authority, identity or currentness.
++bool HasUnambiguousCoreControlWire(std::string_view frame) noexcept;
++// Output must be empty; on an unexpected fill failure, its caller must erase
++// retained contents before destruction. No generic protobuf parser is used.
++bool DecodeCoreControlWire(std::string_view frame, wire::Control& output) noexcept;
++}  // namespace aegis::proxy::internal
++#endif
+diff --git a/chrome/browser/aegis/proxy/core_relay_pair.cc b/chrome/browser/aegis/proxy/core_relay_pair.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e128dcf1ea5929d7e9ed355b2a18cfa58d9b57a
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_relay_pair.cc
+@@ -0,0 +1,247 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/proxy/core_relay_pair.h"
++#include <algorithm>
++#include "chrome/browser/aegis/proxy/core_tls.h"
++#include <cerrno>
++#include "base/containers/span.h"
++#include <utility>
++#include <sys/socket.h>
++#include "third_party/boringssl/src/include/openssl/mem.h"
++namespace aegis::proxy {
++
++struct CoreRelayPair::TlsState {
++  using Status = CoreTlsSocket::Status;
++  struct Side {
++    std::unique_ptr<CoreTlsSocket> socket;
++    short handshake = POLLIN | POLLOUT;
++    short read = POLLIN;
++    short write = POLLOUT;
++    short close = POLLOUT;
++    bool ready = false;
++    bool write_pending = false;
++  };
++  Side front;
++  Side backend;
++  base::TimeTicks handshake_deadline;
++
++  static short Want(Status s) {
++    if (s == Status::kWantRead)
++      return POLLIN;
++    if (s == Status::kWantWrite)
++      return POLLOUT;
++    return 0;
++  }
++
++  static short Events(const Side& side, const Direction& outgoing,
++                      const Direction& incoming) {
++    short events = 0;
++    if (!outgoing.read_eof && !outgoing.size)
++      events |= side.read;
++    if (incoming.size)
++      events |= side.write;
++    if (incoming.read_eof && !incoming.size && !incoming.write_shutdown)
++      events |= side.close;
++    return events;
++  }
++
++  static bool Handshake(Side& side, short events, bool& failed) {
++    if (side.ready || !(events & (side.handshake | POLLHUP)))
++      return false;
++    const auto s = side.socket->Handshake();
++    side.ready = s == Status::kReady;
++    side.handshake = Want(s);
++    if (!side.ready && !side.handshake)
++      failed = true;
++    return side.ready;
++  }
++
++  static bool Transfer(Side& side, short events, Direction& outgoing,
++                       Direction& incoming, bool& failed) {
++    bool progress = false;
++    if (incoming.size && (events & (side.write | POLLHUP))) {
++      auto r = side.socket->Write(incoming.bytes.data(),
++                                  static_cast<int>(incoming.size));
++      if (r.status == Status::kReady &&
++          static_cast<size_t>(r.count) == incoming.size) {
++        OPENSSL_cleanse(incoming.bytes.data(), incoming.size);
++        incoming.size = 0;
++        side.write = POLLOUT;
++        side.write_pending = false;
++        progress = true;
++      } else {
++        side.write = Want(r.status);
++        side.write_pending = side.write != 0;
++        if (!side.write) {
++          failed = true;
++          return progress;
++        }
++      }
++    }
++    // Retry a write waiting for input before starting another SSL operation.
++    // A write waiting for output keeps its exact source buffer unchanged.
++    if (!(side.write_pending && side.write == POLLIN) &&
++        !outgoing.read_eof && !outgoing.size &&
++        ((events & (side.read | POLLHUP)) ||
++         (side.read == POLLIN && side.socket->HasBufferedData()))) {
++      auto r = side.socket->Read(outgoing.bytes.data(), outgoing.bytes.size());
++      if (r.status == Status::kReady) {
++        outgoing.size = r.count;
++        side.read = POLLIN;
++        progress = true;
++      } else if (r.status == Status::kClosed) {
++        outgoing.read_eof = true;
++        progress = true;
++      } else {
++        side.read = Want(r.status);
++        if (!side.read) {
++          failed = true;
++          return progress;
++        }
++      }
++    }
++    if (incoming.read_eof && !incoming.size && !incoming.write_shutdown &&
++        (events & (side.close | POLLHUP))) {
++      const auto result = side.socket->CloseWrite();
++      if (result == Status::kReady) {
++        incoming.write_shutdown = true;
++        progress = true;
++      } else {
++        side.close = Want(result);
++        if (!side.close)
++          failed = true;
++      }
++    }
++    return progress;
++  }
++};
++
++CoreRelayPair::CoreRelayPair(base::ScopedFD client, base::ScopedFD backend,
++                             SSL_CTX& front, std::string_view backend_der,
++                             base::TimeTicks handshake_deadline)
++    : client_(std::move(client)), backend_(std::move(backend)),
++      tls_(std::make_unique<TlsState>()) {
++  tls_->handshake_deadline = handshake_deadline;
++  tls_->front.socket = CoreTlsSocket::Accept(client_.get(), front);
++  tls_->backend.socket = CoreTlsSocket::Connect(backend_.get(), backend_der);
++  failed_ = !tls_->front.socket || !tls_->backend.socket;
++}
++
++void CoreRelayPair::Cancel() {
++  failed_ = true;
++  tls_.reset();
++  client_.reset();
++  backend_.reset();
++  OPENSSL_cleanse(to_backend_.bytes.data(), to_backend_.bytes.size());
++  OPENSSL_cleanse(to_client_.bytes.data(), to_client_.bytes.size());
++}
++
++CoreRelayPair::CoreRelayPair(base::ScopedFD client, base::ScopedFD backend)
++    : client_(std::move(client)), backend_(std::move(backend)) {}
++CoreRelayPair::~CoreRelayPair() {
++  OPENSSL_cleanse(to_backend_.bytes.data(), to_backend_.bytes.size());
++  OPENSSL_cleanse(to_client_.bytes.data(), to_client_.bytes.size());
++}
++short CoreRelayPair::Events(const Direction& outgoing,
++                           const Direction& incoming) const {
++  return ((!outgoing.read_eof && outgoing.size < outgoing.bytes.size()) ? POLLIN : 0) |
++         ((!incoming.write_shutdown && incoming.size) ? POLLOUT : 0);
++}
++pollfd CoreRelayPair::ClientPoll() const {
++  if (tls_) {
++    if (failed_ || !tls_->backend.ready)
++      return {-1, 0, 0};
++    const short events = tls_->front.ready
++        ? TlsState::Events(tls_->front, to_backend_, to_client_)
++        : tls_->front.handshake;
++    return {events ? client_.get() : -1, events, 0};
++  }
++  short events = Events(to_backend_, to_client_);
++  return {events ? client_.get() : -1, events, 0};
++}
++pollfd CoreRelayPair::BackendPoll() const {
++  if (tls_) {
++    if (failed_)
++      return {-1, 0, 0};
++    const short events = !tls_->backend.ready
++        ? tls_->backend.handshake
++        : (tls_->front.ready
++               ? TlsState::Events(tls_->backend, to_client_, to_backend_) : 0);
++    return {events ? backend_.get() : -1, events, 0};
++  }
++  short events = Events(to_client_, to_backend_);
++  return {events ? backend_.get() : -1, events, 0};
++}
++bool CoreRelayPair::Transfer(int fd, short events, Direction& outgoing,
++                             Direction& incoming) {
++  if (events & (POLLERR | POLLNVAL)) { failed_ = true; return false; }
++  bool progress = false;
++  if (!outgoing.read_eof && outgoing.size < outgoing.bytes.size() &&
++      events & (POLLIN | POLLHUP)) {
++    auto available = base::span(outgoing.bytes).subspan(outgoing.size);
++    auto destination = available.first(std::min<size_t>(4096, available.size()));
++    auto n = recv(fd, destination.data(), destination.size(), 0);
++    if (n > 0) { outgoing.size += static_cast<size_t>(n); progress = true; }
++    else if (n == 0) outgoing.read_eof = true;
++    else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK)
++      failed_ = true;
++  }
++  if (!incoming.write_shutdown && incoming.size && events & POLLOUT) {
++    auto n = send(fd, incoming.bytes.data(), incoming.size, 0);
++    if (n > 0) {
++      const auto count = static_cast<size_t>(n);
++      const auto remaining = incoming.size - count;
++      auto buffered = base::span(incoming.bytes).first(incoming.size);
++      buffered.first(remaining).copy_from(buffered.subspan(count));
++      auto consumed = buffered.subspan(remaining, count);
++      OPENSSL_cleanse(consumed.data(), consumed.size());
++      incoming.size = remaining;
++      progress = true;
++    } else if (n == 0 || (errno != EINTR && errno != EAGAIN &&
++                          errno != EWOULDBLOCK)) failed_ = true;
++  }
++  return progress;
++}
++void CoreRelayPair::HalfClose(int destination, Direction& outgoing) {
++  if (!outgoing.read_eof || outgoing.size || outgoing.write_shutdown) return;
++  outgoing.write_shutdown = true;
++  if (shutdown(destination, SHUT_WR) && errno != ENOTCONN) failed_ = true;
++}
++bool CoreRelayPair::Pump(short client_events, short backend_events) {
++  if (failed_)
++    return false;
++  if (tls_) {
++    if ((client_events | backend_events) & (POLLERR | POLLNVAL)) {
++      failed_ = true;
++      return false;
++    }
++    if (!tls_->front.ready || !tls_->backend.ready) {
++      if (base::TimeTicks::Now() >= tls_->handshake_deadline) {
++        failed_ = true;
++        return false;
++      }
++      // Do not complete the client-facing handshake until the backend
++      // presented the exact expected key on this connection.
++      if (!tls_->backend.ready)
++        return TlsState::Handshake(tls_->backend, backend_events, failed_);
++      return TlsState::Handshake(tls_->front, client_events, failed_);
++    }
++    bool progress = TlsState::Transfer(tls_->front, client_events,
++                                       to_backend_, to_client_, failed_);
++    if (!failed_)
++      progress = TlsState::Transfer(tls_->backend, backend_events, to_client_,
++                                    to_backend_, failed_) || progress;
++    return progress;
++  }
++  bool progress = Transfer(client_.get(), client_events, to_backend_, to_client_);
++  if (failed_) return progress;
++  progress = Transfer(backend_.get(), backend_events, to_client_, to_backend_) || progress;
++  HalfClose(backend_.get(), to_backend_);
++  HalfClose(client_.get(), to_client_);
++  return progress;
++}
++bool CoreRelayPair::finished() const {
++  return failed_ || (to_backend_.read_eof && to_client_.read_eof &&
++      !to_backend_.size && !to_client_.size &&
++      to_backend_.write_shutdown && to_client_.write_shutdown);
++}
++}  // namespace aegis::proxy
+diff --git a/chrome/browser/aegis/proxy/core_relay_pair.h b/chrome/browser/aegis/proxy/core_relay_pair.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..ddcbb298f4324f2e797e50880b246bc735d74777
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_relay_pair.h
+@@ -0,0 +1,45 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_PROXY_CORE_RELAY_PAIR_H_
++#define CHROME_BROWSER_AEGIS_PROXY_CORE_RELAY_PAIR_H_
++#include <array>
++#include <cstddef>
++#include <memory>
++#include <string_view>
++#include <poll.h>
++#include "base/files/scoped_file.h"
++#include "base/time/time.h"
++#include "third_party/boringssl/src/include/openssl/ssl.h"
++namespace aegis::proxy {
++// One owner, two bounded directional buffers. A TCP FIN ends only its read
++// direction; shutdown(SHUT_WR) follows the corresponding buffer's last byte.
++class CoreRelayPair final {
++ public:
++  CoreRelayPair(base::ScopedFD client, base::ScopedFD backend);
++  CoreRelayPair(base::ScopedFD client, base::ScopedFD backend, SSL_CTX& front,
++                std::string_view backend_der, base::TimeTicks handshake_deadline);
++  ~CoreRelayPair();
++  void Cancel();
++  CoreRelayPair(const CoreRelayPair&) = delete;
++  CoreRelayPair& operator=(const CoreRelayPair&) = delete;
++  pollfd ClientPoll() const;
++  pollfd BackendPoll() const;
++  bool Pump(short client_events, short backend_events);
++  bool finished() const;
++ private:
++  struct Direction {
++    std::array<char, 16384> bytes{};
++    size_t size = 0;
++    bool read_eof = false;
++    bool write_shutdown = false;
++  };
++  short Events(const Direction& outgoing, const Direction& incoming) const;
++  bool Transfer(int fd, short events, Direction& outgoing, Direction& incoming);
++  void HalfClose(int destination, Direction& outgoing);
++  base::ScopedFD client_, backend_;
++  Direction to_backend_, to_client_;
++  struct TlsState;
++  std::unique_ptr<TlsState> tls_;
++  bool failed_ = false;
++};
++}  // namespace aegis::proxy
++#endif
+diff --git a/chrome/browser/aegis/proxy/core_tls.cc b/chrome/browser/aegis/proxy/core_tls.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..fbb87526a2ebcad7757030fb2268b912d1a6b760
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_tls.cc
+@@ -0,0 +1,296 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/proxy/core_tls.h"
++
++#include <cstdint>
++#include <utility>
++
++#include "base/containers/span.h"
++#include "net/cert/x509_util.h"
++#include "third_party/boringssl/src/include/openssl/bio.h"
++#include "third_party/boringssl/src/include/openssl/bytestring.h"
++#include "third_party/boringssl/src/include/openssl/err.h"
++#include "third_party/boringssl/src/include/openssl/mem.h"
++#include "third_party/boringssl/src/include/openssl/pem.h"
++#include "third_party/boringssl/src/include/openssl/x509.h"
++
++namespace aegis::proxy {
++namespace {
++
++constexpr size_t kMaxCertificateBytes = 4096;
++constexpr uint8_t kHttp11Alpn[] = {8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
++
++bssl::UniquePtr<SSL_CTX> NewContext() {
++  bssl::UniquePtr<SSL_CTX> ctx(SSL_CTX_new(TLS_method()));
++  if (!ctx || !SSL_CTX_set_min_proto_version(ctx.get(), TLS1_3_VERSION) ||
++      !SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_VERSION) ||
++      !SSL_CTX_set_num_tickets(ctx.get(), 0)) {
++    return nullptr;
++  }
++  SSL_CTX_set_session_cache_mode(ctx.get(), SSL_SESS_CACHE_OFF);
++  SSL_CTX_set_options(ctx.get(), SSL_OP_NO_TICKET);
++  return ctx;
++}
++
++int SelectHttp11(SSL*, const uint8_t** selected, uint8_t* selected_size,
++                 const uint8_t* offered, unsigned offered_size, void*) {
++  CBS protocols;
++  CBS_init(&protocols, offered, offered_size);
++  const auto expected = base::span(kHttp11Alpn).subspan<1>();
++  while (CBS_len(&protocols)) {
++    CBS protocol;
++    if (!CBS_get_u8_length_prefixed(&protocols, &protocol) ||
++        !CBS_len(&protocol)) {
++      return SSL_TLSEXT_ERR_ALERT_FATAL;
++    }
++    if (CBS_mem_equal(&protocol, expected.data(), expected.size())) {
++      *selected = CBS_data(&protocol);
++      *selected_size = static_cast<uint8_t>(CBS_len(&protocol));
++      return SSL_TLSEXT_ERR_OK;
++    }
++  }
++  return SSL_TLSEXT_ERR_ALERT_FATAL;
++}
++
++bssl::UniquePtr<X509> ParseExactDer(std::string_view der) {
++  if (der.empty() || der.size() > kMaxCertificateBytes)
++    return nullptr;
++  const auto bytes = base::as_byte_span(der);
++  const auto* next = bytes.data();
++  bssl::UniquePtr<X509> cert(d2i_X509(nullptr, &next, der.size()));
++  if (!cert || next != bytes.subspan(bytes.size()).data())
++    return nullptr;
++  return cert;
++}
++
++bool MatchesLeaf(SSL* ssl, std::string_view expected) {
++  const auto* chain = SSL_get0_peer_certificates(ssl);
++  return chain && sk_CRYPTO_BUFFER_num(chain) == 1 &&
++         !expected.empty() && expected.size() <= kMaxCertificateBytes &&
++         net::x509_util::CryptoBufferAsStringPiece(
++             sk_CRYPTO_BUFFER_value(chain, 0)) == expected;
++}
++
++class KeyPem final {
++ public:
++  KeyPem() : bio_(BIO_new(BIO_s_mem())) {}
++  ~KeyPem() {
++    const uint8_t* p;
++    size_t n;
++    if (bio_ && BIO_mem_contents(bio_.get(), &p, &n) && n)
++      OPENSSL_cleanse(const_cast<uint8_t*>(p), n);
++  }
++  std::string_view Encode(const EVP_PKEY* key) {
++    const uint8_t* p;
++    size_t n;
++    if (!bio_ ||
++        !PEM_write_bio_PrivateKey(bio_.get(), key, nullptr, nullptr, 0, nullptr,
++                                 nullptr) ||
++        !BIO_mem_contents(bio_.get(), &p, &n) || !n || n > 8192) {
++      return {};
++    }
++    return {reinterpret_cast<const char*>(p), n};
++  }
++ private:
++  bssl::UniquePtr<BIO> bio_;
++};
++
++}  // namespace
++
++CoreTlsIdentity::CoreTlsIdentity(Role role, crypto::keypair::PrivateKey key,
++                                 std::string certificate_der)
++    : role_(role), key_(std::move(key)),
++      certificate_der_(std::move(certificate_der)) {}
++
++CoreTlsIdentity::~CoreTlsIdentity() = default;
++
++std::unique_ptr<CoreTlsIdentity> CoreTlsIdentity::Generate(Role role,
++                                                           base::Time now) {
++  if (now.is_null())
++    return nullptr;
++  auto key = crypto::keypair::PrivateKey::GenerateEcP256();
++  std::string der;
++  const char* name = role == Role::kFront ? "CN=Aegis owned front"
++                                         : "CN=Aegis owned backend";
++  // These times are certificate encoding only. Session admission, deadlines
++  // and lease bounds come from the independent operation fence.
++  if (!net::x509_util::CreateSelfSignedCert(
++          key.key(), net::x509_util::DIGEST_SHA256, name, 1,
++          now - base::Minutes(1), now + base::Hours(1), {}, &der) ||
++      !ParseExactDer(der)) {
++    return nullptr;
++  }
++  return std::unique_ptr<CoreTlsIdentity>(
++      new CoreTlsIdentity(role, std::move(key), std::move(der)));
++}
++
++bssl::UniquePtr<SSL_CTX> CoreTlsIdentity::FrontServerContext() const {
++  if (role_ != Role::kFront)
++    return nullptr;
++  auto ctx = NewContext();
++  if (!ctx ||
++      !SSL_CTX_use_certificate_ASN1(
++          ctx.get(), certificate_der_.size(),
++          reinterpret_cast<const uint8_t*>(certificate_der_.data())) ||
++      !SSL_CTX_use_PrivateKey(ctx.get(), const_cast<EVP_PKEY*>(key_.key())) ||
++      !SSL_CTX_check_private_key(ctx.get())) {
++    return nullptr;
++  }
++  SSL_CTX_set_alpn_select_cb(ctx.get(), SelectHttp11, nullptr);
++  return ctx;
++}
++
++bool CoreTlsIdentity::AddBackendXrayTls(base::DictValue& inbound) const {
++  if (role_ != Role::kBackend)
++    return false;
++  auto cert = ParseExactDer(certificate_der_);
++  bssl::UniquePtr<BIO> cert_bio(BIO_new(BIO_s_mem()));
++  const uint8_t* pem;
++  size_t size;
++  if (!cert || !cert_bio || !PEM_write_bio_X509(cert_bio.get(), cert.get()) ||
++      !BIO_mem_contents(cert_bio.get(), &pem, &size) || !size || size > 8192) {
++    return false;
++  }
++  KeyPem key_pem;
++  auto key = key_pem.Encode(key_.key());
++  if (key.empty())
++    return false;
++
++  base::ListValue certificate;
++  certificate.Append(std::string(reinterpret_cast<const char*>(pem), size));
++  base::ListValue private_key;
++  private_key.Append(std::string(key));
++  base::DictValue pair;
++  pair.Set("certificate", std::move(certificate));
++  pair.Set("key", std::move(private_key));
++  pair.Set("oneTimeLoading", true);
++  base::ListValue pairs;
++  pairs.Append(std::move(pair));
++  base::ListValue alpn;
++  alpn.Append("http/1.1");
++  base::DictValue tls;
++  tls.Set("certificates", std::move(pairs));
++  tls.Set("alpn", std::move(alpn));
++  tls.Set("minVersion", "1.3");
++  tls.Set("maxVersion", "1.3");
++  tls.Set("enableSessionResumption", false);
++  base::DictValue stream;
++  stream.Set("security", "tls");
++  stream.Set("tlsSettings", std::move(tls));
++  inbound.Set("streamSettings", std::move(stream));
++  return true;
++}
++
++CoreTlsSocket::CoreTlsSocket(bssl::UniquePtr<SSL> ssl, std::string expected_peer)
++    : ssl_(std::move(ssl)), expected_peer_(std::move(expected_peer)) {}
++
++CoreTlsSocket::~CoreTlsSocket() = default;
++
++std::unique_ptr<CoreTlsSocket> CoreTlsSocket::Accept(int fd, SSL_CTX& front) {
++  bssl::UniquePtr<SSL> ssl(SSL_new(&front));
++  if (!ssl || !SSL_set_fd(ssl.get(), fd))
++    return nullptr;
++  SSL_set_early_data_enabled(ssl.get(), 0);
++  SSL_set_accept_state(ssl.get());
++  return std::unique_ptr<CoreTlsSocket>(new CoreTlsSocket(std::move(ssl), {}));
++}
++
++std::unique_ptr<CoreTlsSocket> CoreTlsSocket::Connect(
++    int fd, std::string_view exact_peer_der) {
++  if (!ParseExactDer(exact_peer_der))
++    return nullptr;
++  auto ctx = NewContext();
++  if (!ctx || SSL_CTX_set_alpn_protos(ctx.get(), kHttp11Alpn,
++                                      sizeof(kHttp11Alpn)) != 0) {
++    return nullptr;
++  }
++  SSL_CTX_set_custom_verify(ctx.get(), SSL_VERIFY_PEER, VerifyPeer);
++  bssl::UniquePtr<SSL> ssl(SSL_new(ctx.get()));
++  if (!ssl || !SSL_set_fd(ssl.get(), fd))
++    return nullptr;
++  SSL_set_early_data_enabled(ssl.get(), 0);
++  SSL_set_connect_state(ssl.get());
++  auto connection = std::unique_ptr<CoreTlsSocket>(
++      new CoreTlsSocket(std::move(ssl), std::string(exact_peer_der)));
++  if (!SSL_set_app_data(connection->ssl_.get(), connection.get()))
++    return nullptr;
++  return connection;
++}
++
++ssl_verify_result_t CoreTlsSocket::VerifyPeer(SSL* ssl, uint8_t* alert) {
++  const auto* self = static_cast<const CoreTlsSocket*>(SSL_get_app_data(ssl));
++  if (self && MatchesLeaf(ssl, self->expected_peer_))
++    return ssl_verify_ok;
++  *alert = SSL_AD_BAD_CERTIFICATE;
++  return ssl_verify_invalid;
++}
++
++CoreTlsSocket::Status CoreTlsSocket::StatusFor(int result) const {
++  switch (SSL_get_error(ssl_.get(), result)) {
++    case SSL_ERROR_WANT_READ: return Status::kWantRead;
++    case SSL_ERROR_WANT_WRITE: return Status::kWantWrite;
++    case SSL_ERROR_ZERO_RETURN: return Status::kClosed;
++    default: return Status::kFailed;
++  }
++}
++
++CoreTlsSocket::Status CoreTlsSocket::Handshake() {
++  if (failed_)
++    return Status::kFailed;
++  if (ready_)
++    return Status::kReady;
++  ERR_clear_error();
++  const int rv = SSL_do_handshake(ssl_.get());
++  if (rv != 1) {
++    const auto status = StatusFor(rv);
++    if (status == Status::kWantRead || status == Status::kWantWrite)
++      return status;
++    failed_ = true;
++    return Status::kFailed;
++  }
++  const uint8_t* alpn;
++  unsigned size;
++  SSL_get0_alpn_selected(ssl_.get(), &alpn, &size);
++  CBS negotiated;
++  CBS_init(&negotiated, alpn, size);
++  const auto expected = base::span(kHttp11Alpn).subspan<1>();
++  const bool http11 =
++      CBS_mem_equal(&negotiated, expected.data(), expected.size());
++  if (!http11 || SSL_version(ssl_.get()) != TLS1_3_VERSION ||
++      SSL_session_reused(ssl_.get()) ||
++      (!expected_peer_.empty() && !MatchesLeaf(ssl_.get(), expected_peer_))) {
++    failed_ = true;
++    return Status::kFailed;
++  }
++  ready_ = true;
++  return Status::kReady;
++}
++
++CoreTlsSocket::Result CoreTlsSocket::Read(char* data, int size) {
++  if (!ready_ || failed_ || size <= 0)
++    return {Status::kFailed};
++  ERR_clear_error();
++  const int rv = SSL_read(ssl_.get(), data, size);
++  return rv > 0 ? Result{Status::kReady, rv} : Result{StatusFor(rv)};
++}
++
++CoreTlsSocket::Result CoreTlsSocket::Write(const char* data, int size) {
++  if (!ready_ || failed_ || size <= 0)
++    return {Status::kFailed};
++  ERR_clear_error();
++  const int rv = SSL_write(ssl_.get(), data, size);
++  return rv > 0 ? Result{Status::kReady, rv} : Result{StatusFor(rv)};
++}
++
++CoreTlsSocket::Status CoreTlsSocket::CloseWrite() {
++  if (!ready_ || failed_)
++    return Status::kFailed;
++  ERR_clear_error();
++  const int rv = SSL_shutdown(ssl_.get());
++  return rv >= 0 ? Status::kReady : StatusFor(rv);
++}
++
++bool CoreTlsSocket::HasBufferedData() const {
++  return ready_ && SSL_pending(ssl_.get()) > 0;
++}
++
++}  // namespace aegis::proxy
+diff --git a/chrome/browser/aegis/proxy/core_tls.h b/chrome/browser/aegis/proxy/core_tls.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..72e674f187569c07ef93a2389e66b36e9b535b87
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_tls.h
+@@ -0,0 +1,75 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_PROXY_CORE_TLS_H_
++#define CHROME_BROWSER_AEGIS_PROXY_CORE_TLS_H_
++
++#include <memory>
++#include <string>
++#include <string_view>
++
++#include "base/time/time.h"
++#include "base/values.h"
++#include "crypto/keypair.h"
++#include "third_party/boringssl/src/include/openssl/ssl.h"
++
++namespace aegis::proxy {
++
++// Supervisor-local key ownership. A front identity cannot export a child key.
++class CoreTlsIdentity final {
++ public:
++  enum class Role { kFront, kBackend };
++
++  static std::unique_ptr<CoreTlsIdentity> Generate(Role role, base::Time now);
++  ~CoreTlsIdentity();
++  CoreTlsIdentity(const CoreTlsIdentity&) = delete;
++  CoreTlsIdentity& operator=(const CoreTlsIdentity&) = delete;
++
++  std::string_view certificate_der() const { return certificate_der_; }
++  bssl::UniquePtr<SSL_CTX> FrontServerContext() const;
++  bool AddBackendXrayTls(base::DictValue& inbound) const;
++
++ private:
++  CoreTlsIdentity(Role role, crypto::keypair::PrivateKey key,
++                  std::string certificate_der);
++  const Role role_;
++  crypto::keypair::PrivateKey key_;
++  std::string certificate_der_;
++};
++
++class CoreTlsSocket final {
++ public:
++  enum class Status { kReady, kWantRead, kWantWrite, kClosed, kFailed };
++  struct Result {
++    Status status;
++    int count = 0;
++  };
++
++  // The FD remains owned by the caller and must be nonblocking.
++  static std::unique_ptr<CoreTlsSocket> Accept(int fd, SSL_CTX& front);
++  static std::unique_ptr<CoreTlsSocket> Connect(int fd,
++                                               std::string_view exact_peer_der);
++  ~CoreTlsSocket();
++  CoreTlsSocket(const CoreTlsSocket&) = delete;
++  CoreTlsSocket& operator=(const CoreTlsSocket&) = delete;
++
++  Status Handshake();
++  Result Read(char* data, int size);
++  Result Write(const char* data, int size);
++  // A successful return means our close_notify has been sent. Read can
++  // continue until the peer closes its sending direction.
++  Status CloseWrite();
++  bool HasBufferedData() const;
++
++ private:
++  CoreTlsSocket(bssl::UniquePtr<SSL> ssl, std::string expected_peer);
++  static ssl_verify_result_t VerifyPeer(SSL* ssl, uint8_t* alert);
++  Status StatusFor(int result) const;
++
++  bssl::UniquePtr<SSL> ssl_;
++  const std::string expected_peer_;
++  bool ready_ = false;
++  bool failed_ = false;
++};
++
++}  // namespace aegis::proxy
++
++#endif  // CHROME_BROWSER_AEGIS_PROXY_CORE_TLS_H_
+diff --git a/chrome/browser/aegis/proxy/core_tls_unittest.cc b/chrome/browser/aegis/proxy/core_tls_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..c9ec3d0d5b7a57a88eb40a61ad673206c060332e
+--- /dev/null
++++ b/chrome/browser/aegis/proxy/core_tls_unittest.cc
+@@ -0,0 +1,486 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/proxy/core_tls.h"
++
++#include <fcntl.h>
++#include <poll.h>
++#include <sys/socket.h>
++
++#include <array>
++#include <cerrno>
++#include <memory>
++#include <string>
++#include <string_view>
++#include <utility>
++
++#include "base/containers/span.h"
++#include "base/files/scoped_file.h"
++#include "chrome/browser/aegis/proxy/core_control_wire_guard.h"
++#include "chrome/browser/aegis/proxy/core_relay_pair.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "third_party/boringssl/src/include/openssl/mem.h"
++
++namespace aegis::proxy {
++namespace {
++
++using Status = CoreTlsSocket::Status;
++
++bool MakePair(std::array<base::ScopedFD, 2>& out) {
++  int fds[2];
++  if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
++    return false;
++  out[0].reset(fds[0]);
++  out[1].reset(fds[1]);
++  for (auto& fd : out) {
++    const int enabled = 1;
++    if (fcntl(fd.get(), F_SETFD, FD_CLOEXEC) ||
++        fcntl(fd.get(), F_SETFL, O_NONBLOCK) ||
++        setsockopt(fd.get(), SOL_SOCKET, SO_NOSIGPIPE, &enabled,
++                   sizeof(enabled))) {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool Pending(Status status) {
++  return status == Status::kWantRead || status == Status::kWantWrite;
++}
++
++void DriveRelay(CoreRelayPair& relay) {
++  pollfd fds[] = {relay.ClientPoll(), relay.BackendPoll()};
++  if (poll(fds, 2, 1) >= 0)
++    relay.Pump(fds[0].revents, fds[1].revents);
++}
++
++TEST(CoreTlsTest, CurrentGuardRejectsUnnegotiatedFrontCertificateField) {
++  wire::Control control;
++  control.set_version(1);
++  control.set_sequence(1);
++  control.set_session_id(std::string(64, 'a'));
++  auto* reply = control.mutable_reply();
++  reply->set_session_id(control.session_id());
++  auto* endpoint = reply->add_endpoints();
++  endpoint->set_listener_id(std::string(64, 'b'));
++  endpoint->set_front_port(1234);
++  std::string bytes;
++  ASSERT_TRUE(control.SerializeToString(&bytes));
++  ASSERT_TRUE(internal::HasUnambiguousCoreControlWire(bytes));
++  endpoint->set_front_tls_certificate_der("unnegotiated");
++  ASSERT_TRUE(control.SerializeToString(&bytes));
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(bytes));
++}
++
++TEST(CoreTlsTest, KeysAreDistinctAndOnlyBackendIdentityExportsConfig) {
++  const auto now = base::Time::Now();
++  auto front = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kFront, now);
++  auto backend = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kBackend, now);
++  ASSERT_TRUE(front);
++  ASSERT_TRUE(backend);
++  EXPECT_NE(front->certificate_der(), backend->certificate_der());
++  EXPECT_TRUE(front->FrontServerContext());
++  EXPECT_FALSE(backend->FrontServerContext());
++  base::DictValue inbound;
++  EXPECT_FALSE(front->AddBackendXrayTls(inbound));
++  EXPECT_TRUE(backend->AddBackendXrayTls(inbound));
++  const auto* stream = inbound.FindDict("streamSettings");
++  ASSERT_TRUE(stream);
++  EXPECT_EQ(*stream->FindString("security"), "tls");
++  const auto* tls = stream->FindDict("tlsSettings");
++  ASSERT_TRUE(tls);
++  EXPECT_EQ(*tls->FindString("minVersion"), "1.3");
++  EXPECT_EQ(tls->FindBool("enableSessionResumption"), false);
++  // The configuration builder owns the production tree cleanse. This test
++  // owns this synthetic tree and must clear its private fixture copy too.
++  auto* certs = inbound.FindDict("streamSettings")
++                    ->FindDict("tlsSettings")->FindList("certificates");
++  ASSERT_TRUE(certs);
++  auto* keys = (*certs)[0].GetDict().FindList("key");
++  ASSERT_TRUE(keys);
++  auto& pem = (*keys)[0].GetString();
++  OPENSSL_cleanse(pem.data(), pem.size());
++}
++
++TEST(CoreTlsTest, WrongBackendCannotCompleteClientFacingHandshake) {
++  const auto now = base::Time::Now();
++  auto front = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kFront, now);
++  auto expected = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kBackend, now);
++  auto impostor = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kFront, now);
++  ASSERT_TRUE(front && expected && impostor);
++  auto front_ctx = front->FrontServerContext();
++  auto impostor_ctx = impostor->FrontServerContext();
++  ASSERT_TRUE(front_ctx && impostor_ctx);
++  std::array<base::ScopedFD, 2> client_fds, backend_fds;
++  ASSERT_TRUE(MakePair(client_fds));
++  ASSERT_TRUE(MakePair(backend_fds));
++  auto client = CoreTlsSocket::Connect(client_fds[1].get(),
++                                        front->certificate_der());
++  auto wrong_server = CoreTlsSocket::Accept(backend_fds[1].get(), *impostor_ctx);
++  ASSERT_TRUE(client && wrong_server);
++  const auto deadline = base::TimeTicks::Now() + base::Seconds(2);
++  CoreRelayPair relay(std::move(client_fds[0]), std::move(backend_fds[0]),
++                      *front_ctx, expected->certificate_der(), deadline);
++  Status client_status = client->Handshake();
++  ASSERT_TRUE(Pending(client_status));
++  while (!relay.finished() && base::TimeTicks::Now() < deadline) {
++    DriveRelay(relay);
++    wrong_server->Handshake();
++    client_status = client->Handshake();
++    ASSERT_NE(Status::kReady, client_status);
++  }
++  EXPECT_TRUE(relay.finished());
++  EXPECT_NE(Status::kReady, client->Write("secret", 6).status);
++}
++
++TEST(CoreTlsTest, RelayTransfersOnlyAfterBothHandshakesAndClosesOnCancel) {
++  const auto now = base::Time::Now();
++  // A separate local test server stands in for the Xray TLS socket. Its
++  // certificate and key never serve as the relay's frontend identity.
++  auto front = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kFront, now);
++  auto server = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kFront, now);
++  ASSERT_TRUE(front && server);
++  auto front_ctx = front->FrontServerContext();
++  auto server_ctx = server->FrontServerContext();
++  ASSERT_TRUE(front_ctx && server_ctx);
++  std::array<base::ScopedFD, 2> client_fds, backend_fds;
++  ASSERT_TRUE(MakePair(client_fds));
++  ASSERT_TRUE(MakePair(backend_fds));
++  auto client = CoreTlsSocket::Connect(client_fds[1].get(),
++                                        front->certificate_der());
++  auto backend = CoreTlsSocket::Accept(backend_fds[1].get(), *server_ctx);
++  ASSERT_TRUE(client && backend);
++  const auto deadline = base::TimeTicks::Now() + base::Seconds(2);
++  CoreRelayPair relay(std::move(client_fds[0]), std::move(backend_fds[0]),
++                      *front_ctx, server->certificate_der(), deadline);
++  EXPECT_NE(Status::kReady, client->Write("before", 6).status);
++  Status client_status = client->Handshake();
++  Status backend_status = backend->Handshake();
++  while ((Pending(client_status) || Pending(backend_status)) &&
++         !relay.finished() && base::TimeTicks::Now() < deadline) {
++    DriveRelay(relay);
++    if (Pending(client_status)) client_status = client->Handshake();
++    if (Pending(backend_status)) backend_status = backend->Handshake();
++  }
++  ASSERT_EQ(Status::kReady, client_status);
++  ASSERT_EQ(Status::kReady, backend_status);
++  ASSERT_EQ(Status::kReady, client->Write("through", 7).status);
++  char message[7];
++  CoreTlsSocket::Result received{Status::kWantRead};
++  while (Pending(received.status) && !relay.finished() &&
++         base::TimeTicks::Now() < deadline) {
++    DriveRelay(relay);
++    received = backend->Read(message, sizeof(message));
++  }
++  ASSERT_EQ(Status::kReady, received.status);
++  EXPECT_EQ(std::string_view(message, received.count), "through");
++  relay.Cancel();
++  EXPECT_TRUE(relay.finished());
++  EXPECT_EQ(Status::kFailed, backend->Read(message, sizeof(message)).status);
++}
++
++// All peers use nonblocking socketpairs. Bound both elapsed time and turns so
++// a missing wakeup and an always-writable descriptor both fail the test.
++template <typename Condition>
++bool DriveUntil(CoreRelayPair& relay, Condition done) {
++  const auto limit = base::TimeTicks::Now() + base::Seconds(4);
++  for (int turn = 0; turn < 8192 && base::TimeTicks::Now() < limit; ++turn) {
++    if (done())
++      return true;
++    if (relay.finished())
++      return false;
++    DriveRelay(relay);
++  }
++  return false;
++}
++
++bool NoWireBytes(int fd) {
++  char byte;
++  return recv(fd, &byte, 1, MSG_PEEK) < 0 &&
++         (errno == EAGAIN || errno == EWOULDBLOCK);
++}
++
++struct RelayPeers {
++  void Open(base::TimeDelta handshake_timeout, int server_fd = -1) {
++    const auto now = base::Time::Now();
++    auto front = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kFront, now);
++    auto server = CoreTlsIdentity::Generate(CoreTlsIdentity::Role::kFront, now);
++    ASSERT_TRUE(front && server);
++    auto front_ctx = front->FrontServerContext();
++    auto server_ctx = server->FrontServerContext();
++    ASSERT_TRUE(front_ctx && server_ctx);
++    std::array<base::ScopedFD, 2> front_pair, backend_pair;
++    ASSERT_TRUE(MakePair(front_pair));
++    ASSERT_TRUE(MakePair(backend_pair));
++    client_fd = std::move(front_pair[1]);
++    backend_fd = std::move(backend_pair[1]);
++    client = CoreTlsSocket::Connect(client_fd.get(), front->certificate_der());
++    backend = CoreTlsSocket::Accept(server_fd < 0 ? backend_fd.get() : server_fd,
++                                    *server_ctx);
++    ASSERT_TRUE(client && backend);
++    handshake_deadline = base::TimeTicks::Now() + handshake_timeout;
++    relay = std::make_unique<CoreRelayPair>(
++        std::move(front_pair[0]), std::move(backend_pair[0]), *front_ctx,
++        server->certificate_der(), handshake_deadline);
++    ASSERT_FALSE(relay->finished());
++  }
++
++  void Connect() {
++    ASSERT_NO_FATAL_FAILURE(Open(base::Seconds(10)));
++    Status front = Status::kWantRead;
++    Status back = Status::kWantRead;
++    ASSERT_TRUE(DriveUntil(*relay, [&] {
++      if (Pending(front))
++        front = client->Handshake();
++      if (Pending(back))
++        back = backend->Handshake();
++      return !Pending(front) && !Pending(back);
++    }));
++    ASSERT_EQ(Status::kReady, front);
++    ASSERT_EQ(Status::kReady, back);
++    // The client may complete before the relay processes its Finished.
++    ASSERT_TRUE(DriveUntil(*relay, [&] {
++      return relay->ClientPoll().fd >= 0 && relay->BackendPoll().fd >= 0;
++    }));
++  }
++
++  CoreTlsSocket::Result Read(CoreTlsSocket& peer, char* buffer, int size) {
++    CoreTlsSocket::Result result{Status::kWantRead};
++    DriveUntil(*relay, [&] {
++      result = peer.Read(buffer, size);
++      return !Pending(result.status);
++    });
++    return result;
++  }
++
++  void ExpectBytes(CoreTlsSocket& peer, std::string_view expected) {
++    std::string received(expected.size(), '\0');
++    size_t offset = 0;
++    while (offset < received.size()) {
++      auto remaining = base::span(received).subspan(offset);
++      const auto result =
++          Read(peer, remaining.data(), static_cast<int>(remaining.size()));
++      ASSERT_EQ(Status::kReady, result.status);
++      ASSERT_GT(result.count, 0);
++      ASSERT_LE(static_cast<size_t>(result.count), received.size() - offset);
++      offset += result.count;
++    }
++    EXPECT_EQ(expected, received);
++  }
++
++  base::ScopedFD client_fd, backend_fd;
++  std::unique_ptr<CoreTlsSocket> client, backend;
++  std::unique_ptr<CoreRelayPair> relay;
++  base::TimeTicks handshake_deadline;
++};
++
++enum class HandshakeEnd { kEof, kDeadline };
++
++void CheckPartialBackendHandshake(HandshakeEnd end) {
++  // A separate socketpair lets the real server consume the relay's ClientHello
++  // and lets us deliver only four bytes of its first five-byte record header.
++  std::array<base::ScopedFD, 2> server_pair;
++  ASSERT_TRUE(MakePair(server_pair));
++  RelayPeers peers;
++  const auto timeout =
++      end == HandshakeEnd::kEof ? base::Seconds(10) : base::Seconds(2);
++  ASSERT_NO_FATAL_FAILURE(peers.Open(timeout, server_pair[0].get()));
++  auto& relay = *peers.relay;
++  DriveRelay(relay);
++  // Drain just the initial flight, before anything is sent on the front leg.
++  // The limit is an upper bound on fixture traffic, independent of record size.
++  std::array<char, 4096> chunk;
++  size_t flight_size = 0;
++  while (!NoWireBytes(peers.backend_fd.get())) {
++    const auto n = recv(peers.backend_fd.get(), chunk.data(), chunk.size(), 0);
++    ASSERT_GT(n, 0);
++    flight_size += n;
++    ASSERT_LE(flight_size, 65536u);
++    ASSERT_EQ(n, send(server_pair[1].get(), chunk.data(), n, 0));
++  }
++  ASSERT_GT(flight_size, 0u);
++  ASSERT_TRUE(Pending(peers.backend->Handshake()));
++  char prefix[4];
++  ASSERT_EQ(4, recv(server_pair[1].get(), prefix, sizeof(prefix), 0));
++  ASSERT_EQ(4, send(peers.backend_fd.get(), prefix, sizeof(prefix), 0));
++
++  ASSERT_TRUE(Pending(peers.client->Handshake()));
++  const auto denied = peers.client->Write("front", 5);
++  ASSERT_EQ(Status::kFailed, denied.status);
++  ASSERT_EQ(0, denied.count);
++  DriveRelay(relay);
++  ASSERT_FALSE(relay.finished());
++  ASSERT_EQ(-1, relay.ClientPoll().fd);
++  const auto backend_poll = relay.BackendPoll();
++  ASSERT_GE(backend_poll.fd, 0);
++  ASSERT_TRUE(backend_poll.events & POLLIN);
++  ASSERT_TRUE(NoWireBytes(backend_poll.fd));  // Relay consumed the fragment.
++  ASSERT_TRUE(NoWireBytes(peers.client_fd.get()));
++  ASSERT_TRUE(NoWireBytes(peers.backend_fd.get()));
++
++  if (end == HandshakeEnd::kEof) {
++    ASSERT_EQ(0, shutdown(peers.backend_fd.get(), SHUT_WR));
++  }
++  ASSERT_TRUE(DriveUntil(relay, [&] { return relay.finished(); }));
++  if (end == HandshakeEnd::kEof) {
++    EXPECT_LT(base::TimeTicks::Now(), peers.handshake_deadline);
++  } else {
++    EXPECT_GE(base::TimeTicks::Now(), peers.handshake_deadline);
++  }
++  EXPECT_EQ(-1, relay.ClientPoll().fd);
++  EXPECT_EQ(-1, relay.BackendPoll().fd);
++  EXPECT_TRUE(NoWireBytes(peers.client_fd.get()));
++  peers.relay.reset();  // The supervisor erases finished pairs.
++  EXPECT_EQ(Status::kFailed, peers.client->Handshake());
++
++  // After the initial ClientHello, only EOF or a single plaintext fatal alert
++  // is legal on this unfinished backend handshake. Neither carries app bytes.
++  std::array<unsigned char, 8> tail{};
++  size_t used = 0;
++  while (used < tail.size()) {
++    auto remaining = base::span(tail).subspan(used);
++    const auto n =
++        recv(peers.backend_fd.get(), remaining.data(), remaining.size(), 0);
++    ASSERT_GE(n, 0);
++    if (n == 0)
++      break;
++    used += n;
++  }
++  if (used != 0) {
++    ASSERT_EQ(7u, used);
++    EXPECT_EQ(21, tail[0]);  // TLS alert
++    EXPECT_EQ(0, tail[3]);
++    EXPECT_EQ(2, tail[4]);
++    EXPECT_EQ(2, tail[5]);  // fatal
++  }
++}
++
++TEST(CoreTlsTest, PartialBackendHandshakeEofGatesFrontend) {
++  ASSERT_NO_FATAL_FAILURE(CheckPartialBackendHandshake(HandshakeEnd::kEof));
++}
++
++TEST(CoreTlsTest, PartialBackendHandshakeExpiresWithPeerStillOpen) {
++  ASSERT_NO_FATAL_FAILURE(CheckPartialBackendHandshake(HandshakeEnd::kDeadline));
++}
++
++TEST(CoreTlsTest, CloseNotifyDrainsPendingReverseBytesAndAllowsReply) {
++  RelayPeers peers;
++  ASSERT_NO_FATAL_FAILURE(peers.Connect());
++  auto& relay = *peers.relay;
++  ASSERT_FALSE(relay.ClientPoll().events & POLLOUT);
++  ASSERT_EQ(6, peers.backend->Write("queued", 6).count);
++  // POLLOUT on a fully handshaken front leg indicates a queued backend write.
++  ASSERT_TRUE(DriveUntil(
++      relay, [&] { return (relay.ClientPoll().events & POLLOUT) != 0; }));
++  ASSERT_EQ(4, peers.client->Write("last", 4).count);
++  ASSERT_EQ(Status::kReady, peers.client->CloseWrite());
++  ASSERT_NO_FATAL_FAILURE(peers.ExpectBytes(*peers.backend, "last"));
++  char byte;
++  const auto front_end = peers.Read(*peers.backend, &byte, 1);
++  ASSERT_EQ(Status::kClosed, front_end.status);
++  EXPECT_EQ(0, front_end.count);
++  ASSERT_FALSE(relay.finished());
++  ASSERT_NO_FATAL_FAILURE(peers.ExpectBytes(*peers.client, "queued"));
++
++  ASSERT_EQ(5, peers.backend->Write("reply", 5).count);
++  ASSERT_EQ(Status::kReady, peers.backend->CloseWrite());
++  ASSERT_NO_FATAL_FAILURE(peers.ExpectBytes(*peers.client, "reply"));
++  const auto back_end = peers.Read(*peers.client, &byte, 1);
++  EXPECT_EQ(Status::kClosed, back_end.status);
++  EXPECT_EQ(0, back_end.count);
++  EXPECT_TRUE(DriveUntil(relay, [&] { return relay.finished(); }));
++}
++
++TEST(CoreTlsTest, TruncatedBackendRecordAbortsEstablishedFrontend) {
++  RelayPeers peers;
++  ASSERT_NO_FATAL_FAILURE(peers.Connect());
++  ASSERT_EQ(6, peers.backend->Write("intact", 6).count);
++  ASSERT_NO_FATAL_FAILURE(peers.ExpectBytes(*peers.client, "intact"));
++
++  // The record promises 32 bytes of TLSCiphertext but supplies only two.
++  constexpr unsigned char fragment[] = {23, 3, 3, 0, 32, 0xaa, 0xbb};
++  ASSERT_EQ(static_cast<ssize_t>(sizeof(fragment)),
++            send(peers.backend_fd.get(), fragment, sizeof(fragment), 0));
++  DriveRelay(*peers.relay);
++  ASSERT_FALSE(peers.relay->finished());
++  char byte;
++  const auto partial = peers.client->Read(&byte, 1);
++  ASSERT_TRUE(Pending(partial.status));
++  EXPECT_EQ(0, partial.count);
++  ASSERT_EQ(0, shutdown(peers.backend_fd.get(), SHUT_WR));
++  ASSERT_TRUE(
++      DriveUntil(*peers.relay, [&] { return peers.relay->finished(); }));
++  EXPECT_EQ(-1, peers.relay->ClientPoll().fd);
++  EXPECT_EQ(-1, peers.relay->BackendPoll().fd);
++  peers.relay.reset();
++  const auto eof = peers.client->Read(&byte, 1);
++  EXPECT_EQ(Status::kFailed, eof.status);
++  EXPECT_EQ(0, eof.count);
++}
++
++// Actual wire preflight/fill only; not deployment or currentness evidence.
++TEST(CoreTlsTest, V2BinaryCertificateSurvivesRetainedFill) {
++  wire::Control input;
++  input.set_version(2);
++  auto* endpoint = input.mutable_reply()->add_endpoints();
++  endpoint->set_listener_id(std::string(64, 'b'));
++  endpoint->set_front_port(1234);
++  const std::string der("\x30\x00\xff\x80", 4);
++  endpoint->set_front_tls_certificate_der(der);
++  std::string bytes;
++  ASSERT_TRUE(input.SerializeToString(&bytes));
++  ASSERT_TRUE(internal::HasUnambiguousCoreControlWire(bytes));
++  wire::Control output;
++  ASSERT_TRUE(internal::DecodeCoreControlWire(bytes, output));
++  ASSERT_EQ(output.reply().endpoints_size(), 1);
++  EXPECT_EQ(output.reply().endpoints(0).front_tls_certificate_der(), der);
++}
++TEST(CoreTlsTest, V2RequiresExplicitLaunchTlsVersion) {
++  wire::Control input;
++  input.set_version(2);
++  input.mutable_launch();
++  std::string bytes;
++  ASSERT_TRUE(input.SerializeToString(&bytes));
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(bytes));
++  input.mutable_launch()->set_local_proxy_tls_version(1);
++  ASSERT_TRUE(input.SerializeToString(&bytes));
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(bytes));
++  input.mutable_launch()->set_local_proxy_tls_version(2);
++  ASSERT_TRUE(input.SerializeToString(&bytes));
++  wire::Control output;
++  ASSERT_TRUE(internal::DecodeCoreControlWire(bytes, output));
++  EXPECT_EQ(output.launch().local_proxy_tls_version(), 2u);
++}
++TEST(CoreTlsTest, VersionMayFollowPayloadButCannotRepeat) {
++  const std::string bytes("\x22\x02\x78\x02\x08\x02", 6);
++  EXPECT_TRUE(internal::HasUnambiguousCoreControlWire(bytes));
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(
++      bytes + std::string("\x08\x02", 2)));
++}
++TEST(CoreTlsTest, V1LaunchRejectsTlsNegotiationField) {
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(
++      std::string("\x08\x01\x22\x02\x78\x02", 6)));
++  EXPECT_TRUE(internal::HasUnambiguousCoreControlWire(
++      std::string("\x08\x01\x22\x00", 4)));
++}
++TEST(CoreTlsTest, CertificateBoundAndDuplicateRemainStrict) {
++  wire::Control input;
++  input.set_version(2);
++  auto* endpoint = input.mutable_reply()->add_endpoints();
++  endpoint->set_front_tls_certificate_der(std::string(4096, '\xff'));
++  std::string bytes;
++  ASSERT_TRUE(input.SerializeToString(&bytes));
++  EXPECT_TRUE(internal::HasUnambiguousCoreControlWire(bytes));
++  endpoint->set_front_tls_certificate_der(std::string(4097, '\xff'));
++  ASSERT_TRUE(input.SerializeToString(&bytes));
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(bytes));
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(
++      std::string("\x08\x02\x32\x08\x3a\x06\x1a\x01\xff\x1a\x01\xff", 12)));
++}
++TEST(CoreTlsTest, EmptyCertificateAndUnknownVersionFailPreflight) {
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(
++      std::string("\x08\x02\x32\x04\x3a\x02\x1a\x00", 8)));
++  EXPECT_FALSE(internal::HasUnambiguousCoreControlWire(
++      std::string("\x08\x03\x32\x00", 4)));
++}
++
++}  // namespace
++}  // namespace aegis::proxy

@@ -13,7 +13,7 @@ struct BrowserLibraryView: View {
     @State private var pendingRestore: SavedWorkspace?
     @State private var showRestore = false
     @State private var restoredTabIDs: [UUID] = []
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
     @State private var editingWorkspace: SavedWorkspace?
     @State private var renamePrompt = false
     @State private var importing = false
@@ -30,9 +30,9 @@ struct BrowserLibraryView: View {
         case newest, title, site
         var title: String {
             switch self {
-            case .newest: String(localized: "最新优先")
-            case .title: String(localized: "按名称")
-            case .site: String(localized: "按网站")
+            case .newest: AegisLocalization.string("最新优先")
+            case .title: AegisLocalization.string("按名称")
+            case .site: AegisLocalization.string("按网站")
             }
         }
     }
@@ -65,7 +65,9 @@ struct BrowserLibraryView: View {
         }
     }
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             List {
                 Picker("浏览资料", selection: $section) {
@@ -111,7 +113,7 @@ struct BrowserLibraryView: View {
                         Button("导入工作区") { importing = true }.accessibilityIdentifier("import-workspaces")
                         Button("导出工作区") {
                             do { exportDocument = WorkspaceDocument(data: try workspaces.exportData()); exporting = true }
-                            catch { message = error.localizedDescription }
+                            catch { message = .error(error) }
                         }.disabled(workspaces.workspaces.isEmpty).accessibilityIdentifier("export-workspaces")
                     }
                     Text("保存当前浏览模式下标签的网址，并移除检测到的敏感参数。恢复时会追加标签，不会关闭现有页面。")
@@ -128,7 +130,7 @@ struct BrowserLibraryView: View {
                         }
                         .swipeActions {
                             Button("删除", role: .destructive) {
-                                do { try workspaces.remove(workspace.id) } catch { message = error.localizedDescription }
+                                do { try workspaces.remove(workspace.id) } catch { message = .error(error) }
                             }
                             Button("重命名") { editingWorkspace = workspace; name = workspace.name; renamePrompt = true }
                         }
@@ -136,15 +138,15 @@ struct BrowserLibraryView: View {
                     if !restoredTabIDs.isEmpty {
                         Button("撤销本次恢复") {
                             for id in restoredTabIDs { browser.close(id) }
-                            restoredTabIDs = []; message = String(localized: "本次恢复的标签已关闭。")
+                            restoredTabIDs = []; message = .resource("本次恢复的标签已关闭。")
                         }
                     }
                 }
-                if let message, message != workspaces.storageError {
-                    Text(message).font(.callout).accessibilityIdentifier("library-message")
+                if let message, message.text != workspaces.storageError {
+                    Text(message.text).font(.callout).accessibilityIdentifier("library-message")
                 }
             }
-            .navigationTitle("浏览资料")
+            .localizedNavigationTitle("浏览资料")
             .searchable(text: $query, prompt: "搜索标题或网址")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.keyboardShortcut(.escape, modifiers: []) }
@@ -164,12 +166,12 @@ struct BrowserLibraryView: View {
                     defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                     guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0) <= 2_000_000 else { throw WorkspaceError.invalidImport }
                     importPreview = try WorkspaceStore.previewImport(Data(contentsOf: url)); confirmImport = true
-                } catch { message = error.localizedDescription }
+                } catch { message = .error(error) }
             }
             .fileExporter(isPresented: $exporting, document: exportDocument, contentType: .json, defaultFilename: "Aegis 工作区") { result in
                 switch result {
-                case .success: message = String(localized: "工作区文件已保存。")
-                case let .failure(error): message = error.localizedDescription
+                case .success: message = .resource("工作区文件已保存。")
+                case let .failure(error): message = .error(error)
                 }
             }
             .alert("移除已保存的收藏？", isPresented: $confirmsPrivateBookmarkRemoval) {
@@ -183,15 +185,15 @@ struct BrowserLibraryView: View {
                 TextField("工作区名称", text: $name)
                 Button("保存") {
                     if let editingWorkspace {
-                        do { try workspaces.rename(editingWorkspace.id, to: name) } catch { message = error.localizedDescription }
+                        do { try workspaces.rename(editingWorkspace.id, to: name) } catch { message = .error(error) }
                     }
                 }
                 Button("取消", role: .cancel) { }
             }
             .confirmationDialog("导入这些工作区？", isPresented: $confirmImport, titleVisibility: .visible) {
                 Button("确认导入") {
-                    do { try workspaces.importWorkspaces(importPreview); message = String(localized: "工作区已导入。") }
-                    catch { message = error.localizedDescription }
+                    do { try workspaces.importWorkspaces(importPreview); message = .resource("工作区已导入。") }
+                    catch { message = .error(error) }
                     importPreview = []
                 }
             } message: { Text(importPreview.map { "\($0.name)（\($0.urls.count)）" }.joined(separator: "、")) }
@@ -200,8 +202,8 @@ struct BrowserLibraryView: View {
                 Button("保存") {
                     do {
                         let value = try browser.saveWorkspace(name: name, privateSaveConfirmed: browser.profile.isPrivate)
-                        message = String(localized: "已保存 \(value.urls.count) 个页面。"); name = ""
-                    } catch { message = error.localizedDescription }
+                        message = .resource("已保存 \(value.urls.count) 个页面。"); name = ""
+                    } catch { message = .error(error) }
                 }
                 Button("取消", role: .cancel) { }
             } message: {
@@ -213,7 +215,7 @@ struct BrowserLibraryView: View {
                 Button("追加打开这些页面") {
                     if let pendingRestore {
                         restoredTabIDs = browser.restoreWorkspace(pendingRestore)
-                        message = String(localized: "已打开 \(restoredTabIDs.count) 个页面。")
+                        message = .resource("已打开 \(restoredTabIDs.count) 个页面。")
                     }
                 }
             } message: {
