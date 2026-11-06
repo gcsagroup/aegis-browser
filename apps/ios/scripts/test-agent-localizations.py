@@ -29,6 +29,11 @@ REGIONS = {
 MARKER = "AEGIS_AGENT_LOCALE "
 
 
+def validate_case_name(name):
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", name):
+        raise ValueError("Unsafe locale case filename")
+
+
 def resolve_testroot(value, root):
     if isinstance(value, str):
         return value.replace("__TESTROOT__", str(root))
@@ -128,8 +133,7 @@ def main():
         resolved = resolve_testroot(base, base_path.parent)
         for case in cases:
             name = case["name"]
-            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]*", name):
-                raise ValueError("Unsafe locale case filename")
+            validate_case_name(name)
             language = case["preferences"][0]
             configuration = copy.deepcopy(resolved)
             target = configuration["AegisTests"]
