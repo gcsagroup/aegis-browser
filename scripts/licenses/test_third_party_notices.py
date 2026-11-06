@@ -1,16 +1,31 @@
 import io
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import warnings
 import zipfile
 
 import third_party_notices as notices
+
+
+def swift_driver_path():
+    selected = shutil.which("swift")
+    if not selected:
+        raise ValueError("Swift driver is unavailable")
+    # Preserve argv[0]: Xcode's swift symlink selects driver behavior, whereas
+    # invoking its resolved swift-frontend target selects frontend behavior.
+    driver = Path(os.path.abspath(selected))
+    target = driver.resolve(strict=True)
+    if driver.name != "swift" or not target.is_file() or not os.access(target, os.X_OK):
+        raise ValueError("Expected an executable Swift driver target")
+    return driver
 
 
 class NoticePackageTests(unittest.TestCase):
@@ -157,12 +172,41 @@ print("Validated \(document.notices.count) notice sections and \(data.count) ori
             source.write_text(program)
             resource = directory / "ThirdPartyNotices.txt"
             resource.write_bytes(generated)
-            # Resolve only the Swift toolchain selected by the host, never a caller-supplied command.
-            swift = Path(shutil.which("swift")).resolve(strict=True)
-            self.assertTrue(swift.is_file())
+            swift = swift_driver_path()
             subprocess.run([str(swift), "-module-cache-path", str(directory / "module-cache"),
                             str(source), str(resource), str(len(expected_sources))],
                            check=True, shell=False, timeout=120)
+
+    def test_swift_symlink_keeps_driver_argv0(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            target = directory / "swift-frontend"
+            target.write_bytes(b"fixture executable; process is mocked")
+            target.chmod(0o700)
+            driver = directory / "swift"
+            driver.symlink_to(target.name)
+            with patch.object(shutil, "which", return_value=str(driver)), \
+                    patch.object(subprocess, "run") as process:
+                self.assertEqual(swift_driver_path(), driver.absolute())
+                self.assertEqual(driver.resolve(), target.resolve())
+                self.test_ios_component_parser_preserves_every_section_and_byte()
+                argv = process.call_args.args[0]
+                self.assertEqual(argv[0], str(driver.absolute()))
+                self.assertEqual(Path(argv[0]).name, "swift")
+                self.assertEqual(argv[1], "-module-cache-path")
+                self.assertIs(process.call_args.kwargs["shell"], False)
+                self.assertIs(process.call_args.kwargs["check"], True)
+
+    def test_swift_driver_rejects_non_executable_target(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "swift-frontend"
+            target.write_bytes(b"not executable")
+            target.chmod(0o600)
+            driver = Path(temp) / "swift"
+            driver.symlink_to(target.name)
+            with patch.object(shutil, "which", return_value=str(driver)):
+                with self.assertRaises(ValueError):
+                    swift_driver_path()
 
     def test_new_sdk_pin_cannot_silently_reuse_old_notices(self):
         with tempfile.TemporaryDirectory() as temp:
