@@ -4,34 +4,34 @@ Date: Sun, 30 Aug 2026 22:05:44 +0800
 Subject: [PATCH] feat(aegis): simplify browser agent v2 onboarding
 
 ---
- .../browser/actor/actor_keyed_service_fake.cc |  21 +-
- .../browser/actor/actor_keyed_service_fake.h  |   4 +-
- chrome/browser/actor/actor_task.cc            |   3 +-
- .../actor/ui/actor_ui_state_manager.cc        |  52 +-
- .../browser/actor/ui/actor_ui_state_manager.h |   7 +
- .../ui/actor_ui_state_manager_unittest.cc     |  54 ++
- chrome/browser/actor/ui/event_dispatcher.cc   |   3 +-
- chrome/browser/actor/ui/event_dispatcher.h    |   1 +
- chrome/browser/actor/ui/ui_event.cc           |   6 +-
- chrome/browser/actor/ui/ui_event.h            |   4 +-
- .../aegis/agent/aegis_agent_browsertest.cc    | 102 ++-
- .../agent/aegis_agent_interactive_uitest.cc   |  20 +-
- .../aegis/agent/aegis_agent_service.cc        |  11 +
- .../browser/aegis/agent/aegis_agent_service.h |   3 +
- .../browser/resources/aegis_agent/agent.css   | 620 ++++++++++++------
- .../browser/resources/aegis_agent/agent.html  | 111 +++-
- chrome/browser/resources/aegis_agent/agent.ts | 389 +++++++++--
- .../ui/webui/aegis_agent/aegis_agent.mojom    |  16 +
- .../aegis_agent/aegis_agent_page_handler.cc   | 213 ++++--
- .../aegis_agent/aegis_agent_page_handler.h    |  17 +
- .../ui/webui/aegis_agent/aegis_agent_ui.cc    |  88 ++-
+ chrome/browser/actor/actor_keyed_service_fake.cc   |  21 +-
+ chrome/browser/actor/actor_keyed_service_fake.h    |   4 +-
+ chrome/browser/actor/actor_task.cc                 |   3 +-
+ chrome/browser/actor/ui/actor_ui_state_manager.cc  |  52 +-
+ chrome/browser/actor/ui/actor_ui_state_manager.h   |   7 +
+ .../actor/ui/actor_ui_state_manager_unittest.cc    |  54 ++
+ chrome/browser/actor/ui/event_dispatcher.cc        |   3 +-
+ chrome/browser/actor/ui/event_dispatcher.h         |   1 +
+ chrome/browser/actor/ui/ui_event.cc                |   6 +-
+ chrome/browser/actor/ui/ui_event.h                 |   4 +-
+ .../browser/aegis/agent/aegis_agent_browsertest.cc | 102 +++-
+ .../aegis/agent/aegis_agent_interactive_uitest.cc  |  20 +-
+ chrome/browser/aegis/agent/aegis_agent_service.cc  |  11 +
+ chrome/browser/aegis/agent/aegis_agent_service.h   |   3 +
+ chrome/browser/resources/aegis_agent/agent.css     | 620 ++++++++++++++-------
+ chrome/browser/resources/aegis_agent/agent.html    | 111 +++-
+ chrome/browser/resources/aegis_agent/agent.ts      | 389 +++++++++++--
+ .../browser/ui/webui/aegis_agent/aegis_agent.mojom |  16 +
+ .../webui/aegis_agent/aegis_agent_page_handler.cc  | 213 +++++--
+ .../webui/aegis_agent/aegis_agent_page_handler.h   |  17 +
+ .../browser/ui/webui/aegis_agent/aegis_agent_ui.cc |  88 ++-
  21 files changed, 1350 insertions(+), 395 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service_fake.cc b/chrome/browser/actor/actor_keyed_service_fake.cc
-index 0ed9a1420eebd18d1489531acc71f484a2c843e2..5b938ce514c105b830bc255a59027e959ecc41f9 100644
+index cbd7b362259965754ea90a1d9209b4365894292d..7b3fe3ccf1d6b67dc3a5ce09dcf8b363dfc2fc30 100644
 --- a/chrome/browser/actor/actor_keyed_service_fake.cc
 +++ b/chrome/browser/actor/actor_keyed_service_fake.cc
-@@ -27,31 +27,40 @@ ActorKeyedServiceFake::~ActorKeyedServiceFake() = default;
+@@ -26,31 +26,40 @@ ActorKeyedServiceFake::~ActorKeyedServiceFake() = default;
  TaskId ActorKeyedServiceFake::CreateTaskForTesting() {
    return CreateTaskWithDurationAndFeatureModeForTesting(  // IN-TEST
        actor::webui::mojom::TaskDuration::kDefault,
@@ -77,7 +77,7 @@ index 0ed9a1420eebd18d1489531acc71f484a2c843e2..5b938ce514c105b830bc255a59027e95
    std::unique_ptr<ui::UiEventDispatcher> ui_event_dispatcher =
        ui::NewMockUiEventDispatcher();
    auto* mock_ui_dispatcher =
-@@ -74,7 +83,7 @@ TaskId ActorKeyedServiceFake::
+@@ -73,7 +82,7 @@ TaskId ActorKeyedServiceFake::
    task_options->duration = duration;
    task_options->feature_mode = feature_mode;
    return ActorKeyedService::CreateTaskForTesting(  // IN-TEST
@@ -87,10 +87,10 @@ index 0ed9a1420eebd18d1489531acc71f484a2c843e2..5b938ce514c105b830bc255a59027e95
        /*delegate=*/nullptr);
  }
 diff --git a/chrome/browser/actor/actor_keyed_service_fake.h b/chrome/browser/actor/actor_keyed_service_fake.h
-index 19cbe8423a0106d8219949402389d5b15abf8e1d..490d0a62592ed7f34ba9d9ee7701f290596afcbd 100644
+index ecc65a32b8346e0d593b58f0ca80f82d4643080d..51e3bb9c95fa6b5188e7ce25111a6f65e8221313 100644
 --- a/chrome/browser/actor/actor_keyed_service_fake.h
 +++ b/chrome/browser/actor/actor_keyed_service_fake.h
-@@ -20,6 +20,7 @@ class ActorKeyedServiceFake : public ActorKeyedService {
+@@ -21,6 +21,7 @@ class ActorKeyedServiceFake : public ActorKeyedService {
    ~ActorKeyedServiceFake() override;
  
    TaskId CreateTaskForTesting();
@@ -98,7 +98,7 @@ index 19cbe8423a0106d8219949402389d5b15abf8e1d..490d0a62592ed7f34ba9d9ee7701f290
    TaskId CreateTransientTaskForTesting();
    TaskId CreateExperimentalTriggeringTaskForTesting();
    void PauseTaskForTesting(TaskId task_id, bool from_actor);
-@@ -29,7 +30,8 @@ class ActorKeyedServiceFake : public ActorKeyedService {
+@@ -30,7 +31,8 @@ class ActorKeyedServiceFake : public ActorKeyedService {
   private:
    TaskId CreateTaskWithDurationAndFeatureModeForTesting(
        actor::webui::mojom::TaskDuration duration,
@@ -109,24 +109,24 @@ index 19cbe8423a0106d8219949402389d5b15abf8e1d..490d0a62592ed7f34ba9d9ee7701f290
    TaskId CreateTaskWithDurationForTesting(
        actor::webui::mojom::TaskDuration duration);
 diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
-index ff0fdd4ab62fa89d686eb30a994aa1bda5b43c88..c2571bbab176081231ec0a27da68f85598d6d4d2 100644
+index a766aa532bae39edf9df652468edb435f1019d18..6faa1028033b04b9a4f134866b49782ee1c6945e 100644
 --- a/chrome/browser/actor/actor_task.cc
 +++ b/chrome/browser/actor/actor_task.cc
-@@ -500,7 +500,8 @@ void ActorTask::Stop(StoppedReason stop_reason) {
+@@ -520,7 +520,8 @@ void ActorTask::Stop(StoppedReason stop_reason) {
        .title = title_,
-       .last_acted_on_tab_handle = last_tab_handle,
+       .last_acted_on_tab_handle = last_actor_surface_handle.GetTabHandle(),
        .duration = duration_,
 -      .feature_mode = feature_mode_});
 +      .feature_mode = feature_mode_,
 +      .source = source_info_.type});
  }
  
- void ActorTask::Pause(bool from_actor, bool cancel_existing_action) {
+ void ActorTask::Pause(bool from_actor) {
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.cc b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-index 7151c0e440794da57cf0fd058466551431e93121..8d061ce8a1a4c7c62ced9eb89129b463bb632753 100644
+index 6e84c18320767e779e939e17334b5ae5d4b04170..f279c991391005ebc80a1d03943b015d47de4917 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.cc
-@@ -163,19 +163,37 @@ ActorTask::TaskDuration ActorUiStateManager::GetDuration(
+@@ -176,19 +176,37 @@ ActorTask::TaskDuration ActorUiStateManager::GetDuration(
    return ActorTask::TaskDuration::kDefault;
  }
  
@@ -168,7 +168,7 @@ index 7151c0e440794da57cf0fd058466551431e93121..8d061ce8a1a4c7c62ced9eb89129b463
  }
  
  UiTabState ActorUiStateManager::GetActorControlledUiTabState(
-@@ -259,10 +277,12 @@ void ActorUiStateManager::OnActorTaskStateChange(
+@@ -272,10 +290,12 @@ void ActorUiStateManager::OnActorTaskStateChange(
      }
    }
  
@@ -185,7 +185,7 @@ index 7151c0e440794da57cf0fd058466551431e93121..8d061ce8a1a4c7c62ced9eb89129b463
  }
  
  std::vector<tabs::TabInterface*> ActorUiStateManager::GetTabs(TaskId id) {
-@@ -336,6 +356,10 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
+@@ -349,6 +369,10 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
    std::visit(
        absl::Overload{
            [this](const StartTask& e) {
@@ -196,7 +196,7 @@ index 7151c0e440794da57cf0fd058466551431e93121..8d061ce8a1a4c7c62ced9eb89129b463
              notify_actor_task_state_change_debounce_timer_.Start(
                  FROM_HERE, kProfileScopedUiUpdateDebounceDelay,
                  base::BindOnce(&ActorUiStateManager::NotifyActorTaskStateChange,
-@@ -346,6 +370,17 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
+@@ -359,6 +383,17 @@ void ActorUiStateManager::OnUiEvent(SyncUiEvent event) {
            },
            [this](const StopTask& e) {
              transient_task_timers_.erase(e.task_id);
@@ -214,7 +214,7 @@ index 7151c0e440794da57cf0fd058466551431e93121..8d061ce8a1a4c7c62ced9eb89129b463
              // Cancelled tasks are intentionally not stored.
              if (e.final_state == ActorTask::State::kCancelled) {
                NotifyActorTaskStopped(e.task_id);
-@@ -435,6 +470,7 @@ base::CallbackListSubscription ActorUiStateManager::RegisterActorTaskStopped(
+@@ -448,6 +483,7 @@ base::CallbackListSubscription ActorUiStateManager::RegisterActorTaskStopped(
  }
  
  void ActorUiStateManager::ActorTaskRemoved(TaskId task_id) {
@@ -223,18 +223,18 @@ index 7151c0e440794da57cf0fd058466551431e93121..8d061ce8a1a4c7c62ced9eb89129b463
    actor_task_removed_callback_list_.Notify(task_id);
  }
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager.h b/chrome/browser/actor/ui/actor_ui_state_manager.h
-index 4da2c48f4c3f6ea6ed8a25cddb8722ac52910406..7b6b98fb01085401088e7c77bca76fbe66e1d4d1 100644
+index 4f035ecb6ddb498291789f70bd0bced8c96e779e..34ec4c566fa9728f5ad6da85929d1a93677390b9 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager.h
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager.h
-@@ -10,6 +10,7 @@
- #include "chrome/browser/actor/actor_task.h"
- #include "chrome/browser/actor/ui/actor_ui_state_manager_interface.h"
+@@ -18,6 +18,7 @@
+ #include "chrome/common/glic_enums.mojom.h"
  #include "components/actor/core/task_id.h"
+ #include "components/tabs/public/tab_interface.h"
 +#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
  
- namespace tabs {
- class TabInterface;
-@@ -70,6 +71,7 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
+ class BrowserWindowInterface;
+ 
+@@ -160,6 +161,7 @@ class ActorUiStateManager : public ActorUiStateManagerInterface,
    void StopTimer(TaskId task_id);
  
    ActorTask::TaskDuration GetDuration(const tabs::TabInterface* tab);
@@ -242,7 +242,7 @@ index 4da2c48f4c3f6ea6ed8a25cddb8722ac52910406..7b6b98fb01085401088e7c77bca76fbe
    // Notify profile scoped ui components about actor task state changes.
    void NotifyActorTaskStateChange(TaskId task_id);
    // Called whenever an actor task state changes.
-@@ -92,6 +94,11 @@ class ActorUiStateManager : public ActorUiStateManagerInterface {
+@@ -182,6 +184,11 @@ class ActorUiStateManager : public ActorUiStateManagerInterface,
    absl::flat_hash_map<TaskId, std::unique_ptr<base::OneShotTimer>>
        transient_task_timers_;
  
@@ -255,10 +255,10 @@ index 4da2c48f4c3f6ea6ed8a25cddb8722ac52910406..7b6b98fb01085401088e7c77bca76fbe
  
    // Tracks tabs currently in a pending actuation state prior to an ActorTask
 diff --git a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
-index 74a66e71b4dac1310a9cfcc213be81d2921282b2..4e5bc54cf6a83ba0d256cbaa5d5ba787d3a2e8e1 100644
+index 91bef0eeb33c32f2c5944c140895043ed4111f16..36b4adfe6f0442934bebab77c255f518e42a7dfb 100644
 --- a/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
 +++ b/chrome/browser/actor/ui/actor_ui_state_manager_unittest.cc
-@@ -204,6 +204,46 @@ TEST_F(ActorUiStateManagerTest, SingleTask_RapidTaskStateChanges_Debounced) {
+@@ -206,6 +206,46 @@ TEST_F(ActorUiStateManagerTest, SingleTask_RapidTaskStateChanges_Debounced) {
    EXPECT_EQ(callback_count, 1);
  }
  
@@ -305,7 +305,7 @@ index 74a66e71b4dac1310a9cfcc213be81d2921282b2..4e5bc54cf6a83ba0d256cbaa5d5ba787
  TEST_F(ActorUiStateManagerTest, OnActorTaskState_kCreatedNewStateCrashes) {
    EXPECT_DEATH(actor_ui_state_manager()->OnUiEvent(
                     TaskStateChanged(TaskId(123), ActorTask::State::kCreated)),
-@@ -334,6 +374,20 @@ TEST_F(ActorUiStateManagerUiEventUiTabScopedTest,
+@@ -336,6 +376,20 @@ TEST_F(ActorUiStateManagerUiEventUiTabScopedTest,
                  expected_ui_tab_state);
  }
  
@@ -327,10 +327,10 @@ index 74a66e71b4dac1310a9cfcc213be81d2921282b2..4e5bc54cf6a83ba0d256cbaa5d5ba787
         OnStoppedActingOnTab_UpdatesUiCorrectly) {
    UiTabState expected_ui_tab_state{
 diff --git a/chrome/browser/actor/ui/event_dispatcher.cc b/chrome/browser/actor/ui/event_dispatcher.cc
-index 87169779c7a53267d346ce525818f44eae89bc53..34adbafe2a87823b6e4fe3d52d27aac6893c627b 100644
+index db7c467c9c9e2b5194f9d0311b071c4da1e39825..8bc7b9ccfeae62e4e1aa9d2b2faf7702ccfcd9c9 100644
 --- a/chrome/browser/actor/ui/event_dispatcher.cc
 +++ b/chrome/browser/actor/ui/event_dispatcher.cc
-@@ -168,7 +168,8 @@ constexpr absl::Overload ActorTaskSyncChangeFn{
+@@ -190,7 +190,8 @@ constexpr absl::Overload ActorTaskSyncChangeFn{
      [](const UiEventDispatcher::StopTask& c) {
        return EventSequence<SyncUiEvent>{
            StopTask(c.task_id, c.final_state, c.title,
@@ -353,7 +353,7 @@ index e8cc60078e22ebf5dda0b832b57d9543d261be85..3e3be6f1e646c739ac03f80f92540fcb
  
    struct RemoveTab {
 diff --git a/chrome/browser/actor/ui/ui_event.cc b/chrome/browser/actor/ui/ui_event.cc
-index 2883ee7c5407ea389572c8ed4322285e19d2bde2..69f32e6a88fd3b8bab895a8ad869db8d48457b94 100644
+index 2c33d38dc5208b061b1f0f4484c108cf9107dc6e..36892cda9a2dba2b514ebf16be61589da6e35098 100644
 --- a/chrome/browser/actor/ui/ui_event.cc
 +++ b/chrome/browser/actor/ui/ui_event.cc
 @@ -17,13 +17,15 @@ StopTask::StopTask(actor::TaskId id,
@@ -371,7 +371,7 @@ index 2883ee7c5407ea389572c8ed4322285e19d2bde2..69f32e6a88fd3b8bab895a8ad869db8d
 -      feature_mode(feature_mode) {
 +      feature_mode(feature_mode),
 +      source(source) {
-   DCHECK(ActorTask::IsCompletedState(final_state));
+   CHECK(ActorTask::IsCompletedState(final_state), base::NotFatalUntil::M161);
  }
  StopTask::~StopTask() = default;
 diff --git a/chrome/browser/actor/ui/ui_event.h b/chrome/browser/actor/ui/ui_event.h
@@ -2639,6 +2639,3 @@ index 0b03d6a49e229f4c82076bc908e182f89c774cea..90d9a7f3dc8a01b973c639f7d59d70d9
    add("noTask", "No active task", "暂无任务", "暫無任務");
    add("provider", "Model", "模型", "模型");
    add("budget", "Budget", "预算", "預算");
--- 
-2.52.0
-

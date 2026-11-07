@@ -30,7 +30,7 @@ index 5c4464c45d620f3aafb2c8d6bb455f11fb649fa0..a0b3086a885d62a845d999405a2c69e2
          android:key="clear_browsing_data"
          android:title="@string/clear_browsing_data_title"
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
-index 1b5d10dbf1aa097d888a759305fa834cbe4c0686..1f67c06db841f2b7416785e81d06d5041f689ac2 100644
+index 512f512a828d63bad545ea4365ecc6f8bf9ded11..dedfe1ac8d043c9e4c6d59ee96c0da5760e1a1bd 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/privacy/settings/PrivacySettings.java
 @@ -10,6 +10,7 @@ import static org.chromium.components.content_settings.PrefNames.COOKIE_CONTROLS

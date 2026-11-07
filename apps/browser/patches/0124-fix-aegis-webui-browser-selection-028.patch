@@ -10,7 +10,7 @@ Subject: [PATCH] fix(aegis): migrate WebUI browser selection for Chromium 153
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
-index ce0e7fefc785014d45768d7d86d963dc085fd22e..bb0c09a7ba5ea1e26660d2808619c5ab97b1dfec 100644
+index 2d6a161f12988dc0b736bb908da8df7feaef7b36..bae259ec1fadc89849a51b963250f3b1e5e3ae19 100644
 --- a/chrome/browser/ui/browser_command_controller.cc
 +++ b/chrome/browser/ui/browser_command_controller.cc
 @@ -1305,7 +1305,7 @@ void BrowserCommandController::HandleCommandWithDisposition(

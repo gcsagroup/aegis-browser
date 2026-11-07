@@ -18,7 +18,7 @@ connection is visible, and send the action to chrome://aegis.
  create mode 100644 chrome/common/aegis/cdp_infobar_copy_unittest.cc
 
 diff --git a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
-index 041fefd3e8ee6df651c44b24cafa6dcc86111074..8fe70949435a80bda2f20f263e7fc1ef9247046d 100644
+index acddc2f001ae4e78874f6d14a9bbac0d70193eee..e07da689cd30e6781dea1a472354dab2a9dc5221 100644
 --- a/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 +++ b/chrome/browser/devtools/devtools_remote_server_infobar_browsertest.cc
 @@ -65,7 +65,7 @@ IN_PROC_BROWSER_TEST_F(DevToolsRemoteServerInfobarBrowserTest,

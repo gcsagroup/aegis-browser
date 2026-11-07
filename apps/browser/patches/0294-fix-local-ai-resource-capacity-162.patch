@@ -29,7 +29,7 @@ index 9ce71356d0a5cdfb589f006293e93793fc4bbcb6..eac23603f36e49fa1703bfa17bf822bc
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/tools/gritsettings/resource_ids.spec b/tools/gritsettings/resource_ids.spec
-index 8eeef24f1f8899457ef78b073d54bf1eb0d5cbee..6d522634a991968e634e1bbdf4d677e998678f90 100644
+index 9d7f6119453b0cb96a23fe602ab442b9cad4ea21..de7141bb1feaca13781c76f90a0961ac10a7e2e6 100644
 --- a/tools/gritsettings/resource_ids.spec
 +++ b/tools/gritsettings/resource_ids.spec
 @@ -892,7 +892,7 @@

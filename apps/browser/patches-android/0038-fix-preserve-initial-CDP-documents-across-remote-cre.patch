@@ -21,7 +21,7 @@ Subject: [PATCH] fix: preserve initial CDP documents across remote creation
  14 files changed, 214 insertions(+), 66 deletions(-)
 
 diff --git a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
-index 34b31ec80c1e37d93781992024a20ed5cc088796..19f0a79f24bcd0b976cbc426d1079a7aca0068ae 100644
+index cc57ed05091614ab4819af349a2fd4a709f2ec1b..f14ecb1e838b67f719995a44f47a6aa62e6dd0c4 100644
 --- a/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 +++ b/chrome/browser/devtools/chrome_devtools_manager_delegate.cc
 @@ -485,9 +485,25 @@ scoped_refptr<DevToolsAgentHost> ChromeDevToolsManagerDelegate::CreateNewTarget(
@@ -69,7 +69,7 @@ index ddbf51d9eaa5b1c044f1f0a9a31092505cbd03f3..d65f7e041df9bbc2a027285808f1371a
    void AcceptDebugging(AcceptCallback) override;
    void SetActiveWebSocketConnections(size_t count) override;
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index 0df50531b1a89dd3c831d8c180c14ae73f0810b3..cf461026822509cd23325090aee49c562bc6f126 100644
+index 8bba9d2563f69eb38db59fa1d72b7c3ebf0e714f..c414cb8ea1af196ad6a388365c42610a3e54ac98 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -360,6 +360,19 @@ IN_PROC_BROWSER_TEST_F(DevToolsProtocolTest, CreateInDefaultContextById) {
@@ -210,7 +210,7 @@ index f8a34c5276c328609f798834f1b20320a3880ead..6b1546a6a955acf04805e5341213f6bc
           target->GetType() == DevToolsAgentHost::kTypeTab);
      const WeakDocumentPtr target_document =
 diff --git a/content/browser/devtools/devtools_http_handler.cc b/content/browser/devtools/devtools_http_handler.cc
-index 79d9ce039498fc8c8848d42a34b7bb5f329a327b..1e332c734f78232b0ae75f6d150fce731fdb11c6 100644
+index 0eefca04924efec9a017e51f6acd16e114a7f249..4b52afc3f25681fc4fb648b322c727351654a61b 100644
 --- a/content/browser/devtools/devtools_http_handler.cc
 +++ b/content/browser/devtools/devtools_http_handler.cc
 @@ -130,6 +130,19 @@ bool RequestIsSafeToServe(const net::HttpServerRequestInfo& info) {
@@ -358,7 +358,7 @@ index d2c67238ecc1e2c802c9ad07988fc2c2e31bbaa7..b04c8f910f53b2da2129e4294d117375
    std::unique_ptr<DevToolsSocketFactory> socket_factory_;
    base::WeakPtrFactory<DevToolsHttpHandler> weak_factory_{this};
 diff --git a/content/browser/devtools/devtools_http_handler_unittest.cc b/content/browser/devtools/devtools_http_handler_unittest.cc
-index 87b2513ed5cf123930d444f2926521f9ff309372..439343260e507712b3ae6785e5170a14785ddad4 100644
+index 790ea116264e156f15612817c5179b5dadb9efb9..ca9b76e39fdb4057a8c4f3c24b8679448b5d14e8 100644
 --- a/content/browser/devtools/devtools_http_handler_unittest.cc
 +++ b/content/browser/devtools/devtools_http_handler_unittest.cc
 @@ -163,8 +163,11 @@ class MockDevToolsManagerDelegate : public DevToolsManagerDelegate {
@@ -503,7 +503,7 @@ index 0422052b959ceacb0c0d0a51292af5cedfe3399a..f7f3cd2dfdad3ed7c499276bfc1c726b
    std::vector<uint8_t> message = ToVector("{invalid cbor/json");
    EXPECT_FALSE(DevToolsSession::ValidateMessage("", false, message,
 diff --git a/content/browser/devtools/protocol/target_handler.cc b/content/browser/devtools/protocol/target_handler.cc
-index 9c8d41c6b845200c29a344cd9e2ff55cf292fe75..cc8de1b65af8ab14b271e7befef65f6f8f9d0192 100644
+index 070cfaf50c9ba372390cfc181ec8ade93ce1dc66..ef98d068d12fe3b0aad294897285ede9dc9adcdb 100644
 --- a/content/browser/devtools/protocol/target_handler.cc
 +++ b/content/browser/devtools/protocol/target_handler.cc
 @@ -1672,8 +1672,15 @@ Response TargetHandler::CreateTarget(
@@ -524,7 +524,7 @@ index 9c8d41c6b845200c29a344cd9e2ff55cf292fe75..cc8de1b65af8ab14b271e7befef65f6f
      return Response::ServerError("Not supported");
    }
 diff --git a/content/browser/devtools/render_frame_devtools_agent_host.cc b/content/browser/devtools/render_frame_devtools_agent_host.cc
-index 130fe6c2401ec711081530ee1cc7ebe45fa898a6..5d0780f279972cb6ea8c67a7203b201e3a009209 100644
+index 42723b104a5f4c5e2a13039039aad532a645f6a5..8e45c3ece528bd7b1ab04db240518656f6f26761 100644
 --- a/content/browser/devtools/render_frame_devtools_agent_host.cc
 +++ b/content/browser/devtools/render_frame_devtools_agent_host.cc
 @@ -1191,7 +1191,9 @@ bool RenderFrameDevToolsAgentHost::ShouldAllowSession(

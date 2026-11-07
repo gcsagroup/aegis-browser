@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+  "reason": "保留156候选已有补丁，新主线补丁原件归档并顺序追加，不跳过功能或历史版本补丁。",
+  "patches": [
+    {
+      "platform": "patches",
+      "originalName": "0326-align-native-settings-product-version-263.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "3c5473f3a1c69845e3acbb4bf3213a78aeb10f4b1d1194d57c0a9aedba43f234",
+      "archive": "apps/browser/patches/archive/main-20261026/0326-align-native-settings-product-version-263.patch",
+      "activeName": "0331-align-native-settings-product-version-263.patch",
+      "adaptedSha256": "db64425655dd38b9bad98856aee007c7ea1d83630df6e4cef6969832ca1c0cbb"
+    },
+    {
+      "platform": "patches",
+      "originalName": "0327-align-mobile-ui-and-version-264.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "9533b37e5c296df360cdbe42f7eaca038b3ac164c2468f98623a6250c71e5ec6",
+      "archive": "apps/browser/patches/archive/main-20261026/0327-align-mobile-ui-and-version-264.patch",
+      "activeName": "0332-align-mobile-ui-and-version-264.patch",
+      "adaptedSha256": "30f8d7a6212b51dd9bc440739fa7ddd50d9d8ff9c33c1dac58f7524cbd871d0e"
+    },
+    {
+      "platform": "patches",
+      "originalName": "0328-fix-reading-capture-and-download-details-265.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "b98cd2d6b828c495dd4087cd3dd0bb678e374c8ffca69f470fd2cabe02fbdfd9",
+      "archive": "apps/browser/patches/archive/main-20261026/0328-fix-reading-capture-and-download-details-265.patch",
+      "activeName": "0333-fix-reading-capture-and-download-details-265.patch",
+      "adaptedSha256": "f234096dafa4825414831ed3f9ceb4d792b0a82a2528ba5781e1db679b6ffd58"
+    },
+    {
+      "platform": "patches",
+      "originalName": "0329-fix-download-platform-build-and-version-266.patch",
+      "originalCommit": "85e9c423557dcb216e37c1cbb42daf7838ff7cf9",
+      "originalSha256": "62a01ee6abef6c26b8c4f010e24023e856db85fa425051075993278e89d766de",
+      "archive": "apps/browser/patches/archive/main-20261026/0329-fix-download-platform-build-and-version-266.patch",
+      "activeName": "0334-fix-download-platform-build-and-version-266.patch",
+      "adaptedSha256": "9a831db6831aa5f128264dc7911d1c059d1cd25df2f94fa05f1fb043651ee8e8"
+    }
+  ]
+}

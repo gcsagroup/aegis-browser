@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Wed, 21 Oct 2026 23:10:00 +0800
+Subject: [PATCH] 对齐下载设置卡片与限速选项
+
+---
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.css b/chrome/browser/resources/settings/downloads_page/downloads_page.css
+index 3d281247297dda3db5897b3629be63cf99a22354..f6bac9c13f6638a0928a6a577bbcddf7bbe16906 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.css
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.css
+@@ -13,6 +13,17 @@
+   word-break: break-word;
+ }
+ 
++/* 嵌入 Aegis 设置时沿用外层内容宽度，避免与下方任务入口错位。 */
++:host([aegis-only]) {
++  display: block;
++}
++
++:host([aegis-only]) .cr-centered-card-container {
++  max-width: none;
++  min-width: 0;
++  width: 100%;
++}
++
+ .aegis-description {
+   color: var(--cr-secondary-text-color);
+   font-size: 12px;
+@@ -34,13 +45,27 @@
+ }
+ 
+ .aegis-rate-row {
+-  align-items: end;
++  align-items: start;
+   display: grid;
+   gap: 16px;
+-  grid-template-columns: 1fr 1fr;
++  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+   padding: 12px 20px;
+ }
+ 
++.aegis-rate-row > div {
++  min-width: 0;
++}
++
++.aegis-rate-row label {
++  display: block;
++  margin-bottom: 8px;
++}
++
++.aegis-rate-row .aegis-select {
++  margin-bottom: 8px;
++  max-width: 100%;
++}
++
+ .aegis-fixed {
+   color: var(--cr-secondary-text-color);
+   padding: 12px 20px;
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index bbdd1766defaa62983c77f3fe3a0161750eef73e..ef83cd35a50d3c625bd99f4d33472aab6a793ef6 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.0.0.242";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.0 (242)";
++inline constexpr char kProductVersion[] = "6.0.0.243";
++inline constexpr char kProductVersionLabel[] = "Ver 6.0 (243)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-10-13",
+  "updated": "2026-11-07",
   "platforms": [
     "macOS",
     "Windows",
@@ -2885,6 +2885,135 @@
           "evidence": [
             "docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md"
           ]
+        }
+      }
+    },
+    {
+      "id": "unified-settings",
+      "name": {
+        "zh-CN": "统一设置与旧入口迁移",
+        "en": "Unified settings and legacy routes",
+        "zh-TW": "統一設定與舊入口遷移"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已整合统一分类、保存和旧入口迁移；本轮仅验证源码及流程，156实机验收未完成。",
+            "en": "Unified categories, saving and legacy routes are integrated; this run verifies source and workflow only. Native acceptance of 156 is pending.",
+            "zh-TW": "已整合統一分類、儲存與舊入口遷移；本輪僅驗證原始碼及流程，156實機驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/resources/settings/aegis_page/aegis_page.ts"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已整合统一分类、保存和旧入口迁移；本轮仅验证源码及流程，156实机验收未完成。",
+            "en": "Unified categories, saving and legacy routes are integrated; this run verifies source and workflow only. Native acceptance of 156 is pending.",
+            "zh-TW": "已整合統一分類、儲存與舊入口遷移；本輪僅驗證原始碼及流程，156實機驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/release-feature-contract.json",
+            "apps/browser/overlay/chrome/browser/resources/settings/aegis_page/aegis_page.ts"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "已整合统一分类、保存和旧入口迁移；本轮仅验证源码及流程，156实机验收未完成。",
+            "en": "Unified categories, saving and legacy routes are integrated; this run verifies source and workflow only. Native acceptance of 156 is pending.",
+            "zh-TW": "已整合統一分類、儲存與舊入口遷移；本輪僅驗證原始碼及流程，156實機驗收尚未完成。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/resources/aegis/mobile_settings.ts",
+            "apps/browser/overlay/chrome/browser/resources/aegis_agent/mobile_settings.ts"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "保留已合入main的SwiftUI分类和表单布局；使用WebKit，本轮未重跑iOS验收。",
+            "en": "Preserves the SwiftUI categories and forms merged into main. iOS uses WebKit; its acceptance was not rerun in this integration.",
+            "zh-TW": "保留已合入main的SwiftUI分類與表單版面；使用WebKit，本輪未重跑iOS驗收。"
+          },
+          "source": [
+            "apps/ios/AegisApp/BrowserSettings.swift",
+            "apps/ios/AegisApp/SettingsFormControls.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "p01-two-hop-tls",
+      "name": {
+        "zh-CN": "P01 控制协议和双跳 TLS 传输",
+        "en": "P01 control protocol and two-hop TLS transport",
+        "zh-TW": "P01 控制協議和雙跳 TLS 傳輸"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "传输库和原生测试由 is_mac 条件编入。",
+            "en": "The build includes the transport library and its native tests on macOS.",
+            "zh-TW": "傳輸庫和原生測試由 is_mac 條件編入。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn",
+            "apps/browser/overlay/chrome/browser/aegis/proxy/core_tls_unittest.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
         }
       }
     }

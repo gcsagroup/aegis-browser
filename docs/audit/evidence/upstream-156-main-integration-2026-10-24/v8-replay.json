@@ -1,0 +1,29 @@
+{
+  "startedAt": "2026-10-24T10:27:03.323848+00:00",
+  "base": "392e44423f46d75904da712fadea4c7d5d97967f",
+  "patches": [
+    {
+      "ordinal": 1,
+      "name": "0001-feat-aegis-add-bytecode-shadow-observation.patch",
+      "sha256": "5fcbb667b3cba930e0eb9314f423492746c21f7ed7461c71814f4e3fa1d3cb42",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 2,
+      "name": "0002-fix-aegis-use-bounded-trace-telemetry.patch",
+      "sha256": "8477cb9fa11b86e25761c0f3fd0634f5981147d44e1fec8b54c999ce08c7bda2",
+      "exitCode": 0
+    },
+    {
+      "ordinal": 3,
+      "name": "0003-fix-shadow-disabled-tracing-build.patch",
+      "sha256": "4d83fcbbe542e61806dd3533b37b2b276e6899086b43d5d214d7580ce6b2e737",
+      "exitCode": 0
+    }
+  ],
+  "status": "passed",
+  "completed": 3,
+  "tree": "7f5058b30e29c62296a21f832bafef8ccc90e30b",
+  "objectScope": "官方提交的完整树索引；补丁涉及内容均存在，未改动的按需下载对象不代表完整依赖同步",
+  "finishedAt": "2026-10-24T10:27:03.387676+00:00"
+}
