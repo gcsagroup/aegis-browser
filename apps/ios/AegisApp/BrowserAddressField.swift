@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 浏览时显示主机名，取得焦点后切换为完整网址并选中，避免快捷键输入残留旧文字。
 struct BrowserAddressField: UIViewRepresentable {
+    @Environment(\.locale) private var localizationLocale
     @Binding var address: String
     @Binding var focused: Bool
     let displayText: String
@@ -12,9 +13,9 @@ struct BrowserAddressField: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UITextField {
         let field = UITextField()
-        field.placeholder = String(localized: "搜索或输入网址")
+        field.placeholder = AegisLocalization.string("搜索或输入网址")
         field.accessibilityIdentifier = "address-field"
-        field.accessibilityLabel = String(localized: "搜索或输入网址")
+        field.accessibilityLabel = AegisLocalization.string("搜索或输入网址")
         field.font = .preferredFont(forTextStyle: .body)
         field.adjustsFontForContentSizeCategory = true
         field.autocapitalizationType = .none
@@ -29,6 +30,9 @@ struct BrowserAddressField: UIViewRepresentable {
     }
 
     func updateUIView(_ field: UITextField, context: Context) {
+        let _ = localizationLocale
+        field.placeholder = AegisLocalization.string("搜索或输入网址")
+        field.accessibilityLabel = field.placeholder
         let coordinator = context.coordinator
         coordinator.parent = self
         let text = focused ? address : displayText

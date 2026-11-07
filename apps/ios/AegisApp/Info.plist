@@ -38,7 +38,7 @@
 		<true/>
 	</dict>
 	<key>CFBundleDisplayName</key>
-	<string>GCSA Aegis</string>
+	<string>Aegis Browser</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

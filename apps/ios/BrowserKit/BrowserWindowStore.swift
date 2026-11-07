@@ -38,7 +38,11 @@ public struct BrowserWindowSnapshot: Codable, Identifiable, Equatable, Sendable 
 /// 文件只接收普通会话的快照；私密标签与分组由 BrowserSession 留在内存中。
 @MainActor public final class BrowserWindowStore: ObservableObject {
     @Published public private(set) var windows: [BrowserWindowSnapshot] = []
-    @Published public private(set) var storageError: String?
+    @Published private var storageErrorPresentation: AegisLocalizedMessage?
+    public private(set) var storageError: String? {
+        get { storageErrorPresentation?.text }
+        set { storageErrorPresentation = newValue.map(AegisLocalizedMessage.verbatim) }
+    }
     @Published public private(set) var openIDs: Set<UUID> = []
     private let persistenceURL: URL?
     private var unreadable = false
@@ -57,7 +61,7 @@ public struct BrowserWindowSnapshot: Codable, Identifiable, Equatable, Sendable 
                 let values = try JSONDecoder().decode([BrowserWindowSnapshot].self, from: data)
                 guard values.count <= 20, Set(values.map(\.id)).count == values.count else { throw BrowserWindowError.invalidData }
                 windows = try values.map(Self.sanitized)
-            } catch { unreadable = true; storageError = String(localized: "窗口记录无法读取，原文件已保留。") }
+            } catch { unreadable = true; storageErrorPresentation = .resource("窗口记录无法读取，原文件已保留。") }
         } else if !legacyURLs.isEmpty {
             let tabs = WorkspaceStore.persistableURLs(legacyURLs).map { SavedBrowserTab(id: UUID(), url: $0, groupID: nil) }
             do { try save(BrowserWindowSnapshot(id: UUID(), tabs: tabs, activeTabID: tabs.first?.id)) }
@@ -134,10 +138,10 @@ public enum BrowserWindowError: LocalizedError {
     case invalidData, capacity, invalidName, windowOpen
     public var errorDescription: String? {
         switch self {
-        case .invalidData: String(localized: "窗口记录无效，未覆盖原有数据。")
-        case .capacity: String(localized: "窗口存储已达上限，请先删除不需要的已关闭窗口。")
-        case .invalidName: String(localized: "请输入名称。")
-        case .windowOpen: String(localized: "请先关闭该窗口，再删除保存的记录。")
+        case .invalidData: AegisLocalization.string("窗口记录无效，未覆盖原有数据。")
+        case .capacity: AegisLocalization.string("窗口存储已达上限，请先删除不需要的已关闭窗口。")
+        case .invalidName: AegisLocalization.string("请输入名称。")
+        case .windowOpen: AegisLocalization.string("请先关闭该窗口，再删除保存的记录。")
         }
     }
 }

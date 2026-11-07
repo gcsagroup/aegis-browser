@@ -1,6 +1,6 @@
 [English](./README.md) | [**简体中文**](./README.zh-CN.md) | [繁體中文](./README.zh-TW.md)
 
-# GCSA Aegis · iPhone 与 iPad
+# Aegis Browser · iPhone 与 iPad
 
 SwiftUI + 系统 WebKit 的原生浏览器，最低系统版本 iOS 18.4。开发目标是符合全球 App Store（含中国大陆）的上架技术要求。当前先完成功能和测试，提审材料由用户后续提供；模拟器通过不等于已具备正式发布资格。
 

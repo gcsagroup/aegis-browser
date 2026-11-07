@@ -7,12 +7,14 @@ struct BrowserWindowActions: View {
     @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
     @Environment(\.openWindow) private var openWindow
     @Binding var managesWindows: Bool
-    @Binding var error: String?
+    @Binding var error: AegisLocalizedMessage?
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         if supportsMultipleWindows {
             Button("新建窗口", systemImage: "rectangle.badge.plus") {
                 do { let id = try windows.createWindow(); openWindow(id: "browser", value: id) }
-                catch { self.error = error.localizedDescription }
+                catch { self.error = .error(error) }
             }.accessibilityIdentifier("new-browser-window")
             Button("窗口管理", systemImage: "rectangle.on.rectangle") { managesWindows = true }
                 .accessibilityIdentifier("manage-browser-windows")
@@ -29,8 +31,10 @@ struct BrowserWindowsView: View {
     @State private var naming = false
     @State private var name = ""
     @State private var deletingID: UUID?
-    @State private var error: String?
+    @State private var error: AegisLocalizedMessage?
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             List {
                 Section {
@@ -51,7 +55,7 @@ struct BrowserWindowsView: View {
                             openWindow(id: "browser", value: value.id)
                         } label: {
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(value.name.isEmpty ? String(localized: "窗口 \(index + 1)") : value.name)
+                                Text(value.name.isEmpty ? AegisLocalization.string("窗口 \(index + 1)") : value.name)
                                 Text("\(value.tabs.count) 个普通标签 · \(value.groups.count) 个分组")
                                     .font(.caption).foregroundStyle(.secondary)
                                 if value.id == browser.windowID { Text("当前窗口").font(.caption) }
@@ -64,15 +68,15 @@ struct BrowserWindowsView: View {
                             }
                     }
                 }
-                if let error = error ?? windows.storageError { Text(error).foregroundStyle(.red) }
+                if let error = error?.text ?? windows.storageError { Text(error).foregroundStyle(.red) }
             }
-            .navigationTitle("窗口管理")
+            .localizedNavigationTitle("窗口管理")
             .toolbar { Button("完成") { dismiss() } }
             .alert("重命名当前窗口", isPresented: $naming) {
                 TextField("名称", text: $name)
                 Button("保存") {
                     do { try windows.rename(browser.windowID, to: name); error = nil }
-                    catch { self.error = error.localizedDescription }
+                    catch { self.error = .error(error) }
                 }
                 Button("取消", role: .cancel) {}
             }
@@ -80,7 +84,7 @@ struct BrowserWindowsView: View {
                 Button("删除", role: .destructive) {
                     guard let deletingID else { return }
                     do { try windows.removeSavedWindow(deletingID); error = nil }
-                    catch { self.error = error.localizedDescription }
+                    catch { self.error = .error(error) }
                     self.deletingID = nil
                 }
                 Button("取消", role: .cancel) { deletingID = nil }

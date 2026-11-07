@@ -14,16 +14,18 @@ struct RecordRecoveryView: View {
     @State private var confirmReset = false
     @State private var exportFile: ExportedFile?
     @State private var busy = false
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         List {
             Section {
                 Text("恢复或重置前会保留当前原始记录。备份不会自动删除；下载文件不会因重置记录而删除。")
                     .font(.callout)
                 Button("导出原始记录") {
                     guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else {
-                        message = RecordRecoveryError.noFile.localizedDescription; return
+                        message = .error(RecordRecoveryError.noFile); return
                     }
                     exportFile = ExportedFile(url: fileURL)
                 }.accessibilityIdentifier("export-original-records")
@@ -51,9 +53,9 @@ struct RecordRecoveryView: View {
                     .accessibilityIdentifier("reset-records")
             }
             if busy { ProgressView("正在处理记录").accessibilityIdentifier("record-recovery-progress") }
-            if let message { Text(message).accessibilityIdentifier("record-recovery-result") }
+            if let message { Text(message.text).accessibilityIdentifier("record-recovery-result") }
         }
-        .navigationTitle("记录恢复")
+        .localizedNavigationTitle("记录恢复")
         .disabled(busy)
         .task { backups = availableBackups() }
         .confirmationDialog("恢复选中的备份？", isPresented: $confirmRestore, titleVisibility: .visible) {
@@ -68,7 +70,7 @@ struct RecordRecoveryView: View {
         .sheet(item: $exportFile) { file in
             FileExportPicker(url: file.url) { saved in
                 exportFile = nil
-                if saved { message = String(localized: "原始记录已导出。") }
+                if saved { message = .resource("原始记录已导出。") }
             }
         }
     }
@@ -76,8 +78,8 @@ struct RecordRecoveryView: View {
     private func perform(_ action: @escaping () async throws -> Void) {
         busy = true; message = nil
         Task { @MainActor in
-            do { try await action(); message = String(localized: "记录已更新，可以继续使用。") }
-            catch { message = error.localizedDescription }
+            do { try await action(); message = .resource("记录已更新，可以继续使用。") }
+            catch { message = .error(error) }
             backups = availableBackups(); busy = false
         }
     }

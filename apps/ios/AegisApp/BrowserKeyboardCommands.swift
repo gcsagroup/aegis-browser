@@ -23,20 +23,22 @@ extension FocusedValues {
 }
 
 struct BrowserKeyboardCommands: Commands {
+    @ObservedObject var language: AppLanguageSettings
     @FocusedValue(\.browserKeyboardActions) private var actions
     var body: some Commands {
+        let _ = language.revision
         CommandGroup(replacing: .newItem) {
-            Button("新建") { actions?.newTab() }.keyboardShortcut("t").disabled(actions == nil)
-            Button("关闭当前标签") { actions?.closeTab() }.keyboardShortcut("w").disabled(actions == nil)
+            Button(AegisLocalization.string("新建")) { actions?.newTab() }.keyboardShortcut("t").disabled(actions == nil)
+            Button(AegisLocalization.string("关闭当前标签")) { actions?.closeTab() }.keyboardShortcut("w").disabled(actions == nil)
         }
         CommandGroup(after: .textEditing) {
-            Button("在页面中查找") {
+            Button(AegisLocalization.string("在页面中查找")) {
                 actions?.find()
             }.keyboardShortcut("f").disabled(actions == nil)
-            Button("编辑网址") { actions?.editAddress() }.keyboardShortcut("l").disabled(actions == nil)
-            Button("刷新") { actions?.reload() }.keyboardShortcut("r").disabled(actions == nil)
-            Button("后退") { actions?.back() }.keyboardShortcut("[").disabled(actions == nil)
-            Button("前进") { actions?.forward() }.keyboardShortcut("]").disabled(actions == nil)
+            Button(AegisLocalization.string("编辑网址")) { actions?.editAddress() }.keyboardShortcut("l").disabled(actions == nil)
+            Button(AegisLocalization.string("刷新")) { actions?.reload() }.keyboardShortcut("r").disabled(actions == nil)
+            Button(AegisLocalization.string("后退")) { actions?.back() }.keyboardShortcut("[").disabled(actions == nil)
+            Button(AegisLocalization.string("前进")) { actions?.forward() }.keyboardShortcut("]").disabled(actions == nil)
         }
     }
 }

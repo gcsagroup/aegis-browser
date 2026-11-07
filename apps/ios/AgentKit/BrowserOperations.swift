@@ -6,12 +6,12 @@ public enum BrowserOperationKind: String, Codable, CaseIterable, Sendable {
     case groupTabs, saveWorkspace, openURLs, reloadTabs, closeTabs, scrollDown
     public var title: String {
         switch self {
-        case .groupTabs: String(localized: "将所选标签分组")
-        case .saveWorkspace: String(localized: "将所选标签保存为工作区")
-        case .openURLs: String(localized: "打开输入的网址")
-        case .reloadTabs: String(localized: "重新载入所选标签")
-        case .closeTabs: String(localized: "关闭所选标签")
-        case .scrollDown: String(localized: "向下滚动当前页面")
+        case .groupTabs: AegisLocalization.string("将所选标签分组")
+        case .saveWorkspace: AegisLocalization.string("将所选标签保存为工作区")
+        case .openURLs: AegisLocalization.string("打开输入的网址")
+        case .reloadTabs: AegisLocalization.string("重新载入所选标签")
+        case .closeTabs: AegisLocalization.string("关闭所选标签")
+        case .scrollDown: AegisLocalization.string("向下滚动当前页面")
         }
     }
 }
@@ -70,11 +70,11 @@ public enum BrowserOperationError: LocalizedError {
     case invalidPlan, changed, expired, alreadyUsed, cancelled
     public var errorDescription: String? {
         switch self {
-        case .invalidPlan: String(localized: "操作计划超出允许范围，请调整所选标签、网址或步骤。")
-        case .changed: String(localized: "窗口、浏览模式或页面已变化，请重新生成并确认操作。")
-        case .expired: String(localized: "操作预览已过期，请重新生成。")
-        case .alreadyUsed: String(localized: "此操作计划已处理，请重新预览后再执行。")
-        case .cancelled: String(localized: "操作已取消。已完成的步骤保持原状。")
+        case .invalidPlan: AegisLocalization.string("操作计划超出允许范围，请调整所选标签、网址或步骤。")
+        case .changed: AegisLocalization.string("窗口、浏览模式或页面已变化，请重新生成并确认操作。")
+        case .expired: AegisLocalization.string("操作预览已过期，请重新生成。")
+        case .alreadyUsed: AegisLocalization.string("此操作计划已处理，请重新预览后再执行。")
+        case .cancelled: AegisLocalization.string("操作已取消。已完成的步骤保持原状。")
         }
     }
 }

@@ -64,9 +64,9 @@ public enum RecordRecoveryError: LocalizedError {
     case invalidBackup, busy, noFile
     public var errorDescription: String? {
         switch self {
-        case .invalidBackup: String(localized: "备份无效或超出容量，当前记录未被替换。")
-        case .busy: String(localized: "请先暂停或取消下载，再恢复记录。")
-        case .noFile: String(localized: "没有可导出的记录文件。")
+        case .invalidBackup: AegisLocalization.string("备份无效或超出容量，当前记录未被替换。")
+        case .busy: AegisLocalization.string("请先暂停或取消下载，再恢复记录。")
+        case .noFile: AegisLocalization.string("没有可导出的记录文件。")
         }
     }
 }
