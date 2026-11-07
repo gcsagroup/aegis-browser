@@ -4,6 +4,7 @@ require "fileutils"
 require "json"
 require "open3"
 require "pathname"
+require "psych"
 require "rbconfig"
 require "time"
 require "uri"
@@ -126,9 +127,44 @@ module AegisRelease
     end
 
     def native_identity
-      text = File.read(File.join(root, 'apps/ios/project.yml'))
-      [text[/MARKETING_VERSION: ([0-9.]+)/, 1], text[/CURRENT_PROJECT_VERSION: (\d+)/, 1]]
+      # Read scalar text, not YAML-coerced floats (1.10 must not become 1.1).
+      # Psych's syntax tree never constructs tagged objects or expands aliases.
+      stream = Psych.parse_stream(File.read(File.join(root, 'apps/ios/project.yml')))
+      AegisRelease.require!(stream.children.length == 1, 'Expected one native project YAML document')
+      project = stream.children.first.root
+      settings = native_yaml_value(project, 'settings')
+      flat_version = native_yaml_value(project, 'MARKETING_VERSION')
+      flat_build = native_yaml_value(project, 'CURRENT_PROJECT_VERSION')
+      if settings
+        AegisRelease.require!(!flat_version && !flat_build, 'Ambiguous native project identity')
+        base = native_yaml_value(settings, 'base')
+        version_node = native_yaml_value(base, 'MARKETING_VERSION')
+        build_node = native_yaml_value(base, 'CURRENT_PROJECT_VERSION')
+      else
+        version_node, build_node = flat_version, flat_build
+      end
+      [native_scalar(version_node), native_scalar(build_node)]
+    rescue Psych::Exception => e
+      raise Error, "Invalid native project YAML: #{e.class}"
     end
+
+    def native_yaml_value(node, key)
+      AegisRelease.require!(node.is_a?(Psych::Nodes::Mapping), 'Expected native project settings mapping')
+      pairs = node.children.each_slice(2).to_a
+      AegisRelease.require!(pairs.all? { |k, _| k.is_a?(Psych::Nodes::Scalar) }, 'Invalid native project mapping key')
+      matches = pairs.select { |k, _| k.value == key }
+      AegisRelease.require!(matches.length <= 1, "Duplicate native project key: #{key}")
+      matches.first&.last
+    end
+
+    def native_scalar(node)
+      AegisRelease.require!(node.is_a?(Psych::Nodes::Scalar) &&
+                           [nil, 'tag:yaml.org,2002:str', 'tag:yaml.org,2002:int', 'tag:yaml.org,2002:float'].include?(node.tag),
+                           'Expected native identity scalar')
+      node.value
+    end
+
+    private :native_yaml_value, :native_scalar
 
     def directory
       File.join(root, ".artifacts/release", platform, run_id)

@@ -193,6 +193,15 @@
 		D135455F301C94F942653081 /* RemoteDiagnosticsControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9111833A652D88B7A7911657 /* RemoteDiagnosticsControllerTests.swift */; };
 		228686737287987D33357995 /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 0D026E316E3C9B908759D083 /* FirebaseRemoteConfig */; };
 		281625E6CA491BDD947E3687 /* FirebaseInstallations in Frameworks */ = {isa = PBXBuildFile; productRef = 42C9E8ECECC6479BFE13E9DB /* FirebaseInstallations */; };
+		CDE459F64DB928068D354FB7 /* AgentErrors.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = EC93F77A9E33941D9D4BFDFB /* AgentErrors.xcstrings */; };
+		3CBB58CBFB7DA0AF1F8A1CBA /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5A5A9763B05F28057638A6 /* AppLocalization.swift */; };
+		2F8608900B0C96D155EDE512 /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5A5A9763B05F28057638A6 /* AppLocalization.swift */; };
+		34B3692E112C9B3EF297B1AE /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5A5A9763B05F28057638A6 /* AppLocalization.swift */; };
+		B6ADE0340A3965DD4AD1A449 /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5A5A9763B05F28057638A6 /* AppLocalization.swift */; };
+		8543F5FF0715D0DFCD954170 /* AppLanguageSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7C7BE9E5466679251262011 /* AppLanguageSettings.swift */; };
+		7E626F0EFBE241CFF8D425BD /* LanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CA6E3E9955B58A183D8D9F8 /* LanguageSettingsView.swift */; };
+		3099E14F9B134196E9917201 /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374551B1E8C7E3FC054806AB /* AppLanguageTests.swift */; };
+		263D129E4575F094B8CA2113 /* AppLanguageUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8944ABC4656FAF452A28FAE /* AppLanguageUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -528,6 +537,12 @@
 		9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirebaseControlsView.swift; sourceTree = "<group>"; };
 		CA4BDED775546246853D21C9 /* RemoteDiagnosticsPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsPolicyTests.swift; sourceTree = "<group>"; };
 		9111833A652D88B7A7911657 /* RemoteDiagnosticsControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteDiagnosticsControllerTests.swift; sourceTree = "<group>"; };
+		EC93F77A9E33941D9D4BFDFB /* AgentErrors.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = AgentErrors.xcstrings; sourceTree = "<group>"; };
+		7B5A5A9763B05F28057638A6 /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
+		D7C7BE9E5466679251262011 /* AppLanguageSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageSettings.swift; sourceTree = "<group>"; };
+		5CA6E3E9955B58A183D8D9F8 /* LanguageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSettingsView.swift; sourceTree = "<group>"; };
+		374551B1E8C7E3FC054806AB /* AppLanguageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageTests.swift; sourceTree = "<group>"; };
+		D8944ABC4656FAF452A28FAE /* AppLanguageUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -583,6 +598,7 @@
 				2C7AE795E0880C8362301009 /* AgentBroker.swift */,
 				52E3D6DAEB88166AA1F5B336 /* AgentContractCodec.swift */,
 				3B191048BDD989006216DCB6 /* AgentContracts.swift */,
+				EC93F77A9E33941D9D4BFDFB /* AgentErrors.xcstrings */,
 				AC946B5F634860F4DB4118FB /* AgentWorkflows.swift */,
 				AE10259F85EE22E3A7563479 /* AssistantTaskStore.swift */,
 				83CFEDCC68D7FED0371E6A7E /* BrowserOperations.swift */,
@@ -606,6 +622,7 @@
 		3C7C7C95A3C79D9763C9EC3F /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				7B5A5A9763B05F28057638A6 /* AppLocalization.swift */,
 				4E2D2FFC6E99254E69EFC1E7 /* ExternalPageLink.swift */,
 				C9964165FF742839CF32C32D /* MarkdownShareInbox.swift */,
 				97F1508E0BB36F8EDAA83DB8 /* SafariReadOnlyGate.swift */,
@@ -675,6 +692,7 @@
 		4D618B5CFF324A152FFFD5FC /* AegisTests */ = {
 			isa = PBXGroup;
 			children = (
+				374551B1E8C7E3FC054806AB /* AppLanguageTests.swift */,
 				19E2C19F643D87331E7B4E34 /* LocalizationTests.swift */,
 				7C91529E9D1C3457DD010A42 /* BookmarkTransactionJournalTests.swift */,
 				7755D203721E0D35AD0E28DC /* BrowserKitTests.swift */,
@@ -704,6 +722,7 @@
 		4FDE9874F5B0ECC431D490BA /* AegisUITests */ = {
 			isa = PBXGroup;
 			children = (
+				D8944ABC4656FAF452A28FAE /* AppLanguageUITests.swift */,
 				C2E56A8F0A54EFFAE2CF7CDD /* LocalizationUITests.swift */,
 				D2EE4B19F40D50A254F73400 /* AegisUITests.swift */,
 				0510756A74BFFCEF7ECFDE21 /* SettingsLayoutUITests.swift */,
@@ -882,6 +901,8 @@
 		C7CD882477A02565A54EFBC2 /* AegisApp */ = {
 			isa = PBXGroup;
 			children = (
+				5CA6E3E9955B58A183D8D9F8 /* LanguageSettingsView.swift */,
+				D7C7BE9E5466679251262011 /* AppLanguageSettings.swift */,
 				397CB2F7CB8A372260242996 /* AegisApp.swift */,
 				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
 				9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */,
@@ -1276,6 +1297,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CDE459F64DB928068D354FB7 /* AgentErrors.xcstrings in Resources */,
 				5F3417E7B4BCA29FBC13A8EC /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1342,6 +1364,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2F8608900B0C96D155EDE512 /* AppLocalization.swift in Sources */,
 				13271F422203DE4F620A039C /* BookmarkLinkChecker.swift in Sources */,
 				4A53823AD2346049A173870F /* BrowserDataStore.swift in Sources */,
 				5386C9FFA46386CDD3DA6605 /* BrowserPreferences.swift in Sources */,
@@ -1372,6 +1395,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				34B3692E112C9B3EF297B1AE /* AppLocalization.swift in Sources */,
 				966246A7BCD0D2E3007E96AF /* ActionCapability.swift in Sources */,
 				8FE482D6250CED01D8EA3558 /* AgentBroker.swift in Sources */,
 				838C5737D8815AB996BC45E6 /* AgentContractCodec.swift in Sources */,
@@ -1390,6 +1414,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				263D129E4575F094B8CA2113 /* AppLanguageUITests.swift in Sources */,
 				D959C852EB8127E186F3B441 /* LocalizationUITests.swift in Sources */,
 				0A421F28BB9416326ED8C14F /* AegisUITests.swift in Sources */,
 				A5D16577C28F1F3AAE156C2A /* SettingsLayoutUITests.swift in Sources */,
@@ -1401,6 +1426,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B6ADE0340A3965DD4AD1A449 /* AppLocalization.swift in Sources */,
 				3481414A58A3D79493FCA1E5 /* MarkdownShareInbox.swift in Sources */,
 				951712A24A4B4F6A0FA3D2F7 /* ShareInbox.swift in Sources */,
 				B9F51A266D55AECD80F09DE4 /* ShareViewController.swift in Sources */,
@@ -1433,6 +1459,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E626F0EFBE241CFF8D425BD /* LanguageSettingsView.swift in Sources */,
+				8543F5FF0715D0DFCD954170 /* AppLanguageSettings.swift in Sources */,
+				3CBB58CBFB7DA0AF1F8A1CBA /* AppLocalization.swift in Sources */,
 				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
 				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
 				EA17336CE13C643EFF37AD29 /* FirebaseControlsView.swift in Sources */,
@@ -1476,6 +1505,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3099E14F9B134196E9917201 /* AppLanguageTests.swift in Sources */,
 				B73A5A07B20C241BA780BBBD /* LocalizationTests.swift in Sources */,
 				B0087639BCB7AC25A15DD724 /* AgentContractGoldenVectorTests.swift in Sources */,
 				0CE5714F43AC5503C8AA2454 /* AgentContractTests.swift in Sources */,
@@ -1668,6 +1698,7 @@
 				PRODUCT_NAME = AgentKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
 			};
@@ -1767,7 +1798,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
-				MARKETING_VERSION = 7.0;
+				MARKETING_VERSION = 1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1835,7 +1866,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.4;
-				MARKETING_VERSION = 7.0;
+				MARKETING_VERSION = 1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -2050,6 +2081,7 @@
 				PRODUCT_NAME = AgentKit;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
 			};

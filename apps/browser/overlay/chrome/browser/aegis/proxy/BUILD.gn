@@ -1,0 +1,38 @@
+# Copyright 2026 GCSA
+import("//testing/test.gni")
+import("//third_party/protobuf/proto_library.gni")
+
+if (is_mac) {
+  proto_library("access_core_control") {
+    sources = [ "access_core_control.proto" ]
+  }
+
+  source_set("p01_transport") {
+    sources = [
+      "core_control_limits.h",
+      "core_control_wire_guard.cc",
+      "core_control_wire_guard.h",
+      "core_relay_pair.cc",
+      "core_relay_pair.h",
+      "core_tls.cc",
+      "core_tls.h",
+    ]
+    public_deps = [
+      ":access_core_control",
+      "//base",
+      "//crypto",
+      "//third_party/boringssl",
+    ]
+    deps = [ "//net" ]
+  }
+
+  test("p01_transport_unittests") {
+    sources = [ "core_tls_unittest.cc" ]
+    deps = [
+      ":p01_transport",
+      "//base/test:run_all_unittests",
+      "//base/test:test_support",
+      "//testing/gtest",
+    ]
+  }
+}

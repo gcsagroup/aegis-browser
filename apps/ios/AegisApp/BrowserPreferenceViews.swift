@@ -5,9 +5,11 @@ import WebKit
 struct BrowserGeneralSettingsView: View {
     @ObservedObject var preferences: BrowserPreferences
     @State private var draft = BrowserPreferenceValues()
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Form {
             Section("搜索") {
                 SettingsPicker("搜索引擎", selection: $draft.searchEngine, value: draft.searchEngine?.title ?? "未启用搜索") {
@@ -75,14 +77,14 @@ struct BrowserGeneralSettingsView: View {
             }
             Section {
                 Button("保存浏览设置") {
-                    do { try preferences.save(draft); message = String(localized: "浏览设置已保存。") }
-                    catch { message = error.localizedDescription }
+                    do { try preferences.save(draft); message = .resource("浏览设置已保存。") }
+                    catch { message = .error(error) }
                 }.accessibilityIdentifier("save-browser-preferences")
-                if let message { Text(message).accessibilityIdentifier("browser-preferences-status") }
+                if let message { Text(message.text).accessibilityIdentifier("browser-preferences-status") }
                 if let error = preferences.error { Text(error).foregroundStyle(.red) }
             }
         }
-        .navigationTitle("浏览设置")
+        .localizedNavigationTitle("浏览设置")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { draft = preferences.values }
     }
@@ -90,8 +92,10 @@ struct BrowserGeneralSettingsView: View {
 
 struct ProtectionOptionsView: View {
     @ObservedObject var preferences: BrowserPreferences
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Form {
             Section("导航保护") {
                 Toggle("链接追踪参数清理", isOn: binding(\.linkSanitization))
@@ -127,19 +131,19 @@ struct ProtectionOptionsView: View {
                 Text("iOS 使用系统 WebKit；没有移植 V8 字节码或完整 CNAME 检查。行为提示不能证明未知挖矿，严格指纹限制也不是不可绕过的引擎保护。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            if let message { Text(message).foregroundStyle(.red) }
-        }.navigationTitle("保护选项").navigationBarTitleDisplayMode(.inline)
+            if let message { Text(message.text).foregroundStyle(.red) }
+        }.localizedNavigationTitle("保护选项").navigationBarTitleDisplayMode(.inline)
     }
     private func optionalBinding(_ key: WritableKeyPath<BrowserPreferenceValues, Bool?>, fallback: Bool) -> Binding<Bool> {
         Binding(get: { preferences.values[keyPath: key] ?? fallback }, set: { value in
             var next = preferences.values; next[keyPath: key] = value
-            do { try preferences.save(next) } catch { message = error.localizedDescription }
+            do { try preferences.save(next) } catch { message = .error(error) }
         })
     }
     private func binding(_ key: WritableKeyPath<BrowserPreferenceValues, Bool>) -> Binding<Bool> {
         Binding(get: { preferences.values[keyPath: key] }, set: { value in
             var next = preferences.values; next[keyPath: key] = value
-            do { try preferences.save(next) } catch { message = error.localizedDescription }
+            do { try preferences.save(next) } catch { message = .error(error) }
         })
     }
 }
@@ -147,7 +151,9 @@ struct ProtectionOptionsView: View {
 struct WebsiteSettingsView: View {
     @EnvironmentObject private var browser: BrowserSession
     @ObservedObject var preferences: BrowserPreferences
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         List {
             if let url = browser.activeTab?.url, let origin = BrowserPreferences.origin(url) {
                 Section("当前网站") {
@@ -167,7 +173,7 @@ struct WebsiteSettingsView: View {
                 Text("网站设置按协议、主机和端口分别保存。相机和麦克风的“询问”仍需系统许可；定位等权限由系统提示管理。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-        }.navigationTitle("网站设置与权限").navigationBarTitleDisplayMode(.inline)
+        }.localizedNavigationTitle("网站设置与权限").navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -177,9 +183,11 @@ struct SitePreferenceEditor: View {
     @ObservedObject var preferences: BrowserPreferences
     let url: URL
     @State private var draft = SitePreferences()
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
     @State private var confirmsSave = false
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Form {
             Section { Text(BrowserPreferences.origin(url) ?? "").textSelection(.enabled) }
             Section("网页显示") {
@@ -220,13 +228,13 @@ struct SitePreferenceEditor: View {
                 }.accessibilityIdentifier("save-site-preferences")
                 Button("恢复此网站默认设置") {
                     do { try preferences.setSite(nil, for: url); dismiss() }
-                    catch { message = error.localizedDescription }
+                    catch { message = .error(error) }
                 }
                 Text("保存后重新载入页面，以应用网站模式、脚本及权限规则。")
                     .font(.footnote).foregroundStyle(.secondary)
-                if let message { Text(message) }
+                if let message { Text(message.text) }
             }
-        }.navigationTitle("网站设置").navigationBarTitleDisplayMode(.inline)
+        }.localizedNavigationTitle("网站设置").navigationBarTitleDisplayMode(.inline)
             .onAppear { draft = preferences.site(for: url) }
             .alert("保存私密网站的设置？", isPresented: $confirmsSave) {
                 Button("确认保存") { save() }
@@ -234,8 +242,8 @@ struct SitePreferenceEditor: View {
             } message: { Text("网站地址与设置会保留在本机，普通和私密浏览均会使用。\n\(BrowserPreferences.origin(url) ?? "")") }
     }
     private func save() {
-        do { try preferences.setSite(draft, for: url); message = String(localized: "网站设置已保存。") }
-        catch { message = error.localizedDescription }
+        do { try preferences.setSite(draft, for: url); message = .resource("网站设置已保存。") }
+        catch { message = .error(error) }
     }
 }
 
@@ -245,8 +253,10 @@ struct WebsiteDataSettingsView: View {
     @State private var selection: WKWebsiteDataRecord?
     @State private var busy = false
     @State private var confirmsRemoval = false
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         List {
             Section {
                 Text("管理普通浏览的 Cookie、缓存和网站存储。清除前会关闭所有普通浏览窗口中的标签，避免页面立即重新写入；收藏、工作区和阅读资料不受影响。")
@@ -262,8 +272,8 @@ struct WebsiteDataSettingsView: View {
                     }.disabled(busy || browser.profile.isPrivate)
                 }
             }
-            if let message { Text(message) }
-        }.navigationTitle("网站数据管理").navigationBarTitleDisplayMode(.inline)
+            if let message { Text(message.text) }
+        }.localizedNavigationTitle("网站数据管理").navigationBarTitleDisplayMode(.inline)
             .task { await refresh() }
             .refreshable { await refresh() }
             .alert("清除此网站的数据？", isPresented: $confirmsRemoval) {
@@ -272,7 +282,7 @@ struct WebsiteDataSettingsView: View {
                     busy = true
                     Task { @MainActor in
                         await browser.clearWebsiteData(records: [selection])
-                        await refresh(); busy = false; message = String(localized: "所选网站的数据已清除。")
+                        await refresh(); busy = false; message = .resource("所选网站的数据已清除。")
                     }
                 }
                 Button("取消", role: .cancel) { selection = nil }

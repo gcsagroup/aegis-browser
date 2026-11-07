@@ -7,10 +7,12 @@ struct TabSwitcher: View {
     @State private var naming = false
     @State private var editingID: UUID?
     @State private var name = ""
-    @State private var error: String?
-    @State private var releaseMessage: String?
+    @State private var error: AegisLocalizedMessage?
+    @State private var releaseMessage: AegisLocalizedMessage?
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             List {
                 Section {
@@ -40,13 +42,13 @@ struct TabSwitcher: View {
                         Button("释放闲置页面内存", systemImage: "leaf") {
                             Task { @MainActor in
                                 let count = await browser.releaseInactiveTabs()
-                                releaseMessage = String(localized: "已休眠 \(count) 个标签，切换时会重新加载。")
+                                releaseMessage = .resource("已休眠 \(count) 个标签，切换时会重新加载。")
                             }
                         }.accessibilityIdentifier("release-idle-tabs")
                         Text("已编辑表单、媒体播放、含框架或有浏览历史的页面会保留。")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    if let releaseMessage { Text(releaseMessage).accessibilityIdentifier("tab-release-result") }
+                    if let releaseMessage { Text(releaseMessage.text).accessibilityIdentifier("tab-release-result") }
                 }
                 Section("标签页") {
                     ForEach(browser.displayedTabs) { tab in
@@ -71,10 +73,10 @@ struct TabSwitcher: View {
                     Button("新建标签页", systemImage: "plus") { _ = browser.newTab(); dismiss() }
                         .accessibilityIdentifier("new-group-tab")
                 }
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error { Text(error.text).foregroundStyle(.red) }
                 if let error = browser.sessionError { Text(error).foregroundStyle(.red) }
             }
-            .navigationTitle("标签与分组")
+            .localizedNavigationTitle("标签与分组")
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() }.keyboardShortcut(.escape, modifiers: []) } }
             .alert(editingID == nil ? "新建标签组" : "重命名标签组", isPresented: $naming) {
                 TextField("名称", text: $name)
@@ -83,7 +85,7 @@ struct TabSwitcher: View {
                         if let editingID { try browser.renameGroup(editingID, to: name) }
                         else { _ = try browser.createGroup(name: name) }
                         error = nil
-                    } catch { self.error = error.localizedDescription }
+                    } catch { self.error = .error(error) }
                 }
                 Button("取消", role: .cancel) {}
             }

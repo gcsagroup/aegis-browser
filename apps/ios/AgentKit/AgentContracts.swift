@@ -52,23 +52,27 @@ public enum AgentContractError: Error, Equatable, LocalizedError, Sendable {
     case unknownResource
 
     public var errorDescription: String? {
+        AegisLocalization.string(localizedResource)
+    }
+
+    var localizedResource: LocalizedStringResource {
         switch self {
-        case .invalidState: "当前任务状态不允许此操作"
-        case .privateProfileDenied: "私密浏览不启用 Agent"
-        case .consentRequired: "需要先取得任务授权"
-        case .expiredGrant: "任务授权已过期"
-        case .unsupportedVersion: "合同或策略版本不受支持"
-        case .toolDenied: "工具不在授权范围内"
-        case .originDenied: "页面来源不在授权范围内"
-        case .riskExceeded: "动作风险超过授权上限"
-        case .invalidLease: "页面身份已变化，请重新确认"
-        case .staleResourceRevision: "浏览器资源已变化，请重新预览"
-        case .capabilityExpired: "动作确认已过期"
-        case .capabilityAlreadyConsumed: "动作确认已使用或不存在"
-        case .capabilityMismatch: "动作与确认内容不一致"
-        case .invalidTransition: "资源状态变化不合法"
-        case .resourceReuse: "资源 ID 不允许复用"
-        case .unknownResource: "资源不存在"
+        case .invalidState: .AgentErrors.agentErrorInvalidState
+        case .privateProfileDenied: .AgentErrors.agentErrorPrivateProfileDenied
+        case .consentRequired: .AgentErrors.agentErrorConsentRequired
+        case .expiredGrant: .AgentErrors.agentErrorGrantExpired
+        case .unsupportedVersion: .AgentErrors.agentErrorUnsupportedVersion
+        case .toolDenied: .AgentErrors.agentErrorToolDenied
+        case .originDenied: .AgentErrors.agentErrorOriginDenied
+        case .riskExceeded: .AgentErrors.agentErrorRiskExceeded
+        case .invalidLease: .AgentErrors.agentErrorInvalidLease
+        case .staleResourceRevision: .AgentErrors.agentErrorStaleResourceRevision
+        case .capabilityExpired: .AgentErrors.agentErrorCapabilityExpired
+        case .capabilityAlreadyConsumed: .AgentErrors.agentErrorCapabilityAlreadyConsumed
+        case .capabilityMismatch: .AgentErrors.agentErrorCapabilityMismatch
+        case .invalidTransition: .AgentErrors.agentErrorInvalidTransition
+        case .resourceReuse: .AgentErrors.agentErrorResourceReuse
+        case .unknownResource: .AgentErrors.agentErrorUnknownResource
         }
     }
 }

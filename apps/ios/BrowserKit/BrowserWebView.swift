@@ -61,7 +61,7 @@ final class BrowserContentWebView: WKWebView {
     override var canBecomeFirstResponder: Bool { true }
     override var keyCommands: [UIKeyCommand]? {
         let find = UIKeyCommand(input: "f", modifierFlags: .command, action: #selector(showPageFind))
-        find.discoverabilityTitle = String(localized: "在页面中查找")
+        find.discoverabilityTitle = AegisLocalization.string("在页面中查找")
         find.wantsPriorityOverSystemBehavior = true
         return [find] + (super.keyCommands ?? [])
     }
