@@ -77,14 +77,6 @@ export class SettingsMainElement extends SettingsMainElementBase {
 
   static get properties() {
     return {
-      /**
-       * Preferences state.
-       */
-      prefs: {
-        type: Object,
-        notify: true,
-      },
-
       pageVisibility_: {
         type: Object,
         value: () => pageVisibility || {},
@@ -130,7 +122,6 @@ export class SettingsMainElement extends SettingsMainElementBase {
     };
   }
 
-  declare prefs: Record<string, unknown>;
   declare private pageVisibility_: PageVisibility;
   declare private lastRoute_: Route|null;
   declare private routes_: SettingsRoutes;

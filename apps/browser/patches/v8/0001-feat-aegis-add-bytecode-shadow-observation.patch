@@ -21,10 +21,10 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 test/unittests/interpreter/aegis-bytecode-shadow-unittest.cc
 
 diff --git a/BUILD.gn b/BUILD.gn
-index c6132807ff6c488543b4df1f3ba8793d9dea98d5..f8163829f3df1151257c6b8e13301876065d3235 100644
+index 8956a3dc35741e89953b8275ca69d130856182bd..aa4953c43bbd155027d978755bbfee98363ef927 100644
 --- a/BUILD.gn
 +++ b/BUILD.gn
-@@ -4528,6 +4528,7 @@ v8_header_set("v8_internal_headers") {
+@@ -4600,6 +4600,7 @@ v8_header_set("v8_internal_headers") {
      "src/init/setup-isolate.h",
      "src/init/startup-data-util.h",
      "src/init/v8.h",
@@ -32,7 +32,7 @@ index c6132807ff6c488543b4df1f3ba8793d9dea98d5..f8163829f3df1151257c6b8e13301876
      "src/interpreter/block-coverage-builder.h",
      "src/interpreter/bytecode-array-builder.h",
      "src/interpreter/bytecode-array-iterator.h",
-@@ -6399,6 +6400,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
+@@ -6512,6 +6513,7 @@ v8_cluster_source_set("v8_base_without_compiler") {
      "src/init/isolate-group.cc",
      "src/init/startup-data-util.cc",
      "src/init/v8.cc",
@@ -41,10 +41,10 @@ index c6132807ff6c488543b4df1f3ba8793d9dea98d5..f8163829f3df1151257c6b8e13301876
      "src/interpreter/bytecode-array-iterator.cc",
      "src/interpreter/bytecode-array-random-iterator.cc",
 diff --git a/src/flags/flag-definitions.h b/src/flags/flag-definitions.h
-index a64f1b5e7b397190030598f39b0d27c6613c27b0..066460e72226ff44cb808977007dac16b7122a7b 100644
+index a7ea6f8178a502c92b8bc15f145b640ada481a31..13cc8861c2505793c409802c4ad3f3efbcd2e55f 100644
 --- a/src/flags/flag-definitions.h
 +++ b/src/flags/flag-definitions.h
-@@ -1132,6 +1132,13 @@ DEFINE_BOOL(lazy_feedback_allocation, true, "Allocate feedback vectors lazily")
+@@ -1195,6 +1195,13 @@ DEFINE_BOOL(lazy_feedback_allocation, true, "Allocate feedback vectors lazily")
  DEFINE_BOOL(stress_ic, false, "exercise interesting paths in ICs more often")
  
  // Flags for Ignition.
@@ -244,12 +244,12 @@ index 3c3bcbaacada8ee140bc1f40d8966feddd85be69..12619f0577ba058df5671005637d7989
      StdoutStream os;
      std::unique_ptr<char[]> name =
 diff --git a/test/unittests/BUILD.gn b/test/unittests/BUILD.gn
-index 06428824029565445641d0f22ed48086e3a537b2..2aec3605c9d41c5a1f27790d16de4d1d7309edff 100644
+index 56dd2dea3625ce2d5b7f383bad3174b2fc5fc248..57c139cce5febf14a21aeebed27944355ec9b70d 100644
 --- a/test/unittests/BUILD.gn
 +++ b/test/unittests/BUILD.gn
-@@ -413,6 +413,7 @@ v8_cluster_source_set("v8_unittests_sources") {
-     "heap/spaces-unittest.cc",
+@@ -416,6 +416,7 @@ v8_cluster_source_set("v8_unittests_sources") {
      "heap/strong-root-allocator-unittest.cc",
+     "heap/weak-references-unittest.cc",
      "heap/write-barrier-unittest.cc",
 +    "interpreter/aegis-bytecode-shadow-unittest.cc",
      "interpreter/bytecode-array-builder-unittest.cc",
@@ -302,6 +302,3 @@ index 0000000000000000000000000000000000000000..1fa1cbf893327e6a6c77194f61a1450b
 +}  // namespace interpreter
 +}  // namespace internal
 +}  // namespace v8
--- 
-2.52.0
-

@@ -527,19 +527,19 @@ index 0000000000000000000000000000000000000000..e40894e24e8ec3225153f2c4257b1217
 +
 +#endif  // CHROME_BROWSER_AEGIS_FILTER_LIST_UPDATER_H_
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index a9607d3d6ffe72d64e10f2a3f92df9ca72856d13..f2b7e9c980035d81294d8f89398b5f4a833c605b 100644
+index c7a791e6320ca75a27b1785f2c93768b93189984..0653cda24f8f51db8b5fc0ba22c4208e5b666816 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
-@@ -15,6 +15,8 @@
+@@ -17,6 +17,8 @@
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/common/pref_names.h"
  #include "chrome/common/aegis/pref_names.h"
 +#include "chrome/common/aegis/filter_list.h"
 +#include "chrome/common/aegis/filter_list_matcher.h"
  #include "chrome/common/renderer_configuration.mojom.h"
+ #include "chrome/common/request_header_integrity/buildflags.h"
  #include "components/content_settings/common/content_settings_manager.mojom.h"
- #include "components/content_settings/core/browser/content_settings_utils.h"
-@@ -101,6 +103,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
+@@ -109,6 +111,10 @@ RendererUpdater::RendererUpdater(Profile* profile)
        aegis::prefs::kFingerprintGuardEnabled,
        base::BindRepeating(&RendererUpdater::UpdateAllRenderers,
                            base::Unretained(this)));
@@ -547,10 +547,10 @@ index a9607d3d6ffe72d64e10f2a3f92df9ca72856d13..f2b7e9c980035d81294d8f89398b5f4a
 +      aegis::prefs::kFilterListGeneration,
 +      base::BindRepeating(&RendererUpdater::PushAegisFilterList,
 +                          base::Unretained(this)));
- }
  
- RendererUpdater::~RendererUpdater() {
-@@ -161,6 +167,7 @@ void RendererUpdater::InitializeRenderer(
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+   if (auto* platform_runtime_host =
+@@ -179,6 +185,7 @@ void RendererUpdater::InitializeRenderer(
        std::move(bound_session_request_throttled_handler));
  
    renderer_configuration->SetConfiguration(CreateRendererDynamicParams());
@@ -558,7 +558,7 @@ index a9607d3d6ffe72d64e10f2a3f92df9ca72856d13..f2b7e9c980035d81294d8f89398b5f4a
  }
  
  RendererUpdater::RendererConfigurations
-@@ -237,6 +244,30 @@ void RendererUpdater::UpdateAllRenderers() {
+@@ -255,6 +262,30 @@ void RendererUpdater::UpdateAllRenderers() {
    }
  }
  
@@ -590,10 +590,10 @@ index a9607d3d6ffe72d64e10f2a3f92df9ca72856d13..f2b7e9c980035d81294d8f89398b5f4a
      const {
    return chrome::mojom::DynamicParams::New(
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index 07b177b26414800a75e886c14e122dfeb5086cab..3236d383bb28ba45966043046c27206b2410e8d2 100644
+index 7ea0a57befe3ea51416cb1986a33da051c55142b..48ee2b2a8066865cc9350c59d62fa73c9c385c86 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
-@@ -73,6 +73,11 @@ class RendererUpdater : public KeyedService
+@@ -81,6 +81,11 @@ class RendererUpdater : public KeyedService
    // Update all renderers due to a configuration change.
    void UpdateAllRenderers();
  
@@ -1534,10 +1534,10 @@ index 77d70a5d628036c294811e38ce8b2a0ff28bdac6..c631daf621b242286940170cf944de20
  }  // namespace aegis::prefs
  
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index 75098fa6a65440709b315985961807510a2f210b..3f33b331d03263f064fb6df31313410675cb5acd 100644
+index 83a93bd32ecb4e0040ee089fd5e881d90da8eb33..de3e9a7427033a614285020724cf578aded5b31e 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
-@@ -101,6 +101,9 @@ interface RendererConfiguration {
+@@ -113,6 +113,9 @@ interface RendererConfiguration {
    // Update renderer configuration with settings that can change.
    SetConfiguration(DynamicParams params);
  
@@ -1546,9 +1546,9 @@ index 75098fa6a65440709b315985961807510a2f210b..3f33b331d03263f064fb6df313134106
 +
    // Update the renderer configuration with settings that won't
    // change after being set.
-   [EnableIfNot=is_android]
+   SetConfigurationOnProcessLockUpdate(StaticParams params);
 diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
-index a07c9a9956028e4bd74d6f8664b81ae0abad0c70..dc5442edcaf4f535e8474730c0da5299f991a9fb 100644
+index 58b73bee1686d57a47f1b92a72fedca767c44f9d..bc88127fb6a15f0b8357cb20fd958186ed702aae 100644
 --- a/chrome/renderer/chrome_render_thread_observer.cc
 +++ b/chrome/renderer/chrome_render_thread_observer.cc
 @@ -4,6 +4,8 @@
@@ -1560,7 +1560,7 @@ index a07c9a9956028e4bd74d6f8664b81ae0abad0c70..dc5442edcaf4f535e8474730c0da5299
  
  #include <stddef.h>
  
-@@ -220,6 +222,17 @@ void ChromeRenderThreadObserver::SetConfiguration(
+@@ -229,6 +231,17 @@ void ChromeRenderThreadObserver::SetConfiguration(
    dynamic_params_ = std::move(params);
  }
  
@@ -1575,11 +1575,11 @@ index a07c9a9956028e4bd74d6f8664b81ae0abad0c70..dc5442edcaf4f535e8474730c0da5299
 +  aegis::FilterListMatcher::GetInstance()->ReplaceCompiledList(std::move(list));
 +}
 +
- #if !BUILDFLAG(IS_ANDROID)
  void ChromeRenderThreadObserver::SetConfigurationOnProcessLockUpdate(
      chrome::mojom::StaticParamsPtr params) {
+   // Ensure static renderer configuration parameters are set once.
 diff --git a/chrome/renderer/chrome_render_thread_observer.h b/chrome/renderer/chrome_render_thread_observer.h
-index a03714c550df7819ff905a5477fa9dd201d9a9b9..cb3e12ef928fbd366f6c37c8e8b8d4fa47194aa7 100644
+index 11ffcdbb58cd8ca1615de9aebb3f5afb1de480e6..4f7b5104f6400b4a471ba256eb1eb25dfd5ce169 100644
 --- a/chrome/renderer/chrome_render_thread_observer.h
 +++ b/chrome/renderer/chrome_render_thread_observer.h
 @@ -6,6 +6,7 @@
@@ -1597,9 +1597,9 @@ index a03714c550df7819ff905a5477fa9dd201d9a9b9..cb3e12ef928fbd366f6c37c8e8b8d4fa
 +  void SetAegisFilterList(const std::string& hosts,
 +                          const std::string& path_rules,
 +                          const std::string& exceptions) override;
- #if !BUILDFLAG(IS_ANDROID)
    void SetConfigurationOnProcessLockUpdate(
        chrome::mojom::StaticParamsPtr params) override;
+   void OnRendererConfigurationAssociatedRequest(
 diff --git a/third_party/aegis_policy/README.md b/third_party/aegis_policy/README.md
 index 27ea501d285376c916f7647465f0a5bdbc58f972..5555470acf3e0d4d38b8b44ef35ea95d7a96636d 100644
 --- a/third_party/aegis_policy/README.md
@@ -1619,6 +1619,3 @@ index 27ea501d285376c916f7647465f0a5bdbc58f972..5555470acf3e0d4d38b8b44ef35ea95d
  ```
  
  Do not hand-edit generated `.inc` files — edit TypeScript under `packages/core` instead.
--- 
-2.52.0
-

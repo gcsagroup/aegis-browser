@@ -33,7 +33,7 @@ Content-Transfer-Encoding: 8bit
  20 files changed, 472 insertions(+), 253 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 26cd464a56922469aafa3d24fbc34c7588532d03..4187c1c67dc533eeca434330ab5b0e964a67a469 100644
+index 7d38e74ac1fbf43a9d84c8c5bc320361e490cbda..ba29c5deba5c701d66fd8313e234777c4b82f6b1 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 @@ -4388,7 +4388,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
@@ -46,7 +46,7 @@ index 26cd464a56922469aafa3d24fbc34c7588532d03..4187c1c67dc533eeca434330ab5b0e96
      }
  
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index ea6bd99ca4a3a638a70c3ee2f7a908ab583e9278..0d5bf1f738b8290233289338c6237ad578fc0fa1 100644
+index d89a16f51c8cead0b6b0563326eac63d0fa2cee5..3b9eb39e074a7016165ba45ddd366d1e131cb277 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 @@ -542,12 +542,10 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm
@@ -1072,7 +1072,7 @@ index 42cc3a7baf1e265ed953d85b88e642a03825f77d..653b95fb709cbf2f86105f54bd7f100c
        element<HTMLButtonElement>('plan-button').click();
      }
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index 89fc53c5d55263253d2f56ddb28f65f24641c476..4ee8424c018865321892c324e9ce48af4d52f826 100644
+index 9075a6498fbfabf1c5c9393498587a1866c5990c..c562bd8227276fee1857e2463ebf6dfc8bc61ab8 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 @@ -325,7 +325,7 @@ CHAR_LIMIT guidelines:
@@ -1171,7 +1171,7 @@ index 89fc53c5d55263253d2f56ddb28f65f24641c476..4ee8424c018865321892c324e9ce48af
        <message name="IDS_SIGNIN_ACCOUNT_PICKER_BOTTOM_SHEET_SIGNIN_TITLE" desc="The title of the account picker bottom sheet tells that the user is in the process of signing in with their Google Account">
          Signing in...
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index b5d856e20839fc076f7fa056c2b5db1c3549bc7c..883e927a9166dd59538185ef4800f809b79dee6c 100644
+index 6a26313e907dbacff69e99676569b7e60b729df3..4ac626d9c52e0db386e4f9a73ef93d2840759bee 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 @@ -2165,4 +2165,17 @@
@@ -1193,7 +1193,7 @@ index b5d856e20839fc076f7fa056c2b5db1c3549bc7c..883e927a9166dd59538185ef4800f809
 +<translation id="5354352846738712842">Google 密码管理工具需要兼容的 Google Play 服务和浏览器支持，当前版本无法使用该服务。</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-index dddbc0d957a4ba540dee3937f17b35726a9119ec..6a05467e4659cdfc2eab928a03406ad35e46463c 100644
+index 9bd0ab3b1321df5ea022dfc0dac5395001072bbd..804a0ceab8a7560ad149cfd86d5db9cdbe7de8da 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 @@ -2167,4 +2167,17 @@

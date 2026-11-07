@@ -716,7 +716,7 @@ index 4a7eda0959342d6b79904faf3835ee3a0e04e818..971abdb14a3fbc789e0df25bd08b8398
 +    </group>
  </vector>
 diff --git a/chrome/browser/ui/android/strings/android_chrome_strings.grd b/chrome/browser/ui/android/strings/android_chrome_strings.grd
-index 2705221cb200e18d9a0b0b130c431252c21cc470..89fc53c5d55263253d2f56ddb28f65f24641c476 100644
+index e5524adca20a9ce2537683da05ae4b84f244c7dd..9075a6498fbfabf1c5c9393498587a1866c5990c 100644
 --- a/chrome/browser/ui/android/strings/android_chrome_strings.grd
 +++ b/chrome/browser/ui/android/strings/android_chrome_strings.grd
 @@ -2144,7 +2144,7 @@ Your Google account may have other forms of browsing history like searches and a
@@ -765,7 +765,7 @@ index 2705221cb200e18d9a0b0b130c431252c21cc470..89fc53c5d55263253d2f56ddb28f65f2
        <message name="IDS_NOTIFICATION_PERMISSION_RATIONALE_DIALOG_MESSAGE" desc="The body text of a dialog explaining the benefits of enabling Chrome notifications.">
          You’ll be able to easily manage media controls, Incognito sessions, downloads and more
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
-index 5a5db6f81c15593894b2c5f4ff322a22dfabf8af..b5d856e20839fc076f7fa056c2b5db1c3549bc7c 100644
+index 341aad4da9aef043c73eb6802e3c4606ab392ccc..6a26313e907dbacff69e99676569b7e60b729df3 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-CN.xtb
 @@ -2175,4 +2175,8 @@
@@ -778,7 +778,7 @@ index 5a5db6f81c15593894b2c5f4ff322a22dfabf8af..b5d856e20839fc076f7fa056c2b5db1c
 +<translation id="7491982752760169795">GCSA Aegis 通知</translation>
  </translationbundle>
 diff --git a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
-index 40e62e6c64298ae6dee5a2f6cb3320d6432061a0..dddbc0d957a4ba540dee3937f17b35726a9119ec 100644
+index 9dc7294441ce30ca4e6154e1f0472772b979de6e..9bd0ab3b1321df5ea022dfc0dac5395001072bbd 100644
 --- a/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 +++ b/chrome/browser/ui/android/strings/translations/android_chrome_strings_zh-TW.xtb
 @@ -2177,4 +2177,8 @@
@@ -829,7 +829,7 @@ index 7967608471384a0199d0faecf7409799d235ee20..77ace210fa26ede3dfee895ca9c6a5b6
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/version/version_ui.cc b/chrome/browser/ui/webui/version/version_ui.cc
-index 4c523d48d8f8537042a9483e4fd0c6d163c8de52..ac96419abce972375536bb168c864d46ab19a713 100644
+index 7a9234630b90fce67d4e9e51f03c786355141f9d..9e1d66038bc9c3417c80fdf04afa27202dc8e149 100644
 --- a/chrome/browser/ui/webui/version/version_ui.cc
 +++ b/chrome/browser/ui/webui/version/version_ui.cc
 @@ -22,6 +22,7 @@

@@ -169,10 +169,10 @@ index f90558dbd9b9248fbbdc233b7ee3eece9871d736..3b1b25dcad71084a06d8217aad6def84
 +}
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index ba07d804193a8aefd79ae57c8e543876822a4969..7d06d4b5f7c5eed0302edde1cf42a21cf6eed1d3 100644
+index 154a87b7d1e6b85fba513d07c0dd1b662b6580d2..8a6ff5b786319bee87fe3a9e2ced08f2effc7874 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -9140,6 +9140,11 @@ base::FilePath ChromeContentBrowserClient::GetChildProcessPath(int flags) {
+@@ -9266,6 +9266,11 @@ base::FilePath ChromeContentBrowserClient::GetChildProcessPath(int flags) {
  
  bool ChromeContentBrowserClient::ShouldUseFirstPartyStorageKey(
      const url::Origin& origin) {
@@ -1195,10 +1195,10 @@ index a1b408051953044f78388f173fde03730135519e..63c0aa04e5eb6526b40d1d9460da14eb
        this.aegisTorrentDownloadLimitKib_ = value;
      } else {
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
-index 9851ae4a98948d1627070c5343a970bbaa5fa764..7dab4a96ecf02e8865e1553ee86bc93fcccb4b1d 100644
+index dcf915e8a53b8646bc6edabbcd93e651f2904d17..fc32468c6b55601aa0aac347493354dee753bf76 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
-@@ -2,8 +2,8 @@
+@@ -1,8 +1,8 @@
    <settings-section page-title="$i18n{privacyPageTitle}">
      <cr-link-row id="aegisLinkRow"
          start-icon="privacy:lock"
@@ -1206,24 +1206,24 @@ index 9851ae4a98948d1627070c5343a970bbaa5fa764..7dab4a96ecf02e8865e1553ee86bc93f
 -        sub-label="$i18n{aegisPrivacyDescription}"
 +        label="$i18n{aegisSettingsTitle}"
 +        sub-label="$i18n{aegisSettingsDescription}"
-         on-click="onAegisSettingsClick_"></cr-link-row>
-     <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
+         @click="${this.onAegisSettingsClick_}"></cr-link-row>
+     ${this.showClearBrowsingDataDialog_ ? html`
        <settings-clear-browsing-data-dialog
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.ts b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
-index 45ff91ff570b67b93e340a658203cfa996dfd22b..da61b099bdc2d02a6ac6b08804fb9788dd4782ff 100644
+index 14b77a5dcd53dfd24653d5739c28f06dfb65a364..12f61c5fe807beaa7df771e7fef8ea5c4cf8b41d 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.ts
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
-@@ -127,7 +127,7 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
+@@ -123,7 +123,7 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
  
-   private onAegisSettingsClick_() {
+   protected onAegisSettingsClick_() {
      this.interactedWithPage_();
 -    Router.getInstance().navigateTo(routes.AEGIS_PRIVACY);
 +    Router.getInstance().navigateTo(routes.AEGIS);
    }
  
-   private onCookiesClick_() {
+   protected onCookiesClick_() {
 diff --git a/chrome/browser/resources/settings/route.ts b/chrome/browser/resources/settings/route.ts
-index cb4d650221579c0487d7db3caa86d513a7f56f99..10d396fe8744589810d712049b322f44ac9777c6 100644
+index c5140f86202c55adfa1b137e051bf512ccc40385..d40643383e28895d6fb9960f780719da47c2b48e 100644
 --- a/chrome/browser/resources/settings/route.ts
 +++ b/chrome/browser/resources/settings/route.ts
 @@ -142,10 +142,14 @@ function createRoutes(): SettingsRoutes {
@@ -1246,7 +1246,7 @@ index cb4d650221579c0487d7db3caa86d513a7f56f99..10d396fe8744589810d712049b322f44
    r.ABOUT = r.BASIC.createSection(
        '/help', 'about', loadTimeData.getString('aboutPageTitle'));
 diff --git a/chrome/browser/resources/settings/router.ts b/chrome/browser/resources/settings/router.ts
-index 6698d2f0c6ba911649f4d25c2941945823d47810..191215b138f5b0b6828d19ff31a7a5becbc11760 100644
+index e5ed3cf1d7dc2284fff94bfbaa34ca892a54b4f2..6149fc2a7c680aa8146ce5434607815069f1560d 100644
 --- a/chrome/browser/resources/settings/router.ts
 +++ b/chrome/browser/resources/settings/router.ts
 @@ -14,6 +14,10 @@ import {loadTimeData} from './i18n_setup.js';
@@ -1261,7 +1261,7 @@ index 6698d2f0c6ba911649f4d25c2941945823d47810..191215b138f5b0b6828d19ff31a7a5be
    AEGIS_READING: Route;
    AEGIS_GESTURES: Route;
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
-index fa43dd63cf7e8b624b3b653ed10a44dffccfe2f7..cf7fbc66dd7d8aac9476e29135c550aa0eb8e2a7 100644
+index 42a00827bf6703d86eb33dfa077bd74b3a161323..17d30e16dc4d340e09b731c02d21fa03f13e9c9f 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.html
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.html
 @@ -50,10 +50,14 @@
@@ -1284,13 +1284,13 @@ index fa43dd63cf7e8b624b3b653ed10a44dffccfe2f7..cf7fbc66dd7d8aac9476e29135c550aa
      <div slot="view" id="people">
        <template is="dom-if" if="[[renderPlugin_(
 diff --git a/chrome/browser/resources/settings/settings_menu/settings_menu.html b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-index c4bd5c041cc212c57bc59acb086df2473e40661d..fb62c5655ccc00bbd095a5ea3d85ad960aba9986 100644
+index bde81ecc14a9ed78e7def0fc6f0440442a0f7129..b65cf60fd82acb5dac45023263a651ce9defb020 100644
 --- a/chrome/browser/resources/settings/settings_menu/settings_menu.html
 +++ b/chrome/browser/resources/settings/settings_menu/settings_menu.html
-@@ -86,9 +86,10 @@
+@@ -2,9 +2,10 @@
        <cr-menu-selector id="menu" selectable="a:not(#extensionsLink)"
-           attr-for-selected="href" on-iron-activate="onSelectorActivate_"
-           on-click="onLinkClick_" selected-attribute="selected">
+           attr-for-selected="href" @iron-activate="${this.onIronActivate_}"
+           @click="${this.onLinkClick_}" selected-attribute="selected">
 -        <a role="menuitem" class="cr-nav-menu-item" href="/aegisEnhancements"><cr-icon icon="settings:code"></cr-icon><span class="menu-label">$i18n{aegisEnhancementsTitle}</span></a>
 -        <a role="menuitem" class="cr-nav-menu-item" href="/aegisReading"><cr-icon icon="settings:appearance"></cr-icon><span class="menu-label">$i18n{aegisReadingTitle}</span></a>
 -        <a role="menuitem" class="cr-nav-menu-item" href="/aegisGestures"><cr-icon icon="settings:touchpad-mouse"></cr-icon><span class="menu-label">$i18n{aegisGesturesTitle}</span></a>
@@ -1300,7 +1300,7 @@ index c4bd5c041cc212c57bc59acb086df2473e40661d..fb62c5655ccc00bbd095a5ea3d85ad96
 +        </a>
          <a role="menuitem"
              id="people" href="/people"
-             hidden="[[!showPeopleMenuItem_(
+             ?hidden="${!this.showPeopleMenuItem_()}"
 diff --git a/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc b/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
 index 3286f21c7b5ad4eef07b253d336ec40a008e7be0..0426815680ce0c0b92886e4145b933053f268647 100644
 --- a/chrome/browser/ui/aegis_mouse_gesture_tab_helper.cc
@@ -1467,10 +1467,10 @@ index 1f63acb1aa1e50c49213fff37916570a3ff00740..53173610f688ae890b8956ba5bd227db
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index eda0053f404f3e55b847a59cee0a2992f6b05bd3..39014011ba339fa6fd4f22cd5bfba6edc93b415b 100644
+index ed4ae958af46e7bdf83cdd1c5b08a24f4f6a7e59..e5eec94e1ccc38876f6954139cc29e3703ad92df 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -249,11 +249,24 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -256,11 +256,24 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    const auto& locale = g_browser_process->GetApplicationLocale();
    const bool chinese = locale.starts_with("zh");
    const bool traditional = locale == "zh-TW" || locale == "zh-HK";
@@ -1498,7 +1498,7 @@ index eda0053f404f3e55b847a59cee0a2992f6b05bd3..39014011ba339fa6fd4f22cd5bfba6ed
    // 默认 language 仅保留基础语言；动态文案需要地区信息区分简繁体。
    html_source->AddString("aegisLocale",
                           g_browser_process->GetApplicationLocale());
-@@ -261,6 +274,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -268,6 +281,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
        network::mojom::CSPDirectiveName::WorkerSrc,
        "worker-src blob: chrome://resources 'self';");
  

@@ -33,7 +33,7 @@ index 01055db27cd7a93a8a463b586168a35367030903..a60236d17b01137ba9676df602ef2b14
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/BUILD.gn b/chrome/browser/ui/webui/settings/BUILD.gn
-index edfc5069b2452ca7c92c841bae42bafa8ab5eede..1a6f838ed48300ece7eb053e7cf51583dea2ae3e 100644
+index b97079bc6a6b98bc4cbebbdf807c4d43b3f02478..5473dc68f00be4e30f1668f8b357e8bc069683ac 100644
 --- a/chrome/browser/ui/webui/settings/BUILD.gn
 +++ b/chrome/browser/ui/webui/settings/BUILD.gn
 @@ -368,6 +368,10 @@ source_set("impl") {
@@ -48,7 +48,7 @@ index edfc5069b2452ca7c92c841bae42bafa8ab5eede..1a6f838ed48300ece7eb053e7cf51583
      deps += [
        "//ash/webui/eche_app_ui",
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 18301217331ee8b2fbb871821cf4c6bc84ee6fe3..283113f5683c17e62ded20353a474b43beaa0ac8 100644
+index 418ae7a527a86f42061a0cdc3ca3d5256618aba9..37978b25e024646c4cdb33efc45ecf2525106af5 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -18,6 +18,9 @@

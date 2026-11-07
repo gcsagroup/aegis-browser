@@ -52,7 +52,7 @@ index 3ee9e06d11164ae8123b92176f32cf4c1b883641..766b206aa7ef4c613750a94a95b9d067
    static AegisAgentService* GetForProfileIfExists(Profile* profile);
  
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 24fd182653df647771626f8f19c08ca6b3ad1279..ac36ce0cd22175c2196bbf60883978fa3a453e58 100644
+index 164c6a3d0a553cba78fe77b8b9e7582a8260bc7f..b68614add8ebe364a3978d157438fa9478f1916f 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -31,6 +31,7 @@

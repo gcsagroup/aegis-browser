@@ -29,7 +29,7 @@ index 20dadd0051e3c1774a0f3f85faafc9d8e4098d2c..83d7fe74523d6efeb37fd1f2e3b23e0e
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/version/BUILD.gn b/chrome/browser/ui/webui/version/BUILD.gn
-index 8c207f69b19c3c55ce8163d1271f28ab16959669..7fa96369f554919e6db3c13fbdd7da7f3fe9e944 100644
+index f1524d17dbfa4c065ffc9c79ad80a9fe2fea97fa..cf812108ad9dff2891242d94d46566bc34b23921 100644
 --- a/chrome/browser/ui/webui/version/BUILD.gn
 +++ b/chrome/browser/ui/webui/version/BUILD.gn
 @@ -34,6 +34,10 @@ source_set("version") {

@@ -68,7 +68,7 @@ Content-Transfer-Encoding: 8bit
  56 files changed, 1814 insertions(+), 861 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
-index 40830877156e5e6bdd2c850bbc33c810a30c0f1c..5d48a08318eef83acf5e029d1c20afe5bdc7b548 100644
+index c2a5181515789a7d32bac15ed0d23716517fa3bc..472c35430b3561f922da809a0bed4b8df7fc89e4 100644
 --- a/chrome/app/chromium_strings.grd
 +++ b/chrome/app/chromium_strings.grd
 @@ -402,14 +402,14 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->
@@ -252,7 +252,7 @@ index 40830877156e5e6bdd2c850bbc33c810a30c0f1c..5d48a08318eef83acf5e029d1c20afe5
  
        <!-- Lens Overlay Strings -->
        <message name="IDS_LENS_SEND_FEEDBACK"
-@@ -2732,7 +2730,7 @@ Chromium is unable to recover your settings.
+@@ -2738,7 +2736,7 @@ Chromium is unable to recover your settings.
            <ph name="SHORTCUT">$1<ex>CTRL+SHIFT+M</ex></ph> can switch between Chromium profiles
          </message>
          <message name="IDS_PASSWORD_MANAGER_IPH_BODY_WEB_APP_PROFILE_SWITCH" desc="Body of the in Product Help for profile switching shown in the password manager web app.">
@@ -261,7 +261,7 @@ index 40830877156e5e6bdd2c850bbc33c810a30c0f1c..5d48a08318eef83acf5e029d1c20afe5
          </message>
  
          <!-- Web Signout Intercept IPH -->
-@@ -2748,7 +2746,7 @@ Chromium is unable to recover your settings.
+@@ -2754,7 +2752,7 @@ Chromium is unable to recover your settings.
            Stay safe with Password Manager
          </message>
          <message name="IDS_FEATURE_SHOWCASE_PASSWORD_MANAGER_SUBTITLE" desc="Description for the Password Manager page in the Feature Showcase.">
@@ -270,7 +270,7 @@ index 40830877156e5e6bdd2c850bbc33c810a30c0f1c..5d48a08318eef83acf5e029d1c20afe5
          </message>
  
          <!-- Feature Showcase - Lens -->
-@@ -3372,10 +3370,10 @@ Chromium is unable to recover your settings.
+@@ -3378,10 +3376,10 @@ Chromium is unable to recover your settings.
  
        <!-- UNO Promo strings for bookmarks -->
        <message name="IDS_BOOKMARK_INSTALLED_PROMO_EXPLICIT_SIGNIN_MESSAGE" desc="Text of the promo displayed at the bottom of the bookmark bubble asking the user to enable UNO.">
@@ -283,7 +283,7 @@ index 40830877156e5e6bdd2c850bbc33c810a30c0f1c..5d48a08318eef83acf5e029d1c20afe5
        </message>
  
        <!-- Dice Migration strings -->
-@@ -3390,12 +3388,12 @@ Chromium is unable to recover your settings.
+@@ -3396,12 +3394,12 @@ Chromium is unable to recover your settings.
        <if expr="not is_android">
          <if expr="use_titlecase">
            <message name="IDS_PROFILE_MENU_ACCOUNT_SETTINGS_BUTTON" desc="Button in the avatar menu bubble view for opening Chrome account settings.">
@@ -299,10 +299,10 @@ index 40830877156e5e6bdd2c850bbc33c810a30c0f1c..5d48a08318eef83acf5e029d1c20afe5
          </if>
        </if>
 diff --git a/chrome/app/generated_resources.grd b/chrome/app/generated_resources.grd
-index b0f261d73c619c1a3493fec1f0c7c5e1ee5f98f6..937afe07bf0ed3172d4ad65dbb039cea3b0fb02b 100644
+index 66d8dcfacc07898eac4abdd88a4b4ee17245c6e9..fd5d0b528d6aa70da34766266539c18eafa72f45 100644
 --- a/chrome/app/generated_resources.grd
 +++ b/chrome/app/generated_resources.grd
-@@ -1895,9 +1895,7 @@ are declared in tools/grit/grit_args.gni.
+@@ -1898,9 +1898,7 @@ are declared in tools/grit/grit_args.gni.
        <message name="IDS_IMPORT_SETTINGS_MENU_LABEL" desc="The app menu label to import bookmarks and settings.">
          Import bookmarks and settings...
        </message>
@@ -314,10 +314,10 @@ index b0f261d73c619c1a3493fec1f0c7c5e1ee5f98f6..937afe07bf0ed3172d4ad65dbb039cea
  
          <message name="IDS_PROFILING_ENABLED" desc="The toggle to turn profiling on / off">
 diff --git a/chrome/app/resources/chromium_strings_zh-CN.xtb b/chrome/app/resources/chromium_strings_zh-CN.xtb
-index efe0e59733751ba1c1231ff0b83380a1281ac49c..479c9e5d70c30493b12814c6664b66b77af94ca9 100644
+index e54341e616e9421dcee48393b10e358d863f533f..ecc9a5d05ba0209d35a67f45d6d91bb156ba9859 100644
 --- a/chrome/app/resources/chromium_strings_zh-CN.xtb
 +++ b/chrome/app/resources/chromium_strings_zh-CN.xtb
-@@ -750,7 +750,7 @@ Chromium 无法恢复您的设置。</translation>
+@@ -755,7 +755,7 @@ Chromium 无法恢复您的设置。</translation>
  <translation id="8556420416730706394">您可以固定图片搜索功能以方便访问，点击侧边栏顶部的“固定”按钮即可</translation>
  <translation id="856656450041460113">搜索语言列表</translation>
  <translation id="8576826849825683917">多个组织负责管理 Chromium</translation>
@@ -326,7 +326,7 @@ index efe0e59733751ba1c1231ff0b83380a1281ac49c..479c9e5d70c30493b12814c6664b66b7
  <translation id="8619360774459241877">正在启动 Chromium…</translation>
  <translation id="8624541899164515475">“设置”页面，在新标签页中打开。</translation>
  <translation id="8648201657708811153">您无法将 Google Chrome for Testing 设为默认浏览器。</translation>
-@@ -824,4 +824,149 @@ Chromium 无法恢复您的设置。</translation>
+@@ -830,4 +830,149 @@ Chromium 无法恢复您的设置。</translation>
  <translation id="985602178874221306">The Chromium Authors</translation>
  <translation id="989970834842471429">选择任何文字或图片即可使用图片搜索功能进行搜索</translation>
  <translation id="992780518932311116">如需使用位置信息，请在<ph name="BEGIN_LINK" />系统设置<ph name="END_LINK" />中授予 Chromium 访问权限</translation>
@@ -478,10 +478,10 @@ index efe0e59733751ba1c1231ff0b83380a1281ac49c..479c9e5d70c30493b12814c6664b66b7
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/resources/chromium_strings_zh-HK.xtb b/chrome/app/resources/chromium_strings_zh-HK.xtb
-index 7dc2e54166864b03f81974d087d3797994f1dacf..8bf7364e6a78dbb696d05ca147557b32674b2ebb 100644
+index 7e97ecbfb586de707286ce9ecefbe8d2f74d6063..9898c9a76943354a749e4656371771d083bf3533 100644
 --- a/chrome/app/resources/chromium_strings_zh-HK.xtb
 +++ b/chrome/app/resources/chromium_strings_zh-HK.xtb
-@@ -825,4 +825,149 @@ Chromium 無法復原您的設定。</translation>
+@@ -831,4 +831,149 @@ Chromium 無法復原您的設定。</translation>
  <translation id="985602178874221306">The Chromium Authors</translation>
  <translation id="989970834842471429">選取任何要使用「圖片搜尋」尋找的文字或圖片</translation>
  <translation id="992780518932311116">如要使用位置，請在<ph name="BEGIN_LINK" />系統設定<ph name="END_LINK" />中向 Chromium 授予存取權</translation>
@@ -633,10 +633,10 @@ index 7dc2e54166864b03f81974d087d3797994f1dacf..8bf7364e6a78dbb696d05ca147557b32
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/resources/chromium_strings_zh-TW.xtb b/chrome/app/resources/chromium_strings_zh-TW.xtb
-index 245e4ff02fe545878b357fcc5b603b70ea53daad..6b77977690a64fe3863c52511c265ee6808f0cd3 100644
+index 23dcfba04da919241ca9ce93287d29d98e448b5b..fdd553b2f0597f9e0c93f8a65a39af51c6ed3f2c 100644
 --- a/chrome/app/resources/chromium_strings_zh-TW.xtb
 +++ b/chrome/app/resources/chromium_strings_zh-TW.xtb
-@@ -821,4 +821,149 @@ Chromium 無法復原你的設定。</translation>
+@@ -827,4 +827,149 @@ Chromium 無法復原你的設定。</translation>
  <translation id="985602178874221306">The Chromium Authors</translation>
  <translation id="989970834842471429">選取要使用「圖片搜尋」尋找的文字或圖片</translation>
  <translation id="992780518932311116">如要使用位置資訊，請在<ph name="BEGIN_LINK" />系統設定<ph name="END_LINK" />中授予 Chromium 存取權</translation>
@@ -788,10 +788,10 @@ index 245e4ff02fe545878b357fcc5b603b70ea53daad..6b77977690a64fe3863c52511c265ee6
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
-index 707b842f3bd143b7d09029cb0c1a86795c4ee87f..9d631a5090ccb7118a0b53a2a9e39c09e21a01a3 100644
+index 58382e3135ebe6e579ffc157e0d02718a92df25a..95ac7dcf0a58580dc148f00e965f1fc42a495877 100644
 --- a/chrome/app/resources/generated_resources_zh-CN.xtb
 +++ b/chrome/app/resources/generated_resources_zh-CN.xtb
-@@ -8779,7 +8779,7 @@
+@@ -8815,7 +8815,7 @@
  <translation id="7716781361494605745">Netscape 证书授权中心政策网址</translation>
  <translation id="7717014941119698257">正在下载：<ph name="STATUS" /></translation>
  <translation id="771721654176725387">此操作会将您的浏览数据从这部设备上永久删除。如需恢复这些数据，请开启“以…的身份同步”</translation>
@@ -800,7 +800,7 @@ index 707b842f3bd143b7d09029cb0c1a86795c4ee87f..9d631a5090ccb7118a0b53a2a9e39c09
  <translation id="7718490543420739837">屏幕键盘、语音输入、开关控制等</translation>
  <translation id="7719367874908701697">网页缩放</translation>
  <translation id="7719588063158526969">设备名称过长</translation>
-@@ -10846,4 +10846,21 @@
+@@ -10899,4 +10899,21 @@
  <translation id="998347228911661591">同步标签页分组</translation>
  <translation id="998747458861718449">检查(&amp;N)</translation>
  <translation id="998852291477823323">配置的政策不允许执行此操作。</translation>
@@ -823,10 +823,10 @@ index 707b842f3bd143b7d09029cb0c1a86795c4ee87f..9d631a5090ccb7118a0b53a2a9e39c09
 +<translation id="4763381216067908866">自动将新建标签页分组固定到书签栏</translation>
  </translationbundle>
 diff --git a/chrome/app/resources/generated_resources_zh-HK.xtb b/chrome/app/resources/generated_resources_zh-HK.xtb
-index afdeaa5f7a8a29a5d31a16f6f56f5a62e8c56daa..5461adc0a5adbaf9427d91058d52530aab5dd956 100644
+index ef7822eee5286bc44fdded509740eb68fddb06dd..7cb003a3426b90e61ba79b581cde407704263827 100644
 --- a/chrome/app/resources/generated_resources_zh-HK.xtb
 +++ b/chrome/app/resources/generated_resources_zh-HK.xtb
-@@ -10854,4 +10854,21 @@
+@@ -10907,4 +10907,21 @@
  <translation id="998347228911661591">同步分頁群組</translation>
  <translation id="998747458861718449">檢查(&amp;N)</translation>
  <translation id="998852291477823323">所設定的政策不允許此操作。</translation>
@@ -849,10 +849,10 @@ index afdeaa5f7a8a29a5d31a16f6f56f5a62e8c56daa..5461adc0a5adbaf9427d91058d52530a
 +<translation id="4763381216067908866">自動將新建標籤頁分組固定到書籤欄</translation>
  </translationbundle>
 diff --git a/chrome/app/resources/generated_resources_zh-TW.xtb b/chrome/app/resources/generated_resources_zh-TW.xtb
-index f1e06b97d08b6cb8fbfba981f20d661a1254f034..453c8d5f8ee77adb4a564385f88076e820f4eadc 100644
+index c77966f83d14dbfdaf0374593c967f79dc97b5ea..3624d9eabc93ef2b28d041353804998cdfd3a411 100644
 --- a/chrome/app/resources/generated_resources_zh-TW.xtb
 +++ b/chrome/app/resources/generated_resources_zh-TW.xtb
-@@ -10841,4 +10841,21 @@
+@@ -10894,4 +10894,21 @@
  <translation id="998347228911661591">同步處理分頁群組</translation>
  <translation id="998747458861718449">檢查(&amp;N)</translation>
  <translation id="998852291477823323">已設定的政策禁止執行這項動作。</translation>
@@ -875,7 +875,7 @@ index f1e06b97d08b6cb8fbfba981f20d661a1254f034..453c8d5f8ee77adb4a564385f88076e8
 +<translation id="4763381216067908866">自動將新建標籤頁分組固定到書籤欄</translation>
  </translationbundle>
 diff --git a/chrome/app/settings_chromium_strings.grdp b/chrome/app/settings_chromium_strings.grdp
-index 237b2a8517c3c1e20595dacbb543a33d758b6c01..dc4b221ffd509b513a2458efa312f251fb0da67c 100644
+index 66b9cc089bf9d33392ed48e85b37a5786462adfb..07edb4ec99b3d9267c6705bc86106e32e8308b92 100644
 --- a/chrome/app/settings_chromium_strings.grdp
 +++ b/chrome/app/settings_chromium_strings.grdp
 @@ -4,7 +4,7 @@
@@ -1109,8 +1109,8 @@ index 237b2a8517c3c1e20595dacbb543a33d758b6c01..dc4b221ffd509b513a2458efa312f251
 +    Warns you about dangerous sites, even ones Google didn't know about before, by analyzing more data from sites than standard protection. You can choose to skip GCSA Aegis warnings.
    </message>
    <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_LEARN_MORE_LABEL" desc="The text for a link to a help center article that gives more information about Safe Browsing.">
--    Learn more about <ph name="BEGIN_LINK">&lt;a href="#" id="enhancedProtectionLearnMoreLink" on-click="onEnhancedProtectionLearnMoreClick_"&gt;</ph>how Chromium keeps your data private<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
-+    Learn more about <ph name="BEGIN_LINK">&lt;a href="#" id="enhancedProtectionLearnMoreLink" on-click="onEnhancedProtectionLearnMoreClick_"&gt;</ph>how GCSA Aegis keeps your data private<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+-    Learn more about <ph name="BEGIN_LINK">&lt;a href="#" id="enhancedProtectionLearnMoreLink"&gt;</ph>how Chromium keeps your data private<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
++    Learn more about <ph name="BEGIN_LINK">&lt;a href="#" id="enhancedProtectionLearnMoreLink"&gt;</ph>how GCSA Aegis keeps your data private<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
    </message>
    <message name="IDS_SETTINGS_SECURE_DNS_DESCRIPTION" desc="Secondary, continued explanation of secure DNS in Privacy options">
 -    Make it harder for people with access to your internet traffic to see which sites you visit. Chromium uses a secure connection to look up a site's IP address in the DNS (Domain Name System).
@@ -1428,7 +1428,7 @@ index 237b2a8517c3c1e20595dacbb543a33d758b6c01..dc4b221ffd509b513a2458efa312f251
    <!-- Dictation Settings Page -->
    <!-- TODO(b/510738735): Make these translatable when finalized. -->
 diff --git a/chrome/app/settings_strings.grdp b/chrome/app/settings_strings.grdp
-index 8ad9547b9a5e47d23a62daf398756695d536ad54..867ac60da64094b3f2801ed7570055388a12fb27 100644
+index 506bb951cde6f0668ebf5e0766b6e27b822a0ef7..37a6adf36d80d89506e9f06c2b087caf4ff84652 100644
 --- a/chrome/app/settings_strings.grdp
 +++ b/chrome/app/settings_strings.grdp
 @@ -307,9 +307,7 @@
@@ -1462,7 +1462,7 @@ index 8ad9547b9a5e47d23a62daf398756695d536ad54..867ac60da64094b3f2801ed757005538
      </if>
  
      <!-- Delete Browsing Data -->
-@@ -1377,19 +1373,19 @@
+@@ -1380,19 +1376,19 @@
  
      <!-- Privacy Page -->
      <message name="IDS_AEGIS_SETTINGS_MENU" desc="Menu item that opens chrome://aegis privacy modules.">
@@ -1487,7 +1487,7 @@ index 8ad9547b9a5e47d23a62daf398756695d536ad54..867ac60da64094b3f2801ed757005538
      </message>
      <message name="IDS_AEGIS_UPDATE_CHANNEL_UNAVAILABLE" desc="Update status shown when this GCSA-aegis build has no trusted product release channel.">
        GCSA-aegis cannot automatically check for or install updates because a trusted release channel is not configured.
-@@ -2271,7 +2267,7 @@
+@@ -2274,7 +2270,7 @@
        Site search
      </message>
      <message name="IDS_SETTINGS_SEARCH_ENGINES_SITE_SEARCH_EXPLANATION" desc="Explanation for 'Site Search' section. Used interchangeably with IDS_SETTINGS_SEARCH_ENGINES_SITE_SEARCH_EXPLANATION_STARTER_PACK">
@@ -3106,7 +3106,7 @@ index 9129a9e46d831c481c2905054b7c000119761e7d..75b1eb6619bf4776ce27e207df4f8e4b
  <head>
    <meta charset="utf-8">
 diff --git a/chrome/browser/resources/history/side_bar.html.ts b/chrome/browser/resources/history/side_bar.html.ts
-index aa63395a61eba83d3b21d7b5f76be63e989fb302..65eff8bdc1d40f4e34a3db6d99986f513d143ba0 100644
+index f2384bffe54f9c2f78e7d7415434faa37a425e81..fdc746875620a8feafe11b54b17c1519b8dcf0dd 100644
 --- a/chrome/browser/resources/history/side_bar.html.ts
 +++ b/chrome/browser/resources/history/side_bar.html.ts
 @@ -20,6 +20,7 @@ export function getHtml(this: HistorySideBarElement) {
@@ -3222,19 +3222,19 @@ index 154ea1ed24fcb07ac854acdeb86d970eb383aedb..a4776fcea1f50bf61ff94b9ae6a66d92
    protected shouldShowThrobber_(): boolean {
      if (this.obsoleteSystemInfo_.endOfLine) {
        return false;
-diff --git a/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html b/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html
-index a1035e8e519d92548399eebffa6d6c375244ba38..e3205778f4a378f45fa96c9584bde0a92ac2b7ca 100644
---- a/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html
-+++ b/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html
-@@ -46,7 +46,10 @@
+diff --git a/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html.ts b/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html.ts
+index b7aed239f7cbb0b9df59b03bd6e1f1ca06c8f04a..04f5695d4ab8f42abfa196893a0aa0c714c9cf8b 100644
+--- a/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html.ts
++++ b/chrome/browser/resources/settings/autofill_page/collapsible_autofill_settings_card.html.ts
+@@ -38,7 +38,10 @@ export function getHtml(this: CollapsibleAutofillSettingsCardElement) {
      </div>
-   </template>
+   ` : ''}
  
 -  <div class="settings-columned-section">
-+  <div class="cr-row" hidden$="[[enhancedAutofillEligibleUser_]]">
++  <div class="cr-row" ?hidden="${this.enhancedAutofillEligibleUser_}">
 +    $i18n{aegisUnavailable}
 +  </div>
-+  <div class="settings-columned-section" hidden$="[[!enhancedAutofillEligibleUser_]]">
++  <div class="settings-columned-section" ?hidden="${!this.enhancedAutofillEligibleUser_}">
      <div class="column">
        <h3 class="description-header">$i18n{columnHeadingWhenOn}</h3>
        <ul class="icon-bulleted-list">
@@ -3519,10 +3519,10 @@ index 0dc653b74243abf055f75eda87ea37ba2c85ba72..5715773e58662a747ff65572c491dc30
  
    // Override FindShortcutMixin methods.
 diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
-index 3b356eb35e79d24e81f2fde29d033b8b61eed74b..8bfd6d4189f897d1e9e7429a2c8c46e0b62a5e12 100644
+index f48ac56bc45533ac6611ebe47cc0378c0145f804..c52c8003770479aedea0d3640d40a57081f28a36 100644
 --- a/chrome/browser/ui/browser_actions.cc
 +++ b/chrome/browser/ui/browser_actions.cc
-@@ -415,8 +415,8 @@ void BrowserActions::InitializeSidePanelActions() {
+@@ -451,8 +451,8 @@ void BrowserActions::InitializeSidePanelActions() {
              CreateToggleSidePanelActionCallback(
                  SidePanelEntryKey(SidePanelEntryId::kAegisAgent), bwi))
              .SetActionId(kActionSidePanelShowAegisAgent)
@@ -3534,30 +3534,20 @@ index 3b356eb35e79d24e81f2fde29d033b8b61eed74b..8bfd6d4189f897d1e9e7429a2c8c46e0
                                                       ui::kColorIcon))
              .SetProperty(actions::kActionItemPinnableKey,
 diff --git a/chrome/browser/ui/safety_hub/BUILD.gn b/chrome/browser/ui/safety_hub/BUILD.gn
-index 991bb4bb9e2f8158eba0612149e9852ee4eb047a..c82fc44a13f40abd4250a0e73ba63679fa7b84eb 100644
+index b4bdc7e7c49030bf010c110bd9babc74eb5fb4ff..9f7150d254a16dd8d873aa43a1e65fbd4317205b 100644
 --- a/chrome/browser/ui/safety_hub/BUILD.gn
 +++ b/chrome/browser/ui/safety_hub/BUILD.gn
-@@ -78,6 +78,11 @@ source_set("safety_hub") {
- }
- 
- source_set("impl") {
-+  if (!is_android && !is_chromeos) {
-+    deps = [ "//chrome/browser/ui/webui/help:aegis_github_update" ]
-+  } else {
-+    deps = []
-+  }
-   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
- 
-   sources = [
-@@ -103,7 +108,7 @@ source_set("impl") {
-     "unused_site_permissions_manager.cc",
+@@ -125,6 +125,10 @@ source_set("impl") {
+     "//services/metrics/public/cpp:ukm_builders",
    ]
  
--  deps = [
-+  deps += [
-     ":safety_hub",
-     "//chrome/app:command_ids",
-     "//chrome/browser:browser_process",
++  if (!is_android && !is_chromeos) {
++    deps += [ "//chrome/browser/ui/webui/help:aegis_github_update" ]
++  }
++
+   if (is_android) {
+     sources += [
+       "notification_wrapper_android.cc",
 diff --git a/chrome/browser/ui/safety_hub/safety_hub_util.cc b/chrome/browser/ui/safety_hub/safety_hub_util.cc
 index a442e2d0d5be1ef06137c9fe818bc68daa9ea581..c4101502f91b198354b37e666eee2f6ebc5e5a56 100644
 --- a/chrome/browser/ui/safety_hub/safety_hub_util.cc
@@ -5428,10 +5418,10 @@ index d4ada4774a7876adfd0f69f607b83d2e55f8ba0a..ab0fc9ea0d3279a60cd4bd0da8601bb1
                case aegis::GitHubUpdate::State::kCurrent:
                case aegis::GitHubUpdate::State::kEmpty:
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 9106a4ff30a2589755029f8bc988c9b467b7ec0c..18301217331ee8b2fbb871821cf4c6bc84ee6fe3 100644
+index 9004bffd8bd4548b932546d768f1382d79ce328b..418ae7a527a86f42061a0cdc3ca3d5256618aba9 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-@@ -327,8 +327,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -325,8 +325,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
        {"aboutUpgradeUpdating", IDS_SETTINGS_UPGRADE_UPDATING},
        {"aboutUpgradeUpdatingPercent", IDS_SETTINGS_UPGRADE_UPDATING_PERCENT},
        {"aboutGetHelpUsingChrome", IDS_SETTINGS_GET_HELP_USING_CHROME},
@@ -5441,7 +5431,7 @@ index 9106a4ff30a2589755029f8bc988c9b467b7ec0c..18301217331ee8b2fbb871821cf4c6bc
        {"aboutPageTitle", IDS_SETTINGS_ABOUT_PROGRAM},
        {"aboutProductTitle", IDS_PRODUCT_NAME},
  #else
-@@ -361,21 +360,25 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -359,21 +358,25 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
  #endif
  
    std::u16string browser_version;
@@ -5475,7 +5465,7 @@ index 9106a4ff30a2589755029f8bc988c9b467b7ec0c..18301217331ee8b2fbb871821cf4c6bc
    html_source->AddString(
        "aboutProductCopyright",
        base::i18n::MessageFormatter::FormatWithNumberedArgs(
-@@ -386,6 +389,12 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
+@@ -384,6 +387,12 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {
        IDS_VERSION_UI_LICENSE, chrome::kChromiumProjectURL,
        chrome::kChromeUICreditsURL16,
        l10n_util::GetStringUTF16(IDS_SETTINGS_OPENS_IN_NEW_TAB));
@@ -5488,7 +5478,7 @@ index 9106a4ff30a2589755029f8bc988c9b467b7ec0c..18301217331ee8b2fbb871821cf4c6bc
    html_source->AddString("aboutProductLicense", license);
  
    html_source->AddBoolean("aboutObsoleteNowOrSoon",
-@@ -1903,6 +1912,7 @@ void AddAutofillStrings(content::WebUIDataSource* html_source,
+@@ -1893,6 +1902,7 @@ void AddAutofillStrings(content::WebUIDataSource* html_source,
         IDS_SETTINGS_AUTOFILL_AI_AUTHENTICATION_TOGGLE_TITLE},
        {"autofillAiAuthenticationToggleSubtitle",
         IDS_SETTINGS_AUTOFILL_AI_AUTHENTICATION_TOGGLE_SUBTITLE},
@@ -5496,18 +5486,7 @@ index 9106a4ff30a2589755029f8bc988c9b467b7ec0c..18301217331ee8b2fbb871821cf4c6bc
        {"autofillAiManageYourInfo", IDS_AUTOFILL_MANAGE_YOUR_INFO_LINK},
        {"suggestionsFromGeminiQualityLoggingTitle",
         IDS_SETTINGS_SUGGESTIONS_FROM_GEMINI_QUALITY_LOGGING_TITLE},
-@@ -2171,8 +2181,8 @@ void AddAutofillStrings(content::WebUIDataSource* html_source,
-       autofill_client &&
-           autofill::MayPerformAutofillAiAction(
-               *autofill_client, autofill::AutofillAiAction::kOptIn));
--  // TODO(crbug.com/515356902): Check enable/disable eligibility per entity type,
--  // similar to how it is done on Clank. See crrev.com/c/7847781
-+  // TODO(crbug.com/515356902): Check enable/disable eligibility per entity
-+  // type, similar to how it is done on Clank. See crrev.com/c/7847781
-   html_source->AddBoolean(
-       "canEnableOrDisableAutofillAi",
-       autofill_client &&
-@@ -2497,9 +2507,8 @@ std::string GetPeopleSignInPromptSecondaryWithAccount(Profile* profile) {
+@@ -2489,9 +2499,8 @@ std::string GetPeopleSignInPromptSecondaryWithAccount(Profile* profile) {
  
  void AddPeopleStrings(content::WebUIDataSource* html_source, Profile* profile) {
    static constexpr webui::LocalizedString kLocalizedStrings[] = {
@@ -5519,7 +5498,7 @@ index 9106a4ff30a2589755029f8bc988c9b467b7ec0c..18301217331ee8b2fbb871821cf4c6bc
        {"peoplePageTitle", IDS_SETTINGS_PEOPLE},
  #else
        {"peoplePageTitle", IDS_SETTINGS_CUSTOMIZE_PROFILE},
-@@ -2935,21 +2944,8 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
+@@ -2927,21 +2936,8 @@ void AddPrivacyStrings(content::WebUIDataSource* html_source,
  
    html_source->AddLocalizedString("aegisSettingsRowLabel",
                                    IDS_AEGIS_SETTINGS_ROW_LABEL);
@@ -5544,10 +5523,10 @@ index 9106a4ff30a2589755029f8bc988c9b467b7ec0c..18301217331ee8b2fbb871821cf4c6bc
    html_source->AddString("cookiesSettingsHelpCenterURL",
                           chrome::kCookiesSettingsHelpCenterURL);
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 1adb2000f555f6578700b99ac1b58ce216550986..937bf403b3877a51f76279df47e9699a7a62170c 100644
+index bc482889df7536c9d4c5495ebc1916d898212a0a..0e272369525735eeecd3b2384a0f803fde1ffc6e 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -237,6 +237,9 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -244,6 +244,9 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
        content::WebUIDataSource::CreateAndAdd(
            web_ui->GetWebContents()->GetBrowserContext(),
            chrome::kChromeUISettingsHost);
@@ -5557,7 +5536,7 @@ index 1adb2000f555f6578700b99ac1b58ce216550986..937bf403b3877a51f76279df47e9699a
    html_source->OverrideContentSecurityPolicy(
        network::mojom::CSPDirectiveName::WorkerSrc,
        "worker-src blob: chrome://resources 'self';");
-@@ -313,12 +316,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -325,12 +328,12 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    html_source->AddBoolean("signinAllowed", !profile->IsGuestSession() &&
                                                 profile->GetPrefs()->GetBoolean(
                                                     prefs::kSigninAllowed));
@@ -5576,7 +5555,7 @@ index 1adb2000f555f6578700b99ac1b58ce216550986..937bf403b3877a51f76279df47e9699a
  
    html_source->AddBoolean("shouldUseMetricsConsentRestructure",
                            metrics::MetricsReportingChoiceService::
-@@ -572,8 +575,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -588,8 +591,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    bool show_glic_section = false;
    bool glic_disallowed_by_admin = false;
  
@@ -5584,9 +5563,9 @@ index 1adb2000f555f6578700b99ac1b58ce216550986..937bf403b3877a51f76279df47e9699a
 -    BUILDFLAG(CHROME_FOR_TESTING)
 +#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || BUILDFLAG(CHROME_FOR_TESTING)
    auto glic_enablement = glic::GlicEnabling::EnablementForProfile(profile);
-   show_glic_section = glic_enablement.ShouldShowSettingsPage();
-   glic_disallowed_by_admin = glic_enablement.DisallowedByAdmin();
-@@ -678,11 +680,9 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+   // No service means an ineligible profile shown via
+   // kAiSettingsPageForceAvailable; keep showing the Gemini page there.
+@@ -699,11 +701,9 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    html_source->AddBoolean("showAiPageAiFeatureSection",
                            show_ai_features_section);
  
@@ -5601,7 +5580,7 @@ index 1adb2000f555f6578700b99ac1b58ce216550986..937bf403b3877a51f76279df47e9699a
  #else
    html_source->AddBoolean("replaceSyncPromosWithSignInPromos", false);
  #endif
-@@ -934,8 +934,7 @@ void SettingsUI::UpdateShowGlicState() {
+@@ -961,8 +961,7 @@ void SettingsUI::UpdateShowGlicState() {
    // FRE. Propagate this state to the WebUI value used to display the settings
    // page.
    base::DictValue update;
@@ -5610,7 +5589,7 @@ index 1adb2000f555f6578700b99ac1b58ce216550986..937bf403b3877a51f76279df47e9699a
 +#if BUILDFLAG(GOOGLE_CHROME_BRANDING) || BUILDFLAG(CHROME_FOR_TESTING)
    Profile* profile = Profile::FromWebUI(web_ui());
    auto enablement = glic::GlicEnabling::EnablementForProfile(profile);
-   const bool show_glic = enablement.ShouldShowSettingsPage();
+   auto* glic_service = glic::GlicKeyedService::Get(profile);
 diff --git a/components/new_or_sad_tab_strings.grdp b/components/new_or_sad_tab_strings.grdp
 index 21a8aae55523cadf9520c5a097d226552c3abb23..b79a1322aed8ae056d519d4f1a770951f272129d 100644
 --- a/components/new_or_sad_tab_strings.grdp
@@ -5638,10 +5617,10 @@ index 690bb1b9a5e2db36e7b96e6eb8991bff980d7d0b..89e1b560bf152ee1efc51798646b8c46
  
    <!-- Harmful download interstitial -->
 diff --git a/components/strings/components_strings_zh-CN.xtb b/components/strings/components_strings_zh-CN.xtb
-index 296ae8ad89cd456375ff3a94ca3f0cb241fc45b4..9cbc7b16fbbb5aa09767605d69098ee3e61b8e6a 100644
+index 342faba5c0d5039cbd93698cb11af59a0d35e6c3..c1d683d345d93908a73baad15a465683a890ff6f 100644
 --- a/components/strings/components_strings_zh-CN.xtb
 +++ b/components/strings/components_strings_zh-CN.xtb
-@@ -4939,4 +4939,11 @@
+@@ -4935,4 +4935,11 @@
  <translation id="995755448277384931">添加 IBAN</translation>
  <translation id="995782501881226248">YouTube</translation>
  <translation id="997986563973421916">来自 Google Pay</translation>
@@ -5655,10 +5634,10 @@ index 296ae8ad89cd456375ff3a94ca3f0cb241fc45b4..9cbc7b16fbbb5aa09767605d69098ee3
  </translationbundle>
 \ No newline at end of file
 diff --git a/components/strings/components_strings_zh-HK.xtb b/components/strings/components_strings_zh-HK.xtb
-index eba46980c2f7fa3e2433ccbe53ddb1f636719733..017d3d15572c211c0099c575d57b7a44f0103154 100644
+index f2484abf26f68aadb24ad6be380c4836e62809ce..d407a4aef97ecea1ebb374a16071cafcbb640b47 100644
 --- a/components/strings/components_strings_zh-HK.xtb
 +++ b/components/strings/components_strings_zh-HK.xtb
-@@ -4942,4 +4942,11 @@
+@@ -4938,4 +4938,11 @@
  <translation id="995755448277384931">新增 IBAN</translation>
  <translation id="995782501881226248">YouTube</translation>
  <translation id="997986563973421916">來自 Google Pay</translation>
@@ -5672,10 +5651,10 @@ index eba46980c2f7fa3e2433ccbe53ddb1f636719733..017d3d15572c211c0099c575d57b7a44
  </translationbundle>
 \ No newline at end of file
 diff --git a/components/strings/components_strings_zh-TW.xtb b/components/strings/components_strings_zh-TW.xtb
-index 4903be0cef0f4c10b5373f82125ef31a96da94b7..7e00172db33727bfa3ea4f90e2940dabcdb43e4c 100644
+index 9c1a7370e17ed71e874128ff67ba0b004856b8ea..46be29cb5ccf54904af5cfcf5c4ef29eb5a1a4dd 100644
 --- a/components/strings/components_strings_zh-TW.xtb
 +++ b/components/strings/components_strings_zh-TW.xtb
-@@ -4941,4 +4941,11 @@
+@@ -4937,4 +4937,11 @@
  <translation id="995755448277384931">新增 IBAN</translation>
  <translation id="995782501881226248">YouTube</translation>
  <translation id="997986563973421916">來自 Google Pay</translation>

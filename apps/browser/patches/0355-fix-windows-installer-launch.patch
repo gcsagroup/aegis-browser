@@ -223,7 +223,7 @@ index 56485db6187abe8de8e456aa1c3555b7f8a65dcd..e838e80e07673dcf6512e29bdb3036cd
 +}
  }  // namespace installer
 diff --git a/chrome/installer/setup/setup_main.cc b/chrome/installer/setup/setup_main.cc
-index 08fe851c02ec759e77b73f3851c70007a5b0575f..2059cf684977135ce973900f7592645685234ee3 100644
+index 34af694e21b13b24481cfe6efb5ab16661dc0d68..53d311071150b29f595811b3ec42ad5f7888d2ab 100644
 --- a/chrome/installer/setup/setup_main.cc
 +++ b/chrome/installer/setup/setup_main.cc
 @@ -1431,12 +1431,21 @@ InstallStatus InstallProductsHelper(InstallationState& original_state,
