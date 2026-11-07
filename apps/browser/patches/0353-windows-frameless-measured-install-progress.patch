@@ -189,7 +189,7 @@ index 0000000000000000000000000000000000000000..af3a2ce289a49437954834e61dcc5be5
 +
 +#endif  // CHROME_INSTALLER_AEGIS_INSTALL_PROGRESS_H_
 diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
-index ed1a7bc2f3841ee6d3ac081d7c2165020733392c..2ad853eb77a9813a20c6bb15d06eddb13a29f4a1 100644
+index d64b564ea828fce56168eafaf0ffca001876d615..fbd3c864a9c09c15fa66f771314a0bbcdef851d7 100644
 --- a/chrome/installer/mini_installer/BUILD.gn
 +++ b/chrome/installer/mini_installer/BUILD.gn
 @@ -76,10 +76,15 @@ source_set("lib") {
@@ -1031,7 +1031,7 @@ index 4947d2f73e399af55de72bbbc73cc113c3d4d313..7660788c529cd4278d5bfe5d33ac7205
  
    if (configuration.should_delete_extracted_files()) {
 diff --git a/chrome/installer/setup/BUILD.gn b/chrome/installer/setup/BUILD.gn
-index 48882781b772692dc75a0d77387a640cdb6eacb9..d4357b9cb6bd8ec55eecc255c38e14de33765f9e 100644
+index 108073f05ccf18c8732426f7b38ead58016091d8..ffeb32f977e3ba2e10fe915b0ebf7cd856be105c 100644
 --- a/chrome/installer/setup/BUILD.gn
 +++ b/chrome/installer/setup/BUILD.gn
 @@ -104,6 +104,7 @@ if (is_win) {
@@ -1316,7 +1316,7 @@ index 0000000000000000000000000000000000000000..4c862a31758114fc434695ff7d5bb4cb
 +}  // namespace
 +}  // namespace aegis_installer
 diff --git a/chrome/installer/setup/install.cc b/chrome/installer/setup/install.cc
-index 3743671c97e5ce0fe894fc0fc0bed0a4c0480129..fcf9a457b52f219939365a88d0693b35b06407f4 100644
+index a1e330eba12530018a2b312adb083f8aa8ecce3b..2ecf3e50bfec51ebeb14b1a09ef49f0757f57724 100644
 --- a/chrome/installer/setup/install.cc
 +++ b/chrome/installer/setup/install.cc
 @@ -16,6 +16,7 @@
@@ -1339,7 +1339,7 @@ index 3743671c97e5ce0fe894fc0fc0bed0a4c0480129..fcf9a457b52f219939365a88d0693b35
    base::FilePath new_chrome_exe(
        installer_state.target_path().Append(kChromeNewExe));
 diff --git a/chrome/installer/setup/installer_state.cc b/chrome/installer/setup/installer_state.cc
-index 93c827d5e3e5fba27f7a248b4a7019cc097da6d3..6da4d0277da3b219888ef099a14246b3a76de2c8 100644
+index fda0a2e9f4fce57dee696b44d7f6825de9c6fcf3..2cf129f5047636c85df1df927e36afb6846e7671 100644
 --- a/chrome/installer/setup/installer_state.cc
 +++ b/chrome/installer/setup/installer_state.cc
 @@ -61,6 +61,12 @@ void InstallerState::Initialize(const base::CommandLine& command_line,
@@ -1725,7 +1725,7 @@ index ec0e61f448e1c2ed1f1501a7c51d74ad25f5286a..b266a729871f5f0780c40e294b43e2df
    std::optional<DWORD> GetErrorCode() { return error_code_; }
  
 diff --git a/chrome/installer/util/work_item_list.cc b/chrome/installer/util/work_item_list.cc
-index 8e7f1968547ae78f4518117edd78cb332a504746..6be98071edcacbfafe4cc1faba99b2222ea2a619 100644
+index 70923bf42b87949182fa4ed6a428745096f09d44..daf74c3b12b84a421be021e31c0ad49df43854b2 100644
 --- a/chrome/installer/util/work_item_list.cc
 +++ b/chrome/installer/util/work_item_list.cc
 @@ -28,10 +28,20 @@ WorkItemList::~WorkItemList() {

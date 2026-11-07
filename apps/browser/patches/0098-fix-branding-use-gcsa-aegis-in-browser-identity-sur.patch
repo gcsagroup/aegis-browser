@@ -8,7 +8,7 @@ Subject: [PATCH] fix(branding): use GCSA Aegis in browser identity surfaces
  1 file changed, 26 insertions(+), 26 deletions(-)
 
 diff --git a/chrome/app/chromium_strings.grd b/chrome/app/chromium_strings.grd
-index 3de8ca69c9248a9ebf408526ca9192d6ddd035f4..40830877156e5e6bdd2c850bbc33c810a30c0f1c 100644
+index 87499190d7614f211d9b9440a360605d8eda1b92..c2a5181515789a7d32bac15ed0d23716517fa3bc 100644
 --- a/chrome/app/chromium_strings.grd
 +++ b/chrome/app/chromium_strings.grd
 @@ -294,10 +294,10 @@ If you update this file, be sure also to update google_chrome_strings.grd. -->

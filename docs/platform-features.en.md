@@ -53,6 +53,7 @@ Source: supported by source or the product contract. Partial: defined difference
 | User scripts and AI drafts | Partial | Source | Not ported | Partial |
 | Built-in Markdown reader | Partial | Source | Not ported | Partial |
 | Unified settings and legacy routes | Source | Source | Source | Source |
+| P01 control protocol and two-hop TLS transport | Source | Not ported | Not ported | Not ported |
 
 ## iOS scope and evidence
 
@@ -413,6 +414,14 @@ iOS Simulator evidence：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.
 `unified-settings` — Preserves the SwiftUI categories and forms merged into main. iOS uses WebKit; its acceptance was not rerun in this integration.
 
 Source：[apps/ios/AegisApp/BrowserSettings.swift](../apps/ios/AegisApp/BrowserSettings.swift) · [apps/ios/AegisApp/SettingsFormControls.swift](../apps/ios/AegisApp/SettingsFormControls.swift)
+
+Runtime acceptance not completed for this item in this work。
+
+### P01 control protocol and two-hop TLS transport
+
+`p01-two-hop-tls` — The build for this platform does not include the P01 two-hop transport.
+
+Source：[apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn](../apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn)
 
 Runtime acceptance not completed for this item in this work。
 

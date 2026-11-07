@@ -412,7 +412,7 @@ index 0000000000000000000000000000000000000000..7f7542b2378454b8af07fad8533af7f2
 +}  // namespace
 +}  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index f5a726636c489c0a8880efc4e35c3b9a5b2452f4..ebbf7580bf7f9478873b1c637794d2be6d6a73c0 100644
+index 3ba0a720d5d9ace3ad91691018b1de39384b1930..ad83860ff32551b40638e2d18ebebd44ab51bb22 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -49,6 +49,7 @@
@@ -423,7 +423,7 @@ index f5a726636c489c0a8880efc4e35c3b9a5b2452f4..ebbf7580bf7f9478873b1c637794d2be
  #include "base/types/expected.h"
  #include "base/types/expected_macros.h"
  #include "base/values.h"
-@@ -222,7 +223,10 @@
+@@ -228,7 +229,10 @@
  #include "chrome/browser/webauthn/webauthn_pref_names.h"
  #include "chrome/common/aegis/aegis_net_throttle.h"
  #include "chrome/common/aegis/features.h"
@@ -434,7 +434,7 @@ index f5a726636c489c0a8880efc4e35c3b9a5b2452f4..ebbf7580bf7f9478873b1c637794d2be
  #include "chrome/common/buildflags.h"
  #include "chrome/common/channel_info.h"
  #include "chrome/common/chrome_constants.h"
-@@ -7007,6 +7011,42 @@ bool ChromeContentBrowserClient::WillInterceptWebSocket(
+@@ -7100,6 +7104,42 @@ bool ChromeContentBrowserClient::WillInterceptWebSocket(
  #endif
  }
  
@@ -478,10 +478,10 @@ index f5a726636c489c0a8880efc4e35c3b9a5b2452f4..ebbf7580bf7f9478873b1c637794d2be
  ChromeContentBrowserClient::GetWebSocketOptions(
      content::RenderFrameHost* frame) {
 diff --git a/chrome/browser/chrome_content_browser_client.h b/chrome/browser/chrome_content_browser_client.h
-index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..ac0376c9ed76aef4fedd06dfdccf580d44594f00 100644
+index 8ba370793b2a4896be08328bae539505c2db7374..c26b084922929b13695439984214359dd367dca1 100644
 --- a/chrome/browser/chrome_content_browser_client.h
 +++ b/chrome/browser/chrome_content_browser_client.h
-@@ -723,6 +723,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
+@@ -730,6 +730,8 @@ class ChromeContentBrowserClient : public content::ContentBrowserClient {
        scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner)
        override;
    bool WillInterceptWebSocket(content::RenderFrameHost* frame) override;
@@ -491,19 +491,19 @@ index 1c972e4e276b60cc4fb1501700725c99e45f2fe0..ac0376c9ed76aef4fedd06dfdccf580d
        content::RenderFrameHost* frame) override;
    void CreateWebSocket(
 diff --git a/chrome/browser/page_load_metrics/BUILD.gn b/chrome/browser/page_load_metrics/BUILD.gn
-index 7862ffd728bf71de85c6e2078f4d5cf2e1e81f3b..32512e19a51969147fabc710fc7b765b802a0ceb 100644
+index 3972be2d23c8528fe496aeaa2022a8c58544e9e6..3e5dbdcaefabfb69452b60411f9f475e4266c377 100644
 --- a/chrome/browser/page_load_metrics/BUILD.gn
 +++ b/chrome/browser/page_load_metrics/BUILD.gn
 @@ -92,6 +92,8 @@ source_set("page_load_metrics") {
  source_set("impl") {
    sources = [
-     "chrome_initiator_location.cc",
+     "chrome_navigation_initiator.cc",
 +    "observers/aegis_miner_guard_page_load_metrics_observer.cc",
 +    "observers/aegis_miner_guard_page_load_metrics_observer.h",
      "observers/bookmark_bar_page_load_metrics_observer.cc",
      "observers/captcha_metrics_observer.cc",
      "observers/captcha_provider_manager.cc",
-@@ -153,8 +155,11 @@ source_set("impl") {
+@@ -151,8 +153,11 @@ source_set("impl") {
      "//chrome/browser/translate",
      "//chrome/browser/ui/browser_window",
      "//chrome/common",
@@ -1982,10 +1982,10 @@ index e756aaf3ee05579c495f971c3eeed547fc30944e..62535d387d046df1b388160683e78200
        GetContentClient()->browser()->GetWebSocketOptions(frame);
  
 diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
-index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..49426c53fbfd1e79134342be5411a5eebf8e0cf4 100644
+index 92be4ef5f55045f0ff8665405340d1d2174eaf74..df2c8565403cdbffd62cf42d55fc1e3e45a26fc7 100644
 --- a/content/public/browser/content_browser_client.cc
 +++ b/content/public/browser/content_browser_client.cc
-@@ -1110,6 +1110,9 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
+@@ -1127,6 +1127,9 @@ bool ContentBrowserClient::WillInterceptWebSocket(RenderFrameHost*) {
    return false;
  }
  
@@ -1996,10 +1996,10 @@ index 9fdb8a4b7b54991e024a36338682c7129b59a7ad..49426c53fbfd1e79134342be5411a5ee
  ContentBrowserClient::WebSocketOptions::~WebSocketOptions() = default;
  ContentBrowserClient::WebSocketOptions::WebSocketOptions(WebSocketOptions&&) =
 diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
-index 6e730455c66df584a721a2b4720f25bf9844f16d..67d5370230fa9c5fc6679f1b244b812a20b39c17 100644
+index 9a920eb24de3df04b60f1d130cff086d314e3055..9d69c15ab5e0dd855565de07de739eeee92798e9 100644
 --- a/content/public/browser/content_browser_client.h
 +++ b/content/public/browser/content_browser_client.h
-@@ -1989,6 +1989,11 @@ class CONTENT_EXPORT ContentBrowserClient {
+@@ -2022,6 +2022,11 @@ class CONTENT_EXPORT ContentBrowserClient {
    // Returns true when the embedder wants to intercept a websocket connection.
    virtual bool WillInterceptWebSocket(RenderFrameHost* frame);
  

@@ -516,7 +516,7 @@ index ca83ce18824cf67b3bceb7662628a0b13d7cadb1..bcc72edff8768622556baaa0b4ac1797
  
  }  // namespace aegis
 diff --git a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
-index 2d8d1f70183c443fe8505be1dc7938cf74df2de3..cd23e01931e8d4db42796fe95d6181d30dc3f1d6 100644
+index 79c042a12d3e25a0607f51f0ece1a030766fc5e3..0b136c7e20bf1f75485b61ed7657fda60948af48 100644
 --- a/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 +++ b/chrome/browser/chrome_content_browser_client_navigation_throttles.cc
 @@ -22,6 +22,7 @@

@@ -76,10 +76,10 @@ index a56fde3805626c6f384744c8f4eae9f39eddd152..1a2484bf2fa7b3b14918ce6bbaca42de
  
  void AegisService::SetTrackerBlockingEnabled(bool enabled) {
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 4a9184c85238a7ca579d8433b72c8f31be6db609..f5a726636c489c0a8880efc4e35c3b9a5b2452f4 100644
+index 852acff030ffe05c830fadcd4e963a149e0d0124..3ba0a720d5d9ace3ad91691018b1de39384b1930 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
-@@ -221,6 +221,7 @@
+@@ -227,6 +227,7 @@
  #include "chrome/browser/webauthn/chrome_web_authentication_delegate_base.h"
  #include "chrome/browser/webauthn/webauthn_pref_names.h"
  #include "chrome/common/aegis/aegis_net_throttle.h"
@@ -87,7 +87,7 @@ index 4a9184c85238a7ca579d8433b72c8f31be6db609..f5a726636c489c0a8880efc4e35c3b9a
  #include "chrome/common/aegis/pref_names.h"
  #include "chrome/common/buildflags.h"
  #include "chrome/common/channel_info.h"
-@@ -6094,11 +6095,13 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
+@@ -6156,11 +6157,13 @@ std::unique_ptr<blink::URLLoaderThrottle> CreateGoogleURLLoaderThrottle(
            profile->GetPrefs()->GetString(prefs::kAllowedDomainsForApps),
            profile->GetPrefs()->GetBoolean(
                aegis::prefs::kTrackerBlockingEnabled),
@@ -98,17 +98,17 @@ index 4a9184c85238a7ca579d8433b72c8f31be6db609..f5a726636c489c0a8880efc4e35c3b9a
 +                  aegis::prefs::kFingerprintGuardEnabled)),
            profile->GetPrefs()->GetBoolean(aegis::prefs::kCnameUncloakEnabled),
            profile->GetPrefs()->GetBoolean(aegis::prefs::kLinkSanitizeEnabled),
--          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites));
+-          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites)
 +          profile->GetPrefs()->GetString(aegis::prefs::kPausedSites),
-+          std::vector<uint8_t>());
-   return std::make_unique<GoogleURLLoaderThrottle>(
- #if BUILDFLAG(IS_ANDROID)
-       client_data_header,
++          std::vector<uint8_t>()
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+               ,
+           // Only the copy pushed to renderers carries this; the throttle
 diff --git a/chrome/browser/profiles/renderer_updater.cc b/chrome/browser/profiles/renderer_updater.cc
-index 8ab76f0485015f351c3f035bc9acdc1d5e65b75f..45b7955e5ec260cf35300694e3814f499c2cdb5c 100644
+index ecfbd7bb906af9c553cb757850032c3fa086cb1c..2dca3ac2768404748ffc67f3a70ef48b62beee99 100644
 --- a/chrome/browser/profiles/renderer_updater.cc
 +++ b/chrome/browser/profiles/renderer_updater.cc
-@@ -4,15 +4,20 @@
+@@ -4,17 +4,22 @@
  
  #include "chrome/browser/profiles/renderer_updater.h"
  
@@ -122,14 +122,16 @@ index 8ab76f0485015f351c3f035bc9acdc1d5e65b75f..45b7955e5ec260cf35300694e3814f49
  #include "base/functional/callback.h"
 +#include "base/rand_util.h"
  #include "build/chromeos_buildflags.h"
+ #include "chrome/browser/browser_process.h"
  #include "chrome/browser/content_settings/content_settings_manager_delegate.h"
  #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+ #include "chrome/browser/global_features.h"
  #include "chrome/browser/profiles/profile.h"
 +#include "chrome/common/aegis/features.h"
  #include "chrome/common/aegis/filter_list.h"
  #include "chrome/common/aegis/filter_list_matcher.h"
  #include "chrome/common/aegis/pref_names.h"
-@@ -23,6 +28,7 @@
+@@ -26,6 +31,7 @@
  #include "components/content_settings/core/common/content_settings.h"
  #include "components/content_settings/core/common/content_settings_utils.h"
  #include "components/policy/core/common/policy_pref_names.h"
@@ -137,9 +139,9 @@ index 8ab76f0485015f351c3f035bc9acdc1d5e65b75f..45b7955e5ec260cf35300694e3814f49
  #include "components/signin/public/base/signin_buildflags.h"
  #include "content/public/browser/browser_thread.h"
  #include "content/public/browser/render_process_host.h"
-@@ -43,10 +49,36 @@
- #include "chrome/browser/signin/bound_session_credentials/bound_session_cookie_refresh_service_factory.h"
- #endif  // BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
+@@ -51,10 +57,36 @@
+ #include "net/http/http_request_headers.h"
+ #endif
  
 +namespace {
 +
@@ -175,22 +177,24 @@ index 8ab76f0485015f351c3f035bc9acdc1d5e65b75f..45b7955e5ec260cf35300694e3814f49
  #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
        ,
        bound_session_cookie_refresh_service_(
-@@ -306,6 +338,8 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
+@@ -324,8 +356,10 @@ chrome::mojom::DynamicParamsPtr RendererUpdater::CreateRendererDynamicParams()
  #endif
        force_google_safesearch_.GetValue(), force_youtube_restrict_.GetValue(),
        allowed_domains_for_apps_.GetValue(), aegis_tracker_blocking_.GetValue(),
 -      aegis_fingerprint_guard_.GetValue(), aegis_cname_uncloak_.GetValue(),
--      aegis_link_sanitize_.GetValue(), aegis_paused_sites_.GetValue());
+-      aegis_link_sanitize_.GetValue(), aegis_paused_sites_.GetValue()
 +      aegis::features::IsFingerprintGuardGloballyEnabled(
 +          aegis_fingerprint_guard_.GetValue()),
 +      aegis_cname_uncloak_.GetValue(), aegis_link_sanitize_.GetValue(),
-+      aegis_paused_sites_.GetValue(), aegis_farbling_secret_);
- }
++      aegis_paused_sites_.GetValue(), aegis_farbling_secret_
+ #if BUILDFLAG(ENABLE_REQUEST_HEADER_INTEGRITY) && !BUILDFLAG(IS_ANDROID)
+           ,
+       GetPlatformRuntimeHeaders()
 diff --git a/chrome/browser/profiles/renderer_updater.h b/chrome/browser/profiles/renderer_updater.h
-index 741e038b0665df4be78db9c8c0b3abb9e6a8215a..95e146555cdba9faac946ad36d0d6c6c43bb0d9e 100644
+index ae88a38edbb703342d001ab5f2c12453ada3f946..1737736733b714d7d63c055ee8f9f02cbc762556 100644
 --- a/chrome/browser/profiles/renderer_updater.h
 +++ b/chrome/browser/profiles/renderer_updater.h
-@@ -94,6 +94,7 @@ class RendererUpdater : public KeyedService
+@@ -108,6 +108,7 @@ class RendererUpdater : public KeyedService
    const raw_ptr<Profile> profile_;
    const bool is_off_the_record_;
    const raw_ptr<Profile> original_profile_;
@@ -403,23 +407,23 @@ index a550df39400d6123b5136ab2817589348b42946c..ada93350b47ae2f9503ef20e26ba820d
      "aegis.filter_list_auto_update";
  inline constexpr char kFilterListLastUpdated[] =
 diff --git a/chrome/common/renderer_configuration.mojom b/chrome/common/renderer_configuration.mojom
-index fba394b8716496b82994b7333e77393175fb12a8..cd7d6557af294e5105cacc976470ca7fb1acb769 100644
+index a153f7a793300c2bd089822f48c4bd535d553ab7..685ba6968590aef7094caed7dd79fd3286d82818 100644
 --- a/chrome/common/renderer_configuration.mojom
 +++ b/chrome/common/renderer_configuration.mojom
-@@ -35,6 +35,7 @@ struct DynamicParams {
+@@ -38,6 +38,7 @@ struct DynamicParams {
    bool aegis_cname_uncloak = true;
    bool aegis_link_sanitize = true;
    string aegis_paused_sites;
 +  array<uint8> aegis_farbling_secret;
- };
  
- // Renderer → browser: AegisNetThrottle 拦截与 Referer 去参。
+   // Request headers produced by the Platform Runtime library. Empty until the
+   // browser has a value.
 diff --git a/chrome/renderer/chrome_render_thread_observer.cc b/chrome/renderer/chrome_render_thread_observer.cc
-index 160c6059c6d9b5100335dc8fc5aaa61555f6e36d..3b49641129c27f4e8bb549ad34183d196a098904 100644
+index 113f569c30e2e1cd04f29362b9f78118582661e0..62bea16052f5482797697380bb5c02668ec6cb74 100644
 --- a/chrome/renderer/chrome_render_thread_observer.cc
 +++ b/chrome/renderer/chrome_render_thread_observer.cc
-@@ -227,7 +227,9 @@ void ChromeRenderThreadObserver::SetConfiguration(
-     chrome::mojom::DynamicParamsPtr params) {
+@@ -236,7 +236,9 @@ void ChromeRenderThreadObserver::SetConfiguration(
+ #endif
    base::AutoLock lock(dynamic_params_lock_);
    if (params) {
 -    blink::aegis::SetFingerprintGuardEnabled(params->aegis_fingerprint_guard);
@@ -443,10 +447,10 @@ index 1c6d965d9464449b401f0be801e65d9ac1cd7020..ed1bcece4f8293651b07a48ca7c877e2
        blink::WebString::FromUtf8(user_agent), ua_metadata,
        ToWebContentSecurityPolicies(info->content_security_policies),
 diff --git a/third_party/blink/common/BUILD.gn b/third_party/blink/common/BUILD.gn
-index a0d963c0e1ac6b52db8e2f54862a0a3d10039e65..1cea5e4cee39da20fd6346614623edde0bbc74fc 100644
+index 6bd84267cd9b61f2d8875ea0411d0f480776b071..849f3bba0cb8f9fe1c2c699a35180cf9ec35b294 100644
 --- a/third_party/blink/common/BUILD.gn
 +++ b/third_party/blink/common/BUILD.gn
-@@ -308,6 +308,7 @@ source_set("common") {
+@@ -309,6 +309,7 @@ source_set("common") {
      "//base",
      "//build:android_buildflags",
      "//build:chromecast_buildflags",
@@ -455,7 +459,7 @@ index a0d963c0e1ac6b52db8e2f54862a0a3d10039e65..1cea5e4cee39da20fd6346614623edde
      "//media/capture/mojom:video_capture_mojom_support",
      "//mojo/public/cpp/system",
 diff --git a/third_party/blink/common/DEPS b/third_party/blink/common/DEPS
-index 217032d3e0fa5977221432078abcdeeb8ac75ccb..2089fc106fd804aac667ef67335bc339d723438f 100644
+index 0f2f0b8ad38005401ad1e6a7af59de705b871966..fb55a61c5093879fb0d57094d5516bbff3abc29e 100644
 --- a/third_party/blink/common/DEPS
 +++ b/third_party/blink/common/DEPS
 @@ -9,6 +9,7 @@ include_rules = [
@@ -792,10 +796,10 @@ index afadb2f8c33436ce709ecd5c22c4efad3f619324..44df8cd29059c8f52062e9e57803e75d
        bool is_constructor_secure_context,
        const WebString& user_agent,
 diff --git a/third_party/blink/renderer/core/BUILD.gn b/third_party/blink/renderer/core/BUILD.gn
-index ea5bdeebd89a8f2ee0ea889e19b7b0346cc7aa98..1912ea7c08c8c85975bff55337ecffb745ce722d 100644
+index e3840cddf8569c9cfcb5f116e01a17b93e951d7c..64356e415fc682fceb5927d5203408cfd670b43b 100644
 --- a/third_party/blink/renderer/core/BUILD.gn
 +++ b/third_party/blink/renderer/core/BUILD.gn
-@@ -1505,6 +1505,7 @@ source_set("unit_tests") {
+@@ -1553,6 +1553,7 @@ source_set("unit_tests") {
    # in 'foo/build.gni' to define blink_core_tests_foo, and add any dependencies
    # in the deps section below.
    sources = rebase_path(blink_core_tests_accessibility, "", "accessibility")
@@ -1464,7 +1468,7 @@ index 0000000000000000000000000000000000000000..fe162d2f1df40ba7580f780dd78e5c7d
 +}  // namespace
 +}  // namespace blink::aegis
 diff --git a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc b/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
-index a3a718f49e9663d22ab25ee157dc7f3f1e33d4f0..0a06e6d2b0161fd45a28ca99a2bd037f8f244898 100644
+index a66cfd94177702a942790de1a5560777e27fefd2..05e668d34cb37bfb4b243759590a301306ba55ca 100644
 --- a/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
 +++ b/third_party/blink/renderer/core/exported/web_shared_worker_impl.cc
 @@ -214,6 +214,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
@@ -1475,7 +1479,7 @@ index a3a718f49e9663d22ab25ee157dc7f3f1e33d4f0..0a06e6d2b0161fd45a28ca99a2bd037f
      WebSecurityOrigin origin_from_browser,
      bool is_constructor_secure_context,
      const WebString& user_agent,
-@@ -298,7 +299,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
+@@ -296,7 +297,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
        /*direct_sockets_force_enabled_in_parent=*/false,
        /*interface_registry=*/nullptr,
        /*agent_group_scheduler_compositor_task_runner=*/nullptr,
@@ -1484,7 +1488,7 @@ index a3a718f49e9663d22ab25ee157dc7f3f1e33d4f0..0a06e6d2b0161fd45a28ca99a2bd037f
        /*parent_storage_access_api_status=*/
        net::StorageAccessApiStatus::kNone,
        require_cross_site_request_for_cookies,
-@@ -367,6 +368,7 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
+@@ -365,6 +366,7 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
      network::mojom::CredentialsMode credentials_mode,
      const WebString& name,
      WebSecurityOrigin constructor_origin,
@@ -1492,7 +1496,7 @@ index a3a718f49e9663d22ab25ee157dc7f3f1e33d4f0..0a06e6d2b0161fd45a28ca99a2bd037f
      WebSecurityOrigin origin_from_browser,
      bool is_constructor_secure_context,
      const WebString& user_agent,
-@@ -396,7 +398,8 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
+@@ -394,7 +396,8 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
        base::WrapUnique(new WebSharedWorkerImpl(token, std::move(host), client));
    worker->StartWorkerContext(
        script_request_url, script_type, credentials_mode, name,
@@ -1515,18 +1519,18 @@ index 184c5da267dc2c6ff97e155012b4df84f7544004..f3f9f1968e0103d45de68937524b4d56
        bool is_constructor_secure_context,
        const WebString& user_agent,
 diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-index 2a4949728745ed2e5e926676097d3c41f0c49ef3..28f0a1f0cf572bd6e13ce209018ff1a2b47fbfd3 100644
+index 41ed6d0c2156b1545f0a78592b4e50ef55d37698..1b9b16d69f54fc1e0c1b43f2c1018e5cfd1544d9 100644
 --- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
 +++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
-@@ -19,6 +19,7 @@
- #include "third_party/blink/renderer/bindings/core/v8/v8_element_geometry_update_event_init.h"
+@@ -20,6 +20,7 @@
+ #include "third_party/blink/renderer/bindings/core/v8/v8_element_image_default_size.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_union_element_elementimage.h"
  #include "third_party/blink/renderer/bindings/core/v8/v8_update_element_geometry_options.h"
 +#include "third_party/blink/renderer/core/aegis/farbling.h"
  #include "third_party/blink/renderer/core/css/css_font_selector.h"
  #include "third_party/blink/renderer/core/css/offscreen_font_selector.h"
  #include "third_party/blink/renderer/core/css/style_engine.h"
-@@ -375,6 +376,20 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+@@ -376,6 +377,20 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
      return nullptr;
    }
  
@@ -1547,7 +1551,7 @@ index 2a4949728745ed2e5e926676097d3c41f0c49ef3..28f0a1f0cf572bd6e13ce209018ff1a2
    ImageBitmap* image =
        context_->TransferToImageBitmap(script_state, exception_state);
    if (exception_state.HadException()) [[unlikely]] {
-@@ -385,6 +400,8 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
+@@ -386,6 +401,8 @@ ImageBitmap* OffscreenCanvas::transferToImageBitmap(
      // Undocumented exception (not in spec).
      exception_state.ThrowDOMException(DOMExceptionCode::kUnknownError,
                                        "ImageBitmap construction failed");
@@ -1556,7 +1560,7 @@ index 2a4949728745ed2e5e926676097d3c41f0c49ef3..28f0a1f0cf572bd6e13ce209018ff1a2
    }
  
    return image;
-@@ -584,7 +601,9 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+@@ -586,7 +603,9 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
    }
  
    base::TimeTicks start_time = base::TimeTicks::Now();
@@ -1568,10 +1572,10 @@ index 2a4949728745ed2e5e926676097d3c41f0c49ef3..28f0a1f0cf572bd6e13ce209018ff1a2
      auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
          script_state, exception_state.GetContext());
 diff --git a/third_party/blink/renderer/core/workers/worker_global_scope.h b/third_party/blink/renderer/core/workers/worker_global_scope.h
-index c46068b29b4e12ed3fd0be9ccfe828d10754da56..053fd8962202f16b307cddf4fdb6610dc41ef8ca 100644
+index b7f3b19f12dc32908c04779e8645c6c4bd01acf6..b416208e564636105ef6638639017c6e6d9b2cff 100644
 --- a/third_party/blink/renderer/core/workers/worker_global_scope.h
 +++ b/third_party/blink/renderer/core/workers/worker_global_scope.h
-@@ -296,6 +296,12 @@ class CORE_EXPORT WorkerGlobalScope
+@@ -295,6 +295,12 @@ class CORE_EXPORT WorkerGlobalScope
      return top_level_frame_security_origin_.get();
    }
  
@@ -1585,10 +1589,10 @@ index c46068b29b4e12ed3fd0be9ccfe828d10754da56..053fd8962202f16b307cddf4fdb6610d
    WorkerGlobalScope(std::unique_ptr<GlobalScopeCreationParams>,
                      WorkerThread*,
 diff --git a/third_party/blink/renderer/modules/BUILD.gn b/third_party/blink/renderer/modules/BUILD.gn
-index 57908c79e9e445feb9eeb52f56d317505fa5db5a..261e32a4308cd30d22573a9ec78efd0971bd7b7d 100644
+index d09cfa2fa07c0e5be12bd05ce3b9fd332502761a..3d85781fecae8ab88b701a608c31fa6041569991 100644
 --- a/third_party/blink/renderer/modules/BUILD.gn
 +++ b/third_party/blink/renderer/modules/BUILD.gn
-@@ -652,6 +652,7 @@ source_set("unit_tests") {
+@@ -656,6 +656,7 @@ source_set("unit_tests") {
      "wake_lock/wake_lock_test_utils.h",
      "webaudio/analyser_node_test.cc",
      "webaudio/audio_buffer_source_handler_test.cc",
@@ -1597,10 +1601,10 @@ index 57908c79e9e445feb9eeb52f56d317505fa5db5a..261e32a4308cd30d22573a9ec78efd09
      "webaudio/audio_context_test.cc",
      "webaudio/audio_node_input_test.cc",
 diff --git a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-index 84233c2714c56d9cc0ed44d90bf124eb34e312ac..6673320e5f104e69384237241bb78329ec7db5b1 100644
+index ad59ebae4967690f6d05698d6239d37e267088e5..644165a64f2f2271b116eba11d592a7b09953183 100644
 --- a/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
 +++ b/third_party/blink/renderer/modules/service_worker/service_worker_global_scope.cc
-@@ -1698,11 +1698,13 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
+@@ -1703,11 +1703,13 @@ void ServiceWorkerGlobalScope::InitializeGlobalScope(
  
    ancestor_frame_type_ = ancestor_frame_type;
  
@@ -1763,7 +1767,7 @@ index 0000000000000000000000000000000000000000..82b2b63ca842323a5be2ff3741a962de
 +}  // namespace
 +}  // namespace blink
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 44054500124e03b5c59c0bc08d799ca85ea1c811..90623bdc96d0248247bc1c3ec14f4d7b2b3e61f0 100644
+index 8f1daec7eb84bffaeb24fa2eaf1ea2c6e7baf707..ff65cc42536c9afec972a4adcca664d3d17fbc0c 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 @@ -25,7 +25,6 @@
@@ -1774,7 +1778,7 @@ index 44054500124e03b5c59c0bc08d799ca85ea1c811..90623bdc96d0248247bc1c3ec14f4d7b
  
  #include <inttypes.h>
  
-@@ -3893,12 +3892,17 @@ bool WebGLRenderingContextBase::TimerQueryExtensionsEnabled() {
+@@ -3896,12 +3895,17 @@ bool WebGLRenderingContextBase::TimerQueryExtensionsEnabled() {
  ScriptObject WebGLRenderingContextBase::getExtension(ScriptState* script_state,
                                                       const String& name) {
    ExecutionContext* context = ExecutionContext::From(script_state);
@@ -1794,7 +1798,7 @@ index 44054500124e03b5c59c0bc08d799ca85ea1c811..90623bdc96d0248247bc1c3ec14f4d7b
    return ScriptObject(
        script_state->GetIsolate(),
        ToV8Traits<IDLNullable<WebGLExtension>>::ToV8(script_state, extension));
-@@ -4218,9 +4222,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4221,9 +4225,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -1807,7 +1811,7 @@ index 44054500124e03b5c59c0bc08d799ca85ea1c811..90623bdc96d0248247bc1c3ec14f4d7b
          }
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
-@@ -4231,9 +4235,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4234,9 +4238,9 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -1820,7 +1824,7 @@ index 44054500124e03b5c59c0bc08d799ca85ea1c811..90623bdc96d0248247bc1c3ec14f4d7b
          }
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_VENDOR)));
-@@ -4552,8 +4556,16 @@ WebGLRenderingContextBase::getSupportedExtensions() {
+@@ -4555,8 +4559,16 @@ WebGLRenderingContextBase::getSupportedExtensions() {
      return std::nullopt;
  
    Vector<String> result;

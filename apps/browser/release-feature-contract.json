@@ -372,6 +372,17 @@
       }
     },
     {
+      "id": "p01-two-hop-tls",
+      "name": "P01 控制协议 v2 和双跳 TLS 传输",
+      "platforms": [
+        "mac-arm64"
+      ],
+      "testFilters": [
+        "CoreTlsTest.*"
+      ],
+      "nativeAcceptance": "在同一候选的 mac-arm64 输出构建并运行 //chrome/browser/aegis/proxy:p01_transport_unittests。覆盖证书协商、双握手、断开和超时。"
+    },
+    {
       "id": "unified-settings",
       "name": "统一设置分类、旧入口迁移、保存与重启回读",
       "platforms": [

@@ -5441,7 +5441,7 @@ index 63c0aa04e5eb6526b40d1d9460da14eb83c965c7..1fa2fd98bdc226ebf617e7336433769a
    }
  
 diff --git a/chrome/browser/resources/settings/router.ts b/chrome/browser/resources/settings/router.ts
-index b6bf17eaa48005002502b0e892f3d5d865198974..ef65c4b1abb908cb47490c4502c55f9b92a60c0e 100644
+index 47a77678b560a0380495862cc88d5f904ae04381..9a27c563dc1d221d145920525883f869b156f4b4 100644
 --- a/chrome/browser/resources/settings/router.ts
 +++ b/chrome/browser/resources/settings/router.ts
 @@ -298,6 +298,11 @@ export class Router {
@@ -5923,7 +5923,7 @@ index 2b4dd9d48545a03d0040a8f2b632e22ceea78795..f1e219b0bc6fc00c151bd9497eaca865
        DownloadSettingsFromValue(args[1]);
    if (!settings) {
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 5899f97e73b76f070751bf06d4dae51c57c2bb3a..02dd55537ff85c95591895e744e58ae3286df26b 100644
+index 7ea82132a5dcea9536dac190656e5537fc3793ad..95c33a6761664c458aa03ea319c6e4048ecdab82 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
 @@ -259,19 +259,19 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)

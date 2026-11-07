@@ -154,38 +154,37 @@ index 37db3293d27e45ed39a4c57c34846deb336eb782..8ad237e22140cd1eff1fb3868739f4fd
        tools: '本机工具连接 允许本机 AI 工具读取和操作网页 连接状态 权限 本機工具連線 CDP AI tools connection permissions',
      };
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.html b/chrome/browser/resources/settings/privacy_page/privacy_page.html
-index 7dab4a96ecf02e8865e1553ee86bc93fcccb4b1d..356ea3082584691257c7c28b7e921cc92ece8249 100644
+index fc32468c6b55601aa0aac347493354dee753bf76..cf64c38c78a89007e9096c14f995503f33a7ecce 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.html
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.html
-@@ -1,10 +1,5 @@
-   <style include="cr-shared-style cr-hidden-style settings-shared"></style>
+@@ -1,9 +1,4 @@
    <settings-section page-title="$i18n{privacyPageTitle}">
 -    <cr-link-row id="aegisLinkRow"
 -        start-icon="privacy:lock"
 -        label="$i18n{aegisSettingsTitle}"
 -        sub-label="$i18n{aegisSettingsDescription}"
--        on-click="onAegisSettingsClick_"></cr-link-row>
-     <template is="dom-if" if="[[showClearBrowsingDataDialog_]]" restamp>
+-        @click="${this.onAegisSettingsClick_}"></cr-link-row>
+     ${this.showClearBrowsingDataDialog_ ? html`
        <settings-clear-browsing-data-dialog
-           on-close="onCbdDialogClosed_"
+           @close="${this.onCbdDialogClose_}"
 diff --git a/chrome/browser/resources/settings/privacy_page/privacy_page.ts b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
-index da61b099bdc2d02a6ac6b08804fb9788dd4782ff..2ea749475b1fd813057287047e6b2bf0b628b4c0 100644
+index 12f61c5fe807beaa7df771e7fef8ea5c4cf8b41d..e423b15d32e6b3564a19cd51e6c98fc4e382ed89 100644
 --- a/chrome/browser/resources/settings/privacy_page/privacy_page.ts
 +++ b/chrome/browser/resources/settings/privacy_page/privacy_page.ts
-@@ -125,11 +125,6 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
+@@ -121,11 +121,6 @@ export class SettingsPrivacyPageElement extends SettingsPrivacyPageElementBase {
      Router.getInstance().navigateTo(routes.CLEAR_BROWSER_DATA);
    }
  
--  private onAegisSettingsClick_() {
+-  protected onAegisSettingsClick_() {
 -    this.interactedWithPage_();
 -    Router.getInstance().navigateTo(routes.AEGIS);
 -  }
 -
-   private onCookiesClick_() {
+   protected onCookiesClick_() {
      this.interactedWithPage_();
  
 diff --git a/chrome/browser/resources/settings/route.ts b/chrome/browser/resources/settings/route.ts
-index 10d396fe8744589810d712049b322f44ac9777c6..d06a0cf44cd2ecdeb4fdcb7e8ae705e2d3ed0ece 100644
+index d40643383e28895d6fb9960f780719da47c2b48e..d4f86cfd64f6719fb4ef363fbc0ebaabe113ead4 100644
 --- a/chrome/browser/resources/settings/route.ts
 +++ b/chrome/browser/resources/settings/route.ts
 @@ -148,6 +148,7 @@ function createRoutes(): SettingsRoutes {
@@ -197,7 +196,7 @@ index 10d396fe8744589810d712049b322f44ac9777c6..d06a0cf44cd2ecdeb4fdcb7e8ae705e2
    r.AEGIS_TOOLS = r.AEGIS.createSection('/aegisTools', 'aegisTools', loadTimeData.getString('aegisToolsTitle'));
  
 diff --git a/chrome/browser/resources/settings/router.ts b/chrome/browser/resources/settings/router.ts
-index 191215b138f5b0b6828d19ff31a7a5becbc11760..b6bf17eaa48005002502b0e892f3d5d865198974 100644
+index 6149fc2a7c680aa8146ce5434607815069f1560d..47a77678b560a0380495862cc88d5f904ae04381 100644
 --- a/chrome/browser/resources/settings/router.ts
 +++ b/chrome/browser/resources/settings/router.ts
 @@ -16,6 +16,7 @@ import {loadTimeData} from './i18n_setup.js';
@@ -209,7 +208,7 @@ index 191215b138f5b0b6828d19ff31a7a5becbc11760..b6bf17eaa48005002502b0e892f3d5d8
    AEGIS_TOOLS: Route;
    AEGIS_ENHANCEMENTS: Route;
 diff --git a/chrome/browser/resources/settings/settings_main/settings_main.html b/chrome/browser/resources/settings/settings_main/settings_main.html
-index cf7fbc66dd7d8aac9476e29135c550aa0eb8e2a7..d73ad688e5da55f0e3ddc05b1469f4d015a263cd 100644
+index 17d30e16dc4d340e09b731c02d21fa03f13e9c9f..46896f64baaf0bc32ddb116b0113bd355e0b2e9e 100644
 --- a/chrome/browser/resources/settings/settings_main/settings_main.html
 +++ b/chrome/browser/resources/settings/settings_main/settings_main.html
 @@ -52,6 +52,7 @@
@@ -249,10 +248,10 @@ index 53173610f688ae890b8956ba5bd227db7d2b57f1..4da45792502562a389ead053a5dacefa
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 39014011ba339fa6fd4f22cd5bfba6edc93b415b..5899f97e73b76f070751bf06d4dae51c57c2bb3a 100644
+index e5eec94e1ccc38876f6954139cc29e3703ad92df..7ea82132a5dcea9536dac190656e5537fc3793ad 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
-@@ -254,6 +254,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -258,6 +258,8 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    const bool traditional = locale == "zh-TW" || locale == "zh-HK";
    html_source->AddString("aegisSettingsTitle", chinese ? (traditional ? "Aegis 功能設定" : "Aegis 功能设置") : "Aegis settings");
    html_source->AddString("aegisSettingsDescription", chinese ? (traditional ? "集中管理 Aegis 的防護、網站增強、閱讀、手勢、AI 與下載功能。" : "集中管理 Aegis 的防护、网站增强、阅读、手势、AI 与下载功能。") : "Manage Aegis protection, website enhancements, reading, gestures, AI and downloads.");
@@ -261,7 +260,7 @@ index 39014011ba339fa6fd4f22cd5bfba6edc93b415b..5899f97e73b76f070751bf06d4dae51c
    html_source->AddString("aegisAiTitle", chinese ? (traditional ? "AI 與模型" : "AI 与模型") : "AI and models");
    html_source->AddString("aegisDownloadsTitle", chinese ? (traditional ? "下載增強" : "下载增强") : "Download enhancements");
    html_source->AddString("aegisToolsTitle", chinese ? (traditional ? "本機工具連線" : "本机工具连接") : "Local tool connections");
-@@ -262,7 +264,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
+@@ -266,7 +268,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
    html_source->AddString("aegisEnhancementsDescription", chinese ? (traditional ? "網站規則、使用者腳本與 AI 編寫" : "网站规则、用户脚本与 AI 编写") : "Site rules, user scripts and AI authoring");
    html_source->AddString("aegisReadingDescription", chinese ? (traditional ? "閱讀外觀、Markdown、圖片權限與閱讀庫" : "阅读外观、Markdown、图片权限与阅读库") : "Reading appearance, Markdown, image permissions and library");
    html_source->AddString("aegisGesturesDescription", chinese ? (traditional ? "手勢動作、軌跡、網站例外與練習" : "手势动作、轨迹、网站例外与练习") : "Actions, trails, site exceptions and practice");

@@ -27,7 +27,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/android/junit/src/org/chromium/chrome/browser/about_settings/AegisUpdatePolicyTest.java
 
 diff --git a/chrome/android/chrome_java_sources.gni b/chrome/android/chrome_java_sources.gni
-index 4113f42672a06d8f20d82f3249e02975495b2e36..b546e4598a09aa24417e1febebea926f0f71a385 100644
+index 6c7345209b0baa341d02ab6903b61fcd1ca23625..49614da069b39e59a57db72b77795be95a3b5deb 100644
 --- a/chrome/android/chrome_java_sources.gni
 +++ b/chrome/android/chrome_java_sources.gni
 @@ -59,6 +59,9 @@ chrome_java_sources = [
@@ -752,7 +752,7 @@ index 0000000000000000000000000000000000000000..74bf0ea87c7f878cc1ac5b080a790571
 +    }
 +}
 diff --git a/chrome/android/junit/BUILD.gn b/chrome/android/junit/BUILD.gn
-index 21efb67ce47f53d5b6404b3056d6f2cc25117662..452880a306ae52a4236ab50d3881457b3e7ea3e1 100644
+index e68eff9dc3bd1a8bfa90220de7c0e51cd85a17c7..3c8100b240242308c22b1207ed61ae181ec5653a 100644
 --- a/chrome/android/junit/BUILD.gn
 +++ b/chrome/android/junit/BUILD.gn
 @@ -1660,6 +1660,7 @@ if (is_android) {

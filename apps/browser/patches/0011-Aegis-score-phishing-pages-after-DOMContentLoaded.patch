@@ -26,7 +26,7 @@ combined score crosses the block threshold.
  create mode 100644 chrome/browser/aegis/aegis_phish_tab_helper.h
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 9693a95a251b33c1558cd75647096e1b2d317050..29595ec7fd935480904bc8c3b9ee8353afb8da30 100644
+index 58aa45a163f97f06c862a5984910526f313bb0d6..58b4715b33a5dd660e5160e8977f552fa4bc2dea 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
 @@ -167,6 +167,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
@@ -321,6 +321,26 @@ index 0000000000000000000000000000000000000000..1e65f7a86fcaacb8ac7f162795e9a75b
 +}  // namespace aegis
 +
 +#endif  // CHROME_BROWSER_AEGIS_AEGIS_PHISH_TAB_HELPER_H_
+diff --git a/chrome/browser/android/tab_features.cc b/chrome/browser/android/tab_features.cc
+index b0fdfe5f83797330b622bfdbea4ff1d31e5d814d..6d1dd58cd907c114305a880f0c9a97c569ed7284 100644
+--- a/chrome/browser/android/tab_features.cc
++++ b/chrome/browser/android/tab_features.cc
+@@ -10,6 +10,7 @@
+ #include "base/check_is_test.h"
+ #include "base/time/default_tick_clock.h"
+ #include "base/trace_event/trace_event.h"
++#include "chrome/browser/aegis/aegis_phish_tab_helper.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_surface_tab_helper.h"
+ #include "chrome/browser/actor/actor_tab_data.h"
+@@ -252,6 +253,7 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+   TabInterface* const tab = TabInterface::GetFromContents(web_contents);
+   CHECK(tab);
+   tab_subscription_ = webui::InitEmbeddingContext(tab);
++  aegis::PhishTabHelper::CreateForWebContents(web_contents);
+ 
+   autofill::AutofillClientProvider& autofill_client_provider =
+       autofill::AutofillClientProviderFactory::GetForProfile(profile);
 diff --git a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc b/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
 index 71c5c3139b3cb93e7d8eea287f087e0a685f9162..5bc84f0f6aea3e8d3c5a947d275e9025a972f38c 100644
 --- a/chrome/browser/password_manager/actor_login/internal/actor_login_siwg_controller_unittest.cc
@@ -352,25 +372,53 @@ index d7e92c9c73ebd8cf09582439a3d63d0feb4bb111..8c540d59a562ff567cceb020888374df
    MOCK_METHOD(void, SetShouldDeferMediaLoad, (bool), (override));
    MOCK_METHOD(void,
 diff --git a/chrome/browser/ui/tab_helpers.cc b/chrome/browser/ui/tab_helpers.cc
-index f7e2862c79baa94717de88c8a188816441be3324..e034a11cc4b3c77d43e27a11aa655ad67afe93a1 100644
+index 8dccf1cf05be2351e3d1bbdc66da44bc959e3482..d8d181568647b0fab2c5f26721feab2b2b431583 100644
 --- a/chrome/browser/ui/tab_helpers.cc
 +++ b/chrome/browser/ui/tab_helpers.cc
-@@ -15,6 +15,7 @@
- #include "base/time/default_tick_clock.h"
- #include "base/trace_event/trace_event.h"
+@@ -13,6 +13,7 @@
+ #include "base/feature_list.h"
+ #include "base/logging.h"
  #include "build/build_config.h"
 +#include "chrome/browser/aegis/aegis_phish_tab_helper.h"
  #include "chrome/browser/bookmarks/bookmark_model_factory.h"
- #include "chrome/browser/breadcrumbs/breadcrumb_manager_tab_helper.h"
  #include "chrome/browser/browser_process.h"
-@@ -364,6 +365,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
-       web_contents,
-       std::make_unique<PageSpecificContentSettingsDelegate>(web_contents));
-   CoreTabHelper::CreateForWebContents(web_contents);
+ #include "chrome/browser/buildflags.h"
+@@ -100,6 +101,7 @@ void TabHelpers::AttachTabHelpers(WebContents* web_contents,
+       Profile::FromBrowserContext(web_contents->GetBrowserContext());
+ 
+   // --- Section 1: Common tab helpers ---
 +  aegis::PhishTabHelper::CreateForWebContents(web_contents);
-   favicon::CreateContentFaviconDriverForWebContents(web_contents);
-   FileSystemAccessPermissionRequestManager::CreateForWebContents(web_contents);
-   FileSystemAccessTabHelper::CreateForWebContents(web_contents);
+   // AutofillClientProvider initializes ContentAutofillClient for web_contents,
+   // which is gated by enable_browser_autofill.
+   if (enable_browser_autofill) {
+diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
+index b8826e9cb6a749a380bc3767da49cdf66b9930f6..a9d393f4e60e14e7cc97850d6e9e53f091f3e8ba 100644
+--- a/chrome/browser/ui/tabs/tab_features.cc
++++ b/chrome/browser/ui/tabs/tab_features.cc
+@@ -13,6 +13,7 @@
+ #include "base/no_destructor.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/time/default_tick_clock.h"
++#include "chrome/browser/aegis/aegis_phish_tab_helper.h"
+ #include "chrome/browser/actor/actor_keyed_service.h"
+ #include "chrome/browser/actor/actor_surface_tab_helper.h"
+ #include "chrome/browser/actor/actor_tab_data.h"
+@@ -415,6 +416,7 @@ const LensOverlayController* TabFeatures::lens_overlay_controller() const {
+ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
+   CHECK(!initialized_);
+   initialized_ = true;
++  aegis::PhishTabHelper::CreateForWebContents(tab.GetContents());
+ 
+   // In tests you may want to disable TabFeatures initialization.
+   // See tabs::TabModel::PreventFeatureInitializationForTesting
+@@ -1467,6 +1469,7 @@ void TabFeatures::WillDiscardContents(tabs::TabInterface* tab,
+                                       content::WebContents* old_contents,
+                                       content::WebContents* new_contents) {
+   DCHECK_EQ(old_contents, tab->GetContents());
++  aegis::PhishTabHelper::CreateForWebContents(new_contents);
+ 
+   Profile* profile = tab->GetBrowserWindowInterface()->GetProfile();
+ 
 diff --git a/chrome/common/aegis/phish_score.cc b/chrome/common/aegis/phish_score.cc
 index 91c16aa6ed09666b895ac20e2d266e0ef35e10ed..440a99658701080e92bac411db96a1bd4c1b3a2b 100644
 --- a/chrome/common/aegis/phish_score.cc
@@ -528,7 +576,7 @@ index c5b742e2fe1f6b986f85a10286fd638b86e0dc64..efaa533860e755f5ae9e2fc8900cb834
    // identifier (empty string matches all).
    LoadBlockedPlugins(string identifier);
 diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
-index 6f3034c426214bf36c6ec65ab91e36a8ae0127e5..909291a80953d38f6ee37e69dd5e2ee424533cfc 100644
+index f773945b6792b51e961d846829e3de06a7b7780c..a0dc63589a1ac7efdfbb014fcbf1bbffff8a61e5 100644
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
 @@ -71,7 +71,9 @@
@@ -541,7 +589,7 @@ index 6f3034c426214bf36c6ec65ab91e36a8ae0127e5..909291a80953d38f6ee37e69dd5e2ee4
  #include "third_party/blink/public/web/web_local_frame.h"
  #include "third_party/blink/public/web/web_local_frame_client.h"
  #include "third_party/blink/public/web/web_node.h"
-@@ -656,6 +658,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
+@@ -667,6 +669,43 @@ void ChromeRenderFrameObserver::GetMediaFeedURL(
    std::move(callback).Run(MediaFeeds::GetMediaFeedURL(render_frame()));
  }
  

@@ -17,20 +17,20 @@ Content-Transfer-Encoding: 8bit
  5 files changed, 21 insertions(+), 18 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
-index d761f8ede65672ed7b1826ae5ef61089c4e33056..c6f133b48e45501ffdb8a9509d02c1f1e3e6818e 100644
+index cfae9343eddccc3fa1786098576768256ddc8487..fd3052491a59d7aea6a45515cb23dac087cb5af3 100644
 --- a/chrome/browser/actor/actor_keyed_service.cc
 +++ b/chrome/browser/actor/actor_keyed_service.cc
-@@ -497,7 +497,8 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
-     actor::ui::ActorUiStateManagerInterface* ui_state_manager,
-     std::optional<glic::mojom::InvocationSource> initial_invocation_source) {
+@@ -520,7 +520,8 @@ TaskId ActorKeyedService::CreateTaskWithOptions(
+     std::optional<glic::mojom::InvocationSource> initial_invocation_source,
+     AllowedSchemes allowed_schemes) {
    CHECK(ui_state_manager);
 -  return CreateTaskImpl(ui::NewUiEventDispatcher(ui_state_manager, journal_.is_private()), source_info,
 +  return CreateTaskImpl(
 +      ui::NewUiEventDispatcher(ui_state_manager, journal_.is_private()), source_info,
                          policy_checker, nullptr, std::move(options),
                          std::move(delegate), ui_state_manager,
-                         initial_invocation_source);
-@@ -512,7 +513,8 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
+                         initial_invocation_source, allowed_schemes);
+@@ -535,7 +536,8 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
    auto* ui_state_manager = actor_ui_state_manager_.get();
    CHECK(ui_state_manager);
    const EnterprisePolicyChecker* policy_checker_ptr = policy_checker.get();
@@ -39,12 +39,12 @@ index d761f8ede65672ed7b1826ae5ef61089c4e33056..c6f133b48e45501ffdb8a9509d02c1f1
 +      ui::NewUiEventDispatcher(ui_state_manager, journal_.is_private()),
                          source_info, policy_checker_ptr,
                          std::move(policy_checker), std::move(options),
-                         std::move(delegate), ui_state_manager, std::nullopt);
+                         std::move(delegate), ui_state_manager, std::nullopt,
 diff --git a/chrome/browser/actor/actor_task.cc b/chrome/browser/actor/actor_task.cc
-index 0c66f96585abb830ee01ed8cf490714a652858f8..f2edc205f2cf93a5625341ea9f4257764cf545f3 100644
+index 6faa1028033b04b9a4f134866b49782ee1c6945e..e970cb5ec1e38d9bdd7292bde2f683378298e869 100644
 --- a/chrome/browser/actor/actor_task.cc
 +++ b/chrome/browser/actor/actor_task.cc
-@@ -157,6 +157,9 @@ ActorTask::ActorTask(
+@@ -174,6 +174,9 @@ ActorTask::ActorTask(
        source_info_(source_info),
        create_time_(base::TimeTicks::Now()),
        action_tracker_for_metrics_(std::make_unique<ActionTrackerForMetrics>()),
@@ -54,7 +54,7 @@ index 0c66f96585abb830ee01ed8cf490714a652858f8..f2edc205f2cf93a5625341ea9f425776
        ui_event_dispatcher_(std::move(ui_event_dispatcher)),
        journal_(service_->GetJournal().GetSafeRef()),
        title_(options && options->title.has_value() ? options->title.value()
-@@ -170,9 +173,6 @@ ActorTask::ActorTask(
+@@ -187,9 +190,6 @@ ActorTask::ActorTask(
                          ? options->feature_mode.value()
                          : glic::mojom::FeatureMode::kUnspecified),
        initial_invocation_source_(initial_invocation_source),
@@ -65,10 +65,10 @@ index 0c66f96585abb830ee01ed8cf490714a652858f8..f2edc205f2cf93a5625341ea9f425776
        ui_weak_ptr_factory_(ui_event_dispatcher_.get()) {
    CHECK(policy_checker);
 diff --git a/chrome/browser/actor/actor_task.h b/chrome/browser/actor/actor_task.h
-index 143aa8f0e376bebc946350acdb70a626d188f02a..0dceffb24a9a11109d454c7ed0b974e33b45ea6d 100644
+index b79b661a7736694eaf57e47aa34586465ff1193d..47b843684ea35764b902e15935dd657e622bc92c 100644
 --- a/chrome/browser/actor/actor_task.h
 +++ b/chrome/browser/actor/actor_task.h
-@@ -425,6 +425,12 @@ class ActorTask : public base::SupportsUserData {
+@@ -449,6 +449,12 @@ class ActorTask : public base::SupportsUserData {
  
    std::unique_ptr<ActionTrackerForMetrics> action_tracker_for_metrics_;
  
@@ -81,7 +81,7 @@ index 143aa8f0e376bebc946350acdb70a626d188f02a..0dceffb24a9a11109d454c7ed0b974e3
    // This is used by and should be kept above `execution_engine_`.
    std::unique_ptr<ui::UiEventDispatcher> ui_event_dispatcher_;
  
-@@ -507,12 +513,6 @@ class ActorTask : public base::SupportsUserData {
+@@ -535,12 +541,6 @@ class ActorTask : public base::SupportsUserData {
  
    std::optional<InterruptReason> interrupt_reason_;
  
@@ -95,30 +95,21 @@ index 143aa8f0e376bebc946350acdb70a626d188f02a..0dceffb24a9a11109d454c7ed0b974e3
    base::WeakPtr<ActorTaskDelegate> delegate_;
  
 diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
-index 662a5c48c0929b21531ab1ca9f88e9271819e095..b2c456497554ceb71cae0b7a3ee1f3edf47b9aaa 100644
+index 4f82ffa8522ae16264019d22bb27c690553c103a..2d53d43c7fb2207166e9d03155c90e381fc6c6f3 100644
 --- a/chrome/browser/actor/execution_engine.cc
 +++ b/chrome/browser/actor/execution_engine.cc
-@@ -784,7 +784,7 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
-               {
-                   {CustomPredicate(
-                        base::BindRepeating(&BlockIfExplicitlyDenied,
--                                           base::Unretained(task_.get())),
-+                                           base::Unretained(&task_.get())),
-                        ActorCustomPredicate::kExplicitPolicyBlock),
-                    GateableEventSet::All()},
-                   {CustomPredicate(base::BindRepeating(&BlockTabErrorDocument),
-@@ -844,7 +844,8 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
-                   {CustomPredicate(
-                        base::BindRepeating(
-                            &BlockSensitiveUrlWhenNavigationGatingDisabled,
--                           task_->source_info().type != TaskSourceInfo::Client::kAegis,
-+                           task_->source_info().type !=
-+                               TaskSourceInfo::Client::kAegis,
-                            task_->GetProfile()),
-                        ActorCustomPredicate::kSensitiveUrl),
-                    {GateableEvent::kNavigationRequest}},
+@@ -870,7 +870,8 @@ std::vector<origin_gating::PredicateConfiguration> CreateOriginGatingPredicates(
+       {CustomPredicate(
+            base::BindRepeating(
+                &BlockSensitiveUrlWhenNavigationGatingDisabled,
+-               task.source_info().type != TaskSourceInfo::Client::kAegis,
++               task.source_info().type !=
++                   TaskSourceInfo::Client::kAegis,
+                task.GetProfile()),
+            ActorCustomPredicate::kSensitiveUrl),
+        {GateableEvent::kNavigationRequest}},
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 0b3c52143567dbf119aae2cac1ead2dd57464a5f..d56c9b9576212f6bb7e3e9a56e3043ab6c3c2c2d 100644
+index 1c0e46e76ebe2c4fe8343ded13b8c7f54e6b731d..0cc472c4bdee048f2ed71a9bd576dcb6fc4d3fef 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
 @@ -18,7 +18,6 @@
@@ -129,7 +120,7 @@ index 0b3c52143567dbf119aae2cac1ead2dd57464a5f..d56c9b9576212f6bb7e3e9a56e3043ab
  #include "base/test/test_future.h"
  #include "base/time/time.h"
  #include "chrome/browser/actor/actor_keyed_service.h"
-@@ -1297,11 +1296,12 @@ TEST_F(AegisExecutionEngineUrlGatingTest, SkipsGlicSensitiveOriginService) {
+@@ -1300,11 +1299,12 @@ TEST_F(AegisExecutionEngineUrlGatingTest, SkipsGlicSensitiveOriginService) {
            testing::An<optimization_guide::OptimizationGuideDecisionCallback>()))
        .Times(0);
    EXPECT_CALL(mock_actor_task_delegate(),
@@ -144,7 +135,7 @@ index 0b3c52143567dbf119aae2cac1ead2dd57464a5f..d56c9b9576212f6bb7e3e9a56e3043ab
    EXPECT_EQ(allowed.Get(), MayActOnUrlBlockReason::kAllowed);
    CheckUrl(url, true);
  }
-@@ -1471,8 +1471,8 @@ TEST_F(AegisExecutionEngineUrlGatingTest,
+@@ -1474,8 +1474,8 @@ TEST_F(AegisExecutionEngineUrlGatingTest,
        switches::kDisableActorSafetyChecks);
    const GURL url("https://outside-scope.test/");
    auto& engine = GetExecutionEngine();
