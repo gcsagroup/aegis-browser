@@ -17,9 +17,11 @@ struct AegisRootView: View {
     @State private var showsFind = false
     @State private var showsReading = false
     @State private var findText = ""
-    @State private var findMessage = ""
+    @State private var findMessage: AegisLocalizedMessage?
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Group {
             if let tab = browser.activeTab {
                 BrowserPane(
@@ -70,13 +72,13 @@ struct AegisRootView: View {
                             do {
                                 let result = try await browser.activeTab?.webView.find(findText, configuration: .init())
                                 findMessage = result?.matchFound == true
-                                    ? String(localized: "已找到匹配内容。")
-                                    : String(localized: "未找到匹配内容。")
-                            } catch { findMessage = error.localizedDescription }
+                                    ? .resource("已找到匹配内容。")
+                                    : .resource("未找到匹配内容。")
+                            } catch { findMessage = .error(error) }
                         }
                     }.disabled(findText.isEmpty)
-                    Text(findMessage)
-                }.navigationTitle("在页面中查找")
+                    Text(findMessage?.text ?? "")
+                }.localizedNavigationTitle("在页面中查找")
                     .toolbar { Button("完成") { showsFind = false }.keyboardShortcut(.escape, modifiers: []) }
             }.presentationDetents([.medium])
         }
@@ -153,7 +155,7 @@ private struct BrowserPane: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var tab: BrowserTab
     @State private var managesWindows = false
-    @State private var windowError: String?
+    @State private var windowError: AegisLocalizedMessage?
     @State private var toolbarCollapsed = false
     @Binding var address: String
     @Binding var showsTabs: Bool
@@ -177,7 +179,9 @@ private struct BrowserPane: View {
     }
     private var isCollapsed: Bool { toolbarCollapsed && canCollapse }
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 0) {
             if let error = browser.sessionError {
                 Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal)
@@ -194,7 +198,7 @@ private struct BrowserPane: View {
         .sheet(isPresented: $managesWindows) { BrowserWindowsView() }
         .alert("无法新建窗口", isPresented: Binding(get: { windowError != nil }, set: { if !$0 { windowError = nil } })) {
             Button("完成") { windowError = nil }
-        } message: { Text(windowError ?? "") }
+        } message: { Text(windowError?.text ?? "") }
         .alert("修改已保存的收藏？", isPresented: $confirmsPrivateBookmark) {
             Button("确认修改") {
                 guard let pendingBookmark, browser.profile.isPrivate,
@@ -205,7 +209,7 @@ private struct BrowserPane: View {
             }
             Button("取消", role: .cancel) { pendingBookmark = nil }
         } message: {
-            Text(String(localized: "此操作会在普通收藏中添加或移除下面的网址，退出私密浏览后仍然保留。")
+            Text(AegisLocalization.string("此操作会在普通收藏中添加或移除下面的网址，退出私密浏览后仍然保留。")
                  + "\n\n" + (pendingBookmark?.url.absoluteString ?? ""))
         }
     }
@@ -236,14 +240,14 @@ private struct BrowserPane: View {
 
     /// 浏览时只显示主机名；输入和辅助功能始终可取得完整网址。
     private var displayedAddress: String {
-        guard let url = tab.url, url.scheme != "aegis" else { return String(localized: "起始页") }
+        guard let url = tab.url, url.scheme != "aegis" else { return AegisLocalization.string("起始页") }
         return url.host(percentEncoded: true) ?? url.absoluteString
     }
 
     private var filterStatus: String {
-        if !TrackingProtection.enabled { return String(localized: "广告过滤已关闭") }
-        if let url = tab.url, TrackingProtection.isExcepted(url) { return String(localized: "此网站已暂停过滤") }
-        return String(localized: "广告过滤已启用")
+        if !TrackingProtection.enabled { return AegisLocalization.string("广告过滤已关闭") }
+        if let url = tab.url, TrackingProtection.isExcepted(url) { return AegisLocalization.string("此网站已暂停过滤") }
+        return AegisLocalization.string("广告过滤已启用")
     }
 
     private var toolbar: some View {
@@ -263,7 +267,7 @@ private struct BrowserPane: View {
                             .frame(width: 44, height: 44)
                     }
                     .accessibilityLabel("当前网站")
-                    .accessibilityValue(browser.profile.isPrivate ? String(localized: "私密浏览：不记录历史，保存和发送资料前需确认") : filterStatus)
+                    .accessibilityValue(browser.profile.isPrivate ? AegisLocalization.string("私密浏览：不记录历史，保存和发送资料前需确认") : filterStatus)
                     .accessibilityIdentifier("page-protection")
                 }
                 BrowserAddressField(address: $address, focused: $addressFocused,
@@ -355,6 +359,7 @@ private struct BrowserPane: View {
                     Button("临时允许本站安全资源（10 分钟）", systemImage: "shield.slash") { tab.temporarilyRestoreSecurityResources() }
                 }
                 Button("在页面中查找", systemImage: "doc.text.magnifyingglass") { showsFind = true }
+                    .accessibilityIdentifier("find-in-page")
                 if let url = tab.url, ["http", "https"].contains(url.scheme ?? "") {
                     ShareLink(item: url) { Label("分享页面", systemImage: "square.and.arrow.up") }
                 }
@@ -369,13 +374,14 @@ private struct BrowserPane: View {
             Section {
                 BrowserWindowActions(managesWindows: $managesWindows, error: $windowError)
                 Button("设置", systemImage: "gearshape") { showsSettings = true }
+                    .accessibilityIdentifier("open-browser-settings")
             }
         } label: {
             Image(systemName: "ellipsis").frame(width: 44, height: 44)
                 .background(.regularMaterial, in: Circle())
         }
         .accessibilityLabel("更多")
-        .accessibilityValue(String(localized: "标签 \(browser.displayedTabs.count)"))
+        .accessibilityValue(AegisLocalization.string("标签 \(browser.displayedTabs.count)"))
         .accessibilityIdentifier("browser-more")
     }
 }
@@ -387,7 +393,9 @@ private struct ActiveTabView: View {
     let onFind: () -> Void
     let onScroll: (Bool) -> Void
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         VStack(spacing: 0) {
             if let error = tab.loadingError {
                 VStack(alignment: .leading, spacing: 8) {
@@ -405,8 +413,8 @@ private struct ActiveTabView: View {
                   VStack(alignment: .leading, spacing: 18) {
                     Label("已阻止风险页面", systemImage: "exclamationmark.shield.fill").font(.title2.bold()).accessibilityIdentifier("page-protection-blocked")
                     Text(incident.url.host ?? "").font(.headline).textSelection(.enabled)
-                    Text(incident.fromPage ? String(localized: "页面结构检查发现高风险，已卸载该页面。检查发生在页面开始加载之后。") : String(localized: "本地网址检查已阻止此次导航。"))
-                    Text(incident.reasons.contains("known_phishing_host") ? String(localized: "命中本地已知钓鱼主机规则。") : String(localized: "网址或登录表单包含多项风险信号。"))
+                    Text(incident.fromPage ? AegisLocalization.string("页面结构检查发现高风险，已卸载该页面。检查发生在页面开始加载之后。") : AegisLocalization.string("本地网址检查已阻止此次导航。"))
+                    Text(incident.reasons.contains("known_phishing_host") ? AegisLocalization.string("命中本地已知钓鱼主机规则。") : AegisLocalization.string("网址或登录表单包含多项风险信号。"))
                     ForEach(incident.explanations, id: \.self) { Text($0).font(.callout) }
                     Text("评分：\(incident.score)").font(.caption)
                     Button("返回起始页") { tab.load(URL(string: "aegis://start")!) }.buttonStyle(.borderedProminent)
@@ -437,11 +445,13 @@ private struct NavigationPolicyBanner: View {
     let decision: BrowserNavigationPolicyDecision
     let dismiss: () -> Void
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: decision.kind == .blocked ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
             VStack(alignment: .leading, spacing: 3) {
-                Text(decision.kind == .blocked ? blockedTitle : String(localized: "已清理追踪参数"))
+                Text(decision.kind == .blocked ? blockedTitle : AegisLocalization.string("已清理追踪参数"))
                     .font(.callout.weight(.semibold))
                     .accessibilityIdentifier(
                         decision.kind == .blocked
@@ -471,30 +481,30 @@ private struct NavigationPolicyBanner: View {
 
     private var blockedTitle: String {
         if decision.reasonCodes.contains("unsupported_top_level_scheme") {
-            return String(localized: "已阻止不受支持的链接")
+            return AegisLocalization.string("已阻止不受支持的链接")
         }
         if decision.reasonCodes.contains("unsafe_sanitization_method")
             || decision.reasonCodes.contains("invalid_sanitized_target") {
-            return String(localized: "已阻止无法安全清理的请求")
+            return AegisLocalization.string("已阻止无法安全清理的请求")
         }
         if decision.reasonCodes.contains("credentialed_url") {
-            return String(localized: "已阻止含凭据的 URL")
+            return AegisLocalization.string("已阻止含凭据的 URL")
         }
-        return String(localized: "已阻止高风险导航")
+        return AegisLocalization.string("已阻止高风险导航")
     }
 
     private var blockedDetail: String {
         if decision.reasonCodes.contains("unsupported_top_level_scheme") {
-            return String(localized: "仅允许 HTTP(S) 与 Aegis 内部页面 · 请求未加载")
+            return AegisLocalization.string("仅允许 HTTP(S) 与 Aegis 内部页面 · 请求未加载")
         }
         if decision.reasonCodes.contains("unsafe_sanitization_method")
             || decision.reasonCodes.contains("invalid_sanitized_target") {
-            return String(localized: "非 GET/HEAD 请求含追踪参数 · 请求未发送")
+            return AegisLocalization.string("非 GET/HEAD 请求含追踪参数 · 请求未发送")
         }
         if decision.reasonCodes.contains("credentialed_url") {
-            return String(localized: "URL 中包含 user/password · 请求未加载")
+            return AegisLocalization.string("URL 中包含 user/password · 请求未加载")
         }
-        return String(localized: "本地钓鱼评分 \(decision.phishingScore) · 请求未加载")
+        return AegisLocalization.string("本地钓鱼评分 \(decision.phishingScore) · 请求未加载")
     }
 }
 
@@ -503,13 +513,15 @@ struct TabRow: View {
     let isActive: Bool
     let action: () -> Void
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Button(action: action) {
             HStack {
                 Image(systemName: tab.profile.isPrivate ? "eye.slash" : "globe")
                 VStack(alignment: .leading) {
                     Text(tab.title).lineLimit(2)
-                    Text(tab.url?.host ?? String(localized: "起始页")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    Text(tab.url?.host ?? AegisLocalization.string("起始页")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     if tab.isSuspended { Text("已休眠，切换时加载").font(.caption).foregroundStyle(.secondary) }
                 }
                 Spacer()

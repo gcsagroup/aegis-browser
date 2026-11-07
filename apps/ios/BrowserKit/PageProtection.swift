@@ -9,13 +9,13 @@ public struct PageProtectionIncident: Equatable, Sendable {
     public let fromPage: Bool
     public var explanations: [String] {
         let mappings: [(String, String)] = [
-            ("known_phishing_host", String(localized: "命中本地已知钓鱼主机规则。")),
-            ("cross_site_credential_submit", String(localized: "密码表单将提交到不同网站。")),
-            ("brand_spoof_host", String(localized: "网址包含与注册域不符的品牌名称。")),
-            ("brand_lookalike_host", String(localized: "网址疑似使用品牌近似拼写。")),
-            ("password_on_risky_origin", String(localized: "登录表单所在来源存在额外风险。")),
-            ("insecure_http", String(localized: "此网址使用未加密的 HTTP。")),
-            ("ip_hostname", String(localized: "此网址以 IP 地址代替域名。"))
+            ("known_phishing_host", AegisLocalization.string("命中本地已知钓鱼主机规则。")),
+            ("cross_site_credential_submit", AegisLocalization.string("密码表单将提交到不同网站。")),
+            ("brand_spoof_host", AegisLocalization.string("网址包含与注册域不符的品牌名称。")),
+            ("brand_lookalike_host", AegisLocalization.string("网址疑似使用品牌近似拼写。")),
+            ("password_on_risky_origin", AegisLocalization.string("登录表单所在来源存在额外风险。")),
+            ("insecure_http", AegisLocalization.string("此网址使用未加密的 HTTP。")),
+            ("ip_hostname", AegisLocalization.string("此网址以 IP 地址代替域名。"))
         ]
         return Array(mappings.filter { reasons.contains($0.0) }.prefix(4).map(\.1))
     }

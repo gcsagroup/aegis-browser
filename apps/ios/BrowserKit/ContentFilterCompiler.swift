@@ -129,9 +129,9 @@ public enum ContentFilterError: LocalizedError {
     case tooLarge, empty, invalidResponse
     public var errorDescription: String? {
         switch self {
-        case .tooLarge: String(localized: "过滤列表超过处理上限，已保留原有规则。")
-        case .empty: String(localized: "过滤列表没有可用规则，已保留原有规则。")
-        case .invalidResponse: String(localized: "规则更新失败，已保留原有规则。请稍后重试。")
+        case .tooLarge: AegisLocalization.string("过滤列表超过处理上限，已保留原有规则。")
+        case .empty: AegisLocalization.string("过滤列表没有可用规则，已保留原有规则。")
+        case .invalidResponse: AegisLocalization.string("规则更新失败，已保留原有规则。请稍后重试。")
         }
     }
 }

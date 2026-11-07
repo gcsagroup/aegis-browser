@@ -8,7 +8,9 @@ struct BookmarkLinkCheckerView: View {
     @State private var operation: Task<Void, Never>?
     @Environment(\.scenePhase) private var scenePhase
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         List {
             Section {
                 Text("检查会访问前 50 条收藏的网址，不发送 Cookie 或模型请求。访问受限和暂时失败不会被当作失效，也不会删除任何收藏。")
@@ -26,7 +28,7 @@ struct BookmarkLinkCheckerView: View {
                 }
             }
         }
-        .navigationTitle("检查收藏链接")
+        .localizedNavigationTitle("检查收藏链接")
         .onDisappear { operation?.cancel() }
         .onChange(of: scenePhase) { _, phase in if phase == .background { operation?.cancel(); busy = false } }
     }

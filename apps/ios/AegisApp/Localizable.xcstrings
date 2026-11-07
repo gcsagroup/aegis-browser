@@ -1514,91 +1514,91 @@
         }
       }
     },
-    "GCSA Aegis": {
+    "Aegis Browser": {
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "id": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "it": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "ms": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "pt": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "th": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         },
         "vi": {
           "stringUnit": {
             "state": "translated",
-            "value": "GCSA Aegis"
+            "value": "Aegis Browser"
           }
         }
       }
@@ -96384,6 +96384,184 @@
           "stringUnit": {
             "state": "translated",
             "value": "已獲准傳送的當機報告無法撤回。"
+          }
+        }
+      }
+    },
+    "语言": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Language"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语言"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "語言"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idioma"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Langue"
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bahasa"
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lingua"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "言語"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "언어"
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bahasa"
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Idioma"
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ภาษา"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ngôn ngữ"
+          }
+        }
+      }
+    },
+    "地区版本自动匹配系统语言偏好，地区格式保持系统设置。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regional variants follow system language preferences. Regional formats keep system settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地區版本自動配合系統語言偏好，地區格式維持系統設定。"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Regionale Varianten folgen den Sprachpräferenzen des Systems. Regionale Formate behalten die Systemeinstellungen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las variantes regionales siguen las preferencias de idioma del sistema. Los formatos regionales conservan los ajustes del sistema."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les variantes régionales suivent les préférences linguistiques du système. Les formats régionaux conservent les réglages du système."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Varian regional mengikuti preferensi bahasa sistem. Format regional tetap mengikuti pengaturan sistem."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le varianti regionali seguono le preferenze linguistiche del sistema. I formati regionali mantengono le impostazioni di sistema."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "地域別の言語はシステムの言語設定に従います。地域の書式はシステム設定を維持します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지역별 언어는 시스템 언어 환경설정에 따릅니다. 지역 형식은 시스템 설정을 유지합니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Varian serantau mengikut keutamaan bahasa sistem. Format serantau mengekalkan tetapan sistem."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As variantes regionais seguem as preferências de idioma do sistema. Os formatos regionais mantêm as definições do sistema."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "รูปแบบภาษาตามภูมิภาคจะเป็นไปตามภาษาที่ต้องการของระบบ โดยรูปแบบภูมิภาคยังคงใช้การตั้งค่าของระบบ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Biến thể theo khu vực tuân theo tùy chọn ngôn ngữ của hệ thống. Định dạng khu vực giữ nguyên cài đặt hệ thống."
           }
         }
       }

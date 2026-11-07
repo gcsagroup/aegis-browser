@@ -10,10 +10,12 @@ struct WebsiteEnhancementsView: View {
   private var content: some View {
     WebsiteEnhancementManager(store: browser.enhancements, tab: browser.activeTab,
                               isPrivate: browser.profile.isPrivate)
-      .navigationTitle("网站增强与脚本")
+      .localizedNavigationTitle("网站增强与脚本")
       .navigationBarTitleDisplayMode(.inline)
   }
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     if embedded { content }
     else {
       NavigationStack { content.toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } } }
@@ -33,7 +35,7 @@ private struct WebsiteEnhancementManager: View {
   let isPrivate: Bool
   @State private var rule = WebsiteEnhancementRule(origin: "")
   @State private var showsRule = false
-  @State private var message = ""
+  @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var editor: ScriptEditorRequest?
   @State private var importing = false
   @State private var reloadConfirmation = false
@@ -41,10 +43,12 @@ private struct WebsiteEnhancementManager: View {
   @State private var recoveryConfirmation = false
   @State private var enabling: UserScriptRecord?
   @State private var confirmsEnable = false
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     Form {
       if let error = store.error { Text(error).foregroundStyle(.red) }
-      if !message.isEmpty { Text(message).accessibilityIdentifier("enhance-result") }
+      if !message.text.isEmpty { Text(message.text).accessibilityIdentifier("enhance-result") }
       if isPrivate { Text("本次私密会话的规则和脚本只留在内存，关闭全部私密标签后清除。普通脚本不会自动在此运行。") }
       if !rule.origin.isEmpty && showsRule {
         Section("当前网站") {
@@ -57,7 +61,7 @@ private struct WebsiteEnhancementManager: View {
           Button(isPrivate ? "保存到本次私密会话" : "保存并记住本站") {
             perform {
               try store.saveRule(rule)
-              message = String(localized: "设置已保存，重新载入后应用。")
+              message = .resource("设置已保存，重新载入后应用。")
             }
           }.accessibilityIdentifier("enhance-save-site")
           Button("重新载入以应用") { reloadConfirmation = true }.accessibilityIdentifier("enhance-reload")
@@ -157,7 +161,7 @@ private struct WebsiteEnhancementManager: View {
         perform {
           try store.disableAll()
           tab?.recoverAfterDisablingScripts()
-          message = String(localized: "全部脚本已停用，当前页面已重新打开。")
+          message = .resource("全部脚本已停用，当前页面已重新打开。")
         }
       }
       Button("取消", role: .cancel) {}
@@ -168,7 +172,7 @@ private struct WebsiteEnhancementManager: View {
       Button("开启") {
         perform {
           try tab?.setInspectionEnabled(true)
-          message = String(localized: "已允许检查。请在 Mac Safari 的开发菜单选择此页面；页面导航后自动关闭。")
+          message = .resource("已允许检查。请在 Mac Safari 的开发菜单选择此页面；页面导航后自动关闭。")
         }
       }
       Button("取消", role: .cancel) {}
@@ -180,7 +184,7 @@ private struct WebsiteEnhancementManager: View {
         if let script = enabling {
           perform {
             try store.setEnabled(script.id, revision: script.revision, enabled: true)
-            message = String(localized: "脚本已启用，下一次页面加载自动运行。")
+            message = .resource("脚本已启用，下一次页面加载自动运行。")
           }
         }
       }
@@ -195,14 +199,16 @@ private struct WebsiteEnhancementManager: View {
     return "\(matches)\n权限：\(grants)\n脚本可以修改已授权网页；隔离环境仍可访问页面内容。"
   }
   private func perform(_ action: () throws -> Void) {
-    do { try action() } catch { message = error.localizedDescription }
+    do { try action() } catch { message = .error(error) }
   }
 }
 
 private struct UserScriptRuntimeView: View {
   @ObservedObject var runtime: UserScriptController
-  @State private var error = ""
+  @State private var error: AegisLocalizedMessage = .verbatim("")
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     Section("当前页脚本状态") {
       if let message = runtime.installationError { Text(message).foregroundStyle(.red) }
       ForEach(runtime.statuses) { item in
@@ -214,11 +220,11 @@ private struct UserScriptRuntimeView: View {
       ForEach(runtime.statuses) { item in
         ForEach(runtime.menus.filter { $0.scriptID == item.id }) { menu in
           Button(item.name + " · " + menu.label) {
-            Task { do { try await runtime.runMenu(menu) } catch { self.error = error.localizedDescription } }
+            Task { do { try await runtime.runMenu(menu) } catch { self.error = .error(error) } }
           }
         }
       }
-      if !error.isEmpty { Text(error).foregroundStyle(.red) }
+      if !error.text.isEmpty { Text(error.text).foregroundStyle(.red) }
     }
   }
 }
@@ -234,7 +240,7 @@ struct UserScriptEditor: View {
   @State private var allFrames: Bool
   @State private var goal = ""
   @State private var context = ""
-  @State private var message = ""
+  @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var busy = false
   @State private var confirmsModel = false
   @State private var confirmsTrial = false
@@ -264,7 +270,9 @@ struct UserScriptEditor: View {
     _world = State(initialValue: record?.world ?? "isolated")
     _allFrames = State(initialValue: record?.allFrames ?? false)
   }
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     NavigationStack {
       Form {
         Section("AI 编写与修复") {
@@ -314,16 +322,16 @@ struct UserScriptEditor: View {
                 source = value.source
                 world = value.world
                 allFrames = value.allFrames
-                message = String(localized: "已回退为草稿，请检查后重新启用。")
-              } catch { message = error.localizedDescription }
+                message = .resource("已回退为草稿，请检查后重新启用。")
+              } catch { message = .error(error) }
             }
           }
         }.disabled(busy)
-        if !message.isEmpty {
-          Text(message).textSelection(.enabled).accessibilityIdentifier("user-script-message")
+        if !message.text.isEmpty {
+          Text(message.text).textSelection(.enabled).accessibilityIdentifier("user-script-message")
         }
       }
-      .navigationTitle("编辑用户脚本").navigationBarTitleDisplayMode(.inline)
+      .localizedNavigationTitle("编辑用户脚本").navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("完成") {
@@ -345,9 +353,9 @@ struct UserScriptEditor: View {
             do {
               if let record {
                 try await tab?.userScripts.trial(record)
-                message = String(localized: "已安排试运行，请检查实际效果及运行状态。试运行存储不会持久保存。")
+                message = .resource("已安排试运行，请检查实际效果及运行状态。试运行存储不会持久保存。")
               }
-            } catch { message = error.localizedDescription }
+            } catch { message = .error(error) }
           }
         }
         Button("取消", role: .cancel) {}
@@ -359,8 +367,8 @@ struct UserScriptEditor: View {
         contentType: .plainText, defaultFilename: "aegis-script.user.js"
       ) { result in
         switch result {
-        case .success: message = String(localized: "已导出脚本。")
-        case .failure(let error): message = error.localizedDescription
+        case .success: message = .resource("已导出脚本。")
+        case .failure(let error): message = .error(error)
         }
       }
     }
@@ -371,16 +379,16 @@ struct UserScriptEditor: View {
       record = try store.saveScript(
         id: record?.id, revision: record?.revision, source: source, world: world,
         allFrames: allFrames)
-      message = String(localized: "草稿已保存。修改后的版本需要回到列表确认启用。")
+      message = .resource("草稿已保存。修改后的版本需要回到列表确认启用。")
       return true
     } catch {
-      message = error.localizedDescription
+      message = .error(error)
       return false
     }
   }
   private func readContext() async {
     guard let tab, let url = tab.url, ScriptMatch.origin(url) != nil else {
-      message = String(localized: "请先打开普通网页。")
+      message = .resource("请先打开普通网页。")
       return
     }
     let epoch = tab.navigationEpoch
@@ -395,10 +403,10 @@ struct UserScriptEditor: View {
         throw EnhancementError.invalid("页面已变化，请重新读取。")
       }
       context = result as? String ?? ""
-      message = String(localized: "已读取结构，请在发送前检查。")
+      message = .resource("已读取结构，请在发送前检查。")
     } catch {
       context = ""
-      message = error.localizedDescription
+      message = .error(error)
     }
   }
   private func generate() {
@@ -423,7 +431,7 @@ struct UserScriptEditor: View {
             goal: prompt,
             sources: [
               "网址：" + (url?.absoluteString ?? "未指定"), "待修改脚本：\n" + source, "不可信的页面结构：\n" + context,
-            ], language: "中文", disableLocalQwenThinking: true)
+            ], language: AegisLocalization.current.dialect, disableLocalQwenThinking: true)
         try Task.checkCancellation()
         guard generation == token, (tab?.navigationEpoch ?? 0) == epoch, tab?.url == url else {
           throw EnhancementError.invalid("页面已变化，生成结果没有应用。")
@@ -434,8 +442,8 @@ struct UserScriptEditor: View {
         else { throw EnhancementError.invalid("模型未返回完整脚本，请调整需求后重试。") }
         try EnhancementAssets.checkSyntax(next)
         self.source = next
-        message = (object["summary"] ?? "已生成草稿。") + "\n请检查网址、权限和源码后保存并试运行。"
-      } catch { if generation == token { message = error.localizedDescription } }
+        message = .verbatim((object["summary"] ?? "已生成草稿。") + "\n请检查网址、权限和源码后保存并试运行。")
+      } catch { if generation == token { message = .error(error) } }
       if generation == token {
         busy = false
         operation = nil
@@ -453,24 +461,26 @@ struct UserScriptEditor: View {
 private func scriptStatusText(_ item: ScriptRunStatus) -> String {
   let status: String
   switch item.status {
-  case "completed": status = String(localized: "已执行")
-  case "running": status = String(localized: "执行中")
-  case "failed": status = String(localized: "执行失败")
+  case "completed": status = AegisLocalization.string("已执行")
+  case "running": status = AegisLocalization.string("执行中")
+  case "failed": status = AegisLocalization.string("执行失败")
   default: status = item.status
   }
-  return (item.trial ? String(localized: "试运行") + " · " : "") + status
-    + (item.mainFrame ? "" : String(localized: "（子框架）"))
+  return (item.trial ? AegisLocalization.string("试运行") + " · " : "") + status
+    + (item.mainFrame ? "" : AegisLocalization.string("（子框架）"))
 }
 
 struct CurrentWebsiteView: View {
   @EnvironmentObject private var browser: BrowserSession
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     NavigationStack {
       if let tab = browser.activeTab {
         CurrentWebsitePanel(tab: tab, store: browser.enhancements, isPrivate: browser.profile.isPrivate)
           .id(tab.id)
-          .navigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
+          .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
           .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
       }
     }
@@ -481,13 +491,15 @@ private struct CurrentWebsitePanel: View {
   @ObservedObject var tab: BrowserTab
   @ObservedObject var store: WebsiteEnhancementStore
   let isPrivate: Bool
-  @State private var message = ""
+  @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var markdownDocument: MarkdownDocument?
   @State private var readingPage = false
   @State private var paused = false
   @State private var reload = false
   @State private var editor: ScriptEditorRequest?
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     Form {
       if let url = tab.url, ScriptMatch.origin(url) != nil {
         Section {
@@ -502,7 +514,7 @@ private struct CurrentWebsitePanel: View {
               Button(paused ? "恢复本站过滤" : "暂停本站过滤") {
                 TrackingProtection.setException(!paused, for: url)
                 paused = TrackingProtection.isExcepted(url)
-                message = String(localized: "保护设置已保存，重新载入后应用。")
+                message = .resource("保护设置已保存，重新载入后应用。")
               }
             }
             Text("过滤设置与网站增强分别管理。风险页面保护不会因此关闭。")
@@ -519,7 +531,7 @@ private struct CurrentWebsitePanel: View {
             readingPage = true
             Task {
               do { markdownDocument = try await MarkdownDocument.capture(tab) }
-              catch { message = error.localizedDescription }
+              catch { message = .error(error) }
               readingPage = false
             }
           }.disabled(readingPage).accessibilityIdentifier("site-read-markdown")
@@ -539,7 +551,7 @@ private struct CurrentWebsitePanel: View {
     }
     .onAppear { if let url = tab.url { paused = TrackingProtection.isExcepted(url) } }
     .onChange(of: tab.navigationEpoch) { _, _ in
-      message = ""
+      message = .verbatim("")
       if let url = tab.url { paused = TrackingProtection.isExcepted(url) }
     }
     .sheet(item: $markdownDocument) { document in MarkdownReaderView(initial: document) }
@@ -555,7 +567,7 @@ private struct WebsiteQuickRuleSection: View {
   @ObservedObject var store: WebsiteEnhancementStore
   @ObservedObject var tab: BrowserTab
   let url: URL
-  @Binding var message: String
+  @Binding var message: AegisLocalizedMessage
   private func binding(_ key: WritableKeyPath<WebsiteEnhancementRule, Bool>) -> Binding<Bool> {
     Binding(get: { (store.rule(for: url) ?? WebsiteEnhancementRule(origin: ""))[keyPath: key] }, set: { value in
       guard tab.url == url, let origin = ScriptMatch.origin(url) else { return }
@@ -563,15 +575,17 @@ private struct WebsiteQuickRuleSection: View {
       if rule.origin != origin { rule.subdomains = false }
       rule.origin = origin
       rule[keyPath: key] = value
-      do { try store.saveRule(rule); message = String(localized: "已保存，重新载入后生效。") }
-      catch { message = error.localizedDescription }
+      do { try store.saveRule(rule); message = .resource("已保存，重新载入后生效。") }
+      catch { message = .error(error) }
     })
   }
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     Section("网站增强") {
       Toggle("恢复长按与菜单", isOn: binding(\.menu)).accessibilityIdentifier("site-menu")
       Toggle("允许选取和复制", isOn: binding(\.copy)).accessibilityIdentifier("site-copy")
-      if !message.isEmpty { Text(message).font(.footnote).accessibilityIdentifier("site-rule-result") }
+      if !message.text.isEmpty { Text(message.text).font(.footnote).accessibilityIdentifier("site-rule-result") }
       DisclosureGroup("更多选项与适用范围") {
         Toggle("网页调试兼容", isOn: binding(\.debug))
         Text("处理部分网页的调试干扰，保留普通断点和导航。").font(.footnote).foregroundStyle(.secondary)
@@ -588,7 +602,7 @@ private struct CurrentPageScriptsSection: View {
   @ObservedObject var store: WebsiteEnhancementStore
   @ObservedObject var runtime: UserScriptController
   @ObservedObject var tab: BrowserTab
-  @State private var error = ""
+  @State private var error: AegisLocalizedMessage = .verbatim("")
   @State private var editor: ScriptEditorRequest?
   @State private var showAll = false
   private var scripts: [UserScriptRecord] {
@@ -598,12 +612,14 @@ private struct CurrentPageScriptsSection: View {
   }
   private func status(_ script: UserScriptRecord) -> String {
     if let value = runtime.statuses.first(where: { $0.id == script.id }) { return scriptStatusText(value) }
-    if !script.enabled { return String(localized: "已停用 / 待授权") }
-    if script.paused(at: tab.url) { return String(localized: "本站已停用") }
-    if script.world == "page" { return String(localized: "已启用 · 无执行回执") }
-    return String(localized: "等待重新加载")
+    if !script.enabled { return AegisLocalization.string("已停用 / 待授权") }
+    if script.paused(at: tab.url) { return AegisLocalization.string("本站已停用") }
+    if script.world == "page" { return AegisLocalization.string("已启用 · 无执行回执") }
+    return AegisLocalization.string("等待重新加载")
   }
+  @Environment(\.locale) private var localizationLocale
   var body: some View {
+      let _ = localizationLocale
     Section("本页脚本") {
       if scripts.isEmpty { Text("此页面没有适用脚本。").foregroundStyle(.secondary) }
       ForEach(Array(scripts.prefix(showAll ? 64 : 4))) { script in
@@ -613,8 +629,8 @@ private struct CurrentPageScriptsSection: View {
               guard let url = tab.url else { return }
               do {
                 try store.setSiteEnabled(script.id, revision: script.revision, url: url, enabled: value)
-                error = String(localized: "设置已保存，重新载入后应用；全局启用状态不变。")
-              } catch { self.error = error.localizedDescription }
+                error = .resource("设置已保存，重新载入后应用；全局启用状态不变。")
+              } catch { self.error = .error(error) }
             }))
           }
           if let status = runtime.statuses.first(where: { $0.id == script.id }), !status.error.isEmpty {
@@ -622,7 +638,7 @@ private struct CurrentPageScriptsSection: View {
           }
           ForEach(runtime.menus.filter { $0.scriptID == script.id }) { menu in
             Button(menu.label) {
-              Task { do { try await runtime.runMenu(menu) } catch { self.error = error.localizedDescription } }
+              Task { do { try await runtime.runMenu(menu) } catch { self.error = .error(error) } }
             }
           }
           Button("查看源码与权限") { editor = ScriptEditorRequest(record: script) }
@@ -636,9 +652,9 @@ private struct CurrentPageScriptsSection: View {
       }
       if scripts.count > 4 { Button(showAll ? "收起脚本" : "查看全部脚本") { showAll.toggle() } }
       if let issue = runtime.installationError { Text(issue).foregroundStyle(.red) }
-      if !error.isEmpty { Text(error).font(.footnote).accessibilityIdentifier("site-script-result") }
+      if !error.text.isEmpty { Text(error.text).font(.footnote).accessibilityIdentifier("site-script-result") }
     }
-    .onChange(of: tab.navigationEpoch) { _, _ in error = "" }
+    .onChange(of: tab.navigationEpoch) { _, _ in error = .verbatim("") }
     .sheet(item: $editor) { item in UserScriptEditor(store: store, tab: tab, record: item.record, imported: item.imported) }
   }
 }

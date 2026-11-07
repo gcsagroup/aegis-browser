@@ -24,7 +24,9 @@ struct BrowserSettingsView: View {
     @EnvironmentObject private var browser: BrowserSession
     @Environment(\.dismiss) private var dismiss
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             Form {
                 Section("浏览") {
@@ -37,8 +39,6 @@ struct BrowserSettingsView: View {
                     Button("打开系统 App 设置") {
                         if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                     }
-                    Text("默认浏览器、App 语言及系统相机、麦克风权限由 iOS 管理；可用选项取决于安装资格和系统版本。")
-                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Aegis 功能") {
                     NavigationLink { AegisFeatureSettingsView() } label: {
@@ -57,11 +57,14 @@ struct BrowserSettingsView: View {
                         Text("浅色").tag("light")
                         Text("深色").tag("dark")
                     }
-                    Text("界面语言跟随系统的 App 语言设置。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    NavigationLink("语言") { LanguageSettingsView() }
+                        .accessibilityIdentifier("language-settings-link")
                 }
                 Section("关于") {
-                    LabeledContent("应用", value: "GCSA Aegis")
+                    LabeledContent(
+                        "应用",
+                        value: Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Aegis Browser"
+                    )
                     LabeledContent("版本", value: version)
                     LabeledContent("网页引擎") { Text("系统 WebKit") }
                     NavigationLink("开源许可与鸣谢") { ThirdPartyNoticesView() }
@@ -81,8 +84,8 @@ struct BrowserSettingsView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("设置")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .localizedNavigationTitle("设置")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() }.accessibilityIdentifier("settings-done") } }
         }
     }
 
@@ -98,7 +101,9 @@ private struct AegisFeatureSettingsView: View {
     @EnvironmentObject private var browser: BrowserSession
     @State private var showsDownloads = false
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Form {
             Section {
                 NavigationLink { AegisProtectionSettingsView() } label: {
@@ -114,12 +119,12 @@ private struct AegisFeatureSettingsView: View {
                                 .accessibilityIdentifier("reading-preferences-settings")
                             NavigationLink("Markdown 自动预览网站") { WebsiteSettingsView(preferences: browser.preferences) }
                         }
-                    }.navigationTitle("阅读与 Markdown").navigationBarTitleDisplayMode(.inline)
+                    }.localizedNavigationTitle("阅读与 Markdown").navigationBarTitleDisplayMode(.inline)
                 } label: { row("阅读与 Markdown", "阅读外观、图片权限与自动预览", "doc.text") }
                     .accessibilityIdentifier("aegis-reading-settings")
                 NavigationLink {
                     Form { Section { Text("鼠标手势适用于桌面版。iOS 使用系统触控操作，暂无独立手势配置。") } }
-                        .navigationTitle("鼠标手势").navigationBarTitleDisplayMode(.inline)
+                        .localizedNavigationTitle("鼠标手势").navigationBarTitleDisplayMode(.inline)
                 } label: { row("鼠标手势", "此功能适用于桌面版", "hand.draw") }
                     .accessibilityIdentifier("aegis-gestures-settings")
                 NavigationLink { ModelSettingsView() } label: {
@@ -134,7 +139,7 @@ private struct AegisFeatureSettingsView: View {
                 }.accessibilityIdentifier("aegis-downloads-settings")
                 NavigationLink {
                     Form { Section { Text("iOS 版暂未提供本机工具连接服务。网页操作通过应用内的 AI 助手发起，并在需要时确认。") } }
-                        .navigationTitle("本机工具连接").navigationBarTitleDisplayMode(.inline)
+                        .localizedNavigationTitle("本机工具连接").navigationBarTitleDisplayMode(.inline)
                 } label: { row("本机工具连接", "iOS 版暂未提供", "network") }
                     .accessibilityIdentifier("aegis-tools-settings")
                 NavigationLink {
@@ -144,12 +149,12 @@ private struct AegisFeatureSettingsView: View {
                             Text("严格指纹限制可在单个网站的设置中开启，可能影响网站正常显示。iOS 版暂未提供桌面的本机实验模型。")
                                 .font(.footnote).foregroundStyle(.secondary)
                         }
-                    }.navigationTitle("实验功能").navigationBarTitleDisplayMode(.inline)
+                    }.localizedNavigationTitle("实验功能").navigationBarTitleDisplayMode(.inline)
                 } label: { row("实验功能", "网站实验选项与平台说明", "flask") }
                     .accessibilityIdentifier("aegis-experiments-settings")
             }
         }
-        .navigationTitle("Aegis 设置")
+        .localizedNavigationTitle("Aegis 设置")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showsDownloads) { DownloadsView() }
     }
@@ -172,9 +177,11 @@ private struct AegisProtectionSettingsView: View {
     @State private var clearing = false
     @State private var clearingWebsites = false
     @State private var deletingWebsites = false
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Form {
             Section("隐私与保护") {
                 NavigationLink("保护选项") { ProtectionOptionsView(preferences: browser.preferences) }
@@ -185,7 +192,7 @@ private struct AegisProtectionSettingsView: View {
                     Button(TrackingProtection.isExcepted(url) ? "恢复当前网站的跟踪拦截" : "为当前网站暂停跟踪拦截") {
                         TrackingProtection.setException(!TrackingProtection.isExcepted(url), for: url)
                         browser.activeTab?.reload()
-                        message = String(localized: "已更新当前网站的设置并重新加载。")
+                        message = .resource("已更新当前网站的设置并重新加载。")
                     }
                     Text(url.host ?? "").font(.caption).foregroundStyle(.secondary)
                 }
@@ -196,9 +203,9 @@ private struct AegisProtectionSettingsView: View {
                     .disabled(browser.profile.isPrivate || deletingWebsites)
             }
             FirebaseControlsView()
-            if let message { Text(message).foregroundStyle(.secondary) }
+            if let message { Text(message.text).foregroundStyle(.secondary) }
         }
-        .navigationTitle("隐私与防护")
+        .localizedNavigationTitle("隐私与防护")
         .navigationBarTitleDisplayMode(.inline)
         .alert("清除网站数据？", isPresented: $clearingWebsites) {
             Button("清除并关闭普通标签", role: .destructive) {
@@ -206,7 +213,7 @@ private struct AegisProtectionSettingsView: View {
                 Task { @MainActor in
                     await browser.clearWebsiteData()
                     deletingWebsites = false
-                    message = String(localized: "网站数据已清除。")
+                    message = .resource("网站数据已清除。")
                 }
             }
             Button("取消", role: .cancel) { }
@@ -215,7 +222,7 @@ private struct AegisProtectionSettingsView: View {
             Button("清除历史", role: .destructive) {
                 guard !browser.profile.isPrivate else { return }
                 browser.dataStore.clearHistory()
-                message = browser.dataStore.history.isEmpty ? "浏览历史已清除。" : "浏览历史未能清除，请重启后重试。"
+                message = .verbatim(browser.dataStore.history.isEmpty ? "浏览历史已清除。" : "浏览历史未能清除，请重启后重试。")
             }
         }
     }
@@ -226,12 +233,14 @@ struct ModelSettingsView: View {
     @State private var configuration = ModelConfiguration()
     @State private var key = ""
     @State private var models: [String] = []
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
     @State private var busy = false
     @State private var operation: Task<Void, Never>?
     @FocusState private var editing: Bool
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         Form {
             Section("连接设置") {
                 SettingsPicker("接口类型", selection: $configuration.provider, value: configuration.provider.title) {
@@ -272,13 +281,13 @@ struct ModelSettingsView: View {
                         guard !configuration.model.isEmpty else { throw ModelClientError.missingModel }
                         try ModelCredentialStore.save(key, for: configuration)
                         settings.model = configuration
-                        message = String(localized: "模型设置已保存。")
-                    } catch { message = error.localizedDescription }
+                        message = .resource("模型设置已保存。")
+                    } catch { message = .error(error) }
                 }.disabled(busy).accessibilityIdentifier("save-model")
-                if let message { Text(message).font(.callout).textSelection(.enabled).accessibilityIdentifier("model-status") }
+                if let message { Text(message.text).font(.callout).textSelection(.enabled).accessibilityIdentifier("model-status") }
             }
         }
-        .navigationTitle("模型服务")
+        .localizedNavigationTitle("模型服务")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { configuration = settings.model; key = ModelCredentialStore.read(for: configuration) }
         .onChange(of: configuration.endpoint) { _, _ in key = ModelCredentialStore.read(for: configuration); models = []; message = nil }
@@ -298,8 +307,8 @@ struct ModelSettingsView: View {
                 try Task.checkCancellation()
                 models = values
                 if configuration.model.isEmpty { configuration.model = values[0] }
-                message = String(localized: "连接成功，请选择模型并保存。")
-            } catch is CancellationError { } catch { message = error.localizedDescription }
+                message = .resource("连接成功，请选择模型并保存。")
+            } catch is CancellationError { } catch { message = .error(error) }
         }
     }
 }

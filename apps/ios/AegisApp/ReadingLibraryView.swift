@@ -10,7 +10,7 @@ struct ReadingLibraryView: View {
     @State private var query = ""
     @State private var archived = false
     @State private var draft: ReadingRecord?
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
     @State private var busy = false
     @State private var operation: Task<Void, Never>?
     @State private var importing = false
@@ -21,7 +21,9 @@ struct ReadingLibraryView: View {
     @State private var showsPDFPage = false
     @State private var pendingPDFRecord: ReadingRecord?
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             List {
                 Section("添加资料") {
@@ -46,14 +48,14 @@ struct ReadingLibraryView: View {
                         Button { draft = record } label: {
                             VStack(alignment: .leading) {
                                 Text(record.title).font(.headline)
-                                Text(record.sourceURL?.host ?? String(localized: "PDF 第 \(record.pdfPage ?? 1) 页"))
+                                Text(record.sourceURL?.host ?? AegisLocalization.string("PDF 第 \(record.pdfPage ?? 1) 页"))
                                     .font(.caption).foregroundStyle(.secondary)
                                 if !record.note.isEmpty { Text(record.note).lineLimit(2).font(.caption) }
                             }
                         }.accessibilityIdentifier("reading-record-\(record.id.uuidString)")
                     }
                 }
-                if let message { Text(message).foregroundStyle(.red).accessibilityIdentifier("reading-error") }
+                if let message { Text(message.text).foregroundStyle(.red).accessibilityIdentifier("reading-error") }
                 if let error = library.storageError {
                     Text(error).foregroundStyle(.red)
                     Button("重新读取资料库") { library.reload() }
@@ -61,7 +63,7 @@ struct ReadingLibraryView: View {
             }
             .searchable(text: $query, prompt: "搜索标题、正文、批注或译文")
             .sheet(isPresented: $showsMarkdown) { MarkdownReaderView() }
-            .navigationTitle("阅读与批注")
+            .localizedNavigationTitle("阅读与批注")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
         .fullScreenCover(item: $draft) { ReadingEditor(record: $0) }
@@ -72,7 +74,7 @@ struct ReadingLibraryView: View {
                 guard (try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= 20_000_000 else { throw ReadingLibraryError.pdfTooLarge }
                 pdfData = try Data(contentsOf: url); pdfName = url.lastPathComponent; pdfPage = 1; showsPDFPage = true
                 message = nil
-            } catch { message = error.localizedDescription }
+            } catch { message = .error(error) }
         }
         .sheet(isPresented: $showsPDFPage, onDismiss: {
             pdfData = nil
@@ -88,10 +90,10 @@ struct ReadingLibraryView: View {
                             pendingPDFRecord = try ReadingLibrary.pdfRecord(data: pdfData, name: pdfName, page: pdfPage)
                             message = nil
                             showsPDFPage = false
-                        } catch { message = error.localizedDescription }
+                        } catch { message = .error(error) }
                     }.accessibilityIdentifier("reading-extract-pdf")
-                    if let message { Text(message).foregroundStyle(.red) }
-                }.navigationTitle("选择 PDF 页")
+                    if let message { Text(message.text).foregroundStyle(.red) }
+                }.localizedNavigationTitle("选择 PDF 页")
                     .toolbar { Button("取消") { showsPDFPage = false } }
             }
         }
@@ -109,7 +111,7 @@ struct ReadingLibraryView: View {
                 try Task.checkCancellation()
                 guard browser.profile == profile else { throw PageSnapshotError.changed }
                 draft = ReadingLibrary.fromSnapshot(snapshot)
-            } catch is CancellationError { } catch { message = error.localizedDescription }
+            } catch is CancellationError { } catch { message = .error(error) }
         }
     }
 }
@@ -126,7 +128,7 @@ struct ReadingEditor: View {
     @FocusState private var editing: Field?
     @State private var expectedDate: Date?
     @State private var initialized = false
-    @State private var message: String?
+    @State private var message: AegisLocalizedMessage?
     @State private var confirmsSave = false
     @State private var confirmsRemoval = false
     @State private var confirmsExport = false
@@ -143,7 +145,9 @@ struct ReadingEditor: View {
     @State private var operation: Task<Void, Never>?
     @State private var generation = UUID()
 
+    @Environment(\.locale) private var localizationLocale
     var body: some View {
+        let _ = localizationLocale
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -184,10 +188,10 @@ struct ReadingEditor: View {
                     }
                     Text("译文由模型生成，需要核对原文。翻译和批注只有点击保存后才会保留；搜索范围仅包含已保存的资料。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    if let message { Text(message).accessibilityIdentifier("reading-status") }
+                    if let message { Text(message.text).accessibilityIdentifier("reading-status") }
                 }.padding(20)
             }.accessibilityIdentifier("reading-editor-scroll").scrollDismissesKeyboard(.interactively)
-                .navigationTitle("阅读资料")
+                .localizedNavigationTitle("阅读资料")
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) { Button("完成") { cancel(); dismiss() }.accessibilityIdentifier("reading-editor-done") }
                     ToolbarItem(placement: .topBarLeading) {
@@ -208,7 +212,7 @@ struct ReadingEditor: View {
                 do {
                     guard let expectedDate else { return }
                     try library.remove(id: record.id, replacing: expectedDate); dismiss()
-                } catch { message = error.localizedDescription }
+                } catch { message = .error(error) }
             }
             Button("取消", role: .cancel) { }
         } message: { Text("这会删除本机保存的正文、批注和译文，无法撤销。已导出的文件不受影响。") }
@@ -219,7 +223,7 @@ struct ReadingEditor: View {
             Button("继续导出") { exporting = true }; Button("取消", role: .cancel) { }
         } message: { Text("导出的文本会包含正文、来源、批注和译文，保留在你选择的位置。") }
         .fileExporter(isPresented: $exporting, document: TextReportDocument(text: record.report), contentType: .plainText,
-                      defaultFilename: "Aegis-reading.txt") { result in if case .failure(let error) = result { message = error.localizedDescription } }
+                      defaultFilename: "Aegis-reading.txt") { result in if case .failure(let error) = result { message = .error(error) } }
         .sheet(item: $translationPreview) { preview in
             NavigationStack {
                 ScrollView {
@@ -231,7 +235,7 @@ struct ReadingEditor: View {
                         Button("确认发送并翻译") { translationPreview = nil; translate(preview) }
                             .buttonStyle(.borderedProminent).accessibilityIdentifier("reading-confirm-translation")
                     }.padding()
-                }.navigationTitle("确认翻译")
+                }.localizedNavigationTitle("确认翻译")
                     .toolbar { Button("取消") { translationPreview = nil } }
             }
         }
@@ -258,8 +262,8 @@ struct ReadingEditor: View {
         do {
             try library.save(record, replacing: expectedDate)
             expectedDate = library.records.first { $0.id == record.id }?.updatedAt
-            message = String(localized: "阅读资料已保存。")
-        } catch { message = error.localizedDescription }
+            message = .resource("阅读资料已保存。")
+        } catch { message = .error(error) }
     }
     private func prepareTranslation() {
         do {
@@ -269,7 +273,7 @@ struct ReadingEditor: View {
             translationPreview = TranslationPreview(configuration: settings.model,
                 text: try ReadingTranslation.preparedText(record.text), language: language)
             message = nil
-        } catch { message = error.localizedDescription }
+        } catch { message = .error(error) }
     }
     private func translate(_ preview: TranslationPreview) {
         busy = true; message = nil; generation = UUID()
@@ -285,8 +289,8 @@ struct ReadingEditor: View {
                 try Task.checkCancellation()
                 guard generation == token else { return }
                 record.translation = translation; record.translationLanguage = target
-                message = String(localized: "翻译完成，点击保存后保留。")
-            } catch is CancellationError { } catch { if token == generation { message = error.localizedDescription } }
+                message = .resource("翻译完成，点击保存后保留。")
+            } catch is CancellationError { } catch { if token == generation { message = .error(error) } }
         }
     }
     private func cancel() { generation = UUID(); operation?.cancel(); busy = false; translationPreview = nil }
