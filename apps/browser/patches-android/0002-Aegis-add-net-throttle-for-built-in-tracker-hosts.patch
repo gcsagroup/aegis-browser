@@ -25,7 +25,7 @@ via URLLoaderThrottle in both browser and renderer paths.
  create mode 100644 chrome/common/aegis/builtin_tracker_hosts.h
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 9ea9c147cb356cebca137216e3bc9cb0c1ab63ba..0450241a3df7285d73ed270cc60494db51385e39 100644
+index f343b7470691b9edf83ede1321fa385fcf40a3bd..65486b596cf78e13f18852e642ba58bac3292b20 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
 @@ -923,6 +923,7 @@ source_set("core") {
@@ -123,7 +123,7 @@ index fb76c457df3ea6db3ee3447c1ebe149fc9d83ef4..1cb917885cbc483fae2d7c8b3c8b54bc
   private:
    friend struct base::DefaultSingletonTraits<AegisService>;
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 2e0f287290b7656d1b97dffc79bf117da240507a..820cfd300f14df71efb695236180bdfe7cec573d 100644
+index 1defcfa514d5b100c35165f02ce91df492fa351e..625d46b8bd31243d55a0988b0c54652be9cdc901 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -3,6 +3,7 @@
@@ -405,7 +405,7 @@ index 0000000000000000000000000000000000000000..4a2c3cca836d03bf236db0b3ab3a0108
 +
 +#endif  // CHROME_COMMON_AEGIS_BUILTIN_TRACKER_HOSTS_H_
 diff --git a/chrome/renderer/BUILD.gn b/chrome/renderer/BUILD.gn
-index df80dfe84aed61bfffe3e6571efe914650fe3926..b4ee8f232388c4c4b6bff92e33b4f60d6e972d38 100644
+index a28d0ae008cf35d02510ae381863bd835d3bf058..64ea66c0aa2438b817ba4d3d76555d68e9f8ea1e 100644
 --- a/chrome/renderer/BUILD.gn
 +++ b/chrome/renderer/BUILD.gn
 @@ -132,6 +132,7 @@ static_library("renderer") {

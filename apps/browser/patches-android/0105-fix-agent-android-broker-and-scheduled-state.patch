@@ -450,7 +450,7 @@ index 0c2abce187a288f391f7f78033eb19a15f1194e1..bc21a7ad18e7d593b27e477442975b2e
    if (call.tool_name == "monitor.list") {
      return HasList(value, "monitors") && HasString(value, "revision")
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui.cc b/chrome/browser/chrome_browser_interface_binders_webui.cc
-index f58d5edfdc6cb88288038beafcba5f35ef69c0fc..33222c466cbd67e649ac14c863329c40fa4c3ec5 100644
+index 4ef3e944e5238050cbe364125c8ff3a26154de61..82924c61ba3d390f7122f1a5b0e187fd823e5e39 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui.cc
 @@ -490,6 +490,10 @@ void PopulateUntrustedChromeWebUIFrameInterfaceBrokers(
@@ -465,20 +465,20 @@ index f58d5edfdc6cb88288038beafcba5f35ef69c0fc..33222c466cbd67e649ac14c863329c40
    PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsCros(registry);
  #endif  // BUILDFLAG(IS_CHROMEOS)
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts.h b/chrome/browser/chrome_browser_interface_binders_webui_parts.h
-index 6c398bd59393a611fea4cd6f559a5cba599cd2e4..092d2ff57d48e2ccf043390aafd6072109768ef5 100644
+index 2d808084606666a6109b407546f29102174e31de..e57facdabefed9e0a8e13640f8d3d6d237cb2caf 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui_parts.h
 +++ b/chrome/browser/chrome_browser_interface_binders_webui_parts.h
-@@ -31,6 +31,8 @@ void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsFeatures(
- void PopulateChromeWebUIFrameBindersPartsAndroid(
-     mojo::BinderMapWithContext<content::RenderFrameHost*>* map,
+@@ -33,6 +33,8 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
      content::RenderFrameHost* render_frame_host);
+ void PopulateChromeWebUIFrameInterfaceBrokersTrustedPartsAndroid(
+     content::WebUIBrowserInterfaceBrokerRegistry& registry);
 +void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsAndroid(
 +    content::WebUIBrowserInterfaceBrokerRegistry& registry);
  #else
  // These assumes "Desktop" is non-Android.
  void PopulateChromeWebUIFrameBindersPartsDesktop(
 diff --git a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
-index 4de7cd318e1d36b292cc2577446f5be3a24b4531..d69eaa3784573f6d261fb8d312b7a23f76f517aa 100644
+index 7557530c3690f774ba9efeacf82ad5f7e1c7fd15..bebe6891a6437c08b9ddaa68d63a403ebece070d 100644
 --- a/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
 +++ b/chrome/browser/chrome_browser_interface_binders_webui_parts_android.cc
 @@ -4,6 +4,8 @@
@@ -490,16 +490,8 @@ index 4de7cd318e1d36b292cc2577446f5be3a24b4531..d69eaa3784573f6d261fb8d312b7a23f
  #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals.mojom.h"
  #include "chrome/browser/ui/webui/chrome_finds_internals/chrome_finds_internals_ui.h"
  #include "chrome/browser/ui/webui/feed_internals/feed_internals.mojom.h"
-@@ -13,6 +15,7 @@
- #include "components/commerce/core/commerce_feature_list.h"
- #include "components/notebooks/internals/webui/notebooks_internals.mojom.h"
- #include "components/notebooks/internals/webui/notebooks_internals_ui.h"
-+#include "content/public/browser/web_ui_browser_interface_broker_registry.h"
- #include "content/public/browser/web_ui_controller_interface_binder.h"
- #include "mojo/public/cpp/bindings/binder_map.h"
- #include "ui/webui/buildflags.h"
-@@ -65,4 +68,10 @@ void PopulateChromeWebUIFrameBindersPartsAndroid(
-       notebooks::NotebooksInternalsUI>(map);
+@@ -84,4 +86,10 @@ void PopulateChromeWebUIFrameInterfaceBrokersTrustedPartsAndroid(
+ #endif  // BUILDFLAG(ENABLE_WEBUI_TABSTRIP_NTB)
  }
  
 +void PopulateChromeWebUIFrameInterfaceBrokersUntrustedPartsAndroid(

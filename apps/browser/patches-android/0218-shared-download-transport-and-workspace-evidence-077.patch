@@ -137,7 +137,7 @@ index 8868dbcbd5f590d4c92d91bb036603dd45243c9e..7b324111c4e83fe41689e9e813556a8d
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/third_party/lit/v3_0/BUILD.gn b/third_party/lit/v3_0/BUILD.gn
-index a75e73285cf865a2ae9f2c4e937f63e8b188f10d..a2efbb5e4109791f94b95247268e8902f7113162 100644
+index 7b494253a6bf90875c846127153ef51d08003aea..b030fe5d843806182429d47edde042e0e0959901 100644
 --- a/third_party/lit/v3_0/BUILD.gn
 +++ b/third_party/lit/v3_0/BUILD.gn
 @@ -167,6 +167,7 @@ ts_library("build_ts") {
@@ -149,7 +149,7 @@ index a75e73285cf865a2ae9f2c4e937f63e8b188f10d..a2efbb5e4109791f94b95247268e8902
      "//ui/webui/resources/cr_components/cr_lottie:build_ts",
      "//ui/webui/resources/cr_components/cr_shortcut_input:build_ts",
 diff --git a/tools/typescript/path_mappings.py b/tools/typescript/path_mappings.py
-index 32c9f41ee3adfc45eee27fd1016012a62462739c..a6f5d161699768eec84e023bdd50b4371d602c61 100644
+index 5b170a6418246907dd9831d3ebe909a57e64f4ea..11a4c133fb09427a4c0058e2e98663ca26de935c 100644
 --- a/tools/typescript/path_mappings.py
 +++ b/tools/typescript/path_mappings.py
 @@ -20,6 +20,7 @@ def _add_ui_webui_resources_mappings(path_mappings, root_gen_dir):
@@ -161,7 +161,7 @@ index 32c9f41ee3adfc45eee27fd1016012a62462739c..a6f5d161699768eec84e023bdd50b437
      "cr_components/color_change_listener",
      "cr_components/commerce",
 diff --git a/ui/webui/resources/BUILD.gn b/ui/webui/resources/BUILD.gn
-index c1d4f55b2d63b5663f8a6cc177a113824bb8c606..4221a852ebf16786ce627d8900a7f0e69ee9441b 100644
+index c81042c093ba03af3feb2bbb86f959e3c0a2e398..86d93212738e105de59d23619f751ec770da3927 100644
 --- a/ui/webui/resources/BUILD.gn
 +++ b/ui/webui/resources/BUILD.gn
 @@ -43,7 +43,6 @@ generate_grd("build_grd") {

@@ -53,6 +53,7 @@
 | 使用者腳本與 AI 草稿 | 部分 | 原始碼接入 | 未移植 | 部分 |
 | 內建 Markdown 閱讀 | 部分 | 原始碼接入 | 未移植 | 部分 |
 | 統一設定與舊入口遷移 | 原始碼接入 | 原始碼接入 | 原始碼接入 | 原始碼接入 |
+| P01 控制協議和雙跳 TLS 傳輸 | 原始碼接入 | 未移植 | 未移植 | 未移植 |
 
 ## iOS 範圍與依據
 
@@ -413,6 +414,14 @@ iOS 模擬器證據：[docs/audit/site-enhancement-markdown-2026-10-13.zh-CN.md]
 `unified-settings` — 保留已合入main的SwiftUI分類與表單版面；使用WebKit，本輪未重跑iOS驗收。
 
 原始碼：[apps/ios/AegisApp/BrowserSettings.swift](../apps/ios/AegisApp/BrowserSettings.swift) · [apps/ios/AegisApp/SettingsFormControls.swift](../apps/ios/AegisApp/SettingsFormControls.swift)
+
+本項未完成本輪執行驗收。
+
+### P01 控制協議和雙跳 TLS 傳輸
+
+`p01-two-hop-tls` — 此平台的建置目標尚未接入 P01 雙跳傳輸。
+
+原始碼：[apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn](../apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn)
 
 本項未完成本輪執行驗收。
 

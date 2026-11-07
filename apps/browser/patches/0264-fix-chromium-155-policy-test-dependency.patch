@@ -13,7 +13,7 @@ Content-Transfer-Encoding: 8bit
  1 file changed, 1 deletion(-)
 
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index 304f59086514736980e3bc04ab9d6595429cbcb7..6718eed0172216c5f8306a03c138b45ac7caa085 100644
+index a5728a23c28deb0e6e0dafaa746af7e0723e1324..bc96564c17ab58a883386eae648046c4bfb0c708 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
 @@ -858,7 +858,6 @@ source_set("unit_tests") {

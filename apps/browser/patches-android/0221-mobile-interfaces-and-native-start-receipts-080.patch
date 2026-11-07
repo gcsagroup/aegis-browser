@@ -27,7 +27,7 @@ Content-Transfer-Encoding: 8bit
  14 files changed, 201 insertions(+), 20 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
-index 4187c1c67dc533eeca434330ab5b0e964a67a469..c6ce994e7ef891bc8d2ff5121cc51c5f70b7c6f6 100644
+index ba29c5deba5c701d66fd8313e234777c4b82f6b1..337042be5bbd82d7f9695b93d52b766f24d59fdc 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/ChromeTabbedActivity.java
 @@ -4368,7 +4368,7 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt

@@ -95,8 +95,9 @@ IN_PROC_BROWSER_TEST_F(GoogleServicePromptBrowserTest,
   const int tab_count = browser()->tab_strip_model()->count();
   const GURL original_url = contents()->GetLastCommittedURL();
   EXPECT_EQ(0u, GooglePromptCount());
-  SigninViewController::From(browser())->ShowSignin(
-      signin_metrics::AccessPoint::kSettings);
+  SigninViewController::From(browser())->ShowDiceEnableSyncTab(
+      signin_metrics::AccessPoint::kSettings,
+      signin_metrics::PromoAction::PROMO_ACTION_NO_SIGNIN_PROMO, std::string());
   EXPECT_EQ(1u, GooglePromptCount());
   EXPECT_EQ(tab_count, browser()->tab_strip_model()->count());
   EXPECT_EQ(original_url, contents()->GetLastCommittedURL());

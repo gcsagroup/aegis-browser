@@ -16,19 +16,19 @@ Content-Transfer-Encoding: 8bit
  4 files changed, 60 insertions(+), 5 deletions(-)
 
 diff --git a/chrome/browser/actor/actor_keyed_service.cc b/chrome/browser/actor/actor_keyed_service.cc
-index c6f133b48e45501ffdb8a9509d02c1f1e3e6818e..56d8c0cb2820d3a5687283c63d83fa78cdd38f0d 100644
+index fd3052491a59d7aea6a45515cb23dac087cb5af3..cc46ae1beb87661c448276a58c4b23b63ca859a4 100644
 --- a/chrome/browser/actor/actor_keyed_service.cc
 +++ b/chrome/browser/actor/actor_keyed_service.cc
-@@ -486,7 +486,7 @@ TaskId ActorKeyedService::CreateTask(
-     const EnterprisePolicyChecker* policy_checker) {
-   return CreateTaskWithOptions(source_info, policy_checker, /*options=*/nullptr,
-                                /*delegate=*/nullptr,
--                               actor_ui_state_manager_.get());
-+                               GetTaskUiStateManager());
+@@ -507,7 +507,7 @@ TaskId ActorKeyedService::CreateTask(
+     AllowedSchemes allowed_schemes) {
+   return CreateTaskWithOptions(
+       source_info, policy_checker, /*options=*/nullptr,
+-      /*delegate=*/nullptr, actor_ui_state_manager_.get(),
++      /*delegate=*/nullptr, GetTaskUiStateManager(),
+       /*initial_invocation_source=*/std::nullopt, allowed_schemes);
  }
  
- TaskId ActorKeyedService::CreateTaskWithOptions(
-@@ -510,7 +510,7 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
+@@ -533,7 +533,7 @@ TaskId ActorKeyedService::CreateTaskWithOwnedPolicyChecker(
      webui::mojom::TaskOptionsPtr options,
      base::WeakPtr<ActorTaskDelegate> delegate) {
    CHECK(policy_checker);
@@ -37,17 +37,17 @@ index c6f133b48e45501ffdb8a9509d02c1f1e3e6818e..56d8c0cb2820d3a5687283c63d83fa78
    CHECK(ui_state_manager);
    const EnterprisePolicyChecker* policy_checker_ptr = policy_checker.get();
    return CreateTaskImpl(
-@@ -529,7 +529,7 @@ TaskId ActorKeyedService::CreateTaskForTesting(
-     std::optional<glic::mojom::InvocationSource> initial_invocation_source) {
+@@ -554,7 +554,7 @@ TaskId ActorKeyedService::CreateTaskForTesting(
+     AllowedSchemes allowed_schemes) {
    return CreateTaskImpl(std::move(ui_event_dispatcher), source_info,
                          policy_checker, nullptr, std::move(options),
 -                        std::move(delegate), actor_ui_state_manager_.get(),
 +                        std::move(delegate), GetTaskUiStateManager(),
-                         initial_invocation_source);
+                         initial_invocation_source, allowed_schemes);
  }
  
-@@ -878,6 +878,19 @@ ActorTask* ActorKeyedService::GetTask(TaskId task_id) {
-   return nullptr;
+@@ -907,6 +907,19 @@ ActorSurfaceRegistry& ActorKeyedService::GetSurfaceRegistry() {
+   return *surface_registry_;
  }
  
 +void ActorKeyedService::SetActorUiStateManagerForTesting(
@@ -67,10 +67,10 @@ index c6f133b48e45501ffdb8a9509d02c1f1e3e6818e..56d8c0cb2820d3a5687283c63d83fa78
      base::PassKey<ui::ActorUiStateManager>) {
    return actor_ui_state_manager_.get();
 diff --git a/chrome/browser/actor/actor_keyed_service.h b/chrome/browser/actor/actor_keyed_service.h
-index 36b6b7336a0b2e9c112d778b2e657a03c6237261..7baff77ba00873f483301797e95c153a73babe3e 100644
+index 81c316309a180a529b42c7844ece907e9946ba23..ca9e338607bff5f2c42a26abf2b5d75d41b13f17 100644
 --- a/chrome/browser/actor/actor_keyed_service.h
 +++ b/chrome/browser/actor/actor_keyed_service.h
-@@ -72,6 +72,14 @@ class ActorKeyedService : public KeyedService,
+@@ -75,6 +75,14 @@ class ActorKeyedService : public KeyedService,
    // Convenience method, may return nullptr.
    static ActorKeyedService* Get(content::BrowserContext* context);
  
@@ -85,7 +85,7 @@ index 36b6b7336a0b2e9c112d778b2e657a03c6237261..7baff77ba00873f483301797e95c153a
    const std::map<TaskId, const ActorTask*> GetActiveTasks() const;
  
    size_t GetActiveTasksCount() const;
-@@ -286,6 +294,8 @@ class ActorKeyedService : public KeyedService,
+@@ -308,6 +316,8 @@ class ActorKeyedService : public KeyedService,
    base::WeakPtr<ActorKeyedService> GetWeakPtr();
  
   private:
@@ -94,7 +94,7 @@ index 36b6b7336a0b2e9c112d778b2e657a03c6237261..7baff77ba00873f483301797e95c153a
    TaskId CreateTaskImpl(
        std::unique_ptr<actor::ui::UiEventDispatcher> ui_event_dispatcher,
        const TaskSourceInfo& source_info,
-@@ -324,6 +334,10 @@ class ActorKeyedService : public KeyedService,
+@@ -347,6 +357,10 @@ class ActorKeyedService : public KeyedService,
    // Note: This field should not be used directly, use the
    // ActorUiStateManagerInterface* passed in via CreateTaskImpl instead.
    std::unique_ptr<ui::ActorUiStateManager> actor_ui_state_manager_;
@@ -103,10 +103,10 @@ index 36b6b7336a0b2e9c112d778b2e657a03c6237261..7baff77ba00873f483301797e95c153a
 +      actor_ui_state_manager_for_testing_;
 +
  
-   std::map<TaskId, std::unique_ptr<ActorTask>> active_tasks_;
- 
+   // Declared before `surface_registry_` so the manager outlives the registry
+   // that uses it, and before `active_tasks_` so tasks are destroyed before
 diff --git a/chrome/browser/actor/actor_keyed_service_unittest.cc b/chrome/browser/actor/actor_keyed_service_unittest.cc
-index 578a33d7bace74f12d4116ff9618d0ffb7d09c45..009306d603b63e2f39fd30a906a97160f820f3f9 100644
+index 9851654337217b31ee81d6753cfd9cc54e3177f0..816c80fe4fe096c92158ed564722018c45a709bc 100644
 --- a/chrome/browser/actor/actor_keyed_service_unittest.cc
 +++ b/chrome/browser/actor/actor_keyed_service_unittest.cc
 @@ -11,6 +11,7 @@
@@ -114,9 +114,9 @@ index 578a33d7bace74f12d4116ff9618d0ffb7d09c45..009306d603b63e2f39fd30a906a97160
  #include "base/files/scoped_temp_dir.h"
  #include "base/test/bind.h"
 +#include "base/test/gtest_util.h"
- #include "base/test/metrics/histogram_tester.h"
- #include "base/test/run_until.h"
  #include "base/test/scoped_command_line.h"
+ #include "chrome/browser/actor/actor_surface_registry.h"
+ #include "chrome/browser/actor/actor_task.h"
 @@ -162,6 +163,33 @@ TEST_F(AegisActorRuntimeTest, CreatesAegisTaskWithoutGlicRuntime) {
    EXPECT_TRUE(checker_destroyed);
  }

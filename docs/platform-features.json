@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updated": "2026-10-24",
+  "updated": "2026-11-07",
   "platforms": [
     "macOS",
     "Windows",
@@ -2948,6 +2948,69 @@
           "source": [
             "apps/ios/AegisApp/BrowserSettings.swift",
             "apps/ios/AegisApp/SettingsFormControls.swift"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        }
+      }
+    },
+    {
+      "id": "p01-two-hop-tls",
+      "name": {
+        "zh-CN": "P01 控制协议和双跳 TLS 传输",
+        "en": "P01 control protocol and two-hop TLS transport",
+        "zh-TW": "P01 控制協議和雙跳 TLS 傳輸"
+      },
+      "platforms": {
+        "macOS": {
+          "status": "source",
+          "reason": {
+            "zh-CN": "传输库和原生测试由 is_mac 条件编入。",
+            "en": "The build includes the transport library and its native tests on macOS.",
+            "zh-TW": "傳輸庫和原生測試由 is_mac 條件編入。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn",
+            "apps/browser/overlay/chrome/browser/aegis/proxy/core_tls_unittest.cc"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Windows": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "Android": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
+          ],
+          "validation": "not-run",
+          "evidence": []
+        },
+        "iOS": {
+          "status": "not-ported",
+          "reason": {
+            "zh-CN": "此平台的构建目标尚未接入 P01 双跳传输。",
+            "en": "The build for this platform does not include the P01 two-hop transport.",
+            "zh-TW": "此平台的建置目標尚未接入 P01 雙跳傳輸。"
+          },
+          "source": [
+            "apps/browser/overlay/chrome/browser/aegis/proxy/BUILD.gn"
           ],
           "validation": "not-run",
           "evidence": []

@@ -325,3 +325,4 @@
 0325-prepare-go-toolchain-retry-version-303.patch
 0326-wire-bounded-tracker-test-entry.patch
 0327-fix-desktop-test-browser-client-dependency.patch
+0328-connect-157-tab-feature-dependencies.patch

@@ -14,10 +14,10 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 5 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/android/tab_features.cc b/chrome/browser/android/tab_features.cc
-index a8da26669e518c0de815ccb6cd56ec475529c9ad..2cb72eb75e76c162e7f07400825ed7e222e98a62 100644
+index 6d1dd58cd907c114305a880f0c9a97c569ed7284..e808ca7164876d4fa172734346d43a2d131ee7fe 100644
 --- a/chrome/browser/android/tab_features.cc
 +++ b/chrome/browser/android/tab_features.cc
-@@ -151,12 +151,13 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+@@ -359,7 +359,9 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
      }
    }
  
@@ -27,6 +27,9 @@ index a8da26669e518c0de815ccb6cd56ec475529c9ad..2cb72eb75e76c162e7f07400825ed7e2
 +  if (actor_service || base::FeatureList::IsEnabled(features::kGlicActor)) {
      actor_tab_data_ =
          GetUserDataFactory().CreateInstance<actor::ActorTabData>(*tab, tab);
+     actor_surface_tab_helper_ =
+@@ -367,7 +369,6 @@ TabFeatures::TabFeatures(content::WebContents* web_contents, Profile* profile) {
+                                                                           *tab);
    }
  
 -  auto* actor_service = actor::ActorKeyedService::Get(profile);
@@ -48,6 +51,3 @@ index 83d7fe74523d6efeb37fd1f2e3b23e0e29b92913..9e9728714c380620adcc92d0b550382a
  inline constexpr char kReleaseAPI[] =
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
--- 
-2.52.0
-

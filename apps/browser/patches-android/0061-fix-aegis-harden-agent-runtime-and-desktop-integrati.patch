@@ -34,10 +34,10 @@ Subject: [PATCH] fix(aegis): harden agent runtime and desktop integration
  27 files changed, 732 insertions(+), 150 deletions(-)
 
 diff --git a/chrome/browser/actor/execution_engine.cc b/chrome/browser/actor/execution_engine.cc
-index 90c63c54259e3556605abc8f60895209f9468f71..662a5c48c0929b21531ab1ca9f88e9271819e095 100644
+index e0296b8dfb18ffab8fbe872e62255985ca044a1a..4f82ffa8522ae16264019d22bb27c690553c103a 100644
 --- a/chrome/browser/actor/execution_engine.cc
 +++ b/chrome/browser/actor/execution_engine.cc
-@@ -124,6 +124,7 @@ namespace actor {
+@@ -129,6 +129,7 @@ namespace actor {
  // Individual custom predicates that the actor framework supports in addition to
  // those provided by the origin_gating framework.
  enum class ActorCustomPredicate {
@@ -45,7 +45,7 @@ index 90c63c54259e3556605abc8f60895209f9468f71..662a5c48c0929b21531ab1ca9f88e927
    kSafetyList,
    kSensitiveUrl,
    kLookalikeUrl,
-@@ -146,6 +147,8 @@ namespace {
+@@ -152,6 +153,8 @@ namespace {
  constexpr std::string_view ActorCustomPredicateToString(
      ActorCustomPredicate predicate) {
    switch (predicate) {
@@ -54,7 +54,7 @@ index 90c63c54259e3556605abc8f60895209f9468f71..662a5c48c0929b21531ab1ca9f88e927
      case ActorCustomPredicate::kSafetyList:
        return "actor_safety_list_check";
      case ActorCustomPredicate::kSensitiveUrl:
-@@ -487,6 +490,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
+@@ -518,6 +521,21 @@ origin_gating::Decision BlockIfSafeBrowsingDisabled(
                                    : origin_gating::Decision::kBlocked;
  }
  
@@ -76,7 +76,7 @@ index 90c63c54259e3556605abc8f60895209f9468f71..662a5c48c0929b21531ab1ca9f88e927
  origin_gating::Decision AllowIfSafetyChecksDisabled(
      origin_gating::GatingDecisionContext* context,
      const GateableEvent& event) {
-@@ -579,6 +597,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
+@@ -610,6 +628,8 @@ ExecutionEngine::GatingDecision MapGatingDecisionToEngineDecision(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -85,7 +85,7 @@ index 90c63c54259e3556605abc8f60895209f9468f71..662a5c48c0929b21531ab1ca9f88e927
          case ActorCustomPredicate::kSafetyList:
            return decision.is_allowed
                       ? ExecutionEngine::GatingDecision::kAllowByStaticList
-@@ -640,6 +660,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
+@@ -676,6 +696,8 @@ MayActOnUrlBlockReason MapGatingDecisionToBlockReason(
        }
      case origin_gating::DecisionAttribution::Type::kCustomPredicate:
        switch (decision.attribution.CustomPredicateId<ActorCustomPredicate>()) {
@@ -94,20 +94,19 @@ index 90c63c54259e3556605abc8f60895209f9468f71..662a5c48c0929b21531ab1ca9f88e927
          case ActorCustomPredicate::kSafetyList:
            return MayActOnUrlBlockReason::kBlockedByStaticList;
          case ActorCustomPredicate::kDangerousMimeType:
-@@ -760,6 +782,11 @@ ExecutionEngine::ExecutionEngine(base::PassKey<ExecutionEngine>,
-           weak_ptr_factory_.GetWeakPtr(),
-           origin_gating::OriginGatingConfiguration(
-               {
-+                  {CustomPredicate(
-+                       base::BindRepeating(&BlockIfExplicitlyDenied,
-+                                           base::Unretained(task_.get())),
+@@ -784,6 +806,10 @@ std::vector<origin_gating::PredicateConfiguration> CreateOriginGatingPredicates(
+     ActorTask& task,
+     ExecutionEngine::AllowedSchemes allowed_schemes) {
+   std::vector<origin_gating::PredicateConfiguration> predicates({
++      {CustomPredicate(base::BindRepeating(&BlockIfExplicitlyDenied,
++                                          base::Unretained(&task)),
 +                       ActorCustomPredicate::kExplicitPolicyBlock),
-+                   GateableEventSet::All()},
-                   {CustomPredicate(base::BindRepeating(&BlockTabErrorDocument),
-                                    ActorCustomPredicate::kTabErrorDocument),
-                    {GateableEvent::kPageAction}},
++       GateableEventSet::All()},
+       {CustomPredicate(base::BindRepeating(&BlockTabErrorDocument),
+                        ActorCustomPredicate::kTabErrorDocument),
+        {GateableEvent::kPageAction}},
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index 33a0c6386804aa3e2a708c6b2137d6f275c51fb2..0b3c52143567dbf119aae2cac1ead2dd57464a5f 100644
+index e7647f49fa533e5e54c814800e7386ba6a777faa..1c0e46e76ebe2c4fe8343ded13b8c7f54e6b731d 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
 @@ -18,6 +18,7 @@
@@ -129,7 +128,7 @@ index 33a0c6386804aa3e2a708c6b2137d6f275c51fb2..0b3c52143567dbf119aae2cac1ead2dd
    virtual TaskSourceInfo TaskSource() const { return TestTaskSourceInfo(); }
  
    void SetExpectedOptimizationGuideCall(
-@@ -1454,6 +1459,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
+@@ -1457,6 +1462,50 @@ TEST_F(ExecutionEngineUrlGatingTest, EnterprisePolicyBlock) {
             EnterprisePolicyChecker::UrlBlockReason::kExplicitlyBlocked);
  }
  
@@ -1786,10 +1785,10 @@ index 6cccfc1ccc0c8b1b6ce523ebcc5f05403ce92692..7dc07d318cfc2a381076dc4c09f9a815
    const bool ok = task && task->mode() == AgentMode::kAutomate &&
                    service_->RemoveMonitor(task_id, monitor_id);
 diff --git a/chrome/chrome_paks.gni b/chrome/chrome_paks.gni
-index 12a5e53584f9f30117ba8e3e1c444974862dbd09..ce149b98106e41d4a6d8d9f043e422d95208d8b4 100644
+index 150c570d3ea9756dd068bd919a57b722a4c7e056..56f940aaa840c0d640b1584c2552ea9ae90303a4 100644
 --- a/chrome/chrome_paks.gni
 +++ b/chrome/chrome_paks.gni
-@@ -212,6 +212,7 @@ template("chrome_extra_paks") {
+@@ -222,6 +222,7 @@ template("chrome_extra_paks") {
          "$root_gen_dir/chrome/about_sys_resources.pak",
          "$root_gen_dir/chrome/access_code_cast_resources.pak",
          "$root_gen_dir/chrome/actor_overlay_resources.pak",

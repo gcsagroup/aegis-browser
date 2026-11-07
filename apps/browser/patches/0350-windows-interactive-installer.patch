@@ -30,7 +30,7 @@ Content-Transfer-Encoding: 8bit
  create mode 100644 chrome/installer/setup/aegis_launch_policy_unittest.cc
 
 diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
-index ce1f5a5711eeba1109bef0169a80cbe29373a843..ed1a7bc2f3841ee6d3ac081d7c2165020733392c 100644
+index df9408bb1666cce96dd4fa716205b446164641de..d64b564ea828fce56168eafaf0ffca001876d615 100644
 --- a/chrome/installer/mini_installer/BUILD.gn
 +++ b/chrome/installer/mini_installer/BUILD.gn
 @@ -41,6 +41,8 @@ config("mini_installer_compiler_flags") {
@@ -465,7 +465,7 @@ index e2b6155fe43fc37cb9e17ccc1e0163e01ddd0366..6919e6076389c424e1dbb993bdae0c58
    bool should_delete_extracted_files_;
  
 diff --git a/chrome/installer/mini_installer/configuration_test.cc b/chrome/installer/mini_installer/configuration_test.cc
-index 744340a2fe3371b027f1021e7d71d5199b369d4e..bda18650ca3ecfc183f54e067acac560bafe0957 100644
+index bc4bd951fe64235db46fb60cbfbde5d1b9935d87..23bbb46af5c67f84c5d1e8379dab6cc6d21b7538 100644
 --- a/chrome/installer/mini_installer/configuration_test.cc
 +++ b/chrome/installer/mini_installer/configuration_test.cc
 @@ -165,4 +165,20 @@ TEST_F(MiniInstallerConfigurationTest, DeleteExtractedFilesBogusValues) {
@@ -557,7 +557,7 @@ index fff6a53c69130651cafd844a76a5d0e882689d56..e33ab60b5b783c8cb6da68ea794c2531
  #ifdef APSTUDIO_INVOKED
  /////////////////////////////////////////////////////////////////////////////
 diff --git a/chrome/installer/setup/BUILD.gn b/chrome/installer/setup/BUILD.gn
-index 8967d1094ffe3d0e6bc5eb4bfe38e302e4ac26a6..48882781b772692dc75a0d77387a640cdb6eacb9 100644
+index e7e695f652355604ceea7d9739dcb95f73769fad..108073f05ccf18c8732426f7b38ead58016091d8 100644
 --- a/chrome/installer/setup/BUILD.gn
 +++ b/chrome/installer/setup/BUILD.gn
 @@ -11,6 +11,7 @@ import("//testing/test.gni")
@@ -568,7 +568,7 @@ index 8967d1094ffe3d0e6bc5eb4bfe38e302e4ac26a6..48882781b772692dc75a0d77387a640c
        "setup.rc",
        "setup_main.cc",
        "setup_main.h",
-@@ -153,6 +154,8 @@ if (is_win) {
+@@ -159,6 +160,8 @@ if (is_win) {
    # This test covers the mini installer and setup tests.
    test("setup_unittests") {
      sources = [
@@ -576,7 +576,7 @@ index 8967d1094ffe3d0e6bc5eb4bfe38e302e4ac26a6..48882781b772692dc75a0d77387a640c
 +      "aegis_launch_policy_unittest.cc",
        "configure_app_container_sandbox_unittest.cc",
        "downgrade_cleanup_unittest.cc",
-       "generate_visual_elements_manifest_work_item_unittest.cc",
+       "dynamic_patch_component_unittest.cc",
 diff --git a/chrome/installer/setup/aegis_launch_policy.h b/chrome/installer/setup/aegis_launch_policy.h
 new file mode 100644
 index 0000000000000000000000000000000000000000..9cef1fa2abd88e70ba3943b577e263b902e7c19a
@@ -635,7 +635,7 @@ index 0000000000000000000000000000000000000000..56485db6187abe8de8e456aa1c3555b7
 +}
 +}  // namespace installer
 diff --git a/chrome/installer/setup/setup_main.cc b/chrome/installer/setup/setup_main.cc
-index 8689571a44a1393ac6afde429d7302cf336d1814..08fe851c02ec759e77b73f3851c70007a5b0575f 100644
+index 3b9e3170f0b737c3c86eb35a48f31b66d080270d..34af694e21b13b24481cfe6efb5ab16661dc0d68 100644
 --- a/chrome/installer/setup/setup_main.cc
 +++ b/chrome/installer/setup/setup_main.cc
 @@ -54,6 +54,7 @@
@@ -654,7 +654,7 @@ index 8689571a44a1393ac6afde429d7302cf336d1814..08fe851c02ec759e77b73f3851c70007
  #include "chrome/installer/setup/brand_behaviors.h"
  #include "chrome/installer/setup/configure_app_container_sandbox.h"
  #include "chrome/installer/setup/downgrade_cleanup.h"
-@@ -1420,17 +1422,35 @@ InstallStatus InstallProductsHelper(InstallationState& original_state,
+@@ -1428,17 +1430,35 @@ InstallStatus InstallProductsHelper(InstallationState& original_state,
            install_status, install_msg_base,
            write_chrome_launch_string ? &quoted_chrome_exe : nullptr);
  
@@ -700,6 +700,3 @@ index 8689571a44a1393ac6afde429d7302cf336d1814..08fe851c02ec759e77b73f3851c70007
          DCHECK_NE(chrome_exe.value(), std::wstring());
          RemoveChromeLegacyRegistryKeys(chrome_exe);
        }
--- 
-2.56.0.windows.4
-

@@ -12,7 +12,7 @@ Subject: [PATCH] feat(aegis): add native site protection surface
  5 files changed, 347 insertions(+)
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index 21df5f091c8e7202651fa792f04d644ad8306660..48958acef0ac0e114656c243fa489ec64897e378 100644
+index aa58fdf578f1cb6611d4432baaf13f5abbd7e84a..7574d0a016e9d67e3e17b8248d31097ad19c4612 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
 @@ -9,6 +9,7 @@ import("//ui/webui/webui_features.gni")
@@ -23,7 +23,7 @@ index 21df5f091c8e7202651fa792f04d644ad8306660..48958acef0ac0e114656c243fa489ec6
      "ai_overlay_toolbar_button.h",
      "app_menu.h",
      "avatar_toolbar_button_interface.h",
-@@ -166,6 +167,7 @@ source_set("toolbar_button") {
+@@ -167,6 +168,7 @@ source_set("toolbar_button") {
  
  source_set("impl") {
    sources = [
@@ -31,7 +31,7 @@ index 21df5f091c8e7202651fa792f04d644ad8306660..48958acef0ac0e114656c243fa489ec6
      "ai_overlay_toolbar_button.cc",
      "app_menu.cc",
      "avatar_toolbar_button_interface.cc",
-@@ -231,6 +233,7 @@ source_set("impl") {
+@@ -241,6 +243,7 @@ source_set("impl") {
      "//chrome/app/theme:theme_resources_grit",
      "//chrome/app/vector_icons",
      "//chrome/browser:browser_process",
@@ -385,7 +385,7 @@ index 0000000000000000000000000000000000000000..5322188f74a9b092df1b6eae86b84698
 +
 +#endif  // CHROME_BROWSER_UI_VIEWS_TOOLBAR_AEGIS_TOOLBAR_BUTTON_H_
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.cc b/chrome/browser/ui/views/toolbar/toolbar_view.cc
-index f9bb38f92374559f70077dfcb24c2010d1b7efba..1e8da872d5bfd4d7e1bb6f63e7d756fd1bfa6b7f 100644
+index 184ae3e5bc4e2338553fb8aee789fb2b1b75c9b1..7f432ae6ccf844514211fc34921209ccb8e07cfc 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.cc
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.cc
 @@ -98,6 +98,7 @@
@@ -396,7 +396,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..1e8da872d5bfd4d7e1bb6f63e7d756fd
  #include "chrome/browser/ui/views/toolbar/app_menu.h"
  #include "chrome/browser/ui/views/toolbar/app_menu_control.h"
  #include "chrome/browser/ui/views/toolbar/avatar_toolbar_button_interface.h"
-@@ -490,6 +491,8 @@ void ToolbarView::Init() {
+@@ -480,6 +481,8 @@ void ToolbarView::Init() {
      location_bar_ = toolbar_webview_->GetLocationBar();
    }
  
@@ -405,7 +405,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..1e8da872d5bfd4d7e1bb6f63e7d756fd
    bool is_glic_left_of_profile =
        features::kGlicToolbarButtonLocationParam.Get() ==
            features::GlicToolbarButtonLocation::kLeftOfProfileChip ||
-@@ -1216,6 +1219,11 @@ void ToolbarView::Update(WebContents* tab) {
+@@ -1212,6 +1215,11 @@ void ToolbarView::Update(WebContents* tab) {
      pinned_toolbar_actions_container_->UpdateAllIcons();
    }
  
@@ -418,7 +418,7 @@ index f9bb38f92374559f70077dfcb24c2010d1b7efba..1e8da872d5bfd4d7e1bb6f63e7d756fd
      reload_control->SetDevToolsStatus(
          chrome::IsDebuggerAttachedToCurrentTab(browser_));
 diff --git a/chrome/browser/ui/views/toolbar/toolbar_view.h b/chrome/browser/ui/views/toolbar/toolbar_view.h
-index 50e546251e9f8021683a6929593205daefbb0596..1b34a578e10b4183c0b3f9f880064ce9a4789b48 100644
+index e10dc91a6710c792dfb29e669bf65262bb5bbe62..9b1ea09f3be8b43e450c839fda3f930b6b2c5fd5 100644
 --- a/chrome/browser/ui/views/toolbar/toolbar_view.h
 +++ b/chrome/browser/ui/views/toolbar/toolbar_view.h
 @@ -48,6 +48,7 @@
@@ -437,9 +437,9 @@ index 50e546251e9f8021683a6929593205daefbb0596..1b34a578e10b4183c0b3f9f880064ce9
  
    // Returns the native Views Glic button, or nullptr if the Glic button is not
    // created or is rendered by the WebUI toolbar (`features::kWebUIGlicButton`).
-@@ -416,6 +418,7 @@ class ToolbarView : public views::AccessiblePaneView,
+@@ -411,6 +413,7 @@ class ToolbarView : public views::AccessiblePaneView,
+   raw_ptr<ReloadButton> reload_ = nullptr;
    raw_ptr<WebUIToolbarWebView> toolbar_webview_ = nullptr;
-   std::unique_ptr<WebUIToolbarWebView> detached_toolbar_webview_;
    raw_ptr<HomeButton> home_ = nullptr;
 +  raw_ptr<AegisToolbarButton> aegis_button_ = nullptr;
    raw_ptr<SplitTabsToolbarButton> split_tabs_ = nullptr;

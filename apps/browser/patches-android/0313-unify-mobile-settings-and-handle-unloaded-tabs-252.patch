@@ -20,7 +20,7 @@ index 67228cb0ac09589f6ee362c7c5fa2ac8667014c5..5c633fe8a0b9c7d258a531c81562d8d5
          android:key="settings_promo_card"
          android:order="0" />
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
-index 3d8c931df4ad751948b18065e636cd48b420dfb2..7392ab9db4a368889afd18578fc35dbfb134f379 100644
+index c52e633f062aa87228621060b2c604e066c378ec..40ecbe9d2164983dd9b60a7887e4a053c7521dca 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/settings/MainSettings.java
 @@ -12,6 +12,7 @@ import android.content.Intent;

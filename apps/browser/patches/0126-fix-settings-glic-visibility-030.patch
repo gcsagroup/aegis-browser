@@ -32,7 +32,7 @@ index 89f68e35de5fa9c1359acea7b6c0b879f1b8ea13..a537285c47aa7e69abf0df22ab8b7f9d
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 diff --git a/chrome/browser/ui/webui/settings/settings_ui.cc b/chrome/browser/ui/webui/settings/settings_ui.cc
-index 937bf403b3877a51f76279df47e9699a7a62170c..0584aa084c2ab74e45eb7f3f39a17ed48956870a 100644
+index 0e272369525735eeecd3b2384a0f803fde1ffc6e..d38c913b90e91ca6643dd99a395402e433f32e00 100644
 --- a/chrome/browser/ui/webui/settings/settings_ui.cc
 +++ b/chrome/browser/ui/webui/settings/settings_ui.cc
 @@ -625,7 +625,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)

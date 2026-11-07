@@ -14,7 +14,7 @@ Content-Transfer-Encoding: 8bit
  2 files changed, 12 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
-index 07580fe2d8e8284bb895cb14dbe5034e1745cf0a..ea6bd99ca4a3a638a70c3ee2f7a908ab583e9278 100644
+index b193217a4d22955b8c88bc4f86e41593eaf5277c..d89a16f51c8cead0b6b0563326eac63d0fa2cee5 100644
 --- a/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 +++ b/chrome/android/java/src/org/chromium/chrome/browser/tabbed_mode/TabbedAppMenuPropertiesDelegate.java
 @@ -1387,23 +1387,29 @@ public class TabbedAppMenuPropertiesDelegate extends AppMenuPropertiesDelegateIm

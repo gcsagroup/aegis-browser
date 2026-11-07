@@ -18,7 +18,7 @@ Content-Transfer-Encoding: 8bit
  6 files changed, 10 insertions(+), 6 deletions(-)
 
 diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
-index 5f2d2a5660755e81e50e87005441f1b35a1dfc7c..f20d85272e870595027ee982f9707f88db98d894 100644
+index 42f7820ca4efe9be81bc8acba1e6b25f28c16b3a..85ba26ddfc29ab2332cb02bc0209808fc3013d59 100644
 --- a/chrome/browser/BUILD.gn
 +++ b/chrome/browser/BUILD.gn
 @@ -1695,6 +1695,7 @@ source_set("core") {
@@ -80,7 +80,7 @@ index 04e77a74a0b460d04fd3386f8cfa963fdb8b7710..fdc7986171fe78e49cb0cb730e03985e
  #include "chrome/browser/ui/tabs/tab_strip_model.h"
  #endif
 diff --git a/chrome/browser/policy/BUILD.gn b/chrome/browser/policy/BUILD.gn
-index 6718eed0172216c5f8306a03c138b45ac7caa085..304f59086514736980e3bc04ab9d6595429cbcb7 100644
+index bc96564c17ab58a883386eae648046c4bfb0c708..a5728a23c28deb0e6e0dafaa746af7e0723e1324 100644
 --- a/chrome/browser/policy/BUILD.gn
 +++ b/chrome/browser/policy/BUILD.gn
 @@ -858,6 +858,7 @@ source_set("unit_tests") {

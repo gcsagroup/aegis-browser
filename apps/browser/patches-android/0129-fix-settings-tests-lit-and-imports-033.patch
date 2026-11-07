@@ -46,7 +46,7 @@ index 0a469f77da5c2072cee79b91ae7e39db7d6faad9..910c9d3ffe6371b6f7cffadd094e5b6b
      assertTrue(page.shadowRoot.querySelector<HTMLButtonElement>('#aegisCheckUpdate')!.disabled);
      assertTrue(page.$.updateStatusMessage.textContent.includes('请退出浏览器后安装'));
 diff --git a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
-index f06e4eb92cf10c6e81377ce6dffc9ed9f27fe4e0..f82c584ab5c90f84da5a32de73b80f4fd5e9003d 100644
+index 11dfdfe887e062903a7956d8511f1f32a7acc28d..6e49c995c3fb1bb32d7de941476a57db6f74ee92 100644
 --- a/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
 +++ b/chrome/test/data/webui/settings/settings_menu_interactive_ui_test.ts
 @@ -3,7 +3,7 @@
