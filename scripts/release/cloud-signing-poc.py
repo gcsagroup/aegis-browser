@@ -115,12 +115,16 @@ def validate_runtime(runtime, environment, archive_from):
         if (not hosted or environment.get('RUNNER_ENVIRONMENT') != 'github-hosted'
                 or environment.get('RUNNER_OS') != 'macOS' or archive_from):
             raise ValueError('Fresh GitHub-hosted macOS archive required; reuse/local runners are not accepted')
+    elif runtime == 'self-hosted':
+        if (not hosted or environment.get('RUNNER_ENVIRONMENT') != 'self-hosted'
+                or environment.get('RUNNER_OS') != 'macOS' or archive_from):
+            raise ValueError('Self-hosted Actions macOS archive required; reuse/local runners are not accepted')
     elif hosted:
         raise ValueError('Local fallback cannot claim hosted-runner evidence')
 
 
 def prepare_credentials(directory, options, environment):
-    if options.runtime != 'github-hosted':
+    if options.runtime not in ('github-hosted', 'self-hosted'):
         return module('local_credentials', 'local-ios-signing.py').credentials(options.downloads, environment), None
     key_id, issuer = environment.get('AEGIS_ASC_KEY_ID', ''), environment.get('AEGIS_ASC_ISSUER_ID', '')
     if not re.fullmatch(r'[A-Z0-9]{10}', key_id) or not re.fullmatch(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}', issuer):
@@ -229,7 +233,8 @@ def experiment(options, environment):
                 'team': options.team, 'profile': options.profile, 'signingMode': 'cloud', 'runtime': options.runtime, 'status': 'started',
                 'upload': 'not_attempted', 'deviceAcceptance': 'not_verified', 'releaseReady': False}
     temporary_key = None
-    archive_signing = options.archive_signing or ('ad-hoc' if options.runtime == 'github-hosted' else 'development')
+    archive_signing = options.archive_signing or (
+        'ad-hoc' if options.runtime in ('github-hosted', 'self-hosted') else 'development')
     evidence['archiveSigningMode'] = archive_signing
     try:
         environment = dict(environment)
@@ -242,6 +247,8 @@ def experiment(options, environment):
         evidence['xcode'] = run('xcodebuild', '-version').decode().strip()
         if evidence['xcode'].splitlines()[0] != 'Xcode 26.6':
             raise ValueError('Xcode 26.6 is required')
+        if options.runtime in ('github-hosted', 'self-hosted'):
+            evidence.update(runId=environment['GITHUB_RUN_ID'], runAttempt=environment['GITHUB_RUN_ATTEMPT'])
         if options.runtime == 'github-hosted':
             no_distribution_identity()
             installed = sum(len(list(p.glob('*.mobileprovision'))) for p in [
@@ -249,8 +256,7 @@ def experiment(options, environment):
                 Path.home() / 'Library/Developer/Xcode/UserData/Provisioning Profiles'])
             if installed:
                 raise ValueError('Fresh hosted runner must start without installed provisioning profiles')
-            evidence.update(cleanRunnerDistributionIdentityAbsent=True, initialProvisioningProfileCount=installed,
-                            runId=environment['GITHUB_RUN_ID'], runAttempt=environment['GITHUB_RUN_ATTEMPT'])
+            evidence.update(cleanRunnerDistributionIdentityAbsent=True, initialProvisioningProfileCount=installed)
         if options.archive_from:
             previous, archive_source = reusable_archive(options.archive_from, options.version, options.build, options.team, options.profile)
             work = previous / 'work'
@@ -327,7 +333,7 @@ def experiment(options, environment):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--signing-mode', choices=['cloud', 'cloud-poc'], required=True)
-    parser.add_argument('--runtime', choices=['local-fallback', 'github-hosted'], default='local-fallback')
+    parser.add_argument('--runtime', choices=['local-fallback', 'github-hosted', 'self-hosted'], default='local-fallback')
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], default='beta')
     parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'], help='Hosted uses ad-hoc archive then cloud distribution; local fallback retains development signing')
     parser.add_argument('--version', required=True)

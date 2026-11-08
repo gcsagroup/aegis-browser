@@ -126,7 +126,7 @@ jobs:
     needs:
       - admission
       - check-unused
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-signing
     timeout-minutes: 50
     outputs:
@@ -306,7 +306,7 @@ jobs:
     needs:
       - admission
       - import
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-store
     timeout-minutes: 45
     env:
@@ -367,7 +367,7 @@ jobs:
     needs:
       - admission
       - ios-package
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-store
     timeout-minutes: 45
     env:
