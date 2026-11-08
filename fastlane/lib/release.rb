@@ -357,16 +357,14 @@ module AegisRelease
     end
 
     def package_ios_cloud
-      runtime = ENV['RUNNER_ENVIRONMENT'].to_s
-      AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && %w[github-hosted self-hosted].include?(runtime) &&
-                            ENV['RUNNER_OS'] == 'macOS',
-                            'Cloud production packaging requires a GitHub Actions macOS runner; use the explicit local fallback separately')
+      AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted',
+                            'Cloud production packaging requires a GitHub-hosted runner; use the explicit local fallback separately')
       source = AegisRelease.source(request.root)
       client = AppleStore.new(request, @fastlane, admission: method(:preflight_upload)).tap(&:authenticate)
       before = CloudReservations.preflight(client, request, source)
       engine_run_id = 'production-' + Digest::SHA256.hexdigest(request.run_id)[0,32]
       run('python3', File.join(request.root, 'scripts/release/cloud-signing-poc.py'), '--signing-mode', 'cloud',
-          '--runtime', runtime, '--profile', request.profile, '--version', request.version, '--build', request.build,
+          '--runtime', 'github-hosted', '--profile', request.profile, '--version', request.version, '--build', request.build,
           '--team', required('AEGIS_APPLE_TEAM_ID'), '--run-id', engine_run_id)
       root = File.join(request.root, '.artifacts/cloud-signing-poc', engine_run_id)
       receipt_path = File.join(root, 'poc-receipt.json')

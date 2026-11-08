@@ -60,7 +60,7 @@ platform :ios do
   end
   desc 'Prepare existing App Store signing material for explicit manual fallback on an ephemeral CI runner'
   lane :ci_signing do
-    UI.user_error!('ci_signing is only for GitHub Actions macOS runners') unless ENV['GITHUB_ACTIONS'] == 'true' && %w[github-hosted self-hosted].include?(ENV['RUNNER_ENVIRONMENT']) && ENV['RUNNER_OS'] == 'macOS'
+    UI.user_error!('ci_signing is only for GitHub-hosted macOS runners') unless ENV['GITHUB_ACTIONS'] == 'true' && ENV['RUNNER_ENVIRONMENT'] == 'github-hosted'
     setup_ci(provider: 'github')
     match(type: 'appstore', readonly: true, app_identifier: AegisRelease::IOS_TARGETS.values,
           team_id: ENV.fetch('AEGIS_APPLE_TEAM_ID'), git_url: ENV.fetch('AEGIS_MATCH_GIT_URL'))

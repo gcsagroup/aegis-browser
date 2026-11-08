@@ -241,7 +241,7 @@ test('Full explicitly forwards named secrets while protected jobs resolve enviro
 test('hosted signing loads only environment secrets after source admission and cleans up before artifact upload', () => {
   const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const job = doc.jobs['ios-package'];
-  assert.equal(job['runs-on'], "${{ fromJSON(format('[\"self-hosted\",\"macOS\",\"ARM64\",\"{0}\"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}");
+  assert.equal(job['runs-on'], 'macos-26');
   assert.equal(job.environment, 'aegis-ios-signing');
   assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
   const ruby = job.steps.findIndex(s => s.uses === './.github/actions/ensure-ios-ruby');

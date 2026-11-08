@@ -1,0 +1,1310 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Packaging Proposal <aegis-proposal@invalid>
+Date: Sun, 8 Nov 2026 14:27:45 +0000
+Subject: [PATCH] feat: publish macOS site-proxy bubble session to local proxy
+
+Wire toolbar bubble enable/disable onto PrepareCandidate → Publish → ACK
+with local loopback proxy readiness. Failures stay readable; disable
+commits locally even when the service is unavailable.
+
+---
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index a24b41dbc68f9c905d18fd15664293e806d2d8a1..40a2c0d6b3d5f35b9269f2458df220e887e8864d 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -189,18 +189,57 @@
+   ]
+ }
+ 
++source_set("access_site_proxy_session") {
++  sources = [
++    "access_site_proxy_session.cc",
++    "access_site_proxy_session.h",
++  ]
++  deps = [
++    ":access_site_intent",
++    ":access_site_proxy_bubble_model",
++    "//base",
++    "//components/aegis_access",
++    "//components/aegis_access:request_ownership_registry",
++  ]
++}
++
++test("access_site_proxy_session_unittests") {
++  sources = [ "access_site_proxy_session_unittest.cc" ]
++  deps = [
++    ":access_site_proxy_session",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
++source_set("access_site_proxy_bubble_model") {
++  sources = [
++    "access_site_proxy_bubble_model.cc",
++    "access_site_proxy_bubble_model.h",
++  ]
++  deps = [
++    ":access_site_intent",
++    "//base",
++    "//url",
++  ]
++}
++
+ source_set("access_site_proxy_bubble") {
+   sources = [
+     "access_site_proxy_bubble_controller.cc",
+     "access_site_proxy_bubble_controller.h",
+-    "access_site_proxy_bubble_model.cc",
+-    "access_site_proxy_bubble_model.h",
+-  ]
+-  deps = [
++  ]
++  deps = [
++    ":access_network_context_transport",
++    ":access_rule_store",
++    ":access_service_coordinator",
+     ":access_site_intent",
+-    "//base",
+-    "//chrome/browser/aegis:profile_support",
+-    "//chrome/browser/profiles:profile",
++    ":access_site_proxy_bubble_model",
++    ":access_site_proxy_session",
++    "//base",
++    "//chrome/browser/aegis:profile_support",
++    "//chrome/browser/profiles:profile",
++    "//components/aegis_access",
+     "//content/public/browser",
+     "//url",
+   ]
+@@ -209,7 +248,7 @@
+ test("access_site_proxy_bubble_unittests") {
+   sources = [ "access_site_proxy_bubble_model_unittest.cc" ]
+   deps = [
+-    ":access_site_proxy_bubble",
++    ":access_site_proxy_bubble_model",
+     "//base/test:run_all_unittests",
+     "//testing/gtest",
+   ]
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+index 55b18924055220eeee41921dda85d50bed931f9f..fdef7b6afc15e339b0a04cbc532489a011a5a398 100644
+--- a/chrome/browser/aegis/access/access_rule_store.h
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -75,6 +75,22 @@
+   std::string runtime_profile_token_;
+   base::FilePath profile_path_;
+   base::FilePath database_path_;
++};
++
++// Trusted browser-owned factory for Profile-backed AccessRuleStore bindings.
++// Product session publication (P-mac-3) uses ephemeral bindings when a durable
++// profile path is not required for the mutation journal.
++class TrustedAccessStoreBindingFactory {
++ public:
++  static std::optional<AccessStoreBinding> CreateEphemeral(
++      ChannelNamespace channel,
++      std::string durable_profile_id,
++      std::string runtime_profile_token);
++  static std::optional<AccessStoreBinding> CreatePersistent(
++      ChannelNamespace channel,
++      std::string durable_profile_id,
++      std::string runtime_profile_token,
++      base::FilePath profile_path);
+ };
+ 
+ enum class StoreStatus {
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 108b9c891a60d089e29770865d79ab2e632e1536..89efd848f0c0774e628a27f86a9659b0619c0700 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -545,6 +545,38 @@
+     default;
+ 
+ AccessStoreBinding::~AccessStoreBinding() = default;
++
++std::optional<AccessStoreBinding>
++TrustedAccessStoreBindingFactory::CreateEphemeral(
++    ChannelNamespace channel,
++    std::string durable_profile_id,
++    std::string runtime_profile_token) {
++  if (!aegis_access::IsKnownChannel(channel) || durable_profile_id.empty() ||
++      runtime_profile_token.empty()) {
++    return std::nullopt;
++  }
++  return AccessStoreBinding(AccessStoreKind::kEphemeralProfile, channel,
++                            std::move(durable_profile_id),
++                            std::move(runtime_profile_token), base::FilePath(),
++                            base::FilePath());
++}
++
++std::optional<AccessStoreBinding>
++TrustedAccessStoreBindingFactory::CreatePersistent(
++    ChannelNamespace channel,
++    std::string durable_profile_id,
++    std::string runtime_profile_token,
++    base::FilePath profile_path) {
++  if (!aegis_access::IsKnownChannel(channel) || durable_profile_id.empty() ||
++      runtime_profile_token.empty() || profile_path.empty()) {
++    return std::nullopt;
++  }
++  base::FilePath database_path = profile_path.AppendASCII("access.db");
++  return AccessStoreBinding(AccessStoreKind::kPersistentProfile, channel,
++                            std::move(durable_profile_id),
++                            std::move(runtime_profile_token),
++                            std::move(profile_path), std::move(database_path));
++}
+ 
+ AccessRuleStore::AccessRuleStore(AccessStoreBinding binding)
+     : binding_(std::move(binding)), database_("AegisAccess") {}
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index 318f483e758330abd5cee60ec83aa3d93bff4b45..b4113daef0faae337740a8b32472c1a9c935f629 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -3,8 +3,16 @@
+ #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
+ 
++#include <memory>
++#include <string>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
+ #include "base/supports_user_data.h"
++#include "chrome/browser/aegis/access/access_rule_store.h"
++#include "chrome/browser/aegis/access/access_service_coordinator.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++#include "chrome/browser/aegis/access/access_site_proxy_session.h"
+ #include "url/gurl.h"
+ 
+ class Profile;
+@@ -12,8 +20,8 @@
+ namespace aegis::access {
+ 
+ // Profile-owned product state for the toolbar site-proxy bubble.
+-// Holds intent separately from connection. Does not publish or ACK
+-// (session finalize is P-mac-3).
++// Holds intent separately from connection. P-mac-3 wires the toggle onto
++// PrepareCandidate → Publish → ACK (and requires local proxy readiness).
+ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+  public:
+   static AccessSiteProxyBubbleController* Get(Profile* profile);
+@@ -31,8 +39,8 @@
+   AccessSiteConnectionState connection_state() const {
+     return connection_state_;
+   }
+-  // P-mac-3 advances this through connecting/ready/unavailable. P-mac-2 keeps
+-  // the default idle so switch-on never implies connectivity.
++  const std::string& failure_reason() const { return failure_reason_; }
++
+   void SetConnectionState(AccessSiteConnectionState state) {
+     connection_state_ = state;
+   }
+@@ -40,15 +48,38 @@
+   AccessSiteProxyBubbleSnapshot SnapshotForCommittedUrl(
+       const GURL& committed_url) const;
+ 
+-  // Updates product intent only. Never sets connection to ready.
++  // Updates product intent only (no publish). Prefer RequestHostProxySession
++  // from the toolbar so publication/ACK runs.
+   bool ApplyHostProxyToggle(const AccessSiteHost& host, bool enabled);
++
++  // Product path: enable → local proxy ready → Prepare/Publish/ACK → ready.
++  // Disable locally commits even when the Access service is unavailable.
++  // Returns false only when the host/toggle cannot be accepted.
++  bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
+ 
+  private:
+   explicit AccessSiteProxyBubbleController(Profile* profile);
+ 
++  AccessSiteProxySessionError EnsureLocalProxyReady(
++      const AccessSiteHost& host,
++      AccessSiteProxyLocalProxyReadyInfo* out) const;
++  void BeginEnablePublication(const AccessSiteHost& host,
++                              AccessSiteProxyLocalProxyReadyInfo ready);
++  void BeginDisablePublication(const AccessSiteHost& host);
++  void OnPublicationComplete(AccessSiteHost host,
++                             bool enabling,
++                             AccessMutationTransactionResult result);
++  std::unique_ptr<AccessRuleStore> OpenSessionStore(
++      const OwnershipKey& owner) const;
++
++  const raw_ptr<Profile> profile_;
+   AccessSiteIntentStore intent_store_;
+   AccessSiteConnectionState connection_state_ =
+       AccessSiteConnectionState::kIdle;
++  std::string failure_reason_;
++  bool store_retained_ = false;
++  bool publication_in_flight_ = false;
++  base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
+ };
+ 
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 155c6c8d472cc109a392a0a89b1693567794da38..fb514fb341a895e77cc5aa358efb4186d98fa997 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -2,8 +2,14 @@
+ 
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ 
++#include <utility>
++
++#include "base/strings/string_number_conversions.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/browser/aegis/access/access_service_coordinator.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "components/aegis_access/access_proxy_route_adapter.h"
+ #include "content/public/browser/browser_thread.h"
+ 
+ namespace aegis::access {
+@@ -12,12 +18,54 @@
+ const void* const kAccessSiteProxyBubbleControllerKey =
+     &kAccessSiteProxyBubbleControllerKey;
+ 
++bool IsNumericLoopbackHost(std::string_view host) {
++  return host == "127.0.0.1" || host == "::1" || host == "[::1]";
++}
++
++AccessSiteProxySessionError MutationStatusToSessionError(
++    AccessMutationTransactionStatus status) {
++  switch (status) {
++    case AccessMutationTransactionStatus::kCommitted:
++      return AccessSiteProxySessionError::kOk;
++    case AccessMutationTransactionStatus::kBusy:
++      return AccessSiteProxySessionError::kBusy;
++    case AccessMutationTransactionStatus::kInvalidRequest:
++    case AccessMutationTransactionStatus::kUnsupportedTransportScope:
++      return AccessSiteProxySessionError::kMutationFailed;
++    case AccessMutationTransactionStatus::kStoreReadFailed:
++    case AccessMutationTransactionStatus::kPrepareFailed:
++    case AccessMutationTransactionStatus::kCandidateBuildFailed:
++      return AccessSiteProxySessionError::kPrepareFailed;
++    case AccessMutationTransactionStatus::kMissingRuntime:
++    case AccessMutationTransactionStatus::kMissingDispatchState:
++    case AccessMutationTransactionStatus::kMissingTransport:
++      return AccessSiteProxySessionError::kServiceUnavailable;
++    case AccessMutationTransactionStatus::kProxySelectionUnavailable:
++      return AccessSiteProxySessionError::kLocalProxyNotReady;
++    case AccessMutationTransactionStatus::kPublicationTrackerRejected:
++    case AccessMutationTransactionStatus::kRuntimePublicationFailed:
++      return AccessSiteProxySessionError::kPublishFailed;
++    case AccessMutationTransactionStatus::kNetworkPublicationFailed:
++      return AccessSiteProxySessionError::kAckFailed;
++    case AccessMutationTransactionStatus::kCommitFailed:
++      return AccessSiteProxySessionError::kMutationFailed;
++  }
++  return AccessSiteProxySessionError::kMutationFailed;
++}
++
++std::string MutationStatusReadableMessage(
++    AccessMutationTransactionStatus status) {
++  return AccessSiteProxySessionErrorReadableMessage(
++      MutationStatusToSessionError(status),
++      base::NumberToString(static_cast<int>(status)));
++}
++
+ }  // namespace
+ 
+ AccessSiteProxyBubbleController::AccessSiteProxyBubbleController(
+-    Profile* profile) {
+-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  (void)profile;
++    Profile* profile)
++    : profile_(profile) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+ }
+ 
+ AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() {
+@@ -55,7 +103,7 @@
+ AccessSiteProxyBubbleController::SnapshotForCommittedUrl(
+     const GURL& committed_url) const {
+   return BuildSiteProxyBubbleSnapshot(committed_url, intent_store_,
+-                                      connection_state_);
++                                      connection_state_, failure_reason_);
+ }
+ 
+ bool AccessSiteProxyBubbleController::ApplyHostProxyToggle(
+@@ -64,4 +112,214 @@
+   return ApplySiteProxyToggle(&intent_store_, host, enabled);
+ }
+ 
++bool AccessSiteProxyBubbleController::RequestHostProxySession(
++    const AccessSiteHost& host,
++    bool enabled) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
++    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kInvalidHost);
++    connection_state_ = AccessSiteConnectionState::kUnavailable;
++    return false;
++  }
++  if (publication_in_flight_) {
++    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kBusy);
++    return false;
++  }
++
++  if (!enabled) {
++    // Local commit first — disable stays allowed when the service is down.
++    ApplySiteProxyToggle(&intent_store_, host, false);
++    connection_state_ = AccessSiteConnectionState::kIdle;
++    failure_reason_.clear();
++    BeginDisablePublication(host);
++    return true;
++  }
++
++  ApplySiteProxyToggle(&intent_store_, host, true);
++  connection_state_ = AccessSiteConnectionState::kConnecting;
++  failure_reason_.clear();
++
++  AccessSiteProxyLocalProxyReadyInfo ready;
++  const AccessSiteProxySessionError ready_status =
++      EnsureLocalProxyReady(host, &ready);
++  if (ready_status != AccessSiteProxySessionError::kOk) {
++    connection_state_ = AccessSiteConnectionState::kUnavailable;
++    failure_reason_ =
++        AccessSiteProxySessionErrorReadableMessage(ready_status);
++    return true;
++  }
++
++  BeginEnablePublication(host, std::move(ready));
++  return true;
++}
++
++AccessSiteProxySessionError
++AccessSiteProxyBubbleController::EnsureLocalProxyReady(
++    const AccessSiteHost& host,
++    AccessSiteProxyLocalProxyReadyInfo* out) const {
++  if (!out) {
++    return AccessSiteProxySessionError::kLocalProxyUnavailable;
++  }
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  if (!transport) {
++    return AccessSiteProxySessionError::kLocalProxyUnavailable;
++  }
++  const std::optional<OwnershipKey> owner =
++      transport->OwnerForPartition(ChannelNamespace::kDev, base::FilePath());
++  if (!owner || !transport->OwnsConfiguredPartition(*owner)) {
++    return AccessSiteProxySessionError::kMissingOwner;
++  }
++  const std::optional<aegis_access::RegisteredProxyEndpoint> endpoint =
++      transport->CurrentEndpoint(*owner);
++  if (!endpoint) {
++    return AccessSiteProxySessionError::kLocalProxyNotReady;
++  }
++  if (!IsNumericLoopbackHost(endpoint->host) || endpoint->port == 0 ||
++      endpoint->proxy_group_id.empty() ||
++      endpoint->generations.selection_generation == 0) {
++    return AccessSiteProxySessionError::kLocalProxyNotReady;
++  }
++  if (endpoint->transport != aegis_access::RegisteredProxyTransport::kHttp &&
++      endpoint->transport != aegis_access::RegisteredProxyTransport::kSocks5) {
++    return AccessSiteProxySessionError::kLocalProxyNotReady;
++  }
++  (void)host;
++  out->owner = *owner;
++  out->proxy_group_id = endpoint->proxy_group_id;
++  return AccessSiteProxySessionError::kOk;
++}
++
++std::unique_ptr<AccessRuleStore>
++AccessSiteProxyBubbleController::OpenSessionStore(
++    const OwnershipKey& owner) const {
++  auto binding = TrustedAccessStoreBindingFactory::CreateEphemeral(
++      owner.channel, "aegis-access-bubble-session", owner.profile_token);
++  if (!binding) {
++    return nullptr;
++  }
++  auto store = std::make_unique<AccessRuleStore>(*binding);
++  if (store->Open() != StoreStatus::kValid) {
++    return nullptr;
++  }
++  return store;
++}
++
++void AccessSiteProxyBubbleController::BeginEnablePublication(
++    const AccessSiteHost& host,
++    AccessSiteProxyLocalProxyReadyInfo ready) {
++  auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile_);
++  if (!coordinator) {
++    connection_state_ = AccessSiteConnectionState::kUnavailable;
++    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kMissingCoordinator);
++    return;
++  }
++
++  const AccessSiteProxySessionMutationPlan plan =
++      BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kAllow,
++                                        ready.owner, ready.proxy_group_id,
++                                        "enable");
++  if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
++      !plan.mutation.request) {
++    connection_state_ = AccessSiteConnectionState::kUnavailable;
++    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++        plan.mutation.status ==
++                AccessSiteIntentMutationStatus::kMissingProxyGroup
++            ? AccessSiteProxySessionError::kMissingProxyGroup
++            : AccessSiteProxySessionError::kPrepareFailed);
++    return;
++  }
++
++  std::unique_ptr<AccessRuleStore> store;
++  if (!store_retained_) {
++    store = OpenSessionStore(ready.owner);
++    if (!store) {
++      connection_state_ = AccessSiteConnectionState::kUnavailable;
++      failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++          AccessSiteProxySessionError::kMissingStore);
++      return;
++    }
++  }
++
++  publication_in_flight_ = true;
++  coordinator->CommitSiteGroupMutation(
++      std::move(store), std::move(*plan.mutation.request), plan.selector,
++      base::BindOnce(&AccessSiteProxyBubbleController::OnPublicationComplete,
++                     weak_factory_.GetWeakPtr(), host, /*enabling=*/true));
++}
++
++void AccessSiteProxyBubbleController::BeginDisablePublication(
++    const AccessSiteHost& host) {
++  AccessSiteProxyLocalProxyReadyInfo ready;
++  const AccessSiteProxySessionError ready_status =
++      EnsureLocalProxyReady(host, &ready);
++  if (ready_status != AccessSiteProxySessionError::kOk) {
++    // Local off already committed; service/proxy absence is non-blocking.
++    return;
++  }
++
++  auto* coordinator = AccessServiceCoordinator::Get(profile_);
++  if (!coordinator) {
++    return;
++  }
++
++  const AccessSiteProxySessionMutationPlan plan =
++      BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kOff,
++                                        ready.owner, /*proxy_group_id=*/"",
++                                        "disable");
++  if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
++      !plan.mutation.request) {
++    return;
++  }
++
++  std::unique_ptr<AccessRuleStore> store;
++  if (!store_retained_) {
++    store = OpenSessionStore(ready.owner);
++    if (!store) {
++      return;
++    }
++  }
++
++  publication_in_flight_ = true;
++  coordinator->CommitSiteGroupMutation(
++      std::move(store), std::move(*plan.mutation.request), plan.selector,
++      base::BindOnce(&AccessSiteProxyBubbleController::OnPublicationComplete,
++                     weak_factory_.GetWeakPtr(), host, /*enabling=*/false));
++}
++
++void AccessSiteProxyBubbleController::OnPublicationComplete(
++    AccessSiteHost host,
++    bool enabling,
++    AccessMutationTransactionResult result) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  publication_in_flight_ = false;
++  if (result.status == AccessMutationTransactionStatus::kCommitted) {
++    store_retained_ = true;
++  }
++
++  if (enabling) {
++    if (result.status == AccessMutationTransactionStatus::kCommitted) {
++      connection_state_ = AccessSiteConnectionState::kReady;
++      failure_reason_.clear();
++      return;
++    }
++    // Keep allow intent; surface readable failure (switch ≠ connectivity).
++    connection_state_ = AccessSiteConnectionState::kUnavailable;
++    failure_reason_ = MutationStatusReadableMessage(result.status);
++    return;
++  }
++
++  // Disable: local off already applied. Note service failures without
++  // reverting the local commit or claiming Access connectivity.
++  connection_state_ = AccessSiteConnectionState::kIdle;
++  if (result.status != AccessMutationTransactionStatus::kCommitted) {
++    failure_reason_ = MutationStatusReadableMessage(result.status);
++  } else {
++    failure_reason_.clear();
++  }
++  (void)host;
++}
++
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_model.h b/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
+index 6e6cce036de00914c9ceb37016a5e8e56d8b0ba9..471bc23738c9b326518c59e0331f7db65fdd3f68 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
+@@ -51,6 +51,8 @@
+       AccessSiteProxyIntentStatusId::kNoTrustedSite;
+   AccessSiteProxyConnectionStatusId connection_status =
+       AccessSiteProxyConnectionStatusId::kIdle;
++  // Readable publication/session failure from P-mac-3. Empty when healthy.
++  std::string failure_reason;
+ };
+ 
+ std::string_view AccessSiteConnectionStateToString(
+@@ -65,7 +67,8 @@
+ AccessSiteProxyBubbleSnapshot BuildSiteProxyBubbleSnapshot(
+     const GURL& committed_url,
+     const AccessSiteIntentStore& store,
+-    AccessSiteConnectionState connection);
++    AccessSiteConnectionState connection,
++    std::string_view failure_reason = {});
+ 
+ // Product toggle → allow/off intent. Does not publish, ACK, or claim ready.
+ bool ApplySiteProxyToggle(AccessSiteIntentStore* store,
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_model.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_model.cc
+index d61885b3a71ff11d153c4bcd7862af41fb17e2ee..74c330d49cffabcd43901cdf116ee5eda9e28b5d 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_model.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_model.cc
+@@ -65,10 +65,12 @@
+ AccessSiteProxyBubbleSnapshot BuildSiteProxyBubbleSnapshot(
+     const GURL& committed_url,
+     const AccessSiteIntentStore& store,
+-    AccessSiteConnectionState connection) {
++    AccessSiteConnectionState connection,
++    std::string_view failure_reason) {
+   AccessSiteProxyBubbleSnapshot snapshot;
+   snapshot.connection = connection;
+   snapshot.connection_status = ConnectionStatusId(connection);
++  snapshot.failure_reason = std::string(failure_reason);
+ 
+   const AccessSiteHostResult host = ResolveTrustedNavigationHost(committed_url);
+   if (host.status != AccessSiteHostStatus::kOk || !host.host.has_value()) {
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc
+index 0229c8c22768b8664992f4e6ec9bb70fd4404589..5d78dc3f30e55fd38210391ae3e41601a5ea55b2 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc
+@@ -99,5 +99,20 @@
+             AccessSiteProxyIntentStatusId::kBlockLocalRefuse);
+ }
+ 
++TEST(AccessSiteProxyBubbleModelTest, FailureReasonStaysDistinctFromSwitch) {
++  AccessSiteIntentStore store;
++  store.Set(Host("news.example"), AccessSiteIntent::kAllow);
++  auto snap = BuildSiteProxyBubbleSnapshot(
++      GURL("https://news.example/"), store,
++      AccessSiteConnectionState::kUnavailable,
++      "Local Access proxy is not ready: no loopback endpoint published");
++  EXPECT_TRUE(snap.toggle_on);
++  EXPECT_EQ(snap.connection_status,
++            AccessSiteProxyConnectionStatusId::kUnavailable);
++  EXPECT_EQ(snap.intent_status,
++            AccessSiteProxyIntentStatusId::kAllowNotConnected);
++  EXPECT_NE(snap.failure_reason.find("Local Access proxy"), std::string::npos);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index aa32f73d4edc7b0eb629fe414a7b0a7708a4b934..0a19c9d9512552e08b17e51f3da525e518b6e038 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -355,8 +355,9 @@
+     if (!snap.has_trusted_site || !snap.toggle_enabled) {
+       return;
+     }
+-    // Intent only — never claims connectivity (P-mac-3 owns publish/ACK).
+-    controller->ApplyHostProxyToggle(snap.host, !snap.toggle_on);
++    // Publication path: enable → Prepare/Publish/ACK; disable commits locally
++    // even when the service is unavailable. Switch state ≠ connectivity.
++    controller->RequestHostProxySession(snap.host, !snap.toggle_on);
+     RefreshSoon();
+   }
+   void AppendSiteProxySection(views::View* parent) {
+@@ -383,6 +384,9 @@
+                                base::Unretained(this)));
+     AddLabel(parent, IntentStatusCopy(snap.intent_status));
+     AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
++    if (!snap.failure_reason.empty()) {
++      AddLabel(parent, base::UTF8ToUTF16(snap.failure_reason));
++    }
+     AddLabel(parent,
+              Copy(u"开关状态与连通状态分开显示。",
+                   u"Switch state is shown separately from connectivity.",
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.h b/chrome/browser/aegis/access/access_site_proxy_session.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..6250fe4acb6ac9454efbf8263c672d9653c9a5fb
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_session.h
+@@ -0,0 +1,147 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_SESSION_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_SESSION_H_
++
++#include <map>
++#include <string>
++#include <string_view>
++
++#include "chrome/browser/aegis/access/access_site_intent.h"
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++#include "components/aegis_access/request_ownership_registry.h"
++
++namespace aegis::access {
++
++// Readable fail-closed errors for bubble → publish/ACK (P-mac-3).
++// Callers must surface ReadableMessage(); never treat these as DIRECT success.
++enum class AccessSiteProxySessionError {
++  kOk,
++  kInvalidHost,
++  kLocalProxyUnavailable,
++  kLocalProxyNotReady,
++  kMissingOwner,
++  kMissingCoordinator,
++  kMissingStore,
++  kMissingProxyGroup,
++  kPrepareFailed,
++  kPublishFailed,
++  kAckFailed,
++  kMutationFailed,
++  kServiceUnavailable,
++  kBusy,
++  kDirectFallbackNotAdmitted,
++  kTearDownFailed,
++};
++
++std::string_view AccessSiteProxySessionErrorToString(
++    AccessSiteProxySessionError error);
++std::string AccessSiteProxySessionErrorReadableMessage(
++    AccessSiteProxySessionError error,
++    std::string_view detail = {});
++
++enum class AccessSiteProxySessionPhase {
++  kIdle,
++  kPreparingCandidate,
++  kPublishing,
++  kAwaitingAck,
++  kReady,
++  kUnavailable,
++};
++
++std::string_view AccessSiteProxySessionPhaseToString(
++    AccessSiteProxySessionPhase phase);
++
++struct AccessSiteProxySessionSnapshot {
++  AccessSiteHost host;
++  AccessSiteIntent intent = AccessSiteIntent::kOff;
++  AccessSiteProxySessionPhase phase = AccessSiteProxySessionPhase::kIdle;
++  AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;
++  std::string failure_reason;
++  uint64_t policy_generation = 0;
++};
++
++struct AccessSiteProxyLocalProxyReadyInfo {
++  OwnershipKey owner;
++  std::string proxy_group_id;
++};
++
++struct AccessSiteProxySessionPublicationInfo {
++  uint64_t policy_generation = 0;
++};
++
++// Injectable PrepareCandidate → Publish → ACK (+ local proxy readiness) seam.
++// Production hosts wire AccessServiceCoordinator + localhost proxy selection.
++// Unit tests supply doubles. Implementations must never report DIRECT success
++// on the allow path.
++class AccessSiteProxySessionOrchestrating {
++ public:
++  virtual ~AccessSiteProxySessionOrchestrating() = default;
++
++  // Confirms a published loopback proxy endpoint is ready for this host.
++  virtual AccessSiteProxySessionError EnsureLocalProxyReady(
++      const AccessSiteHost& host,
++      AccessSiteProxyLocalProxyReadyInfo* out) = 0;
++
++  // Runs PrepareCandidate → Publish → wait ACK for an ordinary mutation.
++  virtual AccessSiteProxySessionError PublishAndAcknowledge(
++      const SiteGroupMutationRequest& request,
++      const aegis_access::RequestCancellationSelector& selector,
++      AccessSiteProxySessionPublicationInfo* out) = 0;
++
++  // Best-effort tear-down of a previously published host selection.
++  virtual AccessSiteProxySessionError TearDownPublishedHost(
++      const AccessSiteHost& host) = 0;
++};
++
++// Per-host product session controller: intent stays distinct from connection.
++// enable: local-proxy ready → Prepare/Publish/ACK → ready
++// disable: local intent commit always; service may be unavailable
++class AccessSiteProxySessionController {
++ public:
++  explicit AccessSiteProxySessionController(
++      AccessSiteProxySessionOrchestrating* orchestrator);
++
++  AccessSiteIntentStore& intent_store() { return intent_store_; }
++  const AccessSiteIntentStore& intent_store() const { return intent_store_; }
++
++  AccessSiteProxySessionSnapshot SnapshotFor(const AccessSiteHost& host) const;
++
++  // Allow path. On failure: intent remains allow, connection=unavailable,
++  // failure_reason is set; never claims ready via DIRECT.
++  AccessSiteProxySessionSnapshot Enable(const AccessSiteHost& host);
++
++  // Off path. Local intent/off + idle always commit even when publication
++  // tear-down fails (failure_reason may note the service issue).
++  AccessSiteProxySessionSnapshot Disable(const AccessSiteHost& host);
++
++ private:
++  AccessSiteProxySessionSnapshot Write(
++      AccessSiteProxySessionSnapshot snapshot);
++  AccessSiteProxySessionSnapshot MarkUnavailable(
++      const AccessSiteHost& host,
++      AccessSiteIntent intent,
++      AccessSiteProxySessionError error,
++      std::string_view detail = {});
++
++  AccessSiteProxySessionOrchestrating* const orchestrator_;
++  AccessSiteIntentStore intent_store_;
++  std::map<AccessSiteHost, AccessSiteProxySessionSnapshot> snapshots_;
++};
++
++// Builds ordinary mutation + cancellation selector inputs for bubble sessions.
++struct AccessSiteProxySessionMutationPlan {
++  AccessSiteIntentMutationResult mutation;
++  aegis_access::RequestCancellationSelector selector;
++};
++
++AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
++    const AccessSiteHost& host,
++    AccessSiteIntent intent,
++    const OwnershipKey& owner,
++    std::string_view proxy_group_id,
++    std::string_view operation_suffix);
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_SESSION_H_
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d7b19ecfd656bead369a5b8fe246512033458876
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
+@@ -0,0 +1,329 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_proxy_session.h"
++
++#include <utility>
++
++#include "base/strings/strcat.h"
++
++namespace aegis::access {
++namespace {
++
++std::string DetailOr(std::string_view detail, std::string_view fallback) {
++  return detail.empty() ? std::string(fallback) : std::string(detail);
++}
++
++}  // namespace
++
++std::string_view AccessSiteProxySessionErrorToString(
++    AccessSiteProxySessionError error) {
++  switch (error) {
++    case AccessSiteProxySessionError::kOk:
++      return "ok";
++    case AccessSiteProxySessionError::kInvalidHost:
++      return "invalid-host";
++    case AccessSiteProxySessionError::kLocalProxyUnavailable:
++      return "local-proxy-unavailable";
++    case AccessSiteProxySessionError::kLocalProxyNotReady:
++      return "local-proxy-not-ready";
++    case AccessSiteProxySessionError::kMissingOwner:
++      return "missing-owner";
++    case AccessSiteProxySessionError::kMissingCoordinator:
++      return "missing-coordinator";
++    case AccessSiteProxySessionError::kMissingStore:
++      return "missing-store";
++    case AccessSiteProxySessionError::kMissingProxyGroup:
++      return "missing-proxy-group";
++    case AccessSiteProxySessionError::kPrepareFailed:
++      return "prepare-failed";
++    case AccessSiteProxySessionError::kPublishFailed:
++      return "publish-failed";
++    case AccessSiteProxySessionError::kAckFailed:
++      return "ack-failed";
++    case AccessSiteProxySessionError::kMutationFailed:
++      return "mutation-failed";
++    case AccessSiteProxySessionError::kServiceUnavailable:
++      return "service-unavailable";
++    case AccessSiteProxySessionError::kBusy:
++      return "busy";
++    case AccessSiteProxySessionError::kDirectFallbackNotAdmitted:
++      return "direct-fallback-not-admitted";
++    case AccessSiteProxySessionError::kTearDownFailed:
++      return "tear-down-failed";
++  }
++  return "mutation-failed";
++}
++
++std::string AccessSiteProxySessionErrorReadableMessage(
++    AccessSiteProxySessionError error,
++    std::string_view detail) {
++  switch (error) {
++    case AccessSiteProxySessionError::kOk:
++      return std::string();
++    case AccessSiteProxySessionError::kInvalidHost:
++      return "Site host is not a trusted exact host for Access.";
++    case AccessSiteProxySessionError::kLocalProxyUnavailable:
++      return "Local Access proxy is unavailable for this profile.";
++    case AccessSiteProxySessionError::kLocalProxyNotReady:
++      return base::StrCat(
++          {"Local Access proxy is not ready: ",
++           DetailOr(detail, "no loopback endpoint published")});
++    case AccessSiteProxySessionError::kMissingOwner:
++      return "Access ownership for this profile partition is missing.";
++    case AccessSiteProxySessionError::kMissingCoordinator:
++      return "Access service coordinator is unavailable.";
++    case AccessSiteProxySessionError::kMissingStore:
++      return "Access rule store could not be opened.";
++    case AccessSiteProxySessionError::kMissingProxyGroup:
++      return "No Access proxy group is bound for publication.";
++    case AccessSiteProxySessionError::kPrepareFailed:
++      return base::StrCat(
++          {"Failed to prepare Access candidate: ", DetailOr(detail, "prepare")});
++    case AccessSiteProxySessionError::kPublishFailed:
++      return base::StrCat(
++          {"Failed to publish Access session: ", DetailOr(detail, "publish")});
++    case AccessSiteProxySessionError::kAckFailed:
++      return base::StrCat(
++          {"Access session acknowledgement failed: ",
++           DetailOr(detail, "ack")});
++    case AccessSiteProxySessionError::kMutationFailed:
++      return base::StrCat(
++          {"Access site mutation failed: ", DetailOr(detail, "mutation")});
++    case AccessSiteProxySessionError::kServiceUnavailable:
++      return base::StrCat(
++          {"Access service is unavailable: ",
++           DetailOr(detail, "service down")});
++    case AccessSiteProxySessionError::kBusy:
++      return "Another Access site mutation is already in progress.";
++    case AccessSiteProxySessionError::kDirectFallbackNotAdmitted:
++      return "Direct fallback is not admitted on the allow path.";
++    case AccessSiteProxySessionError::kTearDownFailed:
++      return base::StrCat(
++          {"Failed to tear down Access session: ",
++           DetailOr(detail, "tear-down")});
++  }
++  return "Access session failed.";
++}
++
++std::string_view AccessSiteProxySessionPhaseToString(
++    AccessSiteProxySessionPhase phase) {
++  switch (phase) {
++    case AccessSiteProxySessionPhase::kIdle:
++      return "idle";
++    case AccessSiteProxySessionPhase::kPreparingCandidate:
++      return "preparing-candidate";
++    case AccessSiteProxySessionPhase::kPublishing:
++      return "publishing";
++    case AccessSiteProxySessionPhase::kAwaitingAck:
++      return "awaiting-ack";
++    case AccessSiteProxySessionPhase::kReady:
++      return "ready";
++    case AccessSiteProxySessionPhase::kUnavailable:
++      return "unavailable";
++  }
++  return "unavailable";
++}
++
++AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
++    const AccessSiteHost& host,
++    AccessSiteIntent intent,
++    const OwnershipKey& owner,
++    std::string_view proxy_group_id,
++    std::string_view operation_suffix) {
++  AccessSiteProxySessionMutationPlan plan;
++  AccessSiteIntentMutationInput input;
++  input.intent = intent;
++  input.host = host;
++  input.owner = owner;
++  input.site_toggle_id = base::StrCat({"bubble:", host.value});
++  input.operation_id =
++      base::StrCat({"bubble-session:", host.value, ":", operation_suffix});
++  input.request_fingerprint = input.operation_id;
++  input.proxy_group_id =
++      intent == AccessSiteIntent::kAllow ? std::string(proxy_group_id)
++                                         : std::string();
++  plan.mutation = BuildOrdinarySiteGroupMutation(input);
++
++  plan.selector.owner = owner;
++  plan.selector.document_token =
++      base::StrCat({"bubble-session-doc:", host.value});
++  plan.selector.top_level_site = base::StrCat({"https://", host.value});
++  plan.selector.exact_host = host.value;
++  plan.selector.scheme = RequestScheme::kHttps;
++  plan.selector.port = 443;
++  return plan;
++}
++
++AccessSiteProxySessionController::AccessSiteProxySessionController(
++    AccessSiteProxySessionOrchestrating* orchestrator)
++    : orchestrator_(orchestrator) {}
++
++AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
++    const AccessSiteHost& host) const {
++  const auto it = snapshots_.find(host);
++  if (it != snapshots_.end()) {
++    return it->second;
++  }
++  AccessSiteProxySessionSnapshot snapshot;
++  snapshot.host = host;
++  snapshot.intent = intent_store_.Get(host);
++  snapshot.phase = snapshot.intent == AccessSiteIntent::kOff
++                       ? AccessSiteProxySessionPhase::kIdle
++                       : AccessSiteProxySessionPhase::kUnavailable;
++  snapshot.connection = AccessSiteConnectionState::kIdle;
++  return snapshot;
++}
++
++AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
++    const AccessSiteHost& host) {
++  if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk ||
++      !orchestrator_) {
++    return MarkUnavailable(host, AccessSiteIntent::kAllow,
++                           !orchestrator_
++                               ? AccessSiteProxySessionError::kServiceUnavailable
++                               : AccessSiteProxySessionError::kInvalidHost);
++  }
++
++  intent_store_.Set(host, AccessSiteIntent::kAllow);
++  Write({.host = host,
++         .intent = AccessSiteIntent::kAllow,
++         .phase = AccessSiteProxySessionPhase::kPreparingCandidate,
++         .connection = AccessSiteConnectionState::kConnecting});
++
++  AccessSiteProxyLocalProxyReadyInfo ready_info;
++  const AccessSiteProxySessionError ready_status =
++      orchestrator_->EnsureLocalProxyReady(host, &ready_info);
++  if (ready_status != AccessSiteProxySessionError::kOk) {
++    return MarkUnavailable(host, AccessSiteIntent::kAllow, ready_status);
++  }
++  if (ready_info.proxy_group_id.empty()) {
++    return MarkUnavailable(host, AccessSiteIntent::kAllow,
++                           AccessSiteProxySessionError::kMissingProxyGroup);
++  }
++
++  Write({.host = host,
++         .intent = AccessSiteIntent::kAllow,
++         .phase = AccessSiteProxySessionPhase::kPublishing,
++         .connection = AccessSiteConnectionState::kConnecting});
++
++  const AccessSiteProxySessionMutationPlan plan =
++      BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kAllow,
++                                        ready_info.owner,
++                                        ready_info.proxy_group_id, "enable");
++  if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
++      !plan.mutation.request.has_value()) {
++    return MarkUnavailable(
++        host, AccessSiteIntent::kAllow,
++        plan.mutation.status ==
++                AccessSiteIntentMutationStatus::kMissingProxyGroup
++            ? AccessSiteProxySessionError::kMissingProxyGroup
++            : AccessSiteProxySessionError::kPrepareFailed);
++  }
++
++  Write({.host = host,
++         .intent = AccessSiteIntent::kAllow,
++         .phase = AccessSiteProxySessionPhase::kAwaitingAck,
++         .connection = AccessSiteConnectionState::kConnecting});
++
++  AccessSiteProxySessionPublicationInfo publication;
++  const AccessSiteProxySessionError publish_status =
++      orchestrator_->PublishAndAcknowledge(*plan.mutation.request,
++                                           plan.selector, &publication);
++  if (publish_status != AccessSiteProxySessionError::kOk) {
++    (void)orchestrator_->TearDownPublishedHost(host);
++    return MarkUnavailable(host, AccessSiteIntent::kAllow, publish_status);
++  }
++
++  return Write({.host = host,
++                .intent = AccessSiteIntent::kAllow,
++                .phase = AccessSiteProxySessionPhase::kReady,
++                .connection = AccessSiteConnectionState::kReady,
++                .policy_generation = publication.policy_generation});
++}
++
++AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
++    const AccessSiteHost& host) {
++  if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
++    AccessSiteProxySessionSnapshot snap;
++    snap.host = host;
++    snap.intent = AccessSiteIntent::kOff;
++    snap.phase = AccessSiteProxySessionPhase::kIdle;
++    snap.connection = AccessSiteConnectionState::kIdle;
++    snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kInvalidHost);
++    intent_store_.Set(host, AccessSiteIntent::kOff);
++    return Write(std::move(snap));
++  }
++
++  // Local commit first — disable must succeed even when the service is down.
++  intent_store_.Set(host, AccessSiteIntent::kOff);
++  AccessSiteProxySessionSnapshot local = {
++      .host = host,
++      .intent = AccessSiteIntent::kOff,
++      .phase = AccessSiteProxySessionPhase::kIdle,
++      .connection = AccessSiteConnectionState::kIdle,
++  };
++
++  if (!orchestrator_) {
++    local.failure_reason = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kServiceUnavailable);
++    return Write(std::move(local));
++  }
++
++  AccessSiteProxyLocalProxyReadyInfo ready_info;
++  const AccessSiteProxySessionError ready_status =
++      orchestrator_->EnsureLocalProxyReady(host, &ready_info);
++  if (ready_status == AccessSiteProxySessionError::kOk &&
++      !ready_info.proxy_group_id.empty()) {
++    const AccessSiteProxySessionMutationPlan plan =
++        BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kOff,
++                                          ready_info.owner,
++                                          /*proxy_group_id=*/"", "disable");
++    if (plan.mutation.status == AccessSiteIntentMutationStatus::kReady &&
++        plan.mutation.request.has_value()) {
++      AccessSiteProxySessionPublicationInfo publication;
++      const AccessSiteProxySessionError publish_status =
++          orchestrator_->PublishAndAcknowledge(*plan.mutation.request,
++                                               plan.selector, &publication);
++      if (publish_status != AccessSiteProxySessionError::kOk) {
++        local.failure_reason =
++            AccessSiteProxySessionErrorReadableMessage(publish_status);
++      }
++    }
++  } else {
++    const AccessSiteProxySessionError tear_down =
++        orchestrator_->TearDownPublishedHost(host);
++    if (tear_down != AccessSiteProxySessionError::kOk &&
++        tear_down != AccessSiteProxySessionError::kServiceUnavailable &&
++        tear_down != AccessSiteProxySessionError::kLocalProxyUnavailable &&
++        tear_down != AccessSiteProxySessionError::kLocalProxyNotReady) {
++      local.failure_reason =
++          AccessSiteProxySessionErrorReadableMessage(tear_down);
++    }
++  }
++
++  return Write(std::move(local));
++}
++
++AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Write(
++    AccessSiteProxySessionSnapshot snapshot) {
++  snapshots_[snapshot.host] = snapshot;
++  return snapshot;
++}
++
++AccessSiteProxySessionSnapshot
++AccessSiteProxySessionController::MarkUnavailable(
++    const AccessSiteHost& host,
++    AccessSiteIntent intent,
++    AccessSiteProxySessionError error,
++    std::string_view detail) {
++  intent_store_.Set(host, intent);
++  return Write({.host = host,
++                .intent = intent,
++                .phase = AccessSiteProxySessionPhase::kUnavailable,
++                .connection = AccessSiteConnectionState::kUnavailable,
++                .failure_reason = AccessSiteProxySessionErrorReadableMessage(
++                    error, detail)});
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..9a19d8794fda34668a65f5854027b87792b8ee7f
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+@@ -0,0 +1,182 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_proxy_session.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++OwnershipKey TestOwner() {
++  return {ChannelNamespace::kDev, "profile-token", "partition-token"};
++}
++
++AccessSiteHost Host(std::string_view value) {
++  const auto result = MakeAccessSiteHost(value);
++  EXPECT_EQ(result.status, AccessSiteHostStatus::kOk);
++  return *result.host;
++}
++
++class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
++ public:
++  enum class Stage {
++    kEnsure,
++    kPublish,
++    kTearDown,
++  };
++
++  bool local_proxy_ready = true;
++  bool admit_direct_fallback = false;
++  std::optional<Stage> fail_at;
++  AccessSiteProxySessionError ensure_error =
++      AccessSiteProxySessionError::kLocalProxyNotReady;
++  AccessSiteProxySessionError publish_error =
++      AccessSiteProxySessionError::kPublishFailed;
++  int ensure_count = 0;
++  int publish_count = 0;
++  int tear_down_count = 0;
++  uint64_t next_generation = 7;
++  std::optional<AccessSiteHost> last_torn_down;
++
++  AccessSiteProxySessionError EnsureLocalProxyReady(
++      const AccessSiteHost& host,
++      AccessSiteProxyLocalProxyReadyInfo* out) override {
++    ++ensure_count;
++    EXPECT_TRUE(out);
++    if (fail_at == Stage::kEnsure || !local_proxy_ready) {
++      return ensure_error;
++    }
++    out->owner = TestOwner();
++    out->proxy_group_id = "proxy-group";
++    (void)host;
++    return AccessSiteProxySessionError::kOk;
++  }
++
++  AccessSiteProxySessionError PublishAndAcknowledge(
++      const SiteGroupMutationRequest& request,
++      const aegis_access::RequestCancellationSelector& selector,
++      AccessSiteProxySessionPublicationInfo* out) override {
++    ++publish_count;
++    EXPECT_TRUE(out);
++    EXPECT_EQ(selector.exact_host, request.candidate_group.canonical_host);
++    if (admit_direct_fallback) {
++      return AccessSiteProxySessionError::kDirectFallbackNotAdmitted;
++    }
++    if (fail_at == Stage::kPublish) {
++      return publish_error;
++    }
++    out->policy_generation = next_generation++;
++    return AccessSiteProxySessionError::kOk;
++  }
++
++  AccessSiteProxySessionError TearDownPublishedHost(
++      const AccessSiteHost& host) override {
++    ++tear_down_count;
++    last_torn_down = host;
++    if (fail_at == Stage::kTearDown) {
++      return AccessSiteProxySessionError::kTearDownFailed;
++    }
++    return AccessSiteProxySessionError::kOk;
++  }
++};
++
++TEST(AccessSiteProxySessionTest, EnableRunsPreparePublishAckReady) {
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++
++  const auto snap = controller.Enable(host);
++
++  EXPECT_EQ(snap.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(snap.phase, AccessSiteProxySessionPhase::kReady);
++  EXPECT_EQ(snap.connection, AccessSiteConnectionState::kReady);
++  EXPECT_TRUE(snap.failure_reason.empty());
++  EXPECT_EQ(snap.policy_generation, 7u);
++  EXPECT_EQ(orchestrator.ensure_count, 1);
++  EXPECT_EQ(orchestrator.publish_count, 1);
++  EXPECT_EQ(controller.intent_store().Get(host), AccessSiteIntent::kAllow);
++}
++
++TEST(AccessSiteProxySessionTest, DisableCommitsLocallyEvenWhenServiceDown) {
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++  ASSERT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
++
++  orchestrator.local_proxy_ready = false;
++  orchestrator.ensure_error = AccessSiteProxySessionError::kServiceUnavailable;
++  const auto snap = controller.Disable(host);
++
++  EXPECT_EQ(snap.intent, AccessSiteIntent::kOff);
++  EXPECT_EQ(snap.phase, AccessSiteProxySessionPhase::kIdle);
++  EXPECT_EQ(snap.connection, AccessSiteConnectionState::kIdle);
++  EXPECT_EQ(controller.intent_store().Get(host), AccessSiteIntent::kOff);
++  // Tear-down still attempted when ensure cannot publish DIRECT.
++  EXPECT_GE(orchestrator.tear_down_count, 1);
++}
++
++TEST(AccessSiteProxySessionTest, EnableWithoutLocalProxyFailsClosedReadable) {
++  FakeOrchestrator orchestrator;
++  orchestrator.local_proxy_ready = false;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++
++  const auto snap = controller.Enable(host);
++
++  EXPECT_EQ(snap.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(snap.phase, AccessSiteProxySessionPhase::kUnavailable);
++  EXPECT_EQ(snap.connection, AccessSiteConnectionState::kUnavailable);
++  EXPECT_FALSE(snap.failure_reason.empty());
++  EXPECT_EQ(snap.failure_reason.find("Direct success"), std::string::npos);
++  EXPECT_EQ(orchestrator.publish_count, 0);
++}
++
++TEST(AccessSiteProxySessionTest, PublishFailureDoesNotClaimReady) {
++  FakeOrchestrator orchestrator;
++  orchestrator.fail_at = FakeOrchestrator::Stage::kPublish;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("news.example");
++
++  const auto snap = controller.Enable(host);
++
++  EXPECT_EQ(snap.phase, AccessSiteProxySessionPhase::kUnavailable);
++  EXPECT_EQ(snap.connection, AccessSiteConnectionState::kUnavailable);
++  EXPECT_NE(snap.failure_reason.find("publish"), std::string::npos);
++  EXPECT_EQ(orchestrator.tear_down_count, 1);
++}
++
++TEST(AccessSiteProxySessionTest, DirectFallbackRejectedOnAllowPath) {
++  FakeOrchestrator orchestrator;
++  orchestrator.admit_direct_fallback = true;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++
++  const auto snap = controller.Enable(host);
++
++  EXPECT_EQ(snap.phase, AccessSiteProxySessionPhase::kUnavailable);
++  EXPECT_EQ(
++      snap.failure_reason,
++      AccessSiteProxySessionErrorReadableMessage(
++          AccessSiteProxySessionError::kDirectFallbackNotAdmitted));
++}
++
++TEST(AccessSiteProxySessionTest, BuildsOrdinaryAllowAndOffMutationPlans) {
++  const AccessSiteHost host = Host("news.example");
++  auto allow = BuildSiteProxySessionMutationPlan(
++      host, AccessSiteIntent::kAllow, TestOwner(), "proxy-group", "on");
++  EXPECT_EQ(allow.mutation.status, AccessSiteIntentMutationStatus::kReady);
++  ASSERT_TRUE(allow.mutation.request);
++  EXPECT_EQ(allow.mutation.request->candidate_members[0].mode,
++            AccessMode::kProxy);
++  EXPECT_EQ(allow.selector.exact_host, "news.example");
++
++  auto off = BuildSiteProxySessionMutationPlan(
++      host, AccessSiteIntent::kOff, TestOwner(), "", "off");
++  EXPECT_EQ(off.mutation.status, AccessSiteIntentMutationStatus::kReady);
++  ASSERT_TRUE(off.mutation.request);
++  EXPECT_EQ(off.mutation.request->candidate_members[0].mode,
++            AccessMode::kDirect);
++}
++
++}  // namespace
++}  // namespace aegis::access

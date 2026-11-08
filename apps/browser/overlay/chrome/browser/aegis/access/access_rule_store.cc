@@ -546,6 +546,38 @@ AccessStoreBinding& AccessStoreBinding::operator=(AccessStoreBinding&&) =
 
 AccessStoreBinding::~AccessStoreBinding() = default;
 
+std::optional<AccessStoreBinding>
+TrustedAccessStoreBindingFactory::CreateEphemeral(
+    ChannelNamespace channel,
+    std::string durable_profile_id,
+    std::string runtime_profile_token) {
+  if (!aegis_access::IsKnownChannel(channel) || durable_profile_id.empty() ||
+      runtime_profile_token.empty()) {
+    return std::nullopt;
+  }
+  return AccessStoreBinding(AccessStoreKind::kEphemeralProfile, channel,
+                            std::move(durable_profile_id),
+                            std::move(runtime_profile_token), base::FilePath(),
+                            base::FilePath());
+}
+
+std::optional<AccessStoreBinding>
+TrustedAccessStoreBindingFactory::CreatePersistent(
+    ChannelNamespace channel,
+    std::string durable_profile_id,
+    std::string runtime_profile_token,
+    base::FilePath profile_path) {
+  if (!aegis_access::IsKnownChannel(channel) || durable_profile_id.empty() ||
+      runtime_profile_token.empty() || profile_path.empty()) {
+    return std::nullopt;
+  }
+  base::FilePath database_path = profile_path.AppendASCII("access.db");
+  return AccessStoreBinding(AccessStoreKind::kPersistentProfile, channel,
+                            std::move(durable_profile_id),
+                            std::move(runtime_profile_token),
+                            std::move(profile_path), std::move(database_path));
+}
+
 AccessRuleStore::AccessRuleStore(AccessStoreBinding binding)
     : binding_(std::move(binding)), database_("AegisAccess") {}
 

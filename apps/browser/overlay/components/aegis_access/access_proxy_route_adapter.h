@@ -16,6 +16,8 @@ namespace aegis_access {
 
 enum class RegisteredProxyTransport {
   kHttp,
+  // No-auth SOCKS5 loopback inbound. Username/password is not admitted.
+  kSocks5,
   kInvalid,
 };
 
@@ -54,8 +56,8 @@ enum class ProxyRouteApplyStatus {
 //   A higher-level dispatcher may retry kWait after state changes.
 //
 // The endpoint is separately supplied by trusted registration state. Opaque
-// ids in RoutePlan are never interpreted as host/port values. This first P0
-// network slice accepts HTTP loopback only; SOCKS5 is a later acceptance item.
+// ids in RoutePlan are never interpreted as host/port values. This slice
+// accepts numeric-loopback HTTP and no-auth SOCKS5 endpoints only.
 ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
     const RoutePlan& plan,
     const RegisteredProxyEndpoint* endpoint,

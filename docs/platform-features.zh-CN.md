@@ -217,11 +217,11 @@ iOS 模拟器证据：[docs/audit/ios-portable-features-2026-10-11.zh-CN.md](../
 
 ### 网络访问规则和权限
 
-`aegis-access` — 按来源的网站显示、脚本、相机和麦克风设置；未移植 Aegis Access 代理路由。
+`aegis-access` — 保留按来源的显示/脚本/相机麦克风设置；另有 AccessKit loopback HTTP/HTTPS 入站、reality_vision 出站合同与 ProxyConfiguration 接线。本轮仅登记模拟器单元/UI 覆盖（见 I1–I9 与 REALITY 正反）；真机与 TestFlight 为 NOT_RUN。不等于桌面 Chromium Access 全路由移植，也不把单测绿升为产品五步 PASS。
 
-源码：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift)
+源码：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift) · [apps/ios/AccessKit/AccessInboundTransport.swift](../apps/ios/AccessKit/AccessInboundTransport.swift) · [apps/ios/AccessKit/AccessHTTPRealityPath.swift](../apps/ios/AccessKit/AccessHTTPRealityPath.swift) · [apps/ios/AccessKit/AccessHTTPSRealityPath.swift](../apps/ios/AccessKit/AccessHTTPSRealityPath.swift) · [apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift](../apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift) · [apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift](../apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift)
 
-本项未完成本轮运行验收。
+iOS 模拟器证据：[docs/audit/ios-access-simulator-evidence-2026-11-08.md](../docs/audit/ios-access-simulator-evidence-2026-11-08.md)
 
 ### 旧资料、隐私模式和重启兼容
 
