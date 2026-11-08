@@ -526,10 +526,10 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
     if (!direction) {
       return nullptr;
     }
-    return std::make_unique<actor::HistoryToolRequest>(
-        tab_handle, *direction == "back"
-                        ? actor::HistoryToolRequest::Direction::kBack
-                        : actor::HistoryToolRequest::Direction::kForward);
+    if (*direction == "back") {
+      return std::make_unique<actor::HistoryBackToolRequest>(tab_handle);
+    }
+    return std::make_unique<actor::HistoryForwardToolRequest>(tab_handle);
   }
   if (call.tool_name == "page.media") {
     const std::string* action = call.arguments.FindString("action");
@@ -537,16 +537,14 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
       return nullptr;
     }
     if (*action == "play") {
-      return std::make_unique<actor::MediaControlToolRequest>(
-          tab_handle, actor::PlayMedia{});
+      return std::make_unique<actor::PlayMediaToolRequest>(tab_handle);
     }
     if (*action == "pause") {
-      return std::make_unique<actor::MediaControlToolRequest>(
-          tab_handle, actor::PauseMedia{});
+      return std::make_unique<actor::PauseMediaToolRequest>(tab_handle);
     }
     std::optional<int> position_ms = call.arguments.FindInt("position_ms");
-    return position_ms ? std::make_unique<actor::MediaControlToolRequest>(
-                             tab_handle, actor::SeekMedia{*position_ms})
+    return position_ms ? std::make_unique<actor::SeekMediaToolRequest>(
+                             tab_handle, base::Milliseconds(*position_ms))
                        : nullptr;
   }
   if (call.tool_name == "page.webmcp.invoke") {
@@ -616,8 +614,9 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
     std::vector<actor::AttemptFormFillingToolRequest::FormFillingRequest>
         requests;
     requests.push_back(std::move(request));
+    // 当前只请求地址和联系信息，不传入预选信用卡令牌。
     return std::make_unique<actor::AttemptFormFillingToolRequest>(
-        tab_handle, std::move(requests));
+        tab_handle, std::move(requests), /*credit_card_opaque_token=*/"");
   }
   return nullptr;
 }
