@@ -338,13 +338,20 @@ if (!is_android) {
       "//chrome/browser/renderer_context_menu:test_support",
       "//chrome/browser/search_engines",
       "//chrome/browser/translate",
-      "//chrome/browser/ui",
       "//chrome/browser/ui:browser_actions",
+      "//chrome/browser/ui:browser_command_controller",
+      "//chrome/browser/ui:browser_commands",
+      "//chrome/browser/ui:browser_tabstrip",
+      "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/side_panel",
       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
       "//chrome/browser/ui/signin",
       "//chrome/browser/ui/startup",
+      "//chrome/browser/ui/tabs:tab_strip",
+      "//chrome/browser/ui/toolbar",
+      "//chrome/browser/ui/toolbar/pinned_toolbar",
       "//chrome/browser/ui/views/side_panel",
+      "//chrome/browser/ui/views/toolbar",
       "//chrome/browser/ui/webui/aegis_agent",
       "//chrome/browser/ui/webui/aegis_agent:impl",
       "//chrome/common/aegis",
@@ -394,10 +401,12 @@ if (!is_android) {
       "//chrome/browser/pdf:pdf_extension_test_base",
       "//chrome/browser/profiles:profile",
       "//chrome/browser/renderer_context_menu:test_support",
-      "//chrome/browser/ui",
+      "//chrome/browser/ui:browser_commands",
       "//chrome/browser/ui:browser_element_identifiers",
+      "//chrome/browser/ui/browser_window",
       "//chrome/browser/ui/side_panel",
       "//chrome/browser/ui/side_panel:side_panel_views_dependent",
+      "//chrome/browser/ui/tabs:tab_strip",
       "//chrome/browser/ui/views/side_panel",
       "//chrome/common/aegis",
       "//chrome/test:test_support",
@@ -502,15 +511,16 @@ test("aegis_browser_unittests") {
     sources += [
       "actor_journal_privacy_unittest.cc",
       "aegis_ui_handler_unittest.cc",
-      "enhancements/enhancement_store_unittest.cc",
       "agent/aegis_agent_service_unittest.cc",
       "agent/agent_core_unittest.cc",
       "agent/agent_observation_unittest.cc",
       "agent/agent_task_store_unittest.cc",
+      "enhancements/enhancement_store_unittest.cc",
       "summary_session_unittest.cc",
     ]
     deps += [
-      # 桌面测试直接引用 BrowserClient；test_support 的私有依赖不会透传头文件。
+      # 桌面测试直接引用 BrowserClient；test_support
+      # 的私有依赖不会透传头文件。
       "//chrome/browser:chrome_content_browser_client",
       "//chrome/browser/actor",
       "//chrome/browser/actor/ui:event_dispatcher",
@@ -531,8 +541,8 @@ test("aegis_browser_unittests") {
   }
   if (is_mac) {
     sources += [
-      "aegis_torrent_client_unittest.cc",
       "aegis_mac_signing_unittest.cc",
+      "aegis_torrent_client_unittest.cc",
     ]
   }
 }
