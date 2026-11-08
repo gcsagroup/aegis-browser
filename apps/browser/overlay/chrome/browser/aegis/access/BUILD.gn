@@ -189,6 +189,30 @@ test("access_site_intent_unittests") {
   ]
 }
 
+source_set("access_site_proxy_bubble") {
+  sources = [
+    "access_site_proxy_bubble_controller.cc",
+    "access_site_proxy_bubble_controller.h",
+    "access_site_proxy_bubble_model.cc",
+    "access_site_proxy_bubble_model.h",
+  ]
+  deps = [
+    ":access_site_intent",
+    "//base",
+    "//chrome/browser/profiles:profile",
+    "//url",
+  ]
+}
+
+test("access_site_proxy_bubble_unittests") {
+  sources = [ "access_site_proxy_bubble_model_unittest.cc" ]
+  deps = [
+    ":access_site_proxy_bubble",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
 test("access_service_coordinator_unittests") {
   sources = [ "access_service_coordinator_unittest.cc" ]
   deps = [

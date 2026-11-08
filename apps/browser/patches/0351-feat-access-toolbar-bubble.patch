@@ -1,0 +1,640 @@
+From 46905089640bd5383f8d644977432f0907a68680 Mon Sep 17 00:00:00 2001
+From: Aegis Packaging Proposal <aegis-proposal@invalid>
+Date: Sun, 8 Nov 2026 13:53:40 +0000
+Subject: [PATCH] feat: add macOS toolbar bubble for per-site proxy
+
+Show current host, site-proxy toggle, and short status with switch
+state distinct from connectivity. Sync overlay with the Chromium
+patch series.
+---
+ chrome/browser/aegis/BUILD.gn                 |   3 +
+ chrome/browser/aegis/access/BUILD.gn          |  24 ++++
+ .../access_site_proxy_bubble_controller.cc    |  60 ++++++++++
+ .../access_site_proxy_bubble_controller.h     |  55 ++++++++++
+ .../access/access_site_proxy_bubble_model.cc  | 102 +++++++++++++++++
+ .../access/access_site_proxy_bubble_model.h   |  77 +++++++++++++
+ ...access_site_proxy_bubble_model_unittest.cc | 103 ++++++++++++++++++
+ .../ui/views/toolbar/aegis_toolbar_button.cc  |  98 +++++++++++++++++
+ 8 files changed, 522 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_model.cc
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_model.h
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index e1c7ce98acd908d0d5e6501ff99794a91903b344..033549f3840498426df0f8e6b3e5b5a1cb143b86 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -263,6 +263,9 @@ source_set("aegis") {
+       "summary_session.cc",
+       "summary_session.h",
+     ]
++    # Toolbar site-proxy bubble reads Access product intent (P-mac-2).
++    public_deps +=
++        [ "//chrome/browser/aegis/access:access_site_proxy_bubble" ]
+     deps += [
+       "//chrome/browser/resources/aegis:resources",
+       "//chrome/browser/ui/tabs:tab_strip",
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index cb92dd1af9364fa81d4217f230ad297c28ca9833..714e225295a272f14f4b3065cd6bedb980e70047 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -189,6 +189,30 @@ test("access_site_intent_unittests") {
+   ]
+ }
+ 
++source_set("access_site_proxy_bubble") {
++  sources = [
++    "access_site_proxy_bubble_controller.cc",
++    "access_site_proxy_bubble_controller.h",
++    "access_site_proxy_bubble_model.cc",
++    "access_site_proxy_bubble_model.h",
++  ]
++  deps = [
++    ":access_site_intent",
++    "//base",
++    "//chrome/browser/profiles:profile",
++    "//url",
++  ]
++}
++
++test("access_site_proxy_bubble_unittests") {
++  sources = [ "access_site_proxy_bubble_model_unittest.cc" ]
++  deps = [
++    ":access_site_proxy_bubble",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("access_service_coordinator_unittests") {
+   sources = [ "access_service_coordinator_unittest.cc" ]
+   deps = [
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..1ee8403a9222ca4e43a7387b932e9dfadc0dcb36
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -0,0 +1,60 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
++
++#include "chrome/browser/profiles/profile.h"
++
++namespace aegis::access {
++namespace {
++
++const void* const kAccessSiteProxyBubbleControllerKey =
++    &kAccessSiteProxyBubbleControllerKey;
++
++}  // namespace
++
++AccessSiteProxyBubbleController::AccessSiteProxyBubbleController(
++    Profile* profile) {
++  (void)profile;
++}
++
++AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() = default;
++
++AccessSiteProxyBubbleController* AccessSiteProxyBubbleController::Get(
++    Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  return static_cast<AccessSiteProxyBubbleController*>(
++      profile->GetUserData(kAccessSiteProxyBubbleControllerKey));
++}
++
++AccessSiteProxyBubbleController* AccessSiteProxyBubbleController::GetOrCreate(
++    Profile* profile) {
++  if (!profile) {
++    return nullptr;
++  }
++  if (AccessSiteProxyBubbleController* existing = Get(profile)) {
++    return existing;
++  }
++  auto controller = std::unique_ptr<AccessSiteProxyBubbleController>(
++      new AccessSiteProxyBubbleController(profile));
++  AccessSiteProxyBubbleController* raw = controller.get();
++  profile->SetUserData(kAccessSiteProxyBubbleControllerKey,
++                       std::move(controller));
++  return raw;
++}
++
++AccessSiteProxyBubbleSnapshot
++AccessSiteProxyBubbleController::SnapshotForCommittedUrl(
++    const GURL& committed_url) const {
++  return BuildSiteProxyBubbleSnapshot(committed_url, intent_store_,
++                                      connection_state_);
++}
++
++bool AccessSiteProxyBubbleController::ApplyHostProxyToggle(
++    const AccessSiteHost& host,
++    bool enabled) {
++  return ApplySiteProxyToggle(&intent_store_, host, enabled);
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..090a28677db7742d59eb4f1b6279d06398db5cf0
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -0,0 +1,55 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
++
++#include "base/supports_user_data.h"
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++
++class Profile;
++
++namespace aegis::access {
++
++// Profile-owned product state for the toolbar site-proxy bubble.
++// Holds intent separately from connection. Does not publish or ACK
++// (session finalize is P-mac-3).
++class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
++ public:
++  static AccessSiteProxyBubbleController* Get(Profile* profile);
++  static AccessSiteProxyBubbleController* GetOrCreate(Profile* profile);
++
++  AccessSiteProxyBubbleController(const AccessSiteProxyBubbleController&) =
++      delete;
++  AccessSiteProxyBubbleController& operator=(
++      const AccessSiteProxyBubbleController&) = delete;
++  ~AccessSiteProxyBubbleController() override;
++
++  AccessSiteIntentStore& intent_store() { return intent_store_; }
++  const AccessSiteIntentStore& intent_store() const { return intent_store_; }
++
++  AccessSiteConnectionState connection_state() const {
++    return connection_state_;
++  }
++  // P-mac-3 advances this through connecting/ready/unavailable. P-mac-2 keeps
++  // the default idle so switch-on never implies connectivity.
++  void SetConnectionState(AccessSiteConnectionState state) {
++    connection_state_ = state;
++  }
++
++  AccessSiteProxyBubbleSnapshot SnapshotForCommittedUrl(
++      const GURL& committed_url) const;
++
++  // Updates product intent only. Never sets connection to ready.
++  bool ApplyHostProxyToggle(const AccessSiteHost& host, bool enabled);
++
++ private:
++  explicit AccessSiteProxyBubbleController(Profile* profile);
++
++  AccessSiteIntentStore intent_store_;
++  AccessSiteConnectionState connection_state_ =
++      AccessSiteConnectionState::kIdle;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_model.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_model.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d61885b3a71ff11d153c4bcd7862af41fb17e2ee
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_model.cc
+@@ -0,0 +1,102 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++
++namespace aegis::access {
++namespace {
++
++AccessSiteProxyConnectionStatusId ConnectionStatusId(
++    AccessSiteConnectionState connection) {
++  switch (connection) {
++    case AccessSiteConnectionState::kIdle:
++      return AccessSiteProxyConnectionStatusId::kIdle;
++    case AccessSiteConnectionState::kConnecting:
++      return AccessSiteProxyConnectionStatusId::kConnecting;
++    case AccessSiteConnectionState::kReady:
++      return AccessSiteProxyConnectionStatusId::kReady;
++    case AccessSiteConnectionState::kUnavailable:
++      return AccessSiteProxyConnectionStatusId::kUnavailable;
++  }
++  return AccessSiteProxyConnectionStatusId::kUnavailable;
++}
++
++AccessSiteProxyIntentStatusId IntentStatusId(
++    AccessSiteIntent intent,
++    AccessSiteConnectionState connection) {
++  switch (intent) {
++    case AccessSiteIntent::kOff:
++      return AccessSiteProxyIntentStatusId::kOffBrowserDefault;
++    case AccessSiteIntent::kBlock:
++      return AccessSiteProxyIntentStatusId::kBlockLocalRefuse;
++    case AccessSiteIntent::kAllow:
++      return connection == AccessSiteConnectionState::kReady
++                 ? AccessSiteProxyIntentStatusId::kAllowConnected
++                 : AccessSiteProxyIntentStatusId::kAllowNotConnected;
++  }
++  return AccessSiteProxyIntentStatusId::kOffBrowserDefault;
++}
++
++}  // namespace
++
++std::string_view AccessSiteConnectionStateToString(
++    AccessSiteConnectionState state) {
++  switch (state) {
++    case AccessSiteConnectionState::kIdle:
++      return "idle";
++    case AccessSiteConnectionState::kConnecting:
++      return "connecting";
++    case AccessSiteConnectionState::kReady:
++      return "ready";
++    case AccessSiteConnectionState::kUnavailable:
++      return "unavailable";
++  }
++  return "unavailable";
++}
++
++AccessSiteHostResult ResolveTrustedNavigationHost(const GURL& committed_url) {
++  if (!committed_url.is_valid() || !committed_url.SchemeIsHTTPOrHTTPS() ||
++      !committed_url.has_host()) {
++    return {.status = AccessSiteHostStatus::kEmpty};
++  }
++  // Committed navigation URL only — never visible/typed speculative hosts.
++  return NormalizeAccessSiteHost(committed_url.host());
++}
++
++AccessSiteProxyBubbleSnapshot BuildSiteProxyBubbleSnapshot(
++    const GURL& committed_url,
++    const AccessSiteIntentStore& store,
++    AccessSiteConnectionState connection) {
++  AccessSiteProxyBubbleSnapshot snapshot;
++  snapshot.connection = connection;
++  snapshot.connection_status = ConnectionStatusId(connection);
++
++  const AccessSiteHostResult host = ResolveTrustedNavigationHost(committed_url);
++  if (host.status != AccessSiteHostStatus::kOk || !host.host.has_value()) {
++    snapshot.intent_status = AccessSiteProxyIntentStatusId::kNoTrustedSite;
++    return snapshot;
++  }
++
++  snapshot.has_trusted_site = true;
++  snapshot.host = *host.host;
++  snapshot.intent = store.Get(snapshot.host);
++  snapshot.toggle_enabled = true;
++  snapshot.toggle_on = snapshot.intent == AccessSiteIntent::kAllow;
++  snapshot.intent_status = IntentStatusId(snapshot.intent, connection);
++  return snapshot;
++}
++
++bool ApplySiteProxyToggle(AccessSiteIntentStore* store,
++                          const AccessSiteHost& host,
++                          bool enabled) {
++  if (!store || host.value.empty()) {
++    return false;
++  }
++  const AccessSiteHostResult checked = MakeAccessSiteHost(host.value);
++  if (checked.status != AccessSiteHostStatus::kOk) {
++    return false;
++  }
++  store->Set(host, enabled ? AccessSiteIntent::kAllow : AccessSiteIntent::kOff);
++  return true;
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_model.h b/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..6e6cce036de00914c9ceb37016a5e8e56d8b0ba9
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
+@@ -0,0 +1,77 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_MODEL_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_MODEL_H_
++
++#include <string>
++#include <string_view>
++
++#include "chrome/browser/aegis/access/access_site_intent.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++
++// Connection / session readiness for the toolbar bubble. Distinct from the
++// product site-proxy switch (AccessSiteIntent). P-mac-2 shows both; P-mac-3
++// advances connection through publish/ACK.
++enum class AccessSiteConnectionState {
++  kIdle,
++  kConnecting,
++  kReady,
++  kUnavailable,
++};
++
++// Short intent-line ids. UI localizes; never conflate with connection copy.
++enum class AccessSiteProxyIntentStatusId {
++  kNoTrustedSite,
++  kOffBrowserDefault,
++  kAllowNotConnected,
++  kAllowConnected,
++  kBlockLocalRefuse,
++};
++
++enum class AccessSiteProxyConnectionStatusId {
++  kIdle,
++  kConnecting,
++  kReady,
++  kUnavailable,
++};
++
++// Presentation snapshot for the toolbar site-proxy bubble.
++struct AccessSiteProxyBubbleSnapshot {
++  bool has_trusted_site = false;
++  AccessSiteHost host;
++  AccessSiteIntent intent = AccessSiteIntent::kOff;
++  AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;
++  // Checked when intent == allow. Independent of connection readiness.
++  bool toggle_on = false;
++  // False when the committed URL is not a trusted http(s) navigation host.
++  bool toggle_enabled = false;
++  AccessSiteProxyIntentStatusId intent_status =
++      AccessSiteProxyIntentStatusId::kNoTrustedSite;
++  AccessSiteProxyConnectionStatusId connection_status =
++      AccessSiteProxyConnectionStatusId::kIdle;
++};
++
++std::string_view AccessSiteConnectionStateToString(
++    AccessSiteConnectionState state);
++
++// Resolves an exact-host product key from the current navigation's trusted
++// URL only: last-committed http(s). Visible/typed URLs are not admitted.
++AccessSiteHostResult ResolveTrustedNavigationHost(const GURL& committed_url);
++
++// Builds bubble state. Intent comes from the product store; connection is an
++// independent input so switch-on never implies Access connectivity.
++AccessSiteProxyBubbleSnapshot BuildSiteProxyBubbleSnapshot(
++    const GURL& committed_url,
++    const AccessSiteIntentStore& store,
++    AccessSiteConnectionState connection);
++
++// Product toggle → allow/off intent. Does not publish, ACK, or claim ready.
++bool ApplySiteProxyToggle(AccessSiteIntentStore* store,
++                          const AccessSiteHost& host,
++                          bool enabled);
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_MODEL_H_
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0229c8c22768b8664992f4e6ec9bb70fd4404589
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc
+@@ -0,0 +1,103 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++AccessSiteHost Host(std::string_view value) {
++  const auto result = MakeAccessSiteHost(value);
++  EXPECT_EQ(result.status, AccessSiteHostStatus::kOk);
++  return *result.host;
++}
++
++TEST(AccessSiteProxyBubbleModelTest, TrustedHostFromCommittedHttpOnly) {
++  const auto ok =
++      ResolveTrustedNavigationHost(GURL("https://News.Example/path?q=1"));
++  ASSERT_EQ(ok.status, AccessSiteHostStatus::kOk);
++  EXPECT_EQ(ok.host->value, "news.example");
++
++  EXPECT_EQ(ResolveTrustedNavigationHost(GURL("chrome://settings")).status,
++            AccessSiteHostStatus::kEmpty);
++  EXPECT_EQ(ResolveTrustedNavigationHost(GURL("file:///tmp/x")).status,
++            AccessSiteHostStatus::kEmpty);
++  EXPECT_EQ(ResolveTrustedNavigationHost(GURL()).status,
++            AccessSiteHostStatus::kEmpty);
++}
++
++TEST(AccessSiteProxyBubbleModelTest, SwitchStateDistinctFromConnection) {
++  AccessSiteIntentStore store;
++  const GURL url("https://news.example/");
++  store.Set(Host("news.example"), AccessSiteIntent::kAllow);
++
++  auto idle = BuildSiteProxyBubbleSnapshot(url, store,
++                                           AccessSiteConnectionState::kIdle);
++  EXPECT_TRUE(idle.has_trusted_site);
++  EXPECT_TRUE(idle.toggle_on);
++  EXPECT_TRUE(idle.toggle_enabled);
++  EXPECT_EQ(idle.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(idle.intent_status,
++            AccessSiteProxyIntentStatusId::kAllowNotConnected);
++  EXPECT_EQ(idle.connection_status, AccessSiteProxyConnectionStatusId::kIdle);
++
++  auto ready = BuildSiteProxyBubbleSnapshot(url, store,
++                                            AccessSiteConnectionState::kReady);
++  EXPECT_TRUE(ready.toggle_on);
++  EXPECT_EQ(ready.intent_status,
++            AccessSiteProxyIntentStatusId::kAllowConnected);
++  EXPECT_EQ(ready.connection_status, AccessSiteProxyConnectionStatusId::kReady);
++
++  auto off = BuildSiteProxyBubbleSnapshot(url, AccessSiteIntentStore(),
++                                          AccessSiteConnectionState::kReady);
++  EXPECT_FALSE(off.toggle_on);
++  EXPECT_EQ(off.intent_status,
++            AccessSiteProxyIntentStatusId::kOffBrowserDefault);
++  // Connection may be ready globally while this site switch is off.
++  EXPECT_EQ(off.connection_status, AccessSiteProxyConnectionStatusId::kReady);
++}
++
++TEST(AccessSiteProxyBubbleModelTest, ToggleUpdatesIntentWithoutReadyClaim) {
++  AccessSiteIntentStore store;
++  const AccessSiteHost host = Host("www.example.com");
++  EXPECT_TRUE(ApplySiteProxyToggle(&store, host, true));
++  EXPECT_EQ(store.Get(host), AccessSiteIntent::kAllow);
++
++  auto snap = BuildSiteProxyBubbleSnapshot(GURL("https://www.example.com/"),
++                                           store,
++                                           AccessSiteConnectionState::kIdle);
++  EXPECT_TRUE(snap.toggle_on);
++  EXPECT_EQ(snap.intent_status,
++            AccessSiteProxyIntentStatusId::kAllowNotConnected);
++  EXPECT_EQ(snap.connection, AccessSiteConnectionState::kIdle);
++
++  EXPECT_TRUE(ApplySiteProxyToggle(&store, host, false));
++  EXPECT_EQ(store.Get(host), AccessSiteIntent::kOff);
++  EXPECT_TRUE(store.All().empty());
++}
++
++TEST(AccessSiteProxyBubbleModelTest, InternalPagesDisableToggle) {
++  AccessSiteIntentStore store;
++  auto snap = BuildSiteProxyBubbleSnapshot(GURL("chrome://aegis/"), store,
++                                           AccessSiteConnectionState::kIdle);
++  EXPECT_FALSE(snap.has_trusted_site);
++  EXPECT_FALSE(snap.toggle_enabled);
++  EXPECT_FALSE(snap.toggle_on);
++  EXPECT_EQ(snap.intent_status, AccessSiteProxyIntentStatusId::kNoTrustedSite);
++}
++
++TEST(AccessSiteProxyBubbleModelTest, BlockIntentSurfacesLocalRefuseStatus) {
++  AccessSiteIntentStore store;
++  store.Set(Host("blocked.example"), AccessSiteIntent::kBlock);
++  auto snap = BuildSiteProxyBubbleSnapshot(GURL("https://blocked.example/"),
++                                           store,
++                                           AccessSiteConnectionState::kIdle);
++  EXPECT_TRUE(snap.has_trusted_site);
++  EXPECT_FALSE(snap.toggle_on);
++  EXPECT_EQ(snap.intent_status,
++            AccessSiteProxyIntentStatusId::kBlockLocalRefuse);
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index f93e0180735bfe7c77243aa8d3ee06c7cfd03830..aa32f73d4edc7b0eb629fe414a7b0a7708a4b934 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -14,6 +14,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/aegis/enhancements/enhancement_store.h"
+ #include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
+@@ -94,6 +95,51 @@ std::u16string Copy(std::u16string chinese,
+   return UseChinese() ? std::move(chinese) : std::move(english);
+ }
+ 
++std::u16string IntentStatusCopy(
++    aegis::access::AccessSiteProxyIntentStatusId id) {
++  using Id = aegis::access::AccessSiteProxyIntentStatusId;
++  switch (id) {
++    case Id::kNoTrustedSite:
++      return Copy(u"请先打开需要设置的网站",
++                  u"Open a website to configure site proxy",
++                  u"請先開啟需要設定的網站");
++    case Id::kOffBrowserDefault:
++      return Copy(u"未使用本服务代理 · 使用浏览器原有连接",
++                  u"Not using Access proxy · browser default connection",
++                  u"未使用本服務代理 · 使用瀏覽器原有連線");
++    case Id::kAllowNotConnected:
++      return Copy(u"本站代理已开启 · 连接尚未就绪",
++                  u"Site proxy on · connection not ready",
++                  u"本站代理已開啟 · 連線尚未就緒");
++    case Id::kAllowConnected:
++      return Copy(u"本站代理已开启", u"Site proxy on", u"本站代理已開啟");
++    case Id::kBlockLocalRefuse:
++      return Copy(u"本站代理已本地拒绝", u"Site proxy blocked locally",
++                  u"本站代理已本地拒絕");
++  }
++  return Copy(u"未使用本服务代理 · 使用浏览器原有连接",
++              u"Not using Access proxy · browser default connection",
++              u"未使用本服務代理 · 使用瀏覽器原有連線");
++}
++
++std::u16string ConnectionStatusCopy(
++    aegis::access::AccessSiteProxyConnectionStatusId id) {
++  using Id = aegis::access::AccessSiteProxyConnectionStatusId;
++  switch (id) {
++    case Id::kIdle:
++      return Copy(u"连通：空闲", u"Connection: idle", u"連通：閒置");
++    case Id::kConnecting:
++      return Copy(u"连通：正在连接", u"Connection: connecting",
++                  u"連通：正在連線");
++    case Id::kReady:
++      return Copy(u"连通：可用", u"Connection: ready", u"連通：可用");
++    case Id::kUnavailable:
++      return Copy(u"连通：不可用", u"Connection: unavailable",
++                  u"連通：不可用");
++  }
++  return Copy(u"连通：不可用", u"Connection: unavailable", u"連通：不可用");
++}
++
+ std::u16string EventKind(const std::string& kind) {
+   if (kind == "block") {
+     return Copy(u"拦截", u"Blocked", u"攔截");
+@@ -292,6 +338,56 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+       RefreshSoon();
+     }
+   }
++  aegis::access::AccessSiteProxyBubbleController* AccessBubble() const {
++    return aegis::access::AccessSiteProxyBubbleController::GetOrCreate(
++        browser_->GetProfile());
++  }
++  // Trusted URL for Access is the committed navigation only (address_).
++  void ToggleSiteProxy() {
++    if (!Valid()) {
++      return;
++    }
++    auto* controller = AccessBubble();
++    if (!controller) {
++      return;
++    }
++    const auto snap = controller->SnapshotForCommittedUrl(address_);
++    if (!snap.has_trusted_site || !snap.toggle_enabled) {
++      return;
++    }
++    // Intent only — never claims connectivity (P-mac-3 owns publish/ACK).
++    controller->ApplyHostProxyToggle(snap.host, !snap.toggle_on);
++    RefreshSoon();
++  }
++  void AppendSiteProxySection(views::View* parent) {
++    AddLabel(parent, Copy(u"本站代理", u"Site proxy", u"本站代理"),
++             views::style::CONTEXT_DIALOG_TITLE);
++    auto* controller = AccessBubble();
++    if (!controller) {
++      AddLabel(parent, Copy(u"当前用户资料不可用",
++                            u"Unavailable for this profile",
++                            u"目前使用者資料不可用"));
++      return;
++    }
++    const auto snap = controller->SnapshotForCommittedUrl(address_);
++    if (!snap.has_trusted_site) {
++      AddLabel(parent, IntentStatusCopy(snap.intent_status));
++      AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
++      return;
++    }
++    Toggle(parent,
++           Copy(u"当前网站使用代理", u"Use Access proxy for this site",
++                u"目前網站使用代理"),
++           snap.toggle_on,
++           base::BindRepeating(&AegisPageBubble::ToggleSiteProxy,
++                               base::Unretained(this)));
++    AddLabel(parent, IntentStatusCopy(snap.intent_status));
++    AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
++    AddLabel(parent,
++             Copy(u"开关状态与连通状态分开显示。",
++                  u"Switch state is shown separately from connectivity.",
++                  u"開關狀態與連通狀態分開顯示。"));
++  }
+   void Build() {
+     if (!Valid()) return;
+     auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
+@@ -300,6 +396,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     panel_->RemoveAllChildViews();
+     if (!address_.SchemeIsHTTPOrHTTPS()) {
+       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
++      AppendSiteProxySection(panel_);
+       AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
+       Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
+              base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
+@@ -308,6 +405,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     AddLabel(panel_, base::UTF8ToUTF16(address_.host()), views::style::CONTEXT_DIALOG_TITLE);
+     if (browser_->GetProfile()->IsOffTheRecord())
+       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
++    AppendSiteProxySection(panel_);
+     AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
+     AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
+                                     : Copy(u"保护已开启 · ", u"Protection on · ", u"保護已開啟 · ")) +
+-- 
+2.43.0
+

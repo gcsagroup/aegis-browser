@@ -62,10 +62,12 @@ STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
 TARGET="//components/aegis_access:aegis_access_unittests"
 COORDINATOR_TARGET="//chrome/browser/aegis/access:access_service_coordinator_unittests"
 SITE_INTENT_TARGET="//chrome/browser/aegis/access:access_site_intent_unittests"
+SITE_PROXY_BUBBLE_TARGET="//chrome/browser/aegis/access:access_site_proxy_bubble_unittests"
 OWNERSHIP_TARGET="//components/aegis_access:request_ownership_registry_unittests"
 DISPATCH_GATE_TARGET="//components/aegis_access:request_dispatch_gate_unittests"
 BROWSER_METADATA_TARGET="//components/aegis_access:browser_request_metadata_seed_unittests"
 SITE_INTENT_PATCH_FILE="$BROWSER_DIR/patches/0350-feat-access-site-intent-api.patch"
+SITE_PROXY_BUBBLE_PATCH_FILE="$BROWSER_DIR/patches/0351-feat-access-toolbar-bubble.patch"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -85,6 +87,10 @@ args_block="$(awk '/^root_extra_deps = \[$/,/^\]$/' "$ARGS_FILE")"
   fail "aegis.gn must add the site intent API test exactly once"
 [[ "$args_block" == *"$SITE_INTENT_TARGET"* ]] ||
   fail "the site intent API test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_PROXY_BUBBLE_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the site-proxy bubble test exactly once"
+[[ "$args_block" == *"$SITE_PROXY_BUBBLE_TARGET"* ]] ||
+  fail "the site-proxy bubble test must be reachable through root_extra_deps"
 [[ "$(rg -F -c "$OWNERSHIP_TARGET" "$ARGS_FILE")" == 1 ]] ||
   fail "aegis.gn must add the ownership registry test exactly once"
 [[ "$args_block" == *"$OWNERSHIP_TARGET"* ]] ||
@@ -194,12 +200,28 @@ rg -Fq 'source_set("access_site_intent")' "$ACCESS_BUILD" ||
   fail "overlay must define the product site intent API"
 rg -Fq 'test("access_site_intent_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must define the product site intent API regression"
+rg -Fq 'source_set("access_site_proxy_bubble")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy toolbar bubble"
+rg -Fq 'test("access_site_proxy_bubble_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy toolbar bubble regression"
 rg -Fq 'BuildOrdinarySiteGroupMutation' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
   fail "site intent API must expose ordinary CommitSiteGroupMutation builders"
 rg -Fq 'kBlockNotOrdinary' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
   fail "site intent API must keep block outside ordinary DIRECT publication"
+rg -Fq 'ResolveTrustedNavigationHost' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_model.h" ||
+  fail "toolbar bubble must resolve trusted committed navigation hosts only"
+rg -Fq 'AccessSiteConnectionState' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_model.h" ||
+  fail "toolbar bubble must keep connection state distinct from site intent"
+rg -Fq 'AppendSiteProxySection' \
+  "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
+  fail "toolbar bubble must render the site-proxy section"
+rg -Fq 'access_site_proxy_bubble' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/BUILD.gn" ||
+  fail "desktop aegis target must expose the site-proxy bubble to toolbar UI"
 coordinator_test_block="$(awk '/^test\("access_service_coordinator_unittests"\)/,/^}/' "$ACCESS_BUILD")"
 [[ "$coordinator_test_block" == *'":access_proxy_selection_generation_source",'* ]] ||
   fail "coordinator test must directly depend on the proxy selection generation source"
@@ -209,6 +231,12 @@ rg -Fq '+source_set("access_site_intent")' "$SITE_INTENT_PATCH_FILE" ||
   fail "patch 0350 must deliver the product site intent API source_set"
 rg -Fq '+test("access_site_intent_unittests")' "$SITE_INTENT_PATCH_FILE" ||
   fail "patch 0350 must deliver the product site intent API regression"
+[[ -f "$SITE_PROXY_BUBBLE_PATCH_FILE" ]] ||
+  fail "active series must include the toolbar site-proxy bubble sync patch"
+rg -Fq '+source_set("access_site_proxy_bubble")' "$SITE_PROXY_BUBBLE_PATCH_FILE" ||
+  fail "patch 0351 must deliver the site-proxy bubble source_set"
+rg -Fq '+test("access_site_proxy_bubble_unittests")' "$SITE_PROXY_BUBBLE_PATCH_FILE" ||
+  fail "patch 0351 must deliver the site-proxy bubble regression"
 for profile_test in \
   access_browser_request_adapter_unittests \
   access_identity_generation_source_unittests \
