@@ -1,20 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Aegis Packaging Proposal <aegis-proposal@invalid>
-Date: Sun, 8 Nov 2026 15:45:00 +0000
-Subject: [PATCH] feat: add macOS product phase-1 evidence pack fixture
+Date: Sun, 8 Nov 2026 16:00:00 +0000
+Subject: [PATCH] feat: add macOS product phase-1 evidence pack
 
 ---
- chrome/browser/aegis/access/BUILD.gn                                          |    2 ++
- chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc |    4 ++++
- chrome/browser/aegis/access/access_site_proxy_session_unittest.cc             |   80 ++++++++++++++++++++
- chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h       |   74 ++++++++++++++++++++
- chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc      |  200 ++++++++++++++++++++
- 5 files changed, 360 insertions(+)
- create mode 100644 chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h
- create mode 100644 chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc
-
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 01d094fac3e004712478905978e705f47170211a..4547723af5ce09e44470901416a3619eb2784644 100644
+index c491344334069cdfb8820ff9698d60f3772131c6..81c8f1bb1524cb20e9f6d869f0d7a4054ebbdf36 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -193,6 +193,8 @@
@@ -140,7 +131,7 @@ index 7da61816ca6bace2ba147a010823508a8a290710..c4d851d9ce199bd4207e1f80f4816525
 +
 diff --git a/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..f0b3bae3b3c80506ee47504f3b3c4e406607a6e5
+index 000000000000..f0b3bae3b3c8
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h
 @@ -0,0 +1,74 @@
@@ -220,7 +211,7 @@ index 0000000000000000000000000000000000000000..f0b3bae3b3c80506ee47504f3b3c4e40
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_PHASE1_EVIDENCE_FIXTURE_H_
 diff --git a/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..16b8efd790c556626c14bccd8f2b7b286af656fe
+index 000000000000..16b8efd790c5
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc
 @@ -0,0 +1,200 @@
