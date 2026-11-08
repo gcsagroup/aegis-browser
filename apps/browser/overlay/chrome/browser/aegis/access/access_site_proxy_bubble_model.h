@@ -51,6 +51,8 @@ struct AccessSiteProxyBubbleSnapshot {
       AccessSiteProxyIntentStatusId::kNoTrustedSite;
   AccessSiteProxyConnectionStatusId connection_status =
       AccessSiteProxyConnectionStatusId::kIdle;
+  // Readable publication/session failure from P-mac-3. Empty when healthy.
+  std::string failure_reason;
 };
 
 std::string_view AccessSiteConnectionStateToString(
@@ -65,7 +67,8 @@ AccessSiteHostResult ResolveTrustedNavigationHost(const GURL& committed_url);
 AccessSiteProxyBubbleSnapshot BuildSiteProxyBubbleSnapshot(
     const GURL& committed_url,
     const AccessSiteIntentStore& store,
-    AccessSiteConnectionState connection);
+    AccessSiteConnectionState connection,
+    std::string_view failure_reason = {});
 
 // Product toggle → allow/off intent. Does not publish, ACK, or claim ready.
 bool ApplySiteProxyToggle(AccessSiteIntentStore* store,

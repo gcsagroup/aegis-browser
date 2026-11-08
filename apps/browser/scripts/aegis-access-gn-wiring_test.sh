@@ -63,11 +63,13 @@ TARGET="//components/aegis_access:aegis_access_unittests"
 COORDINATOR_TARGET="//chrome/browser/aegis/access:access_service_coordinator_unittests"
 SITE_INTENT_TARGET="//chrome/browser/aegis/access:access_site_intent_unittests"
 SITE_PROXY_BUBBLE_TARGET="//chrome/browser/aegis/access:access_site_proxy_bubble_unittests"
+SITE_PROXY_SESSION_TARGET="//chrome/browser/aegis/access:access_site_proxy_session_unittests"
 OWNERSHIP_TARGET="//components/aegis_access:request_ownership_registry_unittests"
 DISPATCH_GATE_TARGET="//components/aegis_access:request_dispatch_gate_unittests"
 BROWSER_METADATA_TARGET="//components/aegis_access:browser_request_metadata_seed_unittests"
 SITE_INTENT_PATCH_FILE="$BROWSER_DIR/patches/0350-feat-access-site-intent-api.patch"
 SITE_PROXY_BUBBLE_PATCH_FILE="$BROWSER_DIR/patches/0351-feat-access-toolbar-bubble.patch"
+SITE_PROXY_SESSION_PATCH_FILE="$BROWSER_DIR/patches/0352-feat-access-bubble-session.patch"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -91,6 +93,10 @@ args_block="$(awk '/^root_extra_deps = \[$/,/^\]$/' "$ARGS_FILE")"
   fail "aegis.gn must add the site-proxy bubble test exactly once"
 [[ "$args_block" == *"$SITE_PROXY_BUBBLE_TARGET"* ]] ||
   fail "the site-proxy bubble test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_PROXY_SESSION_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the site-proxy bubble session test exactly once"
+[[ "$args_block" == *"$SITE_PROXY_SESSION_TARGET"* ]] ||
+  fail "the site-proxy bubble session test must be reachable through root_extra_deps"
 [[ "$(rg -F -c "$OWNERSHIP_TARGET" "$ARGS_FILE")" == 1 ]] ||
   fail "aegis.gn must add the ownership registry test exactly once"
 [[ "$args_block" == *"$OWNERSHIP_TARGET"* ]] ||
@@ -204,6 +210,10 @@ rg -Fq 'source_set("access_site_proxy_bubble")' "$ACCESS_BUILD" ||
   fail "overlay must define the product site-proxy toolbar bubble"
 rg -Fq 'test("access_site_proxy_bubble_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must define the product site-proxy toolbar bubble regression"
+rg -Fq 'source_set("access_site_proxy_session")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy bubble session"
+rg -Fq 'test("access_site_proxy_session_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy bubble session regression"
 rg -Fq 'BuildOrdinarySiteGroupMutation' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
   fail "site intent API must expose ordinary CommitSiteGroupMutation builders"
@@ -216,9 +226,18 @@ rg -Fq 'ResolveTrustedNavigationHost' \
 rg -Fq 'AccessSiteConnectionState' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_model.h" ||
   fail "toolbar bubble must keep connection state distinct from site intent"
+rg -Fq 'RequestHostProxySession' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h" ||
+  fail "toolbar bubble must publish sessions through RequestHostProxySession"
+rg -Fq 'EnsureLocalProxyReady' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session.h" ||
+  fail "bubble session must require local proxy readiness before publish"
 rg -Fq 'AppendSiteProxySection' \
   "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
   fail "toolbar bubble must render the site-proxy section"
+rg -Fq 'RequestHostProxySession' \
+  "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
+  fail "toolbar bubble toggle must call the publication session path"
 rg -Fq 'access_site_proxy_bubble' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/BUILD.gn" ||
   fail "desktop aegis target must expose the site-proxy bubble to toolbar UI"
@@ -237,6 +256,12 @@ rg -Fq '+source_set("access_site_proxy_bubble")' "$SITE_PROXY_BUBBLE_PATCH_FILE"
   fail "patch 0351 must deliver the site-proxy bubble source_set"
 rg -Fq '+test("access_site_proxy_bubble_unittests")' "$SITE_PROXY_BUBBLE_PATCH_FILE" ||
   fail "patch 0351 must deliver the site-proxy bubble regression"
+[[ -f "$SITE_PROXY_SESSION_PATCH_FILE" ]] ||
+  fail "active series must include the bubble session sync patch"
+rg -Fq '+source_set("access_site_proxy_session")' "$SITE_PROXY_SESSION_PATCH_FILE" ||
+  fail "patch 0352 must deliver the site-proxy bubble session source_set"
+rg -Fq '+test("access_site_proxy_session_unittests")' "$SITE_PROXY_SESSION_PATCH_FILE" ||
+  fail "patch 0352 must deliver the site-proxy bubble session regression"
 for profile_test in \
   access_browser_request_adapter_unittests \
   access_identity_generation_source_unittests \

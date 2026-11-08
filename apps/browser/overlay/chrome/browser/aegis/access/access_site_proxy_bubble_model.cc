@@ -65,10 +65,12 @@ AccessSiteHostResult ResolveTrustedNavigationHost(const GURL& committed_url) {
 AccessSiteProxyBubbleSnapshot BuildSiteProxyBubbleSnapshot(
     const GURL& committed_url,
     const AccessSiteIntentStore& store,
-    AccessSiteConnectionState connection) {
+    AccessSiteConnectionState connection,
+    std::string_view failure_reason) {
   AccessSiteProxyBubbleSnapshot snapshot;
   snapshot.connection = connection;
   snapshot.connection_status = ConnectionStatusId(connection);
+  snapshot.failure_reason = std::string(failure_reason);
 
   const AccessSiteHostResult host = ResolveTrustedNavigationHost(committed_url);
   if (host.status != AccessSiteHostStatus::kOk || !host.host.has_value()) {

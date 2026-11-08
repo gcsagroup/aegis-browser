@@ -189,18 +189,57 @@ test("access_site_intent_unittests") {
   ]
 }
 
-source_set("access_site_proxy_bubble") {
+source_set("access_site_proxy_session") {
   sources = [
-    "access_site_proxy_bubble_controller.cc",
-    "access_site_proxy_bubble_controller.h",
+    "access_site_proxy_session.cc",
+    "access_site_proxy_session.h",
+  ]
+  deps = [
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    "//base",
+    "//components/aegis_access",
+    "//components/aegis_access:request_ownership_registry",
+  ]
+}
+
+test("access_site_proxy_session_unittests") {
+  sources = [ "access_site_proxy_session_unittest.cc" ]
+  deps = [
+    ":access_site_proxy_session",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_site_proxy_bubble_model") {
+  sources = [
     "access_site_proxy_bubble_model.cc",
     "access_site_proxy_bubble_model.h",
   ]
   deps = [
     ":access_site_intent",
     "//base",
+    "//url",
+  ]
+}
+
+source_set("access_site_proxy_bubble") {
+  sources = [
+    "access_site_proxy_bubble_controller.cc",
+    "access_site_proxy_bubble_controller.h",
+  ]
+  deps = [
+    ":access_network_context_transport",
+    ":access_rule_store",
+    ":access_service_coordinator",
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    ":access_site_proxy_session",
+    "//base",
     "//chrome/browser/aegis:profile_support",
     "//chrome/browser/profiles:profile",
+    "//components/aegis_access",
     "//content/public/browser",
     "//url",
   ]
@@ -209,7 +248,7 @@ source_set("access_site_proxy_bubble") {
 test("access_site_proxy_bubble_unittests") {
   sources = [ "access_site_proxy_bubble_model_unittest.cc" ]
   deps = [
-    ":access_site_proxy_bubble",
+    ":access_site_proxy_bubble_model",
     "//base/test:run_all_unittests",
     "//testing/gtest",
   ]

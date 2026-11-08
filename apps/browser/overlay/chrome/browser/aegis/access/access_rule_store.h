@@ -77,6 +77,22 @@ class AccessStoreBinding {
   base::FilePath database_path_;
 };
 
+// Trusted browser-owned factory for Profile-backed AccessRuleStore bindings.
+// Product session publication (P-mac-3) uses ephemeral bindings when a durable
+// profile path is not required for the mutation journal.
+class TrustedAccessStoreBindingFactory {
+ public:
+  static std::optional<AccessStoreBinding> CreateEphemeral(
+      ChannelNamespace channel,
+      std::string durable_profile_id,
+      std::string runtime_profile_token);
+  static std::optional<AccessStoreBinding> CreatePersistent(
+      ChannelNamespace channel,
+      std::string durable_profile_id,
+      std::string runtime_profile_token,
+      base::FilePath profile_path);
+};
+
 enum class StoreStatus {
   kMissing,
   kValid,

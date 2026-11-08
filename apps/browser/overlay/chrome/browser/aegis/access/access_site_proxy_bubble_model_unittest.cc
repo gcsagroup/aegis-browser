@@ -99,5 +99,20 @@ TEST(AccessSiteProxyBubbleModelTest, BlockIntentSurfacesLocalRefuseStatus) {
             AccessSiteProxyIntentStatusId::kBlockLocalRefuse);
 }
 
+TEST(AccessSiteProxyBubbleModelTest, FailureReasonStaysDistinctFromSwitch) {
+  AccessSiteIntentStore store;
+  store.Set(Host("news.example"), AccessSiteIntent::kAllow);
+  auto snap = BuildSiteProxyBubbleSnapshot(
+      GURL("https://news.example/"), store,
+      AccessSiteConnectionState::kUnavailable,
+      "Local Access proxy is not ready: no loopback endpoint published");
+  EXPECT_TRUE(snap.toggle_on);
+  EXPECT_EQ(snap.connection_status,
+            AccessSiteProxyConnectionStatusId::kUnavailable);
+  EXPECT_EQ(snap.intent_status,
+            AccessSiteProxyIntentStatusId::kAllowNotConnected);
+  EXPECT_NE(snap.failure_reason.find("Local Access proxy"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace aegis::access

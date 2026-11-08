@@ -355,8 +355,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (!snap.has_trusted_site || !snap.toggle_enabled) {
       return;
     }
-    // Intent only — never claims connectivity (P-mac-3 owns publish/ACK).
-    controller->ApplyHostProxyToggle(snap.host, !snap.toggle_on);
+    // Publication path: enable → Prepare/Publish/ACK; disable commits locally
+    // even when the service is unavailable. Switch state ≠ connectivity.
+    controller->RequestHostProxySession(snap.host, !snap.toggle_on);
     RefreshSoon();
   }
   void AppendSiteProxySection(views::View* parent) {
@@ -383,6 +384,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                                base::Unretained(this)));
     AddLabel(parent, IntentStatusCopy(snap.intent_status));
     AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
+    if (!snap.failure_reason.empty()) {
+      AddLabel(parent, base::UTF8ToUTF16(snap.failure_reason));
+    }
     AddLabel(parent,
              Copy(u"开关状态与连通状态分开显示。",
                   u"Switch state is shown separately from connectivity.",
