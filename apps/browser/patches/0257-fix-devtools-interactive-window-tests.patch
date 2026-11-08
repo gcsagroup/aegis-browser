@@ -56,7 +56,7 @@ index 1d4a929ca49e3b431abfa932b6dd19fcefcedab1..ba932cbb41eea8a4f515173375295260
    SidePanelUI* side_panel = browser()->GetFeatures().side_panel_ui();
    ASSERT_TRUE(side_panel);
 diff --git a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
-index cf461026822509cd23325090aee49c562bc6f126..ae3d3cc97e28b2731052f49d73fffd1de0c598fa 100644
+index c414cb8ea1af196ad6a388365c42610a3e54ac98..90364080a9bce9bd383f6b5fe660043e8c43336b 100644
 --- a/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 +++ b/chrome/browser/devtools/protocol/devtools_protocol_browsertest.cc
 @@ -485,7 +485,7 @@ class AegisOtherRemoteDevToolsProtocolClient

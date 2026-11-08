@@ -45,6 +45,7 @@ export interface SettingsRoutes {
   FONTS: Route;
   GEMINI: Route;
   GEMINI_LOGIN: Route;
+  GEMINI_ENTERPRISE: Route;
   GLIC_SECTION: Route;
   HISTORY_SEARCH: Route;
   IDENTITY_DOCS: Route;
@@ -122,7 +123,6 @@ export interface SettingsRoutes {
   SITE_SETTINGS_ZOOM_LEVELS: Route;
   SITE_SETTINGS_WEB_PRINTING: Route;
   SKILLS: Route;
-  SPELL_CHECK: Route;
   SUGGESTIONS_FROM_GEMINI: Route;
   SYNC: Route;
   SYNC_ADVANCED: Route;

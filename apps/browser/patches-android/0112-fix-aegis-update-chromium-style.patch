@@ -152,7 +152,7 @@ index 43b288834478d3acaeb2089dc598b6c29b486bfb..f4878215cabe7a95b82d49fe4313671a
    // Sub-classes must implement this method to create the respective
    // specialization. |web_contents| may be null, in which case any required UX
 diff --git a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
-index 75bf73dd1a90bca0eac649038df925460e964caf..9c0f94b8658ae7dcdba025580f0887ee77e1a3f9 100644
+index b5793ce563597731815fadc912dec46e9e9a5603..9004bffd8bd4548b932546d768f1382d79ce328b 100644
 --- a/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 +++ b/chrome/browser/ui/webui/settings/settings_localized_strings_provider.cc
 @@ -356,7 +356,7 @@ void AddAboutStrings(content::WebUIDataSource* html_source, Profile* profile) {

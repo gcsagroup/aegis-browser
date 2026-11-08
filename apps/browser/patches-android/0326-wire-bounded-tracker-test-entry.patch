@@ -10,7 +10,7 @@ Both process controls remain REQUIRED/BLOCKED pending a loss-safe executor.
 
 ---
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 01b0f6a6f2e3e96f867b981f96ef2f043c322c1f..4e2fe481c440ba896619ee9f383756db56849fa3 100644
+index 05cc690b6d5301b79ffc9c1ce11c10e5ee269b38..d02cf73589ac0f99617841698cbd73cd9abf2615 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -3,6 +3,11 @@

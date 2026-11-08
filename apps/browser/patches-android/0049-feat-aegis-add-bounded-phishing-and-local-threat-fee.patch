@@ -38,7 +38,7 @@ Subject: [PATCH] feat(aegis): add bounded phishing and local threat feeds
  create mode 100644 chrome/common/aegis/threat_feed_index_unittest.cc
 
 diff --git a/chrome/browser/actor/execution_engine_unittest.cc b/chrome/browser/actor/execution_engine_unittest.cc
-index e17d620b889bafcb8f9003fb86cf7f094658bb1c..afca830054148c9d23c447112eb13b71e2254486 100644
+index 58b4715b33a5dd660e5160e8977f552fa4bc2dea..b72efe631e1ce7f522cc165acf6067aa60092d9c 100644
 --- a/chrome/browser/actor/execution_engine_unittest.cc
 +++ b/chrome/browser/actor/execution_engine_unittest.cc
 @@ -165,9 +165,10 @@ class FakeChromeRenderFrame : public chrome::mojom::ChromeRenderFrame {
@@ -1733,7 +1733,7 @@ index efaa533860e755f5ae9e2fc8900cb834dea6163e..a5139225cf26af5ba220f3a7446f19d6
    // Tells the render frame to load any blocked plugins matching the given
    // identifier (empty string matches all).
 diff --git a/chrome/renderer/chrome_render_frame_observer.cc b/chrome/renderer/chrome_render_frame_observer.cc
-index 909291a80953d38f6ee37e69dd5e2ee424533cfc..1ba8bd133314e29a4e131ea0606d923e07958eb7 100644
+index a0dc63589a1ac7efdfbb014fcbf1bbffff8a61e5..c8604af7d5c4c5f2e522a53d88f8215fc647b794 100644
 --- a/chrome/renderer/chrome_render_frame_observer.cc
 +++ b/chrome/renderer/chrome_render_frame_observer.cc
 @@ -72,6 +72,7 @@

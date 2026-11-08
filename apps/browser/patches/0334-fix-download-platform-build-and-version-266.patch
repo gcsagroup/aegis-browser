@@ -1,0 +1,43 @@
+From f2ad9ede0b934efcdcaebd2cf46b44d1c5a8e943 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 20:52:09 +0800
+Subject: [PATCH] 修复平台说明编译条件并更新版本
+
+---
+ chrome/browser/ui/webui/aegis/aegis_ui.cc          | 7 +++++--
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/aegis/aegis_ui.cc b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+index 070133ce61784a43b423fa1ce39adbef093ffda2..86603291a0e5408b90fc6ec2605870af13ad8e3a 100644
+--- a/chrome/browser/ui/webui/aegis/aegis_ui.cc
++++ b/chrome/browser/ui/webui/aegis/aegis_ui.cc
+@@ -629,8 +629,11 @@ AegisUI::AegisUI(content::WebUI* web_ui) : content::WebUIController(web_ui) {
+   source->AddString("torrentResume", strings.torrent_resume);
+   source->AddString("torrentCancel", strings.torrent_cancel);
+   source->AddString("torrentSafety", strings.torrent_safety);
+-  source->AddString("downloadsSafety", BUILDFLAG(IS_ANDROID)
+-      ? strings.metalink_safety : strings.torrent_safety);
++#if BUILDFLAG(IS_ANDROID)
++  source->AddString("downloadsSafety", strings.metalink_safety);
++#else
++  source->AddString("downloadsSafety", strings.torrent_safety);
++#endif
+   source->AddString("linkSanitizeLabel", strings.link_sanitize_label);
+   source->AddString("linkSanitizeHint", strings.link_sanitize_hint);
+   source->AddString("cookieJanitorLabel", strings.cookie_janitor_label);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index a59dd2b37c07cbe441f475b98586f06d98c36474..95ff7d16da5a2a015107d59386156bc7b91462d8 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.265";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (265)";
++inline constexpr char kProductVersion[] = "6.1.0.266";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (266)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =

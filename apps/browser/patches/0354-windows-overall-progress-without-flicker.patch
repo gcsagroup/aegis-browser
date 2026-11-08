@@ -14,7 +14,7 @@ Subject: [PATCH] Show overall installer progress without repainting the whole
  create mode 100644 chrome/installer/mini_installer/aegis_overall_progress.h
 
 diff --git a/chrome/installer/mini_installer/BUILD.gn b/chrome/installer/mini_installer/BUILD.gn
-index 2ad853eb77a9813a20c6bb15d06eddb13a29f4a1..1b3638ada8b6b558bdce130cb6f89ec9b7bfa6b7 100644
+index fbd3c864a9c09c15fa66f771314a0bbcdef851d7..af3c5bc5917691abd2cc6a471793d0cef7beebcf 100644
 --- a/chrome/installer/mini_installer/BUILD.gn
 +++ b/chrome/installer/mini_installer/BUILD.gn
 @@ -43,6 +43,7 @@ source_set("lib") {

@@ -1,0 +1,103 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 21:00:00 +0800
+Subject: [PATCH] 修复下载保存冲突与阅读语言包入口
+
+保存失败后取消本轮待执行草稿，允许阅读侧栏主动展开语言包，并同步 Worker 资源摘要。
+
+---
+diff --git a/chrome/browser/resources/aegis_agent/agent.css b/chrome/browser/resources/aegis_agent/agent.css
+index 667657b4cc3e4eb6cf550f7ce19017fcbba2315e..ec39cd4ff5247d6af534b75fd347d84b9f97dac5 100644
+--- a/chrome/browser/resources/aegis_agent/agent.css
++++ b/chrome/browser/resources/aegis_agent/agent.css
+@@ -935,6 +935,11 @@ body.central-settings #reading-ai-settings {
+   display: none !important;
+ }
+ 
++/* 阅读时主动管理语言包可在原处展开，切回其他视图后继续隐藏。 */
++body.central-settings main > #reading-view:not([hidden]) ~ #reading-ai-settings[open] {
++  display: block !important;
++}
++
+ body.settings-only {
+   --bg: light-dark(#fff, #202124);
+   --surface: light-dark(#fff, #202124);
+diff --git a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+index 04017530025d9bee06d2a00e3c297d0a863f39b0..603e39a4f7bf9b38c03d418faac80507c2b76ca1 100644
+--- a/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
++++ b/chrome/browser/resources/aegis_agent/local_ai/asset_manifest.json
+@@ -6,8 +6,8 @@
+       "sha256": "a1bfb839c4a97d6d645a9fd2d85c6d8bbf0221b6fc141506eaed9f858af837f0"
+     },
+     "worker.js": {
+-      "bytes": 11982,
+-      "sha256": "32c59bb9e74822725a47ebbb18e830b4e6ff61693ca7d693eee07a6e6cad4a2a"
++      "bytes": 12155,
++      "sha256": "ba5a9a498dadf319fc1a613f11e84b8a4cb725ac4a10aec2d36971585104e6b9"
+     },
+     "research.js": {
+       "bytes": 6934,
+diff --git a/chrome/browser/resources/settings/downloads_page/downloads_page.ts b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+index 1fa2fd98bdc226ebf617e7336433769a0a0b92ef..c2d780befaf0b9072cd96b428fbc84b33a4ea066 100644
+--- a/chrome/browser/resources/settings/downloads_page/downloads_page.ts
++++ b/chrome/browser/resources/settings/downloads_page/downloads_page.ts
+@@ -146,7 +146,7 @@ export class SettingsDownloadsPageElement extends
+       downloadLimit: '預設下載上限（KiB/s，1–1000000）',
+       uploadLimit: '預設上傳上限（KiB/s，1–1000000）',
+       stopSeeding: '下載完成後自動停止上傳',
+-      saved: '已儲存，將應用於新下載。', saving: '正在儲存…', failed: '儲存失敗，已重新讀取設定。', link: '開啟 Aegis 下載設定',
++      saved: '已儲存，將應用於新下載。', saving: '正在儲存…', failed: '儲存失敗，請檢查目前設定後重試。', link: '開啟 Aegis 下載設定',
+     } : {
+       unlimited: '不限速', custom: '自定义上限', invalidLimit: '请输入 1–1000000 的整数；不限速请选择“不限速”。', retry: '重新读取',
+       title: '下载加速',
+@@ -167,7 +167,7 @@ export class SettingsDownloadsPageElement extends
+       downloadLimit: '默认下载上限（KiB/s，1–1000000）',
+       uploadLimit: '默认上传上限（KiB/s，1–1000000）',
+       stopSeeding: '下载完成后自动停止上传',
+-      saved: '已保存，将应用于新下载。', saving: '正在保存…', failed: '保存失败，已重新读取设置。', link: '打开 Aegis 下载设置',
++      saved: '已保存，将应用于新下载。', saving: '正在保存…', failed: '保存失败，请检查当前设置后重试。', link: '打开 Aegis 下载设置',
+     }) : {
+       unlimited: 'Unlimited', custom: 'Custom limit', invalidLimit: 'Enter an integer from 1 to 1000000, or choose Unlimited.', retry: 'Reload',
+       title: 'Aegis download acceleration',
+@@ -188,13 +188,14 @@ export class SettingsDownloadsPageElement extends
+       downloadLimit: 'Default download limit (KiB/s, 1–1000000)',
+       uploadLimit: 'Default upload limit (KiB/s, 1–1000000)',
+       stopSeeding: 'Automatically stop uploading when complete',
+-      saved: 'Saved. Applies to new downloads.', saving: 'Saving…', failed: 'Could not save. Settings reloaded.', link: 'Open Aegis download settings',
++      saved: 'Saved. Applies to new downloads.', saving: 'Saving…', failed: 'Could not save. Check the current settings and try again.', link: 'Open Aegis download settings',
+     };
+   })();
+ 
+   private browserProxy_: DownloadsBrowserProxy =
+       DownloadsBrowserProxyImpl.getInstance();
+   private aegisSaveChain_: Promise<void> = Promise.resolve();
++  private aegisSaveGeneration_: number = 0;
+   private aegisSaved_: AegisDownloadSettings|null = null;
+   private aegisRequested_: AegisDownloadSettings|null = null;
+ 
+@@ -262,11 +263,15 @@ export class SettingsDownloadsPageElement extends
+       return;
+     }
+     const requested = this.currentAegisDownloadSettings_();
++    const generation = this.aegisSaveGeneration_;
+     const changed = Object.keys(requested).filter(key => requested[key as keyof AegisDownloadSettings] !== this.aegisRequested_?.[key as keyof AegisDownloadSettings]);
+     this.aegisRequested_ = requested;
+     this.aegisSaveStatus_ = this.aegisStrings_.saving;
+     this.aegisSaveChain_ = this.aegisSaveChain_
+                                 .then(async () => {
++                                  if (generation !== this.aegisSaveGeneration_) {
++                                    return;
++                                  }
+                                   const merged = {...this.aegisSaved_!, ...Object.fromEntries(changed.map(key => [key, requested[key as keyof AegisDownloadSettings]]))};
+                                   const saved = await this.browserProxy_
+                                                     .setAegisDownloadSettings(
+@@ -280,6 +285,9 @@ export class SettingsDownloadsPageElement extends
+                                   }
+                                 })
+                                 .catch(async () => {
++                                  // 回读会丢弃本轮草稿，尚未执行的保存也必须一并作废。
++                                  this.aegisSaveGeneration_++;
++                                  this.aegisSettingsReady_ = false;
+                                   try { await this.loadAegisDownloadSettings_(); }
+                                   finally { this.aegisSaveStatus_ = this.aegisStrings_.failed; }
+                                 }).catch(() => {});
