@@ -1,0 +1,418 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Packaging Proposal <aegis-proposal@invalid>
+Date: Sun, 8 Nov 2026 12:30:00 +0000
+Subject: [PATCH] feat: admit no-auth SOCKS5 inbound on access overlay
+
+Keep the ordered Chromium patch series synchronized with the expected overlay.
+Username/password SOCKS5 remains fail-closed.
+
+---
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 4e2fe481c440ba896619ee9f383756db56849fa3..a57ce391e084591af5fddc8db51186231f09455f 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -112,6 +112,8 @@ source_set("aegis_access") {
+     "access_proxy_route_adapter.h",
+     "access_route_planner.cc",
+     "access_route_planner.h",
++    "access_socks5_inbound_parser.cc",
++    "access_socks5_inbound_parser.h",
+     "request_policy_context.cc",
+     "request_policy_context.h",
+     "site_proxy_rule_group.cc",
+@@ -247,6 +249,7 @@ test("aegis_access_unittests") {
+     "access_proxy_route_adapter_unittest.cc",
+     "access_route_planner_contract_test.h",
+     "access_route_planner_unittest.cc",
++    "access_socks5_inbound_parser_unittest.cc",
+     "published_request_runtime_contract_test.h",
+     "published_request_runtime_unittest.cc",
+     "request_policy_context_unittest.cc",
+diff --git a/components/aegis_access/access_proxy_route_adapter.h b/components/aegis_access/access_proxy_route_adapter.h
+index 0f105e33cddbfc468478bbdb9d361ebdfb782b03..1538c7bbbbd282e8ba5ce9c8a816239bcb6ec7e2 100644
+--- a/components/aegis_access/access_proxy_route_adapter.h
++++ b/components/aegis_access/access_proxy_route_adapter.h
+@@ -16,6 +16,8 @@ namespace aegis_access {
+ 
+ enum class RegisteredProxyTransport {
+   kHttp,
++  // No-auth SOCKS5 loopback inbound. Username/password is not admitted.
++  kSocks5,
+   kInvalid,
+ };
+ 
+@@ -54,8 +56,8 @@ enum class ProxyRouteApplyStatus {
+ //   A higher-level dispatcher may retry kWait after state changes.
+ //
+ // The endpoint is separately supplied by trusted registration state. Opaque
+-// ids in RoutePlan are never interpreted as host/port values. This first P0
+-// network slice accepts HTTP loopback only; SOCKS5 is a later acceptance item.
++// ids in RoutePlan are never interpreted as host/port values. This slice
++// accepts numeric-loopback HTTP and no-auth SOCKS5 endpoints only.
+ ProxyRouteApplyStatus ApplyRoutePlanToProxyInfo(
+     const RoutePlan& plan,
+     const RegisteredProxyEndpoint* endpoint,
+diff --git a/components/aegis_access/access_proxy_route_adapter.cc b/components/aegis_access/access_proxy_route_adapter.cc
+index f427a5bb618d9c2147195ed6b249fa44cfe57fc3..3a0f7c0c8f9d4495775fd7a9f67d91c6486fed92 100644
+--- a/components/aegis_access/access_proxy_route_adapter.cc
++++ b/components/aegis_access/access_proxy_route_adapter.cc
+@@ -20,6 +20,8 @@ net::ProxyServer::Scheme ToProxyScheme(RegisteredProxyTransport transport) {
+   switch (transport) {
+     case RegisteredProxyTransport::kHttp:
+       return net::ProxyServer::SCHEME_HTTP;
++    case RegisteredProxyTransport::kSocks5:
++      return net::ProxyServer::SCHEME_SOCKS5;
+     case RegisteredProxyTransport::kInvalid:
+       return net::ProxyServer::SCHEME_INVALID;
+   }
+diff --git a/components/aegis_access/access_proxy_route_adapter_unittest.cc b/components/aegis_access/access_proxy_route_adapter_unittest.cc
+index 8b1a81416b987736440c41709dd5d47654ff7ee7..6811205a53ca02817afd9f75e6bc161861ad0092 100644
+--- a/components/aegis_access/access_proxy_route_adapter_unittest.cc
++++ b/components/aegis_access/access_proxy_route_adapter_unittest.cc
+@@ -249,5 +249,30 @@ TEST(AccessProxyRouteAdapterTest, SupportsBracketedIpv6HttpLoopback) {
+   EXPECT_EQ(info.proxy_chain().First().GetPort(), 19091u);
+ }
+ 
++TEST(AccessProxyRouteAdapterTest, SupportsSocks5LoopbackEndpoint) {
++  RegisteredProxyEndpoint endpoint = TestEndpoint();
++  endpoint.transport = RegisteredProxyTransport::kSocks5;
++  endpoint.port = 18085;
++  net::ProxyInfo info;
++  info.UseNamedProxy("http://native.example:3128;direct://");
++
++  EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(RouteAction::kUseRegisteredProxy),
++                                      &endpoint, &info),
++            ProxyRouteApplyStatus::kAppliedProxy);
++  ASSERT_EQ(info.proxy_list().size(), 1u);
++  EXPECT_FALSE(info.is_direct());
++  EXPECT_TRUE(info.proxy_chain().First().is_socks());
++  EXPECT_EQ(info.proxy_chain().First().GetHost(), "127.0.0.1");
++  EXPECT_EQ(info.proxy_chain().First().GetPort(), 18085u);
++}
++
++TEST(AccessProxyRouteAdapterTest, Socks5NonLoopbackFailsClosed) {
++  RegisteredProxyEndpoint endpoint = TestEndpoint();
++  endpoint.transport = RegisteredProxyTransport::kSocks5;
++  endpoint.host = "proxy.example";
++  ExpectInvalidEndpointFailsClosed(TestPlan(RouteAction::kUseRegisteredProxy),
++                                   &endpoint);
++}
++
+ }  // namespace
+ }  // namespace aegis_access
+diff --git a/components/aegis_access/access_socks5_inbound_parser.h b/components/aegis_access/access_socks5_inbound_parser.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..9c29061c4fdf5266e7760fdba66f1853f2e9fe32
+--- /dev/null
++++ b/components/aegis_access/access_socks5_inbound_parser.h
+@@ -0,0 +1,67 @@
++// Copyright 2026 GCSA
++
++#ifndef COMPONENTS_AEGIS_ACCESS_ACCESS_SOCKS5_INBOUND_PARSER_H_
++#define COMPONENTS_AEGIS_ACCESS_ACCESS_SOCKS5_INBOUND_PARSER_H_
++
++#include <cstdint>
++#include <optional>
++#include <string>
++#include <vector>
++
++namespace aegis_access {
++
++// SOCKS5 no-auth inbound parser (RFC 1928 subset).
++//
++// Admitted: version 5, method 0x00, CONNECT.
++// Rejected: username/password-only greetings, BIND, UDP ASSOCIATE.
++enum class Socks5InboundParseStatus {
++  kNeedMoreData,
++  kOk,
++  kMalformedGreeting,
++  kNoAcceptableAuthMethod,
++  kUsernamePasswordNotAdmitted,
++  kMalformedRequest,
++  kUnsupportedCommand,
++  kUnsupportedAddressType,
++};
++
++struct Socks5ConnectTarget {
++  enum class AddressType {
++    kIPv4,
++    kDomain,
++    kIPv6,
++  };
++
++  AddressType address_type = AddressType::kDomain;
++  std::string host;
++  uint16_t port = 0;
++};
++
++struct Socks5GreetingParseResult {
++  Socks5InboundParseStatus status = Socks5InboundParseStatus::kNeedMoreData;
++  // Number of greeting bytes consumed when status == kOk.
++  size_t consumed = 0;
++  // Method-selection reply bytes when status == kOk (VER + METHOD).
++  std::vector<uint8_t> method_reply;
++};
++
++struct Socks5ConnectParseResult {
++  Socks5InboundParseStatus status = Socks5InboundParseStatus::kNeedMoreData;
++  size_t consumed = 0;
++  std::optional<Socks5ConnectTarget> target;
++};
++
++Socks5GreetingParseResult ParseSocks5NoAuthGreeting(
++    const std::vector<uint8_t>& buffer);
++
++Socks5ConnectParseResult ParseSocks5ConnectRequest(
++    const std::vector<uint8_t>& buffer);
++
++// Success reply with BND.ADDR 0.0.0.0 / BND.PORT 0 (tunnel endpoint only).
++std::vector<uint8_t> Socks5SuccessReply();
++std::vector<uint8_t> Socks5NoAcceptableMethodReply();
++std::vector<uint8_t> Socks5CommandNotSupportedReply();
++
++}  // namespace aegis_access
++
++#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_SOCKS5_INBOUND_PARSER_H_
+diff --git a/components/aegis_access/access_socks5_inbound_parser.cc b/components/aegis_access/access_socks5_inbound_parser.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..a08c426d126608342a87767332c6e3078a59a97c
+--- /dev/null
++++ b/components/aegis_access/access_socks5_inbound_parser.cc
+@@ -0,0 +1,179 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_socks5_inbound_parser.h"
++
++#include <cstdio>
++
++namespace aegis_access {
++namespace {
++
++constexpr uint8_t kVersion = 0x05;
++constexpr uint8_t kMethodNoAuth = 0x00;
++constexpr uint8_t kMethodUsernamePassword = 0x02;
++constexpr uint8_t kMethodNoneAcceptable = 0xFF;
++constexpr uint8_t kCommandConnect = 0x01;
++constexpr uint8_t kAtypIPv4 = 0x01;
++constexpr uint8_t kAtypDomain = 0x03;
++constexpr uint8_t kAtypIPv6 = 0x04;
++constexpr uint8_t kReplySucceeded = 0x00;
++constexpr uint8_t kReplyCommandNotSupported = 0x07;
++
++}  // namespace
++
++Socks5GreetingParseResult ParseSocks5NoAuthGreeting(
++    const std::vector<uint8_t>& buffer) {
++  Socks5GreetingParseResult result;
++  if (buffer.empty()) {
++    return result;
++  }
++  if (buffer[0] != kVersion) {
++    result.status = Socks5InboundParseStatus::kMalformedGreeting;
++    return result;
++  }
++  if (buffer.size() < 2) {
++    return result;
++  }
++  const size_t nmethods = buffer[1];
++  const size_t total = 2 + nmethods;
++  if (nmethods == 0) {
++    result.status = Socks5InboundParseStatus::kMalformedGreeting;
++    return result;
++  }
++  if (buffer.size() < total) {
++    return result;
++  }
++
++  bool offers_no_auth = false;
++  bool offers_userpass = false;
++  for (size_t i = 2; i < total; ++i) {
++    if (buffer[i] == kMethodNoAuth) {
++      offers_no_auth = true;
++    } else if (buffer[i] == kMethodUsernamePassword) {
++      offers_userpass = true;
++    }
++  }
++
++  if (offers_no_auth) {
++    result.status = Socks5InboundParseStatus::kOk;
++    result.consumed = total;
++    result.method_reply = {kVersion, kMethodNoAuth};
++    return result;
++  }
++  if (offers_userpass) {
++    result.status = Socks5InboundParseStatus::kUsernamePasswordNotAdmitted;
++    return result;
++  }
++  result.status = Socks5InboundParseStatus::kNoAcceptableAuthMethod;
++  return result;
++}
++
++Socks5ConnectParseResult ParseSocks5ConnectRequest(
++    const std::vector<uint8_t>& buffer) {
++  Socks5ConnectParseResult result;
++  if (buffer.empty()) {
++    return result;
++  }
++  if (buffer[0] != kVersion) {
++    result.status = Socks5InboundParseStatus::kMalformedRequest;
++    return result;
++  }
++  if (buffer.size() < 4) {
++    return result;
++  }
++  if (buffer[2] != 0x00) {
++    result.status = Socks5InboundParseStatus::kMalformedRequest;
++    return result;
++  }
++  if (buffer[1] != kCommandConnect) {
++    result.status = Socks5InboundParseStatus::kUnsupportedCommand;
++    return result;
++  }
++
++  const uint8_t atyp = buffer[3];
++  Socks5ConnectTarget target;
++  size_t need = 0;
++  switch (atyp) {
++    case kAtypIPv4: {
++      need = 4 + 4 + 2;
++      if (buffer.size() < need) {
++        return result;
++      }
++      char host[32];
++      std::snprintf(host, sizeof(host), "%u.%u.%u.%u", buffer[4], buffer[5],
++                    buffer[6], buffer[7]);
++      target.address_type = Socks5ConnectTarget::AddressType::kIPv4;
++      target.host = host;
++      target.port =
++          (static_cast<uint16_t>(buffer[8]) << 8) | static_cast<uint16_t>(buffer[9]);
++      break;
++    }
++    case kAtypDomain: {
++      if (buffer.size() < 5) {
++        return result;
++      }
++      const size_t len = buffer[4];
++      need = 5 + len + 2;
++      if (buffer.size() < need) {
++        return result;
++      }
++      if (len == 0) {
++        result.status = Socks5InboundParseStatus::kMalformedRequest;
++        return result;
++      }
++      target.address_type = Socks5ConnectTarget::AddressType::kDomain;
++      target.host.assign(reinterpret_cast<const char*>(&buffer[5]), len);
++      target.port = (static_cast<uint16_t>(buffer[5 + len]) << 8) |
++                    static_cast<uint16_t>(buffer[6 + len]);
++      break;
++    }
++    case kAtypIPv6: {
++      need = 4 + 16 + 2;
++      if (buffer.size() < need) {
++        return result;
++      }
++      std::string host;
++      for (size_t i = 4; i < 20; i += 2) {
++        if (!host.empty()) {
++          host.push_back(':');
++        }
++        char part[8];
++        const uint16_t value = (static_cast<uint16_t>(buffer[i]) << 8) |
++                               static_cast<uint16_t>(buffer[i + 1]);
++        std::snprintf(part, sizeof(part), "%x", value);
++        host.append(part);
++      }
++      target.address_type = Socks5ConnectTarget::AddressType::kIPv6;
++      target.host = host;
++      target.port = (static_cast<uint16_t>(buffer[20]) << 8) |
++                    static_cast<uint16_t>(buffer[21]);
++      break;
++    }
++    default:
++      result.status = Socks5InboundParseStatus::kUnsupportedAddressType;
++      return result;
++  }
++
++  if (target.port == 0 || target.host.empty()) {
++    result.status = Socks5InboundParseStatus::kMalformedRequest;
++    return result;
++  }
++  result.status = Socks5InboundParseStatus::kOk;
++  result.consumed = need;
++  result.target = target;
++  return result;
++}
++
++std::vector<uint8_t> Socks5SuccessReply() {
++  return {kVersion, kReplySucceeded, 0x00, kAtypIPv4, 0, 0, 0, 0, 0, 0};
++}
++
++std::vector<uint8_t> Socks5NoAcceptableMethodReply() {
++  return {kVersion, kMethodNoneAcceptable};
++}
++
++std::vector<uint8_t> Socks5CommandNotSupportedReply() {
++  return {kVersion, kReplyCommandNotSupported, 0x00, kAtypIPv4, 0, 0, 0, 0, 0,
++          0};
++}
++
++}  // namespace aegis_access
+diff --git a/components/aegis_access/access_socks5_inbound_parser_unittest.cc b/components/aegis_access/access_socks5_inbound_parser_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d3b146dc36da75006462736a43467459ce31c25d
+--- /dev/null
++++ b/components/aegis_access/access_socks5_inbound_parser_unittest.cc
+@@ -0,0 +1,52 @@
++// Copyright 2026 GCSA
++
++#include "components/aegis_access/access_socks5_inbound_parser.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access {
++namespace {
++
++TEST(AccessSocks5InboundParserTest, AcceptsNoAuthGreetingAndDomainConnect) {
++  const std::vector<uint8_t> greeting = {0x05, 0x01, 0x00};
++  const Socks5GreetingParseResult greet = ParseSocks5NoAuthGreeting(greeting);
++  EXPECT_EQ(greet.status, Socks5InboundParseStatus::kOk);
++  EXPECT_EQ(greet.consumed, 3u);
++  ASSERT_EQ(greet.method_reply.size(), 2u);
++  EXPECT_EQ(greet.method_reply[0], 0x05);
++  EXPECT_EQ(greet.method_reply[1], 0x00);
++
++  std::vector<uint8_t> request = {0x05, 0x01, 0x00, 0x03, 0x0b};
++  const std::string host = "example.com";
++  request.insert(request.end(), host.begin(), host.end());
++  request.push_back(0x01);
++  request.push_back(0xbb);  // 443
++  const Socks5ConnectParseResult connect = ParseSocks5ConnectRequest(request);
++  EXPECT_EQ(connect.status, Socks5InboundParseStatus::kOk);
++  ASSERT_TRUE(connect.target.has_value());
++  EXPECT_EQ(connect.target->host, "example.com");
++  EXPECT_EQ(connect.target->port, 443u);
++}
++
++TEST(AccessSocks5InboundParserTest, RejectsUsernamePasswordOnlyGreeting) {
++  const std::vector<uint8_t> greeting = {0x05, 0x01, 0x02};
++  const Socks5GreetingParseResult greet = ParseSocks5NoAuthGreeting(greeting);
++  EXPECT_EQ(greet.status, Socks5InboundParseStatus::kUsernamePasswordNotAdmitted);
++}
++
++TEST(AccessSocks5InboundParserTest, RejectsBindCommand) {
++  const std::vector<uint8_t> request = {0x05, 0x02, 0x00, 0x01, 127, 0, 0, 1,
++                                        0x00, 0x50};
++  const Socks5ConnectParseResult connect = ParseSocks5ConnectRequest(request);
++  EXPECT_EQ(connect.status, Socks5InboundParseStatus::kUnsupportedCommand);
++}
++
++TEST(AccessSocks5InboundParserTest, SuccessReplyHasFixedShape) {
++  const std::vector<uint8_t> reply = Socks5SuccessReply();
++  ASSERT_EQ(reply.size(), 10u);
++  EXPECT_EQ(reply[0], 0x05);
++  EXPECT_EQ(reply[1], 0x00);
++}
++
++}  // namespace
++}  // namespace aegis_access

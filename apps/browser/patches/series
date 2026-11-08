@@ -346,3 +346,4 @@
 0346-fix-windows-installer-launch.patch
 0347-fix-third-party-license-credits.patch
 0348-p01-control-v2-two-hop-tls-transport.patch
+0349-feat-access-socks5-inbound-no-auth.patch
