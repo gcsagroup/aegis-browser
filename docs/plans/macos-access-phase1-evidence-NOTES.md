@@ -17,7 +17,7 @@ for this exit and must not be claimed PASS while still open.
 | `RunSiteProxyPhase1EvidenceDrill` | Session+route contract drill with IDs |
 | Pack under `docs/audit/evidence/macos-access-product-phase1/` | Operator path + manifest template |
 | `macos-access-phase1-evidence.mjs` | Schema + anti-拼证 validator |
-| Patch `0354` | Keeps Chromium series synced with overlay (next free on develop; open P-mac-4 must renumber if it lands second) |
+| Patch `0355` | Keeps Chromium series synced with overlay (after merged P-mac-4 `0354`) |
 
 ## Flow (B2)
 
