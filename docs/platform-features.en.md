@@ -217,11 +217,11 @@ Runtime acceptance not completed for this item in this work。
 
 ### Network access rules and permissions
 
-`aegis-access` — Per-origin display, script, camera and microphone settings; no Aegis Access proxy routing.
+`aegis-access` — Keeps per-origin display, script, camera and microphone settings; AccessKit also covers loopback HTTP/HTTPS inbound, reality_vision outbound contracts, and ProxyConfiguration wiring. This round records Simulator unit/UI coverage only (I1–I9 and REALITY ±); physical device and TestFlight remain NOT_RUN. Not a full Chromium Access routing port, and unit green is not a product five-step PASS.
 
-Source：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift)
+Source：[apps/ios/BrowserKit/BrowserPreferences.swift](../apps/ios/BrowserKit/BrowserPreferences.swift) · [apps/ios/AccessKit/AccessInboundTransport.swift](../apps/ios/AccessKit/AccessInboundTransport.swift) · [apps/ios/AccessKit/AccessHTTPRealityPath.swift](../apps/ios/AccessKit/AccessHTTPRealityPath.swift) · [apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift](../apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift) · [apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift](../apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift)
 
-Runtime acceptance not completed for this item in this work。
+iOS Simulator evidence：[docs/audit/ios-access-simulator-evidence-2026-11-08.md](../docs/audit/ios-access-simulator-evidence-2026-11-08.md)
 
 ### Profile and restart compatibility
 
