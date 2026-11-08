@@ -24,6 +24,7 @@ public struct AccessSiteSessionSnapshot: Sendable, Equatable {
     public let intent: AccessSiteIntent
     public let phase: AccessSiteSessionPhase
     public let connectionState: AccessSiteSessionConnectionState
+    public let faultMode: AccessSiteSessionFaultMode
     public let registrationID: AccessRegistrationID?
     public let failureReason: String?
 
@@ -32,6 +33,7 @@ public struct AccessSiteSessionSnapshot: Sendable, Equatable {
         intent: AccessSiteIntent,
         phase: AccessSiteSessionPhase,
         connectionState: AccessSiteSessionConnectionState,
+        faultMode: AccessSiteSessionFaultMode = .none,
         registrationID: AccessRegistrationID? = nil,
         failureReason: String? = nil
     ) {
@@ -39,6 +41,7 @@ public struct AccessSiteSessionSnapshot: Sendable, Equatable {
         self.intent = intent
         self.phase = phase
         self.connectionState = connectionState
+        self.faultMode = faultMode
         self.registrationID = registrationID
         self.failureReason = failureReason
     }
@@ -48,7 +51,8 @@ public struct AccessSiteSessionSnapshot: Sendable, Equatable {
             host: host,
             intent: .off,
             phase: .idle,
-            connectionState: .idle
+            connectionState: .idle,
+            faultMode: .none
         )
     }
 }

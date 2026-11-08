@@ -24,7 +24,7 @@ path using existing F8 / F9 / F11 seams.
 
 - SwiftUI toggle (P-iOS-3)
 - DEV ALLOW/BLOCK panel (P-iOS-4)
-- Fault-injection product drill (P-iOS-5)
+- Fault-injection product drill (P-iOS-5) — see `ios-access-fault-no-direct-NOTES.md`
 - HTTPS inbound → reality confluence (F12)
 
 ## PBX IDs

@@ -71,6 +71,8 @@ enum AccessSiteProxyToggleModel {
         case .block:
             return .blockLocalRefuse
         case .allow:
+            // Allow intent stays distinct from connection health (incl. P-iOS-5
+            // fault: unavailable / connecting must not read as Access ready).
             return connection == .ready ? .allowConnected : .allowNotConnected
         }
     }

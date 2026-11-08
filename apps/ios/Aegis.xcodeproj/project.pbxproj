@@ -282,6 +282,10 @@
 		A10CCE55ACC0020000000000F9 /* AccessSitePhase1EvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */; };
 		A10CCE55ACC0020000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */; };
 		A10CCE55ACC0020000000000FB /* AccessSitePhase1EvidencePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */; };
+		A10CCE55ACC0020000000000F4 /* AccessSiteSessionFault.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F4 /* AccessSiteSessionFault.swift */; };
+		A10CCE55ACC0020000000000F5 /* AccessSiteSessionRequestRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F5 /* AccessSiteSessionRequestRoute.swift */; };
+		A10CCE55ACC0020000000000F6 /* AccessSiteSessionFaultFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F6 /* AccessSiteSessionFaultFixture.swift */; };
+		A10CCE55ACC0020000000000F7 /* AccessSiteSessionFaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F7 /* AccessSiteSessionFaultTests.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -752,6 +756,10 @@
 		A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceFaultRequirement.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidencePack.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F4 /* AccessSiteSessionFault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionFault.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F5 /* AccessSiteSessionRequestRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionRequestRoute.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F6 /* AccessSiteSessionFaultFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionFaultFixture.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F7 /* AccessSiteSessionFaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionFaultTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -1291,6 +1299,9 @@
 				A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */,
 				A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */,
 				A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */,
+				A10CCE55ACC0010000000000F4 /* AccessSiteSessionFault.swift */,
+				A10CCE55ACC0010000000000F5 /* AccessSiteSessionRequestRoute.swift */,
+				A10CCE55ACC0010000000000F6 /* AccessSiteSessionFaultFixture.swift */,
 				A10CCE55ACC0010000000000D0 /* AccessBrowsingBucket.swift */,
 				A10CCE55ACC0010000000000D1 /* AccessBrowsingIsolationError.swift */,
 				A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */,
@@ -1323,6 +1334,7 @@
 				A10CCE55ACC0010000000000B3 /* AccessLocalV2RayConfigTests.swift */,
 				A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */,
 				A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */,
+				A10CCE55ACC0010000000000F7 /* AccessSiteSessionFaultTests.swift */,
 				A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */,
 				A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */,
 				A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */,
@@ -1902,6 +1914,7 @@
 				A10CCE55ACC0020000000000B3 /* AccessLocalV2RayConfigTests.swift in Sources */,
 				A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */,
 				A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */,
+				A10CCE55ACC0020000000000F7 /* AccessSiteSessionFaultTests.swift in Sources */,
 				A10CCE55ACC0020000000000D4 /* AccessBrowsingIsolationControllerTests.swift in Sources */,
 				A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */,
 				A10CCE55ACC0020000000000F9 /* AccessSitePhase1EvidenceTests.swift in Sources */,
@@ -1986,6 +1999,9 @@
 				A10CCE55ACC0020000000000C6 /* AccessSiteSessionState.swift in Sources */,
 				A10CCE55ACC0020000000000C7 /* AccessSiteSessionOrchestrating.swift in Sources */,
 				A10CCE55ACC0020000000000C8 /* AccessSiteSessionController.swift in Sources */,
+				A10CCE55ACC0020000000000F4 /* AccessSiteSessionFault.swift in Sources */,
+				A10CCE55ACC0020000000000F5 /* AccessSiteSessionRequestRoute.swift in Sources */,
+				A10CCE55ACC0020000000000F6 /* AccessSiteSessionFaultFixture.swift in Sources */,
 				A10CCE55ACC0020000000000D0 /* AccessBrowsingBucket.swift in Sources */,
 				A10CCE55ACC0020000000000D1 /* AccessBrowsingIsolationError.swift in Sources */,
 				A10CCE55ACC0020000000000D2 /* AccessBrowsingAccessState.swift in Sources */,

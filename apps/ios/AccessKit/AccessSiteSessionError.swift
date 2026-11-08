@@ -15,6 +15,7 @@ public enum AccessSiteSessionError: Error, Equatable, Sendable {
     case proxyApplyFailed(String)
     case tearDownFailed(String)
     case sessionNotActive
+    case runtimeFault(String)
 
     /// Human-readable failure text for UI / logs.
     public var readableMessage: String {
@@ -39,6 +40,9 @@ public enum AccessSiteSessionError: Error, Equatable, Sendable {
             return "Failed to tear down Access session: \(detail)"
         case .sessionNotActive:
             return "No active Access session for this host."
+        case .runtimeFault(let detail):
+            let suffix = detail.isEmpty ? "node or runtime fault." : detail
+            return "Access node or runtime fault: \(suffix)"
         }
     }
 }

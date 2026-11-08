@@ -2,10 +2,12 @@ import Foundation
 
 /// Orchestrates per-host Access sessions onto the reality_vision path.
 ///
-/// Product Phase 1 (P-iOS-2):
+/// Product Phase 1 (P-iOS-2 / P-iOS-5):
 /// - `enable` (allow): PrepareCandidate → Publish → ACK → ready
 /// - `block`: commit local refuse; tear down any published proxy for the host
 /// - `disable` (off): stop publishing / clear proxy for the host
+/// - `notifyRuntimeFault`: keep allow intent; Fail or Wait; never DIRECT
+/// - `recoverFromFault`: re-run enable path (PROXY only)
 ///
 /// Intent and connection health stay separate. Failures stay readable and must
 /// not be reported as DIRECT success.
@@ -39,7 +41,8 @@ public final class AccessSiteSessionController: @unchecked Sendable {
             host: host,
             intent: intent,
             phase: intent == .off ? .idle : .unavailable,
-            connectionState: .idle
+            connectionState: .idle,
+            faultMode: .none
         )
     }
 
@@ -53,7 +56,8 @@ public final class AccessSiteSessionController: @unchecked Sendable {
                 host: host,
                 intent: .allow,
                 phase: .preparingCandidate,
-                connectionState: .connecting
+                connectionState: .connecting,
+                faultMode: .none
             )
         )
         lock.unlock()
@@ -73,6 +77,7 @@ public final class AccessSiteSessionController: @unchecked Sendable {
                     intent: .allow,
                     phase: .publishing,
                     connectionState: .connecting,
+                    faultMode: .none,
                     registrationID: candidate.registration.id
                 )
             )
@@ -89,6 +94,7 @@ public final class AccessSiteSessionController: @unchecked Sendable {
                     intent: .allow,
                     phase: .awaitingAck,
                     connectionState: .connecting,
+                    faultMode: .none,
                     registrationID: candidate.registration.id
                 )
             )
@@ -113,6 +119,7 @@ public final class AccessSiteSessionController: @unchecked Sendable {
                 intent: .allow,
                 phase: .ready,
                 connectionState: .ready,
+                faultMode: .none,
                 registrationID: candidate.registration.id
             )
             lock.lock()
@@ -143,6 +150,7 @@ public final class AccessSiteSessionController: @unchecked Sendable {
                 intent: .block,
                 phase: .ready,
                 connectionState: .unavailable,
+                faultMode: .none,
                 failureReason: "Local block: Access proxying refused for this host."
             )
             writeLocked(snap)
@@ -243,6 +251,61 @@ public final class AccessSiteSessionController: @unchecked Sendable {
         }
     }
 
+    /// P-iOS-5: node/runtime fault while allow stays allow. Never treats DIRECT
+    /// / native success as Access success and never tears down the published
+    /// candidate. New requests must Fail (`failClosed`) or Wait (`wait`).
+    @discardableResult
+    public func notifyRuntimeFault(
+        host: AccessSiteHost,
+        mode: AccessSiteSessionFaultMode,
+        detail: String = ""
+    ) -> AccessSiteSessionSnapshot {
+        if mode == .none {
+            return snapshot(for: host)
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        intentStore.setIntent(.allow, for: host)
+        let prior = snapshots[host]
+        let registrationID = activeCandidates[host]?.registration.id
+            ?? prior?.registrationID
+        let reason = AccessSiteSessionError.runtimeFault(detail).readableMessage
+
+        let snap: AccessSiteSessionSnapshot
+        if mode == .wait {
+            snap = AccessSiteSessionSnapshot(
+                host: host,
+                intent: .allow,
+                phase: .preparingCandidate,
+                connectionState: .connecting,
+                faultMode: .wait,
+                registrationID: registrationID,
+                failureReason: reason
+            )
+        } else {
+            snap = AccessSiteSessionSnapshot(
+                host: host,
+                intent: .allow,
+                phase: .unavailable,
+                connectionState: .unavailable,
+                faultMode: .failClosed,
+                registrationID: registrationID,
+                failureReason: reason
+            )
+        }
+        writeLocked(snap)
+        return snap
+    }
+
+    /// Re-arms the allow path after the node/runtime recovers
+    /// (Prepare → Publish → ACK → activate). Never claims ready via DIRECT.
+    @discardableResult
+    public func recoverFromFault(host: AccessSiteHost) throws -> AccessSiteSessionSnapshot {
+        try enable(host: host)
+    }
+
     private func runPhase<T>(
         host: AccessSiteHost,
         phase: AccessSiteSessionPhase,
@@ -294,6 +357,7 @@ public final class AccessSiteSessionController: @unchecked Sendable {
                 intent: intent,
                 phase: .unavailable,
                 connectionState: .unavailable,
+                faultMode: .none,
                 registrationID: registrationID,
                 failureReason: error.readableMessage
             )
