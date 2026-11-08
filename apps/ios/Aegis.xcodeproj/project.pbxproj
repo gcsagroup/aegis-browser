@@ -232,6 +232,12 @@
 		A10CCE55ACC002000000000072 /* AccessHTTPSInboundFrontPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000072 /* AccessHTTPSInboundFrontPlan.swift */; };
 		A10CCE55ACC002000000000073 /* AccessHTTPSInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000073 /* AccessHTTPSInboundListener.swift */; };
 		A10CCE55ACC002000000000074 /* AccessHTTPSInboundFrontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000074 /* AccessHTTPSInboundFrontTests.swift */; };
+		A10CCE55ACC002000000000080 /* AccessRealityProbeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000080 /* AccessRealityProbeError.swift */; };
+		A10CCE55ACC002000000000081 /* AccessRealityProbeTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000081 /* AccessRealityProbeTarget.swift */; };
+		A10CCE55ACC002000000000082 /* AccessRealityProbeResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000082 /* AccessRealityProbeResult.swift */; };
+		A10CCE55ACC002000000000083 /* AccessRealityProbeExecuting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000083 /* AccessRealityProbeExecuting.swift */; };
+		A10CCE55ACC002000000000084 /* AccessRealityProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000084 /* AccessRealityProbe.swift */; };
+		A10CCE55ACC002000000000085 /* AccessRealityProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000085 /* AccessRealityProbeTests.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -652,6 +658,12 @@
 		A10CCE55ACC001000000000072 /* AccessHTTPSInboundFrontPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundFrontPlan.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000073 /* AccessHTTPSInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000074 /* AccessHTTPSInboundFrontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundFrontTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000080 /* AccessRealityProbeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000081 /* AccessRealityProbeTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeTarget.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000082 /* AccessRealityProbeResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeResult.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000083 /* AccessRealityProbeExecuting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeExecuting.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000084 /* AccessRealityProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbe.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000085 /* AccessRealityProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -1158,6 +1170,11 @@
 				A10CCE55ACC001000000000071 /* AccessHTTPSInboundTLSProviding.swift */,
 				A10CCE55ACC001000000000072 /* AccessHTTPSInboundFrontPlan.swift */,
 				A10CCE55ACC001000000000073 /* AccessHTTPSInboundListener.swift */,
+				A10CCE55ACC001000000000080 /* AccessRealityProbeError.swift */,
+				A10CCE55ACC001000000000081 /* AccessRealityProbeTarget.swift */,
+				A10CCE55ACC001000000000082 /* AccessRealityProbeResult.swift */,
+				A10CCE55ACC001000000000083 /* AccessRealityProbeExecuting.swift */,
+				A10CCE55ACC001000000000084 /* AccessRealityProbe.swift */,
 				A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */,
 				A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
@@ -1176,6 +1193,7 @@
 				A10CCE55ACC001000000000054 /* AccessHTTPConnectTests.swift */,
 				A10CCE55ACC001000000000064 /* AccessXrayRuntimeTests.swift */,
 				A10CCE55ACC001000000000074 /* AccessHTTPSInboundFrontTests.swift */,
+				A10CCE55ACC001000000000085 /* AccessRealityProbeTests.swift */,
 				A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */,
 			);
 			path = AccessKitTests;
@@ -1739,6 +1757,7 @@
 				A10CCE55ACC002000000000054 /* AccessHTTPConnectTests.swift in Sources */,
 				A10CCE55ACC002000000000064 /* AccessXrayRuntimeTests.swift in Sources */,
 				A10CCE55ACC002000000000074 /* AccessHTTPSInboundFrontTests.swift in Sources */,
+				A10CCE55ACC002000000000085 /* AccessRealityProbeTests.swift in Sources */,
 				A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
@@ -1793,6 +1812,11 @@
 				A10CCE55ACC002000000000071 /* AccessHTTPSInboundTLSProviding.swift in Sources */,
 				A10CCE55ACC002000000000072 /* AccessHTTPSInboundFrontPlan.swift in Sources */,
 				A10CCE55ACC002000000000073 /* AccessHTTPSInboundListener.swift in Sources */,
+				A10CCE55ACC002000000000080 /* AccessRealityProbeError.swift in Sources */,
+				A10CCE55ACC002000000000081 /* AccessRealityProbeTarget.swift in Sources */,
+				A10CCE55ACC002000000000082 /* AccessRealityProbeResult.swift in Sources */,
+				A10CCE55ACC002000000000083 /* AccessRealityProbeExecuting.swift in Sources */,
+				A10CCE55ACC002000000000084 /* AccessRealityProbe.swift in Sources */,
 				A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */,
 				A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */,
 			);
