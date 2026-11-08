@@ -205,11 +205,11 @@ private struct AegisProtectionSettingsView: View {
             Section {
                 NavigationLink {
                     Form { FirebaseControlsView() }
-                        .localizedNavigationTitle("诊断与使用数据")
+                        .localizedNavigationTitle("诊断与使用分析")
                         .navigationBarTitleDisplayMode(.inline)
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("诊断与使用数据")
+                        Text("诊断与使用分析")
                         Text("崩溃报告、使用分析与远程诊断配置默认开启，可随时关闭。")
                             .font(.caption)
                             .foregroundStyle(.secondary)

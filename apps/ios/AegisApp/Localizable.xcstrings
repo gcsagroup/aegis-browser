@@ -96565,6 +96565,95 @@
           }
         }
       }
+    },
+    "崩溃报告、使用分析与远程诊断配置默认开启，可随时关闭。": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Absturzberichte, Nutzungsanalysen und Remote-Diagnosekonfiguration sind standardmäßig aktiviert und können jederzeit deaktiviert werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crash reports, usage analytics, and remote diagnostics are on by default. You can turn them off anytime."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los informes de fallos, el análisis de uso y la configuración de diagnóstico remoto están activados de forma predeterminada; puedes desactivarlos en cualquier momento."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les rapports de plantage, l’analyse d’utilisation et la configuration de diagnostic à distance sont activés par défaut ; vous pouvez les désactiver à tout moment."
+          }
+        },
+        "id": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laporan crash, analitik penggunaan, dan konfigurasi diagnostik jarak jauh aktif secara default; Anda dapat menonaktifkannya kapan saja."
+          }
+        },
+        "it": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I report di arresto anomalo, l’analisi dell’utilizzo e la configurazione diagnostica remota sono attivi per impostazione predefinita; puoi disattivarli in qualsiasi momento."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クラッシュレポート、使用状況分析、リモート診断設定はデフォルトでオンです。いつでもオフにできます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "충돌 보고서, 사용 분석, 원격 진단 구성은 기본적으로 켜져 있으며 언제든 끌 수 있습니다."
+          }
+        },
+        "ms": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Laporan ranap, analitik penggunaan dan konfigurasi diagnostik jauh dihidupkan secara lalai; anda boleh mematikannya pada bila-bila masa."
+          }
+        },
+        "pt": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os relatórios de falha, a análise de utilização e a configuração de diagnóstico remoto estão ativos por predefinição; pode desativá-los a qualquer momento."
+          }
+        },
+        "th": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "รายงานข้อขัดข้อง การวิเคราะห์การใช้งาน และการกำหนดค่าการวินิจฉัยระยะไกลเปิดอยู่ตามค่าเริ่มต้น และคุณสามารถปิดได้ทุกเมื่อ"
+          }
+        },
+        "vi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Báo cáo sự cố, phân tích sử dụng và cấu hình chẩn đoán từ xa được bật theo mặc định; bạn có thể tắt bất cứ lúc nào."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "崩溃报告、使用分析与远程诊断配置默认开启，可随时关闭。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "當機報告、使用分析與遠端診斷設定預設開啟，可隨時關閉。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
