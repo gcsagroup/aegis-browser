@@ -57,6 +57,17 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   // Returns false only when the host/toggle cannot be accepted.
   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
 
+  // P-mac-5: node/runtime fault while allow stays allow. Never clears the
+  // PROXY selection or publishes DIRECT. |wait| holds new requests; otherwise
+  // they fail closed.
+  bool NotifyHostProxyRuntimeFault(const AccessSiteHost& host, bool wait);
+
+  // Re-arms the allow publication path after fault recovery.
+  bool RecoverHostProxySession(const AccessSiteHost& host);
+
+  // Rebuild PROXY publication after Network Service restart (no DIRECT).
+  bool RebuildHostProxyAfterNetworkServiceRestart(const AccessSiteHost& host);
+
  private:
   explicit AccessSiteProxyBubbleController(Profile* profile);
 

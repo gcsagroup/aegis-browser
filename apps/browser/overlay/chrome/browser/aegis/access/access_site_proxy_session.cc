@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "base/strings/strcat.h"
+#include "components/aegis_access/access_route_planner.h"
 
 namespace aegis::access {
 namespace {
@@ -14,6 +15,19 @@ std::string DetailOr(std::string_view detail, std::string_view fallback) {
 }
 
 }  // namespace
+
+std::string_view AccessSiteProxyFaultModeToString(
+    AccessSiteProxyFaultMode mode) {
+  switch (mode) {
+    case AccessSiteProxyFaultMode::kNone:
+      return "none";
+    case AccessSiteProxyFaultMode::kFailClosed:
+      return "fail-closed";
+    case AccessSiteProxyFaultMode::kWait:
+      return "wait";
+  }
+  return "fail-closed";
+}
 
 std::string_view AccessSiteProxySessionErrorToString(
     AccessSiteProxySessionError error) {
@@ -50,6 +64,10 @@ std::string_view AccessSiteProxySessionErrorToString(
       return "direct-fallback-not-admitted";
     case AccessSiteProxySessionError::kTearDownFailed:
       return "tear-down-failed";
+    case AccessSiteProxySessionError::kRuntimeFault:
+      return "runtime-fault";
+    case AccessSiteProxySessionError::kNetworkServiceRebuildFailed:
+      return "network-service-rebuild-failed";
   }
   return "mutation-failed";
 }
@@ -101,6 +119,14 @@ std::string AccessSiteProxySessionErrorReadableMessage(
       return base::StrCat(
           {"Failed to tear down Access session: ",
            DetailOr(detail, "tear-down")});
+    case AccessSiteProxySessionError::kRuntimeFault:
+      return base::StrCat(
+          {"Access node or runtime fault: ",
+           DetailOr(detail, "new requests fail closed without DIRECT")});
+    case AccessSiteProxySessionError::kNetworkServiceRebuildFailed:
+      return base::StrCat(
+          {"Failed to rebuild Access proxy after Network Service restart: ",
+           DetailOr(detail, "rebuild")});
   }
   return "Access session failed.";
 }
@@ -176,6 +202,70 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
 
 AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
     const AccessSiteHost& host) {
+  return RepublishAllow(host, "enable");
+}
+
+AccessSiteProxySessionSnapshot
+AccessSiteProxySessionController::NotifyRuntimeFault(
+    const AccessSiteHost& host,
+    AccessSiteProxyFaultMode mode,
+    std::string_view detail) {
+  if (mode == AccessSiteProxyFaultMode::kNone) {
+    return SnapshotFor(host);
+  }
+  if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
+    return MarkUnavailable(host, AccessSiteIntent::kAllow,
+                           AccessSiteProxySessionError::kInvalidHost);
+  }
+
+  // Keep product intent on allow. Do not publish DIRECT and do not tear down
+  // the PROXY selection — new requests must Fail or Wait against that policy.
+  intent_store_.Set(host, AccessSiteIntent::kAllow);
+  const auto prior = SnapshotFor(host);
+  AccessSiteProxySessionSnapshot snap;
+  snap.host = host;
+  snap.intent = AccessSiteIntent::kAllow;
+  snap.fault_mode = mode;
+  snap.policy_generation = prior.policy_generation;
+  snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
+      AccessSiteProxySessionError::kRuntimeFault, detail);
+  if (mode == AccessSiteProxyFaultMode::kWait) {
+    snap.phase = AccessSiteProxySessionPhase::kPreparingCandidate;
+    snap.connection = AccessSiteConnectionState::kConnecting;
+  } else {
+    snap.phase = AccessSiteProxySessionPhase::kUnavailable;
+    snap.connection = AccessSiteConnectionState::kUnavailable;
+  }
+  return Write(std::move(snap));
+}
+
+AccessSiteProxySessionSnapshot
+AccessSiteProxySessionController::RecoverFromFault(
+    const AccessSiteHost& host) {
+  return RepublishAllow(host, "recover");
+}
+
+AccessSiteProxySessionSnapshot
+AccessSiteProxySessionController::RebuildAfterNetworkServiceRestart(
+    const AccessSiteHost& host) {
+  if (intent_store_.Get(host) != AccessSiteIntent::kAllow) {
+    return SnapshotFor(host);
+  }
+  AccessSiteProxySessionSnapshot snap =
+      RepublishAllow(host, "network-service-rebuild");
+  if (snap.phase != AccessSiteProxySessionPhase::kReady) {
+    snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
+        AccessSiteProxySessionError::kNetworkServiceRebuildFailed,
+        snap.failure_reason);
+    return Write(std::move(snap));
+  }
+  return snap;
+}
+
+AccessSiteProxySessionSnapshot
+AccessSiteProxySessionController::RepublishAllow(
+    const AccessSiteHost& host,
+    std::string_view operation_suffix) {
   if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk ||
       !orchestrator_) {
     return MarkUnavailable(host, AccessSiteIntent::kAllow,
@@ -188,7 +278,8 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
   Write({.host = host,
          .intent = AccessSiteIntent::kAllow,
          .phase = AccessSiteProxySessionPhase::kPreparingCandidate,
-         .connection = AccessSiteConnectionState::kConnecting});
+         .connection = AccessSiteConnectionState::kConnecting,
+         .fault_mode = AccessSiteProxyFaultMode::kNone});
 
   AccessSiteProxyLocalProxyReadyInfo ready_info;
   const AccessSiteProxySessionError ready_status =
@@ -204,12 +295,14 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
   Write({.host = host,
          .intent = AccessSiteIntent::kAllow,
          .phase = AccessSiteProxySessionPhase::kPublishing,
-         .connection = AccessSiteConnectionState::kConnecting});
+         .connection = AccessSiteConnectionState::kConnecting,
+         .fault_mode = AccessSiteProxyFaultMode::kNone});
 
   const AccessSiteProxySessionMutationPlan plan =
       BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kAllow,
                                         ready_info.owner,
-                                        ready_info.proxy_group_id, "enable");
+                                        ready_info.proxy_group_id,
+                                        operation_suffix);
   if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
       !plan.mutation.request.has_value()) {
     return MarkUnavailable(
@@ -220,10 +313,20 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
             : AccessSiteProxySessionError::kPrepareFailed);
   }
 
+  // Allow-path mutations must stay PROXY. Reject any accidental DIRECT plan.
+  for (const auto& member : plan.mutation.request->candidate_members) {
+    if (member.mode != AccessMode::kProxy) {
+      return MarkUnavailable(
+          host, AccessSiteIntent::kAllow,
+          AccessSiteProxySessionError::kDirectFallbackNotAdmitted);
+    }
+  }
+
   Write({.host = host,
          .intent = AccessSiteIntent::kAllow,
          .phase = AccessSiteProxySessionPhase::kAwaitingAck,
-         .connection = AccessSiteConnectionState::kConnecting});
+         .connection = AccessSiteConnectionState::kConnecting,
+         .fault_mode = AccessSiteProxyFaultMode::kNone});
 
   AccessSiteProxySessionPublicationInfo publication;
   const AccessSiteProxySessionError publish_status =
@@ -238,6 +341,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
                 .intent = AccessSiteIntent::kAllow,
                 .phase = AccessSiteProxySessionPhase::kReady,
                 .connection = AccessSiteConnectionState::kReady,
+                .fault_mode = AccessSiteProxyFaultMode::kNone,
                 .policy_generation = publication.policy_generation});
 }
 
@@ -249,6 +353,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
     snap.intent = AccessSiteIntent::kOff;
     snap.phase = AccessSiteProxySessionPhase::kIdle;
     snap.connection = AccessSiteConnectionState::kIdle;
+    snap.fault_mode = AccessSiteProxyFaultMode::kNone;
     snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
         AccessSiteProxySessionError::kInvalidHost);
     intent_store_.Set(host, AccessSiteIntent::kOff);
@@ -262,6 +367,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
       .intent = AccessSiteIntent::kOff,
       .phase = AccessSiteProxySessionPhase::kIdle,
       .connection = AccessSiteConnectionState::kIdle,
+      .fault_mode = AccessSiteProxyFaultMode::kNone,
   };
 
   if (!orchestrator_) {
@@ -322,8 +428,81 @@ AccessSiteProxySessionController::MarkUnavailable(
                 .intent = intent,
                 .phase = AccessSiteProxySessionPhase::kUnavailable,
                 .connection = AccessSiteConnectionState::kUnavailable,
+                .fault_mode = AccessSiteProxyFaultMode::kNone,
                 .failure_reason = AccessSiteProxySessionErrorReadableMessage(
                     error, detail)});
+}
+
+aegis_access::RoutePlan PlanSiteProxySessionRequestRoute(
+    const AccessSiteProxySessionSnapshot& snapshot,
+    const AccessSiteProxyFaultRouteContext& context) {
+  using aegis_access::AccessMode;
+  using aegis_access::PolicyScope;
+  using aegis_access::PolicyState;
+  using aegis_access::ProxyRuntimeState;
+  using aegis_access::RouteAction;
+  using aegis_access::RouteInput;
+  using aegis_access::RoutePlan;
+  using aegis_access::SnapshotState;
+
+  RouteInput input;
+  input.request_owner = context.owner;
+  input.snapshot_owner = context.owner;
+  input.request_generations = context.generations;
+  input.snapshot_generations = context.generations;
+  input.snapshot_state = SnapshotState::kPublished;
+  input.protection_restriction =
+      aegis_access::ProtectionRestriction::kNone;
+  input.managed_restriction = aegis_access::ManagedRestriction::kNone;
+  input.site_ownership_reliable = true;
+
+  if (snapshot.intent != AccessSiteIntent::kAllow) {
+    input.policy_state = PolicyState::kAbsent;
+    input.effective_mode = AccessMode::kNone;
+    input.policy_scope = PolicyScope::kNone;
+    input.require_proxy_intent = false;
+    input.runtime_state = ProxyRuntimeState::kStopped;
+    return aegis_access::PlanAccessRoute(input);
+  }
+
+  // Allow intent requires PROXY. Fault must Fail or Wait — never DIRECT.
+  input.policy_state = PolicyState::kValid;
+  input.effective_mode = AccessMode::kProxy;
+  input.policy_scope = PolicyScope::kSite;
+  input.effective_proxy_group_id = context.proxy_group_id;
+  input.require_proxy_intent = true;
+
+  if (snapshot.fault_mode == AccessSiteProxyFaultMode::kWait) {
+    input.runtime_state = ProxyRuntimeState::kRecovering;
+    input.registered_proxy_entry = context.registered_proxy_entry;
+    return aegis_access::PlanAccessRoute(input);
+  }
+  if (snapshot.fault_mode == AccessSiteProxyFaultMode::kFailClosed ||
+      snapshot.phase == AccessSiteProxySessionPhase::kUnavailable ||
+      snapshot.connection == AccessSiteConnectionState::kUnavailable) {
+    input.runtime_state = ProxyRuntimeState::kOffline;
+    input.registered_proxy_entry = context.registered_proxy_entry;
+    return aegis_access::PlanAccessRoute(input);
+  }
+  if (snapshot.phase == AccessSiteProxySessionPhase::kReady &&
+      snapshot.connection == AccessSiteConnectionState::kReady) {
+    input.runtime_state = ProxyRuntimeState::kReady;
+    input.registered_proxy_entry = context.registered_proxy_entry;
+    return aegis_access::PlanAccessRoute(input);
+  }
+
+  // Connecting / preparing without an explicit wait fault still waits.
+  input.runtime_state = ProxyRuntimeState::kPreparing;
+  input.registered_proxy_entry = context.registered_proxy_entry;
+  const RoutePlan plan = aegis_access::PlanAccessRoute(input);
+  // Secondary guard: allow-path plans must never preserve native DIRECT.
+  if (plan.action == RouteAction::kPreserveNative) {
+    RoutePlan denied = plan;
+    denied.action = RouteAction::kFail;
+    denied.reason = aegis_access::RouteReason::kProxyUnavailable;
+    return denied;
+  }
+  return plan;
 }
 
 }  // namespace aegis::access

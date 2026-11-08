@@ -1268,6 +1268,10 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
   std::optional<aegis_access::OwnershipKey> owner_;
 };
 
+// P-mac-5 browser fixture: controlled node/runtime fault must not open the
+// origin via DIRECT; recovery restores the PROXY path; OFF returns native.
+// Product session drill: AccessSiteProxySessionTest.ProductFaultDrillHealthyOnFaultRecoveryOff
+// and RunSiteProxyFaultProductDrill (access_site_proxy_fault_fixture.h).
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        ControlledOnFaultRecoveryOffPreservesRoute) {
   size_t ignored_origin = 0, ignored_proxy = 0;

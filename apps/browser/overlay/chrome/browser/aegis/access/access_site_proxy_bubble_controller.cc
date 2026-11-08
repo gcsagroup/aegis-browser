@@ -155,6 +155,48 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
   return true;
 }
 
+bool AccessSiteProxyBubbleController::NotifyHostProxyRuntimeFault(
+    const AccessSiteHost& host,
+    bool wait) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
+    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
+        AccessSiteProxySessionError::kInvalidHost);
+    connection_state_ = AccessSiteConnectionState::kUnavailable;
+    return false;
+  }
+  if (intent_store_.Get(host) != AccessSiteIntent::kAllow) {
+    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
+        AccessSiteProxySessionError::kRuntimeFault,
+        "site proxy is not enabled");
+    return false;
+  }
+  // Keep allow intent and the published PROXY selection. Do not ClearProxy
+  // or publish DIRECT — new requests fail or wait against the PROXY policy.
+  failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
+      AccessSiteProxySessionError::kRuntimeFault,
+      wait ? "waiting for node recovery" : "node or runtime unavailable");
+  connection_state_ = wait ? AccessSiteConnectionState::kConnecting
+                           : AccessSiteConnectionState::kUnavailable;
+  return true;
+}
+
+bool AccessSiteProxyBubbleController::RecoverHostProxySession(
+    const AccessSiteHost& host) {
+  return RequestHostProxySession(host, true);
+}
+
+bool AccessSiteProxyBubbleController::
+    RebuildHostProxyAfterNetworkServiceRestart(const AccessSiteHost& host) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (intent_store_.Get(host) != AccessSiteIntent::kAllow) {
+    return false;
+  }
+  // Republish PROXY for the allow host. RequestHostProxySession never admits
+  // DIRECT on the enable path.
+  return RequestHostProxySession(host, true);
+}
+
 AccessSiteProxySessionError
 AccessSiteProxyBubbleController::EnsureLocalProxyReady(
     const AccessSiteHost& host,
