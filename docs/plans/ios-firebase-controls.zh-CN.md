@@ -4,7 +4,7 @@
 
 ## 用户选择与生效规则
 
-- 三个独立开关：发送崩溃报告、发送使用分析、允许远程诊断配置。未设置过的项目默认关闭；已明确保存的采集选择继续保留。
+- 三个独立开关：发送崩溃报告、发送使用分析、允许远程诊断配置。未设置时三者默认开启；已明确保存的采集选择继续保留。设置入口对齐 HomeGuard iOS：「隐私与防护」下诊断导航行，进入详情页再改开关。
 - 生效许可 = 本机采集选择 AND 远程许可；关闭远程配置时仅采用本机选择。服务未配置时仍可保存选择，但不启动服务。
 - 远程配置启用后，在没有有效配置、配置格式错误或超过 24 小时时暂停两类上报。网络失败保留仍在有效期内的最近一次正确配置；不延长缓存年龄。
 - 参数白名单：`aegis_diagnostics_schema` 必须为 `1`；`aegis_crash_reports_allowed`、`aegis_analytics_allowed` 必须为 `true` 或 `false`。全部有效才接受。未知参数不会执行。远程值永远不写入用户的采集偏好。
@@ -26,6 +26,6 @@ Crashlytics 保持关闭自动上传。应用等待启动时首次远程尝试�
 
 ## 验证要求
 
-单元与回归覆盖默认关闭、已有选择保留、参数校验、24 小时有效期、关闭后旧回调丢弃、快速关闭/重开、清理失败及重启重试、请求失败保留有效缓存、远程值不能写回本机选择。原注册环境隔离回归保留。验证原生编译、设置入口、本地化和鸣谢资源；模拟器/真机、线上 Firebase、CI 与签名发行证据分别记录。
+单元与回归覆盖三项采集默认开启、已有选择保留、参数校验、24 小时有效期、关闭后旧回调丢弃、快速关闭/重开、清理失败及重启重试、请求失败保留有效缓存、远程值不能写回本机选择。原注册环境隔离回归保留。验证原生编译、HomeGuard 式设置入口、本地化和鸣谢资源；模拟器/真机、线上 Firebase、CI 与签名发行证据分别记录。
 
 依据：[Remote Config API](https://firebase.google.com/docs/reference/swift/firebaseremoteconfig/api/reference/Classes/RemoteConfig) 的 Installations 同步与删除要求、[iOS Remote Config](https://firebase.google.com/docs/remote-config/ios/get-started)、[Crashlytics 可选上报](https://firebase.google.com/docs/crashlytics/ios/customize-crash-reports)。
