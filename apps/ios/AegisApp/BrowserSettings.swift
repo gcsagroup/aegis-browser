@@ -202,7 +202,24 @@ private struct AegisProtectionSettingsView: View {
                 Button("清除网站数据", role: .destructive) { clearingWebsites = true }
                     .disabled(browser.profile.isPrivate || deletingWebsites)
             }
-            FirebaseControlsView()
+            Section {
+                NavigationLink {
+                    Form { FirebaseControlsView() }
+                        .localizedNavigationTitle("诊断与使用数据")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("诊断与使用数据")
+                        Text("崩溃报告、使用分析与远程诊断配置默认开启，可随时关闭。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityIdentifier("firebase-data-collection-details")
+            } header: {
+                Text("诊断与使用分析")
+            }
             if let message { Text(message.text).foregroundStyle(.secondary) }
         }
         .localizedNavigationTitle("隐私与防护")
