@@ -131,7 +131,7 @@ index 7da61816ca6bace2ba147a010823508a8a290710..c4d851d9ce199bd4207e1f80f4816525
 +
 diff --git a/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h
 new file mode 100644
-index 000000000000..f0b3bae3b3c8
+index 0000000000000000000000000000000000000000..f0b3bae3b3c80506ee47504f3b3c4e406607a6e5
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h
 @@ -0,0 +1,74 @@
@@ -211,7 +211,7 @@ index 000000000000..f0b3bae3b3c8
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_PHASE1_EVIDENCE_FIXTURE_H_
 diff --git a/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc
 new file mode 100644
-index 000000000000..16b8efd790c5
+index 0000000000000000000000000000000000000000..16b8efd790c556626c14bccd8f2b7b286af656fe
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc
 @@ -0,0 +1,200 @@
