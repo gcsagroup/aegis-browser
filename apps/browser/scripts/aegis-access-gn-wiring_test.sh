@@ -61,9 +61,11 @@ python3 -B "$SCRIPT_DIR/merged-main-patch_test.py"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
 TARGET="//components/aegis_access:aegis_access_unittests"
 COORDINATOR_TARGET="//chrome/browser/aegis/access:access_service_coordinator_unittests"
+SITE_INTENT_TARGET="//chrome/browser/aegis/access:access_site_intent_unittests"
 OWNERSHIP_TARGET="//components/aegis_access:request_ownership_registry_unittests"
 DISPATCH_GATE_TARGET="//components/aegis_access:request_dispatch_gate_unittests"
 BROWSER_METADATA_TARGET="//components/aegis_access:browser_request_metadata_seed_unittests"
+SITE_INTENT_PATCH_FILE="$BROWSER_DIR/patches/0350-feat-access-site-intent-api.patch"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -79,6 +81,10 @@ args_block="$(awk '/^root_extra_deps = \[$/,/^\]$/' "$ARGS_FILE")"
   fail "aegis.gn must add the coordinator lifecycle test exactly once"
 [[ "$args_block" == *"$COORDINATOR_TARGET"* ]] ||
   fail "the coordinator lifecycle test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_INTENT_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the site intent API test exactly once"
+[[ "$args_block" == *"$SITE_INTENT_TARGET"* ]] ||
+  fail "the site intent API test must be reachable through root_extra_deps"
 [[ "$(rg -F -c "$OWNERSHIP_TARGET" "$ARGS_FILE")" == 1 ]] ||
   fail "aegis.gn must add the ownership registry test exactly once"
 [[ "$args_block" == *"$OWNERSHIP_TARGET"* ]] ||
@@ -184,9 +190,25 @@ rg -Fq 'source_set("access_service_coordinator")' "$ACCESS_BUILD" ||
   fail "overlay must define the Profile-owned Access service coordinator"
 rg -Fq 'test("access_service_coordinator_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must define the Access service coordinator lifecycle regression"
+rg -Fq 'source_set("access_site_intent")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site intent API"
+rg -Fq 'test("access_site_intent_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site intent API regression"
+rg -Fq 'BuildOrdinarySiteGroupMutation' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
+  fail "site intent API must expose ordinary CommitSiteGroupMutation builders"
+rg -Fq 'kBlockNotOrdinary' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
+  fail "site intent API must keep block outside ordinary DIRECT publication"
 coordinator_test_block="$(awk '/^test\("access_service_coordinator_unittests"\)/,/^}/' "$ACCESS_BUILD")"
 [[ "$coordinator_test_block" == *'":access_proxy_selection_generation_source",'* ]] ||
   fail "coordinator test must directly depend on the proxy selection generation source"
+[[ -f "$SITE_INTENT_PATCH_FILE" ]] ||
+  fail "active series must include the site intent API sync patch"
+rg -Fq '+source_set("access_site_intent")' "$SITE_INTENT_PATCH_FILE" ||
+  fail "patch 0350 must deliver the product site intent API source_set"
+rg -Fq '+test("access_site_intent_unittests")' "$SITE_INTENT_PATCH_FILE" ||
+  fail "patch 0350 must deliver the product site intent API regression"
 for profile_test in \
   access_browser_request_adapter_unittests \
   access_identity_generation_source_unittests \

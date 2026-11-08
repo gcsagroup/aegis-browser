@@ -167,6 +167,28 @@ source_set("access_service_coordinator") {
   ]
 }
 
+source_set("access_site_intent") {
+  sources = [
+    "access_site_intent.cc",
+    "access_site_intent.h",
+  ]
+  deps = [
+    ":access_rule_store",
+    "//base",
+    "//components/aegis_access",
+    "//url",
+  ]
+}
+
+test("access_site_intent_unittests") {
+  sources = [ "access_site_intent_unittest.cc" ]
+  deps = [
+    ":access_site_intent",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
 test("access_service_coordinator_unittests") {
   sources = [ "access_service_coordinator_unittest.cc" ]
   deps = [

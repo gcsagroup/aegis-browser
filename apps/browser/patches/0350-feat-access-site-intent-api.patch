@@ -1,0 +1,561 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Packaging Proposal <aegis-proposal@invalid>
+Date: Sun, 8 Nov 2026 13:30:00 +0000
+Subject: [PATCH] feat: expose macOS site allow/block/off intent API
+
+Add product-facing AccessSiteIntent helpers and keep Chromium patch
+series synchronized with the overlay. Block stays outside ordinary
+DIRECT publication.
+
+---
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 0e57c40308e470de0ce8c56fa5c8b9b4f5774114..cb92dd1af9364fa81d4217f230ad297c28ca9833 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -167,6 +167,28 @@
+   ]
+ }
+ 
++source_set("access_site_intent") {
++  sources = [
++    "access_site_intent.cc",
++    "access_site_intent.h",
++  ]
++  deps = [
++    ":access_rule_store",
++    "//base",
++    "//components/aegis_access",
++    "//url",
++  ]
++}
++
++test("access_site_intent_unittests") {
++  sources = [ "access_site_intent_unittest.cc" ]
++  deps = [
++    ":access_site_intent",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ test("access_service_coordinator_unittests") {
+   sources = [ "access_service_coordinator_unittest.cc" ]
+   deps = [
+diff --git a/chrome/browser/aegis/access/access_site_intent.h b/chrome/browser/aegis/access/access_site_intent.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..b752c60fbdf30d3787ebaaa5918cfc6eead9b942
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_intent.h
+@@ -0,0 +1,125 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_INTENT_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_INTENT_H_
++
++#include <map>
++#include <optional>
++#include <string>
++#include <string_view>
++
++#include "chrome/browser/aegis/access/access_rule_store.h"
++#include "components/aegis_access/access_route_types.h"
++#include "components/aegis_access/site_proxy_rule_group.h"
++
++namespace aegis::access {
++
++// Product-facing per-host Access intent. Distinct from publication/ACK and
++// from connection health. Ordinary CommitSiteGroupMutation admits only the
++// Direct/Proxy pair; block stays a local refuse-Access intent.
++enum class AccessSiteIntent {
++  kOff,
++  kAllow,
++  kBlock,
++};
++
++enum class AccessSiteIntentParseStatus {
++  kOk,
++  kUnknownIntent,
++};
++
++// Exact-host product key. Must match site proxy rule group canonical hosts:
++// lowercase, no scheme/path/userinfo/port, no trailing dot.
++struct AccessSiteHost {
++  std::string value;
++
++  friend bool operator==(const AccessSiteHost&,
++                         const AccessSiteHost&) = default;
++  friend bool operator<(const AccessSiteHost& left,
++                        const AccessSiteHost& right) {
++    return left.value < right.value;
++  }
++};
++
++enum class AccessSiteHostStatus {
++  kOk,
++  kEmpty,
++  kNotCanonical,
++  kContainsSchemeOrPath,
++};
++
++struct AccessSiteHostResult {
++  AccessSiteHostStatus status = AccessSiteHostStatus::kEmpty;
++  std::optional<AccessSiteHost> host;
++};
++
++enum class AccessSiteIntentMutationStatus {
++  // Ready for AccessServiceCoordinator::CommitSiteGroupMutation.
++  kReady,
++  kInvalidHost,
++  kInvalidOwner,
++  kMissingProxyGroup,
++  // Block is product-local refuse; not an ordinary site-group mutation.
++  // Callers must not treat this as silent DIRECT success.
++  kBlockNotOrdinary,
++  kInvalidArgument,
++};
++
++struct AccessSiteIntentMutationInput {
++  AccessSiteIntent intent = AccessSiteIntent::kOff;
++  AccessSiteHost host;
++  OwnershipKey owner;
++  std::string site_toggle_id;
++  std::string operation_id;
++  std::string request_fingerprint;
++  // Required for kAllow; must be empty for kOff.
++  std::string proxy_group_id;
++  uint64_t expected_revision = 0;
++};
++
++struct AccessSiteIntentMutationResult {
++  AccessSiteIntentMutationStatus status =
++      AccessSiteIntentMutationStatus::kInvalidArgument;
++  // Set only when status == kReady. Never invents DIRECT for allow/block.
++  std::optional<SiteGroupMutationRequest> request;
++  // Set for kReady: kProxy (allow) or kDirect (off).
++  std::optional<aegis_access::AccessMode> ordinary_mode;
++};
++
++AccessSiteIntentParseStatus ParseAccessSiteIntent(std::string_view raw,
++                                                  AccessSiteIntent* out);
++std::string_view AccessSiteIntentToString(AccessSiteIntent intent);
++
++// Accepts only an already-canonical exact host.
++AccessSiteHostResult MakeAccessSiteHost(std::string_view exact_host);
++// Strips scheme/userinfo/path/port and lowercases into an exact-host key.
++AccessSiteHostResult NormalizeAccessSiteHost(std::string_view raw);
++
++// Maps product intent onto ordinary site-group AccessMode boundaries.
++// allow -> kProxy, off -> kDirect, block -> nullopt (not ordinary).
++std::optional<aegis_access::AccessMode> OrdinaryAccessModeForIntent(
++    AccessSiteIntent intent);
++
++// Builds a SiteGroupMutationRequest for allow/off only. Fail-closed for block
++// and invalid inputs: never returns a PROXY request for off/block, and never
++// returns a DIRECT request for allow.
++AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
++    const AccessSiteIntentMutationInput& input);
++
++// In-memory product intent store. Off entries are omitted. Does not publish,
++// ACK, or call AccessServiceCoordinator.
++class AccessSiteIntentStore {
++ public:
++  AccessSiteIntent Get(const AccessSiteHost& host) const;
++  void Set(const AccessSiteHost& host, AccessSiteIntent intent);
++  const std::map<AccessSiteHost, AccessSiteIntent>& All() const {
++    return values_;
++  }
++
++ private:
++  std::map<AccessSiteHost, AccessSiteIntent> values_;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_INTENT_H_
+diff --git a/chrome/browser/aegis/access/access_site_intent.cc b/chrome/browser/aegis/access/access_site_intent.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..9924c771e58d38764b0a1fef499bdf1342c82a22
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_intent.cc
+@@ -0,0 +1,252 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_intent.h"
++
++#include <algorithm>
++#include <cctype>
++#include <utility>
++
++#include "base/strings/string_util.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++namespace {
++
++bool HasUpperAscii(std::string_view text) {
++  return std::ranges::any_of(
++      text, [](unsigned char character) { return base::IsAsciiUpper(character); });
++}
++
++bool LooksLikeSchemeOrPath(std::string_view text) {
++  return text.find("://") != std::string_view::npos ||
++         text.find('/') != std::string_view::npos ||
++         text.find('@') != std::string_view::npos ||
++         text.find('\\') != std::string_view::npos;
++}
++
++bool IsCanonicalExactHostValue(std::string_view host) {
++  if (host.empty() || host.back() == '.' || HasUpperAscii(host) ||
++      LooksLikeSchemeOrPath(host) || host.find('\0') != std::string_view::npos) {
++    return false;
++  }
++  const bool bracketed_ipv6 = host.front() == '[' && host.back() == ']';
++  if (!bracketed_ipv6 && host.find(':') != std::string_view::npos) {
++    return false;
++  }
++  const GURL url(std::string("https://") + std::string(host) + "/");
++  return url.is_valid() && url.has_host() && url.host() == host;
++}
++
++std::string StripToHostCandidate(std::string_view raw) {
++  std::string text = std::string(raw);
++  base::TrimWhitespaceASCII(text, base::TRIM_ALL, &text);
++  if (text.empty()) {
++    return text;
++  }
++
++  const size_t at = text.find('@');
++  if (at != std::string::npos) {
++    text = text.substr(at + 1);
++  }
++  const size_t scheme = text.find("://");
++  if (scheme != std::string::npos) {
++    text = text.substr(scheme + 3);
++  }
++  const size_t slash = text.find('/');
++  if (slash != std::string::npos) {
++    text = text.substr(0, slash);
++  }
++  if (!text.empty() && text.front() == '[') {
++    const size_t end = text.find(']');
++    if (end != std::string::npos) {
++      text = text.substr(1, end - 1);
++    }
++  } else {
++    const size_t colon = text.rfind(':');
++    if (colon != std::string::npos) {
++      const std::string_view port = std::string_view(text).substr(colon + 1);
++      if (!port.empty() &&
++          std::ranges::all_of(port, [](unsigned char character) {
++            return base::IsAsciiDigit(character);
++          })) {
++        text = text.substr(0, colon);
++      }
++    }
++  }
++  while (!text.empty() && text.back() == '.') {
++    text.pop_back();
++  }
++  return base::ToLowerASCII(text);
++}
++
++SiteProxyRuleMember MakeMember(const AccessSiteIntentMutationInput& input,
++                               std::string_view rule_suffix,
++                               std::string_view top_level_site,
++                               aegis_access::AccessMode mode) {
++  SiteProxyRuleMember member;
++  member.rule_id = input.site_toggle_id + ":" + std::string(rule_suffix);
++  member.owner = input.owner;
++  member.site_toggle_id = input.site_toggle_id;
++  member.group_revision = 0;
++  member.top_level_site = std::string(top_level_site);
++  member.exact_host = input.host.value;
++  member.schemes = {RequestScheme::kHttp, RequestScheme::kHttps,
++                    RequestScheme::kWs, RequestScheme::kWss};
++  member.ports = PortScope::kAllBrowserPermitted;
++  member.include_subdomains = false;
++  member.mode = mode;
++  member.proxy_group_id =
++      mode == AccessMode::kProxy ? input.proxy_group_id : std::string();
++  member.protection_override = ProtectionOverride::kNone;
++  member.last_operation_sequence = 0;
++  return member;
++}
++
++}  // namespace
++
++AccessSiteIntentParseStatus ParseAccessSiteIntent(std::string_view raw,
++                                                  AccessSiteIntent* out) {
++  if (!out) {
++    return AccessSiteIntentParseStatus::kUnknownIntent;
++  }
++  if (raw == "off") {
++    *out = AccessSiteIntent::kOff;
++    return AccessSiteIntentParseStatus::kOk;
++  }
++  if (raw == "allow") {
++    *out = AccessSiteIntent::kAllow;
++    return AccessSiteIntentParseStatus::kOk;
++  }
++  if (raw == "block") {
++    *out = AccessSiteIntent::kBlock;
++    return AccessSiteIntentParseStatus::kOk;
++  }
++  return AccessSiteIntentParseStatus::kUnknownIntent;
++}
++
++std::string_view AccessSiteIntentToString(AccessSiteIntent intent) {
++  switch (intent) {
++    case AccessSiteIntent::kOff:
++      return "off";
++    case AccessSiteIntent::kAllow:
++      return "allow";
++    case AccessSiteIntent::kBlock:
++      return "block";
++  }
++  return "off";
++}
++
++AccessSiteHostResult MakeAccessSiteHost(std::string_view exact_host) {
++  AccessSiteHostResult result;
++  if (exact_host.empty()) {
++    result.status = AccessSiteHostStatus::kEmpty;
++    return result;
++  }
++  if (LooksLikeSchemeOrPath(exact_host)) {
++    result.status = AccessSiteHostStatus::kContainsSchemeOrPath;
++    return result;
++  }
++  if (!IsCanonicalExactHostValue(exact_host)) {
++    result.status = AccessSiteHostStatus::kNotCanonical;
++    return result;
++  }
++  result.status = AccessSiteHostStatus::kOk;
++  result.host = AccessSiteHost{std::string(exact_host)};
++  return result;
++}
++
++AccessSiteHostResult NormalizeAccessSiteHost(std::string_view raw) {
++  return MakeAccessSiteHost(StripToHostCandidate(raw));
++}
++
++std::optional<aegis_access::AccessMode> OrdinaryAccessModeForIntent(
++    AccessSiteIntent intent) {
++  switch (intent) {
++    case AccessSiteIntent::kAllow:
++      return AccessMode::kProxy;
++    case AccessSiteIntent::kOff:
++      return AccessMode::kDirect;
++    case AccessSiteIntent::kBlock:
++      return std::nullopt;
++  }
++  return std::nullopt;
++}
++
++AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
++    const AccessSiteIntentMutationInput& input) {
++  AccessSiteIntentMutationResult result;
++  if (input.site_toggle_id.empty() || input.operation_id.empty() ||
++      input.request_fingerprint.empty()) {
++    result.status = AccessSiteIntentMutationStatus::kInvalidArgument;
++    return result;
++  }
++  if (!aegis_access::IsCompleteOwner(input.owner)) {
++    result.status = AccessSiteIntentMutationStatus::kInvalidOwner;
++    return result;
++  }
++  if (MakeAccessSiteHost(input.host.value).status != AccessSiteHostStatus::kOk) {
++    result.status = AccessSiteIntentMutationStatus::kInvalidHost;
++    return result;
++  }
++
++  if (input.intent == AccessSiteIntent::kBlock) {
++    result.status = AccessSiteIntentMutationStatus::kBlockNotOrdinary;
++    return result;
++  }
++
++  const auto mode = OrdinaryAccessModeForIntent(input.intent);
++  if (!mode) {
++    result.status = AccessSiteIntentMutationStatus::kInvalidArgument;
++    return result;
++  }
++  if (*mode == AccessMode::kProxy && input.proxy_group_id.empty()) {
++    result.status = AccessSiteIntentMutationStatus::kMissingProxyGroup;
++    return result;
++  }
++  if (*mode == AccessMode::kDirect && !input.proxy_group_id.empty()) {
++    result.status = AccessSiteIntentMutationStatus::kInvalidArgument;
++    return result;
++  }
++
++  const std::string http_site = "http://" + input.host.value;
++  const std::string https_site = "https://" + input.host.value;
++
++  SiteGroupMutationRequest request;
++  request.operation_id = input.operation_id;
++  request.request_fingerprint = input.request_fingerprint;
++  request.expected_revision = input.expected_revision;
++  request.candidate_group = {
++      .site_toggle_id = input.site_toggle_id,
++      .canonical_host = input.host.value,
++      .owner = input.owner,
++      .http_top_level_site = http_site,
++      .https_top_level_site = https_site,
++      .member_rule_ids = {input.site_toggle_id + ":http",
++                          input.site_toggle_id + ":https"},
++  };
++  request.candidate_members = {
++      MakeMember(input, "http", http_site, *mode),
++      MakeMember(input, "https", https_site, *mode),
++  };
++
++  result.status = AccessSiteIntentMutationStatus::kReady;
++  result.ordinary_mode = mode;
++  result.request = std::move(request);
++  return result;
++}
++
++AccessSiteIntent AccessSiteIntentStore::Get(const AccessSiteHost& host) const {
++  const auto it = values_.find(host);
++  return it == values_.end() ? AccessSiteIntent::kOff : it->second;
++}
++
++void AccessSiteIntentStore::Set(const AccessSiteHost& host,
++                                AccessSiteIntent intent) {
++  if (intent == AccessSiteIntent::kOff) {
++    values_.erase(host);
++    return;
++  }
++  values_[host] = intent;
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_intent_unittest.cc b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..35e99b6aaca6762042042a744a12e8d158fff401
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+@@ -0,0 +1,123 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_intent.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++OwnershipKey TestOwner() {
++  return {ChannelNamespace::kDev, "profile-token", "partition-token"};
++}
++
++AccessSiteHost Host(std::string_view value) {
++  const auto result = MakeAccessSiteHost(value);
++  EXPECT_EQ(result.status, AccessSiteHostStatus::kOk);
++  EXPECT_TRUE(result.host.has_value());
++  return *result.host;
++}
++
++TEST(AccessSiteIntentTest, ParsesOffAllowBlockOnly) {
++  AccessSiteIntent intent = AccessSiteIntent::kOff;
++  EXPECT_EQ(ParseAccessSiteIntent("off", &intent),
++            AccessSiteIntentParseStatus::kOk);
++  EXPECT_EQ(intent, AccessSiteIntent::kOff);
++  EXPECT_EQ(ParseAccessSiteIntent("allow", &intent),
++            AccessSiteIntentParseStatus::kOk);
++  EXPECT_EQ(intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(ParseAccessSiteIntent("block", &intent),
++            AccessSiteIntentParseStatus::kOk);
++  EXPECT_EQ(intent, AccessSiteIntent::kBlock);
++  EXPECT_EQ(ParseAccessSiteIntent("proxy", &intent),
++            AccessSiteIntentParseStatus::kUnknownIntent);
++  EXPECT_EQ(ParseAccessSiteIntent("direct", &intent),
++            AccessSiteIntentParseStatus::kUnknownIntent);
++  EXPECT_EQ(AccessSiteIntentToString(AccessSiteIntent::kAllow), "allow");
++}
++
++TEST(AccessSiteIntentTest, NormalizesExactHostLikeSiteGroup) {
++  const auto normalized =
++      NormalizeAccessSiteHost("https://WWW.Example.COM:443/path?q=1");
++  ASSERT_EQ(normalized.status, AccessSiteHostStatus::kOk);
++  EXPECT_EQ(normalized.host->value, "www.example.com");
++
++  EXPECT_EQ(MakeAccessSiteHost("WWW.Example.COM").status,
++            AccessSiteHostStatus::kNotCanonical);
++  EXPECT_EQ(MakeAccessSiteHost("www.example.com/path").status,
++            AccessSiteHostStatus::kContainsSchemeOrPath);
++  EXPECT_EQ(MakeAccessSiteHost("https://www.example.com").status,
++            AccessSiteHostStatus::kContainsSchemeOrPath);
++  EXPECT_EQ(MakeAccessSiteHost("").status, AccessSiteHostStatus::kEmpty);
++}
++
++TEST(AccessSiteIntentTest, MapsIntentOntoOrdinaryCoordinatorModes) {
++  EXPECT_EQ(OrdinaryAccessModeForIntent(AccessSiteIntent::kAllow),
++            AccessMode::kProxy);
++  EXPECT_EQ(OrdinaryAccessModeForIntent(AccessSiteIntent::kOff),
++            AccessMode::kDirect);
++  EXPECT_EQ(OrdinaryAccessModeForIntent(AccessSiteIntent::kBlock), std::nullopt);
++}
++
++TEST(AccessSiteIntentTest, BuildsAllowAndOffMutationsFailClosedForBlock) {
++  AccessSiteIntentMutationInput input;
++  input.host = Host("news.example");
++  input.owner = TestOwner();
++  input.site_toggle_id = "toggle";
++  input.operation_id = "op-1";
++  input.request_fingerprint = "fp-1";
++
++  input.intent = AccessSiteIntent::kAllow;
++  input.proxy_group_id = "proxy-group";
++  auto allow = BuildOrdinarySiteGroupMutation(input);
++  ASSERT_EQ(allow.status, AccessSiteIntentMutationStatus::kReady);
++  ASSERT_TRUE(allow.request);
++  EXPECT_EQ(allow.ordinary_mode, AccessMode::kProxy);
++  EXPECT_EQ(allow.request->candidate_group.canonical_host, "news.example");
++  ASSERT_EQ(allow.request->candidate_members.size(), 2u);
++  EXPECT_EQ(allow.request->candidate_members[0].mode, AccessMode::kProxy);
++  EXPECT_EQ(allow.request->candidate_members[0].proxy_group_id, "proxy-group");
++  EXPECT_EQ(allow.request->candidate_members[1].mode, AccessMode::kProxy);
++
++  input.intent = AccessSiteIntent::kOff;
++  input.proxy_group_id.clear();
++  auto off = BuildOrdinarySiteGroupMutation(input);
++  ASSERT_EQ(off.status, AccessSiteIntentMutationStatus::kReady);
++  ASSERT_TRUE(off.request);
++  EXPECT_EQ(off.ordinary_mode, AccessMode::kDirect);
++  EXPECT_TRUE(off.request->candidate_members[0].proxy_group_id.empty());
++  EXPECT_EQ(off.request->candidate_members[0].mode, AccessMode::kDirect);
++
++  input.intent = AccessSiteIntent::kBlock;
++  auto block = BuildOrdinarySiteGroupMutation(input);
++  EXPECT_EQ(block.status, AccessSiteIntentMutationStatus::kBlockNotOrdinary);
++  EXPECT_FALSE(block.request.has_value());
++  EXPECT_FALSE(block.ordinary_mode.has_value());
++
++  input.intent = AccessSiteIntent::kAllow;
++  input.proxy_group_id.clear();
++  auto missing_group = BuildOrdinarySiteGroupMutation(input);
++  EXPECT_EQ(missing_group.status,
++            AccessSiteIntentMutationStatus::kMissingProxyGroup);
++  EXPECT_FALSE(missing_group.request.has_value());
++}
++
++TEST(AccessSiteIntentTest, StoreDefaultsOffAndOmitsOffEntries) {
++  AccessSiteIntentStore store;
++  const AccessSiteHost host = Host("www.example.com");
++  EXPECT_EQ(store.Get(host), AccessSiteIntent::kOff);
++
++  store.Set(host, AccessSiteIntent::kAllow);
++  EXPECT_EQ(store.Get(host), AccessSiteIntent::kAllow);
++  EXPECT_EQ(store.All().at(host), AccessSiteIntent::kAllow);
++
++  store.Set(host, AccessSiteIntent::kBlock);
++  EXPECT_EQ(store.Get(host), AccessSiteIntent::kBlock);
++
++  store.Set(host, AccessSiteIntent::kOff);
++  EXPECT_EQ(store.Get(host), AccessSiteIntent::kOff);
++  EXPECT_TRUE(store.All().empty());
++}
++
++}  // namespace
++}  // namespace aegis::access
