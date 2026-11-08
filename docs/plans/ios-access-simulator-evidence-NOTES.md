@@ -38,7 +38,9 @@ When F13 lands, refresh the I9 row in a follow-up docs PR — do not fold its im
 
 ## Non-goals
 
-- Product five-step evidence directory (`P-iOS-6`)
+- Product five-step evidence directory (`P-iOS-6`) — see
+  `docs/audit/evidence/ios-access-product-phase1/` and
+  `ios-access-product-phase1-evidence-NOTES.md`
 - Real-device / TestFlight / Archive gates
 - Implementing F13
 - SOCKS5 authenticated path, WS+TLS primary egress, Network Extension

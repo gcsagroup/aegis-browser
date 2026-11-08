@@ -37,7 +37,7 @@ PBX 新区段（避免与 F11 `00A0`、本地导入 `00B0` 冲突）：
 | **P-iOS-3** | `feat/ios-access-site-toggle-ui-2cd7` | 当前页「本站代理」开关；开关态 ≠ 连通态；关闭文案 | `00CA–00CE`（App 侧） | P-iOS-2 | A1-1/A1-3/A1-4 |
 | **P-iOS-4** | `feat/ios-access-dev-allow-block-2cd7` | DEV 调试：对明确 host ALLOW/BLOCK | `00CF–00D2` | P-iOS-1/2 | A1-2 |
 | **P-iOS-5** | `feat/ios-access-fault-no-direct-2cd7` | 节点/运行时失败时新请求失败或等待；禁止当直连成功 | `00D3–00D6` | P-iOS-2 | A2-3/A2-4 |
-| **P-iOS-6** | `feat/ios-access-product-phase1-evidence-2cd7` | 模拟器五步证据目录与操作说明（可 `SIMULATOR_PASS`） | docs + 夹具 | P-iOS-3/5 | A2-5、A4 |
+| **P-iOS-6** | `feat/ios-access-product-phase1-evidence-2cd7` | 模拟器五步证据目录与操作说明（可 `SIMULATOR_PASS`；真机/TestFlight=`NOT_RUN`） | docs + 夹具 `00F8–00FB`；包目录 `docs/audit/evidence/ios-access-product-phase1/`；NOTES `ios-access-product-phase1-evidence-NOTES.md` | P-iOS-3/5（fault 未合入前 A2-3/A2-4 记 pending） | A2-5、A4 |
 
 ### P-iOS-1 细节
 
@@ -118,7 +118,7 @@ F12/F13/F14 纯工程切片可并行但不阻塞本退出；WS+TLS 主出站、�
 | --- | --- |
 | F12 HTTPS→Reality | iOS 工程加项；P-iOS-2 可先 HTTP 路径，F12 补齐 HTTPS 汇合 |
 | F13 私密隔离 | 产品加项（A3-2）；可与 P-iOS-1 store 按 Profile 分桶一起做或紧随 |
-| F14 模拟器目录 | 并入 P-iOS-6 |
+| F14 模拟器目录 | 工程矩阵保留；**产品**五步包由 P-iOS-6（`docs/audit/evidence/ios-access-product-phase1/`）承接 |
 | WS+TLS 主出站 | **另轨**（改出站合同） |
 | 有认证 SOCKS5 | **另轨** |
 | 真机/TestFlight | **另轨**（发行门，不阻塞模拟器产品 PASS） |

@@ -59,6 +59,8 @@
 
 ### A4. 证据门（iOS）
 
+包目录：`docs/audit/evidence/ios-access-product-phase1/`（P-iOS-6）。
+
 | ID | 项 | 通过条件 |
 | --- | --- | --- |
 | A4-1 | 同候选五步包 | 同一 build/SHA 下：操作记录 + 日志关联 ID + 至少开/关各一张界面证据 |

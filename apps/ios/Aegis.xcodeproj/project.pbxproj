@@ -278,6 +278,10 @@
 		A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */; };
 		A10CCE55ACC0020000000000F2 /* AccessDevAllowBlockSectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */; };
 		A10CCE55ACC0020000000000F3 /* AccessDevAllowBlockSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */; };
+		A10CCE55ACC0020000000000F8 /* AccessSitePhase1Evidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */; };
+		A10CCE55ACC0020000000000F9 /* AccessSitePhase1EvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */; };
+		A10CCE55ACC0020000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */; };
+		A10CCE55ACC0020000000000FB /* AccessSitePhase1EvidencePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -744,6 +748,10 @@
 		A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanelTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionModel.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionView.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1Evidence.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceFaultRequirement.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidencePack.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -1287,6 +1295,9 @@
 				A10CCE55ACC0010000000000D1 /* AccessBrowsingIsolationError.swift */,
 				A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */,
 				A10CCE55ACC0010000000000D3 /* AccessBrowsingIsolationController.swift */,
+				A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */,
+				A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */,
+				A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */,
 				A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */,
 				A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
@@ -1314,6 +1325,7 @@
 				A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */,
 				A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */,
 				A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */,
+				A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */,
 				A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */,
 			);
 			path = AccessKitTests;
@@ -1892,6 +1904,7 @@
 				A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */,
 				A10CCE55ACC0020000000000D4 /* AccessBrowsingIsolationControllerTests.swift in Sources */,
 				A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */,
+				A10CCE55ACC0020000000000F9 /* AccessSitePhase1EvidenceTests.swift in Sources */,
 				A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
@@ -1977,6 +1990,9 @@
 				A10CCE55ACC0020000000000D1 /* AccessBrowsingIsolationError.swift in Sources */,
 				A10CCE55ACC0020000000000D2 /* AccessBrowsingAccessState.swift in Sources */,
 				A10CCE55ACC0020000000000D3 /* AccessBrowsingIsolationController.swift in Sources */,
+				A10CCE55ACC0020000000000F8 /* AccessSitePhase1Evidence.swift in Sources */,
+				A10CCE55ACC0020000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift in Sources */,
+				A10CCE55ACC0020000000000FB /* AccessSitePhase1EvidencePack.swift in Sources */,
 				A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */,
 				A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */,
 			);

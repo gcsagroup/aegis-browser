@@ -99,6 +99,8 @@ This Linux documentation host cannot execute `xcodebuild`; rows above bind to **
 
 ## Explicit non-claims
 
-- Product Phase 1 five-step pack (`P-iOS-6` / `A2`+`A4`) — separate track
+- Product Phase 1 five-step pack (`P-iOS-6` / `A2`+`A4`) — separate track under
+  `docs/audit/evidence/ios-access-product-phase1/` (allows `SIMULATOR_PASS`;
+  device/TestFlight stay `NOT_RUN`)
 - F13 private browsing Access isolation — pending beyond ProxyConfiguration store-kind checks (PR `#303`)
 - SOCKS5 username/password, WS+TLS primary egress, Network Extension / system VPN

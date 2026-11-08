@@ -38,4 +38,5 @@ for this exit and must not be claimed PASS while still open.
 
 - Claiming native B4 PASS without filled pack artifacts
 - Claiming P-mac-4 DEV panel PASS while that feat is open
-- iOS simulator evidence pack (P-iOS-6)
+- iOS product evidence pack (P-iOS-6) — see
+  `docs/audit/evidence/ios-access-product-phase1/`

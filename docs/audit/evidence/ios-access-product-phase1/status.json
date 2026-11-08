@@ -1,0 +1,17 @@
+{
+  "kind": "ios-access-product-phase1-evidence-status",
+  "schemaVersion": 1,
+  "status": "NOT_RUN",
+  "reason": "Pack scaffold and correlation helpers landed; awaiting same-candidate Simulator artifacts for A4. Fault/recovery steps pending P-iOS-5 fail-closed fixture API.",
+  "exitCriteria": ["pios1", "pios2", "pios3", "pios5", "pios6"],
+  "excludedFromExitClaim": ["pios4"],
+  "forbidDirectAsAccessSuccess": true,
+  "allowSimulatorPass": true,
+  "deviceAndTestFlight": "NOT_RUN",
+  "faultStep": "pending-pios5",
+  "requiredFaultFixtureAPI": [
+    "fail-closed runtime fault that refuses silent DIRECT as Access success",
+    "recoverable path back to PROXY-ready without replaying a dirty session"
+  ],
+  "updated": "2026-11-08"
+}
