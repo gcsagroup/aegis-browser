@@ -72,8 +72,6 @@ targets:
         embed: true
       - target: AegisPolicyKit
         embed: true
-      - target: AccessKit
-        embed: true
       - target: AgentKit
         embed: true
       - target: SafariWebExtension
@@ -144,21 +142,6 @@ targets:
         INFOPLIST_FILE: AegisPolicyKit/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.policykit
         PRODUCT_NAME: AegisPolicyKit
-        SKIP_INSTALL: YES
-
-  AccessKit:
-    type: framework
-    platform: iOS
-    sources:
-      - path: AccessKit
-        excludes:
-          - Info.plist
-    settings:
-      base:
-        DEFINES_MODULE: YES
-        INFOPLIST_FILE: AccessKit/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.accesskit
-        PRODUCT_NAME: AccessKit
         SKIP_INSTALL: YES
 
   AgentKit:
@@ -236,7 +219,6 @@ targets:
           - Info.plist
       - path: Tests/AgentKitTests
       - path: Tests/AegisPolicyKitTests
-      - path: Tests/AccessKitTests
       - path: Tests/Fixtures
         type: folder
         buildPhase: resources
@@ -246,7 +228,6 @@ targets:
       - target: Aegis
       - target: BrowserKit
       - target: AegisPolicyKit
-      - target: AccessKit
       - target: AgentKit
     settings:
       base:

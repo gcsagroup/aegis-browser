@@ -84,7 +84,6 @@ function checkProductTopology() {
       'Aegis',
       'BrowserKit',
       'AegisPolicyKit',
-      'AccessKit',
       'AgentKit',
       'SafariWebExtension',
       'ShareExtension',
