@@ -1,7 +1,7 @@
 # iOS Access — simulator evidence matrix (F14)
 
 Date: 2026-11-08 (Asia/Shanghai)  
-Baseline: fork `develop` at `e700ac3d4d3ea46abbb7afab4786cab47837559b`  
+Baseline: fork `develop` at `2dc131bdcebd681b6012c2a77a56ddd842cbcd63`  
 Plan: [ios-access-feat-split-2026-11-08.zh-CN.md](../plans/ios-access-feat-split-2026-11-08.zh-CN.md)  
 NOTES: [ios-access-simulator-evidence-NOTES.md](../plans/ios-access-simulator-evidence-NOTES.md)
 
@@ -39,11 +39,11 @@ This document does **not**:
 | F9 ProxyConfiguration | yes | `AccessProxyConfigurationApplicatorTests` |
 | F10 reality probe | yes | `AccessRealityProbeTests` (no node → `BLOCKED_RESOURCE`) |
 | F11 HTTP → reality path | yes | `AccessHTTPRealityPathTests` |
+| **F12 HTTPS → reality path** | **yes** | `AccessHTTPSRealityPathTests` |
 | Local Reality Vision import | yes | `AccessLocalV2RayConfigTests` |
 | SOCKS5 no-auth inbound | yes | `AccessSOCKS5InboundTests` (admitted no-auth only) |
 | Site intent / session / toggle | yes | `AccessSiteIntentTests`, `AccessSiteSessionControllerTests`, `AccessSiteProxyToggleModelTests` |
-| **F12 HTTPS → reality path** | **no** | Pending on `feat/ios-access-https-reality-path-2cd7` |
-| **F13 private browsing isolation** | **no** | Pending on `feat/ios-access-private-browsing-isolation-2cd7`; F9 store-kind boundary only |
+| **F13 private browsing isolation** | **no** | Open PR `#303` (`feat/ios-access-private-browsing-isolation-2cd7`); F9 store-kind boundary only on `develop` |
 
 ## Matrix I1–I9
 
@@ -51,8 +51,8 @@ This document does **not**:
 | --- | --- | --- | --- | --- | --- |
 | I1 | HTTP inbound + HTTP page | Via local entry hit fixture / origin | `SIMULATOR_UNIT` — `AccessHTTPInboundListenerTests`, `AccessHTTPConnectTests`, `AccessHTTPRealityPathTests` | `NOT_RUN` | Unit covers listener admit, CONNECT, and HTTP→reality dial seam. Full WebKit page load with correlation ID / origin count = 1 is `NOT_RUN`. |
 | I2 | HTTP inbound + HTTPS page | CONNECT success; site TLS end-to-end | `PARTIAL_UNIT` — CONNECT + reality path open for `example.com:443` | `NOT_RUN` | No Simulator UI evidence of end-to-end site TLS through the proxy hop. |
-| I3 | HTTPS inbound + HTTP page | TLS front then forward | `PARTIAL_UNIT` — `AccessHTTPSInboundFrontTests` plan/params/lease gates | `NOT_RUN` | Front shell on `develop`. HTTPS inbound → reality confluence is **F12 `PENDING`**. |
-| I4 | HTTPS inbound + HTTPS page | Shell TLS + target CONNECT; distinguishable hops; no site MITM cert | `PARTIAL_UNIT` — HTTPS front assembly only | `NOT_RUN` | Must not claim MITM-free two-hop product proof. **F12 `PENDING`**. |
+| I3 | HTTPS inbound + HTTP page | TLS front then forward | `SIMULATOR_UNIT` — `AccessHTTPSInboundFrontTests` + `AccessHTTPSRealityPathTests` open/lease/runtime gates | `NOT_RUN` | Engineering confluence on `develop` (F5+F12). Full WebKit page load through the TLS front remains `NOT_RUN`. |
+| I4 | HTTPS inbound + HTTPS page | Shell TLS + target CONNECT; distinguishable hops; no site MITM cert | `SIMULATOR_UNIT` — `testOpensRealityPathForHTTPSConnect`, `testCertificateFailureHasNoDirectBypass` | `NOT_RUN` | Unit covers HTTPS registration → reality dial seam and cert-failure fail-closed. Live two-hop / no-MITM product proof is `NOT_RUN`. |
 | I5 | Wrong credentials | Fail closed; origin = 0 | `PARTIAL_UNIT` — inactive lease, non-canonical credential slot, registration rotation | `NOT_RUN` | HTTP 407 / secret-mismatch path is not a dedicated product drill here. Listener comments defer secret checks beyond lease/admission gates. |
 | I6 | Bad / expired front certificate | Load fails; no bypass | `PARTIAL_UNIT` — `tlsIdentityUnavailable`, empty identity label | `NOT_RUN` | No WebKit certificate-error UI evidence. Bypass prohibition for live page loads is `NOT_RUN`. |
 | I7 | Entry / runtime stopped | New requests fail; no silent direct | `SIMULATOR_UNIT` — listener stop, `runtimeNotRunning`, session enable without node / direct fallback rejected | `NOT_RUN` | Unit fail-closed only. Simulator refresh-after-stop UI drill is `NOT_RUN`. |
@@ -100,6 +100,5 @@ This Linux documentation host cannot execute `xcodebuild`; rows above bind to **
 ## Explicit non-claims
 
 - Product Phase 1 five-step pack (`P-iOS-6` / `A2`+`A4`) — separate track
-- F12 HTTPS→reality confluence — pending
-- F13 private browsing Access isolation — pending beyond ProxyConfiguration store-kind checks
+- F13 private browsing Access isolation — pending beyond ProxyConfiguration store-kind checks (PR `#303`)
 - SOCKS5 username/password, WS+TLS primary egress, Network Extension / system VPN

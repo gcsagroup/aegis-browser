@@ -1,7 +1,7 @@
 # F14 — simulator evidence and feature catalog notes
 
 Branch: `feat/ios-access-simulator-evidence-2cd7`  
-Base: `develop` (F1–F11 + site intent/session/toggle already merged)
+Base: `develop` (F1–F12 + site intent/session/toggle already merged)
 
 ## Scope
 
@@ -17,17 +17,17 @@ No AccessKit / AegisApp product toolbar or session code changes.
 
 ## Depends on
 
-- F1–F11 engineering closed loop on `develop`
+- F1–F12 engineering closed loop on `develop`
 - Catalog check: `node scripts/check-platform-features.mjs`
 
 ## Pending on develop (do not claim)
 
 | Feat | Status |
 | --- | --- |
-| F12 HTTPS inbound → reality path | Not merged; I3/I4 confluence stays `PENDING` / `PARTIAL_UNIT` (front only) |
-| F13 private browsing Access isolation | Not merged; I9 limited to F9 store-kind mismatch tests |
+| F12 HTTPS inbound → reality path | **Merged** (`#301`); I3/I4 claim Simulator unit coverage only |
+| F13 private browsing Access isolation | Open `#303`; I9 limited to F9 store-kind mismatch tests |
 
-When F12/F13 land, refresh the matrix rows in a follow-up docs PR — do not fold their implementation into F14.
+When F13 lands, refresh the I9 row in a follow-up docs PR — do not fold its implementation into F14.
 
 ## Evidence rules
 
@@ -40,5 +40,5 @@ When F12/F13 land, refresh the matrix rows in a follow-up docs PR — do not fol
 
 - Product five-step evidence directory (`P-iOS-6`)
 - Real-device / TestFlight / Archive gates
-- Implementing F12 or F13
+- Implementing F13
 - SOCKS5 authenticated path, WS+TLS primary egress, Network Extension
