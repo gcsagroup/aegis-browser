@@ -212,6 +212,11 @@
 		A10CCE55ACC0020000000023 /* AccessXrayAssetPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */; };
 		A10CCE55ACC0020000000024 /* AccessXrayAssetPins.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */; };
 		A10CCE55ACC0020000000025 /* AccessXrayAssetPinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */; };
+		A10CCE55ACC002000000000040 /* AccessRealityVisionOutboundConfigError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000040 /* AccessRealityVisionOutboundConfigError.swift */; };
+		A10CCE55ACC002000000000041 /* AccessRealityVisionParameters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000041 /* AccessRealityVisionParameters.swift */; };
+		A10CCE55ACC002000000000042 /* AccessRealityVisionOutboundConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000042 /* AccessRealityVisionOutboundConfig.swift */; };
+		A10CCE55ACC002000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift */; };
+		A10CCE55ACC002000000000044 /* AccessRealityVisionOutboundConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000044 /* AccessRealityVisionOutboundConfigTests.swift */; };
 		A10CCE55ACC0020000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */; };
 		A10CCE55ACC0020000000006 /* AccessContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000008 /* AccessContractTests.swift */; };
 		A10CCE55ACC0020000000010 /* AccessCredentialSlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000010 /* AccessCredentialSlot.swift */; };
@@ -609,6 +614,11 @@
 		A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPin.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPins.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPinTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000040 /* AccessRealityVisionOutboundConfigError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfigError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000041 /* AccessRealityVisionParameters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionParameters.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000042 /* AccessRealityVisionOutboundConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfig.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfigBuilder.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000044 /* AccessRealityVisionOutboundConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfigTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1096,6 +1106,10 @@
 				A10CCE55ACC0010000000022 /* AccessXrayAssetKind.swift */,
 				A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */,
 				A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */,
+				A10CCE55ACC001000000000040 /* AccessRealityVisionOutboundConfigError.swift */,
+				A10CCE55ACC001000000000041 /* AccessRealityVisionParameters.swift */,
+				A10CCE55ACC001000000000042 /* AccessRealityVisionOutboundConfig.swift */,
+				A10CCE55ACC001000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
 			);
 			path = AccessKit;
@@ -1108,6 +1122,7 @@
 				A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */,
 				A10CCE55ACC0010000000014 /* AccessRegistrationLeaseTests.swift */,
 				A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */,
+				A10CCE55ACC001000000000044 /* AccessRealityVisionOutboundConfigTests.swift */,
 			);
 			path = AccessKitTests;
 			sourceTree = "<group>";
@@ -1666,6 +1681,7 @@
 				A10CCE55ACC002000000000F /* AccessProxyConfigurationApplicatorTests.swift in Sources */,
 				A10CCE55ACC0020000000014 /* AccessRegistrationLeaseTests.swift in Sources */,
 				A10CCE55ACC0020000000025 /* AccessXrayAssetPinTests.swift in Sources */,
+				A10CCE55ACC002000000000044 /* AccessRealityVisionOutboundConfigTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
 				3F56151172419CCB1A2F301F /* RecordRecoveryTests.swift in Sources */,
@@ -1703,6 +1719,10 @@
 				A10CCE55ACC0020000000022 /* AccessXrayAssetKind.swift in Sources */,
 				A10CCE55ACC0020000000023 /* AccessXrayAssetPin.swift in Sources */,
 				A10CCE55ACC0020000000024 /* AccessXrayAssetPins.swift in Sources */,
+				A10CCE55ACC002000000000040 /* AccessRealityVisionOutboundConfigError.swift in Sources */,
+				A10CCE55ACC002000000000041 /* AccessRealityVisionParameters.swift in Sources */,
+				A10CCE55ACC002000000000042 /* AccessRealityVisionOutboundConfig.swift in Sources */,
+				A10CCE55ACC002000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
