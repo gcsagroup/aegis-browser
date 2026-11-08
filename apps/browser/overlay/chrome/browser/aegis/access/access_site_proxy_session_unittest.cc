@@ -1,6 +1,7 @@
 // Copyright 2026 GCSA
 
 #include "chrome/browser/aegis/access/access_site_proxy_fault_fixture.h"
+#include "chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h"
 #include "chrome/browser/aegis/access/access_site_proxy_session.h"
 
 #include <vector>
@@ -337,5 +338,84 @@ TEST(AccessSiteProxySessionTest,
   }
 }
 
+TEST(AccessSiteProxySessionTest, Phase1EvidenceCorrelationIdConvention) {
+  const std::string id = BuildPhase1EvidenceCorrelationId(
+      "abcdef0123456789deadbeef", "run-42",
+      AccessSiteProxyPhase1EvidenceStepId::kLoad);
+  EXPECT_EQ(id, "aegis-mac-p1/abcdef01/run-42/load");
+  EXPECT_TRUE(IsValidPhase1EvidenceCorrelationId(id));
+  EXPECT_FALSE(IsValidPhase1EvidenceCorrelationId(
+      "aegis-mac-p1/ABCDEF01/run-42/load"));
+  EXPECT_FALSE(IsValidPhase1EvidenceCorrelationId(
+      "aegis-mac-p1/abcdef01/run-42/healthy"));
+  EXPECT_EQ(AccessSiteProxyPhase1EvidenceStepAcceptanceId(
+                AccessSiteProxyPhase1EvidenceStepId::kOff),
+            "B2-5");
+}
+
+TEST(AccessSiteProxySessionTest, Phase1EvidenceDrillOnLoadFaultRecoveryOff) {
+  // Product exit path B2-1..B2-5 with correlation IDs. This proves the session
+  // contract only; B4 PASS still requires a same-candidate launchable macOS
+  // build with logs + UI evidence. Do not claim PASS for open DEV-only P-mac-4.
+  FakeOrchestrator orchestrator;
+  AccessSiteProxySessionController controller(&orchestrator);
+  const AccessSiteHost host = Host("target.example");
+  constexpr std::string_view kCandidate =
+      "8ba3848aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  constexpr std::string_view kRun = "fixture-1";
+
+  const auto run = RunSiteProxyPhase1EvidenceDrill(
+      &controller, host, AccessSiteProxyFaultMode::kFailClosed,
+      HealthyRouteContext(7), kCandidate, kRun);
+  ASSERT_EQ(run.steps.size(), 5u);
+  EXPECT_EQ(run.candidate_sha, kCandidate);
+  EXPECT_EQ(run.run_id, kRun);
+
+  EXPECT_EQ(run.steps[0].step, AccessSiteProxyPhase1EvidenceStepId::kOn);
+  EXPECT_EQ(run.steps[0].correlation_id, "aegis-mac-p1/8ba3848a/fixture-1/on");
+  EXPECT_EQ(run.steps[0].snapshot.phase, AccessSiteProxySessionPhase::kReady);
+  EXPECT_TRUE(run.steps[0].forbid_direct);
+  EXPECT_EQ(PlanSiteProxySessionRequestRoute(run.steps[0].snapshot,
+                                             HealthyRouteContext(7))
+                .action,
+            aegis_access::RouteAction::kUseRegisteredProxy);
+
+  EXPECT_EQ(run.steps[1].step, AccessSiteProxyPhase1EvidenceStepId::kLoad);
+  EXPECT_EQ(run.steps[1].correlation_id,
+            "aegis-mac-p1/8ba3848a/fixture-1/load");
+  EXPECT_EQ(run.steps[1].expected_action,
+            aegis_access::RouteAction::kUseRegisteredProxy);
+  EXPECT_TRUE(run.steps[1].forbid_direct);
+  EXPECT_EQ(PlanSiteProxySessionRequestRoute(run.steps[1].snapshot,
+                                             HealthyRouteContext(7))
+                .action,
+            aegis_access::RouteAction::kUseRegisteredProxy);
+
+  EXPECT_EQ(run.steps[2].step, AccessSiteProxyPhase1EvidenceStepId::kFault);
+  EXPECT_EQ(run.steps[2].expected_action, aegis_access::RouteAction::kFail);
+  EXPECT_TRUE(run.steps[2].forbid_direct);
+  EXPECT_EQ(PlanSiteProxySessionRequestRoute(run.steps[2].snapshot,
+                                             HealthyRouteContext(7))
+                .action,
+            aegis_access::RouteAction::kFail);
+
+  EXPECT_EQ(run.steps[3].step, AccessSiteProxyPhase1EvidenceStepId::kRecovery);
+  EXPECT_EQ(run.steps[3].snapshot.phase, AccessSiteProxySessionPhase::kReady);
+  EXPECT_EQ(PlanSiteProxySessionRequestRoute(run.steps[3].snapshot,
+                                             HealthyRouteContext(8))
+                .action,
+            aegis_access::RouteAction::kUseRegisteredProxy);
+
+  EXPECT_EQ(run.steps[4].step, AccessSiteProxyPhase1EvidenceStepId::kOff);
+  EXPECT_EQ(run.steps[4].snapshot.intent, AccessSiteIntent::kOff);
+  EXPECT_EQ(run.steps[4].expected_action,
+            aegis_access::RouteAction::kPreserveNative);
+  EXPECT_FALSE(run.steps[4].forbid_direct);
+  for (const auto& step : run.steps) {
+    EXPECT_TRUE(IsValidPhase1EvidenceCorrelationId(step.correlation_id));
+  }
+}
+
 }  // namespace
 }  // namespace aegis::access
+

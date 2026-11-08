@@ -193,6 +193,8 @@ source_set("access_site_proxy_session") {
   sources = [
     "access_site_proxy_fault_fixture.cc",
     "access_site_proxy_fault_fixture.h",
+    "access_site_proxy_phase1_evidence_fixture.cc",
+    "access_site_proxy_phase1_evidence_fixture.h",
     "access_site_proxy_session.cc",
     "access_site_proxy_session.h",
   ]

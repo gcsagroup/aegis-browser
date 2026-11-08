@@ -1272,6 +1272,10 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 // origin via DIRECT; recovery restores the PROXY path; OFF returns native.
 // Product session drill: AccessSiteProxySessionTest.ProductFaultDrillHealthyOnFaultRecoveryOff
 // and RunSiteProxyFaultProductDrill (access_site_proxy_fault_fixture.h).
+// P-mac-6 five-step evidence (B2-1..B2-5 + correlation IDs):
+// AccessSiteProxySessionTest.Phase1EvidenceDrillOnLoadFaultRecoveryOff and
+// RunSiteProxyPhase1EvidenceDrill (access_site_proxy_phase1_evidence_fixture.h).
+// Overlay/unit drills alone must not be recorded as product B4 PASS.
 IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
                        ControlledOnFaultRecoveryOffPreservesRoute) {
   size_t ignored_origin = 0, ignored_proxy = 0;
