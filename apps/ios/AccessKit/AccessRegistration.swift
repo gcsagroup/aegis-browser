@@ -30,8 +30,8 @@ public struct AccessRegistrationID: Codable, Sendable, Equatable, Hashable {
 /// Browser-owned inbound registration published to WebKit / probe callers.
 ///
 /// `id` is opaque and one-shot. Recycling a TCP port still requires a new id
-/// and a new lease generation. SOCKS5 is not constructible because
-/// `AccessInboundTransport` already rejects it.
+/// and a new lease generation. SOCKS5 registrations are no-auth only; the
+/// SOCKS5 listener rejects username/password negotiation.
 public struct AccessRegistration: Codable, Sendable, Equatable, Hashable {
     public let id: AccessRegistrationID
     public let owner: AccessOwner

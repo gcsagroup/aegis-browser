@@ -242,6 +242,12 @@
 		A10CCE55ACC0020000000000A1 /* AccessRealityPathDialing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A1 /* AccessRealityPathDialing.swift */; };
 		A10CCE55ACC0020000000000A2 /* AccessHTTPRealityPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A2 /* AccessHTTPRealityPath.swift */; };
 		A10CCE55ACC0020000000000A3 /* AccessHTTPRealityPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A3 /* AccessHTTPRealityPathTests.swift */; };
+		A10CCE55ACC002000000000090 /* AccessSOCKS5InboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000090 /* AccessSOCKS5InboundError.swift */; };
+		A10CCE55ACC002000000000091 /* AccessSOCKS5ConnectRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000091 /* AccessSOCKS5ConnectRequest.swift */; };
+		A10CCE55ACC002000000000092 /* AccessSOCKS5InboundParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000092 /* AccessSOCKS5InboundParser.swift */; };
+		A10CCE55ACC002000000000093 /* AccessSOCKS5InboundSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000093 /* AccessSOCKS5InboundSession.swift */; };
+		A10CCE55ACC002000000000094 /* AccessSOCKS5InboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000094 /* AccessSOCKS5InboundListener.swift */; };
+		A10CCE55ACC002000000000095 /* AccessSOCKS5InboundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000095 /* AccessSOCKS5InboundTests.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -672,6 +678,12 @@
 		A10CCE55ACC0010000000000A1 /* AccessRealityPathDialing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityPathDialing.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000A2 /* AccessHTTPRealityPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPRealityPath.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000A3 /* AccessHTTPRealityPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPRealityPathTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000090 /* AccessSOCKS5InboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000091 /* AccessSOCKS5ConnectRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5ConnectRequest.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000092 /* AccessSOCKS5InboundParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundParser.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000093 /* AccessSOCKS5InboundSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundSession.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000094 /* AccessSOCKS5InboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundListener.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000095 /* AccessSOCKS5InboundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -1186,6 +1198,11 @@
 				A10CCE55ACC0010000000000A0 /* AccessHTTPRealityPathError.swift */,
 				A10CCE55ACC0010000000000A1 /* AccessRealityPathDialing.swift */,
 				A10CCE55ACC0010000000000A2 /* AccessHTTPRealityPath.swift */,
+				A10CCE55ACC001000000000090 /* AccessSOCKS5InboundError.swift */,
+				A10CCE55ACC001000000000091 /* AccessSOCKS5ConnectRequest.swift */,
+				A10CCE55ACC001000000000092 /* AccessSOCKS5InboundParser.swift */,
+				A10CCE55ACC001000000000093 /* AccessSOCKS5InboundSession.swift */,
+				A10CCE55ACC001000000000094 /* AccessSOCKS5InboundListener.swift */,
 				A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */,
 				A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
@@ -1206,6 +1223,7 @@
 				A10CCE55ACC001000000000074 /* AccessHTTPSInboundFrontTests.swift */,
 				A10CCE55ACC001000000000085 /* AccessRealityProbeTests.swift */,
 				A10CCE55ACC0010000000000A3 /* AccessHTTPRealityPathTests.swift */,
+				A10CCE55ACC001000000000095 /* AccessSOCKS5InboundTests.swift */,
 				A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */,
 			);
 			path = AccessKitTests;
@@ -1771,6 +1789,7 @@
 				A10CCE55ACC002000000000074 /* AccessHTTPSInboundFrontTests.swift in Sources */,
 				A10CCE55ACC002000000000085 /* AccessRealityProbeTests.swift in Sources */,
 				A10CCE55ACC0020000000000A3 /* AccessHTTPRealityPathTests.swift in Sources */,
+				A10CCE55ACC002000000000095 /* AccessSOCKS5InboundTests.swift in Sources */,
 				A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
@@ -1833,6 +1852,11 @@
 				A10CCE55ACC0020000000000A0 /* AccessHTTPRealityPathError.swift in Sources */,
 				A10CCE55ACC0020000000000A1 /* AccessRealityPathDialing.swift in Sources */,
 				A10CCE55ACC0020000000000A2 /* AccessHTTPRealityPath.swift in Sources */,
+				A10CCE55ACC002000000000090 /* AccessSOCKS5InboundError.swift in Sources */,
+				A10CCE55ACC002000000000091 /* AccessSOCKS5ConnectRequest.swift in Sources */,
+				A10CCE55ACC002000000000092 /* AccessSOCKS5InboundParser.swift in Sources */,
+				A10CCE55ACC002000000000093 /* AccessSOCKS5InboundSession.swift in Sources */,
+				A10CCE55ACC002000000000094 /* AccessSOCKS5InboundListener.swift in Sources */,
 				A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */,
 				A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */,
 			);

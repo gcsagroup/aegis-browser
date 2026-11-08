@@ -8,20 +8,37 @@ final class AccessProxyConfigurationApplicatorTests: XCTestCase {
         let http = try AccessProxyRegistrationFixture.httpOrdinary(port: 18_101)
         let https = try AccessProxyRegistrationFixture.httpsPrivate(port: 18_443)
 
-        let httpPlan = try XCTUnwrap(AccessProxyConfigurationBuilder.plan(for: http))
+        let httpPlan = try XCTUnwrap(try AccessProxyConfigurationBuilder.plan(for: http))
         XCTAssertEqual(httpPlan.host, "127.0.0.1")
         XCTAssertEqual(httpPlan.port, 18_101)
         XCTAssertFalse(httpPlan.usesTLSToProxy)
 
-        let httpsPlan = try XCTUnwrap(AccessProxyConfigurationBuilder.plan(for: https))
+        let httpsPlan = try XCTUnwrap(try AccessProxyConfigurationBuilder.plan(for: https))
         XCTAssertEqual(httpsPlan.port, 18_443)
         XCTAssertTrue(httpsPlan.usesTLSToProxy)
     }
 
     func testInactiveFixtureBuildsEmptyConfigurationList() throws {
         let inactive = try AccessProxyRegistrationFixture.httpOrdinary().deactivated()
-        XCTAssertNil(AccessProxyConfigurationBuilder.plan(for: inactive))
+        XCTAssertNil(try AccessProxyConfigurationBuilder.plan(for: inactive))
         XCTAssertTrue(try AccessProxyConfigurationBuilder.makeConfigurations(from: inactive).isEmpty)
+    }
+
+    func testBuilderRejectsSocks5ProxyConfiguration() throws {
+        let socks5 = try AccessProxyRegistrationFixture(
+            registrationId: "fixture-socks5",
+            dataStoreKind: .ordinary,
+            transport: .socks5,
+            loopbackHost: "127.0.0.1",
+            port: 18_108,
+            isActive: true
+        )
+        XCTAssertThrowsError(try AccessProxyConfigurationBuilder.plan(for: socks5)) { error in
+            XCTAssertEqual(
+                error as? AccessProxyConfigurationError,
+                .socks5ProxyConfigurationNotAdmitted
+            )
+        }
     }
 
     func testFixtureRejectsNonLoopbackAndZeroPort() {
@@ -69,7 +86,7 @@ final class AccessProxyConfigurationApplicatorTests: XCTestCase {
         try applicator.applyToOrdinaryStore(second, dataStore: store)
         XCTAssertEqual(store.proxyConfigurations.count, 1)
 
-        let secondPlan = try XCTUnwrap(AccessProxyConfigurationBuilder.plan(for: second))
+        let secondPlan = try XCTUnwrap(try AccessProxyConfigurationBuilder.plan(for: second))
         XCTAssertEqual(secondPlan.port, 18_202)
 
         applicator.clearOrdinaryStore(store)
@@ -141,7 +158,7 @@ final class AccessProxyConfigurationApplicatorTests: XCTestCase {
             port: 18_444,
             isActive: true
         )
-        let plan = try XCTUnwrap(AccessProxyConfigurationBuilder.plan(for: fixture))
+        let plan = try XCTUnwrap(try AccessProxyConfigurationBuilder.plan(for: fixture))
         XCTAssertEqual(plan.host, "::1")
         XCTAssertTrue(plan.usesTLSToProxy)
         XCTAssertEqual(try AccessProxyConfigurationBuilder.makeConfigurations(from: fixture).count, 1)

@@ -25,14 +25,18 @@ public struct AccessProxyEndpointPlan: Equatable, Sendable {
 /// Builds Network `ProxyConfiguration` values from a fake registration fixture.
 ///
 /// HTTP registrations use cleartext HTTP CONNECT. HTTPS registrations attach
-/// TLS options so WebKit speaks TLS to the local inbound front. No listener or
-/// REALITY runtime is started here.
+/// TLS options so WebKit speaks TLS to the local inbound front. SOCKS5 inbound
+/// exists separately; WebKit SOCKS `ProxyConfiguration` is not admitted yet.
+/// No listener or REALITY runtime is started here.
 public enum AccessProxyConfigurationBuilder {
     /// Returns `nil` when the fixture is inactive (caller must clear the store).
     public static func plan(
         for fixture: AccessProxyRegistrationFixture
-    ) -> AccessProxyEndpointPlan? {
+    ) throws -> AccessProxyEndpointPlan? {
         guard fixture.isActive else { return nil }
+        guard fixture.transport != .socks5 else {
+            throw AccessProxyConfigurationError.socks5ProxyConfigurationNotAdmitted
+        }
         return AccessProxyEndpointPlan(
             registrationId: fixture.registrationId,
             host: fixture.loopbackHost,
@@ -45,7 +49,7 @@ public enum AccessProxyConfigurationBuilder {
     public static func makeConfigurations(
         from fixture: AccessProxyRegistrationFixture
     ) throws -> [ProxyConfiguration] {
-        guard let plan = plan(for: fixture) else { return [] }
+        guard let plan = try plan(for: fixture) else { return [] }
         return [try makeConfiguration(from: plan)]
     }
 

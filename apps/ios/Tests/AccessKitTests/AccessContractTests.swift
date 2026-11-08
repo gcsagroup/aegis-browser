@@ -2,15 +2,13 @@ import XCTest
 @testable import AccessKit
 
 final class AccessContractTests: XCTestCase {
-    func testInboundAcceptsHttpAndHttpsOnly() throws {
+    func testInboundAcceptsHttpHttpsAndSocks5() throws {
         XCTAssertEqual(try AccessInboundTransport.parse(rawValue: 1), .http)
         XCTAssertEqual(try AccessInboundTransport.parse(rawValue: 2), .https)
+        XCTAssertEqual(try AccessInboundTransport.parse(rawValue: 3), .socks5)
     }
 
-    func testInboundRejectsSocks5AndUnknown() {
-        XCTAssertThrowsError(try AccessInboundTransport.parse(rawValue: 3)) { error in
-            XCTAssertEqual(error as? AccessContractError, .socks5NotAdmitted)
-        }
+    func testInboundRejectsUnknown() {
         XCTAssertThrowsError(try AccessInboundTransport.parse(rawValue: 0)) { error in
             XCTAssertEqual(error as? AccessContractError, .unknownInboundTransport(0))
         }
@@ -19,15 +17,18 @@ final class AccessContractTests: XCTestCase {
         }
     }
 
-    func testInboundCodableRoundTripAndRejectsSocks5Payload() throws {
+    func testInboundCodableRoundTripIncludesSocks5() throws {
         let encoded = try JSONEncoder().encode(AccessInboundTransport.https)
         XCTAssertEqual(String(data: encoded, encoding: .utf8), "2")
         XCTAssertEqual(try JSONDecoder().decode(AccessInboundTransport.self, from: encoded), .https)
 
         let socks5 = Data("3".utf8)
-        XCTAssertThrowsError(try JSONDecoder().decode(AccessInboundTransport.self, from: socks5)) { error in
-            XCTAssertEqual(error as? AccessContractError, .socks5NotAdmitted)
-        }
+        XCTAssertEqual(
+            try JSONDecoder().decode(AccessInboundTransport.self, from: socks5),
+            .socks5
+        )
+        let roundTrip = try JSONEncoder().encode(AccessInboundTransport.socks5)
+        XCTAssertEqual(String(data: roundTrip, encoding: .utf8), "3")
     }
 
     func testOutboundAcceptsOnlyRealityVision() throws {
