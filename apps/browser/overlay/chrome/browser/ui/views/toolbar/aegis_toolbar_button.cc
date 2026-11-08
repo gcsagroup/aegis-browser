@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "chrome/browser/aegis/access/access_site_dev_allow_block_panel.h"
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 #include "chrome/browser/aegis/aegis_service_factory.h"
 #include "chrome/browser/aegis/enhancements/enhancement_store.h"
@@ -93,6 +94,30 @@ std::u16string Copy(std::u16string chinese,
     return traditional;
   }
   return UseChinese() ? std::move(chinese) : std::move(english);
+}
+
+std::u16string DevAllowBlockStatusCopy(
+    aegis::access::AccessDevAllowBlockStatusId id) {
+  using Id = aegis::access::AccessDevAllowBlockStatusId;
+  switch (id) {
+    case Id::kPanelNotRegistered:
+      return Copy(u"调试面板未注册", u"Debug panel not registered",
+                  u"偵錯面板未註冊");
+    case Id::kNoTrustedHost:
+      return Copy(u"请先打开需要调试的网站",
+                  u"Open a website to debug ALLOW / BLOCK",
+                  u"請先開啟需要偵錯的網站");
+    case Id::kOff:
+      return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
+    case Id::kAllowProxyIntent:
+      return Copy(u"DEV 意图：ALLOW（代理）", u"DEV intent: ALLOW (proxy)",
+                  u"DEV 意圖：ALLOW（代理）");
+    case Id::kBlockLocalRefuse:
+      return Copy(u"DEV 意图：BLOCK（本地拒绝）",
+                  u"DEV intent: BLOCK (local refuse)",
+                  u"DEV 意圖：BLOCK（本地拒絕）");
+  }
+  return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
 }
 
 std::u16string IntentStatusCopy(
@@ -392,6 +417,58 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                   u"Switch state is shown separately from connectivity.",
                   u"開關狀態與連通狀態分開顯示。"));
   }
+  void ApplyDevAllowBlock(aegis::access::AccessDevAllowBlockAction action) {
+    if (!Valid()) {
+      return;
+    }
+    auto* controller = AccessBubble();
+    if (!controller || !controller->IsDevAllowBlockPanelRegistered()) {
+      return;
+    }
+    const auto snap = controller->DevAllowBlockSnapshotForCommittedUrl(address_);
+    if (!snap.has_explicit_host) {
+      return;
+    }
+    controller->ApplyDevAllowBlock(snap.host.value, action);
+    RefreshSoon();
+  }
+  // DEV/Alpha only. Beta/Release never register this section or a general
+  // Access rule editor.
+  void AppendDevAllowBlockSection(views::View* parent) {
+    auto* controller = AccessBubble();
+    if (!controller || !controller->IsDevAllowBlockPanelRegistered()) {
+      return;
+    }
+    const auto snap = controller->DevAllowBlockSnapshotForCommittedUrl(address_);
+    if (!snap.panel_registered) {
+      return;
+    }
+    AddLabel(parent,
+             Copy(u"DEV ALLOW / BLOCK", u"DEV ALLOW / BLOCK",
+                  u"DEV ALLOW / BLOCK"),
+             views::style::CONTEXT_DIALOG_TITLE);
+    AddLabel(parent, DevAllowBlockStatusCopy(snap.status_id));
+    if (!snap.has_explicit_host) {
+      return;
+    }
+    AddLabel(parent, base::UTF8ToUTF16(snap.host.value));
+    Button(parent, Copy(u"ALLOW", u"ALLOW", u"ALLOW"),
+           base::BindRepeating(&AegisPageBubble::ApplyDevAllowBlock,
+                               base::Unretained(this),
+                               aegis::access::AccessDevAllowBlockAction::kAllow));
+    Button(parent, Copy(u"BLOCK", u"BLOCK", u"BLOCK"),
+           base::BindRepeating(&AegisPageBubble::ApplyDevAllowBlock,
+                               base::Unretained(this),
+                               aegis::access::AccessDevAllowBlockAction::kBlock));
+    Button(parent, Copy(u"清除", u"Clear", u"清除"),
+           base::BindRepeating(&AegisPageBubble::ApplyDevAllowBlock,
+                               base::Unretained(this),
+                               aegis::access::AccessDevAllowBlockAction::kOff));
+    AddLabel(parent,
+             Copy(u"仅对明确主机生效；不是通用规则编辑器。",
+                  u"Applies to an explicit host only; not a general rule editor.",
+                  u"僅對明確主機生效；不是通用規則編輯器。"));
+  }
   void Build() {
     if (!Valid()) return;
     auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
@@ -401,6 +478,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (!address_.SchemeIsHTTPOrHTTPS()) {
       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
       AppendSiteProxySection(panel_);
+      AppendDevAllowBlockSection(panel_);
       AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
       Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
              base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
@@ -410,6 +488,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (browser_->GetProfile()->IsOffTheRecord())
       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
     AppendSiteProxySection(panel_);
+    AppendDevAllowBlockSection(panel_);
     AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
     AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
                                     : Copy(u"保护已开启 · ", u"Protection on · ", u"保護已開啟 · ")) +

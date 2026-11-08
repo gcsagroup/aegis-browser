@@ -64,6 +64,7 @@ COORDINATOR_TARGET="//chrome/browser/aegis/access:access_service_coordinator_uni
 SITE_INTENT_TARGET="//chrome/browser/aegis/access:access_site_intent_unittests"
 SITE_PROXY_BUBBLE_TARGET="//chrome/browser/aegis/access:access_site_proxy_bubble_unittests"
 SITE_PROXY_SESSION_TARGET="//chrome/browser/aegis/access:access_site_proxy_session_unittests"
+SITE_DEV_ALLOW_BLOCK_TARGET="//chrome/browser/aegis/access:access_site_dev_allow_block_panel_unittests"
 OWNERSHIP_TARGET="//components/aegis_access:request_ownership_registry_unittests"
 DISPATCH_GATE_TARGET="//components/aegis_access:request_dispatch_gate_unittests"
 BROWSER_METADATA_TARGET="//components/aegis_access:browser_request_metadata_seed_unittests"
@@ -71,7 +72,8 @@ SITE_INTENT_PATCH_FILE="$BROWSER_DIR/patches/0350-feat-access-site-intent-api.pa
 SITE_PROXY_BUBBLE_PATCH_FILE="$BROWSER_DIR/patches/0351-feat-access-toolbar-bubble.patch"
 SITE_PROXY_SESSION_PATCH_FILE="$BROWSER_DIR/patches/0352-feat-access-bubble-session.patch"
 SITE_PROXY_FAULT_PATCH_FILE="$BROWSER_DIR/patches/0353-feat-access-fault-no-direct.patch"
-SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE="$BROWSER_DIR/patches/0354-feat-access-phase1-evidence.patch"
+SITE_DEV_ALLOW_BLOCK_PATCH_FILE="$BROWSER_DIR/patches/0354-feat-access-dev-allow-block-panel.patch"
+SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE="$BROWSER_DIR/patches/0355-feat-access-phase1-evidence.patch"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -99,6 +101,10 @@ args_block="$(awk '/^root_extra_deps = \[$/,/^\]$/' "$ARGS_FILE")"
   fail "aegis.gn must add the site-proxy bubble session test exactly once"
 [[ "$args_block" == *"$SITE_PROXY_SESSION_TARGET"* ]] ||
   fail "the site-proxy bubble session test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_DEV_ALLOW_BLOCK_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the DEV allow/block panel test exactly once"
+[[ "$args_block" == *"$SITE_DEV_ALLOW_BLOCK_TARGET"* ]] ||
+  fail "the DEV allow/block panel test must be reachable through root_extra_deps"
 [[ "$(rg -F -c "$OWNERSHIP_TARGET" "$ARGS_FILE")" == 1 ]] ||
   fail "aegis.gn must add the ownership registry test exactly once"
 [[ "$args_block" == *"$OWNERSHIP_TARGET"* ]] ||
@@ -216,6 +222,10 @@ rg -Fq 'source_set("access_site_proxy_session")' "$ACCESS_BUILD" ||
   fail "overlay must define the product site-proxy bubble session"
 rg -Fq 'test("access_site_proxy_session_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must define the product site-proxy bubble session regression"
+rg -Fq 'source_set("access_site_dev_allow_block_panel")' "$ACCESS_BUILD" ||
+  fail "overlay must define the DEV allow/block debug panel"
+rg -Fq 'test("access_site_dev_allow_block_panel_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the DEV allow/block debug panel regression"
 rg -Fq 'BuildOrdinarySiteGroupMutation' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
   fail "site intent API must expose ordinary CommitSiteGroupMutation builders"
@@ -240,6 +250,18 @@ rg -Fq 'AppendSiteProxySection' \
 rg -Fq 'RequestHostProxySession' \
   "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
   fail "toolbar bubble toggle must call the publication session path"
+rg -Fq 'IsAccessDevAllowBlockPanelAdmitted' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h" ||
+  fail "DEV allow/block panel must gate registration by channel"
+rg -Fq 'IsGeneralAccessRuleEditorRegistered' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h" ||
+  fail "DEV allow/block panel must keep the general rule editor unregistered"
+rg -Fq 'ApplyDevAllowBlock' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h" ||
+  fail "bubble controller must expose DEV allow/block apply"
+rg -Fq 'AppendDevAllowBlockSection' \
+  "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
+  fail "toolbar bubble must render the DEV allow/block section when admitted"
 rg -Fq 'access_site_proxy_bubble' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/BUILD.gn" ||
   fail "desktop aegis target must expose the site-proxy bubble to toolbar UI"
@@ -278,14 +300,25 @@ rg -Fq 'ControlledOnFaultRecoveryOffPreservesRoute' "$BROWSER_PROXY_TEST" ||
   fail "browser proxy fixture must cover controlled fault without DIRECT"
 rg -Fq 'ProductFaultDrillHealthyOnFaultRecoveryOff' "$BROWSER_PROXY_TEST" ||
   fail "browser fault fixture must reference the product session drill"
+[[ -f "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ]] ||
+  fail "active series must include the DEV allow/block panel sync patch"
+rg -Fq '+source_set("access_site_dev_allow_block_panel")' \
+  "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ||
+  fail "patch 0354 must deliver the DEV allow/block panel source_set"
+rg -Fq '+test("access_site_dev_allow_block_panel_unittests")' \
+  "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ||
+  fail "patch 0354 must deliver the DEV allow/block panel regression"
+rg -Fq '+bool IsGeneralAccessRuleEditorRegistered' \
+  "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ||
+  fail "patch 0354 must keep the general rule editor unregistered"
 [[ -f "$SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE" ]] ||
   fail "active series must include the phase-1 evidence sync patch"
 rg -Fq '+    "access_site_proxy_phase1_evidence_fixture.cc",' \
   "$SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE" ||
-  fail "patch 0354 must deliver the phase-1 evidence fixture"
+  fail "patch 0355 must deliver the phase-1 evidence fixture"
 rg -Fq 'RunSiteProxyPhase1EvidenceDrill' \
   "$SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE" ||
-  fail "patch 0354 must deliver RunSiteProxyPhase1EvidenceDrill"
+  fail "patch 0355 must deliver RunSiteProxyPhase1EvidenceDrill"
 rg -Fq 'Phase1EvidenceDrillOnLoadFaultRecoveryOff' \
   "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc" ||
   fail "session regression must cover the phase-1 evidence drill"

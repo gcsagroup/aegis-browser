@@ -237,13 +237,16 @@ source_set("access_site_proxy_bubble") {
     ":access_network_context_transport",
     ":access_rule_store",
     ":access_service_coordinator",
+    ":access_site_dev_allow_block_panel",
     ":access_site_intent",
     ":access_site_proxy_bubble_model",
     ":access_site_proxy_session",
     "//base",
     "//chrome/browser/aegis:profile_support",
     "//chrome/browser/profiles:profile",
+    "//chrome/common:channel_info",
     "//components/aegis_access",
+    "//components/version_info:channel",
     "//content/public/browser",
     "//url",
   ]
@@ -255,6 +258,30 @@ test("access_site_proxy_bubble_unittests") {
     ":access_site_proxy_bubble_model",
     "//base/test:run_all_unittests",
     "//testing/gtest",
+  ]
+}
+
+source_set("access_site_dev_allow_block_panel") {
+  sources = [
+    "access_site_dev_allow_block_panel.cc",
+    "access_site_dev_allow_block_panel.h",
+  ]
+  deps = [
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    "//base",
+    "//components/version_info:channel",
+    "//url",
+  ]
+}
+
+test("access_site_dev_allow_block_panel_unittests") {
+  sources = [ "access_site_dev_allow_block_panel_unittest.cc" ]
+  deps = [
+    ":access_site_dev_allow_block_panel",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+    "//url",
   ]
 }
 

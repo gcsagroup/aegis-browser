@@ -9,7 +9,9 @@
 #include "chrome/browser/aegis/access/access_service_coordinator.h"
 #include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/channel_info.h"
 #include "components/aegis_access/access_proxy_route_adapter.h"
+#include "components/version_info/channel.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace aegis::access {
@@ -110,6 +112,38 @@ bool AccessSiteProxyBubbleController::ApplyHostProxyToggle(
     const AccessSiteHost& host,
     bool enabled) {
   return ApplySiteProxyToggle(&intent_store_, host, enabled);
+}
+
+bool AccessSiteProxyBubbleController::IsDevAllowBlockPanelRegistered() const {
+  return IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) &&
+         !IsGeneralAccessRuleEditorRegistered(chrome::GetChannel());
+}
+
+AccessDevAllowBlockPanelSnapshot
+AccessSiteProxyBubbleController::DevAllowBlockSnapshotForCommittedUrl(
+    const GURL& committed_url) const {
+  return BuildAccessDevAllowBlockPanelSnapshot(chrome::GetChannel(),
+                                               intent_store_, committed_url);
+}
+
+AccessDevAllowBlockApplyResult
+AccessSiteProxyBubbleController::ApplyDevAllowBlock(
+    std::string_view raw_host,
+    AccessDevAllowBlockAction action) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  AccessDevAllowBlockApplyResult result = ApplyAccessDevAllowBlock(
+      &intent_store_, chrome::GetChannel(), raw_host, action);
+  if (result.status != AccessDevAllowBlockApplyStatus::kApplied) {
+    return result;
+  }
+  // Keep connection line honest: block/off never claim Access readiness.
+  // Allow leaves connection untouched so the product session path can advance.
+  if (action == AccessDevAllowBlockAction::kBlock ||
+      action == AccessDevAllowBlockAction::kOff) {
+    connection_state_ = AccessSiteConnectionState::kIdle;
+    failure_reason_.clear();
+  }
+  return result;
 }
 
 bool AccessSiteProxyBubbleController::RequestHostProxySession(
