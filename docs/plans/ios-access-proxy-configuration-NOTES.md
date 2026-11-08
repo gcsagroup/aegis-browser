@@ -68,7 +68,7 @@ xcodebuild test \
 | F2 registration / lease types | Not in this PR. Fake `AccessProxyRegistrationFixture` is intentional. |
 | F3–F5 inbound listeners | Not implemented; fixture ports are not bound. |
 | F6–F8 / F10 REALITY + Xray | Not touched. |
-| F13 private browsing isolation | API boundary only (`applyToOrdinaryStore` / `applyToPrivateStore`). No BrowserSession wiring. |
+| F13 private browsing isolation | Ownership controller landed in `ios-access-private-browsing-NOTES.md`. Applicator API boundary retained; BrowserSession wiring still later. |
 | Simulator evidence on this host | Linux environment cannot run `xcodebuild`; tests are authored for the existing iOS Simulator gate. |
 
 ## Out of scope

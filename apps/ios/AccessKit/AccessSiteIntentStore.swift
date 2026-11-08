@@ -9,7 +9,8 @@ public protocol AccessSiteIntentStoring: Sendable {
     func allIntents() -> [AccessSiteHost: AccessSiteIntent]
 }
 
-/// In-memory store. Profile/private isolation can wrap separate instances (F13).
+/// In-memory store. `AccessBrowsingIsolationController` (F13) keeps separate
+/// ordinary / private instances so intents never cross browsing buckets.
 public struct AccessSiteIntentStore: AccessSiteIntentStoring, Sendable, Equatable {
     private var values: [AccessSiteHost: AccessSiteIntent]
 

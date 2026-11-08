@@ -2,8 +2,9 @@ import Foundation
 
 /// Data-store lane the WebKit applicator is allowed to write.
 ///
-/// Full private-browsing isolation is F13. This enum only keeps the ordinary /
-/// private write boundary visible at the applicator API.
+/// F13 (`AccessBrowsingIsolationController`) owns the full ordinary / private
+/// Access isolation. This enum remains the applicator write-boundary key and
+/// maps 1:1 to `AccessBrowsingBucket`.
 public enum AccessProxyDataStoreKind: String, Codable, Sendable, Equatable, Hashable {
     case ordinary
     case privateBrowsing
