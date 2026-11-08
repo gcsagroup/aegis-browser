@@ -3,7 +3,7 @@ import Foundation
 /// Minimal importer for local Access tests: `vless://` share URI or flat JSON.
 ///
 /// iOS stays small on purpose. Full Xray Core / sing-box client documents are
-/// handled by `apps/browser/scripts/access_local_v2ray_config.py` on macOS.
+/// handled by `scripts/access_local_v2ray_config.py` on macOS.
 ///
 /// Admitted matrix only: VLESS + TCP + REALITY + `xtls-rprx-vision`.
 public enum AccessLocalV2RayConfigLoader {

@@ -8,7 +8,7 @@ Use a developer-local test endpoint (Xray Core **or** sing-box client export /
 | Surface | Role |
 | --- | --- |
 | iOS `AccessLocalV2RayConfigLoader` | **Minimal**: `vless://` share URI or flat JSON only |
-| `apps/browser/scripts/access_local_v2ray_config.py` | macOS/Linux smoke: URI + Xray Core + sing-box |
+| `scripts/access_local_v2ray_config.py` | macOS/Linux smoke: URI + Xray Core + sing-box |
 | `scripts/access-local-v2ray-smoke.sh` | One-shot local runner |
 
 Routing databases (`geoip.dat` / `geosite*.srs`) are **out of scope** — Access

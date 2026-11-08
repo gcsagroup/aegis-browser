@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_NAME=AEGIS_ACCESS_LOCAL_V2RAY_CONFIG
-PY="$ROOT/apps/browser/scripts/access_local_v2ray_config.py"
+PY="$ROOT/scripts/access_local_v2ray_config.py"
 DEFAULT_LOCAL="$ROOT/.local/access-service/test-reality-vision.uri"
 
 echo "== synthetic parser self-test (uri + xray + sing-box) =="
