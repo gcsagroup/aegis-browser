@@ -17,6 +17,8 @@ permissions:
 concurrency:
   group: ios-clear-empty-upload-${{ github.repository }}
   cancel-in-progress: false
+env:
+  AEGIS_IOS_RELEASE_ENABLED: ${{ vars.AEGIS_IOS_RELEASE_ENABLED }}
 jobs:
   clear:
     if: ${{ github.repository == 'gcsagroup/aegis-browser' }}
