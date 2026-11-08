@@ -275,13 +275,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.self_test:
+        def require(condition: bool, message: str) -> None:
+            if not condition:
+                raise SystemExit(f"self-test failed: {message}")
+
         uri = (
             "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.10:443"
             "?flow=xtls-rprx-vision&security=reality&encryption=none&type=tcp"
             "&sni=www.example.com&fp=chrome"
             "&pbk=abcdefghijklmnopqrstuvwxyzABCDEFG&sid=abcd1234#demo"
         )
-        assert parameters_from_share_uri(uri)["address"] == "198.51.100.10"
+        require(
+            parameters_from_share_uri(uri)["address"] == "198.51.100.10",
+            "vless uri address",
+        )
 
         xray = {
             "outbounds": [
@@ -314,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
                 }
             ]
         }
-        assert parse_root(xray)["source"] == "xray-core"
+        require(parse_root(xray)["source"] == "xray-core", "xray-core source")
 
         sing = {
             "outbounds": [
@@ -337,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
                 }
             ]
         }
-        assert parse_root(sing)["source"] == "sing-box"
+        require(parse_root(sing)["source"] == "sing-box", "sing-box source")
         print("ok self-test (vless-uri + xray-core + sing-box)")
         return 0
 

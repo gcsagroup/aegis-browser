@@ -91,9 +91,13 @@ final class AccessXrayRuntimeTests: XCTestCase {
                 return XCTFail("expected digestMismatch, got \(error)")
             }
             XCTAssertEqual(expected, AccessXrayAssetPins.realityVisionCoreBinaryIOSArm64DigestHex)
-            let data = try! Data(contentsOf: executable)
-            let hex = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            XCTAssertEqual(actual, hex)
+            do {
+                let data = try Data(contentsOf: executable)
+                let hex = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+                XCTAssertEqual(actual, hex)
+            } catch {
+                XCTFail("failed to re-read fixture for digest check: \(error)")
+            }
         }
     }
 

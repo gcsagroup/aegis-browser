@@ -253,6 +253,7 @@
 		A10CCE55ACC0020000000000B2 /* AccessLocalV2RayConfigLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000B2 /* AccessLocalV2RayConfigLoader.swift */; };
 		A10CCE55ACC0020000000000B3 /* AccessLocalV2RayConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000B3 /* AccessLocalV2RayConfigTests.swift */; };
 		A10CCE55ACC0020000000000C0 /* AccessSiteIntentError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C0 /* AccessSiteIntentError.swift */; };
+		A10CCE55ACC0020000000000E0 /* AccessInboundStartErrorBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000E0 /* AccessInboundStartErrorBox.swift */; };
 		A10CCE55ACC0020000000000C1 /* AccessSiteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */; };
 		A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */; };
 		A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */; };
@@ -706,6 +707,7 @@
 		A10CCE55ACC0010000000000B2 /* AccessLocalV2RayConfigLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLocalV2RayConfigLoader.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000B3 /* AccessLocalV2RayConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLocalV2RayConfigTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C0 /* AccessSiteIntentError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000E0 /* AccessInboundStartErrorBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessInboundStartErrorBox.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntent.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentStore.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentTests.swift; sourceTree = "<group>"; };
@@ -1245,6 +1247,7 @@
 				A10CCE55ACC0010000000000B1 /* AccessLocalV2RayConfig.swift */,
 				A10CCE55ACC0010000000000B2 /* AccessLocalV2RayConfigLoader.swift */,
 				A10CCE55ACC0010000000000C0 /* AccessSiteIntentError.swift */,
+				A10CCE55ACC0010000000000E0 /* AccessInboundStartErrorBox.swift */,
 				A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */,
 				A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */,
 				A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */,
@@ -1919,6 +1922,7 @@
 				A10CCE55ACC0020000000000B1 /* AccessLocalV2RayConfig.swift in Sources */,
 				A10CCE55ACC0020000000000B2 /* AccessLocalV2RayConfigLoader.swift in Sources */,
 				A10CCE55ACC0020000000000C0 /* AccessSiteIntentError.swift in Sources */,
+				A10CCE55ACC0020000000000E0 /* AccessInboundStartErrorBox.swift in Sources */,
 				A10CCE55ACC0020000000000C1 /* AccessSiteIntent.swift in Sources */,
 				A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */,
 				A10CCE55ACC0020000000000C5 /* AccessSiteSessionError.swift in Sources */,

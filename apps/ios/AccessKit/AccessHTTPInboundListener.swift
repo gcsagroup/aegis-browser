@@ -85,13 +85,13 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         }
 
         let started = DispatchSemaphore(value: 0)
-        var startError: String?
+        let startError = AccessInboundStartErrorBox()
         nwListener.stateUpdateHandler = { state in
             switch state {
             case .ready:
                 started.signal()
             case .failed(let error):
-                startError = String(describing: error)
+                startError.value = String(describing: error)
                 started.signal()
             default:
                 break
@@ -105,9 +105,9 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
             nwListener.cancel()
             throw AccessHTTPInboundError.bindFailed("listener start timed out")
         }
-        if let startError {
+        if let message = startError.value {
             nwListener.cancel()
-            throw AccessHTTPInboundError.bindFailed(startError)
+            throw AccessHTTPInboundError.bindFailed(message)
         }
 
         lock.lock()
