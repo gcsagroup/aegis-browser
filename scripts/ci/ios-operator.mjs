@@ -4,7 +4,7 @@ import {isDeepStrictEqual} from 'node:util';
 
 const UPSTREAM = 'gcsagroup/aegis-browser';
 const UPSTREAM_ID = '1348409663';
-const WORKFLOWS = new Map([['delivery', ['.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml']], ['validation', '.github/workflows/ios-release-validation.yml'], ['coverage', '.github/workflows/ios-coverage.yml']]);
+const WORKFLOWS = new Map([['delivery', ['.github/workflows/ios-delivery.yml', '.github/workflows/ios-delivery-full.yml', '.github/workflows/ios-clear-empty-upload.yml']], ['validation', '.github/workflows/ios-release-validation.yml'], ['coverage', '.github/workflows/ios-coverage.yml']]);
 const requirePolicy = createRequire(import.meta.url);
 class OperatorError extends Error {}
 function requireValue(value, message) { if (!value) throw new OperatorError(message); }
