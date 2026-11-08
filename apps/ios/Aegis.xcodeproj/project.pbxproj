@@ -256,6 +256,11 @@
 		A10CCE55ACC0020000000000C1 /* AccessSiteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */; };
 		A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */; };
 		A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */; };
+		A10CCE55ACC0020000000000C5 /* AccessSiteSessionError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */; };
+		A10CCE55ACC0020000000000C6 /* AccessSiteSessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */; };
+		A10CCE55ACC0020000000000C7 /* AccessSiteSessionOrchestrating.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */; };
+		A10CCE55ACC0020000000000C8 /* AccessSiteSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */; };
+		A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -700,6 +705,11 @@
 		A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntent.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentStore.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionState.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionOrchestrating.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionController.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionControllerTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -1225,6 +1235,10 @@
 				A10CCE55ACC0010000000000C0 /* AccessSiteIntentError.swift */,
 				A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */,
 				A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */,
+				A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */,
+				A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */,
+				A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */,
+				A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */,
 				A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */,
 				A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
@@ -1248,6 +1262,7 @@
 				A10CCE55ACC001000000000095 /* AccessSOCKS5InboundTests.swift */,
 				A10CCE55ACC0010000000000B3 /* AccessLocalV2RayConfigTests.swift */,
 				A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */,
+				A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */,
 				A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */,
 			);
 			path = AccessKitTests;
@@ -1816,6 +1831,7 @@
 				A10CCE55ACC002000000000095 /* AccessSOCKS5InboundTests.swift in Sources */,
 				A10CCE55ACC0020000000000B3 /* AccessLocalV2RayConfigTests.swift in Sources */,
 				A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */,
+				A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */,
 				A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
@@ -1889,6 +1905,10 @@
 				A10CCE55ACC0020000000000C0 /* AccessSiteIntentError.swift in Sources */,
 				A10CCE55ACC0020000000000C1 /* AccessSiteIntent.swift in Sources */,
 				A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */,
+				A10CCE55ACC0020000000000C5 /* AccessSiteSessionError.swift in Sources */,
+				A10CCE55ACC0020000000000C6 /* AccessSiteSessionState.swift in Sources */,
+				A10CCE55ACC0020000000000C7 /* AccessSiteSessionOrchestrating.swift in Sources */,
+				A10CCE55ACC0020000000000C8 /* AccessSiteSessionController.swift in Sources */,
 				A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */,
 				A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */,
 			);
