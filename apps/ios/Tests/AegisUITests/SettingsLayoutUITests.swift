@@ -287,13 +287,17 @@ final class SettingsLayoutUITests: XCTestCase {
         }
         enterFeatureSettings(app)
         app.buttons["aegis-privacy-settings"].tap()
+        let entry = app.buttons["firebase-data-collection-details"]
+        XCTAssertTrue(reveal(entry, app))
+        assertInsideWindow(entry, app)
+        entry.tap()
         let crashes = app.switches["firebase-crash-reports"]
         let analytics = app.switches["firebase-analytics"]
         let remote = app.switches["firebase-remote-configuration"]
         for control in [crashes, analytics, remote] {
             XCTAssertTrue(reveal(control, app))
             assertInsideWindow(control, app)
-            XCTAssertEqual(control.value as? String, "0")
+            XCTAssertEqual(control.value as? String, "1")
         }
         XCTAssertTrue(reveal(analytics, app, scrollDown: true))
         capture("Firebase-使用分析-点击前", app)
@@ -303,15 +307,16 @@ final class SettingsLayoutUITests: XCTestCase {
         add(controls)
         tapFirebaseSwitch(analytics)
         capture("Firebase-使用分析-点击后", app)
-        XCTAssertEqual(analytics.value as? String, "1")
-        XCTAssertEqual(crashes.value as? String, "0")
+        XCTAssertEqual(analytics.value as? String, "0")
+        XCTAssertEqual(crashes.value as? String, "1")
         XCTAssertTrue(reveal(remote, app)); tapFirebaseSwitch(remote)
-        XCTAssertEqual(remote.value as? String, "1")
-        tapFirebaseSwitch(remote)
         XCTAssertEqual(remote.value as? String, "0")
+        tapFirebaseSwitch(remote)
+        XCTAssertEqual(remote.value as? String, "1")
         XCTAssertTrue(reveal(analytics, app, scrollDown: true))
-        XCTAssertEqual(analytics.value as? String, "1")
+        XCTAssertEqual(analytics.value as? String, "0")
         tapFirebaseSwitch(analytics)
+        XCTAssertEqual(analytics.value as? String, "1")
         let disclosure = app.staticTexts["已获准发送的崩溃报告无法撤回。"]
         XCTAssertTrue(reveal(disclosure, app))
         assertInsideWindow(disclosure, app)

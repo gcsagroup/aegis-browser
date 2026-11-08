@@ -38,7 +38,8 @@ final class RemoteDiagnosticsControllerTests: XCTestCase {
         XCTFail("Expected asynchronous state was not reached", file: file, line: line)
     }
 
-    func testDisabledByDefaultNeverContactsTheSource() async {
+    func testDisabledRemoteNeverContactsTheSource() async {
+        preferences.setEnabled(false, for: .remoteConfiguration)
         let source = ControlledRemoteDiagnosticsSource()
         let controller = controller(source)
         controller.start()
@@ -49,6 +50,7 @@ final class RemoteDiagnosticsControllerTests: XCTestCase {
     }
 
     func testAllowRemoteCannotEnableLocalConsentOrModifySavedChoices() async {
+        preferences.setEnabled(false, for: .remoteConfiguration)
         let source = ControlledRemoteDiagnosticsSource()
         let controller = controller(source)
         preferences.setEnabled(false, for: .analytics)
@@ -67,6 +69,7 @@ final class RemoteDiagnosticsControllerTests: XCTestCase {
     }
 
     func testOffDiscardsLateResultAndDeletesOnlyAfterFetchCompletes() async {
+        preferences.setEnabled(false, for: .remoteConfiguration)
         let source = ControlledRemoteDiagnosticsSource()
         let controller = controller(source)
         controller.setEnabled(true)
@@ -84,6 +87,7 @@ final class RemoteDiagnosticsControllerTests: XCTestCase {
     }
 
     func testOffOnWaitsForCleanupAndCannotUseOldAllowResponse() async {
+        preferences.setEnabled(false, for: .remoteConfiguration)
         let source = ControlledRemoteDiagnosticsSource()
         source.suspendDeletion = true
         let controller = controller(source)
@@ -105,6 +109,7 @@ final class RemoteDiagnosticsControllerTests: XCTestCase {
     }
 
     func testDeletionFailureSurvivesRestartAndBlocksNewFetchUntilRetrySucceeds() async {
+        preferences.setEnabled(false, for: .remoteConfiguration)
         preferences.remoteInstallationUsed = true
         let first = ControlledRemoteDiagnosticsSource()
         first.deletionFails = true
@@ -191,6 +196,7 @@ final class RemoteDiagnosticsControllerTests: XCTestCase {
     }
 
     func testEnableDuringStartupCleanupStartsExactlyOneNewFetch() async {
+        preferences.setEnabled(false, for: .remoteConfiguration)
         preferences.remoteInstallationUsed = true
         let source = ControlledRemoteDiagnosticsSource()
         source.suspendDeletion = true
@@ -208,6 +214,7 @@ final class RemoteDiagnosticsControllerTests: XCTestCase {
     }
 
     func testAlreadyAbsentCleanupAllowsRecoveryAfterThrottledFetch() async {
+        preferences.setEnabled(false, for: .remoteConfiguration)
         let source = ControlledRemoteDiagnosticsSource()
         let controller = controller(source)
         controller.setEnabled(true)
