@@ -206,6 +206,12 @@
 		A10CCE55ACC0020000000002 /* AccessInboundTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000003 /* AccessInboundTransport.swift */; };
 		A10CCE55ACC0020000000003 /* AccessOutboundProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000004 /* AccessOutboundProfile.swift */; };
 		A10CCE55ACC0020000000004 /* AccessOwner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000005 /* AccessOwner.swift */; };
+		A10CCE55ACC0020000000020 /* AccessXrayArchitecture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000020 /* AccessXrayArchitecture.swift */; };
+		A10CCE55ACC0020000000021 /* AccessXrayAssetDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000021 /* AccessXrayAssetDigest.swift */; };
+		A10CCE55ACC0020000000022 /* AccessXrayAssetKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000022 /* AccessXrayAssetKind.swift */; };
+		A10CCE55ACC0020000000023 /* AccessXrayAssetPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */; };
+		A10CCE55ACC0020000000024 /* AccessXrayAssetPins.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */; };
+		A10CCE55ACC0020000000025 /* AccessXrayAssetPinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */; };
 		A10CCE55ACC0020000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */; };
 		A10CCE55ACC0020000000006 /* AccessContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000008 /* AccessContractTests.swift */; };
 		A10CCE55ACC0020000000010 /* AccessCredentialSlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000010 /* AccessCredentialSlot.swift */; };
@@ -597,6 +603,12 @@
 		A10CCE55ACC0010000000012 /* AccessLease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLease.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000013 /* AccessRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRegistration.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000014 /* AccessRegistrationLeaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRegistrationLeaseTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000020 /* AccessXrayArchitecture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayArchitecture.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000021 /* AccessXrayAssetDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetDigest.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000022 /* AccessXrayAssetKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetKind.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPin.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPins.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPinTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1079,6 +1091,11 @@
 				A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */,
 				A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */,
 				A10CCE55ACC0010000000013 /* AccessRegistration.swift */,
+				A10CCE55ACC0010000000020 /* AccessXrayArchitecture.swift */,
+				A10CCE55ACC0010000000021 /* AccessXrayAssetDigest.swift */,
+				A10CCE55ACC0010000000022 /* AccessXrayAssetKind.swift */,
+				A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */,
+				A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
 			);
 			path = AccessKit;
@@ -1090,6 +1107,7 @@
 				A10CCE55ACC0010000000008 /* AccessContractTests.swift */,
 				A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */,
 				A10CCE55ACC0010000000014 /* AccessRegistrationLeaseTests.swift */,
+				A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */,
 			);
 			path = AccessKitTests;
 			sourceTree = "<group>";
@@ -1647,6 +1665,7 @@
 				A10CCE55ACC0020000000006 /* AccessContractTests.swift in Sources */,
 				A10CCE55ACC002000000000F /* AccessProxyConfigurationApplicatorTests.swift in Sources */,
 				A10CCE55ACC0020000000014 /* AccessRegistrationLeaseTests.swift in Sources */,
+				A10CCE55ACC0020000000025 /* AccessXrayAssetPinTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
 				3F56151172419CCB1A2F301F /* RecordRecoveryTests.swift in Sources */,
@@ -1679,6 +1698,11 @@
 				A10CCE55ACC002000000000D /* AccessProxyConfigurationBuilder.swift in Sources */,
 				A10CCE55ACC002000000000E /* AccessProxyConfigurationApplicator.swift in Sources */,
 				A10CCE55ACC0020000000013 /* AccessRegistration.swift in Sources */,
+				A10CCE55ACC0020000000020 /* AccessXrayArchitecture.swift in Sources */,
+				A10CCE55ACC0020000000021 /* AccessXrayAssetDigest.swift in Sources */,
+				A10CCE55ACC0020000000022 /* AccessXrayAssetKind.swift in Sources */,
+				A10CCE55ACC0020000000023 /* AccessXrayAssetPin.swift in Sources */,
+				A10CCE55ACC0020000000024 /* AccessXrayAssetPins.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

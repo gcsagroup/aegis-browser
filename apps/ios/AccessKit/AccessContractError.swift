@@ -18,4 +18,11 @@ public enum AccessContractError: Error, Equatable, Sendable {
     case invalidLeaseGeneration(UInt64)
     case staleLeaseGeneration(UInt64)
     case leaseGenerationOverflow
+    case malformedAssetDigest
+    case unknownXrayAssetKind(String)
+    case unknownXrayArchitecture(String)
+    case malformedXraySourceCommit
+    case xrayAssetProfileNotAdmitted(String)
+    case xrayAssetPinMissing(String, String)
+    case xrayAssetDigestMismatch(expected: String, actual: String)
 }
