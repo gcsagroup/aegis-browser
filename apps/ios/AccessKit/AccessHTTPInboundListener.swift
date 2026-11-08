@@ -3,14 +3,14 @@ import Network
 
 /// Loopback-only cleartext HTTP inbound listener bound to one registration.
 ///
-/// F3 scope:
+/// F3+F4 scope:
 /// - Admit only `AccessInboundTransport.http`
 /// - Bind exclusively to the registration's loopback endpoint
 /// - Refuse start when the lease is inactive
-/// - Accept TCP connections and count them
+/// - Accept TCP connections and complete HTTP CONNECT admission
 ///
-/// Out of scope: HTTP CONNECT (F4), HTTPS TLS front (F5), REALITY / Xray,
-/// and ProxyConfiguration application.
+/// Out of scope: HTTPS TLS front (F5), REALITY / Xray dial (F11), and
+/// ProxyConfiguration application (F9).
 public final class AccessHTTPInboundListener: @unchecked Sendable {
     public let registration: AccessRegistration
 
@@ -18,7 +18,9 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     private let lock = NSLock()
     private var listener: NWListener?
     private var acceptedConnections: UInt64 = 0
+    private var establishedConnects: UInt64 = 0
     private var openConnections: [NWConnection] = []
+    private var sessions: [ObjectIdentifier: AccessHTTPConnectSession] = [:]
 
     public init(registration: AccessRegistration) throws {
         guard registration.transport == .http else {
@@ -36,6 +38,11 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     public var acceptedConnectionCount: UInt64 {
         lock.lock(); defer { lock.unlock() }
         return acceptedConnections
+    }
+
+    public var establishedConnectCount: UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        return establishedConnects
     }
 
     /// Starts listening on the registration endpoint when the lease is active.
@@ -123,6 +130,7 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         listener = nil
         let connections = openConnections
         openConnections.removeAll()
+        sessions.removeAll()
         lock.unlock()
 
         active.cancel()
@@ -143,20 +151,26 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
             case .failed, .cancelled:
                 self.lock.lock()
                 self.openConnections.removeAll { $0 === connection }
+                self.sessions.removeValue(forKey: ObjectIdentifier(connection))
                 self.lock.unlock()
             default:
                 break
             }
         }
         connection.start(queue: queue)
-        // F3 does not speak CONNECT. Close after a short idle so tests can
-        // observe accept without leaving sockets open forever.
-        queue.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            connection.cancel()
+
+        let session = AccessHTTPConnectSession(connection: connection, queue: queue) { [weak self] outcome in
             guard let self else { return }
             self.lock.lock()
-            self.openConnections.removeAll { $0 === connection }
+            if case .established = outcome {
+                self.establishedConnects &+= 1
+            }
+            self.sessions.removeValue(forKey: ObjectIdentifier(connection))
             self.lock.unlock()
         }
+        lock.lock()
+        sessions[ObjectIdentifier(connection)] = session
+        lock.unlock()
+        session.start()
     }
 }
