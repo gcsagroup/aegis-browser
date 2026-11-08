@@ -68,3 +68,49 @@ d6420184ca46631c8a355bd68f6d7123f5cde729:apps/ios/Tests/Fixtures/Localization/co
 # prototypes/access-metering/sm00_synthetic_manifest.json
 3e95678bfaf7452e6ea785d30e661ece0f5fb0b7:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32
 6eefbf606ac935e6e0f1df8d7b3899d28335d172:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32
+
+# Rewritten after origin/main history rebase (2026-11-09); same reviewed fixtures/tests/patches.
+
+# apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc (rebased commit fingerprints)
+97fa45ba7fa825b4a45710000eb8e4d37092da3f:apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc:generic-api-key:244
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc:generic-api-key:244
+
+# apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch (rebased commit fingerprints)
+b2ecdbebc94f55bc4f6216e22cc1691ca82cd342:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1414
+b2ecdbebc94f55bc4f6216e22cc1691ca82cd342:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1432
+
+# apps/browser/patches-android/0142-feat-task-scoped-observation-2-0-002.patch (rebased commit fingerprints)
+b2ecdbebc94f55bc4f6216e22cc1691ca82cd342:apps/browser/patches-android/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+
+# apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch (rebased commit fingerprints)
+97fa45ba7fa825b4a45710000eb8e4d37092da3f:apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+
+# apps/browser/patches/archive/main-151/manifest.json (rebased commit fingerprints)
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:28
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:58
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:66
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:90
+
+# apps/ios/BrowserKit/Resources/easylist.txt (rebased commit fingerprints)
+5544dac740e0135b76c2acb50e66945d6f10840a:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+5544dac740e0135b76c2acb50e66945d6f10840a:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+5544dac740e0135b76c2acb50e66945d6f10840a:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+
+# apps/ios/BrowserKit/Resources/security-rules.json (rebased commit fingerprints)
+1aa4d70fe8dc6875d080b3ee873e365c38b66af3:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+61fd6d990083e3d2b947ccc7f0961394fb849b9e:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+
+# apps/ios/Tests/AegisPolicyKitTests/PIIScannerTests.swift (rebased commit fingerprints)
+80c64d42892a14f3e4c3a062c7971d8c25fac956:apps/ios/Tests/AegisPolicyKitTests/PIIScannerTests.swift:generic-api-key:22
+
+# apps/ios/Tests/Fixtures/Localization/coverage.json (rebased commit fingerprints)
+2d5dcdce4c8efb8664b0713d00d875f82e9ab08d:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+615fedacf78b4e0e776701e9d1b071e236261ce6:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+6ed031c3f398cd558280d4fdaa9fe8604575dc71:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+
+# prototypes/access-metering/sm00_synthetic_manifest.json (rebased commit fingerprints)
+6c81e0320cbe6024b372948cc84d2ecbe2da2531:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32

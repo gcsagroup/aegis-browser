@@ -36,9 +36,16 @@ class HostedSigningTest(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 hosted.validate_profile(profile, 'com.gcsa.aegis', 'Expected', 'ABCDEFGHIJ', hashlib.sha1(b'certificate').hexdigest())
 
-    def test_rejects_non_github_hosted_runner(self):
+    def test_accepts_actions_macos_runners_and_rejects_others(self):
+        for environment in (
+            {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'macOS'},
+            {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'self-hosted', 'RUNNER_OS': 'macOS'},
+        ):
+            hosted.check_host(environment)
         with self.assertRaises(ValueError):
             hosted.check_host({'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'self-hosted'})
+        with self.assertRaises(ValueError):
+            hosted.check_host({'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'local', 'RUNNER_OS': 'macOS'})
 
     def test_identity_uses_exact_fingerprint_and_distribution_type(self):
         fingerprint = 'A1' * 20

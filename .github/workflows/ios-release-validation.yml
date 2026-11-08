@@ -79,7 +79,7 @@ jobs:
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= .github/workflows/ios-*.yml
   ios-archive:
     if: ${{ inputs.exercise != 'cloud-poc' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -108,7 +108,7 @@ jobs:
           retention-days: 14
   cloud-poc:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.exercise == 'cloud-poc' && github.repository == 'gcsagroup/aegis-browser' }}
-    runs-on: macos-26
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-cloud-poc
     timeout-minutes: 90
     concurrency:
@@ -151,7 +151,7 @@ jobs:
           AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64: ${{ vars.AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64 }}
         run: |
           node scripts/ci/ios-cloud-poc-admission.mjs
-          python3 scripts/release/cloud-signing-poc.py --signing-mode cloud --runtime github-hosted --profile beta --version "$POC_VERSION" --build "$POC_BUILD" --team "$AEGIS_APPLE_TEAM_ID" --run-id "$POC_RUN_ID"
+          python3 scripts/release/cloud-signing-poc.py --signing-mode cloud --runtime self-hosted --profile beta --version "$POC_VERSION" --build "$POC_BUILD" --team "$AEGIS_APPLE_TEAM_ID" --run-id "$POC_RUN_ID"
       - name: Upload verified IPA and wait for ASC processing without review
         if: ${{ inputs.upload }}
         env:
