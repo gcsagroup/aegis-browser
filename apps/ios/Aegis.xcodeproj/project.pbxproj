@@ -222,6 +222,11 @@
 		A10CCE55ACC002000000000052 /* AccessHTTPConnectParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000052 /* AccessHTTPConnectParser.swift */; };
 		A10CCE55ACC002000000000053 /* AccessHTTPConnectSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000053 /* AccessHTTPConnectSession.swift */; };
 		A10CCE55ACC002000000000054 /* AccessHTTPConnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000054 /* AccessHTTPConnectTests.swift */; };
+		A10CCE55ACC002000000000060 /* AccessXrayRuntimeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000060 /* AccessXrayRuntimeError.swift */; };
+		A10CCE55ACC002000000000061 /* AccessXrayProcessControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000061 /* AccessXrayProcessControlling.swift */; };
+		A10CCE55ACC002000000000062 /* AccessXrayDigestVerifying.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000062 /* AccessXrayDigestVerifying.swift */; };
+		A10CCE55ACC002000000000063 /* AccessXrayRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000063 /* AccessXrayRuntime.swift */; };
+		A10CCE55ACC002000000000064 /* AccessXrayRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000064 /* AccessXrayRuntimeTests.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -632,6 +637,11 @@
 		A10CCE55ACC001000000000052 /* AccessHTTPConnectParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectParser.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000053 /* AccessHTTPConnectSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectSession.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000054 /* AccessHTTPConnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000060 /* AccessXrayRuntimeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntimeError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000061 /* AccessXrayProcessControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayProcessControlling.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000062 /* AccessXrayDigestVerifying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayDigestVerifying.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000063 /* AccessXrayRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntime.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000064 /* AccessXrayRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntimeTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -1130,6 +1140,10 @@
 				A10CCE55ACC001000000000051 /* AccessHTTPConnectRequest.swift */,
 				A10CCE55ACC001000000000052 /* AccessHTTPConnectParser.swift */,
 				A10CCE55ACC001000000000053 /* AccessHTTPConnectSession.swift */,
+				A10CCE55ACC001000000000060 /* AccessXrayRuntimeError.swift */,
+				A10CCE55ACC001000000000061 /* AccessXrayProcessControlling.swift */,
+				A10CCE55ACC001000000000062 /* AccessXrayDigestVerifying.swift */,
+				A10CCE55ACC001000000000063 /* AccessXrayRuntime.swift */,
 				A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */,
 				A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
@@ -1146,6 +1160,7 @@
 				A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */,
 				A10CCE55ACC001000000000044 /* AccessRealityVisionOutboundConfigTests.swift */,
 				A10CCE55ACC001000000000054 /* AccessHTTPConnectTests.swift */,
+				A10CCE55ACC001000000000064 /* AccessXrayRuntimeTests.swift */,
 				A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */,
 			);
 			path = AccessKitTests;
@@ -1707,6 +1722,7 @@
 				A10CCE55ACC0020000000025 /* AccessXrayAssetPinTests.swift in Sources */,
 				A10CCE55ACC002000000000044 /* AccessRealityVisionOutboundConfigTests.swift in Sources */,
 				A10CCE55ACC002000000000054 /* AccessHTTPConnectTests.swift in Sources */,
+				A10CCE55ACC002000000000064 /* AccessXrayRuntimeTests.swift in Sources */,
 				A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
@@ -1753,6 +1769,10 @@
 				A10CCE55ACC002000000000051 /* AccessHTTPConnectRequest.swift in Sources */,
 				A10CCE55ACC002000000000052 /* AccessHTTPConnectParser.swift in Sources */,
 				A10CCE55ACC002000000000053 /* AccessHTTPConnectSession.swift in Sources */,
+				A10CCE55ACC002000000000060 /* AccessXrayRuntimeError.swift in Sources */,
+				A10CCE55ACC002000000000061 /* AccessXrayProcessControlling.swift in Sources */,
+				A10CCE55ACC002000000000062 /* AccessXrayDigestVerifying.swift in Sources */,
+				A10CCE55ACC002000000000063 /* AccessXrayRuntime.swift in Sources */,
 				A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */,
 				A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */,
 			);
