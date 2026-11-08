@@ -32,7 +32,8 @@ module AegisRelease
       AegisRelease.require!(!@read_only || method == :get, 'Read-only ASC query cannot mutate store state')
       uri = uri_for(path, query)
       @token.refresh! if @token.expired?
-      request = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch }.fetch(method).new(uri)
+      request = { get: Net::HTTP::Get, post: Net::HTTP::Post, patch: Net::HTTP::Patch,
+                  delete: Net::HTTP::Delete }.fetch(method).new(uri)
       request['Authorization'] = "Bearer #{@token.text}"
       request['Content-Type'] = request['Accept'] = 'application/json'
       request.body = JSON.generate(body) if body
@@ -48,6 +49,7 @@ module AegisRelease
     def get(path, query = {}) = call(:get, path, nil, query)
     def post(path, body) = call(:post, path, body)
     def patch(path, body) = call(:patch, path, body)
+    def delete(path) = call(:delete, path)
 
     def collection(path, query = {})
       result = { 'data' => [], 'included' => [] }
