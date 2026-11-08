@@ -276,7 +276,7 @@ index 0000000000000000000000000000000000000000..13a10a8d6277dfd22484e781ad36c9e3
 +
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_FAULT_FIXTURE_H_
 diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
-index d7b19ecfd656bead369a5b8fe246512033458876..370e54c67440ca25eb84fd5e058c34d37a9c1fa7 100644
+index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff607d483373 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_session.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
 @@ -5,6 +5,7 @@

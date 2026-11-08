@@ -787,7 +787,7 @@ index 0000000000000000000000000000000000000000..6250fe4acb6ac9454efbf8263c672d96
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_SESSION_H_
 diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..d7b19ecfd656bead369a5b8fe246512033458876
+index 0000000000000000000000000000000000000000..44ff149f5868e5737847033eed00df77b15adaba
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
 @@ -0,0 +1,329 @@
