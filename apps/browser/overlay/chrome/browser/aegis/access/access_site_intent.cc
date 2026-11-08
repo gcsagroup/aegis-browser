@@ -54,7 +54,7 @@ std::string StripToHostCandidate(std::string_view raw) {
   }
   const size_t slash = text.find('/');
   if (slash != std::string::npos) {
-    text = text.substr(0, slash);
+    text.resize(slash);
   }
   if (!text.empty() && text.front() == '[') {
     const size_t end = text.find(']');
@@ -69,7 +69,7 @@ std::string StripToHostCandidate(std::string_view raw) {
           std::ranges::all_of(port, [](unsigned char character) {
             return base::IsAsciiDigit(character);
           })) {
-        text = text.substr(0, colon);
+        text.resize(colon);
       }
     }
   }

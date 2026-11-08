@@ -234,7 +234,7 @@ index 0000000000000000000000000000000000000000..9924c771e58d38764b0a1fef499bdf13
 +  }
 +  const size_t slash = text.find('/');
 +  if (slash != std::string::npos) {
-+    text = text.substr(0, slash);
++    text.resize(slash);
 +  }
 +  if (!text.empty() && text.front() == '[') {
 +    const size_t end = text.find(']');
@@ -249,7 +249,7 @@ index 0000000000000000000000000000000000000000..9924c771e58d38764b0a1fef499bdf13
 +          std::ranges::all_of(port, [](unsigned char character) {
 +            return base::IsAsciiDigit(character);
 +          })) {
-+        text = text.substr(0, colon);
++        text.resize(colon);
 +      }
 +    }
 +  }
