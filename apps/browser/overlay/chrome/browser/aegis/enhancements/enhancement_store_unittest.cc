@@ -76,6 +76,12 @@ TEST_F(EnhancementStoreTest, PersistenceDraftVersionAndRollback) {
                               .Set("source", Script("document.title='first';"))
                               .Set("world", "isolated")),
             "");
+  // 成功回调必须对应已落盘的完整配置，不能只更新内存。
+  std::string persisted;
+  ASSERT_TRUE(base::ReadFileToString(path, &persisted));
+  auto persisted_state = base::JSONReader::ReadDict(persisted, base::JSON_PARSE_RFC);
+  ASSERT_TRUE(persisted_state);
+  EXPECT_EQ(*persisted_state, store.state());
   const auto& first = store.state().FindList("scripts")->front().GetDict();
   const auto id = EnhancementField(first, "id");
   EXPECT_EQ(first.FindBool("enabled"), false);
