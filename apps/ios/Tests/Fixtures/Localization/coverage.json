@@ -969,6 +969,7 @@
     "识别别名跟踪",
     "识别距离",
     "诊断与使用分析",
+    "崩溃报告、使用分析与远程诊断配置默认开启，可随时关闭。",
     "译文",
     "译文由模型生成，需要核对原文。翻译和批注只有点击保存后才会保留；搜索范围仅包含已保存的资料。",
     "试运行",
@@ -1111,9 +1112,9 @@
     "＋ 添加手势"
   ],
   "preservedLocalizationsSHA256": {
-    "en": "bb45f19e912885f2714c0e062b0cc168ecf8c3dc4f212afc148a6929b58ae1df",
-    "zh-Hans": "a59c98e2990aa95eab143752beaad339531e65f66b29372052b0d15db8ec9c79",
-    "zh-Hant": "ffa7e856564e734b9774856cb227cad4c369bddb49acff79a9d9feaa0246d450"
+    "en": "44f2a96e7997b65fa14289596bb0358140203c0c99721da3feb763ec08d84d2f",
+    "zh-Hans": "3eaa5a5370dedcd5399feb62e56f25c6265b3ac50822edadc72cb083cfeed3bc",
+    "zh-Hant": "27b9e7d43ec4c67010b82c27421026180495019f71192a7fad0abeac0ff6738a"
   },
   "identicalEnglishAllowlist": {
     "de": {
@@ -1975,8 +1976,8 @@
     "th": "cdfb006f322e28a9bf4a979a983bfa6d4520e8c829d0049d4c48c83889e3abc4",
     "vi": "be142f9f64d4645c27ee66c10f928792cbd8389a339050d2d0b5d9303fa81087"
   },
-  "catalogKeyCount": 1083,
-  "catalogInventorySHA256": "779cd9f5d4d4a3793fa5d7eec82d607a84d263923a9109400d3443e362e404c0",
+  "catalogKeyCount": 1084,
+  "catalogInventorySHA256": "92d3fbd2d8e7d8f6d3ffb77c491a9eb93fdba340a4e04ade7a11fa905504b564",
   "numericAdditions": {
     "ja": {
       "SHA-256 应为 64 位十六进制字符。": {
