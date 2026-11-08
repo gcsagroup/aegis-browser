@@ -7,7 +7,7 @@ Third-party components retain their own licenses and notices.
 
 ## Browser components
 
-- **Chromium 155.0.8059.80** ([license](https://chromium.googlesource.com/chromium/src/+/43a195105613ac83c21d3f14de279f4a045c7da0/LICENSE)): preserve source notices and generated `chrome://credits` in distributions. See the pinned [credits generator](https://chromium.googlesource.com/chromium/src/+/43a195105613ac83c21d3f14de279f4a045c7da0/tools/licenses/licenses.py). Current source pins are [CHROMIUM_VERSION](apps/browser/CHROMIUM_VERSION) and [CHROMIUM_COMMIT](apps/browser/CHROMIUM_COMMIT); historical packages retain their own versions.
+- **Chromium 157.0.8103.39** ([license](https://chromium.googlesource.com/chromium/src/+/9a31f0acec1854d44e49a73fbf8017598151a583/LICENSE)): preserve source notices and generated `chrome://credits` in distributions. See the pinned [credits generator](https://chromium.googlesource.com/chromium/src/+/9a31f0acec1854d44e49a73fbf8017598151a583/tools/licenses/licenses.py). Current source pins are [CHROMIUM_VERSION](apps/browser/CHROMIUM_VERSION) and [CHROMIUM_COMMIT](apps/browser/CHROMIUM_COMMIT); historical packages retain their own versions.
 - **libtorrent-rasterbar 2.1.1** (optional, [BSD-3-Clause](apps/browser/overlay/third_party/aegis_libtorrent/LICENSE)): [pin and provenance](apps/browser/overlay/third_party/aegis_libtorrent/README.aegis); mirror provenance remains release-pending.
   Its compiled bundled components retain their own notices:
   [try_signal](apps/browser/overlay/third_party/aegis_libtorrent/TRY_SIGNAL_LICENSE.txt)
@@ -68,7 +68,7 @@ Development dependencies from the [root](package.json) and
 | [tsup](https://github.com/egoist/tsup) | 8.5.1 | MIT |
 | [ESLint and @eslint/js](https://github.com/eslint/eslint) | 9.39.3 each | MIT |
 | [typescript-eslint](https://github.com/typescript-eslint/typescript-eslint) | 8.72.1 | MIT |
-| [Vitest and @vitest/coverage-v8](https://github.com/vitest-dev/vitest) | 3.2.7 each | MIT |
+| [Vitest and @vitest/coverage-v8](https://github.com/vitest-dev/vitest) | 5.0.5 each | MIT |
 | [c8](https://github.com/bcoe/c8) | 12.0.0 | ISC |
 | [jsdom](https://github.com/jsdom/jsdom) | 30.1.3 | MIT |
 | [yaml](https://github.com/eemeli/yaml) | 2.9.1 | ISC |
