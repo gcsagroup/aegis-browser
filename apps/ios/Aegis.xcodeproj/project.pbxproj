@@ -212,6 +212,11 @@
 		A10CCE55ACC0020000000008 /* AccessKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001 /* AccessKit.framework */; };
 		A10CCE55ACC0020000000009 /* AccessKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001 /* AccessKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A10CCE55ACC002000000000A /* AccessKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001 /* AccessKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10CCE55ACC002000000000B /* AccessProxyConfigurationError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000009 /* AccessProxyConfigurationError.swift */; };
+		A10CCE55ACC002000000000C /* AccessProxyRegistrationFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000A /* AccessProxyRegistrationFixture.swift */; };
+		A10CCE55ACC002000000000D /* AccessProxyConfigurationBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */; };
+		A10CCE55ACC002000000000E /* AccessProxyConfigurationApplicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */; };
+		A10CCE55ACC002000000000F /* AccessProxyConfigurationApplicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -577,6 +582,11 @@
 		A10CCE55ACC0010000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000008 /* AccessContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessContractTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000009 /* AccessProxyConfigurationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000A /* AccessProxyRegistrationFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyRegistrationFixture.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationBuilder.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationApplicator.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationApplicatorTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1051,6 +1061,10 @@
 				A10CCE55ACC0010000000003 /* AccessInboundTransport.swift */,
 				A10CCE55ACC0010000000004 /* AccessOutboundProfile.swift */,
 				A10CCE55ACC0010000000005 /* AccessOwner.swift */,
+				A10CCE55ACC0010000000009 /* AccessProxyConfigurationError.swift */,
+				A10CCE55ACC001000000000A /* AccessProxyRegistrationFixture.swift */,
+				A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */,
+				A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */,
 				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
 			);
 			path = AccessKit;
@@ -1060,6 +1074,7 @@
 			isa = PBXGroup;
 			children = (
 				A10CCE55ACC0010000000008 /* AccessContractTests.swift */,
+				A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */,
 			);
 			path = AccessKitTests;
 			sourceTree = "<group>";
@@ -1615,6 +1630,7 @@
 				0C658D1B64536667B12FFB4A /* PIIScannerTests.swift in Sources */,
 				51A012093196ED6DBBDC7C07 /* PhishingScorerTests.swift in Sources */,
 				A10CCE55ACC0020000000006 /* AccessContractTests.swift in Sources */,
+				A10CCE55ACC002000000000F /* AccessProxyConfigurationApplicatorTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
 				3F56151172419CCB1A2F301F /* RecordRecoveryTests.swift in Sources */,
@@ -1639,6 +1655,10 @@
 				A10CCE55ACC0020000000002 /* AccessInboundTransport.swift in Sources */,
 				A10CCE55ACC0020000000003 /* AccessOutboundProfile.swift in Sources */,
 				A10CCE55ACC0020000000004 /* AccessOwner.swift in Sources */,
+				A10CCE55ACC002000000000B /* AccessProxyConfigurationError.swift in Sources */,
+				A10CCE55ACC002000000000C /* AccessProxyRegistrationFixture.swift in Sources */,
+				A10CCE55ACC002000000000D /* AccessProxyConfigurationBuilder.swift in Sources */,
+				A10CCE55ACC002000000000E /* AccessProxyConfigurationApplicator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
