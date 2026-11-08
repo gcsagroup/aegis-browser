@@ -18,15 +18,20 @@ const packRoot = join(repoRoot,
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 
-async function withCopy(action) {
+const withCopy = async action => {
   const root = await mkdtemp(join(tmpdir(), 'aegis-mac-p1-evidence-'));
+  let error = null;
   try {
     await cp(packRoot, root, {recursive: true});
     await action(root);
-  } finally {
-    await rm(root, {recursive: true, force: true});
+  } catch (caught) {
+    error = caught;
   }
-}
+  await rm(root, {recursive: true, force: true});
+  if (error) {
+    throw error;
+  }
+};
 
 test('correlation ID accepts only aegis-mac-p1 convention', () => {
   assert.equal(isValidCorrelationId('aegis-mac-p1/8ba3848a/run-1/on'), true);
