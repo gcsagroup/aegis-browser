@@ -1,16 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "__MSG_extensionName__",
+  "name": "Aegis Read-Only Companion",
   "version": "2.1.0",
-  "description": "__MSG_extensionDescription__",
-  "icons": {
-    "48": "icon-48.png",
-    "64": "icon-64.png",
-    "96": "icon-96.png",
-    "128": "icon-128.png",
-    "256": "icon-256.png",
-    "512": "icon-512.png"
-  },
+  "description": "读取用户当前授权页面的最小摘要，不执行页面写操作。",
   "permissions": [
     "activeTab",
     "scripting",
@@ -18,13 +10,12 @@
     "webNavigation"
   ],
   "action": {
-    "default_title": "__MSG_extensionAction__"
+    "default_title": "检查并在 Aegis 中打开"
   },
   "background": {
     "service_worker": "background.js"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'"
-  },
-  "default_locale": "en"
+  }
 }

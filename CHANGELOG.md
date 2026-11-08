@@ -4,23 +4,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project intends to use [Semantic Versioning](https://semver.org/).
 
-The workspace package, historical iOS development candidates and source previews use version numbers independent of the App Store version.
-
-## iOS / iPadOS 1.0.1 · TestFlight
-
-- Packaged Beta build 13 from upstream main (`93ead15`) and verified the signed IPA and dSYM against the delivery receipt. [TestFlight upload run](https://github.com/gcsagroup/aegis-browser/actions/runs/41715274104). [Packaging run](https://github.com/gcsagroup/aegis-browser/actions/runs/41714005704)
-- Added Open Source Licenses & Acknowledgements in Settings → About, with bundled notices available offline. [Source changes](https://github.com/gcsagroup/aegis-browser/pull/70)
-- Verified three delivery methods: manual Fastlane with Alpha build 8, GitHub Actions with Beta build 12, and Tag → Draft Release with Release build 11. Apple processing completed for all three builds.
-- Local signing scripts discover App Store Connect credentials in Downloads, retrieve the three app/extension provisioning profiles through the API, and unlock the dedicated signing keychain using its local password file. Exported signing files use stable names without dates. [Signing automation](https://github.com/gcsagroup/aegis-browser/pull/68)
-- Fixed Tag → Draft Release being skipped after packaging succeeded; added regression coverage for skipped dependency jobs. [Workflow fix](https://github.com/gcsagroup/aegis-browser/pull/67)
-- Beta build 12 is assigned to the existing Aegis Beta external group and awaits Apple's Beta review. [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx)
-
-## iOS / iPadOS 1.0.0 · App Store
-
-- Prepared the app and extension identities and the review materials. [App Store preparation](docs/releases/ios-app-store-preparation-2026-11-02.zh-CN.md)
-- Build 38 passed App Review and is published as a formal GitHub Release with its signed IPA, matching dSYM, manifest and checksums. The release tag points to the source used to build the shipped binary. [Release and downloads](https://github.com/gcsagroup/aegis-browser/releases/tag/ios/1.0.0-release.38)
-- Confirmed public App Store availability for iPhone and iPad and a separate external TestFlight invitation on 2026-11-03. [App Store](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx)
-- Expired the other 1.0.0 TestFlight builds and removed obsolete iOS test tags/releases; retained online build 38 and its formal release. Apple closed 1.0.0 for new Beta review submissions, so external testing proceeds with 1.0.1 Beta build 12.
+The workspace package remains `0.1.0`; the current iOS development candidate uses `7.0` and the published source preview remains `2.2`. The iOS source prerelease below does not establish signing or store qualification.
 
 ## 2026-10-13 · Desktop 4.0 and iOS 6.0 source integration
 
@@ -62,7 +46,7 @@ A single bottom address bar on iPhone and a single top toolbar on wide iPad wind
 
 iOS Ver 3.0 development candidate: record backup and recovery, lazy tab loading and memory release, download and library management, streaming for three model protocols, and keyboard controls. Unreleased; see the [Ver 3.0 validation record](docs/audit/ios-3-0-2026-10-04.zh-CN.md).
 
-## ios-v2.2.0-preview.1 · historical source preview — 2026-10-03
+## [ios-v2.2.0-preview.1](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) — 2026-10-03
 
 ### Added
 
@@ -77,7 +61,7 @@ iOS Ver 3.0 development candidate: record backup and recovery, lazy tab loading 
 
 - Moved initial window persistence out of view construction to remove SwiftUI runtime warnings. Private pages and groups stay out of window records.
 - Preserved upstream Swift coverage and input hash checks; freeze inputs after version updates and project generation, and reuse the fixed build directory from isolated worktrees.
-- See the [historical preview notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for localization, privacy manifests and simulator evidence. This preview had no installable signed IPA; its device, full VoiceOver, TestFlight and App Store acceptance was unverified. The obsolete preview Draft Release was removed during iOS release cleanup.
+- See the [release notes](docs/releases/ios-2.2.0-preview.1.zh-CN.md) for localization, privacy manifests and simulator evidence. This GitHub source prerelease has no installable signed IPA. Device, full VoiceOver, TestFlight and App Store acceptance remain open.
 
 ## [Unreleased]
 

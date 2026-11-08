@@ -1,0 +1,32 @@
+From 305c1d465ce06db252d623c4bad347967085a0d7 Mon Sep 17 00:00:00 2001
+From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
+Date: Sun, 25 Oct 2026 01:13:49 +0800
+Subject: [PATCH] =?UTF-8?q?=E5=AF=B9=E9=BD=90=E6=A1=8C=E9=9D=A2=E6=8C=81?=
+ =?UTF-8?q?=E4=B9=85=E5=8C=96=E4=BF=AE=E5=A4=8D=E7=9A=84=E4=BA=A7=E5=93=81?=
+ =?UTF-8?q?=E7=89=88=E6=9C=AC?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ chrome/browser/ui/webui/help/aegis_github_update.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 95ff7d16da5a2a015107d59386156bc7b91462d8..844f40c8a0494680ec92f9511c33bdf95b109296 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.266";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (266)";
++inline constexpr char kProductVersion[] = "6.1.0.267";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (267)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.52.0
+

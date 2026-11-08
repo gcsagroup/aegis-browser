@@ -15,10 +15,6 @@ struct ModelStreamDecoder {
     private var firstLine = true
     private var textBlocks: Set<Int> = []
 
-    init(provider: ModelProvider) {
-        self.provider = provider
-    }
-
     mutating func consume(_ byte: UInt8) throws -> Bool {
         receivedBytes += 1
         guard receivedBytes <= 1_000_000 else { throw ModelClientError.tooLarge }

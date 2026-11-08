@@ -19,12 +19,12 @@ struct PageAssistantView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @State private var selected: Set<UUID> = []
-    @State private var goal = AegisLocalization.string("总结主要内容，并给出来源引用。")
+    @State private var goal = String(localized: "总结主要内容，并给出来源引用。")
     @State private var snapshots: [PageSnapshot] = []
     @State private var output = ""
     @State private var outputComplete = false
-    @State private var status: LocalizedStringResource = "准备中"
-    @State private var error: (any Error)?
+    @State private var status = String(localized: "准备中")
+    @State private var error: String?
     @State private var busy = false
     @State private var operation: Task<Void, Never>?
     @State private var generation = UUID()
@@ -42,13 +42,11 @@ struct PageAssistantView: View {
     @State private var resultGoal = ""
     @FocusState private var goalFocused: Bool
 
-    @Environment(\.locale) private var localizationLocale
     var body: some View {
-        let _ = localizationLocale
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Label(AegisLocalization.string(status), systemImage: busy ? "hourglass" : "sparkles")
+                    Label(status, systemImage: busy ? "hourglass" : "sparkles")
                         .font(.headline).accessibilityIdentifier("assistant-status")
                     Text("用当前页面或选中的标签页完成摘要、翻译、研究和商品比较。")
                         .foregroundStyle(.secondary)
@@ -76,7 +74,7 @@ struct PageAssistantView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                     if !snapshots.isEmpty { preview }
                     if let error {
-                        Label(error.localizedDescription, systemImage: "exclamationmark.triangle").foregroundStyle(.red).accessibilityIdentifier("assistant-error")
+                        Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red).accessibilityIdentifier("assistant-error")
                         if !snapshots.isEmpty, !busy {
                             Button("重新确认并重试") {
                                 pendingConfiguration = settings.model; pendingGoal = goal; showingSendConfirmation = true
@@ -94,7 +92,7 @@ struct PageAssistantView: View {
             .accessibilityIdentifier("assistant-scroll")
             .scrollDismissesKeyboard(.interactively)
             .background(Color(uiColor: .systemGroupedBackground))
-            .localizedNavigationTitle("AI 助手")
+            .navigationTitle("AI 助手")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { cancel(); dismiss() } }
@@ -113,7 +111,7 @@ struct PageAssistantView: View {
                             let tab = browser.newTab(); tab.load(url); selected.insert(tab.id)
                         }
                     }
-                    status = "任务已恢复，请重新读取页面并确认发送。"
+                    status = String(localized: "任务已恢复，请重新读取页面并确认发送。")
                     showingHistory = false
                 }
             }
@@ -150,7 +148,7 @@ struct PageAssistantView: View {
                                 .buttonStyle(.borderedProminent).accessibilityIdentifier("confirm-model-send")
                         }
                     }
-                    .localizedNavigationTitle("将资料发送给模型？")
+                    .navigationTitle("将资料发送给模型？")
                     .toolbar { ToolbarItem(placement: .cancellationAction) {
                         Button("取消") { showingSendConfirmation = false; pendingConfiguration = nil }
                     } }
@@ -166,7 +164,7 @@ struct PageAssistantView: View {
             } message: { Text("回答和来源网址会写入你选择的文件，退出私密浏览后仍然保留。") }
             .fileExporter(isPresented: $export, document: TextReportDocument(text: report), contentType: .plainText,
                           defaultFilename: "Aegis 研究结果") { result in
-                if case let .failure(failure) = result { error = failure }
+                if case let .failure(failure) = result { error = failure.localizedDescription }
             }
         }
         .onAppear { if let id = browser.activeTab?.id { selected = [id] } }
@@ -174,7 +172,7 @@ struct PageAssistantView: View {
         .onChange(of: browser.profile) { _, _ in cancel(); snapshots = []; output = ""; outputComplete = false; dismiss() }
         .onChange(of: scenePhase) { _, phase in if phase == .background { cancel() } }
         .onChange(of: status) { _, value in
-            if UIAccessibility.isVoiceOverRunning { UIAccessibility.post(notification: .announcement, argument: AegisLocalization.string(value)) }
+            if UIAccessibility.isVoiceOverRunning { UIAccessibility.post(notification: .announcement, argument: value) }
         }
     }
 
@@ -186,10 +184,10 @@ struct PageAssistantView: View {
         .disabled(busy)
     }
     @ViewBuilder private var presetButtons: some View {
-        Button("摘要") { goal = AegisLocalization.string("总结主要内容，并给出来源引用。") }
-        Button("翻译") { goal = AegisLocalization.string("将正文完整翻译为简体中文；如果篇幅过长，请明确标注未完成的范围。") }
-        Button("研究比较") { goal = AegisLocalization.string("比较所选来源的观点、证据和分歧，逐项引用，说明资料不足之处。") }
-        Button("商品比较") { goal = AegisLocalization.string("比较所选页面的商品、价格和规格，列出来源；说明未知的运费、库存和时效。") }
+        Button("摘要") { goal = String(localized: "总结主要内容，并给出来源引用。") }
+        Button("翻译") { goal = String(localized: "将正文完整翻译为简体中文；如果篇幅过长，请明确标注未完成的范围。") }
+        Button("研究比较") { goal = String(localized: "比较所选来源的观点、证据和分歧，逐项引用，说明资料不足之处。") }
+        Button("商品比较") { goal = String(localized: "比较所选页面的商品、价格和规格，列出来源；说明未知的运费、库存和时效。") }
     }
     private var sourceSelection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -256,8 +254,8 @@ struct PageAssistantView: View {
             else if browser.profile.isPrivate {
                 taskID = try tasks.saveCompletedReport(goal: resultGoal, sources: snapshots.map(\.url), report: report)
             } else { return }
-            status = "研究结果已加密保存。"
-        } catch { self.error = error }
+            status = String(localized: "研究结果已加密保存。")
+        } catch { self.error = error.localizedDescription }
     }
 
     private var report: String {
@@ -267,7 +265,7 @@ struct PageAssistantView: View {
     private func readPages() {
         goalFocused = false
         cancel()
-        error = nil; output = ""; outputComplete = false; snapshots = []; busy = true; status = "正在读取页面"
+        error = nil; output = ""; outputComplete = false; snapshots = []; busy = true; status = String(localized: "正在读取页面")
         let current = generation
         let profile = browser.profile
         let tabs = browser.visibleTabs.filter { selected.contains($0.id) }
@@ -283,10 +281,10 @@ struct PageAssistantView: View {
                     values.append(try await tab.snapshot(privateReadConfirmed: profile.isPrivate))
                 }
                 guard generation == current, browser.profile == profile else { return }
-                snapshots = values; busy = false; status = "等待确认发送"
+                snapshots = values; busy = false; status = String(localized: "等待确认发送")
             } catch {
                 guard generation == current else { return }
-                self.error = error; busy = false; status = "读取失败"
+                self.error = error.localizedDescription; busy = false; status = String(localized: "读取失败")
             }
         }
     }
@@ -297,15 +295,15 @@ struct PageAssistantView: View {
         // 请求发送前重新核对页面身份。用户确认的是这些页面，不是之后的新导航。
         guard sources.allSatisfy({ source in browser.visibleTabs.contains {
             $0.id == source.id && $0.url == source.url && $0.navigationEpoch == source.navigationEpoch && !$0.isLoading
-        } }) else { error = PageSnapshotError.changed; return }
+        } }) else { error = PageSnapshotError.changed.localizedDescription; return }
         let profile = browser.profile
         do {
             taskID = nil
             if !profile.isPrivate { taskID = try tasks.begin(goal: pendingGoal, sources: sources.map(\.url)) }
         }
-        catch { self.error = error; return }
+        catch { self.error = error.localizedDescription; return }
         let recordID = taskID
-        busy = true; error = nil; output = ""; outputComplete = false; status = "正在连接模型服务"
+        busy = true; error = nil; output = ""; outputComplete = false; status = String(localized: "正在连接模型服务")
         let current = generation
         let client = ModelClient(configuration: config, key: ModelCredentialStore.read(for: config))
         let requestedGoal = pendingGoal
@@ -315,20 +313,20 @@ struct PageAssistantView: View {
             do {
                 let sourceTexts = sources.enumerated().map { "来源 [\($0.offset + 1)]：\($0.element.title)\n\($0.element.text)" }
                 let text = try await client.streamComplete(goal: requestedGoal, sources: sourceTexts,
-                    language: AegisLocalization.current.dialect) { partial in
+                    language: Locale.preferredLanguages.first ?? "zh-Hans") { partial in
                     guard generation == current, browser.profile == profile, browser.agentIsAvailable else { return }
-                    output = partial; status = "正在生成回答"
+                    output = partial; status = String(localized: "正在生成回答")
                 }
                 try Task.checkCancellation()
                 guard generation == current, browser.profile == profile, browser.agentIsAvailable else { return }
                 if let recordID { try tasks.finish(recordID, state: .completed) }
-                output = text; outputComplete = true; busy = false; status = "已完成"
+                output = text; outputComplete = true; busy = false; status = String(localized: "已完成")
             } catch {
                 guard generation == current else { return }
                 if let recordID { try? tasks.finish(recordID, state: .failed) }
                 if let failure = error as? ModelClientError,
                    [.invalidCitation, .invalidResponse, .sensitiveData].contains(failure) { output = "" }
-                self.error = error; busy = false; status = "分析失败"
+                self.error = error.localizedDescription; busy = false; status = String(localized: "分析失败")
             }
         }
     }
@@ -338,7 +336,7 @@ struct PageAssistantView: View {
         browser.protectAssistantTabs([])
         if busy, let taskID { try? tasks.finish(taskID, state: .interrupted) }
         taskID = nil
-        if busy { outputComplete = false; status = "已暂停，可重新运行" }
+        if busy { outputComplete = false; status = String(localized: "已暂停，可重新运行") }
         busy = false; pendingConfiguration = nil
     }
 }

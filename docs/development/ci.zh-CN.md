@@ -50,19 +50,7 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 个人 `main` 保留为后续发布 Action 入口。为了保持 SHA 镜像，未来 workflow 源码须先进入上游，再同步到个人 main；执行可通过仓库变量 `AEGIS_PROMOTION_FORK_REPOSITORY` 与 `github.repository` 的精确匹配限定个人仓库，签名与发布凭据仅配置在个人仓库受保护 environment。发布默认手动触发，校验 main 与 upstream/main、选定 SHA、适用测试及制品来源；镜像 push 本身不授权发布。当前流程变更不添加发布、打包、签名或上传动作。
 
-`quality.yml` 继续验证 develop/main 的 Ready PR 与 push；Draft PR 暂缓自动测试，转为 Ready 后触发。检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
-
-## Dependabot 第一阶段
-
-`.github/dependabot.yml` 仅配置根目录 pnpm workspace（`apps/browser`、`packages/core`）的 npm 生态更新。常规版本检查为每周一北京时间 09:00，最多同时打开 3 个版本更新 PR；lint、Vitest、构建工具的 minor/patch 按工具族分组。major 单独审查，其中 Vitest 与 `@vitest/*` 的 major 保持同组，避免测试运行器和覆盖率插件拆开升级。提交与 PR 标题使用 `chore(deps):`。
-
-配置不设置 `target-branch`，跟随仓库默认分支：开发 Fork 指向 `develop`，共享配置以后晋升到上游时指向上游默认分支。配置必须合入默认分支才生效；保留为未合并 PR 不代表定期更新已经启用。Fork 还需在 Settings → Advanced Security（或 Code security）中显式启用 Dependabot version updates；只提交配置不能证明该开关已开启。
-
-Dependabot alerts 与 Dependabot security updates 是独立的仓库设置，需要分别开启并回读验证，不能由本文件推断。安全更新不受每周版本检查时刻和 3 个版本 PR 上限限制；Vitest 安全修复单独分组。仓库级安全更新可能针对依赖图中其他已识别的清单提出修复，不等于本阶段为那些目录启用了常规版本更新。
-
-第一阶段不配置 GitHub Actions、pip 或隔离原型的常规更新，并显式排除原型与 iOS 测试 fixture。Actions 的批准 SHA、coverage.py 的重复版本校验和原型 `prototype-lock.json` 仍需联动维护；Node、pnpm、Python 固定工具链、Chromium、补丁与模型权重继续走各自验收流程。发现这些范围的安全告警或修复 PR 时按原合同人工处理，不能直接合并清单变更。
-
-所有依赖 PR 保留现有本地完整门、独立 Review、最终 HEAD 的 `quality-gate` 和服务端保护，不自动批准或合并。服务端开关、配置合并、Dependabot 首次作业/PR、该 PR 的实际 CI 是四份独立证据；配置 PR 的 CI 通过不能替代 Dependabot 实际运行验收。若暂停常规版本更新，可将 `open-pull-requests-limit` 设为 `0`，仍保留 Alerts 与安全更新。
+`quality.yml` 继续验证 develop/main PR 与 push，检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
 
 ## 固定工具链与本地完整门
 
@@ -77,8 +65,6 @@ mise exec -- node scripts/ci/run-quality.mjs \
 ```
 
 入口依次执行工具链预检、`pnpm install --frozen-lockfile`、`pnpm run quality:fast`、分语言覆盖率生成与校验、许可证元数据记录、修订 4 冻结文件校验、临时副本中的 13 项离线预览检查、CI 门禁回归、工作流验证与源码前后摘要比对。任一阶段非零即整体失败；报告写入被忽略的 `.artifacts/ci/`，不得提交该目录。
-
-`ci:test` 按文件串行执行 Node 回归套件，避免多个创建真实子进程的 fixture 同时争用 runner CPU。V8 覆盖率退出回归仍使用真实 Vitest worker、原有的 500ms SIGKILL 兜底和全部退出码/覆盖率断言；串行调度不延长超时，也不接受失败结果。
 
 ## Lint、单元测试与覆盖率口径
 
@@ -120,13 +106,7 @@ Codacy 正式分析范围为上游 `gcsagroup/aegis-browser` 的 main 及以 mai
 
 ## PR、develop/main 与证据身份
 
-开发 Fork 的 `develop` 与上游 `main` 共用 Draft/Ready 规则：`.github/workflows/quality.yml`、`cpp-unit-tests.yml` 和 `ios-release-validation.yml` 的自动 PR 测试 job 只在 `github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false'` 时运行。PR 必须显式带有布尔值 `draft: false`；Draft 或缺失该元数据时跳过测试，不分配测试 runner。三个 workflow 都监听 `opened`、`reopened`、`synchronize`、`ready_for_review`、`converted_to_draft`；转为 Ready 会触发测试，转回 Draft 则通过现有 PR concurrency 取消同一 PR 的旧运行。各 workflow 原有分支、路径过滤、push 和手动入口保持不变：quality 覆盖 develop/main，C++ 保留路径过滤，iOS release validation 的 PR 仍只面向 main。PR Title Policy 元数据处理和 Codacy 策略独立，分支保护与 required checks 不因 Draft 暂缓而放宽。
-
-quality 汇总 job 使用中性 ID `quality-summary`，条件为 `always() && (上述就绪条件)`，因此 Ready PR、push 和手动运行仍会在依赖失败时执行汇总。仅非 PR 或显式 Ready PR 使用 required check 显示名 `quality-gate`；Draft 或元数据缺失时配置备用名 `quality-deferred-draft-or-missing-metadata`。GitHub 可能直接显示跳过 job 的名称表达式；无论如何，跳过记录的检查名都不能等于 `quality-gate`，避免被计作必需检查通过。实际运行的 `quality-gate` 仅在唯一必需执行 job `quality` 明确为 `success` 时成功，结果映射必须恰好包含 `quality`；failure、cancelled、skipped、timeout 或缺失均不得放行。普通开发分支不重复执行 push 全量门。
-
-本地 workflow validator 与 mutation 回归校验事件集合、严格 Ready 条件、汇总名称和失败传播合同。GitHub 上仍需以同一 head 的 Draft → Ready 实际运行验证触发与 check 身份；本地检查不能替代该托管证据。
-
-常规 macOS 测试支持仓库级 opt-in：将 `AEGIS_SELF_HOSTED_TEST_REPOSITORY` 设置为当前个人仓库的精确 `owner/repo` 后，`quality`、`quality-gate` 与 C++ 单元测试使用 `[self-hosted, macOS, ARM64, aegis-test]`。变量为空、身份不匹配或 PR 来自外部 fork 时继续使用 `macos-15`。个人仓库部署两个独立测试 runner，预安装并核验固定 Node/Python；托管 runner 继续通过固定 setup actions 安装工具，本地 runner 验证预安装的 Python `3.11.9`，避免 setup-python 在 macOS 上强制使用托管账号路径。在本机 job-start hook 拒绝仓库身份不匹配、外部 fork PR 及非 `main`/`develop` 的 push/手动事件；拒绝时必须在返回前终止经本机路径与用户校验的所属 `Runner.Worker`，阻断包括 `always()` 在内的后续步骤；只返回非零不足以构成安全边界。无法确认所属 Worker 时阻塞作业并等待服务检查，不能继续执行。workflow 条件不能替代这个主机端边界。禁用变量即可让后续测试恢复托管路由，既有运行仍保留原 runner 与证据身份。iOS、Android、Linux、Windows、Chromium 构建和晋升控制器保持原路线；测试 runner 不使用 `aegis-upstream` 构建标签。
+`.github/workflows/quality.yml` 对所有目标为 `develop` 或 `main` 的 PR（含 Draft）和这两个分支的 push 运行 macOS 优先基础门；普通开发分支不重复执行 push 全量门。固定汇总检查名是 `quality-gate`。它仅在唯一必需执行 job `quality` 明确为 `success` 时成功，结果映射必须恰好包含 `quality`；failure、cancelled、skipped、timeout 或缺失均不得放行。
 
 `.github/workflows/ios-coverage.yml` 是独立报告 workflow。仅通过 `workflow_dispatch` 手动生成报告，PR/develop/main push 不自动运行。它继续严格绑定当次 GitHub tested SHA，测试失败仍为非零；当前分支保护的必需状态检查为 `quality-gate`，因此 iOS 报告不改变 macOS 优先的合并门。
 
@@ -170,8 +150,6 @@ mise exec -- node scripts/ci/run-quality.mjs \
 
 上游合并后记录真实 S 和 push CI。个人 main 快进镜像到上游已有提交，不制造同步 commit。之后从 S 创建 `codex/backflow-<S完整SHA>` 分支，PR 到 develop；允许为冲突追加修复，所有产品修复、测试和共享规则必须回流。回流使用 merge commit，再验证实际 develop push CI；下一批必须包含上游祖先且该 develop 来源验证通过。提前 backport 的重要修复保留映射，不能用局部 cherry-pick 代替最终祖先对齐。
 
-上游晋升 PR 确认为 `MERGED` 且合并提交 S 已进入 `upstream/main` 后，由协调者清理该 PR 在来源 Fork 上的临时远端分支。按 PR 记录核对来源仓库、分支名和最终 HEAD SHA，确认没有其他开放 PR 使用该分支，再以该 SHA 为条件删除，并回读确认远端引用已消失。分支已不存在时记为已清理；若分支已前移、仍被其他 PR 使用，或 PR 关闭但未合并，则保留。清理范围仅限临时源分支，`main`、`develop`、受保护分支和本地工作树须保留。
-
 ### 串行控制器
 
 `.github/workflows/promotion-orchestrator.yml` 只从个人仓库 develop 的 push、每 15 分钟 schedule 或 develop 手动 dispatch 运行，使用固定 concurrency。校验必填仓库变量 `AEGIS_PROMOTION_FORK_REPOSITORY` 与当前仓库完全一致、ref、事件和版本变量 `AEGIS_PROMOTION_AUTOMATION=direct-upstream-v2`；旧值 `enabled` 不启动新控制器，新值不启动旧控制器。PR、main、上游仓库或未知事件不能执行带写权限的转换。仓库变量缺失、格式无效、与当前仓库不符或指向上游时拒绝执行；具体 Fork 身份仅在仓库设置中配置，不写入共享源码。候选源码只作为 Git 对象读取，不在凭据环境执行。
@@ -196,8 +174,6 @@ mise exec -- node scripts/ci/run-quality.mjs \
 代码、GitHub 保护和 Codacy 服务端接入分别验收；个人 fork 尚未停止分析或上游门禁未配置时保持 `paused`。迁移可能等待现有上游 PR 的 native 验收，不能把控制器交付等同于镜像已经完成。发生问题时暂停控制器并保留分支/PR/证据，按同一路径人工修复；不要恢复旧 develop → 个人 main 流程。
 
 ## Chromium 集成边界与故障分类
-
-构建身份的补丁 lineage v2 从固定 base 开始逐提交回放，要求每一步的完整树等于对应 applied commit tree，且提交数量、单父顺序及固定选项下的 canonical stable patch-ID 全部匹配。原补丁哈希、header commit SHA、raw patch-ID 和 raw 比较结果继续保留；Python/Git 对等价 diff 的上下文分组不同可以产生 raw mismatch，不将其改记为 raw 匹配。build、finalize/verify 和 status 共用同一 v2 校验；仅最终树相同、仅 blob 子集相同或仅 raw ID 相同均不能放行。v2 不把历史 raw-ID 失败改写为成功，也不替代实际编译、运行和打包验收。
 
 报告中的 `nativeIntegration` 采用保守分类：overlay、patch、C++/GN、Chromium 固定版本及关键生成/同步脚本变更为 `REQUIRED`；未明确分类的产品路径为 `REVIEW_REQUIRED`；纯文档和本基础 CI 变更可为 `NOT_APPLICABLE`。`quality:fast` 中的独立 native runner 不等于固定 Chromium workspace 的 GN/GTest 或浏览器集成证明。
 

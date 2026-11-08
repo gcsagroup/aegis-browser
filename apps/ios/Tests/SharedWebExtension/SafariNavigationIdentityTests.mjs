@@ -23,7 +23,7 @@ const sandbox = {
     },
     extension: {inIncognitoContext: false},
     runtime: {
-      id: "com.gcsa.aegis.safari",
+      id: "com.gcsa.aegis.ios.app.safari",
       async sendNativeMessage(message) {
         nativeMessages.push(message);
         return {ok: false};

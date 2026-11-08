@@ -2,7 +2,6 @@ import UIKit
 import UniformTypeIdentifiers
 
 final class ShareViewController: UIViewController {
-    private var status: AegisLocalizedMessage = .resource("正在验证分享链接…")
     private let statusLabel = UILabel()
     private let activity = UIActivityIndicatorView(style: .medium)
 
@@ -10,26 +9,14 @@ final class ShareViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         configureUI()
-        NotificationCenter.default.addObserver(self, selector: #selector(refreshLanguage),
-            name: UIApplication.didBecomeActiveNotification, object: nil)
         receiveURL()
     }
-
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        refreshLanguage()
-    }
-
-    @objc private func refreshLanguage() { statusLabel.text = status.text }
-
-    deinit { NotificationCenter.default.removeObserver(self) }
 
     private func configureUI() {
         let mark = UIImageView(image: UIImage(systemName: "shield.lefthalf.filled"))
         mark.tintColor = .systemGreen
         mark.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 34, weight: .semibold)
-        refreshLanguage()
-        statusLabel.adjustsFontForContentSizeCategory = true
+        statusLabel.text = String(localized: "正在验证分享链接…")
         statusLabel.font = .preferredFont(forTextStyle: .headline)
         statusLabel.textAlignment = .center
         statusLabel.numberOfLines = 0
@@ -67,8 +54,7 @@ final class ShareViewController: UIViewController {
                     guard let self else { return }
                     do {
                         let (title, data) = try result.get(); try MarkdownShareInbox().store(title: title, data: data)
-                        self.status = .resource("文档已交给 Aegis，请在 60 秒内打开 App。")
-                        self.refreshLanguage()
+                        self.statusLabel.text = String(localized: "文档已交给 Aegis，请在 60 秒内打开 App。")
                         self.activity.stopAnimating()
                         self.extensionContext?.completeRequest(returningItems: nil)
                     } catch { self.finish(error: error) }
@@ -117,8 +103,7 @@ final class ShareViewController: UIViewController {
             let inbox = try ShareInbox()
             let envelope = try inbox.makeEnvelope(from: value)
             try inbox.store(envelope)
-            status = .resource("已安全交给 Aegis\n60 秒内打开 App 即可接收")
-            refreshLanguage()
+            statusLabel.text = String(localized: "已安全交给 Aegis\n60 秒内打开 App 即可接收")
             activity.stopAnimating()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
                 self?.extensionContext?.completeRequest(returningItems: nil)
@@ -129,8 +114,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func finish(error: Error) {
-        status = .error(error)
-        refreshLanguage()
+        statusLabel.text = error.localizedDescription
         statusLabel.textColor = .systemRed
         activity.stopAnimating()
         extensionContext?.cancelRequest(withError: error)

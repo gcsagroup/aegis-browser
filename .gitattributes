@@ -13,12 +13,3 @@ apps/ios/BrowserKit/Resources/easyprivacy.txt whitespace=-blank-at-eol
 # 第三方运行库保留已核对的原始字节，以保持资产清单哈希一致。
 apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/bergamot/worker/translator-worker.js whitespace=-blank-at-eol,-blank-at-eof
 apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/vendor/ort-wasm-simd-threaded.js whitespace=-blank-at-eol,-blank-at-eof
-
-# Imported SDK licenses and generated compilations preserve upstream legal text.
-scripts/licenses/sdk-licenses/*.txt whitespace=-blank-at-eol,-blank-at-eof
-apps/ios/AegisApp/ThirdPartyNotices.txt whitespace=-blank-at-eol,-blank-at-eof
-apps/browser/MACOS_THIRD_PARTY_NOTICES.txt whitespace=-blank-at-eol,-blank-at-eof
-apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/vendor/onnxruntime-web-NOTICES whitespace=-blank-at-eol,-blank-at-eof
-apps/browser/overlay/third_party/aegis_libtorrent/*LICENSE*.txt whitespace=-blank-at-eol,-blank-at-eof
-apps/browser/overlay/third_party/aegis_libtorrent/APSL-2.0.txt whitespace=-blank-at-eol,-blank-at-eof
-apps/browser/overlay/third_party/aegis_libtorrent/UPSTREAM_ROUTE_H.txt whitespace=-blank-at-eol,-blank-at-eof

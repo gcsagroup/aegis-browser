@@ -9,7 +9,7 @@ public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
     case privateMode
 
     public var id: String { rawValue }
-    public var title: String { self == .standard ? AegisLocalization.string("普通") : AegisLocalization.string("私密") }
+    public var title: String { self == .standard ? String(localized: "普通") : String(localized: "私密") }
     public var isPrivate: Bool { self == .privateMode }
 }
 
@@ -32,7 +32,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         titleObservation = view.observe(\.title, options: [.new]) { [weak self, weak view] _, _ in
             Task { @MainActor [weak self, weak view] in
                 guard let self, let view, view === self.loadedWebView else { return }
-                self.updateTitle(view.title, url: view.url)
+                self.title = view.title?.isEmpty == false ? view.title! : (view.url?.host ?? String(localized: "新标签页"))
             }
         }
         return view
@@ -52,22 +52,19 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public let enhancementStore: WebsiteEnhancementStore
     public private(set) var userScripts: UserScriptController!
     @Published public private(set) var inspectionEnabled = false
-    @Published private var titlePresentation: AegisLocalizedMessage = .resource("新标签页")
-    public var title: String { titlePresentation.text }
+    @Published public private(set) var title = String(localized: "新标签页")
     @Published public private(set) var url: URL?
     @Published public private(set) var isLoading = false
     @Published public private(set) var canGoBack = false
     @Published public private(set) var canGoForward = false
     @Published public private(set) var navigationEpoch: UInt64 = 0
     @Published public private(set) var lastPolicyIntervention: BrowserNavigationPolicyDecision?
-    @Published private var loadingErrorPresentation: AegisLocalizedMessage?
-    public var loadingError: String? { loadingErrorPresentation?.text }
+    @Published public private(set) var loadingError: String?
     @Published public private(set) var trackingProtectionReady = false
     @Published public internal(set) var groupID: UUID?
     public private(set) var requestedURL: URL?
     @Published public private(set) var protectionIncident: PageProtectionIncident?
-    @Published private var protectionNoticePresentation: AegisLocalizedMessage?
-    public var protectionNotice: String? { protectionNoticePresentation?.text }
+    @Published public private(set) var protectionNotice: String?
     @Published public private(set) var securityRulesReady = false
     @Published public private(set) var fingerprintSignals: [String] = []
     private var securityLists: [String: WKContentRuleList] = [:]
@@ -111,7 +108,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     func prepareForRestore(url: URL?, title: String? = nil, scrollOffset: Double? = nil) {
         self.url = url; requestedURL = url
-        updateTitle(title, url: url)
+        self.title = title ?? url?.host ?? String(localized: "新标签页")
         savedScrollOffset = CGPoint(x: 0, y: max(0, scrollOffset ?? 0))
         isSuspended = true
     }
@@ -182,10 +179,10 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         isSuspended = false
         if url != requestedURL { recentTerminations = [] }
         lastPolicyIntervention = nil
-        protectionIncident = nil; protectionNoticePresentation = nil; fingerprintSignals = []
+        protectionIncident = nil; protectionNotice = nil; fingerprintSignals = []
         structureTask?.cancel()
         if temporaryPermission?.url != url { temporaryPermission = nil }
-        loadingErrorPresentation = nil
+        loadingError = nil
         // 立即让旧页面授权失效，不等网络回调到来。
         navigationEpoch &+= 1
         loadTask?.cancel()
@@ -199,7 +196,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             return
         }
         if preferences.values.phishingProtection, decision.phishingScore >= 55, !hasTemporaryPermission(url) {
-            protectionNoticePresentation = .resource("此页面有登录风险信号，请核对网址和提交目的地。")
+            protectionNotice = String(localized: "此页面有登录风险信号，请核对网址和提交目的地。")
         }
         if decision.kind == .sanitized { lastPolicyIntervention = decision }
         let url = URL(string: decision.effectiveURL) ?? url
@@ -222,7 +219,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 } catch {
                     guard generation == loadGeneration else { return }
                     isLoading = false
-                    loadingErrorPresentation = .resource("跟踪保护初始化失败，请重试。")
+                    loadingError = String(localized: "跟踪保护初始化失败，请重试。")
                 }
             }
         } else {
@@ -384,7 +381,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView === loadedWebView, isCurrent(navigation) else { return }
         // 新文档不继承前页的结构或接口提示；当前页面的检查会重新生成提示。
-        protectionNoticePresentation = nil
+        protectionNotice = nil
         fingerprintSignals = []
         startStructureChecks(webView)
     }
@@ -394,10 +391,6 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         pendingNavigation = nil
         isLoading = false
         refreshState()
-        // History can restore a start document whose DOM predates the current
-        // language; a newly loaded document may also finish after a selection.
-        // Reuse the owned-document guards with the latest runtime snapshot.
-        refreshLocalizedPresentation()
         if restoresScrollOffset {
             let offset = savedScrollOffset
             let epoch = navigationEpoch
@@ -429,7 +422,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         guard webView === loadedWebView, isCurrent(navigation) else { return }
         pendingNavigation = nil
         isLoading = false
-        if (error as NSError).code != NSURLErrorCancelled { loadingErrorPresentation = .error(error) }
+        if (error as NSError).code != NSURLErrorCancelled { loadingError = error.localizedDescription }
         refreshState()
     }
 
@@ -541,7 +534,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         releaseWebView()
         requestedURL = incident.url; url = incident.url
         protectionIncident = incident
-        titlePresentation = .resource("已阻止风险页面")
+        title = String(localized: "已阻止风险页面")
     }
 
     private func configurePageProtection(for url: URL) {
@@ -582,7 +575,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
               let current = view.url, let origin = BrowserPreferences.origin(expected),
               BrowserPreferences.origin(current) == origin else { return false }
         if temporaryPermission?.url != current { temporaryPermission = nil }
-        var notice: AegisLocalizedMessage?
+        var notice: String?
         if preferences.values.phishingProtection,
            let raw = try? await view.callAsyncJavaScript(PageProtection.structureScript, arguments: [:], in: nil, contentWorld: .defaultClient) as? [String: Any],
            view === loadedWebView, epoch == navigationEpoch, !Task.isCancelled,
@@ -595,7 +588,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 return false
             }
             if assessment.score >= 55 {
-                notice = .resource("此页面有登录风险信号，请核对网址和提交目的地。")
+                notice = String(localized: "此页面有登录风险信号，请核对网址和提交目的地。")
             }
         }
         if let counts = try? await view.callAsyncJavaScript("return globalThis.__aegisProtectionCounts || {};", arguments: [:], in: nil, contentWorld: .page) as? [String: Int],
@@ -604,11 +597,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             let observed = ["canvas", "webgl", "audio"].filter { (counts[$0] ?? 0) > 0 }
             if fingerprintSignals != observed { fingerprintSignals = observed }
             if (counts["worker"] ?? 0) > 0, (counts["wasm"] ?? 0) > 0 {
-                notice = .resource("页面使用了 Worker 和 WASM；这些也是正常计算能力，尚不能据此判断挖矿。")
+                notice = String(localized: "页面使用了 Worker 和 WASM；这些也是正常计算能力，尚不能据此判断挖矿。")
             }
         }
         guard view === loadedWebView, epoch == navigationEpoch, !Task.isCancelled else { return false }
-        if protectionNotice != notice?.text { protectionNoticePresentation = notice }
+        if protectionNotice != notice { protectionNotice = notice }
         return true
     }
 
@@ -620,7 +613,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         guard isActive else { releaseWebView(); return }
         guard recentTerminations.count <= 1 else {
             loadTask?.cancel(); loadGeneration = UUID(); pendingNavigation = nil; isLoading = false
-            loadingErrorPresentation = .resource("页面连续停止运行，已暂停自动重载。请手动重试或关闭此标签。")
+            loadingError = String(localized: "页面连续停止运行，已暂停自动重载。请手动重试或关闭此标签。")
             return
         }
         isLoading = true
@@ -632,39 +625,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         return navigation === pendingNavigation
     }
 
-    private func updateTitle(_ title: String?, url: URL?) {
-        if let title, !title.isEmpty { titlePresentation = .verbatim(title) }
-        else if let host = url?.host { titlePresentation = .verbatim(host) }
-        else { titlePresentation = .resource("新标签页") }
-    }
-
-    private var languageRevision = 0
-
-    /// Presentation refresh never creates a resident WebView or navigates a page.
-    func refreshLocalizedPresentation(snapshot: AegisLocalizationSnapshot = AegisLocalization.current) {
-        objectWillChange.send()
-        guard let view = loadedWebView else { return }
-        guard view.url?.absoluteString == "aegis://start" else { return }
-        languageRevision &+= 1
-        let revision = languageRevision
-        let epoch = navigationEpoch
-        Task { @MainActor [weak self, weak view] in
-            guard let self, let view,
-                  let documentID = try? await view.callAsyncJavaScript(
-                    FixtureSchemeHandler.documentIdentityScript,
-                    arguments: ["expectedURL": "aegis://start"], in: nil, contentWorld: .defaultClient) as? String,
-                  view === self.loadedWebView, view.url?.absoluteString == "aegis://start",
-                  self.navigationEpoch == epoch, self.languageRevision == revision else { return }
-            _ = try? await view.callAsyncJavaScript(FixtureSchemeHandler.refreshScript, arguments: [
-                "expectedURL": "aegis://start", "documentID": documentID, "revision": revision,
-                "labels": FixtureSchemeHandler.startPageText(snapshot: snapshot),
-                "language": snapshot.family.rawValue,
-            ], in: nil, contentWorld: .defaultClient)
-        }
-    }
-
     private func refreshState() {
-        updateTitle(webView.title, url: webView.url)
+        title = webView.title?.isEmpty == false ? webView.title! : (webView.url?.host ?? String(localized: "新标签页"))
         url = webView.url
         if let url { requestedURL = url }
         canGoBack = webView.canGoBack
@@ -682,11 +644,7 @@ public final class BrowserSession: ObservableObject {
     @Published public var profile: BrowserProfile = .standard
     @Published public private(set) var extensionStatus = "WebExtension 正在初始化"
     @Published public private(set) var bookmarkIsActive = false
-    @Published private var sessionErrorPresentation: AegisLocalizedMessage?
-    public private(set) var sessionError: String? {
-        get { sessionErrorPresentation?.text }
-        set { sessionErrorPresentation = newValue.map(AegisLocalizedMessage.verbatim) }
-    }
+    @Published public private(set) var sessionError: String?
     @Published public var pendingDownloadURL: URL?
     @Published public var pendingMarkdown: MarkdownDocument?
     @Published public private(set) var standardGroups: [BrowserTabGroup] = []
@@ -780,18 +738,7 @@ public final class BrowserSession: ObservableObject {
 
     public var groups: [BrowserTabGroup] { profile.isPrivate ? privateGroups : standardGroups }
     public var selectedGroupID: UUID? { profile.isPrivate ? privateGroupID : standardGroupID }
-    public func refreshLocalizedPresentation() {
-        refreshLocalizedPresentation(snapshot: AegisLocalization.current)
-    }
-
-    func refreshLocalizedPresentation(snapshot: AegisLocalizationSnapshot) {
-        objectWillChange.send()
-        // Rebuild command menus without disturbing the current first responder.
-        UIMenuSystem.main.setNeedsRebuild()
-        for tab in standardTabs + privateTabs { tab.refreshLocalizedPresentation(snapshot: snapshot) }
-    }
-
-    public var selectedGroupName: String { groups.first { $0.id == selectedGroupID }?.name ?? AegisLocalization.string("所有标签") }
+    public var selectedGroupName: String { groups.first { $0.id == selectedGroupID }?.name ?? String(localized: "所有标签") }
     public var displayedTabs: [BrowserTab] {
         guard let selectedGroupID else { return visibleTabs }
         return visibleTabs.filter { $0.groupID == selectedGroupID }
@@ -959,7 +906,7 @@ public final class BrowserSession: ObservableObject {
         guard let tab = activeTab else { return }
         guard let url = Self.normalizedURL(from: address, preferences: preferences.values) else {
             if preferences.values.availableSearchEngines.isEmpty {
-                sessionErrorPresentation = .resource("尚未启用搜索引擎，请输入网址，或在浏览设置中恢复搜索引擎。")
+                sessionError = String(localized: "尚未启用搜索引擎，请输入网址，或在浏览设置中恢复搜索引擎。")
             }
             return
         }

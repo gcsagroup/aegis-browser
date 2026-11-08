@@ -8,11 +8,7 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
   WKScriptMessageHandler
 {
   @Published var document: MarkdownDocument?
-  @Published var errorPresentation: AegisLocalizedMessage = .verbatim("")
-  var error: String {
-    get { errorPresentation.text }
-    set { errorPresentation = .verbatim(newValue) }
-  }
+  @Published var error = ""
   @Published var ready = false
   @Published var exportURL: URL?
   @Published var needsResources = false
@@ -37,14 +33,14 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
         _ = try await webView.callAsyncJavaScript(
           "AegisMarkdown.configure(value);", arguments: ["value": ["embedded": true, "locale": Bundle.main.preferredLocalizations.first ?? "zh-Hans", "preferences": preferences]],
           in: nil, contentWorld: .page)
-      } catch { self.errorPresentation = .error(error) }
+      } catch { self.error = error.localizedDescription }
     }
   }
   func command(_ value: String) {
     guard ready, document != nil else { return }
     Task { @MainActor in
       do { _ = try await webView.callAsyncJavaScript("AegisMarkdown.command(value);", arguments: ["value": value], in: nil, contentWorld: .page) }
-      catch { self.errorPresentation = .error(error) }
+      catch { self.error = error.localizedDescription }
     }
   }
   private(set) var webView: WKWebView!
@@ -59,7 +55,7 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
     if let root = EnhancementAssets.directory {
       webView.loadFileURL(root.appendingPathComponent("viewer.html"), allowingReadAccessTo: root)
     } else {
-      errorPresentation = .resource("Markdown 阅读资源缺失。")
+      error = String(localized: "Markdown 阅读资源缺失。")
     }
   }
   func close() {
@@ -84,7 +80,7 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
               "baseURL": document.sourceURL?.absoluteString ?? "", "resources": document.resources,
             ]
           ], in: nil, contentWorld: .page)
-      } catch { self.errorPresentation = .error(error) }
+      } catch { self.error = error.localizedDescription }
     }
   }
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -124,11 +120,11 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
     case "copy":
       if value.utf8.count <= MarkdownDocument.maximumBytes {
         UIPasteboard.general.string = value
-        errorPresentation = .resource("已复制。")
+        error = String(localized: "已复制。")
       }
     case "open": if let url = URL(string: value), ScriptMatch.origin(url) != nil { openURL?(url) }
     case "resources": needsResources = true
-    case "relativeLink": errorPresentation = .joined(.resource("这是本地相对链接，请通过打开文件选择目标文档："), .verbatim(String(value.prefix(300))))
+    case "relativeLink": error = String(localized: "这是本地相对链接，请通过打开文件选择目标文档：") + String(value.prefix(300))
     default: break
     }
   }
@@ -141,8 +137,8 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
         as? [String] ?? []
       let count = try document.loadResources(from: directory, references: references)
       load(document)
-      errorPresentation = .resource("已加载 \(count) 张本地图片。")
-    } catch { self.errorPresentation = .error(error) }
+      error = String(localized: "已加载 \(count) 张本地图片。")
+    } catch { self.error = error.localizedDescription }
   }
   func exportPDF() async {
     do {
@@ -151,7 +147,7 @@ private final class MarkdownReaderModel: NSObject, ObservableObject, WKNavigatio
         "markdown-\(UUID().uuidString).pdf")
       try data.write(to: url, options: .atomic)
       exportURL = url
-    } catch { self.errorPresentation = .error(error) }
+    } catch { self.error = error.localizedDescription }
   }
   func printDocument() {
     let controller = UIPrintInteractionController.shared
@@ -180,9 +176,7 @@ struct MarkdownReaderView: View {
   @State private var appearance = false
   @State private var sourceInfo = false
   @ScaledMetric(relativeTo: .body) private var fontSize = 17.0
-  @Environment(\.locale) private var localizationLocale
   var body: some View {
-      let _ = localizationLocale
     NavigationStack {
       VStack(spacing: 0) {
         if !model.error.isEmpty {
@@ -201,7 +195,7 @@ struct MarkdownReaderView: View {
           .frame(height: model.document == nil ? 0 : nil)
           .accessibilityHidden(model.document == nil)
       }
-      .navigationTitle(model.document?.title ?? AegisLocalization.string("Markdown 阅读")).navigationBarTitleDisplayMode(.inline)
+      .navigationTitle(model.document?.title ?? String(localized: "Markdown 阅读")).navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
         ToolbarItem(placement: .topBarLeading) {
@@ -250,15 +244,15 @@ struct MarkdownReaderView: View {
       .sheet(isPresented: $sourceInfo) {
         NavigationStack {
           Form {
-            Section("文档来源") { Text(model.document?.sourceURL?.absoluteString ?? AegisLocalization.string("本地导入 · 只读")).textSelection(.enabled) }
+            Section("文档来源") { Text(model.document?.sourceURL?.absoluteString ?? String(localized: "本地导入 · 只读")).textSelection(.enabled) }
             if let url = model.document?.sourceURL, ScriptMatch.origin(url) != nil {
               Toggle("本站自动预览 Markdown", isOn: $automatic)
                 .onChange(of: automatic) { _, value in
                   do { var site = browser.preferences.site(for: url); site.markdownPreview = value; try browser.preferences.setSite(site, for: url) }
-                  catch { model.errorPresentation = .error(error) }
+                  catch { model.error = error.localizedDescription }
                 }
             }
-          }.localizedNavigationTitle("文档来源").toolbar { Button("完成") { sourceInfo = false } }
+          }.navigationTitle("文档来源").toolbar { Button("完成") { sourceInfo = false } }
         }
       }
       .onChange(of: model.needsResources) { _, value in if value { importingResources = true; importing = true; model.needsResources = false } }
@@ -273,9 +267,9 @@ struct MarkdownReaderView: View {
             Task { await model.loadResources(url) }
           } else {
             do { model.load(try MarkdownDocument.read(url)) }
-            catch { model.errorPresentation = .error(error) }
+            catch { model.error = error.localizedDescription }
           }
-        case .failure(let error): model.errorPresentation = .error(error)
+        case .failure(let error): model.error = error.localizedDescription
         }
       }
       .onAppear {
@@ -303,7 +297,7 @@ struct MarkdownReaderView: View {
           model.load(try MarkdownDocument.read(url))
           return true
         } catch {
-          model.errorPresentation = .error(error)
+          model.error = error.localizedDescription
           return false
         }
       }
@@ -320,7 +314,7 @@ struct MarkdownReaderView: View {
               ShareLink(item: url) { Label("分享或保存 PDF", systemImage: "square.and.arrow.up") }
                 .buttonStyle(.borderedProminent)
               Text(url.lastPathComponent).font(.caption)
-            }.localizedNavigationTitle("PDF 已生成").toolbar { Button("完成") { model.exportURL = nil } }
+            }.navigationTitle("PDF 已生成").toolbar { Button("完成") { model.exportURL = nil } }
           }
         }
       }
@@ -336,7 +330,7 @@ struct MarkdownReaderView: View {
     do {
       guard let tab = browser.activeTab else { return }
       model.load(try await MarkdownDocument.capture(tab))
-    } catch { model.errorPresentation = .error(error) }
+    } catch { model.error = error.localizedDescription }
   }
   private func saveDocument() {
     guard let document = model.document else { return }
@@ -349,8 +343,8 @@ struct MarkdownReaderView: View {
           title: document.title,
           sourceURL: document.sourceURL?.isFileURL == true ? nil : document.sourceURL,
           text: document.text))
-      model.errorPresentation = .resource("已保存完整原文到阅读资料库。")
-    } catch { model.errorPresentation = .error(error) }
+      model.error = String(localized: "已保存完整原文到阅读资料库。")
+    } catch { model.error = error.localizedDescription }
   }
 }
 
@@ -360,9 +354,7 @@ struct ReadingPreferencesView: View {
   @AppStorage("markdown.font") private var font = 17.0
   @AppStorage("markdown.spacing") private var spacing = 180
   @AppStorage("markdown.width") private var width = 820
-  @Environment(\.locale) private var localizationLocale
   var body: some View {
-      let _ = localizationLocale
     Form {
       Section("阅读外观") {
         SettingsPicker("主题", selection: $theme, value: theme == "system" ? "跟随系统" : theme == "dark" ? "深色" : "浅色") {
@@ -387,6 +379,6 @@ struct ReadingPreferencesView: View {
         Text("外部图片每次打开文档时按需加载；本地图片需要选择所属目录。")
         Text("外观设置会记住，图片权限不会随外观扩大。").font(.footnote).foregroundStyle(.secondary)
       }
-    }.localizedNavigationTitle("阅读外观").navigationBarTitleDisplayMode(.inline)
+    }.navigationTitle("阅读外观").navigationBarTitleDisplayMode(.inline)
   }
 }

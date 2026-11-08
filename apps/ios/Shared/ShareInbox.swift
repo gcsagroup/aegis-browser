@@ -19,11 +19,11 @@ enum ShareInboxError: Error, Equatable, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedScheme: AegisLocalization.string("只接受 HTTP(S) 链接")
-        case .payloadTooLarge: AegisLocalization.string("分享内容超过 8 KiB")
-        case .invalidEnvelope: AegisLocalization.string("分享内容格式无效")
-        case .expired: AegisLocalization.string("分享内容已过期")
-        case .unavailableContainer: AegisLocalization.string("专用 Share Inbox 不可用")
+        case .unsupportedScheme: "只接受 HTTP(S) 链接"
+        case .payloadTooLarge: "分享内容超过 8 KiB"
+        case .invalidEnvelope: "分享内容格式无效"
+        case .expired: "分享内容已过期"
+        case .unavailableContainer: "专用 Share Inbox 不可用"
         }
     }
 }

@@ -106,20 +106,20 @@ public struct AgentWorkflowEngine: Sendable {
         removedDuplicateCount: Int,
         undoAvailable: Bool
     ) -> WorkflowResult {
-        let headline = undoAvailable ? AegisLocalization.string("收藏夹整理已应用") : AegisLocalization.string("收藏夹无需变更")
+        let headline = undoAvailable ? String(localized: "收藏夹整理已应用") : String(localized: "收藏夹无需变更")
         let summary = undoAvailable
-            ? AegisLocalization.string("已将当前 \(beforeCount) 条收藏整理为 \(afterCount) 条；重启 App 后仍可撤销。")
-            : AegisLocalization.string("当前共有 \(beforeCount) 条收藏，检查后无需更改。")
+            ? String(localized: "已将当前 \(beforeCount) 条收藏整理为 \(afterCount) 条；重启 App 后仍可撤销。")
+            : String(localized: "当前共有 \(beforeCount) 条收藏，检查后无需更改。")
         return WorkflowResult(
             kind: .browserManager,
             headline: headline,
             summary: summary,
-            steps: [AegisLocalization.string("读取当前收藏"), AegisLocalization.string("清理追踪参数"), AegisLocalization.string("去除重复项并排序"), AegisLocalization.string("应用整理并保存撤销记录")],
+            steps: [String(localized: "读取当前收藏"), String(localized: "清理追踪参数"), String(localized: "去除重复项并排序"), String(localized: "应用整理并保存撤销记录")],
             evidence: [
-                AegisLocalization.string("整理前 \(beforeCount) 条"),
-                AegisLocalization.string("整理后 \(afterCount) 条"),
-                AegisLocalization.string("变更 \(changedCount) 条"),
-                AegisLocalization.string("精确去重 \(removedDuplicateCount) 条"),
+                String(localized: "整理前 \(beforeCount) 条"),
+                String(localized: "整理后 \(afterCount) 条"),
+                String(localized: "变更 \(changedCount) 条"),
+                String(localized: "精确去重 \(removedDuplicateCount) 条"),
             ],
             citations: [],
             requiresUserHandoff: false,
@@ -135,14 +135,14 @@ public struct AgentWorkflowEngine: Sendable {
     ) -> WorkflowResult {
         WorkflowResult(
             kind: .browserManager,
-            headline: AegisLocalization.string("上次收藏整理已撤销"),
-            summary: AegisLocalization.string("已通过新的任务授权和动作确认恢复整理前的 \(restoredCount) 条收藏。"),
-            steps: [AegisLocalization.string("读取已保存的撤销记录"), AegisLocalization.string("核对整理记录与当前收藏"), AegisLocalization.string("重新取得用户授权"), AegisLocalization.string("恢复整理前的收藏")],
+            headline: String(localized: "上次收藏整理已撤销"),
+            summary: String(localized: "已通过新的任务授权和动作确认恢复整理前的 \(restoredCount) 条收藏。"),
+            steps: [String(localized: "读取已保存的撤销记录"), String(localized: "核对整理记录与当前收藏"), String(localized: "重新取得用户授权"), String(localized: "恢复整理前的收藏")],
             evidence: [
-                AegisLocalization.string("恢复后 \(restoredCount) 条"),
-                AegisLocalization.string("事务 \(transactionID.uuidString.lowercased())"),
+                String(localized: "恢复后 \(restoredCount) 条"),
+                String(localized: "事务 \(transactionID.uuidString.lowercased())"),
                 "Tree before \(restoredDigest)",
-                AegisLocalization.string("跨重启自动写入 0 次"),
+                String(localized: "跨重启自动写入 0 次"),
             ],
             citations: [],
             requiresUserHandoff: false,

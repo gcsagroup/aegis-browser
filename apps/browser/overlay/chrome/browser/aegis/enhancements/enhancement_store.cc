@@ -422,7 +422,8 @@ void EnhancementStore::Commit(base::DictValue state,
             if (self)
               self->RunNext();
           },
-          weak_.GetWeakPtr(), std::move(state), std::move(*json), policy,
+          // 两个回调都需要完整内容，避免参数求值顺序导致提前移走字符串。
+          weak_.GetWeakPtr(), std::move(state), *json, policy,
           std::move(done)));
 }
 void EnhancementStore::RunNext() {

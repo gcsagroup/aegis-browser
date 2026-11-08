@@ -1,7 +1,7 @@
 name: Aegis
 
 options:
-  bundleIdPrefix: com.gcsa.aegis
+  bundleIdPrefix: com.gcsa.aegis.ios
   createIntermediateGroups: true
   deploymentTarget:
     iOS: "18.4"
@@ -14,18 +14,13 @@ configs:
   Debug: debug
   Release: release
 
-packages:
-  Firebase:
-    url: https://github.com/firebase/firebase-ios-sdk.git
-    exactVersion: "13.1.1"
-
 settings:
   base:
     CLANG_ENABLE_MODULES: YES
     CURRENT_PROJECT_VERSION: 127
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     IPHONEOS_DEPLOYMENT_TARGET: "18.4"
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: 7.0
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_VERSION: "6.0"
     SWIFT_EMIT_LOC_STRINGS: YES
@@ -44,7 +39,6 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: Shared/AppLocalization.swift
       - path: AegisApp
         excludes:
           - Aegis.entitlements
@@ -55,19 +49,7 @@ targets:
       - path: Shared/SafariReadOnlyGate.swift
       - path: SharedWebExtension
         buildPhase: resources
-        excludes:
-          - _locales
-      - path: SharedWebExtension/_locales
-        type: folder
-        buildPhase: resources
     dependencies:
-      - package: Firebase
-        products:
-          - FirebaseCore
-          - FirebaseCrashlytics
-          - FirebaseAnalyticsCore
-          - FirebaseRemoteConfig
-          - FirebaseInstallations
       - target: BrowserKit
         embed: true
       - target: AegisPolicyKit
@@ -78,32 +60,11 @@ targets:
         embed: true
       - target: ShareExtension
         embed: true
-    postBuildScripts:
-      - name: Select Aegis Firebase registration
-        script: |
-          /usr/bin/python3 -B "${SRCROOT}/scripts/firebase_config.py" install \
-            --root "${SRCROOT}/Firebase" --channel "${AEGIS_FIREBASE_CHANNEL}" \
-            --artifact "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AegisFirebase.plist"
-        inputFiles:
-          - $(SRCROOT)/scripts/firebase_config.py
-          - $(SRCROOT)/Firebase/identities.json
-          - $(SRCROOT)/Firebase/dev/GoogleService-Info.plist
-          - $(SRCROOT)/Firebase/prod/GoogleService-Info.plist
-        outputFiles:
-          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisFirebase.plist
-        basedOnDependencyAnalysis: false
     settings:
-      configs:
-        Debug:
-          AEGIS_FIREBASE_CHANNEL: dev
-          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
-        Release:
-          AEGIS_FIREBASE_CHANNEL: disabled
       base:
-        OTHER_LDFLAGS: "$(inherited) -ObjC"
         CODE_SIGN_ENTITLEMENTS: AegisApp/Aegis.entitlements
         INFOPLIST_FILE: AegisApp/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.app
         PRODUCT_NAME: Aegis
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
@@ -112,7 +73,6 @@ targets:
     type: framework
     platform: iOS
     sources:
-      - path: Shared/AppLocalization.swift
       - path: BrowserKit
         excludes:
           - Info.plist
@@ -125,7 +85,7 @@ targets:
       base:
         DEFINES_MODULE: YES
         INFOPLIST_FILE: BrowserKit/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.browserkit
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.browserkit
         PRODUCT_NAME: BrowserKit
         SKIP_INSTALL: YES
 
@@ -140,7 +100,7 @@ targets:
       base:
         DEFINES_MODULE: YES
         INFOPLIST_FILE: AegisPolicyKit/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.policykit
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.policykit
         PRODUCT_NAME: AegisPolicyKit
         SKIP_INSTALL: YES
 
@@ -148,7 +108,6 @@ targets:
     type: framework
     platform: iOS
     sources:
-      - path: Shared/AppLocalization.swift
       - path: AgentKit
         excludes:
           - Info.plist
@@ -157,10 +116,9 @@ targets:
       - target: BrowserKit
     settings:
       base:
-        STRING_CATALOG_GENERATE_SYMBOLS: YES
         DEFINES_MODULE: YES
         INFOPLIST_FILE: AgentKit/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.agentkit
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.agentkit
         PRODUCT_NAME: AgentKit
         SKIP_INSTALL: YES
 
@@ -175,17 +133,12 @@ targets:
       - path: Shared/SafariReadOnlyGate.swift
       - path: SharedWebExtension
         buildPhase: resources
-        excludes:
-          - _locales
-      - path: SharedWebExtension/_locales
-        type: folder
-        buildPhase: resources
     settings:
       base:
         APPLICATION_EXTENSION_API_ONLY: YES
         CODE_SIGN_ENTITLEMENTS: SafariWebExtension/SafariWebExtension.entitlements
         INFOPLIST_FILE: SafariWebExtension/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.safari
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.app.safari
         PRODUCT_NAME: SafariWebExtension
         SKIP_INSTALL: YES
 
@@ -193,7 +146,6 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - path: Shared/AppLocalization.swift
       - path: AegisApp/Localizable.xcstrings
       - path: ShareExtension
         excludes:
@@ -206,7 +158,7 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: YES
         CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
         INFOPLIST_FILE: ShareExtension/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.share
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.app.share
         PRODUCT_NAME: ShareExtension
         SKIP_INSTALL: YES
 
@@ -233,7 +185,7 @@ targets:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
         INFOPLIST_FILE: Tests/AegisTests/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.tests
         PRODUCT_NAME: AegisTests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Aegis.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aegis"
 
@@ -249,7 +201,7 @@ targets:
     settings:
       base:
         INFOPLIST_FILE: Tests/AegisUITests/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis.ios.uitests
         PRODUCT_NAME: AegisUITests
         TEST_TARGET_NAME: Aegis
 
