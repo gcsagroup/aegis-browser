@@ -1,4 +1,4 @@
-From 46905089640bd5383f8d644977432f0907a68680 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Aegis Packaging Proposal <aegis-proposal@invalid>
 Date: Sun, 8 Nov 2026 13:53:40 +0000
 Subject: [PATCH] feat: add macOS toolbar bubble for per-site proxy
@@ -6,22 +6,8 @@ Subject: [PATCH] feat: add macOS toolbar bubble for per-site proxy
 Show current host, site-proxy toggle, and short status with switch
 state distinct from connectivity. Sync overlay with the Chromium
 patch series.
----
- chrome/browser/aegis/BUILD.gn                 |   3 +
- chrome/browser/aegis/access/BUILD.gn          |  24 ++++
- .../access_site_proxy_bubble_controller.cc    |  60 ++++++++++
- .../access_site_proxy_bubble_controller.h     |  55 ++++++++++
- .../access/access_site_proxy_bubble_model.cc  | 102 +++++++++++++++++
- .../access/access_site_proxy_bubble_model.h   |  77 +++++++++++++
- ...access_site_proxy_bubble_model_unittest.cc | 103 ++++++++++++++++++
- .../ui/views/toolbar/aegis_toolbar_button.cc  |  98 +++++++++++++++++
- 8 files changed, 522 insertions(+)
- create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
- create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
- create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_model.cc
- create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_model.h
- create mode 100644 chrome/browser/aegis/access/access_site_proxy_bubble_model_unittest.cc
 
+---
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
 index e1c7ce98acd908d0d5e6501ff99794a91903b344..033549f3840498426df0f8e6b3e5b5a1cb143b86 100644
 --- a/chrome/browser/aegis/BUILD.gn
@@ -37,10 +23,10 @@ index e1c7ce98acd908d0d5e6501ff99794a91903b344..033549f3840498426df0f8e6b3e5b5a1
        "//chrome/browser/resources/aegis:resources",
        "//chrome/browser/ui/tabs:tab_strip",
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index cb92dd1af9364fa81d4217f230ad297c28ca9833..714e225295a272f14f4b3065cd6bedb980e70047 100644
+index cb92dd1af9364fa81d4217f230ad297c28ca9833..a24b41dbc68f9c905d18fd15664293e806d2d8a1 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
-@@ -189,6 +189,30 @@ test("access_site_intent_unittests") {
+@@ -189,6 +189,32 @@ test("access_site_intent_unittests") {
    ]
  }
  
@@ -54,7 +40,9 @@ index cb92dd1af9364fa81d4217f230ad297c28ca9833..714e225295a272f14f4b3065cd6bedb9
 +  deps = [
 +    ":access_site_intent",
 +    "//base",
++    "//chrome/browser/aegis:profile_support",
 +    "//chrome/browser/profiles:profile",
++    "//content/public/browser",
 +    "//url",
 +  ]
 +}
@@ -71,17 +59,156 @@ index cb92dd1af9364fa81d4217f230ad297c28ca9833..714e225295a272f14f4b3065cd6bedb9
  test("access_service_coordinator_unittests") {
    sources = [ "access_service_coordinator_unittest.cc" ]
    deps = [
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index f93e0180735bfe7c77243aa8d3ee06c7cfd03830..aa32f73d4edc7b0eb629fe414a7b0a7708a4b934 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -14,6 +14,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/aegis/enhancements/enhancement_store.h"
+ #include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
+@@ -94,6 +95,51 @@ std::u16string Copy(std::u16string chinese,
+   return UseChinese() ? std::move(chinese) : std::move(english);
+ }
+ 
++std::u16string IntentStatusCopy(
++    aegis::access::AccessSiteProxyIntentStatusId id) {
++  using Id = aegis::access::AccessSiteProxyIntentStatusId;
++  switch (id) {
++    case Id::kNoTrustedSite:
++      return Copy(u"请先打开需要设置的网站",
++                  u"Open a website to configure site proxy",
++                  u"請先開啟需要設定的網站");
++    case Id::kOffBrowserDefault:
++      return Copy(u"未使用本服务代理 · 使用浏览器原有连接",
++                  u"Not using Access proxy · browser default connection",
++                  u"未使用本服務代理 · 使用瀏覽器原有連線");
++    case Id::kAllowNotConnected:
++      return Copy(u"本站代理已开启 · 连接尚未就绪",
++                  u"Site proxy on · connection not ready",
++                  u"本站代理已開啟 · 連線尚未就緒");
++    case Id::kAllowConnected:
++      return Copy(u"本站代理已开启", u"Site proxy on", u"本站代理已開啟");
++    case Id::kBlockLocalRefuse:
++      return Copy(u"本站代理已本地拒绝", u"Site proxy blocked locally",
++                  u"本站代理已本地拒絕");
++  }
++  return Copy(u"未使用本服务代理 · 使用浏览器原有连接",
++              u"Not using Access proxy · browser default connection",
++              u"未使用本服務代理 · 使用瀏覽器原有連線");
++}
++
++std::u16string ConnectionStatusCopy(
++    aegis::access::AccessSiteProxyConnectionStatusId id) {
++  using Id = aegis::access::AccessSiteProxyConnectionStatusId;
++  switch (id) {
++    case Id::kIdle:
++      return Copy(u"连通：空闲", u"Connection: idle", u"連通：閒置");
++    case Id::kConnecting:
++      return Copy(u"连通：正在连接", u"Connection: connecting",
++                  u"連通：正在連線");
++    case Id::kReady:
++      return Copy(u"连通：可用", u"Connection: ready", u"連通：可用");
++    case Id::kUnavailable:
++      return Copy(u"连通：不可用", u"Connection: unavailable",
++                  u"連通：不可用");
++  }
++  return Copy(u"连通：不可用", u"Connection: unavailable", u"連通：不可用");
++}
++
+ std::u16string EventKind(const std::string& kind) {
+   if (kind == "block") {
+     return Copy(u"拦截", u"Blocked", u"攔截");
+@@ -292,6 +338,56 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+       RefreshSoon();
+     }
+   }
++  aegis::access::AccessSiteProxyBubbleController* AccessBubble() const {
++    return aegis::access::AccessSiteProxyBubbleController::GetOrCreate(
++        browser_->GetProfile());
++  }
++  // Trusted URL for Access is the committed navigation only (address_).
++  void ToggleSiteProxy() {
++    if (!Valid()) {
++      return;
++    }
++    auto* controller = AccessBubble();
++    if (!controller) {
++      return;
++    }
++    const auto snap = controller->SnapshotForCommittedUrl(address_);
++    if (!snap.has_trusted_site || !snap.toggle_enabled) {
++      return;
++    }
++    // Intent only — never claims connectivity (P-mac-3 owns publish/ACK).
++    controller->ApplyHostProxyToggle(snap.host, !snap.toggle_on);
++    RefreshSoon();
++  }
++  void AppendSiteProxySection(views::View* parent) {
++    AddLabel(parent, Copy(u"本站代理", u"Site proxy", u"本站代理"),
++             views::style::CONTEXT_DIALOG_TITLE);
++    auto* controller = AccessBubble();
++    if (!controller) {
++      AddLabel(parent, Copy(u"当前用户资料不可用",
++                            u"Unavailable for this profile",
++                            u"目前使用者資料不可用"));
++      return;
++    }
++    const auto snap = controller->SnapshotForCommittedUrl(address_);
++    if (!snap.has_trusted_site) {
++      AddLabel(parent, IntentStatusCopy(snap.intent_status));
++      AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
++      return;
++    }
++    Toggle(parent,
++           Copy(u"当前网站使用代理", u"Use Access proxy for this site",
++                u"目前網站使用代理"),
++           snap.toggle_on,
++           base::BindRepeating(&AegisPageBubble::ToggleSiteProxy,
++                               base::Unretained(this)));
++    AddLabel(parent, IntentStatusCopy(snap.intent_status));
++    AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
++    AddLabel(parent,
++             Copy(u"开关状态与连通状态分开显示。",
++                  u"Switch state is shown separately from connectivity.",
++                  u"開關狀態與連通狀態分開顯示。"));
++  }
+   void Build() {
+     if (!Valid()) return;
+     auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
+@@ -300,6 +396,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     panel_->RemoveAllChildViews();
+     if (!address_.SchemeIsHTTPOrHTTPS()) {
+       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
++      AppendSiteProxySection(panel_);
+       AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
+       Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
+              base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
+@@ -308,6 +405,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     AddLabel(panel_, base::UTF8ToUTF16(address_.host()), views::style::CONTEXT_DIALOG_TITLE);
+     if (browser_->GetProfile()->IsOffTheRecord())
+       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
++    AppendSiteProxySection(panel_);
+     AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
+     AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
+                                     : Copy(u"保护已开启 · ", u"Protection on · ", u"保護已開啟 · ")) +
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..1ee8403a9222ca4e43a7387b932e9dfadc0dcb36
+index 0000000000000000000000000000000000000000..155c6c8d472cc109a392a0a89b1693567794da38
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,67 @@
 +// Copyright 2026 GCSA
 +
 +#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 +
++#include "chrome/browser/aegis/aegis_profile_support.h"
 +#include "chrome/browser/profiles/profile.h"
++#include "content/public/browser/browser_thread.h"
 +
 +namespace aegis::access {
 +namespace {
@@ -93,13 +220,17 @@ index 0000000000000000000000000000000000000000..1ee8403a9222ca4e43a7387b932e9dfa
 +
 +AccessSiteProxyBubbleController::AccessSiteProxyBubbleController(
 +    Profile* profile) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 +  (void)profile;
 +}
 +
-+AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() = default;
++AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++}
 +
 +AccessSiteProxyBubbleController* AccessSiteProxyBubbleController::Get(
 +    Profile* profile) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 +  if (!profile) {
 +    return nullptr;
 +  }
@@ -109,7 +240,8 @@ index 0000000000000000000000000000000000000000..1ee8403a9222ca4e43a7387b932e9dfa
 +
 +AccessSiteProxyBubbleController* AccessSiteProxyBubbleController::GetOrCreate(
 +    Profile* profile) {
-+  if (!profile) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (!profile || !aegis::IsAegisProfileSupported(profile)) {
 +    return nullptr;
 +  }
 +  if (AccessSiteProxyBubbleController* existing = Get(profile)) {
@@ -139,10 +271,10 @@ index 0000000000000000000000000000000000000000..1ee8403a9222ca4e43a7387b932e9dfa
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..090a28677db7742d59eb4f1b6279d06398db5cf0
+index 0000000000000000000000000000000000000000..318f483e758330abd5cee60ec83aa3d93bff4b45
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,56 @@
 +// Copyright 2026 GCSA
 +
 +#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
@@ -150,6 +282,7 @@ index 0000000000000000000000000000000000000000..090a28677db7742d59eb4f1b6279d063
 +
 +#include "base/supports_user_data.h"
 +#include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++#include "url/gurl.h"
 +
 +class Profile;
 +
@@ -498,143 +631,3 @@ index 0000000000000000000000000000000000000000..0229c8c22768b8664992f4e6ec9bb70f
 +
 +}  // namespace
 +}  // namespace aegis::access
-diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-index f93e0180735bfe7c77243aa8d3ee06c7cfd03830..aa32f73d4edc7b0eb629fe414a7b0a7708a4b934 100644
---- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-+++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-@@ -14,6 +14,7 @@
- #include "base/strings/string_util.h"
- #include "base/strings/utf_string_conversions.h"
- #include "build/build_config.h"
-+#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
- #include "chrome/browser/aegis/aegis_service_factory.h"
- #include "chrome/browser/aegis/enhancements/enhancement_store.h"
- #include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
-@@ -94,6 +95,51 @@ std::u16string Copy(std::u16string chinese,
-   return UseChinese() ? std::move(chinese) : std::move(english);
- }
- 
-+std::u16string IntentStatusCopy(
-+    aegis::access::AccessSiteProxyIntentStatusId id) {
-+  using Id = aegis::access::AccessSiteProxyIntentStatusId;
-+  switch (id) {
-+    case Id::kNoTrustedSite:
-+      return Copy(u"请先打开需要设置的网站",
-+                  u"Open a website to configure site proxy",
-+                  u"請先開啟需要設定的網站");
-+    case Id::kOffBrowserDefault:
-+      return Copy(u"未使用本服务代理 · 使用浏览器原有连接",
-+                  u"Not using Access proxy · browser default connection",
-+                  u"未使用本服務代理 · 使用瀏覽器原有連線");
-+    case Id::kAllowNotConnected:
-+      return Copy(u"本站代理已开启 · 连接尚未就绪",
-+                  u"Site proxy on · connection not ready",
-+                  u"本站代理已開啟 · 連線尚未就緒");
-+    case Id::kAllowConnected:
-+      return Copy(u"本站代理已开启", u"Site proxy on", u"本站代理已開啟");
-+    case Id::kBlockLocalRefuse:
-+      return Copy(u"本站代理已本地拒绝", u"Site proxy blocked locally",
-+                  u"本站代理已本地拒絕");
-+  }
-+  return Copy(u"未使用本服务代理 · 使用浏览器原有连接",
-+              u"Not using Access proxy · browser default connection",
-+              u"未使用本服務代理 · 使用瀏覽器原有連線");
-+}
-+
-+std::u16string ConnectionStatusCopy(
-+    aegis::access::AccessSiteProxyConnectionStatusId id) {
-+  using Id = aegis::access::AccessSiteProxyConnectionStatusId;
-+  switch (id) {
-+    case Id::kIdle:
-+      return Copy(u"连通：空闲", u"Connection: idle", u"連通：閒置");
-+    case Id::kConnecting:
-+      return Copy(u"连通：正在连接", u"Connection: connecting",
-+                  u"連通：正在連線");
-+    case Id::kReady:
-+      return Copy(u"连通：可用", u"Connection: ready", u"連通：可用");
-+    case Id::kUnavailable:
-+      return Copy(u"连通：不可用", u"Connection: unavailable",
-+                  u"連通：不可用");
-+  }
-+  return Copy(u"连通：不可用", u"Connection: unavailable", u"連通：不可用");
-+}
-+
- std::u16string EventKind(const std::string& kind) {
-   if (kind == "block") {
-     return Copy(u"拦截", u"Blocked", u"攔截");
-@@ -292,6 +338,56 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
-       RefreshSoon();
-     }
-   }
-+  aegis::access::AccessSiteProxyBubbleController* AccessBubble() const {
-+    return aegis::access::AccessSiteProxyBubbleController::GetOrCreate(
-+        browser_->GetProfile());
-+  }
-+  // Trusted URL for Access is the committed navigation only (address_).
-+  void ToggleSiteProxy() {
-+    if (!Valid()) {
-+      return;
-+    }
-+    auto* controller = AccessBubble();
-+    if (!controller) {
-+      return;
-+    }
-+    const auto snap = controller->SnapshotForCommittedUrl(address_);
-+    if (!snap.has_trusted_site || !snap.toggle_enabled) {
-+      return;
-+    }
-+    // Intent only — never claims connectivity (P-mac-3 owns publish/ACK).
-+    controller->ApplyHostProxyToggle(snap.host, !snap.toggle_on);
-+    RefreshSoon();
-+  }
-+  void AppendSiteProxySection(views::View* parent) {
-+    AddLabel(parent, Copy(u"本站代理", u"Site proxy", u"本站代理"),
-+             views::style::CONTEXT_DIALOG_TITLE);
-+    auto* controller = AccessBubble();
-+    if (!controller) {
-+      AddLabel(parent, Copy(u"当前用户资料不可用",
-+                            u"Unavailable for this profile",
-+                            u"目前使用者資料不可用"));
-+      return;
-+    }
-+    const auto snap = controller->SnapshotForCommittedUrl(address_);
-+    if (!snap.has_trusted_site) {
-+      AddLabel(parent, IntentStatusCopy(snap.intent_status));
-+      AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
-+      return;
-+    }
-+    Toggle(parent,
-+           Copy(u"当前网站使用代理", u"Use Access proxy for this site",
-+                u"目前網站使用代理"),
-+           snap.toggle_on,
-+           base::BindRepeating(&AegisPageBubble::ToggleSiteProxy,
-+                               base::Unretained(this)));
-+    AddLabel(parent, IntentStatusCopy(snap.intent_status));
-+    AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
-+    AddLabel(parent,
-+             Copy(u"开关状态与连通状态分开显示。",
-+                  u"Switch state is shown separately from connectivity.",
-+                  u"開關狀態與連通狀態分開顯示。"));
-+  }
-   void Build() {
-     if (!Valid()) return;
-     auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
-@@ -300,6 +396,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
-     panel_->RemoveAllChildViews();
-     if (!address_.SchemeIsHTTPOrHTTPS()) {
-       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
-+      AppendSiteProxySection(panel_);
-       AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
-       Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
-              base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
-@@ -308,6 +405,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
-     AddLabel(panel_, base::UTF8ToUTF16(address_.host()), views::style::CONTEXT_DIALOG_TITLE);
-     if (browser_->GetProfile()->IsOffTheRecord())
-       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
-+    AppendSiteProxySection(panel_);
-     AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
-     AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
-                                     : Copy(u"保护已开启 · ", u"Protection on · ", u"保護已開啟 · ")) +
--- 
-2.43.0
-

@@ -5,6 +5,7 @@
 
 #include "base/supports_user_data.h"
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
+#include "url/gurl.h"
 
 class Profile;
 

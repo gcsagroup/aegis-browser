@@ -2,7 +2,9 @@
 
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 
+#include "chrome/browser/aegis/aegis_profile_support.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_thread.h"
 
 namespace aegis::access {
 namespace {
@@ -14,13 +16,17 @@ const void* const kAccessSiteProxyBubbleControllerKey =
 
 AccessSiteProxyBubbleController::AccessSiteProxyBubbleController(
     Profile* profile) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   (void)profile;
 }
 
-AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() = default;
+AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+}
 
 AccessSiteProxyBubbleController* AccessSiteProxyBubbleController::Get(
     Profile* profile) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!profile) {
     return nullptr;
   }
@@ -30,7 +36,8 @@ AccessSiteProxyBubbleController* AccessSiteProxyBubbleController::Get(
 
 AccessSiteProxyBubbleController* AccessSiteProxyBubbleController::GetOrCreate(
     Profile* profile) {
-  if (!profile) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!profile || !aegis::IsAegisProfileSupported(profile)) {
     return nullptr;
   }
   if (AccessSiteProxyBubbleController* existing = Get(profile)) {

@@ -199,7 +199,9 @@ source_set("access_site_proxy_bubble") {
   deps = [
     ":access_site_intent",
     "//base",
+    "//chrome/browser/aegis:profile_support",
     "//chrome/browser/profiles:profile",
+    "//content/public/browser",
     "//url",
   ]
 }
