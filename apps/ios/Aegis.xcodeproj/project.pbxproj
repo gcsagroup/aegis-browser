@@ -274,6 +274,10 @@
 		A10CCE55ACC0020000000000D2 /* AccessBrowsingAccessState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */; };
 		A10CCE55ACC0020000000000D3 /* AccessBrowsingIsolationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D3 /* AccessBrowsingIsolationController.swift */; };
 		A10CCE55ACC0020000000000D4 /* AccessBrowsingIsolationControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */; };
+		A10CCE55ACC0020000000000F0 /* AccessDevAllowBlockPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */; };
+		A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */; };
+		A10CCE55ACC0020000000000F2 /* AccessDevAllowBlockSectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */; };
+		A10CCE55ACC0020000000000F3 /* AccessDevAllowBlockSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -736,6 +740,10 @@
 		A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingAccessState.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000D3 /* AccessBrowsingIsolationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingIsolationController.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingIsolationControllerTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanel.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanelTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionModel.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionView.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -1108,6 +1116,8 @@
 				A10CCE55ACC0010000000000CA /* AccessSiteProxyToggleModel.swift */,
 				A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */,
 				A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */,
+				A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */,
+				A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */,
 				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
 				9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */,
 				510DA8D712A38313B1242AA9 /* FirebaseRemoteDiagnosticsSource.swift */,
@@ -1268,6 +1278,7 @@
 				A10CCE55ACC0010000000000E0 /* AccessInboundStartErrorBox.swift */,
 				A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */,
 				A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */,
+				A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */,
 				A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */,
 				A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */,
 				A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */,
@@ -1302,6 +1313,7 @@
 				A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */,
 				A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */,
 				A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */,
+				A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */,
 				A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */,
 			);
 			path = AccessKitTests;
@@ -1797,6 +1809,8 @@
 				A10CCE55ACC0020000000000CA /* AccessSiteProxyToggleModel.swift in Sources */,
 				A10CCE55ACC0020000000000CB /* AccessSiteProxyToggleView.swift in Sources */,
 				A10CCE55ACC0020000000000CC /* AccessSiteProxySessionStore.swift in Sources */,
+				A10CCE55ACC0020000000000F2 /* AccessDevAllowBlockSectionModel.swift in Sources */,
+				A10CCE55ACC0020000000000F3 /* AccessDevAllowBlockSectionView.swift in Sources */,
 				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
 				EA17336CE13C643EFF37AD29 /* FirebaseControlsView.swift in Sources */,
 				3BB026E7DD1A640C185C5BEC /* FirebaseRemoteDiagnosticsSource.swift in Sources */,
@@ -1877,6 +1891,7 @@
 				A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */,
 				A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */,
 				A10CCE55ACC0020000000000D4 /* AccessBrowsingIsolationControllerTests.swift in Sources */,
+				A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */,
 				A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
@@ -1953,6 +1968,7 @@
 				A10CCE55ACC0020000000000E0 /* AccessInboundStartErrorBox.swift in Sources */,
 				A10CCE55ACC0020000000000C1 /* AccessSiteIntent.swift in Sources */,
 				A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */,
+				A10CCE55ACC0020000000000F0 /* AccessDevAllowBlockPanel.swift in Sources */,
 				A10CCE55ACC0020000000000C5 /* AccessSiteSessionError.swift in Sources */,
 				A10CCE55ACC0020000000000C6 /* AccessSiteSessionState.swift in Sources */,
 				A10CCE55ACC0020000000000C7 /* AccessSiteSessionOrchestrating.swift in Sources */,

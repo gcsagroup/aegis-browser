@@ -11,13 +11,16 @@ import Foundation
 final class AccessSiteProxySessionStore: ObservableObject {
     let controller: AccessSiteSessionController
     private let orchestrator: AccessSiteSessionOrchestrating
+    /// Product channel used to gate the DEV ALLOW/BLOCK debug entry.
+    let devAllowBlockChannel: AccessReleaseChannel
 
     /// Bumps when session state changes so SwiftUI can re-query snapshots.
     @Published private(set) var revision: UInt64 = 0
 
     init(
         intentStore: AccessSiteIntentStore = AccessSiteIntentStore(),
-        orchestrator: AccessSiteSessionOrchestrating? = nil
+        orchestrator: AccessSiteSessionOrchestrating? = nil,
+        channel: AccessReleaseChannel? = nil
     ) {
         let pipeline = orchestrator ?? AccessSiteProxyFailClosedOrchestrator()
         self.orchestrator = pipeline
@@ -25,6 +28,7 @@ final class AccessSiteProxySessionStore: ObservableObject {
             intentStore: intentStore,
             orchestrator: pipeline
         )
+        self.devAllowBlockChannel = channel ?? AccessDevAllowBlockSectionModel.resolveChannel()
     }
 
     func snapshot(for url: URL?) -> AccessSiteProxyToggleSnapshot {
@@ -42,6 +46,33 @@ final class AccessSiteProxySessionStore: ObservableObject {
             controller: controller
         )
         revision &+= 1
+    }
+
+    /// DEV/Alpha debug snapshot. Beta/Release keep `panelRegistered == false`.
+    func devAllowBlockSnapshot(for url: URL?) -> AccessDevAllowBlockPanelSnapshot {
+        _ = revision
+        return AccessDevAllowBlockSectionModel.buildSnapshot(
+            channel: devAllowBlockChannel,
+            url: url,
+            controller: controller
+        )
+    }
+
+    @discardableResult
+    func applyDevAllowBlock(
+        _ action: AccessDevAllowBlockAction,
+        for url: URL?
+    ) -> AccessDevAllowBlockApplyResult {
+        let result = AccessDevAllowBlockSectionModel.apply(
+            action: action,
+            channel: devAllowBlockChannel,
+            url: url,
+            controller: controller
+        )
+        if result.status == .applied {
+            revision &+= 1
+        }
+        return result
     }
 
     func noteNavigationChanged() {

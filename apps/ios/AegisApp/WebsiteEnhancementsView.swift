@@ -510,6 +510,7 @@ private struct CurrentWebsitePanel: View {
     Form {
       AccessSiteProxyToggleView(store: accessSiteProxy, url: tab.url)
         .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
+      AccessDevAllowBlockSectionView(store: accessSiteProxy, url: tab.url)
       if let url = tab.url, ScriptMatch.origin(url) != nil {
         Section {
           Text(url.host ?? url.absoluteString).font(.headline).textSelection(.enabled)

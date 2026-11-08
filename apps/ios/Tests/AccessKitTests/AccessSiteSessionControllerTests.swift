@@ -205,4 +205,39 @@ final class AccessSiteSessionControllerTests: XCTestCase {
         XCTAssertEqual(snap.connectionState, .unavailable)
         XCTAssertEqual(orchestrator.activateCount, 0)
     }
+
+    func testDevAllowBlockSessionSeamAdmitsDevAndRefusesBeta() throws {
+        let orchestrator = FakeOrchestrator()
+        let controller = AccessSiteSessionController(orchestrator: orchestrator)
+
+        let refused = controller.applyDevAllowBlock(
+            channel: .beta,
+            rawHost: "news.example",
+            action: .allow
+        )
+        XCTAssertEqual(refused.status, .channelNotAdmitted)
+        XCTAssertTrue(controller.intentStoreSnapshot().allIntents().isEmpty)
+
+        let allow = controller.applyDevAllowBlock(
+            channel: .dev,
+            rawHost: "https://NEWS.Example/x",
+            action: .allow
+        )
+        XCTAssertEqual(allow.status, .applied)
+        XCTAssertEqual(allow.host?.rawValue, "news.example")
+        XCTAssertEqual(allow.intent, .allow)
+        // Intent-only: no publish/ACK from the DEV panel path.
+        XCTAssertEqual(orchestrator.publishCount, 0)
+
+        let block = controller.applyDevAllowBlock(
+            channel: .dev,
+            rawHost: "news.example",
+            action: .block
+        )
+        XCTAssertEqual(block.status, .applied)
+        let snap = controller.snapshot(for: try AccessSiteHost("news.example"))
+        XCTAssertEqual(snap.intent, .block)
+        XCTAssertEqual(snap.connectionState, .unavailable)
+        XCTAssertTrue(snap.failureReason?.contains("Local block") == true)
+    }
 }

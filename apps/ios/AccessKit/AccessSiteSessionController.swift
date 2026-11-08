@@ -158,6 +158,70 @@ public final class AccessSiteSessionController: @unchecked Sendable {
         }
     }
 
+    /// DEV ALLOW/BLOCK debug entry (P-iOS-4): intent-only apply via the store.
+    ///
+    /// Channel-gated. Does not publish/ACK on allow. Block/off tear down any
+    /// active publication and keep connection honest (local refuse / idle) —
+    /// never silent DIRECT success.
+    @discardableResult
+    public func applyDevAllowBlock(
+        channel: AccessReleaseChannel,
+        rawHost: String,
+        action: AccessDevAllowBlockAction
+    ) -> AccessDevAllowBlockApplyResult {
+        lock.lock()
+        var store = intentStore
+        let result = AccessDevAllowBlockPanel.apply(
+            store: &store,
+            channel: channel,
+            rawHost: rawHost,
+            action: action
+        )
+        intentStore = store
+        let appliedHost = result.host
+        lock.unlock()
+
+        guard result.status == .applied, let host = appliedHost else {
+            return result
+        }
+
+        switch action {
+        case .allow:
+            lock.lock()
+            let prior = snapshots[host]
+            writeLocked(
+                AccessSiteSessionSnapshot(
+                    host: host,
+                    intent: .allow,
+                    phase: prior?.phase ?? .idle,
+                    connectionState: prior?.connectionState ?? .idle,
+                    registrationID: prior?.registrationID ?? activeCandidates[host]?.registration.id,
+                    failureReason: prior?.failureReason
+                )
+            )
+            lock.unlock()
+        case .block:
+            try? tearDownActiveIfNeeded(host: host)
+            lock.lock()
+            writeLocked(
+                AccessSiteSessionSnapshot(
+                    host: host,
+                    intent: .block,
+                    phase: .ready,
+                    connectionState: .unavailable,
+                    failureReason: "Local block: Access proxying refused for this host."
+                )
+            )
+            lock.unlock()
+        case .off:
+            try? tearDownActiveIfNeeded(host: host)
+            lock.lock()
+            writeLocked(AccessSiteSessionSnapshot.idle(host: host))
+            lock.unlock()
+        }
+        return result
+    }
+
     /// Off path: clear intent and stop publishing for the host.
     @discardableResult
     public func disable(host: AccessSiteHost) throws -> AccessSiteSessionSnapshot {
