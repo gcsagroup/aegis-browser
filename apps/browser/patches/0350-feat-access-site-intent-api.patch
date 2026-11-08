@@ -174,7 +174,7 @@ index 0000000000000000000000000000000000000000..b752c60fbdf30d3787ebaaa5918cfc6e
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_INTENT_H_
 diff --git a/chrome/browser/aegis/access/access_site_intent.cc b/chrome/browser/aegis/access/access_site_intent.cc
 new file mode 100644
-index 0000000000000000000000000000000000000000..9924c771e58d38764b0a1fef499bdf1342c82a22
+index 0000000000000000000000000000000000000000..848e9cd81c794ddef7e34c69cf9716b78d3b4c60
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_intent.cc
 @@ -0,0 +1,252 @@
