@@ -24,6 +24,7 @@ struct FirebaseControlsView: View {
         } footer: {
             VStack(alignment: .leading) {
                 Text("通过 Firebase 发送崩溃诊断和应用使用统计。崩溃报告在下次启动时发送。")
+                Text("崩溃报告、使用分析与远程诊断配置默认开启，可随时关闭。")
                 Text("已获准发送的崩溃报告无法撤回。")
             }
         }

@@ -30,7 +30,8 @@ struct FirebaseInstallPreferences {
     }
 
     func isEnabled(_ collection: Collection) -> Bool {
-        guard let value = defaults.object(forKey: collection.key) else { return false }
+        // Unset collection choices default on; an explicit saved false remains off.
+        guard let value = defaults.object(forKey: collection.key) else { return true }
         return (value as? Bool) == true
     }
 
