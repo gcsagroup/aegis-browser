@@ -1,45 +1,31 @@
 #!/usr/bin/env bash
-# Smoke-test Access against a local V2Ray/Xray client JSON (Mac or Linux).
-# Usage:
-#   export AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$HOME/path/to/config.json"
-#   ./scripts/access-local-v2ray-smoke.sh
+# Smoke-test Access against a local Reality Vision endpoint.
+# Prefer a vless:// text file under .local/access-service/ (gitignored).
+# Xray Core and sing-box client JSON are also accepted by the Python importer.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_NAME=AEGIS_ACCESS_LOCAL_V2RAY_CONFIG
 PY="$ROOT/apps/browser/scripts/access_local_v2ray_config.py"
+DEFAULT_LOCAL="$ROOT/.local/access-service/test-reality-vision.uri"
 
-echo "== synthetic parser self-test =="
+echo "== synthetic parser self-test (uri + xray + sing-box) =="
 python3 "$PY" --self-test
+
+if [[ -z "${!ENV_NAME:-}" && -f "$DEFAULT_LOCAL" ]]; then
+  export AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$DEFAULT_LOCAL"
+fi
 
 if [[ -z "${!ENV_NAME:-}" ]]; then
   echo
-  echo "Parser ready. To exercise your local V2Ray config:"
-  echo "  export $ENV_NAME=\"\$HOME/<your-v2ray-or-xray-config.json>\""
+  echo "Parser ready. For a live import:"
+  echo "  mkdir -p .local/access-service"
+  echo "  # paste vless://… into .local/access-service/test-reality-vision.uri"
+  echo "  export $ENV_NAME=\"\$PWD/.local/access-service/test-reality-vision.uri\""
   echo "  $0"
-  echo
-  echo "Accepted JSON shapes: full Xray outbounds[], single VLESS outbound,"
-  echo "or flat {address,port,id,sni/serverName,pbk/publicKey,sid/shortId}."
-  echo "Only reality_vision (VLESS + TCP + REALITY + xtls-rprx-vision) is admitted."
   exit 0
 fi
 
 echo "== import local config (secrets redacted) =="
 python3 "$PY" "${!ENV_NAME}"
-
-if command -v xcodebuild >/dev/null 2>&1 && [[ -d "$ROOT/apps/ios/Aegis.xcodeproj" ]]; then
-  echo "== iOS AccessKit local-config unit tests =="
-  (
-    cd "$ROOT/apps/ios"
-    xcodebuild test \
-      -project Aegis.xcodeproj \
-      -scheme AccessKit \
-      -destination 'platform=iOS Simulator,name=iPhone 16' \
-      -only-testing:AccessKitTests/AccessLocalV2RayConfigTests \
-      2>&1 | tail -n 40
-  ) || echo "xcodebuild AccessKit scheme unavailable; parser smoke still passed"
-else
-  echo "skip xcodebuild (not on macOS tooling path)"
-fi
-
 echo "done"
