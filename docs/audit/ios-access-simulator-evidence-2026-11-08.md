@@ -1,7 +1,7 @@
 # iOS Access — simulator evidence matrix (F14)
 
 Date: 2026-11-08 (Asia/Shanghai)  
-Baseline: fork `develop` at `2dc131bdcebd681b6012c2a77a56ddd842cbcd63`  
+Baseline: fork `develop` at `81792dfe5357529b5b196db14fdcc4f98d967042`  
 Plan: [ios-access-feat-split-2026-11-08.zh-CN.md](../plans/ios-access-feat-split-2026-11-08.zh-CN.md)  
 NOTES: [ios-access-simulator-evidence-NOTES.md](../plans/ios-access-simulator-evidence-NOTES.md)
 
