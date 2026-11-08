@@ -472,13 +472,19 @@ private func scriptStatusText(_ item: ScriptRunStatus) -> String {
 
 struct CurrentWebsiteView: View {
   @EnvironmentObject private var browser: BrowserSession
+  @EnvironmentObject private var accessSiteProxy: AccessSiteProxySessionStore
   @Environment(\.dismiss) private var dismiss
   @Environment(\.locale) private var localizationLocale
   var body: some View {
       let _ = localizationLocale
     NavigationStack {
       if let tab = browser.activeTab {
-        CurrentWebsitePanel(tab: tab, store: browser.enhancements, isPrivate: browser.profile.isPrivate)
+        CurrentWebsitePanel(
+          tab: tab,
+          store: browser.enhancements,
+          isPrivate: browser.profile.isPrivate,
+          accessSiteProxy: accessSiteProxy
+        )
           .id(tab.id)
           .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
           .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
@@ -491,6 +497,7 @@ private struct CurrentWebsitePanel: View {
   @ObservedObject var tab: BrowserTab
   @ObservedObject var store: WebsiteEnhancementStore
   let isPrivate: Bool
+  @ObservedObject var accessSiteProxy: AccessSiteProxySessionStore
   @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var markdownDocument: MarkdownDocument?
   @State private var readingPage = false
@@ -501,6 +508,8 @@ private struct CurrentWebsitePanel: View {
   var body: some View {
       let _ = localizationLocale
     Form {
+      AccessSiteProxyToggleView(store: accessSiteProxy, url: tab.url)
+        .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
       if let url = tab.url, ScriptMatch.origin(url) != nil {
         Section {
           Text(url.host ?? url.absoluteString).font(.headline).textSelection(.enabled)

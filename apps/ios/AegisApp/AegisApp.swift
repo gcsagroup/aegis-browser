@@ -171,18 +171,21 @@ struct AegisApp: App {
 private struct AegisWindowView: View {
     @EnvironmentObject private var language: AppLanguageSettings
     @StateObject private var browser: BrowserSession
+    @StateObject private var accessSiteProxy: AccessSiteProxySessionStore
     @ObservedObject var windows: BrowserWindowStore
     init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore,
          preferences: BrowserPreferences) {
         self.windows = windows
         _browser = StateObject(wrappedValue: BrowserSession(dataStore: dataStore, workspaceStore: workspaces,
             windowID: id, windowStore: windows, preferences: preferences))
+        _accessSiteProxy = StateObject(wrappedValue: AccessSiteProxySessionStore())
     }
     @Environment(\.locale) private var localizationLocale
     var body: some View {
         let _ = localizationLocale
         AegisRootView()
             .environmentObject(browser)
+            .environmentObject(accessSiteProxy)
             .onChange(of: language.revision) { _, _ in browser.refreshLocalizedPresentation() }
             .onAppear {
                 windows.register(browser.windowID)

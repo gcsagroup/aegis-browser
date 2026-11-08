@@ -261,6 +261,10 @@
 		A10CCE55ACC0020000000000C7 /* AccessSiteSessionOrchestrating.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */; };
 		A10CCE55ACC0020000000000C8 /* AccessSiteSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */; };
 		A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */; };
+		A10CCE55ACC0020000000000CA /* AccessSiteProxyToggleModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CA /* AccessSiteProxyToggleModel.swift */; };
+		A10CCE55ACC0020000000000CB /* AccessSiteProxyToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */; };
+		A10CCE55ACC0020000000000CC /* AccessSiteProxySessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */; };
+		A10CCE55ACC0020000000000CD /* AccessSiteProxyToggleModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */; };
 		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
 		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
 		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
@@ -710,6 +714,10 @@
 		A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionOrchestrating.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionController.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionControllerTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CA /* AccessSiteProxyToggleModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleModel.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleView.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxySessionStore.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleModelTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
@@ -870,6 +878,7 @@
 				7755D203721E0D35AD0E28DC /* BrowserKitTests.swift */,
 				BB1984028F943ED514E4B2BF /* BrowserWindowTests.swift */,
 				7DA26E91B481872DFF7904C7 /* ContentFilterTests.swift */,
+				A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */,
 				C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */,
 				E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */,
 				F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */,
@@ -1078,6 +1087,9 @@
 				5CA6E3E9955B58A183D8D9F8 /* LanguageSettingsView.swift */,
 				D7C7BE9E5466679251262011 /* AppLanguageSettings.swift */,
 				397CB2F7CB8A372260242996 /* AegisApp.swift */,
+				A10CCE55ACC0010000000000CA /* AccessSiteProxyToggleModel.swift */,
+				A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */,
+				A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */,
 				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
 				9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */,
 				510DA8D712A38313B1242AA9 /* FirebaseRemoteDiagnosticsSource.swift */,
@@ -1755,6 +1767,9 @@
 				8543F5FF0715D0DFCD954170 /* AppLanguageSettings.swift in Sources */,
 				3CBB58CBFB7DA0AF1F8A1CBA /* AppLocalization.swift in Sources */,
 				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
+				A10CCE55ACC0020000000000CA /* AccessSiteProxyToggleModel.swift in Sources */,
+				A10CCE55ACC0020000000000CB /* AccessSiteProxyToggleView.swift in Sources */,
+				A10CCE55ACC0020000000000CC /* AccessSiteProxySessionStore.swift in Sources */,
 				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
 				EA17336CE13C643EFF37AD29 /* FirebaseControlsView.swift in Sources */,
 				3BB026E7DD1A640C185C5BEC /* FirebaseRemoteDiagnosticsSource.swift in Sources */,
@@ -1807,6 +1822,7 @@
 				B18325DA69ACDF40FD945543 /* BrowserWindowTests.swift in Sources */,
 				A81B549D1197E1C4752D1B75 /* CapabilitySecurityTests.swift in Sources */,
 				8FD86E55938A81B726515530 /* ContentFilterTests.swift in Sources */,
+				A10CCE55ACC0020000000000CD /* AccessSiteProxyToggleModelTests.swift in Sources */,
 				F1DB30017933EE43C6660F04 /* DownloadPlanTests.swift in Sources */,
 				FC29A4E60162F5F98F194385 /* ExternalPageLinkTests.swift in Sources */,
 				A3D7B09E532CEACA66A14C52 /* FirebaseInstallPreferencesTests.swift in Sources */,
