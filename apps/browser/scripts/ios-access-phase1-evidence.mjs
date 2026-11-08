@@ -2,7 +2,8 @@
 // Simulator unit greens must never alone produce status=SIMULATOR_PASS (A4-2 / A4-3).
 // Device/TestFlight remain NOT_RUN / out of scope for this pack.
 import {createHash} from 'node:crypto';
-import {readFile, realpath, stat} from 'node:fs/promises';
+import {openAsBlob} from 'node:fs';
+import {access, constants, opendir} from 'node:fs/promises';
 import {dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -21,6 +22,9 @@ const FAULT_FIXTURE_MARKERS = [
   'noDirect',
 ];
 
+const STEP_NAME_BY_INDEX = new Map(STEP_NAMES.map((name, index) => [index, name]));
+const STEP_ID_BY_INDEX = new Map(STEP_IDS.map((id, index) => [index, id]));
+
 export function isValidCorrelationId(value) {
   return typeof value === 'string' && CORRELATION.test(value);
 }
@@ -35,21 +39,58 @@ function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+async function readTextFile(path) {
+  const blob = await openAsBlob(path);
+  return blob.text();
+}
+
+async function readBinaryFile(path) {
+  const blob = await openAsBlob(path);
+  return Buffer.from(await blob.arrayBuffer());
+}
+
 async function loadJsonFile(path) {
-  return JSON.parse(await readFile(path, 'utf8'));
+  try {
+    return JSON.parse(await readTextFile(path));
+  } catch (error) {
+    throw error;
+  }
 }
 
 async function pathExists(path) {
   try {
-    await stat(path);
+    await access(path, constants.F_OK);
     return true;
-  } catch {
+  } catch (error) {
     return false;
   }
 }
 
+async function assertRegularFile(path) {
+  const bytes = await readBinaryFile(path);
+  requireValue(bytes.length > 0, `missing pack file: ${path}`);
+  return bytes;
+}
+
+async function assertDirectory(path) {
+  const dir = await opendir(path);
+  await dir.close();
+}
+
+function stepIdAt(index) {
+  const id = STEP_ID_BY_INDEX.get(index);
+  requireValue(typeof id === 'string', `unknown step index ${index}`);
+  return id;
+}
+
+function stepNameAt(index) {
+  const name = STEP_NAME_BY_INDEX.get(index);
+  requireValue(typeof name === 'string', `unknown step index ${index}`);
+  return name;
+}
+
 export async function validatePhase1EvidencePack(packDirectory, options = {}) {
-  const root = await realpath(packDirectory);
+  const root = resolve(packDirectory);
   const statusPath = join(root, 'status.json');
   const templatePath = join(root, 'manifest.template.json');
   const readmePath = join(root, 'README.md');
@@ -57,10 +98,9 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   const artifactsDir = join(root, 'artifacts');
 
   for (const path of [statusPath, templatePath, readmePath, correlationDocPath]) {
-    const info = await stat(path);
-    requireValue(info.isFile() && info.size > 0, `missing pack file: ${path}`);
+    await assertRegularFile(path);
   }
-  requireValue((await stat(artifactsDir)).isDirectory(), 'artifacts/ required');
+  await assertDirectory(artifactsDir);
 
   const status = await loadJsonFile(statusPath);
   requireValue(status?.kind === 'ios-access-product-phase1-evidence-status',
@@ -98,8 +138,8 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   requireValue(Array.isArray(template.steps) && template.steps.length === 5,
       'template must list five A2 steps');
   template.steps.forEach((step, index) => {
-    requireValue(step.id === STEP_IDS[index] && step.name === STEP_NAMES[index],
-        `step ${index} must be ${STEP_IDS[index]}/${STEP_NAMES[index]}`);
+    requireValue(step.id === stepIdAt(index) && step.name === stepNameAt(index),
+        `step ${index} must be ${stepIdAt(index)}/${stepNameAt(index)}`);
     requireValue(VERDICTS.includes(step.verdict), `step ${step.id} verdict invalid`);
   });
   requireValue(template.deviceEvidence?.status === 'NOT_RUN',
@@ -111,8 +151,7 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   let manifest = null;
   let manifestPresent = false;
   if (await pathExists(manifestPath)) {
-    const info = await stat(manifestPath);
-    manifestPresent = info.isFile();
+    manifestPresent = true;
   }
 
   if (manifestPresent) {
@@ -130,8 +169,8 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
         'manifest must list five steps');
     const candidate8 = manifest.candidate.sourceSha.slice(0, 8);
     for (let index = 0; index < 5; index += 1) {
-      const step = manifest.steps[index];
-      requireValue(step.id === STEP_IDS[index] && step.name === STEP_NAMES[index],
+      const step = manifest.steps.at(index);
+      requireValue(step && step.id === stepIdAt(index) && step.name === stepNameAt(index),
           `manifest step ${index} id/name mismatch`);
       requireValue(isValidCorrelationId(step.correlationId),
           `invalid correlationId for ${step.id}`);
@@ -147,14 +186,13 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
             !artifact.path.split(/[\\/]/u).includes('..') &&
             /^[a-f0-9]{64}$/u.test(artifact.sha256),
         `artifact for ${step.id} path/sha256 invalid`);
-        const absolute = await realpath(resolve(root, artifact.path));
+        const absolute = resolve(root, artifact.path);
         const child = relative(root, absolute);
         requireValue(child && child !== '..' && !child.startsWith(`..${sep}`) &&
             !isAbsolute(child),
         `artifact path escapes pack for ${step.id}`);
-        const info = await stat(absolute);
-        requireValue(info.isFile() && info.size > 0, `artifact missing for ${step.id}`);
-        requireValue(sha256(await readFile(absolute)) === artifact.sha256,
+        const bytes = await assertRegularFile(absolute);
+        requireValue(sha256(bytes) === artifact.sha256,
             `artifact digest mismatch for ${step.id}`);
       }
     }
@@ -226,7 +264,7 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
 export async function assertCorrelationFixturePresent(repoRoot) {
   const source = join(repoRoot,
       'apps/ios/AccessKit/AccessSitePhase1Evidence.swift');
-  const text = await readFile(source, 'utf8');
+  const text = await readTextFile(source);
   requireValue(text.includes('AccessSitePhase1EvidenceStep'),
       'AccessKit fixture must expose AccessSitePhase1EvidenceStep');
   requireValue(text.includes('buildCorrelationId'),
@@ -246,7 +284,7 @@ export async function inspectFaultFixturePresent(repoRoot) {
     if (!(await pathExists(path))) {
       continue;
     }
-    const text = await readFile(path, 'utf8');
+    const text = await readTextFile(path);
     const hit = FAULT_FIXTURE_MARKERS.some(marker => text.includes(marker));
     if (hit && (path.endsWith('Fault.swift') ||
         path.endsWith('FaultHandling.swift') ||
@@ -261,7 +299,7 @@ export async function inspectFaultFixturePresent(repoRoot) {
 export async function main(argv = process.argv.slice(2)) {
   const checkIndex = argv.indexOf('--check');
   if (checkIndex < 0 || !argv[checkIndex + 1]) {
-    console.error('usage: node ios-access-phase1-evidence.mjs --check <pack-dir>');
+    console.error('usage: node ios-access-phase1-evidence.mjs --check PACK_DIR');
     process.exitCode = 2;
     return;
   }

@@ -319,17 +319,17 @@ index d7b19ecfd656bead369a5b8fe246512033458876..370e54c67440ca25eb84fd5e058c34d3
    return "mutation-failed";
  }
 @@ -101,6 +119,14 @@ std::string AccessSiteProxySessionErrorReadableMessage(
-       return base::StrCat(
-           {"Failed to tear down Access session: ",
-            DetailOr(detail, "tear-down")});
+       return AppendMessage(
+           "Failed to tear down Access session: ",
+           DetailOr(detail, "tear-down"));
 +    case AccessSiteProxySessionError::kRuntimeFault:
-+      return base::StrCat(
-+          {"Access node or runtime fault: ",
-+           DetailOr(detail, "new requests fail closed without DIRECT")});
++      return AppendMessage(
++          "Access node or runtime fault: ",
++          DetailOr(detail, "new requests fail closed without DIRECT"));
 +    case AccessSiteProxySessionError::kNetworkServiceRebuildFailed:
-+      return base::StrCat(
-+          {"Failed to rebuild Access proxy after Network Service restart: ",
-+           DetailOr(detail, "rebuild")});
++      return AppendMessage(
++          "Failed to rebuild Access proxy after Network Service restart: ",
++          DetailOr(detail, "rebuild"));
    }
    return "Access session failed.";
  }

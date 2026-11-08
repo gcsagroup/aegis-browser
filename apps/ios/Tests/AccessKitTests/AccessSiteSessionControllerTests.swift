@@ -160,7 +160,10 @@ final class AccessSiteSessionControllerTests: XCTestCase {
 
         XCTAssertThrowsError(try controller.enable(host: host)) { error in
             XCTAssertEqual(error as? AccessSiteSessionError, .nodeUnavailable)
-            let sessionError = error as! AccessSiteSessionError
+            guard let sessionError = error as? AccessSiteSessionError else {
+                XCTFail("expected AccessSiteSessionError")
+                return
+            }
             XCTAssertFalse(sessionError.readableMessage.isEmpty)
             XCTAssertFalse(sessionError.readableMessage.lowercased().contains("direct success"))
         }

@@ -4,7 +4,6 @@
 
 #include <utility>
 
-#include "base/strings/strcat.h"
 #include "components/aegis_access/access_route_planner.h"
 
 namespace aegis::access {
@@ -12,6 +11,12 @@ namespace {
 
 std::string DetailOr(std::string_view detail, std::string_view fallback) {
   return detail.empty() ? std::string(fallback) : std::string(detail);
+}
+
+std::string AppendMessage(std::string_view prefix, std::string_view detail) {
+  std::string out(prefix);
+  out.append(detail.data(), detail.size());
+  return out;
 }
 
 }  // namespace
@@ -83,9 +88,9 @@ std::string AccessSiteProxySessionErrorReadableMessage(
     case AccessSiteProxySessionError::kLocalProxyUnavailable:
       return "Local Access proxy is unavailable for this profile.";
     case AccessSiteProxySessionError::kLocalProxyNotReady:
-      return base::StrCat(
-          {"Local Access proxy is not ready: ",
-           DetailOr(detail, "no loopback endpoint published")});
+      return AppendMessage(
+          "Local Access proxy is not ready: ",
+          DetailOr(detail, "no loopback endpoint published"));
     case AccessSiteProxySessionError::kMissingOwner:
       return "Access ownership for this profile partition is missing.";
     case AccessSiteProxySessionError::kMissingCoordinator:
@@ -95,38 +100,38 @@ std::string AccessSiteProxySessionErrorReadableMessage(
     case AccessSiteProxySessionError::kMissingProxyGroup:
       return "No Access proxy group is bound for publication.";
     case AccessSiteProxySessionError::kPrepareFailed:
-      return base::StrCat(
-          {"Failed to prepare Access candidate: ", DetailOr(detail, "prepare")});
+      return AppendMessage(
+          "Failed to prepare Access candidate: ", DetailOr(detail, "prepare"));
     case AccessSiteProxySessionError::kPublishFailed:
-      return base::StrCat(
-          {"Failed to publish Access session: ", DetailOr(detail, "publish")});
+      return AppendMessage(
+          "Failed to publish Access session: ", DetailOr(detail, "publish"));
     case AccessSiteProxySessionError::kAckFailed:
-      return base::StrCat(
-          {"Access session acknowledgement failed: ",
-           DetailOr(detail, "ack")});
+      return AppendMessage(
+          "Access session acknowledgement failed: ",
+          DetailOr(detail, "ack"));
     case AccessSiteProxySessionError::kMutationFailed:
-      return base::StrCat(
-          {"Access site mutation failed: ", DetailOr(detail, "mutation")});
+      return AppendMessage(
+          "Access site mutation failed: ", DetailOr(detail, "mutation"));
     case AccessSiteProxySessionError::kServiceUnavailable:
-      return base::StrCat(
-          {"Access service is unavailable: ",
-           DetailOr(detail, "service down")});
+      return AppendMessage(
+          "Access service is unavailable: ",
+          DetailOr(detail, "service down"));
     case AccessSiteProxySessionError::kBusy:
       return "Another Access site mutation is already in progress.";
     case AccessSiteProxySessionError::kDirectFallbackNotAdmitted:
       return "Direct fallback is not admitted on the allow path.";
     case AccessSiteProxySessionError::kTearDownFailed:
-      return base::StrCat(
-          {"Failed to tear down Access session: ",
-           DetailOr(detail, "tear-down")});
+      return AppendMessage(
+          "Failed to tear down Access session: ",
+          DetailOr(detail, "tear-down"));
     case AccessSiteProxySessionError::kRuntimeFault:
-      return base::StrCat(
-          {"Access node or runtime fault: ",
-           DetailOr(detail, "new requests fail closed without DIRECT")});
+      return AppendMessage(
+          "Access node or runtime fault: ",
+          DetailOr(detail, "new requests fail closed without DIRECT"));
     case AccessSiteProxySessionError::kNetworkServiceRebuildFailed:
-      return base::StrCat(
-          {"Failed to rebuild Access proxy after Network Service restart: ",
-           DetailOr(detail, "rebuild")});
+      return AppendMessage(
+          "Failed to rebuild Access proxy after Network Service restart: ",
+          DetailOr(detail, "rebuild"));
   }
   return "Access session failed.";
 }
@@ -161,9 +166,10 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
   input.intent = intent;
   input.host = host;
   input.owner = owner;
-  input.site_toggle_id = base::StrCat({"bubble:", host.value});
-  input.operation_id =
-      base::StrCat({"bubble-session:", host.value, ":", operation_suffix});
+  input.site_toggle_id = AppendMessage("bubble:", host.value);
+  input.operation_id = AppendMessage(
+      AppendMessage(AppendMessage("bubble-session:", host.value), ":"),
+      operation_suffix);
   input.request_fingerprint = input.operation_id;
   input.proxy_group_id =
       intent == AccessSiteIntent::kAllow ? std::string(proxy_group_id)
@@ -171,9 +177,8 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
   plan.mutation = BuildOrdinarySiteGroupMutation(input);
 
   plan.selector.owner = owner;
-  plan.selector.document_token =
-      base::StrCat({"bubble-session-doc:", host.value});
-  plan.selector.top_level_site = base::StrCat({"https://", host.value});
+  plan.selector.document_token = AppendMessage("bubble-session-doc:", host.value);
+  plan.selector.top_level_site = AppendMessage("https://", host.value);
   plan.selector.exact_host = host.value;
   plan.selector.scheme = RequestScheme::kHttps;
   plan.selector.port = 443;
