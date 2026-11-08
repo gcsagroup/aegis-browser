@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Upstream <aegis-upstream@example.invalid>
+Date: Mon, 9 Nov 2026 00:35:00 +0800
+Subject: [PATCH] 适配Chromium157的Actor操作接口并递增307
+
+---
+
+diff --git a/chrome/browser/aegis/agent/aegis_actor_bridge.cc b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+index 6ab90c82c21e1ff946c6ed948175f46185edb3a6..87a46a313c6ff7150f71619a363e5b074483cc2c 100644
+--- a/chrome/browser/aegis/agent/aegis_actor_bridge.cc
++++ b/chrome/browser/aegis/agent/aegis_actor_bridge.cc
+@@ -526,10 +526,10 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+     if (!direction) {
+       return nullptr;
+     }
+-    return std::make_unique<actor::HistoryToolRequest>(
+-        tab_handle, *direction == "back"
+-                        ? actor::HistoryToolRequest::Direction::kBack
+-                        : actor::HistoryToolRequest::Direction::kForward);
++    if (*direction == "back") {
++      return std::make_unique<actor::HistoryBackToolRequest>(tab_handle);
++    }
++    return std::make_unique<actor::HistoryForwardToolRequest>(tab_handle);
+   }
+   if (call.tool_name == "page.media") {
+     const std::string* action = call.arguments.FindString("action");
+@@ -537,16 +537,14 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+       return nullptr;
+     }
+     if (*action == "play") {
+-      return std::make_unique<actor::MediaControlToolRequest>(
+-          tab_handle, actor::PlayMedia{});
++      return std::make_unique<actor::PlayMediaToolRequest>(tab_handle);
+     }
+     if (*action == "pause") {
+-      return std::make_unique<actor::MediaControlToolRequest>(
+-          tab_handle, actor::PauseMedia{});
++      return std::make_unique<actor::PauseMediaToolRequest>(tab_handle);
+     }
+     std::optional<int> position_ms = call.arguments.FindInt("position_ms");
+-    return position_ms ? std::make_unique<actor::MediaControlToolRequest>(
+-                             tab_handle, actor::SeekMedia{*position_ms})
++    return position_ms ? std::make_unique<actor::SeekMediaToolRequest>(
++                             tab_handle, base::Milliseconds(*position_ms))
+                        : nullptr;
+   }
+   if (call.tool_name == "page.webmcp.invoke") {
+@@ -616,8 +614,9 @@ std::unique_ptr<actor::ToolRequest> BuildActorRequest(
+     std::vector<actor::AttemptFormFillingToolRequest::FormFillingRequest>
+         requests;
+     requests.push_back(std::move(request));
++    // 当前只请求地址和联系信息，不传入预选信用卡令牌。
+     return std::make_unique<actor::AttemptFormFillingToolRequest>(
+-        tab_handle, std::move(requests));
++        tab_handle, std::move(requests), /*credit_card_opaque_token=*/"");
+   }
+   return nullptr;
+ }
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index fab273e87089fe67d9f0efdc3297ab6e11cc9e62..1dc400c6361dcbd0827510468865c6775a7c3be7 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.306";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (306)";
++inline constexpr char kProductVersion[] = "6.1.0.307";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (307)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
