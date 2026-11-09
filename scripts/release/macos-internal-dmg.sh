@@ -36,19 +36,24 @@ find_app() {
     done
   done
   roots+=(
-    "$HOME/Projects/GCSA-aegis-build/macos"
-    "$HOME/src/aegis-browser"
-    "/Volumes/CI/Git/gsca/aegis-browser"
+    "$HOME/Projects"
+    "$HOME/src"
+    "$HOME/Developer"
+    "/Volumes/CI"
+    "/Volumes/ExternalSSD"
     "/Volumes/CI/Codex"
   )
-  for root in "${roots[@]}"; do
-    [[ -d "$root" ]] || continue
-    while IFS= read -r candidate; do
-      if is_mac_app "$candidate"; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
-    done < <(find "$root" -maxdepth 8 \( -name 'GCSA Aegis.app' -o -name 'GCSA-aegis.app' -o -name 'Aegis.app' \) -type d -prune 2>/dev/null | head -n 20)
+  local name
+  for name in "GCSA Aegis.app" "GCSA-aegis.app" "Aegis.app"; do
+    for root in "${roots[@]}"; do
+      [[ -d "$root" ]] || continue
+      while IFS= read -r candidate; do
+        if is_mac_app "$candidate"; then
+          printf '%s\n' "$candidate"
+          return 0
+        fi
+      done < <(find "$root" -maxdepth 8 -name "$name" -type d -prune 2>/dev/null | head -n 5)
+    done
   done
   return 1
 }
