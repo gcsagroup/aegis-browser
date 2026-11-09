@@ -81,6 +81,26 @@ if [[ -z "$APP" ]]; then
         fi
       fi
     done
+    if [[ -d "$root/src/out" ]]; then
+      printf 'out %s/src/out\n' "$root" >&2
+      find "$root/src/out" -maxdepth 2 \( -name '*.app' -o -type d \) -print 2>/dev/null | head -n 40 >&2
+    fi
+  done
+  for root in \
+    "$HOME/Projects" \
+    "$HOME/Projects/GCSA-aegis-build" \
+    "$HOME/Projects/GCSA-aegis-build/macos" \
+    "/Volumes/CI" \
+    "/Volumes/CI/Git" \
+    "/Volumes/CI/Git/gsca" \
+    "/Volumes/CI/Git/gsca/aegis-browser" \
+    "/Volumes/CI/Codex"
+  do
+    if [[ -d "$root" ]]; then
+      printf 'exists %s\n' "$root" >&2
+    else
+      printf 'missing %s\n' "$root" >&2
+    fi
   done
   exit 3
 fi
