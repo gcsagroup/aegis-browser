@@ -68,6 +68,22 @@ def no_distribution_identity():
         raise ValueError('Distribution private identity is visible; cloud-only proof refused')
 
 
+def keychain_has_distribution(path):
+    """True when a keychain exposes a Distribution/Developer ID private identity."""
+    identities = run('security', 'find-identity', '-v', '-p', 'codesigning', path).decode()
+    return bool(re.search(r'"(?:Apple Distribution|iPhone Distribution|Developer ID Application):', identities))
+
+
+def development_keychains(original):
+    """Keep host Development identities available without exposing Distribution secrets."""
+    retained = []
+    for path in original:
+        if keychain_has_distribution(path):
+            continue
+        retained.append(path)
+    return retained
+
+
 def verify_ad_hoc_archive(archive):
     app = archive / 'Products/Applications/Aegis.app'
     for bundle in [app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex']:
@@ -78,19 +94,26 @@ def verify_ad_hoc_archive(archive):
 
 
 @contextmanager
-def isolated_keychain(directory, evidence):
-    """Save/restore the user search list and default; never import a P12 or touch ACLs."""
+def isolated_keychain(directory, evidence, retain_development=False):
+    """Save/restore the user search list and default; never import a P12 or touch ACLs.
+
+    Disposable keychains lose Apple Development private keys after each job. When
+    archive signing needs Development, keep host keychains that do not expose
+    Distribution identities so Xcode can reuse a durable Development cert.
+    """
     original = keychains()
     default = run('security', 'default-keychain', '-d', 'user').decode().strip().strip('"')
     path = str(directory / 'cloud-poc.keychain-db')
     password = secrets.token_urlsafe(32)
+    retained = development_keychains(original) if retain_development else []
     evidence.update(originalSearchList=original, originalDefaultKeychain=default,
-                    distributionP12Imported=False, keychainRestored=False)
+                    distributionP12Imported=False, keychainRestored=False,
+                    retainedDevelopmentKeychains=retained)
     try:
         run('security', 'create-keychain', '-p', password, path)
         run('security', 'set-keychain-settings', '-lut', '7200', path)
         run('security', 'unlock-keychain', '-p', password, path)
-        run('security', 'list-keychains', '-d', 'user', '-s', path)
+        run('security', 'list-keychains', '-d', 'user', '-s', path, *retained)
         run('security', 'default-keychain', '-d', 'user', '-s', path)
         no_distribution_identity()
         evidence['distributionIdentityAbsentBeforeArchive'] = True
@@ -272,7 +295,7 @@ def experiment(options, environment):
         auth = ['-allowProvisioningUpdates', '-authenticationKeyPath', environment['AEGIS_ASC_KEY_PATH'],
                 '-authenticationKeyID', environment['AEGIS_ASC_KEY_ID'],
                 '-authenticationKeyIssuerID', environment['AEGIS_ASC_ISSUER_ID']]
-        with isolated_keychain(directory, evidence):
+        with isolated_keychain(directory, evidence, retain_development=(archive_signing == 'development')):
             if not options.archive_from:
                 print('Archiving with ' + archive_signing + ' signing and no Distribution identity', flush=True)
                 signing_args = (['CODE_SIGN_IDENTITY=-', 'AD_HOC_CODE_SIGNING_ALLOWED=YES', 'CODE_SIGNING_REQUIRED=NO']
@@ -363,4 +386,6 @@ if __name__ == '__main__':
     try:
         main()
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
-        sys.exit(str(error))
+        # Print to stdout so callers that capture stderr still see a useful reason.
+        print(str(error), flush=True)
+        sys.exit(1)
