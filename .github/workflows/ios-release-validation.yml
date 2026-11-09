@@ -61,12 +61,16 @@ jobs:
         run: node scripts/ci/ios-operator.mjs --probe-admin-metadata
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Ensure self-hosted toolcache
+      - id: toolcache
+        name: Ensure self-hosted toolcache
         uses: ./.github/actions/ensure-self-hosted-toolcache
       - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
         with:
           ruby-version: 3.3.6
           bundler-cache: true
+        env:
+          RUNNER_TOOL_CACHE: ${{ steps.toolcache.outputs.tool_cache }}
+          AGENT_TOOLSDIRECTORY: ${{ steps.toolcache.outputs.tool_cache }}
       - name: Install locked Node dependencies
         run: corepack pnpm install --frozen-lockfile --ignore-scripts
       - name: Release contracts and regressions
@@ -135,12 +139,16 @@ jobs:
           node-version: 22.23.1
       - name: Admit exact frozen candidate and repository Admin
         run: node scripts/ci/ios-cloud-poc-admission.mjs
-      - name: Ensure self-hosted toolcache
+      - id: toolcache
+        name: Ensure self-hosted toolcache
         uses: ./.github/actions/ensure-self-hosted-toolcache
       - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
         with:
           ruby-version: 3.3.6
           bundler-cache: true
+        env:
+          RUNNER_TOOL_CACHE: ${{ steps.toolcache.outputs.tool_cache }}
+          AGENT_TOOLSDIRECTORY: ${{ steps.toolcache.outputs.tool_cache }}
       - name: Check unused build before signing
         env:
           AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
