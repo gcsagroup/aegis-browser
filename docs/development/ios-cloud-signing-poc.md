@@ -155,11 +155,15 @@ validation job includes real self-signed CMS and ad-hoc signature rejection
 regressions without importing any signing identity.
 
 The existing iOS Release Validation workflow has an explicit `cloud-poc` manual
-exercise on `macos-26`. It uses a dedicated environment restricted to the exact
-candidate branch, with the candidate SHA frozen in an environment variable and
-repeatedly checked against the dispatch, checkout and remote branch. Both the
-original operator and rerunner must be repository Admins. Credentialed work is
-never triggered by a fork PR. Production current-main admission is unchanged.
+exercise on the admitted self-hosted macOS runner labeled by
+`vars.AEGIS_IOS_RUNNER_LABEL` (historical `aegis-ios-upstream-migration`). It
+uses a dedicated environment restricted to the exact candidate branch, with the
+candidate SHA frozen in an environment variable and repeatedly checked against
+the dispatch, checkout and remote branch. Both the original operator and
+rerunner must be repository Admins. Credentialed work is never triggered by a
+fork PR. Production current-main admission is unchanged. Cloud packaging accepts
+GitHub Actions macOS runners (`github-hosted` or `self-hosted`); durable
+self-host evidence skips the fresh-runner clean-slate profile proof.
 The first probe used a 0.8.0 Beta build; its evidence is not transferable from
 that candidate to the later merged-source matrix.
 

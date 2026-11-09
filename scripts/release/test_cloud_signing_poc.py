@@ -23,10 +23,15 @@ verifier = load('cloud_verifier', 'verify-signed-ios.py')
 class CloudSigningTests(unittest.TestCase):
     def test_hosted_proof_requires_a_fresh_github_runner_and_refuses_archive_reuse(self):
         good = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'macOS'}
+        self_hosted = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'self-hosted', 'RUNNER_OS': 'macOS'}
         poc.validate_runtime('github-hosted', good, None)
-        for environment, archive in [({}, None), ({**good, 'RUNNER_ENVIRONMENT': 'self-hosted'}, None), (good, 'prior')]:
+        poc.validate_runtime('self-hosted', self_hosted, None)
+        for environment, archive in [({}, None), (self_hosted, None), (good, 'prior')]:
             with self.assertRaises(ValueError):
                 poc.validate_runtime('github-hosted', environment, archive)
+        for environment, archive in [({}, None), (good, None), (self_hosted, 'prior')]:
+            with self.assertRaises(ValueError):
+                poc.validate_runtime('self-hosted', environment, archive)
         with self.assertRaises(ValueError):
             poc.validate_runtime('local-fallback', good, None)
 
