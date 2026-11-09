@@ -64,10 +64,11 @@ find_src() {
     printf '%s\n' "$MAC_SRC"
   elif [[ -n "${OTHER_SRC:-}" ]]; then
     printf '%s\n' "$OTHER_SRC"
-  elif [[ -n "${ANDROID_SRC:-}" ]]; then
-    printf 'Only Chromium checkout is an Android tree. Building the Mac chrome target from it.\n' >&2
-    printf '%s\n' "$ANDROID_SRC"
   else
+    if [[ -n "${ANDROID_SRC:-}" ]]; then
+      printf 'Only checkout is an Android tree: %s\n' "$ANDROID_SRC" >&2
+      printf 'Its host Python is not a Mac binary, so it cannot regenerate GCSA Aegis.app.\n' >&2
+    fi
     return 1
   fi
 }
