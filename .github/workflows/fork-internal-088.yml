@@ -1,0 +1,76 @@
+name: Fork internal 0.8.0
+run-name: Fork internal ${{ inputs.version || '0.8.0' }} (${{ inputs.build || '1' }})
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Internal version. 0.8.0 is not uploaded; that App Store train is closed."
+        type: string
+        default: "0.8.0"
+      build:
+        description: "Build number"
+        type: string
+        default: "1"
+      arch:
+        description: "macOS DMG architecture"
+        type: choice
+        options: [arm64, x64]
+        default: arm64
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: fork-internal-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  ios-internal:
+    if: ${{ github.repository == 'quinn521/aegis-browser' }}
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Archive internal iOS app
+        run: bash scripts/release/ios-internal-archive.sh "${{ inputs.version }}" "${{ inputs.build }}"
+      - name: AccessKit network and session tests
+        run: bash scripts/release/ios-access-tests.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: ios-internal-${{ inputs.version }}-${{ inputs.build }}
+          path: |
+            ${{ runner.temp }}/Aegis-${{ inputs.version }}-${{ inputs.build }}.xcarchive
+            ${{ runner.temp }}/ios-internal-receipt.json
+          if-no-files-found: error
+          retention-days: 14
+  macos-internal:
+    if: ${{ github.repository == 'quinn521/aegis-browser' }}
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - id: package
+        name: Package unnotarized internal DMG
+        env:
+          AEGIS_MACOS_APP_ROOT: ${{ vars.AEGIS_MACOS_APP_ROOT }}
+          AEGIS_IOS_RUNNER_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
+          MACOS_SIGNING_MODE: ad-hoc
+        run: bash scripts/release/macos-internal-dmg.sh "${{ inputs.version }}" "${{ inputs.arch }}"
+      - name: Access network unit tests
+        if: ${{ always() }}
+        run: bash scripts/release/macos-access-tests.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: macos-internal-${{ inputs.version }}-${{ inputs.arch }}
+          path: |
+            ${{ runner.temp }}/aegis-macos-internal-${{ inputs.version }}-*/*.dmg
+            ${{ runner.temp }}/aegis-macos-internal-${{ inputs.version }}-*/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14
