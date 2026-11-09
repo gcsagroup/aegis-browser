@@ -34,6 +34,7 @@ macOS 沿用 fork 变量 `AEGIS_MACOS_BRANCH_REHEARSAL=true` 和 `AEGIS_MACOS_RE
 | Access tests | 在这台 Mac 上跑 Access 证据校验和 `test-aegis-access-native.sh` |
 | Package DMG | 先跑上述测试，再对 runner 上已有的 `.app` 做 ad-hoc 或 Developer ID 签名并生成 DMG |
 | Internal DMG | 先跑 Access 测试，再在已知 Mac 构建目录里找带 `Contents/MacOS` 的 `.app`，打未公证的 0.8.0 DMG。找不到就不做假包 |
+| Rebuild DMG | 在这台 Mac 上找到已有 Chromium 源码，用 `aegis-release.gn` 重新编译 `GCSA Aegis.app`，再 ad-hoc 签名打 DMG。没有源码就不下载、不做假包 |
 
 0.8.0 只打 alpha，给开发自测。不上传，不提审。列车关闭只挡住送审，不挡住这个 alpha 包。
 

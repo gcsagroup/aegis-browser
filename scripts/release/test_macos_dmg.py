@@ -128,6 +128,8 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn('altool', fork_ios)
         self.assertIn('Internal DMG', text)
         self.assertIn('macos-internal-dmg.sh', text)
+        self.assertIn('macos-rebuild-dmg.sh', text)
+        self.assertIn('Rebuild DMG', text)
 
 
 if __name__ == '__main__':

@@ -13,12 +13,13 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Access tests, a known .app DMG, or a searched 0.8.0 internal DMG"
+        description: "Access tests, a known .app DMG, a searched DMG, or a rebuilt ad-hoc DMG"
         type: choice
         options:
           - Access tests
           - Package DMG
           - Internal DMG
+          - Rebuild DMG
         default: Access tests
       version:
         description: "Product version, for example 6.1.0.266"
@@ -98,7 +99,7 @@ jobs:
   access-tests:
     name: access-tests
     needs: admission
-    if: ${{ github.event_name == 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'Rebuild DMG' }}
     runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
     timeout-minutes: 40
     steps:
@@ -165,20 +166,28 @@ jobs:
     needs:
       - admission
       - access-tests
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.operation == 'Internal DMG' && needs.admission.result == 'success' }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && (inputs.operation == 'Internal DMG' || inputs.operation == 'Rebuild DMG') && needs.admission.result == 'success' }}
     runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
-    timeout-minutes: 40
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Package the searched app as an unnotarized internal DMG
+        if: ${{ inputs.operation == 'Internal DMG' }}
         env:
           AEGIS_MACOS_APP_ROOT: ${{ vars.AEGIS_MACOS_APP_ROOT }}
           AEGIS_IOS_RUNNER_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
           MACOS_SIGNING_MODE: ad-hoc
           MACOS_OUTPUT_DIR: ${{ runner.temp }}/aegis-macos-internal-${{ inputs.version }}
         run: bash scripts/release/macos-internal-dmg.sh "${{ inputs.version }}" "${{ inputs.arch }}"
+      - name: Rebuild GCSA Aegis.app and ad-hoc sign the DMG
+        if: ${{ inputs.operation == 'Rebuild DMG' }}
+        env:
+          AEGIS_IOS_RUNNER_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
+          MACOS_SIGNING_MODE: ad-hoc
+          MACOS_OUTPUT_DIR: ${{ runner.temp }}/aegis-macos-internal-${{ inputs.version }}
+        run: bash scripts/release/macos-rebuild-dmg.sh "${{ inputs.version }}" "${{ inputs.arch }}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() }}
         with:
