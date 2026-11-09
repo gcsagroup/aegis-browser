@@ -34,9 +34,16 @@ module AegisRelease
   def self.command(executable, *arguments, cwd: ROOT, env: {}, binary: false)
     # Ruby's [executable, argv0] form always uses exec, including zero arguments.
     # Metacharacters therefore remain literal bytes and never select a shell.
-    stdout, _stderr, status = Open3.capture3({ 'PYTHONDONTWRITEBYTECODE' => '1' }.merge(env),
+    stdout, stderr, status = Open3.capture3({ 'PYTHONDONTWRITEBYTECODE' => '1' }.merge(env),
                                            [executable, executable], *arguments, chdir: cwd, binmode: binary)
-    require!(status.success?, "#{File.basename(executable)} failed (exit #{status.exitstatus}); no success receipt written")
+    unless status.success?
+      detail = [stdout, stderr].compact.map { |chunk| chunk.to_s.strip }.reject(&:empty?).last
+      detail = detail.lines.map(&:strip).reject(&:empty?).last if detail
+      if detail && detail.length <= 300 && !detail.match?(/PRIVATE KEY|BEGIN |password|P12|AuthKey_/i)
+        require!(false, "#{File.basename(executable)} failed (exit #{status.exitstatus}); #{detail}")
+      end
+      require!(false, "#{File.basename(executable)} failed (exit #{status.exitstatus}); no success receipt written")
+    end
     binary ? stdout : stdout.strip
   end
 
