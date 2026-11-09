@@ -61,7 +61,7 @@ jobs:
           - platform: windows
             labels: '["self-hosted", "Windows", "X64", "aegis-upstream"]'
           - platform: android
-            labels: '["self-hosted", "Linux", "X64", "aegis-upstream"]'
+            labels: '["self-hosted", "Linux", "ARM64", "aegis-upstream"]'
     runs-on: ${{ fromJSON(matrix.labels) }}
     steps:
       - uses: actions/checkout@v4

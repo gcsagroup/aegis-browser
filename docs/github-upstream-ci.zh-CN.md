@@ -44,7 +44,7 @@ Mac 大规格机器公布存储仍为 14 GB，完整 Mac 构建暂沿用现有�
 | --- | --- | --- | --- |
 | Mac ARM64 | `self-hosted`, `macOS`, `ARM64`, `aegis-upstream` | `src/out/AegisRelease` | ad-hoc 签名 App 的 ZIP |
 | Windows x64 | `self-hosted`, `Windows`, `X64`, `aegis-upstream` | `src/out/AegisRelease` | `mini_installer.exe`，非正式签名发行包 |
-| Android ARM64 | `self-hosted`, `Linux`, `X64`, `aegis-upstream` | `src/out/AegisAndroid` | `ChromePublic.apk`，非 Play 发布 |
+| Android ARM64 | `self-hosted`, `Linux`, `ARM64`, `aegis-upstream` | `src/out/AegisAndroid` | `ChromePublic.apk`，非 Play 发布 |
 
 三台专用机器需预装 Python 3.12+、Git、对应 Chromium 工具链和系统依赖。Android 编译必须使用 Linux x64；实际验收另需连接专用 ARM64 测试设备。Mac 桌面、Windows UI 验收需要可交互的测试会话。不要将允许任意外部 PR 执行代码的通用 runner 用作这里的构建机。
 
@@ -125,7 +125,7 @@ Windows 使用相应 Windows 路径，Android 使用 Linux 路径。`minFreeGiB`
 1. 用组织所有者或仓库管理员账号打开仓库 `Settings → Actions → Runners → New self-hosted runner`。这是 GitHub 仓库权限，不是要求把所有构建进程以系统管理员运行。
 2. 按机器选择系统与架构：Mac 选 macOS/ARM64，Windows 选 Windows/x64，Android 构建机选 Linux/x64。Android 手机通过 ADB 接入 Linux 构建机，不注册为 runner。
 3. 在对应机器的独立 runner 目录，依次执行页面生成的 Download 和 Configure 命令。注册令牌一小时有效，直接在目标机器使用，不提交到仓库或粘贴到讨论中。
-4. runner 名称分别填写 `aegis-mac-arm64`、`aegis-windows-x64`、`aegis-android-linux-x64`；额外标签填写 `aegis-upstream`，保留自动生成的系统和架构标签。工作目录可使用默认 `_work`，不要填写现有 Chromium 源码目录。
+4. runner 名称分别填写 `aegis-mac-arm64`、`aegis-windows-x64`、`aegis-android-linux-arm64`（x86 阶段再恢复/另挂 `aegis-android-linux-x64`）；额外标签填写 `aegis-upstream`，保留自动生成的系统和架构标签。工作目录可使用默认 `_work`，不要填写现有 Chromium 源码目录。
 5. 首次验证在已登录的测试用户会话启动：Mac/Linux 执行 `./run.sh`，Windows 执行 `./run.cmd`。Windows 桌面 UI 验收先不要选择作为系统服务运行。
 6. 终端显示 `Listening for Jobs`，GitHub 页面显示 `Idle`，表示注册连接成功。记录机器名称及状态，随后由项目维护者配置独立源码、工具链、`AEGIS_CI_CONFIG` 和真实验收程序。注册成功不等于编译环境已经就绪。
 7. 三平台环境验收完成后再设置 `AEGIS_BUILD_RUNNERS_READY=true`；首次注册时不要提前启用。
