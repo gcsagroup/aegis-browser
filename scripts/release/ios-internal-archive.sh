@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build a 0.8.0 alpha archive for development self-test.
-# Alpha stays internal. Do not upload and do not submit for review.
+# Alpha stays internal. Firebase stays disabled because the dev plist is not in git.
+# Do not upload and do not submit for review.
 # The closed train blocks 送审 only.
 set -euo pipefail
 
@@ -52,7 +53,7 @@ xcodebuild \
   -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
-  AEGIS_FIREBASE_CHANNEL="$PROFILE" \
+  AEGIS_FIREBASE_CHANNEL=disabled \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD" \
   archive

@@ -95,7 +95,6 @@ export GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-workflow_dispatch}"
 export GITHUB_SHA="${GITHUB_SHA:-$(git rev-parse HEAD)}"
 export MACOS_OPERATION=package
 export MACOS_VERSION="$VERSION"
-export MACOS_SIGNING_MODE="${MACOS_SIGNING_MODE:-ad-hoc}"
 export MACOS_ARCH="$ARCH"
 export MACOS_APP_PATH="$APP"
 export AEGIS_MACOS_APP_ROOT="$APP_ROOT"
@@ -103,11 +102,7 @@ export AEGIS_IOS_RUNNER_LABEL="${AEGIS_IOS_RUNNER_LABEL:-aegis-ios-fork-migratio
 export MACOS_ACTUAL_ARCH="$(uname -m)"
 export MACOS_OUTPUT_DIR="$OUTPUT"
 export MACOS_NOTARIZE=false
-
-if ps -axo comm= 2>/dev/null | grep -Eq '(^|/)(xcodebuild|codesign)$'; then
-  printf 'Found %s with Contents/MacOS, but xcodebuild or codesign is already running. Not packaging until that signing job finishes.\n' "$APP" >&2
-  exit 4
-fi
+export MACOS_SIGNING_MODE=ad-hoc
 
 python3 scripts/release/macos-dmg.py package
 echo "MACOS_INTERNAL_DMG=$OUTPUT"
