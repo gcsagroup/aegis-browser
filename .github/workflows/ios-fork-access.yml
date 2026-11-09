@@ -13,14 +13,14 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Simulator Access tests, or a 0.8.0 internal archive plus those tests"
+        description: "Simulator Access tests, or a 0.8.0 alpha package for development self-test"
         type: choice
         options:
           - Access tests
-          - Internal archive
+          - Alpha package
         default: Access tests
       version:
-        description: "Internal marketing version. Not uploaded to App Store Connect."
+        description: "Alpha marketing version. Packaged for self-test. Not submitted for review."
         type: string
         default: "0.8.0"
       build:
@@ -50,7 +50,7 @@ jobs:
           node --test apps/browser/scripts/ios-access-phase1-evidence_test.mjs
           python3 -B -m unittest scripts/release/test_macos_dmg.py
   simulator:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'Internal archive' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'Alpha package' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') }}
     runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     timeout-minutes: 40
     steps:
@@ -61,22 +61,22 @@ jobs:
         run: bash scripts/release/ios-access-tests.sh
   internal:
     name: internal-archive
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'Internal archive' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'Alpha package' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') }}
     runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     timeout-minutes: 70
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Archive the internal iOS app
-        run: bash scripts/release/ios-internal-archive.sh "${{ inputs.version }}" "${{ inputs.build }}"
+      - name: Archive the alpha iOS app
+        run: bash scripts/release/ios-internal-archive.sh "${{ inputs.version }}" "${{ inputs.build }}" alpha
       - name: AccessKit network and session tests
         if: ${{ always() }}
         run: bash scripts/release/ios-access-tests.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() }}
         with:
-          name: ios-internal-${{ inputs.version }}-${{ inputs.build }}
+          name: ios-alpha-${{ inputs.version }}-${{ inputs.build }}
           path: |
             ${{ runner.temp }}/Aegis-${{ inputs.version }}-${{ inputs.build }}.xcarchive
             ${{ runner.temp }}/ios-internal-receipt.json

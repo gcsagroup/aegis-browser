@@ -9,7 +9,7 @@ fork 上恢复的是测试用打包签名：
 | 工作流 | 作用 |
 | --- | --- |
 | `macos-delivery.yml` | 在 self-hosted Mac 上跑 Access 测试；需要时用 `temporary-ad-hoc` 或 Developer ID 签出现有 `.app` 的 DMG，不公证 |
-| `ios-fork-access.yml` | 在 fork 已有的 `AEGIS_IOS_RUNNER_LABEL`（当前 `aegis-ios-fork-migration`）上跑 AccessKit 模拟器测试。`Internal archive` 另打 0.8.0 内测归档，不导入 Distribution 证书，不上传商店 |
+| `ios-fork-access.yml` | 在 fork 已有的 `AEGIS_IOS_RUNNER_LABEL`（当前 `aegis-ios-fork-migration`）上跑 AccessKit 模拟器测试。`Alpha package` 打 0.8.0 alpha 自测包，不导入 Distribution 证书，不上传，不提审 |
 
 macOS 沿用 fork 变量 `AEGIS_MACOS_BRANCH_REHEARSAL=true` 和 `AEGIS_MACOS_REHEARSAL_SIGNING_MODE=temporary-ad-hoc`。Runner 优先 `AEGIS_MACOS_RUNNER_LABEL`，否则用现有 iOS self-hosted 标签，不改成 `macos-26`。
 
@@ -35,7 +35,7 @@ macOS 沿用 fork 变量 `AEGIS_MACOS_BRANCH_REHEARSAL=true` 和 `AEGIS_MACOS_RE
 | Package DMG | 先跑上述测试，再对 runner 上已有的 `.app` 做 ad-hoc 或 Developer ID 签名并生成 DMG |
 | Internal DMG | 先跑 Access 测试，再在已知 Mac 构建目录里找带 `Contents/MacOS` 的 `.app`，打未公证的 0.8.0 DMG。找不到就不做假包 |
 
-0.8.0 的 App Store 列车已经关闭，低于已批准的 1.0.0。内测归档和 DMG 只作为 Actions artifact，不调用 `altool`，不上传 TestFlight。
+0.8.0 只打 alpha，给开发自测。不上传，不提审。列车关闭只挡住送审，不挡住这个 alpha 包。
 
 ## 当前 self-host
 
