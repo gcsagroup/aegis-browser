@@ -77,7 +77,8 @@ jobs:
           go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= .github/workflows/ios-*.yml
   ios-archive:
     if: ${{ inputs.exercise != 'cloud-poc' && (github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false') }}
-    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    runs-on: >-
+      ${{ vars.AEGIS_IOS_RUNNER_LABEL != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) || 'macos-26' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
