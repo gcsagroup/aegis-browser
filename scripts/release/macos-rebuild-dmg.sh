@@ -15,8 +15,20 @@ is_chromium_src() {
   [[ -d "$src" && ! -L "$src" && -f "$src/chrome/BUILD.gn" && -d "$src/build" ]]
 }
 
+remember_src() {
+  local src="$1"
+  is_chromium_src "$src" || return 0
+  src="$(cd "$src" && pwd -P)"
+  case "$src" in
+    *android*) ANDROID_SRC="${ANDROID_SRC:-$src}" ;;
+    *macos*|*mac-*|*upstream-candidate*|*Aegis*|*aegis*) MAC_SRC="$src" ;;
+    *) OTHER_SRC="${OTHER_SRC:-$src}" ;;
+  esac
+  printf 'found chromium %s\n' "$src" >&2
+}
+
 find_src() {
-  local candidate root
+  local candidate root build_gn
   local candidates=()
   [[ -n "${CHROMIUM_ROOT:-}" ]] && candidates+=("${CHROMIUM_ROOT}/src")
   candidates+=(
@@ -26,49 +38,72 @@ find_src() {
     "/Users/lazy/Projects/GCSA-aegis-build/upstream-candidate/src"
     "/Volumes/AegisBuild/upstream-candidate/src"
     "/Volumes/CI/Git/gsca/chromium/src"
+    "/Volumes/CI/repositories/aegis-release-build/macos/src"
     "/Volumes/ExternalSSD/repositories/aegis-release-build/src"
   )
   for candidate in "${candidates[@]}"; do
-    if is_chromium_src "$candidate"; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
+    remember_src "$candidate"
   done
   local roots=(
     "$HOME/Projects"
     "$HOME/src"
     "/Users/lazy/Projects"
     "/Volumes/AegisBuild"
-    "/Volumes/CI"
+    "/Volumes/CI/repositories"
     "/Volumes/ExternalSSD"
   )
   for root in "${roots[@]}"; do
     [[ -d "$root" ]] || continue
-    while IFS= read -r candidate; do
-      candidate="$(dirname "$(dirname "$candidate")")"
-      if is_chromium_src "$candidate"; then
-        printf '%s\n' "$candidate"
-        return 0
-      fi
+    while IFS= read -r build_gn; do
+      remember_src "$(dirname "$(dirname "$build_gn")")"
+      [[ -n "${MAC_SRC:-}" ]] && break
     done < <(find "$root" -maxdepth 8 -type f -path '*/chrome/BUILD.gn' -print 2>/dev/null || true)
+    [[ -n "${MAC_SRC:-}" ]] && break
   done
-  return 1
+  if [[ -n "${MAC_SRC:-}" ]]; then
+    printf '%s\n' "$MAC_SRC"
+  elif [[ -n "${OTHER_SRC:-}" ]]; then
+    printf '%s\n' "$OTHER_SRC"
+  elif [[ -n "${ANDROID_SRC:-}" ]]; then
+    printf 'Only Chromium checkout is an Android tree. Building the Mac chrome target from it.\n' >&2
+    printf '%s\n' "$ANDROID_SRC"
+  else
+    return 1
+  fi
 }
 
 find_depot_tools() {
-  local dir
+  local dir parent autoninja
+  local start="$1"
+  parent="$start"
+  local depth
+  for depth in 1 2 3 4 5 6; do
+    parent="$(dirname "$parent")"
+    dir="$parent/depot_tools"
+    if [[ -f "$dir/autoninja" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+  done
   for dir in \
     "${DEPOT_TOOLS_DIR:-}" \
     "$HOME/depot_tools" \
     "/opt/depot_tools" \
+    "/opt/homebrew/opt/depot_tools" \
     "/Volumes/CI/depot_tools" \
+    "/Volumes/CI/repositories/depot_tools" \
     "/Volumes/AegisBuild/depot_tools" \
     "/Users/lazy/depot_tools"; do
-    [[ -n "$dir" && -d "$dir" ]] || continue
-    if [[ -x "$dir/autoninja" || -f "$dir/autoninja" ]]; then
-      printf '%s\n' "$dir"
+    [[ -n "$dir" && -f "$dir/autoninja" ]] || continue
+    printf '%s\n' "$dir"
+    return 0
+  done
+  for parent in /Volumes/CI /Volumes/AegisBuild /opt /Users/quinn /Users/lazy "$HOME"; do
+    [[ -d "$parent" ]] || continue
+    while IFS= read -r autoninja; do
+      printf '%s\n' "$(dirname "$autoninja")"
       return 0
-    fi
+    done < <(find "$parent" -maxdepth 6 -type f -path '*/depot_tools/autoninja' -print 2>/dev/null || true)
   done
   return 1
 }
@@ -81,7 +116,7 @@ fi
 SRC="$(cd "$SRC" && pwd -P)"
 printf 'Using Chromium src %s\n' "$SRC"
 
-DEPOT="$(find_depot_tools || true)"
+DEPOT="$(find_depot_tools "$SRC" || true)"
 if [[ -z "$DEPOT" ]]; then
   printf 'depot_tools not found. Cannot run gn or autoninja.\n' >&2
   exit 3
