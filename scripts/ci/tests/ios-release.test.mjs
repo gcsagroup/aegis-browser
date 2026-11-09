@@ -244,15 +244,16 @@ test('hosted signing loads only environment secrets after source admission and c
   assert.equal(job['runs-on'], "${{ fromJSON(format('[\"self-hosted\",\"macOS\",\"ARM64\",\"{0}\"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}");
   assert.equal(job.environment, 'aegis-ios-signing');
   assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
-  const toolcache = job.steps.findIndex(s => s.uses === './.github/actions/ensure-self-hosted-toolcache');
-  const ruby = job.steps.findIndex(s => s.uses?.startsWith('ruby/setup-ruby@'));
-  assert(toolcache >= 0 && toolcache < ruby);
+  const ruby = job.steps.findIndex(s => s.uses === './.github/actions/ensure-ios-ruby');
+  assert(ruby >= 0);
+  assert(!job.steps.some(s => s.uses?.startsWith('ruby/setup-ruby@')),
+    'ios-package must not call ruby/setup-ruby directly; it hard-codes /Users/runner on macOS');
   const setup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py setup');
   const source = job.steps.findIndex(s => s.run?.includes('ios-release-preflight.mjs'));
   const pack = job.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py package');
   const cleanup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
   const upload = job.steps.findIndex(s => s.uses?.startsWith('actions/upload-artifact@'));
-  assert(source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
+  assert(ruby < source && source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
   assert.equal(job.steps[cleanup].if, "${{ always() && needs.admission.outputs.signing_mode == 'manual' }}");
   assert.equal(Object.keys(job.steps[setup].env).length, 5);
   assert(Object.values(job.steps[setup].env).every(v => v.startsWith('${{ secrets.AEGIS_IOS_')));
