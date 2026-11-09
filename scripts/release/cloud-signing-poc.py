@@ -74,13 +74,22 @@ def keychain_has_distribution(path):
     return bool(re.search(r'"(?:Apple Distribution|iPhone Distribution|Developer ID Application):', identities))
 
 
+# login/System stay locked or ACL-gated under headless Actions; retaining them
+# makes codesign pick those identities and fail with errSecInternalComponent.
+_UNRETAINABLE_KEYCHAINS = {'login.keychain-db', 'login.keychain', 'System.keychain'}
+
+
 def development_keychains(original):
-    """Keep host Development identities available without exposing Distribution secrets."""
+    """Keep unlocked non-login Development identities without exposing Distribution secrets."""
     retained = []
     for path in original:
+        if Path(path).name in _UNRETAINABLE_KEYCHAINS:
+            continue
         if keychain_has_distribution(path):
             continue
-        retained.append(path)
+        identities = run('security', 'find-identity', '-v', '-p', 'codesigning', path).decode()
+        if re.search(r'"Apple Development:', identities):
+            retained.append(path)
     return retained
 
 
@@ -98,8 +107,9 @@ def isolated_keychain(directory, evidence, retain_development=False):
     """Save/restore the user search list and default; never import a P12 or touch ACLs.
 
     Disposable keychains lose Apple Development private keys after each job. When
-    archive signing needs Development, keep host keychains that do not expose
-    Distribution identities so Xcode can reuse a durable Development cert.
+    archive signing needs Development, keep unlocked non-login host keychains that
+    expose Development identities without Distribution secrets. login/System are
+    never retained (headless codesign cannot use their private keys).
     """
     original = keychains()
     default = run('security', 'default-keychain', '-d', 'user').decode().strip().strip('"')
