@@ -38,7 +38,7 @@ the unit inventory; this feat is the **product** A2/A4 pack analogous to
 
 While `feat/ios-access-fault-no-direct-2cd7` is not on `develop`:
 
-- `status.json` keeps `faultStep: pending-pios5`
+- `status.json` keeps `faultStep: fixture-present` while product artifacts are still `NOT_RUN`
 - Template fault/recovery verdicts stay `NOT_RUN`
 - Validator refuses `SIMULATOR_PASS` unless a P-iOS-5 fault fixture is present
   (and same-candidate artifacts cover all five steps)

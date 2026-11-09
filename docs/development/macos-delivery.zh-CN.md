@@ -1,0 +1,41 @@
+# Fork 打包签名与 Access 测试
+
+#97 的 Access 闭环在 fork 分支 `promote/ios-access-closed-loop-2cd7`（`quinn521/aegis-browser`）上。fork `develop` 也有 AccessKit。上游 `main` 还没有。
+
+上游 iOS Delivery 仍然只允许 `gcsagroup/aegis-browser` 做 App Store 打包上传。旧的 `AEGIS_IOS_FORK_REHEARSAL` 不能重新打开这条特权路径。
+
+fork 上恢复的是测试用打包签名：
+
+| 工作流 | 作用 |
+| --- | --- |
+| `macos-delivery.yml` | 在 self-hosted Mac 上跑 Access 测试；需要时用 `temporary-ad-hoc` 或 Developer ID 签出现有 `.app` 的 DMG，不公证 |
+| `ios-fork-access.yml` | 在 fork 已有的 `AEGIS_IOS_RUNNER_LABEL`（当前 `aegis-ios-fork-migration`）上跑 AccessKit 模拟器测试，不导入 Distribution 证书，不上传商店 |
+
+macOS 沿用 fork 变量 `AEGIS_MACOS_BRANCH_REHEARSAL=true` 和 `AEGIS_MACOS_REHEARSAL_SIGNING_MODE=temporary-ad-hoc`。Runner 优先 `AEGIS_MACOS_RUNNER_LABEL`，否则用现有 iOS self-hosted 标签，不改成 `macos-26`。
+
+# macOS Delivery（前期，不公证）
+
+手动工作流：`.github/workflows/macos-delivery.yml`。
+
+先在 fork `quinn521/aegis-browser` 上使用。上游仓库也可以手动触发。不会改 iOS 工作流的 Runner。
+
+## 执行环境
+
+打包和 Access 测试都跑在现有 self-hosted Mac 上：
+
+`["self-hosted", "macOS", "ARM64", <label>]`
+
+`<label>` 优先用仓库变量 `AEGIS_MACOS_RUNNER_LABEL`。未设置时沿用已经在跑 iOS 的 `AEGIS_IOS_RUNNER_LABEL`。不会退回 `macos-26`。
+
+## 操作
+
+| 操作 | 行为 |
+| --- | --- |
+| Access tests | 在这台 Mac 上跑 Access 证据校验和 `test-aegis-access-native.sh` |
+| Package DMG | 先跑上述测试，再对 runner 上已有的 `.app` 做 ad-hoc 或 Developer ID 签名并生成 DMG |
+
+`.app` 必须是 `AEGIS_MACOS_APP_ROOT` 下的真实目录。前期不调用 `notarytool`，回执里 `notarized` 固定为 `false`。Gatekeeper 仍可能拒绝未公证的磁盘映像。
+
+Developer ID 使用仓库 secret `AEGIS_MACOS_DEVELOPER_ID_P12_BASE64` 和 `AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD`。证书只进本次作业的临时钥匙串，不替换登录钥匙串搜索列表。
+
+这不是发行资格，也不代替产品阶段一的五步证据。

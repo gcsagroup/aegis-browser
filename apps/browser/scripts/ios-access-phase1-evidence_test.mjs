@@ -48,7 +48,7 @@ test('checked-in pack scaffold stays NOT_RUN and excludes pios4', async () => {
   assert.ok(result.exitCriteria.includes('pios5'));
   assert.ok(result.exitCriteria.includes('pios6'));
   assert.equal(result.deviceAndTestFlight, 'NOT_RUN');
-  assert.equal(result.faultStep, 'pending-pios5');
+  assert.equal(result.faultStep, 'fixture-present');
   await assertCorrelationFixturePresent(repoRoot);
 });
 
@@ -182,9 +182,9 @@ test('template forbids claiming pios4 as required exit', async () => {
   assert.equal(template.deviceEvidence.status, 'NOT_RUN');
 });
 
-test('fault fixture inspection reports absent until P-iOS-5 lands', async () => {
+test('fault fixture inspection finds the P-iOS-5 API on this branch', async () => {
   const fault = await inspectFaultFixturePresent(repoRoot);
-  // Develop tip may or may not have P-iOS-5 yet; only assert shape.
-  assert.equal(typeof fault.present, 'boolean');
-  assert.ok('path' in fault);
+  assert.equal(fault.present, true);
+  assert.equal(typeof fault.path, 'string');
+  assert.ok(fault.path.endsWith('AccessSiteSessionFault.swift'));
 });
