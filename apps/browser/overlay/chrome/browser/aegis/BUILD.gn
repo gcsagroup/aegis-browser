@@ -4,6 +4,14 @@
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 
+if (is_mac) {
+  # 将独立的传输回归纳入默认构建图，固定输出可直接构建并运行它。
+  group("transport_unittests") {
+    testonly = true
+    deps = [ "proxy:p01_transport_unittests" ]
+  }
+}
+
 source_set("model_provider_policy") {
   sources = [
     "model_provider_policy.cc",

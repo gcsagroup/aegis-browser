@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Upstream <aegis-upstream@example.invalid>
+Date: Mon, 09 Nov 2026 16:20:10 +0800
+Subject: [PATCH] 接通双跳TLS原生回归入口并递增308
+
+---
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index ccf50ba0f4d6259b4c690977b2361b5351f478d7..3f23af3000d70db24397c6e9f6c8d306c52fc419 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -4,6 +4,14 @@
+ import("//testing/libfuzzer/fuzzer_test.gni")
+ import("//testing/test.gni")
+ 
++if (is_mac) {
++  # 将独立的传输回归纳入默认构建图，固定输出可直接构建并运行它。
++  group("transport_unittests") {
++    testonly = true
++    deps = [ "proxy:p01_transport_unittests" ]
++  }
++}
++
+ source_set("model_provider_policy") {
+   sources = [
+     "model_provider_policy.cc",
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 1dc400c6361dcbd0827510468865c6775a7c3be7..7c65aa78aa6b1c801017fcd358a7394f7c2ae1c0 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.307";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (307)";
++inline constexpr char kProductVersion[] = "6.1.0.308";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (308)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
