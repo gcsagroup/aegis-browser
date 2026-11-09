@@ -13,11 +13,12 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: "Access tests, or tests then an unnotarized DMG"
+        description: "Access tests, a known .app DMG, or a searched 0.8.0 internal DMG"
         type: choice
         options:
           - Access tests
           - Package DMG
+          - Internal DMG
         default: Access tests
       version:
         description: "Product version, for example 6.1.0.266"
@@ -159,3 +160,31 @@ jobs:
       - name: Remove the job-local Developer ID keychain
         if: ${{ always() && inputs.signing_mode == 'developer-id' }}
         run: python3 scripts/release/macos-developer-id.py cleanup
+  internal-dmg:
+    name: internal-dmg
+    needs:
+      - admission
+      - access-tests
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.operation == 'Internal DMG' && needs.admission.result == 'success' }}
+    runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Package the searched app as an unnotarized internal DMG
+        env:
+          AEGIS_MACOS_APP_ROOT: ${{ vars.AEGIS_MACOS_APP_ROOT }}
+          AEGIS_IOS_RUNNER_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
+          MACOS_SIGNING_MODE: ad-hoc
+          MACOS_OUTPUT_DIR: ${{ runner.temp }}/aegis-macos-internal-${{ inputs.version }}
+        run: bash scripts/release/macos-internal-dmg.sh "${{ inputs.version }}" "${{ inputs.arch }}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: macos-internal-${{ inputs.version }}-${{ inputs.arch }}
+          path: |
+            ${{ runner.temp }}/aegis-macos-internal-${{ inputs.version }}/*.dmg
+            ${{ runner.temp }}/aegis-macos-internal-${{ inputs.version }}/macos-delivery-receipt.json
+          if-no-files-found: error
+          retention-days: 14

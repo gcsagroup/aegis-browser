@@ -124,6 +124,10 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn('macos-26', fork_ios)
         self.assertNotIn('DISTRIBUTION_P12', fork_ios)
         self.assertIn('ios-access-tests.sh', fork_ios)
+        self.assertIn('ios-internal-archive.sh', fork_ios)
+        self.assertNotIn('altool', fork_ios)
+        self.assertIn('Internal DMG', text)
+        self.assertIn('macos-internal-dmg.sh', text)
 
 
 if __name__ == '__main__':

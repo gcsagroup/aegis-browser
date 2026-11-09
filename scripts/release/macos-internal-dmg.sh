@@ -20,7 +20,7 @@ find_app() {
   for root in "${roots[@]}"; do
     [[ -d "$root" ]] || continue
     while IFS= read -r candidate; do
-      if [[ -f "$candidate/Contents/Info.plist" && ! -L "$candidate" ]]; then
+      if [[ -d "$candidate/Contents/MacOS" && -f "$candidate/Contents/Info.plist" && ! -L "$candidate" ]]; then
         printf '%s\n' "$candidate"
         return 0
       fi
