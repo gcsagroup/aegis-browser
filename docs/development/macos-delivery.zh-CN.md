@@ -37,6 +37,12 @@ macOS 沿用 fork 变量 `AEGIS_MACOS_BRANCH_REHEARSAL=true` 和 `AEGIS_MACOS_RE
 
 0.8.0 的 App Store 列车已经关闭，低于已批准的 1.0.0。内测归档和 DMG 只作为 Actions artifact，不调用 `altool`，不上传 TestFlight。
 
+## 当前 self-host
+
+fork 的开发和内测都走 `quinn-local-aegis-test-01` / `02`（标签 `aegis-test`、`aegis-ios-fork-migration`）。`main`/`develop` 上的 `quality`、C++ 和 iOS archive 本来就会被 `/Users/quinn/actions-runner-aegis/hooks/job-started.py` 放行。
+
+同一份 hook 现在也放行本仓库的内测工作流 `ios-fork-access.yml`、`macos-delivery.yml`，分支包括 `main`、`develop` 和 `promote/ios-access-closed-loop-2cd7`。商店上传作业仍然只允许 `main`/`develop` 和既有 candidate tag。外部 fork PR 继续拒绝。源码副本在 `scripts/ci/self-host-job-started.py`，生效的是 Mac 上的那份。
+
 `.app` 必须是 `AEGIS_MACOS_APP_ROOT` 下的真实目录。前期不调用 `notarytool`，回执里 `notarized` 固定为 `false`。Gatekeeper 仍可能拒绝未公证的磁盘映像。
 
 Developer ID 使用仓库 secret `AEGIS_MACOS_DEVELOPER_ID_P12_BASE64` 和 `AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD`。证书只进本次作业的临时钥匙串，不替换登录钥匙串搜索列表。
