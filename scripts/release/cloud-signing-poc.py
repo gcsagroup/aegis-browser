@@ -233,8 +233,11 @@ def experiment(options, environment):
                 'team': options.team, 'profile': options.profile, 'signingMode': 'cloud', 'runtime': options.runtime, 'status': 'started',
                 'upload': 'not_attempted', 'deviceAcceptance': 'not_verified', 'releaseReady': False}
     temporary_key = None
-    archive_signing = options.archive_signing or (
-        'ad-hoc' if options.runtime in ('github-hosted', 'self-hosted') else 'development')
+    # Xcode 26.6 rejects ad-hoc/unsigned archives when targets carry entitlements
+    # ("require signing with a development certificate"). CI therefore defaults to
+    # Apple Development for the archive, then still exports via cloud Distribution.
+    # Explicit --archive-signing=ad-hoc remains available for older experiments.
+    archive_signing = options.archive_signing or 'development'
     evidence['archiveSigningMode'] = archive_signing
     try:
         environment = dict(environment)
@@ -335,7 +338,8 @@ def main():
     parser.add_argument('--signing-mode', choices=['cloud', 'cloud-poc'], required=True)
     parser.add_argument('--runtime', choices=['local-fallback', 'github-hosted', 'self-hosted'], default='local-fallback')
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], default='beta')
-    parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'], help='Hosted uses ad-hoc archive then cloud distribution; local fallback retains development signing')
+    parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'],
+                        help='Archive identity before cloud Distribution export (default: development; Xcode 26.6 rejects ad-hoc for entitlement-bearing targets)')
     parser.add_argument('--version', required=True)
     parser.add_argument('--build', required=True)
     parser.add_argument('--team', required=True)

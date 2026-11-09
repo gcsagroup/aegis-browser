@@ -125,12 +125,13 @@ packaging runs only on GitHub-hosted macOS; the isolated-keychain local command 
 automatic retry after a cloud failure.
 
 The hosted proof must use Xcode 26.6, a clean runner without installed profiles or
-Distribution identities, and a newly created archive. Hosted archive signing is
-ad-hoc, then export performs Apple cloud distribution signing. This avoids
-creating disposable development certificates for every matrix build. Ad-hoc
-archives themselves are not accepted as distributable packages; the exported
-IPA must pass the full Apple-trusted distribution signature/profile/entitlement
-checks. Local fallback retains development-signed archiving by default.
+Distribution identities, and a newly created archive. Archive signing defaults to
+Apple Development (via ASC API key + `-allowProvisioningUpdates`), then export
+performs Apple cloud Distribution signing. Xcode 26.6 rejects ad-hoc/unsigned
+archives when targets carry entitlements, so ad-hoc archive signing is opt-in
+only (`--archive-signing=ad-hoc`) and is not the CI default. Development-signed
+archives are still not distributable packages; the exported IPA must pass the
+full Apple-trusted distribution signature/profile/entitlement checks.
 
 Each package contains a source-bound receipt, IPA, dSYM ZIP and independent
 signature/dSYM checks. Every target's dSYM UUID must match its archived binary.
