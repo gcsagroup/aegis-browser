@@ -88,25 +88,25 @@ rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*Chromium Hel
   "$TEST_ROOT/sibling_sign_then_valid/calls.log"
 
 brand_root="$TEST_ROOT/branded"
-brand_app="$brand_root/GCSA Aegis.app"
-mkdir -p "$brand_app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/Helpers"
-: > "$brand_app/Contents/Frameworks/GCSA Aegis Framework.framework/Versions/Current/GCSA Aegis Framework"
+brand_app="$brand_root/Aegis Browser.app"
+mkdir -p "$brand_app/Contents/Frameworks/Aegis Browser Framework.framework/Versions/Current/Helpers"
+: > "$brand_app/Contents/Frameworks/Aegis Browser Framework.framework/Versions/Current/Aegis Browser Framework"
 cat > "$brand_app/Contents/Info.plist" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0"><dict>
 <key>CFBundleExecutable</key><string>GCSA Aegis</string>
 </dict></plist>
 EOF
-mkdir -p "$brand_root/GCSA Aegis Helper Sibling.app"
+mkdir -p "$brand_root/Aegis Browser Helper Sibling.app"
 export FAKE_CODESIGN_MODE=sibling_sign_then_valid
 export FAKE_CODESIGN_LOG="$brand_root/calls.log"
 export FAKE_CODESIGN_COUNT="$brand_root/count"
 export FAKE_SIBLING_SIGNED="$brand_root/sibling-signed"
 CODESIGN="$FAKE_CODESIGN" bash "$SCRIPT_DIR/sign-chromium-app.sh" \
   "$brand_app" "$brand_root"
-rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*GCSA Aegis Framework.framework/Versions/Current/GCSA Aegis Framework' \
+rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*Aegis Browser Framework.framework/Versions/Current/Aegis Browser Framework' \
   "$brand_root/calls.log"
-rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*GCSA Aegis Helper Sibling.app' \
+rg -q -- '--force --sign 7C33B517942161311A087CE893D2F1CE9B204B44 .*Aegis Browser Helper Sibling.app' \
   "$brand_root/calls.log"
 
 set +e

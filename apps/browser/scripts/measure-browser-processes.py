@@ -12,7 +12,7 @@ import sys
 import time
 
 APP = Path('/Users/lazy/Applications/GCSA Aegis Test.app')
-EXECUTABLE = APP / 'Contents/MacOS/GCSA Aegis'
+EXECUTABLE = APP / 'Contents/MacOS/Aegis Browser'
 
 
 def cpu_seconds(value):

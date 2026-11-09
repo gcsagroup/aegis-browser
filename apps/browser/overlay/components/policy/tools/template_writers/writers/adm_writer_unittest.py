@@ -91,12 +91,12 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     }, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
   END CATEGORY
 
@@ -104,7 +104,7 @@ class AdmWriterUnittest(writer_unittest_common.WriterUnittestCommon):
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"''')
     self.CompareOutputs(output, expected_output)
 
@@ -124,12 +124,12 @@ chromium_recommended="GCSA Aegis - Recommended"''')
     expected_output = '; chromium version: 39.0.0.0\n' + \
         self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
   END CATEGORY
 
@@ -137,7 +137,7 @@ chromium_recommended="GCSA Aegis - Recommended"''')
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"''')
     self.CompareOutputs(output, expected_output)
 
@@ -290,7 +290,7 @@ With a newline.""",
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!StringPolicy_Policy
       #if version >= 4
@@ -307,7 +307,7 @@ With a newline.""",
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!StringPolicy_Policy
       #if version >= 4
@@ -327,7 +327,7 @@ With a newline.""",
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 StringPolicy_Policy="Caption of policy."
 StringPolicy_Explain="Description of group.\\nWith a newline.\\n\\n\
@@ -358,7 +358,7 @@ StringPolicy_Part="Caption of policy."
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!IntPolicy_Policy
       #if version >= 4
@@ -375,7 +375,7 @@ StringPolicy_Part="Caption of policy."
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!IntPolicy_Policy
       #if version >= 4
@@ -395,7 +395,7 @@ StringPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 IntPolicy_Policy="Caption of policy."
 IntPolicy_Explain="Description of policy.\\n\\n\
@@ -427,7 +427,7 @@ IntPolicy_Part="Caption of policy."
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!IntPolicy_Policy
       #if version >= 4
@@ -444,7 +444,7 @@ IntPolicy_Part="Caption of policy."
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!IntPolicy_Policy
       #if version >= 4
@@ -464,7 +464,7 @@ IntPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 IntPolicy_Policy="Caption of policy."
 IntPolicy_Explain="Description of policy.\\n\\n\
@@ -497,7 +497,7 @@ IntPolicy_Part="Caption of policy."
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!IntPolicy_Policy
       #if version >= 4
@@ -514,7 +514,7 @@ IntPolicy_Part="Caption of policy."
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!IntPolicy_Policy
       #if version >= 4
@@ -534,7 +534,7 @@ IntPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 IntPolicy_Policy="Caption of policy."
 IntPolicy_Explain="Description of policy.\\n\\n\
@@ -747,7 +747,7 @@ With a newline.""",
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!ListPolicy_Policy
       #if version >= 4
@@ -756,7 +756,7 @@ With a newline.""",
       EXPLAIN !!ListPolicy_Explain
 
       PART !!ListPolicy_Part  LISTBOX
-        KEYNAME "Software\\Policies\\GCSA Aegis\\ListPolicy"
+        KEYNAME "Software\\Policies\\Aegis Browser\\ListPolicy"
         VALUEPREFIX ""
       END PART
     END POLICY
@@ -764,7 +764,7 @@ With a newline.""",
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!ListPolicy_Policy
       #if version >= 4
@@ -773,7 +773,7 @@ With a newline.""",
       EXPLAIN !!ListPolicy_Explain
 
       PART !!ListPolicy_Part  LISTBOX
-        KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended\\ListPolicy"
+        KEYNAME "Software\\Policies\\Aegis Browser\\Recommended\\ListPolicy"
         VALUEPREFIX ""
       END PART
     END POLICY
@@ -784,7 +784,7 @@ With a newline.""",
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 ListPolicy_Policy="Caption of list policy."
 ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
@@ -823,7 +823,7 @@ With a newline.""",
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!ListPolicy_Policy
       #if version >= 4
@@ -832,7 +832,7 @@ With a newline.""",
       EXPLAIN !!ListPolicy_Explain
 
       PART !!ListPolicy_Part  LISTBOX
-        KEYNAME "Software\\Policies\\GCSA Aegis\\ListPolicy"
+        KEYNAME "Software\\Policies\\Aegis Browser\\ListPolicy"
         VALUEPREFIX ""
       END PART
     END POLICY
@@ -840,7 +840,7 @@ With a newline.""",
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!ListPolicy_Policy
       #if version >= 4
@@ -849,7 +849,7 @@ With a newline.""",
       EXPLAIN !!ListPolicy_Explain
 
       PART !!ListPolicy_Part  LISTBOX
-        KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended\\ListPolicy"
+        KEYNAME "Software\\Policies\\Aegis Browser\\Recommended\\ListPolicy"
         VALUEPREFIX ""
       END PART
     END POLICY
@@ -860,7 +860,7 @@ With a newline.""",
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 ListPolicy_Policy="Caption of list policy."
 ListPolicy_Explain="Description of list policy.\\nWith a newline.\\n\\n\
@@ -891,7 +891,7 @@ ListPolicy_Part="Label of list policy."
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!DictionaryPolicy_Policy
       #if version >= 4
@@ -908,7 +908,7 @@ ListPolicy_Part="Label of list policy."
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!DictionaryPolicy_Policy
       #if version >= 4
@@ -928,7 +928,7 @@ ListPolicy_Part="Label of list policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 DictionaryPolicy_Policy="Caption of policy."
 DictionaryPolicy_Explain="Description of group.\\n\\n\
@@ -959,7 +959,7 @@ DictionaryPolicy_Part="Caption of policy."
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     POLICY !!ExternalPolicy_Policy
       #if version >= 4
@@ -976,7 +976,7 @@ DictionaryPolicy_Part="Caption of policy."
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     POLICY !!ExternalPolicy_Policy
       #if version >= 4
@@ -996,7 +996,7 @@ DictionaryPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 ExternalPolicy_Policy="Caption of policy."
 ExternalPolicy_Explain="Description of group.\\n\\n\
@@ -1034,12 +1034,12 @@ ExternalPolicy_Part="Caption of policy."
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
   END CATEGORY
 
@@ -1047,7 +1047,7 @@ ExternalPolicy_Part="Caption of policy."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 ''')
     self.CompareOutputs(output, expected_output)
@@ -1145,7 +1145,7 @@ With a newline."""
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     CATEGORY !!Group1_Category
       POLICY !!Policy1_Policy
@@ -1155,7 +1155,7 @@ With a newline."""
         EXPLAIN !!Policy1_Explain
 
         PART !!Policy1_Part  LISTBOX
-          KEYNAME "Software\\Policies\\GCSA Aegis\\Policy1"
+          KEYNAME "Software\\Policies\\Aegis Browser\\Policy1"
           VALUEPREFIX ""
         END PART
       END POLICY
@@ -1177,7 +1177,7 @@ With a newline."""
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     CATEGORY !!Group1_Category
       POLICY !!Policy1_Policy
@@ -1187,7 +1187,7 @@ With a newline."""
         EXPLAIN !!Policy1_Explain
 
         PART !!Policy1_Part  LISTBOX
-          KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended\\Policy1"
+          KEYNAME "Software\\Policies\\Aegis Browser\\Recommended\\Policy1"
           VALUEPREFIX ""
         END PART
       END POLICY
@@ -1200,7 +1200,7 @@ With a newline."""
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 Group1_Category="Caption of group."
 Policy1_Policy="Caption of policy1."
@@ -1336,7 +1336,7 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
     output = self.GetOutput(policy_json, {'_chromium': '1'}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     CATEGORY !!DeprecatedPolicies_Category
       POLICY !!Policy1_Policy
@@ -1356,7 +1356,7 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     CATEGORY !!DeprecatedPolicies_Category
       POLICY !!Policy1_Policy
@@ -1379,7 +1379,7 @@ EnumPolicy_B_tls1_2_DropDown="tls1.2"
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 DeprecatedPolicies_Category="Deprecated policies"
 Policy1_Policy="Caption of policy1."
@@ -1412,7 +1412,7 @@ Policy1_Part="Caption of policy1."
                                           'major_version': 84}, 'adm')
     expected_output = self.ConstructOutput(['MACHINE', 'USER'], '''
   CATEGORY !!chromium
-    KEYNAME "Software\\Policies\\GCSA Aegis"
+    KEYNAME "Software\\Policies\\Aegis Browser"
 
     CATEGORY !!RemovedPolicies_Category
       POLICY !!Policy1_Policy
@@ -1432,7 +1432,7 @@ Policy1_Part="Caption of policy1."
   END CATEGORY
 
   CATEGORY !!chromium_recommended
-    KEYNAME "Software\\Policies\\GCSA Aegis\\Recommended"
+    KEYNAME "Software\\Policies\\Aegis Browser\\Recommended"
 
     CATEGORY !!RemovedPolicies_Category
       POLICY !!Policy1_Policy
@@ -1455,7 +1455,7 @@ Policy1_Part="Caption of policy1."
 ''', '''[Strings]
 SUPPORTED_WIN7="Microsoft Windows 7 or later"
 SUPPORTED_WIN7_ONLY="Microsoft Windows 7"
-chromium="GCSA Aegis"
+chromium="Aegis Browser"
 chromium_recommended="GCSA Aegis - Recommended"
 RemovedPolicies_Category="Removed policies"
 Policy1_Policy="Caption of policy1."

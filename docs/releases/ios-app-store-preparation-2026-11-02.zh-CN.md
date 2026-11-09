@@ -6,7 +6,7 @@
 
 | 字段 | 拟填写值 |
 | --- | --- |
-| 应用名称 | GCSA Aegis |
+| 应用名称 | Aegis Browser |
 | Marketing URL | https://browser.erjinyi.com/ |
 | Support URL | https://browser.erjinyi.com/support/ |
 | Privacy Policy URL | https://browser.erjinyi.com/privacy/ |

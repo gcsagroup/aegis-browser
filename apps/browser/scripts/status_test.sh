@@ -16,9 +16,9 @@ assert_eq() {
   fi
 }
 
-assert_eq '/tmp/out/GCSA Aegis.app/Contents/MacOS/GCSA Aegis' \
+assert_eq '/tmp/out/Aegis Browser.app/Contents/MacOS/Aegis Browser' \
   "$(desktop_binary_path /tmp/out Darwin)" "macOS 产物路径"
-assert_eq '/tmp/out/GCSA Aegis.app' \
+assert_eq '/tmp/out/Aegis Browser.app' \
   "$(desktop_app_path /tmp/out)" "macOS App 路径"
 assert_eq /tmp/out/chrome "$(desktop_binary_path /tmp/out Linux)" \
   "Linux 产物路径"

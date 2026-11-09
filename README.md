@@ -16,7 +16,7 @@
 
 [Getting started](#getting-started) · [Platform progress](#platform-progress) · [Roadmap](docs/roadmap.md) · [Documentation](docs/README.md)
 
-GCSA Aegis 1.0.0 is available for iPhone and iPad. Join the external beta through [TestFlight](https://testflight.apple.com/join/EwUW1VDx). See the [changelog](CHANGELOG.md) for earlier development milestones.
+Aegis Browser 1.0.0 is available for iPhone and iPad. Join the external beta through [TestFlight](https://testflight.apple.com/join/EwUW1VDx). See the [changelog](CHANGELOG.md) for earlier development milestones.
 
 The iOS 1.0.1 candidate adds an Open Source Licenses & Acknowledgements page in Settings. See the [changelog](CHANGELOG.md#ios--ipados-101--testflight) for build status.
 

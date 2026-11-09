@@ -2,7 +2,7 @@ import {readFileSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 
-export const AEGIS_MAC_PRODUCT_NAME = 'GCSA Aegis';
+export const AEGIS_MAC_PRODUCT_NAME = 'Aegis Browser';
 export const AEGIS_MAC_APP_BUNDLE_NAME = `${AEGIS_MAC_PRODUCT_NAME}.app`;
 
 function decodeXmlText(value) {

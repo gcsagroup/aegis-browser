@@ -27,21 +27,21 @@ def GetConfigurationForBuild(defines):
   if '_chromium' in defines:
     config = {
         'build': 'chromium',
-        'app_name': 'GCSA Aegis',
+        'app_name': 'Aegis Browser',
         'doc_url': 'https://chromeenterprise.google/policies/',
         'frame_name': 'Chromium Frame',
         'os_name': 'ChromiumOS',
         'webview_name': 'Chromium WebView',
         'win_config': {
             'win': {
-                'reg_mandatory_key_name': 'Software\\Policies\\GCSA Aegis',
+                'reg_mandatory_key_name': 'Software\\Policies\\Aegis Browser',
                 'reg_recommended_key_name':
-                'Software\\Policies\\GCSA Aegis\\Recommended',
+                'Software\\Policies\\Aegis Browser\\Recommended',
                 'mandatory_category_path': ['chromium'],
                 'recommended_category_path': ['chromium_recommended'],
                 'category_path_strings': {
-                    'chromium': 'GCSA Aegis',
-                    'chromium_recommended': 'GCSA Aegis - {doc_recommended}',
+                    'chromium': 'Aegis Browser',
+                    'chromium_recommended': 'Aegis Browser - {doc_recommended}',
                 },
                 'namespace': 'GCSA.Policies.Aegis',
             },
