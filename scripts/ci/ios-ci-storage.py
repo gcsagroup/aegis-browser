@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Place unsigned iOS CI data on enrolled storage; retain source-bound evidence."""
 import argparse
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -61,7 +62,7 @@ def private_json(path):
     for parent in reversed(path.parents):
         ordinary_directory(parent)
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as error:
         raise ValueError("private storage configuration cannot be opened without symlinks") from error
     with os.fdopen(descriptor, "rb") as stream:
@@ -73,6 +74,70 @@ def private_json(path):
         raw = stream.read(16385)
     require(len(raw) <= 16384, "storage configuration exceeds its bound")
     return json.loads(raw, object_pairs_hook=unique_object), hashlib.sha256(raw).hexdigest()
+
+
+def seed_artifacts(base, cache, volume):
+    seed = base / "artifact-seed-v1"
+    if not seed.exists() and not seed.is_symlink():
+        return None, 0
+    artifacts = seed / "artifacts"
+    for directory in (seed, artifacts):
+        ordinary_directory(directory)
+        require(directory.stat().st_dev == volume.stat().st_dev, "artifact snapshot is on another device")
+    catalog, digest = private_json(seed / "manifest.json")
+    require(isinstance(catalog, dict) and set(catalog) == {"schema_version", "artifacts"}
+            and type(catalog["schema_version"]) is int and catalog["schema_version"] == 1,
+            "invalid artifact snapshot schema")
+    entries = catalog["artifacts"]
+    require(isinstance(entries, list) and 0 < len(entries) <= 64, "invalid artifact snapshot count")
+    names, total = set(), 0
+    for entry in entries:
+        require(isinstance(entry, dict) and set(entry) == {"name", "bytes", "sha256"}, "invalid artifact snapshot entry")
+        name, size, checksum = entry["name"], entry["bytes"], entry["sha256"]
+        require(isinstance(name, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", name)
+                and name not in names, "unsafe or duplicate artifact snapshot name")
+        require(type(size) is int and 0 < size <= 256 * 2**20, "invalid artifact snapshot size")
+        require(isinstance(checksum, str) and re.fullmatch(r"[0-9a-f]{64}", checksum), "invalid artifact snapshot digest")
+        names.add(name)
+        total += size
+    require(total <= 512 * 2**20, "artifact snapshot exceeds its byte bound")
+    observed = set()
+    for path in artifacts.iterdir():
+        require(len(observed) < 64 and path.name in names, "artifact snapshot has unlisted payloads")
+        observed.add(path.name)
+    require(observed == names, "artifact snapshot is missing payloads")
+    destination = None if cache is None else cache / "artifacts"
+    if destination is not None:
+        destination.mkdir(mode=0o700)
+    for entry in entries:
+        path = artifacts / entry["name"]
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError as error:
+            raise ValueError("artifact snapshot payload cannot be opened safely") from error
+        with os.fdopen(descriptor, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and info.st_nlink == 1
+                    and stat.S_IMODE(info.st_mode) == 0o400 and info.st_size == entry["bytes"]
+                    and info.st_dev == volume.stat().st_dev and not acl_entries(path),
+                    "artifact snapshot payload identity or permissions differ")
+            content = hashlib.sha256()
+            copied = 0
+            output = (nullcontext(None) if destination is None else os.fdopen(os.open(
+                destination / entry["name"], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), "wb"))
+            with output as target:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    copied += len(chunk)
+                    require(copied <= entry["bytes"], "artifact snapshot grew during copy")
+                    content.update(chunk)
+                    if target is not None:
+                        target.write(chunk)
+            after = os.fstat(stream.fileno())
+            fields = ("st_dev", "st_ino", "st_uid", "st_gid", "st_mode", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")
+            require(all(getattr(info, key) == getattr(after, key) for key in fields)
+                    and copied == entry["bytes"] and content.hexdigest() == entry["sha256"],
+                    "artifact snapshot bytes changed or digest differs")
+    return digest, len(entries)
 
 
 def volume_info(path):
@@ -193,8 +258,13 @@ def prepare(environment, runner_environment, runner_name, *, config_path=CONFIG)
     require(not acl_entries(root), "new private job directory has an ACL")
     for name in ("tmp", "DerivedData", "SourcePackages", "PackageCache", "ModuleCache"):
         (root / name).mkdir(mode=0o700)
+    seed_digest, seed_count = (seed_artifacts(base, root / "PackageCache", volume)
+                               if runner_environment == "self-hosted" else (None, 0))
+    if runner_environment == "self-hosted":
+        require(available_bytes(volume) >= MIN_FREE_BYTES, "unsigned iOS CI storage capacity is below 20 GiB")
     receipt = dict(schema_version=1, **metadata, placement=placement,
-                   runner_name=runner_name, enrollment_sha256=enrollment)
+                   runner_name=runner_name, enrollment_sha256=enrollment,
+                   artifact_seed_sha256=seed_digest, seed_artifact_count=seed_count)
     write_json(root / "storage-receipt.json", receipt)
     # Local state stays private; the uploaded receipt never contains host paths or UUIDs.
     write_json(root / ".storage-state.json", dict(receipt, root=str(root), device=root.stat().st_dev,
@@ -252,8 +322,10 @@ def main():
     else:
         root, volume, enrollment = host_storage(args.runner_name, CONFIG)
         require(available_bytes(volume) >= MIN_FREE_BYTES, "unsigned iOS CI storage capacity is below 20 GiB")
+        seed_digest, seed_count = seed_artifacts(root, None, volume)
         print(json.dumps(dict(root=str(root), volume=str(volume), enrollment_sha256=enrollment,
-                              available_bytes=available_bytes(volume))))
+                              available_bytes=available_bytes(volume), artifact_seed_sha256=seed_digest,
+                              seed_artifact_count=seed_count)))
 
 
 if __name__ == "__main__":

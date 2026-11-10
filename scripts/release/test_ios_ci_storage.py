@@ -1,14 +1,17 @@
 """Disposable tests for unsigned CI placement and retained archive evidence."""
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import pwd
 from pathlib import Path
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
+from contextlib import redirect_stdout
 
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "scripts/ci/ios-ci-storage.py"
@@ -70,6 +73,155 @@ class StorageTests(unittest.TestCase):
     def prepare(self, runner_environment="self-hosted", **environment):
         return self.storage.prepare({**self.environment, **environment}, runner_environment,
                                     "fixture-mac", config_path=self.config)
+
+    def artifact_snapshot(self):
+        seed = self.volume / "gcsa-ci/aegis/slot-fixture/artifact-seed-v1"
+        artifacts = seed / "artifacts"
+        artifacts.mkdir(parents=True, mode=0o700)
+        payload = artifacts / "https___fixture_invalid_package_zip"
+        payload.write_bytes(b"disposable archive bytes")
+        payload.chmod(0o400)
+        catalog = {"schema_version": 1, "artifacts": [{"name": payload.name,
+                   "bytes": payload.stat().st_size,
+                   "sha256": hashlib.sha256(payload.read_bytes()).hexdigest()}]}
+        manifest = seed / "manifest.json"
+        manifest.write_text(json.dumps(catalog))
+        manifest.chmod(0o600)
+        return seed, payload, manifest, catalog
+
+    def test_snapshot_archives_are_private_copies_with_digest_receipts(self):
+        seed, payload, manifest, _ = self.artifact_snapshot()
+        first, second = self.prepare(), self.prepare()
+        copied = first / "PackageCache/artifacts" / payload.name
+        other = second / "PackageCache/artifacts" / payload.name
+        self.assertEqual(copied.read_bytes(), payload.read_bytes())
+        self.assertEqual(other.read_bytes(), payload.read_bytes())
+        self.assertEqual(len({payload.stat().st_ino, copied.stat().st_ino, other.stat().st_ino}), 3)
+        copied.write_bytes(b"one job changed its own cache")
+        self.assertEqual(other.read_bytes(), payload.read_bytes())
+        receipt = json.loads((first / "storage-receipt.json").read_text())
+        self.assertEqual(receipt["artifact_seed_sha256"], hashlib.sha256(manifest.read_bytes()).hexdigest())
+        self.assertEqual(receipt["seed_artifact_count"], 1)
+        self.assertNotIn(str(seed), json.dumps(receipt))
+
+    def test_snapshot_digest_size_and_writable_payload_are_denied(self):
+        _, payload, manifest, catalog = self.artifact_snapshot()
+        for fault in ("digest", "size", "writable"):
+            changed = json.loads(json.dumps(catalog))
+            if fault == "digest":
+                changed["artifacts"][0]["sha256"] = "0" * 64
+            elif fault == "size":
+                changed["artifacts"][0]["bytes"] += 1
+            payload.chmod(0o600 if fault == "writable" else 0o400)
+            manifest.write_text(json.dumps(changed))
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                self.prepare()
+        self.assertEqual(list(self.temp.iterdir()), [])
+
+    def test_snapshot_symlink_hardlink_and_unlisted_payloads_are_denied(self):
+        _, payload, _, _ = self.artifact_snapshot()
+        raw = payload.read_bytes()
+        elsewhere = self.root / "retained.zip"
+        elsewhere.write_bytes(raw)
+        elsewhere.chmod(0o400)
+        payload.unlink()
+        payload.symlink_to(elsewhere)
+        with self.assertRaises(ValueError):
+            self.prepare()
+        payload.unlink()
+        os.link(elsewhere, payload)
+        with self.assertRaises(ValueError):
+            self.prepare()
+        payload.unlink()
+        payload.write_bytes(raw)
+        payload.chmod(0o400)
+        (payload.parent / "unlisted").write_bytes(b"unlisted archive")
+        with self.assertRaises(ValueError):
+            self.prepare()
+
+    def test_snapshot_catalog_rejects_names_duplicates_and_unbounded_sizes(self):
+        _, _, manifest, original = self.artifact_snapshot()
+        variants = []
+        for name in ("../escape", "/absolute", "with/slash"):
+            catalog = json.loads(json.dumps(original))
+            catalog["artifacts"][0]["name"] = name
+            variants.append(catalog)
+        variants.append({**original, "artifacts": original["artifacts"] * 2})
+        for size in (True, 0, 512 * 2**20 + 1):
+            catalog = json.loads(json.dumps(original))
+            catalog["artifacts"][0]["bytes"] = size
+            variants.append(catalog)
+        for catalog in variants:
+            manifest.write_text(json.dumps(catalog))
+            with self.subTest(catalog=catalog), self.assertRaises(ValueError):
+                self.prepare()
+
+    def test_hosted_route_ignores_self_hosted_snapshot(self):
+        _, _, manifest, _ = self.artifact_snapshot()
+        manifest.write_text("invalid host snapshot")
+        root = self.prepare("github-hosted")
+        self.assertFalse((root / "PackageCache/artifacts").exists())
+
+    def test_no_snapshot_retains_cold_cache_route(self):
+        root = self.prepare()
+        self.assertEqual(list((root / "PackageCache").iterdir()), [])
+        receipt = json.loads((root / "storage-receipt.json").read_text())
+        self.assertIsNone(receipt["artifact_seed_sha256"])
+        self.assertEqual(receipt["seed_artifact_count"], 0)
+
+    def test_snapshot_special_files_are_rejected_without_waiting_for_a_writer(self):
+        _, payload, manifest, _ = self.artifact_snapshot()
+        raw = payload.read_bytes()
+        payload.unlink()
+        os.mkfifo(payload, 0o400)
+        with self.assertRaises(ValueError):
+            self.prepare()
+        payload.unlink()
+        payload.write_bytes(raw)
+        payload.chmod(0o400)
+        manifest.unlink()
+        os.mkfifo(manifest, 0o600)
+        with self.assertRaises(ValueError):
+            self.prepare()
+
+    def test_snapshot_foreign_device_and_payload_acl_are_denied(self):
+        _, payload, _, _ = self.artifact_snapshot()
+        original_fstat = os.fstat
+        inode = payload.stat().st_ino
+        def foreign_device(descriptor):
+            info = original_fstat(descriptor)
+            if info.st_ino != inode:
+                return info
+            fields = {key: getattr(info, key) for key in dir(info) if key.startswith("st_")}
+            return SimpleNamespace(**{**fields, "st_dev": info.st_dev + 1})
+        with mock.patch.object(self.storage.os, "fstat", side_effect=foreign_device):
+            with self.assertRaises(ValueError):
+                self.prepare()
+        original_acl = self.storage.acl_entries
+        with mock.patch.object(self.storage, "acl_entries", side_effect=lambda path:
+                               ["0: everyone allow read"] if Path(path) == payload else original_acl(path)):
+            with self.assertRaises(ValueError):
+                self.prepare()
+
+    def test_snapshot_copy_rechecks_free_space_before_admission(self):
+        self.artifact_snapshot()
+        with mock.patch.object(self.storage, "available_bytes", side_effect=[100 * 2**30, 19 * 2**30]):
+            with self.assertRaisesRegex(ValueError, "capacity"):
+                self.prepare()
+
+    def test_doctor_verifies_snapshot_without_creating_a_job(self):
+        seed, payload, manifest, _ = self.artifact_snapshot()
+        before = payload.read_bytes()
+        output = io.StringIO()
+        with mock.patch.object(self.storage, "CONFIG", self.config), mock.patch.object(
+                self.storage.sys, "argv", [str(HELPER), "doctor", "--runner-name", "fixture-mac"]):
+            with redirect_stdout(output):
+                self.storage.main()
+        receipt = json.loads(output.getvalue())
+        self.assertEqual(receipt["seed_artifact_count"], 1)
+        self.assertEqual(receipt["artifact_seed_sha256"], hashlib.sha256(manifest.read_bytes()).hexdigest())
+        self.assertFalse((seed.parent / "jobs").exists())
+        self.assertEqual(payload.read_bytes(), before)
 
     def test_external_names_and_uuids_come_only_from_host_enrollment(self):
         first = self.prepare()
