@@ -69,3 +69,7 @@ step IDs. It is not an A4 product `SIMULATOR_PASS`.
 | `correlation.md` | ID convention |
 | `status.json` | Current pack verdict (`NOT_RUN`) |
 | `artifacts/` | Place same-candidate logs/UI captures here |
+| `K/` | Desensitized in-process core (K) receipt template; see `K/README.md` |
+
+Opt-in K runner: `scripts/release/ios-access-core-tests.sh` (not the default U
+`ios-access-tests.sh` gate).

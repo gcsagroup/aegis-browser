@@ -23,8 +23,9 @@
 | `apps/ios/AccessKit/AccessHTTPInboundListener.swift`、`AccessHTTPConnectSession.swift` | CONNECT 200 后目前没有数据转发；增加持有到连接结束的桥 |
 | `apps/ios/AccessKit/AccessRealityPathDialing.swift`、`AccessHTTPRealityPath.swift` | 流目前只有 isOpen/close；增加可取消的异步拨号、读写 |
 | `apps/ios/AccessKit/AccessXrayRuntime.swift`、`AccessXrayAssetPins.swift` | 当前是可执行文件/进程控制模型；K 使用独立身份的进程内库 |
-| `apps/ios/project.yml`、`apps/ios/Aegis.xcodeproj/project.pbxproj` | 更新 XcodeGen 输入的目标、依赖、资源后生成工程；不能只手改会被覆盖的工程文件 |
+| `apps/ios/project.yml`、`apps/ios/Aegis.xcodeproj/project.pbxproj` | project.yml 已声明 `AegisEmbeddedCore.xcframework` 搜索路径/链接/嵌入与 lock 资源；生成前需本地 `EmbeddedCore/Products`。手改 pbxproj 仍须与 yml 对齐 |
 | `scripts/release/ios-access-tests.sh`、`ios_access_test_gate.py` | 类实际属于 AegisTests；补齐新增类的过滤、发现及真实运行数量核验 |
+| `scripts/release/ios-access-core-tests.sh` | Opt-in K：预检 lock/节点/xcframework，跑 EmbeddedCore 相关测试，写脱敏 `k-receipt.json`；缺输入 `NOT_RUN` |
 
 操作文档：[CI 与交付](../../development/ci.zh-CN.md)、[工作区入口](../../../WORKSPACES.zh-CN.md)、[iOS 构建入口](../../../apps/ios/README.md#build-and-test)。旧 I0 反例、冻结规格和历史收据保留原意，不改写成新范围已经通过。
 
