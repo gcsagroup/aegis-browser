@@ -39,6 +39,7 @@ run_check 'TypeSafe choice contract unit tests' bash ./scripts/typesafe-choice-c
 run_check 'model generation profiles and accounting' bash ./scripts/agent-generation-profile_test.sh
 run_check 'paired model routing evaluation' node --test ./scripts/evaluate-agent-model-routing_test.mjs
 run_check 'vector generators' bash ./scripts/vector-generators_test.sh
+run_check 'iOS Access phase-1 evidence pack' node --test ./scripts/ios-access-phase1-evidence_test.mjs
 run_check 'Access GN wiring' bash ./scripts/aegis-access-gn-wiring_test.sh
 run_check 'browser status script' bash ./scripts/status_test.sh
 run_check 'toolchain fetch script' bash ./scripts/fetch-toolchain_test.sh
