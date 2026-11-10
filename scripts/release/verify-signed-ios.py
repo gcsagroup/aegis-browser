@@ -117,7 +117,23 @@ def validate_cloud_profile(provision, signed, identifier, team, fingerprint, *, 
         raise ValueError('Cloud signing certificate absent from profile: ' + identifier)
 
 
-def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root, *, cloud_poc=False):
+def validate_central_entitlements(signed, requested, identifier, team, profile_entitlements=None):
+    allowed = set(requested) | {'application-identifier', 'com.apple.developer.team-identifier',
+                                'get-task-allow', 'keychain-access-groups', 'beta-reports-active'}
+    if set(signed) - allowed:
+        raise ValueError('Unapproved additional signed entitlements: ' + identifier)
+    if 'beta-reports-active' in signed and (signed['beta-reports-active'] is not True or (profile_entitlements or {}).get('beta-reports-active') is not True):
+        raise ValueError('Unapproved beta reports entitlement: ' + identifier)
+    groups = signed.get('keychain-access-groups')
+    if groups is not None and groups != [team + '.' + identifier]:
+        raise ValueError('Unapproved keychain access groups: ' + identifier)
+    if groups is not None:
+        permitted = (profile_entitlements or {}).get('keychain-access-groups')
+        if not isinstance(permitted, list) or not any(value in permitted for value in (team + '.' + identifier, team + '.*')):
+            raise ValueError('Keychain access group absent from profile: ' + identifier)
+
+
+def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root, *, cloud_poc=False, strict_entitlements=False):
     if not re.fullmatch(r"[A-Z0-9]{10}", team) or (not cloud_poc and not re.fullmatch(r"[A-Fa-f0-9]{40}", certificate_sha1)):
         raise ValueError("Provide the expected Apple team and certificate SHA-1")
     if not cloud_poc and sorted(profiles) != sorted(TARGETS):
@@ -188,10 +204,14 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
                                          APP_ID + '.share': 'ShareExtension/ShareExtension.entitlements'}
                     requested = plistlib.loads((source_root / 'apps/ios' / entitlement_paths[identifier]).read_bytes())
                     validate_cloud_profile(provision, signed, identifier, team, fingerprint, requested_entitlements=requested)
+                    if strict_entitlements:
+                        validate_central_entitlements(signed, requested, identifier, team, provision.get('Entitlements', {}))
                     # Require an Apple-trusted code-signing chain, independently of the profile.
                     chain = sorted(certificates.glob('Distribution*'))
                     command('security', 'verify-cert', '-p', 'codeSign', *[v for c in chain for v in ('-c', str(c))])
                 checked.append({"applicationId": identifier, "profileName": provision["Name"], "profileUuid": provision["UUID"], "certificateSha1": fingerprint})
+                if strict_entitlements:
+                    checked[-1].update(signedEntitlements=signed, profileSha256=hashlib.sha256((bundle / "embedded.mobileprovision").read_bytes()).hexdigest())
     result = {"ipaSha256": hashlib.sha256(Path(ipa).read_bytes()).hexdigest(), "profile": profile,
             "version": version, "build": build, "deepSignatureVerification": True,
             "testFlightInternalTestingOnly": profile == "alpha", "sharedResourcesVerified": shared_count,
