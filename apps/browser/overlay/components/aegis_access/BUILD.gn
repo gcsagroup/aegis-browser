@@ -242,11 +242,71 @@ test("request_dispatch_gate_unittests") {
   deps += [ ":request_ownership_registry_test_support" ]
 }
 
+test("access_http_route_execution_unittests") {
+  sources = [ "access_http_route_execution_unittest.cc" ]
+  deps = [
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//net",
+    "//net:test_support",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+test("access_proxy_tunnel_context_unittests") {
+  sources = [ "access_proxy_tunnel_context_unittest.cc" ]
+  deps = [
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//net",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+test("access_route_request_context_unittests") {
+  sources = [ "access_route_request_context_unittest.cc" ]
+  deps = [
+    "//base",
+    "//base/test:run_all_unittests",
+    "//net",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+test("access_proxy_route_context_unittests") {
+  sources = [ "access_proxy_route_context_unittest.cc" ]
+  deps = [
+    "//base",
+    "//base/test:run_all_unittests",
+    "//net",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+test("access_route_pool_isolation_unittests") {
+  sources = [ "access_route_pool_isolation_unittest.cc" ]
+  deps = [
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//net",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 test("aegis_access_unittests") {
   sources = [
     "access_local_proxy_acceptance_unittest.cc",
     "access_policy_evaluator_unittest.cc",
     "access_proxy_route_adapter_unittest.cc",
+    "access_route_isolation_key_contract_test.h",
     "access_route_planner_contract_test.h",
     "access_route_planner_unittest.cc",
     "access_socks5_inbound_parser_unittest.cc",
@@ -289,5 +349,172 @@ source_set("request_ownership_registry_test_support") {
     ":aegis_access_unittests",
     ":request_dispatch_gate_unittests",
     ":request_ownership_registry_unittests",
+  ]
+}
+
+# Exercises the Browser-only terminal hook without changing factory security.
+test("access_terminal_factory_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_terminal_factory_unittest.cc",
+    "//services/network/public/cpp/url_loader_factory_builder_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network:test_support",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+test("access_network_route_registry_unittests") {
+  sources = [
+    "access_network_route_registry_unittest.cc",
+    "access_request_route_state_unittest.cc",
+    "access_policy_evaluator_unittest.cc",
+  ]
+  include_dirs = [ "$target_gen_dir" ]
+  deps = [
+    ":generate_policy_matcher_vectors",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//services/network/aegis:access_route_registry",
+    "//testing/gtest",
+  ]
+}
+
+# Real Network Service URLLoader requests through a registered local proxy.
+test("access_network_url_loader_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_network_url_loader_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/core/embedder",
+    "//net:test_support",
+    "//services/network:network_service",
+    "//services/network:test_support",
+    "//services/network/aegis:access_route_registry",
+    "//testing/gtest",
+  ]
+}
+
+# CORS security checks and internal preflights retain the private route.
+test("access_cors_route_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_cors_route_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/test_support:test_utils",
+    "//net:test_support",
+    "//services/network:network_service",
+    "//services/network:test_support",
+    "//services/network/aegis:access_route_registry",
+    "//testing/gtest",
+  ]
+}
+
+# Actual private Mojo messages retain original CORS and per-hop authorization.
+test("access_private_factory_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_private_factory_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/test_support:test_utils",
+    "//net:test_support",
+    "//services/network:network_service",
+    "//services/network:test_support",
+    "//services/network/aegis:access_route_registry",
+    "//testing/gtest",
+  ]
+}
+
+# Decode the full Browser snapshot before changing live Network authority.
+test("access_route_wire_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_route_wire_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/core/embedder",
+    "//net",
+    "//services/network/aegis:access_route_registry",
+    "//testing/gtest",
+  ]
+}
+
+# Context lifetime, full snapshot binding and actual private IPC requests.
+test("access_network_context_state_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_network_context_state_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/test_support:test_utils",
+    "//net:test_support",
+    "//services/network:network_service",
+    "//services/network:test_support",
+    "//services/network/aegis:access_route_registry",
+    "//testing/gtest",
+  ]
+}
+
+# Actual NetworkContext Mojo install/ACK/private factory creation.
+test("access_network_context_ipc_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_network_context_ipc_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/test_support:test_utils",
+    "//net:test_support",
+    "//services/network:network_service",
+    "//services/network:test_support",
+    "//services/network/aegis:access_route_registry",
+    "//testing/gtest",
+  ]
+}
+
+# Browser-owned retained Context, exact ACK and live private route requests.
+test("access_private_context_client_unittests") {
+  sources = [
+    "access_network_test_main.cc",
+    "access_private_context_client_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:test_support",
+    "//chrome/browser/aegis/access:access_private_context_client",
+    "//mojo/core/embedder",
+    "//mojo/public/cpp/test_support:test_utils",
+    "//net:test_support",
+    "//services/network:network_service",
+    "//services/network:test_support",
+    "//testing/gtest",
   ]
 }

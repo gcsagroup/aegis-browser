@@ -1,0 +1,310 @@
+From 0fa8122298b857e5914d666b9cae7e8612cac875 Mon Sep 17 00:00:00 2001
+From: Aegis Local Validation <aegis-local@invalid>
+Date: Tue, 10 Nov 2026 05:14:24 +0800
+Subject: [PATCH] feat(access): bind one-shot retries to the failed navigation
+ identity
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  22 ++++
+ .../access/access_navigation_retry_state.cc   |  79 +++++++++++++
+ .../access/access_navigation_retry_state.h    |  52 +++++++++
+ .../access_navigation_retry_state_unittest.cc | 109 ++++++++++++++++++
+ 4 files changed, 262 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_navigation_retry_state.cc
+ create mode 100644 chrome/browser/aegis/access/access_navigation_retry_state.h
+ create mode 100644 chrome/browser/aegis/access/access_navigation_retry_state_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index fcca1322832927be3dc78a28ccfa5cfd8a1faa86..5d6f5195f78974a35227ef5b1468a4561a462d2b 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -3,6 +3,28 @@
+ 
+ import("//testing/test.gni")
+ 
++source_set("access_navigation_retry_state") {
++  sources = [
++    "access_navigation_retry_state.cc",
++    "access_navigation_retry_state.h",
++  ]
++  public_deps = [
++    "//base",
++    "//url",
++  ]
++  deps = [ "//net" ]
++}
++
++test("access_navigation_retry_state_unittests") {
++  sources = [ "access_navigation_retry_state_unittest.cc" ]
++  deps = [
++    ":access_navigation_retry_state",
++    "//base/test:run_all_unittests",
++    "//net",
++    "//testing/gtest",
++  ]
++}
++
+ source_set("access_browser_request_adapter") {
+   sources = [
+     "access_browser_request_adapter.cc",
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_state.cc b/chrome/browser/aegis/access/access_navigation_retry_state.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..99524f8afe636c4357028991eab3e9b4402ceb71
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_navigation_retry_state.cc
+@@ -0,0 +1,79 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_navigation_retry_state.h"
++
++#include "net/base/net_errors.h"
++
++namespace aegis::access {
++namespace {
++
++bool IsRetryableConnectionFailure(int error) {
++  switch (error) {
++    case net::ERR_NAME_NOT_RESOLVED:
++    case net::ERR_CONNECTION_REFUSED:
++    case net::ERR_CONNECTION_RESET:
++    case net::ERR_CONNECTION_CLOSED:
++    case net::ERR_CONNECTION_TIMED_OUT:
++    case net::ERR_TIMED_OUT:
++    case net::ERR_INTERNET_DISCONNECTED:
++    case net::ERR_NETWORK_CHANGED:
++      return true;
++    default:
++      return false;
++  }
++}
++
++bool IsWebUrl(const GURL& url) {
++  return url.is_valid() && url.SchemeIsHTTPOrHTTPS() && url.has_host();
++}
++
++}  // namespace
++
++AccessNavigationRetryState::AccessNavigationRetryState() = default;
++AccessNavigationRetryState::~AccessNavigationRetryState() = default;
++
++void AccessNavigationRetryState::BeginNavigation(int64_t navigation_id) {
++  navigation_id_ = navigation_id;
++  ticket_.reset();
++}
++
++bool AccessNavigationRetryState::RecordFailure(
++    int64_t navigation_id,
++    const GURL& original_url,
++    const GURL& failed_url,
++    std::string_view initial_method,
++    int net_error,
++    bool committed_error_page) {
++  if (navigation_id <= 0 || navigation_id != navigation_id_) {
++    return false;
++  }
++  ticket_.reset();
++  // Primary Chromium navigations use GET or POST. Never convert a failed
++  // POST (including one redirected to GET) or another method into a GET.
++  if (!committed_error_page || initial_method != "GET" ||
++      !IsRetryableConnectionFailure(net_error) || !IsWebUrl(original_url) ||
++      !IsWebUrl(failed_url)) {
++    return false;
++  }
++  ticket_ = AccessNavigationRetryTicket{
++      base::UnguessableToken::Create(), original_url, failed_url};
++  return true;
++}
++
++std::optional<AccessNavigationRetryTicket>
++AccessNavigationRetryState::Capture() const {
++  return ticket_;
++}
++
++bool AccessNavigationRetryState::Consume(
++    const AccessNavigationRetryTicket& ticket) {
++  if (!ticket_ || *ticket_ != ticket) {
++    return false;
++  }
++  // Revoke before the caller starts a navigation, including any re-entrant
++  // callback that navigation may cause.
++  ticket_.reset();
++  return true;
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_state.h b/chrome/browser/aegis/access/access_navigation_retry_state.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1faad0d5efb1753805636328966a266f8a3a28ee
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_navigation_retry_state.h
+@@ -0,0 +1,52 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NAVIGATION_RETRY_STATE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NAVIGATION_RETRY_STATE_H_
++
++#include <cstdint>
++#include <optional>
++#include <string_view>
++
++#include "base/unguessable_token.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++
++struct AccessNavigationRetryTicket {
++  base::UnguessableToken identity;
++  GURL original_url;
++  GURL failed_url;
++
++  friend bool operator==(const AccessNavigationRetryTicket&,
++                         const AccessNavigationRetryTicket&) = default;
++};
++
++// One instance belongs to one WebContents. Its inputs must come from that
++// WebContents' primary NavigationHandle, never a visible URL or renderer field.
++// A route-ready callback must consume its exact ticket before initiating the
++// single reload. Starting another navigation revokes all outstanding tickets.
++class AccessNavigationRetryState {
++ public:
++  AccessNavigationRetryState();
++  ~AccessNavigationRetryState();
++  AccessNavigationRetryState(const AccessNavigationRetryState&) = delete;
++  AccessNavigationRetryState& operator=(const AccessNavigationRetryState&) = delete;
++
++  void BeginNavigation(int64_t navigation_id);
++  bool RecordFailure(int64_t navigation_id,
++                     const GURL& original_url,
++                     const GURL& failed_url,
++                     std::string_view initial_method,
++                     int net_error,
++                     bool committed_error_page);
++  std::optional<AccessNavigationRetryTicket> Capture() const;
++  bool Consume(const AccessNavigationRetryTicket& ticket);
++
++ private:
++  int64_t navigation_id_ = 0;
++  std::optional<AccessNavigationRetryTicket> ticket_;
++};
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NAVIGATION_RETRY_STATE_H_
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_state_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_state_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..352314c6b2328a6a0ec692144948e137948180b0
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_navigation_retry_state_unittest.cc
+@@ -0,0 +1,109 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_navigation_retry_state.h"
++
++#include "net/base/net_errors.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++GURL OriginalUrl() {
++  return GURL("https://start.example/path?q=1#section");
++}
++GURL FailedUrl() {
++  return GURL("https://target.example/redirected?q=2#result");
++}
++
++TEST(AccessNavigationRetryStateTest, PreservesOriginalAndFailedNavigationUrls) {
++  AccessNavigationRetryState state;
++  state.BeginNavigation(17);
++  ASSERT_TRUE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), "GET",
++                                  net::ERR_NAME_NOT_RESOLVED, true));
++  const auto ticket = state.Capture();
++  ASSERT_TRUE(ticket);
++  EXPECT_EQ(ticket->original_url, OriginalUrl());
++  EXPECT_EQ(ticket->failed_url, FailedUrl());
++  EXPECT_TRUE(state.Consume(*ticket));
++  EXPECT_FALSE(state.Consume(*ticket));
++  EXPECT_FALSE(state.Capture());
++}
++
++TEST(AccessNavigationRetryStateTest, NavigationInvalidatesLateReadyCallback) {
++  AccessNavigationRetryState state;
++  state.BeginNavigation(17);
++  ASSERT_TRUE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), "GET",
++                                  net::ERR_CONNECTION_RESET, true));
++  const auto old = state.Capture();
++  ASSERT_TRUE(old);
++  state.BeginNavigation(18);
++  EXPECT_FALSE(state.Consume(*old));
++  EXPECT_FALSE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), "GET",
++                                   net::ERR_CONNECTION_RESET, true));
++}
++
++TEST(AccessNavigationRetryStateTest, AnotherTabCannotConsumeTheSameUrlTicket) {
++  AccessNavigationRetryState first;
++  AccessNavigationRetryState second;
++  for (auto* state : {&first, &second}) {
++    state->BeginNavigation(17);
++    ASSERT_TRUE(state->RecordFailure(17, OriginalUrl(), FailedUrl(), "GET",
++                                    net::ERR_CONNECTION_TIMED_OUT, true));
++  }
++  const auto ticket = first.Capture();
++  ASSERT_TRUE(ticket);
++  EXPECT_FALSE(second.Consume(*ticket));
++  EXPECT_TRUE(first.Consume(*ticket));
++  ASSERT_TRUE(second.Capture());
++  EXPECT_TRUE(second.Consume(*second.Capture()));
++}
++
++TEST(AccessNavigationRetryStateTest, DoesNotReplayNonIdempotentInitialMethod) {
++  for (const auto* method : {"POST", "PATCH", "PUT", "DELETE"}) {
++    AccessNavigationRetryState state;
++    state.BeginNavigation(17);
++    EXPECT_FALSE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), method,
++                                     net::ERR_CONNECTION_RESET, true));
++    EXPECT_FALSE(state.Capture());
++  }
++}
++
++TEST(AccessNavigationRetryStateTest, SecurityAndHttpFailuresStayOnNativePath) {
++  for (int error : {net::OK, net::ERR_CERT_AUTHORITY_INVALID,
++                    net::ERR_SSL_PROTOCOL_ERROR, net::ERR_BLOCKED_BY_CLIENT,
++                    net::ERR_ABORTED}) {
++    AccessNavigationRetryState state;
++    state.BeginNavigation(17);
++    EXPECT_FALSE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), "GET", error,
++                                     true));
++    EXPECT_FALSE(state.Capture());
++  }
++}
++
++TEST(AccessNavigationRetryStateTest, RejectsUncommittedAndNonWebErrorPages) {
++  AccessNavigationRetryState state;
++  state.BeginNavigation(17);
++  EXPECT_FALSE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), "GET",
++                                   net::ERR_CONNECTION_RESET, false));
++  EXPECT_FALSE(state.RecordFailure(17, GURL("chrome://settings"), FailedUrl(),
++                                   "GET", net::ERR_CONNECTION_RESET, true));
++  EXPECT_FALSE(state.RecordFailure(17, OriginalUrl(), GURL("about:blank"), "GET",
++                                   net::ERR_CONNECTION_RESET, true));
++  EXPECT_FALSE(state.Capture());
++}
++
++TEST(AccessNavigationRetryStateTest, ModifiedTicketCannotChangeReloadUrl) {
++  AccessNavigationRetryState state;
++  state.BeginNavigation(17);
++  ASSERT_TRUE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), "GET",
++                                  net::ERR_CONNECTION_REFUSED, true));
++  auto modified = state.Capture();
++  ASSERT_TRUE(modified);
++  modified->original_url = GURL("https://other.example/");
++  EXPECT_FALSE(state.Consume(*modified));
++  ASSERT_TRUE(state.Capture());
++  EXPECT_TRUE(state.Consume(*state.Capture()));
++}
++
++}  // namespace
++}  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

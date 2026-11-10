@@ -1,0 +1,508 @@
+From 4412b4f194835f1343d9d26dfaa31717530e3f56 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 12:31:18 +0800
+Subject: [PATCH] feat(access): retain private route through CORS and preflight
+
+---
+ components/aegis_access/BUILD.gn              |  19 ++
+ .../access_cors_route_unittest.cc             | 162 ++++++++++++++++++
+ .../aegis/access_request_route_state.h        |   2 +
+ services/network/cors/cors_url_loader.cc      |  18 +-
+ services/network/cors/cors_url_loader.h       |   9 +-
+ .../network/cors/cors_url_loader_factory.cc   |  60 ++++++-
+ .../network/cors/cors_url_loader_factory.h    |  11 ++
+ services/network/url_loader_factory.cc        |  13 +-
+ services/network/url_loader_factory.h         |   4 +-
+ 9 files changed, 289 insertions(+), 9 deletions(-)
+ create mode 100644 components/aegis_access/access_cors_route_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 5218b06f7bb02c33b3c387d462865e65684ca8e1..44ef71551edde513709235b7763bafbb9af8e946 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -407,3 +407,22 @@ test("access_network_url_loader_unittests") {
+     "//testing/gtest",
+   ]
+ }
++
++# CORS security checks and internal preflights retain the private route.
++test("access_cors_route_unittests") {
++  sources = [
++    "access_network_test_main.cc",
++    "access_cors_route_unittest.cc",
++  ]
++  deps = [
++    "//base",
++    "//base/test:test_support",
++    "//mojo/core/embedder",
++    "//mojo/public/cpp/test_support:test_utils",
++    "//net:test_support",
++    "//services/network:network_service",
++    "//services/network:test_support",
++    "//services/network/aegis:access_route_registry",
++    "//testing/gtest",
++  ]
++}
+diff --git a/components/aegis_access/access_cors_route_unittest.cc b/components/aegis_access/access_cors_route_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d68c7e9d5daf6f449772a711b19b61b1467a20e8
+--- /dev/null
++++ b/components/aegis_access/access_cors_route_unittest.cc
+@@ -0,0 +1,162 @@
++// Copyright 2026 GCSA
++#include <atomic>
++#include "base/functional/bind.h"
++#include "base/test/task_environment.h"
++#include "mojo/core/embedder/embedder.h"
++#include "mojo/public/cpp/test_support/test_utils.h"
++#include "mojo/public/cpp/test_support/fake_message_dispatch_context.h"
++#include "net/test/embedded_test_server/embedded_test_server.h"
++#include "net/test/embedded_test_server/http_response.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "services/network/aegis/access_request_route_state.h"
++#include "services/network/cors/cors_url_loader_factory.h"
++#include "services/network/network_context.h"
++#include "services/network/network_service.h"
++#include "services/network/resource_scheduler/resource_scheduler_client.h"
++#include "services/network/prefetch_matching_url_loader_factory.h"
++#include "services/network/test/fake_test_cert_verifier_params_factory.h"
++#include "services/network/test/test_url_loader_client.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace network {
++namespace {
++using namespace aegis_access;
++class AccessCorsRouteTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    mojo::core::Init();
++    server_.RegisterRequestHandler(base::BindRepeating(
++        &AccessCorsRouteTest::Respond, base::Unretained(this)));
++    ASSERT_TRUE(server_.Start());
++    service_ = NetworkService::CreateForTesting();
++    auto params = mojom::NetworkContextParams::New();
++    params->cert_verifier_params = FakeTestCertVerifierParamsFactory::GetCertVerifierParams();
++    params->initial_proxy_config = net::ProxyConfigWithAnnotation::CreateDirect();
++    context_ = std::make_unique<NetworkContext>(service_.get(),
++        context_remote_.BindNewPipeAndPassReceiver(), std::move(params));
++    auto factory_params = mojom::URLLoaderFactoryParams::New();
++    factory_params->process_id = OriginatingProcessId::FromUnsafeValue(42);
++    factory_params->is_trusted = false;
++    factory_params->request_initiator_origin_lock = initiator_;
++    factory_params->isolation_info = net::IsolationInfo::CreateForInternalRequest(initiator_);
++    owner_ = std::make_unique<PrefetchMatchingURLLoaderFactory>(context_.get(),
++        std::move(factory_params), nullptr,
++        factory_remote_.BindNewPipeAndPassReceiver(), &origin_access_list_, nullptr);
++    AccessPolicyRule rule{"rule", key_, PolicyScope::kProfile, {}, "destination.test",
++        false, {RequestScheme::kHttp}, {PortScope::kAllBrowserPermitted, {}},
++        AccessMode::kProxy, "group", ProtectionOverride::kNone, 1, 1};
++    net::AccessRouteIsolationKey isolation{0, "profile", "partition", "group",
++        "registration", "incarnation", 1, 1, 1, 1, 1};
++    auto route = net::AccessProxyRoute::Create(isolation, net::ProxyChain(
++        net::ProxyServer::FromSchemeHostAndPort(net::ProxyServer::SCHEME_HTTP,
++                                               "127.0.0.1", server_.port())));
++    ASSERT_TRUE(registry_.Install(1, {{key_, 1, {rule}}, {1, 1, 0, 1, 1},
++                                     {{"group", route}}}));
++  }
++  void TearDown() override {
++    loader_.reset();
++    owner_.reset();
++    factory_remote_.reset();
++    context_.reset();
++    context_remote_.reset();
++    service_.reset();
++  }
++  std::unique_ptr<net::test_server::HttpResponse> Respond(
++      const net::test_server::HttpRequest& request) {
++    if (request.method == net::test_server::METHOD_OPTIONS) ++preflights_;
++    else ++actual_;
++    auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++    response->set_code(net::HTTP_NO_CONTENT);
++    if (allow_cors_) {
++      response->AddCustomHeader("Access-Control-Allow-Origin", initiator_.Serialize());
++      response->AddCustomHeader("Access-Control-Allow-Methods", "PUT");
++      response->AddCustomHeader("Access-Control-Max-Age", "600");
++      response->AddCustomHeader("Access-Control-Allow-Headers", "x-access-test");
++    }
++    return response;
++  }
++  void Start(bool wrong_initiator = false, bool fake_trusted = false) {
++    loader_.reset();
++    client_ = std::make_unique<TestURLLoaderClient>();
++    ResourceRequest request;
++    request.url = GURL("http://destination.test/resource");
++    request.method = "PUT";
++    request.mode = mojom::RequestMode::kCors;
++    request.credentials_mode = mojom::CredentialsMode::kOmit;
++    request.request_initiator = wrong_initiator
++        ? url::Origin::Create(GURL("http://other.test")) : initiator_;
++    request.headers.SetHeader("x-access-test", "1");
++    if (fake_trusted) request.trusted_params.emplace();
++    BrowserOwnedRequestMetadata metadata{"request", key_,
++        RequestAttributionKind::kProfileOnly, {}, {}, std::nullopt};
++    auto state = AccessRequestRouteState::Create(registry_.GetWeakPtr(), metadata,
++        request.url, request.method, {"incarnation", {1,1,1,1,1}, "registration"});
++    ASSERT_TRUE(state);
++    owner_->GetCorsURLLoaderFactoryForTesting()->CreateLoaderAndStartWithAccessRoute(
++        loader_.BindNewPipeAndPassReceiver(), 0, 0, request, client_->CreateRemote(),
++        net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS), state);
++  }
++  base::test::TaskEnvironment environment_{base::test::TaskEnvironment::MainThreadType::IO};
++  mojo::FakeMessageDispatchContext mojo_context_;
++  net::EmbeddedTestServer server_;
++  std::atomic<int> preflights_{0}, actual_{0};
++  std::atomic<bool> allow_cors_{true};
++  const url::Origin initiator_ = url::Origin::Create(GURL("http://127.0.0.1:1234"));
++  OwnershipKey key_{ChannelNamespace::kDev, "profile", "partition"};
++  AccessRouteRegistry registry_{key_, "incarnation"};
++  std::unique_ptr<NetworkService> service_;
++  mojo::Remote<mojom::NetworkContext> context_remote_;
++  std::unique_ptr<NetworkContext> context_;
++  cors::OriginAccessList origin_access_list_;
++  mojo::Remote<mojom::URLLoaderFactory> factory_remote_;
++  std::unique_ptr<PrefetchMatchingURLLoaderFactory> owner_;
++  mojo::Remote<mojom::URLLoader> loader_;
++  std::unique_ptr<TestURLLoaderClient> client_;
++};
++TEST_F(AccessCorsRouteTest, PreflightAndActualUseSameRegisteredProxy) {
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(preflights_, 1);
++  EXPECT_EQ(actual_, 1);
++}
++TEST_F(AccessCorsRouteTest, CorsFailureDoesNotSendActualRequest) {
++  allow_cors_ = false;
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_TRUE(client_->completion_status().cors_error_status.has_value());
++  EXPECT_EQ(preflights_, 1);
++  EXPECT_EQ(actual_, 0);
++}
++TEST_F(AccessCorsRouteTest, ManagedPreflightDoesNotPopulateSharedCache) {
++  Start();
++  client_->RunUntilComplete();
++  ASSERT_EQ(client_->completion_status().error_code, net::OK);
++  allow_cors_ = false;
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(preflights_, 2);
++  EXPECT_EQ(actual_, 1);
++}
++TEST_F(AccessCorsRouteTest, OriginalInitiatorLockStillRejectsMismatch) {
++  mojo::test::BadMessageObserver observer;
++  Start(true);
++  EXPECT_FALSE(observer.WaitForBadMessage().empty());
++  client_->RunUntilComplete();
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(preflights_, 0);
++  EXPECT_EQ(actual_, 0);
++}
++TEST_F(AccessCorsRouteTest, PrivateRouteDoesNotTrustRendererTrustedParams) {
++  mojo::test::BadMessageObserver observer;
++  Start(false, true);
++  EXPECT_FALSE(observer.WaitForBadMessage().empty());
++  client_->RunUntilComplete();
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(preflights_, 0);
++  EXPECT_EQ(actual_, 0);
++}
++}  // namespace
++}  // namespace network
+diff --git a/services/network/aegis/access_request_route_state.h b/services/network/aegis/access_request_route_state.h
+index 548a9f8539560e2160f277c17e217d1cb9af7d4a..cbc47b3e663a304ace5e35561e58e2dc3bd18821 100644
+--- a/services/network/aegis/access_request_route_state.h
++++ b/services/network/aegis/access_request_route_state.h
+@@ -27,6 +27,8 @@ class AccessRequestRouteState : public base::RefCounted<AccessRequestRouteState>
+                        const std::string& method,
+                        AccessRouteRegistry::Expectation expected);
+   uint32_t hop() const { return hop_; }
++  // Cache policy only; BeginSend still validates authority at dispatch.
++  bool uses_managed_route() const { return !expected_.registration_id.empty(); }
+ 
+  private:
+   friend class base::RefCounted<AccessRequestRouteState>;
+diff --git a/services/network/cors/cors_url_loader.cc b/services/network/cors/cors_url_loader.cc
+index 2a6c236a9b447db912d1f27150c4ad859cebbd90..b166e455c4450315c2565b44fbfce13050a65a34 100644
+--- a/services/network/cors/cors_url_loader.cc
++++ b/services/network/cors/cors_url_loader.cc
+@@ -445,13 +445,19 @@ CorsURLLoader::CorsURLLoader(
+     NetworkContext* context,
+     std::optional<base::UnguessableToken> network_restrictions_id,
+     net::CookieSettingOverrides factory_cookie_setting_overrides,
+-    net::CookieSettingOverrides devtools_cookie_setting_overrides)
++    net::CookieSettingOverrides devtools_cookie_setting_overrides,
++    std::unique_ptr<mojom::URLLoaderFactory> owned_network_loader_factory,
++    scoped_refptr<AccessRequestRouteState> access_route_state)
+     : receiver_(this, std::move(loader_receiver)),
+       process_id_(process_id),
+       request_id_(request_id),
+       options_(options),
+       delete_callback_(std::move(delete_callback)),
+-      network_loader_factory_(network_loader_factory),
++      access_route_state_(std::move(access_route_state)),
++      owned_network_loader_factory_(std::move(owned_network_loader_factory)),
++      network_loader_factory_(owned_network_loader_factory_
++                                  ? owned_network_loader_factory_.get()
++                                  : network_loader_factory),
+       sync_network_loader_factory_(sync_network_loader_factory),
+       request_(std::move(resource_request)),
+       forwarding_client_(std::move(client)),
+@@ -1317,10 +1323,16 @@ bool CorsURLLoader::CheckPreflightRequired() {
+ void CorsURLLoader::StartPreflightCheck() {
+   mojo::PendingRemote<mojom::URLLoaderNetworkServiceObserver> remote_observer;
+ 
++  ResourceRequest preflight_request = request_;
++  // A managed authorization cannot seed or consume the native preflight cache.
++  // Keep the actual request flags intact, including after a native redirect.
++  if (access_route_state_ && access_route_state_->uses_managed_route()) {
++    preflight_request.load_flags |= net::LOAD_DISABLE_CACHE;
++  }
+   context_->cors_preflight_controller()->PerformPreflightCheck(
+       base::BindOnce(&CorsURLLoader::OnPreflightRequestComplete,
+                      weak_factory_.GetWeakPtr()),
+-      request_id_, request_,
++      request_id_, preflight_request,
+       PreflightController::WithTrustedHeaderClient(
+           options_ & mojom::kURLLoadOptionUseHeaderClient),
+       context_->cors_non_wildcard_request_headers_support(), tainted_,
+diff --git a/services/network/cors/cors_url_loader.h b/services/network/cors/cors_url_loader.h
+index 32d81eb6014973e0df533c7af47851e3d5475b87..e7ec3b57cbe743dff7f066246976a64adb371240 100644
+--- a/services/network/cors/cors_url_loader.h
++++ b/services/network/cors/cors_url_loader.h
+@@ -22,6 +22,7 @@
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "net/url_request/redirect_info.h"
+ #include "services/network/cors/preflight_controller.h"
++#include "services/network/aegis/access_request_route_state.h"
+ #include "services/network/public/cpp/cors/cors_error_status.h"
+ #include "services/network/public/cpp/cross_origin_embedder_policy.h"
+ #include "services/network/public/cpp/http_request_headers_update_params.h"
+@@ -97,7 +98,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
+       NetworkContext* context,
+       std::optional<base::UnguessableToken> network_restrictions_id,
+       net::CookieSettingOverrides factory_cookie_setting_overrides,
+-      net::CookieSettingOverrides devtools_cookie_setting_overrides);
++      net::CookieSettingOverrides devtools_cookie_setting_overrides,
++      std::unique_ptr<mojom::URLLoaderFactory> owned_network_loader_factory = nullptr,
++      scoped_refptr<AccessRequestRouteState> access_route_state = nullptr);
+ 
+   CorsURLLoader(const CorsURLLoader&) = delete;
+   CorsURLLoader& operator=(const CorsURLLoader&) = delete;
+@@ -255,6 +258,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoader
+ 
+   // This raw URLLoaderFactory pointer is shared with the CorsURLLoaderFactory
+   // that created and owns this object.
++  // Optional per-request private wrapper, also used by internal preflight.
++  // It must outlive all uses of the non-owning factory pointers below.
++  scoped_refptr<AccessRequestRouteState> access_route_state_;
++  std::unique_ptr<mojom::URLLoaderFactory> owned_network_loader_factory_;
+   raw_ptr<mojom::URLLoaderFactory> network_loader_factory_;
+   // This has the same lifetime as `network_loader_factory_`, and should be used
+   // when non-null to create optimized URLLoaders which can call URLLoaderClient
+diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
+index 21ae5adb4bc1c81f2ac4db7bdf450b0312b65b87..91515ed55ff58f15badafbbf94421c84e4183e9b 100644
+--- a/services/network/cors/cors_url_loader_factory.cc
++++ b/services/network/cors/cors_url_loader_factory.cc
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
+ 
+ #include "services/network/cors/cors_url_loader_factory.h"
++#include "mojo/public/cpp/bindings/receiver_set.h"
++#include "services/network/aegis/access_request_route_state.h"
+ 
+ #include <optional>
+ #include <utility>
+@@ -54,6 +56,31 @@ namespace network::cors {
+ 
+ namespace {
+ 
++// Never exposed to a renderer. This wrapper is owned by exactly one CORS
++// loader, so its preflight and actual request share only that request's state.
++class AccessRouteBoundURLLoaderFactory final : public mojom::URLLoaderFactory {
++ public:
++  AccessRouteBoundURLLoaderFactory(network::URLLoaderFactory* factory,
++                                  scoped_refptr<AccessRequestRouteState> state)
++      : factory_(factory), state_(std::move(state)) {}
++  void CreateLoaderAndStart(
++      mojo::PendingReceiver<mojom::URLLoader> receiver, int32_t request_id,
++      uint32_t options, const ResourceRequest& request,
++      mojo::PendingRemote<mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag& annotation) override {
++    factory_->CreateLoaderAndStartWithSyncClient(
++        std::move(receiver), request_id, options, request, std::move(client),
++        {}, annotation, state_);
++  }
++  void Clone(mojo::PendingReceiver<mojom::URLLoaderFactory> receiver) override {
++    receivers_.Add(this, std::move(receiver));
++  }
++ private:
++  const raw_ptr<network::URLLoaderFactory> factory_;
++  const scoped_refptr<AccessRequestRouteState> state_;
++  mojo::ReceiverSet<mojom::URLLoaderFactory> receivers_;
++};
++
+ // Verifies state that should hold for Trust Tokens parameters provided by a
+ // functioning renderer:
+ // - Trust Tokens should be enabled
+@@ -391,6 +418,16 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
+     ResourceRequest& resource_request,
+     mojo::PendingRemote<mojom::URLLoaderClient> client,
+     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
++  CreateLoaderAndStartWithAccessRoute(std::move(receiver), request_id, options,
++      resource_request, std::move(client), traffic_annotation, nullptr);
++}
++
++void CorsURLLoaderFactory::CreateLoaderAndStartWithAccessRoute(
++    mojo::PendingReceiver<mojom::URLLoader> receiver, int32_t request_id,
++    uint32_t options, ResourceRequest& resource_request,
++    mojo::PendingRemote<mojom::URLLoaderClient> client,
++    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
++    scoped_refptr<AccessRequestRouteState> access_route_state) {
+   TRACE_EVENT("loading", "CorsURLLoaderFactory::CreateLoaderAndStart",
+               perfetto::Flow::FromPointer(this));
+ 
+@@ -415,6 +452,14 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
+     return;
+   }
+ 
++  if (access_route_state &&
++      (factory_override_ || resource_request.web_bundle_token_params ||
++       resource_request.destination == mojom::RequestDestination::kWebBundle)) {
++    mojo::Remote<mojom::URLLoaderClient>(std::move(client))->OnComplete(
++        URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
++    return;
++  }
++
+   if (base::FeatureList::IsEnabled(
+           net::features::kUpdateIsMainFrameOriginRecentlyAccessed) &&
+       is_main_frame_origin_recently_accessed_) {
+@@ -495,6 +540,11 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
+       }
+     }
+ 
++    std::unique_ptr<mojom::URLLoaderFactory> private_factory;
++    if (access_route_state) {
++      private_factory = std::make_unique<AccessRouteBoundURLLoaderFactory>(
++          network_loader_factory_.get(), access_route_state);
++    }
+     std::unique_ptr<CorsURLLoader> loader = std::make_unique<CorsURLLoader>(
+         std::move(receiver), process_id_, request_id, options,
+         base::BindOnce(&CorsURLLoaderFactory::DestroyCorsURLLoader,
+@@ -504,17 +554,23 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
+             factory_override_->ShouldSkipCorsEnabledSchemeCheck(),
+         renderer_accessible_http_cache_write_enabled_, std::move(client),
+         traffic_annotation, inner_url_loader_factory,
+-        factory_override_ ? nullptr : network_loader_factory_.get(),
++        (factory_override_ || access_route_state) ? nullptr
++                                                 : network_loader_factory_.get(),
+         origin_access_list_, *isolation_info_ptr, std::move(devtools_observer),
+         client_security_state_.get(), &url_loader_network_service_observer_,
+         cross_origin_embedder_policy_, shared_dictionary_storage,
+         shared_dictionary_observer_ ? shared_dictionary_observer_.get()
+                                     : nullptr,
+         context_, network_restrictions_id_, factory_cookie_setting_overrides_,
+-        devtools_cookie_setting_overrides_);
++        devtools_cookie_setting_overrides_, std::move(private_factory),
++        access_route_state);
+     auto* raw_loader = loader.get();
+     OnCorsURLLoaderCreated(std::move(loader));
+     raw_loader->Start();
++  } else if (access_route_state) {
++    network_loader_factory_->CreateLoaderAndStartWithSyncClient(
++        std::move(receiver), request_id, options, resource_request,
++        std::move(client), {}, traffic_annotation, std::move(access_route_state));
+   } else {
+     inner_url_loader_factory->CreateLoaderAndStart(
+         std::move(receiver), request_id, options, resource_request,
+diff --git a/services/network/cors/cors_url_loader_factory.h b/services/network/cors/cors_url_loader_factory.h
+index 721ec760dfbea98eb80952451f47cf71cd917196..cd1ce2b7f392c3df2fa740e8b03c17b69fc24dad 100644
+--- a/services/network/cors/cors_url_loader_factory.h
++++ b/services/network/cors/cors_url_loader_factory.h
+@@ -28,6 +28,8 @@
+ 
+ namespace network {
+ 
++class AccessRequestRouteState;
++
+ class PrefetchMatchingURLLoaderFactory;
+ class ResourceSchedulerClient;
+ class URLLoader;
+@@ -87,6 +89,15 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
+                             mojo::PendingRemote<mojom::URLLoaderClient> client,
+                             const net::MutableNetworkTrafficAnnotationTag&
+                                 traffic_annotation) override;
++  // Private C++ entry: preserves the original factory's security validation.
++  // Route state is supplied only by the Browser-private factory channel.
++  void CreateLoaderAndStartWithAccessRoute(
++      mojo::PendingReceiver<mojom::URLLoader> receiver, int32_t request_id,
++      uint32_t options, ResourceRequest& resource_request,
++      mojo::PendingRemote<mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
++      scoped_refptr<AccessRequestRouteState> access_route_state);
++
+   void Clone(mojo::PendingReceiver<mojom::URLLoaderFactory> receiver) override;
+ 
+   // Methods for use by network::URLLoaderFactory.
+diff --git a/services/network/url_loader_factory.cc b/services/network/url_loader_factory.cc
+index 541b9e627d41503f8b17984e15a7e6359d0df1ea..6777fef68b6f4da5b27776651402342a3a2f6842 100644
+--- a/services/network/url_loader_factory.cc
++++ b/services/network/url_loader_factory.cc
+@@ -203,11 +203,20 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
+     const ResourceRequest& resource_request,
+     mojo::PendingRemote<mojom::URLLoaderClient> client,
+     base::WeakPtr<mojom::URLLoaderClient> sync_client,
+-    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
++    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
++    scoped_refptr<AccessRequestRouteState> access_route_state) {
+   // Requests with |trusted_params| when params_->is_trusted is not set should
+   // have been rejected at the CorsURLLoader layer.
+   DCHECK(!resource_request.trusted_params || params_->is_trusted);
+ 
++  // Bundle subresources use a different executor and cannot discard the
++  // private route state. The controlled CORS entry rejects these as well.
++  if (access_route_state && resource_request.web_bundle_token_params) {
++    mojo::Remote<mojom::URLLoaderClient>(std::move(client))->OnComplete(
++        URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
++    return;
++  }
++
+   if (resource_request.web_bundle_token_params.has_value() &&
+       resource_request.destination !=
+           network::mojom::RequestDestination::kWebBundle) {
+@@ -405,7 +414,7 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
+       std::move(accept_ch_frame_observer),
+       *context_->GetSharedResourceChecker(),
+       std::move(maybe_durable_message_writer),
+-      std::move(provided_response_body_stream));
++      std::move(provided_response_body_stream), std::move(access_route_state));
+ 
+   cors_url_loader_factory_->OnURLLoaderCreated(std::move(loader));
+ }
+diff --git a/services/network/url_loader_factory.h b/services/network/url_loader_factory.h
+index 233a6425d8ccdd87172d0df186bedccab99d5585..9c9f942527438553e541a7727a06f8bfd433be1d 100644
+--- a/services/network/url_loader_factory.h
++++ b/services/network/url_loader_factory.h
+@@ -6,6 +6,7 @@
+ #define SERVICES_NETWORK_URL_LOADER_FACTORY_H_
+ 
+ #include "base/memory/raw_ptr.h"
++#include "services/network/aegis/access_request_route_state.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+@@ -98,7 +99,8 @@ class URLLoaderFactory : public mojom::URLLoaderFactory,
+       const ResourceRequest& resource_request,
+       mojo::PendingRemote<mojom::URLLoaderClient> client,
+       base::WeakPtr<mojom::URLLoaderClient> sync_client,
+-      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
++      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
++      scoped_refptr<AccessRequestRouteState> access_route_state = nullptr);
+ 
+   mojom::DevToolsObserver* GetDevToolsObserver() const;
+ 
+-- 
+2.54.0 (Apple Git-157)
+

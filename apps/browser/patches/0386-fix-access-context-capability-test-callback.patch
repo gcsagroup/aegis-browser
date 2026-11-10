@@ -1,0 +1,37 @@
+From b4f2f18be1d986bdcf23a22cf273e92003d2973c Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 17:09:28 +0800
+Subject: [PATCH] fix(access): bind TestFuture to the generated string callback
+ signature
+
+---
+ .../aegis_access/access_network_context_ipc_unittest.cc     | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc
+index 56304f53d0c350a973474f19f679c73c6f6cb685..4542d7d93acda14313cc243641f06cbf5ea69af6 100644
+--- a/components/aegis_access/access_network_context_ipc_unittest.cc
++++ b/components/aegis_access/access_network_context_ipc_unittest.cc
+@@ -69,7 +69,8 @@ class AccessNetworkContextIPCTest : public testing::Test {
+         context_remote_.BindNewPipeAndPassReceiver(), std::move(params));
+     base::test::TestFuture<std::string> bind_future;
+     context_remote_->BindAegisAccessContext(
+-        capability_.BindNewPipeAndPassReceiver(), bind_future.GetCallback());
++        capability_.BindNewPipeAndPassReceiver(),
++        bind_future.GetCallback<const std::string&>());
+     incarnation_ = bind_future.Get();
+     ASSERT_FALSE(incarnation_.empty());
+     auto factory_params = mojom::URLLoaderFactoryParams::New();
+@@ -442,7 +443,8 @@ TEST_F(AccessNetworkContextIPCTest, RetainedPrivateContextUsesExactOriginalConte
+   mojo::Remote<mojom::AegisAccessContext> capability;
+   base::test::TestFuture<std::string> future;
+   context_remote_->BindAegisAccessContext(
+-      capability.BindNewPipeAndPassReceiver(), future.GetCallback());
++      capability.BindNewPipeAndPassReceiver(),
++      future.GetCallback<const std::string&>());
+   const auto incarnation = future.Get();
+   EXPECT_FALSE(incarnation.empty());
+   base::test::TestFuture<bool> restored;
+-- 
+2.54.0 (Apple Git-157)
+

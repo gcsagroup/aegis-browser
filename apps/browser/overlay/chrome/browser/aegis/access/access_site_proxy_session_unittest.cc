@@ -42,6 +42,8 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
   uint64_t next_generation = 7;
   std::optional<AccessSiteHost> last_torn_down;
   std::vector<AccessMode> published_modes;
+  std::vector<std::string> operation_ids;
+  std::map<AccessSiteHost, uint64_t> committed_revisions;
 
   AccessSiteProxySessionError EnsureLocalProxyReady(
       const AccessSiteHost& host,
@@ -53,6 +55,7 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
     }
     out->owner = TestOwner();
     out->proxy_group_id = "proxy-group";
+    out->committed_revision = committed_revisions[host];
     (void)host;
     return AccessSiteProxySessionError::kOk;
   }
@@ -62,6 +65,9 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
       const aegis_access::RequestCancellationSelector& selector,
       AccessSiteProxySessionPublicationInfo* out) override {
     ++publish_count;
+    operation_ids.push_back(request.operation_id);
+    EXPECT_EQ(request.expected_revision,
+              committed_revisions[AccessSiteHost{selector.exact_host}]);
     EXPECT_TRUE(out);
     EXPECT_EQ(selector.exact_host, request.candidate_group.canonical_host);
     for (const auto& member : request.candidate_members) {
@@ -73,6 +79,7 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
     if (fail_at == Stage::kPublish) {
       return publish_error;
     }
+    ++committed_revisions[AccessSiteHost{selector.exact_host}];
     out->policy_generation = next_generation++;
     return AccessSiteProxySessionError::kOk;
   }
@@ -87,6 +94,21 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
     return AccessSiteProxySessionError::kOk;
   }
 };
+
+TEST(AccessSiteProxySessionTest, SubdomainSelectorMatchesCanonicalMemberSite) {
+  for (const auto intent : {AccessSiteIntent::kAllow, AccessSiteIntent::kOff}) {
+    const auto plan = BuildSiteProxySessionMutationPlan(
+        Host("www.example.co.uk"), intent, TestOwner(), "proxy-group",
+        "new-operation", 0);
+    ASSERT_TRUE(plan.mutation.request);
+    EXPECT_EQ(plan.selector.top_level_site, "https://example.co.uk");
+    EXPECT_EQ(plan.selector.top_level_site,
+              plan.mutation.request->candidate_group.https_top_level_site);
+    EXPECT_EQ(plan.selector.exact_host, "www.example.co.uk");
+    EXPECT_EQ(plan.selector.top_level_site,
+              plan.mutation.request->candidate_members[1].top_level_site);
+  }
+}
 
 TEST(AccessSiteProxySessionTest, EnableRunsPreparePublishAckReady) {
   FakeOrchestrator orchestrator;
@@ -168,10 +190,23 @@ TEST(AccessSiteProxySessionTest, DirectFallbackRejectedOnAllowPath) {
           AccessSiteProxySessionError::kDirectFallbackNotAdmitted));
 }
 
+TEST(AccessSiteProxySessionTest, EachRecoveryUsesNewOperationAndCommittedRevision) {
+  FakeOrchestrator orchestrator;
+  AccessSiteProxySessionController controller(&orchestrator);
+  const auto host = Host("news.example");
+  EXPECT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
+  EXPECT_EQ(controller.RecoverFromFault(host).phase, AccessSiteProxySessionPhase::kReady);
+  EXPECT_EQ(controller.RecoverFromFault(host).phase, AccessSiteProxySessionPhase::kReady);
+  ASSERT_EQ(orchestrator.operation_ids.size(), 3u);
+  EXPECT_NE(orchestrator.operation_ids[0], orchestrator.operation_ids[1]);
+  EXPECT_NE(orchestrator.operation_ids[1], orchestrator.operation_ids[2]);
+  EXPECT_EQ(orchestrator.committed_revisions[host], 3u);
+}
+
 TEST(AccessSiteProxySessionTest, BuildsOrdinaryAllowAndOffMutationPlans) {
   const AccessSiteHost host = Host("news.example");
   auto allow = BuildSiteProxySessionMutationPlan(
-      host, AccessSiteIntent::kAllow, TestOwner(), "proxy-group", "on");
+      host, AccessSiteIntent::kAllow, TestOwner(), "proxy-group", "on", 0);
   EXPECT_EQ(allow.mutation.status, AccessSiteIntentMutationStatus::kReady);
   ASSERT_TRUE(allow.mutation.request);
   EXPECT_EQ(allow.mutation.request->candidate_members[0].mode,
@@ -179,11 +214,34 @@ TEST(AccessSiteProxySessionTest, BuildsOrdinaryAllowAndOffMutationPlans) {
   EXPECT_EQ(allow.selector.exact_host, "news.example");
 
   auto off = BuildSiteProxySessionMutationPlan(
-      host, AccessSiteIntent::kOff, TestOwner(), "", "off");
+      host, AccessSiteIntent::kOff, TestOwner(), "", "off", 0);
   EXPECT_EQ(off.mutation.status, AccessSiteIntentMutationStatus::kReady);
   ASSERT_TRUE(off.mutation.request);
   EXPECT_EQ(off.mutation.request->candidate_members[0].mode,
             AccessMode::kDirect);
+}
+
+TEST(AccessSiteProxySessionTest, MutationIdentityBindsContentAndCommittedRevision) {
+  const auto host = Host("news.example");
+  const auto first = BuildSiteProxySessionMutationPlan(
+      host, AccessSiteIntent::kAllow, TestOwner(), "group-a", "operation-1", 3);
+  const auto retry = BuildSiteProxySessionMutationPlan(
+      host, AccessSiteIntent::kAllow, TestOwner(), "group-a", "operation-1", 3);
+  const auto changed = BuildSiteProxySessionMutationPlan(
+      host, AccessSiteIntent::kAllow, TestOwner(), "group-b", "operation-1", 3);
+  const auto recovery = BuildSiteProxySessionMutationPlan(
+      host, AccessSiteIntent::kAllow, TestOwner(), "group-a", "operation-2", 4);
+  ASSERT_TRUE(first.mutation.request);
+  ASSERT_TRUE(retry.mutation.request);
+  ASSERT_TRUE(changed.mutation.request);
+  ASSERT_TRUE(recovery.mutation.request);
+  EXPECT_EQ(first.mutation.request->expected_revision, 3u);
+  EXPECT_EQ(*first.mutation.request, *retry.mutation.request);
+  EXPECT_NE(first.mutation.request->request_fingerprint,
+            changed.mutation.request->request_fingerprint);
+  EXPECT_NE(first.mutation.request->operation_id,
+            recovery.mutation.request->operation_id);
+  EXPECT_EQ(recovery.mutation.request->expected_revision, 4u);
 }
 
 AccessSiteProxyFaultRouteContext HealthyRouteContext(
@@ -274,6 +332,31 @@ TEST(AccessSiteProxySessionTest, RecoverFromFaultRestoresReadyViaProxy) {
       PlanSiteProxySessionRequestRoute(recovered, HealthyRouteContext(8));
   EXPECT_EQ(plan.action, aegis_access::RouteAction::kUseRegisteredProxy);
   EXPECT_NE(plan.action, aegis_access::RouteAction::kPreserveNative);
+}
+
+TEST(AccessSiteProxySessionTest,
+     FailedRecoveryDoesNotTearDownCommittedProxySelection) {
+  FakeOrchestrator orchestrator;
+  AccessSiteProxySessionController controller(&orchestrator);
+  const AccessSiteHost host = Host("www.example.com");
+  ASSERT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
+  controller.NotifyRuntimeFault(host, AccessSiteProxyFaultMode::kFailClosed);
+  const int prior_teardowns = orchestrator.tear_down_count;
+
+  orchestrator.fail_at = FakeOrchestrator::Stage::kPublish;
+  orchestrator.publish_error = AccessSiteProxySessionError::kAckFailed;
+  const auto failed = controller.RecoverFromFault(host);
+
+  EXPECT_EQ(failed.intent, AccessSiteIntent::kAllow);
+  EXPECT_EQ(failed.phase, AccessSiteProxySessionPhase::kUnavailable);
+  EXPECT_EQ(failed.policy_generation, 7u);
+  EXPECT_EQ(orchestrator.tear_down_count, prior_teardowns);
+  EXPECT_EQ(controller.RecoverFromFault(host).policy_generation, 7u);
+  EXPECT_EQ(orchestrator.tear_down_count, prior_teardowns);
+  const auto route =
+      PlanSiteProxySessionRequestRoute(failed, HealthyRouteContext(7));
+  EXPECT_EQ(route.action, aegis_access::RouteAction::kFail);
+  EXPECT_NE(route.action, aegis_access::RouteAction::kPreserveNative);
 }
 
 TEST(AccessSiteProxySessionTest,

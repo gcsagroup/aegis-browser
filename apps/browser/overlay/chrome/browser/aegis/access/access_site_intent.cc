@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/strings/string_util.h"
+#include "net/base/schemeful_site.h"
 #include "url/gurl.h"
 
 namespace aegis::access {
@@ -208,8 +209,13 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
     return result;
   }
 
-  const std::string http_site = "http://" + input.host.value;
-  const std::string https_site = "https://" + input.host.value;
+  // The rule still matches this exact destination host. Its top-level site
+  // uses Chromium's registrable-site identity, as required by the store and
+  // by the trusted request metadata (e.g. www.example.com -> example.com).
+  const std::string http_site =
+      net::SchemefulSite(GURL("http://" + input.host.value)).Serialize();
+  const std::string https_site =
+      net::SchemefulSite(GURL("https://" + input.host.value)).Serialize();
 
   SiteGroupMutationRequest request;
   request.operation_id = input.operation_id;
@@ -234,6 +240,9 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
   result.request = std::move(request);
   return result;
 }
+
+AccessSiteIntentStore::AccessSiteIntentStore() = default;
+AccessSiteIntentStore::~AccessSiteIntentStore() = default;
 
 AccessSiteIntent AccessSiteIntentStore::Get(const AccessSiteHost& host) const {
   const auto it = values_.find(host);

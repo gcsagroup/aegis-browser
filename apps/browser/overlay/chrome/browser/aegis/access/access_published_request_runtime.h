@@ -66,6 +66,17 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
   AccessPolicyPublicationResult PublishPreparedPolicyCandidate(
       const StoredPolicySnapshot& candidate);
 
+  // Accepts committed rule contents with a freshly reserved publication
+  // version. The Store reservation is durable; this only updates Browser
+  // memory and does not imply Network ACK or connection readiness.
+  AccessPolicyPublicationResult PublishRestoredPolicyCandidate(
+      const aegis_access::PublishedAccessPolicySnapshot& candidate);
+
+  // Native decisions use the same live common counters, with selection zero.
+  std::optional<aegis_access::GenerationTuple>
+  CaptureCommonGenerationTupleOnUiThread(
+      const aegis_access::OwnershipKey& owner) const;
+
   // Restores the pre-mutation runtime snapshot only when the currently
   // published value is still the exact PREPARED candidate. This prevents a
   // delayed failure path from overwriting a newer publication.
@@ -90,6 +101,10 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
   explicit AccessPublishedRequestRuntime(Profile* profile);
   AccessPolicyPublicationResult PublishPolicySnapshot(
       const StoredPolicySnapshot& stored);
+
+  aegis_access::RequestGenerationTupleInput CaptureGenerationSources(
+      const aegis_access::OwnershipKey& owner,
+      const std::string& proxy_group_id) const;
 
   const raw_ptr<Profile> profile_;
   std::map<std::string, aegis_access::PublishedAccessPolicySnapshot>

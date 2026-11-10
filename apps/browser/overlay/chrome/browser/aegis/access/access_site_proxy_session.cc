@@ -4,6 +4,8 @@
 
 #include <utility>
 
+#include "base/uuid.h"
+
 #include "components/aegis_access/access_route_planner.h"
 
 namespace aegis::access {
@@ -160,17 +162,31 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
     AccessSiteIntent intent,
     const OwnershipKey& owner,
     std::string_view proxy_group_id,
-    std::string_view operation_suffix) {
+    std::string_view operation_id,
+    uint64_t expected_revision) {
   AccessSiteProxySessionMutationPlan plan;
   AccessSiteIntentMutationInput input;
   input.intent = intent;
   input.host = host;
   input.owner = owner;
   input.site_toggle_id = AppendMessage("bubble:", host.value);
-  input.operation_id = AppendMessage(
-      AppendMessage(AppendMessage("bubble-session:", host.value), ":"),
-      operation_suffix);
-  input.request_fingerprint = input.operation_id;
+  input.operation_id = std::string(operation_id);
+  input.expected_revision = expected_revision;
+  // Length-prefixed fields make the fingerprint unambiguous even when owner
+  // or group identifiers contain separators. The operation nonce is separate:
+  // retries reuse it, while a new publication must receive a new nonce.
+  auto append_field = [&](std::string_view value) {
+    input.request_fingerprint += std::to_string(value.size()) + ":";
+    input.request_fingerprint.append(value);
+  };
+  append_field("bubble-session-v1");
+  append_field(host.value);
+  append_field(std::to_string(static_cast<int>(intent)));
+  append_field(std::to_string(static_cast<int>(owner.channel)));
+  append_field(owner.profile_token);
+  append_field(owner.storage_partition_token);
+  append_field(proxy_group_id);
+  append_field(std::to_string(expected_revision));
   input.proxy_group_id =
       intent == AccessSiteIntent::kAllow ? std::string(proxy_group_id)
                                          : std::string();
@@ -178,7 +194,10 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
 
   plan.selector.owner = owner;
   plan.selector.document_token = AppendMessage("bubble-session-doc:", host.value);
-  plan.selector.top_level_site = AppendMessage("https://", host.value);
+  if (plan.mutation.request) {
+    plan.selector.top_level_site =
+        plan.mutation.request->candidate_group.https_top_level_site;
+  }
   plan.selector.exact_host = host.value;
   plan.selector.scheme = RequestScheme::kHttps;
   plan.selector.port = 443;
@@ -188,6 +207,8 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
 AccessSiteProxySessionController::AccessSiteProxySessionController(
     AccessSiteProxySessionOrchestrating* orchestrator)
     : orchestrator_(orchestrator) {}
+
+AccessSiteProxySessionController::~AccessSiteProxySessionController() = default;
 
 AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
     const AccessSiteHost& host) const {
@@ -307,7 +328,9 @@ AccessSiteProxySessionController::RepublishAllow(
       BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kAllow,
                                         ready_info.owner,
                                         ready_info.proxy_group_id,
-                                        operation_suffix);
+                                        std::string(operation_suffix) + ":" +
+                                            base::Uuid::GenerateRandomV4().AsLowercaseString(),
+                                        ready_info.committed_revision);
   if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
       !plan.mutation.request.has_value()) {
     return MarkUnavailable(
@@ -338,7 +361,12 @@ AccessSiteProxySessionController::RepublishAllow(
       orchestrator_->PublishAndAcknowledge(*plan.mutation.request,
                                            plan.selector, &publication);
   if (publish_status != AccessSiteProxySessionError::kOk) {
-    (void)orchestrator_->TearDownPublishedHost(host);
+    // The transaction owns candidate rollback. A failed recovery must not
+    // tear down the previously committed PROXY selection: that could expose
+    // the host to native routing while its saved intent still requires PROXY.
+    if (SnapshotFor(host).policy_generation == 0) {
+      (void)orchestrator_->TearDownPublishedHost(host);
+    }
     return MarkUnavailable(host, AccessSiteIntent::kAllow, publish_status);
   }
 
@@ -389,7 +417,9 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
     const AccessSiteProxySessionMutationPlan plan =
         BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kOff,
                                           ready_info.owner,
-                                          /*proxy_group_id=*/"", "disable");
+                                          /*proxy_group_id=*/"",
+                                          base::Uuid::GenerateRandomV4().AsLowercaseString(),
+                                          ready_info.committed_revision);
     if (plan.mutation.status == AccessSiteIntentMutationStatus::kReady &&
         plan.mutation.request.has_value()) {
       AccessSiteProxySessionPublicationInfo publication;
@@ -418,6 +448,13 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
 
 AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Write(
     AccessSiteProxySessionSnapshot snapshot) {
+  // Preparing or failing a new candidate does not erase the last committed
+  // generation. Retain it through repeated recovery attempts; OFF clears it.
+  const auto previous = snapshots_.find(snapshot.host);
+  if (snapshot.intent == AccessSiteIntent::kAllow &&
+      snapshot.policy_generation == 0 && previous != snapshots_.end()) {
+    snapshot.policy_generation = previous->second.policy_generation;
+  }
   snapshots_[snapshot.host] = snapshot;
   return snapshot;
 }

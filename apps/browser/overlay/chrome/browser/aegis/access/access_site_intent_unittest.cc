@@ -119,5 +119,45 @@ TEST(AccessSiteIntentTest, StoreDefaultsOffAndOmitsOffEntries) {
   EXPECT_TRUE(store.All().empty());
 }
 
+TEST(AccessSiteIntentTest, SubdomainRulesUseCanonicalSitesButKeepExactHostScope) {
+  struct Case {
+    const char* host;
+    const char* site_host;
+  };
+  for (const auto& [host, site_host] :
+       {Case{"www.google.com", "google.com"},
+        Case{"news.example.co.uk", "example.co.uk"},
+        Case{"project.github.io", "project.github.io"},
+        Case{"[::1]", "[::1]"}}) {
+    SCOPED_TRACE(host);
+    AccessSiteIntentMutationInput input;
+    input.host = Host(host);
+    input.owner = TestOwner();
+    input.site_toggle_id = "toggle";
+    input.operation_id = "op";
+    input.request_fingerprint = "fingerprint";
+    input.intent = AccessSiteIntent::kAllow;
+    input.proxy_group_id = "proxy-group";
+    auto result = BuildOrdinarySiteGroupMutation(input);
+    ASSERT_EQ(result.status, AccessSiteIntentMutationStatus::kReady);
+    ASSERT_TRUE(result.request);
+    const auto& request = *result.request;
+    EXPECT_EQ(request.candidate_group.canonical_host, host);
+    EXPECT_EQ(request.candidate_group.http_top_level_site,
+              "http://" + std::string(site_host));
+    EXPECT_EQ(request.candidate_group.https_top_level_site,
+              "https://" + std::string(site_host));
+    ASSERT_EQ(request.candidate_members.size(), 2u);
+    for (const auto& member : request.candidate_members) {
+      EXPECT_EQ(member.exact_host, host);
+      EXPECT_FALSE(member.include_subdomains);
+    }
+    EXPECT_EQ(request.candidate_members[0].top_level_site,
+              request.candidate_group.http_top_level_site);
+    EXPECT_EQ(request.candidate_members[1].top_level_site,
+              request.candidate_group.https_top_level_site);
+  }
+}
+
 }  // namespace
 }  // namespace aegis::access

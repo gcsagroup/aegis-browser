@@ -1,6 +1,6 @@
-From f83d896f2a0bab6fa9e707b5745448309ebc4b14 Mon Sep 17 00:00:00 2001
-From: Aegis Packaging Proposal <aegis-proposal@invalid>
-Date: Sun, 8 Nov 2026 15:27:16 +0000
+From d46f9b3a0c93c361f43db6edb94f9fd1a58d0be5 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@invalid>
+Date: Tue, 10 Nov 2026 03:59:36 +0800
 Subject: [PATCH] feat: fail closed on macOS site-proxy fault without DIRECT
 
 ---
@@ -279,15 +279,15 @@ diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/b
 index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff607d483373 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_session.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
-@@ -5,6 +5,7 @@
+@@ -4,6 +4,7 @@
+ 
  #include <utility>
  
- #include "base/strings/strcat.h"
 +#include "components/aegis_access/access_route_planner.h"
  
  namespace aegis::access {
  namespace {
-@@ -15,6 +16,19 @@ std::string DetailOr(std::string_view detail, std::string_view fallback) {
+@@ -20,6 +21,19 @@ std::string AppendMessage(std::string_view prefix, std::string_view detail) {
  
  }  // namespace
  
@@ -307,7 +307,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
  std::string_view AccessSiteProxySessionErrorToString(
      AccessSiteProxySessionError error) {
    switch (error) {
-@@ -50,6 +64,10 @@ std::string_view AccessSiteProxySessionErrorToString(
+@@ -55,6 +69,10 @@ std::string_view AccessSiteProxySessionErrorToString(
        return "direct-fallback-not-admitted";
      case AccessSiteProxySessionError::kTearDownFailed:
        return "tear-down-failed";
@@ -318,7 +318,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
    }
    return "mutation-failed";
  }
-@@ -101,6 +119,14 @@ std::string AccessSiteProxySessionErrorReadableMessage(
+@@ -106,6 +124,14 @@ std::string AccessSiteProxySessionErrorReadableMessage(
        return AppendMessage(
            "Failed to tear down Access session: ",
            DetailOr(detail, "tear-down"));
@@ -333,7 +333,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
    }
    return "Access session failed.";
  }
-@@ -176,6 +202,70 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
+@@ -181,6 +207,70 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
  
  AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
      const AccessSiteHost& host) {
@@ -404,7 +404,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
    if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk ||
        !orchestrator_) {
      return MarkUnavailable(host, AccessSiteIntent::kAllow,
-@@ -188,7 +278,8 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+@@ -193,7 +283,8 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
    Write({.host = host,
           .intent = AccessSiteIntent::kAllow,
           .phase = AccessSiteProxySessionPhase::kPreparingCandidate,
@@ -414,7 +414,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
  
    AccessSiteProxyLocalProxyReadyInfo ready_info;
    const AccessSiteProxySessionError ready_status =
-@@ -204,12 +295,14 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+@@ -209,12 +300,14 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
    Write({.host = host,
           .intent = AccessSiteIntent::kAllow,
           .phase = AccessSiteProxySessionPhase::kPublishing,
@@ -431,7 +431,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
    if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
        !plan.mutation.request.has_value()) {
      return MarkUnavailable(
-@@ -220,10 +313,20 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+@@ -225,10 +318,20 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
              : AccessSiteProxySessionError::kPrepareFailed);
    }
  
@@ -453,7 +453,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
  
    AccessSiteProxySessionPublicationInfo publication;
    const AccessSiteProxySessionError publish_status =
-@@ -238,6 +341,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+@@ -243,6 +346,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
                  .intent = AccessSiteIntent::kAllow,
                  .phase = AccessSiteProxySessionPhase::kReady,
                  .connection = AccessSiteConnectionState::kReady,
@@ -461,7 +461,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
                  .policy_generation = publication.policy_generation});
  }
  
-@@ -249,6 +353,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
+@@ -254,6 +358,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
      snap.intent = AccessSiteIntent::kOff;
      snap.phase = AccessSiteProxySessionPhase::kIdle;
      snap.connection = AccessSiteConnectionState::kIdle;
@@ -469,7 +469,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
      snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
          AccessSiteProxySessionError::kInvalidHost);
      intent_store_.Set(host, AccessSiteIntent::kOff);
-@@ -262,6 +367,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
+@@ -267,6 +372,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
        .intent = AccessSiteIntent::kOff,
        .phase = AccessSiteProxySessionPhase::kIdle,
        .connection = AccessSiteConnectionState::kIdle,
@@ -477,7 +477,7 @@ index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff60
    };
  
    if (!orchestrator_) {
-@@ -322,8 +428,81 @@ AccessSiteProxySessionController::MarkUnavailable(
+@@ -327,8 +433,81 @@ AccessSiteProxySessionController::MarkUnavailable(
                  .intent = intent,
                  .phase = AccessSiteProxySessionPhase::kUnavailable,
                  .connection = AccessSiteConnectionState::kUnavailable,
@@ -861,5 +861,5 @@ index 9a19d8794fda34668a65f5854027b87792b8ee7f..7da61816ca6bace2ba147a010823508a
  }  // namespace
  }  // namespace aegis::access
 -- 
-2.43.0
+2.54.0 (Apple Git-157)
 

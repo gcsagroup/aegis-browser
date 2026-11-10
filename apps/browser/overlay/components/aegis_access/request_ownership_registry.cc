@@ -7,12 +7,18 @@
 namespace aegis_access {
 namespace {
 
-bool IsComplete(const GenerationTuple& generations) {
-  return generations.policy_generation != 0 &&
-         generations.identity_generation != 0 &&
-         generations.selection_generation != 0 &&
-         generations.network_epoch != 0 &&
-         generations.base_proxy_config_generation != 0;
+bool IsComplete(const RequestOwnershipRecord& record) {
+  const auto& generations = record.generations;
+  if (!generations.policy_generation || !generations.identity_generation ||
+      !generations.network_epoch || !generations.base_proxy_config_generation)
+    return false;
+  switch (record.route) {
+    case RequestOwnershipRoute::kProxy:
+      return generations.selection_generation != 0;
+    case RequestOwnershipRoute::kNative:
+      return generations.selection_generation == 0;
+  }
+  return false;
 }
 
 bool IsKnown(RequestScheme scheme) {
@@ -40,7 +46,7 @@ bool HasExactlyOneAttributionToken(const RequestCancellationSelector& selector) 
 
 bool HasValidRequestMetadata(const RequestOwnershipRecord& record) {
   return !record.request_id.empty() && IsCompleteOwner(record.owner) &&
-         IsComplete(record.generations) && !record.exact_host.empty() &&
+         IsComplete(record) && !record.exact_host.empty() &&
          IsKnown(record.scheme) && record.port != 0;
 }
 

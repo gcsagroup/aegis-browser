@@ -406,6 +406,68 @@ TEST(AccessRuleStoreTest, EphemeralProfileNeverCreatesAccessDb) {
   EXPECT_TRUE(store.binding().profile_path().empty());
 }
 
+TEST(AccessRuleStoreTest, EmptyBootstrapReservesLiveGenerationBeforeFirstMutation) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  auto binding = AccessRuleStoreTestPeer::Persistent(temp.GetPath());
+  {
+    AccessRuleStore store(binding);
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    auto initial = store.ReserveCommittedPolicyForPublication("partition-A");
+    ASSERT_EQ(initial.status, StoreStatus::kValid);
+    ASSERT_TRUE(initial.value);
+    EXPECT_EQ(initial.value->owner, Owner());
+    EXPECT_EQ(initial.value->policy_generation, 1u);
+    EXPECT_TRUE(initial.value->rules.empty());
+    EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status, StoreStatus::kMissing);
+  }
+  AccessRuleStore reopened(binding);
+  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
+  auto pending = Prepare(&reopened, Mutation("first-enable", AccessMode::kProxy));
+  EXPECT_EQ(pending.operation_sequence, 2u);
+}
+TEST(AccessRuleStoreTest, RestoreRepublishesCommittedContentAboveFailedCandidate) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "ephemeral-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  Commit(&store, Prepare(&store, Mutation("enabled", AccessMode::kProxy)));
+  auto original = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(original.value);
+  auto expected = AccessRuleStore::AdaptMatcherSnapshot(*original.value);
+  ASSERT_TRUE(expected.value);
+  auto failed = Prepare(&store, Mutation("failed-disable", AccessMode::kDirect, 1));
+  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("partition-A").status,
+            StoreStatus::kRecoveryRequired);
+  ASSERT_EQ(store.SupersedePreparedMutation(failed.operation_id,
+                                           failed.request_fingerprint),
+            StoreStatus::kValid);
+  auto restored = store.ReserveCommittedPolicyForPublication("partition-A");
+  ASSERT_EQ(restored.status, StoreStatus::kValid);
+  ASSERT_TRUE(restored.value);
+  EXPECT_GT(restored.value->policy_generation, failed.operation_sequence);
+  EXPECT_EQ(restored.value->rules, expected.value->rules);
+  auto committed = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(committed.value);
+  EXPECT_EQ(committed.value->site_groups, original.value->site_groups);
+  auto next = Prepare(&store, Mutation("next-disable", AccessMode::kDirect, 1));
+  EXPECT_GT(next.operation_sequence, restored.value->policy_generation);
+}
+TEST(AccessRuleStoreTest, InvalidRestoreDoesNotConsumeGenerationAndOverflowRejects) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "ephemeral-A", "profile-A"));
+  EXPECT_FALSE(store.ReserveCommittedPolicyForPublication("partition-A").value);
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("").status,
+            StoreStatus::kInvalidArgument);
+  auto live = store.ReserveCommittedPolicyForPublication("partition-A");
+  ASSERT_TRUE(live.value);
+  EXPECT_EQ(live.value->policy_generation, 1u);
+  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(&store,
+      "UPDATE access_store_counters SET operation_sequence=9223372036854775807"));
+  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("partition-A").status,
+            StoreStatus::kConflict);
+}
+
 TEST(AccessRuleStoreTest, PrepareIsDurableButDoesNotReplaceCommittedRows) {
   base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
