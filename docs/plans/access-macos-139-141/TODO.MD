@@ -346,3 +346,28 @@
 - 最新用户提供了用于Alpha内置测试的独立节点，已只写入本机0700目录内0600私有配置，脱敏身份见本地alpha-test-node-binding.json；URI与凭据不写入源码、PR或CI日志。当前仅完成协议解析和私有绑定，Alpha内置加载/打包/真实节点验收均NOT_RUN，旧节点结果不转移给新节点。依用户顺序，当前PR更新完成后再实施Alpha私有资源接线和网站上下文扩展。
 - 当前阶段性候选f2f0afa6f30bc1a2309b5e50a0df4241f2df31de的完整质量门首次FAIL：merged-main-patch_test.py要求补丁完整Git blob索引，47个新增补丁使用了缩写。原始report/run-quality日志保留，不把前置通过项当完整门通过。
 - 修复只展开补丁index元数据到实际Native Git blob的40位身份；47个稳定patch-id全部未变，Native源SHA8d398cda6abadbea5d14177bec6edcf3177264b6和已测源码/产物不变。patch-full-index-correction-receipt.json绑定每个补丁修复前后SHA256；随后重新跑对应回归、完整门和fresh独立review，尚未完成的不勾选。
+
+
+### 新Alpha节点真实核心与原标签重试验证（2026-11-10 23:41 Asia/Shanghai）
+
+- 新节点的私有配置语法校验PASS；既有0405原生产物运行6项真实核心产品用例全部PASS、无SKIP，原始证据`alpha-node-product-probe-result.json`。这些用例使用实际Xray准备和HTTPS可用性检查，NetworkContext ACK仍为测试对象，不代替实际浏览器。凭据只保留在本机私有配置。
+- **实际Aegis受控主流程PASS：** 候选8d398cda6abadbea5d14177bec6edcf3177264b6，完整coherent405 runtime、全新普通测试Profile；本App内example.com受控DNS失败→一次点击Retry through proxy→Connecting→原标签原URL自动加载Example Domain。封存NetLog有原DIRECT和重试loopback代理两个主文档控制器；日志只有一次retry start，无手动刷新或开关。原始CUA观察/截图/日志哈希与路由在`cua-main-flow-405-alpha-pass-receipt.json`。随后菜单退出、无残留任务浏览器。
+- 本次使用已有DEV私有配置入口；**Alpha内置资源接线、网站上下文扩展及对应新候选真实验收仍NOT_RUN**。自然GFW失败、系统Keychain/签名/发布不由此证明。旧V2Ray节点证据不转移为新节点百站结果。
+- **PR检查点：** 5b141c2a701ce8dbeaeb2c46b6948941d34fb438完整本地质量门PASS、sourceStable=true，初次失败保留。fresh只读内置gpt-6-astra/xhigh审查仍RUNNING；共享PR的iOS分支已前进至12c999e0aa0862e631c6093d2376c676cd52be64，仅2个不重叠iOS文档。预备整合提交616c0b0accfc1dc85ecc0111f22cd19ecc40fc45保留其全部内容，141个macOS文件blob不变；尚未checkout/push，最终整合候选仍须检查与fresh复审。
+- **下一项：** 收取独立审查、修复实际发现并绑定最终整合候选后更新PR97；随后实现用户已批准的网站上下文和Alpha内置加载、普通Profile真实冷启动核心恢复，继续受影响原生验证和100站点验收。
+
+
+### PR检查点独立审查问题修复（2026-11-10 23:54 Asia/Shanghai）
+
+- fresh内置只读独立审查5b141c2a701ce8dbeaeb2c46b6948941d34fb438进程正常完成，但发现2项P1和3项P2：内层控制管先关闭误发ERR_ABORTED、原标签网络epoch变化未先刷新私有快照、压缩字典跨路由共享、ignore_factory_reset豁免丢失、异步候选构造失败遗留durable PREPARED。原始pr97-macos-checkpoint-review.stdout保留；这不是review PASS。
+- **0406实现：** 请求relay等待客户端终止事件并设超时；每次私有请求先完整发布当前G/I/E/C且等ACK后重新核验，旧epoch重定向fail-closed；管理路由禁用共享压缩字典读写；reset仅撤销非豁免factory；候选构造失败前保留PREPARED身份并执行恢复。新增控制管终止、native字典开关、epoch新ACK、豁免service-worker factory仍能发请求、同Profile候选I/O失败后再启用等回归。
+- 当前源码e5d6bd2a87ff4c827713509f2cc81a0afe2dc6ee，20文件新补丁0406完整blob身份，review-fixes-406-source.json绑定。完整chrome与8个受影响GN测试目标构建RUNNING；新候选测试、原浏览器复验和fresh复审NOT_RUN。先前0405及5b141完整门证据保留，但不提升为0406 PASS。
+- **新增真实FAIL：** 同一Alpha测试Profile重启后原URL显示ERR_PROXY_CONNECTION_FAILED，核心未自动准备，失败页没有代理重试动作。cua-main-flow-405-alpha-cold-failure.json记录原始日志、launch和哈希；下一阶段必须解决cold core bootstrap，不能只恢复规则和unavailable状态。
+- **下一项：** 验证0406修复和当前PR检查点，收取fresh复审后保留最新iOS头更新PR97；再按用户顺序接入Alpha私有内置资源及可信网站上下文，完成冷启动和最终同候选验收。
+
+
+### 0408审查修复原生验证（2026-11-11 00:02 Asia/Shanghai）
+
+- **PASS：** d6bff7c302cab2c8f30ff54b5e18a1058b8a64ad完整chrome与8个受影响GN目标构建，source inputs unchanged。正式目标176项全部SUCCESS、无SKIP，其中coordinator25含7项使用新Alpha节点的真实核心产品用例，私有factory16、NetworkContext state19、private client30、URLLoader6、transport37、rule store38、async store5。证据native-independent-review-fixes-408-build-result.json、native-review-fixes-408-tests-result.json，绑定每个二进制SHA与测试summary。
+- 0406/0407首次编译均FAIL（测试私有访问）；修复限定actor测试访问、改由真实网络通知器驱动，原始日志与输入身份保留。0406–0408新补丁从0405基线Git-index精确回放PASS，整树等于原生HEAD：pending-406-408-replay-result.json。未改动其他窗口v8脏状态。
+- 当前候选实际Aegis复验RUNNING（新408 coherent runtime），完整本地质量门和fresh修复后独立审查NOT_RUN。176项测试不替代CORS隔离浏览器矩阵、Alpha内置加载、冷启动核心及百站最终验收。

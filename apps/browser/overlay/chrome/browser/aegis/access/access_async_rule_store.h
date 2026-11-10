@@ -39,6 +39,7 @@ class AccessAsyncRuleStore {
       base::OnceCallback<void(AsyncAccessStoreRestoration)> completion);
   void ReadCommitted(std::string partition,
       base::OnceCallback<void(StoreResult<StoredPolicySnapshot>)> completion);
+  void SetFailurePointForTesting(AccessRuleStore::FailurePointForTesting point);
  private:
   class Worker;
   base::SequenceBound<Worker> worker_;

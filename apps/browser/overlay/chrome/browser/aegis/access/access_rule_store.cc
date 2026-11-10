@@ -1480,6 +1480,8 @@ StoreResult<StoredPolicySnapshot>
 AccessRuleStore::BuildPreparedCandidateSnapshot(
     const PendingMutationRecord& expected) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (ShouldFail(FailurePointForTesting::kBuildPreparedCandidateBeforeRead))
+    return SnapshotError(StoreStatus::kIoError, "injected_candidate_read_failure");
   if (!is_open_) {
     return SnapshotError(terminal_status_, "store_not_open");
   }

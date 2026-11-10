@@ -256,6 +256,12 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
 void AccessServiceCoordinator::OnAsyncPrepared(
     std::unique_ptr<MutationTransaction> transaction,
     AsyncAccessStorePrepared result) {
+  // PREPARED is already durable even if construction of its full candidate
+  // fails. Keep its identity so FailTransaction supersedes the journal entry.
+  if (result.pending && result.pending->phase == MutationPhase::kPrepared) {
+    transaction->pending = *result.pending;
+    transaction->previous = std::move(result.previous);
+  }
   if (result.status != StoreStatus::kValid || !result.pending) {
     FailTransaction(std::move(transaction),
         Result(AccessMutationTransactionStatus::kPrepareFailed, result.status));
@@ -267,8 +273,6 @@ void AccessServiceCoordinator::OnAsyncPrepared(
                result.pending->committed_policy_generation));
     return;
   }
-  transaction->pending = std::move(*result.pending);
-  transaction->previous = std::move(result.previous);
   if (!result.candidate) {
     FailTransaction(std::move(transaction),
         Result(AccessMutationTransactionStatus::kCandidateBuildFailed, result.status));

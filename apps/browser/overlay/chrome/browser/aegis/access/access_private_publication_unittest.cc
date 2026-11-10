@@ -107,6 +107,40 @@ class AccessPrivatePublicationTest : public testing::Test {
   aegis_access::OwnershipKey owner_;
 };
 
+TEST_F(AccessPrivatePublicationTest, ChangedCommonTupleRequiresFreshPrivateAck) {
+  auto notifier = net::NetworkChangeNotifier::CreateMockIfNeeded();
+  HeldPrivateContext context;
+  auto client = Bind(context);
+  ASSERT_TRUE(client);
+  const auto policy = Policy();
+  const auto old_common = Common();
+  base::test::TestFuture<bool> first;
+  transport_->PublishPrivatePolicy(policy, old_common, first.GetCallback());
+  environment_.RunUntilIdle();
+  context.Acknowledge();
+  ASSERT_TRUE(first.Get());
+  EXPECT_TRUE(transport_->HasCurrentPrivatePolicy(owner_, old_common));
+  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
+      net::NetworkChangeNotifier::CONNECTION_WIFI);
+  environment_.RunUntilIdle();
+  auto new_common = old_common;
+  new_common.network_epoch = transport_->network_epoch();
+  EXPECT_NE(old_common.network_epoch, new_common.network_epoch);
+  EXPECT_FALSE(transport_->HasCurrentPrivatePolicy(owner_, new_common));
+  base::test::TestFuture<bool> changed;
+  transport_->PublishPrivatePolicy(policy, new_common, changed.GetCallback());
+  environment_.RunUntilIdle();
+  EXPECT_FALSE(changed.IsReady());
+  EXPECT_FALSE(transport_->HasCurrentPrivatePolicy(owner_, new_common));
+  ASSERT_TRUE(context.snapshot);
+  EXPECT_EQ(context.snapshot->common_generations->network_epoch,
+            new_common.network_epoch);
+  context.Acknowledge();
+  ASSERT_TRUE(changed.Get());
+  EXPECT_TRUE(transport_->HasCurrentPrivatePolicy(owner_, new_common));
+  EXPECT_FALSE(transport_->HasCurrentPrivatePolicy(owner_, old_common));
+}
+
 TEST_F(AccessPrivatePublicationTest, FactoriesShareOneContextAndExactPublication) {
   HeldPrivateContext context;
   auto first = Bind(context);

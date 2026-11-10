@@ -937,6 +937,17 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
                                              : RequestDisposition::kPreserveNative;
   }
 
+  if (private_target_factory_.is_bound()) {
+    auto* transport = AccessNetworkContextTransport::Get(profile_);
+    const auto common =
+        runtime->CaptureCommonGenerationTupleOnUiThread(metadata.owner);
+    if (!transport || !common ||
+        !transport->HasCurrentPrivatePolicy(metadata.owner, *common)) {
+      *net_error = net::ERR_NETWORK_CHANGED;
+      return RequestDisposition::kBlock;
+    }
+  }
+
   aegis_access::RequestPolicyContextResult context_result =
       aegis_access::CanonicalizeBrowserOwnedRequest(metadata, request_url);
   if (!context_result.context.has_value()) {
@@ -996,6 +1007,65 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
                  net::ERR_FAILED);
     return;
   }
+
+  if (private_target_factory_.is_bound()) {
+    auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+    auto* transport = AccessNetworkContextTransport::Get(profile_);
+    const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_)
+                                 : nullptr;
+    const auto common = runtime
+        ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
+        : std::nullopt;
+    if (!transport || !policy || !common) {
+      BlockRequest(std::move(loader_receiver), std::move(client),
+                   net::ERR_NETWORK_CHANGED);
+      return;
+    }
+    // An open document keeps its factory across network/identity/config
+    // changes. Publish the new tuple and wait for the exact ACK before
+    // stamping either native or proxy requests with that tuple.
+    ++pending_starts_;
+    transport->PublishPrivatePolicy(*policy, *common, base::BindOnce(
+        &AccessProxyingURLLoaderFactory::OnRequestPolicyReady,
+        weak_factory_.GetWeakPtr(), std::move(loader_receiver), request_id,
+        options, request, std::move(client), traffic_annotation, *common));
+    return;
+  }
+  StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
+                         std::move(client), traffic_annotation);
+}
+
+void AccessProxyingURLLoaderFactory::OnRequestPolicyReady(
+    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+    int32_t request_id, uint32_t options, network::ResourceRequest request,
+    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+    net::MutableNetworkTrafficAnnotationTag traffic_annotation,
+    aegis_access::GenerationTuple expected, bool accepted) {
+  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+  const auto current = runtime
+      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
+      : std::nullopt;
+  if (!accepted || !current || *current != expected ||
+      !private_target_factory_.is_bound()) {
+    BlockRequest(std::move(loader_receiver), std::move(client),
+                 net::ERR_NETWORK_CHANGED);
+  } else {
+    StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
+                           std::move(client), traffic_annotation);
+  }
+  // Keep the factory alive while StartEvaluatedRequest can remove a failed
+  // tracked request, including when its public factory receiver has closed.
+  CHECK_GT(pending_starts_, 0u);
+  --pending_starts_;
+  MaybeDestroySelf();
+}
+
+void AccessProxyingURLLoaderFactory::StartEvaluatedRequest(
+    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+    int32_t request_id, uint32_t options,
+    const network::ResourceRequest& request,
+    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
 
   int net_error = net::ERR_BLOCKED_BY_CLIENT;
   aegis_access::RequestOwnershipRecord ownership_record;
@@ -1162,7 +1232,8 @@ void AccessProxyingURLLoaderFactory::OnProxyBindingError() {
 
 void AccessProxyingURLLoaderFactory::MaybeDestroySelf() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (!proxy_receivers_.empty() || !requests_.empty() || !on_disconnect_) {
+  if (!proxy_receivers_.empty() || !requests_.empty() || pending_starts_ ||
+      !on_disconnect_) {
     return;
   }
   std::move(on_disconnect_).Run(this);

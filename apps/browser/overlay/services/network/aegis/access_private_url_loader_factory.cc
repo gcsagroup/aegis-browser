@@ -3,6 +3,8 @@
 
 #include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/cors/cors_url_loader_factory.h"
@@ -56,11 +58,14 @@ class AccessPrivateURLLoaderFactory::Request final
   mojo::PendingReceiver<mojom::URLLoader> BindInner() {
     auto receiver = inner_.BindNewPipeAndPassReceiver();
     inner_.set_disconnect_handler(
-        base::BindOnce(&Request::Cancel, base::Unretained(this)));
+        base::BindOnce(&Request::OnInnerDisconnected, base::Unretained(this)));
     return receiver;
   }
   mojo::PendingRemote<mojom::URLLoaderClient> BindClient() {
-    return client_receiver_.BindNewPipeAndPassRemote();
+    auto client = client_receiver_.BindNewPipeAndPassRemote();
+    client_receiver_.set_disconnect_handler(
+        base::BindOnce(&Request::Cancel, base::Unretained(this)));
+    return client;
   }
   void FollowRedirect(HttpRequestHeadersUpdateParams,
                       const std::optional<GURL>&) override {
@@ -69,7 +74,7 @@ class AccessPrivateURLLoaderFactory::Request final
   void FollowRedirectWithRoute(HttpRequestHeadersUpdateParams headers,
       const std::optional<GURL>& new_url,
       mojom::AegisAccessRequestEnvelopePtr envelope) override {
-    if (!pending_redirect_ || !envelope || !envelope->generations ||
+    if (!inner_.is_bound() || !pending_redirect_ || !envelope || !envelope->generations ||
         envelope->request_token != token_ ||
         envelope->incarnation != incarnation_ ||
         envelope->target != new_url.value_or(pending_redirect_->new_url) ||
@@ -83,7 +88,7 @@ class AccessPrivateURLLoaderFactory::Request final
     inner_->FollowRedirect(std::move(headers), new_url);
   }
   void SetPriority(net::RequestPriority priority, int32_t value) override {
-    inner_->SetPriority(priority, value);
+    if (inner_.is_bound()) inner_->SetPriority(priority, value);
   }
   void OnReceiveEarlyHints(mojom::EarlyHintsPtr hints) override {
     client_->OnReceiveEarlyHints(std::move(hints));
@@ -113,6 +118,14 @@ class AccessPrivateURLLoaderFactory::Request final
     Finish(status);
   }
  private:
+  void OnInnerDisconnected() {
+    // The control pipe can close before a queued OnComplete on the separate
+    // client pipe. Preserve that terminal status instead of synthesizing an
+    // abort. A broken producer that leaves its client pipe open is bounded.
+    inner_.reset();
+    completion_watchdog_.Start(FROM_HERE, base::Seconds(5),
+        base::BindOnce(&Request::Cancel, base::Unretained(this)));
+  }
   void Cancel() { Finish(URLLoaderCompletionStatus(net::ERR_ABORTED)); }
   void Finish(const URLLoaderCompletionStatus& status) {
     client_->OnComplete(status);
@@ -128,6 +141,7 @@ class AccessPrivateURLLoaderFactory::Request final
   mojo::Receiver<mojom::AegisAccessURLLoaderControl> control_receiver_;
   mojo::Receiver<mojom::URLLoaderClient> client_receiver_{this};
   std::optional<net::RedirectInfo> pending_redirect_;
+  base::OneShotTimer completion_watchdog_;
   base::OnceClosure remove_;
 };
 
@@ -140,6 +154,7 @@ AccessPrivateURLLoaderFactory::AccessPrivateURLLoaderFactory(
     mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory> receiver,
     base::OnceCallback<void(AccessPrivateURLLoaderFactory*)> on_destroy)
     : registry_(std::move(registry)), binding_(std::move(binding)),
+      ignore_factory_reset_(params->ignore_factory_reset),
       incarnation_(std::move(incarnation)), on_destroy_(std::move(on_destroy)),
       cors_factory_(std::make_unique<cors::CorsURLLoaderFactory>(context,
           std::move(params), std::move(scheduler), origin_access_list, this)) {

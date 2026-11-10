@@ -31,8 +31,11 @@ AccessNetworkContextState::~AccessNetworkContextState() {
   factories_.clear();
 }
 void AccessNetworkContextState::ResetFactories() {
-  // Drop issued capabilities and their requests while Context dependencies live.
-  factories_.clear();
+  // Match NetworkContext's original factory contract, including extension
+  // service-worker factories that must survive webRequest-triggered resets.
+  std::erase_if(factories_, [](const auto& factory) {
+    return !factory->ignore_factory_reset();
+  });
 }
 bool AccessNetworkContextState::Install(
     const mojom::AegisAccessSnapshot& snapshot) {

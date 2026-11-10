@@ -273,6 +273,15 @@ bool AccessNetworkContextTransport::HasReadyPrivateContext(
           entry.second.applied_revision == state.private_revision; });
 }
 
+bool AccessNetworkContextTransport::HasCurrentPrivatePolicy(
+    const aegis_access::OwnershipKey& owner,
+    const aegis_access::GenerationTuple& common) const {
+  if (!HasReadyPrivateContext(owner)) return false;
+  const auto& publication =
+      partitions_.at(owner.storage_partition_token).private_publication;
+  return publication && publication->common == common;
+}
+
 void AccessNetworkContextTransport::BindPrivateContext(
     const aegis_access::OwnershipKey& owner, network::mojom::NetworkContext* context,
     base::OnceCallback<void(PrivateContext)> completion) {

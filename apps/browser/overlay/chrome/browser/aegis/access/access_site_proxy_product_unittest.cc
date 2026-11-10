@@ -1,6 +1,7 @@
 // Copyright 2026 GCSA
 
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+#include "chrome/browser/aegis/access/access_async_rule_store.h"
 
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
@@ -22,6 +23,14 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace aegis::access {
+class AccessServiceCoordinatorTestPeer {
+ public:
+  static void SetFailure(AccessServiceCoordinator* coordinator,
+                        AccessRuleStore::FailurePointForTesting point) {
+    CHECK(coordinator->async_store_);
+    coordinator->async_store_->SetFailurePointForTesting(point);
+  }
+};
 namespace {
 
 // Real Mojo ACK with an explicit hold at the product PREPARED boundary. The
@@ -154,6 +163,20 @@ class AccessSiteProxyProductTest : public testing::Test {
   raw_ptr<AccessSiteProxyBubbleController> bubble_ = nullptr;
   OwnershipKey owner_;
 };
+
+TEST_F(AccessSiteProxyProductTest, CandidateReadFailureRecoversPreparedWithoutRestart) {
+  AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
+      AccessRuleStore::FailurePointForTesting::kBuildPreparedCandidateBeforeRead);
+  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
+  WaitFor(AccessSiteConnectionState::kUnavailable);
+  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
+  AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
+      AccessRuleStore::FailurePointForTesting::kNone);
+  // The next operation must prepare and commit in the same Profile/process.
+  // An orphaned durable PREPARED would instead report pending_mutation_exists.
+  Enable();
+  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
+}
 
 TEST_F(AccessSiteProxyProductTest, OnOffOnUsesRealCoreAndCommittedRevision) {
   uint64_t previous = 0;

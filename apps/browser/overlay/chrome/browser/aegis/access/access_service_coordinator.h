@@ -86,6 +86,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
       base::OnceCallback<void(AccessMutationTransactionResult)> completion);
 
  private:
+  friend class AccessServiceCoordinatorTestPeer;
   explicit AccessServiceCoordinator(Profile* profile);
   struct MutationTransaction;
   void OnStoreInitialized(OwnershipKey owner, AsyncAccessStoreRestoration result);

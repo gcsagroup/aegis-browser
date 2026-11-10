@@ -4,6 +4,7 @@
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "mojo/core/embedder/embedder.h"
+#include "net/base/load_flags.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -88,10 +89,12 @@ class AccessNetworkURLLoaderTest : public testing::Test {
     return AccessRequestRouteState::Create(registry_.GetWeakPtr(), metadata,
                                            url, "GET", Expected(proxy));
   }
-  void Start(const GURL& url, scoped_refptr<AccessRequestRouteState> state) {
+  void Start(const GURL& url, scoped_refptr<AccessRequestRouteState> state,
+             int flags = 0) {
     ResourceRequest request;
     request.url = url;
     request.method = "GET";
+    request.load_flags = flags;
     loader_.reset(new URLLoader(context_, base::BindLambdaForTesting(
         [&](URLLoader*) { loader_.reset(); }), remote_.BindNewPipeAndPassReceiver(),
         0, request, client_.CreateRemote(), {}, TRAFFIC_ANNOTATION_FOR_TESTS,
@@ -113,6 +116,27 @@ class AccessNetworkURLLoaderTest : public testing::Test {
   mojo::Remote<mojom::URLLoader> remote_;
   std::unique_ptr<URLLoader> loader_;
 };
+TEST_F(AccessNetworkURLLoaderTest, ManagedRouteCannotAdvertiseNativeDictionary) {
+  Install(true);
+  const auto url = origin_.GetURL("/final");
+  Start(url, State(url, true), net::LOAD_CAN_USE_SHARED_DICTIONARY);
+  ASSERT_EQ(net_context_->url_requests()->size(), 1u);
+  EXPECT_FALSE((*net_context_->url_requests()->begin())->load_flags() &
+               net::LOAD_CAN_USE_SHARED_DICTIONARY);
+  client_.RunUntilComplete();
+  EXPECT_EQ(client_.completion_status().error_code, net::OK);
+  EXPECT_EQ(proxy_hits_, 1);
+}
+TEST_F(AccessNetworkURLLoaderTest, OrdinaryNativeLoaderRetainsDictionaryCapability) {
+  const auto url = origin_.GetURL("/final");
+  Start(url, nullptr, net::LOAD_CAN_USE_SHARED_DICTIONARY);
+  ASSERT_EQ(net_context_->url_requests()->size(), 1u);
+  EXPECT_TRUE((*net_context_->url_requests()->begin())->load_flags() &
+              net::LOAD_CAN_USE_SHARED_DICTIONARY);
+  client_.RunUntilComplete();
+  EXPECT_EQ(client_.completion_status().error_code, net::OK);
+  EXPECT_EQ(origin_hits_, 1);
+}
 TEST_F(AccessNetworkURLLoaderTest, ManagedRequestUsesPrivateRoute) {
   Install(true);
   const auto url = origin_.GetURL("/final");

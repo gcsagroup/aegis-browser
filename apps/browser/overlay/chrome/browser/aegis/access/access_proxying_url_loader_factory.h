@@ -12,6 +12,7 @@
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
 #include "components/aegis_access/request_policy_context.h"
 #include "content/public/browser/frame_tree_node_id.h"
@@ -139,6 +140,19 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
     kBlock,
   };
 
+  void OnRequestPolicyReady(
+      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+      int32_t request_id, uint32_t options, network::ResourceRequest request,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+      net::MutableNetworkTrafficAnnotationTag traffic_annotation,
+      aegis_access::GenerationTuple expected, bool accepted);
+  void StartEvaluatedRequest(
+      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+      int32_t request_id, uint32_t options,
+      const network::ResourceRequest& request,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
+
   RequestDisposition EvaluateRequest(
       const network::ResourceRequest& request,
       int* net_error,
@@ -206,6 +220,8 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   mojo::Remote<network::mojom::AegisAccessURLLoaderFactory> private_target_factory_;
   std::shared_ptr<AccessPrivateContextClient> private_context_;
   DisconnectCallback on_disconnect_;
+  size_t pending_starts_ = 0;
+  base::WeakPtrFactory<AccessProxyingURLLoaderFactory> weak_factory_{this};
 };
 
 }  // namespace aegis::access

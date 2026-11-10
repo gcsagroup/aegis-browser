@@ -1,0 +1,12 @@
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+index 43648a6cff845d6a8af0dd3cb93d9f3a34402c98..24436d57b1ade059563b6988e5ac2ac15e02907d 100644
+--- a/chrome/browser/aegis/access/access_rule_store.h
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -280,6 +280,7 @@ class AccessRuleStore {
+ 
+  private:
+   friend class AccessRuleStoreTestPeer;
++  friend class AccessAsyncRuleStore;
+ 
+   // Restricted friend-only fixture seam for persistence/matcher regressions.
+   // It is intentionally unavailable to production callers.

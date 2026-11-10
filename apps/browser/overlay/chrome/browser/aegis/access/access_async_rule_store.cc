@@ -71,6 +71,9 @@ class AccessAsyncRuleStore::Worker {
   StoreResult<StoredPolicySnapshot> ReadCommitted(const std::string& partition) {
     return store_.ReadCommittedSnapshot(partition);
   }
+  void SetFailurePointForTesting(AccessRuleStore::FailurePointForTesting point) {
+    store_.SetFailurePointForTesting(point);
+  }
  private:
   AsyncAccessStoreRestoration ReserveCommitted(const std::string& partition) {
     auto publication = store_.ReserveCommittedPolicyForPublication(partition);
@@ -114,5 +117,9 @@ void AccessAsyncRuleStore::ReadCommitted(std::string partition,
     base::OnceCallback<void(StoreResult<StoredPolicySnapshot>)> completion) {
   worker_.AsyncCall(&Worker::ReadCommitted).WithArgs(std::move(partition))
       .Then(std::move(completion));
+}
+void AccessAsyncRuleStore::SetFailurePointForTesting(
+    AccessRuleStore::FailurePointForTesting point) {
+  worker_.AsyncCall(&Worker::SetFailurePointForTesting).WithArgs(point);
 }
 }  // namespace aegis::access

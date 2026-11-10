@@ -144,6 +144,16 @@ TEST_F(AccessPrivateFactoryTest, PreflightAndActualUseSameRegisteredProxy) {
   EXPECT_EQ(preflights_, 1);
   EXPECT_EQ(actual_, 1);
 }
+TEST_F(AccessPrivateFactoryTest, SuccessfulTerminalEventsSurviveControlPipeClosure) {
+  for (int i = 0; i < 20; ++i) {
+    SCOPED_TRACE(i);
+    Start(false, false, "", false, i % 2 == 0);
+    client_->RunUntilComplete();
+    EXPECT_EQ(client_->completion_status().error_code, net::OK);
+    environment_.RunUntilIdle();
+  }
+  EXPECT_EQ(actual_, 20);
+}
 TEST_F(AccessPrivateFactoryTest, CorsFailureDoesNotSendActualRequest) {
   allow_cors_ = false;
   Start();

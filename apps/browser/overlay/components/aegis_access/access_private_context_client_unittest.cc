@@ -581,6 +581,32 @@ TEST_F(AccessPrivateContextClientTest, ResetFactoriesRevokesAlreadyIssuedPrivate
   factory_remote_.FlushForTesting();
   EXPECT_FALSE(factory_remote_.is_connected());
 }
+TEST_F(AccessPrivateContextClientTest, ResetPreservesExemptServiceWorkerFactory) {
+  auto params = mojom::URLLoaderFactoryParams::New();
+  params->process_id = OriginatingProcessId::FromUnsafeValue(42);
+  params->ignore_factory_reset = true;
+  params->request_initiator_origin_lock = initiator_;
+  params->isolation_info = net::IsolationInfo::CreateForInternalRequest(initiator_);
+  auto binding = mojom::AegisAccessFactoryBinding::New();
+  binding->owner = Snapshot()->owner.Clone();
+  binding->incarnation = incarnation_;
+  binding->attribution = mojom::AegisAccessAttribution::kProfileOnly;
+  mojo::Remote<mojom::AegisAccessURLLoaderFactory> exempt;
+  ASSERT_TRUE(CreateFactory(std::move(params), nullptr, std::move(binding),
+                            exempt.BindNewPipeAndPassReceiver()));
+  context_remote_->ResetURLLoaderFactories();
+  context_remote_.FlushForTesting();
+  exempt.FlushForTesting();
+  factory_remote_.FlushForTesting();
+  EXPECT_TRUE(exempt.is_connected());
+  EXPECT_FALSE(factory_remote_.is_connected());
+  factory_remote_.reset();
+  factory_remote_.Bind(exempt.Unbind());
+  Start();
+  client_->RunUntilComplete();
+  EXPECT_EQ(client_->completion_status().error_code, net::OK);
+  EXPECT_EQ(actual_, 1);
+}
 TEST_F(AccessPrivateContextClientTest, RetainedPrivateContextUsesExactOriginalContext) {
   mojo::Remote<mojom::AegisAccessContext> capability;
   base::test::TestFuture<std::string> future;

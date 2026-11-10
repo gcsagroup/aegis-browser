@@ -107,6 +107,8 @@ class AccessNetworkContextTransport
   std::vector<AccessPrivateEndpoint> PrivateEndpoints(
       const aegis_access::OwnershipKey& owner) const;
   bool HasReadyPrivateContext(const aegis_access::OwnershipKey& owner) const;
+  bool HasCurrentPrivatePolicy(const aegis_access::OwnershipKey& owner,
+      const aegis_access::GenerationTuple& common) const;
   using PrivateContext = std::shared_ptr<AccessPrivateContextClient>;
   void BindPrivateContext(const aegis_access::OwnershipKey& owner,
       network::mojom::NetworkContext* context,

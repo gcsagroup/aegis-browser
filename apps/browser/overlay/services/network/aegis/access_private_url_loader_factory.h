@@ -50,6 +50,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) AccessPrivateURLLoaderFactory final
       override;
   bool HasAdditionalReferences() const override;
   void DestroyURLLoaderFactory(cors::CorsURLLoaderFactory* factory) override;
+  bool ignore_factory_reset() const { return ignore_factory_reset_; }
 
  private:
   class Request;
@@ -57,6 +58,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) AccessPrivateURLLoaderFactory final
   void OnDisconnect();
   const base::WeakPtr<AccessRouteRegistry> registry_;
   const aegis_access::BrowserOwnedRequestMetadata binding_;
+  const bool ignore_factory_reset_;
   const std::string incarnation_;
   base::OnceCallback<void(AccessPrivateURLLoaderFactory*)> on_destroy_;
   std::unique_ptr<cors::CorsURLLoaderFactory> cors_factory_;

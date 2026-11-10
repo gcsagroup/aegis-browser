@@ -230,6 +230,7 @@ class AccessRuleStore {
     kPrepareAfterCounterUpdate,
     kPrepareBeforeJournalInsert,
     kPrepareAfterJournalInsert,
+    kBuildPreparedCandidateBeforeRead,
     kCommitAfterRuleDelete,
     kCommitAfterGroupDelete,
     kCommitAfterGroupInsert,
@@ -279,6 +280,7 @@ class AccessRuleStore {
 
  private:
   friend class AccessRuleStoreTestPeer;
+  friend class AccessAsyncRuleStore;
 
   // Restricted friend-only fixture seam for persistence/matcher regressions.
   // It is intentionally unavailable to production callers.
