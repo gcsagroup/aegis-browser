@@ -7,7 +7,7 @@ Third-party components retain their own licenses and notices.
 
 ## Browser components
 
-- **Chromium 157.0.8103.39** ([license](https://chromium.googlesource.com/chromium/src/+/9a31f0acec1854d44e49a73fbf8017598151a583/LICENSE)): preserve source notices and generated `chrome://credits` in distributions. See the pinned [credits generator](https://chromium.googlesource.com/chromium/src/+/9a31f0acec1854d44e49a73fbf8017598151a583/tools/licenses/licenses.py). Current source pins are [CHROMIUM_VERSION](apps/browser/CHROMIUM_VERSION) and [CHROMIUM_COMMIT](apps/browser/CHROMIUM_COMMIT); historical packages retain their own versions.
+- **Chromium 157.0.8103.51** ([license](https://chromium.googlesource.com/chromium/src/+/653674df293788cf4932c40d914e9e15b41a2d31/LICENSE)): preserve source notices and generated `chrome://credits` in distributions. See the pinned [credits generator](https://chromium.googlesource.com/chromium/src/+/653674df293788cf4932c40d914e9e15b41a2d31/tools/licenses/licenses.py). Current source pins are [CHROMIUM_VERSION](apps/browser/CHROMIUM_VERSION) and [CHROMIUM_COMMIT](apps/browser/CHROMIUM_COMMIT); historical packages retain their own versions.
 - **libtorrent-rasterbar 2.1.1** (optional, [BSD-3-Clause](apps/browser/overlay/third_party/aegis_libtorrent/LICENSE)): [pin and provenance](apps/browser/overlay/third_party/aegis_libtorrent/README.aegis); mirror provenance remains release-pending.
   Its compiled bundled components retain their own notices:
   [try_signal](apps/browser/overlay/third_party/aegis_libtorrent/TRY_SIGNAL_LICENSE.txt)
