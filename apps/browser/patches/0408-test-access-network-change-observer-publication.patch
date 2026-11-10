@@ -1,0 +1,36 @@
+From d6bff7c302cab2c8f30ff54b5e18a1058b8a64ad Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 23:56:47 +0800
+Subject: [PATCH] test(access): drive publication regression through network
+ notifier
+
+---
+ .../aegis/access/access_private_publication_unittest.cc      | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_private_publication_unittest.cc b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+index 9c0df1fb1ed8829bb59d5d5de8c5cb1e0b2d57a7..c79feac4c037304c34c204d72f289df62b4e5607 100644
+--- a/chrome/browser/aegis/access/access_private_publication_unittest.cc
++++ b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+@@ -108,6 +108,7 @@ class AccessPrivatePublicationTest : public testing::Test {
+ };
+ 
+ TEST_F(AccessPrivatePublicationTest, ChangedCommonTupleRequiresFreshPrivateAck) {
++  auto notifier = net::NetworkChangeNotifier::CreateMockIfNeeded();
+   HeldPrivateContext context;
+   auto client = Bind(context);
+   ASSERT_TRUE(client);
+@@ -119,7 +120,9 @@ TEST_F(AccessPrivatePublicationTest, ChangedCommonTupleRequiresFreshPrivateAck)
+   context.Acknowledge();
+   ASSERT_TRUE(first.Get());
+   EXPECT_TRUE(transport_->HasCurrentPrivatePolicy(owner_, old_common));
+-  transport_->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_WIFI);
++  net::NetworkChangeNotifier::NotifyObserversOfNetworkChangeForTests(
++      net::NetworkChangeNotifier::CONNECTION_WIFI);
++  environment_.RunUntilIdle();
+   auto new_common = old_common;
+   new_common.network_epoch = transport_->network_epoch();
+   EXPECT_NE(old_common.network_epoch, new_common.network_epoch);
+-- 
+2.54.0 (Apple Git-157)
+

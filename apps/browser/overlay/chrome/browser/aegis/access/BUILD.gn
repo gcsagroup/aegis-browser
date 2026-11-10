@@ -1,7 +1,166 @@
 # Copyright 2026 GCSA
 # Intended path: chrome/browser/aegis/access/BUILD.gn
 
+import("//build/buildflag_header.gni")
+import("//chrome/browser/aegis/access/alpha_access.gni")
 import("//testing/test.gni")
+
+buildflag_header("access_buildflags") {
+  header = "access_buildflags.h"
+  flags = [ "AEGIS_ALPHA_TEST_NODE_ENABLED=$aegis_alpha_test_node_enabled" ]
+}
+
+if (aegis_alpha_test_node_enabled) {
+  action("alpha_access_resource_files") {
+    script = "prepare_alpha_access_resources.py"
+    inputs = [
+      "$aegis_alpha_test_resources_dir/core-manifest.json",
+      "$aegis_alpha_test_resources_dir/node.json",
+      "$aegis_alpha_test_resources_dir/xray",
+    ]
+    outputs = [
+      "$root_out_dir/AegisAlphaAccess/core-manifest.json",
+      "$root_out_dir/AegisAlphaAccess/node.json",
+      "$root_out_dir/AegisAlphaAccess/xray",
+    ]
+    args = [
+      "--channel",
+      "alpha",
+      "--source-dir",
+      rebase_path(aegis_alpha_test_resources_dir, root_build_dir),
+      "--output-dir",
+      rebase_path("$root_out_dir/AegisAlphaAccess", root_build_dir),
+    ]
+  }
+
+  bundle_data("alpha_access_bundle_data") {
+    sources = get_target_outputs(":alpha_access_resource_files")
+    outputs =
+        [ "{{bundle_resources_dir}}/AegisAlphaAccess/{{source_file_part}}" ]
+    public_deps = [ ":alpha_access_resource_files" ]
+  }
+} else {
+  action("alpha_test_resource_guard") {
+    script = "verify_no_alpha_access_resources.py"
+    inputs = get_target_outputs(":access_buildflags")
+    outputs = [ "$target_gen_dir/alpha_test_resources_absent.stamp" ]
+    deps = [ ":access_buildflags" ]
+    args = [
+      "--output-dir",
+      rebase_path(root_out_dir, root_build_dir),
+      "--stamp",
+      rebase_path(outputs[0], root_build_dir),
+    ]
+  }
+}
+
+source_set("access_build_channel") {
+  sources = [
+    "access_build_channel.cc",
+    "access_build_channel.h",
+  ]
+  deps = [
+    ":access_buildflags",
+    "//chrome/common:channel_info",
+    "//components/aegis_access:browser_request_metadata_seed",
+    "//components/version_info:channel",
+  ]
+}
+
+source_set("access_local_core_manager") {
+  sources = [
+    "access_local_core_manager.cc",
+    "access_local_core_manager.h",
+  ]
+  deps = [
+    ":access_buildflags",
+    "//base",
+    "//crypto",
+    "//net",
+    "//url",
+  ]
+  if (aegis_alpha_test_node_enabled) {
+    data_deps = [ ":alpha_access_resource_files" ]
+  } else {
+    data_deps = [ ":alpha_test_resource_guard" ]
+  }
+}
+
+test("access_local_core_manager_unittests") {
+  sources = [ "access_local_core_manager_unittest.cc" ]
+  deps = [
+    ":access_buildflags",
+    ":access_local_core_manager",
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//crypto",
+    "//net",
+    "//testing/gtest",
+  ]
+  if (is_mac) {
+    data_deps = [ ":access_local_core_test_child" ]
+  }
+}
+
+if (is_mac) {
+  executable("access_local_core_test_child") {
+    testonly = true
+    sources = [ "access_local_core_test_child.cc" ]
+    deps = [ "//base" ]
+  }
+}
+
+source_set("access_navigation_retry_tab_helper") {
+  sources = [
+    "access_navigation_retry_tab_helper.cc",
+    "access_navigation_retry_tab_helper.h",
+  ]
+  public_deps = [
+    ":access_navigation_retry_state",
+    "//base",
+    "//content/public/browser",
+  ]
+  deps = [
+    "//components/error_page/content/browser",
+    "//ui/base",
+  ]
+}
+
+test("access_navigation_retry_tab_helper_unittests") {
+  sources = [ "access_navigation_retry_tab_helper_unittest.cc" ]
+  deps = [
+    ":access_navigation_retry_tab_helper",
+    "//components/error_page/content/browser",
+    "//content/test:run_all_unittests",
+    "//content/test:test_support",
+    "//net",
+    "//testing/gtest",
+  ]
+  data_deps = [ "//content/shell:pak" ]
+}
+
+source_set("access_navigation_retry_state") {
+  sources = [
+    "access_navigation_retry_state.cc",
+    "access_navigation_retry_state.h",
+  ]
+  public_deps = [
+    "//base",
+    "//url",
+  ]
+  deps = [ "//net" ]
+}
+
+test("access_navigation_retry_state_unittests") {
+  sources = [ "access_navigation_retry_state_unittest.cc" ]
+  deps = [
+    ":access_navigation_retry_state",
+    "//base/test:run_all_unittests",
+    "//net",
+    "//testing/gtest",
+  ]
+}
 
 source_set("access_browser_request_adapter") {
   sources = [
@@ -9,6 +168,7 @@ source_set("access_browser_request_adapter") {
     "access_browser_request_adapter.h",
   ]
   deps = [
+    ":access_build_channel",
     ":access_network_context_transport",
     "//base",
     "//chrome/browser/aegis",
@@ -55,7 +215,10 @@ source_set("access_network_context_transport") {
     "access_network_context_transport.cc",
     "access_network_context_transport.h",
   ]
-  public_deps = [ "//components/aegis_access:policy_publication_ack_tracker" ]
+  public_deps = [
+    ":access_private_context_client",
+    "//components/aegis_access:policy_publication_ack_tracker",
+  ]
   deps = [
     "//base",
     "//chrome/browser/aegis:profile_support",
@@ -93,9 +256,13 @@ source_set("access_proxying_url_loader_factory") {
   ]
   deps = [
     ":access_browser_request_adapter",
+    ":access_navigation_retry_tab_helper",
     ":access_network_context_transport",
+    ":access_private_context_client",
     ":access_published_request_runtime",
     ":access_request_dispatch_state",
+    ":access_service_coordinator",
+    ":access_site_proxy_bubble",
     "//base",
     "//chrome/browser/aegis:profile_support",
     "//chrome/browser/profiles:profile",
@@ -115,11 +282,13 @@ source_set("access_rule_store") {
     "access_rule_store.cc",
     "access_rule_store.h",
   ]
-  deps = [
+  public_deps = [
     "//base",
     "//components/aegis_access",
-    "//net",
     "//sql",
+  ]
+  deps = [
+    "//net",
     "//url",
   ]
 }
@@ -152,6 +321,8 @@ source_set("access_service_coordinator") {
     "access_service_coordinator.h",
   ]
   deps = [
+    ":access_async_rule_store",
+    ":access_identity_generation_source",
     ":access_proxy_selection_generation_source",
     ":access_published_request_runtime",
     ":access_request_dispatch_state",
@@ -167,22 +338,161 @@ source_set("access_service_coordinator") {
   ]
 }
 
-test("access_service_coordinator_unittests") {
-  sources = [ "access_service_coordinator_unittest.cc" ]
+source_set("access_site_intent") {
+  sources = [
+    "access_site_intent.cc",
+    "access_site_intent.h",
+  ]
+  public_deps = [
+    ":access_rule_store",
+    "//components/aegis_access",
+  ]
   deps = [
+    "//base",
+    "//net",
+    "//url",
+  ]
+}
+
+test("access_site_intent_unittests") {
+  sources = [ "access_site_intent_unittest.cc" ]
+  deps = [
+    ":access_site_intent",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_site_proxy_session") {
+  sources = [
+    "access_site_proxy_fault_fixture.cc",
+    "access_site_proxy_fault_fixture.h",
+    "access_site_proxy_phase1_evidence_fixture.cc",
+    "access_site_proxy_phase1_evidence_fixture.h",
+    "access_site_proxy_session.cc",
+    "access_site_proxy_session.h",
+  ]
+  public_deps = [
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    "//base",
+    "//components/aegis_access",
+    "//components/aegis_access:request_ownership_registry",
+  ]
+}
+
+test("access_site_proxy_session_unittests") {
+  sources = [ "access_site_proxy_session_unittest.cc" ]
+  deps = [
+    ":access_site_proxy_session",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_site_proxy_bubble_model") {
+  sources = [
+    "access_site_proxy_bubble_model.cc",
+    "access_site_proxy_bubble_model.h",
+  ]
+  public_deps = [
+    ":access_site_intent",
+    "//url",
+  ]
+  deps = [ "//base" ]
+}
+
+source_set("access_site_proxy_bubble") {
+  sources = [
+    "access_site_proxy_bubble_controller.cc",
+    "access_site_proxy_bubble_controller.h",
+  ]
+  deps = [
+    ":access_build_channel",
+    ":access_identity_generation_source",
+    ":access_local_core_manager",
     ":access_network_context_transport",
-    ":access_published_request_runtime",
     ":access_proxy_selection_generation_source",
-    "//mojo/public/cpp/bindings",
-    "//services/network/public/mojom",
+    ":access_published_request_runtime",
+    ":access_rule_store",
     ":access_service_coordinator",
+    ":access_site_dev_allow_block_panel",
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    ":access_site_proxy_session",
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common:channel_info",
+    "//components/aegis_access",
+    "//components/version_info:channel",
+    "//content/public/browser",
+    "//url",
+  ]
+}
+
+test("access_site_proxy_bubble_unittests") {
+  sources = [ "access_site_proxy_bubble_model_unittest.cc" ]
+  deps = [
+    ":access_site_proxy_bubble_model",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_site_dev_allow_block_panel") {
+  sources = [
+    "access_site_dev_allow_block_panel.cc",
+    "access_site_dev_allow_block_panel.h",
+  ]
+  deps = [
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    "//base",
+    "//components/version_info:channel",
+    "//url",
+  ]
+}
+
+test("access_site_dev_allow_block_panel_unittests") {
+  sources = [ "access_site_dev_allow_block_panel_unittest.cc" ]
+  deps = [
+    ":access_site_dev_allow_block_panel",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
+test("access_service_coordinator_unittests") {
+  sources = [
+    "access_service_coordinator_unittest.cc",
+    "access_site_proxy_product_unittest.cc",
+  ]
+  deps = [
+    ":access_async_rule_store",
+    ":access_build_channel",
+    ":access_buildflags",
+    ":access_navigation_retry_tab_helper",
+    ":access_network_context_transport",
+    ":access_proxy_selection_generation_source",
+    ":access_published_request_runtime",
+    ":access_service_coordinator",
+    ":access_site_proxy_bubble",
     "//build:chromeos_buildflags",
+    "//chrome/browser/net:impl",
     "//chrome/browser/profiles:test_support",
     "//chrome/test:test_support",
     "//chrome/test:test_support_unit",
+    "//components/prefs",
+    "//components/proxy_config",
     "//content/test:test_support",
+    "//mojo/public/cpp/bindings",
+    "//services/network:test_support",
+    "//services/network/public/mojom",
     "//testing/gtest",
   ]
+  data_deps = [ "//content/shell:pak" ]
 }
 
 test("access_browser_request_adapter_unittests") {
@@ -209,9 +519,9 @@ test("access_request_dispatch_state_unittests") {
   sources = [ "access_request_dispatch_state_unittest.cc" ]
   deps = [
     ":access_request_dispatch_state",
+    "//chrome/browser/profiles:test_support",
     "//chrome/test:test_support",
     "//chrome/test:test_support_unit",
-    "//chrome/browser/profiles:test_support",
     "//content/test:test_support",
     "//testing/gtest",
   ]
@@ -244,18 +554,23 @@ test("access_proxy_selection_generation_source_unittests") {
 }
 
 test("access_network_context_transport_unittests") {
-  sources = [ "access_network_context_transport_unittest.cc" ]
+  sources = [
+    "access_network_context_transport_unittest.cc",
+    "access_private_publication_unittest.cc",
+  ]
   deps = [
-    "//content/test:test_support",
     ":access_network_context_transport",
-    "//chrome/test:test_support",
-    "//chrome/test:test_support_unit",
+    ":access_private_context_client",
     "//base/test:test_support",
     "//chrome/browser/profiles:test_support",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_unit",
     "//components/aegis_access",
+    "//content/test:test_support",
     "//mojo/public/cpp/bindings",
     "//net",
     "//services/network:network_service",
+    "//services/network:test_support",
     "//services/network/public/mojom",
     "//testing/gtest",
     "//url",
@@ -279,14 +594,50 @@ test("access_rule_store_unittests") {
 test("access_published_request_runtime_unittests") {
   sources = [ "access_published_request_runtime_unittest.cc" ]
   deps = [
-    "//content/test:test_support",
     ":access_network_context_transport",
     ":access_published_request_runtime",
-    "//chrome/test:test_support",
-    "//chrome/test:test_support_unit",
     "//base/test:test_support",
     "//chrome/browser/profiles:test_support",
+    "//chrome/test:test_support",
+    "//chrome/test:test_support_unit",
+    "//content/test:test_support",
     "//services/network/public/mojom",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_private_context_client") {
+  sources = [
+    "access_private_context_client.cc",
+    "access_private_context_client.h",
+  ]
+  public_deps = [
+    "//base",
+    "//components/aegis_access",
+    "//mojo/public/cpp/bindings",
+    "//net",
+    "//services/network/public/mojom",
+  ]
+}
+
+source_set("access_async_rule_store") {
+  sources = [
+    "access_async_rule_store.cc",
+    "access_async_rule_store.h",
+  ]
+  public_deps = [
+    ":access_rule_store",
+    "//base",
+  ]
+}
+
+test("access_async_rule_store_unittests") {
+  sources = [ "access_async_rule_store_unittest.cc" ]
+  deps = [
+    ":access_async_rule_store",
+    ":access_site_intent",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
     "//testing/gtest",
   ]
 }

@@ -1,0 +1,152 @@
+From af3313653fa2f9c9fffdb164e93a0c5a96cf41eb Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 08:12:41 +0800
+Subject: [PATCH] feat(access): carry route through proxy connect parameters
+
+---
+ .../access_proxy_tunnel_context_unittest.cc   | 38 +++++++++++++++++++
+ net/socket/connect_job_params_factory.cc      | 23 ++++++++---
+ net/socket/connect_job_params_factory.h       |  3 +-
+ 3 files changed, 57 insertions(+), 7 deletions(-)
+
+diff --git a/components/aegis_access/access_proxy_tunnel_context_unittest.cc b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
+index 21261736e82400a7b2e8fe89d0ac881c09b81594..796890c5e100fda8906f611f5c4310f77d3dcb9a 100644
+--- a/components/aegis_access/access_proxy_tunnel_context_unittest.cc
++++ b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
+@@ -7,6 +7,7 @@
+ #include "net/http/http_proxy_connect_job.h"
+ 
+ #include "base/test/gtest_util.h"
++#include "net/socket/connect_job_params_factory.h"
+ #include "net/socket/transport_connect_job.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -82,5 +83,42 @@ TEST(AccessProxyTunnelContextTest, MismatchedTransportCannotReceiveCredentials)
+                            net::HostPortPair("127.0.0.1", 8081)));
+ }
+ 
++net::ConnectJobParams BuildParams(scoped_refptr<net::AccessProxyRoute> route,
++                                  net::ProxyChain chain = Proxy()) {
++  return net::ConstructConnectJobParams(
++      url::SchemeHostPort("http", "destination.test", 80), chain,
++      TRAFFIC_ANNOTATION_FOR_TESTS, {},
++      net::ConnectJobFactory::AlpnMode::kDisabled, true,
++      net::PRIVACY_MODE_DISABLED, net::OnHostResolutionCallback(),
++      net::NetworkAnonymizationKey(), net::SecureDnsPolicy::kAllow, false,
++      nullptr, net::NetworkAnonymizationKey(),
++      net::handles::kInvalidNetworkHandle, std::move(route));
++}
++
++TEST(AccessProxyTunnelContextTest, FactoryPreservesRegisteredRoute) {
++  auto route = Route();
++  ASSERT_TRUE(route);
++  auto params = BuildParams(route);
++  ASSERT_TRUE(params.is_http_proxy());
++  EXPECT_EQ(params.http_proxy()->access_proxy_route(), route);
++  EXPECT_TRUE(params.http_proxy()->tunnel());
++  EXPECT_EQ(params.http_proxy()->transport_params()->destination(),
++            net::TransportSocketParams::Endpoint(
++                Proxy().GetProxyServer(0).host_port_pair()));
++}
++
++TEST(AccessProxyTunnelContextTest, FactoryPreservesNativeRoute) {
++  auto params = BuildParams(nullptr);
++  ASSERT_TRUE(params.is_http_proxy());
++  EXPECT_FALSE(params.http_proxy()->access_proxy_route());
++  auto direct = BuildParams(nullptr, net::ProxyChain::Direct());
++  EXPECT_TRUE(direct.is_transport());
++}
++
++TEST(AccessProxyTunnelContextTest, FactoryCannotDowngradeRouteToDirect) {
++  EXPECT_CHECK_DEATH(BuildParams(Route(), net::ProxyChain::Direct()));
++  EXPECT_CHECK_DEATH(BuildParams(Route(), Proxy(8081)));
++}
++
+ }  // namespace
+ }  // namespace aegis_access
+diff --git a/net/socket/connect_job_params_factory.cc b/net/socket/connect_job_params_factory.cc
+index 83ba68d5f9e22af5339a1dff1c073c38846f5470..7a82ebb711263c95b58ff2052a4567031cfa7e08 100644
+--- a/net/socket/connect_job_params_factory.cc
++++ b/net/socket/connect_job_params_factory.cc
+@@ -168,7 +168,8 @@ ConnectJobParams CreateProxyParams(
+     SecureDnsPolicy secure_dns_policy,
+     const CommonConnectJobParams* common_connect_job_params,
+     const NetworkAnonymizationKey& proxy_dns_network_anonymization_key,
+-    handles::NetworkHandle target_network) {
++    handles::NetworkHandle target_network,
++    scoped_refptr<AccessProxyRoute> access_proxy_route) {
+   const ProxyServer& proxy_server =
+       proxy_chain.GetProxyServer(proxy_chain_index);
+ 
+@@ -224,7 +225,8 @@ ConnectJobParams CreateProxyParams(
+     return ConnectJobParams(base::MakeRefCounted<HttpProxySocketParams>(
+         std::move(proxy_server_ssl_config), host_port_pair, proxy_chain,
+         proxy_chain_index, should_tunnel, *proxy_annotation_tag,
+-        network_anonymization_key, secure_dns_policy, target_network));
++        network_anonymization_key, secure_dns_policy, target_network,
++        access_proxy_route));
+   } else if (proxy_chain_index == 0) {
+     // At the beginning of the chain, create the only TransportSocketParams
+     // object, corresponding to the transport socket we want to create to the
+@@ -242,7 +244,7 @@ ConnectJobParams CreateProxyParams(
+         proxy_chain_index - 1, proxy_annotation_tag, resolution_callback,
+         endpoint_network_anonymization_key, secure_dns_policy,
+         common_connect_job_params, proxy_dns_network_anonymization_key,
+-        target_network);
++        target_network, access_proxy_route);
+   }
+ 
+   // For secure connections, wrap the underlying connection params in SSL
+@@ -260,7 +262,7 @@ ConnectJobParams CreateProxyParams(
+     params = ConnectJobParams(base::MakeRefCounted<HttpProxySocketParams>(
+         std::move(params), host_port_pair, proxy_chain, proxy_chain_index,
+         should_tunnel, *proxy_annotation_tag, network_anonymization_key,
+-        secure_dns_policy, target_network));
++        secure_dns_policy, target_network, access_proxy_route));
+   } else {
+     DCHECK(proxy_server.is_socks());
+     DCHECK_EQ(1u, proxy_chain.length());
+@@ -291,7 +293,15 @@ ConnectJobParams ConstructConnectJobParams(
+     bool disable_cert_network_fetches,
+     const CommonConnectJobParams* common_connect_job_params,
+     const NetworkAnonymizationKey& proxy_dns_network_anonymization_key,
+-    handles::NetworkHandle target_network) {
++    handles::NetworkHandle target_network,
++    scoped_refptr<AccessProxyRoute> access_proxy_route) {
++  if (access_proxy_route) {
++    // This private path currently implements HTTP inbound transport. Reject
++    // unsupported managed transports rather than silently losing their context.
++    CHECK(proxy_chain == access_proxy_route->proxy_chain());
++    CHECK(proxy_chain.is_single_proxy());
++    CHECK(proxy_chain.GetProxyServer(0).is_http());
++  }
+   DCHECK(proxy_chain.IsValid());
+ 
+   // Set up `ssl_config` if using SSL to the endpoint.
+@@ -334,7 +344,8 @@ ConnectJobParams ConstructConnectJobParams(
+         /*proxy_chain_index=*/proxy_chain.length() - 1, proxy_annotation_tag,
+         resolution_callback, endpoint_network_anonymization_key,
+         secure_dns_policy, common_connect_job_params,
+-        proxy_dns_network_anonymization_key, target_network);
++        proxy_dns_network_anonymization_key, target_network,
++        access_proxy_route);
+   }
+ 
+   if (UsingSsl(endpoint)) {
+diff --git a/net/socket/connect_job_params_factory.h b/net/socket/connect_job_params_factory.h
+index 37dce058e062d134f3949a99f14042ea582090c7..b4f6e2ca55ac2f8b6ece8d99d89ac6a669bf4a43 100644
+--- a/net/socket/connect_job_params_factory.h
++++ b/net/socket/connect_job_params_factory.h
+@@ -45,7 +45,8 @@ NET_EXPORT_PRIVATE ConnectJobParams ConstructConnectJobParams(
+     bool disable_cert_network_fetches,
+     const CommonConnectJobParams* common_connect_job_params,
+     const NetworkAnonymizationKey& proxy_dns_network_anonymization_key,
+-    handles::NetworkHandle target_network);
++    handles::NetworkHandle target_network,
++    scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+ 
+ }  // namespace net
+ 
+-- 
+2.54.0 (Apple Git-157)
+

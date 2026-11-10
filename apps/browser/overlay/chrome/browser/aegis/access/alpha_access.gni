@@ -1,0 +1,13 @@
+# Copyright 2026 GCSA
+
+declare_args() {
+  # Explicit local Alpha test build. Normal Dev/Beta/Release builds have no
+  # bundled node, executable, or private resource dependency.
+  aegis_alpha_test_node_enabled = false
+  aegis_alpha_test_resources_dir = ""
+}
+
+assert(!aegis_alpha_test_node_enabled || (is_mac && !is_official_build),
+       "The built-in test node is limited to non-official macOS Alpha builds.")
+assert(aegis_alpha_test_node_enabled == (aegis_alpha_test_resources_dir != ""),
+       "Alpha test resources require the explicit Alpha test build flag.")

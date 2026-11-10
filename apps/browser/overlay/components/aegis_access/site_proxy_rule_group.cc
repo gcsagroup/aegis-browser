@@ -87,6 +87,8 @@ GroupValidation ValidateSiteProxyRuleGroup(
   }
 
   for (const SiteProxyRuleMember& member : members) {
+    if (member.scope != (group->website_context ? PolicyScope::kWebsite : PolicyScope::kSite))
+      return Unknown(GroupValidationError::kScopeMismatch);
     if (!IsCompleteOwner(member.owner) || member.owner != group->owner ||
         member.site_toggle_id != group->site_toggle_id) {
       return Unknown(GroupValidationError::kOwnershipMismatch);

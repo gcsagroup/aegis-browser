@@ -1,0 +1,35 @@
+From e86a2affc8364e9d92a8219dee8c9c6ac2b7569d Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 16:45:08 +0800
+Subject: [PATCH] fix(access): use valid GN comments for private route test
+ targets
+
+---
+ components/aegis_access/BUILD.gn | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 341b2e48052a538e79d894f7a26fe1573383dd41..ee204d3cc3357d599f28860b71bf5c0568f12f02 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -352,7 +352,7 @@ source_set("request_ownership_registry_test_support") {
+   ]
+ }
+ 
+-// Exercises the Browser-only terminal hook without changing factory security.
++# Exercises the Browser-only terminal hook without changing factory security.
+ test("access_terminal_factory_unittests") {
+   sources = [
+     "access_network_test_main.cc",
+@@ -390,7 +390,7 @@ test("access_network_route_registry_unittests") {
+   ]
+ }
+ 
+-// Real Network Service URLLoader requests through a registered local proxy.
++# Real Network Service URLLoader requests through a registered local proxy.
+ test("access_network_url_loader_unittests") {
+   sources = [
+     "access_network_test_main.cc",
+-- 
+2.54.0 (Apple Git-157)
+

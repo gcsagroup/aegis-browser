@@ -14,6 +14,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
+#include "services/network/public/mojom/aegis_access_route.mojom.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -90,11 +91,15 @@ class AccessProxyingURLTrackedRequest final
   const raw_ptr<AccessRequestDispatchState> dispatch_state_;
   aegis_access::RequestOwnershipRecord ownership_record_;
   std::optional<GURL> pending_redirect_url_;
+  std::string pending_redirect_method_;
+  uint32_t hop_ = 0;
+  bool private_route_ = false;
   bool ownership_registered_ = true;
   bool finished_ = false;
 
   mojo::Receiver<network::mojom::URLLoader> loader_receiver_{this};
   mojo::Remote<network::mojom::URLLoader> target_loader_;
+  mojo::Remote<network::mojom::AegisAccessURLLoaderControl> private_control_;
   mojo::Receiver<network::mojom::URLLoaderClient> client_receiver_{this};
   mojo::Remote<network::mojom::URLLoaderClient> target_client_;
   base::OneShotTimer client_completion_watchdog_;

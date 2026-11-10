@@ -1,0 +1,84 @@
+From 191e7a962b9c5618741a48f78ad1b82f0de5abd4 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 05:11:31 +0800
+Subject: [PATCH] test(access): drain canceled retry transactions before
+ checking tabs
+
+---
+ .../access_site_proxy_product_unittest.cc     | 24 +++++++++++++------
+ 1 file changed, 17 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 315222dc9c5848ff478d201fe40692bb4b180181..307da9fa46fc94b2865c0dd992715c20f3de7476 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -42,6 +42,9 @@ class AccessSiteProxyProductTestPeer {
+   static bool HasCore(AccessSiteProxyBubbleController* bubble) {
+     return !!bubble->local_core_;
+   }
++  static bool IsPreparing(AccessSiteProxyBubbleController* bubble) {
++    return bubble->publication_in_flight_;
++  }
+ };
+ class AccessServiceCoordinatorTestPeer {
+  public:
+@@ -490,18 +493,25 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+         web_contents(), failed_, net::ERR_CONNECTION_RESET);
+     context_.hold_next = true;
+     ASSERT_TRUE(helper()->RequestProxyRetry(completed_.GetCallback()));
+-    ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return context_.has_reply() || completed_.IsReady();
++    }));
++    ASSERT_TRUE(context_.has_reply())
++        << bubble_->SnapshotForCommittedUrl(failed_).failure_reason;
+     EXPECT_FALSE(controller().GetPendingEntry());
+     EXPECT_FALSE(completed_.IsReady());
+     EXPECT_EQ(bubble_->SnapshotForCommittedUrl(failed_).connection,
+               AccessSiteConnectionState::kConnecting);
+   }
+-  void CompleteHeldRetry() {
++  void DrainHeldRetry() {
+     context_.Reply(true);
++    // Cancellation tests must await the late transaction and core verification,
++    // including an unavailable outcome if navigation changed their binding.
+     ASSERT_TRUE(base::test::RunUntil([&] {
+-      return bubble_->SnapshotForCommittedUrl(failed_).connection ==
+-             AccessSiteConnectionState::kReady;
++      return !AccessSiteProxyProductTestPeer::IsPreparing(bubble_);
+     }));
++    EXPECT_NE(bubble_->SnapshotForCommittedUrl(failed_).connection,
++              AccessSiteConnectionState::kConnecting);
+   }
+   base::ScopedTempDir directory_;
+   ProductAckContext context_;
+@@ -519,7 +529,7 @@ TEST_F(AccessRetryNavigationProductTest, NewNavigationBeforeRealAckIsNotReloaded
+   const GURL replacement("https://replacement.example/keep");
+   content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), replacement);
+   const int entries = controller().GetEntryCount();
+-  CompleteHeldRetry();
++  DrainHeldRetry();
+   EXPECT_FALSE(controller().GetPendingEntry());
+   EXPECT_EQ(web_contents()->GetLastCommittedURL(), replacement);
+   EXPECT_EQ(controller().GetEntryCount(), entries);
+@@ -531,7 +541,7 @@ TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOthe
+   const GURL replacement("https://other.example/unchanged");
+   content::NavigationSimulator::NavigateAndCommitFromBrowser(other.get(), replacement);
+   DeleteContents();
+-  CompleteHeldRetry();
++  DrainHeldRetry();
+   EXPECT_FALSE(other->GetController().GetPendingEntry());
+   EXPECT_EQ(other->GetLastCommittedURL(), replacement);
+ }
+@@ -540,7 +550,7 @@ TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry)
+   BeginHeldRetry();
+   web_contents()->Stop();
+   EXPECT_FALSE(helper()->FailureForRetry());
+-  CompleteHeldRetry();
++  DrainHeldRetry();
+   EXPECT_FALSE(controller().GetPendingEntry());
+   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
+ }
+-- 
+2.54.0 (Apple Git-157)
+

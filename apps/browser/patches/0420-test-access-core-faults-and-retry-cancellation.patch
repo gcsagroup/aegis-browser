@@ -1,0 +1,467 @@
+From d822b56644a5fd136ce367956ec8281a00b72af9 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 04:45:59 +0800
+Subject: [PATCH] test(access): cover core faults and real retry cancellation
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  13 ++
+ .../access_local_core_manager_unittest.cc     | 125 ++++++++++++++++++
+ .../access/access_local_core_test_child.cc    | 118 +++++++++++++++++
+ .../access_site_proxy_product_unittest.cc     | 118 +++++++++++++++++
+ 4 files changed, 374 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_local_core_test_child.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 5bf445ea3ab1e3b9b9ce2bb74a3294c16d30c0a4..35aa35db61da2a4f7afba834b5bb9175d5a9a76b 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -94,9 +94,21 @@ test("access_local_core_manager_unittests") {
+     "//base",
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
++    "//crypto",
+     "//net",
+     "//testing/gtest",
+   ]
++  if (is_mac) {
++    data_deps = [ ":access_local_core_test_child" ]
++  }
++}
++
++if (is_mac) {
++  executable("access_local_core_test_child") {
++    testonly = true
++    sources = [ "access_local_core_test_child.cc" ]
++    deps = [ "//base" ]
++  }
+ }
+ 
+ source_set("access_navigation_retry_tab_helper") {
+@@ -478,6 +490,7 @@ test("access_service_coordinator_unittests") {
+     "//services/network/public/mojom",
+     "//testing/gtest",
+   ]
++  data_deps = [ "//content/shell:pak" ]
+ }
+ 
+ test("access_browser_request_adapter_unittests") {
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index a06be13692fcc4264c3ab92585fccdd1a1dcaeff..2a720b4421c27360d5e45b75e5abd2dca5ae46f0 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -5,11 +5,19 @@
+ #include "base/base_paths.h"
+ #include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/path_service.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/test/task_environment.h"
++#include "base/test/run_until.h"
++#include "base/test/scoped_run_loop_timeout.h"
+ #include "base/test/scoped_command_line.h"
+ #include "base/test/scoped_path_override.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
++#include "build/build_config.h"
++#include "crypto/hash.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
+@@ -97,5 +105,122 @@ TEST_F(AccessLocalCoreManagerTest, AuthorizedNodeHttpsRecheckAndStop) {
+   EXPECT_FALSE(after.Get().ready);
+   EXPECT_FALSE(after.Get().local_credentials);
+ }
++
++#if BUILDFLAG(IS_MAC)
++class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
++ protected:
++  void SetUp() override {
++    ASSERT_TRUE(directory_.CreateUniqueTempDir());
++    base::FilePath binaries;
++    ASSERT_TRUE(base::PathService::Get(base::DIR_EXE, &binaries));
++    binary_ = binaries.AppendASCII("access_local_core_test_child");
++    auto bytes = base::ReadFileToBytes(binary_);
++    ASSERT_TRUE(bytes);
++    pin_ = base::HexEncodeLower(crypto::hash::Sha256(*bytes));
++    state_ = directory_.GetPath().AppendASCII("child-state.json");
++  }
++  AccessLocalCoreInput Input(const char* mode) {
++    const auto manifest = directory_.GetPath().AppendASCII("manifest.json");
++    const auto node = directory_.GetPath().AppendASCII("node.json");
++    std::string json;
++    EXPECT_TRUE(base::JSONWriter::Write(base::DictValue()
++        .Set("binaryPath", binary_.value()).Set("binarySha256", pin_), &json));
++    EXPECT_TRUE(base::WriteFile(manifest, json));
++    EXPECT_TRUE(base::JSONWriter::Write(base::DictValue().Set("outbounds",
++        base::ListValue().Append(base::DictValue().Set("protocol", "vless")
++            .Set("tag", mode)
++            .Set("streamSettings", base::DictValue()
++                .Set("network", "tcp").Set("security", "reality"))
++            .Set("settings", base::DictValue().Set("fixtureStateFile", state_.value())))),
++        &json));
++    EXPECT_TRUE(base::WriteFile(node, json));
++    return {manifest, node};
++  }
++  std::optional<base::DictValue> State() {
++    std::string json;
++    return base::ReadFileToString(state_, &json)
++        ? base::JSONReader::ReadDict(json, base::JSON_PARSE_RFC) : std::nullopt;
++  }
++  void ExpectUnavailable(const AccessLocalCoreReady& result) {
++    EXPECT_FALSE(result.ready);
++    EXPECT_EQ(result.port, 0);
++    EXPECT_FALSE(result.local_credentials);
++    EXPECT_TRUE(result.registration_id.empty());
++    EXPECT_FALSE(result.error.empty());
++  }
++  base::ScopedTempDir directory_;
++  base::FilePath binary_, state_;
++  std::string pin_;
++  base::test::ScopedRunLoopTimeout timeout_{FROM_HERE, base::Seconds(45)};
++};
++
++TEST_F(AccessLocalCoreFaultTest, PinnedChildExitCannotBecomeReady) {
++  AccessLocalCoreManager manager(Input("exit-before-listen"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ExpectUnavailable(prepared.Get());
++}
++
++TEST_F(AccessLocalCoreFaultTest, ListeningWithoutAuthenticatedTlsCannotBecomeReady) {
++  AccessLocalCoreManager manager(Input("unauthenticated-response"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ExpectUnavailable(prepared.Get());
++  ASSERT_TRUE(State());
++  EXPECT_EQ(*State()->FindString("phase"), "unauthenticated-response");
++}
++
++TEST_F(AccessLocalCoreFaultTest, RejectedProxyCredentialsCannotBecomeReady) {
++  AccessLocalCoreManager manager(Input("reject-auth"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ExpectUnavailable(prepared.Get());
++  EXPECT_EQ(prepared.Get().error, "Local proxy authentication failed.");
++  auto state = State();
++  ASSERT_TRUE(state);
++  EXPECT_GE(state->FindInt("requests").value_or(0), 2);
++}
++
++TEST_F(AccessLocalCoreFaultTest, AuthenticatedIngressIsNotTargetReadiness) {
++  AccessLocalCoreManager manager(Input("target-unavailable"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ExpectUnavailable(prepared.Get());
++  auto state = State();
++  ASSERT_TRUE(state);
++  EXPECT_EQ(*state->FindString("phase"), "authenticated-target-unavailable");
++}
++
++TEST_F(AccessLocalCoreFaultTest, StopCancelsARealPendingProbe) {
++  AccessLocalCoreManager manager(Input("hold-tunnel"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    auto state = State();
++    return state && state->FindString("phase") &&
++        *state->FindString("phase") == "authenticated-tunnel-held";
++  }));
++  EXPECT_FALSE(prepared.IsReady());
++  base::test::TestFuture<void> stopped;
++  manager.Stop(stopped.GetCallback());
++  ASSERT_TRUE(stopped.Wait());
++  ExpectUnavailable(prepared.Get());
++  EXPECT_EQ(prepared.Get().error, "Proxy preparation was cancelled.");
++  base::test::TestFuture<AccessLocalCoreReady> after;
++  manager.Verify(after.GetCallback());
++  ExpectUnavailable(after.Get());
++}
++
++TEST_F(AccessLocalCoreFaultTest, StalledAuthenticatedTunnelTimesOut) {
++  AccessLocalCoreManager manager(Input("hold-tunnel"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ExpectUnavailable(prepared.Get());
++  EXPECT_EQ(prepared.Get().error, "Proxy connectivity check timed out.");
++  auto state = State();
++  ASSERT_TRUE(state);
++  EXPECT_EQ(*state->FindString("phase"), "authenticated-tunnel-held");
++}
++#endif
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_local_core_test_child.cc b/chrome/browser/aegis/access/access_local_core_test_child.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0dcb2adab361d650e9fdaa1d8c3644fa30d5bd15
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_local_core_test_child.cc
+@@ -0,0 +1,118 @@
++// Copyright 2026 GCSA
++// Loopback-only fault fixture. It never opens an outbound connection and never
++// records a request header or the generated proxy credentials.
++
++#include <netinet/in.h>
++#include <signal.h>
++#include <sys/socket.h>
++#include <unistd.h>
++
++#include <array>
++#include <string>
++
++#include "base/at_exit.h"
++#include "base/base64.h"
++#include "base/command_line.h"
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_file.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/posix/eintr_wrapper.h"
++#include "base/values.h"
++
++namespace {
++void Record(const base::FilePath& path, const char* phase, int requests) {
++  std::string json;
++  if (!base::JSONWriter::Write(base::DictValue()
++          .Set("phase", phase).Set("pid", static_cast<int>(getpid()))
++          .Set("requests", requests), &json)) return;
++  base::File file(path, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
++  if (file.IsValid() && base::SetPosixFilePermissions(path, 0600))
++    file.WriteAtCurrentPosAndCheck(base::as_byte_span(json));
++}
++
++std::string ReadHeaders(base::File& connection) {
++  std::string headers;
++  std::array<uint8_t, 2048> buffer;
++  while (headers.size() < 65536 && headers.find("\r\n\r\n") == std::string::npos) {
++    const auto read = connection.ReadAtCurrentPosNoBestEffort(buffer);
++    if (!read || !*read) break;
++    headers.append(base::as_string_view(base::span(buffer).first(*read)));
++  }
++  return headers;
++}
++}  // namespace
++
++int main(int argc, const char* argv[]) {
++  base::AtExitManager at_exit;
++  base::CommandLine::Init(argc, argv);
++  const auto* command = base::CommandLine::ForCurrentProcess();
++  const auto args = command->GetArgs();
++  if (args.size() != 2 || args.front() != "run" || !command->HasSwitch("config")) return 2;
++  std::string json;
++  if (!base::ReadFileToString(base::FilePath(args.back()), &json)) return 3;
++  auto config = base::JSONReader::ReadDict(json, base::JSON_PARSE_RFC);
++  if (!config) return 3;
++  const auto* inbounds = config->FindList("inbounds");
++  const auto* outbounds = config->FindList("outbounds");
++  if (!inbounds || inbounds->empty() || !outbounds || outbounds->empty()) return 3;
++  const auto& inbound = inbounds->front().GetDict();
++  const auto& outbound = outbounds->front().GetDict();
++  const auto* mode = outbound.FindString("tag");
++  const auto* state = outbound.FindStringByDottedPath("settings.fixtureStateFile");
++  const auto port = inbound.FindInt("port");
++  if (!mode || !state || !port) return 3;
++  if (*mode == "exit-before-listen") return 4;
++  const auto* accounts = inbound.FindListByDottedPath("settings.accounts");
++  if (!accounts || accounts->empty()) return 3;
++  const auto& account = accounts->front().GetDict();
++  const auto* user = account.FindString("user");
++  const auto* password = account.FindString("pass");
++  if (!user || !password) return 3;
++  const std::string credential = base::Base64Encode(*user + ":" + *password);
++  const base::FilePath state_path(*state);
++  signal(SIGPIPE, SIG_IGN);
++  base::ScopedFD listener(socket(AF_INET, SOCK_STREAM, 0));
++  if (!listener.is_valid()) return 5;
++  sockaddr_in address{};
++  address.sin_family = AF_INET;
++  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
++  address.sin_port = htons(static_cast<uint16_t>(*port));
++  if (bind(listener.get(), reinterpret_cast<sockaddr*>(&address), sizeof(address)) ||
++      listen(listener.get(), 8)) return 5;
++  Record(state_path, "listening", 0);
++  int requests = 0;
++  for (;;) {
++    base::File connection(HANDLE_EINTR(accept(listener.get(), nullptr, nullptr)));
++    if (!connection.IsValid()) return 6;
++    const auto headers = ReadHeaders(connection);
++    if (headers.empty()) continue;
++    ++requests;
++    std::string response;
++    if (*mode == "unauthenticated-response") {
++      Record(state_path, "unauthenticated-response", requests);
++      response = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n";
++    } else if (*mode == "reject-auth" || headers.find(credential) == std::string::npos) {
++      Record(state_path, "auth-challenge", requests);
++      response = "HTTP/1.1 407 Proxy Authentication Required\r\n"
++                 "Proxy-Authenticate: Basic realm=\"fixture\"\r\n"
++                 "Content-Length: 0\r\nConnection: close\r\n\r\n";
++    } else if (*mode == "target-unavailable") {
++      Record(state_path, "authenticated-target-unavailable", requests);
++      response = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n"
++                 "Connection: close\r\n\r\n";
++    } else {
++      response = "HTTP/1.1 200 Connection Established\r\n\r\n";
++      if (!connection.WriteAtCurrentPosAndCheck(base::as_byte_span(response))) continue;
++      Record(state_path, "authenticated-tunnel-held", requests);
++      std::array<uint8_t, 2048> buffer;
++      while (const auto read = connection.ReadAtCurrentPosNoBestEffort(buffer)) {
++        if (!*read) break;
++      }
++      continue;
++    }
++    connection.WriteAtCurrentPosAndCheck(base::as_byte_span(response));
++  }
++}
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index e5e63ef7e021926a6423c1fb1638f37bc383c334..b20f32c5697b0ad8bdb5da608613908d0eec4b78 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -4,6 +4,7 @@
+ #include "chrome/browser/aegis/access/access_async_rule_store.h"
+ #include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
++#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ 
+ #include "base/command_line.h"
+ #include "base/files/scoped_temp_dir.h"
+@@ -16,10 +17,16 @@
+ #include "chrome/browser/net/profile_network_context_service.h"
+ #include "chrome/browser/net/profile_network_context_service_factory.h"
+ #include "chrome/test/base/testing_profile.h"
++#include "chrome/test/base/chrome_render_view_host_test_harness.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/proxy_config/proxy_config_pref_names.h"
+ #include "components/proxy_config/proxy_config_dictionary.h"
+ #include "content/public/test/browser_task_environment.h"
++#include "content/public/browser/navigation_controller.h"
++#include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/web_contents.h"
++#include "content/public/test/navigation_simulator.h"
++#include "net/base/net_errors.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "services/network/test/test_network_context.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -424,5 +431,116 @@ TEST_F(AccessSiteProxyProductTest, ReadyUiRequiresCurrentContextAckAfterDisconne
+   EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);
+ }
+ 
++// Unlike the helper-only tests, this fixture uses the production retry handler,
++// a real pinned core, the Profile transaction and the private Mojo ACK path.
++class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness {
++ protected:
++  std::unique_ptr<TestingProfile> CreateTestingProfile() override {
++    return TestingProfile::Builder().SetPath(directory_.GetPath())
++        .AddTestingFactory(ProfileNetworkContextServiceFactory::GetInstance(),
++            base::BindRepeating([](content::BrowserContext* context)
++                -> std::unique_ptr<KeyedService> {
++              return std::make_unique<ProfileNetworkContextService>(
++                  Profile::FromBrowserContext(context));
++            })).Build();
++  }
++  void SetUp() override {
++    ASSERT_TRUE(directory_.CreateUniqueTempDir());
++    ChromeRenderViewHostTestHarness::SetUp();
++#if !BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
++    const auto* command = base::CommandLine::ForCurrentProcess();
++    if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
++        command->GetSwitchValuePath("aegis-access-dev-node-config").empty())
++      GTEST_SKIP() << "Real product retry requires authorized private inputs.";
++#endif
++    ASSERT_TRUE(ProfileNetworkContextServiceFactory::GetForContext(profile()));
++    profile()->GetPrefs()->SetDict(proxy_config::prefs::kProxy,
++                                  ProxyConfigDictionary::CreateDirect());
++    task_environment()->RunUntilIdle();
++    network::mojom::NetworkContextParams params;
++    ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile(), {}, &params));
++    transport_ = AccessNetworkContextTransport::Get(profile());
++    owner_ = *transport_->OwnerForPartition(AccessChannelForCurrentBuild(), {});
++    coordinator_ = AccessServiceCoordinator::GetOrCreate(profile());
++    base::test::TestFuture<bool> restored;
++    coordinator_->InitializeForProfile(owner_, restored.GetCallback());
++    ASSERT_TRUE(restored.Get());
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
++    ASSERT_TRUE(bound.Get());
++    auto* runtime = AccessPublishedRequestRuntime::Get(profile());
++    const auto common = runtime->CaptureCommonGenerationTupleOnUiThread(owner_);
++    ASSERT_TRUE(common);
++    base::test::TestFuture<bool> published;
++    transport_->PublishPrivatePolicy(*runtime->GetPublishedPolicySnapshot(owner_),
++                                    *common, published.GetCallback());
++    ASSERT_TRUE(published.Get());
++    bubble_ = AccessSiteProxyBubbleController::GetOrCreate(profile());
++    AccessNavigationRetryTabHelper::CreateForWebContents(web_contents());
++    helper()->SetProxyRetryHandler(bubble_->GetFailedNavigationRetryHandler());
++  }
++  AccessNavigationRetryTabHelper* helper() {
++    return AccessNavigationRetryTabHelper::FromWebContents(web_contents());
++  }
++  void BeginHeldRetry() {
++    content::NavigationSimulator::NavigateAndFailFromBrowser(
++        web_contents(), failed_, net::ERR_CONNECTION_RESET);
++    context_.hold_next = true;
++    ASSERT_TRUE(helper()->RequestProxyRetry(completed_.GetCallback()));
++    ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++    EXPECT_FALSE(controller().GetPendingEntry());
++    EXPECT_FALSE(completed_.IsReady());
++    EXPECT_EQ(bubble_->SnapshotForCommittedUrl(failed_).connection,
++              AccessSiteConnectionState::kConnecting);
++  }
++  void CompleteHeldRetry() {
++    context_.Reply(true);
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return bubble_->SnapshotForCommittedUrl(failed_).connection ==
++             AccessSiteConnectionState::kReady;
++    }));
++  }
++  base::ScopedTempDir directory_;
++  ProductAckContext context_;
++  raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
++  raw_ptr<AccessServiceCoordinator> coordinator_ = nullptr;
++  raw_ptr<AccessSiteProxyBubbleController> bubble_ = nullptr;
++  OwnershipKey owner_;
++  const GURL failed_{"https://failed.example/path?q=original#fragment"};
++  base::test::TestFuture<bool> completed_;
++  base::test::ScopedRunLoopTimeout timeout_{FROM_HERE, base::Seconds(90)};
++};
++
++TEST_F(AccessRetryNavigationProductTest, NewNavigationBeforeRealAckIsNotReloaded) {
++  BeginHeldRetry();
++  const GURL replacement("https://replacement.example/keep");
++  content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), replacement);
++  const int entries = controller().GetEntryCount();
++  CompleteHeldRetry();
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), replacement);
++  EXPECT_EQ(controller().GetEntryCount(), entries);
++}
++
++TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOtherTab) {
++  BeginHeldRetry();
++  auto other = CreateTestWebContents();
++  const GURL replacement("https://other.example/unchanged");
++  content::NavigationSimulator::NavigateAndCommitFromBrowser(other.get(), replacement);
++  DeleteContents();
++  CompleteHeldRetry();
++  EXPECT_FALSE(other->GetController().GetPendingEntry());
++  EXPECT_EQ(other->GetLastCommittedURL(), replacement);
++}
++
++TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry) {
++  BeginHeldRetry();
++  web_contents()->Stop();
++  EXPECT_FALSE(helper()->FailureForRetry());
++  CompleteHeldRetry();
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

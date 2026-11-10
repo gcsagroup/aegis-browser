@@ -1,0 +1,86 @@
+From 5c9de0e2dc48ead04eb6205ad0a07ca3b2a3da93 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 21:21:47 +0800
+Subject: [PATCH] chore(access): trace retry navigation admission without URLs
+ or credentials
+
+---
+ .../access/access_navigation_retry_tab_helper.cc     | 12 +++++++++++-
+ .../access/access_proxying_url_loader_factory.cc     |  3 +++
+ chrome/browser/net/net_error_tab_helper.cc           |  4 ++++
+ 3 files changed, 18 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index d7663a45e569594335213cbbf9dd3517ce1846f8..0315d727ad80777e09fb4cc86e777c457de07347 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -3,6 +3,7 @@
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ 
+ #include "base/functional/bind.h"
++#include "base/logging.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+@@ -62,6 +63,9 @@ void AccessNavigationRetryTabHelper::SetProxyRetryHandler(ProxyRetryHandler hand
+ bool AccessNavigationRetryTabHelper::RequestProxyRetry(
+     base::OnceCallback<void(bool)> completion) {
+   auto ticket = FailureForRetry();
++  VLOG(1) << "Aegis proxy retry request: ticket=" << ticket.has_value()
++          << " handler=" << !!proxy_retry_handler_
++          << " preparing=" << proxy_preparation_pending_;
+   if (!ticket || !proxy_retry_handler_ || proxy_preparation_pending_) {
+     std::move(completion).Run(false);
+     return false;
+@@ -101,12 +105,18 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
+     return;
+   }
+   const auto& redirects = navigation->GetRedirectChain();
+-  state_.RecordFailure(
++  const bool recorded = state_.RecordFailure(
+       navigation->GetNavigationId(),
+       redirects.empty() ? navigation->GetURL() : redirects.front(),
+       navigation->GetURL(), navigation->GetRequestMethod(),
+       navigation->GetNetErrorCode(),
+       navigation->HasCommitted() && navigation->IsErrorPage());
++  VLOG(1) << "Aegis proxy retry navigation: id=" << navigation->GetNavigationId()
++          << " method=" << navigation->GetRequestMethod()
++          << " error=" << navigation->GetNetErrorCode()
++          << " committed=" << navigation->HasCommitted()
++          << " error_page=" << navigation->IsErrorPage()
++          << " recorded=" << recorded;
+ }
+ 
+ void AccessNavigationRetryTabHelper::NavigationStopped() {
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 102ec5816d26c6d4c11843741f26626f02dac3fa..bdc20b60889d906e72c95913ef4b45cdc67837be 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -783,6 +783,9 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   // Observe native failures too: the user may enable a proxy only after this
+   // navigation fails. The identity comes from the browser navigation hook.
++  VLOG(1) << "Aegis proxy retry factory: id=" << navigation_id
++          << " frame=" << !!frame
++          << " primary_main=" << (frame && frame->IsInPrimaryMainFrame());
+   if (frame && frame->IsInPrimaryMainFrame() && navigation_id > 0) {
+     AccessNavigationRetryTabHelper::ObservePendingNavigation(
+         content::WebContents::FromRenderFrameHost(frame), navigation_id);
+diff --git a/chrome/browser/net/net_error_tab_helper.cc b/chrome/browser/net/net_error_tab_helper.cc
+index d8ec6a90fd4ab32f138d4d3cb7efad1222113db7..d71bced77096ee9e36493d20632712cfb86b86e7 100644
+--- a/chrome/browser/net/net_error_tab_helper.cc
++++ b/chrome/browser/net/net_error_tab_helper.cc
+@@ -161,6 +161,10 @@ void NetErrorTabHelper::RetryWithAegisProxy(RetryWithAegisProxyCallback callback
+ #if BUILDFLAG(IS_MAC)
+   auto& sender = net_error_page_support_.CurrentTargetFrame();
+   const auto* entry = web_contents()->GetController().GetLastCommittedEntry();
++  VLOG(1) << "Aegis proxy retry IPC: current_sender="
++          << (&sender == web_contents()->GetPrimaryMainFrame())
++          << " error_entry=" << (entry && entry->GetPageType() == content::PAGE_TYPE_ERROR)
++          << " helper=" << !!aegis::access::AccessNavigationRetryTabHelper::FromWebContents(web_contents());
+   if (&sender == web_contents()->GetPrimaryMainFrame() &&
+       entry && entry->GetPageType() == content::PAGE_TYPE_ERROR) {
+     auto* helper = aegis::access::AccessNavigationRetryTabHelper::FromWebContents(
+-- 
+2.54.0 (Apple Git-157)
+

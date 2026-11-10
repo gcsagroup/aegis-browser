@@ -1,0 +1,865 @@
+From d46f9b3a0c93c361f43db6edb94f9fd1a58d0be5 Mon Sep 17 00:00:00 2001
+From: Aegis <aegis@invalid>
+Date: Tue, 10 Nov 2026 03:59:36 +0800
+Subject: [PATCH] feat: fail closed on macOS site-proxy fault without DIRECT
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   2 +
+ ...proxying_url_loader_factory_browsertest.cc |   4 +
+ .../access_site_proxy_bubble_controller.cc    |  42 ++++
+ .../access_site_proxy_bubble_controller.h     |  11 ++
+ .../access/access_site_proxy_fault_fixture.cc |  94 +++++++++
+ .../access/access_site_proxy_fault_fixture.h  |  49 +++++
+ .../aegis/access/access_site_proxy_session.cc | 187 +++++++++++++++++-
+ .../aegis/access/access_site_proxy_session.h  |  57 +++++-
+ .../access_site_proxy_session_unittest.cc     | 159 +++++++++++++++
+ 9 files changed, 600 insertions(+), 5 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_fault_fixture.cc
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_fault_fixture.h
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 40a2c0d6b3d5f35b9269f2458df220e887e8864d..01d094fac3e004712478905978e705f47170211a 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -191,6 +191,8 @@ test("access_site_intent_unittests") {
+ 
+ source_set("access_site_proxy_session") {
+   sources = [
++    "access_site_proxy_fault_fixture.cc",
++    "access_site_proxy_fault_fixture.h",
+     "access_site_proxy_session.cc",
+     "access_site_proxy_session.h",
+   ]
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+index c6f743ca3afa539757774cdbb6037ff5323a8ab4..b1f990cc1525e67d6c3cfae63958ff294445ddae 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory_browsertest.cc
+@@ -1268,6 +1268,10 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
+   std::optional<aegis_access::OwnershipKey> owner_;
+ };
+ 
++// P-mac-5 browser fixture: controlled node/runtime fault must not open the
++// origin via DIRECT; recovery restores the PROXY path; OFF returns native.
++// Product session drill: AccessSiteProxySessionTest.ProductFaultDrillHealthyOnFaultRecoveryOff
++// and RunSiteProxyFaultProductDrill (access_site_proxy_fault_fixture.h).
+ IN_PROC_BROWSER_TEST_F(AccessProxyingURLLoaderFactoryBrowserTest,
+                        ControlledOnFaultRecoveryOffPreservesRoute) {
+   size_t ignored_origin = 0, ignored_proxy = 0;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index fb514fb341a895e77cc5aa358efb4186d98fa997..da4ea6c1e33f7e4869a735817a5627e0a4fb0ddd 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -155,6 +155,48 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+   return true;
+ }
+ 
++bool AccessSiteProxyBubbleController::NotifyHostProxyRuntimeFault(
++    const AccessSiteHost& host,
++    bool wait) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
++    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kInvalidHost);
++    connection_state_ = AccessSiteConnectionState::kUnavailable;
++    return false;
++  }
++  if (intent_store_.Get(host) != AccessSiteIntent::kAllow) {
++    failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kRuntimeFault,
++        "site proxy is not enabled");
++    return false;
++  }
++  // Keep allow intent and the published PROXY selection. Do not ClearProxy
++  // or publish DIRECT — new requests fail or wait against the PROXY policy.
++  failure_reason_ = AccessSiteProxySessionErrorReadableMessage(
++      AccessSiteProxySessionError::kRuntimeFault,
++      wait ? "waiting for node recovery" : "node or runtime unavailable");
++  connection_state_ = wait ? AccessSiteConnectionState::kConnecting
++                           : AccessSiteConnectionState::kUnavailable;
++  return true;
++}
++
++bool AccessSiteProxyBubbleController::RecoverHostProxySession(
++    const AccessSiteHost& host) {
++  return RequestHostProxySession(host, true);
++}
++
++bool AccessSiteProxyBubbleController::
++    RebuildHostProxyAfterNetworkServiceRestart(const AccessSiteHost& host) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (intent_store_.Get(host) != AccessSiteIntent::kAllow) {
++    return false;
++  }
++  // Republish PROXY for the allow host. RequestHostProxySession never admits
++  // DIRECT on the enable path.
++  return RequestHostProxySession(host, true);
++}
++
+ AccessSiteProxySessionError
+ AccessSiteProxyBubbleController::EnsureLocalProxyReady(
+     const AccessSiteHost& host,
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index b4113daef0faae337740a8b32472c1a9c935f629..a3af98ed56e6362dd588b41b6b8d8208ee9d4b81 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -57,6 +57,17 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   // Returns false only when the host/toggle cannot be accepted.
+   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
+ 
++  // P-mac-5: node/runtime fault while allow stays allow. Never clears the
++  // PROXY selection or publishes DIRECT. |wait| holds new requests; otherwise
++  // they fail closed.
++  bool NotifyHostProxyRuntimeFault(const AccessSiteHost& host, bool wait);
++
++  // Re-arms the allow publication path after fault recovery.
++  bool RecoverHostProxySession(const AccessSiteHost& host);
++
++  // Rebuild PROXY publication after Network Service restart (no DIRECT).
++  bool RebuildHostProxyAfterNetworkServiceRestart(const AccessSiteHost& host);
++
+  private:
+   explicit AccessSiteProxyBubbleController(Profile* profile);
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_fault_fixture.cc b/chrome/browser/aegis/access/access_site_proxy_fault_fixture.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ac159666570f2c0926e4a47ecb07a291a855d715
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_fault_fixture.cc
+@@ -0,0 +1,94 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_proxy_fault_fixture.h"
++
++#include "components/aegis_access/access_route_planner.h"
++
++namespace aegis::access {
++
++std::string_view AccessSiteProxyFaultDrillStageToString(
++    AccessSiteProxyFaultDrillStage stage) {
++  switch (stage) {
++    case AccessSiteProxyFaultDrillStage::kHealthy:
++      return "healthy";
++    case AccessSiteProxyFaultDrillStage::kOn:
++      return "on";
++    case AccessSiteProxyFaultDrillStage::kFault:
++      return "fault";
++    case AccessSiteProxyFaultDrillStage::kRecovery:
++      return "recovery";
++    case AccessSiteProxyFaultDrillStage::kOff:
++      return "off";
++  }
++  return "fault";
++}
++
++namespace {
++
++AccessSiteProxyFaultDrillStep MakeStep(
++    AccessSiteProxyFaultDrillStage stage,
++    AccessSiteProxySessionSnapshot snapshot,
++    const AccessSiteProxyFaultRouteContext& route_context,
++    aegis_access::RouteAction expected_action,
++    bool forbid_direct) {
++  AccessSiteProxyFaultDrillStep step;
++  step.stage = stage;
++  step.snapshot = std::move(snapshot);
++  step.expected_action = expected_action;
++  step.forbid_direct = forbid_direct;
++  const aegis_access::RoutePlan plan =
++      PlanSiteProxySessionRequestRoute(step.snapshot, route_context);
++  // Capture expected action from the planner when caller passes a sentinel
++  // that should match the live plan (tests assert equality separately).
++  (void)plan;
++  return step;
++}
++
++}  // namespace
++
++std::vector<AccessSiteProxyFaultDrillStep> RunSiteProxyFaultProductDrill(
++    AccessSiteProxySessionController* controller,
++    const AccessSiteHost& host,
++    AccessSiteProxyFaultMode fault_mode,
++    const AccessSiteProxyFaultRouteContext& route_context) {
++  std::vector<AccessSiteProxyFaultDrillStep> steps;
++  if (!controller) {
++    return steps;
++  }
++
++  steps.push_back(MakeStep(AccessSiteProxyFaultDrillStage::kHealthy,
++                           controller->SnapshotFor(host), route_context,
++                           aegis_access::RouteAction::kPreserveNative,
++                           /*forbid_direct=*/false));
++
++  const auto on = controller->Enable(host);
++  steps.push_back(MakeStep(AccessSiteProxyFaultDrillStage::kOn, on,
++                           route_context,
++                           aegis_access::RouteAction::kUseRegisteredProxy,
++                           /*forbid_direct=*/true));
++
++  const auto fault =
++      controller->NotifyRuntimeFault(host, fault_mode, "product drill fault");
++  const aegis_access::RouteAction fault_action =
++      fault_mode == AccessSiteProxyFaultMode::kWait
++          ? aegis_access::RouteAction::kWait
++          : aegis_access::RouteAction::kFail;
++  steps.push_back(MakeStep(AccessSiteProxyFaultDrillStage::kFault, fault,
++                           route_context, fault_action,
++                           /*forbid_direct=*/true));
++
++  const auto recovery = controller->RecoverFromFault(host);
++  steps.push_back(MakeStep(AccessSiteProxyFaultDrillStage::kRecovery, recovery,
++                           route_context,
++                           aegis_access::RouteAction::kUseRegisteredProxy,
++                           /*forbid_direct=*/true));
++
++  const auto off = controller->Disable(host);
++  steps.push_back(MakeStep(AccessSiteProxyFaultDrillStage::kOff, off,
++                           route_context,
++                           aegis_access::RouteAction::kPreserveNative,
++                           /*forbid_direct=*/false));
++  return steps;
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_fault_fixture.h b/chrome/browser/aegis/access/access_site_proxy_fault_fixture.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..13a10a8d6277dfd22484e781ad36c9e30bfda8b7
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_fault_fixture.h
+@@ -0,0 +1,49 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_FAULT_FIXTURE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_FAULT_FIXTURE_H_
++
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "chrome/browser/aegis/access/access_site_proxy_session.h"
++#include "components/aegis_access/access_route_types.h"
++
++namespace aegis::access {
++
++// Product fault drill stages for P-mac-5 (B2-3/B2-4). Mirrors the browser
++// lifecycle fixture ControlledOnFaultRecoveryOffPreservesRoute while staying
++// usable from session unit tests without a full InProcessBrowserTest host.
++enum class AccessSiteProxyFaultDrillStage {
++  kHealthy,
++  kOn,
++  kFault,
++  kRecovery,
++  kOff,
++};
++
++std::string_view AccessSiteProxyFaultDrillStageToString(
++    AccessSiteProxyFaultDrillStage stage);
++
++struct AccessSiteProxyFaultDrillStep {
++  AccessSiteProxyFaultDrillStage stage =
++      AccessSiteProxyFaultDrillStage::kHealthy;
++  AccessSiteProxySessionSnapshot snapshot;
++  aegis_access::RouteAction expected_action =
++      aegis_access::RouteAction::kPreserveNative;
++  // True when the allow path must reject PreserveNative / DIRECT success.
++  bool forbid_direct = false;
++};
++
++// Runs healthy → on → fault → recovery → off against |controller|.
++// |fault_mode| selects Fail vs Wait during the fault stage.
++std::vector<AccessSiteProxyFaultDrillStep> RunSiteProxyFaultProductDrill(
++    AccessSiteProxySessionController* controller,
++    const AccessSiteHost& host,
++    AccessSiteProxyFaultMode fault_mode,
++    const AccessSiteProxyFaultRouteContext& route_context);
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_FAULT_FIXTURE_H_
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
+index 44ff149f5868e5737847033eed00df77b15adaba..2dd4400defb0bc718ea8f11ffec1ff607d483373 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
+@@ -4,6 +4,7 @@
+ 
+ #include <utility>
+ 
++#include "components/aegis_access/access_route_planner.h"
+ 
+ namespace aegis::access {
+ namespace {
+@@ -20,6 +21,19 @@ std::string AppendMessage(std::string_view prefix, std::string_view detail) {
+ 
+ }  // namespace
+ 
++std::string_view AccessSiteProxyFaultModeToString(
++    AccessSiteProxyFaultMode mode) {
++  switch (mode) {
++    case AccessSiteProxyFaultMode::kNone:
++      return "none";
++    case AccessSiteProxyFaultMode::kFailClosed:
++      return "fail-closed";
++    case AccessSiteProxyFaultMode::kWait:
++      return "wait";
++  }
++  return "fail-closed";
++}
++
+ std::string_view AccessSiteProxySessionErrorToString(
+     AccessSiteProxySessionError error) {
+   switch (error) {
+@@ -55,6 +69,10 @@ std::string_view AccessSiteProxySessionErrorToString(
+       return "direct-fallback-not-admitted";
+     case AccessSiteProxySessionError::kTearDownFailed:
+       return "tear-down-failed";
++    case AccessSiteProxySessionError::kRuntimeFault:
++      return "runtime-fault";
++    case AccessSiteProxySessionError::kNetworkServiceRebuildFailed:
++      return "network-service-rebuild-failed";
+   }
+   return "mutation-failed";
+ }
+@@ -106,6 +124,14 @@ std::string AccessSiteProxySessionErrorReadableMessage(
+       return AppendMessage(
+           "Failed to tear down Access session: ",
+           DetailOr(detail, "tear-down"));
++    case AccessSiteProxySessionError::kRuntimeFault:
++      return AppendMessage(
++          "Access node or runtime fault: ",
++          DetailOr(detail, "new requests fail closed without DIRECT"));
++    case AccessSiteProxySessionError::kNetworkServiceRebuildFailed:
++      return AppendMessage(
++          "Failed to rebuild Access proxy after Network Service restart: ",
++          DetailOr(detail, "rebuild"));
+   }
+   return "Access session failed.";
+ }
+@@ -181,6 +207,70 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
+ 
+ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+     const AccessSiteHost& host) {
++  return RepublishAllow(host, "enable");
++}
++
++AccessSiteProxySessionSnapshot
++AccessSiteProxySessionController::NotifyRuntimeFault(
++    const AccessSiteHost& host,
++    AccessSiteProxyFaultMode mode,
++    std::string_view detail) {
++  if (mode == AccessSiteProxyFaultMode::kNone) {
++    return SnapshotFor(host);
++  }
++  if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
++    return MarkUnavailable(host, AccessSiteIntent::kAllow,
++                           AccessSiteProxySessionError::kInvalidHost);
++  }
++
++  // Keep product intent on allow. Do not publish DIRECT and do not tear down
++  // the PROXY selection — new requests must Fail or Wait against that policy.
++  intent_store_.Set(host, AccessSiteIntent::kAllow);
++  const auto prior = SnapshotFor(host);
++  AccessSiteProxySessionSnapshot snap;
++  snap.host = host;
++  snap.intent = AccessSiteIntent::kAllow;
++  snap.fault_mode = mode;
++  snap.policy_generation = prior.policy_generation;
++  snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
++      AccessSiteProxySessionError::kRuntimeFault, detail);
++  if (mode == AccessSiteProxyFaultMode::kWait) {
++    snap.phase = AccessSiteProxySessionPhase::kPreparingCandidate;
++    snap.connection = AccessSiteConnectionState::kConnecting;
++  } else {
++    snap.phase = AccessSiteProxySessionPhase::kUnavailable;
++    snap.connection = AccessSiteConnectionState::kUnavailable;
++  }
++  return Write(std::move(snap));
++}
++
++AccessSiteProxySessionSnapshot
++AccessSiteProxySessionController::RecoverFromFault(
++    const AccessSiteHost& host) {
++  return RepublishAllow(host, "recover");
++}
++
++AccessSiteProxySessionSnapshot
++AccessSiteProxySessionController::RebuildAfterNetworkServiceRestart(
++    const AccessSiteHost& host) {
++  if (intent_store_.Get(host) != AccessSiteIntent::kAllow) {
++    return SnapshotFor(host);
++  }
++  AccessSiteProxySessionSnapshot snap =
++      RepublishAllow(host, "network-service-rebuild");
++  if (snap.phase != AccessSiteProxySessionPhase::kReady) {
++    snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
++        AccessSiteProxySessionError::kNetworkServiceRebuildFailed,
++        snap.failure_reason);
++    return Write(std::move(snap));
++  }
++  return snap;
++}
++
++AccessSiteProxySessionSnapshot
++AccessSiteProxySessionController::RepublishAllow(
++    const AccessSiteHost& host,
++    std::string_view operation_suffix) {
+   if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk ||
+       !orchestrator_) {
+     return MarkUnavailable(host, AccessSiteIntent::kAllow,
+@@ -193,7 +283,8 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+   Write({.host = host,
+          .intent = AccessSiteIntent::kAllow,
+          .phase = AccessSiteProxySessionPhase::kPreparingCandidate,
+-         .connection = AccessSiteConnectionState::kConnecting});
++         .connection = AccessSiteConnectionState::kConnecting,
++         .fault_mode = AccessSiteProxyFaultMode::kNone});
+ 
+   AccessSiteProxyLocalProxyReadyInfo ready_info;
+   const AccessSiteProxySessionError ready_status =
+@@ -209,12 +300,14 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+   Write({.host = host,
+          .intent = AccessSiteIntent::kAllow,
+          .phase = AccessSiteProxySessionPhase::kPublishing,
+-         .connection = AccessSiteConnectionState::kConnecting});
++         .connection = AccessSiteConnectionState::kConnecting,
++         .fault_mode = AccessSiteProxyFaultMode::kNone});
+ 
+   const AccessSiteProxySessionMutationPlan plan =
+       BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kAllow,
+                                         ready_info.owner,
+-                                        ready_info.proxy_group_id, "enable");
++                                        ready_info.proxy_group_id,
++                                        operation_suffix);
+   if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
+       !plan.mutation.request.has_value()) {
+     return MarkUnavailable(
+@@ -225,10 +318,20 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+             : AccessSiteProxySessionError::kPrepareFailed);
+   }
+ 
++  // Allow-path mutations must stay PROXY. Reject any accidental DIRECT plan.
++  for (const auto& member : plan.mutation.request->candidate_members) {
++    if (member.mode != AccessMode::kProxy) {
++      return MarkUnavailable(
++          host, AccessSiteIntent::kAllow,
++          AccessSiteProxySessionError::kDirectFallbackNotAdmitted);
++    }
++  }
++
+   Write({.host = host,
+          .intent = AccessSiteIntent::kAllow,
+          .phase = AccessSiteProxySessionPhase::kAwaitingAck,
+-         .connection = AccessSiteConnectionState::kConnecting});
++         .connection = AccessSiteConnectionState::kConnecting,
++         .fault_mode = AccessSiteProxyFaultMode::kNone});
+ 
+   AccessSiteProxySessionPublicationInfo publication;
+   const AccessSiteProxySessionError publish_status =
+@@ -243,6 +346,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Enable(
+                 .intent = AccessSiteIntent::kAllow,
+                 .phase = AccessSiteProxySessionPhase::kReady,
+                 .connection = AccessSiteConnectionState::kReady,
++                .fault_mode = AccessSiteProxyFaultMode::kNone,
+                 .policy_generation = publication.policy_generation});
+ }
+ 
+@@ -254,6 +358,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
+     snap.intent = AccessSiteIntent::kOff;
+     snap.phase = AccessSiteProxySessionPhase::kIdle;
+     snap.connection = AccessSiteConnectionState::kIdle;
++    snap.fault_mode = AccessSiteProxyFaultMode::kNone;
+     snap.failure_reason = AccessSiteProxySessionErrorReadableMessage(
+         AccessSiteProxySessionError::kInvalidHost);
+     intent_store_.Set(host, AccessSiteIntent::kOff);
+@@ -267,6 +372,7 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
+       .intent = AccessSiteIntent::kOff,
+       .phase = AccessSiteProxySessionPhase::kIdle,
+       .connection = AccessSiteConnectionState::kIdle,
++      .fault_mode = AccessSiteProxyFaultMode::kNone,
+   };
+ 
+   if (!orchestrator_) {
+@@ -327,8 +433,81 @@ AccessSiteProxySessionController::MarkUnavailable(
+                 .intent = intent,
+                 .phase = AccessSiteProxySessionPhase::kUnavailable,
+                 .connection = AccessSiteConnectionState::kUnavailable,
++                .fault_mode = AccessSiteProxyFaultMode::kNone,
+                 .failure_reason = AccessSiteProxySessionErrorReadableMessage(
+                     error, detail)});
+ }
+ 
++aegis_access::RoutePlan PlanSiteProxySessionRequestRoute(
++    const AccessSiteProxySessionSnapshot& snapshot,
++    const AccessSiteProxyFaultRouteContext& context) {
++  using aegis_access::AccessMode;
++  using aegis_access::PolicyScope;
++  using aegis_access::PolicyState;
++  using aegis_access::ProxyRuntimeState;
++  using aegis_access::RouteAction;
++  using aegis_access::RouteInput;
++  using aegis_access::RoutePlan;
++  using aegis_access::SnapshotState;
++
++  RouteInput input;
++  input.request_owner = context.owner;
++  input.snapshot_owner = context.owner;
++  input.request_generations = context.generations;
++  input.snapshot_generations = context.generations;
++  input.snapshot_state = SnapshotState::kPublished;
++  input.protection_restriction =
++      aegis_access::ProtectionRestriction::kNone;
++  input.managed_restriction = aegis_access::ManagedRestriction::kNone;
++  input.site_ownership_reliable = true;
++
++  if (snapshot.intent != AccessSiteIntent::kAllow) {
++    input.policy_state = PolicyState::kAbsent;
++    input.effective_mode = AccessMode::kNone;
++    input.policy_scope = PolicyScope::kNone;
++    input.require_proxy_intent = false;
++    input.runtime_state = ProxyRuntimeState::kStopped;
++    return aegis_access::PlanAccessRoute(input);
++  }
++
++  // Allow intent requires PROXY. Fault must Fail or Wait — never DIRECT.
++  input.policy_state = PolicyState::kValid;
++  input.effective_mode = AccessMode::kProxy;
++  input.policy_scope = PolicyScope::kSite;
++  input.effective_proxy_group_id = context.proxy_group_id;
++  input.require_proxy_intent = true;
++
++  if (snapshot.fault_mode == AccessSiteProxyFaultMode::kWait) {
++    input.runtime_state = ProxyRuntimeState::kRecovering;
++    input.registered_proxy_entry = context.registered_proxy_entry;
++    return aegis_access::PlanAccessRoute(input);
++  }
++  if (snapshot.fault_mode == AccessSiteProxyFaultMode::kFailClosed ||
++      snapshot.phase == AccessSiteProxySessionPhase::kUnavailable ||
++      snapshot.connection == AccessSiteConnectionState::kUnavailable) {
++    input.runtime_state = ProxyRuntimeState::kOffline;
++    input.registered_proxy_entry = context.registered_proxy_entry;
++    return aegis_access::PlanAccessRoute(input);
++  }
++  if (snapshot.phase == AccessSiteProxySessionPhase::kReady &&
++      snapshot.connection == AccessSiteConnectionState::kReady) {
++    input.runtime_state = ProxyRuntimeState::kReady;
++    input.registered_proxy_entry = context.registered_proxy_entry;
++    return aegis_access::PlanAccessRoute(input);
++  }
++
++  // Connecting / preparing without an explicit wait fault still waits.
++  input.runtime_state = ProxyRuntimeState::kPreparing;
++  input.registered_proxy_entry = context.registered_proxy_entry;
++  const RoutePlan plan = aegis_access::PlanAccessRoute(input);
++  // Secondary guard: allow-path plans must never preserve native DIRECT.
++  if (plan.action == RouteAction::kPreserveNative) {
++    RoutePlan denied = plan;
++    denied.action = RouteAction::kFail;
++    denied.reason = aegis_access::RouteReason::kProxyUnavailable;
++    return denied;
++  }
++  return plan;
++}
++
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.h b/chrome/browser/aegis/access/access_site_proxy_session.h
+index 6250fe4acb6ac9454efbf8263c672d9653c9a5fb..f75e7de5c3e25f213acf04fbf92aa8b998c04fc5 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session.h
++++ b/chrome/browser/aegis/access/access_site_proxy_session.h
+@@ -7,13 +7,17 @@
+ #include <string>
+ #include <string_view>
+ 
++#include <optional>
++
+ #include "chrome/browser/aegis/access/access_site_intent.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++#include "components/aegis_access/access_route_types.h"
+ #include "components/aegis_access/request_ownership_registry.h"
+ 
+ namespace aegis::access {
+ 
+-// Readable fail-closed errors for bubble → publish/ACK (P-mac-3).
++// Readable fail-closed errors for bubble → publish/ACK (P-mac-3) and the
++// P-mac-5 fault / Network Service rebuild path.
+ // Callers must surface ReadableMessage(); never treat these as DIRECT success.
+ enum class AccessSiteProxySessionError {
+   kOk,
+@@ -32,8 +36,21 @@ enum class AccessSiteProxySessionError {
+   kBusy,
+   kDirectFallbackNotAdmitted,
+   kTearDownFailed,
++  kRuntimeFault,
++  kNetworkServiceRebuildFailed,
++};
++
++// Product fault disposition while intent remains allow (P-mac-5).
++// Fail-closed aborts new requests; wait holds them until recovery.
++enum class AccessSiteProxyFaultMode {
++  kNone,
++  kFailClosed,
++  kWait,
+ };
+ 
++std::string_view AccessSiteProxyFaultModeToString(
++    AccessSiteProxyFaultMode mode);
++
+ std::string_view AccessSiteProxySessionErrorToString(
+     AccessSiteProxySessionError error);
+ std::string AccessSiteProxySessionErrorReadableMessage(
+@@ -57,6 +74,7 @@ struct AccessSiteProxySessionSnapshot {
+   AccessSiteIntent intent = AccessSiteIntent::kOff;
+   AccessSiteProxySessionPhase phase = AccessSiteProxySessionPhase::kIdle;
+   AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;
++  AccessSiteProxyFaultMode fault_mode = AccessSiteProxyFaultMode::kNone;
+   std::string failure_reason;
+   uint64_t policy_generation = 0;
+ };
+@@ -115,6 +133,23 @@ class AccessSiteProxySessionController {
+   // tear-down fails (failure_reason may note the service issue).
+   AccessSiteProxySessionSnapshot Disable(const AccessSiteHost& host);
+ 
++  // P-mac-5: node/runtime fault while allow stays allow. Never publishes
++  // DIRECT and never clears the PROXY publication intent. New requests must
++  // Fail (kFailClosed) or Wait (kWait) — never silent DIRECT.
++  AccessSiteProxySessionSnapshot NotifyRuntimeFault(
++      const AccessSiteHost& host,
++      AccessSiteProxyFaultMode mode,
++      std::string_view detail = {});
++
++  // Re-arms the allow path after the node/runtime recovers (Ensure → Publish
++  // → ACK). Never claims ready via DIRECT.
++  AccessSiteProxySessionSnapshot RecoverFromFault(const AccessSiteHost& host);
++
++  // After Network Service restart: rebuild PROXY publication for an allow
++  // host. Must not fall back to DIRECT while intent remains allow.
++  AccessSiteProxySessionSnapshot RebuildAfterNetworkServiceRestart(
++      const AccessSiteHost& host);
++
+  private:
+   AccessSiteProxySessionSnapshot Write(
+       AccessSiteProxySessionSnapshot snapshot);
+@@ -123,12 +158,32 @@ class AccessSiteProxySessionController {
+       AccessSiteIntent intent,
+       AccessSiteProxySessionError error,
+       std::string_view detail = {});
++  AccessSiteProxySessionSnapshot RepublishAllow(
++      const AccessSiteHost& host,
++      std::string_view operation_suffix);
+ 
+   AccessSiteProxySessionOrchestrating* const orchestrator_;
+   AccessSiteIntentStore intent_store_;
+   std::map<AccessSiteHost, AccessSiteProxySessionSnapshot> snapshots_;
+ };
+ 
++// Trusted inputs for evaluating a new request under the current product
++// session/fault snapshot. Tests and browser fixtures supply a complete
++// generation tuple and (when healthy) the registered loopback entry.
++struct AccessSiteProxyFaultRouteContext {
++  OwnershipKey owner;
++  std::string proxy_group_id;
++  aegis_access::GenerationTuple generations;
++  std::optional<aegis_access::RegisteredProxyEntry> registered_proxy_entry;
++};
++
++// Plans the route a new request would take for |snapshot|. When intent is
++// allow, the result is UseRegisteredProxy / Wait / Fail — never
++// PreserveNative (DIRECT). Used by P-mac-5 unit and browser fixtures.
++aegis_access::RoutePlan PlanSiteProxySessionRequestRoute(
++    const AccessSiteProxySessionSnapshot& snapshot,
++    const AccessSiteProxyFaultRouteContext& context);
++
+ // Builds ordinary mutation + cancellation selector inputs for bubble sessions.
+ struct AccessSiteProxySessionMutationPlan {
+   AccessSiteIntentMutationResult mutation;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+index 9a19d8794fda34668a65f5854027b87792b8ee7f..7da61816ca6bace2ba147a010823508a8a290710 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+@@ -1,7 +1,10 @@
+ // Copyright 2026 GCSA
+ 
++#include "chrome/browser/aegis/access/access_site_proxy_fault_fixture.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_session.h"
+ 
++#include <vector>
++
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
+@@ -37,6 +40,7 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
+   int tear_down_count = 0;
+   uint64_t next_generation = 7;
+   std::optional<AccessSiteHost> last_torn_down;
++  std::vector<AccessMode> published_modes;
+ 
+   AccessSiteProxySessionError EnsureLocalProxyReady(
+       const AccessSiteHost& host,
+@@ -59,6 +63,9 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
+     ++publish_count;
+     EXPECT_TRUE(out);
+     EXPECT_EQ(selector.exact_host, request.candidate_group.canonical_host);
++    for (const auto& member : request.candidate_members) {
++      published_modes.push_back(member.mode);
++    }
+     if (admit_direct_fallback) {
+       return AccessSiteProxySessionError::kDirectFallbackNotAdmitted;
+     }
+@@ -178,5 +185,157 @@ TEST(AccessSiteProxySessionTest, BuildsOrdinaryAllowAndOffMutationPlans) {
+             AccessMode::kDirect);
+ }
+ 
++AccessSiteProxyFaultRouteContext HealthyRouteContext(
++    uint64_t policy_generation) {
++  AccessSiteProxyFaultRouteContext ctx;
++  ctx.owner = TestOwner();
++  ctx.proxy_group_id = "proxy-group";
++  ctx.generations = {policy_generation, 2, 3, 4, 5};
++  ctx.registered_proxy_entry = aegis_access::RegisteredProxyEntry{
++      "reg-1", "proxy-group", TestOwner(), ctx.generations};
++  return ctx;
++}
++
++TEST(AccessSiteProxySessionTest, RuntimeFaultFailClosedKeepsAllowWithoutDirect) {
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++  ASSERT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
++  const int publishes_before_fault = orchestrator.publish_count;
++  const int tear_downs_before_fault = orchestrator.tear_down_count;
++
++  const auto fault = controller.NotifyRuntimeFault(
++      host, AccessSiteProxyFaultMode::kFailClosed, "node offline");
++
++  EXPECT_EQ(fault.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(fault.fault_mode, AccessSiteProxyFaultMode::kFailClosed);
++  EXPECT_EQ(fault.phase, AccessSiteProxySessionPhase::kUnavailable);
++  EXPECT_EQ(fault.connection, AccessSiteConnectionState::kUnavailable);
++  EXPECT_NE(fault.failure_reason.find("fault"), std::string::npos);
++  EXPECT_EQ(fault.failure_reason.find("Direct success"), std::string::npos);
++  // Fault must not republish DIRECT or tear down the PROXY selection.
++  EXPECT_EQ(orchestrator.publish_count, publishes_before_fault);
++  EXPECT_EQ(orchestrator.tear_down_count, tear_downs_before_fault);
++  for (AccessMode mode : orchestrator.published_modes) {
++    EXPECT_NE(mode, AccessMode::kDirect);
++  }
++
++  const auto plan =
++      PlanSiteProxySessionRequestRoute(fault, HealthyRouteContext(7));
++  EXPECT_EQ(plan.action, aegis_access::RouteAction::kFail);
++  EXPECT_EQ(plan.effective_mode, AccessMode::kProxy);
++  EXPECT_NE(plan.action, aegis_access::RouteAction::kPreserveNative);
++}
++
++TEST(AccessSiteProxySessionTest, RuntimeFaultWaitHoldsRequestsWithoutDirect) {
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++  ASSERT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
++
++  const auto fault = controller.NotifyRuntimeFault(
++      host, AccessSiteProxyFaultMode::kWait, "runtime recovering");
++
++  EXPECT_EQ(fault.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(fault.fault_mode, AccessSiteProxyFaultMode::kWait);
++  EXPECT_EQ(fault.connection, AccessSiteConnectionState::kConnecting);
++  EXPECT_EQ(orchestrator.publish_count, 1);
++
++  const auto plan =
++      PlanSiteProxySessionRequestRoute(fault, HealthyRouteContext(7));
++  EXPECT_EQ(plan.action, aegis_access::RouteAction::kWait);
++  EXPECT_EQ(plan.effective_mode, AccessMode::kProxy);
++  EXPECT_NE(plan.action, aegis_access::RouteAction::kPreserveNative);
++}
++
++TEST(AccessSiteProxySessionTest, RecoverFromFaultRestoresReadyViaProxy) {
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++  ASSERT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
++  ASSERT_EQ(controller
++                .NotifyRuntimeFault(host, AccessSiteProxyFaultMode::kFailClosed)
++                .fault_mode,
++            AccessSiteProxyFaultMode::kFailClosed);
++
++  const auto recovered = controller.RecoverFromFault(host);
++
++  EXPECT_EQ(recovered.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(recovered.phase, AccessSiteProxySessionPhase::kReady);
++  EXPECT_EQ(recovered.connection, AccessSiteConnectionState::kReady);
++  EXPECT_EQ(recovered.fault_mode, AccessSiteProxyFaultMode::kNone);
++  EXPECT_TRUE(recovered.failure_reason.empty());
++  EXPECT_EQ(orchestrator.publish_count, 2);
++  ASSERT_FALSE(orchestrator.published_modes.empty());
++  EXPECT_EQ(orchestrator.published_modes.back(), AccessMode::kProxy);
++
++  const auto plan =
++      PlanSiteProxySessionRequestRoute(recovered, HealthyRouteContext(8));
++  EXPECT_EQ(plan.action, aegis_access::RouteAction::kUseRegisteredProxy);
++  EXPECT_NE(plan.action, aegis_access::RouteAction::kPreserveNative);
++}
++
++TEST(AccessSiteProxySessionTest,
++     NetworkServiceRestartRebuildsProxyWithoutDirect) {
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++  ASSERT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
++
++  const auto rebuilt = controller.RebuildAfterNetworkServiceRestart(host);
++
++  EXPECT_EQ(rebuilt.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(rebuilt.phase, AccessSiteProxySessionPhase::kReady);
++  EXPECT_EQ(rebuilt.connection, AccessSiteConnectionState::kReady);
++  EXPECT_EQ(rebuilt.fault_mode, AccessSiteProxyFaultMode::kNone);
++  EXPECT_EQ(orchestrator.publish_count, 2);
++  for (AccessMode mode : orchestrator.published_modes) {
++    EXPECT_EQ(mode, AccessMode::kProxy);
++  }
++
++  const auto plan =
++      PlanSiteProxySessionRequestRoute(rebuilt, HealthyRouteContext(8));
++  EXPECT_EQ(plan.action, aegis_access::RouteAction::kUseRegisteredProxy);
++}
++
++TEST(AccessSiteProxySessionTest,
++     ProductFaultDrillHealthyOnFaultRecoveryOff) {
++  // Product fixture stages matching the browser lifecycle drill:
++  // healthy → on → fault → recovery → off. Off may use DIRECT publication;
++  // fault/recovery on the allow path must not.
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("target.example");
++
++  auto steps = RunSiteProxyFaultProductDrill(
++      &controller, host, AccessSiteProxyFaultMode::kFailClosed,
++      HealthyRouteContext(7));
++  ASSERT_EQ(steps.size(), 5u);
++  EXPECT_EQ(steps[0].stage, AccessSiteProxyFaultDrillStage::kHealthy);
++  EXPECT_EQ(steps[1].stage, AccessSiteProxyFaultDrillStage::kOn);
++  EXPECT_EQ(steps[1].snapshot.phase, AccessSiteProxySessionPhase::kReady);
++  EXPECT_EQ(steps[2].stage, AccessSiteProxyFaultDrillStage::kFault);
++  EXPECT_EQ(steps[2].expected_action, aegis_access::RouteAction::kFail);
++  EXPECT_TRUE(steps[2].forbid_direct);
++  EXPECT_EQ(PlanSiteProxySessionRequestRoute(steps[2].snapshot,
++                                             HealthyRouteContext(7))
++                .action,
++            aegis_access::RouteAction::kFail);
++  EXPECT_EQ(steps[3].stage, AccessSiteProxyFaultDrillStage::kRecovery);
++  EXPECT_EQ(steps[3].snapshot.phase, AccessSiteProxySessionPhase::kReady);
++  EXPECT_EQ(PlanSiteProxySessionRequestRoute(steps[3].snapshot,
++                                             HealthyRouteContext(8))
++                .action,
++            aegis_access::RouteAction::kUseRegisteredProxy);
++  EXPECT_EQ(steps[4].stage, AccessSiteProxyFaultDrillStage::kOff);
++  EXPECT_EQ(steps[4].snapshot.intent, AccessSiteIntent::kOff);
++  for (AccessMode mode : orchestrator.published_modes) {
++    // Enable/recover publish PROXY only; disable may publish DIRECT after.
++    if (mode == AccessMode::kDirect) {
++      EXPECT_EQ(controller.intent_store().Get(host), AccessSiteIntent::kOff);
++    }
++  }
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+
