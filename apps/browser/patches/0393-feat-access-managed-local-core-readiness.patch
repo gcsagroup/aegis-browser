@@ -15,7 +15,7 @@ Subject: [PATCH] feat(access): prepare authenticated managed core with real
  create mode 100644 chrome/browser/aegis/access/access_local_core_manager_unittest.cc
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 05c3ceb..c84dad6 100644
+index 05c3ceb5951c58fddbe8a2755abe429352c0660e..c84dad6092a2700d6329f41a208777a94ced7c79 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -3,6 +3,28 @@
@@ -49,7 +49,7 @@ index 05c3ceb..c84dad6 100644
      "access_navigation_retry_tab_helper.cc",
 diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
 new file mode 100644
-index 0000000..37c9b34
+index 0000000000000000000000000000000000000000..37c9b3415df1c7851649569867b02830ae613e49
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_local_core_manager.cc
 @@ -0,0 +1,314 @@
@@ -369,7 +369,7 @@ index 0000000..37c9b34
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_local_core_manager.h b/chrome/browser/aegis/access/access_local_core_manager.h
 new file mode 100644
-index 0000000..82eb34a
+index 0000000000000000000000000000000000000000..82eb34ac7f623f9120b75798d633fed54346fad2
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_local_core_manager.h
 @@ -0,0 +1,50 @@
@@ -425,7 +425,7 @@ index 0000000..82eb34a
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
 diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
 new file mode 100644
-index 0000000..1f52339
+index 0000000000000000000000000000000000000000..1f5233938d40e569c6795782f24ca676dcb24780
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
 @@ -0,0 +1,68 @@

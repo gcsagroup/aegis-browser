@@ -17,7 +17,7 @@ Subject: [PATCH] feat(access): retain private route through CORS and preflight
  create mode 100644 components/aegis_access/access_cors_route_unittest.cc
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 5218b06..44ef715 100644
+index 5218b06f7bb02c33b3c387d462865e65684ca8e1..44ef71551edde513709235b7763bafbb9af8e946 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -407,3 +407,22 @@ test("access_network_url_loader_unittests") {
@@ -45,7 +45,7 @@ index 5218b06..44ef715 100644
 +}
 diff --git a/components/aegis_access/access_cors_route_unittest.cc b/components/aegis_access/access_cors_route_unittest.cc
 new file mode 100644
-index 0000000..d68c7e9
+index 0000000000000000000000000000000000000000..d68c7e9d5daf6f449772a711b19b61b1467a20e8
 --- /dev/null
 +++ b/components/aegis_access/access_cors_route_unittest.cc
 @@ -0,0 +1,162 @@
@@ -212,7 +212,7 @@ index 0000000..d68c7e9
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/aegis/access_request_route_state.h b/services/network/aegis/access_request_route_state.h
-index 548a9f8..cbc47b3 100644
+index 548a9f8539560e2160f277c17e217d1cb9af7d4a..cbc47b3e663a304ace5e35561e58e2dc3bd18821 100644
 --- a/services/network/aegis/access_request_route_state.h
 +++ b/services/network/aegis/access_request_route_state.h
 @@ -27,6 +27,8 @@ class AccessRequestRouteState : public base::RefCounted<AccessRequestRouteState>
@@ -225,7 +225,7 @@ index 548a9f8..cbc47b3 100644
   private:
    friend class base::RefCounted<AccessRequestRouteState>;
 diff --git a/services/network/cors/cors_url_loader.cc b/services/network/cors/cors_url_loader.cc
-index 2a6c236..b166e45 100644
+index 2a6c236a9b447db912d1f27150c4ad859cebbd90..b166e455c4450315c2565b44fbfce13050a65a34 100644
 --- a/services/network/cors/cors_url_loader.cc
 +++ b/services/network/cors/cors_url_loader.cc
 @@ -445,13 +445,19 @@ CorsURLLoader::CorsURLLoader(
@@ -269,7 +269,7 @@ index 2a6c236..b166e45 100644
            options_ & mojom::kURLLoadOptionUseHeaderClient),
        context_->cors_non_wildcard_request_headers_support(), tainted_,
 diff --git a/services/network/cors/cors_url_loader.h b/services/network/cors/cors_url_loader.h
-index 32d81eb..e7ec3b5 100644
+index 32d81eb6014973e0df533c7af47851e3d5475b87..e7ec3b57cbe743dff7f066246976a64adb371240 100644
 --- a/services/network/cors/cors_url_loader.h
 +++ b/services/network/cors/cors_url_loader.h
 @@ -22,6 +22,7 @@
@@ -303,7 +303,7 @@ index 32d81eb..e7ec3b5 100644
    // This has the same lifetime as `network_loader_factory_`, and should be used
    // when non-null to create optimized URLLoaders which can call URLLoaderClient
 diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
-index 21ae5ad..91515ed 100644
+index 21ae5adb4bc1c81f2ac4db7bdf450b0312b65b87..91515ed55ff58f15badafbbf94421c84e4183e9b 100644
 --- a/services/network/cors/cors_url_loader_factory.cc
 +++ b/services/network/cors/cors_url_loader_factory.cc
 @@ -3,6 +3,8 @@
@@ -418,7 +418,7 @@ index 21ae5ad..91515ed 100644
      inner_url_loader_factory->CreateLoaderAndStart(
          std::move(receiver), request_id, options, resource_request,
 diff --git a/services/network/cors/cors_url_loader_factory.h b/services/network/cors/cors_url_loader_factory.h
-index 721ec76..cd1ce2b 100644
+index 721ec760dfbea98eb80952451f47cf71cd917196..cd1ce2b7f392c3df2fa740e8b03c17b69fc24dad 100644
 --- a/services/network/cors/cors_url_loader_factory.h
 +++ b/services/network/cors/cors_url_loader_factory.h
 @@ -28,6 +28,8 @@
@@ -447,7 +447,7 @@ index 721ec76..cd1ce2b 100644
  
    // Methods for use by network::URLLoaderFactory.
 diff --git a/services/network/url_loader_factory.cc b/services/network/url_loader_factory.cc
-index 541b9e6..6777fef 100644
+index 541b9e627d41503f8b17984e15a7e6359d0df1ea..6777fef68b6f4da5b27776651402342a3a2f6842 100644
 --- a/services/network/url_loader_factory.cc
 +++ b/services/network/url_loader_factory.cc
 @@ -203,11 +203,20 @@ void URLLoaderFactory::CreateLoaderAndStartWithSyncClient(
@@ -482,7 +482,7 @@ index 541b9e6..6777fef 100644
    cors_url_loader_factory_->OnURLLoaderCreated(std::move(loader));
  }
 diff --git a/services/network/url_loader_factory.h b/services/network/url_loader_factory.h
-index 233a642..9c9f942 100644
+index 233a6425d8ccdd87172d0df186bedccab99d5585..9c9f942527438553e541a7727a06f8bfd433be1d 100644
 --- a/services/network/url_loader_factory.h
 +++ b/services/network/url_loader_factory.h
 @@ -6,6 +6,7 @@

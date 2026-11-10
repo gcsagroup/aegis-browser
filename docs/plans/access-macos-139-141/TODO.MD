@@ -339,3 +339,10 @@
 - **百站基线已封存：** 405实际Aegis15个自然DIRECT观察、14个代理主文档观察；封存NetLog证明14站主文档使用任务loopback链路。12站有页面内容/可视证据，Pinterest主HTML到达但CDN原生超时而空白，TikTok的完整渲染证据尚不足。`gfw-100/candidate405-baseline-sealed.json`、`candidate405-route-proof-summary.json`、`acceptance-matrix.json`及原始CUA观察/截图保留。不是100站完成或全功能PASS。
 - **新增实际问题：** 根域pinterest.com代理后跳到未选中的www.pinterest.com，按旧精确host策略落到native并超时；显式www失败页再重试后主导航通过，但s.pinimg.com脚本/CSS仍native超时。用户授权的新网站上下文范围将覆盖这些页面资源；原失败不删除、不重分类为节点不可用。
 - **下一项：** 当前精确host候选更新PR97并明确未验收项；随后实施新范围，补普通Profile真实自动core恢复/退出故障/关闭/隔离与100站点最终候选验收及复审。
+
+
+### PR质量门回放与Alpha测试绑定续记（2026-11-10 23:16 Asia/Shanghai）
+
+- 最新用户提供了用于Alpha内置测试的独立节点，已只写入本机0700目录内0600私有配置，脱敏身份见本地alpha-test-node-binding.json；URI与凭据不写入源码、PR或CI日志。当前仅完成协议解析和私有绑定，Alpha内置加载/打包/真实节点验收均NOT_RUN，旧节点结果不转移给新节点。依用户顺序，当前PR更新完成后再实施Alpha私有资源接线和网站上下文扩展。
+- 当前阶段性候选f2f0afa6f30bc1a2309b5e50a0df4241f2df31de的完整质量门首次FAIL：merged-main-patch_test.py要求补丁完整Git blob索引，47个新增补丁使用了缩写。原始report/run-quality日志保留，不把前置通过项当完整门通过。
+- 修复只展开补丁index元数据到实际Native Git blob的40位身份；47个稳定patch-id全部未变，Native源SHA8d398cda6abadbea5d14177bec6edcf3177264b6和已测源码/产物不变。patch-full-index-correction-receipt.json绑定每个补丁修复前后SHA256；随后重新跑对应回归、完整门和fresh独立review，尚未完成的不勾选。

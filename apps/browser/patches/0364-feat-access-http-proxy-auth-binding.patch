@@ -15,7 +15,7 @@ Subject: [PATCH] feat(access): bind HTTP proxy authentication to route
  create mode 100644 components/aegis_access/access_proxy_tunnel_context_unittest.cc
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 52601a8..7dfc067 100644
+index 52601a89ff1c264adf6fd5ac699e4e96ea54919b..7dfc06740650d055b6811a25786a24853ebb443a 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -242,6 +242,18 @@ test("request_dispatch_gate_unittests") {
@@ -39,7 +39,7 @@ index 52601a8..7dfc067 100644
    deps = [
 diff --git a/components/aegis_access/access_proxy_tunnel_context_unittest.cc b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
 new file mode 100644
-index 0000000..2126173
+index 0000000000000000000000000000000000000000..21261736e82400a7b2e8fe89d0ac881c09b81594
 --- /dev/null
 +++ b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
 @@ -0,0 +1,86 @@
@@ -130,7 +130,7 @@ index 0000000..2126173
 +}  // namespace
 +}  // namespace aegis_access
 diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
-index 1788baf..e9970f1 100644
+index 1788baf80729ca55c0abfba04de999b7b1522d4b..e9970f1bf3d52b9fe8690cde36e521f81d364b61 100644
 --- a/net/http/http_network_transaction.cc
 +++ b/net/http/http_network_transaction.cc
 @@ -4,6 +4,8 @@
@@ -175,7 +175,7 @@ index 1788baf..e9970f1 100644
    return auth_controllers_[target]->MaybeGenerateAuthToken(
        request_, io_callback_, net_log_);
 diff --git a/net/http/http_network_transaction.h b/net/http/http_network_transaction.h
-index 831fcf1..65f3f37 100644
+index 831fcf140ec60237f3493cb10d8aac5eef5c9087..65f3f37df68aa566b56c51d20664e829b0c557ce 100644
 --- a/net/http/http_network_transaction.h
 +++ b/net/http/http_network_transaction.h
 @@ -43,6 +43,7 @@
@@ -198,7 +198,7 @@ index 831fcf1..65f3f37 100644
        auth_controllers_;
  
 diff --git a/net/http/http_proxy_connect_job.cc b/net/http/http_proxy_connect_job.cc
-index e40cf32..9faaa27 100644
+index e40cf32cb9c1e3624a196fe54f8db74246812b6b..9faaa278764a95d2fc22d72a5b92969046f6e15a 100644
 --- a/net/http/http_proxy_connect_job.cc
 +++ b/net/http/http_proxy_connect_job.cc
 @@ -157,7 +157,8 @@ HttpProxySocketParams::HttpProxySocketParams(
@@ -312,7 +312,7 @@ index e40cf32..9faaa27 100644
  
  // static
 diff --git a/net/http/http_proxy_connect_job.h b/net/http/http_proxy_connect_job.h
-index ef8e49c..440df3a 100644
+index ef8e49c4d2dbb00eb3ceacb1d2faf622dcf81676..440df3aa51823b940c037215169fd55771aa64aa 100644
 --- a/net/http/http_proxy_connect_job.h
 +++ b/net/http/http_proxy_connect_job.h
 @@ -21,6 +21,7 @@

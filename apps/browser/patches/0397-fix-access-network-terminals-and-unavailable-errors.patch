@@ -13,7 +13,7 @@ Subject: [PATCH] fix(access): restrict private terminals to network factories
  5 files changed, 57 insertions(+), 45 deletions(-)
 
 diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
-index 91885e9..95c4b4a 100644
+index 91885e9d96cf7a067d90da906f46b30da36aba54..95c4b4a0d007500fb47474159b044b2b2d4b6b9a 100644
 --- a/chrome/browser/chrome_content_browser_client.cc
 +++ b/chrome/browser/chrome_content_browser_client.cc
 @@ -6807,46 +6807,50 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
@@ -103,7 +103,7 @@ index 91885e9..95c4b4a 100644
  
  #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
 diff --git a/content/browser/loader/url_loader_factory_utils.cc b/content/browser/loader/url_loader_factory_utils.cc
-index 1d7bcd0..403a627 100644
+index 1d7bcd00122d1fafca22fa070295aa4dad2e934c..403a62744e0792dc5cf1cdec46234c9e7f058774 100644
 --- a/content/browser/loader/url_loader_factory_utils.cc
 +++ b/content/browser/loader/url_loader_factory_utils.cc
 @@ -196,7 +196,8 @@ void ContentClientParams::Run(
@@ -117,7 +117,7 @@ index 1d7bcd0..403a627 100644
      GetContentClient()->browser()->WillCreateURLLoaderFactoryForDocument(
          browser_context_.get(), frame_.get(), *document_context_,
 diff --git a/services/network/aegis/access_private_url_loader_factory.cc b/services/network/aegis/access_private_url_loader_factory.cc
-index 34f482e..d869ebc 100644
+index 34f482e12145646d81da4b0416458bd44ba1c79c..d869ebcd0ba5b11d5dfd7325ef0b60a999fe9ffc 100644
 --- a/services/network/aegis/access_private_url_loader_factory.cc
 +++ b/services/network/aegis/access_private_url_loader_factory.cc
 @@ -23,10 +23,11 @@ AccessRouteRegistry::Expectation Expected(
@@ -150,7 +150,7 @@ index 34f482e..d869ebc 100644
    }
    used_tokens_.insert(token);
 diff --git a/services/network/aegis/access_request_route_state.cc b/services/network/aegis/access_request_route_state.cc
-index ef2cfae..317a4aa 100644
+index ef2cfae01a4dbd26c8c5d35a9b65b9914c6eb58b..317a4aa84fbf9cdca95628a2fe343824c0806a92 100644
 --- a/services/network/aegis/access_request_route_state.cc
 +++ b/services/network/aegis/access_request_route_state.cc
 @@ -8,16 +8,19 @@ namespace network {
@@ -178,7 +178,7 @@ index ef2cfae..317a4aa 100644
    }
    return result;
 diff --git a/services/network/aegis/access_request_route_state.h b/services/network/aegis/access_request_route_state.h
-index cbc47b3..766fd7e 100644
+index cbc47b3e663a304ace5e35561e58e2dc3bd18821..766fd7e43271ceb858759b09c923639823448f8c 100644
 --- a/services/network/aegis/access_request_route_state.h
 +++ b/services/network/aegis/access_request_route_state.h
 @@ -14,7 +14,8 @@ class AccessRequestRouteState : public base::RefCounted<AccessRequestRouteState>

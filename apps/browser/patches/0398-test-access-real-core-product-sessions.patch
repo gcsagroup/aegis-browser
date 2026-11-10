@@ -12,7 +12,7 @@ Subject: [PATCH] test(access): exercise product sessions with real managed
  create mode 100644 chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 0959573..264c345 100644
+index 09595735704b55b02abc0e1c9d3f8308e72ca53e..264c345edbc6bfdcd8cc5db3b80f9a20c7832bc3 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -375,7 +375,10 @@ test("access_site_dev_allow_block_panel_unittests") {
@@ -36,7 +36,7 @@ index 0959573..264c345 100644
      "//build:chromeos_buildflags",
      "//chrome/browser/profiles:test_support",
 diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
-index 9851086..c20ad1d 100644
+index 9851086abb1166e7ce36f03c020de1fd31fde641..c20ad1d6a48936ec84da807e86ba3930464d453f 100644
 --- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
 +++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
 @@ -260,117 +260,6 @@ class AccessMutationTransactionTest : public AccessServiceCoordinatorTest {
@@ -159,7 +159,7 @@ index 9851086..c20ad1d 100644
    auto* pending_store = store.get();
 diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 new file mode 100644
-index 0000000..ec4b894
+index 0000000000000000000000000000000000000000..ec4b89496f892c803753c0e8ababfeb3de19d8a4
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 @@ -0,0 +1,217 @@

@@ -9,7 +9,7 @@ Subject: [PATCH] fix(access): derive cancellation site from validated mutation
  2 files changed, 19 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
-index 3eb9064..1890fdf 100644
+index 3eb9064ca93434bdc1856bf7485c18bab1513a69..1890fdfe194d66dc2fbf9931669ebf6cdacd3941 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_session.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
 @@ -194,7 +194,10 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
@@ -25,7 +25,7 @@ index 3eb9064..1890fdf 100644
    plan.selector.scheme = RequestScheme::kHttps;
    plan.selector.port = 443;
 diff --git a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
-index f38f750..2865510 100644
+index f38f750bb830a7e4720250c32b67a1de643690a2..2865510081745f5365061fc3861e824a68b0f043 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
 @@ -95,6 +95,21 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {

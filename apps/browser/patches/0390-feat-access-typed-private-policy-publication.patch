@@ -12,7 +12,7 @@ Subject: [PATCH] feat(access): encode full Browser policy and registered
  4 files changed, 185 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index a724e79..bceb74f 100644
+index a724e7927898edd8ff1c8af4797d8794ef4017bf..bceb74ffdfe55959ee3ff2b4d26c669975aea814 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -471,6 +471,7 @@ source_set("access_private_context_client") {
@@ -24,7 +24,7 @@ index a724e79..bceb74f 100644
    ]
  }
 diff --git a/chrome/browser/aegis/access/access_private_context_client.cc b/chrome/browser/aegis/access/access_private_context_client.cc
-index 5b673fb..571d9de 100644
+index 5b673fb76601e67fd34c180e416acfb3d12229a2..571d9deba13b70abeeadb0385f043b639b0c8591 100644
 --- a/chrome/browser/aegis/access/access_private_context_client.cc
 +++ b/chrome/browser/aegis/access/access_private_context_client.cc
 @@ -20,6 +20,53 @@ mojom::AegisAccessChannel Channel(aegis_access::ChannelNamespace channel) {
@@ -169,7 +169,7 @@ index 5b673fb..571d9de 100644
      base::OnceCallback<void(bool)> completion) {
    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 diff --git a/chrome/browser/aegis/access/access_private_context_client.h b/chrome/browser/aegis/access/access_private_context_client.h
-index 0458481..c52362a 100644
+index 04584817688d552dfd0362c4c9b36662d8a56a84..c52362a6eaffd64e8015e1ca719a30adac755793 100644
 --- a/chrome/browser/aegis/access/access_private_context_client.h
 +++ b/chrome/browser/aegis/access/access_private_context_client.h
 @@ -3,15 +3,25 @@
@@ -213,7 +213,7 @@ index 0458481..c52362a 100644
    void CreateFactory(network::mojom::URLLoaderFactoryParamsPtr params,
        network::mojom::AegisAccessFactoryBindingPtr binding,
 diff --git a/components/aegis_access/access_private_context_client_unittest.cc b/components/aegis_access/access_private_context_client_unittest.cc
-index e369139..d2ac865 100644
+index e3691397402ef8c42e30854495326aa43244c216..d2ac865716544636a7354555696625cdf8b38e98 100644
 --- a/components/aegis_access/access_private_context_client_unittest.cc
 +++ b/components/aegis_access/access_private_context_client_unittest.cc
 @@ -10,6 +10,8 @@

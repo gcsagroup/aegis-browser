@@ -15,7 +15,7 @@ Subject: [PATCH] feat(access): keep Profile rule store lifecycle and recovery
  create mode 100644 chrome/browser/aegis/access/access_async_rule_store_unittest.cc
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index bceb74f..05c3ceb 100644
+index bceb74ffdfe55959ee3ff2b4d26c669975aea814..05c3ceb5951c58fddbe8a2755abe429352c0660e 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -475,3 +475,25 @@ source_set("access_private_context_client") {
@@ -46,7 +46,7 @@ index bceb74f..05c3ceb 100644
 +}
 diff --git a/chrome/browser/aegis/access/access_async_rule_store.cc b/chrome/browser/aegis/access/access_async_rule_store.cc
 new file mode 100644
-index 0000000..93ac8c7
+index 0000000000000000000000000000000000000000..93ac8c7afff4e27716af02a58c9b079c0d2f043a
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_async_rule_store.cc
 @@ -0,0 +1,118 @@
@@ -170,7 +170,7 @@ index 0000000..93ac8c7
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_async_rule_store.h b/chrome/browser/aegis/access/access_async_rule_store.h
 new file mode 100644
-index 0000000..1b9c6cf
+index 0000000000000000000000000000000000000000..1b9c6cf254374da40f7a45f51a60a22222138a43
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_async_rule_store.h
 @@ -0,0 +1,47 @@
@@ -223,7 +223,7 @@ index 0000000..1b9c6cf
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_ASYNC_RULE_STORE_H_
 diff --git a/chrome/browser/aegis/access/access_async_rule_store_unittest.cc b/chrome/browser/aegis/access/access_async_rule_store_unittest.cc
 new file mode 100644
-index 0000000..faf4098
+index 0000000000000000000000000000000000000000..faf4098ca49123efff3552ccd2d2b76b5bfb14a6
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_async_rule_store_unittest.cc
 @@ -0,0 +1,150 @@

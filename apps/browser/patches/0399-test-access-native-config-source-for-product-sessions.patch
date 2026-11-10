@@ -10,7 +10,7 @@ Subject: [PATCH] test(access): use real native config monitor for product
  2 files changed, 24 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 264c345..079e117 100644
+index 264c345edbc6bfdcd8cc5db3b80f9a20c7832bc3..079e11764bbe2a97817f2d544d625f8c1944ee03 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -390,6 +390,9 @@ test("access_service_coordinator_unittests") {
@@ -24,7 +24,7 @@ index 264c345..079e117 100644
      "//chrome/test:test_support_unit",
      "//content/test:test_support",
 diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
-index ec4b894..d6e00b0 100644
+index ec4b89496f892c803753c0e8ababfeb3de19d8a4..d6e00b0136e59c8b8e8986aace0f7214676adb08 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 @@ -4,12 +4,18 @@

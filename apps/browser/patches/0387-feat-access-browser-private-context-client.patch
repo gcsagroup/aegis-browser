@@ -16,7 +16,7 @@ Subject: [PATCH] feat(access): publish full snapshots through Browser-retained
  create mode 100644 components/aegis_access/access_private_context_client_unittest.cc
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 34c7eb8..a724e79 100644
+index 34c7eb832c875ef48d473f5212f18ab6535bb090..a724e7927898edd8ff1c8af4797d8794ef4017bf 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -461,3 +461,16 @@ test("access_published_request_runtime_unittests") {
@@ -38,7 +38,7 @@ index 34c7eb8..a724e79 100644
 +}
 diff --git a/chrome/browser/aegis/access/access_private_context_client.cc b/chrome/browser/aegis/access/access_private_context_client.cc
 new file mode 100644
-index 0000000..5b673fb
+index 0000000000000000000000000000000000000000..5b673fb76601e67fd34c180e416acfb3d12229a2
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_private_context_client.cc
 @@ -0,0 +1,145 @@
@@ -189,7 +189,7 @@ index 0000000..5b673fb
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_private_context_client.h b/chrome/browser/aegis/access/access_private_context_client.h
 new file mode 100644
-index 0000000..0458481
+index 0000000000000000000000000000000000000000..04584817688d552dfd0362c4c9b36662d8a56a84
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_private_context_client.h
 @@ -0,0 +1,50 @@
@@ -244,7 +244,7 @@ index 0000000..0458481
 +}  // namespace aegis::access
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PRIVATE_CONTEXT_CLIENT_H_
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index ee204d3..fb04536 100644
+index ee204d3cc3357d599f28860b71bf5c0568f12f02..fb04536a3806236926f0f9cf073e4e5cc771f40f 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -499,3 +499,22 @@ test("access_network_context_ipc_unittests") {
@@ -272,7 +272,7 @@ index ee204d3..fb04536 100644
 +}
 diff --git a/components/aegis_access/access_private_context_client_unittest.cc b/components/aegis_access/access_private_context_client_unittest.cc
 new file mode 100644
-index 0000000..e369139
+index 0000000000000000000000000000000000000000..e3691397402ef8c42e30854495326aa43244c216
 --- /dev/null
 +++ b/components/aegis_access/access_private_context_client_unittest.cc
 @@ -0,0 +1,595 @@

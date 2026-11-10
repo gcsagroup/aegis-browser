@@ -16,7 +16,7 @@ Subject: [PATCH] feat(access): own private factories and route snapshots per
  create mode 100644 services/network/aegis/access_network_context_state.h
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index a5d2027..0fed902 100644
+index a5d20272adc2b4091b4817ae7cae28c67e81a2c4..0fed902112bac1e96065e08b1c6e448fcffd75af 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -461,3 +461,22 @@ test("access_route_wire_unittests") {
@@ -44,7 +44,7 @@ index a5d2027..0fed902 100644
 +}
 diff --git a/components/aegis_access/access_network_context_state_unittest.cc b/components/aegis_access/access_network_context_state_unittest.cc
 new file mode 100644
-index 0000000..0ddd2d6
+index 0000000000000000000000000000000000000000..0ddd2d63d96de3cef7a7166ffb6bfa082ba1320c
 --- /dev/null
 +++ b/components/aegis_access/access_network_context_state_unittest.cc
 @@ -0,0 +1,409 @@
@@ -458,7 +458,7 @@ index 0000000..0ddd2d6
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index 6683c2a..9155fb6 100644
+index 6683c2a0ead23e6dacca92b842330b6866209592..9155fb68bc761136af1e12bac194bcead706e82e 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
 @@ -13,6 +13,8 @@ component("network_service") {
@@ -472,7 +472,7 @@ index 6683c2a..9155fb6 100644
      "chunked_data_pipe_upload_data_stream.cc",
 diff --git a/services/network/aegis/access_network_context_state.cc b/services/network/aegis/access_network_context_state.cc
 new file mode 100644
-index 0000000..b31ff56
+index 0000000000000000000000000000000000000000..b31ff56c79eb44346fd6667bacc5f6c401e32699
 --- /dev/null
 +++ b/services/network/aegis/access_network_context_state.cc
 @@ -0,0 +1,96 @@
@@ -574,7 +574,7 @@ index 0000000..b31ff56
 +}  // namespace network
 diff --git a/services/network/aegis/access_network_context_state.h b/services/network/aegis/access_network_context_state.h
 new file mode 100644
-index 0000000..19d2dc8
+index 0000000000000000000000000000000000000000..19d2dc827d49df97405e423ed916a74da4a56a88
 --- /dev/null
 +++ b/services/network/aegis/access_network_context_state.h
 @@ -0,0 +1,40 @@

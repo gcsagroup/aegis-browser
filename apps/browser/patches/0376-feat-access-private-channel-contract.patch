@@ -20,7 +20,7 @@ Subject: [PATCH] feat(access): define private route IPC and independent CORS
  create mode 100644 services/network/public/mojom/aegis_access_route_types.mojom
 
 diff --git a/components/aegis_access/access_cors_route_unittest.cc b/components/aegis_access/access_cors_route_unittest.cc
-index d68c7e9..99c9e86 100644
+index d68c7e9d5daf6f449772a711b19b61b1467a20e8..99c9e86e90d4c4828cbc1d872ca3da949cef8c73 100644
 --- a/components/aegis_access/access_cors_route_unittest.cc
 +++ b/components/aegis_access/access_cors_route_unittest.cc
 @@ -10,6 +10,7 @@
@@ -67,7 +67,7 @@ index d68c7e9..99c9e86 100644
    Start();
    client_->RunUntilComplete();
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index b93ebab..ac104a5 100644
+index b93ebab26ee243805009253b052fd6080d69cfd1..ac104a577b09edbad12b3849ceb1c457d4a6814f 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
 @@ -29,6 +29,7 @@ component("network_service") {
@@ -79,7 +79,7 @@ index b93ebab..ac104a5 100644
      "cors/cors_util.h",
      "cors/preflight_cache.cc",
 diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
-index 91515ed..cb6ee09 100644
+index 91515ed55ff58f15badafbbf94421c84e4183e9b..cb6ee097f22185cf92cc7e139f4e8fcd1b1982dd 100644
 --- a/services/network/cors/cors_url_loader_factory.cc
 +++ b/services/network/cors/cors_url_loader_factory.cc
 @@ -33,7 +33,7 @@
@@ -101,7 +101,7 @@ index 91515ed..cb6ee09 100644
        is_trusted_(params->is_trusted),
        disable_web_security_(params->disable_web_security),
 diff --git a/services/network/cors/cors_url_loader_factory.h b/services/network/cors/cors_url_loader_factory.h
-index cd1ce2b..589517d 100644
+index cd1ce2b7f392c3df2fa740e8b03c17b69fc24dad..589517dc61a40ed3f8814a1c197fa8b5c3be8eed 100644
 --- a/services/network/cors/cors_url_loader_factory.h
 +++ b/services/network/cors/cors_url_loader_factory.h
 @@ -30,7 +30,6 @@ namespace network {
@@ -140,7 +140,7 @@ index cd1ce2b..589517d 100644
  
 diff --git a/services/network/cors/cors_url_loader_factory_owner.h b/services/network/cors/cors_url_loader_factory_owner.h
 new file mode 100644
-index 0000000..212b2d7
+index 0000000000000000000000000000000000000000..212b2d7fab22c7bc270632e9d9e9d0b9d259595e
 --- /dev/null
 +++ b/services/network/cors/cors_url_loader_factory_owner.h
 @@ -0,0 +1,20 @@
@@ -165,7 +165,7 @@ index 0000000..212b2d7
 +
 +#endif  // SERVICES_NETWORK_CORS_CORS_URL_LOADER_FACTORY_OWNER_H_
 diff --git a/services/network/prefetch_matching_url_loader_factory.h b/services/network/prefetch_matching_url_loader_factory.h
-index 6b87a14..fd88a3d 100644
+index 6b87a140b9b0ddeed10d73f9a53f682f246ea8df..fd88a3dc31d7f6a1359658b3fc3ce60a0a56767f 100644
 --- a/services/network/prefetch_matching_url_loader_factory.h
 +++ b/services/network/prefetch_matching_url_loader_factory.h
 @@ -17,6 +17,7 @@
@@ -201,7 +201,7 @@ index 6b87a14..fd88a3d 100644
    // Returns true if this URLLoaderFactory should not be reset when
    // calling `ResetURLLoaderFactories()`.
 diff --git a/services/network/public/mojom/BUILD.gn b/services/network/public/mojom/BUILD.gn
-index c6871b5..f307ffb 100644
+index c6871b55405e127b7e2370bd364753db5db25fa2..f307ffb65c1d33b3f09414c46d2819cd297d3d7a 100644
 --- a/services/network/public/mojom/BUILD.gn
 +++ b/services/network/public/mojom/BUILD.gn
 @@ -619,6 +619,8 @@ mojom("url_loader_base") {
@@ -215,7 +215,7 @@ index c6871b5..f307ffb 100644
      "url_loader_network_service_observer.mojom",
 diff --git a/services/network/public/mojom/aegis_access_route.mojom b/services/network/public/mojom/aegis_access_route.mojom
 new file mode 100644
-index 0000000..a198109
+index 0000000000000000000000000000000000000000..a1981096d5d7e38b4fa8cf1117ca6cac68f2bc0e
 --- /dev/null
 +++ b/services/network/public/mojom/aegis_access_route.mojom
 @@ -0,0 +1,25 @@
@@ -246,7 +246,7 @@ index 0000000..a198109
 +};
 diff --git a/services/network/public/mojom/aegis_access_route_types.mojom b/services/network/public/mojom/aegis_access_route_types.mojom
 new file mode 100644
-index 0000000..17c1cff
+index 0000000000000000000000000000000000000000..17c1cff75ae38753c4f7c86f9c92b8a267c95d6d
 --- /dev/null
 +++ b/services/network/public/mojom/aegis_access_route_types.mojom
 @@ -0,0 +1,89 @@

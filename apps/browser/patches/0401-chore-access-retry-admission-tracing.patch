@@ -11,7 +11,7 @@ Subject: [PATCH] chore(access): trace retry navigation admission without URLs
  3 files changed, 18 insertions(+), 1 deletion(-)
 
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
-index d7663a4..0315d72 100644
+index d7663a45e569594335213cbbf9dd3517ce1846f8..0315d727ad80777e09fb4cc86e777c457de07347 100644
 --- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 @@ -3,6 +3,7 @@
@@ -53,7 +53,7 @@ index d7663a4..0315d72 100644
  
  void AccessNavigationRetryTabHelper::NavigationStopped() {
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-index 102ec58..bdc20b6 100644
+index 102ec5816d26c6d4c11843741f26626f02dac3fa..bdc20b60889d906e72c95913ef4b45cdc67837be 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -783,6 +783,9 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
@@ -67,7 +67,7 @@ index 102ec58..bdc20b6 100644
      AccessNavigationRetryTabHelper::ObservePendingNavigation(
          content::WebContents::FromRenderFrameHost(frame), navigation_id);
 diff --git a/chrome/browser/net/net_error_tab_helper.cc b/chrome/browser/net/net_error_tab_helper.cc
-index d8ec6a9..d71bced 100644
+index d8ec6a90fd4ab32f138d4d3cb7efad1222113db7..d71bced77096ee9e36493d20632712cfb86b86e7 100644
 --- a/chrome/browser/net/net_error_tab_helper.cc
 +++ b/chrome/browser/net/net_error_tab_helper.cc
 @@ -161,6 +161,10 @@ void NetErrorTabHelper::RetryWithAegisProxy(RetryWithAegisProxyCallback callback

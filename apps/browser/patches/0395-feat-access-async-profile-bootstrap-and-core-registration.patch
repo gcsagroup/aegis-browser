@@ -18,7 +18,7 @@ Subject: [PATCH] feat(access): restore Profile asynchronously and register
  10 files changed, 410 insertions(+), 9 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 5e6d668..a07d28c 100644
+index 5e6d668e307ac0ab74f20411283fa92abfe54544..a07d28c727988341962ae7fb4c5b95a07284b74a 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -126,6 +126,7 @@ source_set("access_network_context_transport") {
@@ -55,7 +55,7 @@ index 5e6d668..a07d28c 100644
      ":access_network_context_transport",
      ":access_rule_store",
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
-index 487f309..1dde5c5 100644
+index 487f309c0dace566f09e64456becf1ff8e5f0fb7..1dde5c5d6f429bc90d2c03cc7165f923ae5cee72 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport.cc
 @@ -230,6 +230,45 @@ bool AccessNetworkContextTransport::ClearProxySelection(
@@ -136,7 +136,7 @@ index 487f309..1dde5c5 100644
  }
  
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
-index 139d672..b623c0e 100644
+index 139d67279b47781e941ca79aeeb8b463ce62b0dc..b623c0e963adf83829d625f987548d447320291e 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.h
 +++ b/chrome/browser/aegis/access/access_network_context_transport.h
 @@ -6,6 +6,7 @@
@@ -185,7 +185,7 @@ index 139d672..b623c0e 100644
 \ No newline at end of file
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-index 7287a52..5d630e0 100644
+index 7287a52abb20ee20c1e0305e5a478b7f3a511838..5d630e0bec8b0d9c085becf023b4b9397cfa1a10 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -17,6 +17,7 @@
@@ -232,7 +232,7 @@ index 7287a52..5d630e0 100644
    ProxyDispatchPreparation preparation = PrepareProxyDispatch(
        profile_, runtime, metadata, *snapshot, *context_result.context, match);
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
-index 282c7a8..1541803 100644
+index 282c7a8b677922b15b835be6f3bcda18365e3e84..1541803dcdf26e26ab4fd8d1cf974a3e169a437c 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 @@ -20,6 +20,7 @@
@@ -252,7 +252,7 @@ index 282c7a8..1541803 100644
  };
  
 diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
-index 5325a13..ce6b776 100644
+index 5325a1317695bb323dc8fc15b9977ff078e2a400..ce6b7760cb9a834aa523b24cdd28822005b8675b 100644
 --- a/chrome/browser/aegis/access/access_service_coordinator.cc
 +++ b/chrome/browser/aegis/access/access_service_coordinator.cc
 @@ -12,6 +12,7 @@
@@ -510,7 +510,7 @@ index 5325a13..ce6b776 100644
      base::OnceCallback<void(AccessMutationTransactionResult)> completion,
      AccessMutationTransactionResult result) {
 diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
-index f1114ab..d824c42 100644
+index f1114ab1d83a6ab87e1762602cd8b35211ca2173..d824c42ad7eabbd80127751585f5be3c8c1dbbf0 100644
 --- a/chrome/browser/aegis/access/access_service_coordinator.h
 +++ b/chrome/browser/aegis/access/access_service_coordinator.h
 @@ -6,6 +6,8 @@
@@ -577,7 +577,7 @@ index f1114ab..d824c42 100644
    bool mutation_in_flight_ = false;
    base::OneShotTimer publication_timeout_;
 diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
-index 2ed7bc5..9851086 100644
+index 2ed7bc5766e721410c67a234bc7d20185f0a3e3d..9851086abb1166e7ce36f03c020de1fd31fde641 100644
 --- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
 +++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
 @@ -9,6 +9,7 @@
@@ -646,7 +646,7 @@ index 2ed7bc5..9851086 100644
  class HeldPolicyClient : public network::mojom::CustomProxyConfigClient {
   public:
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-index aec962f..9967348 100644
+index aec962fc82e81c07a7a786d87450d89754097387..996734828931f207c0a233bf5e02e7937afcd014 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 @@ -6,6 +6,7 @@
@@ -781,7 +781,7 @@ index aec962f..9967348 100644
    }
  
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
-index ea9a847..a6ccbc5 100644
+index ea9a847953a4054ffdee8246db176f4b7c3caad4..a6ccbc5c804f22c2f1230fd78f3872d5e9a43b35 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 @@ -57,6 +57,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {

@@ -16,7 +16,7 @@ Subject: [PATCH] feat(access): bind private Mojo requests and redirect
  create mode 100644 services/network/aegis/access_private_url_loader_factory.h
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 44ef715..1173bc6 100644
+index 44ef71551edde513709235b7763bafbb9af8e946..1173bc68623a30f20a6f1cc54d4bea17dff320f3 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -426,3 +426,22 @@ test("access_cors_route_unittests") {
@@ -44,7 +44,7 @@ index 44ef715..1173bc6 100644
 +}
 diff --git a/components/aegis_access/access_private_factory_unittest.cc b/components/aegis_access/access_private_factory_unittest.cc
 new file mode 100644
-index 0000000..fe037aa
+index 0000000000000000000000000000000000000000..fe037aad0b88a401723efe84cc5a619d91c1a7f1
 --- /dev/null
 +++ b/components/aegis_access/access_private_factory_unittest.cc
 @@ -0,0 +1,307 @@
@@ -356,7 +356,7 @@ index 0000000..fe037aa
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index ac104a5..6683c2a 100644
+index ac104a577b09edbad12b3849ceb1c457d4a6814f..6683c2a0ead23e6dacca92b842330b6866209592 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
 @@ -13,6 +13,8 @@ component("network_service") {
@@ -370,7 +370,7 @@ index ac104a5..6683c2a 100644
      "conditional_cache_deletion_helper.cc",
 diff --git a/services/network/aegis/access_private_url_loader_factory.cc b/services/network/aegis/access_private_url_loader_factory.cc
 new file mode 100644
-index 0000000..34f482e
+index 0000000000000000000000000000000000000000..34f482e12145646d81da4b0416458bd44ba1c79c
 --- /dev/null
 +++ b/services/network/aegis/access_private_url_loader_factory.cc
 @@ -0,0 +1,210 @@
@@ -586,7 +586,7 @@ index 0000000..34f482e
 +}  // namespace network
 diff --git a/services/network/aegis/access_private_url_loader_factory.h b/services/network/aegis/access_private_url_loader_factory.h
 new file mode 100644
-index 0000000..0dada53
+index 0000000000000000000000000000000000000000..0dada53af47cb98fed6baa37bb55ff40dd1c8b80
 --- /dev/null
 +++ b/services/network/aegis/access_private_url_loader_factory.h
 @@ -0,0 +1,69 @@

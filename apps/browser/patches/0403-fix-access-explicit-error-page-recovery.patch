@@ -12,7 +12,7 @@ Subject: [PATCH] fix(access): keep explicit error-page recovery stable
  5 files changed, 80 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 079e117..6af852c 100644
+index 079e11764bbe2a97817f2d544d625f8c1944ee03..6af852c0f08f9b5582440b26bfc03202f2ac8b1b 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -38,13 +38,17 @@ source_set("access_navigation_retry_tab_helper") {
@@ -35,7 +35,7 @@ index 079e117..6af852c 100644
      "//content/test:test_support",
      "//net",
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
-index a7ac89f..ddcfba3 100644
+index a7ac89f886a95e18a4e4100aac6058755cef82ae..ddcfba3a3d55467fc428e1dd018333d0c257d2c8 100644
 --- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 @@ -4,6 +4,7 @@
@@ -63,7 +63,7 @@ index a7ac89f..ddcfba3 100644
            << " method=" << navigation->GetRequestMethod()
            << " error=" << navigation->GetNetErrorCode()
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
-index b55a781..c77869c 100644
+index b55a781808494b0d814330a1e2095a8f5cd6ba05..c77869c0cd439a756f8e1ec8758029019749f02c 100644
 --- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
 @@ -7,6 +7,7 @@
@@ -127,7 +127,7 @@ index b55a781..c77869c 100644
    Fail(GURL("https://failed.example/path"));
    auto ready = helper()->CaptureRouteReadyCallback();
 diff --git a/components/error_page/content/browser/net_error_auto_reloader.cc b/components/error_page/content/browser/net_error_auto_reloader.cc
-index 8f2bc61..7ef13c7 100644
+index 8f2bc61a1b5aa5bd3da1fe32b98ff0bc3dd9f377..7ef13c78ca0ff324fc5b0001142045ce50d15773 100644
 --- a/components/error_page/content/browser/net_error_auto_reloader.cc
 +++ b/components/error_page/content/browser/net_error_auto_reloader.cc
 @@ -282,6 +282,12 @@ void NetErrorAutoReloader::DisableConnectionChangeObservationForTesting() {
@@ -166,7 +166,7 @@ index 8f2bc61..7ef13c7 100644
    }
  
 diff --git a/components/error_page/content/browser/net_error_auto_reloader.h b/components/error_page/content/browser/net_error_auto_reloader.h
-index 9057190..6140363 100644
+index 90571901c5dc6710996d316e525e4e26b3511205..614036380de6516182dfb20e19a4075b0f072f25 100644
 --- a/components/error_page/content/browser/net_error_auto_reloader.h
 +++ b/components/error_page/content/browser/net_error_auto_reloader.h
 @@ -18,6 +18,7 @@

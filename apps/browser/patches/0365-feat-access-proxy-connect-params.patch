@@ -10,7 +10,7 @@ Subject: [PATCH] feat(access): carry route through proxy connect parameters
  3 files changed, 57 insertions(+), 7 deletions(-)
 
 diff --git a/components/aegis_access/access_proxy_tunnel_context_unittest.cc b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
-index 2126173..796890c 100644
+index 21261736e82400a7b2e8fe89d0ac881c09b81594..796890c5e100fda8906f611f5c4310f77d3dcb9a 100644
 --- a/components/aegis_access/access_proxy_tunnel_context_unittest.cc
 +++ b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
 @@ -7,6 +7,7 @@
@@ -65,7 +65,7 @@ index 2126173..796890c 100644
  }  // namespace
  }  // namespace aegis_access
 diff --git a/net/socket/connect_job_params_factory.cc b/net/socket/connect_job_params_factory.cc
-index 83ba68d..7a82ebb 100644
+index 83ba68d5f9e22af5339a1dff1c073c38846f5470..7a82ebb711263c95b58ff2052a4567031cfa7e08 100644
 --- a/net/socket/connect_job_params_factory.cc
 +++ b/net/socket/connect_job_params_factory.cc
 @@ -168,7 +168,8 @@ ConnectJobParams CreateProxyParams(
@@ -134,7 +134,7 @@ index 83ba68d..7a82ebb 100644
  
    if (UsingSsl(endpoint)) {
 diff --git a/net/socket/connect_job_params_factory.h b/net/socket/connect_job_params_factory.h
-index 37dce05..b4f6e2c 100644
+index 37dce058e062d134f3949a99f14042ea582090c7..b4f6e2ca55ac2f8b6ece8d99d89ac6a669bf4a43 100644
 --- a/net/socket/connect_job_params_factory.h
 +++ b/net/socket/connect_job_params_factory.h
 @@ -45,7 +45,8 @@ NET_EXPORT_PRIVATE ConnectJobParams ConstructConnectJobParams(

@@ -12,7 +12,7 @@ Subject: [PATCH] fix(access): canonicalize top-level sites for exact subdomain
  4 files changed, 76 insertions(+), 2 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 6af852c..01b61e2 100644
+index 6af852c0f08f9b5582440b26bfc03202f2ac8b1b..01b61e21b6e3c5fdb552cd57beb33088f5cbeaa7 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -265,6 +265,7 @@ source_set("access_site_intent") {
@@ -24,7 +24,7 @@ index 6af852c..01b61e2 100644
    ]
  }
 diff --git a/chrome/browser/aegis/access/access_site_intent.cc b/chrome/browser/aegis/access/access_site_intent.cc
-index 91e4c58..e07b41b 100644
+index 91e4c58cdf01e1e69326bce5f626aed3f8e4f85f..e07b41b3070c6dcc1ca32324e443b882b545e8f5 100644
 --- a/chrome/browser/aegis/access/access_site_intent.cc
 +++ b/chrome/browser/aegis/access/access_site_intent.cc
 @@ -7,6 +7,7 @@
@@ -52,7 +52,7 @@ index 91e4c58..e07b41b 100644
    SiteGroupMutationRequest request;
    request.operation_id = input.operation_id;
 diff --git a/chrome/browser/aegis/access/access_site_intent_unittest.cc b/chrome/browser/aegis/access/access_site_intent_unittest.cc
-index 35e99b6..08bc186 100644
+index 35e99b6aaca6762042042a744a12e8d158fff401..08bc186ea78bbacdec96b43b706991012b002606 100644
 --- a/chrome/browser/aegis/access/access_site_intent_unittest.cc
 +++ b/chrome/browser/aegis/access/access_site_intent_unittest.cc
 @@ -119,5 +119,45 @@ TEST(AccessSiteIntentTest, StoreDefaultsOffAndOmitsOffEntries) {
@@ -102,7 +102,7 @@ index 35e99b6..08bc186 100644
  }  // namespace
  }  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
-index d6e00b0..ff1fa59 100644
+index d6e00b0136e59c8b8e8986aace0f7214676adb08..ff1fa59938cedd3c8d3f2f6bffa1ea2c041330c1 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 @@ -233,5 +233,32 @@ TEST_F(AccessSiteProxyProductTest, HostFailuresRemainIndependent) {

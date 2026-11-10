@@ -12,7 +12,7 @@ Subject: [PATCH] fix(access): track native requests without a proxy selection
  4 files changed, 67 insertions(+), 7 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-index 5abe7ac..102ec58 100644
+index 5abe7ace5bb969d689c7673fa7830e3bc16b3dff..102ec5816d26c6d4c11843741f26626f02dac3fa 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -950,6 +950,7 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
@@ -24,7 +24,7 @@ index 5abe7ac..102ec58 100644
      if (barrier.status != aegis_access::RequestDispatchBarrierStatus::kOk ||
          barrier.decision != aegis_access::RequestDispatchDecision::kAllow ||
 diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
-index 80a2ed5..a19599e 100644
+index 80a2ed567e2957a7c2af0490b00549316e993275..a19599eab3159cbf920a39d8ce45e17cab90cf72 100644
 --- a/components/aegis_access/request_ownership_registry.cc
 +++ b/components/aegis_access/request_ownership_registry.cc
 @@ -7,12 +7,18 @@
@@ -62,7 +62,7 @@ index 80a2ed5..a19599e 100644
  }
  
 diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
-index 4af2630..726f3ba 100644
+index 4af26307bd911349198e91ba68a8130bd2c927a3..726f3ba6b12e3c4c302f7dcb3a1dd405aff1109a 100644
 --- a/components/aegis_access/request_ownership_registry.h
 +++ b/components/aegis_access/request_ownership_registry.h
 @@ -45,6 +45,11 @@ class RequestTerminationHandle {
@@ -88,7 +88,7 @@ index 4af2630..726f3ba 100644
    friend bool operator==(const RequestOwnershipRecord&,
                           const RequestOwnershipRecord&) = default;
 diff --git a/components/aegis_access/request_ownership_registry_unittest.cc b/components/aegis_access/request_ownership_registry_unittest.cc
-index a24811e..712779f 100644
+index a24811e1afddf4165f9b112d714269d090fd04c2..712779f92788c049cf177cca27ff94dca4094e64 100644
 --- a/components/aegis_access/request_ownership_registry_unittest.cc
 +++ b/components/aegis_access/request_ownership_registry_unittest.cc
 @@ -45,5 +45,50 @@ TEST(RequestDispatchBarrierRegressionTest, SharedRegressionContract) {

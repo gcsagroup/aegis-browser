@@ -14,7 +14,7 @@ Subject: [PATCH] feat(access): execute exact managed HTTP route without native
  create mode 100644 components/aegis_access/access_http_route_execution_unittest.cc
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 7dfc067..7678e9d 100644
+index 7dfc06740650d055b6811a25786a24853ebb443a..7678e9d21a4e8c5c05cd2102ac8ca2b350ebbce2 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -242,6 +242,19 @@ test("request_dispatch_gate_unittests") {
@@ -39,7 +39,7 @@ index 7dfc067..7678e9d 100644
    deps = [
 diff --git a/components/aegis_access/access_http_route_execution_unittest.cc b/components/aegis_access/access_http_route_execution_unittest.cc
 new file mode 100644
-index 0000000..bbb911d
+index 0000000000000000000000000000000000000000..bbb911db7c436f97bac0de13acdca20614fbeaa1
 --- /dev/null
 +++ b/components/aegis_access/access_http_route_execution_unittest.cc
 @@ -0,0 +1,183 @@
@@ -227,7 +227,7 @@ index 0000000..bbb911d
 +}  // namespace
 +}  // namespace aegis_access
 diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
-index e9970f1..c54489d 100644
+index e9970f1bf3d52b9fe8690cde36e521f81d364b61..c54489d9c4f95784aa0962c6b40d9dba23ed82de 100644
 --- a/net/http/http_network_transaction.cc
 +++ b/net/http/http_network_transaction.cc
 @@ -2615,6 +2615,11 @@ void HttpNetworkTransaction::RecordStreamRequestResult(int result) {
@@ -243,7 +243,7 @@ index e9970f1..c54489d 100644
      stream_->GetSSLInfo(&response_.ssl_info);
      if (response_.ssl_info.is_valid() &&
 diff --git a/net/http/http_stream_factory_job.cc b/net/http/http_stream_factory_job.cc
-index 0026ab3..d9d4108 100644
+index 0026ab3ed47da643b01370e36c83290132db6c76..d9d41089ab90bf370e228600bd7e9e6359eecafd 100644
 --- a/net/http/http_stream_factory_job.cc
 +++ b/net/http/http_stream_factory_job.cc
 @@ -143,10 +143,11 @@ HttpStreamFactory::Job::Job(
@@ -284,7 +284,7 @@ index 0026ab3..d9d4108 100644
    return OK;
  }
 diff --git a/net/http/http_stream_factory_job_controller.cc b/net/http/http_stream_factory_job_controller.cc
-index 1136164..94935d9 100644
+index 11361641d5ab12b4bf5b4065fca9535e72016257..94935d9c0af8166d73fa7e129e7a1e24c2691b89 100644
 --- a/net/http/http_stream_factory_job_controller.cc
 +++ b/net/http/http_stream_factory_job_controller.cc
 @@ -4,6 +4,8 @@

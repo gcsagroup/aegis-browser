@@ -13,7 +13,7 @@ Subject: [PATCH] feat(access): gate Network URLLoader sends and redirect hops
  create mode 100644 components/aegis_access/access_network_url_loader_unittest.cc
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index c0765f8..5218b06 100644
+index c0765f839518427cc01bc6e3e2b8f12031ff07f8..5218b06f7bb02c33b3c387d462865e65684ca8e1 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -389,3 +389,21 @@ test("access_network_route_registry_unittests") {
@@ -40,7 +40,7 @@ index c0765f8..5218b06 100644
 +}
 diff --git a/components/aegis_access/access_network_url_loader_unittest.cc b/components/aegis_access/access_network_url_loader_unittest.cc
 new file mode 100644
-index 0000000..0f86bd6
+index 0000000000000000000000000000000000000000..0f86bd685b130141677bc0328432c5029de80e11
 --- /dev/null
 +++ b/components/aegis_access/access_network_url_loader_unittest.cc
 @@ -0,0 +1,168 @@
@@ -213,7 +213,7 @@ index 0000000..0f86bd6
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index a029e50..b93ebab 100644
+index a029e50ac98ef9e0307dadc206ad169a7a081d41..b93ebab26ee243805009253b052fd6080d69cfd1 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
 @@ -399,7 +399,10 @@ component("network_service") {
@@ -229,7 +229,7 @@ index a029e50..b93ebab 100644
    if (is_ct_supported) {
      sources += [
 diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
-index 729337b..0568bfc 100644
+index 729337bbde095d2be4ec50b479306054b372076c..0568bfc920023608f4dec26c50bc49e877c3ee11 100644
 --- a/services/network/url_loader.cc
 +++ b/services/network/url_loader.cc
 @@ -3,6 +3,7 @@
@@ -329,7 +329,7 @@ index 729337b..0568bfc 100644
  
  void URLLoader::OnBeforeSendHeadersComplete(
 diff --git a/services/network/url_loader.h b/services/network/url_loader.h
-index bf23e05..a3a1e7e 100644
+index bf23e0501ab27d51e00c6f30b917088d86e7f6af..a3a1e7eb85c72b7086f503439fca7597953fda16 100644
 --- a/services/network/url_loader.h
 +++ b/services/network/url_loader.h
 @@ -5,6 +5,8 @@

@@ -17,7 +17,7 @@ Subject: [PATCH] feat(access): bind single-send request and redirect
  create mode 100644 services/network/aegis/access_request_route_state.h
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 904d484..c0765f8 100644
+index 904d48464c8c48228147b7c2cc80021485de7357..c0765f839518427cc01bc6e3e2b8f12031ff07f8 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -377,6 +377,7 @@ test("access_terminal_factory_unittests") {
@@ -30,7 +30,7 @@ index 904d484..c0765f8 100644
    include_dirs = [ "$target_gen_dir" ]
 diff --git a/components/aegis_access/access_request_route_state_unittest.cc b/components/aegis_access/access_request_route_state_unittest.cc
 new file mode 100644
-index 0000000..06bbc96
+index 0000000000000000000000000000000000000000..06bbc968b542380ab8c6fa8929e201e7d2f1ba98
 --- /dev/null
 +++ b/components/aegis_access/access_request_route_state_unittest.cc
 @@ -0,0 +1,105 @@
@@ -140,7 +140,7 @@ index 0000000..06bbc96
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/aegis/BUILD.gn b/services/network/aegis/BUILD.gn
-index d29b7af..f5287d3 100644
+index d29b7afcd0894258a53b5af7a06626981a3236e2..f5287d36c70671f0ad0ff747879092b84c1b4256 100644
 --- a/services/network/aegis/BUILD.gn
 +++ b/services/network/aegis/BUILD.gn
 @@ -3,6 +3,8 @@ source_set("access_route_registry") {
@@ -154,7 +154,7 @@ index d29b7af..f5287d3 100644
      "//base",
 diff --git a/services/network/aegis/access_request_route_state.cc b/services/network/aegis/access_request_route_state.cc
 new file mode 100644
-index 0000000..ef2cfae
+index 0000000000000000000000000000000000000000..ef2cfae01a4dbd26c8c5d35a9b65b9914c6eb58b
 --- /dev/null
 +++ b/services/network/aegis/access_request_route_state.cc
 @@ -0,0 +1,83 @@
@@ -243,7 +243,7 @@ index 0000000..ef2cfae
 +}  // namespace network
 diff --git a/services/network/aegis/access_request_route_state.h b/services/network/aegis/access_request_route_state.h
 new file mode 100644
-index 0000000..548a9f8
+index 0000000000000000000000000000000000000000..548a9f8539560e2160f277c17e217d1cb9af7d4a
 --- /dev/null
 +++ b/services/network/aegis/access_request_route_state.h
 @@ -0,0 +1,53 @@
@@ -301,7 +301,7 @@ index 0000000..548a9f8
 +}  // namespace network
 +#endif  // SERVICES_NETWORK_AEGIS_ACCESS_REQUEST_ROUTE_STATE_H_
 diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
-index 2cb4855..f1a7ebf 100644
+index 2cb485558b005cba562e87f66325a9cf3a840ea5..f1a7ebf6a1b2858ba92f84c1c3e9edc1110d627d 100644
 --- a/services/network/aegis/access_route_registry.h
 +++ b/services/network/aegis/access_route_registry.h
 @@ -6,6 +6,7 @@

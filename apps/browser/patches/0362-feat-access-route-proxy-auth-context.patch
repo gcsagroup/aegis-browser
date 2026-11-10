@@ -15,7 +15,7 @@ Subject: [PATCH] feat(access): isolate route proxy authentication state
  create mode 100644 net/http/access_proxy_route.h
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 3b6d17f..38e1270 100644
+index 3b6d17f03179264051a44f81738559c02693c4a0..38e127012d18cde98ca2c798032cbc7e73164dc8 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -242,6 +242,17 @@ test("request_dispatch_gate_unittests") {
@@ -38,7 +38,7 @@ index 3b6d17f..38e1270 100644
    deps = [
 diff --git a/components/aegis_access/access_proxy_route_context_unittest.cc b/components/aegis_access/access_proxy_route_context_unittest.cc
 new file mode 100644
-index 0000000..7e6fb39
+index 0000000000000000000000000000000000000000..7e6fb39847d3fe86b043e4fb8cacc350fa315797
 --- /dev/null
 +++ b/components/aegis_access/access_proxy_route_context_unittest.cc
 @@ -0,0 +1,148 @@
@@ -191,7 +191,7 @@ index 0000000..7e6fb39
 +}  // namespace
 +}  // namespace aegis_access
 diff --git a/net/BUILD.gn b/net/BUILD.gn
-index 88190e2..e94ce90 100644
+index 88190e217fc4df2c0599fe82326f31d8135d100a..e94ce900eba52700bb9ec4c0b567ff00da95fc69 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
 @@ -600,6 +600,8 @@ component("net") {
@@ -205,7 +205,7 @@ index 88190e2..e94ce90 100644
      "http/http_auth_challenge_tokenizer.cc",
 diff --git a/net/http/access_proxy_route.cc b/net/http/access_proxy_route.cc
 new file mode 100644
-index 0000000..a4802b1
+index 0000000000000000000000000000000000000000..a4802b159ea53e998658107834b761973cf8861e
 --- /dev/null
 +++ b/net/http/access_proxy_route.cc
 @@ -0,0 +1,48 @@
@@ -259,7 +259,7 @@ index 0000000..a4802b1
 +}  // namespace net
 diff --git a/net/http/access_proxy_route.h b/net/http/access_proxy_route.h
 new file mode 100644
-index 0000000..5d74338
+index 0000000000000000000000000000000000000000..5d74338241195feb3b00bfde138e546da6b1465d
 --- /dev/null
 +++ b/net/http/access_proxy_route.h
 @@ -0,0 +1,54 @@

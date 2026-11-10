@@ -11,7 +11,7 @@ Subject: [PATCH] feat(access): reserve durable publication generations for
  3 files changed, 112 insertions(+)
 
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
-index 89efd84..d5191d4 100644
+index 89efd848f0c0774e628a27f86a9659b0619c0700..d5191d4ae4ce9cecfb0eb0746e328fbf0a469310 100644
 --- a/chrome/browser/aegis/access/access_rule_store.cc
 +++ b/chrome/browser/aegis/access/access_rule_store.cc
 @@ -762,6 +762,48 @@ StoreResult<StoredPolicySnapshot> AccessRuleStore::ReadCommittedSnapshot(
@@ -64,7 +64,7 @@ index 89efd84..d5191d4 100644
  AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
                                                 bool check_recovery) {
 diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
-index fdef7b6..6f6deed 100644
+index fdef7b6afc15e339b0a04cbc532489a011a5a398..6f6deed05557bd88d47f798803d70c8279798a13 100644
 --- a/chrome/browser/aegis/access/access_rule_store.h
 +++ b/chrome/browser/aegis/access/access_rule_store.h
 @@ -249,6 +249,14 @@ class AccessRuleStore {
@@ -83,7 +83,7 @@ index fdef7b6..6f6deed 100644
        const SiteGroupMutationRequest& request);
    // Builds the full in-memory candidate represented by one exact PREPARED
 diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
-index 51f763a..a066e6d 100644
+index 51f763a101ca8cc78842297cc6be580a43a4de5e..a066e6dcbe99766d465ccf0a27adaed4ea60815a 100644
 --- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
 +++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
 @@ -406,6 +406,68 @@ TEST(AccessRuleStoreTest, EphemeralProfileNeverCreatesAccessDb) {

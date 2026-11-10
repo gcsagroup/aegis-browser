@@ -11,7 +11,7 @@ Subject: [PATCH] feat(access): publish freshly versioned restored policy and
  3 files changed, 92 insertions(+), 16 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_published_request_runtime.cc b/chrome/browser/aegis/access/access_published_request_runtime.cc
-index 9a47c18..38e561e 100644
+index 9a47c1831983419992df3616af979357c218812f..38e561edf9c14b233d5baae01669e809472c1bbd 100644
 --- a/chrome/browser/aegis/access/access_published_request_runtime.cc
 +++ b/chrome/browser/aegis/access/access_published_request_runtime.cc
 @@ -123,27 +123,31 @@ AccessPublishedRequestRuntime::PublishPolicySnapshot(
@@ -98,7 +98,7 @@ index 9a47c18..38e561e 100644
  
  }  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_published_request_runtime.h b/chrome/browser/aegis/access/access_published_request_runtime.h
-index 48be853..741cc8d 100644
+index 48be85326f7401666a4fc34c147e65636d6ec298..741cc8d029c89996fe91f680594ac4c4a8d17fad 100644
 --- a/chrome/browser/aegis/access/access_published_request_runtime.h
 +++ b/chrome/browser/aegis/access/access_published_request_runtime.h
 @@ -66,6 +66,17 @@ class AccessPublishedRequestRuntime : public base::SupportsUserData::Data {
@@ -131,7 +131,7 @@ index 48be853..741cc8d 100644
    std::map<std::string, aegis_access::PublishedAccessPolicySnapshot>
        policy_snapshots_;
 diff --git a/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc b/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
-index bcb20ed..64efba8 100644
+index bcb20edc379796a61fdc143d020c7fab313bd5e2..64efba866f86ac952b4f76ea7b87f01e8c6203e1 100644
 --- a/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
 +++ b/chrome/browser/aegis/access/access_published_request_runtime_unittest.cc
 @@ -43,6 +43,43 @@ class AccessPublishedRequestRuntimeTest : public testing::Test {

@@ -16,7 +16,7 @@ Subject: [PATCH] feat(access): bind one-shot retry to original failed
  create mode 100644 chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 5d6f519..34c7eb8 100644
+index 5d6f5195f78974a35227ef5b1468a4561a462d2b..34c7eb832c875ef48d473f5212f18ab6535bb090 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -3,6 +3,31 @@
@@ -61,7 +61,7 @@ index 5d6f519..34c7eb8 100644
      ":access_request_dispatch_state",
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 new file mode 100644
-index 0000000..ae766d3
+index 0000000000000000000000000000000000000000..ae766d3ee6182ec9d1ccdbd90c392f851bbc282c
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 @@ -0,0 +1,103 @@
@@ -170,7 +170,7 @@ index 0000000..ae766d3
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
 new file mode 100644
-index 0000000..ae406f4
+index 0000000000000000000000000000000000000000..ae406f444967074a1ae859db2e3701bcfc31193d
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
 @@ -0,0 +1,43 @@
@@ -219,7 +219,7 @@ index 0000000..ae406f4
 +#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NAVIGATION_RETRY_TAB_HELPER_H_
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
 new file mode 100644
-index 0000000..23334f3
+index 0000000000000000000000000000000000000000..23334f3932ba5bb0429b1edc85c8e6d9d363ed33
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
 @@ -0,0 +1,168 @@
@@ -392,7 +392,7 @@ index 0000000..23334f3
 +}  // namespace
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-index f58c357..3c21307 100644
+index f58c3577ea82b3d6f752234d73f8bf4924a1b45d..3c21307330d9333b8c4b9bf19197d61c4937fa83 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -15,6 +15,7 @@

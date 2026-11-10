@@ -19,7 +19,7 @@ Subject: [PATCH] feat(access): validate immutable Network route registry and
  create mode 100644 services/network/aegis/access_route_registry.h
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 47c0d18..904d484 100644
+index 47c0d18cd757b959d55bf4fab7b6407da4cbdc84..904d48464c8c48228147b7c2cc80021485de7357 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -373,3 +373,18 @@ test("access_terminal_factory_unittests") {
@@ -43,7 +43,7 @@ index 47c0d18..904d484 100644
 +}
 diff --git a/components/aegis_access/access_network_route_registry_unittest.cc b/components/aegis_access/access_network_route_registry_unittest.cc
 new file mode 100644
-index 0000000..d4d9a76
+index 0000000000000000000000000000000000000000..d4d9a76d1aeff3020fb36d2d829e180dba1eff87
 --- /dev/null
 +++ b/components/aegis_access/access_network_route_registry_unittest.cc
 @@ -0,0 +1,168 @@
@@ -216,7 +216,7 @@ index 0000000..d4d9a76
 +}  // namespace
 +}  // namespace network
 diff --git a/components/aegis_access/access_policy_evaluator.cc b/components/aegis_access/access_policy_evaluator.cc
-index 5bc5803..9195cd2 100644
+index 5bc5803fbbf09a049bdd126ef002a7d89739f62f..9195cd2dceaef67270534a42e1760a058dfcce26 100644
 --- a/components/aegis_access/access_policy_evaluator.cc
 +++ b/components/aegis_access/access_policy_evaluator.cc
 @@ -334,33 +334,39 @@ PolicyMatchResult Error(PolicyState state, PolicyMatchReason reason,
@@ -278,7 +278,7 @@ index 5bc5803..9195cd2 100644
  
    std::vector<Candidate> candidates =
 diff --git a/components/aegis_access/access_policy_evaluator.h b/components/aegis_access/access_policy_evaluator.h
-index 7e4197d..0cb7236 100644
+index 7e4197d8b6332f6e928aac96a918dea2e708eeb9..0cb7236d346acc5806a2123f82b29f004acb9cf6 100644
 --- a/components/aegis_access/access_policy_evaluator.h
 +++ b/components/aegis_access/access_policy_evaluator.h
 @@ -71,6 +71,11 @@ struct PolicyMatchResult {
@@ -295,7 +295,7 @@ index 7e4197d..0cb7236 100644
  // winning rule is ambiguous. Site rules are ignored when the browser-owned
 diff --git a/services/network/aegis/BUILD.gn b/services/network/aegis/BUILD.gn
 new file mode 100644
-index 0000000..d29b7af
+index 0000000000000000000000000000000000000000..d29b7afcd0894258a53b5af7a06626981a3236e2
 --- /dev/null
 +++ b/services/network/aegis/BUILD.gn
 @@ -0,0 +1,12 @@
@@ -313,7 +313,7 @@ index 0000000..d29b7af
 +}
 diff --git a/services/network/aegis/access_route_registry.cc b/services/network/aegis/access_route_registry.cc
 new file mode 100644
-index 0000000..d5c5328
+index 0000000000000000000000000000000000000000..d5c5328c8b42e156d8d0594f41947e98503139a7
 --- /dev/null
 +++ b/services/network/aegis/access_route_registry.cc
 @@ -0,0 +1,162 @@
@@ -481,7 +481,7 @@ index 0000000..d5c5328
 +}  // namespace network
 diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
 new file mode 100644
-index 0000000..2cb4855
+index 0000000000000000000000000000000000000000..2cb485558b005cba562e87f66325a9cf3a840ea5
 --- /dev/null
 +++ b/services/network/aegis/access_route_registry.h
 @@ -0,0 +1,65 @@

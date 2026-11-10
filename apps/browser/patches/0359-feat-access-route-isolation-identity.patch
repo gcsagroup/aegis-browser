@@ -16,7 +16,7 @@ Subject: [PATCH] feat(access): define complete request route isolation
  create mode 100644 net/base/access_route_isolation_key.h
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index a57ce39..9e759fb 100644
+index a57ce391e084591af5fddc8db51186231f09455f..9e759fb88702bc6cb978cf34f31197baf9130d36 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -247,6 +247,7 @@ test("aegis_access_unittests") {
@@ -29,7 +29,7 @@ index a57ce39..9e759fb 100644
      "access_socks5_inbound_parser_unittest.cc",
 diff --git a/components/aegis_access/access_route_isolation_key_contract_test.h b/components/aegis_access/access_route_isolation_key_contract_test.h
 new file mode 100644
-index 0000000..567864e
+index 0000000000000000000000000000000000000000..567864e54479ba7ba4686b00827b9f7ef506736d
 --- /dev/null
 +++ b/components/aegis_access/access_route_isolation_key_contract_test.h
 @@ -0,0 +1,78 @@
@@ -112,7 +112,7 @@ index 0000000..567864e
 +
 +#endif  // COMPONENTS_AEGIS_ACCESS_ACCESS_ROUTE_ISOLATION_KEY_CONTRACT_TEST_H_
 diff --git a/components/aegis_access/access_route_planner_native_test.cc b/components/aegis_access/access_route_planner_native_test.cc
-index 022baac..1524cc6 100644
+index 022baace04bb714e02962dc8704f50482e0095c3..1524cc6356ff318bffdc8024151403e45912f4ba 100644
 --- a/components/aegis_access/access_route_planner_native_test.cc
 +++ b/components/aegis_access/access_route_planner_native_test.cc
 @@ -3,6 +3,8 @@
@@ -133,7 +133,7 @@ index 022baac..1524cc6 100644
    aegis_access::test::RunSiteProxyRuleGroupContractTests(observer);
    aegis_access::test::RunSiteProxyTransportUnitTests(observer);
 diff --git a/components/aegis_access/access_route_planner_unittest.cc b/components/aegis_access/access_route_planner_unittest.cc
-index 0d01482..d331c1f 100644
+index 0d01482eb6595e59ba3bb0997906c3b33d57f9d0..d331c1f82078ed564b8db28b54774203ee798f16 100644
 --- a/components/aegis_access/access_route_planner_unittest.cc
 +++ b/components/aegis_access/access_route_planner_unittest.cc
 @@ -2,6 +2,8 @@
@@ -158,7 +158,7 @@ index 0d01482..d331c1f 100644
    GtestObserver observer;
    RunSiteProxyRuleGroupContractTests(observer);
 diff --git a/net/BUILD.gn b/net/BUILD.gn
-index 54a4095..88190e2 100644
+index 54a40951c09aa31ff0d1b74757b201024939fc86..88190e217fc4df2c0599fe82326f31d8135d100a 100644
 --- a/net/BUILD.gn
 +++ b/net/BUILD.gn
 @@ -138,6 +138,7 @@ source_set("net_features") {
@@ -171,7 +171,7 @@ index 54a4095..88190e2 100644
      "base/address_list.cc",
 diff --git a/net/base/access_route_isolation_key.h b/net/base/access_route_isolation_key.h
 new file mode 100644
-index 0000000..6b7ccb3
+index 0000000000000000000000000000000000000000..6b7ccb3f238caf7d545ac69b6543a37422e393d0
 --- /dev/null
 +++ b/net/base/access_route_isolation_key.h
 @@ -0,0 +1,42 @@

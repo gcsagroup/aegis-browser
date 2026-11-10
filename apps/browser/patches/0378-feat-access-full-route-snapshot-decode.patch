@@ -18,7 +18,7 @@ Subject: [PATCH] feat(access): decode full route snapshots and bind local
  create mode 100644 services/network/aegis/access_route_wire.h
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 1173bc6..a5d2027 100644
+index 1173bc68623a30f20a6f1cc54d4bea17dff320f3..a5d20272adc2b4091b4817ae7cae28c67e81a2c4 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -445,3 +445,19 @@ test("access_private_factory_unittests") {
@@ -43,7 +43,7 @@ index 1173bc6..a5d2027 100644
 +}
 diff --git a/components/aegis_access/access_route_wire_unittest.cc b/components/aegis_access/access_route_wire_unittest.cc
 new file mode 100644
-index 0000000..e708ec8
+index 0000000000000000000000000000000000000000..e708ec82c016aacfde8b12fb6341a7de95824bbb
 --- /dev/null
 +++ b/components/aegis_access/access_route_wire_unittest.cc
 @@ -0,0 +1,105 @@
@@ -153,7 +153,7 @@ index 0000000..e708ec8
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/aegis/BUILD.gn b/services/network/aegis/BUILD.gn
-index f5287d3..f6fc3dc 100644
+index f5287d36c70671f0ad0ff747879092b84c1b4256..f6fc3dcaa33b80da246d1177975057dd9fe040b7 100644
 --- a/services/network/aegis/BUILD.gn
 +++ b/services/network/aegis/BUILD.gn
 @@ -1,6 +1,8 @@
@@ -173,7 +173,7 @@ index f5287d3..f6fc3dc 100644
    ]
  }
 diff --git a/services/network/aegis/access_route_registry.cc b/services/network/aegis/access_route_registry.cc
-index d5c5328..9a1d806 100644
+index d5c5328c8b42e156d8d0594f41947e98503139a7..9a1d8060213b7371e02933e0ba47b87c5465a06f 100644
 --- a/services/network/aegis/access_route_registry.cc
 +++ b/services/network/aegis/access_route_registry.cc
 @@ -2,10 +2,25 @@
@@ -223,7 +223,7 @@ index d5c5328..9a1d806 100644
    last_policy_ = snapshot.policy;
    installed_sequence_ = sequence;
 diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
-index f1a7ebf..8a6008a 100644
+index f1a7ebf6a1b2858ba92f84c1c3e9edc1110d627d..8a6008a388fc2578ddbf0aa31c888e07d2334fc7 100644
 --- a/services/network/aegis/access_route_registry.h
 +++ b/services/network/aegis/access_route_registry.h
 @@ -9,6 +9,7 @@
@@ -245,7 +245,7 @@ index f1a7ebf..8a6008a 100644
    std::optional<Snapshot> snapshot_;
 diff --git a/services/network/aegis/access_route_wire.cc b/services/network/aegis/access_route_wire.cc
 new file mode 100644
-index 0000000..039be40
+index 0000000000000000000000000000000000000000..039be40b0d729ea18fa43ea80ff59edff3f8e65d
 --- /dev/null
 +++ b/services/network/aegis/access_route_wire.cc
 @@ -0,0 +1,119 @@
@@ -370,7 +370,7 @@ index 0000000..039be40
 +}  // namespace network
 diff --git a/services/network/aegis/access_route_wire.h b/services/network/aegis/access_route_wire.h
 new file mode 100644
-index 0000000..a137a29
+index 0000000000000000000000000000000000000000..a137a2951017a64ea87d81084b2c69f4c72cce3c
 --- /dev/null
 +++ b/services/network/aegis/access_route_wire.h
 @@ -0,0 +1,20 @@

@@ -12,7 +12,7 @@ Subject: [PATCH] feat(access): preserve route through connect job factory
  4 files changed, 67 insertions(+), 10 deletions(-)
 
 diff --git a/components/aegis_access/access_proxy_tunnel_context_unittest.cc b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
-index 796890c..6a9bd45 100644
+index 796890c5e100fda8906f611f5c4310f77d3dcb9a..6a9bd4504d0a1f83f72fab9313f5bc3c268129fe 100644
 --- a/components/aegis_access/access_proxy_tunnel_context_unittest.cc
 +++ b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
 @@ -120,5 +120,53 @@ TEST(AccessProxyTunnelContextTest, FactoryCannotDowngradeRouteToDirect) {
@@ -70,7 +70,7 @@ index 796890c..6a9bd45 100644
  }  // namespace
  }  // namespace aegis_access
 diff --git a/net/socket/client_socket_pool_base_unittest.cc b/net/socket/client_socket_pool_base_unittest.cc
-index 449212a..84f13df 100644
+index 449212aba5422c40119447379de36d0108978f6e..84f13dfb7f9d9ac018e3fe18c2a094ca683fed39 100644
 --- a/net/socket/client_socket_pool_base_unittest.cc
 +++ b/net/socket/client_socket_pool_base_unittest.cc
 @@ -571,7 +571,8 @@ class TestConnectJobFactory : public ConnectJobFactory {
@@ -84,7 +84,7 @@ index 449212a..84f13df 100644
      TestConnectJob::JobType job_type = job_type_;
      if (job_types_ && !job_types_->empty()) {
 diff --git a/net/socket/connect_job_factory.cc b/net/socket/connect_job_factory.cc
-index 5e7ee93..4660115 100644
+index 5e7ee93d5e0e62cd85a5c64d022b5e671ae3e17f..46601150132f1584b5dbc5ed5fec3d269f14187c 100644
 --- a/net/socket/connect_job_factory.cc
 +++ b/net/socket/connect_job_factory.cc
 @@ -77,14 +77,16 @@ std::unique_ptr<ConnectJob> ConnectJobFactory::CreateConnectJob(
@@ -144,7 +144,7 @@ index 5e7ee93..4660115 100644
    if (connect_job_params.is_ssl()) {
      return ssl_connect_job_factory_->Create(
 diff --git a/net/socket/connect_job_factory.h b/net/socket/connect_job_factory.h
-index cf1b382..5916b83 100644
+index cf1b3829d3cdeee5cb498921e6d960d2b1b2d452..5916b837b3ace32a4464eafe16dd2497678018d7 100644
 --- a/net/socket/connect_job_factory.h
 +++ b/net/socket/connect_job_factory.h
 @@ -100,7 +100,8 @@ class NET_EXPORT_PRIVATE ConnectJobFactory {

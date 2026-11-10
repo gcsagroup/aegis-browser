@@ -14,7 +14,7 @@ Subject: [PATCH] feat(access): retain exact Context capability and native
  6 files changed, 98 insertions(+), 10 deletions(-)
 
 diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc
-index 23a46f6bfb..56304f53d0 100644
+index 23a46f6bfbfb80d2f31f9065abcd0735ac47ac6d..56304f53d0c350a973474f19f679c73c6f6cb685 100644
 --- a/components/aegis_access/access_network_context_ipc_unittest.cc
 +++ b/components/aegis_access/access_network_context_ipc_unittest.cc
 @@ -29,7 +29,7 @@ mojom::AegisAccessSnapshotPtr WireSnapshot() {
@@ -142,7 +142,7 @@ index 23a46f6bfb..56304f53d0 100644
    mojo::test::BadMessageObserver observer;
    Start(true);
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index 4796dd4a74..c3d3cc1336 100644
+index 4796dd4a748ab39734a8db7568e73912cb80a06c..c3d3cc13367f9b9c5ef4c643bd52266b8c37d697 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -993,6 +993,7 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
@@ -193,7 +193,7 @@ index 4796dd4a74..c3d3cc1336 100644
      ack->registrations.push_back(mojom::AegisAccessRegistrationAck::New(
          endpoint->proxy_group_id, endpoint->registration_id,
 diff --git a/services/network/network_context.h b/services/network/network_context.h
-index 25bcc4bdd3..a0cb66ade3 100644
+index 25bcc4bdd33df80201cfc23619f19ef8a49a7528..a0cb66ade3397b81bee25a68744c5d2627322154 100644
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
 @@ -21,6 +21,7 @@
@@ -243,7 +243,7 @@ index 25bcc4bdd3..a0cb66ade3 100644
  
    // Keep track of the existing `ConnectionChangeNotifiers`. These will be later
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 711d7f5038..605177b8fe 100644
+index 711d7f50384fa5e7ba1eb6fcce9f366835bb8530..605177b8fe7a33bc5aab587fbe545e43252e9d36 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -1971,4 +1971,19 @@ interface NetworkContext {
@@ -267,7 +267,7 @@ index 711d7f5038..605177b8fe 100644
 +      => (bool created);
  };
 diff --git a/services/network/test/test_network_context.cc b/services/network/test/test_network_context.cc
-index 92d7d59007..60fa0fa83b 100644
+index 92d7d59007c27baff7985404c0c592561fd8f0ac..60fa0fa83bccf70e49874d28d8c5388eff105b55 100644
 --- a/services/network/test/test_network_context.cc
 +++ b/services/network/test/test_network_context.cc
 @@ -2,6 +2,12 @@
@@ -284,7 +284,7 @@ index 92d7d59007..60fa0fa83b 100644
        InstallAegisAccessSnapshotCallback callback) {
      auto ack = mojom::AegisAccessSnapshotAck::New();
 diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
-index e87cc1b88b..d72ea957e7 100644
+index e87cc1b88b2617816e24b503d46940b02c69bcbb..d72ea957e77a6fb7097cff973917ace8688dc5de 100644
 --- a/services/network/test/test_network_context.h
 +++ b/services/network/test/test_network_context.h
 @@ -332,6 +332,9 @@ class TestNetworkContext : public mojom::NetworkContext {

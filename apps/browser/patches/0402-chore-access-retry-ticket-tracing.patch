@@ -9,7 +9,7 @@ Subject: [PATCH] chore(access): distinguish retry ticket and pending entry
  1 file changed, 3 insertions(+)
 
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
-index 0315d72..a7ac89f 100644
+index 0315d727ad80777e09fb4cc86e777c457de07347..a7ac89f886a95e18a4e4100aac6058755cef82ae 100644
 --- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 @@ -64,6 +64,8 @@ bool AccessNavigationRetryTabHelper::RequestProxyRetry(

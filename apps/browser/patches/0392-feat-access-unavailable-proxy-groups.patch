@@ -17,7 +17,7 @@ Subject: [PATCH] feat(access): preserve proxy intent for unavailable groups
  10 files changed, 205 insertions(+), 4 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_private_context_client.cc b/chrome/browser/aegis/access/access_private_context_client.cc
-index 571d9de..4654ca1 100644
+index 571d9deba13b70abeeadb0385f043b639b0c8591..4654ca1a1b899299059e7966e88acf018a8f3c38 100644
 --- a/chrome/browser/aegis/access/access_private_context_client.cc
 +++ b/chrome/browser/aegis/access/access_private_context_client.cc
 @@ -73,7 +73,8 @@ bool Matches(const mojom::AegisAccessSnapshot& expected,
@@ -69,7 +69,7 @@ index 571d9de..4654ca1 100644
  }
  
 diff --git a/chrome/browser/aegis/access/access_private_context_client.h b/chrome/browser/aegis/access/access_private_context_client.h
-index c52362a..c34dbe5 100644
+index c52362a6eaffd64e8015e1ca719a30adac755793..c34dbe50b008a1267baa56dc06c062448f6bac10 100644
 --- a/chrome/browser/aegis/access/access_private_context_client.h
 +++ b/chrome/browser/aegis/access/access_private_context_client.h
 @@ -2,6 +2,7 @@
@@ -94,7 +94,7 @@ index c52362a..c34dbe5 100644
    void CreateFactory(network::mojom::URLLoaderFactoryParamsPtr params,
        network::mojom::AegisAccessFactoryBindingPtr binding,
 diff --git a/components/aegis_access/access_network_route_registry_unittest.cc b/components/aegis_access/access_network_route_registry_unittest.cc
-index 4328178..0228d7c 100644
+index 4328178d4513b24bd012c54f8561579ca38fd158..0228d7c89007390f113b684ea20ba89675352db7 100644
 --- a/components/aegis_access/access_network_route_registry_unittest.cc
 +++ b/components/aegis_access/access_network_route_registry_unittest.cc
 @@ -37,6 +37,57 @@ AccessRouteRegistry::Expectation Expected(std::string group = "x",
@@ -156,7 +156,7 @@ index 4328178..0228d7c 100644
    AccessRouteRegistry registry(Owner(), "incarnation");
    AccessRouteRegistry::Expectation native{"incarnation", Common(), {}};
 diff --git a/components/aegis_access/access_private_context_client_unittest.cc b/components/aegis_access/access_private_context_client_unittest.cc
-index d2ac865..53df8ae 100644
+index d2ac865716544636a7354555696625cdf8b38e98..53df8aedf8e4b8748a63ad3c1c3347db19ba3012 100644
 --- a/components/aegis_access/access_private_context_client_unittest.cc
 +++ b/components/aegis_access/access_private_context_client_unittest.cc
 @@ -80,6 +80,9 @@ class AckContext final : public TestNetworkContext,
@@ -242,7 +242,7 @@ index d2ac865..53df8ae 100644
    mojo::test::BadMessageObserver observer;
    Start(true);
 diff --git a/components/aegis_access/access_route_wire_unittest.cc b/components/aegis_access/access_route_wire_unittest.cc
-index e708ec8..e944aaa 100644
+index e708ec82c016aacfde8b12fb6341a7de95824bbb..e944aaaf0728bdc00940aea79d6cdf62f8c426a0 100644
 --- a/components/aegis_access/access_route_wire_unittest.cc
 +++ b/components/aegis_access/access_route_wire_unittest.cc
 @@ -101,5 +101,41 @@ TEST(AccessRouteWireTest, EmptyPolicyRequiresExplicitValidSnapshot) {
@@ -288,7 +288,7 @@ index e708ec8..e944aaa 100644
  }  // namespace
  }  // namespace network
 diff --git a/services/network/aegis/access_route_registry.cc b/services/network/aegis/access_route_registry.cc
-index 9a1d806..371fe8c 100644
+index 9a1d8060213b7371e02933e0ba47b87c5465a06f..371fe8ce03a14441efa628ef513d20e61a8e54c4 100644
 --- a/services/network/aegis/access_route_registry.cc
 +++ b/services/network/aegis/access_route_registry.cc
 @@ -86,6 +86,14 @@ bool AccessRouteRegistry::Install(uint64_t sequence, Snapshot snapshot) {
@@ -334,7 +334,7 @@ index 9a1d806..371fe8c 100644
        if (found == snapshot_->routes.end()) {
          return {};
 diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
-index 8a6008a..2810dc6 100644
+index 8a6008a388fc2578ddbf0aa31c888e07d2334fc7..2810dc6dee270d356fd7c4a58752b4d3ae0553a0 100644
 --- a/services/network/aegis/access_route_registry.h
 +++ b/services/network/aegis/access_route_registry.h
 @@ -24,11 +24,14 @@ class AccessRouteRegistry {
@@ -354,7 +354,7 @@ index 8a6008a..2810dc6 100644
    };
    struct Result {
 diff --git a/services/network/aegis/access_route_wire.cc b/services/network/aegis/access_route_wire.cc
-index 039be40..420dc3f 100644
+index 039be40b0d729ea18fa43ea80ff59edff3f8e65d..420dc3fb904850ed05469672550cdd062e517d3a 100644
 --- a/services/network/aegis/access_route_wire.cc
 +++ b/services/network/aegis/access_route_wire.cc
 @@ -111,6 +111,12 @@ std::optional<DecodedAccessRouteSnapshot> DecodeAccessRouteSnapshot(
@@ -371,7 +371,7 @@ index 039be40..420dc3f 100644
    if (!validator.Install(wire.sequence, snapshot)) return std::nullopt;
    return DecodedAccessRouteSnapshot{std::move(owner), wire.incarnation,
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index c3d3cc1..9d7e611 100644
+index c3d3cc13367f9b9c5ef4c643bd52266b8c37d697..9d7e611a5e595770676e437d0b50659050f83402 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -1192,6 +1192,9 @@ void NetworkContext::InstallAegisAccessSnapshot(
@@ -385,7 +385,7 @@ index c3d3cc1..9d7e611 100644
  }
  void NetworkContext::BeginAegisAccessRestore(
 diff --git a/services/network/public/mojom/aegis_access_route_types.mojom b/services/network/public/mojom/aegis_access_route_types.mojom
-index 825e3fc..d9ffbb6 100644
+index 825e3fc47b7eb27877c7f6a0a8ad0c08d79b2f0f..d9ffbb65b46ea241d32b92842a89c11fd58bb45a 100644
 --- a/services/network/public/mojom/aegis_access_route_types.mojom
 +++ b/services/network/public/mojom/aegis_access_route_types.mojom
 @@ -62,6 +62,12 @@ struct AegisAccessHttpEndpoint {

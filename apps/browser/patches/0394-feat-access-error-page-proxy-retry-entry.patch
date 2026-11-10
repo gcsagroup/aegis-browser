@@ -24,7 +24,7 @@ Subject: [PATCH] feat(access): route failed-page retry through Browser-owned
  16 files changed, 349 insertions(+), 14 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index c84dad6..5e6d668 100644
+index c84dad6092a2700d6329f41a208777a94ced7c79..5e6d668e307ac0ab74f20411283fa92abfe54544 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -163,6 +163,7 @@ source_set("access_proxying_url_loader_factory") {
@@ -46,7 +46,7 @@ index c84dad6..5e6d668 100644
      ":access_rule_store",
      ":access_service_coordinator",
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
-index ae766d3..d7663a4 100644
+index ae766d3ee6182ec9d1ccdbd90c392f851bbc282c..d7663a45e569594335213cbbf9dd3517ce1846f8 100644
 --- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
 @@ -56,9 +56,40 @@ base::OnceClosure AccessNavigationRetryTabHelper::CaptureRouteReadyCallback() {
@@ -99,7 +99,7 @@ index ae766d3..d7663a4 100644
    state_.BeginNavigation(0);
  }
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
-index ae406f4..7b5555a 100644
+index ae406f444967074a1ae859db2e3701bcfc31193d..7b5555af62af6e6e4b14381081381fe0a58a3eb4 100644
 --- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
 @@ -23,6 +23,12 @@ class AccessNavigationRetryTabHelper
@@ -129,7 +129,7 @@ index ae406f4..7b5555a 100644
    base::WeakPtrFactory<AccessNavigationRetryTabHelper> weak_factory_{this};
  };
 diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
-index 23334f3..b55a781 100644
+index 23334f3932ba5bb0429b1edc85c8e6d9d363ed33..b55a781808494b0d814330a1e2095a8f5cd6ba05 100644
 --- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
 +++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
 @@ -4,6 +4,10 @@
@@ -206,7 +206,7 @@ index 23334f3..b55a781 100644
  }  // namespace
  }  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-index 3c21307..7287a52 100644
+index 3c21307330d9333b8c4b9bf19197d61c4937fa83..7287a52abb20ee20c1e0305e5a478b7f3a511838 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -16,6 +16,7 @@
@@ -230,7 +230,7 @@ index 3c21307..7287a52 100644
  
    std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-index cfa3838..aec962f 100644
+index cfa3838b117e842859d557c6796074c98ef6a578..aec962fc82e81c07a7a786d87450d89754097387 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 @@ -3,6 +3,9 @@
@@ -423,7 +423,7 @@ index cfa3838..aec962f 100644
    }
  
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
-index 8919d49..ea9a847 100644
+index 8919d49d32d87d3d76c554f371a8896de234cd57..ea9a847953a4054ffdee8246db176f4b7c3caad4 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 @@ -10,6 +10,7 @@
@@ -467,7 +467,7 @@ index 8919d49..ea9a847 100644
  };
  
 diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
-index 30290ba..a8489bd 100644
+index 30290bab2c41815b3cb5a0a34f06c4f1d48230d2..a8489bdf3d63ec8935727ec2875f708656afeb65 100644
 --- a/chrome/browser/net/BUILD.gn
 +++ b/chrome/browser/net/BUILD.gn
 @@ -176,6 +176,7 @@ source_set("impl") {
@@ -479,7 +479,7 @@ index 30290ba..a8489bd 100644
      "//chrome/browser/component_updater",
      "//chrome/browser/content_settings:content_settings_factory",
 diff --git a/chrome/browser/net/net_error_tab_helper.cc b/chrome/browser/net/net_error_tab_helper.cc
-index 8568010..d8ec6a9 100644
+index 8568010340cff531fa44899cbcd2d82d36f87a4f..d8ec6a90fd4ab32f138d4d3cb7efad1222113db7 100644
 --- a/chrome/browser/net/net_error_tab_helper.cc
 +++ b/chrome/browser/net/net_error_tab_helper.cc
 @@ -4,6 +4,10 @@
@@ -518,7 +518,7 @@ index 8568010..d8ec6a9 100644
  void NetErrorTabHelper::DownloadPageLater() {
    // Makes sure that this is coming from an error page.
 diff --git a/chrome/browser/net/net_error_tab_helper.h b/chrome/browser/net/net_error_tab_helper.h
-index a2e9482..867f233 100644
+index a2e9482fdc49ef55143693be9a107efb0aeddfb6..867f233d29bd0b46989dfa662d23a392d17ef15f 100644
 --- a/chrome/browser/net/net_error_tab_helper.h
 +++ b/chrome/browser/net/net_error_tab_helper.h
 @@ -88,6 +88,7 @@ class NetErrorTabHelper
@@ -530,7 +530,7 @@ index a2e9482..867f233 100644
    void DownloadPageLater() override;
    void SetIsShowingDownloadButtonInErrorPage(
 diff --git a/chrome/common/net/net_error_page_support.mojom b/chrome/common/net/net_error_page_support.mojom
-index 1065414..539b845 100644
+index 10654147aa0e308e81e3ebc3470d8da28b16f241..539b8451d0d2a115482e658fa2baef50dfd75e3c 100644
 --- a/chrome/common/net/net_error_page_support.mojom
 +++ b/chrome/common/net/net_error_page_support.mojom
 @@ -7,6 +7,8 @@ module chrome.mojom;
@@ -543,7 +543,7 @@ index 1065414..539b845 100644
    [EnableIf=enable_offline_pages]
    DownloadPageLater();
 diff --git a/chrome/renderer/net/net_error_helper.cc b/chrome/renderer/net/net_error_helper.cc
-index 247c4b3..e8b0f22 100644
+index 247c4b3090286c572a38ca87ed0bed2909e8be42..e8b0f228cea36ab757ab65ba7c6e68d90bdf6f0b 100644
 --- a/chrome/renderer/net/net_error_helper.cc
 +++ b/chrome/renderer/net/net_error_helper.cc
 @@ -74,6 +74,34 @@ using error_page::LocalizedError;
@@ -614,7 +614,7 @@ index 247c4b3..e8b0f22 100644
  
    std::string js = "if (window.updateForDnsProbe) "
 diff --git a/chrome/renderer/net/net_error_helper.h b/chrome/renderer/net/net_error_helper.h
-index 49b9b32..582a008 100644
+index 49b9b32d7b908d0ae5058624be0c67056fdad92d..582a008e50a590a7316b8fe377750dd0a3c3f261 100644
 --- a/chrome/renderer/net/net_error_helper.h
 +++ b/chrome/renderer/net/net_error_helper.h
 @@ -52,6 +52,7 @@ class NetErrorHelper
@@ -635,7 +635,7 @@ index 49b9b32..582a008 100644
  };
  
 diff --git a/chrome/renderer/net/net_error_page_controller.cc b/chrome/renderer/net/net_error_page_controller.cc
-index 5a23779..ce4eb87 100644
+index 5a2377904dbee97d9bfcd9a3b2e82f875f140e16..ce4eb87fe0eb7661901319c35bdcdee180cbd30d 100644
 --- a/chrome/renderer/net/net_error_page_controller.cc
 +++ b/chrome/renderer/net/net_error_page_controller.cc
 @@ -51,6 +51,10 @@ bool NetErrorPageController::DownloadButtonClick() {
@@ -659,7 +659,7 @@ index 5a23779..ce4eb87 100644
                   &NetErrorPageController::DetailsButtonClick)
        .SetMethod("diagnoseErrorsButtonClick",
 diff --git a/chrome/renderer/net/net_error_page_controller.h b/chrome/renderer/net/net_error_page_controller.h
-index 95beca0..07fb4f1 100644
+index 95beca0b0723640f62474c1229c864404c9d907e..07fb4f19a22b01fdb987ef638cf602af0a5b0b12 100644
 --- a/chrome/renderer/net/net_error_page_controller.h
 +++ b/chrome/renderer/net/net_error_page_controller.h
 @@ -31,6 +31,7 @@ class NetErrorPageController : public gin::Wrappable<NetErrorPageController> {
@@ -679,7 +679,7 @@ index 95beca0..07fb4f1 100644
    // Execute a "Details" button click.
    bool DetailsButtonClick();
 diff --git a/components/neterror/resources/neterror.ts b/components/neterror/resources/neterror.ts
-index c638ccd..84280ed 100644
+index c638ccd028a6f78901ec398f6d759aea033eecc6..84280edee0f48cff782a6cea3ec560dab791c922 100644
 --- a/components/neterror/resources/neterror.ts
 +++ b/components/neterror/resources/neterror.ts
 @@ -21,6 +21,7 @@ declare global {

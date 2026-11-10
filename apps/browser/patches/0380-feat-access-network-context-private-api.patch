@@ -17,7 +17,7 @@ Subject: [PATCH] feat(access): expose Browser-only NetworkContext snapshot and
  create mode 100644 components/aegis_access/access_network_context_ipc_unittest.cc
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 0fed902..341b2e4 100644
+index 0fed902112bac1e96065e08b1c6e448fcffd75af..341b2e48052a538e79d894f7a26fe1573383dd41 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -480,3 +480,22 @@ test("access_network_context_state_unittests") {
@@ -45,7 +45,7 @@ index 0fed902..341b2e4 100644
 +}
 diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc
 new file mode 100644
-index 0000000..23a46f6
+index 0000000000000000000000000000000000000000..23a46f6bfbfb80d2f31f9065abcd0735ac47ac6d
 --- /dev/null
 +++ b/components/aegis_access/access_network_context_ipc_unittest.cc
 @@ -0,0 +1,452 @@
@@ -502,7 +502,7 @@ index 0000000..23a46f6
 +}  // namespace
 +}  // namespace network
 diff --git a/services/network/aegis/access_network_context_state.cc b/services/network/aegis/access_network_context_state.cc
-index b31ff56..5684552 100644
+index b31ff56c79eb44346fd6667bacc5f6c401e32699..5684552d948a74cce349692c58160fe28d4213fd 100644
 --- a/services/network/aegis/access_network_context_state.cc
 +++ b/services/network/aegis/access_network_context_state.cc
 @@ -30,6 +30,10 @@ AccessNetworkContextState::~AccessNetworkContextState() {
@@ -517,7 +517,7 @@ index b31ff56..5684552 100644
      const mojom::AegisAccessSnapshot& snapshot) {
    auto decoded = DecodeAccessRouteSnapshot(snapshot);
 diff --git a/services/network/aegis/access_network_context_state.h b/services/network/aegis/access_network_context_state.h
-index 19d2dc8..86bc4f2 100644
+index 19d2dc827d49df97405e423ed916a74da4a56a88..86bc4f2223bf885b2163767446d0d4dba53c8f19 100644
 --- a/services/network/aegis/access_network_context_state.h
 +++ b/services/network/aegis/access_network_context_state.h
 @@ -18,6 +18,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) AccessNetworkContextState {
@@ -529,7 +529,7 @@ index 19d2dc8..86bc4f2 100644
    bool EnterRestoring(const aegis_access::OwnershipKey& owner,
                        std::string_view incarnation);
 diff --git a/services/network/network_context.cc b/services/network/network_context.cc
-index e89a9ab..4796dd4 100644
+index e89a9ab84507da58a82044f33f93842fc766bc39..4796dd4a748ab39734a8db7568e73912cb80a06c 100644
 --- a/services/network/network_context.cc
 +++ b/services/network/network_context.cc
 @@ -2,6 +2,8 @@
@@ -613,7 +613,7 @@ index e89a9ab..4796dd4 100644
    // invalidate the iterator if the factory gets deleted.
    std::vector<PrefetchMatchingURLLoaderFactory*> factories;
 diff --git a/services/network/network_context.h b/services/network/network_context.h
-index 630cb9d..25bcc4b 100644
+index 630cb9dffcefc7c0730d2c4ff8502b23d1df9a34..25bcc4bdd33df80201cfc23619f19ef8a49a7528 100644
 --- a/services/network/network_context.h
 +++ b/services/network/network_context.h
 @@ -130,6 +130,7 @@ class SimpleUrlPatternMatcher;
@@ -653,7 +653,7 @@ index 630cb9d..25bcc4b 100644
    // passed on to the corresponding session pools so that we can notify the
    // observers about reconnect events.
 diff --git a/services/network/public/mojom/aegis_access_route_types.mojom b/services/network/public/mojom/aegis_access_route_types.mojom
-index 17c1cff..825e3fc 100644
+index 17c1cff75ae38753c4f7c86f9c92b8a267c95d6d..825e3fc47b7eb27877c7f6a0a8ad0c08d79b2f0f 100644
 --- a/services/network/public/mojom/aegis_access_route_types.mojom
 +++ b/services/network/public/mojom/aegis_access_route_types.mojom
 @@ -87,3 +87,18 @@ struct AegisAccessRoutedRequest {
@@ -676,7 +676,7 @@ index 17c1cff..825e3fc 100644
 +  array<AegisAccessRegistrationAck> registrations;
 +};
 diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
-index 6f055a3..711d7f5 100644
+index 6f055a39f12f2711c15eb07d361e61b529f6f6f7..711d7f50384fa5e7ba1eb6fcce9f366835bb8530 100644
 --- a/services/network/public/mojom/network_context.mojom
 +++ b/services/network/public/mojom/network_context.mojom
 @@ -4,6 +4,8 @@

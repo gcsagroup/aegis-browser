@@ -24,7 +24,7 @@ Subject: [PATCH] feat(access): connect Browser private request routing and
  create mode 100644 chrome/browser/aegis/access/access_private_publication_unittest.cc
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index a07d28c..0959573 100644
+index a07d28c727988341962ae7fb4c5b95a07284b74a..09595735704b55b02abc0e1c9d3f8308e72ca53e 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -20,7 +20,10 @@ test("access_local_core_manager_unittests") {
@@ -85,7 +85,7 @@ index a07d28c..0959573 100644
      "//testing/gtest",
      "//url",
 diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
-index 37c9b34..31fa8fc 100644
+index 37c9b3415df1c7851649569867b02830ae613e49..31fa8fc5e19c65fb891f1fdf23d7a590dc40d83f 100644
 --- a/chrome/browser/aegis/access/access_local_core_manager.cc
 +++ b/chrome/browser/aegis/access/access_local_core_manager.cc
 @@ -89,6 +89,9 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
@@ -107,7 +107,7 @@ index 37c9b34..31fa8fc 100644
      retry_.Stop();
      request_.reset();
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
-index 1dde5c5..af523b1 100644
+index 1dde5c5d6f429bc90d2c03cc7165f923ae5cee72..af523b1b641ac60b7f639943876bcba2db4c0fbe 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.cc
 +++ b/chrome/browser/aegis/access/access_network_context_transport.cc
 @@ -5,12 +5,14 @@
@@ -276,7 +276,7 @@ index 1dde5c5..af523b1 100644
  
  std::optional<aegis_access::RegisteredProxyEndpoint>
 diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
-index b623c0e..4ee20af 100644
+index b623c0e963adf83829d625f987548d447320291e..4ee20afffcd2b42413cd5421cf9e639c63b81221 100644
 --- a/chrome/browser/aegis/access/access_network_context_transport.h
 +++ b/chrome/browser/aegis/access/access_network_context_transport.h
 @@ -107,6 +107,14 @@ class AccessNetworkContextTransport
@@ -335,7 +335,7 @@ index b623c0e..4ee20af 100644
    std::string runtime_profile_token_;
    uint64_t network_epoch_ = 1;
 diff --git a/chrome/browser/aegis/access/access_private_context_client.h b/chrome/browser/aegis/access/access_private_context_client.h
-index c34dbe5..b739d2f 100644
+index c34dbe50b008a1267baa56dc06c062448f6bac10..b739d2fb2dcf54fe3c24256d35a4de25e4df2eb4 100644
 --- a/chrome/browser/aegis/access/access_private_context_client.h
 +++ b/chrome/browser/aegis/access/access_private_context_client.h
 @@ -53,6 +53,7 @@ class AccessPrivateContextClient {
@@ -348,7 +348,7 @@ index c34dbe5..b739d2f 100644
  
 diff --git a/chrome/browser/aegis/access/access_private_publication_unittest.cc b/chrome/browser/aegis/access/access_private_publication_unittest.cc
 new file mode 100644
-index 0000000..56ae965
+index 0000000000000000000000000000000000000000..56ae9657a16b94a3d3994cdbc54f7d2e5df97e81
 --- /dev/null
 +++ b/chrome/browser/aegis/access/access_private_publication_unittest.cc
 @@ -0,0 +1,200 @@
@@ -553,7 +553,7 @@ index 0000000..56ae965
 +}  // namespace
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-index 5d630e0..5abe7ac 100644
+index 5d630e0bec8b0d9c085becf023b4b9397cfa1a10..5abe7ace5bb969d689c7673fa7830e3bc16b3dff 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -9,6 +9,7 @@
@@ -1145,7 +1145,7 @@ index 5d630e0..5abe7ac 100644
    MaybeDestroySelf();
  }
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
-index 1541803..a094cf5 100644
+index 1541803dcdf26e26ab4fd8d1cf974a3e169a437c..a094cf5e4f6c283924dc3004e82a5e4a1b1597a2 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 @@ -33,6 +33,7 @@ class StoragePartition;
@@ -1199,7 +1199,7 @@ index 1541803..a094cf5 100644
  };
  
 diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
-index dfe17f8..765db57 100644
+index dfe17f85fc7c4f2cdf6cc64a20728fd56c4ffe87..765db57e071437e317aa1d3e146a1e0df7251acd 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
 @@ -16,6 +16,7 @@
@@ -1287,7 +1287,7 @@ index dfe17f8..765db57 100644
    if (complete_registry && ownership_registered_) {
      dispatch_state_->ownership().Complete(
 diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
-index 1915296..6895d40 100644
+index 1915296d37adc794e883160ba7b82191648828c0..6895d40d170921958e6785860f82f414cd56931b 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
 +++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
 @@ -14,6 +14,7 @@
@@ -1315,7 +1315,7 @@ index 1915296..6895d40 100644
    mojo::Remote<network::mojom::URLLoaderClient> target_client_;
    base::OneShotTimer client_completion_watchdog_;
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.cc b/chrome/browser/aegis/access/access_request_dispatch_state.cc
-index e034a4b..d787116 100644
+index e034a4bc029f36422d93ca506dcc11ec76af13ab..d787116c1cae44543fb5387d1bdcc467d4d43f98 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state.cc
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.cc
 @@ -208,4 +208,24 @@ void AccessRequestDispatchState::OnNetworkContextPublicationAck(
@@ -1344,7 +1344,7 @@ index e034a4b..d787116 100644
 +
  }  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrome/browser/aegis/access/access_request_dispatch_state.h
-index 374dc11..92d61fe 100644
+index 374dc11136a22e068e44d11d7b0a4c8a88b11d09..92d61fee37900aab0fd269cfbe571d0c6c0ade51 100644
 --- a/chrome/browser/aegis/access/access_request_dispatch_state.h
 +++ b/chrome/browser/aegis/access/access_request_dispatch_state.h
 @@ -85,6 +85,11 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
@@ -1360,7 +1360,7 @@ index 374dc11..92d61fe 100644
   private:
    explicit AccessRequestDispatchState(Profile* profile);
 diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
-index ce6b776..19a0ca4 100644
+index ce6b7760cb9a834aa523b24cdd28822005b8675b..19a0ca409c06383b21f7363e92430e94ff684e7e 100644
 --- a/chrome/browser/aegis/access/access_service_coordinator.cc
 +++ b/chrome/browser/aegis/access/access_service_coordinator.cc
 @@ -115,6 +115,7 @@ struct AccessServiceCoordinator::MutationTransaction {
@@ -1457,7 +1457,7 @@ index ce6b776..19a0ca4 100644
    }
    Finish(std::move(transaction->completion), failure);
 diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
-index d824c42..ec2e493 100644
+index d824c42ad7eabbd80127751585f5be3c8c1dbbf0..ec2e4930a6031d86d95e4b0d862c8f05dd54705b 100644
 --- a/chrome/browser/aegis/access/access_service_coordinator.h
 +++ b/chrome/browser/aegis/access/access_service_coordinator.h
 @@ -130,6 +130,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
@@ -1469,7 +1469,7 @@ index d824c42..ec2e493 100644
    base::WeakPtrFactory<AccessServiceCoordinator> weak_factory_{this};
  };
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-index 9967348..9e786a4 100644
+index 996734828931f207c0a233bf5e02e7937afcd014..9e786a4fe7d66eea815f861a0dc3781545ab3656 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 @@ -349,9 +349,15 @@ void AccessSiteProxyBubbleController::OnCommittedCoreVerified(

@@ -15,7 +15,7 @@ Subject: [PATCH] feat(access): retain route context through HTTP stream
  create mode 100644 components/aegis_access/access_route_request_context_unittest.cc
 
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index 38e1270..52601a8 100644
+index 38e127012d18cde98ca2c798032cbc7e73164dc8..52601a89ff1c264adf6fd5ac699e4e96ea54919b 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -242,6 +242,17 @@ test("request_dispatch_gate_unittests") {
@@ -38,7 +38,7 @@ index 38e1270..52601a8 100644
    deps = [
 diff --git a/components/aegis_access/access_route_request_context_unittest.cc b/components/aegis_access/access_route_request_context_unittest.cc
 new file mode 100644
-index 0000000..781eae1
+index 0000000000000000000000000000000000000000..781eae172fafbf9bf3f49b85518bf0bec1b25dac
 --- /dev/null
 +++ b/components/aegis_access/access_route_request_context_unittest.cc
 @@ -0,0 +1,87 @@
@@ -130,7 +130,7 @@ index 0000000..781eae1
 +}  // namespace
 +}  // namespace aegis_access
 diff --git a/net/http/http_request_info.cc b/net/http/http_request_info.cc
-index c958568..766e251 100644
+index c9585688fb991e06a7fceaf8173b875b167fdc5d..766e25141b40cf8321fec9184e7fcc8a21055962 100644
 --- a/net/http/http_request_info.cc
 +++ b/net/http/http_request_info.cc
 @@ -3,6 +3,8 @@
@@ -143,7 +143,7 @@ index c958568..766e251 100644
  #include "net/base/network_isolation_key.h"
  #include "net/dns/public/secure_dns_policy.h"
 diff --git a/net/http/http_request_info.h b/net/http/http_request_info.h
-index f611ce5..36fbf33 100644
+index f611ce56c45c4ae3991babfb0da41582c2005198..36fbf3395726ec2062241c7afa500e2d9d0bcb8b 100644
 --- a/net/http/http_request_info.h
 +++ b/net/http/http_request_info.h
 @@ -10,6 +10,7 @@
@@ -174,7 +174,7 @@ index f611ce5..36fbf33 100644
    GURL url;
  
 diff --git a/net/http/http_stream_factory.cc b/net/http/http_stream_factory.cc
-index 9d40718..6205b15 100644
+index 9d407183aa0db015ee873188622d54b9cd01c4b0..6205b15d4ff4fd119658ab3b8fcd1c3a0a068b22 100644
 --- a/net/http/http_stream_factory.cc
 +++ b/net/http/http_stream_factory.cc
 @@ -4,6 +4,8 @@
@@ -224,7 +224,7 @@ index 9d40718..6205b15 100644
        network_anonymization_key(http_request_info.network_anonymization_key),
        traffic_annotation(http_request_info.traffic_annotation),
 diff --git a/net/http/http_stream_factory.h b/net/http/http_stream_factory.h
-index 3f70b02..7ba9a37 100644
+index 3f70b0242367a5795bfe031364354e2e9ced6d2b..7ba9a3738af131050d12322690ac2167057c0a8d 100644
 --- a/net/http/http_stream_factory.h
 +++ b/net/http/http_stream_factory.h
 @@ -94,6 +94,7 @@ class NET_EXPORT HttpStreamFactory {

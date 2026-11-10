@@ -12,7 +12,7 @@ Subject: [PATCH] feat(access): bind URLRequest route and revalidate redirects
  4 files changed, 167 insertions(+)
 
 diff --git a/components/aegis_access/access_http_route_execution_unittest.cc b/components/aegis_access/access_http_route_execution_unittest.cc
-index bbb911d..fb765d4 100644
+index bbb911db7c436f97bac0de13acdca20614fbeaa1..fb765d4193016de40977adb76c243ab84d899375 100644
 --- a/components/aegis_access/access_http_route_execution_unittest.cc
 +++ b/components/aegis_access/access_http_route_execution_unittest.cc
 @@ -6,6 +6,7 @@
@@ -174,7 +174,7 @@ index bbb911d..fb765d4 100644
  }  // namespace
  }  // namespace aegis_access
 diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
-index 42f1b1a..f9a7077 100644
+index 42f1b1a31b1b10d52eb0c0fddb6065b895b2aae3..f9a70778f56c64372a47884c2ef6f8fd837d296d 100644
 --- a/net/url_request/url_request.cc
 +++ b/net/url_request/url_request.cc
 @@ -4,6 +4,8 @@
@@ -210,7 +210,7 @@ index 42f1b1a..f9a7077 100644
  
    // When notifying the URLRequest::Delegate, it can destroy the request,
 diff --git a/net/url_request/url_request.h b/net/url_request/url_request.h
-index 4967f03..adf655c 100644
+index 4967f032f2a9c90799993d8c12a23fe2d08b948a..adf655c2bdc94162f7df0fdd7c5df362e104049f 100644
 --- a/net/url_request/url_request.h
 +++ b/net/url_request/url_request.h
 @@ -73,6 +73,7 @@
@@ -251,7 +251,7 @@ index 4967f03..adf655c 100644
    // location. It is true from the time the headers complete until a
    // new request begins.
 diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
-index f93d02b..220d35d 100644
+index f93d02b8024ee7348ca8a975d813be0408e1def7..220d35d17a6b6758317aa6bbfca56540344f2274 100644
 --- a/net/url_request/url_request_http_job.cc
 +++ b/net/url_request/url_request_http_job.cc
 @@ -4,6 +4,8 @@

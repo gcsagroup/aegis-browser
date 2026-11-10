@@ -11,7 +11,7 @@ Subject: [PATCH] fix(access): define test NetworkContext callbacks out of line
  create mode 100644 services/network/test/test_network_context.cc
 
 diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
-index 9155fb68bc..0dfdaf55ce 100644
+index 9155fb68bc761136af1e12bac194bcead706e82e..0dfdaf55ce19e31bbdadeaef0861820930ad51bf 100644
 --- a/services/network/BUILD.gn
 +++ b/services/network/BUILD.gn
 @@ -705,6 +705,7 @@ source_set("test_support") {
@@ -24,7 +24,7 @@ index 9155fb68bc..0dfdaf55ce 100644
      "test/test_network_context_client.h",
 diff --git a/services/network/test/test_network_context.cc b/services/network/test/test_network_context.cc
 new file mode 100644
-index 0000000000..92d7d59007
+index 0000000000000000000000000000000000000000..92d7d59007c27baff7985404c0c592561fd8f0ac
 --- /dev/null
 +++ b/services/network/test/test_network_context.cc
 @@ -0,0 +1,25 @@
@@ -54,7 +54,7 @@ index 0000000000..92d7d59007
 +  }
 +}  // namespace network
 diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
-index c1876c4ef1..e87cc1b88b 100644
+index c1876c4ef10a6eaadae0348ca4d1fe216608892f..e87cc1b88b2617816e24b503d46940b02c69bcbb 100644
 --- a/services/network/test/test_network_context.h
 +++ b/services/network/test/test_network_context.h
 @@ -333,25 +333,13 @@ class TestNetworkContext : public mojom::NetworkContext {

@@ -9,7 +9,7 @@ Subject: [PATCH] fix(access): bind TestFuture to the generated string callback
  1 file changed, 4 insertions(+), 2 deletions(-)
 
 diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc
-index 56304f53d0..4542d7d93a 100644
+index 56304f53d0c350a973474f19f679c73c6f6cb685..4542d7d93acda14313cc243641f06cbf5ea69af6 100644
 --- a/components/aegis_access/access_network_context_ipc_unittest.cc
 +++ b/components/aegis_access/access_network_context_ipc_unittest.cc
 @@ -69,7 +69,8 @@ class AccessNetworkContextIPCTest : public testing::Test {

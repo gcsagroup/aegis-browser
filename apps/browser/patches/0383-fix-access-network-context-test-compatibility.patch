@@ -9,7 +9,7 @@ Subject: [PATCH] fix(access): keep NetworkContext test double concrete after
  1 file changed, 21 insertions(+)
 
 diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
-index 1deef42a6f..c1876c4ef1 100644
+index 1deef42a6f76b2bb65d5bd6baad54e452fd0b75a..c1876c4ef10a6eaadae0348ca4d1fe216608892f 100644
 --- a/services/network/test/test_network_context.h
 +++ b/services/network/test/test_network_context.h
 @@ -32,6 +32,7 @@

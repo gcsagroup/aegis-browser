@@ -16,7 +16,7 @@ Subject: [PATCH] feat(access): retain route identity across socket pool
  8 files changed, 195 insertions(+), 26 deletions(-)
 
 diff --git a/components/aegis_access/access_route_pool_isolation_unittest.cc b/components/aegis_access/access_route_pool_isolation_unittest.cc
-index dd3e977..5fa5c65 100644
+index dd3e977f9778686ae1226cfedd39f5372671a2dd..5fa5c65bb96eb7643b37ad901bd308c9c7784c07 100644
 --- a/components/aegis_access/access_route_pool_isolation_unittest.cc
 +++ b/components/aegis_access/access_route_pool_isolation_unittest.cc
 @@ -16,12 +16,16 @@
@@ -142,7 +142,7 @@ index dd3e977..5fa5c65 100644
  }  // namespace
  }  // namespace aegis_access
 diff --git a/net/http/http_stream_factory_job.cc b/net/http/http_stream_factory_job.cc
-index 73800fe..0026ab3 100644
+index 73800fe4d6b779b790d4f4488203df485e08841e..0026ab3ed47da643b01370e36c83290132db6c76 100644
 --- a/net/http/http_stream_factory_job.cc
 +++ b/net/http/http_stream_factory_job.cc
 @@ -824,7 +824,8 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
@@ -176,7 +176,7 @@ index 73800fe..0026ab3 100644
  
  int HttpStreamFactory::Job::DoInitConnectionImplQuic() {
 diff --git a/net/socket/client_socket_pool.cc b/net/socket/client_socket_pool.cc
-index 341c7ee..7e6cfda 100644
+index 341c7ee7e588df36d001b3f52dcaac191254552a..7e6cfdac1131051532f075d5417cf9072cbffbe8 100644
 --- a/net/socket/client_socket_pool.cc
 +++ b/net/socket/client_socket_pool.cc
 @@ -77,11 +77,21 @@ OnHostResolutionCallbackResult OnHostResolution(
@@ -232,7 +232,7 @@ index 341c7ee..7e6cfda 100644
  
  void ClientSocketPool::UpdateExpandabilityBeforeAllocation() {
 diff --git a/net/socket/client_socket_pool.h b/net/socket/client_socket_pool.h
-index ca67cf0..07152ea 100644
+index ca67cf0679176887577d9d33ccfb195a0ebcd7f8..07152ea5b2f5247665b9be6404be4bb68441bdc7 100644
 --- a/net/socket/client_socket_pool.h
 +++ b/net/socket/client_socket_pool.h
 @@ -25,6 +25,7 @@
@@ -286,7 +286,7 @@ index ca67cf0..07152ea 100644
  
    ClientSocketPool(const ClientSocketPool&) = delete;
 diff --git a/net/socket/client_socket_pool_manager.cc b/net/socket/client_socket_pool_manager.cc
-index 7c7946b..2c97a5f 100644
+index 7c7946b3b98a7fa6c47584c77a674ac756d19a1b..2c97a5f31349e3dc7c2645e8de6969e6af8c062b 100644
 --- a/net/socket/client_socket_pool_manager.cc
 +++ b/net/socket/client_socket_pool_manager.cc
 @@ -72,10 +72,12 @@ bool g_allow_size_randomization_for_proxy = true;
@@ -399,7 +399,7 @@ index 7c7946b..2c97a5f 100644
  
  }  // namespace net
 diff --git a/net/socket/client_socket_pool_manager.h b/net/socket/client_socket_pool_manager.h
-index 9ce5cf8..2f14b6b 100644
+index 9ce5cf88813fe0cbb75e06f3c000bc7f0c272d79..2f14b6b38d8e3e5f5253b81d99cca9c0ea8cdf16 100644
 --- a/net/socket/client_socket_pool_manager.h
 +++ b/net/socket/client_socket_pool_manager.h
 @@ -82,7 +82,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
@@ -454,7 +454,7 @@ index 9ce5cf8..2f14b6b 100644
  }  // namespace net
  
 diff --git a/net/socket/transport_client_socket_pool.cc b/net/socket/transport_client_socket_pool.cc
-index 13bcf4e..1384b1e 100644
+index 13bcf4eb5058d00879b091928f6ebd9f47948334..1384b1e07b7c71bf9bde4f013118877c67a73677 100644
 --- a/net/socket/transport_client_socket_pool.cc
 +++ b/net/socket/transport_client_socket_pool.cc
 @@ -250,6 +250,10 @@ int TransportClientSocketPool::RequestSocket(
@@ -480,7 +480,7 @@ index 13bcf4e..1384b1e 100644
    net_log.AddEvent(NetLogEventType::TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKETS,
                     [&] { return NetLogGroupIdParams(group_id); });
 diff --git a/net/socket/websocket_transport_client_socket_pool.cc b/net/socket/websocket_transport_client_socket_pool.cc
-index eadc144..c174b30 100644
+index eadc1444a01a58fc40a393a32768ef7960380b1b..c174b30124111359146faace3a6657a93f301d4d 100644
 --- a/net/socket/websocket_transport_client_socket_pool.cc
 +++ b/net/socket/websocket_transport_client_socket_pool.cc
 @@ -78,6 +78,10 @@ int WebSocketTransportClientSocketPool::RequestSocket(
