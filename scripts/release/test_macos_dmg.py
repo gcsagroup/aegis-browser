@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import ast
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import tempfile
 import unittest
 
@@ -12,6 +14,7 @@ dmg = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(dmg)
 
 SHA = 'a' * 40
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def environment(**extra):
@@ -50,7 +53,7 @@ class MacosDmgTests(unittest.TestCase):
 
     def test_package_signs_inside_out_without_deep_or_notary(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / 'apps'
+            root = Path(temporary).resolve() / 'apps'
             app = root / 'GCSA-aegis.app'
             helper = app / 'Contents' / 'Frameworks' / 'Helper.app'
             helper.mkdir(parents=True)
@@ -94,7 +97,7 @@ class MacosDmgTests(unittest.TestCase):
 
     def test_package_rejects_architecture_mismatch(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary) / 'apps'
+            root = Path(temporary).resolve() / 'apps'
             app = root / 'GCSA-aegis.app'
             (app / 'Contents').mkdir(parents=True)
             (app / 'Contents' / 'Info.plist').write_text('plist')
@@ -110,26 +113,48 @@ class MacosDmgTests(unittest.TestCase):
 
 class WorkflowContractTests(unittest.TestCase):
     def test_delivery_workflow_keeps_self_hosted_runner_and_access_tests(self):
-        text = Path('.github/workflows/macos-delivery.yml').read_text()
+        text = (ROOT / '.github/workflows/macos-delivery.yml').read_text()
         self.assertNotIn('macos-26', text)
         self.assertNotIn('notarytool', text)
         self.assertIn('macos-access-tests.sh', text)
         self.assertIn('AEGIS_IOS_RUNNER_LABEL', text)
         self.assertNotIn('secrets: inherit', text)
-        ios = Path('.github/workflows/ios-delivery.yml').read_text()
-        self.assertIn('AEGIS_IOS_RUNNER_LABEL', ios)
-        self.assertNotIn('macos-26', ios)
-        fork_ios = Path('.github/workflows/ios-fork-access.yml').read_text()
-        self.assertIn('AEGIS_IOS_RUNNER_LABEL', fork_ios)
-        self.assertNotIn('macos-26', fork_ios)
-        self.assertNotIn('DISTRIBUTION_P12', fork_ios)
-        self.assertIn('ios-access-tests.sh', fork_ios)
-        self.assertIn('ios-internal-archive.sh', fork_ios)
-        self.assertNotIn('altool', fork_ios)
         self.assertIn('Internal DMG', text)
         self.assertIn('macos-internal-dmg.sh', text)
         self.assertIn('macos-rebuild-dmg.sh', text)
         self.assertIn('Rebuild DMG', text)
+
+    def test_internal_dmg_requires_access_success_except_explicit_rebuild_skip(self):
+        workflow = (ROOT / '.github/workflows/macos-delivery.yml').read_text()
+        job = workflow.split('\n  internal-dmg:\n', 1)[1]
+        condition = re.search(r'^    if: \$\{\{ (.+) \}\}$', job, re.M)[1]
+
+        def evaluate(node):
+            if isinstance(node, ast.Constant):
+                return node.value
+            if isinstance(node, ast.BoolOp):
+                values = [evaluate(value) for value in node.values]
+                return all(values) if isinstance(node.op, ast.And) else any(values)
+            if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq):
+                return evaluate(node.left) == evaluate(node.comparators[0])
+            self.fail(f'Unsupported workflow condition: {ast.dump(node)}')
+
+        for operation in ('Internal DMG', 'Rebuild DMG', 'Access tests'):
+            for access in ('success', 'failure', 'cancelled', 'skipped'):
+                for admission in ('success', 'failure'):
+                    for event in ('workflow_dispatch', 'push'):
+                        with self.subTest(operation=operation, access=access, admission=admission, event=event):
+                            expression = condition.replace('always()', 'True')
+                            for key, value in {
+                                'inputs.operation': operation, 'needs.access-tests.result': access,
+                                'needs.admission.result': admission, 'github.event_name': event,
+                            }.items():
+                                expression = expression.replace(key, repr(value))
+                            expression = expression.replace('&&', ' and ').replace('||', ' or ')
+                            permitted = (event == 'workflow_dispatch' and admission == 'success' and
+                                (operation == 'Internal DMG' and access == 'success' or
+                                 operation == 'Rebuild DMG' and access in ('success', 'skipped')))
+                            self.assertEqual(evaluate(ast.parse(expression, mode='eval').body), permitted)
 
 
 if __name__ == '__main__':

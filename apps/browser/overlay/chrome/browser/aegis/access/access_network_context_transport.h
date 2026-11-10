@@ -180,6 +180,9 @@ class AccessNetworkContextTransport
     bool publishing = false;
   };
   struct PartitionState {
+    // A partition that uses trusted per-request routing must never reinstall
+    // destination-host-global proxying, including while its Context reconnects.
+    bool private_routing = false;
     std::map<std::string, AccessPrivateEndpoint> private_endpoints;
     std::map<std::string, uint64_t> private_unavailable_generations;
     std::map<std::string, PrivateContextEntry> private_contexts;

@@ -5,6 +5,7 @@
 #include "chrome/browser/aegis/access/access_build_channel.h"
 #include "chrome/browser/aegis/access/access_buildflags.h"
 #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+#include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
 
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
@@ -27,8 +28,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
 #include "net/base/net_errors.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
+#include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/test/test_network_context.h"
+#include "services/network/test/test_url_loader_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace aegis::access {
@@ -54,7 +58,76 @@ class AccessServiceCoordinatorTestPeer {
     coordinator->async_store_->SetFailurePointForTesting(point);
   }
 };
+class AccessNetworkContextTransportTestPeer {
+ public:
+  static void AdvanceNetwork(AccessNetworkContextTransport* transport) {
+    transport->OnNetworkChanged(net::NetworkChangeNotifier::CONNECTION_WIFI);
+  }
+};
 namespace {
+
+class CountingPrivateFactory final
+    : public network::mojom::AegisAccessURLLoaderFactory {
+ public:
+  mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> Bind() {
+    mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> remote;
+    Clone(remote.InitWithNewPipeAndPassReceiver());
+    return remote;
+  }
+  void Clone(mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderFactory>
+                 receiver) override {
+    receivers_.Add(this, std::move(receiver));
+  }
+  void CreateLoaderAndStartWithRoute(
+      mojo::PendingReceiver<network::mojom::URLLoader>,
+      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl>,
+      int32_t, uint32_t, network::mojom::AegisAccessRoutedRequestPtr request,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+      const net::MutableNetworkTrafficAnnotationTag&) override {
+    ++starts;
+    method = request->request.method;
+    mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
+        ->OnComplete(network::URLLoaderCompletionStatus(net::OK));
+  }
+  int starts = 0;
+  std::string method;
+
+ private:
+  mojo::ReceiverSet<network::mojom::AegisAccessURLLoaderFactory> receivers_;
+};
+
+// Real public/private Mojo pipes through the production Browser wrapper. The
+// controlled target counts attempted dispatch, without sending business bytes.
+struct HeldBrowserRequest {
+  HeldBrowserRequest(Profile* profile, content::FrameTreeNodeId frame,
+      const OwnershipKey& owner,
+      std::shared_ptr<AccessPrivateContextClient> context) {
+    wrapper = std::make_unique<AccessProxyingURLLoaderFactory>(
+        profile, frame, std::nullopt, std::nullopt, nullptr, owner, std::nullopt,
+        factory.BindNewPipeAndPassReceiver(),
+        mojo::PendingRemote<network::mojom::URLLoaderFactory>(), std::nullopt,
+        base::BindOnce([](HeldBrowserRequest* self,
+                          AccessProxyingURLLoaderFactory*) {
+          self->wrapper.reset();
+        }, base::Unretained(this)), target.Bind(), std::move(context));
+  }
+  void StartPost() {
+    network::ResourceRequest request;
+    request.url = GURL("https://resource.example/late-post?q=original");
+    request.method = "POST";
+    mojo::PendingRemote<network::mojom::URLLoaderClient> client_remote;
+    client_receiver.Bind(client_remote.InitWithNewPipeAndPassReceiver());
+    factory->CreateLoaderAndStart(loader.BindNewPipeAndPassReceiver(), 1, 0,
+        request, std::move(client_remote),
+        net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
+  }
+  CountingPrivateFactory target;
+  mojo::Remote<network::mojom::URLLoaderFactory> factory;
+  network::TestURLLoaderClient client;
+  mojo::Receiver<network::mojom::URLLoaderClient> client_receiver{&client};
+  mojo::Remote<network::mojom::URLLoader> loader;
+  std::unique_ptr<AccessProxyingURLLoaderFactory> wrapper;
+};
 
 // Real Mojo ACK with an explicit hold at the product PREPARED boundary. The
 // core is not mocked: these tests require the authorized local DEV inputs.
@@ -520,6 +593,20 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness 
     EXPECT_NE(bubble_->SnapshotForCommittedUrl(failed_).connection,
               AccessSiteConnectionState::kConnecting);
   }
+  std::unique_ptr<HeldBrowserRequest> StartPostWaitingForAck() {
+    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
+    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
+    auto client = bound.Take();
+    EXPECT_TRUE(client);
+    auto request = std::make_unique<HeldBrowserRequest>(
+        profile(), main_rfh()->GetFrameTreeNodeId(), owner_, std::move(client));
+    AccessNetworkContextTransportTestPeer::AdvanceNetwork(transport_);
+    context_.hold_next = true;
+    request->StartPost();
+    EXPECT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
+    EXPECT_EQ(request->target.starts, 0);
+    return request;
+  }
   base::ScopedTempDir directory_;
   ProductAckContext context_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
@@ -594,6 +681,47 @@ TEST_F(AccessRetryNavigationProductTest,
   EXPECT_FALSE(helper()->RequestProxyRetry(duplicate.GetCallback()));
   EXPECT_FALSE(duplicate.Get());
   EXPECT_FALSE(controller().GetPendingEntry());
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       CancelledLoaderBeforePrivateAckNeverSendsPost) {
+  auto request = StartPostWaitingForAck();
+  request->loader.reset();
+  // Release immediately: dispatch must also notice a closed peer before the
+  // queued disconnect notification runs.
+  context_.Reply(true);
+  task_environment()->RunUntilIdle();
+  EXPECT_EQ(request->target.starts, 0);
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       CancelledClientBeforePrivateAckNeverSendsPost) {
+  auto request = StartPostWaitingForAck();
+  request->client_receiver.reset();
+  context_.Reply(true);
+  task_environment()->RunUntilIdle();
+  EXPECT_EQ(request->target.starts, 0);
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       LivePostWaitsForPrivateAckThenSendsOnce) {
+  auto request = StartPostWaitingForAck();
+  context_.Reply(true);
+  task_environment()->RunUntilIdle();
+  EXPECT_EQ(request->target.starts, 1);
+  EXPECT_EQ(request->target.method, "POST");
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       CancelledPendingRequestReleasesFactoryBeforeAck) {
+  auto request = StartPostWaitingForAck();
+  request->factory.reset();
+  request->loader.reset();
+  task_environment()->RunUntilIdle();
+  EXPECT_FALSE(request->wrapper);
+  context_.Reply(true);
+  task_environment()->RunUntilIdle();
+  EXPECT_EQ(request->target.starts, 0);
 }
 
 }  // namespace

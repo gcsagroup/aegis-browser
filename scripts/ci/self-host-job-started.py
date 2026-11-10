@@ -27,7 +27,7 @@ IOS_JOBS = {
     "upload-new",
     "ios-draft",
 }
-TEST_JOBS = {"quality", "quality-summary", "c++-unit-tests"}
+TEST_JOBS = {"quality", "quality-summary", "cpp-unit-tests"}
 INTERNAL_WORKFLOW_FILES = {"ios-fork-access.yml", "macos-delivery.yml"}
 INTERNAL_JOBS = {"simulator", "internal", "access-tests", "package", "internal-dmg"}
 ALLOWED_BRANCH_REFS = {"refs/heads/main", "refs/heads/develop"}

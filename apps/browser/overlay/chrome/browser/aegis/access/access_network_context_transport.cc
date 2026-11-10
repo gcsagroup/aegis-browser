@@ -306,6 +306,13 @@ void AccessNetworkContextTransport::BindPrivateContext(
     std::move(completion).Run(nullptr);
     return;
   }
+  auto& state = partitions_.at(owner.storage_partition_token);
+  if (!state.private_routing) {
+    state.private_routing = true;
+    // Clear any earlier legacy selection before the private capability can
+    // become usable. Subsequent Context creation also starts with empty config.
+    Broadcast(state);
+  }
   auto client = std::make_shared<AccessPrivateContextClient>(owner);
   client->Initialize(context, base::BindOnce(
       [](base::WeakPtr<AccessNetworkContextTransport> self,
@@ -566,7 +573,7 @@ bool AccessNetworkContextTransport::ReplaceSelection(
     const AccessTransportSelection& expected,
     const AccessTransportSelection& replacement) {
   const bool private_context = OwnsConfiguredPartition(owner) &&
-      !partitions_.at(owner.storage_partition_token).private_contexts.empty();
+      partitions_.at(owner.storage_partition_token).private_routing;
   if (CurrentSelection(owner) != expected ||
       (replacement.endpoint && replacement.endpoint->owner != owner) ||
       (!replacement.exact_hosts.empty() &&
@@ -760,7 +767,8 @@ bool AccessNetworkContextTransport::IsEndpointCurrentForPartition(
 network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(
     const PartitionState& state) const {
   auto config = network::mojom::CustomProxyConfig::New();
-  if (!state.endpoint.has_value() || state.exact_hosts.empty()) {
+  if (state.private_routing || !state.endpoint.has_value() ||
+      state.exact_hosts.empty()) {
     return config;
   }
 

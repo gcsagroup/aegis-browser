@@ -139,26 +139,17 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
     kDispatchControlled,
     kBlock,
   };
+  struct PendingStart;
 
   void OnRequestPolicyReady(
-      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
-      int32_t request_id, uint32_t options, network::ResourceRequest request,
-      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
-      net::MutableNetworkTrafficAnnotationTag traffic_annotation,
+      base::WeakPtr<PendingStart> pending,
       aegis_access::GenerationTuple expected, bool accepted);
   std::optional<std::string> SelectedLocalCoreGroup(const GURL& target);
   void OnRequestCoreReady(
-      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
-      int32_t request_id, uint32_t options, network::ResourceRequest request,
-      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
-      net::MutableNetworkTrafficAnnotationTag traffic_annotation,
+      base::WeakPtr<PendingStart> pending,
       uint64_t expected_policy_generation, std::string expected_group, bool ready);
-  void PublishRequestPolicy(
-      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
-      int32_t request_id, uint32_t options, network::ResourceRequest request,
-      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
-      net::MutableNetworkTrafficAnnotationTag traffic_annotation);
-  void FinishPendingStart();
+  void PublishRequestPolicy(base::WeakPtr<PendingStart> pending);
+  void FinishPendingStart(PendingStart* pending);
   void StartEvaluatedRequest(
       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
       int32_t request_id, uint32_t options,
@@ -233,7 +224,8 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   mojo::Remote<network::mojom::AegisAccessURLLoaderFactory> private_target_factory_;
   std::shared_ptr<AccessPrivateContextClient> private_context_;
   DisconnectCallback on_disconnect_;
-  size_t pending_starts_ = 0;
+  std::set<std::unique_ptr<PendingStart>, base::UniquePtrComparator>
+      pending_starts_;
   base::WeakPtrFactory<AccessProxyingURLLoaderFactory> weak_factory_{this};
 };
 

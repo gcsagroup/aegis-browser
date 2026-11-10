@@ -166,7 +166,7 @@ jobs:
     needs:
       - admission
       - access-tests
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && (inputs.operation == 'Internal DMG' || inputs.operation == 'Rebuild DMG') && needs.admission.result == 'success' }}
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && (inputs.operation == 'Internal DMG' || inputs.operation == 'Rebuild DMG') && needs.admission.result == 'success' && (needs.access-tests.result == 'success' || (inputs.operation == 'Rebuild DMG' && needs.access-tests.result == 'skipped')) }}
     runs-on: ${{ fromJSON(needs.admission.outputs.runner) }}
     timeout-minutes: 360
     steps:

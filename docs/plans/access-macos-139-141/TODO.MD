@@ -12,7 +12,7 @@
 
 **Spec:** [阶段一验收清单](../access-product-phase1-acceptance.zh-CN.md)、[功能拆分](../access-product-phase1-feat-split.zh-CN.md)、[本站意图 API](../macos-access-site-intent-api-NOTES.md)，以及本聊天已授权的请求隔离、持久恢复和原标签页重试要求。本文不将旧文档的历史状态当作当前证据；冲突时沿用当前任务授权和当前 AGENTS.md。
 
-**最新快照：** 2026-11-11 05:22 Asia/Shanghai。PR97当前混合头4a658ab，macOS已交付检查点0948保留。0425/0aba8071为测试候选：完整chrome/相关目标build和GN检查PASS；本轮core10、async-store5、coordinator35均实际SUCCESS零skip，新增11项边界；另229项按二进制完全一致复用，共14目标279项适用原生证据。5个生产二进制与0419一致，0419实际CUA封存主流程/冷启动/故障/隔离证据按原范围复用。单组20站smoke仍PARTIAL，GUI取消竞态受工具策略限制，最终质量/独立审查/双PR及issue交付未闭环。
+**最新快照：** 2026-11-11 06:55 Asia/Shanghai。fresh只读审查5项finding已实施修复：F1两项真实RED后完整transport39项GREEN；F3三项取消真实RED后429/f8ec3d06的4项真实Mojo用例全部GREEN（包含正常POST正向及工厂及时释放）。F2/F4/F5已在独立macOS交付树通过针对性检查，macOS入口实际892checks通过，48组合打包条件及5项离线runner检查PASS；未部署runner或签名/DMG。正在完成429受影响原生全套并准备精确平台候选新quality和fresh复审；新候选GUI/单组smoke仍受Computer Use策略限制，两个PR/issue尚未外部交付。
 
 ## 1. 状态与证据规则
 
@@ -27,7 +27,7 @@
 - 单一实现负责人；保留其他窗口工作、旧 P01/T90 暂停边界与失败记录。
 - 原生构建累计 48 小时、100 GiB；继续使用 `resource-budget.json` 的 `startedEpoch=1794254695.128022`，不重置、不重复申请。
 - 该预算的时间截止为 **2026-11-12 04:04:55 Asia/Shanghai**；2026-11-11 04:00 快照剩余约 **24.0 小时**。以账本及守护程序为准，不能将一周开发目标理解为额外构建授权。
-- 最新生产验证候选0419（79eec0e7）：完整chrome/13正式目标263项PASS零skip；核心主流程和恢复/隔离实际CUA证据已封存PASS。0420–0423仅测试变更，新增边界仍在验证，生产二进制须按哈希对应后才复用0419适用证据。405为历史旧节点基线，当前单组smoke为PARTIAL。
+- 最近已封存实际GUI证据的历史生产候选0419（79eec0e7）：完整chrome/13正式目标263项PASS零skip；核心主流程和恢复/隔离实际CUA证据已封存PASS。0420–0425仅测试/BUILD变更，11项新边界已PASS，5项生产二进制与0419相同；GUI证据只按原范围复用。405为历史旧节点基线，当前单组smoke为PARTIAL。
 - 当前受管产品执行先覆盖 HTTP 本机入站；SOCKS5 未产品验收，不能因独立核心测试通过而标成完成。
 - 使用用户新提供并指定为Alpha内置测试的节点；私有引用见本地alpha-test-node-binding.json。旧V2Ray节点配置及证据保留，不自动回退或转移验收；凭据不进入文档、日志、补丁或PR。
 - 最新用户授权最终将#97拆成iOS/macOS独立两份PR，并更新对应issue；此前先更新PR再扩展的0948检查点顺序已完成。保留#97历史、最新iOS提交与其他窗口工作，不强推。仍无独立评论、合并、签名、DMG或发行授权。
@@ -552,3 +552,51 @@
 - **交付安排：** pr97-platform-split-plan.json登记当前407路径初步拆分（iOS197/macOS194/共用待逐文件核对16），不是已创建PR。保留4a658的iOS六文件提交和#97历史；最终从当时有效目标base组成独立两PR，各自验证/独立审查，更新#98与iOS#135–#138/macOS#139–#141。不得按混合提交直接cherry-pick，不覆盖其他owner的DMG/发行未提交工作。
 - **仍缺：** 当前单组20站smoke为PARTIAL、实际GUI取消/晚到回调受Computer Use网址策略限制；占端口等更广故障未全验；有效目标base上的最终quality、fresh只读内置独立审查、双PR及issue更新仍NOT_RUN。旧public-export失败不改为通过，旧DMG/签名发行不升级。
 - **下一项：** 先逐文件定界16个共用路径并准备有效目标base的独立交付候选，跑其必要质量门；不能通过重置CUA/新Browser/CLI网络探测替代受限GUI。当前无活动原生构建/测试，避免重跑有效425。原48h/100GiB起点不变；本轮观测累计约58.4GiB，截止2026-11-12 04:04:55 CST，不重置或自动续期。
+
+### 平台拆分实际组成与完整质量门（2026-11-11 05:43 Asia/Shanghai）
+
+- **16路径分类PASS：** 13为iOS专属（拓扑/本地导入/能力文档/仅iOS生效的license生成），2为共用历史验收规范，1为macOS操作文档引用的宿主hook源码副本。初始“无引用”假设被gitgrep的文档引用纠正；保留副本到macOS，不安装/修改宿主hook。全部原407路径均保留映射，不按混合提交cherry-pick。
+- **保存原工作：** review工作树原0948+57项已按完整419manifest核对并保存本地7fb407d2快照；只同步176个本任务pin后保存425源码快照68a653ae。原失败quality报告及原source419内容均可恢复；未动原实现工作树其他owner脚本或原PR/iOS远端分支。
+- **macOS本地候选：** 22ff7f28fb33f29d80290622b193cbb1cb50333a，直接基线a34c412158ff95a689dd810ae624119b3f2b279b；pr97-macos-platform-candidate.json绑定228项完整文件哈希、tree和原始平台diff。零apps/ios差异，176项本任务源文件与425输入一致；保留最新upstream CI修改。仅本地候选，没有GitHub新PR/issue写入、托管CI或独立review结论。
+- **实际验证RUNNING：** pr97-macos-split-quality-full-r1-launch.json在固定工具链运行full gate，base/public-base均为本候选真实upstream祖先；旧419 public-export FAIL保留，未修改公开门。运行期间不改该review工作树源码/HEAD。
+- 下一项核结果并修复具体失败；可在独立Git index准备iOS候选且不修改活动quality输入。原生build/test保持空闲，CUA限制及原48h/100GiB预算起点不变。
+
+### 独立候选质量失败修复、macOS full PASS与iOS接续（2026-11-11 05:56 Asia/Shanghai）
+
+- **实际拆分失败保留：** 22ff7f28的fullquality首轮在quality:fast FAIL，共用run-script-quality-checks.sh仍调用已随iOS移出的证据测试。另有源码组成断言错误地要求iOS不能包含apps/browser路径，但iOS的两个证据脚本实际位于共用browser/scripts目录；按语义归属修正，没有删除这些文件。
+- **源码修复：** macOS候选3fe45f0e16b36251aedc7227637b36eac9a74b1b只接自己的新evidence测试；iOS候选c03c0ba83dbab2edce478d222f3611ec2ac2846a补自己的新evidence调用，置于不同基线锚点。两端各自保留原61项脚本检查，无exists条件跳过；合并模拟后的脚本两项新检查各一次。除16路径外，新增识别此共享入口文件须按hunk拆分。原407路径全部保留，最新iOS六文件4a658内容逐字一致，两个共用规范blob相同。
+- **macOS fullquality PASS：** pr97-macos-split-quality-full-r2-launch.json绑定H=3fe45f0e16b36251aedc7227637b36eac9a74b1b/B=a34c412158ff95a689dd810ae624119b3f2b279b；退出0，reportIdentityAndSourceStable=true，public-export通过。旧419错误祖先的public-export FAIL与本次r1失败均保留。此为本地仓库门，不是托管CI/源代码独立审查/GUI新增通过。
+- **iOS源候选及quality RUNNING：** 213路径，仅有iOS代码/依赖/历史共用规范及iOS脚本入口；无macOS overlay/patch/runtime差异。pr97-ios-platform-candidate.json与pr97-platform-split-integrity.json绑定全部文件、原始diff及synthetic tree。仅在原质量工作树切换已保存分支执行本地门，不启动模拟器/设备/原生浏览器，不恢复D/Beta或旧暂停工作。
+- 原Native425及5项生产二进制不变、279项适用原生证据按原范围复用；实际GUI取消/单组smoke受限缺口不升级。两份新GitHub PR与issue仍未写入，最终handoff review待对应验证及精确候选固定。
+
+### 两端本地完整门PASS、fresh只读审查和交付正文准备（2026-11-11 06:07 Asia/Shanghai）
+
+- **两端fullquality均PASS：** Mac H=3fe45f0e16b36251aedc7227637b36eac9a74b1b、iOS H=c03c0ba83dbab2edce478d222f3611ec2ac2846a，B均为a34c412158ff95a689dd810ae624119b3f2b279b。pr97-both-platform-local-quality-result.json绑定两个原始launch/report，sourceStable=true。iOS仅仓库本地检查，不提升为新候选App/simulator/device结果；没有恢复D/Beta或旧P01/T90。
+- **fresh独立源码审查RUNNING：** 新内置codex review进程、Astra/xhigh、sandbox=read-only、approval=never；日志头实际报告这些设置，独立session记录于launch。明确B/H/tree、228文件哈希、需求/设计、原始279项范围和419同生产字节的实际主流程证据；未传实施对话、不使用reviewer agent、不启动浏览器/内核/新网络探测。正在审最终macOS源码，尚无审查结论。GUI取消/单组smoke与托管/发行门仍独立开放，源码审查不代替它们。
+- **具体交付正文已准备：** delivery-drafts下macOS/iOS两份PR正文及#98/#135–#141共8个managed issue块，pr97-platform-delivery-drafts.json绑定草稿哈希；均DRAFT_NOT_SENT。正文区分Native425、419原GUI范围、iOS旧证据和新候选未跑的原生/设备范围；后续必须用实际审查/最终候选/PR URL重写相应pending字段后才更新GitHub，不关闭未验证条目。
+- **隐私检查：** pr97-platform-private-input-scan.json仅在内存读取已授权私有节点值，对两候选变更文件与草稿检查实际UUID/key/short-id等值，无明文输出；结果以原始receipt为准，不当通用安全审查。
+- 下一项保持review工作树冻结，处理实际finding并由实现者修复/受影响验证/新进程复审；其他输入外文档可推进。未推送、评论、合并、签名或发布。原budget起点/48h/100GiB保持。
+
+### 独立审查实际finding、F1原生RED及427修复接续（2026-11-11 06:36 Asia/Shanghai）
+
+- **审查不是PASS：** pr97-macos-split-final-review-launch.json/原始log完成，新进程只读、精确3fe45f0e/a34c412输入不变；发现F1 P1 Context重建装回legacy全局host代理、F2 P1 macOS交付检查残留iOS依赖、F3 P2等待core/ACK时未绑定的请求管道取消后仍可发业务、F4 P2 hook错用显示名c++-unit-tests、F5 P2 InternalDMG的always条件不要求Access测试success。两份新PR/issue仍未外写，旧quality PASS不抵消finding。
+- **F1实际复现：** native-review-f1-red-426-build-result.json PASS；两项正式测试均FAIL（不是compile假红），实际NetworkServiceProxyDelegate在foreign顶层站点的anchor请求上仍选127.0.0.1:18080而非原native.example:3128，含首次private绑定、Context重建和OFF后。原始log/summary和完整0426补丁保留，候选e52c0c7d。
+- **427 SOURCE/F1 fix：** 461e49dc88f522e095497d29fe8ffdc213598aa8；partition一旦进入私有请求路由就保持该模式，首次private绑定前清空legacy配置、后续重建初始配置恒空，断连/失败不降回host全局模式；只在首次模式切换清空，避免每个factory绑定触发重置。ReplaceSelection判断使用持续模式，不以临时Context集合是否为空决定回退。
+- **F3 RED用例已写入427：** 正式Browser wrapper公有/私有Mojo管道，held ACK期间取消loader、取消client、关闭factory并取消，以及未取消POST等待ACK后一次发送的正向控制；模拟目标只计发送次数、不发业务字节。待实际运行确认有效红，不把fixture错/未执行当复现。产品pending取消实现尚未写入Native输入。
+- **唯一427构建RUNNING：** chrome/transport/coordinator，copyfile后显式刷新mtime，原起点/48h/100GiB不变；无重复425构建、无CUA尝试。生产修复后旧419二进制/GUI不得转为427产品验收，后续必须重新绑定必要验证并fresh复审最终候选；F2/F4/F5只修源码/离线测试，不安装hook、不打包/签名。
+
+
+### 2026-11-11 06:52 — 审查修复的真实RED/GREEN接续
+
+- F1 `native-review-f1-red-426-tests-result.json`两项ProxyDelegate实际FAIL；持久private-routing模式修复后，`native-review-f1-green-f3-red-428-tests-result.json`的完整transport39项SUCCESS、零skip，覆盖首次私有绑定清空legacy及重建/OFF保留原生路由。
+- F3 同一428的4个真实公私Mojo测试中，关闭loader/client/工厂三项实际FAIL（晚到ACK仍发POST，工厂未及时释放），正常POST正向SUCCESS；不是测试启动/编译失败。429/f8ec3d06在两类等待前持有并监听IPC端点，同步复查peer关闭信号，待验证。
+- F2 macOS交付入口移除iOS文件依赖，实际入口PASS（含892项standalone C++ checks）；iOS工作流断言移到独立iOS候选81ff51c2。F4源hook实际job key修复与5项离线check()测试PASS，未执行main/abort_worker或部署。F5实际workflow条件48组合PASS，阻止Access失败/取消后的Internal DMG，保留显式Rebuild跳过例外；未打包、签名或dispatch。脚本范围证据`review-f2-macos-entrypoint-fix.log`、`review-findings-fix-interim-429.json`。
+- 427夹具参数类型编译FAIL及428继承`LIBRARY_PATH`搜索目录链接FAIL原样保留；428-r2仅任务child移除无效继承变量后build PASS，未创建或改动系统目录。419/425实际GUI证据仅保留历史候选范围，不能替代429。
+- 下一项：429绿测及受影响完整原生目标，更新精确平台候选、正确base完整quality和fresh复审；GUI策略限制未解除，单组smoke/实际取消不冒充完成。
+
+
+### 2026-11-11 06:55 — F3实际GREEN及交付候选接续
+
+- `native-review-f3-green-429-build-result.json`完整chrome及两个受影响owning目标build PASS，`native-review-f3-green-429-focused-result.json`4项SUCCESS、零skip。关闭loader/client后立即放行ACK不晚发POST，取消等待请求在ACK前释放factory；正常请求仅在ACK后发送一次。
+- 原生候选0429/f8ec3d0606910de08f0c188c8102b0ae41b3d1a0；`boundary-426-429-replay-result.json`从425独立index顺序回放四个新patch并精确tree匹配PASS，旧失败仍保留。待受影响完整目标、精确交付HEAD完整quality及fresh复审；未将原生测试当成实际Network Service/GUI取消验收。
+- 交付脚本验证原始输出已封存`review-delivery-fixes-focused-result.json`（固定Python3.11.9，从真实quality工作目录执行13项测试；打包门48组合，包工具仅fake runner），macOS手动Access入口见`review-f2-macos-entrypoint-fix.log`。iOS工作流断言仅移动到iOS候选81ff51c2，不恢复其原生/设备暂停范围。
