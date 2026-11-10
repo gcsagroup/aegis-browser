@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/functional/bind.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
@@ -25,6 +26,7 @@
 #include "chrome/test/interaction/interactive_browser_test.h"
 #include "components/prefs/pref_service.h"
 #include "components/tabs/public/tab_interface.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -94,6 +96,10 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
           },
           true),
       Do([&]() {
+        // 再次执行旧命令仍应保持打开，不能借用工具栏开关动作。
+        EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_SHOW_AEGIS_AGENT));
+        EXPECT_TRUE(side_panel->IsSidePanelEntryShowing(
+            SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
         content::WebContents* contents =
             side_panel->GetWebContentsForTest(SidePanelEntry::Id::kAegisAgent);
         ASSERT_TRUE(contents);
@@ -231,15 +237,29 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
 
 IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
                        SettingsEntryOpensAgentSidePanel) {
-  ASSERT_TRUE(
-      ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(
+      browser(), GURL("chrome://aegis/#browser-agent-section")));
+  auto* settings = browser()->GetActiveTabInterface()->GetContents();
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    return settings->GetLastCommittedURL() == GURL("chrome://settings/aegisAi");
+  }));
+  ASSERT_TRUE(content::WaitForLoadStop(settings));
+  // 统一设置保留旧入口，按钮位于受信任子页，仍须经过父页转发。
+  content::RenderFrameHost* agent_settings = nullptr;
+  ASSERT_TRUE(base::test::RunUntil([&]() {
+    agent_settings = content::FrameMatchingPredicateOrNullptr(
+        settings->GetPrimaryPage(), base::BindRepeating([](content::RenderFrameHost* frame) {
+          return frame->GetLastCommittedURL() == GURL("chrome://aegis/?settings=ai");
+        }));
+    return agent_settings != nullptr;
+  }));
   SidePanelUI* side_panel = SidePanelUI::From(browser());
   ASSERT_TRUE(side_panel);
   ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
 
   ASSERT_TRUE(
-      content::EvalJs(browser()->GetActiveTabInterface()->GetContents(), R"JS(
+      content::EvalJs(agent_settings, R"JS(
         (() => {
           const button = document.querySelector('#browser-agent-open');
           if (!(button instanceof HTMLButtonElement) || button.disabled) {

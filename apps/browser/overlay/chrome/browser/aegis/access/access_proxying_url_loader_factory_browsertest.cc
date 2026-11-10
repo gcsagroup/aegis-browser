@@ -1188,7 +1188,7 @@ class AccessProxyingURLLoaderFactoryBrowserTest : public InProcessBrowserTest {
 
   std::unique_ptr<net::test_server::HttpResponse> LifecycleReply(
       bool proxy, const net::test_server::HttpRequest& request) {
-    const std::string path = request.GetURL().path();
+    const std::string path(request.GetURL().path());
     if (!path.starts_with("/aegis-lifecycle/"))
       return nullptr;
     {

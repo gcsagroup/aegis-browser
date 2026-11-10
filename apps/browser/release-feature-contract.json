@@ -194,7 +194,24 @@
         "mac-arm64",
         "win-x64",
         "android-arm64"
-      ]
+      ],
+      "testFiltersByPlatform": {
+        "mac-arm64": [
+          "AccessBrowserRequestAdapterBrowserTest.*",
+          "AccessLoadingPredictorPrefetchBrowserTest.*",
+          "AccessProxyingURLLoaderFactoryBrowserTest.*",
+          "AccessProxyingURLLoaderFactorySameFrameBrowserTest.*",
+          "SiteTokenChainingBrowserTest.*"
+        ],
+        "win-x64": [
+          "AccessBrowserRequestAdapterBrowserTest.*",
+          "AccessLoadingPredictorPrefetchBrowserTest.*",
+          "AccessProxyingURLLoaderFactoryBrowserTest.*",
+          "AccessProxyingURLLoaderFactorySameFrameBrowserTest.*",
+          "SiteTokenChainingBrowserTest.*"
+        ]
+      },
+      "additionalChecks": "预渲染身份隔离须创建真实非主页面；网站增强的既有 DevTools 会话会阻止默认预渲染，须单独验证这一限制，不能把未创建的页面计为身份隔离通过。"
     },
     {
       "id": "profile-compatibility",
@@ -315,7 +332,8 @@
           "AegisAgentTaskStoreTest.*Monitor*"
         ]
       },
-      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。"
+      "androidAcceptance": "须由 Android 实机验收包装器覆盖已实现行为；桌面浏览器测试不能替代。",
+      "additionalChecks": "必须覆盖 Glic Actor 关闭时的真实监控标签绑定与跨来源重定向拦截。"
     },
     {
       "id": "kAegisWebsiteEnhancements",
@@ -394,12 +412,20 @@
         "mac-arm64": [
           "AegisUIHandlerTest.SettingsKeepLocalPacksWithoutExemptingWebOrigins",
           "AegisUIHandlerTest.KeepsCnamePreferenceSeparateFromRuntimeDependency",
-          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages"
+          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages",
+          "AegisAgentBrowserTest.SettingsCommandsPreserveRoutes",
+          "AegisAgentBrowserTest.ProfileIsolationAndRestrictedProfiles",
+          "AegisAgentInteractiveUiTest.SettingsEntryOpensAgentSidePanel",
+          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety"
         ],
         "win-x64": [
           "AegisUIHandlerTest.SettingsKeepLocalPacksWithoutExemptingWebOrigins",
           "AegisUIHandlerTest.KeepsCnamePreferenceSeparateFromRuntimeDependency",
-          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages"
+          "AegisGestureSettingsTest.PracticeAndSettingsAcceptOnlyCompatiblePages",
+          "AegisAgentBrowserTest.SettingsCommandsPreserveRoutes",
+          "AegisAgentBrowserTest.ProfileIsolationAndRestrictedProfiles",
+          "AegisAgentInteractiveUiTest.SettingsEntryOpensAgentSidePanel",
+          "AegisGestureBrowserTest.SettingsPageAndPracticeSafety"
         ]
       },
       "sourceRegressionTests": [

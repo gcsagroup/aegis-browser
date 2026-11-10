@@ -291,39 +291,61 @@ IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, SettingsPageAndPracticeSafety) {
   }));
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), GURL("chrome://aegis/gestures.html")));
-  ASSERT_EQ("设置已加载", content::EvalJs(contents(), R"(
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return contents()->GetLastCommittedURL() ==
+           GURL("chrome://settings/aegisGestures");
+  }));
+  ASSERT_TRUE(content::WaitForLoadStop(contents()));
+  // 旧地址应迁移到统一设置；练习区现在位于设置组件的 Shadow DOM。
+  // EvalJs 自己会运行事件循环，不能嵌套在 RunUntil 的空闲谓词中。
+  ASSERT_EQ(true, content::EvalJs(contents(), R"(
     new Promise(resolve => {
-      const status = document.getElementById('status');
-      if (status.textContent === '设置已加载') { resolve(status.textContent); return; }
-      new MutationObserver(() => {
-        if (status.textContent === '设置已加载') resolve(status.textContent);
-      }).observe(status, {childList:true, subtree:true});
-    })
+      const check = () => {
+        window.aegisGestureTestRoot = document.querySelector('settings-ui')
+          ?.shadowRoot.querySelector('settings-main')?.shadowRoot
+          .querySelector('settings-aegis-page[mode="gestures"]')?.shadowRoot;
+        if (window.aegisGestureTestRoot && window.AegisI18n &&
+            window.aegisGestureTestRoot.getElementById('status')?.textContent ===
+            window.AegisI18n.t('设置已加载')) {
+          resolve(true);
+        } else {
+          requestAnimationFrame(check);
+        }
+      };
+      check();
+    });
   )"));
   // 练习区里的“关闭标签”必须只显示提示。
-  const auto region = content::EvalJs(contents(), R"(
-    document.getElementById('practice').scrollIntoView({block:'center'});
+  const auto region_result = content::EvalJs(contents(), R"(
+    window.aegisGestureTestRoot.getElementById('practice').scrollIntoView({block:'center'});
     new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
-      const rect = document.getElementById('practice').getBoundingClientRect();
+      const rect = window.aegisGestureTestRoot.getElementById('practice').getBoundingClientRect();
       resolve([Math.round(rect.left + 130), Math.round(rect.top + 45)]);
     })));
-  )")
-                          .ExtractList()
-                          .Clone();
+  )");
+  ASSERT_TRUE(region_result.is_list()) << region_result;
+  const auto region = region_result.ExtractList().Clone();
+  ASSERT_EQ(region.size(), 2u);
+  ASSERT_TRUE(region[0].is_int());
+  ASSERT_TRUE(region[1].is_int());
   const int count = browser()->GetTabStripModel()->count();
   Gesture(host(), "DR", {region[0].GetInt(), region[1].GetInt()});
   EXPECT_EQ(count, browser()->GetTabStripModel()->count());
-  EXPECT_EQ(GURL("chrome://aegis/gestures.html"),
+  EXPECT_EQ(GURL("chrome://settings/aegisGestures"),
             contents()->GetLastCommittedURL());
-  ASSERT_TRUE(base::test::RunUntil([&] {
-    return content::EvalJs(contents(),
-                           "document.getElementById('practiceResult')."
-                           "textContent.includes('练习不执行')")
-        .ExtractBool();
-  }))
-      << content::EvalJs(
-             contents(),
-             "document.getElementById('practiceResult').textContent");
+  ASSERT_EQ(true, content::EvalJs(contents(), R"(
+    new Promise(resolve => {
+      const check = () => {
+        if (window.aegisGestureTestRoot.getElementById('practiceResult').textContent ===
+            window.AegisI18n.t('已绑定，可在下方修改；练习不执行操作。')) {
+          resolve(true);
+        } else {
+          requestAnimationFrame(check);
+        }
+      };
+      check();
+    });
+  )"));
 }
 
 IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,

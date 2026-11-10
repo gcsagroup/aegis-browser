@@ -1,0 +1,600 @@
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 17efd0d17d274fe8e84dfbabeb06a02e9171c369..bf2a017348276c2dac896d8e7c8aff4e37039526 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -479,6 +479,8 @@ test("aegis_browser_unittests") {
+     "//chrome/common/aegis",
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
++    "//chrome/test/base:chrome_render_view_host_test_harness",
++    "//chrome/test/base:testing_browser_process",
+     "//content/test:test_support",
+     "//crypto",
+     "//net",
+@@ -509,6 +511,8 @@ test("aegis_browser_unittests") {
+       "//chrome/browser/ui/webui/aegis_agent",
+       "//chrome/browser/ui/webui/aegis_agent:impl",
+       "//chrome/common/aegis",
++      "//chrome/test/base:browser_with_test_window_test",
++      "//chrome/test/base:test_browser_window",
+       "//components/actor/core",
+       "//components/download/public/common:public",
+       "//components/download/public/common:test_support",
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+index 72b140b0dee24a4fb6bdf96bba0ebc5f2ca2747b..ba373d8e27ec3e7cf987e8a90b0d4d86d2716912 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter_browsertest.cc
+@@ -6,7 +6,9 @@
+ #include <optional>
+ 
+ #include "base/functional/bind.h"
++#include "base/test/metrics/histogram_tester.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/browser/aegis/enhancements/enhancement_tab_helper.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+@@ -237,14 +239,45 @@ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+   EXPECT_FALSE(result.metadata.has_value());
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
++                       EnhancementSessionPreventsPrerenderCreation) {
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), embedded_test_server()->GetURL("/title1.html")));
++  ASSERT_TRUE(aegis::EnhancementTabHelper::FromWebContents(web_contents()));
++  base::HistogramTester histograms;
++  const GURL target = embedded_test_server()->GetURL("/title2.html");
++  content::test::PrerenderHostRegistryObserver observer(*web_contents());
++  prerender_helper_.AddPrerenderAsync(target);
++  observer.WaitForTrigger(target);
++  EXPECT_FALSE(prerender_helper_.GetHostForUrl(target));
++  // 记录现有兼容限制，不将默认会话下未创建预渲染冒充隔离验收。
++  // Chromium PrerenderFinalStatus::kPrerenderingDisabledByDevTools 的 UMA 值。
++  constexpr int kPrerenderingDisabledByDevTools = 69;
++  histograms.ExpectUniqueSample(
++      "Prerender.Experimental.PrerenderHostFinalStatus.SpeculationRule",
++      kPrerenderingDisabledByDevTools, 1);
++}
++
+ IN_PROC_BROWSER_TEST_F(AccessBrowserRequestAdapterBrowserTest,
+                        PrerenderPageCannotInheritPrimaryPageIdentity) {
+   const GURL primary_url = embedded_test_server()->GetURL("/title1.html");
+   const GURL prerender_url = embedded_test_server()->GetURL("/title2.html");
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), primary_url));
+-
++  // 只在此隔离夹具中移除会阻止预渲染的增强会话。默认集成行为由上面
++  // 的测试覆盖；这里必须真正创建非主页面，验证其不能继承主页面身份。
++  ASSERT_TRUE(aegis::EnhancementTabHelper::FromWebContents(web_contents()));
++  web_contents()->RemoveUserData(aegis::EnhancementTabHelper::UserDataKey());
++  ASSERT_FALSE(aegis::EnhancementTabHelper::FromWebContents(web_contents()));
++
++  // 先检查预渲染实际创建，失败时报告原因，而非在辅助方法内崩溃。
++  base::HistogramTester histograms;
++  content::test::PrerenderHostRegistryObserver observer(*web_contents());
++  prerender_helper_.AddPrerenderAsync(prerender_url);
++  observer.WaitForTrigger(prerender_url);
+   const content::PrerenderHostId host_id =
+-      prerender_helper_.AddPrerender(prerender_url);
++      prerender_helper_.GetHostForUrl(prerender_url);
++  ASSERT_TRUE(host_id) << histograms.GetAllHistogramsRecorded();
++  prerender_helper_.WaitForPrerenderLoadCompletion(prerender_url);
+   content::RenderFrameHost* prerender_frame =
+       prerender_helper_.GetPrerenderedMainFrameHost(host_id);
+   ASSERT_NE(prerender_frame, nullptr);
+diff --git a/chrome/browser/aegis/aegis_ui_handler_unittest.cc b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+index c3003bc190f0b9dd82cb754499ea032e032eb7ff..1c4d50278b8659e90a13187e04106b0afb280cbf 100644
+--- a/chrome/browser/aegis/aegis_ui_handler_unittest.cc
++++ b/chrome/browser/aegis/aegis_ui_handler_unittest.cc
+@@ -2,6 +2,7 @@
+ 
+ #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
+ 
++#include <memory>
+ #include <string>
+ #include <utility>
+ #include <vector>
+@@ -12,7 +13,9 @@
+ #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
+ #include "chrome/browser/aegis/metalink_download_verifier.h"
+ #include "chrome/browser/tab_list/tab_list_interface.h"
+-#include "chrome/browser/ui/browser.h"
++#include "chrome/browser/ui/navigator/browser_navigator.h"
++#include "chrome/browser/ui/navigator/browser_navigator_params.h"
++#include "chrome/browser/ui/browser_window/public/create_browser_window.h"
+ #include "chrome/browser/ui/tabs/tab_strip_model.h"
+ #include "chrome/browser/ui/webui/aegis/aegis_ui.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -33,7 +36,40 @@
+ namespace aegis {
+ namespace {
+ 
+-class AegisUIHandlerTest : public BrowserWithTestWindowTest {};
++class AegisUIHandlerTest : public BrowserWithTestWindowTest {
++ protected:
++  void SetUp() override {
++    BrowserWithTestWindowTest::SetUp();
++    BrowserWindowCreateParams params(profile(), /*from_user_gesture=*/false);
++    params.window = CreateBrowserWindow().release();
++    browser_ = DeprecatedCreateOwnedBrowserWindowForTesting(std::move(params));
++  }
++
++  void TearDown() override {
++    // 窗口和标签须先于 Profile 销毁，保持原测试基础类的生命周期。
++    browser_->GetTabStripModel()->CloseAllTabs();
++    browser_.reset();
++    BrowserWithTestWindowTest::TearDown();
++  }
++
++  virtual std::unique_ptr<BrowserWindow> CreateBrowserWindow() {
++    return std::make_unique<TestBrowserWindow>();
++  }
++
++  BrowserWindowInterface* browser() { return browser_.get(); }
++
++  void AddTab(BrowserWindowInterface* target, const GURL& url) {
++    // 保留旧辅助方法的真实导航和索引语义，不用模拟列表替代工作区。
++    NavigateParams params(target, url, ui::PAGE_TRANSITION_TYPED);
++    params.tabstrip_index = 0;
++    params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
++    Navigate(&params);
++    CommitPendingLoad(&params.navigated_or_inserted_contents->GetController());
++  }
++
++ private:
++  std::unique_ptr<BrowserWindowInterface> browser_;
++};
+ 
+ // 工作区恢复需要可编辑的标签栏；基础测试窗口默认禁止编辑。
+ class WorkspaceTestWindow : public TestBrowserWindow {
+@@ -111,7 +147,7 @@ TEST_F(AegisUIHandlerTest, WindowRevisionIgnoresFocusButTracksContentChanges) {
+   auto before = read_state();
+   ASSERT_TRUE(before.ok);
+   ASSERT_TRUE(before.value.FindString("revision"));
+-  auto* test_window = static_cast<TestBrowserWindow*>(window());
++  auto* test_window = static_cast<TestBrowserWindow*>(browser()->GetWindow());
+   test_window->set_is_active(true);
+   auto focused = read_state();
+   ASSERT_TRUE(focused.ok);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+index 522dfe89f62045f5da4baada17bb711c992ddf05..5e69530a2daab37b0aa39e177af4f4dc96239517 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_browsertest.cc
+@@ -1664,7 +1664,7 @@ IN_PROC_BROWSER_TEST_F(AegisAgentUrlMonitorBrowserTest,
+           ->GetTaskFromTab(*tab);
+   ASSERT_TRUE(monitor_actor);
+   // 通过真实 Actor 用户暂停入口接管，不能用删除监控冒充用户接管。
+-  monitor_actor->Pause(/*from_actor=*/false, /*cancel_existing_action=*/true);
++  monitor_actor->Pause(/*from_actor=*/false);
+   ASSERT_NO_FATAL_FAILURE(WaitForCheck(task->id()));
+   ASSERT_EQ(browser()->GetTabStripModel()->count(), initial_tabs + 1);
+   response.Send(net::HTTP_OK, "text/html", "<p>接管后的迟到正文</p>");
+@@ -2545,6 +2545,24 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   EXPECT_TRUE(service->CancelTask(task->id()));
+ }
+ 
++IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
++                       SettingsCommandsPreserveRoutes) {
++  // 验证命令实际打开目标页，防止只注册启用状态而漏接执行回调。
++  for (const auto& [command, url] : {
++           std::pair(IDC_SHOW_AEGIS, "chrome://settings/aegis"),
++           std::pair(IDC_AEGIS_ENHANCEMENTS, "chrome://settings/aegisEnhancements"),
++           std::pair(IDC_AEGIS_MARKDOWN, "chrome://settings/aegisReading")}) {
++    ASSERT_TRUE(chrome::IsCommandEnabled(browser(), command));
++    ASSERT_TRUE(chrome::ExecuteCommand(browser(), command));
++    ASSERT_TRUE(base::test::RunUntil([&]() {
++      return browser()->GetActiveTabInterface()->GetContents()->GetLastCommittedURL() ==
++             GURL(url);
++    }));
++    ASSERT_TRUE(content::WaitForLoadStop(
++        browser()->GetActiveTabInterface()->GetContents()));
++  }
++}
++
+ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+                        ProfileIsolationAndRestrictedProfiles) {
+   Profile* regular = browser()->GetProfile();
+@@ -2605,7 +2623,10 @@ IN_PROC_BROWSER_TEST_F(AegisAgentBrowserTest,
+   ASSERT_TRUE(guest_browser->GetProfile()->IsGuestSession());
+   EXPECT_FALSE(IsAegisAgentSidePanelSupported(guest_browser->GetProfile()));
+   EXPECT_FALSE(AgentEntry(guest_browser));
+-  EXPECT_FALSE(chrome::IsCommandEnabled(guest_browser, IDC_SHOW_AEGIS));
++  for (int command : {IDC_SHOW_AEGIS, IDC_SHOW_AEGIS_AGENT,
++                      IDC_AEGIS_ENHANCEMENTS, IDC_AEGIS_MARKDOWN}) {
++    EXPECT_FALSE(chrome::IsCommandEnabled(guest_browser, command));
++  }
+   EXPECT_EQ(
+       AegisAgentServiceFactory::GetForProfile(guest_browser->GetProfile()),
+       nullptr);
+diff --git a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+index ea7a9e0b4208633ac8e5642dd1deed29aaeeb3fa..b4c0c1275e291eec8bd90763931571d122943a54 100644
+--- a/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
++++ b/chrome/browser/aegis/agent/aegis_agent_interactive_uitest.cc
+@@ -4,6 +4,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/functional/bind.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_feature_list.h"
+ #include "build/build_config.h"
+@@ -25,6 +26,7 @@
+ #include "chrome/test/interaction/interactive_browser_test.h"
+ #include "components/prefs/pref_service.h"
+ #include "components/tabs/public/tab_interface.h"
++#include "content/public/browser/render_frame_host.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/browser_test.h"
+ #include "content/public/test/browser_test_utils.h"
+@@ -94,6 +96,10 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+           },
+           true),
+       Do([&]() {
++        // 再次执行旧命令仍应保持打开，不能借用工具栏开关动作。
++        EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_SHOW_AEGIS_AGENT));
++        EXPECT_TRUE(side_panel->IsSidePanelEntryShowing(
++            SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
+         content::WebContents* contents =
+             side_panel->GetWebContentsForTest(SidePanelEntry::Id::kAegisAgent);
+         ASSERT_TRUE(contents);
+@@ -231,15 +237,29 @@ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+ 
+ IN_PROC_BROWSER_TEST_F(AegisAgentInteractiveUiTest,
+                        SettingsEntryOpensAgentSidePanel) {
+-  ASSERT_TRUE(
+-      ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAegisURL)));
++  ASSERT_TRUE(ui_test_utils::NavigateToURL(
++      browser(), GURL("chrome://aegis/#browser-agent-section")));
++  auto* settings = browser()->GetActiveTabInterface()->GetContents();
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    return settings->GetLastCommittedURL() == GURL("chrome://settings/aegisAi");
++  }));
++  ASSERT_TRUE(content::WaitForLoadStop(settings));
++  // 统一设置保留旧入口，按钮位于受信任子页，仍须经过父页转发。
++  content::RenderFrameHost* agent_settings = nullptr;
++  ASSERT_TRUE(base::test::RunUntil([&]() {
++    agent_settings = content::FrameMatchingPredicateOrNullptr(
++        settings->GetPrimaryPage(), base::BindRepeating([](content::RenderFrameHost* frame) {
++          return frame->GetLastCommittedURL() == GURL("chrome://aegis/?settings=ai");
++        }));
++    return agent_settings != nullptr;
++  }));
+   SidePanelUI* side_panel = SidePanelUI::From(browser());
+   ASSERT_TRUE(side_panel);
+   ASSERT_FALSE(side_panel->IsSidePanelEntryShowing(
+       SidePanelEntry::Key(SidePanelEntry::Id::kAegisAgent)));
+ 
+   ASSERT_TRUE(
+-      content::EvalJs(browser()->GetActiveTabInterface()->GetContents(), R"JS(
++      content::EvalJs(agent_settings, R"JS(
+         (() => {
+           const button = document.querySelector('#browser-agent-open');
+           if (!(button instanceof HTMLButtonElement) || button.disabled) {
+diff --git a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+index c2636fea396efd8039de53052d66d165fa33fa2a..ad3e77e61eddd4b186ab59e9cf516626642af764 100644
+--- a/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
++++ b/chrome/browser/aegis/gestures/gesture_interactive_uitest.cc
+@@ -291,39 +291,61 @@ IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest, SettingsPageAndPracticeSafety) {
+   }));
+   ASSERT_TRUE(ui_test_utils::NavigateToURL(
+       browser(), GURL("chrome://aegis/gestures.html")));
+-  ASSERT_EQ("设置已加载", content::EvalJs(contents(), R"(
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return contents()->GetLastCommittedURL() ==
++           GURL("chrome://settings/aegisGestures");
++  }));
++  ASSERT_TRUE(content::WaitForLoadStop(contents()));
++  // 旧地址应迁移到统一设置；练习区现在位于设置组件的 Shadow DOM。
++  // EvalJs 自己会运行事件循环，不能嵌套在 RunUntil 的空闲谓词中。
++  ASSERT_EQ(true, content::EvalJs(contents(), R"(
+     new Promise(resolve => {
+-      const status = document.getElementById('status');
+-      if (status.textContent === '设置已加载') { resolve(status.textContent); return; }
+-      new MutationObserver(() => {
+-        if (status.textContent === '设置已加载') resolve(status.textContent);
+-      }).observe(status, {childList:true, subtree:true});
+-    })
++      const check = () => {
++        window.aegisGestureTestRoot = document.querySelector('settings-ui')
++          ?.shadowRoot.querySelector('settings-main')?.shadowRoot
++          .querySelector('settings-aegis-page[mode="gestures"]')?.shadowRoot;
++        if (window.aegisGestureTestRoot && window.AegisI18n &&
++            window.aegisGestureTestRoot.getElementById('status')?.textContent ===
++            window.AegisI18n.t('设置已加载')) {
++          resolve(true);
++        } else {
++          requestAnimationFrame(check);
++        }
++      };
++      check();
++    });
+   )"));
+   // 练习区里的“关闭标签”必须只显示提示。
+-  const auto region = content::EvalJs(contents(), R"(
+-    document.getElementById('practice').scrollIntoView({block:'center'});
++  const auto region_result = content::EvalJs(contents(), R"(
++    window.aegisGestureTestRoot.getElementById('practice').scrollIntoView({block:'center'});
+     new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => {
+-      const rect = document.getElementById('practice').getBoundingClientRect();
++      const rect = window.aegisGestureTestRoot.getElementById('practice').getBoundingClientRect();
+       resolve([Math.round(rect.left + 130), Math.round(rect.top + 45)]);
+     })));
+-  )")
+-                          .ExtractList()
+-                          .Clone();
++  )");
++  ASSERT_TRUE(region_result.is_list()) << region_result;
++  const auto region = region_result.ExtractList().Clone();
++  ASSERT_EQ(region.size(), 2u);
++  ASSERT_TRUE(region[0].is_int());
++  ASSERT_TRUE(region[1].is_int());
+   const int count = browser()->GetTabStripModel()->count();
+   Gesture(host(), "DR", {region[0].GetInt(), region[1].GetInt()});
+   EXPECT_EQ(count, browser()->GetTabStripModel()->count());
+-  EXPECT_EQ(GURL("chrome://aegis/gestures.html"),
++  EXPECT_EQ(GURL("chrome://settings/aegisGestures"),
+             contents()->GetLastCommittedURL());
+-  ASSERT_TRUE(base::test::RunUntil([&] {
+-    return content::EvalJs(contents(),
+-                           "document.getElementById('practiceResult')."
+-                           "textContent.includes('练习不执行')")
+-        .ExtractBool();
+-  }))
+-      << content::EvalJs(
+-             contents(),
+-             "document.getElementById('practiceResult').textContent");
++  ASSERT_EQ(true, content::EvalJs(contents(), R"(
++    new Promise(resolve => {
++      const check = () => {
++        if (window.aegisGestureTestRoot.getElementById('practiceResult').textContent ===
++            window.AegisI18n.t('已绑定，可在下方修改；练习不执行操作。')) {
++          resolve(true);
++        } else {
++          requestAnimationFrame(check);
++        }
++      };
++      check();
++    });
++  )"));
+ }
+ 
+ IN_PROC_BROWSER_TEST_F(AegisGestureBrowserTest,
+diff --git a/chrome/browser/site_token_provider/site_token_browsertest.cc b/chrome/browser/site_token_provider/site_token_browsertest.cc
+index c570d7b99c53a60ede41ece4487b40c2e6369175..7c21c333b5611e81de6b90b66f7f2f513ef3091b 100644
+--- a/chrome/browser/site_token_provider/site_token_browsertest.cc
++++ b/chrome/browser/site_token_provider/site_token_browsertest.cc
+@@ -291,7 +291,8 @@ class ChainingTestContentBrowserClient : public ChromeContentBrowserClient {
+       bool* disable_secure_dns,
+       network::mojom::URLLoaderFactoryOverridePtr* factory_override,
+       scoped_refptr<base::SequencedTaskRunner> navigation_response_task_runner,
+-      bool is_for_network_service) override {
++      bool is_for_network_service,
++      NavigationFactorySource navigation_factory_source) override {
+     if (header_client && !header_client->is_valid()) {
+       *header_client = fake_header_client_->AddReceiver();
+     }
+@@ -300,7 +301,8 @@ class ChainingTestContentBrowserClient : public ChromeContentBrowserClient {
+         isolation_info, std::move(navigation_id), ukm_source_id,
+         factory_builder, header_client, bypass_redirect_checks,
+         disable_secure_dns, factory_override,
+-        std::move(navigation_response_task_runner), is_for_network_service);
++        std::move(navigation_response_task_runner), is_for_network_service,
++        navigation_factory_source);
+   }
+ 
+  private:
+diff --git a/chrome/browser/ui/actions/chrome_action_id.h b/chrome/browser/ui/actions/chrome_action_id.h
+index d5375b4f34ddca30a9c4dbccea6c000d41af2ae8..cc5422e6bfd393739713c493cb26595ab702d01b 100644
+--- a/chrome/browser/ui/actions/chrome_action_id.h
++++ b/chrome/browser/ui/actions/chrome_action_id.h
+@@ -160,6 +160,10 @@
+   E(kActionShowDownloadsPage, IDC_SHOW_DOWNLOADS) \
+   E(kActionImportSettings, IDC_IMPORT_SETTINGS) \
+   E(kActionOptions, IDC_OPTIONS) \
++  E(kActionShowAegis, IDC_SHOW_AEGIS) \
++  E(kActionOpenAegisAgent, IDC_SHOW_AEGIS_AGENT) \
++  E(kActionAegisEnhancements, IDC_AEGIS_ENHANCEMENTS) \
++  E(kActionAegisMarkdown, IDC_AEGIS_MARKDOWN) \
+   E(kActionEditSearchEngines, IDC_EDIT_SEARCH_ENGINES) \
+   E(kActionViewPasswords, IDC_VIEW_PASSWORDS) \
+   E(kActionAbout, IDC_ABOUT) \
+diff --git a/chrome/browser/ui/browser_actions.cc b/chrome/browser/ui/browser_actions.cc
+index c52c8003770479aedea0d3640d40a57081f28a36..16ef07b2415b300a1f8d21687464cbf1876886e3 100644
+--- a/chrome/browser/ui/browser_actions.cc
++++ b/chrome/browser/ui/browser_actions.cc
+@@ -446,6 +446,16 @@ void BrowserActions::InitializeSidePanelActions() {
+ 
+   if (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
+       aegis::IsAegisProfileSupported(profile)) {
++    // 旧快捷键只打开侧栏；固定工具栏按钮继续保留开关语义。
++    root_action_item_->AddChild(
++        actions::ActionItem::Builder(base::BindRepeating(
++            [](BrowserWindowInterface* browser, actions::ActionItem*,
++               actions::ActionInvocationContext) {
++              SidePanelUI::From(browser)->Show(
++                  SidePanelEntryId::kAegisAgent, SidePanelOpenTrigger::kAegisAgent);
++            }, bwi))
++            .SetActionId(kActionOpenAegisAgent)
++            .Build());
+     root_action_item_->AddChild(
+         actions::ActionItem::Builder(
+             CreateToggleSidePanelActionCallback(
+@@ -1918,6 +1928,38 @@ void BrowserActions::InitializeToolbarAndMiscActions() {
+   BrowserWindowInterface* const bwi = base::to_address(bwi_);
+   TabStripModel* const tab_strip_model = bwi_->GetTabStripModel();
+ 
++  // 157 默认通过 Action 分发命令；保留原入口及受限资料检查。
++  root_action_item_->AddChild(
++      actions::ActionItem::Builder(base::BindRepeating(
++          [](BrowserWindowInterface* browser, actions::ActionItem*,
++             actions::ActionInvocationContext) {
++            if (aegis::IsAegisProfileSupported(browser->GetProfile())) {
++              chrome::ShowAegisPage(webui::GetBrowserForOpeningWebUi(browser));
++            }
++          }, bwi))
++          .SetActionId(kActionShowAegis)
++          .Build());
++  root_action_item_->AddChild(
++      actions::ActionItem::Builder(base::BindRepeating(
++          [](BrowserWindowInterface* browser, actions::ActionItem*,
++             actions::ActionInvocationContext) {
++            if (aegis::IsAegisProfileSupported(browser->GetProfile())) {
++              ::ShowSingletonTab(browser, GURL("chrome://settings/aegisEnhancements"));
++            }
++          }, bwi))
++          .SetActionId(kActionAegisEnhancements)
++          .Build());
++  root_action_item_->AddChild(
++      actions::ActionItem::Builder(base::BindRepeating(
++          [](BrowserWindowInterface* browser, actions::ActionItem*,
++             actions::ActionInvocationContext) {
++            if (aegis::IsAegisProfileSupported(browser->GetProfile())) {
++              ::ShowSingletonTab(browser, GURL("chrome://settings/aegisReading"));
++            }
++          }, bwi))
++          .SetActionId(kActionAegisMarkdown)
++          .Build());
++
+   root_action_item_->AddChild(
+       actions::ActionItem::Builder(
+           base::BindRepeating(
+diff --git a/chrome/browser/ui/tabs/tab_features.cc b/chrome/browser/ui/tabs/tab_features.cc
+index 86c077dc4ad13ccdd8b781cccdb0333415bf60ed..80ef75c2417774c75a1e66a2ac3de8df0dcb080c 100644
+--- a/chrome/browser/ui/tabs/tab_features.cc
++++ b/chrome/browser/ui/tabs/tab_features.cc
+@@ -736,7 +736,10 @@ void TabFeatures::Init(TabInterface& tab, Profile* profile) {
+     }
+   }  // IsInNormalWindow() end.
+ 
+-  if (base::FeatureList::IsEnabled(features::kGlicActor)) {
++  // Aegis 的受控标签也需要 157 新增的 Actor surface 注册。
++  if (base::FeatureList::IsEnabled(features::kGlicActor) ||
++      (base::FeatureList::IsEnabled(aegis::features::kAegisAgent) &&
++       aegis::IsAegisProfileSupported(profile))) {
+     actor_tab_data_ =
+         GetUserDataFactory().CreateInstance<actor::ActorTabData>(tab, &tab);
+     actor_surface_tab_helper_ =
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 7c65aa78aa6b1c801017fcd358a7394f7c2ae1c0..60422694db8bcd5a0cae4711489fa0cacf9273e9 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.308";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (308)";
++inline constexpr char kProductVersion[] = "6.1.0.309";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (309)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+diff --git a/chrome/test/BUILD.gn b/chrome/test/BUILD.gn
+index 97ae2a692d01b69a776bab4c613507f4ee3e1b24..04d44d59592298a702adc255c1033294719af798 100644
+--- a/chrome/test/BUILD.gn
++++ b/chrome/test/BUILD.gn
+@@ -4359,6 +4359,10 @@ if (!is_android && !is_chromeos_device) {
+   test("interactive_ui_tests") {
+     use_xvfb = use_xvfb_in_this_config
+ 
++    if (is_mac) {
++      configs += [ "//chrome:aegis_acceptance_link_limits" ]
++    }
++
+     sources = [ "base/interactive_ui_tests_main.cc" ]
+ 
+     configs += [ "//build/config:precompiled_headers" ]
+diff --git a/chrome/test/data/webui/settings/autofill_page_index_test.ts b/chrome/test/data/webui/settings/autofill_page_index_test.ts
+index b0bfd0b063c4a7b615ca49d0c77d0c92efbb8269..930118681f07b22bec79352b8eaae05442ee0775 100644
+--- a/chrome/test/data/webui/settings/autofill_page_index_test.ts
++++ b/chrome/test/data/webui/settings/autofill_page_index_test.ts
+@@ -156,9 +156,8 @@ suite('AutofillPageIndex', function() {
+     });
+     resetRouterForTesting();
+     index = document.createElement('settings-autofill-page-index');
+-    index.prefs = settingsPrefs.prefs!;
+     document.body.appendChild(index);
+-    await flushTasks();
++    await microtasksFinished();
+     assertEquals(undefined, routes.SUGGESTIONS_FROM_GEMINI);
+     assertEquals(null, Router.getInstance().getRouteForPath('/enhancedAutofill'));
+     assertFalse(!!index.$.viewManager.querySelector('#suggestionsFromGemini'));
+diff --git a/chrome/test/data/webui/settings/autofill_page_test.ts b/chrome/test/data/webui/settings/autofill_page_test.ts
+index 289017dcb1fd2ab173cf0bd1d1998d40815dd304..9bcf7a72f4138b31ad36d3076f095604208eb9e6 100644
+--- a/chrome/test/data/webui/settings/autofill_page_test.ts
++++ b/chrome/test/data/webui/settings/autofill_page_test.ts
+@@ -306,19 +306,19 @@ suite('AutofillPage', function() {
+       showSuggestionsFromGeminiSettings: true,
+     });
+ 
+-    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++    assertFalse(!!autofillPage.shadowRoot.querySelector(
+         'settings-account-card'));
+-    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++    assertFalse(!!autofillPage.shadowRoot.querySelector(
+         '#googleWalletButton'));
+-    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++    assertFalse(!!autofillPage.shadowRoot.querySelector(
+         '#googleAccountButton'));
+-    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++    assertFalse(!!autofillPage.shadowRoot.querySelector(
+         '#suggestionsFromGeminiCard'));
+-    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++    assertFalse(!!autofillPage.shadowRoot.querySelector(
+         '#passwordManagerButton'));
+-    assertFalse(!!autofillPage.shadowRoot!.querySelector(
++    assertFalse(!!autofillPage.shadowRoot.querySelector(
+         '#relatedServicesSection'));
+-    assertTrue(!!autofillPage.shadowRoot!.querySelector(
++    assertTrue(!!autofillPage.shadowRoot.querySelector(
+         '#passwordManagerCard'));
+   });
+ 
+@@ -613,7 +613,7 @@ suite('RelatedServices', function() {
+     document.body.innerHTML = window.trustedTypes!.emptyHTML;
+     autofillPage = document.createElement('settings-autofill-page');
+     document.body.appendChild(autofillPage);
+-    await flushTasks();
++    await microtasksFinished();
+   });
+ 
+   async function testRowOpensUrl(selector: string, urlStringId: string) {
+diff --git a/chrome/test/data/webui/settings/identity_docs_page_test.ts b/chrome/test/data/webui/settings/identity_docs_page_test.ts
+index 4722568bbb65d7ab69940de72aa61cf4043320fb..632bb08cc23eabe2ba0a0ea93ba4f24c7df80e13 100644
+--- a/chrome/test/data/webui/settings/identity_docs_page_test.ts
++++ b/chrome/test/data/webui/settings/identity_docs_page_test.ts
+@@ -459,7 +459,7 @@ suite('IdentityDocsPage', function() {
+       resetRouterForTesting();
+ 
+       const page = await setupPage();
+-      const button = page.shadowRoot!.querySelector<HTMLElement>(
++      const button = page.shadowRoot.querySelector<HTMLElement>(
+           '#suggestionsFromGeminiLinkRow');
+       assertFalse(!!button);
+     });
+diff --git a/chrome/test/data/webui/settings/shopping_page_test.ts b/chrome/test/data/webui/settings/shopping_page_test.ts
+index d2295bb8aeeb7dd98a3fdc601a62774c6de647fd..df391563dc7ed08f7e63f9cc51b89388a83c7944 100644
+--- a/chrome/test/data/webui/settings/shopping_page_test.ts
++++ b/chrome/test/data/webui/settings/shopping_page_test.ts
+@@ -458,7 +458,7 @@ suite('ShoppingPage', function() {
+       resetRouterForTesting();
+ 
+       const page = await setupPage();
+-      const button = page.shadowRoot!.querySelector<HTMLElement>(
++      const button = page.shadowRoot.querySelector<HTMLElement>(
+           '#suggestionsFromGeminiLinkRow');
+       assertFalse(!!button);
+     });
+diff --git a/chrome/test/data/webui/settings/travel_page_test.ts b/chrome/test/data/webui/settings/travel_page_test.ts
+index 92a144a5a5d5541646c9c0b0173b11d8c3b7783b..0d0088adec50bb0766a3baa6498b0026ace71475 100644
+--- a/chrome/test/data/webui/settings/travel_page_test.ts
++++ b/chrome/test/data/webui/settings/travel_page_test.ts
+@@ -458,7 +458,7 @@ suite('TravelPage', function() {
+       resetRouterForTesting();
+ 
+       const page = await setupPage();
+-      const button = page.shadowRoot!.querySelector<HTMLElement>(
++      const button = page.shadowRoot.querySelector<HTMLElement>(
+           '#suggestionsFromGeminiLinkRow');
+       assertFalse(!!button);
+     });
