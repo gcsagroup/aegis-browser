@@ -1,6 +1,6 @@
 # iOS 精确主机恢复 — 实现方案
 
-日期：2026-11-10。状态：U1–U5 模拟器主路径已接通；K0 已冻结 Xray-core/libXray `v26.11.9` 并构建/链入 `AegisEmbeddedCore.xcframework`（slice 摘要已写入 lock）；模拟器 K live（本地 Reality 节点）已跑通。D 仍 NOT_RUN。公网站点回归见 [受阻站点回归方案](ios-access-blocked-site-regression.zh-CN.md)（opt-in，不替代 U/K/D）。无节点时应用默认失败关闭。
+日期：2026-11-10。状态：U1–U5 模拟器主路径已接通；K0 已冻结 Xray-core/libXray `v26.11.9` 并构建/链入 `AegisEmbeddedCore.xcframework`（slice 摘要已写入 lock）；模拟器 K live（本地 Reality 节点）已跑通。D 仍 NOT_RUN。公网站点回归见 [受阻站点回归方案](ios-access-blocked-site-regression.zh-CN.md)（opt-in，不替代 U/K/D）。体验下一台阶（本站精确 host 组，非全局拦截）见 [Site Rule Group TODO 草案](ios-access-site-rule-group-TODO.zh-CN.md)（未实施）。无节点时应用默认失败关闭。
 
 **行为依据：** [精确主机存储 SDD](ios-exact-host-store-sdd.zh-CN.md)。SDD 决定行为，本文件确定接线、接口和验证顺序。  
 **目标：** 一次用户操作准备本应用入口，只恢复点击时原标签的原失败请求，保持范围隔离、一次额度和失败关闭。  
@@ -320,7 +320,8 @@ U/K/D 分别写入本次独立 `.artifacts/ios-access-recovery/<候选标识>/U/
 | K | 本次响应来自进程内固定内核对应的 VLESS 出口 | 模拟器 live 绿（`.artifacts/ios-access-live/`）；正式脱敏 K 索引仍待按审计目录落盘 |
 | D | 与配套 K 同一候选、设备内核和入口实例的真机请求 | NOT_RUN |
 | R | 受阻公网站点 opt-in 回归（Gold/Full） | 仅有[设计稿](ios-access-blocked-site-regression.zh-CN.md)；未接线，不进默认测试门 |
+| G | 本站规则组（多精确 host 一次开启） | 仅有[TODO 草案](ios-access-site-rule-group-TODO.zh-CN.md)；未接线，不改 U 完成含义 |
 
-U 与模拟器 K 通过后可更新 PR #97 说明与代码；D 未跑不得宣称设备闭环。R 通过不能写成 U/K/D。更新 PR 不等于独立审查、required checks、合并或发行通过，继续遵守 CI 指南及当时任务授权。
+U 与模拟器 K 通过后可更新 PR #97 说明与代码；D 未跑不得宣称设备闭环。R/G 通过不能写成 U/K/D。更新 PR 不等于独立审查、required checks、合并或发行通过，继续遵守 CI 指南及当时任务授权。
 
 不修改 SDD、冻结 spec.zh-CN.md、macOS/Android，不恢复其他暂停平台或清理历史产物。
