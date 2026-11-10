@@ -94,15 +94,31 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' }}
       - name: Verify Apple profile trust regressions without credentials
         run: python3 -B -m unittest discover -s scripts/release -p test_ios_profile_trust.py -v
+      # Host enrollment, retained failures and evidence: docs/ci-storage.md.
+      - name: Admit unsigned CI storage
+        id: storage
+        env:
+          CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          CI_RUNNER_NAME: ${{ runner.name }}
+        run: python3 -I -B scripts/ci/ios-ci-storage.py prepare --runner-environment "$CI_RUNNER_ENVIRONMENT" --runner-name "$CI_RUNNER_NAME"
       - name: Compile uncredentialed native archive
+        env:
+          IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
         run: |
-          xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Aegis.xcarchive" -derivedDataPath "$RUNNER_TEMP/DerivedData" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 archive > "$RUNNER_TEMP/xcodebuild.log" 2>&1
-          python3 scripts/release/verify-ios-archive.py "$RUNNER_TEMP/Aegis.xcarchive" 1.0.0 1
+          export TMPDIR="$IOS_CI_ROOT/tmp"
+          export CLANG_MODULE_CACHE_PATH="$IOS_CI_ROOT/ModuleCache"
+          xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_CI_ROOT/Aegis.xcarchive" -derivedDataPath "$IOS_CI_ROOT/DerivedData" -clonedSourcePackagesDirPath "$IOS_CI_ROOT/SourcePackages" -packageCachePath "$IOS_CI_ROOT/PackageCache" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 archive > "$IOS_CI_ROOT/xcodebuild.log" 2>&1
+          python3 scripts/release/verify-ios-archive.py "$IOS_CI_ROOT/Aegis.xcarchive" 1.0.0 1
+          python3 -I -B scripts/ci/ios-ci-storage.py seal --root "$IOS_CI_ROOT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: ${{ always() }}
+        if: ${{ always() && steps.storage.outcome == 'success' }}
         with:
           name: ios-unsigned-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/xcodebuild.log
+          path: |
+            ${{ steps.storage.outputs.root }}/xcodebuild.log
+            ${{ steps.storage.outputs.root }}/storage-receipt.json
+            ${{ steps.storage.outputs.root }}/Aegis.xcarchive.zip
+            ${{ steps.storage.outputs.root }}/unsigned-artifact.json
           if-no-files-found: error
           retention-days: 14
   cloud-poc:
