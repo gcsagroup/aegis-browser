@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -17,6 +18,7 @@
 #include "components/aegis_access/access_proxy_route_adapter.h"
 #include "components/aegis_access/policy_publication_ack_tracker.h"
 #include "components/aegis_access/access_route_types.h"
+#include "chrome/browser/aegis/access/access_private_context_client.h"
 #include "mojo/public/cpp/bindings/remote_set.h"
 #include "net/base/network_change_notifier.h"
 #include "services/network/public/mojom/network_context.mojom-forward.h"
@@ -99,6 +101,20 @@ class AccessNetworkContextTransport
       const base::FilePath& relative_partition_path,
       std::vector<std::string> exact_hosts,
       const aegis_access::RegisteredProxyEndpoint& endpoint);
+  // Records a real prepared child for private per-request publication. This
+  // does not alter native proxy settings or publish the user's site intent.
+  bool RegisterPreparedProxy(const AccessPrivateEndpoint& endpoint);
+  std::vector<AccessPrivateEndpoint> PrivateEndpoints(
+      const aegis_access::OwnershipKey& owner) const;
+  bool HasReadyPrivateContext(const aegis_access::OwnershipKey& owner) const;
+  using PrivateContext = std::shared_ptr<AccessPrivateContextClient>;
+  void BindPrivateContext(const aegis_access::OwnershipKey& owner,
+      network::mojom::NetworkContext* context,
+      base::OnceCallback<void(PrivateContext)> completion);
+  AccessNetworkConfigAckResult PublishPrivatePolicy(
+      const aegis_access::PublishedAccessPolicySnapshot& policy,
+      const aegis_access::GenerationTuple& common,
+      base::OnceCallback<void(bool)> completion);
 
   // Clears the custom selection while keeping the update channel installed.
   // New requests then use Chromium's native proxy result again.
@@ -145,7 +161,24 @@ class AccessNetworkContextTransport
  private:
   friend class AccessNetworkContextTransportTestPeer;
 
+  struct PrivatePublication {
+    aegis_access::PublishedAccessPolicySnapshot policy;
+    aegis_access::GenerationTuple common;
+    std::vector<AccessPrivateEndpoint> endpoints;
+    std::map<std::string, uint64_t> unavailable;
+  };
+  struct PrivateContextEntry {
+    PrivateContext client;
+    uint64_t sequence = 0;
+    uint64_t applied_revision = 0;
+    bool publishing = false;
+  };
   struct PartitionState {
+    std::map<std::string, AccessPrivateEndpoint> private_endpoints;
+    std::map<std::string, PrivateContextEntry> private_contexts;
+    std::optional<PrivatePublication> private_publication;
+    uint64_t private_revision = 0;
+    std::vector<base::OnceCallback<void(bool)>> private_publication_waiters;
     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
     std::vector<std::string> exact_hosts;
     mojo::RemoteSet<network::mojom::CustomProxyConfigClient> clients;
@@ -183,6 +216,13 @@ class AccessNetworkContextTransport
       const aegis_access::OwnershipKey& owner,
       base::OnceCallback<void(bool)> all_clients_settled);
   void Broadcast(PartitionState& state);
+  void PublishPrivateContext(const aegis_access::OwnershipKey& owner,
+                             const std::string& incarnation);
+  void OnPrivateContextPublished(aegis_access::OwnershipKey owner,
+      std::string incarnation, uint64_t revision, bool accepted);
+  void SettlePrivatePublication(PartitionState& state, bool accepted);
+  static bool SamePrivatePublication(const PrivatePublication& a,
+                                     const PrivatePublication& b);
 
   std::string runtime_profile_token_;
   uint64_t network_epoch_ = 1;

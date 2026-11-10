@@ -110,6 +110,9 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
 // ACK, or call AccessServiceCoordinator.
 class AccessSiteIntentStore {
  public:
+  AccessSiteIntentStore();
+  ~AccessSiteIntentStore();
+
   AccessSiteIntent Get(const AccessSiteHost& host) const;
   void Set(const AccessSiteHost& host, AccessSiteIntent intent);
   const std::map<AccessSiteHost, AccessSiteIntent>& All() const {

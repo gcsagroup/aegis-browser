@@ -762,6 +762,48 @@ StoreResult<StoredPolicySnapshot> AccessRuleStore::ReadCommittedSnapshot(
   return ReadCommittedSnapshotInternal(partition, true);
 }
 
+StoreResult<aegis_access::PublishedAccessPolicySnapshot>
+AccessRuleStore::ReserveCommittedPolicyForPublication(
+    const std::string& partition) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!is_open_) return {terminal_status_, std::nullopt, "store_not_open"};
+  if (!Bounded(partition))
+    return {StoreStatus::kInvalidArgument, std::nullopt, "invalid_partition"};
+  sql::Transaction transaction(&database_);
+  if (!transaction.Begin())
+    return {StoreStatus::kIoError, std::nullopt, "publication_reserve_begin_failed"};
+  auto stored = ReadCommittedSnapshotInternal(partition, true);
+  if (!stored.value || (stored.status != StoreStatus::kValid &&
+                        stored.status != StoreStatus::kMissing))
+    return {stored.status, std::nullopt, stored.detail};
+  std::vector<AccessPolicyRule> rules;
+  if (stored.status == StoreStatus::kValid) {
+    auto adapted = AdaptMatcherSnapshot(*stored.value);
+    if (!adapted.value) return {adapted.status, std::nullopt, adapted.detail};
+    rules = std::move(adapted.value->rules);
+  }
+  sql::Statement counter(database_.GetUniqueStatement(
+      "SELECT operation_sequence FROM access_store_counters WHERE singleton=1"));
+  if (!counter.Step())
+    return {StoreStatus::kCorrupt, std::nullopt, "missing_counters"};
+  const int64_t sequence = counter.ColumnInt64(0);
+  if (sequence < 0 || static_cast<uint64_t>(sequence) < stored.value->policy_generation)
+    return {StoreStatus::kCorrupt, std::nullopt, "invalid_counters"};
+  if (sequence == std::numeric_limits<int64_t>::max())
+    return {StoreStatus::kConflict, std::nullopt, "counter_overflow"};
+  aegis_access::PublishedAccessPolicySnapshot candidate{
+      stored.value->owner, static_cast<uint64_t>(sequence) + 1, std::move(rules)};
+  if (aegis_access::ValidateAccessPolicySnapshot(candidate) !=
+      aegis_access::PolicyMatchReason::kNone)
+    return {StoreStatus::kCorrupt, std::nullopt, "invalid_committed_policy"};
+  sql::Statement reserve(database_.GetUniqueStatement(
+      "UPDATE access_store_counters SET operation_sequence=? WHERE singleton=1"));
+  reserve.BindInt64(0, sequence + 1);
+  if (!reserve.Run() || !transaction.Commit())
+    return {StoreStatus::kIoError, std::nullopt, "publication_reserve_commit_failed"};
+  return {StoreStatus::kValid, std::move(candidate), {}};
+}
+
 StoreResult<StoredPolicySnapshot>
 AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
                                                bool check_recovery) {

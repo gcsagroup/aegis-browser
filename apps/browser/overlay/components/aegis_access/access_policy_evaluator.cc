@@ -334,33 +334,39 @@ PolicyMatchResult Error(PolicyState state, PolicyMatchReason reason,
 
 }  // namespace
 
+PolicyMatchReason ValidateAccessPolicySnapshot(
+    const PublishedAccessPolicySnapshot& snapshot) {
+  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
+    return PolicyMatchReason::kInvalidSnapshot;
+  }
+  for (const AccessPolicyRule& rule : snapshot.rules) {
+    if (!IsValidRule(rule, snapshot.owner)) {
+      return rule.owner != snapshot.owner
+                 ? PolicyMatchReason::kOwnershipMismatch
+                 : PolicyMatchReason::kInvalidRule;
+    }
+  }
+  return HasDuplicateRuleKey(snapshot.rules)
+             ? PolicyMatchReason::kPolicyConflict
+             : PolicyMatchReason::kNone;
+}
+
 PolicyMatchResult EvaluateAccessPolicy(
     const RequestPolicyContext& request,
     const PublishedAccessPolicySnapshot& snapshot) {
-  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
-    return Error(PolicyState::kInvalid,
-                 PolicyMatchReason::kInvalidSnapshot,
-                 snapshot.policy_generation);
+  const auto validation = ValidateAccessPolicySnapshot(snapshot);
+  if (validation == PolicyMatchReason::kInvalidSnapshot) {
+    return Error(PolicyState::kInvalid, validation, snapshot.policy_generation);
   }
   if (request.owner() != snapshot.owner) {
     return Error(PolicyState::kInvalid,
                  PolicyMatchReason::kOwnershipMismatch,
                  snapshot.policy_generation);
   }
-  for (const AccessPolicyRule& rule : snapshot.rules) {
-    if (!IsValidRule(rule, snapshot.owner)) {
-      const PolicyMatchReason reason =
-          rule.owner != snapshot.owner
-              ? PolicyMatchReason::kOwnershipMismatch
-              : PolicyMatchReason::kInvalidRule;
-      return Error(PolicyState::kInvalid, reason,
-                   snapshot.policy_generation);
-    }
-  }
-  if (HasDuplicateRuleKey(snapshot.rules)) {
-    return Error(PolicyState::kConflict,
-                 PolicyMatchReason::kPolicyConflict,
-                 snapshot.policy_generation);
+  if (validation != PolicyMatchReason::kNone) {
+    return Error(validation == PolicyMatchReason::kPolicyConflict
+                     ? PolicyState::kConflict : PolicyState::kInvalid,
+                 validation, snapshot.policy_generation);
   }
 
   std::vector<Candidate> candidates =

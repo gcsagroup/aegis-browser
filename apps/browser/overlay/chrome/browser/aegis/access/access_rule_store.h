@@ -249,6 +249,14 @@ class AccessRuleStore {
 
   StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
       const std::string& storage_partition_token);
+  // Atomically reserves a fresh policy version for the currently committed
+  // contents, including an empty bootstrap snapshot. Rows are not changed.
+  // The returned value is only a publication candidate; Network ACK and the
+  // Browser restoration barrier still govern use. PREPARED rows must be
+  // explicitly recovered before this method can return committed contents.
+  StoreResult<aegis_access::PublishedAccessPolicySnapshot>
+  ReserveCommittedPolicyForPublication(
+      const std::string& storage_partition_token);
   StoreResult<PendingMutationRecord> PrepareSiteGroupMutation(
       const SiteGroupMutationRequest& request);
   // Builds the full in-memory candidate represented by one exact PREPARED

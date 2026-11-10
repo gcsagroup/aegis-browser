@@ -3,6 +3,8 @@
 #include <iostream>
 #include <string>
 
+#include "components/aegis_access/access_route_isolation_key_contract_test.h"
+
 #include "components/aegis_access/access_base_proxy_config_generation_state_contract_test.h"
 #include "components/aegis_access/access_identity_generation_state_contract_test.h"
 #include "components/aegis_access/access_proxy_selection_generation_state_contract_test.h"
@@ -45,6 +47,7 @@ class NativeObserver : public aegis_access::test::ContractTestObserver,
 
 int main() {
   NativeObserver observer;
+  aegis_access::test::RunAccessRouteIsolationKeyContract(observer);
   aegis_access::test::RunRoutePlannerContractTests(observer);
   aegis_access::test::RunSiteProxyRuleGroupContractTests(observer);
   aegis_access::test::RunSiteProxyTransportUnitTests(observer);

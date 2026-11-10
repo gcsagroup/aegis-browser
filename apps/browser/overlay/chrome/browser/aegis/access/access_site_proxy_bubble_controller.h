@@ -3,12 +3,14 @@
 #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
 #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_PROXY_BUBBLE_CONTROLLER_H_
 
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/aegis/access/access_local_core_manager.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/aegis/access/access_rule_store.h"
 #include "chrome/browser/aegis/access/access_service_coordinator.h"
@@ -38,14 +40,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   AccessSiteIntentStore& intent_store() { return intent_store_; }
   const AccessSiteIntentStore& intent_store() const { return intent_store_; }
 
-  AccessSiteConnectionState connection_state() const {
-    return connection_state_;
-  }
-  const std::string& failure_reason() const { return failure_reason_; }
-
-  void SetConnectionState(AccessSiteConnectionState state) {
-    connection_state_ = state;
-  }
+  uint64_t state_revision() const { return state_revision_; }
 
   AccessSiteProxyBubbleSnapshot SnapshotForCommittedUrl(
       const GURL& committed_url) const;
@@ -55,9 +50,14 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   bool ApplyHostProxyToggle(const AccessSiteHost& host, bool enabled);
 
   // Product path: enable → local proxy ready → Prepare/Publish/ACK → ready.
-  // Disable locally commits even when the Access service is unavailable.
+  // Disable does not require a live proxy; publication failures remain visible.
   // Returns false only when the host/toggle cannot be accepted.
   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
+  void RequestFailedNavigationProxy(const GURL& original_url,
+      base::OnceCallback<void(bool)> completion);
+  base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
+  GetFailedNavigationRetryHandler();
+  void EnsureProfileRestored(const OwnershipKey& owner);
 
   // P-mac-4 DEV panel. False on Beta/Release — UI must not register the
   // section. Never admits a general Access rule editor.
@@ -83,6 +83,14 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
 
  private:
   explicit AccessSiteProxyBubbleController(Profile* profile);
+  void PrepareLocalCore(const AccessSiteHost& host);
+  void RestoreSavedIntents(OwnershipKey owner, bool restored);
+  void OnProfileRestoredForCore(AccessSiteHost host, OwnershipKey owner,
+                               bool restored);
+  void OnLocalCorePrepared(AccessSiteHost host, OwnershipKey owner,
+                          AccessLocalCoreReady result);
+  void OnCommittedCoreVerified(AccessSiteHost host, AccessLocalCoreReady result);
+  void FailCorePreparation(const AccessSiteHost& host, std::string error);
 
   AccessSiteProxySessionError EnsureLocalProxyReady(
       const AccessSiteHost& host,
@@ -98,11 +106,15 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
 
   const raw_ptr<Profile> profile_;
   AccessSiteIntentStore intent_store_;
-  AccessSiteConnectionState connection_state_ =
-      AccessSiteConnectionState::kIdle;
-  std::string failure_reason_;
-  bool store_retained_ = false;
+  struct HostState {
+    AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;
+    std::string failure_reason;
+  };
+  std::map<AccessSiteHost, HostState> host_states_;
+  uint64_t state_revision_ = 0;
   bool publication_in_flight_ = false;
+  std::unique_ptr<AccessLocalCoreManager> local_core_;
+  base::OnceCallback<void(bool)> retry_completion_;
   base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
 };
 

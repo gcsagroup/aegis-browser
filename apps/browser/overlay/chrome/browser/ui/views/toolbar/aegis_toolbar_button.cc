@@ -261,7 +261,11 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
     const auto snapshot = Helper() ? Helper()->Snapshot() : base::DictValue();
     const int revision = store->state().FindInt("revision").value_or(0);
-    if (revision != revision_ || snapshot != snapshot_) Build();
+    auto* access = aegis::access::AccessSiteProxyBubbleController::Get(
+        browser_->GetProfile());
+    const uint64_t access_revision = access ? access->state_revision() : 0;
+    if (revision != revision_ || snapshot != snapshot_ ||
+        access_revision != access_revision_) Build();
   }
   void RefreshSoon() {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
@@ -474,6 +478,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
     snapshot_ = Helper() ? Helper()->Snapshot() : base::DictValue();
     revision_ = store->state().FindInt("revision").value_or(0);
+    auto* access = aegis::access::AccessSiteProxyBubbleController::Get(
+        browser_->GetProfile());
+    access_revision_ = access ? access->state_revision() : 0;
     panel_->RemoveAllChildViews();
     if (!address_.SchemeIsHTTPOrHTTPS()) {
       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
@@ -606,6 +613,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   raw_ptr<views::View> panel_ = nullptr;
   base::DictValue snapshot_;
   int revision_ = -1;
+  uint64_t access_revision_ = 0;
   std::set<std::string> expanded_;
   std::u16string notice_;
   base::RepeatingTimer timer_;

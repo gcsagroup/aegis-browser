@@ -123,27 +123,31 @@ AccessPublishedRequestRuntime::PublishPolicySnapshot(
     return PublicationResult(AccessPolicyPublicationStatus::kInvalidSnapshot);
   }
 
-  AccessNetworkContextTransport* transport =
-      AccessNetworkContextTransport::Get(profile_);
-  if (!transport) {
-    return PublicationResult(AccessPolicyPublicationStatus::kMissingTransport);
-  }
-  if (!transport->OwnsConfiguredPartition(candidate.value->owner)) {
-    return PublicationResult(
-        AccessPolicyPublicationStatus::kOwnershipMismatch);
-  }
+  return PublishRestoredPolicyCandidate({candidate.value->owner,
+      candidate.value->committed_policy_generation, candidate.value->rules});
+}
 
-  aegis_access::PublishedAccessPolicySnapshot snapshot{
-      candidate.value->owner,
-      candidate.value->committed_policy_generation,
-      candidate.value->rules,
-  };
+AccessPolicyPublicationResult
+AccessPublishedRequestRuntime::PublishRestoredPolicyCandidate(
+    const aegis_access::PublishedAccessPolicySnapshot& candidate) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (candidate.policy_generation == 0 ||
+      aegis_access::ValidateAccessPolicySnapshot(candidate) !=
+          aegis_access::PolicyMatchReason::kNone) {
+    return PublicationResult(AccessPolicyPublicationStatus::kInvalidSnapshot);
+  }
+  auto* transport = AccessNetworkContextTransport::Get(profile_);
+  if (!transport)
+    return PublicationResult(AccessPolicyPublicationStatus::kMissingTransport);
+  if (!transport->OwnsConfiguredPartition(candidate.owner))
+    return PublicationResult(AccessPolicyPublicationStatus::kOwnershipMismatch);
+  aegis_access::PublishedAccessPolicySnapshot snapshot = candidate;
   auto it = policy_snapshots_.find(snapshot.owner.storage_partition_token);
   if (it == policy_snapshots_.end()) {
     policy_snapshots_.emplace(snapshot.owner.storage_partition_token,
                               std::move(snapshot));
     return PublicationResult(AccessPolicyPublicationStatus::kPublished,
-                             candidate.value->committed_policy_generation);
+                             candidate.policy_generation);
   }
 
   if (it->second.owner != snapshot.owner) {
@@ -195,6 +199,26 @@ aegis_access::RequestGenerationTupleBuildResult
 AccessPublishedRequestRuntime::CaptureProxyGenerationTupleOnUiThread(
     const aegis_access::OwnershipKey& owner,
     const std::string& proxy_group_id) const {
+  return aegis_access::BuildCompleteRequestGenerationTuple(
+      CaptureGenerationSources(owner, proxy_group_id));
+}
+
+std::optional<aegis_access::GenerationTuple>
+AccessPublishedRequestRuntime::CaptureCommonGenerationTupleOnUiThread(
+    const aegis_access::OwnershipKey& owner) const {
+  const auto input = CaptureGenerationSources(owner, {});
+  if (!aegis_access::IsCompleteOwner(owner) || input.policy_generation == 0 ||
+      input.identity_generation == 0 || input.network_epoch == 0 ||
+      input.base_proxy_config_generation == 0) return std::nullopt;
+  return aegis_access::GenerationTuple{input.policy_generation,
+      input.identity_generation, 0, input.network_epoch,
+      input.base_proxy_config_generation};
+}
+
+aegis_access::RequestGenerationTupleInput
+AccessPublishedRequestRuntime::CaptureGenerationSources(
+    const aegis_access::OwnershipKey& owner,
+    const std::string& proxy_group_id) const {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   aegis_access::RequestGenerationTupleInput input;
   input.request_owner = owner;
@@ -228,7 +252,7 @@ AccessPublishedRequestRuntime::CaptureProxyGenerationTupleOnUiThread(
         network_service->GetAegisBaseProxyConfigGeneration();
   }
 
-  return aegis_access::BuildCompleteRequestGenerationTuple(input);
+  return input;
 }
 
 }  // namespace aegis::access

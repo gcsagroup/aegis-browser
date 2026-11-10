@@ -1,0 +1,219 @@
+From 37eaf432ea0c1957aaf6be9b65c9b6979795e255 Mon Sep 17 00:00:00 2001
+From: Aegis Local Validation <aegis-local@invalid>
+Date: Tue, 10 Nov 2026 04:53:21 +0800
+Subject: [PATCH] fix(access): compile native session targets and preserve
+ committed recovery routes
+
+---
+ chrome/browser/aegis/access/BUILD.gn          | 18 +++++++------
+ .../aegis/access/access_site_intent.cc        |  3 +++
+ .../browser/aegis/access/access_site_intent.h |  3 +++
+ .../aegis/access/access_site_proxy_session.cc | 16 +++++++++++-
+ .../aegis/access/access_site_proxy_session.h  |  6 ++++-
+ .../access_site_proxy_session_unittest.cc     | 25 +++++++++++++++++++
+ 6 files changed, 62 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index c79ec02c31661a909d1f92db8bebe098a78b9ec7..fcca1322832927be3dc78a28ccfa5cfd8a1faa86 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -115,11 +115,13 @@ source_set("access_rule_store") {
+     "access_rule_store.cc",
+     "access_rule_store.h",
+   ]
+-  deps = [
++  public_deps = [
+     "//base",
+     "//components/aegis_access",
+-    "//net",
+     "//sql",
++  ]
++  deps = [
++    "//net",
+     "//url",
+   ]
+ }
+@@ -172,10 +174,12 @@ source_set("access_site_intent") {
+     "access_site_intent.cc",
+     "access_site_intent.h",
+   ]
+-  deps = [
++  public_deps = [
+     ":access_rule_store",
+-    "//base",
+     "//components/aegis_access",
++  ]
++  deps = [
++    "//base",
+     "//url",
+   ]
+ }
+@@ -198,7 +202,7 @@ source_set("access_site_proxy_session") {
+     "access_site_proxy_session.cc",
+     "access_site_proxy_session.h",
+   ]
+-  deps = [
++  public_deps = [
+     ":access_site_intent",
+     ":access_site_proxy_bubble_model",
+     "//base",
+@@ -221,11 +225,11 @@ source_set("access_site_proxy_bubble_model") {
+     "access_site_proxy_bubble_model.cc",
+     "access_site_proxy_bubble_model.h",
+   ]
+-  deps = [
++  public_deps = [
+     ":access_site_intent",
+-    "//base",
+     "//url",
+   ]
++  deps = [ "//base" ]
+ }
+ 
+ source_set("access_site_proxy_bubble") {
+diff --git a/chrome/browser/aegis/access/access_site_intent.cc b/chrome/browser/aegis/access/access_site_intent.cc
+index 848e9cd81c794ddef7e34c69cf9716b78d3b4c60..91e4c58cdf01e1e69326bce5f626aed3f8e4f85f 100644
+--- a/chrome/browser/aegis/access/access_site_intent.cc
++++ b/chrome/browser/aegis/access/access_site_intent.cc
+@@ -235,6 +235,9 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
+   return result;
+ }
+ 
++AccessSiteIntentStore::AccessSiteIntentStore() = default;
++AccessSiteIntentStore::~AccessSiteIntentStore() = default;
++
+ AccessSiteIntent AccessSiteIntentStore::Get(const AccessSiteHost& host) const {
+   const auto it = values_.find(host);
+   return it == values_.end() ? AccessSiteIntent::kOff : it->second;
+diff --git a/chrome/browser/aegis/access/access_site_intent.h b/chrome/browser/aegis/access/access_site_intent.h
+index b752c60fbdf30d3787ebaaa5918cfc6eead9b942..1ee76a07dd2b89de9e77efc034e87741fe4ce84a 100644
+--- a/chrome/browser/aegis/access/access_site_intent.h
++++ b/chrome/browser/aegis/access/access_site_intent.h
+@@ -110,6 +110,9 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
+ // ACK, or call AccessServiceCoordinator.
+ class AccessSiteIntentStore {
+  public:
++  AccessSiteIntentStore();
++  ~AccessSiteIntentStore();
++
+   AccessSiteIntent Get(const AccessSiteHost& host) const;
+   void Set(const AccessSiteHost& host, AccessSiteIntent intent);
+   const std::map<AccessSiteHost, AccessSiteIntent>& All() const {
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
+index c6907156c4a9bfb5be793928fb7f964ebba0f0f0..3eb9064ca93434bdc1856bf7485c18bab1513a69 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
+@@ -205,6 +205,8 @@ AccessSiteProxySessionController::AccessSiteProxySessionController(
+     AccessSiteProxySessionOrchestrating* orchestrator)
+     : orchestrator_(orchestrator) {}
+ 
++AccessSiteProxySessionController::~AccessSiteProxySessionController() = default;
++
+ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
+     const AccessSiteHost& host) const {
+   const auto it = snapshots_.find(host);
+@@ -356,7 +358,12 @@ AccessSiteProxySessionController::RepublishAllow(
+       orchestrator_->PublishAndAcknowledge(*plan.mutation.request,
+                                            plan.selector, &publication);
+   if (publish_status != AccessSiteProxySessionError::kOk) {
+-    (void)orchestrator_->TearDownPublishedHost(host);
++    // The transaction owns candidate rollback. A failed recovery must not
++    // tear down the previously committed PROXY selection: that could expose
++    // the host to native routing while its saved intent still requires PROXY.
++    if (SnapshotFor(host).policy_generation == 0) {
++      (void)orchestrator_->TearDownPublishedHost(host);
++    }
+     return MarkUnavailable(host, AccessSiteIntent::kAllow, publish_status);
+   }
+ 
+@@ -438,6 +445,13 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
+ 
+ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Write(
+     AccessSiteProxySessionSnapshot snapshot) {
++  // Preparing or failing a new candidate does not erase the last committed
++  // generation. Retain it through repeated recovery attempts; OFF clears it.
++  const auto previous = snapshots_.find(snapshot.host);
++  if (snapshot.intent == AccessSiteIntent::kAllow &&
++      snapshot.policy_generation == 0 && previous != snapshots_.end()) {
++    snapshot.policy_generation = previous->second.policy_generation;
++  }
+   snapshots_[snapshot.host] = snapshot;
+   return snapshot;
+ }
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.h b/chrome/browser/aegis/access/access_site_proxy_session.h
+index 3ba2806b8e31348bae81083b25bb0a8cffdcf28d..e074017ca51f9da4755aa97ef073df5bb6f49a0c 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session.h
++++ b/chrome/browser/aegis/access/access_site_proxy_session.h
+@@ -9,6 +9,7 @@
+ 
+ #include <optional>
+ 
++#include "base/memory/raw_ptr.h"
+ #include "chrome/browser/aegis/access/access_site_intent.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
+ #include "components/aegis_access/access_route_types.h"
+@@ -103,6 +104,8 @@ class AccessSiteProxySessionOrchestrating {
+       AccessSiteProxyLocalProxyReadyInfo* out) = 0;
+ 
+   // Runs PrepareCandidate → Publish → wait ACK for an ordinary mutation.
++  // On failure, rolls back the candidate while preserving the last committed
++  // selection. The caller must not tear down that selection during recovery.
+   virtual AccessSiteProxySessionError PublishAndAcknowledge(
+       const SiteGroupMutationRequest& request,
+       const aegis_access::RequestCancellationSelector& selector,
+@@ -120,6 +123,7 @@ class AccessSiteProxySessionController {
+  public:
+   explicit AccessSiteProxySessionController(
+       AccessSiteProxySessionOrchestrating* orchestrator);
++  ~AccessSiteProxySessionController();
+ 
+   AccessSiteIntentStore& intent_store() { return intent_store_; }
+   const AccessSiteIntentStore& intent_store() const { return intent_store_; }
+@@ -163,7 +167,7 @@ class AccessSiteProxySessionController {
+       const AccessSiteHost& host,
+       std::string_view operation_suffix);
+ 
+-  AccessSiteProxySessionOrchestrating* const orchestrator_;
++  const raw_ptr<AccessSiteProxySessionOrchestrating> orchestrator_;
+   AccessSiteIntentStore intent_store_;
+   std::map<AccessSiteHost, AccessSiteProxySessionSnapshot> snapshots_;
+ };
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+index 8a4116af54f76a756aee50336e8692851c0a12b6..f38f750bb830a7e4720250c32b67a1de643690a2 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+@@ -319,6 +319,31 @@ TEST(AccessSiteProxySessionTest, RecoverFromFaultRestoresReadyViaProxy) {
+   EXPECT_NE(plan.action, aegis_access::RouteAction::kPreserveNative);
+ }
+ 
++TEST(AccessSiteProxySessionTest,
++     FailedRecoveryDoesNotTearDownCommittedProxySelection) {
++  FakeOrchestrator orchestrator;
++  AccessSiteProxySessionController controller(&orchestrator);
++  const AccessSiteHost host = Host("www.example.com");
++  ASSERT_EQ(controller.Enable(host).phase, AccessSiteProxySessionPhase::kReady);
++  controller.NotifyRuntimeFault(host, AccessSiteProxyFaultMode::kFailClosed);
++  const int prior_teardowns = orchestrator.tear_down_count;
++
++  orchestrator.fail_at = FakeOrchestrator::Stage::kPublish;
++  orchestrator.publish_error = AccessSiteProxySessionError::kAckFailed;
++  const auto failed = controller.RecoverFromFault(host);
++
++  EXPECT_EQ(failed.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(failed.phase, AccessSiteProxySessionPhase::kUnavailable);
++  EXPECT_EQ(failed.policy_generation, 7u);
++  EXPECT_EQ(orchestrator.tear_down_count, prior_teardowns);
++  EXPECT_EQ(controller.RecoverFromFault(host).policy_generation, 7u);
++  EXPECT_EQ(orchestrator.tear_down_count, prior_teardowns);
++  const auto route =
++      PlanSiteProxySessionRequestRoute(failed, HealthyRouteContext(7));
++  EXPECT_EQ(route.action, aegis_access::RouteAction::kFail);
++  EXPECT_NE(route.action, aegis_access::RouteAction::kPreserveNative);
++}
++
+ TEST(AccessSiteProxySessionTest,
+      NetworkServiceRestartRebuildsProxyWithoutDirect) {
+   FakeOrchestrator orchestrator;
+-- 
+2.54.0 (Apple Git-157)
+
