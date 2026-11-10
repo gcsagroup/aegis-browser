@@ -1,3 +1,4 @@
+import WebKit
 import XCTest
 @testable import BrowserKit
 
@@ -47,6 +48,32 @@ import XCTest
         XCTAssertEqual(restored.standardTabs.count, count)
         XCTAssertTrue(restored.standardTabs.allSatisfy { $0.groupID == nil })
         [first, second, restored].forEach { session in (session.standardTabs + session.privateTabs).forEach { $0.stop() } }
+    }
+
+    func testPrivateWebsiteDataStoreRetiresOnCloseAndDiscard() throws {
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        browser.switchProfile(to: .privateMode)
+        let first = try XCTUnwrap(browser.activeTab)
+        let firstStore = first.websiteDataStore
+        XCTAssertFalse(firstStore.isPersistent)
+        XCTAssertFalse(firstStore === WKWebsiteDataStore.default())
+
+        browser.close(first.id)
+        let closed = browser.consumeRetiredPrivateWebsiteDataStores()
+        XCTAssertTrue(closed.contains { $0 === firstStore })
+        let replacement = try XCTUnwrap(browser.privateTabs.first)
+        XCTAssertFalse(replacement.websiteDataStore === firstStore)
+
+        browser.discardPrivateSession()
+        let discarded = browser.consumeRetiredPrivateWebsiteDataStores()
+        XCTAssertTrue(discarded.contains { $0 === replacement.websiteDataStore })
+        XCTAssertTrue(browser.privateTabs.isEmpty)
+        XCTAssertEqual(browser.profile, .standard)
+
+        let ordinary = try XCTUnwrap(browser.activeTab)
+        browser.close(ordinary.id)
+        XCTAssertTrue(browser.consumeRetiredPrivateWebsiteDataStores().isEmpty)
+        browser.standardTabs.forEach { $0.stop() }
     }
 
     func testMoveCloseAndSwitchGroupDoNotAffectOtherGroups() throws {

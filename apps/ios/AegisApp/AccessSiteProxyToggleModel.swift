@@ -31,6 +31,7 @@ struct AccessSiteProxyToggleSnapshot: Equatable, Sendable {
     var intentStatus: AccessSiteProxyIntentStatusId = .noTrustedSite
     var connectionStatus: AccessSiteProxyConnectionStatusId = .idle
     var failureReason: String?
+    var attachment: AccessProxyAttachment = .notAttached
 }
 
 /// Pure presentation helpers for the per-site Access proxy toggle.
@@ -154,6 +155,18 @@ enum AccessSiteProxyToggleModel {
             return "连接：已就绪"
         case .unavailable:
             return "连接：不可用"
+        }
+    }
+
+    static func attachmentLine(for attachment: AccessProxyAttachment, intent: AccessSiteIntent) -> String? {
+        guard intent == .allow else { return nil }
+        switch attachment {
+        case .notAttached:
+            return "尚未接入代理，当前页面仍使用原连接"
+        case .attachedUnavailable:
+            return "代理请求失败，未切回原连接"
+        case .ready:
+            return nil
         }
     }
 }

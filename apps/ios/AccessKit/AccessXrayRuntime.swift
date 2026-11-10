@@ -40,11 +40,26 @@ public final class AccessXrayRuntime: @unchecked Sendable {
     }
 
     public var state: AccessXrayRuntimeState {
-        lock.lock(); defer { lock.unlock() }
-        return stateValue
+        isRunning ? .running : .idle
     }
 
-    public var isRunning: Bool { state == .running }
+    /// True only while the launched handle still reports running.
+    /// An independent core exit clears the cached state so a later start is admitted.
+    public var isRunning: Bool {
+        lock.lock()
+        let active = handle
+        let cached = stateValue
+        lock.unlock()
+        guard cached == .running, let active else { return false }
+        if active.isRunning { return true }
+        lock.lock()
+        if handle === active {
+            handle = nil
+            stateValue = .idle
+        }
+        lock.unlock()
+        return false
+    }
 
     /// Verifies the executable digest, then launches with the supplied config.
     public func start(
@@ -55,10 +70,7 @@ public final class AccessXrayRuntime: @unchecked Sendable {
             throw AccessXrayRuntimeError.profileNotAdmitted(config.profile.rawValue)
         }
 
-        lock.lock()
-        let already = stateValue == .running
-        lock.unlock()
-        if already {
+        if isRunning {
             throw AccessXrayRuntimeError.alreadyRunning
         }
 
@@ -97,9 +109,13 @@ public final class AccessXrayRuntime: @unchecked Sendable {
     }
 
     /// Terminates the running process and returns to idle.
+    /// A core that already exited is not running; callers may start again.
     public func stop() throws {
+        guard isRunning else {
+            throw AccessXrayRuntimeError.notRunning
+        }
         lock.lock()
-        guard stateValue == .running, let active = handle else {
+        guard let active = handle else {
             lock.unlock()
             throw AccessXrayRuntimeError.notRunning
         }

@@ -1,4 +1,5 @@
 import AccessKit
+import BrowserKit
 import SwiftUI
 
 /// Current-page 「本站代理」 toggle: host + switch + intent/connection lines.
@@ -8,11 +9,18 @@ import SwiftUI
 struct AccessSiteProxyToggleView: View {
     @ObservedObject var store: AccessSiteProxySessionStore
     let url: URL?
+    var tab: BrowserTab?
 
     @Environment(\.locale) private var localizationLocale
 
     private var snapshot: AccessSiteProxyToggleSnapshot {
-        store.snapshot(for: url)
+        if let tab { return store.snapshot(for: tab) }
+        return store.snapshot(for: url)
+    }
+
+    private var attachment: AccessProxyAttachment {
+        guard let tab else { return .notAttached }
+        return store.attachment(tab: tab, url: url)
     }
 
     var body: some View {
@@ -33,10 +41,13 @@ struct AccessSiteProxyToggleView: View {
                 "使用本服务代理",
                 isOn: Binding(
                     get: { snap.toggleOn },
-                    set: { store.setProxyEnabled($0, for: url) }
+                    set: { enabled in
+                        guard let tab else { return }
+                        store.setProxyEnabled(enabled, for: tab)
+                    }
                 )
             )
-            .disabled(!snap.toggleEnabled)
+            .disabled(!snap.toggleEnabled || tab == nil)
             .accessibilityIdentifier("access-site-proxy-toggle")
 
             VStack(alignment: .leading, spacing: 4) {
@@ -48,6 +59,15 @@ struct AccessSiteProxyToggleView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("access-site-proxy-connection")
+                if let attachment = AccessSiteProxyToggleModel.attachmentLine(
+                    for: attachment,
+                    intent: snap.intent
+                ) {
+                    Text(attachment)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("access-site-proxy-attachment")
+                }
                 if let reason = snap.failureReason, !reason.isEmpty {
                     Text(reason)
                         .font(.footnote)

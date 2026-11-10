@@ -1,5 +1,6 @@
 import BrowserKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct RecordRecoveryView: View {
     let fileURL: URL?
@@ -88,6 +89,23 @@ struct RecordRecoveryView: View {
 struct ExportedFile: Identifiable {
     let id = UUID()
     let url: URL
+}
+
+struct ExportedFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.data] }
+    let data: Data
+
+    init(url: URL) throws {
+        data = try Data(contentsOf: url)
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
 }
 
 struct FileExportPicker: UIViewControllerRepresentable {

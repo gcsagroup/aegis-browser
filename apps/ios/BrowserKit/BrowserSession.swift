@@ -4,6 +4,55 @@ import Foundation
 import UIKit
 import WebKit
 
+/// App-owned exact-host stores. Nil keeps every tab on the store it was created with.
+public enum BrowserNavigationFailure {
+    public static func isRecoverableNetworkFailure(_ error: NSError) -> Bool {
+        let certificate: Set<Int> = [
+            NSURLErrorServerCertificateUntrusted,
+            NSURLErrorServerCertificateHasBadDate,
+            NSURLErrorServerCertificateHasUnknownRoot,
+            NSURLErrorServerCertificateNotYetValid,
+            NSURLErrorClientCertificateRejected,
+            NSURLErrorClientCertificateRequired
+        ]
+        return error.domain == NSURLErrorDomain
+            && error.code != NSURLErrorCancelled
+            && !certificate.contains(error.code)
+    }
+}
+
+public struct BrowserMainFrameFailure: Equatable, Sendable {
+    public var failureID: UUID
+    public var navigationID: String
+    public var url: URL
+    public var method: String
+    public var recoveryOperationID: UUID?
+
+    public init(
+        failureID: UUID,
+        navigationID: String,
+        url: URL,
+        method: String,
+        recoveryOperationID: UUID? = nil
+    ) {
+        self.failureID = failureID
+        self.navigationID = navigationID
+        self.url = url
+        self.method = method
+        self.recoveryOperationID = recoveryOperationID
+    }
+}
+
+@MainActor
+public protocol BrowserHostStoreCoordinating: AnyObject {
+    func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore?
+    func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError)
+    func pendingRecoveryInvalidated(tab: BrowserTab)
+    func tabClosed(_ tab: BrowserTab)
+    func ordinaryHostStores() -> [WKWebsiteDataStore]
+    func endPrivateSession(scopeID: String)
+}
+
 public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
     case standard
     case privateMode
@@ -16,7 +65,34 @@ public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     public let id: UUID
-    private let configuration: WKWebViewConfiguration
+    private var configuration: WKWebViewConfiguration
+    /// Store captured when the tab was created. Returning to the original connection uses this object.
+    public let originalWebsiteDataStore: WKWebsiteDataStore
+    public var websiteDataStore: WKWebsiteDataStore { configuration.websiteDataStore }
+    public var boundHostName: String?
+    public var browsingScopeID = "ordinary"
+    var configurationFactory: ((WKWebsiteDataStore) -> WKWebViewConfiguration)?
+    public weak var hostCoordinator: BrowserHostStoreCoordinating?
+    private var committedRequestMethod = "GET"
+    private struct MainFrameAttempt {
+        var navigationID: String
+        var url: URL
+        var method: String
+        var failureID: UUID?
+        var recoveryOperationID: UUID?
+    }
+    private var attempt = MainFrameAttempt(
+        navigationID: UUID().uuidString,
+        url: URL(string: "about:blank")!,
+        method: "GET",
+        failureID: nil,
+        recoveryOperationID: nil
+    )
+    private var attemptsByNavigation: [ObjectIdentifier: MainFrameAttempt] = [:]
+    @Published public private(set) var lastMainFrameFailure: BrowserMainFrameFailure?
+    @Published public private(set) var loadingErrorAllowsProxyRetry = false
+    internal private(set) var recoveryLoadCount = 0
+    var currentNavigationForTests: WKNavigation? { pendingNavigation }
     private var loadedWebView: WKWebView?
     private var titleObservation: NSKeyValueObservation?
     /// 只有显式加载或访问当前页面时才创建 WebView；标签列表不得通过此属性读取状态。
@@ -95,18 +171,120 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         self.id = id
         self.profile = profile
         self.configuration = configuration
+        self.originalWebsiteDataStore = configuration.websiteDataStore
         self.preferences = preferences
         self.securityRuleStore = securityRuleStore
         self.enhancementStore = enhancementStore
-        PageProtection.applySystem(configuration, hardened: preferences.values.hardenedSecurity ?? false)
         super.init()
+        installContentHooks()
+    }
+
+    private func installContentHooks() {
+        PageProtection.applySystem(configuration, hardened: preferences.values.hardenedSecurity ?? false)
         configuration.userContentController.addUserScript(WKUserScript(source: """
         globalThis.__aegisHasEdits = false;
         document.addEventListener('input', () => { globalThis.__aegisHasEdits = true; }, true);
         document.addEventListener('change', () => { globalThis.__aegisHasEdits = true; }, true);
         """, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .defaultClient))
         userScripts = UserScriptController(store: enhancementStore, controller: configuration.userContentController)
-        userScripts.tab = self
+        userScripts?.tab = self
+    }
+
+    private func beginUserNavigation(url: URL, method: String) {
+        hostCoordinator?.pendingRecoveryInvalidated(tab: self)
+        loadingErrorPresentation = nil
+        loadingErrorAllowsProxyRetry = false
+        lastMainFrameFailure = nil
+        attempt = MainFrameAttempt(
+            navigationID: UUID().uuidString,
+            url: url,
+            method: method.uppercased(),
+            failureID: nil,
+            recoveryOperationID: nil
+        )
+    }
+
+    private func rememberPendingNavigation() {
+        guard let pendingNavigation else { return }
+        attemptsByNavigation[ObjectIdentifier(pendingNavigation)] = attempt
+    }
+
+    func alignStore(for url: URL, previous: URL?, method: String, body: Data?) {
+        let hostChanged = previous?.host?.lowercased() != nil
+            && url.host?.lowercased() != nil
+            && previous?.host?.lowercased() != url.host?.lowercased()
+        let routed = hostCoordinator?.dataStoreForMainFrame(tab: self, url: url)
+        let desired = routed ?? originalWebsiteDataStore
+        guard hostChanged || desired !== configuration.websiteDataStore else { return }
+        if ["POST", "PATCH"].contains(method.uppercased()), body == nil, hostChanged {
+            loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
+            loadingErrorAllowsProxyRetry = false
+            return
+        }
+        rebindWebsiteDataStore(desired, host: routed == nil ? nil : url.host?.lowercased())
+    }
+
+    func commitPreservingMethod(_ request: URLRequest, continuesAttempt: Bool = false) {
+        let method = request.httpMethod ?? "GET"
+        let url = request.url ?? URL(string: "about:blank")!
+        if !continuesAttempt {
+            beginUserNavigation(url: url, method: method)
+        } else {
+            attempt.url = url
+            attempt.method = method
+        }
+        committedRequestMethod = method
+        alignStore(for: url, previous: requestedURL, method: method, body: request.httpBody)
+        requestedURL = url
+        isLoading = true
+        var outgoing = request
+        outgoing.httpMethod = method
+        let navigation = webView.load(outgoing)
+        pendingNavigation = navigation
+        if let navigation {
+            attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
+        }
+    }
+
+    public func load(_ request: URLRequest) {
+        commitPreservingMethod(request)
+    }
+
+    /// Reloads the failed main-frame request without minting a new navigation identity.
+    /// Returns false when this tab is no longer showing that failure.
+    @discardableResult
+    public func retryFailedNavigation(
+        _ request: URLRequest,
+        expectedNavigationID: String,
+        recoveryOperationID: UUID
+    ) -> Bool {
+        guard lastMainFrameFailure?.navigationID == expectedNavigationID else { return false }
+        guard request.url != nil else { return false }
+        let method = (request.httpMethod ?? "GET").uppercased()
+        guard method == "GET" || method == "HEAD" else { return false }
+        attempt.navigationID = expectedNavigationID
+        attempt.method = method
+        attempt.url = request.url ?? attempt.url
+        attempt.failureID = lastMainFrameFailure?.failureID
+        attempt.recoveryOperationID = recoveryOperationID
+        loadingErrorPresentation = nil
+        loadingErrorAllowsProxyRetry = false
+        recoveryLoadCount += 1
+        commitPreservingMethod(request, continuesAttempt: true)
+        return pendingNavigation != nil
+    }
+
+    public func rebindWebsiteDataStore(_ store: WKWebsiteDataStore, host: String?) {
+        guard store !== configuration.websiteDataStore else {
+            boundHostName = host
+            return
+        }
+        releaseWebView()
+        if let configurationFactory {
+            configuration = configurationFactory(store)
+            installContentHooks()
+        }
+        boundHostName = host
     }
 
     func prepareForRestore(url: URL?, title: String? = nil, scrollOffset: Double? = nil) {
@@ -185,7 +363,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         protectionIncident = nil; protectionNoticePresentation = nil; fingerprintSignals = []
         structureTask?.cancel()
         if temporaryPermission?.url != url { temporaryPermission = nil }
-        loadingErrorPresentation = nil
+        beginUserNavigation(url: url, method: "GET")
         // 立即让旧页面授权失效，不等网络回调到来。
         navigationEpoch &+= 1
         loadTask?.cancel()
@@ -203,7 +381,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         if decision.kind == .sanitized { lastPolicyIntervention = decision }
         let url = URL(string: decision.effectiveURL) ?? url
+        let previous = requestedURL
         requestedURL = url
+        attempt.url = url
+        attempt.method = "GET"
+        committedRequestMethod = "GET"
+        alignStore(for: url, previous: previous, method: "GET", body: nil)
         isLoading = true
         if ["http", "https"].contains(url.scheme ?? ""), contentRuleList == nil || securityLists.count < 2 {
             isLoading = true
@@ -219,19 +402,23 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                     guard generation == loadGeneration else { return }
                     configureTrackingProtection(for: url)
                     pendingNavigation = webView.load(URLRequest(url: url, timeoutInterval: 30))
+                    rememberPendingNavigation()
                 } catch {
                     guard generation == loadGeneration else { return }
                     isLoading = false
+                    loadingErrorAllowsProxyRetry = false
                     loadingErrorPresentation = .resource("跟踪保护初始化失败，请重试。")
                 }
             }
         } else {
             configureTrackingProtection(for: url)
             pendingNavigation = webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 30))
+            rememberPendingNavigation()
         }
     }
 
     public func goBack() {
+        beginUserNavigation(url: requestedURL ?? url ?? URL(string: "about:blank")!, method: "GET")
         loadTask?.cancel(); loadGeneration = UUID()
         if webView.canGoBack {
             navigationEpoch &+= 1
@@ -241,6 +428,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func goForward() {
+        beginUserNavigation(url: requestedURL ?? url ?? URL(string: "about:blank")!, method: "GET")
         loadTask?.cancel(); loadGeneration = UUID()
         if webView.canGoForward {
             navigationEpoch &+= 1
@@ -268,6 +456,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func stop() {
+        beginUserNavigation(url: requestedURL ?? url ?? URL(string: "about:blank")!, method: committedRequestMethod)
         structureTask?.cancel()
         navigationEpoch &+= 1
         loadGeneration = UUID()
@@ -322,6 +511,27 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         webPreferences.preferredContentMode = (site.desktop ?? preferences.values.desktop) ? .desktop : .recommended
         webPreferences.allowsContentJavaScript = site.javaScript ?? preferences.values.javaScript
         let decision = navigationDecision(requestURL, method: navigationAction.request.httpMethod ?? "GET")
+        if decision.kind != .blocked,
+           navigationAction.targetFrame?.isMainFrame != false,
+           let previous = requestedURL,
+           previous.host?.lowercased() != requestURL.host?.lowercased()
+            || hostCoordinator?.dataStoreForMainFrame(tab: self, url: requestURL).map({ $0 !== websiteDataStore }) == true {
+            let method = navigationAction.request.httpMethod ?? "GET"
+            let body = navigationAction.request.httpBody
+            if ["POST", "PATCH"].contains(method.uppercased()), body == nil {
+                loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
+                loadingErrorAllowsProxyRetry = false
+                finish(.cancel)
+                return
+            }
+            finish(.cancel)
+            var request = navigationAction.request
+            request.url = URL(string: decision.effectiveURL) ?? requestURL
+            request.httpMethod = method
+            request.httpBody = body
+            commitPreservingMethod(request, continuesAttempt: attempt.recoveryOperationID != nil)
+            return
+        }
         if decision.kind != .blocked, ["http", "https"].contains(requestURL.scheme ?? ""), (contentRuleList == nil || securityLists.count < 2) {
             finish(.cancel)
             load(requestURL)
@@ -393,6 +603,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         guard webView === loadedWebView, isCurrent(navigation) else { return }
         pendingNavigation = nil
         isLoading = false
+        loadingErrorPresentation = nil
+        loadingErrorAllowsProxyRetry = false
+        lastMainFrameFailure = nil
+        attempt.recoveryOperationID = nil
+        attempt.failureID = nil
         refreshState()
         // History can restore a start document whose DOM predates the current
         // language; a newly loaded document may also finish after a selection.
@@ -427,9 +642,42 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         withError error: Error
     ) {
         guard webView === loadedWebView, isCurrent(navigation) else { return }
+        let recorded = navigation.flatMap { attemptsByNavigation[ObjectIdentifier($0)] } ?? attempt
         pendingNavigation = nil
         isLoading = false
-        if (error as NSError).code != NSURLErrorCancelled { loadingErrorPresentation = .error(error) }
+        let nsError = error as NSError
+        if nsError.code == NSURLErrorCancelled {
+            loadingErrorAllowsProxyRetry = false
+            refreshState()
+            return
+        }
+        let method = recorded.method.uppercased()
+        let failedURL = recorded.url
+        let failureID = recorded.failureID
+            ?? (lastMainFrameFailure?.navigationID == recorded.navigationID ? lastMainFrameFailure?.failureID : nil)
+            ?? UUID()
+        attempt.navigationID = recorded.navigationID
+        attempt.url = failedURL
+        attempt.method = method
+        attempt.failureID = failureID
+        attempt.recoveryOperationID = recorded.recoveryOperationID
+        let failure = BrowserMainFrameFailure(
+            failureID: failureID,
+            navigationID: recorded.navigationID,
+            url: failedURL,
+            method: method,
+            recoveryOperationID: recorded.recoveryOperationID
+        )
+        lastMainFrameFailure = failure
+        loadingErrorPresentation = .error(error)
+        let scheme = failedURL.scheme?.lowercased() ?? ""
+        loadingErrorAllowsProxyRetry = BrowserNavigationFailure.isRecoverableNetworkFailure(nsError)
+            && ["http", "https"].contains(scheme)
+            && (method == "GET" || method == "HEAD")
+        if !loadingErrorAllowsProxyRetry {
+            loadingErrorAllowsProxyRetry = false
+        }
+        hostCoordinator?.mainFrameFailed(tab: self, failure: failure, error: nsError)
         refreshState()
     }
 
@@ -542,6 +790,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         requestedURL = incident.url; url = incident.url
         protectionIncident = incident
         titlePresentation = .resource("已阻止风险页面")
+        loadingErrorAllowsProxyRetry = false
+        lastMainFrameFailure = nil
+        hostCoordinator?.pendingRecoveryInvalidated(tab: self)
     }
 
     private func configurePageProtection(for url: URL) {
@@ -676,8 +927,15 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 public final class BrowserSession: ObservableObject {
     private final class WeakSession { weak var value: BrowserSession?; init(_ value: BrowserSession) { self.value = value } }
     private static var sessions: [WeakSession] = []
+
+    public static func openTabs() -> [BrowserTab] {
+        sessions.compactMap(\.value).flatMap { $0.standardTabs + $0.privateTabs }
+    }
     @Published public private(set) var standardTabs: [BrowserTab] = []
     @Published public private(set) var privateTabs: [BrowserTab] = []
+    /// Bumps when a private `WKWebsiteDataStore` is retired and waiting to be released.
+    @Published public private(set) var retiredPrivateWebsiteDataStoreRevision: UInt64 = 0
+    private var retiredPrivateWebsiteDataStores: [WKWebsiteDataStore] = []
     @Published public var activeTabID: UUID?
     @Published public var profile: BrowserProfile = .standard
     @Published public private(set) var extensionStatus = "WebExtension 正在初始化"
@@ -703,6 +961,10 @@ public final class BrowserSession: ObservableObject {
 
     public let standardProfileID = UUID()
     public let privateProfileID = UUID()
+    public private(set) var privateSessionID = UUID()
+    public weak var hostCoordinator: BrowserHostStoreCoordinating? {
+        didSet { (standardTabs + privateTabs).forEach { $0.hostCoordinator = hostCoordinator } }
+    }
     public let dataStore: BrowserDataStore
     public let workspaceStore: WorkspaceStore
     public let preferences: BrowserPreferences
@@ -842,9 +1104,29 @@ public final class BrowserSession: ObservableObject {
     }
 
     public func discardPrivateSession() {
-        privateTabs.forEach { $0.stop() }
+        let endingScope = privateSessionID.uuidString
+        privateTabs.forEach {
+            hostCoordinator?.tabClosed($0)
+            retirePrivateWebsiteDataStore($0.websiteDataStore)
+            $0.stop()
+        }
         privateTabs = []; privateGroups = []; privateGroupID = nil
+        privateSessionID = UUID()
+        hostCoordinator?.endPrivateSession(scopeID: endingScope)
         if profile.isPrivate { switchProfile(to: .standard) }
+    }
+
+    /// Hands retired private data stores to the Access registry. Ordinary
+    /// `WKWebsiteDataStore.default()` is never included.
+    public func consumeRetiredPrivateWebsiteDataStores() -> [WKWebsiteDataStore] {
+        let stores = retiredPrivateWebsiteDataStores
+        retiredPrivateWebsiteDataStores = []
+        return stores
+    }
+
+    private func retirePrivateWebsiteDataStore(_ dataStore: WKWebsiteDataStore) {
+        retiredPrivateWebsiteDataStores.append(dataStore)
+        retiredPrivateWebsiteDataStoreRevision &+= 1
     }
 
     public var activeProfileID: UUID {
@@ -889,13 +1171,24 @@ public final class BrowserSession: ObservableObject {
     }
 
     public func close(_ tabID: UUID) {
-        visibleTabs.first { $0.id == tabID }?.stop()
+        let closingPrivate = profile == .privateMode
+        let endingScope = privateSessionID.uuidString
+        if let tab = visibleTabs.first(where: { $0.id == tabID }) {
+            hostCoordinator?.tabClosed(tab)
+            if closingPrivate { retirePrivateWebsiteDataStore(tab.websiteDataStore) }
+            tab.stop()
+        }
         if profile == .standard {
             standardTabs.removeAll { $0.id == tabID }
             if standardTabs.isEmpty { standardTabs = [makeTab(profile: .standard)] }
         } else {
             privateTabs.removeAll { $0.id == tabID }
-            if privateTabs.isEmpty { privateEnhancements = WebsiteEnhancementStore(); privateTabs = [makeTab(profile: .privateMode)] }
+            if privateTabs.isEmpty {
+                privateEnhancements = WebsiteEnhancementStore()
+                privateSessionID = UUID()
+                hostCoordinator?.endPrivateSession(scopeID: endingScope)
+                privateTabs = [makeTab(profile: .privateMode)]
+            }
         }
         if activeTabID == tabID { activeTabID = displayedTabs.first?.id }
         refreshBookmarkState()
@@ -934,10 +1227,18 @@ public final class BrowserSession: ObservableObject {
             if !session.profile.isPrivate { session.activeTabID = session.standardActiveID }
             session.persistSession(); session.refreshBookmarkState()
         }
+        let stores = [WKWebsiteDataStore.default()] + (hostCoordinator?.ordinaryHostStores() ?? [])
         if let records {
-            await WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: records)
+            for store in stores {
+                let hosted = await store.dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes())
+                let names = Set(records.map(\.displayName))
+                let matching = hosted.filter { names.contains($0.displayName) }
+                await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: matching.isEmpty ? records : matching)
+            }
         } else {
-            await WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+            for store in stores {
+                await store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
+            }
         }
     }
 
@@ -987,13 +1288,19 @@ public final class BrowserSession: ObservableObject {
     }
 
     private func makeTab(profile: BrowserProfile, id: UUID = UUID()) -> BrowserTab {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = profile.isPrivate ? .nonPersistent() : .default()
-        configuration.userContentController = WKUserContentController()
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = preferences.values.allowPopups
-        configuration.mediaTypesRequiringUserActionForPlayback = preferences.values.requireMediaGesture ? .all : []
-        configuration.setURLSchemeHandler(FixtureSchemeHandler(), forURLScheme: "aegis")
-        (profile.isPrivate ? privateRuntime : standardRuntime).apply(to: configuration)
+        let runtime = profile.isPrivate ? privateRuntime : standardRuntime
+        let initialStore: WKWebsiteDataStore = profile.isPrivate ? .nonPersistent() : .default()
+        let factory: (WKWebsiteDataStore) -> WKWebViewConfiguration = { store in
+            let configuration = WKWebViewConfiguration()
+            configuration.websiteDataStore = store
+            configuration.userContentController = WKUserContentController()
+            configuration.preferences.javaScriptCanOpenWindowsAutomatically = self.preferences.values.allowPopups
+            configuration.mediaTypesRequiringUserActionForPlayback = self.preferences.values.requireMediaGesture ? .all : []
+            configuration.setURLSchemeHandler(FixtureSchemeHandler(), forURLScheme: "aegis")
+            runtime.apply(to: configuration)
+            return configuration
+        }
+        let configuration = factory(initialStore)
 
         #if DEBUG
         let rules = ProcessInfo.processInfo.arguments.contains("--ui-testing-security") ? SecurityRuleStore(fixtureRules: true) : .shared
@@ -1002,6 +1309,9 @@ public final class BrowserSession: ObservableObject {
         #endif
         let tab = BrowserTab(id: id, profile: profile, configuration: configuration, preferences: preferences, securityRuleStore: rules,
                              enhancementStore: profile.isPrivate ? privateEnhancements : standardEnhancements)
+        tab.configurationFactory = factory
+        tab.hostCoordinator = hostCoordinator
+        tab.browsingScopeID = profile.isPrivate ? privateSessionID.uuidString : "ordinary"
         tab.onNavigation = { [weak self] tab in
             guard let self, let url = tab.url else { return }
             if url.absoluteString != "aegis://start", preferences.values.saveHistory {

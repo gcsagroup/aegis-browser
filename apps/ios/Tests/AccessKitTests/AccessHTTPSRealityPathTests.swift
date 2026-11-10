@@ -2,17 +2,19 @@ import Network
 import XCTest
 @testable import AccessKit
 
-private final class FakeStream: AccessRealityPathStream {
+private final class FakeStream: AccessRealityPathStream, @unchecked Sendable {
     private(set) var isOpen = true
+    func read(maxBytes: Int) async throws -> Data? { nil }
+    func write(_ data: Data) async throws {}
     func close() { isOpen = false }
 }
 
-private final class FakeDialer: AccessRealityPathDialing {
+private final class FakeDialer: AccessRealityPathDialing, @unchecked Sendable {
     var lastHost: String?
     var lastPort: UInt16?
     var dialCount = 0
     var shouldFail = false
-    func dial(host: String, port: UInt16) throws -> AccessRealityPathStream {
+    func dial(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
         dialCount += 1
         if shouldFail { throw AccessHTTPSRealityPathError.dialFailed("forced") }
         lastHost = host
@@ -101,7 +103,7 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         return (runtime, url)
     }
 
-    func testOpensRealityPathForHTTPSConnect() throws {
+    func testOpensRealityPathForHTTPSConnect() async throws {
         let registration = try makeRegistration()
         let (runtime, url) = try makeRunningRuntime()
         defer {
@@ -111,7 +113,7 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         let dialer = FakeDialer()
         let tls = AcceptingTLSProvider()
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        let (handle, stream) = try AccessHTTPSRealityPath.open(
+        let (handle, stream) = try await AccessHTTPSRealityPath.open(
             connect: connect,
             registration: registration,
             identityLabel: "local-front",
@@ -133,7 +135,7 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         XCTAssertFalse(stream.isOpen)
     }
 
-    func testRejectsHTTPRegistrationTransportGate() throws {
+    func testRejectsHTTPRegistrationTransportGate() async throws {
         let http = try makeRegistration(transport: .http)
         let (runtime, url) = try makeRunningRuntime()
         defer {
@@ -142,8 +144,8 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         }
         let dialer = FakeDialer()
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        XCTAssertThrowsError(
-            try AccessHTTPSRealityPath.open(
+        do {
+            _ = try await AccessHTTPSRealityPath.open(
                 connect: connect,
                 registration: http,
                 identityLabel: "local-front",
@@ -152,13 +154,14 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
                 dialer: dialer,
                 at: Date(timeIntervalSince1970: 1_700_000_000)
             )
-        ) { error in
+            XCTFail("expected error")
+        } catch {
             XCTAssertEqual(error as? AccessHTTPSRealityPathError, .transportNotHTTPS(.http))
         }
         XCTAssertEqual(dialer.dialCount, 0)
     }
 
-    func testCertificateFailureHasNoDirectBypass() throws {
+    func testCertificateFailureHasNoDirectBypass() async throws {
         let registration = try makeRegistration()
         let (runtime, url) = try makeRunningRuntime()
         defer {
@@ -167,8 +170,8 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         }
         let dialer = FakeDialer()
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        XCTAssertThrowsError(
-            try AccessHTTPSRealityPath.open(
+        do {
+            _ = try await AccessHTTPSRealityPath.open(
                 connect: connect,
                 registration: registration,
                 identityLabel: "local-front",
@@ -177,7 +180,8 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
                 dialer: dialer,
                 at: Date(timeIntervalSince1970: 1_700_000_000)
             )
-        ) { error in
+            XCTFail("expected error")
+        } catch {
             XCTAssertEqual(
                 error as? AccessHTTPSRealityPathError,
                 .tlsIdentityUnavailable("missing:local-front")
@@ -187,7 +191,7 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         XCTAssertEqual(dialer.dialCount, 0)
     }
 
-    func testRejectsStoppedRuntimeAndDirectDialFlag() throws {
+    func testRejectsStoppedRuntimeAndDirectDialFlag() async throws {
         let registration = try makeRegistration()
         let runtime = try AccessXrayRuntime(
             processController: FakeController(),
@@ -195,16 +199,18 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         )
         let dialer = FakeDialer()
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        XCTAssertThrowsError(
-            try AccessHTTPSRealityPath.open(
+        do {
+            _ = try await AccessHTTPSRealityPath.open(
                 connect: connect,
                 registration: registration,
                 identityLabel: "local-front",
                 tlsProvider: AcceptingTLSProvider(),
                 runtime: runtime,
-                dialer: dialer
+                dialer: dialer,
+                at: Date(timeIntervalSince1970: 1_700_000_000)
             )
-        ) { error in
+            XCTFail("expected error")
+        } catch {
             XCTAssertEqual(error as? AccessHTTPSRealityPathError, .runtimeNotRunning)
         }
         XCTAssertEqual(dialer.dialCount, 0)
@@ -214,8 +220,8 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
             try? running.stop()
             try? FileManager.default.removeItem(at: url)
         }
-        XCTAssertThrowsError(
-            try AccessHTTPSRealityPath.open(
+        do {
+            _ = try await AccessHTTPSRealityPath.open(
                 connect: connect,
                 registration: registration,
                 identityLabel: "local-front",
@@ -225,13 +231,14 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
                 at: Date(timeIntervalSince1970: 1_700_000_000),
                 allowDirectDial: true
             )
-        ) { error in
+            XCTFail("expected error")
+        } catch {
             XCTAssertEqual(error as? AccessHTTPSRealityPathError, .directDialNotAdmitted)
         }
         XCTAssertEqual(dialer.dialCount, 0)
     }
 
-    func testRejectsInactiveLease() throws {
+    func testRejectsInactiveLease() async throws {
         let registration = try makeRegistration()
         let (runtime, url) = try makeRunningRuntime()
         defer {
@@ -240,8 +247,8 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
         }
         let dialer = FakeDialer()
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        XCTAssertThrowsError(
-            try AccessHTTPSRealityPath.open(
+        do {
+            _ = try await AccessHTTPSRealityPath.open(
                 connect: connect,
                 registration: registration,
                 identityLabel: "local-front",
@@ -250,7 +257,8 @@ final class AccessHTTPSRealityPathTests: XCTestCase {
                 dialer: dialer,
                 at: Date(timeIntervalSince1970: 1_700_000_000 + 120)
             )
-        ) { error in
+            XCTFail("expected error")
+        } catch {
             XCTAssertEqual(error as? AccessHTTPSRealityPathError, .leaseInactive)
         }
         XCTAssertEqual(dialer.dialCount, 0)

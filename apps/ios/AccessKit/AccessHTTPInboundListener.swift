@@ -16,17 +16,21 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
 
     private let queue: DispatchQueue
     private let lock = NSLock()
+    public private(set) var admissionSummary = ""
     private var listener: NWListener?
     private var acceptedConnections: UInt64 = 0
     private var establishedConnects: UInt64 = 0
     private var openConnections: [NWConnection] = []
     private var sessions: [ObjectIdentifier: AccessHTTPConnectSession] = [:]
+    private var bridges: [ObjectIdentifier: AccessHTTPTunnelBridge] = [:]
+    private let tunnels: any AccessHTTPTunnelOpening
 
-    public init(registration: AccessRegistration) throws {
+    public init(registration: AccessRegistration, tunnels: any AccessHTTPTunnelOpening) throws {
         guard registration.transport == .http else {
             throw AccessHTTPInboundError.transportNotHTTP(registration.transport)
         }
         self.registration = registration
+        self.tunnels = tunnels
         self.queue = DispatchQueue(label: "accesskit.http.inbound.\(registration.id.rawValue)")
     }
 
@@ -131,9 +135,14 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         let connections = openConnections
         openConnections.removeAll()
         sessions.removeAll()
+        let activeBridges = bridges
+        self.bridges.removeAll()
         lock.unlock()
 
         active.cancel()
+        for bridge in activeBridges.values {
+            bridge.stop()
+        }
         for connection in connections {
             connection.cancel()
         }
@@ -152,7 +161,9 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
                 self.lock.lock()
                 self.openConnections.removeAll { $0 === connection }
                 self.sessions.removeValue(forKey: ObjectIdentifier(connection))
+                let bridge = self.bridges.removeValue(forKey: ObjectIdentifier(connection))
                 self.lock.unlock()
+                bridge?.stop()
             default:
                 break
             }
@@ -161,12 +172,17 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
 
         let session = AccessHTTPConnectSession(connection: connection, queue: queue) { [weak self] outcome in
             guard let self else { return }
-            self.lock.lock()
-            if case .established = outcome {
-                self.establishedConnects &+= 1
+            guard case let .established(request, remainder) = outcome else {
+                self.admissionSummary = "rejected"
+                return
             }
-            self.sessions.removeValue(forKey: ObjectIdentifier(connection))
+            self.admissionSummary = "established \(request.host) remainder \(remainder.count)"
+            let bridge = AccessHTTPTunnelBridge(client: connection, queue: self.queue, opener: self.tunnels)
+            self.lock.lock()
+            self.establishedConnects &+= 1
+            self.bridges[ObjectIdentifier(connection)] = bridge
             self.lock.unlock()
+            bridge.start(host: request.host, port: request.port, prelude: remainder)
         }
         lock.lock()
         sessions[ObjectIdentifier(connection)] = session

@@ -43,7 +43,7 @@ final class AccessHTTPConnectTests: XCTestCase {
                 expiresAt: Date(timeIntervalSince1970: 1_700_000_000 + 60)
             )
         )
-        let listener = try AccessHTTPInboundListener(registration: registration)
+        let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         try listener.start(at: now)
 
@@ -91,7 +91,7 @@ final class AccessHTTPConnectTests: XCTestCase {
                 expiresAt: Date(timeIntervalSince1970: 1_700_000_000 + 60)
             )
         )
-        let listener = try AccessHTTPInboundListener(registration: registration)
+        let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
         try listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
 
         let response = expectation(description: "405 method not allowed")
@@ -116,5 +116,18 @@ final class AccessHTTPConnectTests: XCTestCase {
         connection.cancel()
         XCTAssertEqual(listener.establishedConnectCount, 0)
         try listener.stop()
+    }
+}
+
+private final class HoldingStream: AccessRealityPathStream, @unchecked Sendable {
+    private(set) var isOpen = true
+    func read(maxBytes: Int) async throws -> Data? { nil }
+    func write(_ data: Data) async throws {}
+    func close() { isOpen = false }
+}
+
+private final class HoldingTunnel: AccessHTTPTunnelOpening, @unchecked Sendable {
+    func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
+        HoldingStream()
     }
 }

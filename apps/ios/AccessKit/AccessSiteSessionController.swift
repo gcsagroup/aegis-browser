@@ -331,7 +331,7 @@ public final class AccessSiteSessionController: @unchecked Sendable {
 
     private func tearDownActiveIfNeeded(host: AccessSiteHost) throws {
         lock.lock()
-        let candidate = activeCandidates.removeValue(forKey: host)
+        let candidate = activeCandidates[host]
         lock.unlock()
         guard let candidate else { return }
         do {
@@ -341,6 +341,11 @@ public final class AccessSiteSessionController: @unchecked Sendable {
         } catch {
             throw AccessSiteSessionError.tearDownFailed(String(describing: error))
         }
+        lock.lock()
+        if activeCandidates[host]?.registration.id == candidate.registration.id {
+            activeCandidates.removeValue(forKey: host)
+        }
+        lock.unlock()
     }
 
     private func markUnavailable(

@@ -1,5 +1,6 @@
-import BrowserKit
+import AccessKit
 import AgentKit
+import BrowserKit
 import SwiftUI
 
 final class AegisAppDelegate: NSObject, UIApplicationDelegate {
@@ -27,6 +28,8 @@ struct AegisApp: App {
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
     @StateObject private var readingLibrary: ReadingLibrary
+    @StateObject private var accessSiteProxyRegistry: AccessSiteProxyStoreRegistry
+    @StateObject private var hostStores: AccessHostStoreCoordinator
 
     init() {
 #if DEBUG
@@ -89,6 +92,13 @@ struct AegisApp: App {
             try? FileManager.default.removeItem(at: windowsURL)
         }
         _windows = StateObject(wrappedValue: BrowserWindowStore(persistenceURL: windowsURL, legacyURLs: workspaceStore.sessionURLs))
+        let registry = AccessSiteProxyStoreRegistry()
+        let publisher = AccessFailClosedProxyEntryPublisher()
+        let hostStores = AccessHostStoreCoordinator(publisher: publisher)
+        registry.hostRouting = hostStores
+        hostStores.startForegroundSweep()
+        _accessSiteProxyRegistry = StateObject(wrappedValue: registry)
+        _hostStores = StateObject(wrappedValue: hostStores)
     }
 
     var body: some Scene {
@@ -105,6 +115,8 @@ struct AegisApp: App {
                 .environmentObject(downloads)
                 .environmentObject(assistantTasks)
                 .environmentObject(readingLibrary)
+                .environmentObject(accessSiteProxyRegistry)
+                .environmentObject(hostStores)
                 .preferredColorScheme(settings.colorScheme)
                 .tint(Color(red: 0.09, green: 0.47, blue: 0.37))
         } defaultValue: {
@@ -170,29 +182,38 @@ struct AegisApp: App {
 /// 浏览会话的生命周期跟随窗口，公共资料与下载仍由 App 持有。
 private struct AegisWindowView: View {
     @EnvironmentObject private var language: AppLanguageSettings
+    @EnvironmentObject private var accessRegistry: AccessSiteProxyStoreRegistry
+    @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
     @StateObject private var browser: BrowserSession
-    @StateObject private var accessSiteProxy: AccessSiteProxySessionStore
     @ObservedObject var windows: BrowserWindowStore
     init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore,
          preferences: BrowserPreferences) {
         self.windows = windows
         _browser = StateObject(wrappedValue: BrowserSession(dataStore: dataStore, workspaceStore: workspaces,
             windowID: id, windowStore: windows, preferences: preferences))
-        _accessSiteProxy = StateObject(wrappedValue: AccessSiteProxySessionStore())
     }
     @Environment(\.locale) private var localizationLocale
     var body: some View {
         let _ = localizationLocale
         AegisRootView()
             .environmentObject(browser)
-            .environmentObject(accessSiteProxy)
             .onChange(of: language.revision) { _, _ in browser.refreshLocalizedPresentation() }
             .onAppear {
                 windows.register(browser.windowID)
+                browser.hostCoordinator = hostStores
+                hostStores.tabs = { [weak browser] in
+                    guard let browser else { return [] }
+                    return browser.standardTabs + browser.privateTabs
+                }
                 browser.persistSession()
             }
+            .onChange(of: browser.retiredPrivateWebsiteDataStoreRevision) { _, _ in
+                accessRegistry.release(browser.consumeRetiredPrivateWebsiteDataStores())
+            }
             .onDisappear {
-                browser.persistSession(); browser.discardPrivateSession()
+                browser.persistSession()
+                browser.discardPrivateSession()
+                accessRegistry.release(browser.consumeRetiredPrivateWebsiteDataStores())
                 windows.unregister(browser.windowID)
             }
     }

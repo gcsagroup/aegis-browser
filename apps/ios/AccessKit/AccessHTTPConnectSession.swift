@@ -8,7 +8,7 @@ import Network
 /// through `reality_vision` is F11.
 public final class AccessHTTPConnectSession: @unchecked Sendable {
     public enum Outcome: Equatable, Sendable {
-        case established(AccessHTTPConnectRequest)
+        case established(AccessHTTPConnectRequest, Data)
         case rejected(AccessHTTPConnectError)
     }
 
@@ -52,8 +52,8 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
             buffer.append(data)
         }
         do {
-            if let request = try AccessHTTPConnectParser.parse(buffer: buffer) {
-                writeSuccess(for: request)
+            if let (request, remainder) = try AccessHTTPConnectParser.split(buffer: buffer) {
+                writeSuccess(for: request, remainder: remainder)
                 return
             }
         } catch let connectError as AccessHTTPConnectError {
@@ -76,7 +76,7 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
         receiveMore()
     }
 
-    private func writeSuccess(for request: AccessHTTPConnectRequest) {
+    private func writeSuccess(for request: AccessHTTPConnectRequest, remainder: Data) {
         let response = AccessHTTPConnectParser.successResponse(httpVersion: request.httpVersion)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
@@ -86,7 +86,7 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
                     self.connection.cancel()
                     return
                 }
-                self.finish(.established(request))
+                self.finish(.established(request, remainder))
                 // Tunnel endpoint held open for F11 wiring; idle cancel is the
                 // caller's responsibility via listener stop / client close.
             }

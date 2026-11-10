@@ -16,6 +16,21 @@ final class AccessSiteIntentTests: XCTestCase {
         XCTAssertEqual(host.rawValue, "www.example.com")
     }
 
+    func testRejectsEmbeddedWhitespaceAndControlCharacters() {
+        XCTAssertThrowsError(try AccessSiteHost("bad host")) { error in
+            XCTAssertEqual(error as? AccessSiteIntentError, .hostNotCanonical)
+        }
+        XCTAssertThrowsError(try AccessSiteHost("bad\nhost")) { error in
+            XCTAssertEqual(error as? AccessSiteIntentError, .hostNotCanonical)
+        }
+        XCTAssertThrowsError(try AccessSiteHost("bad\u{0001}host")) { error in
+            XCTAssertEqual(error as? AccessSiteIntentError, .hostNotCanonical)
+        }
+        XCTAssertThrowsError(try AccessSiteHost.normalize("https://bad host/path")) { error in
+            XCTAssertEqual(error as? AccessSiteIntentError, .hostNotCanonical)
+        }
+    }
+
     func testRejectsNonCanonicalExactHost() {
         XCTAssertThrowsError(try AccessSiteHost("WWW.Example.COM")) { error in
             XCTAssertEqual(error as? AccessSiteIntentError, .hostNotCanonical)

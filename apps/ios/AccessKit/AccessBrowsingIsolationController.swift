@@ -55,6 +55,8 @@ public final class AccessBrowsingIsolationController: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         try ensureBucketWritable(bucket)
         try rejectCrossBucketRegistrationReuse(registration.id, into: bucket)
+        // Reject before any write. A failed install must not replace the slot's owner.
+        try rejectCrossBucketCredentialReuse(registration.credentialSlot, into: bucket)
 
         let ownerBucket = try AccessBrowsingBucket.from(ownerProfile: registration.owner.profile)
         guard ownerBucket == bucket else {

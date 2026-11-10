@@ -24,7 +24,7 @@ final class AccessHTTPInboundListenerTests: XCTestCase {
 
     func testRejectsHTTPSRegistration() throws {
         let registration = try makeRegistration(transport: .https, port: 18_084)
-        XCTAssertThrowsError(try AccessHTTPInboundListener(registration: registration)) { error in
+        XCTAssertThrowsError(try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())) { error in
             XCTAssertEqual(
                 error as? AccessHTTPInboundError,
                 .transportNotHTTP(.https)
@@ -34,7 +34,7 @@ final class AccessHTTPInboundListenerTests: XCTestCase {
 
     func testRejectsInactiveLeaseOnStart() throws {
         let registration = try makeRegistration(port: 18_085, leaseOffset: 10)
-        let listener = try AccessHTTPInboundListener(registration: registration)
+        let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
         let afterExpiry = Date(timeIntervalSince1970: 1_700_000_000 + 30)
         XCTAssertThrowsError(try listener.start(at: afterExpiry)) { error in
             XCTAssertEqual(error as? AccessHTTPInboundError, .leaseInactive)
@@ -45,7 +45,7 @@ final class AccessHTTPInboundListenerTests: XCTestCase {
     func testStartStopAndAcceptOnLoopback() throws {
         let port: UInt16 = 18_086
         let registration = try makeRegistration(port: port)
-        let listener = try AccessHTTPInboundListener(registration: registration)
+        let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
         let now = Date(timeIntervalSince1970: 1_700_000_000)
 
         try listener.start(at: now)
@@ -81,5 +81,18 @@ final class AccessHTTPInboundListenerTests: XCTestCase {
         XCTAssertThrowsError(try listener.stop()) { error in
             XCTAssertEqual(error as? AccessHTTPInboundError, .notListening)
         }
+    }
+}
+
+private final class HoldingStream: AccessRealityPathStream, @unchecked Sendable {
+    private(set) var isOpen = true
+    func read(maxBytes: Int) async throws -> Data? { nil }
+    func write(_ data: Data) async throws {}
+    func close() { isOpen = false }
+}
+
+private final class HoldingTunnel: AccessHTTPTunnelOpening, @unchecked Sendable {
+    func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
+        HoldingStream()
     }
 }
