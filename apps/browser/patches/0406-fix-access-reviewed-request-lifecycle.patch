@@ -1,3 +1,32 @@
+From e5d6bd2a87ff4c827713509f2cc81a0afe2dc6ee Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 23:52:12 +0800
+Subject: [PATCH] fix(access): coordinate request lifecycle and private
+ publication
+
+---
+ .../aegis/access/access_async_rule_store.cc   |  7 ++
+ .../aegis/access/access_async_rule_store.h    |  1 +
+ .../access_network_context_transport.cc       |  9 +++
+ .../access/access_network_context_transport.h |  2 +
+ .../access_private_publication_unittest.cc    | 31 ++++++++
+ .../access_proxying_url_loader_factory.cc     | 73 ++++++++++++++++++-
+ .../access_proxying_url_loader_factory.h      | 16 ++++
+ .../browser/aegis/access/access_rule_store.cc |  2 +
+ .../browser/aegis/access/access_rule_store.h  |  1 +
+ .../access/access_service_coordinator.cc      |  8 +-
+ .../aegis/access/access_service_coordinator.h |  1 +
+ .../access_site_proxy_product_unittest.cc     | 23 ++++++
+ .../access_network_url_loader_unittest.cc     | 26 ++++++-
+ .../access_private_context_client_unittest.cc | 26 +++++++
+ .../access_private_factory_unittest.cc        | 10 +++
+ .../aegis/access_network_context_state.cc     |  7 +-
+ .../access_private_url_loader_factory.cc      | 23 +++++-
+ .../aegis/access_private_url_loader_factory.h |  2 +
+ .../network/cors/cors_url_loader_factory.cc   |  5 ++
+ services/network/url_loader.cc                |  6 +-
+ 20 files changed, 268 insertions(+), 11 deletions(-)
+
 diff --git a/chrome/browser/aegis/access/access_async_rule_store.cc b/chrome/browser/aegis/access/access_async_rule_store.cc
 index 93ac8c7afff4e27716af02a58c9b079c0d2f043a..ae016933c5d418b30497d02392fb01c21da10026 100644
 --- a/chrome/browser/aegis/access/access_async_rule_store.cc
@@ -627,3 +656,6 @@ index 0568bfc920023608f4dec26c50bc49e877c3ee11..68d7b6632088a4afcd7a16ea27be73d9
      url_request_->SetSharedDictionaryGetter(
          shared_dictionary_manager->MaybeCreateSharedDictionaryGetter(
              url_request_->load_flags(), request_destination_));
+-- 
+2.54.0 (Apple Git-157)
+
