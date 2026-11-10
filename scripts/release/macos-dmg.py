@@ -55,6 +55,7 @@ def normalize(environment):
     require(signing_mode in SIGNING_MODES, 'Signing mode must be ad-hoc or developer-id')
     runner_label = resolve_runner_label(environment)
     arch = machine_arch(environment.get('MACOS_ARCH', '') or 'arm64')
+    require(arch == 'arm64', 'This delivery runner/build supports arm64 only')
     identity = '-' if signing_mode == 'ad-hoc' else environment.get('AEGIS_MACOS_DEVELOPER_ID', '')
     if signing_mode == 'developer-id':
         require(identity.startswith('Developer ID Application:'), 'Developer ID identity is required for developer-id signing')
@@ -175,11 +176,37 @@ def verify_app_identity(app, environment):
             not manifest.parent.is_symlink(), 'Finalized app build identity required')
     expected = environment.get('MACOS_EXPECTED_SOURCE_SHA') or environment.get('GITHUB_SHA', '')
     require(re.fullmatch(r'[0-9a-f]{40}', expected) is not None, 'Expected app source identity SHA required')
-    verifier = Path(__file__).resolve().parents[2] / 'apps/browser/scripts/write-build-identity.mjs'
+    # The verifier's own checkout is part of the build identity. An explicit
+    # existing product checkout is needed when it differs from the wrapper.
+    product_root = Path(environment.get('MACOS_PRODUCT_CHECKOUT') or
+                        Path(__file__).resolve().parents[2]).resolve()
+    verifier = product_root / 'apps/browser/scripts/write-build-identity.mjs'
+    require(verifier.is_file() and not verifier.is_symlink(),
+            'Product checkout build identity verifier required')
+    # Formal app builds live under this exact src/out layout. Do not inherit
+    # the packaging shell's unrelated Chromium root or guess another checkout.
+    chromium_src = out.parent.parent
+    require(out.name == 'AegisRelease' and out.parent.name == 'out' and
+            (chromium_src / 'chrome/BUILD.gn').is_file() and
+            (chromium_src / 'build').is_dir(),
+            'App output must belong to its Chromium src/out/AegisRelease')
     try:
+        product_head = subprocess.run(['git', '-C', str(product_root), 'rev-parse', 'HEAD'],
+            capture_output=True, text=True, check=True).stdout.strip()
+        product_status = subprocess.run(['git', '-C', str(product_root), 'status',
+            '--porcelain', '--untracked-files=normal'],
+            capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise DeliveryError('Product checkout HEAD validation failed') from error
+    require(product_head == expected,
+            'Product checkout must match expected SHA; set MACOS_PRODUCT_CHECKOUT for a separate product')
+    require(not product_status, 'Product checkout must be clean before running its verifier')
+    try:
+        verify_env = dict(os.environ, CHROMIUM_SRC=str(chromium_src),
+                          CHROMIUM_ROOT=str(chromium_src.parent))
         result = subprocess.run(['node', str(verifier), '--phase', 'verify',
             '--manifest', str(manifest), '--out-dir', str(out), '--artifact', str(app)],
-            capture_output=True, text=True, check=True)
+            capture_output=True, text=True, check=True, env=verify_env)
         identity = json.loads(result.stdout)
     except (OSError, subprocess.CalledProcessError, ValueError) as error:
         raise DeliveryError('App build identity verification failed') from error

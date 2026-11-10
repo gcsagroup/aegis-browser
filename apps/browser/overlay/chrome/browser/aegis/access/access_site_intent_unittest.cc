@@ -51,6 +51,22 @@ TEST(AccessSiteIntentTest, NormalizesExactHostLikeSiteGroup) {
   EXPECT_EQ(MakeAccessSiteHost("").status, AccessSiteHostStatus::kEmpty);
 }
 
+TEST(AccessSiteIntentTest, KeepsCanonicalIpv6BracketsForTrustedSites) {
+  const auto url = NormalizeAccessSiteHost("https://[2001:db8::1]:8443/path?q=1");
+  ASSERT_EQ(url.status, AccessSiteHostStatus::kOk);
+  EXPECT_EQ(url.host->value, "[2001:db8::1]");
+  const auto local = NormalizeAccessSiteHost("[::1]:443");
+  ASSERT_EQ(local.status, AccessSiteHostStatus::kOk);
+  EXPECT_EQ(local.host->value, "[::1]");
+}
+
+TEST(AccessSiteIntentTest, DoesNotDiscardInvalidIpv6SuffixOrMissingBracket) {
+  for (const auto* host : {"[::1]junk", "[::1]:wrong", "[::1", "2001:db8::1"}) {
+    SCOPED_TRACE(host);
+    EXPECT_NE(NormalizeAccessSiteHost(host).status, AccessSiteHostStatus::kOk);
+  }
+}
+
 TEST(AccessSiteIntentTest, MapsIntentOntoOrdinaryCoordinatorModes) {
   EXPECT_EQ(OrdinaryAccessModeForIntent(AccessSiteIntent::kAllow),
             AccessMode::kProxy);

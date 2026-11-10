@@ -49,3 +49,9 @@ fork 的开发和内测都走 `quinn-local-aegis-test-01` / `02`（标签 `aegis
 Developer ID 使用仓库 secret `AEGIS_MACOS_DEVELOPER_ID_P12_BASE64` 和 `AEGIS_MACOS_DEVELOPER_ID_P12_PASSWORD`。证书只进本次作业的临时钥匙串，不替换登录钥匙串搜索列表。
 
 这不是发行资格，也不代替产品阶段一的五步证据。
+
+当前交付 runner 与 `aegis-release.gn` 只支持 arm64；工作流、计划入口和手动包装脚本会在查找源码或开始重建前拒绝 x64。现有 `.app` 必须有已经 finalize 的构建身份，产品 SHA、补丁 lineage、overlay、GN 和产物复查均须通过；回执分别记录实际产品 SHA 与包装 workflow SHA。
+
+`Package DMG` / `Internal DMG` 的 `product_checkout` 和 `product_sha` 可绑定与包装脚本不同的既有产品工作树及完整 SHA；留空时使用当前 workflow 工作树和 SHA。该工作树必须干净并处于指定 SHA，校验器从该工作树运行，Chromium 源码则绑定到所选 App 的 `src/out/AegisRelease`，不沿用包装 shell 的另一棵源码树。对应命令行参数为 `MACOS_PRODUCT_CHECKOUT` / `MACOS_EXPECTED_SOURCE_SHA`。`Rebuild DMG` 使用 workflow 工作树，通过现有 canonical builder 持有同一原子锁，覆盖 GN、构建、身份 finalize 及打包。
+
+本轮只完成源码与离线回归；没有部署 host hook、调度重建、签名或生成 DMG，实际操作的应用身份与回执仍须单列验收。

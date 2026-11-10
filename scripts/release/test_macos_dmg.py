@@ -38,7 +38,11 @@ def environment(**extra):
 
 class MacosDmgTests(unittest.TestCase):
     def package_fixture(self, root):
-        app = root / 'apps' / 'GCSA-aegis.app'
+        src = root / 'chromium/src'
+        (src / 'chrome').mkdir(parents=True)
+        (src / 'chrome/BUILD.gn').touch()
+        (src / 'build').mkdir()
+        app = src / 'out/AegisRelease/GCSA-aegis.app'
         (app / 'Contents').mkdir(parents=True)
         (app / 'Contents' / 'Info.plist').write_text('plist')
         identity = app.parent / '.aegis'
@@ -59,12 +63,17 @@ class MacosDmgTests(unittest.TestCase):
                           MACOS_EXPECTED_SOURCE_SHA=SHA)
         return app, env, report, calls, runner
 
+    def fake_verifier(self, report):
+        def run(command, **kwargs):
+            value = ('' if 'status' in command else SHA + '\n') if command[0] == 'git' else json.dumps(report)
+            return subprocess.CompletedProcess(command, 0, value, '')
+        return patch.object(dmg.subprocess, 'run', side_effect=run)
+
     def test_receipt_uses_verified_app_source_and_separate_wrapper_sha(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             app, env, report, calls, runner = self.package_fixture(root)
-            with patch.object(dmg.subprocess, 'run') as verify:
-                verify.return_value.stdout = json.dumps(report)
+            with self.fake_verifier(report) as verify:
                 receipt = dmg.package(env, runner=runner)
             self.assertEqual(receipt['sourceSha'], SHA)
             self.assertEqual(receipt['packagingSourceSha'], 'b' * 40)
@@ -79,8 +88,7 @@ class MacosDmgTests(unittest.TestCase):
             app, env, report, calls, runner = self.package_fixture(root)
             lock = app.parent / '.aegis' / 'build.lock'
             lock.mkdir()
-            with patch.object(dmg.subprocess, 'run') as verify:
-                verify.return_value.stdout = json.dumps(report)
+            with self.fake_verifier(report) as verify:
                 with self.assertRaisesRegex(dmg.DeliveryError, 'holds'):
                     dmg.package(env, runner=runner)
             self.assertFalse(Path(env['MACOS_OUTPUT_DIR']).exists())
@@ -193,28 +201,33 @@ class MacosDmgTests(unittest.TestCase):
             self.assertEqual(calls, [])
 
     def test_identity_rejects_wrong_product_even_when_verifier_succeeds(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary).resolve()
-            app = root / 'GCSA-aegis.app'
-            (root / '.aegis').mkdir()
-            (root / '.aegis/build-manifest.json').write_text('{}')
-            report = {'verified': True, 'localCandidate': True,
-                      'checks': {'patchLineageMatches': True, 'overlayMatches': True, 'gnArgsMatch': True},
-                      'source': {'root': {'sha': 'b' * 40}}}
-            with patch.object(dmg.subprocess, 'run') as run:
-                run.return_value.stdout = json.dumps(report)
+        with tempfile.TemporaryDirectory() as directory:
+            app, env, report, _, _ = self.package_fixture(Path(directory).resolve())
+            report['source']['root']['sha'] = 'b' * 40
+            with self.fake_verifier(report):
                 with self.assertRaisesRegex(dmg.DeliveryError, 'requested product SHA'):
-                    dmg.verify_app_identity(app, environment())
+                    dmg.verify_app_identity(app, env)
 
     def test_identity_requires_verified_patch_lineage_overlay_and_gn(self):
         with tempfile.TemporaryDirectory() as directory:
             app, env, report, _, _ = self.package_fixture(Path(directory).resolve())
             for field in ('patchLineageMatches', 'overlayMatches', 'gnArgsMatch'):
-                with self.subTest(field=field), patch.object(dmg.subprocess, 'run') as verify:
-                    altered = dict(report, checks=dict(report['checks'], **{field: False}))
-                    verify.return_value.stdout = json.dumps(altered)
+                altered = dict(report, checks=dict(report['checks'], **{field: False}))
+                with self.subTest(field=field), self.fake_verifier(altered):
                     with self.assertRaisesRegex(dmg.DeliveryError, 'lineage, overlay and GN'):
                         dmg.verify_app_identity(app, env)
+
+    def test_dirty_or_wrong_product_checkout_cannot_run_verifier(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app, env, report, _, _ = self.package_fixture(Path(directory).resolve())
+            for head, status, expected in ((SHA, ' M verifier', 'must be clean'),
+                                           ('b' * 40, '', 'must match expected SHA')):
+                with self.subTest(reason=expected), patch.object(dmg.subprocess, 'run') as run:
+                    run.side_effect = [subprocess.CompletedProcess([], 0, head, ''),
+                                       subprocess.CompletedProcess([], 0, status, '')]
+                    with self.assertRaisesRegex(dmg.DeliveryError, expected):
+                        dmg.verify_app_identity(app, env)
+                    self.assertEqual(run.call_count, 2)
 
     def test_package_lock_excludes_competing_operation_and_releases_on_failure(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -247,6 +260,73 @@ class MacosDmgTests(unittest.TestCase):
 
 
 
+
+
+class VerificationContextTests(unittest.TestCase):
+    def check_context(self, separate_product):
+        # Execute a real Node verifier boundary from a real, separate Git
+        # checkout. The fixture models source-root sensitivity without building
+        # or signing an app, and does not claim full build-identity acceptance.
+        with tempfile.TemporaryDirectory(prefix='aegis-verify-context-') as directory:
+            root = Path(directory).resolve()
+            product = root / 'product'
+            verifier = product / 'apps/browser/scripts/write-build-identity.mjs'
+            verifier.parent.mkdir(parents=True)
+            verifier.write_text("""import {execFileSync} from 'node:child_process';
+import {dirname, resolve} from 'node:path';
+import {realpathSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+const out = process.argv[process.argv.indexOf('--out-dir') + 1];
+if (!process.env.CHROMIUM_SRC || realpathSync(process.env.CHROMIUM_SRC) !== realpathSync(resolve(out, '../..'))) process.exit(42);
+const sha = execFileSync('git', ['rev-parse', 'HEAD'], {cwd: root, encoding: 'utf8'}).trim();
+console.log(JSON.stringify({verified:true, localCandidate:true, source:{root:{sha}}, checks:{patchLineageMatches:true, overlayMatches:true, gnArgsMatch:true}}));
+""")
+            subprocess.run(['git', 'init', '-q', str(product)], check=True)
+            subprocess.run(['git', '-C', str(product), 'add', '.'], check=True)
+            subprocess.run(['git', '-C', str(product), '-c', 'user.name=Fixture', '-c',
+                            'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+            head = subprocess.check_output(['git', '-C', str(product), 'rev-parse', 'HEAD'], text=True).strip()
+            src = root / 'chromium/src'
+            (src / 'chrome').mkdir(parents=True)
+            (src / 'chrome/BUILD.gn').touch()
+            (src / 'build').mkdir()
+            app = src / 'out/AegisRelease/GCSA Aegis.app'
+            (app / 'Contents').mkdir(parents=True)
+            (app / 'Contents/Info.plist').touch()
+            (app.parent / '.aegis').mkdir()
+            (app.parent / '.aegis/build-manifest.json').write_text('{}')
+            env = environment(MACOS_EXPECTED_SOURCE_SHA=head)
+            if separate_product:
+                env['MACOS_PRODUCT_CHECKOUT'] = str(product)
+                with patch.dict(os.environ, {'CHROMIUM_SRC': str(src)}):
+                    report = dmg.verify_app_identity(app, env)
+            else:
+                unrelated = root / 'unrelated/src'
+                unrelated.mkdir(parents=True)
+                with patch.object(dmg, '__file__', str(product / 'scripts/release/macos-dmg.py')), \
+                        patch.dict(os.environ, {'CHROMIUM_SRC': str(unrelated)}):
+                    report = dmg.verify_app_identity(app, env)
+            self.assertEqual(report['source']['root']['sha'], head)
+
+    def test_verifier_belongs_to_selected_product_checkout(self):
+        self.check_context(True)
+
+    def test_verifier_uses_discovered_apps_chromium_not_ambient_root(self):
+        self.check_context(False)
+
+    def test_manual_x64_wrappers_reject_before_looking_for_a_checkout(self):
+        for name in ('macos-rebuild-dmg.sh', 'macos-internal-dmg.sh'):
+            with self.subTest(script=name):
+                result = subprocess.run(['bash', str(ROOT / 'scripts/release' / name), '0.8.0', 'x64'],
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                        env=dict(os.environ, CHROMIUM_ROOT='/nonexistent/fixture'), timeout=10)
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertIn('arm64 only', result.stdout)
+
+    def test_x64_request_is_rejected_during_admission(self):
+        with self.assertRaisesRegex(dmg.DeliveryError, 'arm64'):
+            dmg.normalize(environment(MACOS_ARCH='x64'))
 
 
 class BuildLifecycleLockTests(unittest.TestCase):

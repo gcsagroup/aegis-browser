@@ -60,7 +60,15 @@ std::string StripToHostCandidate(std::string_view raw) {
   if (!text.empty() && text.front() == '[') {
     const size_t end = text.find(']');
     if (end != std::string::npos) {
-      text = text.substr(1, end - 1);
+      const std::string_view suffix = std::string_view(text).substr(end + 1);
+      if (!suffix.empty() &&
+          (suffix.front() != ':' || suffix.size() == 1 ||
+           !std::ranges::all_of(suffix.substr(1), [](unsigned char character) {
+             return base::IsAsciiDigit(character);
+           }))) {
+        return text;
+      }
+      text.resize(end + 1);
     }
   } else {
     const size_t colon = text.rfind(':');

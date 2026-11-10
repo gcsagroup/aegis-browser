@@ -7,6 +7,10 @@ cd "$ROOT"
 
 VERSION="${1:-0.8.0}"
 ARCH="${2:-arm64}"
+if [[ "$ARCH" != arm64 ]]; then
+  printf 'This release runner/build supports arm64 only.\n' >&2
+  exit 2
+fi
 
 is_mac_app() {
   local candidate="$1"

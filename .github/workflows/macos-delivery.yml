@@ -33,10 +33,18 @@ on:
       arch:
         description: "DMG architecture. Must match the self-hosted Mac."
         type: choice
-        options: [arm64, x64]
+        options: [arm64]
         default: arm64
       app_path:
         description: "Absolute .app path on the runner. Required for Package DMG."
+        type: string
+        default: ""
+      product_checkout:
+        description: "Existing-app packaging only: product checkout on the runner; blank uses the workflow checkout."
+        type: string
+        default: ""
+      product_sha:
+        description: "Existing-app packaging only: full product SHA; blank uses the workflow SHA. Rebuild uses the workflow checkout."
         type: string
         default: ""
 permissions:
@@ -125,6 +133,8 @@ jobs:
       MACOS_SIGNING_MODE: ${{ inputs.signing_mode }}
       MACOS_ARCH: ${{ inputs.arch }}
       MACOS_APP_PATH: ${{ inputs.app_path }}
+      MACOS_PRODUCT_CHECKOUT: ${{ inputs.product_checkout }}
+      MACOS_EXPECTED_SOURCE_SHA: ${{ inputs.product_sha }}
       MACOS_NOTARIZE: "false"
       AEGIS_MACOS_RUNNER_LABEL: ${{ vars.AEGIS_MACOS_RUNNER_LABEL }}
       AEGIS_IOS_RUNNER_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
@@ -176,6 +186,8 @@ jobs:
       - name: Package the searched app as an unnotarized internal DMG
         if: ${{ inputs.operation == 'Internal DMG' }}
         env:
+          MACOS_PRODUCT_CHECKOUT: ${{ inputs.product_checkout }}
+          MACOS_EXPECTED_SOURCE_SHA: ${{ inputs.product_sha }}
           AEGIS_MACOS_APP_ROOT: ${{ vars.AEGIS_MACOS_APP_ROOT }}
           AEGIS_IOS_RUNNER_LABEL: ${{ vars.AEGIS_IOS_RUNNER_LABEL }}
           MACOS_SIGNING_MODE: ad-hoc
