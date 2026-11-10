@@ -109,7 +109,15 @@ find_depot_tools() {
   return 1
 }
 
-SRC="$(find_src || true)"
+if [[ -n "${CHROMIUM_ROOT:-}" ]]; then
+  SRC="${CHROMIUM_ROOT}/src"
+  if ! is_chromium_src "$SRC"; then
+    printf 'Explicit CHROMIUM_ROOT has no Chromium src: %s\n' "$SRC" >&2
+    exit 3
+  fi
+else
+  SRC="$(find_src || true)"
+fi
 if [[ -z "$SRC" ]]; then
   printf 'No Chromium checkout with chrome/BUILD.gn. Refusing to fetch or invent an app.\n' >&2
   exit 3
@@ -141,23 +149,11 @@ if [[ "${avail_kb:-0}" -lt $((20 * 1024 * 1024)) ]]; then
   exit 2
 fi
 
-if pgrep -f "autoninja -C ${OUT}" >/dev/null 2>&1 || pgrep -f "ninja -C ${OUT}" >/dev/null 2>&1; then
-  printf 'A ninja build is already running for %s\n' "$OUT" >&2
-  exit 4
-fi
-
-printf 'Generating %s\n' "$OUT"
-(
-  cd "$SRC"
-  gn gen "$OUT" --args="$(cat "$ARGS_FILE")"
-  autoninja -C "$OUT" chrome
-)
-
-APP="$OUT/GCSA Aegis.app"
-if [[ ! -d "$APP/Contents/MacOS" || -L "$APP" ]]; then
-  printf 'Build finished without %s\n' "$APP" >&2
-  exit 5
-fi
-
-export AEGIS_MACOS_APP_ROOT="$OUT"
-exec bash "$ROOT/scripts/release/macos-internal-dmg.sh" "$VERSION" "$ARCH"
+# The canonical builder owns out/AegisRelease/.aegis/build.lock before GN,
+# records begin/finalize identity, and retains that same lock through packaging.
+export CHROMIUM_ROOT="$(dirname "$SRC")"
+export DEPOT_TOOLS_DIR="$DEPOT"
+export AEGIS_MACOS_PACKAGE_AFTER_BUILD=1
+export MACOS_VERSION="$VERSION"
+export MACOS_ARCH="$ARCH"
+exec bash "$ROOT/apps/browser/scripts/build-release.sh"

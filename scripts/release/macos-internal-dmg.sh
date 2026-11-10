@@ -113,7 +113,10 @@ fi
 APP_ROOT="$(cd "$(dirname "$APP")" && pwd -P)"
 APP="$(cd "$(dirname "$APP")" && pwd -P)/$(basename "$APP")"
 OUTPUT="${MACOS_OUTPUT_DIR:-${RUNNER_TEMP:-/tmp}/aegis-macos-internal-${VERSION}-$$}"
-rm -rf "$OUTPUT"
+if [[ -e "$OUTPUT" || -L "$OUTPUT" ]]; then
+  printf 'Refusing to overwrite existing package output: %s\n' "$OUTPUT" >&2
+  exit 2
+fi
 
 export GITHUB_REPOSITORY="${GITHUB_REPOSITORY:-quinn521/aegis-browser}"
 export GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-workflow_dispatch}"

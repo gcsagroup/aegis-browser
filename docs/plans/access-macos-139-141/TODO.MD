@@ -12,7 +12,7 @@
 
 **Spec:** [阶段一验收清单](../access-product-phase1-acceptance.zh-CN.md)、[功能拆分](../access-product-phase1-feat-split.zh-CN.md)、[本站意图 API](../macos-access-site-intent-api-NOTES.md)，以及本聊天已授权的请求隔离、持久恢复和原标签页重试要求。本文不将旧文档的历史状态当作当前证据；冲突时沿用当前任务授权和当前 AGENTS.md。
 
-**最新快照：** 2026-11-11 06:55 Asia/Shanghai。fresh只读审查5项finding已实施修复：F1两项真实RED后完整transport39项GREEN；F3三项取消真实RED后429/f8ec3d06的4项真实Mojo用例全部GREEN（包含正常POST正向及工厂及时释放）。F2/F4/F5已在独立macOS交付树通过针对性检查，macOS入口实际892checks通过，48组合打包条件及5项离线runner检查PASS；未部署runner或签名/DMG。正在完成429受影响原生全套并准备精确平台候选新quality和fresh复审；新候选GUI/单组smoke仍受Computer Use策略限制，两个PR/issue尚未外部交付。
+**最新快照：** 2026-11-11 07:12 Asia/Shanghai。429完整chrome/14正式目标285项原生测试及两端独立候选local fullquality已PASS；交付前补核#141发现App来源/共享输出锁仍未纳入候选，已用两个真实函数离线用例RED复现并修复，17项离线回归GREEN（含实际重建wrapper→canonical builder的全阶段锁/失败释放模拟）。原生429输入不变，不重建。r2只读审查因需补此源码而主动停止，未判PASS；新macOS候选须重跑exacthead完整quality与fresh复审。iOS81ff51c2及其quality不变；新候选GUI/取消/单组smoke受策略限制，PR/issue外部交付仍未完成。
 
 ## 1. 状态与证据规则
 
@@ -600,3 +600,19 @@
 - `native-review-f3-green-429-build-result.json`完整chrome及两个受影响owning目标build PASS，`native-review-f3-green-429-focused-result.json`4项SUCCESS、零skip。关闭loader/client后立即放行ACK不晚发POST，取消等待请求在ACK前释放factory；正常请求仅在ACK后发送一次。
 - 原生候选0429/f8ec3d0606910de08f0c188c8102b0ae41b3d1a0；`boundary-426-429-replay-result.json`从425独立index顺序回放四个新patch并精确tree匹配PASS，旧失败仍保留。待受影响完整目标、精确交付HEAD完整quality及fresh复审；未将原生测试当成实际Network Service/GUI取消验收。
 - 交付脚本验证原始输出已封存`review-delivery-fixes-focused-result.json`（固定Python3.11.9，从真实quality工作目录执行13项测试；打包门48组合，包工具仅fake runner），macOS手动Access入口见`review-f2-macos-entrypoint-fix.log`。iOS工作流断言仅移动到iOS候选81ff51c2，不恢复其原生/设备暂停范围。
+
+
+### 2026-11-11 07:00 — 429完整原生与macOS精确交付质量门PASS
+
+- `boundary-429-validation-receipt.json`绑定原生f8ec3d06、完整chrome/14正式目标构建、受影响3目标GN及426–429精确回放；本轮实际执行全部285项SUCCESS、零skip（不采用旧229项复用累计）。两个Website隔离与四个取消/正常POST回归的实际RED/GREEN历史齐全。
+- 独立macOS交付候选2be9f450d721f45ce58c595c06e7546ab7f2a91f（233路径）`pr97-macos-split-quality-full-r3-launch.json`PASS，base/tested SHA正确、sourceStable=true、public-export通过。iOS候选81ff51c2f174838555c9850ea2d18603adcfa8af（214路径）补上自身工作流断言后fullquality-r2 RUNNING；历史c03质量PASS不替代新head。
+- `pr97-platform-split-integrity-v3.json`确认407原路径全部保留、4a658最新6个iOS文件字节相同、合成merge无冲突，两端各保留61基础脚本检查及各自证据检查；macOS增加交付/runner回归，不依赖iOS文件。此为源码组成证据，不是实际合并。
+- **未完成：** 最终候选fresh只读复审；新生产候选实际GUI主流程/取消与适用单组smoke（Computer Use限制仍在）；两个平台PR及相应issue外部更新。没有签名、DMG、合并或发布。
+
+
+### 2026-11-11 07:12 — #141来源与构建/打包锁补齐源码验证
+
+- `issue141-provenance-lock-red.log`实际复现两项功能FAIL：回执错误使用包装workflow SHA；已有build.lock时仍能调用打包。`issue141-source-offline-validation.json`/green-r2原始日志17项SUCCESS：使用既有build identity verifier校验实际产品H、patched lineage、overlay/GN，独立记录packaging SHA；首次包锁与重建继承锁互斥。
+- 重建改接既有canonical builder，同一原子lock从GN到begin/build/sign/finalize/package全阶段持有，打包成功/失败都由原owner释放。两项实际shell流程夹具仅临时目录/fake GN、compiler、identity、sign、package命令，无真实大型构建、签名或DMG。明确CHROMIUM_ROOT先绑定，不能被启发式目录覆盖；包输出已存在时拒绝，不删除旧产物。
+- 复用现有工作树对应#141的未交付局部实现，在独立交付树补齐lineage门与流程测试；`issue141-preexisting-source-provenance.json`封存来源五文件哈希，集成后核验原文件完全不变。其他owner代码/证据、root TODO和P01/T90暂停不变；不移用旧验收。
+- fresh审查r2于补核需修正源码时主动停止（exit -15、HEAD/clean状态不变），保留`pr97-platform-review-r2-stop-reason.json`，不称通过。下一项是最终macOS新HEAD完整quality及fresh只读复审；原生429/两端拆分保留/iOS81ff质量有效范围复用，当前GUI仍NOT_RUN_POLICY_STOP。

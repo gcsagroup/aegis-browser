@@ -4,6 +4,7 @@
 Early delivery only. This does not call notarytool, staple a ticket, or
 publish a GitHub Release. The .app must already exist on the Mac runner.
 """
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -167,13 +168,76 @@ def _run(command):
     return result
 
 
+def verify_app_identity(app, environment):
+    out = app.parent
+    manifest = out / '.aegis' / 'build-manifest.json'
+    require(manifest.is_file() and not manifest.is_symlink() and
+            not manifest.parent.is_symlink(), 'Finalized app build identity required')
+    expected = environment.get('MACOS_EXPECTED_SOURCE_SHA') or environment.get('GITHUB_SHA', '')
+    require(re.fullmatch(r'[0-9a-f]{40}', expected) is not None, 'Expected app source identity SHA required')
+    verifier = Path(__file__).resolve().parents[2] / 'apps/browser/scripts/write-build-identity.mjs'
+    try:
+        result = subprocess.run(['node', str(verifier), '--phase', 'verify',
+            '--manifest', str(manifest), '--out-dir', str(out), '--artifact', str(app)],
+            capture_output=True, text=True, check=True)
+        identity = json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError) as error:
+        raise DeliveryError('App build identity verification failed') from error
+    require(identity.get('verified') is True and identity.get('localCandidate') is True,
+            'App build identity is not a verified local candidate')
+    checks = identity.get('checks', {})
+    require(all(checks.get(key) is True for key in
+                ('patchLineageMatches', 'overlayMatches', 'gnArgsMatch')),
+            'App patched lineage, overlay and GN identity must be verified')
+    require(identity.get('source', {}).get('root', {}).get('sha') == expected,
+            'App build identity does not match the requested product SHA')
+    return identity
+
+
+@contextmanager
+def app_build_lock(app, environment):
+    identity_dir = app.parent / '.aegis'
+    require(identity_dir.is_dir() and not identity_dir.is_symlink(),
+            'App build identity directory required')
+    lock = identity_dir / 'build.lock'
+    inherited = environment.get('AEGIS_MACOS_BUILD_LOCK_PID', '')
+    if inherited:
+        require(inherited.isdecimal() and int(inherited) > 1 and
+                lock.is_dir() and not lock.is_symlink() and
+                (lock / 'package-owner').is_file() and
+                not (lock / 'package-owner').is_symlink() and
+                (lock / 'package-owner').read_text().strip() == inherited,
+                'Invalid inherited app build lock')
+        try:
+            os.kill(int(inherited), 0)
+        except OSError as error:
+            raise DeliveryError('Inherited app build lock owner is not alive') from error
+        yield
+        return
+    try:
+        lock.mkdir()
+    except FileExistsError as error:
+        raise DeliveryError('Another build or package operation holds the app lock') from error
+    try:
+        yield
+    finally:
+        lock.rmdir()
+
+
 def package(environment, runner=_run):
     plan = normalize(dict(environment, MACOS_OPERATION='package'))
+    app = admit_app(environment.get('MACOS_APP_PATH', ''), environment.get('AEGIS_MACOS_APP_ROOT', ''))
+    with app_build_lock(app, environment):
+        return package_locked(environment, runner, plan)
+
+
+def package_locked(environment, runner, plan):
     app = admit_app(environment.get('MACOS_APP_PATH', ''), environment.get('AEGIS_MACOS_APP_ROOT', ''))
     plan['app'] = str(app)
     actual = environment.get('MACOS_ACTUAL_ARCH', '')
     if actual:
         require(machine_arch(actual) == plan['arch'], 'Runner architecture does not match the requested DMG architecture')
+    identity = verify_app_identity(app, environment)
     output = Path(environment.get('MACOS_OUTPUT_DIR', ''))
     require(output.is_absolute() and not output.exists(), 'MACOS_OUTPUT_DIR must be a new absolute directory')
     output.mkdir(mode=0o700)
@@ -182,6 +246,10 @@ def package(environment, runner=_run):
     app_name = Path(plan['app']).name
     staged_app = stage / app_name
     shutil.copytree(plan['app'], staged_app, symlinks=True)
+    # Recheck source after copying so a concurrent modification cannot silently
+    # turn an admitted identity into a different package input.
+    require(verify_app_identity(app, environment) == identity,
+            'App build identity changed while staging')
     (stage / 'Applications').symlink_to('/Applications')
     (stage / 'README.txt').write_text(
         'GCSA-aegis macOS delivery\n'
@@ -198,7 +266,9 @@ def package(environment, runner=_run):
         'schemaVersion': 1,
         'product': 'macos-dmg',
         'version': plan['version'],
-        'sourceSha': environment.get('GITHUB_SHA', ''),
+        'sourceSha': identity['source']['root']['sha'],
+        'packagingSourceSha': environment.get('GITHUB_SHA', ''),
+        'appBuildIdentity': identity,
         'signingMode': plan['signing_mode'],
         'notarized': False,
         'notarization': 'skipped',
