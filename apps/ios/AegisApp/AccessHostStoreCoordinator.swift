@@ -90,14 +90,14 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     }
 
     func attachment(tab: BrowserTab, host: AccessSiteHost) -> AccessProxyAttachment {
+        guard tab.boundHostName == host.rawValue else { return .notAttached }
         let endpoint = registry.endpoint(
             scopeID: tab.browsingScopeID,
             host: host,
             isPrivate: tab.profile.isPrivate
         )?.state ?? .unavailable
         if endpoint == .ready { return .ready }
-        if tab.boundHostName == host.rawValue { return .attachedUnavailable }
-        return .notAttached
+        return .attachedUnavailable
     }
 
     func snapshot(for tab: BrowserTab) -> AccessSiteProxyToggleSnapshot {
@@ -127,8 +127,11 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             connection: snapshot.connection
         )
         snapshot.attachment = attachment
-        if intentOn, attachment == .notAttached {
-            snapshot.failureReason = "代理还没有就绪"
+        if intentOn, attachment == .attachedUnavailable {
+            snapshot.failureReason = AccessSiteProxyToggleModel.attachmentLine(
+                for: .attachedUnavailable,
+                intent: .allow
+            )
         }
         return snapshot
     }
@@ -370,7 +373,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
 
     private func finishPrepare(_ operationID: UUID, result: AccessProxyEntryPrepareResult) {
         guard var operation = operations[operationID], operation.state == .preparing else { return }
-        guard clock.now <= operation.deadline else {
+        guard clock.now < operation.deadline else {
             fail(operationID, reason: "代理在 15 秒内没有就绪")
             return
         }

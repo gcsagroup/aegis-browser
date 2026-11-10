@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Lifecycle states for the embedded Xray core used by `reality_vision`.
 public enum AccessXrayRuntimeState: String, Sendable, Equatable {
@@ -20,7 +21,7 @@ public final class AccessXrayRuntime: @unchecked Sendable {
 
     private let processController: AccessXrayProcessControlling
     private let digestVerifier: AccessXrayDigestVerifying
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private var handle: AccessXrayProcessHandle?
     private var stateValue: AccessXrayRuntimeState = .idle
 

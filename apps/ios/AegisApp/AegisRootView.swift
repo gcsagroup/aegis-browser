@@ -469,7 +469,7 @@ private struct ActiveTabView: View {
                         .font(.caption).padding(8).accessibilityIdentifier("fingerprint-observation")
                 }
                 BrowserWebView(webView: tab.webView, onFind: onFind, onScroll: onScroll)
-                    .id(ObjectIdentifier(tab.webView))
+                    .id("\(tab.webViewGeneration)-\(ObjectIdentifier(tab.webView))")
                     .accessibilityIdentifier("browser-webview")
             }
         }

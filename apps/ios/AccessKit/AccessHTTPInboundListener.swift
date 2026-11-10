@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Synchronization
 
 /// Loopback-only cleartext HTTP inbound listener bound to one registration.
 ///
@@ -15,15 +16,18 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     public let registration: AccessRegistration
 
     private let queue: DispatchQueue
-    private let lock = NSLock()
-    public private(set) var admissionSummary = ""
-    private var listener: NWListener?
-    private var acceptedConnections: UInt64 = 0
-    private var establishedConnects: UInt64 = 0
-    private var openConnections: [NWConnection] = []
-    private var sessions: [ObjectIdentifier: AccessHTTPConnectSession] = [:]
-    private var bridges: [ObjectIdentifier: AccessHTTPTunnelBridge] = [:]
+    private let gate = Mutex(State())
     private let tunnels: any AccessHTTPTunnelOpening
+
+    private struct State {
+        var admissionSummary = ""
+        var listener: NWListener?
+        var acceptedConnections: UInt64 = 0
+        var establishedConnects: UInt64 = 0
+        var openConnections: [NWConnection] = []
+        var sessions: [ObjectIdentifier: AccessHTTPConnectSession] = [:]
+        var bridges: [ObjectIdentifier: AccessHTTPTunnelBridge] = [:]
+    }
 
     public init(registration: AccessRegistration, tunnels: any AccessHTTPTunnelOpening) throws {
         guard registration.transport == .http else {
@@ -35,30 +39,27 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     }
 
     public var isListening: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return listener != nil
+        gate.withLock { $0.listener != nil }
     }
 
     public var acceptedConnectionCount: UInt64 {
-        lock.lock(); defer { lock.unlock() }
-        return acceptedConnections
+        gate.withLock { $0.acceptedConnections }
     }
 
     public var establishedConnectCount: UInt64 {
-        lock.lock(); defer { lock.unlock() }
-        return establishedConnects
+        gate.withLock { $0.establishedConnects }
+    }
+
+    public var admissionSummary: String {
+        gate.withLock { $0.admissionSummary }
     }
 
     /// Starts listening on the registration endpoint when the lease is active.
-    public func start(at now: Date = Date()) throws {
+    public func start(at now: Date = Date()) async throws {
         guard registration.isActive(at: now, observedGeneration: registration.generation) else {
             throw AccessHTTPInboundError.leaseInactive
         }
-
-        lock.lock()
-        let already = listener != nil
-        lock.unlock()
-        if already {
+        if gate.withLock({ $0.listener != nil }) {
             throw AccessHTTPInboundError.alreadyListening
         }
 
@@ -88,59 +89,47 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
             self?.accept(connection)
         }
 
-        let started = DispatchSemaphore(value: 0)
-        let startError = AccessInboundStartErrorBox()
-        nwListener.stateUpdateHandler = { state in
-            switch state {
-            case .ready:
-                started.signal()
-            case .failed(let error):
-                startError.value = String(describing: error)
-                started.signal()
-            default:
-                break
-            }
-        }
-
-        nwListener.start(queue: queue)
-
-        let waitResult = started.wait(timeout: .now() + 2.0)
-        if waitResult == .timedOut {
+        do {
+            try await AccessNWListenerBootstrap.awaitReady(nwListener, on: queue)
+        } catch AccessNWListenerBootstrap.Failure.timedOut {
             nwListener.cancel()
             throw AccessHTTPInboundError.bindFailed("listener start timed out")
-        }
-        if let message = startError.value {
+        } catch AccessNWListenerBootstrap.Failure.failed(let message) {
             nwListener.cancel()
             throw AccessHTTPInboundError.bindFailed(message)
+        } catch is CancellationError {
+            nwListener.cancel()
+            throw AccessHTTPInboundError.bindFailed("listener start cancelled")
         }
 
-        lock.lock()
-        if listener != nil {
-            lock.unlock()
+        let installed = gate.withLock { state -> Bool in
+            if state.listener != nil { return false }
+            state.listener = nwListener
+            return true
+        }
+        if !installed {
             nwListener.cancel()
             throw AccessHTTPInboundError.alreadyListening
         }
-        listener = nwListener
-        lock.unlock()
     }
 
     /// Stops accepting and cancels open connections.
     public func stop() throws {
-        lock.lock()
-        guard let active = listener else {
-            lock.unlock()
+        let snapshot: (NWListener, [NWConnection], [AccessHTTPTunnelBridge])? = gate.withLock { state in
+            guard let active = state.listener else { return nil }
+            state.listener = nil
+            let connections = state.openConnections
+            state.openConnections.removeAll()
+            state.sessions.removeAll()
+            let bridges = Array(state.bridges.values)
+            state.bridges.removeAll()
+            return (active, connections, bridges)
+        }
+        guard let (active, connections, bridges) = snapshot else {
             throw AccessHTTPInboundError.notListening
         }
-        listener = nil
-        let connections = openConnections
-        openConnections.removeAll()
-        sessions.removeAll()
-        let activeBridges = bridges
-        self.bridges.removeAll()
-        lock.unlock()
-
         active.cancel()
-        for bridge in activeBridges.values {
+        for bridge in bridges {
             bridge.stop()
         }
         for connection in connections {
@@ -149,20 +138,20 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     }
 
     private func accept(_ connection: NWConnection) {
-        lock.lock()
-        acceptedConnections &+= 1
-        openConnections.append(connection)
-        lock.unlock()
+        gate.withLock { state in
+            state.acceptedConnections &+= 1
+            state.openConnections.append(connection)
+        }
 
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             switch state {
             case .failed, .cancelled:
-                self.lock.lock()
-                self.openConnections.removeAll { $0 === connection }
-                self.sessions.removeValue(forKey: ObjectIdentifier(connection))
-                let bridge = self.bridges.removeValue(forKey: ObjectIdentifier(connection))
-                self.lock.unlock()
+                let bridge: AccessHTTPTunnelBridge? = self.gate.withLock { gateState in
+                    gateState.openConnections.removeAll { $0 === connection }
+                    gateState.sessions.removeValue(forKey: ObjectIdentifier(connection))
+                    return gateState.bridges.removeValue(forKey: ObjectIdentifier(connection))
+                }
                 bridge?.stop()
             default:
                 break
@@ -173,20 +162,20 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         let session = AccessHTTPConnectSession(connection: connection, queue: queue) { [weak self] outcome in
             guard let self else { return }
             guard case let .established(request, remainder) = outcome else {
-                self.admissionSummary = "rejected"
+                self.gate.withLock { $0.admissionSummary = "rejected" }
                 return
             }
-            self.admissionSummary = "established \(request.host) remainder \(remainder.count)"
+            self.gate.withLock {
+                $0.admissionSummary = "established \(request.authority) remainder \(remainder.count)"
+            }
             let bridge = AccessHTTPTunnelBridge(client: connection, queue: self.queue, opener: self.tunnels)
-            self.lock.lock()
-            self.establishedConnects &+= 1
-            self.bridges[ObjectIdentifier(connection)] = bridge
-            self.lock.unlock()
+            self.gate.withLock { state in
+                state.establishedConnects &+= 1
+                state.bridges[ObjectIdentifier(connection)] = bridge
+            }
             bridge.start(host: request.host, port: request.port, prelude: remainder)
         }
-        lock.lock()
-        sessions[ObjectIdentifier(connection)] = session
-        lock.unlock()
+        gate.withLock { $0.sessions[ObjectIdentifier(connection)] = session }
         session.start()
     }
 }

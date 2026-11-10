@@ -1,4 +1,5 @@
 import Network
+import os
 import UIKit
 import WebKit
 import XCTest
@@ -154,13 +155,11 @@ private final class HostRouteProxy: @unchecked Sendable {
     private(set) var port: UInt16 = 9
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "access.host-route.proxy")
-    private let lock = NSLock()
-    private var text = ""
+    private let lock = OSAllocatedUnfairLock(initialState: "")
     var onText: ((String) -> Void)?
 
     var transcript: String {
-        lock.lock(); defer { lock.unlock() }
-        return text
+        lock.withLock { $0 }
     }
 
     init() throws {
@@ -211,12 +210,11 @@ private final class HostRouteProxy: @unchecked Sendable {
                 return
             }
             let text = buffer + chunk
-            self.lock.lock()
-            self.text.append(chunk)
-            let snapshot = self.text
-            let callback = self.onText
-            self.lock.unlock()
-            callback?(snapshot)
+            let snapshot = self.lock.withLock { transcript -> String in
+                transcript.append(chunk)
+                return transcript
+            }
+            self.onText?(snapshot)
             self.finish(connection, text: text)
         }
     }
@@ -243,12 +241,12 @@ private final class HostRouteProxy: @unchecked Sendable {
 }
 
 private final class HostRouteOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var done = false
+    private let lock = OSAllocatedUnfairLock(initialState: false)
     func take() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        if done { return false }
-        done = true
-        return true
+        lock.withLock { done in
+            if done { return false }
+            done = true
+            return true
+        }
     }
 }

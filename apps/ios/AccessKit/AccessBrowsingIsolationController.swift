@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Keeps ordinary and private Access state in independent buckets.
 ///
@@ -12,7 +13,7 @@ import Foundation
 /// real ownership controller. WebKit write paths still use the applicator; this
 /// type decides which fixture / registration is legal for each store.
 public final class AccessBrowsingIsolationController: @unchecked Sendable {
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private var ordinary = AccessBrowsingAccessState(bucket: .ordinary)
     private var privateState = AccessBrowsingAccessState(bucket: .privateBrowsing)
 

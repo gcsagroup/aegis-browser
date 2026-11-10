@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Orchestrates per-host Access sessions onto the reality_vision path.
 ///
@@ -12,7 +13,7 @@ import Foundation
 /// Intent and connection health stay separate. Failures stay readable and must
 /// not be reported as DIRECT success.
 public final class AccessSiteSessionController: @unchecked Sendable {
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private var intentStore: AccessSiteIntentStore
     private let orchestrator: AccessSiteSessionOrchestrating
     private var snapshots: [AccessSiteHost: AccessSiteSessionSnapshot] = [:]

@@ -268,6 +268,24 @@
 		A10RECV000000000000000013 /* AccessProxyEntryPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000003 /* AccessProxyEntryPublisher.swift */; };
 		A10RECV000000000000000014 /* AccessFailClosedProxyEntryPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000004 /* AccessFailClosedProxyEntryPublisher.swift */; };
 		A10TUNN000000000000000011 /* AccessHTTPTunnelBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10TUNN000000000000000001 /* AccessHTTPTunnelBridge.swift */; };
+		A10CORE000000000000000011 /* AccessEmbeddedCoreManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000001 /* AccessEmbeddedCoreManifest.swift */; };
+		A10CORE000000000000000012 /* AccessEmbeddedCoreManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */; };
+		A10CORE000000000000000013 /* AccessEmbeddedCoreControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */; };
+		A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */; };
+		A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */; };
+		A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */; };
+		A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */; };
+		A10CORE000000000000000021 /* AccessNWListenerBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */; };
+		A10CORE00000000000000000D1 /* AccessMutexGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000D /* AccessMutexGate.swift */; };
+		A10CORE000000000000000018 /* AccessEmbeddedProxyEntryFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000008 /* AccessEmbeddedProxyEntryFactory.swift */; };
+		A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */; };
+		A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */; };
+		A10CORE00000000000000001A /* embedded-core-lock.json in Resources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000B /* embedded-core-lock.json */; };
+		A10CORE00000000000000001B /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
+		A10CORE00000000000000001C /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
+		A10CORE00000000000000001D /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
+		A10CORE00000000000000001E /* AegisEmbeddedCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10CORE00000000000000001F /* AegisEmbeddedCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A10TUNN000000000000000012 /* AccessHTTPTunnelBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */; };
 		A10TUNN000000000000000013 /* AccessHostRecoveryWebKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10TUNN000000000000000003 /* AccessHostRecoveryWebKitTests.swift */; };
 		A10RECV000000000000000015 /* AccessProxyEntryPublisherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */; };
@@ -457,6 +475,7 @@
 				A75E140D24416D324155FAD6 /* BrowserKit.framework in Embed Frameworks */,
 				D7EA6BB87737CBDE5B5C1617 /* AegisPolicyKit.framework in Embed Frameworks */,
 				A10CCE55ACC002000000000A /* AccessKit.framework in Embed Frameworks */,
+				A10CORE00000000000000001F /* AegisEmbeddedCore.xcframework in Embed Frameworks */,
 				24D8A94B087B3826B8E7D306 /* AgentKit.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
@@ -471,6 +490,7 @@
 				72CB4B4D2A1DF9D731512DB3 /* BrowserKit.framework in Embed Frameworks */,
 				08AB738ECED584ACD8EEFD90 /* AegisPolicyKit.framework in Embed Frameworks */,
 				A10CCE55ACC0020000000009 /* AccessKit.framework in Embed Frameworks */,
+				A10CORE00000000000000001E /* AegisEmbeddedCore.xcframework in Embed Frameworks */,
 				EC82CA3264103EABFC665167 /* AgentKit.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
@@ -762,6 +782,20 @@
 		A10RECV000000000000000003 /* AccessProxyEntryPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyEntryPublisher.swift; sourceTree = "<group>"; };
 		A10RECV000000000000000004 /* AccessFailClosedProxyEntryPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessFailClosedProxyEntryPublisher.swift; sourceTree = "<group>"; };
 		A10TUNN000000000000000001 /* AccessHTTPTunnelBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPTunnelBridge.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000001 /* AccessEmbeddedCoreManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreManifest.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreManifestTests.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreControlling.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapter.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedRealityDialer.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapterTests.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGoEmbeddedCore.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessNWListenerBootstrap.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000D /* AccessMutexGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessMutexGate.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000008 /* AccessEmbeddedProxyEntryFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedProxyEntryFactory.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedProxyEntryFactoryTests.swift; sourceTree = "<group>"; };
+		A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreLiveTests.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000B /* embedded-core-lock.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "embedded-core-lock.json"; path = EmbeddedCore/embedded-core-lock.json; sourceTree = SOURCE_ROOT; };
+		A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = AegisEmbeddedCore.xcframework; path = EmbeddedCore/Products/AegisEmbeddedCore.xcframework; sourceTree = SOURCE_ROOT; };
 		A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPTunnelBridgeTests.swift; sourceTree = "<group>"; };
 		A10TUNN000000000000000003 /* AccessHostRecoveryWebKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostRecoveryWebKitTests.swift; sourceTree = "<group>"; };
 		A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyEntryPublisherTests.swift; sourceTree = "<group>"; };
@@ -821,6 +855,7 @@
 				7EEA86B8BEC84C02471EFF1A /* BrowserKit.framework in Frameworks */,
 				8E51BF62C4BB22B94BA6EB87 /* AegisPolicyKit.framework in Frameworks */,
 				A10CCE55ACC0020000000008 /* AccessKit.framework in Frameworks */,
+				A10CORE00000000000000001D /* AegisEmbeddedCore.xcframework in Frameworks */,
 				D7A101D820C862EBB3972680 /* AgentKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -837,6 +872,7 @@
 				6839DB2DB6046A431BA96024 /* BrowserKit.framework in Frameworks */,
 				E9D9727EEFB4A51552E29209 /* AegisPolicyKit.framework in Frameworks */,
 				A10CCE55ACC0020000000007 /* AccessKit.framework in Frameworks */,
+				A10CORE00000000000000001C /* AegisEmbeddedCore.xcframework in Frameworks */,
 				A1774B0BEA41E54381DA0432 /* AgentKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -847,6 +883,14 @@
 			files = (
 				FB00BBEBB93684B899A3C380 /* AegisPolicyKit.framework in Frameworks */,
 				D3C0C38220BB297F3A973AC3 /* BrowserKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10CORE000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10CORE00000000000000001B /* AegisEmbeddedCore.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1350,6 +1394,16 @@
 				A10RECV000000000000000003 /* AccessProxyEntryPublisher.swift */,
 				A10RECV000000000000000004 /* AccessFailClosedProxyEntryPublisher.swift */,
 				A10TUNN000000000000000001 /* AccessHTTPTunnelBridge.swift */,
+				A10CORE000000000000000001 /* AccessEmbeddedCoreManifest.swift */,
+				A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */,
+				A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */,
+				A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */,
+				A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */,
+				A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */,
+				A10CORE00000000000000000D /* AccessMutexGate.swift */,
+				A10CORE000000000000000008 /* AccessEmbeddedProxyEntryFactory.swift */,
+				A10CORE00000000000000000B /* embedded-core-lock.json */,
+				A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */,
 				A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */,
 				A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */,
 				A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */,
@@ -1392,6 +1446,10 @@
 				A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */,
 				A10HOST000000000000000004 /* AccessHostStorePolicyTests.swift */,
 				A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */,
+				A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */,
+				A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */,
+				A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */,
+				A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */,
 				A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */,
 				A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */,
 				A10CCE55ACC0010000000000F7 /* AccessSiteSessionFaultTests.swift */,
@@ -1469,6 +1527,7 @@
 			buildConfigurationList = A10CCE55ACC0030000000006 /* Build configuration list for PBXNativeTarget "AccessKit" */;
 			buildPhases = (
 				A10CCE55ACC0030000000003 /* Sources */,
+				A10CORE000000000000000020 /* Frameworks */,
 				A10CCE55ACC0030000000004 /* Resources */,
 			);
 			buildRules = (
@@ -1754,6 +1813,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10CCE55ACC0020000000005 /* PrivacyInfo.xcprivacy in Resources */,
+				A10CORE00000000000000001A /* embedded-core-lock.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1979,6 +2039,10 @@
 				A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */,
 				A10HOST000000000000000014 /* AccessHostStorePolicyTests.swift in Sources */,
 				A10RECV000000000000000015 /* AccessProxyEntryPublisherTests.swift in Sources */,
+				A10CORE000000000000000012 /* AccessEmbeddedCoreManifestTests.swift in Sources */,
+				A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */,
+				A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */,
+				A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */,
 				A10TUNN000000000000000012 /* AccessHTTPTunnelBridgeTests.swift in Sources */,
 				A10TUNN000000000000000013 /* AccessHostRecoveryWebKitTests.swift in Sources */,
 				A10RECV000000000000000016 /* AccessNavigationRecoveryTests.swift in Sources */,
@@ -2073,6 +2137,14 @@
 				A10RECV000000000000000013 /* AccessProxyEntryPublisher.swift in Sources */,
 				A10RECV000000000000000014 /* AccessFailClosedProxyEntryPublisher.swift in Sources */,
 				A10TUNN000000000000000011 /* AccessHTTPTunnelBridge.swift in Sources */,
+				A10CORE000000000000000011 /* AccessEmbeddedCoreManifest.swift in Sources */,
+				A10CORE000000000000000013 /* AccessEmbeddedCoreControlling.swift in Sources */,
+				A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */,
+				A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */,
+				A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */,
+				A10CORE000000000000000021 /* AccessNWListenerBootstrap.swift in Sources */,
+				A10CORE00000000000000000D1 /* AccessMutexGate.swift in Sources */,
+				A10CORE000000000000000018 /* AccessEmbeddedProxyEntryFactory.swift in Sources */,
 				A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */,
 				A10CCE55ACC0020000000000F0 /* AccessDevAllowBlockPanel.swift in Sources */,
 				A10CCE55ACC0020000000000C5 /* AccessSiteSessionError.swift in Sources */,
@@ -2712,6 +2784,15 @@
 		A10CCE55ACC0030000000007 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/EmbeddedCore/Products",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lresolv",
+				);
 				CODE_SIGN_IDENTITY = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
@@ -2723,6 +2804,7 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.accesskit;
 				PRODUCT_NAME = AccessKit;
@@ -2736,6 +2818,15 @@
 		A10CCE55ACC0030000000008 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/EmbeddedCore/Products",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lresolv",
+				);
 				CODE_SIGN_IDENTITY = "";
 				CURRENT_PROJECT_VERSION = 1;
 				DEFINES_MODULE = YES;
@@ -2747,6 +2838,7 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.accesskit;
 				PRODUCT_NAME = AccessKit;

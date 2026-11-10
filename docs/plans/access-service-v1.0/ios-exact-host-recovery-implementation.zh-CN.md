@@ -1,6 +1,6 @@
 # iOS 精确主机恢复 — 实现方案
 
-日期：2026-11-10。状态：U1 的失败导航、一次额度和应用级发布器已接上，并通过对应模拟器测试。失败页按钮的界面测试尚未跑完。U5 字节转发和 K/D 未做。
+日期：2026-11-10。状态：U1–U5 模拟器主路径已接通；K0 已冻结 Xray-core/libXray `v26.11.9` 并构建/链入 `AegisEmbeddedCore.xcframework`（slice 摘要已写入 lock）；模拟器 K live（本地 Reality 节点）已跑通。D 仍 NOT_RUN。公网站点回归见 [受阻站点回归方案](ios-access-blocked-site-regression.zh-CN.md)（opt-in，不替代 U/K/D）。无节点时应用默认失败关闭。
 
 **行为依据：** [精确主机存储 SDD](ios-exact-host-store-sdd.zh-CN.md)。SDD 决定行为，本文件确定接线、接口和验证顺序。  
 **目标：** 一次用户操作准备本应用入口，只恢复点击时原标签的原失败请求，保持范围隔离、一次额度和失败关闭。  
@@ -313,13 +313,14 @@ U/K/D 分别写入本次独立 `.artifacts/ios-access-recovery/<候选标识>/U/
 
 记录源码 SHA/tree；有本地修改时增加 tracked diff 与未跟踪源码清单摘要；App 构建/包摘要；目标、OS、设备；实际用例和数量；xcresult；入口 identity/generation；operationID/nonce；内核 manifest 及实际 slice 摘要。只写 HEAD 不足以标识当前有未提交源码的候选。
 
-| 阶段 | 完成含义 | 本文件交付时 |
+| 阶段 | 完成含义 | 当前工作树（2026-11-10） |
 | --- | --- | --- |
-| U1–U5 | 页面经指定本机入口恢复，范围/额度/失败关闭得到验证 | NOT_RUN；本次仅修改方案 |
-| K0 | 可解析来源、锁定构建与进程内资产身份齐全 | 旧来源在所查询上游不可解析，新资产未构建/冻结 |
-| K | 本次响应来自进程内固定内核对应的 VLESS 出口 | NOT_RUN |
+| U1–U5 | 页面经指定本机入口恢复，范围/额度/失败关闭得到验证 | 模拟器 Access 套件绿（含恢复/WebKit）；证据在 `.artifacts/ios-access-k-final/` |
+| K0 | 可解析来源、锁定构建与进程内资产身份齐全 | `embedded-core-lock.json` 为 `verified_build`，双 slice SHA 已冻结；Products 为本地构建产物（gitignore） |
+| K | 本次响应来自进程内固定内核对应的 VLESS 出口 | 模拟器 live 绿（`.artifacts/ios-access-live/`）；正式脱敏 K 索引仍待按审计目录落盘 |
 | D | 与配套 K 同一候选、设备内核和入口实例的真机请求 | NOT_RUN |
+| R | 受阻公网站点 opt-in 回归（Gold/Full） | 仅有[设计稿](ios-access-blocked-site-regression.zh-CN.md)；未接线，不进默认测试门 |
 
-U1–U5 通过后只记录 U。K 和 D 都有同一候选的有效记录之后，才更新 PR #97 的分支与说明；缺失、失败或 NOT_RUN 均不放行。更新 PR 不等于独立审查、required checks、合并或发行通过，继续遵守 CI 指南及当时任务授权。
+U 与模拟器 K 通过后可更新 PR #97 说明与代码；D 未跑不得宣称设备闭环。R 通过不能写成 U/K/D。更新 PR 不等于独立审查、required checks、合并或发行通过，继续遵守 CI 指南及当时任务授权。
 
 不修改 SDD、冻结 spec.zh-CN.md、macOS/Android，不恢复其他暂停平台或清理历史产物。

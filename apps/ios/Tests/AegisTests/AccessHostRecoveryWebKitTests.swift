@@ -1,4 +1,5 @@
 import AccessKit
+import os
 import UIKit
 import WebKit
 import XCTest
@@ -11,8 +12,8 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
     func testFailedPageReloadsOnceThroughTheListener() async throws {
         let nonce = UUID().uuidString
         let opener = AnsweringOpener()
-        let listener = try makeListener(port: 18_240, tunnels: opener)
-        try listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        let listener = try await makeListener(port: 18_240, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
         defer { try? listener.stop() }
         let publisher = readyPublisher(port: 18_240)
         let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessContinuousPreparationClock())
@@ -34,10 +35,11 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         let operation = coordinator.retryViaProxy(tab: tab)
         XCTAssertNotNil(operation)
         let deadline = Date().addingTimeInterval(15)
-        while !opener.transcript.contains(nonce), Date() < deadline {
+        while !(opener.transcript.contains(nonce) && opener.transcript.contains("cdn.invalid")), Date() < deadline {
             if tab.webView.superview == nil {
                 tab.webView.frame = window.bounds
                 window.addSubview(tab.webView)
+                window.makeKeyAndVisible()
             }
             try await Task.sleep(for: .milliseconds(30))
         }
@@ -46,10 +48,87 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertTrue(opener.transcript.contains("cdn.invalid"), opener.transcript)
     }
 
+    func testUnreadyTabKeepsTheOriginalStore() async throws {
+        let opener = AnsweringOpener()
+        let listener = try await makeListener(port: 18_244, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let publisher = AccessProxyEntryPublisher { _, _ in
+            throw AccessSiteSessionError.nodeUnavailable
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessContinuousPreparationClock())
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        defer { browser.standardTabs.forEach { $0.stop() } }
+        let tab = try XCTUnwrap(browser.activeTab)
+        tab.hostCoordinator = coordinator
+        let original = tab.websiteDataStore
+        let window = show(tab.webView)
+        defer { window.isHidden = true }
+        tab.load(URLRequest(url: URL(string: "http://example.invalid/unready")!))
+        tab.webView.navigationDelegate = NavigationSink()
+        tab.webView.stopLoading()
+        deliverFailure(tab)
+        XCTAssertNotNil(coordinator.retryViaProxy(tab: tab))
+        try await Task.sleep(for: .milliseconds(400))
+        let host = try AccessSiteHost("example.invalid")
+        XCTAssertNil(coordinator.registry.store(
+            scopeID: "ordinary",
+            host: host,
+            isPrivate: false
+        ))
+        XCTAssertTrue(tab.websiteDataStore === original)
+        XCTAssertEqual(tab.recoveryLoadCount, 0)
+        XCTAssertFalse(opener.transcript.contains("example.invalid"))
+        let snapshot = coordinator.snapshot(for: tab)
+        XCTAssertTrue(snapshot.toggleOn)
+        XCTAssertEqual(snapshot.attachment, .notAttached)
+        XCTAssertEqual(
+            AccessSiteProxyToggleModel.attachmentLine(for: snapshot.attachment, intent: snapshot.intent),
+            "尚未接入代理，当前页面仍使用原连接"
+        )
+        XCTAssertNil(snapshot.failureReason)
+    }
+
+    func testHttpsReloadRecordsConnectAuthority() async throws {
+        let opener = AnsweringOpener()
+        let listener = try await makeListener(port: 18_245, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let publisher = readyPublisher(port: 18_245)
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessContinuousPreparationClock())
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        defer { browser.standardTabs.forEach { $0.stop() } }
+        let tab = try XCTUnwrap(browser.activeTab)
+        tab.hostCoordinator = coordinator
+        let window = show(tab.webView)
+        defer { window.isHidden = true }
+        let sink = NavigationSink()
+        tab.load(URLRequest(url: URL(string: "https://example.invalid/secure")!))
+        tab.webView.navigationDelegate = sink
+        tab.webView.stopLoading()
+        deliverFailure(tab)
+        XCTAssertNotNil(coordinator.retryViaProxy(tab: tab))
+        let deadline = Date().addingTimeInterval(8)
+        while !listener.admissionSummary.contains("example.invalid:443"), Date() < deadline {
+            if tab.webView.superview == nil {
+                tab.webView.frame = window.bounds
+                window.addSubview(tab.webView)
+                window.makeKeyAndVisible()
+            }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        XCTAssertEqual(tab.recoveryLoadCount, 1)
+        XCTAssertTrue(
+            listener.admissionSummary.contains("example.invalid:443"),
+            listener.admissionSummary
+        )
+        XCTAssertFalse(opener.transcript.contains("GET /secure"))
+    }
+
     func testUnrelatedHostDoesNotEnterTheListener() async throws {
         let opener = AnsweringOpener()
-        let listener = try makeListener(port: 18_241, tunnels: opener)
-        try listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        let listener = try await makeListener(port: 18_241, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
         defer { try? listener.stop() }
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
         defer { browser.standardTabs.forEach { $0.stop() } }
@@ -63,8 +142,8 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
 
     func testFailedEndpointKeepsTheProxyAndDoesNotAddADirectRequest() async throws {
         let opener = AnsweringOpener()
-        let listener = try makeListener(port: 18_242, tunnels: opener)
-        try listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        let listener = try await makeListener(port: 18_242, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
         defer { try? listener.stop() }
         let publisher = readyPublisher(port: 18_242)
         let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessContinuousPreparationClock())
@@ -81,7 +160,14 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         deliverFailure(tab)
         XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
         _ = coordinator.retryViaProxy(tab: tab)
-        try await waitUntil({ opener.transcript.contains("example.invalid") }, message: opener.transcript)
+        try await waitUntil({
+            if tab.webView.superview == nil {
+                tab.webView.frame = window.bounds
+                window.addSubview(tab.webView)
+                window.makeKeyAndVisible()
+            }
+            return opener.transcript.contains("example.invalid")
+        }, message: opener.transcript)
         let host = try AccessSiteHost("example.invalid")
         let store = try XCTUnwrap(coordinator.registry.storeForTab(
             tabID: tab.id.uuidString,
@@ -129,7 +215,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         }
     }
 
-    private func makeListener(port: UInt16, tunnels: any AccessHTTPTunnelOpening) throws -> AccessHTTPInboundListener {
+    private func makeListener(port: UInt16, tunnels: any AccessHTTPTunnelOpening) async throws -> AccessHTTPInboundListener {
         let registration = AccessRegistration(
             id: try AccessRegistrationID("reg-webkit-\(port)"),
             owner: try AccessOwner(channel: 1, profile: "ordinary", partition: "default"),
@@ -169,11 +255,9 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
 private final class NavigationSink: NSObject, WKNavigationDelegate {}
 
 private final class AnsweringOpener: AccessHTTPTunnelOpening, @unchecked Sendable {
-    private let lock = NSLock()
-    private var text = ""
+    private let lock = OSAllocatedUnfairLock(initialState: "")
     var transcript: String {
-        lock.lock(); defer { lock.unlock() }
-        return text
+        lock.withLock { $0 }
     }
 
     func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
@@ -185,27 +269,27 @@ private final class AnsweringOpener: AccessHTTPTunnelOpening, @unchecked Sendabl
     }
 
     fileprivate func append(_ request: String) {
-        lock.lock()
-        text.append(request)
-        lock.unlock()
+        lock.withLock { $0.append(request) }
     }
 }
 
 private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendable {
+    private struct State {
+        var request = Data()
+        var response = Data()
+        var closed = false
+        var readers: [CheckedContinuation<Data?, Error>] = []
+        var announced = false
+    }
+
     let host: String
     var onRequest: ((String) -> Void)?
-    private let lock = NSLock()
-    private var request = Data()
-    private var response = Data()
-    private var closed = false
-    private var readers: [CheckedContinuation<Data?, Error>] = []
-    private var announced = false
+    private let lock = OSAllocatedUnfairLock(initialState: State())
 
     init(host: String) { self.host = host }
 
     var isOpen: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return !closed
+        lock.withLock { !$0.closed }
     }
 
     func read(maxBytes: Int) async throws -> Data? {
@@ -232,14 +316,16 @@ private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendabl
     }
 
     private func appendRequest(_ data: Data) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        request.append(data)
-        guard !announced, let text = String(data: request, encoding: .utf8), text.contains("\r\n\r\n") else {
-            return nil
+        lock.withLock { state in
+            state.request.append(data)
+            guard !state.announced,
+                  let text = String(data: state.request, encoding: .utf8),
+                  text.contains("\r\n\r\n") else {
+                return nil
+            }
+            state.announced = true
+            return text
         }
-        announced = true
-        return text
     }
 
     private func answer(for request: String) -> Data {
@@ -253,33 +339,36 @@ private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendabl
     }
 
     private func enqueue(_ data: Data) {
-        lock.lock()
-        let reader = readers.isEmpty ? nil : readers.removeFirst()
-        if reader == nil { response.append(data) }
-        lock.unlock()
+        let reader: CheckedContinuation<Data?, Error>? = lock.withLock { state in
+            if state.readers.isEmpty {
+                state.response.append(data)
+                return nil
+            }
+            return state.readers.removeFirst()
+        }
         reader?.resume(returning: data)
     }
 
     private func takeResponse(maxBytes: Int, continuation: CheckedContinuation<Data?, Error>) -> Data?? {
-        lock.lock()
-        defer { lock.unlock() }
-        if closed, response.isEmpty { return .some(nil) }
-        if !response.isEmpty {
-            let count = min(maxBytes, response.count)
-            let chunk = Data(response.prefix(count))
-            response.removeFirst(count)
-            return .some(chunk)
+        lock.withLock { state in
+            if state.closed, state.response.isEmpty { return .some(nil) }
+            if !state.response.isEmpty {
+                let count = min(maxBytes, state.response.count)
+                let chunk = Data(state.response.prefix(count))
+                state.response.removeFirst(count)
+                return .some(chunk)
+            }
+            state.readers.append(continuation)
+            return nil
         }
-        readers.append(continuation)
-        return nil
     }
 
     private func closeLocked() -> [CheckedContinuation<Data?, Error>] {
-        lock.lock()
-        defer { lock.unlock() }
-        closed = true
-        let pending = readers
-        readers.removeAll()
-        return pending
+        lock.withLock { state in
+            state.closed = true
+            let pending = state.readers
+            state.readers.removeAll()
+            return pending
+        }
     }
 }

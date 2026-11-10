@@ -1,4 +1,5 @@
 import Network
+import os
 import WebKit
 import XCTest
 
@@ -67,13 +68,11 @@ private final class RoutingProxyProbe: @unchecked Sendable {
     private(set) var endpoint: NWEndpoint = .hostPort(host: "127.0.0.1", port: 9)
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "access.i0.proxy-probe")
-    private let lock = NSLock()
-    private var text = ""
+    private let lock = OSAllocatedUnfairLock(initialState: "")
     var onText: ((String) -> Void)?
 
     var transcript: String {
-        lock.lock(); defer { lock.unlock() }
-        return text
+        lock.withLock { $0 }
     }
 
     init() throws {
@@ -117,12 +116,11 @@ private final class RoutingProxyProbe: @unchecked Sendable {
         connection.start(queue: queue)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, _, _ in
             guard let self, let data, let chunk = String(data: data, encoding: .utf8) else { return }
-            self.lock.lock()
-            self.text.append(chunk)
-            let snapshot = self.text
-            let callback = self.onText
-            self.lock.unlock()
-            callback?(snapshot)
+            let snapshot = self.lock.withLock { text -> String in
+                text.append(chunk)
+                return text
+            }
+            self.onText?(snapshot)
             connection.cancel()
         }
     }
@@ -133,12 +131,12 @@ private enum RoutingProbeError: Error {
 }
 
 private final class ResumeOnce: @unchecked Sendable {
-    private let lock = NSLock()
-    private var done = false
+    private let lock = OSAllocatedUnfairLock(initialState: false)
     func take() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        if done { return false }
-        done = true
-        return true
+        lock.withLock { done in
+            if done { return false }
+            done = true
+            return true
+        }
     }
 }

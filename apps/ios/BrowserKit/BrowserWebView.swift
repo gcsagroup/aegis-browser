@@ -58,12 +58,18 @@ public struct BrowserWebView: UIViewRepresentable {
 /// 网页取得焦点后，查找快捷键由 WebKit 的响应链处理。
 final class BrowserContentWebView: WKWebView {
     var onFind: (() -> Void)?
+    var onDidMoveToWindow: (() -> Void)?
     override var canBecomeFirstResponder: Bool { true }
     override var keyCommands: [UIKeyCommand]? {
         let find = UIKeyCommand(input: "f", modifierFlags: .command, action: #selector(showPageFind))
         find.discoverabilityTitle = AegisLocalization.string("在页面中查找")
         find.wantsPriorityOverSystemBehavior = true
         return [find] + (super.keyCommands ?? [])
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { onDidMoveToWindow?() }
     }
 
     @objc private func showPageFind() {

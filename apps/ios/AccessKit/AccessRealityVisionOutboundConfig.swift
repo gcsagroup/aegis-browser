@@ -33,4 +33,30 @@ public struct AccessRealityVisionOutboundConfig: @unchecked Sendable {
         }
         return text
     }
+
+    /// Document passed to the in-process bridge `Start`. Adds empty inbounds and
+    /// quiet logging; never injects freedom / DIRECT.
+    public func embeddedInstanceJSONObject() throws -> [String: Any] {
+        guard let outbounds = jsonObject["outbounds"] else {
+            throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("outbounds")
+        }
+        let root: [String: Any] = [
+            "log": ["loglevel": "none"],
+            "inbounds": [Any](),
+            "outbounds": outbounds,
+        ]
+        try AccessRealityVisionOutboundConfigBuilder.assertFailClosed(root)
+        return root
+    }
+
+    public func embeddedInstanceJSONData(prettyPrinted: Bool = false) throws -> Data {
+        var options: JSONSerialization.WritingOptions = [.sortedKeys]
+        if prettyPrinted {
+            options.insert(.prettyPrinted)
+        }
+        return try JSONSerialization.data(
+            withJSONObject: try embeddedInstanceJSONObject(),
+            options: options
+        )
+    }
 }

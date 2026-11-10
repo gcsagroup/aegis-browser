@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import os
 
 /// Opens the outbound stream for one admitted CONNECT target.
 public protocol AccessHTTPTunnelOpening: AnyObject, Sendable {
@@ -14,10 +15,13 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
     private let client: NWConnection
     private let queue: DispatchQueue
     private let opener: AccessHTTPTunnelOpening
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private var task: Task<Void, Never>?
     private var remote: (any AccessRealityPathStream)?
     private var stopped = false
+    private var inboundChunks: [Data] = []
+    private var remoteStream: (any AccessRealityPathStream)?
+    private var drainTask: Task<Void, Never>?
 
     public init(
         client: NWConnection,
@@ -29,7 +33,9 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
         self.opener = opener
     }
 
+    /// Caller is the connection queue, which is where the 200 completion runs.
     public func start(host: String, port: UInt16, prelude: Data) {
+        receiveNow()
         task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -41,10 +47,8 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
                 if !prelude.isEmpty {
                     try await remote.write(prelude)
                 }
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask { await self.pumpClient(to: remote) }
-                    group.addTask { await self.pumpRemote(remote) }
-                }
+                await self.attachRemote(remote)
+                await self.pumpRemote(remote)
             } catch {
                 self.stop()
             }
@@ -73,22 +77,73 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
         return (remote, task)
     }
 
-    private func pumpClient(to remote: any AccessRealityPathStream) async {
-        while !Task.isCancelled {
-            do {
-                guard let chunk = try await receiveClient() else {
-                    remote.close()
-                    client.cancel()
+    private func receiveNow() {
+        client.receive(minimumIncompleteLength: 1, maximumLength: Self.chunkSize) { [weak self] data, _, isComplete, error in
+            guard let self else { return }
+            self.queue.async {
+                if let data, !data.isEmpty {
+                    self.inboundChunks.append(data)
+                    self.kickDrain()
+                }
+                if error != nil || isComplete || self.isStopped {
+                    self.remoteStream?.close()
                     return
                 }
-                if chunk.isEmpty { continue }
-                try await remote.write(chunk)
+                self.receiveNow()
+            }
+        }
+    }
+
+    private func attachRemote(_ remote: any AccessRealityPathStream) async {
+        await withCheckedContinuation { continuation in
+            self.queue.async {
+                self.remoteStream = remote
+                self.kickDrain()
+                continuation.resume()
+            }
+        }
+    }
+
+    private func kickDrain() {
+        guard remoteStream != nil, drainTask == nil else { return }
+        drainTask = Task { [weak self] in
+            await self?.drainLoop()
+        }
+    }
+
+    private struct PendingWrite: @unchecked Sendable {
+        let remote: any AccessRealityPathStream
+        let data: Data
+    }
+
+    private func drainLoop() async {
+        while !Task.isCancelled {
+            let pending: PendingWrite? = await withCheckedContinuation { continuation in
+                self.queue.async {
+                    guard let remote = self.remoteStream, !self.inboundChunks.isEmpty else {
+                        self.drainTask = nil
+                        continuation.resume(returning: nil)
+                        return
+                    }
+                    let next = PendingWrite(remote: remote, data: self.inboundChunks.removeFirst())
+                    continuation.resume(returning: next)
+                }
+            }
+            guard let pending else { return }
+            do {
+                try await pending.remote.write(pending.data)
             } catch {
-                remote.close()
+                pending.remote.close()
                 client.cancel()
                 return
             }
         }
+    }
+
+    private var isStopped: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
     }
 
     private func pumpRemote(_ remote: any AccessRealityPathStream) async {
@@ -104,24 +159,6 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
                 remote.close()
                 client.cancel()
                 return
-            }
-        }
-    }
-
-    private func receiveClient() async throws -> Data? {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
-            self.queue.async {
-                self.client.receive(minimumIncompleteLength: 1, maximumLength: Self.chunkSize) { data, _, isComplete, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                        return
-                    }
-                    if let data, !data.isEmpty {
-                        continuation.resume(returning: data)
-                        return
-                    }
-                    continuation.resume(returning: isComplete ? nil : Data())
-                }
             }
         }
     }
@@ -143,7 +180,7 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
 
 /// In-memory stream for tunnel tests. `close` wakes a pending read or write.
 public final class AccessMemoryRealityStream: AccessRealityPathStream, @unchecked Sendable {
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private var inbound = Data()
     private var closed = false
     private var readers: [CheckedContinuation<Data?, Error>] = []
@@ -168,8 +205,11 @@ public final class AccessMemoryRealityStream: AccessRealityPathStream, @unchecke
 
     public func read(maxBytes: Int) async throws -> Data? {
         try await withCheckedThrowingContinuation { continuation in
-            if let immediate = self.beginRead(maxBytes: maxBytes, continuation: continuation) {
-                continuation.resume(returning: immediate)
+            switch self.beginRead(maxBytes: maxBytes, continuation: continuation) {
+            case nil:
+                break
+            case .some(let data):
+                continuation.resume(returning: data)
             }
         }
     }

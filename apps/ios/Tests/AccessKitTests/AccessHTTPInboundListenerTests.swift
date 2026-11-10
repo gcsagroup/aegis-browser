@@ -32,25 +32,31 @@ final class AccessHTTPInboundListenerTests: XCTestCase {
         }
     }
 
-    func testRejectsInactiveLeaseOnStart() throws {
+    func testRejectsInactiveLeaseOnStart() async throws {
         let registration = try makeRegistration(port: 18_085, leaseOffset: 10)
         let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
         let afterExpiry = Date(timeIntervalSince1970: 1_700_000_000 + 30)
-        XCTAssertThrowsError(try listener.start(at: afterExpiry)) { error in
+        do {
+            try await listener.start(at: afterExpiry)
+            XCTFail("expected throw")
+        } catch {
             XCTAssertEqual(error as? AccessHTTPInboundError, .leaseInactive)
         }
         XCTAssertFalse(listener.isListening)
     }
 
-    func testStartStopAndAcceptOnLoopback() throws {
+    func testStartStopAndAcceptOnLoopback() async throws {
         let port: UInt16 = 18_086
         let registration = try makeRegistration(port: port)
         let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
         let now = Date(timeIntervalSince1970: 1_700_000_000)
 
-        try listener.start(at: now)
+        try await listener.start(at: now)
         XCTAssertTrue(listener.isListening)
-        XCTAssertThrowsError(try listener.start(at: now)) { error in
+        do {
+            try await listener.start(at: now)
+            XCTFail("expected throw")
+        } catch {
             XCTAssertEqual(error as? AccessHTTPInboundError, .alreadyListening)
         }
 
@@ -66,13 +72,13 @@ final class AccessHTTPInboundListenerTests: XCTestCase {
             }
         }
         connection.start(queue: .global())
-        wait(for: [connected], timeout: 2.0)
+        await fulfillment(of: [connected], timeout: 2.0)
         connection.cancel()
 
         // Accept handler is asynchronous; allow a brief settle.
         let deadline = Date().addingTimeInterval(1.0)
         while listener.acceptedConnectionCount == 0, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.02)
+            try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertGreaterThanOrEqual(listener.acceptedConnectionCount, 1)
 

@@ -103,6 +103,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         view.allowsBackForwardNavigationGestures = true
         view.isInspectable = inspectionEnabled
         view.scrollView.keyboardDismissMode = .onDrag
+        view.onDidMoveToWindow = { [weak self] in
+            self?.flushPendingAttachedLoad()
+        }
         loadedWebView = view
         // 页面标题也可能在导航完成之后更新，标签和操作预览必须跟随真实标题。
         titleObservation = view.observe(\.title, options: [.new]) { [weak self, weak view] _, _ in
@@ -114,6 +117,10 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         return view
     }
     public var isResident: Bool { loadedWebView != nil }
+    @Published public private(set) var webViewGeneration: UInt64 = 0
+    private var pendingAttachedLoad: URLRequest?
+    /// Set when a store swap destroys the visible web view. The replacement loads only after it is in a window.
+    private var needsWindowBeforeLoad = false
     @Published public private(set) var isSuspended = false
     public private(set) var lastActivatedAt = Date.distantPast
     private var isActive = false
@@ -192,6 +199,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     private func beginUserNavigation(url: URL, method: String) {
         hostCoordinator?.pendingRecoveryInvalidated(tab: self)
+        pendingAttachedLoad = nil
         loadingErrorPresentation = nil
         loadingErrorAllowsProxyRetry = false
         lastMainFrameFailure = nil
@@ -239,11 +247,31 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         isLoading = true
         var outgoing = request
         outgoing.httpMethod = method
-        let navigation = webView.load(outgoing)
+        if needsWindowBeforeLoad, loadedWebView?.window == nil {
+            pendingAttachedLoad = outgoing
+            webViewGeneration &+= 1
+            return
+        }
+        needsWindowBeforeLoad = false
+        performLoad(outgoing)
+    }
+
+    private func performLoad(_ request: URLRequest) {
+        if attempt.recoveryOperationID != nil, request.url?.scheme == "http" {
+            webView.configuration.defaultWebpagePreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
+        }
+        let navigation = webView.load(request)
         pendingNavigation = navigation
         if let navigation {
             attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
         }
+    }
+
+    private func flushPendingAttachedLoad() {
+        guard loadedWebView?.window != nil, let request = pendingAttachedLoad else { return }
+        pendingAttachedLoad = nil
+        needsWindowBeforeLoad = false
+        performLoad(request)
     }
 
     public func load(_ request: URLRequest) {
@@ -280,6 +308,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             return
         }
         releaseWebView()
+        needsWindowBeforeLoad = true
         if let configurationFactory {
             configuration = configurationFactory(store)
             installContentHooks()
@@ -344,6 +373,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         loadGeneration = UUID(); loadTask?.cancel()
         loadedWebView?.stopLoading()
         loadedWebView?.navigationDelegate = nil; loadedWebView?.uiDelegate = nil
+        loadedWebView?.removeFromSuperview()
         titleObservation = nil
         loadedWebView = nil; pendingNavigation = nil
         isLoading = false; isSuspended = true
@@ -414,6 +444,36 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             configureTrackingProtection(for: url)
             pendingNavigation = webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData, timeoutInterval: 30))
             rememberPendingNavigation()
+        }
+    }
+
+    /// Content rules are not ready on the first recovery load. Fetch them without minting a new navigation.
+    private func scheduleRecoveryAfterRules(_ url: URL) {
+        loadTask?.cancel()
+        let generation = loadGeneration
+        let operationID = attempt.recoveryOperationID
+        let method = attempt.method
+        loadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let list = try await TrackingProtection.shared.ruleList()
+                try Task.checkCancellation()
+                guard generation == self.loadGeneration, self.attempt.recoveryOperationID == operationID else { return }
+                self.contentRuleList = list
+                for category in ["mining", "fingerprinting"] {
+                    self.securityLists[category] = try await self.securityRuleStore.list(category: category)
+                }
+                try Task.checkCancellation()
+                guard generation == self.loadGeneration, self.attempt.recoveryOperationID == operationID else { return }
+                var request = URLRequest(url: url)
+                request.httpMethod = method
+                self.commitPreservingMethod(request, continuesAttempt: true)
+            } catch {
+                guard generation == self.loadGeneration, self.attempt.recoveryOperationID == operationID else { return }
+                self.isLoading = false
+                self.loadingErrorAllowsProxyRetry = false
+                self.loadingErrorPresentation = .resource("跟踪保护初始化失败，请重试。")
+            }
         }
     }
 
@@ -496,6 +556,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             (requestURL.scheme == "http" && ["127.0.0.1", "localhost", "[::1]", "::1"].contains(requestURL.host ?? ""))
         if localOrInternal { webPreferences.preferredHTTPSNavigationPolicy = .keepAsRequested }
         if navigationAction.targetFrame?.isMainFrame == false {
+            if requestURL.scheme == "http", attempt.recoveryOperationID != nil || requestedURL?.scheme == "http" {
+                webPreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
+            }
             let decision = navigationDecision(requestURL, method: navigationAction.request.httpMethod ?? "GET")
             finish(decision.kind == .blocked ? .cancel : .allow)
             return
@@ -505,7 +568,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         activeHardenedSecurity = inheritedHardenedSecurity || (site.hardenedSecurity ?? preferences.values.hardenedSecurity ?? false)
         PageProtection.applySystem(webPreferences, hardened: activeHardenedSecurity)
         // 本机服务没有公网 HTTPS 身份；明确保留用户输入的本机 HTTP。
-        if localOrInternal {
+        // 失败页重放保持原来的 http，避免升级成 TLS 后隧道里不再是那次请求。
+        if localOrInternal || (attempt.recoveryOperationID != nil && requestURL.scheme == "http") {
             webPreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
         }
         webPreferences.preferredContentMode = (site.desktop ?? preferences.values.desktop) ? .desktop : .recommended
@@ -534,7 +598,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         if decision.kind != .blocked, ["http", "https"].contains(requestURL.scheme ?? ""), (contentRuleList == nil || securityLists.count < 2) {
             finish(.cancel)
-            load(requestURL)
+            if attempt.recoveryOperationID != nil {
+                scheduleRecoveryAfterRules(requestURL)
+            } else {
+                load(requestURL)
+            }
             return
         }
         configureTrackingProtection(for: requestURL)
