@@ -352,6 +352,58 @@ class StorageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source"):
             self.prepare()
 
+    def test_source_workspace_must_be_absolute_canonical_and_without_controls(self):
+        alias = self.root / "source-alias"
+        alias.symlink_to(self.repo, target_is_directory=True)
+        for workspace in (str(alias), str(self.repo / ".." / "source")):
+            with self.subTest(workspace=workspace), self.assertRaisesRegex(ValueError, "workspace"):
+                self.storage.source_metadata({**self.environment, "GITHUB_WORKSPACE": workspace})
+        previous = Path.cwd()
+        try:
+            os.chdir(self.root)
+            with self.assertRaisesRegex(ValueError, "workspace"):
+                self.storage.source_metadata({**self.environment, "GITHUB_WORKSPACE": "source"})
+        finally:
+            os.chdir(previous)
+        renamed = self.repo.with_name("source\ncontrol")
+        self.repo.rename(renamed)
+        with self.assertRaisesRegex(ValueError, "workspace"):
+            self.storage.source_metadata({**self.environment, "GITHUB_WORKSPACE": str(renamed)})
+
+    def fsmonitor_hook(self):
+        hook = self.root / "fsmonitor-fixture"
+        hook.write_text('#!/bin/sh\n: > "$0.ran"\n')
+        hook.chmod(0o700)
+        return hook, Path(str(hook) + ".ran")
+
+    def test_inherited_git_configuration_cannot_execute_fsmonitor(self):
+        hook, marker = self.fsmonitor_hook()
+        global_config = self.root / "global-git-config-fixture"
+        global_config.write_text('[core]\nfsmonitor = "' + str(hook) + '"\n')
+        variants = (
+            {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": str(hook)},
+            {"GIT_CONFIG_PARAMETERS": "'core.fsmonitor=" + str(hook) + "'"},
+            {"GIT_CONFIG_GLOBAL": str(global_config)},
+        )
+        for variables in variants:
+            marker.unlink(missing_ok=True)
+            with self.subTest(variables=tuple(variables)), mock.patch.dict(os.environ, variables):
+                self.storage.source_metadata(self.environment)
+                self.assertFalse(marker.exists(), "source verification executed inherited Git configuration")
+
+    def test_local_git_configuration_cannot_execute_fsmonitor(self):
+        hook, marker = self.fsmonitor_hook()
+        subprocess.run(["/usr/bin/git", "-C", str(self.repo), "config", "core.fsmonitor", str(hook)], check=True)
+        self.storage.source_metadata(self.environment)
+        self.assertFalse(marker.exists(), "source verification executed a repository-local fsmonitor")
+
+    def test_source_workspace_shell_characters_are_literal_data(self):
+        renamed = self.repo.with_name("source ; touch shell-marker ; #")
+        self.repo.rename(renamed)
+        result = self.storage.source_metadata({**self.environment, "GITHUB_WORKSPACE": str(renamed)})
+        self.assertEqual(result["source_sha"], self.environment["GITHUB_SHA"])
+        self.assertFalse((self.root / "shell-marker").exists())
+
     def test_ignored_build_resource_is_denied_but_generated_evidence_is_allowed(self):
         generated = self.repo / ".artifacts/build.local"
         generated.parent.mkdir()

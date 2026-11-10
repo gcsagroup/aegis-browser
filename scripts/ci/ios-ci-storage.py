@@ -10,7 +10,7 @@ import plistlib
 import pwd
 import re
 import stat
-import subprocess
+import subprocess  # nosec B404 - fixed absolute executables, with no shell, are audited at each call.
 import sys
 import tempfile
 import unicodedata
@@ -42,7 +42,9 @@ def unique_object(pairs):
 def acl_entries(path):
     if sys.platform != "darwin":
         return []
-    listing = subprocess.check_output(["/bin/ls", "-lde", str(path)], text=True)
+    # The fixed ls operation treats the path after -- as one literal operand.
+    listing = subprocess.check_output(  # nosec B603
+        ["/bin/ls", "-lde", "--", str(path)], shell=False, text=True, timeout=10)
     return [line for line in listing.splitlines()[1:] if re.match(r"\s*\d+:\s", line)]
 
 
@@ -142,7 +144,10 @@ def seed_artifacts(base, cache, volume):
 
 def volume_info(path):
     require(sys.platform == "darwin", "self-hosted iOS storage requires macOS")
-    raw = subprocess.check_output(["/usr/sbin/diskutil", "info", "-plist", str(path)], timeout=10)
+    require(Path(path).is_absolute(), "diskutil requires an absolute volume path")
+    # Fixed read-only operation; the absolute path cannot become an option.
+    raw = subprocess.check_output(  # nosec B603
+        ["/usr/sbin/diskutil", "info", "-plist", str(path)], shell=False, timeout=10)
     return plistlib.loads(raw)
 
 
@@ -203,25 +208,42 @@ def source_metadata(environment):
     require(re.fullmatch(r"[A-Za-z0-9_-]+", environment.get("GITHUB_JOB", "")), "invalid CI job metadata")
     source = environment.get("GITHUB_SHA", "")
     require(re.fullmatch(r"[0-9a-f]{40}", source), "invalid CI source SHA")
-    workspace = environment["GITHUB_WORKSPACE"]
-    git = ["/usr/bin/git", "--no-replace-objects", "-C", workspace]
-    overrides = {"GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
-                 "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"}
-    git_env = dict({key: value for key, value in os.environ.items() if key not in overrides},
-                   GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1")
-    head = subprocess.check_output(git + ["rev-parse", "HEAD^{commit}"], env=git_env, text=True, timeout=10).strip()
-    tree = subprocess.check_output(git + ["rev-parse", "HEAD^{tree}"], env=git_env, text=True, timeout=10).strip()
+    workspace_text = environment["GITHUB_WORKSPACE"]
+    require(isinstance(workspace_text, str) and not any(ord(c) < 32 for c in workspace_text),
+            "invalid source workspace")
+    workspace = Path(workspace_text)
+    require(workspace.is_absolute() and str(workspace) == workspace_text
+            and workspace.resolve(strict=True) == workspace and workspace.is_dir(),
+            "source workspace must be an absolute canonical directory")
+    git_env = dict({key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
+                   GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1", GIT_CONFIG_NOSYSTEM="1",
+                   GIT_CONFIG_GLOBAL=os.devnull, GIT_ATTR_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0")
+    # Each Git argv is literal and uses the verified directory only as cwd.
+    # Disable inherited configuration and repository-local command execution.
+    head = subprocess.check_output(  # nosec B603
+        ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false", "rev-parse", "HEAD^{commit}"],
+        cwd=workspace, env=git_env, shell=False, text=True, timeout=10).strip()
+    tree = subprocess.check_output(  # nosec B603
+        ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false", "rev-parse", "HEAD^{tree}"],
+        cwd=workspace, env=git_env, shell=False, text=True, timeout=10).strip()
     require(head == source, "actual checkout source differs from CI source")
-    clean = subprocess.run(git + ["diff", "--quiet", "HEAD", "--"], env=git_env, timeout=10).returncode
+    clean = subprocess.run(  # nosec B603 - fixed Git operation, external diff/textconv and fsmonitor disabled.
+        ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false",
+         "diff", "--no-ext-diff", "--no-textconv", "--quiet", "HEAD", "--"],
+        cwd=workspace, env=git_env, shell=False, timeout=10).returncode
     require(clean == 0, "actual checkout source has tracked changes")
-    untracked = subprocess.check_output(git + ["ls-files", "--others", "--exclude-standard", "-z"],
-                                        env=git_env, timeout=10)
+    untracked = subprocess.check_output(  # nosec B603 - fixed Git inventory, configuration isolated above.
+        ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false",
+         "ls-files", "--others", "--exclude-standard", "-z"],
+        cwd=workspace, env=git_env, shell=False, timeout=10)
     require(not untracked, "actual checkout source has untracked inputs")
     # Xcode copies these source/resource folders, so ignored files there also
     # affect the product. Generated .artifacts/node_modules outside them remain
     # outside this source claim and are not swept or removed.
-    ignored_inputs = subprocess.check_output(git + ["ls-files", "--others", "--ignored", "--exclude-standard", "-z",
-                                          "--", "apps/ios", "apps/browser/overlay"], env=git_env, timeout=10)
+    ignored_inputs = subprocess.check_output(  # nosec B603 - fixed Git inventory and literal source paths.
+        ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false",
+         "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", "apps/ios", "apps/browser/overlay"],
+        cwd=workspace, env=git_env, shell=False, timeout=10)
     require(not ignored_inputs, "actual checkout source has ignored build inputs")
     return dict(source_sha=head, source_tree=tree, run_id=environment["GITHUB_RUN_ID"],
                 run_attempt=environment["GITHUB_RUN_ATTEMPT"], job=environment["GITHUB_JOB"])
@@ -292,7 +314,9 @@ def seal(root, environment):
             require(not path.is_symlink() or path.resolve().is_relative_to(archive), "archive symlink escapes its root")
     target = root / "Aegis.xcarchive.zip"
     require(not target.exists() and not target.is_symlink(), "archive evidence already exists")
-    subprocess.run(["/usr/bin/ditto", "-c", "-k", "--keepParent", str(archive), str(target)], check=True)
+    # Fixed archiver operation; both operands are absolute paths inside the revalidated job root.
+    subprocess.run(  # nosec B603
+        ["/usr/bin/ditto", "-c", "-k", "--keepParent", str(archive), str(target)], shell=False, check=True)
     digest = hashlib.sha256()
     with target.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
