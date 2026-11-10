@@ -6,11 +6,47 @@ import zipfile
 import json
 import re
 from pathlib import Path
+from typing import NamedTuple, Optional
 
 SCHEMA = 'aegis-central-archive-v1'
 SOURCE = {'name': 'gcsagroup/aegis-browser', 'id': 1348409663}
 APP_ID = '6827988433'
 TARGETS = ('com.gcsa.aegis', 'com.gcsa.aegis.safari', 'com.gcsa.aegis.share')
+
+
+class Policy(NamedTuple):
+    scope: str
+    schema: str
+    source_name: str
+    source_id: int
+    branch: str
+    workflow: str
+    producer_workflow: str
+    registry_schema: str
+    environment_prefix: str
+    actor_id: Optional[int]
+
+
+PROD = Policy('production', SCHEMA, SOURCE['name'], SOURCE['id'], 'main',
+              '.github/workflows/aegis-ios-export.yml', '.github/workflows/ios-central-archive.yml',
+              'aegis-central-export-activation-v1', 'aegis-ios', None)
+QUINN = Policy('quinn-develop-poc', 'aegis-central-archive-v2', 'quinn521/aegis-browser',
+               1363949860, 'develop', '.github/workflows/aegis-ios-develop-export.yml',
+               '.github/workflows/ios-central-develop-archive.yml',
+               'aegis-central-export-activation-v2', 'aegis-ios-develop', 287940781)
+STATUS_AUTHORITY = 'a34c412158ff95a689dd810ae624119b3f2b279b'
+MAX_DEVELOP_AUTHORIZATION_SECONDS = 24 * 60 * 60
+
+
+def policy(scope):
+    matches = [value for value in (PROD, QUINN) if value.scope == scope]
+    require(len(matches) == 1, 'Unknown central execution scope')
+    return matches[0]
+
+
+def source_identity(expected):
+    require(expected in (PROD, QUINN))
+    return {'name': expected.source_name, 'id': expected.source_id}
 
 
 def require(condition, message='Invalid central archive contract'):
@@ -63,12 +99,18 @@ def allocation(request):
                    'version': request['version'], 'build': request['build']})
 
 
-def validate(request):
-    require(type(request) is dict and set(request) == {
+def validate(request, expected=PROD):
+    require(expected in (PROD, QUINN))
+    fields = {
         'schema', 'product', 'source', 'producer', 'version', 'build', 'profile',
-        'team', 'application', 'archive_sha256', 'archive_size', 'destination'})
-    require(request['schema'] == SCHEMA and request['product'] == 'aegis'
+        'team', 'application', 'archive_sha256', 'archive_size', 'destination'}
+    if expected == QUINN:
+        fields.add('scope')
+    require(type(request) is dict and set(request) == fields)
+    require(request['schema'] == expected.schema and request['product'] == 'aegis'
             and request['application'] == APP_ID and request['destination'] == 'export-only')
+    if expected == QUINN:
+        require(request['scope'] == QUINN.scope, 'Development exception is Quinn-only')
     # First activation is deliberately one Alpha allocation, independently approved.
     require(request['profile'] == 'alpha')
     require(isinstance(request['version'], str)
@@ -76,9 +118,12 @@ def validate(request):
     require(isinstance(request['build'], str) and re.fullmatch(r'[1-9][0-9]{0,9}', request['build']))
     require(isinstance(request['team'], str) and re.fullmatch(r'[A-Z0-9]{10}', request['team']))
     source = request['source']
-    require(type(source) is dict and set(source) == {'repository', 'sha', 'tree'}
-            and source['repository'] == SOURCE and hex_value(source['sha'], 40)
+    source_fields = {'repository', 'sha', 'tree'} | ({'ref'} if expected == QUINN else set())
+    require(type(source) is dict and set(source) == source_fields
+            and source['repository'] == source_identity(expected) and hex_value(source['sha'], 40)
             and hex_value(source['tree'], 40))
+    if expected == QUINN:
+        require(source['ref'] == 'refs/heads/develop', 'Development exception requires develop')
     producer = request['producer']
     require(type(producer) is dict and set(producer) == {
         'repository', 'repository_id', 'run_id', 'attempt', 'commit', 'workflow'})
@@ -86,7 +131,7 @@ def validate(request):
             and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', producer['repository'])
             and all(positive(producer[k]) for k in ('repository_id', 'run_id', 'attempt'))
             and producer['attempt'] == 1 and hex_value(producer['commit'], 40)
-            and producer['workflow'] == '.github/workflows/ios-central-archive.yml')
+            and producer['workflow'] == expected.producer_workflow)
     require(hex_value(request['archive_sha256'], 64)
             and positive(request['archive_size']) and request['archive_size'] <= 2 * 1024**3)
     return request

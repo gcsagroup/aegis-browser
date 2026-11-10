@@ -28,7 +28,7 @@ def refuse_store_credentials(environment):
               'Archive producer must have only development signing credentials')
 
 
-def bundle(archive, output, request):
+def bundle(archive, output, request, expected=p.PROD):
     output.mkdir(parents=True, mode=0o700)
     target = output / 'archive.zip'
     with zipfile.ZipFile(target, 'x', compression=zipfile.ZIP_DEFLATED) as zipped:
@@ -37,7 +37,7 @@ def bundle(archive, output, request):
             if path.is_file():
                 zipped.write(path, path.relative_to(archive).as_posix())
     request = dict(request, archive_sha256=p.file_digest(target), archive_size=target.stat().st_size)
-    p.validate(request)
+    p.validate(request, expected)
     (output / 'request.json').write_bytes(p.canonical(request))
     return p.digest(request)
 
@@ -54,11 +54,14 @@ def verify_development(archive, team, engine):
 
 def archive(options, environment):
     refuse_store_credentials(environment)
+    expected = p.policy(getattr(options, 'scope', p.PROD.scope))
     engine = module('central_cloud_engine', 'cloud-signing-poc.py')
     engine.validate_identity(options.version, options.build, options.team)
     p.require(environment.get('GITHUB_ACTIONS') == 'true'
               and environment.get('RUNNER_OS') == 'macOS'
               and environment.get('GITHUB_RUN_ATTEMPT') == '1')
+    if expected == p.QUINN:
+        p.require(environment.get('GITHUB_ACTOR_ID') == str(expected.actor_id), 'Quinn must originate the development producer')
     identity = engine.source()
     p.require(identity['sha'] == environment['AEGIS_CENTRAL_SOURCE_SHA'], 'Frozen source differs')
     engine.no_distribution_identity()
@@ -74,23 +77,27 @@ def archive(options, environment):
                'AEGIS_FIREBASE_CHANNEL=alpha', env=environment, log=options.work / 'archive.log', timeout=2400)
     verify_development(target, options.team, engine)
     module('archive_structure', 'verify-ios-archive.py').verify(target, options.version, options.build)
-    request = {'schema': p.SCHEMA, 'product': 'aegis',
-               'source': {'repository': p.SOURCE, **identity},
+    request = {'schema': expected.schema, 'product': 'aegis',
+               'source': {'repository': p.source_identity(expected), **identity},
                'producer': {'repository': environment['GITHUB_REPOSITORY'],
                             'repository_id': int(environment['GITHUB_REPOSITORY_ID']),
                             'run_id': int(environment['GITHUB_RUN_ID']), 'attempt': 1,
                             'commit': environment['GITHUB_SHA'],
-                            'workflow': '.github/workflows/ios-central-archive.yml'},
+                            'workflow': expected.producer_workflow},
                'version': options.version, 'build': options.build, 'profile': 'alpha',
                'team': options.team, 'application': p.APP_ID, 'destination': 'export-only'}
-    print(bundle(target, options.output, request))
+    if expected == p.QUINN:
+        request['scope'] = expected.scope
+        request['source']['ref'] = 'refs/heads/develop'
+    print(bundle(target, options.output, request, expected))
 
 
 def verify(options, environment):
     """Verify the original native output in a process with no store credentials."""
     refuse_store_credentials(environment)
     prepared = p.parse((options.work / 'prepared.json').read_bytes())
-    request = p.validate(prepared['request'])
+    expected = p.policy(getattr(options, 'scope', p.PROD.scope))
+    request = p.validate(prepared['request'], expected)
     p.require(p.digest(request) == prepared['request_sha256'])
     engine = module('central_cloud_engine', 'cloud-signing-poc.py')
     p.require(engine.source() == {k: request['source'][k] for k in ('sha', 'tree')})
@@ -121,6 +128,10 @@ def verify(options, environment):
                 'request': request, 'execution': prepared['execution'], 'executor_commit': prepared['executor_commit'],
                 'upload': 'not_attempted', 'deviceAcceptance': 'not_verified', 'releaseReady': False,
                 'keychainRestored': True, 'status': 'verified_export'}
+    if expected == p.QUINN:
+        evidence['schema'] = 'aegis-central-develop-export-result-v1'
+        evidence.update(scope=expected.scope, purpose='development-test-only', uploadAuthorized=False,
+                        submissionAuthorized=False, promotionReady=False)
     evidence['assets'] = [{'name': f.name, 'size': f.stat().st_size, 'sha256': p.file_digest(f)}
                           for f in [ipa, options.output / 'Aegis.dSYM.zip', options.output / 'signature-verification.json',
                                     options.output / 'dsym-verification.json', options.output / 'cloud-upload-reservation.json']]
@@ -153,7 +164,8 @@ def verify_retained(options, environment):
     """Authenticate historical central records, then verify downloaded originals read-only."""
     refuse_store_credentials(environment)
     prepared = p.parse((options.work / 'prepared.json').read_bytes())
-    request = p.validate(prepared['request'])
+    expected = p.policy(getattr(options, 'scope', p.PROD.scope))
+    request = p.validate(prepared['request'], expected)
     p.require(prepared['request_sha256'] == p.digest(request))
     key = p.allocation(request)
     token = environment['AEGIS_CENTRAL_READ_TOKEN']
@@ -165,14 +177,19 @@ def verify_retained(options, environment):
     run = github_json('gcsagroup/apple-signing', 'actions/runs/' + str(execution['run_id']), token)
     p.require(run['repository']['id'] == run['head_repository']['id'] == 1364015229
               and run['id'] == execution['run_id'] and run['run_attempt'] == execution['attempt'] == 1
-              and run['path'] == execution['workflow'] == '.github/workflows/aegis-ios-export.yml'
+              and run['path'] == execution['workflow'] == expected.workflow
               and run['head_sha'] == execution['workflow_commit'] and run['event'] == 'workflow_dispatch'
               and run['status'] == 'completed' and run['conclusion'] == 'success')
+    if expected == p.QUINN:
+        p.require(run['actor']['id'] == run['triggering_actor']['id'] == expected.actor_id
+                  and start['scope'] == expected.scope and start['purpose'] == 'development-test-only'
+                  and result.get('scope') == expected.scope and result.get('uploadAuthorized') is False
+                  and result.get('submissionAuthorized') is False and result.get('releaseReady') is False)
     p.require(result['repository'] == request['producer']['repository']
               and result['repository_id'] == request['producer']['repository_id'])
-    expected = {'Aegis.ipa', 'Aegis.dSYM.zip', 'signature-verification.json', 'dsym-verification.json',
-                'cloud-upload-reservation.json', 'result.json', 'archive.zip', 'prepared.json', 'native-export.json'}
-    p.require(len(result['assets']) == 9 and {asset['name'] for asset in result['assets']} == expected)
+    expected_assets = {'Aegis.ipa', 'Aegis.dSYM.zip', 'signature-verification.json', 'dsym-verification.json',
+                       'cloud-upload-reservation.json', 'result.json', 'archive.zip', 'prepared.json', 'native-export.json'}
+    p.require(len(result['assets']) == 9 and {asset['name'] for asset in result['assets']} == expected_assets)
     for asset in result['assets']:
         path = options.work / asset['name']
         p.require(not path.is_symlink() and path.stat().st_size == asset['size']
@@ -181,6 +198,11 @@ def verify_retained(options, environment):
     original = p.parse((options.work / 'result.json').read_bytes())
     p.require(original['request'] == request and original['execution'] == execution
               and original['executor_commit'] == prepared['executor_commit'])
+    if expected == p.QUINN:
+        p.require(original.get('schema') == 'aegis-central-develop-export-result-v1'
+                  and original.get('scope') == expected.scope and original.get('purpose') == 'development-test-only'
+                  and original.get('uploadAuthorized') is False and original.get('submissionAuthorized') is False
+                  and original.get('releaseReady') is False, 'Development output cannot authorize production')
     engine = module('retained_cloud_engine', 'cloud-signing-poc.py')
     p.require(engine.source() == {k: request['source'][k] for k in ('sha', 'tree')})
     options.output.mkdir(parents=True, mode=0o700)
@@ -191,12 +213,16 @@ def verify_retained(options, environment):
         options.work / 'Aegis.ipa', options.work / 'Aegis.dSYM.zip', request['version'], request['build'])
     report.update(centralProvenanceVerified=True, requestSha256=p.digest(request), allocation=key,
                   releaseId=result['release_id'], upload='not_attempted')
+    if expected == p.QUINN:
+        report.update(scope=expected.scope, purpose='development-test-only', releaseReady=False,
+                      uploadAuthorized=False, submissionAuthorized=False, promotionReady=False)
     (options.output / 'retained-verification.json').write_bytes(p.canonical(report))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=['archive', 'verify', 'verify-retained'])
+    parser.add_argument('--scope', choices=[p.PROD.scope, p.QUINN.scope], default=p.PROD.scope)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--version')

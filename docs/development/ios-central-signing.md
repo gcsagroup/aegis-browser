@@ -29,3 +29,71 @@ For independent readback, an operator with central read access checks refs/heads
 Local tests substitute native commands and network services. Real acceptance still requires a private producer, an independently reserved build, Development archive, minimum-permission cloud export, object readback and cleanup. ASC processing/upload, the existing production entrypoint/channel matrix and physical-device upgrade each require their own subsequent acceptance.
 
 The credential-free protocol is mirrored as scripts/ios_export/protocol.py in the central repository and scripts/release/central_ios_protocol.py in Aegis. Review both copies together and verify byte equality before updating either contract. Unit/regression tests cover source/producer identity, canonical requests, entitlement escalation, delivered dSYM drift, ZIP escape, repeated/lost consumption, actual private-file creation and cancellation cleanup.
+
+
+## Quinn develop-only acceptance exception
+
+Before upstream promotion, one independently authorized Alpha export may use
+`quinn521/aegis-browser` (`1363949860`), owner `287940781`, parent
+`1348409663`, and only `refs/heads/develop`. This is a development test exception,
+not a general fork permission. Production remains the default V1 contract and
+rejects the V2 development request.
+
+Use `ios-central-develop-archive.yml` in an approved private producer and
+`aegis-ios-develop-export.yml` in central main. Every producer and central dispatch
+must have Quinn as both original and triggering actor, on attempt 1. The request
+uses `aegis-central-archive-v2`, `scope: quinn-develop-poc`, an explicit source ref,
+Alpha, and export-only. Current source, owner/parent, latest exact push/develop
+quality run/attempt, and both successful quality jobs are rechecked before START.
+
+The separate `develop-activation.json` starts inactive. Its active form has one
+exact authorization with the original V1 fields plus `issued_at`, `source_tree`,
+`status_authority_commit`, `quality_run_id`, `quality_attempt`,
+`environment_validation_sha256`, and `credential_validation_sha256`. The registry
+also has `scope: quinn-develop-poc`. Timestamps are UTC with Z; the interval is
+positive and no longer than **24 hours**. The approval freezes A=S, E, T, L,
+producer/run/job/artifact, source tree, quality, storage and global build-number
+exclusion evidence. No guessed ID or placeholder digest can activate a real run.
+The immutable START stores the original approval, L, scope and quality tuple.
+Expiry is checked again immediately before the signing Key is loaded. A consumed
+START is never released by expiry, cancellation or another scope.
+
+Development uses only `aegis-ios-develop-input`, `aegis-ios-develop-status`,
+`aegis-ios-develop-signing` and `aegis-ios-develop-retain`. Protect central main,
+reviewer separation and bypass settings; verify actual private-repository support
+and the retained evidence before activation. Private archive production uses its
+own `aegis-ios-develop-archive` Environment and Development-only account. Product
+code receives neither cloud signing nor ASC status credentials. Input/signing
+use evidence-read and source-read tokens; retain alone receives the evidence-write
+token; status and signing Keys remain in their respective Environments.
+
+Status preflight and post-export capture execute central E's `status.rb` with
+separately frozen upstream authority T
+`a34c412158ff95a689dd810ae624119b3f2b279b` and T's locked Ruby dependencies.
+Both status jobs are independent of candidate S's code and caches. Candidate S
+runs only the credential-free verification job. The finalizer authenticates the
+capture job's separate artifact ID/digest and compares its original bytes with
+S's returned copy before recording a result.
+
+Both entrypoints retain the original application/platform/version/build
+allocation and the same `ios-export/aegis/{start,result}` indexes. The V2 result
+is `aegis-central-develop-export-result-v1`, with `purpose: development-test-only`,
+`uploadAuthorized: false`, `submissionAuthorized: false`, `releaseReady: false`
+and no promotion permission. It cannot be supplied as a production delivery
+receipt. Source promotion follows accepted development evidence; production
+signing needs its own allocation and authorization.
+
+Use `central-ios.py archive`, `verify` or `verify-retained` with explicit
+`--scope quinn-develop-poc`. Default commands remain production-only. Retained
+verification authenticates the original START and actual successful development
+workflow and does not require current develop, an open admission window, or an
+unexpired temporary Actions artifact. Original package bytes and symbols remain
+read-only.
+
+These code paths do not establish deployment or real acceptance. Before activation,
+retain actual private producer/storage identity, global version/build exclusion,
+minimum Apple role tests, Environment protections, isolated signer/Development
+producer admission and object write/read/overwrite-denial/tenant-denial/recovery
+proofs. Missing infrastructure or permissions leave the registry inactive. A real
+cross-machine export, original object readback, upload/ASC processing and device
+acceptance have separate evidence.
