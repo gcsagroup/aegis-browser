@@ -38,6 +38,7 @@ run_check 'bounded tracker admission unit and regression tests' python3 -I -S -B
 run_check 'TypeSafe choice contract unit tests' bash ./scripts/typesafe-choice-contract_test.sh
 run_check 'model generation profiles and accounting' bash ./scripts/agent-generation-profile_test.sh
 run_check 'paired model routing evaluation' node --test ./scripts/evaluate-agent-model-routing_test.mjs
+run_check 'iOS simulator input evidence' node --test ../ios/scripts/test-simulator-input-evidence.mjs
 run_check 'vector generators' bash ./scripts/vector-generators_test.sh
 run_check 'Access GN wiring' bash ./scripts/aegis-access-gn-wiring_test.sh
 run_check 'macOS Access phase-1 evidence pack' node --test ./scripts/macos-access-phase1-evidence_test.mjs

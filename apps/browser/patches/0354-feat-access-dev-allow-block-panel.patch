@@ -507,7 +507,7 @@ index 0000000000000000000000000000000000000000..c40b28a3b1fd17949cdb27a6d3a2d17b
 +}  // namespace
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
-index b4113daef0faae337740a8b32472c1a9c935f629..d9e2993f81c366ac7cd6be8725720994bc687362 100644
+index a3af98ed56e6362dd588b41b6b8d8208ee9d4b81..e3f073d00411c083595b4f932137e4e527d34862 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 @@ -5,12 +5,14 @@
@@ -525,9 +525,9 @@ index b4113daef0faae337740a8b32472c1a9c935f629..d9e2993f81c366ac7cd6be8725720994
  #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
  #include "chrome/browser/aegis/access/access_site_proxy_session.h"
  #include "url/gurl.h"
-@@ -57,6 +59,17 @@
-   // Returns false only when the host/toggle cannot be accepted.
-   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
+@@ -68,6 +70,17 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   // Rebuild PROXY publication after Network Service restart (no DIRECT).
+   bool RebuildHostProxyAfterNetworkServiceRestart(const AccessSiteHost& host);
  
 +  // P-mac-4 DEV panel. False on Beta/Release — UI must not register the
 +  // section. Never admits a general Access rule editor.
@@ -544,7 +544,7 @@ index b4113daef0faae337740a8b32472c1a9c935f629..d9e2993f81c366ac7cd6be8725720994
    explicit AccessSiteProxyBubbleController(Profile* profile);
  
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-index fb514fb341a895e77cc5aa358efb4186d98fa997..132ec4e1eb29a80f0e4807f5f3ad0729a26f20a9 100644
+index fb514fb341a895e77cc5aa358efb4186d98fa997..bc77dc01af627cf1d57e0ec9914f5a7e2081b43b 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 @@ -9,7 +9,9 @@
