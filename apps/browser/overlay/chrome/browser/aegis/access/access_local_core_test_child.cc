@@ -23,10 +23,20 @@
 #include "base/values.h"
 
 namespace {
+int termination_marker_fd = -1;
+void IgnoreTermination(int) {
+  // Only async-signal-safe operations here. The marker proves that production
+  // Stop has already sent SIGTERM before a later session-ending request.
+  constexpr char marker = 'x';
+  const auto written = write(termination_marker_fd, &marker, 1);
+  (void)written;
+}
 void Record(const base::FilePath& path, const char* phase, int requests) {
   std::string json;
+  const auto args = base::CommandLine::ForCurrentProcess()->GetArgs();
   if (!base::JSONWriter::Write(base::DictValue()
           .Set("phase", phase).Set("pid", static_cast<int>(getpid()))
+          .Set("configDirectory", base::FilePath(args.back()).DirName().value())
           .Set("requests", requests), &json)) return;
   base::File file(path, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
   if (file.IsValid() && base::SetPosixFilePermissions(path, 0600))
@@ -73,6 +83,16 @@ int main(int argc, const char* argv[]) {
   if (!user || !password) return 3;
   const std::string credential = base::Base64Encode(*user + ":" + *password);
   const base::FilePath state_path(*state);
+  base::File termination_marker;
+  if (*mode == "ignore-term") {
+    const auto marker_path = state_path.AddExtensionASCII("sigterm");
+    termination_marker.Initialize(marker_path,
+        base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+    if (!termination_marker.IsValid() ||
+        !base::SetPosixFilePermissions(marker_path, 0600)) return 5;
+    termination_marker_fd = termination_marker.GetPlatformFile();
+    signal(SIGTERM, IgnoreTermination);
+  }
   signal(SIGPIPE, SIG_IGN);
   base::ScopedFD listener(socket(AF_INET, SOCK_STREAM, 0));
   if (!listener.is_valid()) return 5;

@@ -184,6 +184,63 @@ class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
     EXPECT_TRUE(result.registration_id.empty());
     EXPECT_FALSE(result.error.empty());
   }
+  enum class StopInFlight { kNone, kExplicitStop, kDestruction };
+  void CheckUnresponsiveSessionEnding(StopInFlight in_flight) {
+    auto manager = std::make_unique<AccessLocalCoreManager>(Input("ignore-term"));
+    base::test::TestFuture<AccessLocalCoreReady> prepared;
+    manager->Prepare(prepared.GetCallback());
+    base::test::TestFuture<void> tunnel;
+    base::RepeatingTimer observation;
+    observation.Start(FROM_HERE, base::Milliseconds(10),
+        base::BindLambdaForTesting([&] {
+      auto state = State();
+      if (state && state->FindString("phase") &&
+          *state->FindString("phase") == "authenticated-tunnel-held") {
+        observation.Stop();
+        tunnel.SetValue();
+      }
+    }));
+    ASSERT_TRUE(tunnel.Wait());
+    const auto state = State();
+    ASSERT_TRUE(state);
+    const auto child_pid = state->FindInt("pid");
+    const auto* directory = state->FindString("configDirectory");
+    ASSERT_TRUE(child_pid);
+    ASSERT_TRUE(directory);
+    const base::FilePath private_directory(*directory);
+    ASSERT_TRUE(base::PathExists(private_directory));
+    base::test::TestFuture<void> ordinary_stop;
+    if (in_flight != StopInFlight::kNone) {
+      if (in_flight == StopInFlight::kDestruction) manager.reset();
+      else manager->Stop(ordinary_stop.GetCallback());
+      // Confirm StopChild is already inside its termination wait, including
+      // service destruction, before requesting the session-ending rundown.
+      ASSERT_TRUE(base::test::RunUntil([&] {
+        std::string marker;
+        return base::ReadFileToString(state_.AddExtensionASCII("sigterm"), &marker) &&
+               !marker.empty();
+      }));
+      EXPECT_FALSE(ordinary_stop.IsReady());
+    }
+    auto stopped = std::make_shared<base::WaitableEvent>();
+    AccessLocalCoreManager::StopAllForSessionEnding(base::BindOnce(
+        [](std::shared_ptr<base::WaitableEvent> event) { event->Signal(); }, stopped));
+    bool completed;
+    {
+      base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
+      completed = stopped->TimedWait(base::Seconds(5));
+      if (!completed) {
+        // Preserve a behavioral RED without leaving the deliberately stubborn
+        // fixture alive or waiting for the ordinary 60-second grace period.
+        kill(*child_pid, SIGKILL);
+        EXPECT_TRUE(stopped->TimedWait(base::Seconds(5)));
+      }
+    }
+    EXPECT_TRUE(completed) << "Owned core exceeded the session-ending deadline";
+    EXPECT_EQ(kill(*child_pid, 0), -1);
+    EXPECT_EQ(errno, ESRCH);
+    EXPECT_FALSE(base::PathExists(private_directory));
+  }
   base::ScopedTempDir directory_;
   base::FilePath binary_, state_;
   std::string pin_;
@@ -338,6 +395,16 @@ TEST_F(AccessLocalCoreFaultTest, StalledAuthenticatedTunnelTimesOut) {
   auto state = State();
   ASSERT_TRUE(state);
   EXPECT_EQ(*state->FindString("phase"), "authenticated-tunnel-held");
+}
+
+TEST_F(AccessLocalCoreFaultTest, SessionEndingEscalatesUnresponsiveChild) {
+  CheckUnresponsiveSessionEnding(StopInFlight::kNone);
+}
+TEST_F(AccessLocalCoreFaultTest, SessionEndingInterruptsUnresponsiveOrdinaryStop) {
+  CheckUnresponsiveSessionEnding(StopInFlight::kExplicitStop);
+}
+TEST_F(AccessLocalCoreFaultTest, SessionEndingInterruptsUnresponsiveDestruction) {
+  CheckUnresponsiveSessionEnding(StopInFlight::kDestruction);
 }
 #endif
 }  // namespace
