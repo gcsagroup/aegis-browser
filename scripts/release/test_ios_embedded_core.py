@@ -96,7 +96,13 @@ class RequiredLiveLeavesTests(unittest.TestCase):
         self.assertEqual(set(result["requiredTestCases"]), set(gate.REQUIRED))
 
     def test_import_pass_with_dial_and_tunnel_skipped_is_not_pass(self):
-        self.assertEqual(gate.evaluate(self.results(("Passed", "Skipped", "Skipped")))["status"], "FAIL")
+        document = self.results(("Passed", "Skipped", "Skipped"))
+        leaves = document["testNodes"][0]["children"][0]["children"]
+        for leaf in leaves[1:]:
+            leaf["children"] = [{"nodeType": "Skip Message", "name": "fixture configuration missing"}]
+        result = gate.evaluate(document)
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(result["requiredTestCases"][gate.REQUIRED[1]], ["Skipped"])
 
     def test_failed_missing_or_unknown_leaf_is_not_pass(self):
         for status in ("Failed", "Skipped", "Unknown", "Expected Failure"):

@@ -23,7 +23,13 @@ def evaluate(document):
             if kind in ("Unit test bundle", "Test Bundle"):
                 bundle = node.get("nodeIdentifier") or node.get("name", "")
                 bundle = bundle.removesuffix(".xctest")
-            if kind == "Test Case" and not node.get("children"):
+            # xcresult attaches skip/failure messages below a test case. Those
+            # diagnostics do not turn the case into a suite or hide its outcome.
+            diagnostic_children = all(
+                isinstance(child, dict) and child.get("nodeType") in ("Skip Message", "Failure Message", "Attachment")
+                for child in node.get("children", [])
+            )
+            if kind == "Test Case" and diagnostic_children:
                 identifier = node.get("testIdentifier") or node.get("nodeIdentifier") or node.get("identifier", "")
                 if identifier.startswith("AccessEmbeddedCoreLiveTests/") and bundle == "AegisTests":
                     identifier = bundle + "/" + identifier

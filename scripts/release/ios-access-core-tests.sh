@@ -58,9 +58,9 @@ esac
 write_receipt() {
   local status="$1"
   local detail="$2"
-  python3 - "$RECEIPT" "$status" "$detail" "$STAMP" "$SOURCE_SHA" "$PLATFORM_KIND" "$LOCK" "$NODE_FILE" "$OUTPUT" "$SOURCE_TREE" <<'PY'
+  python3 - "$RECEIPT" "$status" "$detail" "$STAMP" "$SOURCE_SHA" "$PLATFORM_KIND" "$LOCK" "$NODE_FILE" "$OUTPUT" "$SOURCE_TREE" "${STATUS:-}" <<'PY'
 import json, hashlib, os, sys
-path, status, detail, stamp, sha, platform, lock, node, output, tree = sys.argv[1:]
+path, status, detail, stamp, sha, platform, lock, node, output, tree, exit_code = sys.argv[1:]
 from pathlib import Path
 
 def sha256_file(p):
@@ -85,6 +85,8 @@ build_inputs = Path(output) / "build-inputs.json"
 verified = json.loads(build_inputs.read_text()) if build_inputs.is_file() else None
 live_tests = Path(output) / "live-tests.json"
 leaves = json.loads(live_tests.read_text()) if live_tests.is_file() else None
+summary_path = Path(output) / "xcresult-summary.json"
+summary = json.loads(summary_path.read_text()) if summary_path.is_file() and summary_path.stat().st_size else {}
 receipt = {
     "schemaVersion": 1,
     "kind": "ios-access-core-k-receipt",
@@ -103,6 +105,11 @@ receipt = {
     "embeddedCoreSlices": verified["slices"] if verified else {},
     "verifiedBuildInputs": verified,
     "liveTests": leaves,
+    "testExecution": {
+        "xcodebuildExit": int(exit_code) if exit_code else None,
+        **{key: summary.get(key) for key in ("totalTestCount", "passedTests", "failedTests", "skippedTests",
+                                             "devicesAndConfigurations")},
+    },
     "notes": [
         "Desensitized receipt only; no UUID/publicKey/shortId/URL contents.",
         "simulator results must not be labeled device.",
@@ -148,9 +155,12 @@ fi
 cp "$OUTPUT/build-inputs.json" "$OUTPUT/build-inputs-before.json"
 export AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$NODE_FILE"
 export AEGIS_ACCESS_LOCAL_V2RAY_LIVE=1
+export TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$NODE_FILE"
+export TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_LIVE=1
 
 set +e
 xcodebuild test -onlyUsePackageVersionsFromResolvedFile \
+  -parallel-testing-enabled NO \
   -clonedSourcePackagesDirPath "${AEGIS_IOS_SOURCE_PACKAGES:-$OUTPUT/SourcePackages}" \
   -packageCachePath "${AEGIS_IOS_PACKAGE_CACHE:-$OUTPUT/PackageCache}" \
   -project apps/ios/Aegis.xcodeproj \
@@ -162,12 +172,18 @@ xcodebuild test -onlyUsePackageVersionsFromResolvedFile \
   -resultBundlePath "$RESULT" \
   -derivedDataPath "$OUTPUT/DerivedData" \
   AEGIS_EMBEDDED_CORE_PRODUCTS="$PRODUCTS" \
-  CODE_SIGNING_ALLOWED=YES \
-  TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$NODE_FILE" \
-  TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_LIVE=1 | tee "$LOG"
+  CODE_SIGNING_ALLOWED=YES | tee "$LOG"
 STATUS=${PIPESTATUS[0]}
 set -e
 
+SUMMARY_STATUS=0
+xcrun xcresulttool get test-results summary --path "$RESULT" > "$OUTPUT/xcresult-summary.json" || SUMMARY_STATUS=$?
+LEAF_STATUS=0
+if ! xcrun xcresulttool get test-results tests --path "$RESULT" > "$OUTPUT/xcresult-tests.json" \
+  || ! python3 -B scripts/release/ios_access_core_gate.py \
+    --tests "$OUTPUT/xcresult-tests.json" --output "$OUTPUT/live-tests.json"; then
+  LEAF_STATUS=4
+fi
 if [[ "$STATUS" -ne 0 ]]; then
   write_receipt "FAIL" "xcodebuild exit $STATUS ($PLATFORM_KIND); see xcodebuild.log"
   printf 'FAIL: xcodebuild exit %s\n' "$STATUS" >&2
@@ -175,9 +191,7 @@ if [[ "$STATUS" -ne 0 ]]; then
 fi
 
 # Retain the exact leaf results. Summary totals and suite names cannot satisfy K.
-if ! xcrun xcresulttool get test-results tests --path "$RESULT" > "$OUTPUT/xcresult-tests.json" \
-  || ! python3 -B scripts/release/ios_access_core_gate.py \
-    --tests "$OUTPUT/xcresult-tests.json" --output "$OUTPUT/live-tests.json"; then
+if [[ "$LEAF_STATUS" -ne 0 || "$SUMMARY_STATUS" -ne 0 ]]; then
   write_receipt "FAIL" "one or more required live K leaves are missing, failed, or skipped ($PLATFORM_KIND)"
   exit 4
 fi
