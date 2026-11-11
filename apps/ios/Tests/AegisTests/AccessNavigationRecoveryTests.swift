@@ -136,6 +136,22 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         deliver(tab, code: NSURLErrorCancelled)
         XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
 
+        tab.load(request)
+        deliver(tab, code: NSURLErrorNotConnectedToInternet)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+
+        tab.load(request)
+        deliver(tab, code: NSURLErrorAppTransportSecurityRequiresSecureConnection)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+
+        tab.load(request)
+        deliver(tab, code: NSURLErrorHTTPTooManyRedirects)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+
+        tab.load(request)
+        deliver(tab, code: NSURLErrorTimedOut)
+        XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
+
         let host = try XCTUnwrap(LocalThreatDatabase.snapshot?.phishing.first)
         tab.load(URL(string: "https://\(host)/")!)
         XCTAssertEqual(tab.protectionIncident?.reasons, ["known_phishing_host"])
@@ -177,6 +193,36 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         tab.webView(oldView, didFailProvisionalNavigation: nil, withError: error)
         XCTAssertNil(tab.lastMainFrameFailure)
         XCTAssertEqual(tab.recoveryLoadCount, 0)
+    }
+
+    func testUncommittedRequestDoesNotAuthorizeTheToggleHost() throws {
+        let coordinator = AccessHostStoreCoordinator()
+        let tab = makeTab()
+        tab.hostCoordinator = coordinator
+        tab.load(URLRequest(url: URL(string: "https://example.invalid/draft")!))
+        XCTAssertNil(coordinator.snapshot(for: tab).host)
+        tab.commitPendingMainFrameForTests()
+        XCTAssertEqual(coordinator.snapshot(for: tab).host, try AccessSiteHost("example.invalid"))
+    }
+
+    func testPostFailureDoesNotReuseThePreviousGetTicket() throws {
+        let tab = makeTab()
+        var get = URLRequest(url: URL(string: "https://example.invalid/page")!)
+        get.httpMethod = "GET"
+        tab.load(get)
+        deliver(tab)
+        XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
+        XCTAssertEqual(tab.lastMainFrameFailure?.method, "GET")
+
+        var post = URLRequest(url: URL(string: "https://example.invalid/submit")!)
+        post.httpMethod = "POST"
+        tab.load(post)
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorCannotFindHost
+        ))
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+        XCTAssertNotEqual(tab.lastMainFrameFailure?.method, "GET")
     }
 
     func testDuplicateCallbackKeepsTheFailureIdentity() throws {

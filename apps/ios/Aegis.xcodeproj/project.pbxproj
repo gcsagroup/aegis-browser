@@ -272,6 +272,8 @@
 		A10CORE000000000000000012 /* AccessEmbeddedCoreManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */; };
 		A10CORE000000000000000013 /* AccessEmbeddedCoreControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */; };
 		A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */; };
+		A10GROUP000000000000000011 /* AccessSiteRuleGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */; };
+		A10GROUP000000000000000012 /* AccessSiteRuleGroupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */; };
 		A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */; };
 		A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */; };
 		A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */; };
@@ -786,6 +788,8 @@
 		A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreManifestTests.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreControlling.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapter.swift; sourceTree = "<group>"; };
+		A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteRuleGroup.swift; sourceTree = "<group>"; };
+		A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteRuleGroupTests.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedRealityDialer.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapterTests.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGoEmbeddedCore.swift; sourceTree = "<group>"; };
@@ -1397,6 +1401,7 @@
 				A10CORE000000000000000001 /* AccessEmbeddedCoreManifest.swift */,
 				A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */,
 				A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */,
+				A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */,
 				A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */,
 				A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */,
 				A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */,
@@ -1448,6 +1453,7 @@
 				A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */,
 				A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */,
 				A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */,
+				A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */,
 				A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */,
 				A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */,
 				A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */,
@@ -2041,6 +2047,7 @@
 				A10RECV000000000000000015 /* AccessProxyEntryPublisherTests.swift in Sources */,
 				A10CORE000000000000000012 /* AccessEmbeddedCoreManifestTests.swift in Sources */,
 				A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */,
+				A10GROUP000000000000000012 /* AccessSiteRuleGroupTests.swift in Sources */,
 				A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */,
 				A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */,
 				A10TUNN000000000000000012 /* AccessHTTPTunnelBridgeTests.swift in Sources */,
@@ -2140,6 +2147,7 @@
 				A10CORE000000000000000011 /* AccessEmbeddedCoreManifest.swift in Sources */,
 				A10CORE000000000000000013 /* AccessEmbeddedCoreControlling.swift in Sources */,
 				A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */,
+				A10GROUP000000000000000011 /* AccessSiteRuleGroup.swift in Sources */,
 				A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */,
 				A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */,
 				A10CORE000000000000000021 /* AccessNWListenerBootstrap.swift in Sources */,
@@ -2365,6 +2373,7 @@
 		4C690ABEB5A9286A91E7B6AD /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AEGIS_ACCESS_RELEASE_CHANNEL = dev;
 				AEGIS_FIREBASE_CHANNEL = dev;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
@@ -2580,6 +2589,7 @@
 		67F8921229C0A0B1FBF8DBAA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AEGIS_ACCESS_RELEASE_CHANNEL = release;
 				AEGIS_FIREBASE_CHANNEL = disabled;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;

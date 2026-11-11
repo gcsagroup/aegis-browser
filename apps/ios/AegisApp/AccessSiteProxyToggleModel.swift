@@ -32,6 +32,9 @@ struct AccessSiteProxyToggleSnapshot: Equatable, Sendable {
     var connectionStatus: AccessSiteProxyConnectionStatusId = .idle
     var failureReason: String?
     var attachment: AccessProxyAttachment = .notAttached
+    /// 「本站打不开时自动重试」. Distinct from the explicit whole-page proxy intent.
+    var autoRecoveryEnabled: Bool = false
+    var autoRecoveryLine: String?
 }
 
 /// Pure presentation helpers for the per-site Access proxy toggle.

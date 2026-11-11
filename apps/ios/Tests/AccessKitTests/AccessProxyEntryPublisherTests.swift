@@ -75,6 +75,36 @@ final class AccessProxyEntryPublisherTests: XCTestCase {
         XCTAssertNil(publisher.currentEndpoint)
     }
 
+    func testCancellingOneWaiterLeavesTheSharedPreparationReady() async throws {
+        let started = expectation(description: "provision started")
+        let release = expectation(description: "release provision")
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            started.fulfill()
+            await self.fulfillment(of: [release], timeout: 2)
+            return self.provision(generation: generation)
+        }
+        let cancelledID = UUID()
+        let keptID = UUID()
+        async let cancelled = publisher.prepare(
+            AccessProxyEntryPrepareRequest(operationID: cancelledID, deadline: .seconds(15))
+        )
+        async let kept = publisher.prepare(
+            AccessProxyEntryPrepareRequest(operationID: keptID, deadline: .seconds(15))
+        )
+        await fulfillment(of: [started], timeout: 2)
+        publisher.cancel(operationID: cancelledID)
+        release.fulfill()
+        do {
+            _ = try await cancelled
+            XCTFail("取消的等待者不能拿到入口")
+        } catch is CancellationError {
+        }
+        let ready = try await kept
+        XCTAssertEqual(publisher.provisionCount, 1)
+        XCTAssertEqual(publisher.currentEndpoint?.generation, ready.endpoint.generation)
+        XCTAssertTrue(publisher.validateReady(ready))
+    }
+
     func testFailClosedPublisherNeverValidates() async {
         let publisher = AccessFailClosedProxyEntryPublisher()
         do {

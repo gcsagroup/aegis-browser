@@ -38,17 +38,23 @@ struct AccessSiteProxyToggleView: View {
             }
 
             Toggle(
-                "使用本服务代理",
+                AccessAutoRecoveryCopy.toggleTitle,
                 isOn: Binding(
-                    get: { snap.toggleOn },
+                    get: { snap.autoRecoveryEnabled },
                     set: { enabled in
                         guard let tab else { return }
-                        store.setProxyEnabled(enabled, for: tab)
+                        _ = store.setAutoRecoveryEnabled(enabled, for: tab)
                     }
                 )
             )
             .disabled(!snap.toggleEnabled || tab == nil)
             .accessibilityIdentifier("access-site-proxy-toggle")
+            if let line = snap.autoRecoveryLine {
+                Text(line)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("access-site-auto-recovery-status")
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(AccessSiteProxyToggleModel.intentLine(for: snap.intentStatus))
@@ -78,7 +84,9 @@ struct AccessSiteProxyToggleView: View {
         } header: {
             Text("本站代理")
         } footer: {
-            Text("开关表示本站是否使用本服务代理；连接状态单独显示，开启不等于已连通。关闭后使用浏览器原有连接。")
+            Text(AccessAutoRecoveryCopy.explanation)
+                .font(.footnote)
+            Text(AccessAutoRecoveryCopy.scopeWarning)
                 .font(.footnote)
         }
     }

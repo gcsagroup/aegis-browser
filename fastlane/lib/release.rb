@@ -351,7 +351,7 @@ module AegisRelease
                          archive_path: File.join(work, 'Aegis.xcarchive'), derived_data_path: File.join(work, 'DerivedData'),
                          buildlog_path: File.join(work, 'logs'), export_method: 'app-store',
                          skip_profile_detection: true, disable_package_automatic_updates: true,
-                         xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile}",
+                         xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile} AEGIS_ACCESS_RELEASE_CHANNEL=#{request.profile}",
                          export_options: { method: 'app-store-connect', teamID: team, signingStyle: 'manual',
                                            provisioningProfiles: profiles, manageAppVersionAndBuildNumber: false,
                                            testFlightInternalTestingOnly: request.profile == 'alpha' })

@@ -50,6 +50,18 @@ final class AccessSiteProxySessionStore: ObservableObject {
         revision &+= 1
     }
 
+    @discardableResult
+    func setAutoRecoveryEnabled(
+        _ enabled: Bool,
+        for tab: BrowserTab,
+        members: [AccessSiteHost] = []
+    ) -> AccessAutoRecoveryChange {
+        let change = hostRouting?.setAutoRecoveryEnabled(enabled, for: tab, members: members)
+            ?? .rejected(.noTrustedHost)
+        revision &+= 1
+        return change
+    }
+
     func snapshot(for tab: BrowserTab) -> AccessSiteProxyToggleSnapshot {
         if let hostRouting {
             return hostRouting.snapshot(for: tab)

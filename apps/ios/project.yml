@@ -102,9 +102,11 @@ targets:
       configs:
         Debug:
           AEGIS_FIREBASE_CHANNEL: dev
+          AEGIS_ACCESS_RELEASE_CHANNEL: dev
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
         Release:
           AEGIS_FIREBASE_CHANNEL: disabled
+          AEGIS_ACCESS_RELEASE_CHANNEL: release
       base:
         OTHER_LDFLAGS: "$(inherited) -ObjC -lresolv"
         FRAMEWORK_SEARCH_PATHS:

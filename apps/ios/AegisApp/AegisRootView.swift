@@ -407,6 +407,9 @@ struct ProxyRetryButton: UIViewRepresentable {
 
 struct PageLoadFailureBanner: View {
     @ObservedObject var tab: BrowserTab
+    var autoRecoveryOn: Bool = false
+    var autoRecoveryLine: String? = nil
+    var setAutoRecovery: ((BrowserTab, Bool) -> Void)? = nil
     var proxyRetry: (BrowserTab) -> Void
 
     var body: some View {
@@ -414,6 +417,20 @@ struct PageLoadFailureBanner: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("页面加载失败：\(error)").font(.caption)
                 Button("重试") { tab.reload() }
+                if setAutoRecovery != nil {
+                    Toggle(AccessAutoRecoveryCopy.toggleTitle, isOn: Binding(
+                        get: { autoRecoveryOn },
+                        set: { setAutoRecovery?(tab, $0) }
+                    ))
+                    .accessibilityIdentifier("page-load-auto-recovery")
+                    Text(AccessAutoRecoveryCopy.explanation).font(.caption)
+                    Text(AccessAutoRecoveryCopy.scopeWarning).font(.caption)
+                    if let autoRecoveryLine {
+                        Text(autoRecoveryLine)
+                            .font(.caption)
+                            .accessibilityIdentifier("page-load-auto-recovery-status")
+                    }
+                }
                 if tab.loadingErrorAllowsProxyRetry {
                     ProxyRetryButton(title: "通过代理重试") { proxyRetry(tab) }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -438,9 +455,17 @@ private struct ActiveTabView: View {
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
-            PageLoadFailureBanner(tab: tab) { failed in
-                _ = hostStores.retryViaProxy(tab: failed)
-            }
+            PageLoadFailureBanner(
+                tab: tab,
+                autoRecoveryOn: hostStores.snapshot(for: tab).autoRecoveryEnabled,
+                autoRecoveryLine: hostStores.snapshot(for: tab).autoRecoveryLine,
+                setAutoRecovery: { failed, enabled in
+                    _ = hostStores.setAutoRecoveryEnabled(enabled, for: failed)
+                },
+                proxyRetry: { failed in
+                    _ = hostStores.retryViaProxy(tab: failed)
+                }
+            )
             if let decision = tab.lastPolicyIntervention {
                 NavigationPolicyBanner(decision: decision) {
                     tab.dismissPolicyIntervention()
