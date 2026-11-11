@@ -454,3 +454,4 @@
 0452-fix-migration-retry-fixture-string-view.patch
 0453-test-unresponsive-core-session-ending-deadline.patch
 0454-fix-unresponsive-child-observation-wakeup.patch
+0455-fix-session-ending-owned-core-termination-deadline.patch

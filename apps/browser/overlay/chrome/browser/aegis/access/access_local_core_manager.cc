@@ -1,6 +1,9 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
+#include <signal.h>
+
+#include <algorithm>
 #include <atomic>
 #include <vector>
 
@@ -381,6 +384,25 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     StopChild();
     if (stopped_callback_) stopped_callback_.Run(registration);
   }
+  bool WaitForChildExit(base::TimeDelta maximum_wait) {
+    auto deadline = maximum_wait.is_max()
+        ? base::TimeTicks::Max() : base::TimeTicks::Now() + maximum_wait;
+    bool session_bounded = false;
+    for (;;) {
+      // A session-ending request must also interrupt a Stop or destructor
+      // already waiting on this thread. Retain the ordinary SIGTERM grace,
+      // but bound each graceful/forced wait to one second during EndSession.
+      if (!session_bounded && shutdown_->stop_requested()) {
+        deadline = std::min(deadline, base::TimeTicks::Now() + base::Seconds(1));
+        session_bounded = true;
+      }
+      const auto remaining = deadline - base::TimeTicks::Now();
+      if (process_.WaitForExitWithTimeout(
+              std::clamp(remaining, base::TimeDelta(), base::Milliseconds(100)),
+              nullptr)) return true;
+      if (remaining <= base::TimeDelta()) return false;
+    }
+  }
   void StopChild() {
     health_.Stop();
     timeout_.Stop();
@@ -388,7 +410,13 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     request_.reset();
     context_.reset();
     if (process_.IsValid()) {
-      if (Running()) process_.Terminate(0, true);
+      if (Running()) {
+        process_.Terminate(0, false);
+        if (!WaitForChildExit(base::Seconds(60)) &&
+            kill(process_.Pid(), SIGKILL) == 0) {
+          WaitForChildExit(base::TimeDelta::Max());
+        }
+      }
       process_.Close();
     }
     credentials_.reset();
