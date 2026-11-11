@@ -21,6 +21,28 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
         XCTAssertEqual(parameters.fingerprint, "chrome")
     }
 
+    func testParsesShareURIWithEmptyEncryptionQuery() throws {
+        let uri =
+            "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.10:443"
+            + "?flow=xtls-rprx-vision&security=reality&encryption=&type=tcp"
+            + "&sni=www.example.com&fp=chrome"
+            + "&pbk=abcdefghijklmnopqrstuvwxyzABCDEFG&sid=abcd1234"
+        let parameters = try AccessLocalV2RayConfigLoader.parseShareURI(uri)
+        XCTAssertEqual(parameters.address, "198.51.100.10")
+        XCTAssertEqual(parameters.shortID, "abcd1234")
+    }
+
+    func testParsesShareURIWithEmptyEncryptionQuery() throws {
+        let uri =
+            "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.10:443"
+            + "?flow=xtls-rprx-vision&security=reality&encryption=&type=tcp"
+            + "&sni=www.example.com&fp=chrome"
+            + "&pbk=abcdefghijklmnopqrstuvwxyzABCDEFG&sid=abcd1234"
+        let parameters = try AccessLocalV2RayConfigLoader.parseShareURI(uri)
+        XCTAssertEqual(parameters.address, "198.51.100.10")
+        XCTAssertEqual(parameters.shortID, "abcd1234")
+    }
+
     func testParsesShareURIFromFileBytes() throws {
         let data = Data(sampleShareURI.utf8)
         let parameters = try AccessLocalV2RayConfigLoader.parse(data: data)
