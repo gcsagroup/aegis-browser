@@ -347,3 +347,10 @@
 0347-fix-third-party-license-credits.patch
 0348-p01-control-v2-two-hop-tls-transport.patch
 0349-brand-windows-uninstall-prompts.patch
+0349-feat-access-socks5-inbound-no-auth.patch
+0350-feat-access-site-intent-api.patch
+0351-feat-access-toolbar-bubble.patch
+0352-feat-access-bubble-session.patch
+0353-feat-access-fault-no-direct.patch
+0354-feat-access-dev-allow-block-panel.patch
+0355-feat-access-phase1-evidence.patch

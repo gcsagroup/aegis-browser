@@ -61,9 +61,19 @@ python3 -B "$SCRIPT_DIR/merged-main-patch_test.py"
 STORE_CONTRACT_TEST="$SCRIPT_DIR/access-rule-store-contract_test.sh"
 TARGET="//components/aegis_access:aegis_access_unittests"
 COORDINATOR_TARGET="//chrome/browser/aegis/access:access_service_coordinator_unittests"
+SITE_INTENT_TARGET="//chrome/browser/aegis/access:access_site_intent_unittests"
+SITE_PROXY_BUBBLE_TARGET="//chrome/browser/aegis/access:access_site_proxy_bubble_unittests"
+SITE_PROXY_SESSION_TARGET="//chrome/browser/aegis/access:access_site_proxy_session_unittests"
+SITE_DEV_ALLOW_BLOCK_TARGET="//chrome/browser/aegis/access:access_site_dev_allow_block_panel_unittests"
 OWNERSHIP_TARGET="//components/aegis_access:request_ownership_registry_unittests"
 DISPATCH_GATE_TARGET="//components/aegis_access:request_dispatch_gate_unittests"
 BROWSER_METADATA_TARGET="//components/aegis_access:browser_request_metadata_seed_unittests"
+SITE_INTENT_PATCH_FILE="$BROWSER_DIR/patches/0350-feat-access-site-intent-api.patch"
+SITE_PROXY_BUBBLE_PATCH_FILE="$BROWSER_DIR/patches/0351-feat-access-toolbar-bubble.patch"
+SITE_PROXY_SESSION_PATCH_FILE="$BROWSER_DIR/patches/0352-feat-access-bubble-session.patch"
+SITE_PROXY_FAULT_PATCH_FILE="$BROWSER_DIR/patches/0353-feat-access-fault-no-direct.patch"
+SITE_DEV_ALLOW_BLOCK_PATCH_FILE="$BROWSER_DIR/patches/0354-feat-access-dev-allow-block-panel.patch"
+SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE="$BROWSER_DIR/patches/0355-feat-access-phase1-evidence.patch"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -79,6 +89,22 @@ args_block="$(awk '/^root_extra_deps = \[$/,/^\]$/' "$ARGS_FILE")"
   fail "aegis.gn must add the coordinator lifecycle test exactly once"
 [[ "$args_block" == *"$COORDINATOR_TARGET"* ]] ||
   fail "the coordinator lifecycle test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_INTENT_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the site intent API test exactly once"
+[[ "$args_block" == *"$SITE_INTENT_TARGET"* ]] ||
+  fail "the site intent API test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_PROXY_BUBBLE_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the site-proxy bubble test exactly once"
+[[ "$args_block" == *"$SITE_PROXY_BUBBLE_TARGET"* ]] ||
+  fail "the site-proxy bubble test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_PROXY_SESSION_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the site-proxy bubble session test exactly once"
+[[ "$args_block" == *"$SITE_PROXY_SESSION_TARGET"* ]] ||
+  fail "the site-proxy bubble session test must be reachable through root_extra_deps"
+[[ "$(rg -F -c "$SITE_DEV_ALLOW_BLOCK_TARGET" "$ARGS_FILE")" == 1 ]] ||
+  fail "aegis.gn must add the DEV allow/block panel test exactly once"
+[[ "$args_block" == *"$SITE_DEV_ALLOW_BLOCK_TARGET"* ]] ||
+  fail "the DEV allow/block panel test must be reachable through root_extra_deps"
 [[ "$(rg -F -c "$OWNERSHIP_TARGET" "$ARGS_FILE")" == 1 ]] ||
   fail "aegis.gn must add the ownership registry test exactly once"
 [[ "$args_block" == *"$OWNERSHIP_TARGET"* ]] ||
@@ -184,9 +210,141 @@ rg -Fq 'source_set("access_service_coordinator")' "$ACCESS_BUILD" ||
   fail "overlay must define the Profile-owned Access service coordinator"
 rg -Fq 'test("access_service_coordinator_unittests")' "$ACCESS_BUILD" ||
   fail "overlay must define the Access service coordinator lifecycle regression"
+rg -Fq 'source_set("access_site_intent")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site intent API"
+rg -Fq 'test("access_site_intent_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site intent API regression"
+rg -Fq 'source_set("access_site_proxy_bubble")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy toolbar bubble"
+rg -Fq 'test("access_site_proxy_bubble_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy toolbar bubble regression"
+rg -Fq 'source_set("access_site_proxy_session")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy bubble session"
+rg -Fq 'test("access_site_proxy_session_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the product site-proxy bubble session regression"
+rg -Fq 'source_set("access_site_dev_allow_block_panel")' "$ACCESS_BUILD" ||
+  fail "overlay must define the DEV allow/block debug panel"
+rg -Fq 'test("access_site_dev_allow_block_panel_unittests")' "$ACCESS_BUILD" ||
+  fail "overlay must define the DEV allow/block debug panel regression"
+rg -Fq 'BuildOrdinarySiteGroupMutation' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
+  fail "site intent API must expose ordinary CommitSiteGroupMutation builders"
+rg -Fq 'kBlockNotOrdinary' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_intent.h" ||
+  fail "site intent API must keep block outside ordinary DIRECT publication"
+rg -Fq 'ResolveTrustedNavigationHost' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_model.h" ||
+  fail "toolbar bubble must resolve trusted committed navigation hosts only"
+rg -Fq 'AccessSiteConnectionState' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_model.h" ||
+  fail "toolbar bubble must keep connection state distinct from site intent"
+rg -Fq 'RequestHostProxySession' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h" ||
+  fail "toolbar bubble must publish sessions through RequestHostProxySession"
+rg -Fq 'EnsureLocalProxyReady' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session.h" ||
+  fail "bubble session must require local proxy readiness before publish"
+rg -Fq 'AppendSiteProxySection' \
+  "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
+  fail "toolbar bubble must render the site-proxy section"
+rg -Fq 'RequestHostProxySession' \
+  "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
+  fail "toolbar bubble toggle must call the publication session path"
+rg -Fq 'IsAccessDevAllowBlockPanelAdmitted' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h" ||
+  fail "DEV allow/block panel must gate registration by channel"
+rg -Fq 'IsGeneralAccessRuleEditorRegistered' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h" ||
+  fail "DEV allow/block panel must keep the general rule editor unregistered"
+rg -Fq 'ApplyDevAllowBlock' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h" ||
+  fail "bubble controller must expose DEV allow/block apply"
+rg -Fq 'AppendDevAllowBlockSection' \
+  "$BROWSER_DIR/overlay/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc" ||
+  fail "toolbar bubble must render the DEV allow/block section when admitted"
+rg -Fq 'access_site_proxy_bubble' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/BUILD.gn" ||
+  fail "desktop aegis target must expose the site-proxy bubble to toolbar UI"
 coordinator_test_block="$(awk '/^test\("access_service_coordinator_unittests"\)/,/^}/' "$ACCESS_BUILD")"
 [[ "$coordinator_test_block" == *'":access_proxy_selection_generation_source",'* ]] ||
   fail "coordinator test must directly depend on the proxy selection generation source"
+[[ -f "$SITE_INTENT_PATCH_FILE" ]] ||
+  fail "active series must include the site intent API sync patch"
+rg -Fq '+source_set("access_site_intent")' "$SITE_INTENT_PATCH_FILE" ||
+  fail "patch 0350 must deliver the product site intent API source_set"
+rg -Fq '+test("access_site_intent_unittests")' "$SITE_INTENT_PATCH_FILE" ||
+  fail "patch 0350 must deliver the product site intent API regression"
+[[ -f "$SITE_PROXY_BUBBLE_PATCH_FILE" ]] ||
+  fail "active series must include the toolbar site-proxy bubble sync patch"
+rg -Fq '+source_set("access_site_proxy_bubble")' "$SITE_PROXY_BUBBLE_PATCH_FILE" ||
+  fail "patch 0351 must deliver the site-proxy bubble source_set"
+rg -Fq '+test("access_site_proxy_bubble_unittests")' "$SITE_PROXY_BUBBLE_PATCH_FILE" ||
+  fail "patch 0351 must deliver the site-proxy bubble regression"
+[[ -f "$SITE_PROXY_SESSION_PATCH_FILE" ]] ||
+  fail "active series must include the bubble session sync patch"
+rg -Fq '+source_set("access_site_proxy_session")' "$SITE_PROXY_SESSION_PATCH_FILE" ||
+  fail "patch 0352 must deliver the site-proxy bubble session source_set"
+rg -Fq '+test("access_site_proxy_session_unittests")' "$SITE_PROXY_SESSION_PATCH_FILE" ||
+  fail "patch 0352 must deliver the site-proxy bubble session regression"
+[[ -f "$SITE_PROXY_FAULT_PATCH_FILE" ]] ||
+  fail "active series must include the site-proxy fault no-direct sync patch"
+rg -Fq '+    "access_site_proxy_fault_fixture.cc",' "$SITE_PROXY_FAULT_PATCH_FILE" ||
+  fail "patch 0353 must deliver the site-proxy fault product fixture"
+rg -Fq '+  AccessSiteProxySessionSnapshot NotifyRuntimeFault(' \
+  "$SITE_PROXY_FAULT_PATCH_FILE" ||
+  fail "patch 0353 must deliver NotifyRuntimeFault on the session controller"
+rg -Fq 'ProductFaultDrillHealthyOnFaultRecoveryOff' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc" ||
+  fail "session regression must cover the product fault drill"
+rg -Fq 'ControlledOnFaultRecoveryOffPreservesRoute' "$BROWSER_PROXY_TEST" ||
+  fail "browser proxy fixture must cover controlled fault without DIRECT"
+rg -Fq 'ProductFaultDrillHealthyOnFaultRecoveryOff' "$BROWSER_PROXY_TEST" ||
+  fail "browser fault fixture must reference the product session drill"
+[[ -f "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ]] ||
+  fail "active series must include the DEV allow/block panel sync patch"
+rg -Fq '+source_set("access_site_dev_allow_block_panel")' \
+  "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ||
+  fail "patch 0354 must deliver the DEV allow/block panel source_set"
+rg -Fq '+test("access_site_dev_allow_block_panel_unittests")' \
+  "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ||
+  fail "patch 0354 must deliver the DEV allow/block panel regression"
+rg -Fq '+bool IsGeneralAccessRuleEditorRegistered' \
+  "$SITE_DEV_ALLOW_BLOCK_PATCH_FILE" ||
+  fail "patch 0354 must keep the general rule editor unregistered"
+[[ -f "$SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE" ]] ||
+  fail "active series must include the phase-1 evidence sync patch"
+rg -Fq '+    "access_site_proxy_phase1_evidence_fixture.cc",' \
+  "$SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE" ||
+  fail "patch 0355 must deliver the phase-1 evidence fixture"
+rg -Fq 'RunSiteProxyPhase1EvidenceDrill' \
+  "$SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE" ||
+  fail "patch 0355 must deliver RunSiteProxyPhase1EvidenceDrill"
+rg -Fq 'Phase1EvidenceDrillOnLoadFaultRecoveryOff' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc" ||
+  fail "session regression must cover the phase-1 evidence drill"
+rg -Fq 'RunSiteProxyPhase1EvidenceDrill' "$BROWSER_PROXY_TEST" ||
+  fail "browser fixture must reference the phase-1 evidence drill"
+rg -Fq 'BuildPhase1EvidenceCorrelationId' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h" ||
+  fail "phase-1 evidence fixture must define correlation IDs"
+REPO_ROOT="$(cd "$BROWSER_DIR/../.." && pwd)"
+[[ -f "$REPO_ROOT/docs/audit/evidence/macos-access-product-phase1/status.json" ]] ||
+  fail "phase-1 evidence pack status.json must exist"
+rg -Fq 'excluded-while-open' \
+  "$REPO_ROOT/docs/audit/evidence/macos-access-product-phase1/manifest.template.json" ||
+  fail "evidence pack must exclude unfinished pmac4 from PASS claim"
+rg -Fq 'NotifyRuntimeFault' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session.h" ||
+  fail "session controller must expose NotifyRuntimeFault"
+rg -Fq 'RebuildAfterNetworkServiceRestart' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session.h" ||
+  fail "session controller must rebuild after Network Service restart"
+rg -Fq 'PlanSiteProxySessionRequestRoute' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_session.h" ||
+  fail "session fault path must plan new requests without DIRECT"
+rg -Fq 'NotifyHostProxyRuntimeFault' \
+  "$BROWSER_DIR/overlay/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h" ||
+  fail "bubble controller must surface runtime fault without DIRECT"
 for profile_test in \
   access_browser_request_adapter_unittests \
   access_identity_generation_source_unittests \

@@ -62,3 +62,6 @@ __pycache__/
 
 # Local Firebase registrations staged by the operator.
 /apps/ios/Firebase/*/GoogleService-Info.plist
+
+# Local Access Reality Vision test endpoints (vless:// / client JSON). Never commit.
+/.local/access-service/

@@ -15,7 +15,7 @@
 公开指南只规定交付职责、验证和审查门槛。维护者的模型选择、推理档位、本机目录及账号配置保存在未跟踪的本机配置或仓库设置中，不作为公开贡献要求。公开记录中的 `${LOCAL_WORKSPACE_ROOT}`、`${LOCAL_APPLICATIONS_ROOT}`、`${LOCAL_APPLICATION_SUPPORT_ROOT}` 为脱敏路径占位符，具体映射仅保存在本地证据索引。
 
 - 实现者负责代码、测试与问题修复；复杂接口和状态变更先明确设计、不变量与验收用例。
-- 独立审查使用新上下文，对照原始需求、base/head、真实差异和测试证据；修复后由同一 reviewer 复审最终候选。
+- 独立审查使用新上下文并保持只读，对照原始需求、base/head、真实差异和测试证据；修复由原实现者完成，相关修改后重新独立审查最终候选，并携带先前发现。具体工具与模型由贡献者的执行环境配置，不增加公开工具链前置要求。
 - 发现行为、安全或隐私风险时升级设计审查，不能以工具选择代替工程结论。
 - 审查、测试、托管 CI 和服务端审批分别核验；修改或 rebase 后重新绑定最终 HEAD。
 - 个人执行偏好不进入共享文档，不替代合并授权或必需检查。
@@ -127,6 +127,8 @@ quality 汇总 job 使用中性 ID `quality-summary`，条件为 `always() && (�
 本地 workflow validator 与 mutation 回归校验事件集合、严格 Ready 条件、汇总名称和失败传播合同。GitHub 上仍需以同一 head 的 Draft → Ready 实际运行验证触发与 check 身份；本地检查不能替代该托管证据。
 
 常规 macOS 测试支持仓库级 opt-in：将 `AEGIS_SELF_HOSTED_TEST_REPOSITORY` 设置为当前个人仓库的精确 `owner/repo` 后，`quality`、`quality-gate` 与 C++ 单元测试使用 `[self-hosted, macOS, ARM64, aegis-test]`。变量为空、身份不匹配或 PR 来自外部 fork 时继续使用 `macos-15`。个人仓库部署两个独立测试 runner，预安装并核验固定 Node/Python；托管 runner 继续通过固定 setup actions 安装工具，本地 runner 验证预安装的 Python `3.11.9`，避免 setup-python 在 macOS 上强制使用托管账号路径。在本机 job-start hook 拒绝仓库身份不匹配、外部 fork PR 及非 `main`/`develop` 的 push/手动事件；拒绝时必须在返回前终止经本机路径与用户校验的所属 `Runner.Worker`，阻断包括 `always()` 在内的后续步骤；只返回非零不足以构成安全边界。无法确认所属 Worker 时阻塞作业并等待服务检查，不能继续执行。workflow 条件不能替代这个主机端边界。禁用变量即可让后续测试恢复托管路由，既有运行仍保留原 runner 与证据身份。iOS、Android、Linux、Windows、Chromium 构建和晋升控制器保持原路线；测试 runner 不使用 `aegis-upstream` 构建标签。
+
+主机端准入按 workflow 文件名与 `GITHUB_JOB` 的组合匹配；`GITHUB_JOB` 是 YAML 中 `jobs` 的键，不是 job 的 `name` 显示名。例如 `cpp-unit-tests.yml` 使用键 `cpp-unit-tests`，检查显示名为 `c++-unit-tests`，不能互换。维护准入钩子时，验证合法 quality/C++ 作业可进入，同时验证错误仓库、外部 fork、错误 workflow/job 组合和不允许的 ref 仍被拒绝。
 
 `.github/workflows/ios-coverage.yml` 是独立报告 workflow。仅通过 `workflow_dispatch` 手动生成报告，PR/develop/main push 不自动运行。它继续严格绑定当次 GitHub tested SHA，测试失败仍为非零；当前分支保护的必需状态检查为 `quality-gate`，因此 iOS 报告不改变 macOS 优先的合并门。
 

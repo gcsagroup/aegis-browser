@@ -69,6 +69,8 @@ bash apps/ios/scripts/run-simulator-tests.sh \
 
 The runner increments the build number in `project.yml`, regenerates the project, builds once and tests the same product on both named QA simulators. Build output stays in the sibling directory `GCSA-aegis-build/ios/DerivedData`; the app is always `Build/Products/Debug-iphonesimulator/Aegis.app`. Evidence gets a new directory for each run. Existing simulators and evidence are not erased.
 
+Evidence includes input hashes for `apps/ios`, `packages/core` and the browser’s `enhancements_shared` resources referenced by the iOS project, with separate source, generated build-input and post-test manifests. Metadata records the original Git state and the state after project generation. The runner verifies the app's `CFBundleVersion` against the incremented build number before testing and includes that number in the Swift coverage reports.
+
 Tests use a loopback-only service at `127.0.0.1:8768`. Pages, downloads and model responses are synthetic; actual HTTP, WebKit and file operations test the integration. Synthetic responses do not establish external model quality. The runner starts and stops only its own fixture process, or reuses an existing matching service.
 
 For a manual demonstration, run `python3 apps/ios/scripts/simulator-fixture-server.py --port 8768`, browse to `http://127.0.0.1:8768/article`, and configure the compatible API at `http://127.0.0.1:8768/v1` with model `aegis-simulator-fixture`.

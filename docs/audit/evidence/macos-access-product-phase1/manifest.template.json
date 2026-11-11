@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "kind": "macos-access-product-phase1-evidence",
+  "status": "NOT_RUN",
+  "candidate": {
+    "sourceSha": "REPLACE_WITH_40_LOWERCASE_HEX",
+    "chromium": "REPLACE_OR_UNKNOWN",
+    "channel": "DEV"
+  },
+  "runId": "REPLACE_RUN_ID",
+  "exitCriteria": {
+    "pmac1": "required",
+    "pmac2": "required",
+    "pmac3": "required",
+    "pmac4": "excluded-while-open",
+    "pmac5": "required",
+    "pmac6": "required"
+  },
+  "rules": {
+    "forbidDirectAsAccessSuccess": true,
+    "sameCandidateOnly": true,
+    "nativeBuildRequired": true,
+    "unitTestsAloneNotPass": true
+  },
+  "steps": [
+    {
+      "id": "B2-1",
+      "name": "on",
+      "correlationId": "aegis-mac-p1/REPLACE8/REPLACE_RUN_ID/on",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    },
+    {
+      "id": "B2-2",
+      "name": "load",
+      "correlationId": "aegis-mac-p1/REPLACE8/REPLACE_RUN_ID/load",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    },
+    {
+      "id": "B2-3",
+      "name": "fault",
+      "correlationId": "aegis-mac-p1/REPLACE8/REPLACE_RUN_ID/fault",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    },
+    {
+      "id": "B2-4",
+      "name": "recovery",
+      "correlationId": "aegis-mac-p1/REPLACE8/REPLACE_RUN_ID/recovery",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    },
+    {
+      "id": "B2-5",
+      "name": "off",
+      "correlationId": "aegis-mac-p1/REPLACE8/REPLACE_RUN_ID/off",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    }
+  ],
+  "uiEvidence": {
+    "onCapture": null,
+    "offCapture": null
+  },
+  "notes": [
+    "Fill artifacts from one launchable macOS build only.",
+    "Do not claim PASS for unfinished DEV-only P-mac-4.",
+    "Overlay unit drills are scaffolding; they are not B4 PASS."
+  ]
+}

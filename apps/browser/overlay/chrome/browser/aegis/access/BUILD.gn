@@ -167,6 +167,124 @@ source_set("access_service_coordinator") {
   ]
 }
 
+source_set("access_site_intent") {
+  sources = [
+    "access_site_intent.cc",
+    "access_site_intent.h",
+  ]
+  deps = [
+    ":access_rule_store",
+    "//base",
+    "//components/aegis_access",
+    "//url",
+  ]
+}
+
+test("access_site_intent_unittests") {
+  sources = [ "access_site_intent_unittest.cc" ]
+  deps = [
+    ":access_site_intent",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_site_proxy_session") {
+  sources = [
+    "access_site_proxy_fault_fixture.cc",
+    "access_site_proxy_fault_fixture.h",
+    "access_site_proxy_phase1_evidence_fixture.cc",
+    "access_site_proxy_phase1_evidence_fixture.h",
+    "access_site_proxy_session.cc",
+    "access_site_proxy_session.h",
+  ]
+  deps = [
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    "//base",
+    "//components/aegis_access",
+    "//components/aegis_access:request_ownership_registry",
+  ]
+}
+
+test("access_site_proxy_session_unittests") {
+  sources = [ "access_site_proxy_session_unittest.cc" ]
+  deps = [
+    ":access_site_proxy_session",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_site_proxy_bubble_model") {
+  sources = [
+    "access_site_proxy_bubble_model.cc",
+    "access_site_proxy_bubble_model.h",
+  ]
+  deps = [
+    ":access_site_intent",
+    "//base",
+    "//url",
+  ]
+}
+
+source_set("access_site_proxy_bubble") {
+  sources = [
+    "access_site_proxy_bubble_controller.cc",
+    "access_site_proxy_bubble_controller.h",
+  ]
+  deps = [
+    ":access_network_context_transport",
+    ":access_rule_store",
+    ":access_service_coordinator",
+    ":access_site_dev_allow_block_panel",
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    ":access_site_proxy_session",
+    "//base",
+    "//chrome/browser/aegis:profile_support",
+    "//chrome/browser/profiles:profile",
+    "//chrome/common:channel_info",
+    "//components/aegis_access",
+    "//components/version_info:channel",
+    "//content/public/browser",
+    "//url",
+  ]
+}
+
+test("access_site_proxy_bubble_unittests") {
+  sources = [ "access_site_proxy_bubble_model_unittest.cc" ]
+  deps = [
+    ":access_site_proxy_bubble_model",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+  ]
+}
+
+source_set("access_site_dev_allow_block_panel") {
+  sources = [
+    "access_site_dev_allow_block_panel.cc",
+    "access_site_dev_allow_block_panel.h",
+  ]
+  deps = [
+    ":access_site_intent",
+    ":access_site_proxy_bubble_model",
+    "//base",
+    "//components/version_info:channel",
+    "//url",
+  ]
+}
+
+test("access_site_dev_allow_block_panel_unittests") {
+  sources = [ "access_site_dev_allow_block_panel_unittest.cc" ]
+  deps = [
+    ":access_site_dev_allow_block_panel",
+    "//base/test:run_all_unittests",
+    "//testing/gtest",
+    "//url",
+  ]
+}
+
 test("access_service_coordinator_unittests") {
   sources = [ "access_service_coordinator_unittest.cc" ]
   deps = [
