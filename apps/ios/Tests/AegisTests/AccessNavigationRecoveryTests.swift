@@ -236,4 +236,32 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         XCTAssertEqual(tab.lastMainFrameFailure?.failureID, failureID)
         XCTAssertEqual(tab.recoveryLoadCount, 0)
     }
+
+    func testSameHostInPageFailureKeepsNavigationIdentity() throws {
+        let tab = makeTab()
+        tab.load(URLRequest(url: URL(string: "https://shop.example/home")!))
+        tab.commitPendingMainFrameForTests()
+        tab.webView(tab.webView, didFinish: tab.currentNavigationForTests)
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+
+        let cart = URL(string: "https://shop.example/cart")!
+        tab.adoptPolicyMainFrameNavigationForTests(url: cart, method: "GET")
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: error)
+        XCTAssertEqual(tab.lastMainFrameFailure?.url, cart)
+        XCTAssertEqual(tab.lastMainFrameFailure?.method, "GET")
+        XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
+    }
+
+    func testFinishedPageDoesNotReuseStaleAttemptForNilNavigationFailure() throws {
+        let tab = makeTab()
+        tab.load(URLRequest(url: URL(string: "https://shop.example/home")!))
+        tab.commitPendingMainFrameForTests()
+        tab.webView(tab.webView, didFinish: tab.currentNavigationForTests)
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: error)
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+    }
 }
