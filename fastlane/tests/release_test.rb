@@ -126,6 +126,48 @@ class ReleaseTest < ReleaseFixture
     assert_equal [:cloud], attempts
   end
 
+  def test_cloud_archive_requires_a_separately_supplied_producer_digest
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', '{"fixture":"original archive manifest"}')
+    directory = File.dirname(manifest)
+    original_digest = AegisRelease.digest(manifest)
+    [['', ''], [directory, original_digest], [directory, ''], ['', original_digest],
+     [directory, 'invalid'], [directory, '0' * 64]].each do |path, digest|
+      ENV[keys[0]], ENV[keys[1]] = path, digest
+      if path.empty? && digest.empty?
+        assert_empty flow.cloud_archive_arguments
+      elsif !path.empty? && digest == original_digest
+        assert_equal ['--archive-input', path, '--archive-manifest-sha256', digest], flow.cloud_archive_arguments
+      else
+        assert_raises(AegisRelease::Error) { flow.cloud_archive_arguments }
+      end
+    end
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_changed_manifest_is_rejected_before_permanent_export_allocation
+    skip 'Native package entrypoint is macOS-only' unless RbConfig::CONFIG['host_os'].include?('darwin')
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', '{"fixture":"original"}')
+    ENV[keys[0]] = File.dirname(manifest)
+    ENV[keys[1]] = AegisRelease.digest(manifest)
+    ENV[keys[2]] = 'ABCDEFGHIJ'
+    File.write(manifest, '{"fixture":"changed"}')
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    commands = []
+    flow.define_singleton_method(:run) { |*arguments, **_options| commands << arguments; true }
+    error = assert_raises(AegisRelease::Error) { flow.package }
+    assert_match(/producer before export allocation/, error.message)
+    assert_empty commands
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
   def test_store_readonly_stages_authorize_before_asc_authentication
     [->(flow) { flow.store }, ->(flow) { flow.status }, ->(flow) { flow.wait }].each do |operation|
       flow = AegisRelease::Pipeline.new(request(destination: 'testflight'), Object.new)
