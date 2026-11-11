@@ -22,6 +22,20 @@ verifier = load('cloud_verifier', 'verify-signed-ios.py')
 
 
 class CloudSigningTests(unittest.TestCase):
+    def test_prepared_inline_selection_is_reused_without_unlocking_or_resolving_twice(self):
+        options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
+        signing = SimpleNamespace(resolve=Mock(), require_identity=Mock(), verify_archive=Mock())
+        access = SimpleNamespace(prepare=Mock(), verify=Mock())
+        proof = {'style': 'manual'}
+        prepared = (signing, ['CODE_SIGN_STYLE=Manual'], proof, access, Path('/owned/development.keychain-db'))
+        with patch.object(poc, 'module', side_effect=AssertionError('Prepared selection must not be resolved again')), \
+                patch.object(poc, 'run'):
+            poc.build_inline_archive(Path('/work'), Path('/output'), options, 'development', {}, {},
+                                     SimpleNamespace(verify_development=Mock()), prepared)
+        signing.resolve.assert_not_called()
+        access.prepare.assert_not_called()
+        access.verify.assert_called_once()
+
     def test_inline_development_archive_uses_the_explicit_selection_without_overwriting_it(self):
         options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
         proof = {'style': 'manual', 'certificateSha1': 'A' * 40}
@@ -30,8 +44,11 @@ class CloudSigningTests(unittest.TestCase):
         signing = SimpleNamespace(resolve=Mock(return_value=(arguments, proof)), require_identity=Mock(), verify_archive=Mock())
         trust = SimpleNamespace(verified_profile=Mock())
         transfer = SimpleNamespace(verify_development=Mock())
+        access = SimpleNamespace(prepare=Mock(return_value=None), verify=Mock())
         evidence = {}
         def modules(_name, filename):
+            if filename == 'development_key_access.py':
+                return access
             return signing if filename == 'development_signing.py' else trust
         with patch.object(poc, 'module', side_effect=modules), patch.object(poc, 'run') as run:
             poc.build_inline_archive(Path('/work'), Path('/output'), options, 'development', {}, evidence, transfer)
@@ -41,6 +58,8 @@ class CloudSigningTests(unittest.TestCase):
         self.assertNotIn('PROVISIONING_PROFILE_SPECIFIER=', command)
         signing.require_identity.assert_called_once()
         signing.verify_archive.assert_called_once()
+        access.prepare.assert_called_once()
+        access.verify.assert_called_once()
         transfer.verify_development.assert_called_once()
         self.assertEqual(evidence['developmentSigning'], proof)
         self.assertIs(evidence['archiveCompleted'], True)

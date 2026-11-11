@@ -184,7 +184,11 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ios-archive-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/aegis-development-archive/archive.log
+          path: |
+            ${{ runner.temp }}/aegis-development-archive/archive.log
+            ${{ runner.temp }}/aegis-development-archive/development-keychain-activation.json
+            ${{ runner.temp }}/aegis-development-archive/development-key-access.json
+            ${{ runner.temp }}/aegis-development-archive/development-key-probe-*.log
           if-no-files-found: warn
           retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

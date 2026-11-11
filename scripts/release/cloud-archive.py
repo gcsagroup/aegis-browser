@@ -55,9 +55,12 @@ def create(output, version, build, team, profile, environment):
     signing = native.module('development_signing', 'development_signing.py')
     signing_args, signing_evidence = signing.resolve(
         team, native.module('development_profile_trust', 'verify-signed-ios.py').verified_profile)
+    access = native.module('development_key_access', 'development_key_access.py')
+    keychain = access.prepare(signing_evidence, native, output)
     evidence = {}
     with native.isolated_keychain(output, evidence, retain_development=True):
         signing.require_identity(signing_evidence, native.run)
+        access.verify(signing_evidence, native, output, build_env, keychain)
         native.run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'),
                    '-scheme', 'Aegis-Release', '-configuration', 'Release', '-destination', 'generic/platform=iOS',
                    '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
