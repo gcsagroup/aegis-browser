@@ -102,6 +102,8 @@ must already be unlocked and available to headless `codesign`.
 
 Private configuration ancestors must be owned by the runner account or root and
 exclude directory mutation by other accounts, including extended ACL grants.
+Writable ancestor ACL entries are accepted only when native membership lookup
+identifies their principal as the runner account or root; groups and unknown principals fail closed.
 Root/account-owned sticky temporary ancestors are allowed; the private signing
 directory and configuration file still require their exact private modes and no ACLs.
 Direct Fastlane/PoC inline Development archives apply the same explicit selection
@@ -117,7 +119,8 @@ producer job publishes the whole manifest SHA-256 separately as a job output; ex
 requires that pin and verifies the ZIP digest before permanently allocating the
 export coordinate. The producer serializes the manifest once and binds its output
 digest to those exact written bytes; import repeats the integrity checks. Relative
-transfer paths are resolved once from the request repository root.
+transfer paths are resolved once from the request repository root, and the verified
+arguments pass to export without a second Ruby ZIP read.
 Older source-bound transfers remain with their original implementation.
 
 Successful package jobs are sealed independently of later upload results. Small

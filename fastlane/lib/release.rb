@@ -279,7 +279,7 @@ module AegisRelease
       AegisRelease.real_path!(request.directory)
       AegisRelease.require!(!File.exist?(request.directory), 'Attempt already exists; use a new run ID or upload the verified package')
       required('AEGIS_APPLE_TEAM_ID')
-      cloud_archive_arguments if request.signing_mode == 'cloud'
+      archive_args = cloud_archive_arguments if request.signing_mode == 'cloud'
       if request.signing_mode == 'manual'
         certificate = required('AEGIS_IOS_CERT_SHA1')
         AegisRelease.require!(/\A[0-9A-Fa-f]{40}\z/.match?(certificate), 'Provide AEGIS_IOS_CERT_SHA1')
@@ -292,7 +292,7 @@ module AegisRelease
       end
       FileUtils.mkdir_p(File.dirname(request.directory))
       Dir.mkdir(request.directory, 0o700)
-      paths, details = package_ios
+      paths, details = package_ios(archive_args)
       sha = Receipt.create(request, paths, source, details)
       publish_args = request.destination == 'github-draft' ? ['--draft'] : []
       begin
@@ -314,8 +314,8 @@ module AegisRelease
       profiles
     end
 
-    def package_ios
-      return package_ios_cloud if request.signing_mode == 'cloud'
+    def package_ios(archive_args = nil)
+      return package_ios_cloud(archive_args) if request.signing_mode == 'cloud'
       profiles = ios_profiles
       work = File.join(request.directory, 'work')
       # Copy only committed inputs; ignored local files must not enter the archive.
@@ -409,12 +409,12 @@ module AegisRelease
       ['--archive-input', path, '--archive-manifest-sha256', digest]
     end
 
-    def package_ios_cloud
+    def package_ios_cloud(archive_args = nil)
       runtime = ENV['RUNNER_ENVIRONMENT'].to_s
       AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && %w[github-hosted self-hosted].include?(runtime) &&
                             ENV['RUNNER_OS'] == 'macOS',
                             'Cloud production packaging requires a GitHub Actions macOS runner; use the explicit local fallback separately')
-      archive_args = cloud_archive_arguments
+      archive_args ||= cloud_archive_arguments
       source = AegisRelease.source(request.root)
       client = AppleStore.new(request, @fastlane, admission: method(:preflight_upload)).tap(&:authenticate)
       before = CloudReservations.preflight(client, request, source)

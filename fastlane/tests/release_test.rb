@@ -116,7 +116,7 @@ class ReleaseTest < ReleaseFixture
   def test_cloud_failure_never_retries_manual_signing_implicitly
     attempts = []
     flow = AegisRelease::Pipeline.new(request, Object.new)
-    flow.define_singleton_method(:package_ios_cloud) do
+    flow.define_singleton_method(:package_ios_cloud) do |_archive_args = nil|
       attempts << :cloud
       raise AegisRelease::Error, 'cloud signing unavailable'
     end
@@ -208,6 +208,25 @@ class ReleaseTest < ReleaseFixture
     end
   ensure
     previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_package_passes_the_preallocation_transfer_arguments_without_reading_them_twice
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    previous = ENV['AEGIS_APPLE_TEAM_ID']
+    ENV['AEGIS_APPLE_TEAM_ID'] = 'ABCDEFGHIJ'
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    verified = ['--archive-input', '/verified/original', '--archive-manifest-sha256', 'a' * 64]
+    calls = 0
+    flow.define_singleton_method(:cloud_archive_arguments) { calls += 1; verified }
+    flow.define_singleton_method(:run) { |*_arguments, **_options| true }
+    flow.define_singleton_method(:package_ios_cloud) { |arguments| throw(:at_builder, arguments) }
+    assert_same verified, catch(:at_builder) { flow.package }
+    assert_equal 1, calls
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous ? ENV['AEGIS_APPLE_TEAM_ID'] = previous : ENV.delete('AEGIS_APPLE_TEAM_ID')
   end
 
   def test_store_readonly_stages_authorize_before_asc_authentication

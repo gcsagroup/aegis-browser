@@ -22,6 +22,25 @@ UUID = re.compile(r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}')
 CERTIFICATE = re.compile(r'[0-9A-F]{40}')
 
 
+def acl_grants_trusted_user(library, entry):
+    """Resolve a Darwin ACL GUID to an explicit root/current-account UID."""
+    library.acl_get_qualifier.argtypes = [ctypes.c_void_p]
+    library.acl_get_qualifier.restype = ctypes.c_void_p
+    library.mbr_uuid_to_id.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32),
+                                      ctypes.POINTER(ctypes.c_int)]
+    library.mbr_uuid_to_id.restype = ctypes.c_int
+    qualifier = library.acl_get_qualifier(entry)
+    if not qualifier:
+        raise ValueError('Cannot inspect Development configuration ancestor ACL principal')
+    try:
+        identifier, kind = ctypes.c_uint32(), ctypes.c_int(-1)
+        result = library.mbr_uuid_to_id(qualifier, ctypes.byref(identifier), ctypes.byref(kind))
+        # membership.h: ID_TYPE_UID=0, ID_TYPE_GID=1. Groups/unknown users are untrusted.
+        return result == 0 and kind.value == 0 and identifier.value in {0, os.getuid()}
+    finally:
+        library.acl_free(qualifier)
+
+
 def check_acl(descriptor, *, readonly=False):
     """Exclude extended grants that POSIX modes alone cannot describe."""
     if sys.platform == 'darwin':
@@ -71,7 +90,9 @@ def check_acl(descriptor, *, readonly=False):
                     if granted == -1:
                         raise OSError(ctypes.get_errno(), 'Cannot inspect ancestor ACL permission')
                     if granted:
-                        raise ValueError('Development configuration ancestor has a writable extended ACL')
+                        if not acl_grants_trusted_user(library, entry):
+                            raise ValueError('Development configuration ancestor has a writable extended ACL')
+                        break
             raise ValueError('Development configuration ancestor ACL exceeds the entry limit')
         finally:
             library.acl_free(acl)

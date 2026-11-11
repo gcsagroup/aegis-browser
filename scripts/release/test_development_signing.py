@@ -214,6 +214,7 @@ class DevelopmentSigningTests(unittest.TestCase):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'Native ancestor ACL regression')
     def test_ancestor_acl_allows_readonly_and_deny_entries_but_rejects_mutation_grants(self):
+        import pwd
         ancestor = self.root / 'config-parent'
         ancestor.mkdir(mode=0o755)
         private = ancestor / 'signing'
@@ -224,16 +225,26 @@ class DevelopmentSigningTests(unittest.TestCase):
         def resolve():
             return signing.resolve('ABCDEFGHIJ', lambda raw: self.profiles[raw], config_path=config,
                                    profile_directories=[self.directory])
-        for rule in ['everyone deny delete', 'everyone allow read,readattr,readextattr,readsecurity,search']:
+        user = pwd.getpwuid(os.getuid()).pw_name
+        for rule in ['everyone deny delete', 'everyone allow read,readattr,readextattr,readsecurity,search',
+                     f'user:{user} allow add_file,delete_child', 'user:root allow add_file']:
             subprocess.run(['chmod', '+a', rule, str(ancestor)], check=True)
             try:
                 self.assertEqual(resolve()[1]['style'], 'manual')
             finally:
                 subprocess.run(['chmod', '-N', str(ancestor)], check=True)
-        subprocess.run(['chmod', '+a', 'everyone allow delete_child,add_subdirectory', str(ancestor)], check=True)
+        for rule in ['everyone allow delete_child,add_subdirectory', 'group:wheel allow add_file',
+                     'user:nobody allow add_file']:
+            subprocess.run(['chmod', '+a', rule, str(ancestor)], check=True)
+            try:
+                with self.assertRaisesRegex(ValueError, 'writable extended ACL'):
+                    resolve()
+            finally:
+                subprocess.run(['chmod', '-N', str(ancestor)], check=True)
+        config.unlink()
+        subprocess.run(['chmod', '+a', f'user:{user} allow add_file', str(ancestor)], check=True)
         try:
-            with self.assertRaisesRegex(ValueError, 'writable extended ACL'):
-                resolve()
+            self.assertEqual(resolve()[1]['style'], 'automatic')
         finally:
             subprocess.run(['chmod', '-N', str(ancestor)], check=True)
 
