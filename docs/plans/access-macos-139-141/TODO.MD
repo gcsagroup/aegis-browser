@@ -12,7 +12,7 @@
 
 **Spec:** [阶段一验收清单](../access-product-phase1-acceptance.zh-CN.md)、[功能拆分](../access-product-phase1-feat-split.zh-CN.md)、[本站意图 API](../macos-access-site-intent-api-NOTES.md)，以及本聊天已授权的请求隔离、持久恢复和原标签页重试要求。本文不将旧文档的历史状态当作当前证据；冲突时沿用当前任务授权和当前 AGENTS.md。
 
-**最新快照：** 2026-11-11 09:11 Asia/Shanghai。Native436/9f316355完整chrome/15正式目标316项实际SUCCESS零skip，新增4回归GREEN、owning GN/435–436精确tree回放PASS；r5两个P2已实现修复，尚需新交付候选fullquality及fresh复审。Mac6e旧质量不转新head，iOS81ff质量/拆分窄审有效。GUI/单组smoke策略限制及两Draft PR/issue仍开放。
+**最新快照：** 2026-11-11 09:19 Asia/Shanghai。Native436/9f316355完整chrome/15目标316 SUCCESS零skip、GN/精确tree回放PASS；r5两个P2实现修复。Mac c755质量首轮Node预检FAIL，固定工具链后因435/436索引缩写FAIL；已按完整blob索引重导出，现有4项校验及精确回放PASS，Native输入/产物未变。新交付候选fullquality/fresh复审尚未通过；GUI/单组smoke及两Draft PR/issue仍开放。
 
 ## 1. 状态与证据规则
 
@@ -674,3 +674,9 @@
 - `boundary-436-validation-receipt.json`绑定Native9f3163555ceac3f81d50ecc35c2ed4b65d7a543a、完整chrome/15正式目标build及316实际SUCCESS零skip，3 owning GN及435–436精确tree回放PASS。原3FAIL+epoch负例PASS，当前四项全部GREEN，coordinator正式目标从39到43；旧RED/夹具失败历史完整保留。
 - 本轮真实重跑全部316，不根据相同exe复用共享库测试。回执记录当前5个生产二进制SHA256；日志实际编译Browser private factory、bubble controller、toolbar及product test对象。当前生产Browser包装层、privatemojo/受控redirect和真实core/controller/store范围通过，不扩大为actualGUI/完整NetworkService联合新验收。
 - 下一项组成Mac新独立候选、exacthead fullquality、带原12个finding及原始证据的fresh最终复审；iOS81ff source/质量范围复用。无活动native构建/测试，不重复436；当前GUI主流程/取消/单组smoke仍策略受限，旧419 GUI身份保留，两PR/8issue尚未外写。
+
+### 2026-11-11 09:19 — v7交付质量两次失败与补丁格式修正
+
+- `pr97-macos-v7-quality-preflight-failure.json`保留首轮：调用漏固定PATH，Node26.4不符22.23.1，在测试启动/输入指纹前停止。已仅对子进程使用既有Node22.23.1/pnpm9.15.0/Python3.11.9，未改全局环境或CI基础设施。
+- 固定工具链的`pr97-macos-split-quality-full-r7-r2-launch.json`sourceStable=true但quality:fast FAIL：merged-main补丁验收要求完整40位最终blob，435/436导出漏full-index。原两份缩写补丁与原始失败报告保留，验收器未修改。现在从相同Native435/436提交重导出`--full-index --binary`；`review-r5-full-index-merged-main-check.log`4项现有校验PASS，`boundary-435-436-full-index-replay-result.json`逐段精确tree PASS。
+- 只是补丁索引/交付文档修正，Native436源码/二进制完全未变，316实际测试与117overlay绑定有效，不重复编译或测试。新的241路径平台候选需新head fullquality和fresh复审；原v7质量FAIL不改为PASS。

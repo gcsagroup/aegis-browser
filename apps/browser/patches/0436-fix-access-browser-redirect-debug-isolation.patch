@@ -14,7 +14,7 @@ Subject: [PATCH] fix(access): preserve redirect routing mode and isolate DEV
  6 files changed, 30 insertions(+), 35 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
-index 1ab8c1acee..b3e1479f0c 100644
+index 1ab8c1acee8e2dc171d69b5a05224f469818e1cc..b3e1479f0cc0be9e5979ec728cb1d549d8b92418 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
 @@ -673,6 +673,7 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
@@ -90,7 +90,7 @@ index 1ab8c1acee..b3e1479f0c 100644
      return RequestDisposition::kBlock;
    }
 diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
-index 72ae56f5d3..1aa755bc26 100644
+index 72ae56f5d378628d8a9deadef27bee7487e6302b..1aa755bc26484942811a43d525f24c28bc5da577 100644
 --- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 +++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
 @@ -215,6 +215,9 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
@@ -104,7 +104,7 @@ index 72ae56f5d3..1aa755bc26 100644
    mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
    std::set<std::unique_ptr<AccessProxyingURLTrackedRequest>,
 diff --git a/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
-index 0a57a693ad..aa272e0565 100644
+index 0a57a693ad9b6e5c6f207bdbcd717a7fdc9bdfa0..aa272e05659727950891a2e3b32788a1a5cd4ee3 100644
 --- a/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
 +++ b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
 @@ -51,9 +51,8 @@ struct AccessDevAllowBlockApplyResult {
@@ -120,7 +120,7 @@ index 0a57a693ad..aa272e0565 100644
      AccessSiteIntentStore* store,
      version_info::Channel channel,
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-index 8d5e9ff0f5..37df60a620 100644
+index 8d5e9ff0f58976b0cda42721bd997fa53bf9af8a..37df60a62083bc231b9d6efe04bf8005defa78a0 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 @@ -156,7 +156,7 @@ AccessDevAllowBlockPanelSnapshot
@@ -154,7 +154,7 @@ index 8d5e9ff0f5..37df60a620 100644
  }
  
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
-index 893dadf774..1e4aee7700 100644
+index 893dadf774e6ccd05878c3b40c39ece52b6bee4e..1e4aee7700c0738e04679c24440eba7ec650d913 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 @@ -71,8 +71,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
@@ -177,7 +177,7 @@ index 893dadf774..1e4aee7700 100644
    struct HostState {
      AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;
 diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
-index 437c46f1c5..eb81acfae1 100644
+index 437c46f1c55e8d030c1cbb9acc88885c2341dbd1..eb81acfae16042030ba1a25c6c54e5cace7e41fb 100644
 --- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 +++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
 @@ -108,16 +108,15 @@ std::u16string DevAllowBlockStatusCopy(

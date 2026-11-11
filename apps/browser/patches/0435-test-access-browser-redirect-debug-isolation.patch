@@ -10,7 +10,7 @@ Subject: [PATCH] test(access): cover Browser redirect reset and debug state
  2 files changed, 210 insertions(+)
 
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index bf0f7a6bd4..48bbe5c160 100644
+index bf0f7a6bd4978406afa3fbf3b682f29655624952..48bbe5c1601c3009f7f03d5acad21c3f08c53b57 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
 @@ -472,6 +472,7 @@ test("access_service_coordinator_unittests") {
@@ -22,7 +22,7 @@ index bf0f7a6bd4..48bbe5c160 100644
      ":access_buildflags",
      ":access_navigation_retry_tab_helper",
 diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
-index 269ca0ea84..8c1dbb9ade 100644
+index 269ca0ea84f996b0a133527f844fb99187019a42..8c1dbb9ade812ed7e2277410781af4557bfd4214 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 @@ -2,6 +2,7 @@
