@@ -86,6 +86,15 @@ targets:
         codeSign: true
         link: true
     postBuildScripts:
+      - name: Select private Access test node
+        script: |
+          /usr/bin/python3 -B "${SRCROOT}/scripts/private_test_node.py"
+        inputFiles:
+          - $(SRCROOT)/scripts/private_test_node.py
+          - $(AEGIS_PRIVATE_TEST_NODE_FILE)
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisPrivateTestNode.vless
+        basedOnDependencyAnalysis: false
       - name: Select Aegis Firebase registration
         script: |
           /usr/bin/python3 -B "${SRCROOT}/scripts/firebase_config.py" install \
@@ -109,6 +118,7 @@ targets:
           AEGIS_FIREBASE_CHANNEL: disabled
           AEGIS_ACCESS_RELEASE_CHANNEL: release
       base:
+        AEGIS_PRIVATE_TEST_NODE_FILE: /dev/null
         OTHER_LDFLAGS: "$(inherited) -ObjC -lresolv"
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)

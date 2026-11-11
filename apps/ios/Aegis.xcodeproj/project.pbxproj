@@ -1512,6 +1512,7 @@
 				DECD2D07A291A4A02847F866 /* Frameworks */,
 				651F0D4DBE487052A2BAA841 /* Embed Foundation Extensions */,
 				7CFE6D1BEF3420D6A2B7DEAC /* Embed Frameworks */,
+				A10A11BE7A00000000000001 /* Select private Access test node */,
 				410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */,
 			);
 			buildRules = (
@@ -1834,6 +1835,23 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A10A11BE7A00000000000001 /* Select private Access test node */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/scripts/private_test_node.py",
+				"$(AEGIS_PRIVATE_TEST_NODE_FILE)",
+			);
+			name = "Select private Access test node";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisPrivateTestNode.vless",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/scripts/private_test_node.py\"\n";
+		};
 		410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -2408,6 +2426,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_ACCESS_RELEASE_CHANNEL = dev;
+				AEGIS_PRIVATE_TEST_NODE_FILE = /dev/null;
 				AEGIS_FIREBASE_CHANNEL = dev;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
@@ -2626,6 +2645,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				AEGIS_ACCESS_RELEASE_CHANNEL = release;
+				AEGIS_PRIVATE_TEST_NODE_FILE = /dev/null;
 				AEGIS_FIREBASE_CHANNEL = disabled;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;

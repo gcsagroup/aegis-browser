@@ -15,7 +15,7 @@ public enum AccessEmbeddedProxyEntryFactory {
     /// Default product publisher. Falls back to fail-closed when any gate fails.
     public static func makeProductPublisher(
         lockData: Data? = nil,
-        configPath: String? = AccessLocalV2RayConfigLoader.configuredPath(),
+        configPath: String? = AccessLocalV2RayConfigLoader.productPath(),
         verifiedCore: (any AccessEmbeddedCoreControlling)? = nil
     ) -> any AccessProxyEntryPublishing {
         do {

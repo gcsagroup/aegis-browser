@@ -10,6 +10,35 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
         + "&pbk=abcdefghijklmnopqrstuvwxyzABCDEFG&sid=abcd1234"
         + "&headerType=none#demo-reality-vision"
 
+    func testProductPathInEachAppChannelWithAStaleResource() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let dev = "/dev-config-from-environment"
+        let environment = [AccessLocalV2RayConfig.environmentVariable: dev]
+        for channel in ["alpha", "beta", "release", "stable", "dev", "unexpected", ""] {
+            let dir = root.appendingPathComponent(UUID().uuidString + ".bundle")
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let node = dir.appendingPathComponent("AegisPrivateTestNode.vless")
+            try Data(sampleShareURI.utf8).write(to: node)
+            var info = ["CFBundleIdentifier": "test." + UUID().uuidString]
+            if !channel.isEmpty { info["AegisAccessReleaseChannel"] = channel }
+            let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            try plist.write(to: dir.appendingPathComponent("Info.plist"))
+            let bundle = try XCTUnwrap(Bundle(url: dir))
+            let path = AccessLocalV2RayConfigLoader.productPath(bundle: bundle, environment: environment)
+            switch channel {
+            case "alpha", "beta":
+                let config = try AccessLocalV2RayConfigLoader.load(path: XCTUnwrap(path))
+                XCTAssertEqual(config.parameters.address, "198.51.100.10")
+            case "dev":
+                XCTAssertEqual(path, dev)
+            default:
+                XCTAssertNil(path, channel)
+            }
+        }
+    }
+
     func testParsesShareURI() throws {
         let parameters = try AccessLocalV2RayConfigLoader.parseShareURI(sampleShareURI)
         XCTAssertEqual(parameters.address, "198.51.100.10")
