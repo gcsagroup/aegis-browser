@@ -45,6 +45,7 @@ test('quality workflow state requires exact push identity and both mandatory job
     qualityJob(run, 'quality-gate'),
   ];
   assert.equal(qualityWorkflowRunState(run, jobs, expected), 'success');
+  assert.equal(qualityWorkflowRunState({...run, event: 'workflow_dispatch'}, jobs, expected), 'failure');
   assert.equal(qualityWorkflowRunState({...run, event: 'pull_request'}, jobs, expected), 'failure');
   assert.equal(qualityWorkflowRunState({...run, status: 'in_progress'}, jobs, expected), 'pending');
   assert.equal(qualityWorkflowRunState(run, jobs.slice(1), expected), 'failure');
@@ -52,12 +53,13 @@ test('quality workflow state requires exact push identity and both mandatory job
   assert.equal(qualityWorkflowRunState(run, [{...jobs[0], run_attempt: 2}, jobs[1]], expected), 'failure');
 });
 
-test('quality verification ignores newer PR and wrong-workflow successes', async () => {
+test('quality verification ignores newer dispatch, PR and wrong-workflow successes', async () => {
   const commitSha = 'develop-sha';
   const exactRun = qualityRun({id: 10, branch: 'develop', sha: commitSha, conclusion: 'failure'});
   const apiFn = async (_repo, path) => {
     if (path.startsWith('/actions/workflows/quality.yml/runs?')) {
       return {workflow_runs: [
+        {...exactRun, id: 13, event: 'workflow_dispatch', conclusion: 'success'},
         {...exactRun, id: 12, event: 'pull_request', conclusion: 'success'},
         {...exactRun, id: 11, path: '.github/workflows/other.yml', conclusion: 'success'},
         exactRun,
@@ -69,6 +71,22 @@ test('quality verification ignores newer PR and wrong-workflow successes', async
   await assert.rejects(
     requireGreenQuality(promotionConfig.personalRepo, 'develop', commitSha, promotionConfig.readToken, apiFn),
     /quality workflow failed/u,
+  );
+});
+
+test('quality verification defers when only successful tip diagnostics exist', async () => {
+  const run = {...qualityRun({id: 50, branch: 'main', sha: 'main-sha'}), event: 'workflow_dispatch'};
+  const apiFn = async (_repo, path) => {
+    if (path.startsWith('/actions/workflows/quality.yml/runs?')) {
+      assert.match(path, /head_sha=main-sha/u);
+      assert.match(path, /event=push/u);
+      return {workflow_runs: [run]};
+    }
+    throw new Error(`unexpected path: ${path}`);
+  };
+  assert.equal(
+    await requireGreenQuality(promotionConfig.personalRepo, 'main', 'main-sha', promotionConfig.readToken, apiFn),
+    false,
   );
 });
 

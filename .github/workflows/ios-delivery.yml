@@ -224,10 +224,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Revalidate source and locked runtime
         run: |
           node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
@@ -342,10 +340,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Download exact package from this running package job
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -438,10 +434,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ios-validated-${{ github.run_id }}-${{ github.run_attempt }}
@@ -502,10 +496,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ios-package-${{ github.run_id }}-${{ github.run_attempt }}
@@ -552,10 +544,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Recheck Admin and current source before loading ASC credentials
         run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
       - name: Read exact version and build from Apple using GET only
@@ -590,10 +580,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22.23.1
-      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
-        with:
-          ruby-version: 3.3.6
-          bundler-cache: true
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
       - name: Recheck Admin and current source before loading ASC credentials
         run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
       - name: Read exact version and build from Apple using GET only

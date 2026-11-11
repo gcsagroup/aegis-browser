@@ -16,7 +16,7 @@
 
 [開始參與](#開始參與) · [平台進度](#平台進度) · [路線圖](docs/roadmap.zh-TW.md) · [文件](docs/README.zh-TW.md)
 
-GCSA Aegis 1.0.0 已在 App Store 上架，支援 iPhone 和 iPad。外部 Beta 可透過 [TestFlight](https://testflight.apple.com/join/EwUW1VDx) 加入。先前的開發里程碑見[變更日誌](CHANGELOG.zh-TW.md)。
+Aegis Browser 1.0.0 已在 App Store 上架，支援 iPhone 和 iPad。外部 Beta 可透過 [TestFlight](https://testflight.apple.com/join/EwUW1VDx) 加入。先前的開發里程碑見[變更日誌](CHANGELOG.zh-TW.md)。
 
 iOS 1.0.1 候選版在設定中新增「開源授權與鳴謝」。組建狀態請見[變更日誌](CHANGELOG.zh-TW.md#ios--ipados-101--testflight)。
 

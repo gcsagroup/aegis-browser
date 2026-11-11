@@ -93,6 +93,27 @@ def development_keychains(original):
     return retained
 
 
+@contextmanager
+def native_session():
+    """Serialize account-wide keychain changes and unwind on TERM/HUP."""
+    lock_path = Path.home() / 'Library/Caches/aegis-cloud-signing-poc.lock'
+    with lock_path.open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        processes = run('ps', '-axo', 'comm=').decode().splitlines()
+        if any(Path(process.strip()).name in {'xcodebuild', 'codesign'} for process in processes):
+            raise ValueError('Native signing/build process active; retry on an idle host')
+        previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGHUP)}
+        def stop(signum, _frame):
+            raise SystemExit(128 + signum)
+        try:
+            for sig in previous:
+                signal.signal(sig, stop)
+            yield
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+
+
 def verify_ad_hoc_archive(archive):
     app = archive / 'Products/Applications/Aegis.app'
     for bundle in [app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex']:
@@ -391,15 +412,7 @@ def main():
     parser.add_argument('--archive-from', help='Reuse a prior source-bound archive; retry export only')
     parser.add_argument('--downloads', type=Path, default=Path.home() / 'Downloads')
     options = parser.parse_args()
-    # Coordinate this entrypoint and refuse a busy native signing host before changing keychain state.
-    lock_path = Path.home() / 'Library/Caches/aegis-cloud-signing-poc.lock'
-    with lock_path.open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        processes = run('ps', '-axo', 'comm=').decode().splitlines()
-        if any(Path(p.strip()).name in {'xcodebuild', 'codesign'} for p in processes):
-            raise ValueError('Native signing/build process active; retry on an idle host')
-        for sig in (signal.SIGTERM, signal.SIGHUP):
-            signal.signal(sig, lambda signum, _frame: sys.exit(128 + signum))
+    with native_session():
         experiment(options, os.environ)
 
 

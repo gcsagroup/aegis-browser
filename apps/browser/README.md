@@ -173,4 +173,4 @@ Always review the exact command and candidate identity before using network, sig
 
 ### Browser updates
 
-About GCSA Aegis checks official GitHub Releases, downloads a matching installer and verifies it. Installation is manual. See [update behavior](../../docs/github-browser-updates.zh-CN.md) and [Ver 1.1 (018) local acceptance](../../docs/ui-copy-acceptance.zh-CN.md).
+About Aegis Browser checks official GitHub Releases, downloads a matching installer and verifies it. Installation is manual. See [update behavior](../../docs/github-browser-updates.zh-CN.md) and [Ver 1.1 (018) local acceptance](../../docs/ui-copy-acceptance.zh-CN.md).

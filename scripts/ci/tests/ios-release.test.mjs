@@ -109,6 +109,18 @@ test('iOS workflow credentials and permissions stay in their protected stage', (
   }
 });
 
+test('unsigned archive isolates fork PRs and tolerates missing runner labels', () => {
+  const workflow = parse(readFileSync('.github/workflows/ios-release-validation.yml', 'utf8'));
+  const route = workflow.jobs['ios-archive']['runs-on'];
+  const configured = route.indexOf("vars.AEGIS_IOS_RUNNER_LABEL != ''");
+  const trusted = route.indexOf("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository");
+  const selfHosted = route.indexOf('fromJSON(');
+  assert(configured >= 0 && configured < selfHosted, 'empty labels must select the hosted fallback');
+  assert(trusted >= 0 && trusted < selfHosted, 'fork PRs must select the hosted fallback');
+  assert(route.endsWith("|| 'macos-26' }}"), 'unsigned validation uses the standard hosted Mac fallback');
+  assert(!workflow.jobs['ios-archive'].environment, 'unsigned validation must not require a protected signing environment');
+});
+
 test('every protected delivery route depends on Admin admission and normalized operation', () => {
   const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   for (const id of ['ios-package', 'ios-draft', 'import', 'store']) {
@@ -271,12 +283,16 @@ test('hosted signing loads only environment secrets after source admission and c
   assert.equal(job['runs-on'], "${{ fromJSON(format('[\"self-hosted\",\"macOS\",\"ARM64\",\"{0}\"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}");
   assert.equal(job.environment, 'aegis-ios-signing');
   assert.equal(job.env.DEVELOPER_DIR, '/Applications/Xcode_26.6.app/Contents/Developer');
+  const ruby = job.steps.findIndex(s => s.uses === './.github/actions/ensure-ios-ruby');
+  assert(ruby >= 0);
+  assert(!job.steps.some(s => s.uses?.startsWith('ruby/setup-ruby@')),
+    'ios-package must not call ruby/setup-ruby directly; it hard-codes /Users/runner on macOS');
   const setup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py setup');
   const source = job.steps.findIndex(s => s.run?.includes('ios-release-preflight.mjs'));
   const pack = job.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py package');
   const cleanup = job.steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
   const upload = job.steps.findIndex(s => s.uses?.startsWith('actions/upload-artifact@'));
-  assert(source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
+  assert(ruby < source && source >= 0 && source < setup && setup < pack && pack < cleanup && cleanup < upload);
   assert.equal(job.steps[cleanup].if, "${{ always() && needs.admission.outputs.signing_mode == 'manual' }}");
   assert.equal(Object.keys(job.steps[setup].env).length, 5);
   assert(Object.values(job.steps[setup].env).every(v => v.startsWith('${{ secrets.AEGIS_IOS_')));

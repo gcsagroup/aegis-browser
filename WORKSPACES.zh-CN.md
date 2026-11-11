@@ -21,6 +21,16 @@
 
 固定验收App仍使用本机Applications中的GCSA Aegis Test.app，不随源码工作区迁移。旧的验收清单保留原始路径和容器ID，后续真实构建应创建绑定新布局的新记录，不能改写旧证据或跳过冻结校验。2026-09-16已在此固定入口完成Ver 1.1 (044)的完整构建、211项原生测试及关键实机验收。
 
+### 本机 Windows 编译目录
+
+2026-11-06 起，本机 Windows 编译区统一使用 `D:\aegis-build-20261030`，D 盘使用 NTFS。Chromium 源码在 `chromium\src`，编译输出在 `chromium\src\out\AegisRelease`；工具链、缓存、临时文件和构建证据也保留在该编译区内。产品源码修改仍以本仓库为入口。
+
+后续构建先在 PowerShell 中加载 `. 'D:\aegis-build-20261030\tools\build-env.ps1'`，再进入 `$env:CHROMIUM_ROOT\src`。该入口为当前进程设置 `AEGIS_BUILD_ROOT`、`CHROMIUM_ROOT`、`DEPOT_TOOLS_DIR` 及缓存、临时路径，不修改系统环境。本机被 Git 忽略的 `apps/browser/.chromium-root` 同样指向 D 盘。
+
+历史日志和带时间戳的验收证据保留原始 E 盘路径；运行入口和 `latest-*.json` 位置指针使用 D 盘，迁移前副本保存在本机 `.artifacts/build-drive-migration-20261106/path-backups`。目录迁移复用现有编译输入与产物，不表示已按最新主仓库源码重新编译或完成安装验收。
+
+迁移期间 D 盘曾发生 USB 设备短暂离线；E 盘原件保留为 `E:\aegis-build-20261030.migrated-backup-20261106`，仅供恢复，不再作为编译入口。
+
 ## 构建与版本
 
 每次真实Mac App编译、打包前更新版本号：小修复使用Ver 1.0 (xxx)递增构建号；新增特性使用Ver 1.1；多个功能或大范围调整使用Ver 2.0。版本显示、包元数据和验收记录应一致，不能只改文件名。源码提交与真实构建须分别记账，不能把提交本身当作已完成编译或版本校验。
