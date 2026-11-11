@@ -46,6 +46,10 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         }
     }
 
+    var listenerStateObserverForTests: (@Sendable (NWListener.State) -> Void)? {
+        gate.withLock { $0.listener?.stateUpdateHandler }
+    }
+
     public var acceptedConnectionCount: UInt64 {
         gate.withLock { $0.acceptedConnections }
     }
@@ -93,38 +97,40 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
             self?.accept(connection)
         }
 
-        do {
-            try await AccessNWListenerBootstrap.awaitReady(nwListener, on: queue)
-        } catch AccessNWListenerBootstrap.Failure.timedOut {
-            nwListener.cancel()
-            throw AccessHTTPInboundError.bindFailed("listener start timed out")
-        } catch AccessNWListenerBootstrap.Failure.failed(let message) {
-            nwListener.cancel()
-            throw AccessHTTPInboundError.bindFailed(message)
-        } catch is CancellationError {
-            nwListener.cancel()
-            throw AccessHTTPInboundError.bindFailed("listener start cancelled")
-        }
-
         let installed = gate.withLock { state -> Bool in
             if state.listener != nil { return false }
             state.listener = nwListener
-            state.listenerFailed = false
+            state.listenerFailed = true // Not healthy until the ready event is observed.
             return true
         }
         if !installed {
             nwListener.cancel()
             throw AccessHTTPInboundError.alreadyListening
         }
-        // Keep observing after the bootstrap handshake so a later `.failed`
-        // clears readiness for the product health check.
-        nwListener.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            if case .failed = state {
-                self.gate.withLock { gateState in
-                    gateState.listenerFailed = true
+        do {
+            try await AccessNWListenerBootstrap.awaitReady(nwListener, on: queue) { [weak self, weak nwListener] state in
+                guard let self, let nwListener else { return }
+                self.gate.withLock { current in
+                    guard current.listener === nwListener else { return }
+                    switch state {
+                    case .ready: current.listenerFailed = false
+                    case .failed, .cancelled: current.listenerFailed = true
+                    default: break
+                    }
                 }
             }
+        } catch {
+            gate.withLock { state in
+                if state.listener === nwListener { state.listener = nil }
+            }
+            nwListener.cancel()
+            if case AccessNWListenerBootstrap.Failure.timedOut = error {
+                throw AccessHTTPInboundError.bindFailed("listener start timed out")
+            }
+            if case AccessNWListenerBootstrap.Failure.failed(let message) = error {
+                throw AccessHTTPInboundError.bindFailed(message)
+            }
+            throw AccessHTTPInboundError.bindFailed("listener start cancelled")
         }
     }
 

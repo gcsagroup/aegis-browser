@@ -13,7 +13,7 @@ usage: ios-access-core-tests.sh \
   --destination <xcodebuild destination> \
   --lock <embedded-core-lock.json> \
   --node-file <private Reality Vision uri/json> \
-  --output <evidence directory>
+  --output <new evidence directory> [--products <verified build directory>]
 EOF
   exit 2
 }
@@ -22,6 +22,7 @@ DESTINATION=""
 LOCK=""
 NODE_FILE=""
 OUTPUT=""
+PRODUCTS="$ROOT/.artifacts/ios-embedded-core"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,6 +30,7 @@ while [[ $# -gt 0 ]]; do
     --lock) LOCK="${2:-}"; shift 2 ;;
     --node-file) NODE_FILE="${2:-}"; shift 2 ;;
     --output) OUTPUT="${2:-}"; shift 2 ;;
+    --products) PRODUCTS="${2:-}"; shift 2 ;;
     -h|--help) usage ;;
     *) printf 'unknown arg: %s\n' "$1" >&2; usage ;;
   esac
@@ -36,12 +38,17 @@ done
 
 [[ -n "$DESTINATION" && -n "$LOCK" && -n "$NODE_FILE" && -n "$OUTPUT" ]] || usage
 
+if [[ -e "$OUTPUT/k-receipt.json" || -e "$OUTPUT/result.xcresult" || -e "$OUTPUT/xcodebuild.log" ]]; then
+  printf 'Evidence already exists; use a new K output directory.\n' >&2
+  exit 2
+fi
 mkdir -p "$OUTPUT"
 RECEIPT="$OUTPUT/k-receipt.json"
 LOG="$OUTPUT/xcodebuild.log"
 RESULT="$OUTPUT/result.xcresult"
 STAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SOURCE_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+SOURCE_TREE="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || echo unknown)"
 PLATFORM_KIND="unknown"
 case "$DESTINATION" in
   *Simulator*) PLATFORM_KIND="simulator" ;;
@@ -51,9 +58,10 @@ esac
 write_receipt() {
   local status="$1"
   local detail="$2"
-  python3 - "$RECEIPT" "$status" "$detail" "$STAMP" "$SOURCE_SHA" "$PLATFORM_KIND" "$LOCK" "$NODE_FILE" <<'PY'
+  python3 - "$RECEIPT" "$status" "$detail" "$STAMP" "$SOURCE_SHA" "$PLATFORM_KIND" "$LOCK" "$NODE_FILE" "$OUTPUT" "$SOURCE_TREE" <<'PY'
 import json, hashlib, os, sys
-path, status, detail, stamp, sha, platform, lock, node = sys.argv[1:]
+path, status, detail, stamp, sha, platform, lock, node, output, tree = sys.argv[1:]
+from pathlib import Path
 
 def sha256_file(p):
     h = hashlib.sha256()
@@ -70,20 +78,20 @@ if os.path.isfile(lock):
     try:
         root = json.load(open(lock, encoding="utf-8"))
         lock_status = root.get("status")
-        arts = root.get("artifacts") or {}
-        for key in ("iosArm64Sha256", "iosArm64SimulatorSha256"):
-            if arts.get(key):
-                slices[key] = arts[key]
     except Exception:
         lock_status = "unreadable"
 
+build_inputs = Path(output) / "build-inputs.json"
+verified = json.loads(build_inputs.read_text()) if build_inputs.is_file() else None
+live_tests = Path(output) / "live-tests.json"
+leaves = json.loads(live_tests.read_text()) if live_tests.is_file() else None
 receipt = {
     "schemaVersion": 1,
     "kind": "ios-access-core-k-receipt",
     "status": status,
     "detail": detail,
     "recordedAt": stamp,
-    "candidate": {"sourceSha": sha, "platformKind": platform},
+    "candidate": {"sourceSha": sha, "sourceTree": tree, "platformKind": platform},
     "inputs": {
         "lockPathName": os.path.basename(lock),
         "lockSha256": lock_digest,
@@ -92,7 +100,9 @@ receipt = {
         "nodePresent": os.path.isfile(node),
         # Never record node bytes or parsed credentials.
     },
-    "embeddedCoreSlices": slices,
+    "embeddedCoreSlices": verified["slices"] if verified else {},
+    "verifiedBuildInputs": verified,
+    "liveTests": leaves,
     "notes": [
         "Desensitized receipt only; no UUID/publicKey/shortId/URL contents.",
         "simulator results must not be labeled device.",
@@ -123,19 +133,26 @@ arts = root.get("artifacts") or {}
 assert arts.get("iosArm64Sha256") and arts.get("iosArm64SimulatorSha256")
 PY
 
-XCFW="$ROOT/apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework"
-[[ -d "$XCFW" ]] || not_run "AegisEmbeddedCore.xcframework missing under EmbeddedCore/Products (build locally first)"
+XCFW="$PRODUCTS/AegisEmbeddedCore.xcframework"
+[[ -d "$XCFW" ]] || not_run "AegisEmbeddedCore.xcframework missing (build locally first)"
+if ! python3 -B scripts/release/ios_embedded_core.py verify --root "$ROOT" \
+  --source-lock "$LOCK" --products "$PRODUCTS" --output "$OUTPUT/build-inputs.json"; then
+  write_receipt "FAIL" "actual EmbeddedCore slices / bundled lock differ from the build manifest"
+  exit 4
+fi
 
 if ! command -v xcodebuild >/dev/null 2>&1; then
   not_run "xcodebuild not available"
 fi
 
+cp "$OUTPUT/build-inputs.json" "$OUTPUT/build-inputs-before.json"
 export AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$NODE_FILE"
 export AEGIS_ACCESS_LOCAL_V2RAY_LIVE=1
 
-rm -rf "$RESULT"
 set +e
-xcodebuild test \
+xcodebuild test -onlyUsePackageVersionsFromResolvedFile \
+  -clonedSourcePackagesDirPath "${AEGIS_IOS_SOURCE_PACKAGES:-$OUTPUT/SourcePackages}" \
+  -packageCachePath "${AEGIS_IOS_PACKAGE_CACHE:-$OUTPUT/PackageCache}" \
   -project apps/ios/Aegis.xcodeproj \
   -scheme Aegis \
   -destination "$DESTINATION" \
@@ -144,6 +161,7 @@ xcodebuild test \
   -only-testing:"AegisTests/AccessEmbeddedCoreManifestTests" \
   -resultBundlePath "$RESULT" \
   -derivedDataPath "$OUTPUT/DerivedData" \
+  AEGIS_EMBEDDED_CORE_PRODUCTS="$PRODUCTS" \
   CODE_SIGNING_ALLOWED=YES \
   TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$NODE_FILE" \
   TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_LIVE=1 | tee "$LOG"
@@ -156,137 +174,35 @@ if [[ "$STATUS" -ne 0 ]]; then
   exit "$STATUS"
 fi
 
-# Exit 0 with every live case skipped must not become a K PASS (device config often invisible).
-# Prefer per-test results (`test-results tests`) over summary aggregates.
-LIVE_SUMMARY="$(
-  python3 - "$RESULT" <<'PY'
-import json, subprocess, sys
+# Retain the exact leaf results. Summary totals and suite names cannot satisfy K.
+if ! xcrun xcresulttool get test-results tests --path "$RESULT" > "$OUTPUT/xcresult-tests.json" \
+  || ! python3 -B scripts/release/ios_access_core_gate.py \
+    --tests "$OUTPUT/xcresult-tests.json" --output "$OUTPUT/live-tests.json"; then
+  write_receipt "FAIL" "one or more required live K leaves are missing, failed, or skipped ($PLATFORM_KIND)"
+  exit 4
+fi
+if [[ "$PLATFORM_KIND" == simulator ]]; then
+  TEST_APP="$OUTPUT/DerivedData/Build/Products/Debug-iphonesimulator/Aegis.app"
+else
+  TEST_APP="$OUTPUT/DerivedData/Build/Products/Debug-iphoneos/Aegis.app"
+fi
+# Verify once more so a changed input cannot acquire a successful execution receipt.
+python3 -B scripts/release/ios_embedded_core.py verify --root "$ROOT" \
+  --source-lock "$LOCK" --products "$PRODUCTS" --bundle "$TEST_APP" --output "$OUTPUT/build-inputs.json" || {
+    write_receipt "FAIL" "EmbeddedCore build inputs changed during the K run"
+    exit 4
+  }
+if ! python3 - "$OUTPUT" <<'PYVERIFY'
+import json, sys
 from pathlib import Path
-result = Path(sys.argv[1])
-if not result.exists():
-    print("MISSING")
-    raise SystemExit(0)
-
-def run_xcresult(*args):
-    return subprocess.check_output(
-        ["xcrun", "xcresulttool", *args, "--path", str(result)],
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
-
-raw = None
-for args in (
-    ("get", "test-results", "tests"),
-    ("get", "test-results", "summary"),
-):
-    try:
-        raw = run_xcresult(*args)
-        break
-    except Exception:
-        continue
-if raw is None:
-    print("UNREADABLE")
-    raise SystemExit(0)
-
-try:
-    data = json.loads(raw)
-except Exception:
-    print("UNREADABLE")
-    raise SystemExit(0)
-
-live_markers = (
-    "accessembeddedcorelivetests",
-    "aegistests/accessembeddedcorelivetests",
-)
-required_live = []
-
-def is_live_name(name: str) -> bool:
-    lowered = name.lower()
-    return any(marker in lowered for marker in live_markers)
-
-def status_of(node: dict) -> str:
-    for key in ("result", "status", "testStatus", "outcome"):
-        value = node.get(key)
-        if value is None:
-            continue
-        if isinstance(value, dict):
-            value = value.get("_value") or value.get("value")
-        text = str(value).lower()
-        if text:
-            return text
-    return ""
-
-def name_of(node: dict) -> str:
-    for key in ("identifier", "name", "testName", "testIdentifier", "nodeIdentifier"):
-        value = node.get(key)
-        if value is None:
-            continue
-        if isinstance(value, dict):
-            value = value.get("_value") or value.get("value") or value.get("identifier")
-        text = str(value)
-        if text:
-            return text
-    return ""
-
-def walk(node, acc):
-    if isinstance(node, dict):
-        name = name_of(node)
-        status = status_of(node)
-        # Prefer leaf tests: nodes that look like XCTest cases under LiveTests.
-        if name and is_live_name(name) and (
-            "test" in name.lower()
-            or status in {"passed", "success", "succeeded", "failed", "skipped", "expected failure"}
-        ):
-            # Skip pure suite containers that only mirror the class name.
-            leafish = "/" in name or name.lower().count("test") >= 2 or status in {
-                "passed", "success", "succeeded", "failed", "skipped", "expected failure"
-            }
-            if leafish and not name.lower().endswith("accessembeddedcorelivetests"):
-                acc.append((name, status))
-            elif leafish and status in {"passed", "success", "succeeded", "failed", "skipped"}:
-                acc.append((name, status))
-        for value in node.values():
-            walk(value, acc)
-    elif isinstance(node, list):
-        for item in node:
-            walk(item, acc)
-
-walk(data, required_live)
-# Deduplicate while preserving order.
-seen = set()
-live_hits = []
-for name, status in required_live:
-    key = (name.lower(), status)
-    if key in seen:
-        continue
-    seen.add(key)
-    live_hits.append((name, status))
-
-if not live_hits:
-    print("NO_LIVE_SIGNAL")
-elif all(("skip" in status or status in {"expected failure", "unknown", ""}) for _, status in live_hits):
-    print("ALL_SKIPPED")
-elif any(status in {"success", "passed", "succeeded"} for _, status in live_hits):
-    print("EXECUTED")
-else:
-    print("NO_LIVE_SIGNAL")
-PY
-)"
-
-case "$LIVE_SUMMARY" in
-  EXECUTED)
-    write_receipt "PASS" "AccessEmbeddedCore live/adapter/manifest tests exited 0 with executed live cases ($PLATFORM_KIND)"
-    printf 'PASS (%s). receipt %s\n' "$PLATFORM_KIND" "$RECEIPT"
-    exit 0
-    ;;
-  ALL_SKIPPED)
-    write_receipt "FAIL" "live AccessEmbeddedCore tests were all skipped ($PLATFORM_KIND); refusing K PASS"
-    printf 'FAIL: live tests all skipped (%s)\n' "$PLATFORM_KIND" >&2
-    exit 4
-    ;;
-  *)
-    write_receipt "FAIL" "could not verify live AccessEmbeddedCore execution from xcresult ($PLATFORM_KIND: $LIVE_SUMMARY)"
-    printf 'FAIL: live execution unverified (%s: %s)\n' "$PLATFORM_KIND" "$LIVE_SUMMARY" >&2
-    exit 4
-    ;;
-esac
+root = Path(sys.argv[1])
+before = json.loads((root / "build-inputs-before.json").read_text())
+after = json.loads((root / "build-inputs.json").read_text())
+assert all(after.get(key) == value for key, value in before.items())
+PYVERIFY
+then
+  write_receipt "FAIL" "EmbeddedCore identity changed during the K run"
+  exit 4
+fi
+write_receipt "PASS" "all three required live K leaves passed with verified EmbeddedCore inputs ($PLATFORM_KIND)"
+printf 'PASS (%s). receipt %s\n' "$PLATFORM_KIND" "$RECEIPT"

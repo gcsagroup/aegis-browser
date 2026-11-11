@@ -158,7 +158,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         snapshot.connectionStatus = AccessSiteProxyToggleModel.connectionStatus(snapshot.connection)
         snapshot.intentStatus = AccessSiteProxyToggleModel.intentStatus(
             intent: snapshot.intent,
-            connection: snapshot.connection
+            connection: snapshot.connection,
+            attachment: attachment
         )
         snapshot.attachment = attachment
         if boundUnavailable, intentOn || autoListed || executingTabs[tab.id.uuidString] == key {
@@ -356,9 +357,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         let generation = (probeGenerations[tabID] ?? 0) + 1
         probeGenerations[tabID] = generation
         let siteHost = host(for: tab)
-        if let siteHost {
-            probeSiteHosts[tabID] = siteHost
-        }
+        probeLines[tabID] = nil
+        probeSiteHosts[tabID] = siteHost
         revision &+= 1
         let runner = probeRunner
         probeTasks[tabID]?.cancel()

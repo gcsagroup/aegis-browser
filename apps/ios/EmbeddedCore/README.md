@@ -17,22 +17,32 @@ the framework is linked, **and** a local Reality Vision config is present via
 ## Build / package
 
 ```bash
-scripts/release/build-ios-access-core.sh \
-  --lock apps/ios/EmbeddedCore/embedded-core-lock.json \
-  --output apps/ios/EmbeddedCore/Products
+AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild \
+  scripts/release/prepare-ios-access-core.sh \
+    apps/ios/EmbeddedCore/embedded-core-lock.json .artifacts/ios-embedded-core
 ```
 
-Then recompute digests (do not invent values):
+Preparation builds the pinned bridge in a copy, checks the binding tool pin, and
+leaves the tracked lock unchanged. The output contains the XCFramework, measured
+slice digests, an effective `embedded-core-lock.json`, a build manifest and Xcode's
+input file list. `ci-rebuild` records the actual source-pinned rebuild; the default
+`strict` mode additionally requires the frozen slice digests to match. Neither mode
+establishes a reproducible binary across different Xcode/SDK versions.
 
-```bash
-scripts/release/record-ios-access-core-digests.sh \
-  --xcframework apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework
-```
+The Xcode project defaults to `.artifacts/ios-embedded-core`. For a separate build
+directory, pass `AEGIS_EMBEDDED_CORE_PRODUCTS=/absolute/build/directory` to
+`xcodebuild`. The sandboxed AccessKit build phase verifies those inputs and installs
+the effective lock and build manifest in the framework bundle. Unsigned CI uses its
+admitted job directory, preserves the archive and manifests, and rechecks the clean
+checkout, actual framework inputs and bundled manifests before sealing the archive.
 
-Freeze matching digests into `embedded-core-lock.json` only after accepting the
-build. `Products/` is a local artifact (gitignored), linked by the Xcode project.
+The opt-in K gate accepts `--products /absolute/build/directory`. It verifies the
+actual slices before linking, requires all three live test leaf identifiers to pass,
+and records the actual app binary and bundled manifest hashes. A missing, failed or
+skipped required leaf cannot produce PASS. Use a new output directory for each run;
+node credentials never belong in the receipt or repository.
 
-## Toolchain (verified local attempt)
+## Toolchain (historical verified local attempt)
 
 - Go: `1.27.3`
 - gomobile / gobind: `golang.org/x/mobile@v0.0.0-20261011034528-197770444867`

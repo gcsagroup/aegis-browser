@@ -744,6 +744,35 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertFalse(release.runProbe(for: releaseTab))
     }
 
+    func testNewSiteProbeClearsThePreviousSitesSuggestionsImmediately() async throws {
+        let fixture = AccessSiteProbeRunner(sessionFactory: {
+            XCTFail("proxy-required probe candidates must not dial directly")
+            return URLSession(configuration: .ephemeral)
+        })
+        let coordinator = AccessHostStoreCoordinator(channel: .dev, probeRunner: fixture)
+        let tab = try committedTab(coordinator: coordinator, url: "https://a.example/home")
+        let first = try AccessSiteHost("login-a.example")
+        let second = try AccessSiteHost("login-b.example")
+        _ = coordinator.setAutoRecoveryEnabled(true, for: tab, members: [first])
+        coordinator.setProxyEnabled(true, host: first, scopeID: "ordinary", isPrivate: false)
+        XCTAssertTrue(coordinator.runProbe(for: tab, candidates: [first]))
+        await settle { !coordinator.snapshot(for: tab).probeBusy }
+        XCTAssertFalse(coordinator.snapshot(for: tab).probeSuggestionLines.isEmpty)
+
+        tab.stop()
+        tab.load(URLRequest(url: URL(string: "https://b.example/home")!))
+        tab.commitPendingMainFrameForTests()
+        _ = coordinator.setAutoRecoveryEnabled(true, for: tab, members: [second])
+        coordinator.setProxyEnabled(true, host: second, scopeID: "ordinary", isPrivate: false)
+        XCTAssertTrue(coordinator.runProbe(for: tab, candidates: [second]))
+        let starting = coordinator.snapshot(for: tab)
+        XCTAssertEqual(starting.host?.rawValue, "b.example")
+        XCTAssertTrue(starting.probeBusy)
+        XCTAssertTrue(starting.probeSuggestionLines.isEmpty)
+        await settle { !coordinator.snapshot(for: tab).probeBusy }
+        XCTAssertFalse(coordinator.snapshot(for: tab).probeSuggestionLines.isEmpty)
+    }
+
     func testSameHostInPageFailureAutoRecoversOnce() async throws {
         let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_109) }
         let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())

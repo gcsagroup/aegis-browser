@@ -1,6 +1,9 @@
 import AccessKit
 @testable import BrowserKit
 import WebKit
+import Network
+import Synchronization
+import UIKit
 import XCTest
 @testable import Aegis
 
@@ -285,9 +288,15 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         // Competing GET must not rewrite the still-pending POST identity in the map.
         let postError = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
         tab.webView(tab.webView, didFailProvisionalNavigation: postNavigation, withError: postError)
-        XCTAssertEqual(tab.lastMainFrameFailure?.method, "POST")
-        XCTAssertEqual(tab.lastMainFrameFailure?.url.path, "/checkout")
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertEqual(tab.requestedURL, getURL)
+        XCTAssertTrue(tab.isLoading)
         XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+        // The new GET retains its own retry eligibility after the old POST fails.
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: postError)
+        XCTAssertEqual(tab.lastMainFrameFailure?.url, getURL)
+        XCTAssertEqual(tab.lastMainFrameFailure?.method, "GET")
+        XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
     }
 
     func testStopBeforeDeferredLoadDoesNotSend() async throws {
@@ -434,5 +443,194 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         )
         await waitUntil { tab.currentNavigationForTests != nil && tab.currentNavigationForTests !== first }
         XCTAssertNotEqual(tab.currentNavigationForTests, first)
+    }
+
+    func testProductionCoordinatorPreservesApprovedActionsUntilTheirStarts() throws {
+        let tab = makeTab()
+        let coordinator = AccessHostStoreCoordinator()
+        tab.hostCoordinator = coordinator
+        // WKNavigation.init does not create WebKit's backing object. Use identities
+        // returned by real loads, with callbacks driven explicitly in this test.
+        tab.webView.navigationDelegate = nil
+        let first = try XCTUnwrap(tab.webView.loadHTMLString("<html>A</html>", baseURL: nil))
+        let second = try XCTUnwrap(tab.webView.loadHTMLString("<html>B</html>", baseURL: nil))
+        tab.webView.navigationDelegate = tab
+        tab.adoptPolicyMainFrameNavigationForTests(url: URL(string: "https://shop.example/a")!)
+        tab.adoptPolicyMainFrameNavigationForTests(url: URL(string: "https://shop.example/b")!, method: "POST")
+        tab.webView(tab.webView, didStartProvisionalNavigation: first)
+        tab.webView(tab.webView, didStartProvisionalNavigation: second)
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+        tab.webView(tab.webView, didFailProvisionalNavigation: first, withError: error)
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertTrue(tab.isLoading)
+        tab.webView(tab.webView, didFailProvisionalNavigation: second, withError: error)
+        XCTAssertEqual(tab.lastMainFrameFailure?.url.path, "/b")
+        XCTAssertEqual(tab.lastMainFrameFailure?.method, "POST")
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+        XCTAssertEqual(tab.recoveryLoadCount, 0)
+    }
+
+    func testProductionCoordinatorDoesNotGiveAnAmbiguousNilFailureTheNewestURL() {
+        let tab = makeTab()
+        let coordinator = AccessHostStoreCoordinator()
+        tab.hostCoordinator = coordinator
+        tab.adoptPolicyMainFrameNavigationForTests(url: URL(string: "https://shop.example/a")!, method: "POST")
+        tab.adoptPolicyMainFrameNavigationForTests(url: URL(string: "https://shop.example/b")!)
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: NSError(
+            domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost
+        ))
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+        XCTAssertNotNil(tab.loadingError)
+        XCTAssertEqual(tab.recoveryLoadCount, 0)
+    }
+
+    func testIdenticalPageActionsStillRequireDistinctCallbackOwners() {
+        let tab = makeTab()
+        let coordinator = AccessHostStoreCoordinator()
+        tab.hostCoordinator = coordinator
+        let url = URL(string: "https://shop.example/repeated")!
+        tab.adoptPolicyMainFrameNavigationForTests(url: url)
+        tab.adoptPolicyMainFrameNavigationForTests(url: url)
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: NSError(
+            domain: NSURLErrorDomain, code: NSURLErrorTimedOut
+        ))
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+    }
+
+    func testOlderFinishDoesNotCancelNewerDeferredLoadWithProductionCoordinator() async throws {
+        let tab = makeTab()
+        let coordinator = AccessHostStoreCoordinator()
+        tab.hostCoordinator = coordinator
+        tab.load(URLRequest(url: URL(string: "https://shop.example/a")!))
+        await waitUntil { tab.currentNavigationForTests != nil }
+        let first = try XCTUnwrap(tab.currentNavigationForTests)
+        tab.load(URLRequest(url: URL(string: "https://shop.example/b")!))
+        tab.webView(tab.webView, didFinish: first)
+        await waitUntil { tab.currentNavigationForTests != nil && tab.currentNavigationForTests !== first }
+        XCTAssertNotNil(tab.currentNavigationForTests)
+        XCTAssertNotEqual(tab.currentNavigationForTests, first)
+        XCTAssertTrue(tab.isLoading)
+    }
+
+    func testOlderFailureCannotReplaceANewerFinishedPage() async throws {
+        let tab = makeTab()
+        let coordinator = AccessHostStoreCoordinator()
+        tab.hostCoordinator = coordinator
+        tab.load(URLRequest(url: URL(string: "https://shop.example/a")!))
+        await waitUntil { tab.currentNavigationForTests != nil }
+        let first = try XCTUnwrap(tab.currentNavigationForTests)
+        tab.load(URLRequest(url: URL(string: "https://shop.example/b")!))
+        await waitUntil { tab.currentNavigationForTests != nil && tab.currentNavigationForTests !== first }
+        let second = try XCTUnwrap(tab.currentNavigationForTests)
+        tab.webView(tab.webView, didCommit: second)
+        tab.webView(tab.webView, didFinish: second)
+        tab.webView(tab.webView, didFailProvisionalNavigation: first, withError: NSError(
+            domain: NSURLErrorDomain, code: NSURLErrorTimedOut
+        ))
+        XCTAssertEqual(tab.committedMainFrameURL?.path, "/b")
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertNil(tab.loadingError)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+        XCTAssertFalse(tab.isLoading)
+        XCTAssertEqual(tab.recoveryLoadCount, 0)
+    }
+
+    func testFirstURLLoadThroughDedicatedStoreSurvivesColdContentRules() async throws {
+        let tab = makeTab()
+        let coordinator = AccessHostStoreCoordinator()
+        tab.hostCoordinator = coordinator
+        let host = try AccessSiteHost("shop.example")
+        coordinator.registry.setEndpoint(readyEndpoint(), scopeID: "ordinary", host: host, isPrivate: false)
+        coordinator.setProxyEnabled(true, host: host, scopeID: "ordinary", isPrivate: false)
+        let original = tab.websiteDataStore
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = UIViewController()
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        tab.load(URL(string: "https://shop.example/first")!)
+        XCTAssertFalse(tab.websiteDataStore === original)
+        tab.webView.frame = window.bounds
+        window.rootViewController?.view.addSubview(tab.webView)
+        await waitUntil({ tab.currentNavigationForTests != nil || tab.loadingError != nil }, timeout: 10)
+        XCTAssertNotNil(tab.currentNavigationForTests, tab.loadingError ?? "cold load never issued")
+    }
+
+    func testReal307308And303RedirectsNeverInventSafePostReplay() async throws {
+        for status in [307, 308, 303] {
+            let origin = try PreservingRedirectOrigin(status: status)
+            defer { origin.stop() }
+            let tab = makeTab()
+            let coordinator = AccessHostStoreCoordinator()
+            tab.hostCoordinator = coordinator
+            try await tab.prepareContentRulesForTests()
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+            window.rootViewController = UIViewController()
+            window.makeKeyAndVisible()
+            defer { window.isHidden = true }
+            tab.webView.frame = window.bounds
+            window.rootViewController?.view.addSubview(tab.webView)
+            var request = URLRequest(url: try await origin.redirectURL())
+            request.httpMethod = "POST"
+            tab.load(request)
+            await waitUntil({ origin.redirectedMethod != nil }, timeout: 10)
+            XCTAssertEqual(origin.redirectedMethod, status == 303 ? "GET" : "POST", "HTTP \(status)")
+            let navigation = try XCTUnwrap(tab.currentNavigationForTests)
+            tab.webView(tab.webView, didFailProvisionalNavigation: navigation, withError: NSError(
+                domain: NSURLErrorDomain, code: NSURLErrorTimedOut
+            ))
+            XCTAssertEqual(tab.lastMainFrameFailure?.method, "POST", "HTTP \(status)")
+            XCTAssertFalse(tab.loadingErrorAllowsProxyRetry, "HTTP \(status)")
+            XCTAssertEqual(tab.recoveryLoadCount, 0)
+            tab.stop()
+        }
+    }
+}
+
+private final class PreservingRedirectOrigin: @unchecked Sendable {
+    private let listener: NWListener
+    private let status: Int
+    private let method = Mutex<String?>(nil)
+    private let connections = Mutex<[NWConnection]>([])
+    var redirectedMethod: String? { method.withLock { $0 } }
+
+    init(status: Int) throws {
+        self.status = status
+        listener = try NWListener(using: .tcp, on: .any)
+        listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
+        listener.start(queue: DispatchQueue(label: "aegis.tests.preserving-redirect"))
+    }
+
+    func redirectURL() async throws -> URL {
+        let deadline = Date().addingTimeInterval(3)
+        while listener.port == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        let port = try XCTUnwrap(listener.port)
+        return try XCTUnwrap(URL(string: "http://127.0.0.1:\(port.rawValue)/redirect"))
+    }
+
+    private func accept(_ connection: NWConnection) {
+        connections.withLock { $0.append(connection) }
+        connection.start(queue: DispatchQueue(label: "aegis.tests.redirect-connection"))
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, _, _ in
+            guard let self, let data else { return }
+            let first = String(decoding: data, as: UTF8.self).components(separatedBy: "\r\n")[0].split(separator: " ")
+            guard first.count >= 2 else { return }
+            if first[1] == "/redirect", let port = self.listener.port {
+                let response = "HTTP/1.1 \(self.status) Redirect\r\nLocation: http://127.0.0.1:\(port.rawValue)/kept\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
+            } else if first[1] == "/kept" {
+                self.method.withLock { $0 = String(first[0]) }
+                // Hold the redirected request so the test delivers a network failure.
+            }
+        }
+    }
+
+    func stop() {
+        listener.cancel()
+        connections.withLock { active in
+            active.forEach { $0.cancel() }
+            active.removeAll()
+        }
     }
 }

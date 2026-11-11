@@ -29,8 +29,8 @@ public struct BrowserMainFrameFailure: Equatable, Sendable {
     public var navigationID: String
     public var url: URL
     public var method: String
-    /// True when the original request carried a body, stream, or auth context
-    /// that this process cannot safely replay. Blocks automatic proxy retry.
+    /// True when a body, stream, auth context, or uncertain redirected method
+    /// cannot safely be replayed. Blocks automatic proxy retry.
     public var hasReplayableBody: Bool
     public var recoveryOperationID: UUID?
 
@@ -100,6 +100,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         var allowSequence: UInt64
         var failureID: UUID?
         var recoveryOperationID: UUID?
+        var isOtherPolicyAction = false
     }
     private var nextAllowSequence: UInt64 = 0
     private var attempt = MainFrameAttempt(
@@ -115,6 +116,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     /// Policy-approved main-frame attempts waiting for a matching `didStart` / load bind.
     /// Paired FIFO so a late start cannot inherit a newer sibling's URL/method.
     private var unboundAttempts: [MainFrameAttempt] = []
+    /// Only app-issued loads waiting for content rules / a window / the next turn.
+    /// Policy-approved page actions already belong to WebKit and must survive cancellation here.
+    private var deferredDocumentNavigationID: String?
+    private var programmaticPolicyNavigationID: String?
+    private var confirmedRedirectPolicy: (navigationID: String, url: URL)?
     @Published public private(set) var lastMainFrameFailure: BrowserMainFrameFailure?
     @Published public private(set) var loadingErrorAllowsProxyRetry = false
     /// Set only after the recovery navigation commits while this attempt is a proxy retry.
@@ -264,9 +270,13 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private func beginUserNavigation(
         url: URL,
         method: String,
-        hasReplayableBody: Bool = false
+        hasReplayableBody: Bool = false,
+        isOtherPolicyAction: Bool = false
     ) {
+        invalidateDeferredDocumentLoad()
         hostCoordinator?.pendingRecoveryInvalidated(tab: self)
+        programmaticPolicyNavigationID = nil
+        confirmedRedirectPolicy = nil
         if realignedNavigationURL != url { realignedNavigationURL = nil }
         if contentRulesNavigationURL != url { contentRulesNavigationURL = nil }
         pendingAttachedLoad = nil
@@ -282,7 +292,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             hasReplayableBody: hasReplayableBody,
             allowSequence: nextAllowSequence,
             failureID: nil,
-            recoveryOperationID: nil
+            recoveryOperationID: nil,
+            isOtherPolicyAction: isOtherPolicyAction
         )
         // Keep prior unbound rows so a competing allow cannot erase an earlier
         // identity before didStart binds it. Abandoned rows are retired when a
@@ -306,7 +317,10 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     private func retireNavigationIdentity(_ navigation: WKNavigation?) {
         if let navigation {
-            attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation))
+            if let retired = attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation)) {
+                if programmaticPolicyNavigationID == retired.navigationID { programmaticPolicyNavigationID = nil }
+                if confirmedRedirectPolicy?.navigationID == retired.navigationID { confirmedRedirectPolicy = nil }
+            }
         }
     }
 
@@ -314,6 +328,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         attemptsByNavigation.removeAll()
         unboundAttempts.removeAll()
         pendingNavigation = nil
+        programmaticPolicyNavigationID = nil
+        confirmedRedirectPolicy = nil
     }
 
     /// Records the actual main-frame URL/method for policy-allowed navigations,
@@ -326,14 +342,25 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         url: URL,
         method: String,
         continuesExistingNavigation: Bool,
-        hasReplayableBody: Bool = false
+        hasReplayableBody: Bool = false,
+        isOtherPolicyAction: Bool = false
     ) {
         let normalizedMethod = method.uppercased()
-        if continuesExistingNavigation {
+        let confirmedRedirect = isOtherPolicyAction
+            && confirmedRedirectPolicy?.navigationID == attempt.navigationID
+            && confirmedRedirectPolicy?.url == url
+        if continuesExistingNavigation || confirmedRedirect {
+            confirmedRedirectPolicy = nil
             if let pending = pendingNavigation,
                var mapped = attemptsByNavigation[ObjectIdentifier(pending)] {
                 mapped.url = url
-                mapped.method = normalizedMethod
+                if confirmedRedirect, mapped.method != normalizedMethod {
+                    // A policy action has no WKNavigation identity. A different method
+                    // at this URL cannot promote the original chain to safe replay.
+                    mapped.hasReplayableBody = true
+                } else {
+                    mapped.method = normalizedMethod
+                }
                 // Redirects must not clear an earlier unsafe replay surface.
                 mapped.hasReplayableBody = mapped.hasReplayableBody || hasReplayableBody
                 attemptsByNavigation[ObjectIdentifier(pending)] = mapped
@@ -345,7 +372,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             }
             if var unbound = unboundAttempts.last {
                 unbound.url = url
-                unbound.method = normalizedMethod
+                if confirmedRedirect, unbound.method != normalizedMethod {
+                    unbound.hasReplayableBody = true
+                } else {
+                    unbound.method = normalizedMethod
+                }
                 unbound.hasReplayableBody = unbound.hasReplayableBody || hasReplayableBody
                 unboundAttempts[unboundAttempts.count - 1] = unbound
                 if attempt.navigationID == unbound.navigationID {
@@ -357,10 +388,13 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         // `WKWebView.load` may call decidePolicyFor before it returns the navigation.
         // Keep the identity minted by commitPreservingMethod / retry in that window.
-        if attempt.url == url, attempt.method == normalizedMethod {
+        if attempt.url == url, attempt.method == normalizedMethod,
+           programmaticPolicyNavigationID == attempt.navigationID {
+            programmaticPolicyNavigationID = nil
             if hasReplayableBody, !attempt.hasReplayableBody {
                 attempt.hasReplayableBody = true
-                if let pending = pendingNavigation {
+                if let pending = pendingNavigation,
+                   attemptsByNavigation[ObjectIdentifier(pending)]?.navigationID == attempt.navigationID {
                     attemptsByNavigation[ObjectIdentifier(pending)] = attempt
                 }
                 if let idx = unboundAttempts.lastIndex(where: { $0.navigationID == attempt.navigationID }) {
@@ -370,7 +404,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             requestedURL = url
             return
         }
-        beginUserNavigation(url: url, method: normalizedMethod, hasReplayableBody: hasReplayableBody)
+        beginUserNavigation(url: url, method: normalizedMethod, hasReplayableBody: hasReplayableBody,
+                            isOtherPolicyAction: isOtherPolicyAction)
         requestedURL = url
         committedRequestMethod = normalizedMethod
         isLoading = true
@@ -393,14 +428,16 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     /// Cancels a deferred `WKWebView.load` that has not been issued yet (Stop, revoke, tab close).
     public func invalidateDeferredDocumentLoad() {
-        let abandonedID = attempt.navigationID
         loadGeneration = UUID()
         pendingAttachedLoad = nil
         needsWindowBeforeLoad = false
-        retireUnboundAttempt(navigationID: abandonedID)
-        if attempt.recoveryOperationID != nil {
+        if let abandonedID = deferredDocumentNavigationID {
+            retireUnboundAttempt(navigationID: abandonedID)
+        }
+        if deferredDocumentNavigationID == attempt.navigationID {
             attempt.recoveryOperationID = nil
         }
+        deferredDocumentNavigationID = nil
     }
 
     func alignStore(for url: URL, previous: URL?, method: String, body: Data?) {
@@ -427,7 +464,6 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             // from `setActive`). Policy-adopted competing allows still stack via
             // `adoptMainFrameNavigation` → `beginUserNavigation` without this clear.
             loadGeneration = UUID()
-            unboundAttempts.removeAll()
             beginUserNavigation(url: url, method: method, hasReplayableBody: unsafeReplay)
         } else {
             attempt.url = url
@@ -440,6 +476,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 unboundAttempts.append(attempt)
             }
         }
+        deferredDocumentNavigationID = attempt.navigationID
         committedRequestMethod = method
         alignStore(for: url, previous: requestedURL, method: method, body: request.httpBody)
         requestedURL = url
@@ -482,6 +519,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     /// The actual load is deferred one turn: `decidePolicy` and `didMoveToWindow`
     /// both drop a re-entrant `WKWebView.load`.
     private func issueDocumentLoad(_ request: URLRequest) {
+        deferredDocumentNavigationID = attempt.navigationID
         preserveExplicitHTTP(request.url)
         if loadedWebView?.window == nil, isLoopbackHTTP(request.url) || needsWindowBeforeLoad {
             parkUntilWindow(request)
@@ -544,10 +582,15 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if replayingFailure {
             lastMainFrameFailure = nil
         }
+        let recorded = attempt
+        deferredDocumentNavigationID = nil
+        programmaticPolicyNavigationID = recorded.navigationID
         let navigation = webView.load(request)
         pendingNavigation = navigation
         if let navigation {
-            bindNavigation(navigation, to: attempt)
+            bindNavigation(navigation, to: recorded)
+        } else {
+            retireUnboundAttempt(navigationID: recorded.navigationID)
         }
     }
 
@@ -684,9 +727,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         navigationEpoch &+= 1
         loadTask?.cancel()
         loadGeneration = UUID()
-        unboundAttempts.removeAll()
         beginUserNavigation(url: url, method: "GET")
-        let generation = loadGeneration
+        deferredDocumentNavigationID = attempt.navigationID
         let decision = navigationDecision(url)
         if decision.kind == .blocked {
             blockNavigation(decision)
@@ -705,6 +747,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         attempt.method = "GET"
         committedRequestMethod = "GET"
         alignStore(for: url, previous: previous, method: "GET", body: nil)
+        // Store replacement releases the old WebView and changes loadGeneration.
+        let generation = loadGeneration
         isLoading = true
         if ["http", "https"].contains(url.scheme ?? ""), contentRuleList == nil || securityLists.count < 2 {
             isLoading = true
@@ -937,7 +981,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 continuesExistingNavigation: continuesExisting,
                 hasReplayableBody: BrowserMainFrameFailure.requestHasUnsafeReplaySurface(
                     navigationAction.request
-                )
+                ),
+                isOtherPolicyAction: navigationAction.navigationType == .other
             )
             finish(.allow)
         case .blocked:
@@ -1014,12 +1059,29 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         guard var recorded = attemptsByNavigation[ObjectIdentifier(navigation)] else { return }
         guard let redirected = webView.url else { return }
         recorded.url = redirected
-        // HTTP redirects that change method land as GET for subsequent recovery checks.
-        if recorded.method != "GET", recorded.method != "HEAD" {
-            recorded.method = "GET"
+        // This callback exposes a URL, not the redirected request or HTTP status.
+        // 307/308 preserve methods. Retain the original method and replay restrictions
+        // rather than inventing GET eligibility for an unsafe request.
+        // WebKit may deliver the redirected request policy before this confirmation.
+        // Fold its one unbound `.other` action back into this confirmed chain,
+        // preserving the failure/recovery identity and all unsafe replay surfaces.
+        let redirectedAllows = unboundAttempts.filter {
+            $0.isOtherPolicyAction && $0.url == redirected && isLatestAttempt($0)
+        }
+        if navigation === pendingNavigation, unboundAttempts.count == 1,
+           let allowed = redirectedAllows.first {
+            recorded.allowSequence = allowed.allowSequence
+            if recorded.method != allowed.method { recorded.hasReplayableBody = true }
+            recorded.hasReplayableBody = recorded.hasReplayableBody || allowed.hasReplayableBody
+            retireUnboundAttempt(navigationID: allowed.navigationID)
+            attempt = recorded
+            confirmedRedirectPolicy = nil
+        } else if isLatestAttempt(recorded) {
+            // Otherwise the policy callback can supply the actual redirected method next.
+            confirmedRedirectPolicy = (recorded.navigationID, redirected)
         }
         attemptsByNavigation[ObjectIdentifier(navigation)] = recorded
-        if attempt.navigationID == recorded.navigationID {
+        if isLatestAttempt(recorded) {
             attempt = recorded
             requestedURL = redirected
         }
@@ -1035,32 +1097,13 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             } else if let next = dequeueUnboundAttempt() {
                 recorded = next
                 bindNavigation(navigation, to: recorded)
-            } else if let pending = pendingNavigation,
-                      pending !== navigation,
-                      let prior = attemptsByNavigation[ObjectIdentifier(pending)] {
-                // Server redirect minted a new WKNavigation; transfer the prior identity.
-                recorded = prior
-                retireNavigationIdentity(pending)
-                bindNavigation(navigation, to: recorded)
-            } else if pendingNavigation == nil || isCurrent(navigation) {
-                // Programmatic load / recovery whose allow identity is already `attempt`.
-                recorded = attempt
-                bindNavigation(navigation, to: recorded)
             } else {
-                // Late competing start with no paired allow — do not invent from latest.
-                isLoading = true
-                userScripts?.navigated()
-                inspectionEnabled = false; webView.isInspectable = false
-                navigationEpoch &+= 1
-                structureTask?.cancel()
-                refreshState()
+                // No approved request owns this callback. Never borrow the newest identity.
                 return
             }
-            // Newer allows become current even while an older provisional is still mapped.
-            if pendingNavigation == nil || recorded.allowSequence >= attempt.allowSequence {
-                attempt = recorded
-                pendingNavigation = navigation
-            }
+            guard isLatestAttempt(recorded) else { return }
+            attempt = recorded
+            pendingNavigation = navigation
         }
         isLoading = true
         userScripts?.navigated()
@@ -1089,10 +1132,16 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard webView === loadedWebView, isCurrent(navigation) else { return }
+        guard webView === loadedWebView else { return }
+        guard isCurrent(navigation) else {
+            retireNavigationIdentity(navigation)
+            return
+        }
         retireNavigationIdentity(navigation)
-        // Finished document — drop orphan allows that never received a WKNavigation.
-        unboundAttempts.removeAll()
+        retireUnboundAttempt(navigationID: attempt.navigationID)
+        if deferredDocumentNavigationID == attempt.navigationID {
+            invalidateDeferredDocumentLoad()
+        }
         pendingNavigation = nil
         isLoading = false
         loadingErrorPresentation = nil
@@ -1136,126 +1185,69 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     ) {
         guard webView === loadedWebView else { return }
         let nsError = error as NSError
-        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
-            loadingErrorAllowsProxyRetry = false
-            let recorded = navigation.flatMap { attemptsByNavigation[ObjectIdentifier($0)] }
-            let cancelledID: String?
-            if let recorded {
-                cancelledID = recorded.navigationID
-            } else if navigation == nil || navigation === pendingNavigation {
-                cancelledID = attempt.navigationID
-            } else {
-                cancelledID = nil
-            }
-            let superseded = recorded.map {
-                $0.navigationID != attempt.navigationID
-                    && $0.allowSequence < attempt.allowSequence
-                    && isLoading
-            } ?? false
-            retireNavigationIdentity(navigation)
-            if let cancelledID {
-                retireUnboundAttempt(navigationID: cancelledID)
-            }
-            if superseded {
-                // A newer allow is already current. Drop the old provisional only.
-                if navigation === pendingNavigation {
-                    pendingNavigation = nil
-                }
-                refreshState()
-                return
-            }
-            if navigation == nil || navigation === pendingNavigation
-                || (cancelledID != nil && cancelledID == attempt.navigationID) {
-                pendingNavigation = nil
-                isLoading = false
-                // Abort deferred load so cancellation cannot leave a later nil-failure
-                // staring at stacked unbound orphans from this allow.
-                loadGeneration = UUID()
-            }
-            refreshState()
-            return
-        }
         let recorded: MainFrameAttempt
         if let navigation {
-            guard let match = attemptsByNavigation[ObjectIdentifier(navigation)] else {
-                // Retired (Stop / finish / replace) identities must not reopen recovery.
-                noteUnidentifiedMainFrameFailure(nsError, for: navigation)
+            guard let match = attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation)) else {
+                // Unknown / retired callbacks cannot replace the current page or failure.
                 return
             }
-            // Prefer the identity recorded for this exact WKNavigation.
-            if navigation === pendingNavigation || pendingNavigation == nil {
-                pendingNavigation = navigation
+            if programmaticPolicyNavigationID == match.navigationID { programmaticPolicyNavigationID = nil }
+            if confirmedRedirectPolicy?.navigationID == match.navigationID { confirmedRedirectPolicy = nil }
+            guard isLatestAttempt(match) else {
+                if navigation === pendingNavigation { pendingNavigation = nil }
+                return
             }
             recorded = match
-            attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation))
-            if recorded.navigationID != attempt.navigationID,
-               recorded.allowSequence < attempt.allowSequence,
-               isLoading {
-                if navigation === pendingNavigation {
-                    pendingNavigation = nil
-                }
-                refreshState()
-                return
-            }
         } else if pendingNavigation == nil, isLoading {
-            // Nil-navigation callbacks need a unique owner. Competing unbound allows
-            // must not borrow the newest URL/method for an earlier failure.
-            let matching = unboundAttempts.filter { $0.navigationID == attempt.navigationID }
-            if unboundAttempts.isEmpty {
-                recorded = attempt
-            } else if unboundAttempts.count == 1 {
-                recorded = unboundAttempts.removeFirst()
-            } else if matching.count == unboundAttempts.count, let current = matching.last {
-                recorded = current
-                retireUnboundAttempt(navigationID: current.navigationID)
-            } else {
+            // A nil callback is only attributable when exactly one approved request
+            // is outstanding. Suite order or the newest URL is not evidence of ownership.
+            guard attemptsByNavigation.isEmpty, unboundAttempts.count == 1,
+                  let unique = unboundAttempts.first, isLatestAttempt(unique) else {
                 noteUnidentifiedMainFrameFailure(nsError, for: nil)
                 return
             }
+            recorded = unique
         } else {
+            guard isLoading else { return }
             noteUnidentifiedMainFrameFailure(nsError, for: nil)
             return
         }
-        // A late failure for a previous navigation must not clear a newer pending load.
-        let failureBelongsToCurrent = pendingNavigation == nil
-            || (navigation != nil && navigation === pendingNavigation)
-            || recorded.navigationID == attempt.navigationID
-        if failureBelongsToCurrent {
-            pendingNavigation = nil
-            isLoading = false
-            // Abort a deferred `WKWebView.load` that would otherwise rebind this
-            // already-failed allow after a nil-navigation callback.
-            loadGeneration = UUID()
+        pendingNavigation = nil
+        isLoading = false
+        invalidateDeferredDocumentLoad()
+        retireUnboundAttempt(navigationID: recorded.navigationID)
+        if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
+            loadingErrorAllowsProxyRetry = false
+            refreshState()
+            return
         }
         let method = recorded.method.uppercased()
         let failedURL = recorded.url
         let failureID = recorded.failureID
             ?? (lastMainFrameFailure?.navigationID == recorded.navigationID ? lastMainFrameFailure?.failureID : nil)
             ?? UUID()
-        if failureBelongsToCurrent {
-            attempt.navigationID = recorded.navigationID
-            attempt.url = failedURL
-            attempt.method = method
-            attempt.hasReplayableBody = recorded.hasReplayableBody
-            attempt.failureID = failureID
-            attempt.recoveryOperationID = recorded.recoveryOperationID
-            let failure = BrowserMainFrameFailure(
-                failureID: failureID,
-                navigationID: recorded.navigationID,
-                url: failedURL,
-                method: method,
-                hasReplayableBody: recorded.hasReplayableBody,
-                recoveryOperationID: recorded.recoveryOperationID
-            )
-            lastMainFrameFailure = failure
-            loadingErrorPresentation = .error(error)
-            let scheme = failedURL.scheme?.lowercased() ?? ""
-            loadingErrorAllowsProxyRetry = BrowserNavigationFailure.isRecoverableNetworkFailure(nsError)
-                && ["http", "https"].contains(scheme)
-                && (method == "GET" || method == "HEAD")
-                && !recorded.hasReplayableBody
-            hostCoordinator?.mainFrameFailed(tab: self, failure: failure, error: nsError)
-        }
+        attempt.navigationID = recorded.navigationID
+        attempt.url = failedURL
+        attempt.method = method
+        attempt.hasReplayableBody = recorded.hasReplayableBody
+        attempt.failureID = failureID
+        attempt.recoveryOperationID = recorded.recoveryOperationID
+        let failure = BrowserMainFrameFailure(
+            failureID: failureID,
+            navigationID: recorded.navigationID,
+            url: failedURL,
+            method: method,
+            hasReplayableBody: recorded.hasReplayableBody,
+            recoveryOperationID: recorded.recoveryOperationID
+        )
+        lastMainFrameFailure = failure
+        loadingErrorPresentation = .error(error)
+        let scheme = failedURL.scheme?.lowercased() ?? ""
+        loadingErrorAllowsProxyRetry = BrowserNavigationFailure.isRecoverableNetworkFailure(nsError)
+            && ["http", "https"].contains(scheme)
+            && (method == "GET" || method == "HEAD")
+            && !recorded.hasReplayableBody
+        hostCoordinator?.mainFrameFailed(tab: self, failure: failure, error: nsError)
         refreshState()
     }
 
@@ -1474,8 +1466,17 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func isCurrent(_ navigation: WKNavigation?) -> Bool {
-        guard let pendingNavigation, let navigation else { return pendingNavigation == nil }
-        return navigation === pendingNavigation
+        guard let navigation else {
+            return pendingNavigation == nil && isLoading
+                && unboundAttempts.count == 1
+                && unboundAttempts.first.map(isLatestAttempt) == true
+        }
+        guard let recorded = attemptsByNavigation[ObjectIdentifier(navigation)] else { return false }
+        return isLatestAttempt(recorded)
+    }
+
+    private func isLatestAttempt(_ recorded: MainFrameAttempt) -> Bool {
+        recorded.navigationID == attempt.navigationID && recorded.allowSequence == attempt.allowSequence
     }
 
     private func updateTitle(_ title: String?, url: URL?) {

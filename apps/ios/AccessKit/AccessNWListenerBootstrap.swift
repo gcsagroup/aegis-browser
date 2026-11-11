@@ -12,7 +12,8 @@ enum AccessNWListenerBootstrap {
     static func awaitReady(
         _ listener: NWListener,
         on queue: DispatchQueue,
-        timeout: Duration = .seconds(2)
+        timeout: Duration = .seconds(2),
+        observeState: @escaping @Sendable (NWListener.State) -> Void = { _ in }
     ) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -20,6 +21,8 @@ enum AccessNWListenerBootstrap {
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                         let resume = OnceVoidResume(continuation)
                         listener.stateUpdateHandler = { state in
+                            // The same observer remains installed across and after readiness.
+                            observeState(state)
                             switch state {
                             case .ready:
                                 resume.finish(returning: ())

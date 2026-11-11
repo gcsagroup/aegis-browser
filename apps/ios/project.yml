@@ -22,6 +22,7 @@ packages:
 settings:
   base:
     CLANG_ENABLE_MODULES: YES
+    AEGIS_EMBEDDED_CORE_PRODUCTS: $(PROJECT_DIR)/../../.artifacts/ios-embedded-core
     CURRENT_PROJECT_VERSION: 127
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     IPHONEOS_DEPLOYMENT_TARGET: "18.4"
@@ -80,7 +81,7 @@ targets:
         embed: true
       - target: ShareExtension
         embed: true
-      - framework: EmbeddedCore/Products/AegisEmbeddedCore.xcframework
+      - framework: $(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework
         embed: true
         codeSign: true
         link: true
@@ -111,7 +112,7 @@ targets:
         OTHER_LDFLAGS: "$(inherited) -ObjC -lresolv"
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
-          - $(PROJECT_DIR)/EmbeddedCore/Products
+          - $(AEGIS_EMBEDDED_CORE_PRODUCTS)
         CODE_SIGN_ENTITLEMENTS: AegisApp/Aegis.entitlements
         INFOPLIST_FILE: AegisApp/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.gcsa.aegis
@@ -163,13 +164,30 @@ targets:
         excludes:
           - Info.plist
       - path: EmbeddedCore/embedded-core-lock.json
-        buildPhase: resources
+        buildPhase: none
     dependencies:
       # Local Products/ is gitignored; run scripts/release/build-ios-access-core.sh
       # before xcodegen when linking the verified in-process core.
-      - framework: EmbeddedCore/Products/AegisEmbeddedCore.xcframework
+      - framework: $(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework
         embed: false
         link: true
+    postBuildScripts:
+      - name: Install verified EmbeddedCore manifest
+        script: |
+          /usr/bin/python3 -B "${SRCROOT}/../../scripts/release/ios_embedded_core.py" install --root "${SRCROOT}/../.." --source-lock "${SRCROOT}/EmbeddedCore/embedded-core-lock.json" --products "${AEGIS_EMBEDDED_CORE_PRODUCTS}" --bundle "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+        inputFiles:
+          - $(SRCROOT)/../../scripts/release/ios_embedded_core.py
+          - $(SRCROOT)/EmbeddedCore/embedded-core-lock.json
+          - $(SRCROOT)/EmbeddedCore/bridge
+          - $(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework
+          - $(AEGIS_EMBEDDED_CORE_PRODUCTS)/embedded-core-lock.json
+          - $(AEGIS_EMBEDDED_CORE_PRODUCTS)/build-manifest.json
+        inputFileLists:
+          - $(AEGIS_EMBEDDED_CORE_PRODUCTS)/build-inputs.xcfilelist
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/embedded-core-lock.json
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/embedded-core-build.json
+        basedOnDependencyAnalysis: false
     settings:
       base:
         DEFINES_MODULE: YES
@@ -179,7 +197,7 @@ targets:
         SKIP_INSTALL: YES
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
-          - $(PROJECT_DIR)/EmbeddedCore/Products
+          - $(AEGIS_EMBEDDED_CORE_PRODUCTS)
         OTHER_LDFLAGS: $(inherited) -ObjC -lresolv
 
   AgentKit:

@@ -285,7 +285,6 @@
 		A10CORE000000000000000018 /* AccessEmbeddedProxyEntryFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000008 /* AccessEmbeddedProxyEntryFactory.swift */; };
 		A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */; };
 		A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */; };
-		A10CORE00000000000000001A /* embedded-core-lock.json in Resources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000B /* embedded-core-lock.json */; };
 		A10CORE00000000000000001B /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
 		A10CORE00000000000000001C /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
 		A10CORE00000000000000001D /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
@@ -805,7 +804,7 @@
 		A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedProxyEntryFactoryTests.swift; sourceTree = "<group>"; };
 		A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreLiveTests.swift; sourceTree = "<group>"; };
 		A10CORE00000000000000000B /* embedded-core-lock.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "embedded-core-lock.json"; path = EmbeddedCore/embedded-core-lock.json; sourceTree = SOURCE_ROOT; };
-		A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = AegisEmbeddedCore.xcframework; path = EmbeddedCore/Products/AegisEmbeddedCore.xcframework; sourceTree = SOURCE_ROOT; };
+		A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = AegisEmbeddedCore.xcframework; path = "$(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework"; sourceTree = "<absolute>"; };
 		A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPTunnelBridgeTests.swift; sourceTree = "<group>"; };
 		A10TUNN000000000000000003 /* AccessHostRecoveryWebKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostRecoveryWebKitTests.swift; sourceTree = "<group>"; };
 		A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyEntryPublisherTests.swift; sourceTree = "<group>"; };
@@ -1544,6 +1543,7 @@
 				A10CCE55ACC0030000000003 /* Sources */,
 				A10CORE000000000000000020 /* Frameworks */,
 				A10CCE55ACC0030000000004 /* Resources */,
+				A14600000000000000000001 /* Install verified EmbeddedCore manifest */,
 			);
 			buildRules = (
 			);
@@ -1828,7 +1828,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10CCE55ACC0020000000005 /* PrivacyInfo.xcprivacy in Resources */,
-				A10CORE00000000000000001A /* embedded-core-lock.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1858,6 +1857,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/scripts/firebase_config.py\" install \\\n  --root \"${SRCROOT}/Firebase\" --channel \"${AEGIS_FIREBASE_CHANNEL}\" \\\n  --artifact \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AegisFirebase.plist\"\n";
+		};
+		A14600000000000000000001 /* Install verified EmbeddedCore manifest */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputFileListPaths = ("$(AEGIS_EMBEDDED_CORE_PRODUCTS)/build-inputs.xcfilelist",);
+			inputPaths = (
+				"$(SRCROOT)/../../scripts/release/ios_embedded_core.py",
+				"$(SRCROOT)/EmbeddedCore/embedded-core-lock.json",
+				"$(SRCROOT)/EmbeddedCore/bridge",
+				"$(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework",
+				"$(AEGIS_EMBEDDED_CORE_PRODUCTS)/embedded-core-lock.json",
+				"$(AEGIS_EMBEDDED_CORE_PRODUCTS)/build-manifest.json",
+			);
+			name = "Install verified EmbeddedCore manifest";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/embedded-core-lock.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/embedded-core-build.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/../../scripts/release/ios_embedded_core.py\" install --root \"${SRCROOT}/../..\" --source-lock \"${SRCROOT}/EmbeddedCore/embedded-core-lock.json\" --products \"${AEGIS_EMBEDDED_CORE_PRODUCTS}\" --bundle \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -2413,6 +2435,7 @@
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
 				CLANG_CXX_LIBRARY = "libc++";
+				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -2475,6 +2498,7 @@
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
 				CLANG_CXX_LIBRARY = "libc++";
+				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -2808,7 +2832,7 @@
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/EmbeddedCore/Products",
+					"$(AEGIS_EMBEDDED_CORE_PRODUCTS)",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -2842,7 +2866,7 @@
 			buildSettings = {
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/EmbeddedCore/Products",
+					"$(AEGIS_EMBEDDED_CORE_PRODUCTS)",
 				);
 				OTHER_LDFLAGS = (
 					"$(inherited)",

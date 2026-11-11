@@ -53,8 +53,13 @@ mkdir -p "$output"
 WORK="$output/work"
 rm -rf "$WORK"
 mkdir -p "$WORK"
-cd "$BRIDGE"
+# Dependency resolution and gomobile may write module metadata. Work on a copy,
+# leaving every reviewed bridge/source input unchanged.
+cp -R "$BRIDGE" "$WORK/bridge"
+cd "$WORK/bridge"
 go mod tidy
+cmp "$BRIDGE/go.mod" go.mod
+cmp "$BRIDGE/go.sum" go.sum
 # Confirm go.mod still points at the frozen commit prefix.
 if ! grep -q "${COMMIT:0:12}" go.mod go.sum; then
   echo "bridge go.mod/sum does not reference frozen commit ${COMMIT:0:12}" >&2

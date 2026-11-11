@@ -88,6 +88,20 @@ final class AccessHTTPInboundListenerTests: XCTestCase {
             XCTAssertEqual(error as? AccessHTTPInboundError, .notListening)
         }
     }
+
+    func testPermanentStateObserverRevokesHealthAfterReadyFailure() async throws {
+        let listener = try AccessHTTPInboundListener(
+            registration: makeRegistration(port: 18_087), tunnels: HoldingTunnel()
+        )
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        XCTAssertTrue(listener.isListening)
+        let observer = try XCTUnwrap(listener.listenerStateObserverForTests)
+        observer(.failed(.posix(.ECONNABORTED)))
+        XCTAssertFalse(listener.isListening)
+        observer(.cancelled)
+        XCTAssertFalse(listener.isListening)
+    }
 }
 
 private final class HoldingStream: AccessRealityPathStream, @unchecked Sendable {

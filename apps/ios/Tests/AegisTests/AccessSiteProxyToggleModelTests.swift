@@ -126,6 +126,24 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
         )
     }
 
+    func testAutomaticallyAttachedProxyReportsItsActualPathWhileManualToggleIsOff() {
+        for (attachment, connection, expected) in [
+            (AccessProxyAttachment.ready, AccessSiteSessionConnectionState.ready,
+             AccessSiteProxyIntentStatusId.automaticConnected),
+            (.attachedUnavailable, .unavailable, .automaticUnavailable)
+        ] {
+            let status = AccessSiteProxyToggleModel.intentStatus(
+                intent: .off, connection: connection, attachment: attachment
+            )
+            XCTAssertEqual(status, expected)
+            XCTAssertFalse(AccessSiteProxyToggleModel.intentLine(for: status).contains("使用浏览器原有连接"))
+        }
+        XCTAssertEqual(
+            AccessSiteProxyToggleModel.attachmentLine(for: .attachedUnavailable, intent: .off),
+            "代理请求失败，未切回原连接"
+        )
+    }
+
     func testReadyPathKeepsIntentAndConnectionLinesDistinct() throws {
         let controller = AccessSiteSessionController(orchestrator: ToggleTestOrchestrator())
         let url = URL(string: "https://ready.example/article")!

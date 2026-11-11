@@ -168,7 +168,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
                 window.makeKeyAndVisible()
             }
             return opener.transcript.contains("example.invalid")
-        }, message: opener.transcript)
+        }, message: "proxy=\(opener.transcript) loads=\(tab.recoveryLoadCount) loading=\(tab.isLoading) failure=\(coordinator.lastRecoveryFailure ?? "") error=\(tab.loadingError ?? "")")
         let host = try AccessSiteHost("example.invalid")
         let store = try XCTUnwrap(coordinator.registry.storeForTab(
             tabID: tab.id.uuidString,
@@ -242,7 +242,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
                 window.makeKeyAndVisible()
             }
             return opener.transcript.contains(nonce) && opener.transcript.contains("cdn.invalid")
-        }, message: "proxy=\(opener.transcript) failure=\(coordinator.lastRecoveryFailure ?? "")")
+        }, message: "proxy=\(opener.transcript) loads=\(member.recoveryLoadCount) loading=\(member.isLoading) failure=\(coordinator.lastRecoveryFailure ?? "") error=\(member.loadingError ?? "") last=\(member.lastMainFrameFailure?.url.absoluteString ?? "")")
         guard opener.transcript.contains(nonce), opener.transcript.contains("cdn.invalid") else { return }
         XCTAssertEqual(member.recoveryLoadCount, 1)
 
@@ -319,13 +319,13 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
     private func waitUntil(
         seconds: TimeInterval = 8,
         _ condition: @MainActor () -> Bool,
-        message: String = ""
+        message: @autoclosure () -> String = ""
     ) async throws {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition(), Date() < deadline {
             try await Task.sleep(for: .milliseconds(30))
         }
-        XCTAssertTrue(condition(), message)
+        XCTAssertTrue(condition(), message())
     }
 }
 

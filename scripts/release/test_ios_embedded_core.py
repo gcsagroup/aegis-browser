@@ -1,0 +1,132 @@
+"""Binary provenance and live-leaf regression checks; no Xcode or private node required."""
+import copy
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import ios_access_core_gate as gate
+import ios_embedded_core as core
+
+
+class EmbeddedCoreInputsTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        bridge = self.root / "apps/ios/EmbeddedCore/bridge"
+        bridge.mkdir(parents=True)
+        (bridge / "bridge.go").write_text("package bridge\n")
+        self.lock = bridge.parent / "embedded-core-lock.json"
+        self.lock.write_text(json.dumps({"status": "verified_build", "xrayCore": {"commit": "a" * 40},
+                                         "artifacts": {key: "0" * 64 for key in core.SLICE_KEYS.values()}}))
+        self.original = self.lock.read_bytes()
+        self.products = self.root / "separate-build-output"
+        for name in core.SLICE_KEYS:
+            binary = self.products / "AegisEmbeddedCore.xcframework" / name / "AegisEmbeddedCore.framework/AegisEmbeddedCore"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes((name + " actual binary bytes").encode())
+
+    def record(self):
+        def tool_output(args, **_kwargs):
+            return "\tmod\tgolang.org/x/mobile\tv-fixture\n" if args[:3] == ["go", "version", "-m"] else "fixture toolchain/source\n"
+        with patch.object(core.shutil, "which", return_value="/fixture/gomobile"), \
+                patch.object(core.subprocess, "check_output", side_effect=tool_output):
+            return core.record(self.root, self.lock, self.products, "ci-rebuild")
+
+    def test_hosted_rebuild_keeps_source_lock_and_binds_the_actual_slices(self):
+        self.record()
+        verified = core.verify(self.root, self.lock, self.products)
+        self.assertEqual(self.original, self.lock.read_bytes())
+        self.assertEqual(verified["slices"], core.slice_digests(self.products / "AegisEmbeddedCore.xcframework"))
+        self.assertNotEqual(verified["slices"]["iosArm64Sha256"], "0" * 64)
+
+    def test_strict_build_does_not_accept_a_new_binary_digest(self):
+        with self.assertRaisesRegex(ValueError, "frozen digests"):
+            core.record(self.root, self.lock, self.products, "strict")
+        self.assertEqual(self.original, self.lock.read_bytes())
+
+    def test_each_stale_or_changed_slice_is_rejected_before_linking(self):
+        self.record()
+        for name in core.SLICE_KEYS:
+            binary = self.products / "AegisEmbeddedCore.xcframework" / name / "AegisEmbeddedCore.framework/AegisEmbeddedCore"
+            original = binary.read_bytes()
+            binary.write_bytes(b"binary left by another build")
+            with self.subTest(slice=name), self.assertRaisesRegex(ValueError, "manifest"):
+                core.verify(self.root, self.lock, self.products)
+            binary.write_bytes(original)
+
+    def test_changed_effective_lock_and_bridge_are_rejected(self):
+        self.record()
+        for path in [self.products / "embedded-core-lock.json", self.root / "apps/ios/EmbeddedCore/bridge/bridge.go"]:
+            original = path.read_bytes()
+            path.write_bytes(original + b"changed")
+            with self.subTest(input=path.name), self.assertRaisesRegex(ValueError, "manifest"):
+                core.verify(self.root, self.lock, self.products)
+            path.write_bytes(original)
+
+    def test_bundle_requires_the_effective_manifest_and_records_the_actual_app_binary(self):
+        self.record()
+        app = self.root / "Aegis.app"
+        resource = app / "Frameworks/AccessKit.framework/embedded-core-lock.json"
+        resource.parent.mkdir(parents=True)
+        resource.write_bytes(self.original)
+        (app / "Aegis").write_bytes(b"actual linked app")
+        with self.assertRaisesRegex(ValueError, "bundled"):
+            core.verify_bundle(app, self.products)
+        resource.write_bytes((self.products / "embedded-core-lock.json").read_bytes())
+        (resource.parent / "embedded-core-build.json").write_bytes((self.products / "build-manifest.json").read_bytes())
+        receipt = core.verify_bundle(app, self.products)
+        self.assertEqual(receipt["appBinarySha256"], core.file_digest(app / "Aegis"))
+
+
+class RequiredLiveLeavesTests(unittest.TestCase):
+    def results(self, statuses=("Passed", "Passed", "Passed")):
+        return {"testNodes": [{"nodeType": "Unit test bundle", "name": "AegisTests", "result": "Passed",
+                               "children": [{"nodeType": "Test Suite", "name": "AccessEmbeddedCoreLiveTests",
+                                             "result": "Passed", "children": [
+                                                 {"nodeType": "Test Case", "name": identifier.split("/")[-1],
+                                                  "nodeIdentifier": identifier, "result": status}
+                                                 for identifier, status in zip(gate.REQUIRED, statuses)]}]}]}
+
+    def test_requires_all_three_explicit_successful_identifiers(self):
+        result = gate.evaluate(self.results())
+        self.assertEqual(result["status"], "PASS")
+        self.assertEqual(set(result["requiredTestCases"]), set(gate.REQUIRED))
+
+    def test_import_pass_with_dial_and_tunnel_skipped_is_not_pass(self):
+        self.assertEqual(gate.evaluate(self.results(("Passed", "Skipped", "Skipped")))["status"], "FAIL")
+
+    def test_failed_missing_or_unknown_leaf_is_not_pass(self):
+        for status in ("Failed", "Skipped", "Unknown", "Expected Failure"):
+            with self.subTest(status=status):
+                self.assertEqual(gate.evaluate(self.results(("Passed", status, "Passed")))["status"], "FAIL")
+        document = self.results()
+        document["testNodes"][0]["children"][0]["children"].pop()
+        self.assertEqual(gate.evaluate(document)["status"], "FAIL")
+
+    def test_suite_success_and_display_names_cannot_satisfy_required_leaves(self):
+        document = self.results()
+        suite = document["testNodes"][0]["children"][0]
+        suite["children"] = []
+        self.assertEqual(gate.evaluate(document)["status"], "FAIL")
+        document = self.results()
+        for leaf in document["testNodes"][0]["children"][0]["children"]:
+            leaf["nodeIdentifier"] = "OtherTests/" + leaf["nodeIdentifier"].split("/", 1)[1]
+        self.assertEqual(gate.evaluate(document)["status"], "FAIL")
+
+    def test_bundle_context_resolves_short_identifiers_but_keeps_prior_failure(self):
+        document = self.results()
+        leaves = document["testNodes"][0]["children"][0]["children"]
+        for leaf in leaves:
+            leaf["nodeIdentifier"] = leaf["nodeIdentifier"].split("/", 1)[1]
+        self.assertEqual(gate.evaluate(document)["status"], "PASS")
+        failure = copy.deepcopy(leaves[0])
+        failure["result"] = "Failed"
+        leaves.append(failure)
+        self.assertEqual(gate.evaluate(document)["status"], "FAIL")
+
+
+if __name__ == "__main__":
+    unittest.main()

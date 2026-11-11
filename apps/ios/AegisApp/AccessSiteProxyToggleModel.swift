@@ -5,6 +5,8 @@ import Foundation
 enum AccessSiteProxyIntentStatusId: String, Equatable, Sendable {
     case noTrustedSite
     case offBrowserDefault
+    case automaticConnected
+    case automaticUnavailable
     case allowNotConnected
     case allowConnected
     case blockLocalRefuse
@@ -73,11 +75,16 @@ enum AccessSiteProxyToggleModel {
 
     static func intentStatus(
         intent: AccessSiteIntent,
-        connection: AccessSiteSessionConnectionState
+        connection: AccessSiteSessionConnectionState,
+        attachment: AccessProxyAttachment = .notAttached
     ) -> AccessSiteProxyIntentStatusId {
         switch intent {
         case .off:
-            return .offBrowserDefault
+            switch attachment {
+            case .ready: return .automaticConnected
+            case .attachedUnavailable: return .automaticUnavailable
+            case .notAttached: return .offBrowserDefault
+            }
         case .block:
             return .blockLocalRefuse
         case .allow:
@@ -145,6 +152,10 @@ enum AccessSiteProxyToggleModel {
             return "当前页不是可代理的网站"
         case .offBrowserDefault:
             return "未使用本服务代理 / 使用浏览器原有连接"
+        case .automaticConnected:
+            return "本站自动重试正在使用代理"
+        case .automaticUnavailable:
+            return "本站自动重试的代理连接不可用"
         case .allowNotConnected:
             return "本站代理已开启 · 连接尚未就绪"
         case .allowConnected:
