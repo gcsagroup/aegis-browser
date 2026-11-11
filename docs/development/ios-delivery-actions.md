@@ -57,12 +57,50 @@ If **Wait** times out, the run fails and retains the last observed Apple state i
 | **Metadata** or **Compliance** | Supply the **Delivery receipt** and the reviewed **Stage JSON**. | 填写 **Delivery receipt** 和已审核的 **Stage JSON**。 |
 | **Distribute internal** or **Distribute external** | Supply the **Delivery receipt** and existing **Existing TestFlight groups**. External distribution requests Beta App Review and requires separate authorization. | 填写 **Delivery receipt** 和已有的 **Existing TestFlight groups**。外测分发会发起 Beta App Review，须另行授权。 |
 
-For existing-package stages, wait for the whole previous run to succeed, copy the complete **Delivery receipt** from its **Summary**, leave **Product** on **Auto**, and leave **Version** and **Build** blank. Retain the original receipt and use the latest successful receipt for the next stage.
+For a new sealed package, successful **ios-package** and **seal-package** jobs establish the original package receipt even if a later job fails. Existing upload intents still require reconciliation. Legacy unsealed packages and later state receipts require their whole source run to succeed. Copy the complete **Delivery receipt**, leave **Product** on **Auto**, and leave **Version** and **Build** blank.
 
-操作已有包时，先确认上一轮运行整体成功，再从其 **Summary** 复制完整 **Delivery receipt**。将 **Product** 保持为 **Auto**，留空 **Version** 和 **Build**。保留原始凭据，后续阶段使用同一包最新成功运行的凭据。
+新封存包的 **ios-package** 和 **seal-package** 均成功后，可保留原包 **Delivery receipt**，后续作业失败时仍可核验原件。已有上传意图须先对账。旧未封存包和后续状态回执仍要求来源运行整体成功。复制完整回执，将 **Product** 保持为 **Auto**，留空 **Version** 和 **Build**。
 
 For protected environment setup, stage JSON examples and recovery steps, see the [iOS release operations reference](ios-release.md).
 
 受保护环境配置、阶段 JSON 示例及故障恢复步骤见 [iOS 发布操作参考](ios-release.zh-CN.md)。
 
 The [Aegis central export PoC](ios-central-signing.md) describes the separately gated private archive and central export-only integration.
+
+## Product-owned archive, receipts and Downloads
+
+Cloud packages use a Development-only archive job and a separate protected export job.
+The settings job passes only validated team and Firebase variables from the existing
+signing Environment. It checks out no product code. The archive job receives no ASC
+secret and uses the existing Development identity and profiles.
+
+Successful package jobs are sealed independently of later upload results. Small
+create-only records under `refs/heads/ios-delivery/` retain the Apple allocation,
+original package job, artifact ID/digest and upload intent/result. A successful
+package and seal can therefore supply the original receipt after a later job
+fails. Downloaded original bytes and the exact producer are verified again.
+Binary artifacts retain their 30-day limit. Missing originals or ambiguous records
+require read-only reconciliation. Repository administrators retain their ability
+to change Git refs. Local artifact-only manual packaging keeps its read-only
+GitHub admission. New Apple uploads require Contents write for their permanent
+intent, including uploads made by the local CLI.
+
+Status and receipt-free Wait use independent read-only concurrency groups.
+Signing, uploading, Draft creation and distribution share the existing mutation
+queue.
+
+Verified deliverables are also copied to
+`~/Downloads/artifacts/aegis/VERSION/alpha`, `Beta`, `Release` or `Draft`.
+Each filename includes its build number and content digest. Existing bytes are
+checked before reuse, and different builds cannot overwrite one another.
+`GCSA_DELIVERY_ROOT` overrides the catalogue root. A failed catalogue copy leaves
+the verified source package available. Retry only the copy with:
+
+```sh
+python3 scripts/release/ios-publish.py --directory .artifacts/release/ios/RUN_ID --manifest-sha256 MANIFEST_SHA256
+```
+
+Use `--draft` for the Draft folder. The catalogue contains IPA, dSYM and delivery
+evidence. On a self-hosted runner the default root belongs to that runner's user.
+Use the same copy command on downloaded, verified original files for a local
+catalogue.

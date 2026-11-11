@@ -65,7 +65,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: ios-delivery-${{ github.repository }}
+  group: ${{ contains(fromJSON('["Status","Wait"]'), inputs.operation || fromJSON(inputs.delivery_inputs || '{}').operation) && !fromJSON(inputs.delivery_inputs || '{}').source && format('ios-delivery-read-{0}-{1}', github.repository, github.run_id) || format('ios-delivery-{0}', github.repository) }}
   cancel-in-progress: false
 env:
   DELIVERY_MODE: ${{ inputs.delivery_mode || 'simple' }}
@@ -121,11 +121,77 @@ jobs:
         env:
           RELEASE_DESTINATION: ${{ steps.plan.outputs.destination }}
           RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+  archive-settings:
+    needs: admission
+    if: ${{ needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || needs.admission.outputs.operation == 'package-upload') }}
+    runs-on: ubuntu-24.04
+    environment: aegis-ios-signing
+    timeout-minutes: 5
+    outputs:
+      team: ${{ steps.settings.outputs.team }}
+      firebase_dev: ${{ steps.settings.outputs.firebase_dev }}
+      firebase_prod: ${{ steps.settings.outputs.firebase_prod }}
+    steps:
+      - id: settings
+        name: Pass only validated non-secret archive settings
+        env:
+          TEAM: ${{ vars.AEGIS_APPLE_TEAM_ID }}
+          FIREBASE_DEV: ${{ vars.AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64 }}
+          FIREBASE_PROD: ${{ vars.AEGIS_IOS_FIREBASE_PROD_PLIST_BASE64 }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          team = os.environ['TEAM']
+          if not re.fullmatch(r'[A-Z0-9]{10}', team):
+              raise SystemExit('Invalid archive team')
+          values = dict(team=team, firebase_dev=os.environ['FIREBASE_DEV'], firebase_prod=os.environ['FIREBASE_PROD'])
+          if any(value and not re.fullmatch(r'[A-Za-z0-9+/=]+', value) for value in values.values()):
+              raise SystemExit('Invalid archive settings')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for name, value in values.items():
+                  output.write(name + '=' + value + '\n')
+          PY
+  ios-archive:
+    name: ios-archive
+    needs: [admission, check-unused, archive-settings]
+    if: ${{ !cancelled() && needs.admission.result == 'success' && needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    timeout-minutes: 50
+    env:
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      AEGIS_APPLE_TEAM_ID: ${{ needs.archive-settings.outputs.team }}
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Build Development archive without cloud or upload credentials
+        env:
+          AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64: ${{ needs.archive-settings.outputs.firebase_dev }}
+          AEGIS_IOS_FIREBASE_PROD_PLIST_BASE64: ${{ needs.archive-settings.outputs.firebase_prod }}
+        run: >-
+          python3 -B scripts/release/cloud-archive.py --output "$RUNNER_TEMP/aegis-development-archive"
+          --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
+          --profile "$RELEASE_PROFILE" --team "$AEGIS_APPLE_TEAM_ID"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-development-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/aegis-development-archive/archive.zip
+            ${{ runner.temp }}/aegis-development-archive/archive-manifest.json
+          if-no-files-found: error
+          retention-days: 7
   ios-package:
     name: ios-package
+    permissions:
+      contents: write
+      actions: read
     needs:
       - admission
       - check-unused
+      - ios-archive
     runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-signing
     timeout-minutes: 50
@@ -167,6 +233,12 @@ jobs:
           node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
           bundle check
           xcodebuild -version
+      - name: Import the successful Development archive
+        if: ${{ needs.admission.outputs.signing_mode == 'cloud' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ios-development-archive-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aegis-development-input
       - name: Install signing material on the ephemeral runner
         if: ${{ needs.admission.outputs.signing_mode == 'manual' }}
         env:
@@ -178,6 +250,7 @@ jobs:
         run: python3 scripts/release/hosted-signing.py setup
       - id: package
         env:
+          AEGIS_CLOUD_ARCHIVE_INPUT: ${{ needs.admission.outputs.signing_mode == 'cloud' && format('{0}/aegis-development-input', runner.temp) || '' }}
           AEGIS_ASC_KEY_ID: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_KEY_ID || '' }}
           AEGIS_ASC_ISSUER_ID: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_ISSUER_ID || '' }}
           AEGIS_ASC_KEY_BASE64: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_KEY_BASE64 || '' }}
@@ -205,7 +278,37 @@ jobs:
           path: .artifacts/ios-delivery/package.zip
           if-no-files-found: error
           retention-days: 30
-    if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+    if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.admission.outputs.signing_mode != 'cloud' || needs.ios-archive.result == 'success') && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+  seal-package:
+    needs: [admission, ios-package]
+    if: ${{ !cancelled() && needs.ios-package.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: read
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_STAGE: package
+      RELEASE_PROFILE: ${{ needs.admission.outputs.profile }}
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_MANIFEST_SHA256: ${{ needs.ios-package.outputs.manifest_sha256 }}
+      PACKAGE_RUN_ID: ${{ github.run_id }}
+      IMPORT_KIND: new-upload
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.admission.outputs.operation == 'package-upload' && format('ios-package-{0}-{1}', github.run_id, github.run_attempt) || format('ios-delivery-{0}-{1}', github.run_id, github.run_attempt) }}
+          path: .artifacts/download
+      - name: Verify original bytes and publish the permanent package locator
+        run: |
+          python3 -B scripts/release/ios-restore.py
+          python3 -B scripts/release/ios-durable.py seal --directory ".artifacts/release/ios/$RELEASE_RUN_ID"
+          python3 -B scripts/release/ios-action.py receipt
   ios-draft:
     if: ${{ !cancelled() && needs.admission.result == 'success' && needs.ios-package.result == 'success' && needs.admission.outputs.operation == 'package' && needs.admission.outputs.destination == 'github-draft' }}
     needs:
@@ -303,6 +406,9 @@ jobs:
       - admission
     if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' }}
   store:
+    permissions:
+      contents: write
+      actions: read
     needs:
       - admission
       - import
@@ -364,9 +470,13 @@ jobs:
           retention-days: 30
     if: ${{ needs.admission.outputs.operation != 'package' && needs.admission.outputs.operation != 'package-upload' && needs.admission.outputs.operation != 'status-query' && needs.admission.outputs.operation != 'status-wait' }}
   upload-new:
+    permissions:
+      contents: write
+      actions: read
     needs:
       - admission
       - ios-package
+      - seal-package
     runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
     environment: aegis-ios-store
     timeout-minutes: 45

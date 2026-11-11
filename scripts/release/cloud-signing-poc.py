@@ -68,6 +68,31 @@ def no_distribution_identity():
         raise ValueError('Distribution private identity is visible; cloud-only proof refused')
 
 
+def keychain_has_distribution(path):
+    """True when a keychain exposes a Distribution/Developer ID private identity."""
+    identities = run('security', 'find-identity', '-v', '-p', 'codesigning', path).decode()
+    return bool(re.search(r'"(?:Apple Distribution|iPhone Distribution|Developer ID Application):', identities))
+
+
+# login/System stay locked or ACL-gated under headless Actions; retaining them
+# makes codesign pick those identities and fail with errSecInternalComponent.
+_UNRETAINABLE_KEYCHAINS = {'login.keychain-db', 'login.keychain', 'System.keychain'}
+
+
+def development_keychains(original):
+    """Keep unlocked non-login Development identities without exposing Distribution secrets."""
+    retained = []
+    for path in original:
+        if Path(path).name in _UNRETAINABLE_KEYCHAINS:
+            continue
+        if keychain_has_distribution(path):
+            continue
+        identities = run('security', 'find-identity', '-v', '-p', 'codesigning', path).decode()
+        if re.search(r'"Apple Development:', identities):
+            retained.append(path)
+    return retained
+
+
 def verify_ad_hoc_archive(archive):
     app = archive / 'Products/Applications/Aegis.app'
     for bundle in [app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex']:
@@ -78,19 +103,27 @@ def verify_ad_hoc_archive(archive):
 
 
 @contextmanager
-def isolated_keychain(directory, evidence):
-    """Save/restore the user search list and default; never import a P12 or touch ACLs."""
+def isolated_keychain(directory, evidence, retain_development=False):
+    """Save/restore the user search list and default; never import a P12 or touch ACLs.
+
+    Disposable keychains lose Apple Development private keys after each job. When
+    archive signing needs Development, keep unlocked non-login host keychains that
+    expose Development identities without Distribution secrets. login/System are
+    never retained (headless codesign cannot use their private keys).
+    """
     original = keychains()
     default = run('security', 'default-keychain', '-d', 'user').decode().strip().strip('"')
     path = str(directory / 'cloud-poc.keychain-db')
     password = secrets.token_urlsafe(32)
+    retained = development_keychains(original) if retain_development else []
     evidence.update(originalSearchList=original, originalDefaultKeychain=default,
-                    distributionP12Imported=False, keychainRestored=False)
+                    distributionP12Imported=False, keychainRestored=False,
+                    retainedDevelopmentKeychains=retained)
     try:
         run('security', 'create-keychain', '-p', password, path)
         run('security', 'set-keychain-settings', '-lut', '7200', path)
         run('security', 'unlock-keychain', '-p', password, path)
-        run('security', 'list-keychains', '-d', 'user', '-s', path)
+        run('security', 'list-keychains', '-d', 'user', '-s', path, *retained)
         run('security', 'default-keychain', '-d', 'user', '-s', path)
         no_distribution_identity()
         evidence['distributionIdentityAbsentBeforeArchive'] = True
@@ -233,17 +266,19 @@ def experiment(options, environment):
                 'team': options.team, 'profile': options.profile, 'signingMode': 'cloud', 'runtime': options.runtime, 'status': 'started',
                 'upload': 'not_attempted', 'deviceAcceptance': 'not_verified', 'releaseReady': False}
     temporary_key = None
-    archive_signing = options.archive_signing or (
-        'ad-hoc' if options.runtime in ('github-hosted', 'self-hosted') else 'development')
+    # Xcode 26.6 rejects ad-hoc/unsigned archives when targets carry entitlements
+    # ("require signing with a development certificate"). CI therefore defaults to
+    # Apple Development for the archive, then still exports via cloud Distribution.
+    # Explicit --archive-signing=ad-hoc remains available for older experiments.
+    archive_signing = options.archive_signing or 'development'
     evidence['archiveSigningMode'] = archive_signing
     try:
         environment = dict(environment)
         # Refuse inherited distribution secrets; this entrypoint never invokes manual signing helpers.
         if any(environment.get(k) for k in environment if 'P12' in k):
             raise ValueError('Remove inherited P12 configuration for this experiment')
-        environment, temporary_key = prepare_credentials(directory, options, environment)
-        # Xcode needs the path, not a base64 copy of the key in its environment.
-        environment.pop('AEGIS_ASC_KEY_BASE64', None)
+        archive_transfer = module('cloud_archive_transfer', 'cloud-archive.py')
+        archive_environment = archive_transfer.build_environment(environment)
         evidence['xcode'] = run('xcodebuild', '-version').decode().strip()
         if evidence['xcode'].splitlines()[0] != 'Xcode 26.6':
             raise ValueError('Xcode 26.6 is required')
@@ -263,25 +298,30 @@ def experiment(options, environment):
             evidence.update(source=archive_source, executionSource=identity, reusedArchiveFrom=options.archive_from,
                             archiveCompleted=True, distributionIdentityAbsentBeforeArchive=True,
                             archiveManifestSha256=hashlib.sha256((previous / 'archive-provenance.json').read_bytes()).hexdigest())
+        elif getattr(options, 'archive_input', None):
+            work = stage(directory, archive_environment, options.profile)
+            archive_transfer.extract(options.archive_input, work / 'Aegis.xcarchive', identity,
+                                     options.version, options.build, options.team, options.profile)
+            archive_transfer.verify_development(work / 'Aegis.xcarchive', options.team, run)
+            snapshot_archive(directory, identity)
+            evidence.update(archiveCompleted=True, archiveTransferred=True,
+                            archiveManifestSha256=hashlib.sha256((directory / 'archive-provenance.json').read_bytes()).hexdigest())
         else:
-            work = stage(directory, environment, options.profile)
+            work = stage(directory, archive_environment, options.profile)
         archive = work / 'Aegis.xcarchive'
-        auth = ['-allowProvisioningUpdates', '-authenticationKeyPath', environment['AEGIS_ASC_KEY_PATH'],
-                '-authenticationKeyID', environment['AEGIS_ASC_KEY_ID'],
-                '-authenticationKeyIssuerID', environment['AEGIS_ASC_ISSUER_ID']]
-        with isolated_keychain(directory, evidence):
-            if not options.archive_from:
+        with isolated_keychain(directory, evidence, retain_development=(archive_signing == 'development')):
+            if not options.archive_from and not getattr(options, 'archive_input', None):
                 print('Archiving with ' + archive_signing + ' signing and no Distribution identity', flush=True)
                 signing_args = (['CODE_SIGN_IDENTITY=-', 'AD_HOC_CODE_SIGNING_ALLOWED=YES', 'CODE_SIGNING_REQUIRED=NO']
                                 if archive_signing == 'ad-hoc' else ['CODE_SIGN_IDENTITY=Apple Development'])
                 run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'), '-scheme', 'Aegis-Release',
                     '-configuration', 'Release', '-destination', 'generic/platform=iOS',
                     '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
-                    '-disableAutomaticPackageResolution', *auth, 'archive',
+                    '-disableAutomaticPackageResolution', 'archive',
                     'CODE_SIGN_STYLE=Automatic', *signing_args,
                     'PROVISIONING_PROFILE_SPECIFIER=', 'DEVELOPMENT_TEAM=' + options.team,
                     'MARKETING_VERSION=' + options.version, 'CURRENT_PROJECT_VERSION=' + options.build,
-                    'AEGIS_FIREBASE_CHANNEL=' + options.profile, env=environment, log=directory / 'archive.log', timeout=2400)
+                    'AEGIS_FIREBASE_CHANNEL=' + options.profile, env=archive_environment, log=directory / 'archive.log', timeout=2400)
                 evidence['archiveCompleted'] = True
                 if archive_signing == 'ad-hoc':
                     verify_ad_hoc_archive(archive)
@@ -290,6 +330,12 @@ def experiment(options, environment):
                 evidence['archiveManifestSha256'] = hashlib.sha256((directory / 'archive-provenance.json').read_bytes()).hexdigest()
             no_distribution_identity()
             evidence['distributionIdentityAbsentBeforeExport'] = True
+            environment, temporary_key = prepare_credentials(directory, options, environment)
+            # The cloud key becomes available only after archive construction.
+            environment.pop('AEGIS_ASC_KEY_BASE64', None)
+            auth = ['-allowProvisioningUpdates', '-authenticationKeyPath', environment['AEGIS_ASC_KEY_PATH'],
+                    '-authenticationKeyID', environment['AEGIS_ASC_KEY_ID'],
+                    '-authenticationKeyIssuerID', environment['AEGIS_ASC_ISSUER_ID']]
             plist = directory / 'ExportOptions.plist'
             plist.write_bytes(plistlib.dumps(export_options(options.team, options.profile)))
             exported = directory / 'export'
@@ -335,7 +381,9 @@ def main():
     parser.add_argument('--signing-mode', choices=['cloud', 'cloud-poc'], required=True)
     parser.add_argument('--runtime', choices=['local-fallback', 'github-hosted', 'self-hosted'], default='local-fallback')
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], default='beta')
-    parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'], help='Hosted uses ad-hoc archive then cloud distribution; local fallback retains development signing')
+    parser.add_argument('--archive-input', type=Path, help='Development transfer from the separate credential-free archive job')
+    parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'],
+                        help='Archive identity before cloud Distribution export (default: development; Xcode 26.6 rejects ad-hoc for entitlement-bearing targets)')
     parser.add_argument('--version', required=True)
     parser.add_argument('--build', required=True)
     parser.add_argument('--team', required=True)
@@ -359,4 +407,6 @@ if __name__ == '__main__':
     try:
         main()
     except (ValueError, OSError, subprocess.TimeoutExpired) as error:
-        sys.exit(str(error))
+        # Print to stdout so callers that capture stderr still see a useful reason.
+        print(str(error), flush=True)
+        sys.exit(1)

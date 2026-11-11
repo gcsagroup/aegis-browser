@@ -8,6 +8,11 @@ class ReleaseFixture < Minitest::Test
     @root = File.realpath(Dir.mktmpdir('aegis-release-test-'))
     write('.gitignore', ".artifacts/\n")
     write('apps/ios/project.yml', "MARKETING_VERSION: 3.2\nCURRENT_PROJECT_VERSION: 69\n")
+    write('scripts/release/ios-durable.py', <<~PY)
+      import pathlib, sys
+      if pathlib.Path('.artifacts/fail-durable').exists():
+          sys.exit(2)
+    PY
     git('init', '-q')
     git('config', 'user.name', 'Fixture')
     git('config', 'user.email', 'fixture@example.invalid')
@@ -559,5 +564,22 @@ class ReleaseTest < ReleaseFixture
     apple.fail_upload = false
     assert_raises(AegisRelease::Error) { flow.upload(sha) }
     assert_equal 1, apple.uploads.length
+  end
+
+  def test_unreadable_permanent_upload_intent_prevents_apple_transport
+    req, sha = package('ios', destination: 'testflight')
+    apple = FakeApple.new
+    flow = fixture_pipeline(req, apple)
+    store = AegisRelease::AppleStore.new(req, apple)
+    store.instance_variable_set(:@app, Struct.new(:id).new('fixture'))
+    store.define_singleton_method(:authenticate) { true }
+    store.define_singleton_method(:exact_build) { nil }
+    store.define_singleton_method(:upload_records) { [] }
+    flow.define_singleton_method(:store) { store }
+    write('.artifacts/fail-durable', 'simulate failed remote record readback')
+    assert_raises(AegisRelease::Error) { flow.upload(sha) }
+    assert_empty apple.uploads
+    assert File.file?(File.join(req.directory, 'apple-upload-started.json'))
+    refute File.exist?(File.join(req.directory, 'apple-upload-result.json'))
   end
 end

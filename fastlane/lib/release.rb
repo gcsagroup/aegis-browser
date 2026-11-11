@@ -278,10 +278,21 @@ module AegisRelease
         ios_profiles
       end
       run('python3', File.join(request.root, 'scripts/release/safari_manifest.py'), File.join(request.root, 'apps/ios/SharedWebExtension'))
+      if ENV['GITHUB_ACTIONS'] == 'true'
+        run('python3', File.join(request.root, 'scripts/release/ios-durable.py'), 'export-start',
+            '--version', request.version, '--build', request.build, '--profile', request.profile)
+      end
       FileUtils.mkdir_p(File.dirname(request.directory))
       Dir.mkdir(request.directory, 0o700)
       paths, details = package_ios
       sha = Receipt.create(request, paths, source, details)
+      publish_args = request.destination == 'github-draft' ? ['--draft'] : []
+      begin
+        run('python3', File.join(request.root, 'scripts/release/ios-publish.py'),
+            '--directory', request.directory, '--manifest-sha256', sha, *publish_args)
+      rescue Error
+        warn 'Downloads catalogue copy failed; retain the verified package and rerun ios-publish.py.'
+      end
       puts "Manifest SHA-256: #{sha}"
       if ENV['GITHUB_OUTPUT']
         File.open(ENV.fetch('GITHUB_OUTPUT'), 'a') { |f| f.puts("manifest_sha256=#{sha}\nrun_id=#{request.run_id}") }
@@ -358,9 +369,10 @@ module AegisRelease
       client = AppleStore.new(request, @fastlane, admission: method(:preflight_upload)).tap(&:authenticate)
       before = CloudReservations.preflight(client, request, source)
       engine_run_id = 'production-' + Digest::SHA256.hexdigest(request.run_id)[0,32]
+      archive_args = ENV['AEGIS_CLOUD_ARCHIVE_INPUT'].to_s.empty? ? [] : ['--archive-input', ENV.fetch('AEGIS_CLOUD_ARCHIVE_INPUT')]
       run('python3', File.join(request.root, 'scripts/release/cloud-signing-poc.py'), '--signing-mode', 'cloud',
           '--runtime', runtime, '--profile', request.profile, '--version', request.version, '--build', request.build,
-          '--team', required('AEGIS_APPLE_TEAM_ID'), '--run-id', engine_run_id)
+          '--team', required('AEGIS_APPLE_TEAM_ID'), '--run-id', engine_run_id, *archive_args)
       root = File.join(request.root, '.artifacts/cloud-signing-poc', engine_run_id)
       receipt_path = File.join(root, 'poc-receipt.json')
       receipt = JSON.parse(File.read(AegisRelease.file!(receipt_path)))

@@ -107,9 +107,42 @@ class CloudSigningTests(unittest.TestCase):
                         pass
                 self.assertTrue(evidence['keychainRestored'])
                 self.assertFalse(evidence['distributionP12Imported'])
+                self.assertEqual(evidence['retainedDevelopmentKeychains'], [])
                 self.assertIn(('security', 'list-keychains', '-d', 'user', '-s', *original), calls)
                 self.assertIn(('security', 'default-keychain', '-d', 'user', '-s', '/original/default-db'), calls)
                 self.assertFalse(any(c[1] == 'import' for c in calls))
+
+    def test_development_archive_skips_login_and_keeps_unlocked_dev_keychains(self):
+        calls = []
+        evidence = {}
+        original = [
+            '/shared/distribution.keychain-db',
+            '/Users/me/login.keychain-db',
+            '/Users/me/Library/Keychains/dev-ci.keychain-db',
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            def security(*args, **_kwargs):
+                calls.append(args)
+                if args[1] == 'default-keychain' and '-s' not in args:
+                    return b'"/Users/me/login.keychain-db"\n'
+                if args[1] == 'find-identity' and args[-1].endswith('distribution.keychain-db'):
+                    return b'1) ABC "Apple Distribution: Team"\n'
+                if args[1] == 'find-identity' and args[-1].endswith('login.keychain-db'):
+                    return b'1) DEF "Apple Development: Dev"\n'
+                if args[1] == 'find-identity' and args[-1].endswith('dev-ci.keychain-db'):
+                    return b'1) GHI "Apple Development: CI"\n'
+                if args[1] == 'find-identity':
+                    return b'1) GHI "Apple Development: CI"\n'
+                return b''
+            with patch.object(poc, 'run', side_effect=security), patch.object(poc, 'keychains', return_value=original):
+                with poc.isolated_keychain(Path(directory), evidence, retain_development=True):
+                    pass
+            temp = str(Path(directory) / 'cloud-poc.keychain-db')
+            self.assertEqual(evidence['retainedDevelopmentKeychains'],
+                             ['/Users/me/Library/Keychains/dev-ci.keychain-db'])
+            self.assertIn(('security', 'list-keychains', '-d', 'user', '-s', temp,
+                           '/Users/me/Library/Keychains/dev-ci.keychain-db'), calls)
+            self.assertTrue(evidence['distributionIdentityAbsentBeforeArchive'])
 
     def test_rejects_local_distribution_identity(self):
         for kind in ('Apple Distribution', 'iPhone Distribution', 'Developer ID Application'):

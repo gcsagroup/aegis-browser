@@ -21,14 +21,24 @@ module AegisRelease
         if File.exist?(finished)
           result = JSON.parse(File.read(AegisRelease.file!(finished)))
           AegisRelease.require!(result['intent'] == intent, 'Completed stage has different parameters; inspect status before changing destinations')
+          durable('upload-check') if operation == 'apple-upload' && result['durableRecordSchema']
           return result.fetch('result')
         end
         AegisRelease.require!(!File.exist?(started), 'Earlier store stage has an unknown outcome. Run status and reconcile with the store; automatic retries are disabled')
         AegisRelease.write_new(started, intent.merge('startedAt' => Time.now.utc.iso8601, 'outcome' => 'unknown'))
+        durable('upload-start') if operation == 'apple-upload'
         result = yield
-        AegisRelease.write_new(finished, 'intent' => intent, 'result' => result, 'completedAt' => Time.now.utc.iso8601)
+        terminal = {'intent' => intent, 'result' => result, 'completedAt' => Time.now.utc.iso8601}
+        terminal['durableRecordSchema'] = 'ios-product-delivery-v1' if operation == 'apple-upload'
+        AegisRelease.write_new(finished, terminal)
+        durable('upload-result') if operation == 'apple-upload'
         result
       end
+    end
+
+    def durable(operation)
+      AegisRelease.command('python3', File.join(@request.root, 'scripts/release/ios-durable.py'),
+                           operation, '--directory', @request.directory, cwd: @request.root)
     end
   end
 

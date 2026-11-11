@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFileSync} from 'node:fs';
+import {readFileSync, mkdtempSync, rmSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {parse} from 'yaml';
 
 const sha = 'a'.repeat(40);
@@ -12,6 +15,30 @@ const load = async () => {
   const {iosReleasePreflight: preflight} = await import('../ios-release-preflight.mjs');
   return {iosReleasePreflight: (source, options) => preflight(source, {authorize: async () => true, ...options})};
 };
+
+test('archive gets only non-secret settings from the existing environment', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const archive = jobs['ios-archive'];
+  assert.equal(archive.environment, undefined);
+  assert(!JSON.stringify(archive).includes('secrets.'));
+  assert(archive.needs.includes('archive-settings'));
+  const settings = jobs['archive-settings'];
+  assert.equal(settings.environment, 'aegis-ios-signing');
+  assert(!JSON.stringify(settings).includes('actions/checkout'));
+  assert(!JSON.stringify(settings).includes('secrets.'));
+  const code = settings.steps[0].run.replace(/^python3 - <<'PY'\n/u, '').replace(/\nPY\n?$/u, '');
+  const temp = mkdtempSync(join(tmpdir(), 'aegis-settings-'));
+  try {
+    const output = join(temp, 'settings');
+    const env = {...process.env, TEAM: 'ABCDEFGHIJ', FIREBASE_DEV: 'YWJj', FIREBASE_PROD: '', GITHUB_OUTPUT: output};
+    execFileSync('python3', ['-c', code], {env});
+    assert.equal(readFileSync(output, 'utf8'), 'team=ABCDEFGHIJ\nfirebase_dev=YWJj\nfirebase_prod=\n');
+    assert.throws(() => execFileSync('python3', ['-c', code], {env: {...env, FIREBASE_DEV: 'YWJj\nrogue=secret'}, stdio: 'pipe'}));
+    assert(!readFileSync(output, 'utf8').includes('rogue'));
+  } finally {
+    rmSync(temp, {recursive: true, force: true});
+  }
+});
 function apiFixture({moved = false, parent = repository, pending = false} = {}) {
   let reads = 0;
   return async (repo, path) => {
@@ -205,7 +232,7 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert.equal(fresh.env.RELEASE_QUERY_MODE, 'unused');
   assert.equal(fresh.environment, 'aegis-ios-store');
   const upload = doc.jobs['upload-new'];
-  assert.deepEqual(upload.needs, ['admission', 'ios-package']);
+  assert.deepEqual(upload.needs, ['admission', 'ios-package', 'seal-package']);
   assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' }}");
   assert.equal(upload.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
   assert.equal(upload.env.PACKAGE_RUN_ID, '${{ github.run_id }}');
