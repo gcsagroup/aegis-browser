@@ -193,6 +193,61 @@ class DevelopmentSigningTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.resolve()
 
+    def test_writable_ancestor_cannot_turn_a_configured_host_into_automatic(self):
+        ancestor = self.root / 'shared-config-parent'
+        ancestor.mkdir(mode=0o700)
+        private = ancestor / 'signing'
+        private.mkdir(mode=0o700)
+        config = private / 'development-archive.json'
+        config.write_bytes(self.config_path.read_bytes())
+        config.chmod(0o600)
+        ancestor.chmod(0o777)
+        try:
+            for existing in (True, False):
+                if not existing:
+                    config.unlink()
+                with self.subTest(existing=existing), self.assertRaisesRegex(ValueError, 'untrusted directory'):
+                    signing.resolve('ABCDEFGHIJ', lambda raw: self.profiles[raw], config_path=config,
+                                    profile_directories=[self.directory])
+        finally:
+            ancestor.chmod(0o700)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Native ancestor ACL regression')
+    def test_ancestor_acl_allows_readonly_and_deny_entries_but_rejects_mutation_grants(self):
+        import pwd
+        ancestor = self.root / 'config-parent'
+        ancestor.mkdir(mode=0o755)
+        private = ancestor / 'signing'
+        private.mkdir(mode=0o700)
+        config = private / 'development-archive.json'
+        config.write_bytes(self.config_path.read_bytes())
+        config.chmod(0o600)
+        def resolve():
+            return signing.resolve('ABCDEFGHIJ', lambda raw: self.profiles[raw], config_path=config,
+                                   profile_directories=[self.directory])
+        user = pwd.getpwuid(os.getuid()).pw_name
+        for rule in ['everyone deny delete', 'everyone allow read,readattr,readextattr,readsecurity,search',
+                     f'user:{user} allow add_file,delete_child', 'user:root allow add_file']:
+            subprocess.run(['chmod', '+a', rule, str(ancestor)], check=True)
+            try:
+                self.assertEqual(resolve()[1]['style'], 'manual')
+            finally:
+                subprocess.run(['chmod', '-N', str(ancestor)], check=True)
+        for rule in ['everyone allow delete_child,add_subdirectory', 'group:wheel allow add_file',
+                     'user:nobody allow add_file']:
+            subprocess.run(['chmod', '+a', rule, str(ancestor)], check=True)
+            try:
+                with self.assertRaisesRegex(ValueError, 'writable extended ACL'):
+                    resolve()
+            finally:
+                subprocess.run(['chmod', '-N', str(ancestor)], check=True)
+        config.unlink()
+        subprocess.run(['chmod', '+a', f'user:{user} allow add_file', str(ancestor)], check=True)
+        try:
+            self.assertEqual(resolve()[1]['style'], 'automatic')
+        finally:
+            subprocess.run(['chmod', '-N', str(ancestor)], check=True)
+
     @unittest.skipUnless(sys.platform == 'darwin', 'Native extended ACL regression')
     def test_extended_acl_grants_are_rejected_even_with_private_modes(self):
         for path in [self.config_path, self.root]:
