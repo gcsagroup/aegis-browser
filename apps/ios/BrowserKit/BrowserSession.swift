@@ -256,6 +256,36 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         )
     }
 
+    /// Records the actual main-frame URL/method for policy-allowed navigations,
+    /// redirects, and sanitized replacements. In-flight identities are updated in
+    /// place; a new page navigation mints a fresh attempt.
+    private func adoptMainFrameNavigation(url: URL, method: String) {
+        let normalizedMethod = method.uppercased()
+        if let pending = pendingNavigation,
+           attemptsByNavigation[ObjectIdentifier(pending)] != nil {
+            attempt.url = url
+            attempt.method = normalizedMethod
+            attemptsByNavigation[ObjectIdentifier(pending)] = attempt
+            requestedURL = url
+            return
+        }
+        // `WKWebView.load` may call decidePolicyFor before it returns the navigation.
+        // Keep the identity minted by commitPreservingMethod / retry in that window.
+        if attempt.url == url, attempt.method == normalizedMethod {
+            requestedURL = url
+            return
+        }
+        beginUserNavigation(url: url, method: normalizedMethod)
+        requestedURL = url
+        committedRequestMethod = normalizedMethod
+        isLoading = true
+    }
+
+    /// Unit tests drive same-host in-page identity without synthesizing `WKNavigationAction`.
+    public func adoptPolicyMainFrameNavigationForTests(url: URL, method: String = "GET") {
+        adoptMainFrameNavigation(url: url, method: method)
+    }
+
     func alignStore(for url: URL, previous: URL?, method: String, body: Data?) {
         let hostChanged = previous?.host?.lowercased() != nil
             && url.host?.lowercased() != nil
@@ -577,6 +607,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             navigationEpoch &+= 1
             lastPolicyIntervention = nil
             pendingNavigation = webView.goBack()
+            if let pendingNavigation {
+                attemptsByNavigation[ObjectIdentifier(pendingNavigation)] = attempt
+            }
         }
     }
 
@@ -587,6 +620,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             navigationEpoch &+= 1
             lastPolicyIntervention = nil
             pendingNavigation = webView.goForward()
+            if let pendingNavigation {
+                attemptsByNavigation[ObjectIdentifier(pendingNavigation)] = attempt
+            }
         }
     }
 
@@ -717,6 +753,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 || lastPolicyIntervention?.effectiveURL != requestURL.absoluteString {
                 lastPolicyIntervention = nil
             }
+            let method = navigationAction.request.httpMethod ?? "GET"
+            adoptMainFrameNavigation(url: requestURL, method: method)
             finish(.allow)
         case .blocked:
             blockNavigation(decision)
@@ -744,13 +782,23 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             lastPolicyIntervention = decision
             var cleanedRequest = navigationAction.request
             cleanedRequest.url = cleanedURL
+            let method = cleanedRequest.httpMethod ?? "GET"
+            adoptMainFrameNavigation(url: cleanedURL, method: method)
             finish(.cancel)
             issueDocumentLoad(cleanedRequest)
         }
     }
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        guard webView === loadedWebView, isCurrent(navigation) else { return }
+        guard webView === loadedWebView else { return }
+        if pendingNavigation == nil {
+            pendingNavigation = navigation
+            if let navigation {
+                attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
+            }
+        } else if !isCurrent(navigation) {
+            return
+        }
         isLoading = true
         userScripts?.navigated()
         inspectionEnabled = false; webView.isInspectable = false
@@ -823,18 +871,29 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
             loadingErrorAllowsProxyRetry = false
+            if navigation == nil || navigation === pendingNavigation {
+                pendingNavigation = nil
+            }
             refreshState()
             return
         }
         let recorded: MainFrameAttempt
         if let navigation {
-            guard navigation === pendingNavigation,
-                  let match = attemptsByNavigation[ObjectIdentifier(navigation)] else {
+            if let match = attemptsByNavigation[ObjectIdentifier(navigation)],
+               pendingNavigation == nil || navigation === pendingNavigation {
+                pendingNavigation = navigation
+                recorded = match
+            } else if pendingNavigation == nil, isLoading {
+                attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
+                pendingNavigation = navigation
+                recorded = attempt
+            } else {
                 noteUnidentifiedMainFrameFailure(nsError)
                 return
             }
-            recorded = match
-        } else if pendingNavigation == nil {
+        } else if pendingNavigation == nil, isLoading {
+            // Only while a policy-adopted main frame is in flight. Finished pages
+            // must not reuse a stale attempt for an unidentified callback.
             recorded = attempt
         } else {
             noteUnidentifiedMainFrameFailure(nsError)

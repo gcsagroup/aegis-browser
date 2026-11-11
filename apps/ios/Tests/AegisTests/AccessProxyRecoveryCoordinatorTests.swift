@@ -707,6 +707,31 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.setAutoRecoveryEnabled(true, for: tab), .rejected(.noTrustedHost))
     }
 
+    func testSameHostInPageFailureAutoRecoversOnce() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_109) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        retainedSessions.append(browser)
+        browser.hostCoordinator = coordinator
+        let tab = try XCTUnwrap(browser.activeTab)
+        tab.load(URLRequest(url: URL(string: "https://shop.example/home")!))
+        tab.commitPendingMainFrameForTests()
+        tab.webView(tab.webView, didFinish: tab.currentNavigationForTests)
+        XCTAssertEqual(coordinator.setAutoRecoveryEnabled(true, for: tab).isArmed, true)
+        XCTAssertEqual(publisher.provisionCount, 0)
+
+        let cart = URL(string: "https://shop.example/cart")!
+        tab.adoptPolicyMainFrameNavigationForTests(url: cart, method: "GET")
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorCannotFindHost
+        ))
+        await settle { tab.recoveryLoadCount == 1 }
+        XCTAssertEqual(tab.recoveryLoadCount, 1)
+        XCTAssertEqual(tab.lastMainFrameFailure?.url, cart)
+        XCTAssertEqual(publisher.provisionCount, 1)
+    }
+
     private func committedTab(coordinator: AccessHostStoreCoordinator, url: String) throws -> BrowserTab {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
         retainedSessions.append(browser)
