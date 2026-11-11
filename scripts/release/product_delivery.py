@@ -28,7 +28,7 @@ class GitHub:
 
     def request(self, path, payload=None, missing=False):
         args = ['gh', 'api', '-H', 'Accept: application/vnd.github+json',
-                'repos/' + self.repository + '/' + path]
+                'repos/' + self.repository + ('/' + path if path else '')]
         body = None
         if payload is not None:
             args += ['--method', 'POST', '--input', '-']
