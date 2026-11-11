@@ -7,16 +7,29 @@ import("//testing/test.gni")
 
 buildflag_header("access_buildflags") {
   header = "access_buildflags.h"
-  flags = [ "AEGIS_ALPHA_TEST_NODE_ENABLED=$aegis_alpha_test_node_enabled" ]
+  allow_dev_files = !is_official_build
+  flags = [
+    "AEGIS_DEV_LOCAL_NODE_ALLOWED=$allow_dev_files",
+    "AEGIS_PRIVATE_TEST_NODE_ENABLED=$aegis_private_test_node_enabled",
+    "AEGIS_BETA_TEST_NODE_ENABLED=$aegis_beta_test_node_enabled",
+  ]
 }
 
-if (aegis_alpha_test_node_enabled) {
+if (aegis_private_test_node_enabled) {
+  private_channel = "alpha"
+  private_dir = aegis_alpha_test_resources_dir
+  if (aegis_beta_test_node_enabled) {
+    private_channel = "beta"
+    private_dir = aegis_beta_test_resources_dir
+  }
+  # Both variants overwrite the same three resources. This also keeps the
+  # normal-build guard effective for output directories reused across channels.
   action("alpha_access_resource_files") {
     script = "prepare_alpha_access_resources.py"
     inputs = [
-      "$aegis_alpha_test_resources_dir/core-manifest.json",
-      "$aegis_alpha_test_resources_dir/node.json",
-      "$aegis_alpha_test_resources_dir/xray",
+      "$private_dir/core-manifest.json",
+      "$private_dir/node.json",
+      "$private_dir/xray",
     ]
     outputs = [
       "$root_out_dir/AegisAlphaAccess/core-manifest.json",
@@ -25,9 +38,9 @@ if (aegis_alpha_test_node_enabled) {
     ]
     args = [
       "--channel",
-      "alpha",
+      private_channel,
       "--source-dir",
-      rebase_path(aegis_alpha_test_resources_dir, root_build_dir),
+      rebase_path(private_dir, root_build_dir),
       "--output-dir",
       rebase_path("$root_out_dir/AegisAlphaAccess", root_build_dir),
     ]
@@ -75,13 +88,14 @@ source_set("access_local_core_manager") {
     sources += [ "access_local_core_manager_unavailable.cc" ]
   }
   deps = [
+    ":access_build_channel",
     ":access_buildflags",
     "//base",
     "//crypto",
     "//net",
     "//url",
   ]
-  if (aegis_alpha_test_node_enabled) {
+  if (aegis_private_test_node_enabled) {
     data_deps = [ ":alpha_access_resource_files" ]
   } else {
     data_deps = [ ":alpha_test_resource_guard" ]
@@ -110,6 +124,7 @@ test("access_local_core_manager_unittests") {
     sources = [ "access_local_core_manager_unavailable_unittest.cc" ]
   }
   deps = [
+    ":access_build_channel",
     ":access_buildflags",
     ":access_local_core_manager",
     "//base",
@@ -344,6 +359,7 @@ source_set("access_service_coordinator") {
   ]
   deps = [
     ":access_async_rule_store",
+    ":access_build_channel",
     ":access_identity_generation_source",
     ":access_proxy_selection_generation_source",
     ":access_published_request_runtime",

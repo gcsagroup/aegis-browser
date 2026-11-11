@@ -350,7 +350,7 @@ class ProductAckContext final : public network::TestNetworkContext,
 class AccessSiteProxyProductTest : public testing::Test {
  protected:
   void SetUp() override {
-#if !BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+#if !BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
     const auto* command = base::CommandLine::ForCurrentProcess();
     if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
         command->GetSwitchValuePath("aegis-access-dev-node-config").empty()) {
@@ -713,7 +713,7 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness 
           return std::make_unique<ProfileNetworkContextService>(
               Profile::FromBrowserContext(context));
         }));
-#if !BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+#if !BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
     const auto* command = base::CommandLine::ForCurrentProcess();
     if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
         command->GetSwitchValuePath("aegis-access-dev-node-config").empty())

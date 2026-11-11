@@ -30,6 +30,7 @@
 #include "base/timer/timer.h"
 #include "base/uuid.h"
 #include "base/values.h"
+#include "chrome/browser/aegis/access/access_build_channel.h"
 #include "chrome/browser/aegis/access/access_buildflags.h"
 #include "crypto/hash.h"
 #include "net/base/auth.h"
@@ -47,18 +48,24 @@
 
 namespace aegis::access {
 std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput() {
-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
+  if (AccessChannelForCurrentBuild() != BundledAccessTestChannel())
+    return std::nullopt;
   base::FilePath assets;
   if (!base::PathService::Get(base::DIR_ASSETS, &assets)) return std::nullopt;
   assets = assets.AppendASCII("AegisAlphaAccess");
   return AccessLocalCoreInput{assets.AppendASCII("core-manifest.json"),
-      assets.AppendASCII("node.json"), AccessLocalCoreSource::kAlphaBundle};
-#else
+      assets.AppendASCII("node.json"), AccessLocalCoreSource::kPrivateTestBundle};
+#elif BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
+  if (AccessChannelForCurrentBuild() != aegis_access::ChannelNamespace::kDev)
+    return std::nullopt;
   const auto* command = base::CommandLine::ForCurrentProcess();
   auto manifest = command->GetSwitchValuePath("aegis-access-dev-core-manifest");
   auto node = command->GetSwitchValuePath("aegis-access-dev-node-config");
   if (manifest.empty() || node.empty()) return std::nullopt;
   return AccessLocalCoreInput{std::move(manifest), std::move(node)};
+#else
+  return std::nullopt;
 #endif
 }
 namespace {
@@ -224,13 +231,14 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     auto node = base::JSONReader::ReadDict(node_json, base::JSON_PARSE_RFC);
     if (!manifest || !node) return false;
     base::FilePath binary;
-    if (input_.source == AccessLocalCoreSource::kAlphaBundle) {
-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+    if (input_.source == AccessLocalCoreSource::kPrivateTestBundle) {
+#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
       const auto* channel = manifest->FindString("channel");
       const auto* relative = manifest->FindString("binaryRelativePath");
       const auto* node_name = manifest->FindString("nodeConfigRelativePath");
       const auto* node_pin = manifest->FindString("nodeConfigSha256");
-      if (manifest->FindInt("schemaVersion") != 1 || !channel || *channel != "alpha" ||
+      if (manifest->FindInt("schemaVersion") != 1 || !channel ||
+          *channel != LocalAccessIdentityChannel(BundledAccessTestChannel()) ||
           !relative || *relative != "xray" || !node_name || *node_name != "node.json" ||
           input_.node_config != input_.manifest.DirName().AppendASCII("node.json") ||
           !node_pin || base::HexEncodeLower(crypto::hash::Sha256(base::as_byte_span(node_json))) != *node_pin)

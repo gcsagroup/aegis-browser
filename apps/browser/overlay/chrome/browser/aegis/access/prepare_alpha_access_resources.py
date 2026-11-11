@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage private Alpha Access inputs without printing node values."""
+"""Stage private Access inputs without printing node values."""
 
 import argparse
 import hashlib
@@ -10,25 +10,25 @@ import tempfile
 
 
 def stage(source: Path, output: Path, channel: str) -> None:
-    if channel != "alpha":
-        raise ValueError("Test resources are restricted to the Alpha channel")
+    if channel not in ("alpha", "beta"):
+        raise ValueError("Test resources are restricted to Alpha and Beta")
     manifest_bytes = (source / "core-manifest.json").read_bytes()
     manifest = json.loads(manifest_bytes)
-    if (manifest.get("schemaVersion") != 1 or manifest.get("channel") != "alpha"
+    if (manifest.get("schemaVersion") != 1 or manifest.get("channel") != channel
             or manifest.get("binaryRelativePath") != "xray"
             or manifest.get("nodeConfigRelativePath") != "node.json"):
-        raise ValueError("Invalid Alpha resource manifest")
+        raise ValueError("Invalid private resource manifest")
     binary = (source / "xray").read_bytes()
     node_bytes = (source / "node.json").read_bytes()
     if (hashlib.sha256(binary).hexdigest() != manifest.get("binarySha256")
             or hashlib.sha256(node_bytes).hexdigest() != manifest.get("nodeConfigSha256")):
-        raise ValueError("Alpha resource pin mismatch")
+        raise ValueError("Private resource pin mismatch")
     node = json.loads(node_bytes)
     outbound = node.get("outbounds", [None])[0]
     if (not isinstance(outbound, dict) or outbound.get("protocol") != "vless"
             or outbound.get("streamSettings", {}).get("network") != "tcp"
             or outbound.get("streamSettings", {}).get("security") != "reality"):
-        raise ValueError("Unsupported Alpha test transport")
+        raise ValueError("Unsupported private test transport")
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output, 0o700)
     # Replace inodes, so an already assembled/running immutable candidate
@@ -36,7 +36,7 @@ def stage(source: Path, output: Path, channel: str) -> None:
     for name, data, mode in (("core-manifest.json", manifest_bytes, 0o600),
                              ("node.json", node_bytes, 0o600),
                              ("xray", binary, 0o700)):
-        descriptor, temporary = tempfile.mkstemp(dir=output, prefix=".alpha-")
+        descriptor, temporary = tempfile.mkstemp(dir=output, prefix=".private-")
         try:
             with os.fdopen(descriptor, "wb") as stream:
                 os.fchmod(stream.fileno(), mode)
@@ -57,7 +57,7 @@ def main() -> int:
         stage(args.source_dir, args.output_dir, args.channel)
     except (OSError, ValueError, KeyError, IndexError, TypeError):
         # Private input values and exception payloads never enter build logs.
-        parser.exit(1, "Cannot prepare validated private Alpha test resources.\n")
+        parser.exit(1, "Cannot prepare validated private test resources.\n")
     return 0
 
 

@@ -5,8 +5,10 @@
 #include "components/aegis_access/access_route_types.h"
 
 namespace aegis::access {
-// Explicit Alpha test builds use Alpha ownership even when unbranded Chromium
+// Explicit private test builds use their selected channel even when unbranded Chromium
 // reports UNKNOWN. Chromium branding and the normal channel mapping are kept.
 aegis_access::ChannelNamespace AccessChannelForCurrentBuild();
+aegis_access::ChannelNamespace BundledAccessTestChannel();
+const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel);
 }  // namespace aegis::access
 #endif
