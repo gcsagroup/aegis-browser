@@ -2,6 +2,7 @@
 import argparse
 import base64
 import ctypes
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import json
@@ -145,34 +146,71 @@ def signing_keychain(fingerprint):
     return found[0]
 
 
-def unlock_keychain(path, password_file):
-    # The password never enters command arguments, stdout, receipts, or a UI agent.
-    password = bytearray(private_file(password_file).read_bytes().rstrip(b'\r\n'))
-    if not password or len(password) > 1024 or b'\n' in password or b'\r' in password or b'\0' in password:
-        raise ValueError('Expected a single-line signing-keychain password')
-    security = ctypes.CDLL('/System/Library/Frameworks/Security.framework/Security')
-    core = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
-    security.SecKeychainOpen.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
-    security.SecKeychainOpen.restype = ctypes.c_int32
-    security.SecKeychainUnlock.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_bool]
-    security.SecKeychainUnlock.restype = ctypes.c_int32
-    security.SecKeychainGetStatus.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
-    security.SecKeychainGetStatus.restype = ctypes.c_int32
-    core.CFRelease.argtypes = [ctypes.c_void_p]
+@contextmanager
+def activated_keychain_from_fd(path, descriptor, *, maximum_file_bytes=1024):
+    """Keep success unlocked; restore a changed lock state if activation/body fails."""
+    password = bytearray(maximum_file_bytes + 1)
+    security = core = None
     reference = ctypes.c_void_p()
+    restore_lock = False
     try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
+                or info.st_nlink != 1 or not 0 < info.st_size <= maximum_file_bytes
+                or os.lseek(descriptor, 0, os.SEEK_CUR) != 0):
+            raise ValueError('Expected a bounded owned private password descriptor')
+        count = os.readv(descriptor, [password])
+        if count != info.st_size:
+            raise ValueError('Signing password changed during reading')
+        length = count
+        while length and password[length - 1] in (10, 13):
+            length -= 1
+        if not 0 < length <= 1024 or any(password[index] in (0, 10, 13) for index in range(length)):
+            raise ValueError('Expected a single-line signing-keychain password')
+        security = ctypes.CDLL('/System/Library/Frameworks/Security.framework/Security')
+        core = ctypes.CDLL('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
+        security.SecKeychainOpen.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
+        security.SecKeychainOpen.restype = ctypes.c_int32
+        security.SecKeychainUnlock.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_bool]
+        security.SecKeychainUnlock.restype = ctypes.c_int32
+        security.SecKeychainGetStatus.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+        security.SecKeychainGetStatus.restype = ctypes.c_int32
+        security.SecKeychainLock.argtypes = [ctypes.c_void_p]
+        security.SecKeychainLock.restype = ctypes.c_int32
+        core.CFRelease.argtypes = [ctypes.c_void_p]
         if security.SecKeychainOpen(os.fsencode(path), ctypes.byref(reference)):
             raise ValueError('Unable to open the signing keychain')
-        buffer = (ctypes.c_ubyte * len(password)).from_buffer(password)
-        if security.SecKeychainUnlock(reference, len(password), buffer, True):
-            raise ValueError('Signing-keychain unlock failed; no password retry or UI fallback')
         status = ctypes.c_uint32()
+        if security.SecKeychainGetStatus(reference, ctypes.byref(status)):
+            raise ValueError('Unable to inspect the signing keychain lock state')
+        initially_unlocked = bool(status.value & 1)
+        restore_lock = not initially_unlocked
+        buffer = (ctypes.c_ubyte * length).from_buffer(password)
+        if security.SecKeychainUnlock(reference, length, buffer, True):
+            raise ValueError('Signing-keychain unlock failed; no password retry or UI fallback')
         if security.SecKeychainGetStatus(reference, ctypes.byref(status)) or not status.value & 1:
             raise ValueError('Signing keychain remains locked')
+        password[:] = b'\0' * len(password)
+        yield initially_unlocked
+    except BaseException as error:
+        if restore_lock and reference.value and security is not None:
+            if security.SecKeychainLock(reference):
+                raise ValueError('Signing keychain lock restoration failed; retain state for reconciliation') from error
+        raise
     finally:
         password[:] = b'\0' * len(password)
-        if reference.value:
+        if reference.value and core is not None:
             core.CFRelease(reference)
+
+
+def unlock_keychain(path, password_file):
+    # Preserve the existing manual entrypoint; the native primitive consumes one FD.
+    descriptor = os.open(private_file(password_file), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        with activated_keychain_from_fd(path, descriptor, maximum_file_bytes=1026):
+            pass
+    finally:
+        os.close(descriptor)
 
 
 def main():

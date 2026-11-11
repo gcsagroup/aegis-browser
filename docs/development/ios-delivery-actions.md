@@ -98,7 +98,21 @@ the existing automatic Development selection remains in use; existing path compo
 must be physical directories, including when a linked destination is missing. Lookup
 compares full profile filenames without case assumptions, allows at most eight matching
 copies across the approved directories, and rejects the first content conflict. The dedicated keychain
-must already be unlocked and available to headless `codesign`.
+must be available to headless `codesign`. An optional owned `0600`
+`development-keychain.password` companion in the same private configuration
+directory enables activation in the actual runner session. The archive worker
+finds the unique owned non-login keychain containing the pinned certificate,
+rejects Distribution identities, and passes the password directly to
+Security.framework. It never passes that password to a command or build phase.
+Without the companion file, the existing pre-unlocked-keychain contract applies.
+
+Before building the app, the isolated worker compiles a fixed trivial probe,
+signs it with the configured Development identity and verifies the signature.
+The probe's environment contains only public toolchain/home/temp settings.
+Activation and probe diagnostics are retained separately from the archive;
+`find-identity` success alone is not evidence that the private signing operation
+works in a background runner. Direct inline Development archives use the same
+preparation before isolation and the same probe inside it.
 
 Private configuration ancestors must be owned by the runner account or root and
 exclude directory mutation by other accounts, including extended ACL grants.

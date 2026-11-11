@@ -16,6 +16,32 @@ spec.loader.exec_module(archive)
 
 
 class CloudArchiveTests(unittest.TestCase):
+    def test_key_activation_precedes_isolation_and_private_probe_runs_before_the_archive(self):
+        events = []
+        @contextmanager
+        def isolated(_output, _evidence, **_options):
+            events.append('isolate')
+            yield
+        def run(*arguments, **_options):
+            if '-version' in arguments:
+                return b'Xcode 26.6\nBuild version fixture'
+            events.append('archive')
+            raise ValueError('stop at archive boundary')
+        signing = SimpleNamespace(resolve=Mock(return_value=([], {'style': 'manual'})),
+                                  require_identity=Mock(side_effect=lambda *_: events.append('identity')))
+        access = SimpleNamespace(prepare=Mock(side_effect=lambda *_: events.append('prepare')),
+                                 verify=Mock(side_effect=lambda *_: events.append('probe')))
+        def module(_name, filename):
+            return signing if filename == 'development_signing.py' else access if filename == 'development_key_access.py' else SimpleNamespace(verified_profile=Mock())
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / 'output'
+            native = SimpleNamespace(validate_identity=Mock(), source=Mock(return_value={'sha': 'a' * 40}),
+                                     run=run, stage=Mock(return_value=output / 'work'), module=module,
+                                     isolated_keychain=isolated, key_access_runtime=lambda _env: native)
+            with patch.object(archive, 'engine', return_value=native), self.assertRaisesRegex(ValueError, 'archive boundary'):
+                archive.create(output, '1.0.2', '16', 'ABCDEFGHIJ', 'beta', {})
+        self.assertEqual(events, ['prepare', 'isolate', 'identity', 'probe', 'archive'])
+
     def test_producer_digest_stays_bound_to_written_bytes_if_the_path_is_replaced_after_close(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'archive-manifest.json'
@@ -56,10 +82,11 @@ class CloudArchiveTests(unittest.TestCase):
             native = SimpleNamespace(validate_identity=Mock(), source=Mock(side_effect=[identity, dict(identity, sha='c' * 40)]),
                                      run=Mock(return_value=b'Xcode 26.6\nBuild version 17F113'),
                                      stage=Mock(return_value=output / 'work'), isolated_keychain=isolated,
+                                     key_access_runtime=lambda _env: native,
                                      module=Mock(side_effect=lambda _name, file: SimpleNamespace(
                                          resolve=Mock(return_value=(['CODE_SIGN_STYLE=Automatic'], {'style': 'automatic'})),
                                          require_identity=Mock(), verify_archive=Mock()) if file == 'development_signing.py'
-                                         else SimpleNamespace(verify=Mock(), verified_profile=Mock())))
+                                         else SimpleNamespace(prepare=Mock(return_value=None), verify=Mock(), verified_profile=Mock())))
             with patch.object(archive, 'engine', return_value=native), patch.object(archive, 'verify_development'), \
                     self.assertRaisesRegex(ValueError, 'Source changed'):
                 archive.create(output, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha', {})
