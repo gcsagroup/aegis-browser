@@ -13,6 +13,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/time/time.h"
 #include "net/base/schemeful_site.h"
+#include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
 #include "url/gurl.h"
@@ -664,9 +665,10 @@ StoreStatus AccessRuleStore::Open() {
     return terminal_status_;
   }
 
+  sql::MetaTable meta_table;
   sql::Transaction transaction(&database_);
   if (!transaction.Begin() ||
-      !meta_table_.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
+      !meta_table.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
     terminal_status_ = StoreStatus::kIoError;
     return terminal_status_;
   }

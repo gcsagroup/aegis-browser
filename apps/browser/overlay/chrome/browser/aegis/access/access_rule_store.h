@@ -13,7 +13,6 @@
 #include "components/aegis_access/access_policy_evaluator.h"
 #include "components/aegis_access/site_proxy_rule_group.h"
 #include "sql/database.h"
-#include "sql/meta_table.h"
 
 namespace aegis::access {
 
@@ -300,7 +299,6 @@ class AccessRuleStore {
 
   AccessStoreBinding binding_;
   sql::Database database_;
-  sql::MetaTable meta_table_;
   bool is_open_ = false;
   StoreStatus terminal_status_ = StoreStatus::kIoError;
   FailurePointForTesting failure_point_for_testing_ =
