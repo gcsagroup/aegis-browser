@@ -101,12 +101,32 @@ jobs:
           CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
           CI_RUNNER_NAME: ${{ runner.name }}
         run: python3 -I -B scripts/ci/ios-ci-storage.py prepare --runner-environment "$CI_RUNNER_ENVIRONMENT" --runner-name "$CI_RUNNER_NAME"
+      - name: Prepare locked EmbeddedCore XCFramework
+        run: |
+          export MISE_TRUSTED_CONFIG_PATHS="${MISE_TRUSTED_CONFIG_PATHS:-$PWD}"
+          if command -v mise >/dev/null 2>&1; then
+            GOROOT="$(mise where go@1.27.3 2>/dev/null || true)"
+            if [[ -n "${GOROOT:-}" ]]; then
+              export GOROOT
+              export PATH="$GOROOT/bin:${GOPATH:-$HOME/go}/bin:$PATH"
+            fi
+          fi
+          export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
+          command -v go >/dev/null || { echo "go missing on archive runner" >&2; exit 2; }
+          if ! command -v gomobile >/dev/null 2>&1; then
+            go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20261011034528-197770444867
+            export PATH="${GOPATH:-$HOME/go}/bin:$PATH"
+            gomobile init
+          fi
+          bash scripts/release/prepare-ios-access-core.sh
+          test -d apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework
       - name: Compile uncredentialed native archive
         env:
           IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
         run: |
           export TMPDIR="$IOS_CI_ROOT/tmp"
           export CLANG_MODULE_CACHE_PATH="$IOS_CI_ROOT/ModuleCache"
+          test -d apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework
           xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_CI_ROOT/Aegis.xcarchive" -derivedDataPath "$IOS_CI_ROOT/DerivedData" -clonedSourcePackagesDirPath "$IOS_CI_ROOT/SourcePackages" -packageCachePath "$IOS_CI_ROOT/PackageCache" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 archive > "$IOS_CI_ROOT/xcodebuild.log" 2>&1
           python3 scripts/release/verify-ios-archive.py "$IOS_CI_ROOT/Aegis.xcarchive" 1.0.0 1
           python3 -I -B scripts/ci/ios-ci-storage.py seal --root "$IOS_CI_ROOT"
