@@ -1691,7 +1691,7 @@ TEST(AccessRuleStoreTest, LegacySchemaCannotReinterpretUnknownOrdinalAsWebsiteGr
     const auto repair = "UPDATE access_rules SET scope=" +
         std::to_string(static_cast<int>(PolicyScope::kSite)) +
         " WHERE rule_id='future-scope'";
-    ASSERT_TRUE(legacy.Execute(repair.c_str()));
+    ASSERT_TRUE(legacy.Execute(repair));
   }
   ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
   const auto recovered = migrated.ReadCommittedSnapshot("partition-A");
