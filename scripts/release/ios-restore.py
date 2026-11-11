@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='ios-restore-') as tmp:
             raise ValueError('Draft origin differs from this package job')
     else:
         original = action.api(f'actions/runs/{expected}')
-        action.transport.verify_run(original, os.environ['GITHUB_REPOSITORY'], sha, expected, int(origin['attempt']))
+        action.verify_package_run(original, os.environ['GITHUB_REPOSITORY'], sha, expected, int(origin['attempt']))
         if original['path'] not in action.transport.PACKAGE_WORKFLOWS:
             raise ValueError('Wrong original package workflow')
         if origin['runIdLocal'] != os.environ['RELEASE_RUN_ID']:
