@@ -125,7 +125,8 @@ def main():
     parser.add_argument('--team', required=True)
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], required=True)
     args = parser.parse_args()
-    create(args.output, args.version, args.build, args.team, args.profile, os.environ)
+    with engine().native_session():
+        create(args.output, args.version, args.build, args.team, args.profile, os.environ)
 
 
 if __name__ == '__main__':
