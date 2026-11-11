@@ -187,6 +187,15 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
     return false;
   }
+  base::OnceCallback<void(bool)> superseded_retry;
+  if (publication_in_flight_ && !enabled && verifying_host_ == host) {
+    // The ON transaction is already committed. Its connectivity recheck may
+    // finish later, but a newer OFF owns both the choice and the retry now.
+    verifying_host_.reset();
+    ++committed_verification_attempt_;
+    publication_in_flight_ = false;
+    superseded_retry = std::move(retry_completion_);
+  }
   if (publication_in_flight_ || (enabled && restoring_core_)) {
     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
         AccessSiteProxySessionError::kBusy);
@@ -199,6 +208,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     host_states_[host].connection = AccessSiteConnectionState::kConnecting;
     host_states_[host].failure_reason.clear();
     BeginDisablePublication(host);
+    if (superseded_retry) std::move(superseded_retry).Run(false);
     return true;
   }
 
@@ -389,7 +399,10 @@ bool AccessSiteProxyBubbleController::RegisterPreparedCore(
   return true;
 }
 void AccessSiteProxyBubbleController::OnCommittedCoreVerified(
-    AccessSiteHost host, AccessLocalCoreReady result) {
+    AccessSiteHost host, uint64_t attempt, AccessLocalCoreReady result) {
+  if (attempt != committed_verification_attempt_ || verifying_host_ != host)
+    return;
+  verifying_host_.reset();
   if (!result.ready) {
     OnLocalCoreStopped(core_registration_);
     FailCorePreparation(host, std::move(result.error));
@@ -809,9 +822,10 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
   if (enabling) {
     if (result.status == AccessMutationTransactionStatus::kCommitted) {
       publication_in_flight_ = true;
+      verifying_host_ = host;
       local_core_->Verify(base::BindOnce(
           &AccessSiteProxyBubbleController::OnCommittedCoreVerified,
-          weak_factory_.GetWeakPtr(), host));
+          weak_factory_.GetWeakPtr(), host, ++committed_verification_attempt_));
       return;
     }
     // Preserve the last committed choice; preparation is not a commit.

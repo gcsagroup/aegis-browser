@@ -68,10 +68,12 @@ source_set("access_build_channel") {
 }
 
 source_set("access_local_core_manager") {
-  sources = [
-    "access_local_core_manager.cc",
-    "access_local_core_manager.h",
-  ]
+  sources = [ "access_local_core_manager.h" ]
+  if (is_mac) {
+    sources += [ "access_local_core_manager.cc" ]
+  } else {
+    sources += [ "access_local_core_manager_unavailable.cc" ]
+  }
   deps = [
     ":access_buildflags",
     "//base",
@@ -86,8 +88,27 @@ source_set("access_local_core_manager") {
   }
 }
 
+test("access_local_core_unavailable_unittests") {
+  sources = [
+    "access_local_core_manager.h",
+    "access_local_core_manager_unavailable.cc",
+    "access_local_core_manager_unavailable_unittest.cc",
+  ]
+  deps = [
+    "//base",
+    "//base/test:run_all_unittests",
+    "//base/test:test_support",
+    "//net",
+    "//testing/gtest",
+  ]
+}
+
 test("access_local_core_manager_unittests") {
-  sources = [ "access_local_core_manager_unittest.cc" ]
+  if (is_mac) {
+    sources = [ "access_local_core_manager_unittest.cc" ]
+  } else {
+    sources = [ "access_local_core_manager_unavailable_unittest.cc" ]
+  }
   deps = [
     ":access_buildflags",
     ":access_local_core_manager",

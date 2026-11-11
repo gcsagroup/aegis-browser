@@ -16,6 +16,7 @@
 #include "base/pending_task.h"
 #include "base/task/current_thread.h"
 #include "base/task/task_observer.h"
+#include "base/test/bind.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/test_future.h"
@@ -57,6 +58,10 @@ class AccessSiteProxyProductTestPeer {
   }
   static bool IsPreparing(AccessSiteProxyBubbleController* bubble) {
     return bubble->publication_in_flight_;
+  }
+  static void StopCore(AccessSiteProxyBubbleController* bubble,
+                       base::OnceClosure completion) {
+    bubble->local_core_->Stop(std::move(completion));
   }
 };
 class AccessServiceCoordinatorTestPeer {
@@ -100,6 +105,33 @@ class CancelAtQueuedPolicyCompletion final : public base::TaskObserver {
  private:
   base::OnceClosure cancel_;
   bool cancelled_ = false;
+};
+
+// Act after the enable transaction's UI task commits ON and starts its
+// asynchronous verification, before another UI task can finish that recheck.
+class DisableDuringCommittedVerification final : public base::TaskObserver {
+ public:
+  DisableDuringCommittedVerification(base::RepeatingCallback<bool()> committed,
+                                      base::OnceClosure disable)
+      : committed_(std::move(committed)), disable_(std::move(disable)) {
+    base::CurrentThread::Get()->AddTaskObserver(this);
+  }
+  ~DisableDuringCommittedVerification() override {
+    base::CurrentThread::Get()->RemoveTaskObserver(this);
+  }
+  void WillProcessTask(const base::PendingTask&, bool) override {}
+  void DidProcessTask(const base::PendingTask&) override {
+    if (disable_ && committed_.Run()) {
+      disabled_ = true;
+      std::move(disable_).Run();
+    }
+  }
+  bool disabled() const { return disabled_; }
+
+ private:
+  base::RepeatingCallback<bool()> committed_;
+  base::OnceClosure disable_;
+  bool disabled_ = false;
 };
 
 class CountingPrivateFactory final
@@ -726,6 +758,20 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness 
   void BeginHeldRetry() {
     content::NavigationSimulator::NavigateAndFailFromBrowser(
         web_contents(), failed_, net::ERR_CONNECTION_RESET);
+    // The first simulated navigation creates its default NetworkContext and
+    // replaces the fixture's setup-time binding. Bind and ACK that current
+    // context before testing transaction completion rather than scope failure.
+    task_environment()->RunUntilIdle();
+    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
+    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
+    ASSERT_TRUE(bound.Get());
+    auto* runtime = AccessPublishedRequestRuntime::Get(profile());
+    const auto common = runtime->CaptureCommonGenerationTupleOnUiThread(owner_);
+    ASSERT_TRUE(common);
+    base::test::TestFuture<bool> published;
+    transport_->PublishPrivatePolicy(*runtime->GetPublishedPolicySnapshot(owner_),
+                                    *common, published.GetCallback());
+    ASSERT_TRUE(published.Get());
     context_.hold_next = true;
     ASSERT_TRUE(helper()->RequestProxyRetry(completed_.GetCallback()));
     ASSERT_TRUE(base::test::RunUntil([&] {
@@ -837,6 +883,44 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness 
   const GURL failed_{"https://failed.example/path?q=original#fragment"};
   base::test::TestFuture<bool> completed_;
 };
+
+TEST_F(AccessRetryNavigationProductTest,
+       OffDuringCommittedVerificationRevokesRetryAndPersistsOff) {
+  BeginHeldRetry();
+  bool accepted = false;
+  DisableDuringCommittedVerification disable(base::BindLambdaForTesting([&] {
+    return bubble_->SnapshotForCommittedUrl(failed_).intent ==
+               AccessSiteIntent::kAllow &&
+           AccessSiteProxyProductTestPeer::IsPreparing(bubble_);
+  }), base::BindLambdaForTesting([&] {
+    EXPECT_EQ(bubble_->SnapshotForCommittedUrl(failed_).intent,
+              AccessSiteIntent::kAllow);
+    EXPECT_TRUE(AccessSiteProxyProductTestPeer::IsPreparing(bubble_));
+    const auto host = ResolveTrustedNavigationHost(failed_);
+    ASSERT_TRUE(host.host);
+    accepted = bubble_->RequestHostProxySession(*host.host, false);
+  }));
+  context_.Reply(true);
+  ASSERT_TRUE(completed_.Wait());
+  ASSERT_TRUE(disable.disabled())
+      << bubble_->SnapshotForCommittedUrl(failed_).failure_reason;
+  EXPECT_TRUE(accepted);
+  EXPECT_FALSE(completed_.Get());
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return !AccessSiteProxyProductTestPeer::IsPreparing(bubble_);
+  }));
+  // Stop runs on the core sequence after Verify. Its reply reaches UI after
+  // that older Verify result, including when Stop must cancel a live probe.
+  base::test::TestFuture<void> stopped;
+  AccessSiteProxyProductTestPeer::StopCore(bubble_, stopped.GetCallback());
+  ASSERT_TRUE(stopped.Wait());
+  EXPECT_FALSE(controller().GetPendingEntry());
+  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
+  const auto state = bubble_->SnapshotForCommittedUrl(failed_);
+  EXPECT_EQ(state.intent, AccessSiteIntent::kOff);
+  EXPECT_EQ(state.connection, AccessSiteConnectionState::kIdle);
+  EXPECT_TRUE(state.failure_reason.empty());
+}
 
 TEST_F(AccessRetryNavigationProductTest, NewNavigationBeforeRealAckIsNotReloaded) {
   BeginHeldRetry();

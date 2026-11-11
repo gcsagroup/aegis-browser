@@ -441,3 +441,9 @@
 0441-fix-access-cold-redirect-ready-gate.patch
 0442-test-access-queued-redirect-cancellation.patch
 0443-fix-access-queued-redirect-caller-closure.patch
+0444-access-off-during-core-verification-regression.patch
+0445-access-off-race-test-callback-fixture.patch
+0446-access-off-race-posted-location-fixture.patch
+0447-access-off-race-committed-state-fixture.patch
+0448-access-retry-fixture-current-network-context.patch
+0449-access-off-supersedes-verify-and-platform-core.patch

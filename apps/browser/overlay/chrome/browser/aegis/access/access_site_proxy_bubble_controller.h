@@ -98,7 +98,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
                                bool restored);
   void OnLocalCorePrepared(AccessSiteHost host, OwnershipKey owner,
                           AccessLocalCoreReady result);
-  void OnCommittedCoreVerified(AccessSiteHost host, AccessLocalCoreReady result);
+  void OnCommittedCoreVerified(AccessSiteHost host, uint64_t attempt,
+                               AccessLocalCoreReady result);
   void CreateLocalCore();
   bool RegisterPreparedCore(const OwnershipKey& owner,
                             const AccessLocalCoreReady& result);
@@ -137,6 +138,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   std::map<AccessSiteHost, HostState> host_states_;
   uint64_t state_revision_ = 0;
   bool publication_in_flight_ = false;
+  std::optional<AccessSiteHost> verifying_host_;
+  uint64_t committed_verification_attempt_ = 0;
   std::unique_ptr<AccessLocalCoreManager> local_core_;
   bool local_core_ready_ = false;
   bool restoring_core_ = false;

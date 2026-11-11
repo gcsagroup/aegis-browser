@@ -95,6 +95,39 @@ class MacosDmgTests(unittest.TestCase):
             self.assertEqual(calls, [])
             self.assertTrue(lock.is_dir())
 
+    def test_developer_id_signs_every_bundle_with_verified_job_keychain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            app, env, report, calls, runner = self.package_fixture(root)
+            helper = app / 'Contents/Frameworks/Helper.app'
+            helper.mkdir(parents=True)
+            keychain = root / 'developer-id.keychain-db'
+            keychain.touch()
+            env.update(MACOS_SIGNING_MODE='developer-id',
+                       AEGIS_MACOS_DEVELOPER_ID='Developer ID Application: Example (ABCDE12345)',
+                       AEGIS_MACOS_SIGNING_KEYCHAIN=str(keychain))
+            with self.fake_verifier(report):
+                dmg.package(env, runner=runner)
+            signing = [call for call in calls if '--sign' in call]
+            self.assertEqual(len(signing), 2)
+            for call in signing:
+                self.assertIn('--keychain', call)
+                self.assertEqual(call[call.index('--keychain') + 1], str(keychain))
+
+    def test_developer_id_without_verified_keychain_cannot_sign(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app, env, report, calls, runner = self.package_fixture(Path(directory).resolve())
+            env.update(MACOS_SIGNING_MODE='developer-id',
+                       AEGIS_MACOS_DEVELOPER_ID='Developer ID Application: Example (ABCDE12345)')
+            with self.fake_verifier(report), self.assertRaisesRegex(dmg.DeliveryError, 'keychain'):
+                dmg.package(env, runner=runner)
+            self.assertEqual(calls, [])
+
+    def test_workflow_passes_setup_verified_keychain_to_package(self):
+        workflow = (ROOT / '.github/workflows/macos-delivery.yml').read_text()
+        self.assertIn('AEGIS_MACOS_SIGNING_KEYCHAIN: ${{ steps.identity.outputs.keychain }}',
+                      workflow)
+
     def test_access_plan_reuses_existing_self_hosted_label_and_skips_dmg(self):
         plan = dmg.normalize(environment())
         self.assertEqual(plan['operation'], 'access')
@@ -122,6 +155,7 @@ class MacosDmgTests(unittest.TestCase):
             (app / 'Contents' / 'Info.plist').write_text('plist')
             (helper / 'Info.plist').write_text('helper')
             commands = dmg.sign_plan(app, '-')
+            self.assertTrue(all('--keychain' not in command for command in commands))
             signed = [Path(command[-1]) for command in commands if command[1] == '--force']
             self.assertEqual(signed, [helper, app])
             self.assertTrue(all('--deep' not in command and 'notarytool' not in command for command in commands))

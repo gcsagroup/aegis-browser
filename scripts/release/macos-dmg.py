@@ -119,8 +119,11 @@ def admit_app(app_path, app_root):
     return app_real
 
 
-def sign_plan(app, identity):
+def sign_plan(app, identity, keychain=''):
     require(identity == '-' or identity.startswith('Developer ID Application:'), 'Refusing an unexpected signing identity')
+    if identity != '-':
+        require(keychain and Path(keychain).is_absolute() and Path(keychain).is_file(),
+                'Verified job-local signing keychain is required for Developer ID')
     bundles = []
     for dirpath, dirnames, _filenames in os.walk(app, followlinks=False):
         current = Path(dirpath)
@@ -137,7 +140,10 @@ def sign_plan(app, identity):
     ordered.append(Path(app))
     commands = []
     for path in ordered:
-        commands.append(['/usr/bin/codesign', '--force', '--sign', identity, '--timestamp=none', str(path)])
+        command = ['/usr/bin/codesign', '--force', '--sign', identity]
+        if identity != '-':
+            command.extend(['--keychain', keychain])
+        commands.append(command + ['--timestamp=none', str(path)])
     commands.append(['/usr/bin/codesign', '--verify', '--strict', str(app)])
     for command in commands:
         require(NOTARIZE_TOOLS.isdisjoint(Path(part).name for part in command), 'Notarization commands are refused')
@@ -253,6 +259,11 @@ def app_build_lock(app, environment):
 
 def package(environment, runner=_run):
     plan = normalize(dict(environment, MACOS_OPERATION='package'))
+    plan['keychain'] = environment.get('AEGIS_MACOS_SIGNING_KEYCHAIN', '')
+    if plan['signing_mode'] == 'developer-id':
+        require(plan['keychain'] and Path(plan['keychain']).is_absolute() and
+                Path(plan['keychain']).is_file(),
+                'Verified job-local signing keychain is required for Developer ID')
     app = admit_app(environment.get('MACOS_APP_PATH', ''), environment.get('AEGIS_MACOS_APP_ROOT', ''))
     with app_build_lock(app, environment):
         return package_locked(environment, runner, plan)
@@ -283,7 +294,7 @@ def package_locked(environment, runner, plan):
         f'Version: {plan["version"]}\n'
         f'Signing: {plan["signing_mode"]}\n'
         'Notarization: not performed. Gatekeeper may refuse this disk image.\n')
-    for command in sign_plan(staged_app, plan['identity']):
+    for command in sign_plan(staged_app, plan['identity'], plan['keychain']):
         runner(command)
     dmg = output / plan['dmg_name']
     runner(dmg_plan(stage, dmg))
