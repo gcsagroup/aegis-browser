@@ -939,7 +939,11 @@ TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOthe
   const GURL replacement("https://other.example/unchanged");
   content::NavigationSimulator::NavigateAndCommitFromBrowser(other.get(), replacement);
   DeleteContents();
+  const bool replied_on_close = completed_.IsReady();
   DrainHeldRetry();
+  EXPECT_TRUE(replied_on_close);
+  ASSERT_TRUE(completed_.IsReady());
+  EXPECT_FALSE(completed_.Get());
   EXPECT_FALSE(other->GetController().GetPendingEntry());
   EXPECT_EQ(other->GetLastCommittedURL(), replacement);
 }
@@ -947,8 +951,12 @@ TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOthe
 TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry) {
   BeginHeldRetry();
   web_contents()->Stop();
+  const bool replied_on_stop = completed_.IsReady();
   EXPECT_FALSE(helper()->FailureForRetry());
   DrainHeldRetry();
+  EXPECT_TRUE(replied_on_stop);
+  ASSERT_TRUE(completed_.IsReady());
+  EXPECT_FALSE(completed_.Get());
   EXPECT_FALSE(controller().GetPendingEntry());
   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
 }

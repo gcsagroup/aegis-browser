@@ -206,6 +206,28 @@ TEST_F(AccessNavigationRetryTabHelperTest, StopRevokesPendingRouteReady) {
   EXPECT_FALSE(controller().GetPendingEntry());
 }
 
+TEST_F(AccessNavigationRetryTabHelperTest,
+       StopAnswersRetainedErrorPageBeforeLateReady) {
+  const GURL failed("https://failed.example/stop");
+  Fail(failed);
+  base::OnceCallback<void(bool)> prepared;
+  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
+      [&](const GURL&, base::OnceCallback<void(bool)> callback) {
+        prepared = std::move(callback);
+      }));
+  base::test::TestFuture<bool> reply;
+  ASSERT_TRUE(helper()->RequestProxyRetry(reply.GetCallback()));
+  ASSERT_TRUE(prepared);
+  web_contents()->Stop();
+  const bool replied_on_stop = reply.IsReady();
+  std::move(prepared).Run(true);
+  EXPECT_TRUE(replied_on_stop);
+  ASSERT_TRUE(reply.IsReady());
+  EXPECT_FALSE(reply.Get());
+  EXPECT_FALSE(controller().GetPendingEntry());
+  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed);
+}
+
 TEST_F(AccessNavigationRetryTabHelperTest, PendingNavigationRevokesLateReady) {
   Fail(GURL("https://failed.example/path"));
   auto ready = helper()->CaptureRouteReadyCallback();
@@ -306,6 +328,8 @@ TEST_F(AccessNavigationRetryTabHelperTest, ErrorPageRequestCannotRetryNewNavigat
   const GURL other("https://other.example/");
   content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), other);
   std::move(prepared).Run(true);
+  ASSERT_TRUE(result.IsReady());
+  EXPECT_FALSE(result.Get());
   EXPECT_FALSE(controller().GetPendingEntry());
   EXPECT_EQ(web_contents()->GetLastCommittedURL(), other);
 }

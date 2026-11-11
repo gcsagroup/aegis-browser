@@ -6,6 +6,7 @@
 
 #include "base/functional/bind.h"
 #include "base/test/task_environment.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/isolation_info.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -14,20 +15,24 @@
 #include "net/http/access_proxy_route.h"
 #include "net/http/http_network_transaction.h"
 #include "net/http/http_response_info.h"
+#include "net/http/http_server_properties.h"
 #include "net/http/http_status_code.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/http/http_transaction_test_util.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy_resolution/configured_proxy_resolution_service.h"
+#include "net/ssl/ssl_info.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_test_util.h"
 #include "net/url_request/url_request_context.h"
-#include "url/origin.h"
 #include "net/url_request/url_request_context_builder.h"
+#include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/origin.h"
+#include "url/scheme_host_port.h"
 
 namespace aegis_access {
 namespace {
@@ -148,6 +153,63 @@ TEST_F(AccessHttpRouteExecutionTest, NativeProxyConfigurationRemainsUnchanged) {
   EXPECT_EQ(Execute(*context, request, &body), net::OK);
   EXPECT_EQ(body, "native");
   EXPECT_EQ(hits.load(), 1);
+}
+
+TEST_F(AccessHttpRouteExecutionTest, ManagedHttpsKeepsHstsAndIsolatesAltSvc) {
+  constexpr char kHost[] = "secure-route.test";
+  net::EmbeddedTestServer origin(net::EmbeddedTestServer::TYPE_HTTPS);
+  origin.SetCertHostnames({kHost});
+  origin.RegisterRequestHandler(base::BindRepeating(
+      [](const net::test_server::HttpRequest&)
+          -> std::unique_ptr<net::test_server::HttpResponse> {
+        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+        response->set_content("secure response");
+        response->AddCustomHeader("Strict-Transport-Security", "max-age=3600");
+        response->AddCustomHeader("Alt-Svc", "h2=\":443\"");
+        return response;
+      }));
+  ASSERT_TRUE(origin.Start());
+  const GURL url = origin.GetURL(kHost, "/policy");
+  net::EmbeddedTestServer proxy;
+  proxy.EnableConnectProxy({net::HostPortPair::FromURL(url)});
+  ASSERT_TRUE(proxy.Start());
+
+  // Both requests use the same local TLS server and CONNECT proxy. Only the
+  // explicitly managed request must suppress the native Alt-Svc update.
+  for (bool managed : {false, true}) {
+    SCOPED_TRACE(managed ? "managed" : "native");
+    auto context = Context(
+        net::ConfiguredProxyResolutionService::CreateFixedFromPacResultForTest(
+            "PROXY " + proxy.host_port_pair().ToString(),
+            TRAFFIC_ANNOTATION_FOR_TESTS));
+    net::TransportSecurityState::STSState sts;
+    EXPECT_FALSE(
+        context->transport_security_state()->GetDynamicSTSState(kHost, &sts));
+    net::TestDelegate delegate;
+    auto request = context->CreateRequest(url, net::DEFAULT_PRIORITY, &delegate,
+                                          TRAFFIC_ANNOTATION_FOR_TESTS,
+                                          net::handles::kInvalidNetworkHandle);
+    request->set_isolation_info(net::IsolationInfo::CreateForInternalRequest(
+        url::Origin::Create(url)));
+    if (managed) {
+      auto route = Route(proxy);
+      ASSERT_TRUE(route);
+      request->SetAccessProxyRoute(std::move(route));
+    }
+    request->Start();
+    delegate.RunUntilComplete();
+    ASSERT_EQ(delegate.request_status(), net::OK);
+    ASSERT_EQ(delegate.data_received(), "secure response");
+    EXPECT_TRUE(request->ssl_info().is_valid());
+    EXPECT_TRUE(
+        context->transport_security_state()->GetDynamicSTSState(kHost, &sts));
+    EXPECT_EQ(context->http_server_properties()
+                  ->GetAlternativeServiceInfos(
+                      url::SchemeHostPort(url),
+                      request->isolation_info().network_anonymization_key())
+                  .empty(),
+              managed);
+  }
 }
 
 TEST_F(AccessHttpRouteExecutionTest, FailedManagedRouteNeverFallsBackToOrigin) {

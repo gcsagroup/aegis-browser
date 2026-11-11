@@ -39,11 +39,12 @@ class AccessNavigationRetryTabHelper
   explicit AccessNavigationRetryTabHelper(content::WebContents* contents);
   void OnRouteReady(AccessNavigationRetryTicket ticket, int error_entry_id);
   void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
-      base::OnceCallback<void(bool)> completion, bool ready);
+                       bool ready);
+  void ResetForNavigation(int64_t navigation_id);
 
   AccessNavigationRetryState state_;
   ProxyRetryHandler proxy_retry_handler_;
-  bool proxy_preparation_pending_ = false;
+  base::OnceCallback<void(bool)> pending_retry_reply_;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
   base::WeakPtrFactory<AccessNavigationRetryTabHelper> weak_factory_{this};
 };
