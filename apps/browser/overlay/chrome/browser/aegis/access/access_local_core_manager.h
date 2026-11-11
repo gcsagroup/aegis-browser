@@ -13,7 +13,7 @@
 #include "net/base/auth.h"
 
 namespace aegis::access {
-enum class AccessLocalCoreSource { kDevFiles, kAlphaBundle };
+enum class AccessLocalCoreSource { kDevFiles, kPrivateTestBundle };
 // Supplied by Browser's private Dev binding or its explicit Alpha build asset.
 // Neither a page nor the retry IPC supplies a path, node, URL or credential.
 struct AccessLocalCoreInput {

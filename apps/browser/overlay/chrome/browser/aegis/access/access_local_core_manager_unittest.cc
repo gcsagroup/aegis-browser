@@ -23,6 +23,7 @@
 #include "base/test/test_future.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/aegis/access/access_build_channel.h"
 #include "chrome/browser/aegis/access/access_buildflags.h"
 #include "build/build_config.h"
 #include "crypto/hash.h"
@@ -42,17 +43,26 @@ TEST(AccessLocalCoreInputTest, BuildControlsPrivateInputSource) {
   command.GetProcessCommandLine()->AppendSwitchPath(
       "aegis-access-dev-node-config", canonical_directory.AppendASCII("dev-node"));
   const auto input = ResolveAccessLocalCoreInput();
+#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
   ASSERT_TRUE(input);
-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
-  EXPECT_EQ(input->source, AccessLocalCoreSource::kAlphaBundle);
+  EXPECT_EQ(input->source, AccessLocalCoreSource::kPrivateTestBundle);
+  EXPECT_EQ(AccessChannelForCurrentBuild(), BundledAccessTestChannel());
+#if BUILDFLAG(AEGIS_BETA_TEST_NODE_ENABLED)
+  EXPECT_EQ(BundledAccessTestChannel(), aegis_access::ChannelNamespace::kBeta);
+#else
+  EXPECT_EQ(BundledAccessTestChannel(), aegis_access::ChannelNamespace::kAlpha);
+#endif
   EXPECT_EQ(input->manifest, canonical_directory.AppendASCII(
       "AegisAlphaAccess/core-manifest.json"));
   EXPECT_EQ(input->node_config, canonical_directory.AppendASCII(
       "AegisAlphaAccess/node.json"));
-#else
+#elif BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
+  ASSERT_TRUE(input);
   EXPECT_EQ(input->source, AccessLocalCoreSource::kDevFiles);
   EXPECT_EQ(input->manifest, canonical_directory.AppendASCII("dev-manifest"));
   EXPECT_EQ(input->node_config, canonical_directory.AppendASCII("dev-node"));
+#else
+  EXPECT_FALSE(input);
 #endif
 }
 

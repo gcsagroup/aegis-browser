@@ -346,6 +346,7 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
 }
 std::string AccessSiteProxyBubbleController::LocalProxyGroup(
     const OwnershipKey& owner) {
+  if (owner.channel == ChannelNamespace::kBeta) return "beta-authorized-test-node";
   return owner.channel == ChannelNamespace::kAlpha ? "alpha-authorized-test-node"
                                                   : "dev-authorized-local-node";
 }
@@ -362,10 +363,9 @@ bool AccessSiteProxyBubbleController::RegisterPreparedCore(
     const OwnershipKey& owner, const AccessLocalCoreReady& result) {
   if (!result.ready || !result.local_credentials) return false;
   // Rebinding a child does not change a saved rule or its revision.
-  const bool alpha = owner.channel == ChannelNamespace::kAlpha;
   auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
   if (!identity->binding()) identity->CommitIdentity(
-      {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, alpha ? "alpha" : "dev", "authorized-local-node"});
+      {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, LocalAccessIdentityChannel(owner.channel), "authorized-local-node"});
   auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
   const auto common = runtime ? runtime->CaptureCommonGenerationTupleOnUiThread(owner)
                               : std::nullopt;

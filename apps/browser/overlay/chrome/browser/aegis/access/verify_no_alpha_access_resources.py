@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject stale private Alpha assets in a reused normal build output."""
+"""Reject stale private test assets in a reused normal build output."""
 
 import argparse
 from pathlib import Path
@@ -11,7 +11,7 @@ def verify(output: Path) -> None:
     candidates.extend(output.glob(
         "*.app/Contents/Frameworks/*.framework/Resources/AegisAlphaAccess"))
     if any(path.exists() for path in candidates):
-        raise ValueError("Normal output contains Alpha test assets")
+        raise ValueError("Normal output contains private test assets")
 
 
 def main() -> int:
@@ -22,9 +22,9 @@ def main() -> int:
     try:
         verify(args.output_dir)
     except ValueError:
-        parser.exit(1, "Normal output contains Alpha test assets; use a normal output directory.\n")
+        parser.exit(1, "Normal output contains private test assets; use a normal output directory.\n")
     args.stamp.parent.mkdir(parents=True, exist_ok=True)
-    args.stamp.write_text("Alpha test resources absent\n")
+    args.stamp.write_text("private test resources absent\n")
     return 0
 
 

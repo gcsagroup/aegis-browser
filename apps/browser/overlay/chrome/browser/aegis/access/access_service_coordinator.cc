@@ -11,6 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/time/time.h"
+#include "chrome/browser/aegis/access/access_build_channel.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 #include "chrome/browser/aegis/access/access_identity_generation_source.h"
 #include "chrome/browser/aegis/access/access_published_request_runtime.h"
@@ -171,7 +172,7 @@ void AccessServiceCoordinator::OnStoreInitialized(
     auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
     if (!identity->binding()) identity->CommitIdentity(
         {aegis_access::AccessIdentityKind::kSignedOut, {}, {},
-         owner.channel == ChannelNamespace::kAlpha ? "alpha" : "dev",
+         LocalAccessIdentityChannel(owner.channel),
          "authorized-local-node"});
     const auto published = runtime->PublishRestoredPolicyCandidate(*result.publication);
     ready = published.status == AccessPolicyPublicationStatus::kPublished ||

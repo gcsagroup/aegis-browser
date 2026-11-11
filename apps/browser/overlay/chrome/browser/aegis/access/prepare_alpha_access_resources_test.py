@@ -38,11 +38,24 @@ class AlphaResourcesTest(unittest.TestCase):
         self.assertEqual((output / "xray").stat().st_mode & 0o777, 0o700)
 
     def test_other_channels_do_not_create_resources(self):
-        for channel in ("dev", "beta", "release", ""):
+        for channel in ("dev", "stable", "release", ""):
             output = self.root / ("output-" + channel)
             with self.assertRaises(ValueError):
                 stage(self.source, output, channel)
             self.assertFalse(output.exists())
+
+    def test_beta_requires_matching_manifest_and_preserves_bytes(self):
+        output = self.root / "output"
+        with self.assertRaises(ValueError):
+            stage(self.source, output, "beta")
+        self.assertFalse(output.exists())
+        self.manifest["channel"] = "beta"
+        self.write_manifest()
+        with self.assertRaises(ValueError):
+            stage(self.source, output, "alpha")
+        self.assertFalse(output.exists())
+        stage(self.source, output, "beta")
+        self.assertEqual((output / "node.json").read_bytes(), self.node)
 
     def test_tampered_node_or_binary_is_rejected_before_output(self):
         for name, original in (("node.json", self.node), ("xray", self.binary)):
