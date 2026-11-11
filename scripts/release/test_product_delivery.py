@@ -1,9 +1,32 @@
 import hashlib
+import subprocess
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
-from product_delivery import EMPTY_TREE, Records, allocation, canonical
+from product_delivery import EMPTY_TREE, GitHub, Records, allocation, canonical
+
+
+class GitHubWireTests(unittest.TestCase):
+    def test_repository_identity_uses_the_exact_root_endpoint(self):
+        with patch('product_delivery.subprocess.run', return_value=subprocess.CompletedProcess([], 0, '{"id":123}')) as run:
+            Records(GitHub('gcsagroup/aegis-browser'), 123, '456')
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][4], 'repos/gcsagroup/aegis-browser')
+        self.assertNotIn('--method', run.call_args.args[0])
+
+    def test_ref_lookup_keeps_404_read_only_and_write_failure_is_not_retried(self):
+        api = GitHub('gcsagroup/aegis-browser')
+        with patch('product_delivery.subprocess.run', return_value=subprocess.CompletedProcess([], 1, '{"status":"404"}')) as run:
+            self.assertIsNone(api.request('git/ref/heads/ios-delivery/package/' + 'a' * 64, missing=True))
+        self.assertEqual(run.call_args.args[0][4], 'repos/gcsagroup/aegis-browser/git/ref/heads/ios-delivery/package/' + 'a' * 64)
+        self.assertNotIn('--method', run.call_args.args[0])
+        with patch('product_delivery.subprocess.run', return_value=subprocess.CompletedProcess([], 1, '')) as run:
+            with self.assertRaisesRegex(ValueError, 'retain state and reconcile'):
+                api.request('git/refs', {'ref': 'refs/heads/example', 'sha': 'b' * 40})
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.kwargs['input'], canonical({'ref': 'refs/heads/example', 'sha': 'b' * 40}))
 
 
 class FakeGitHub:
