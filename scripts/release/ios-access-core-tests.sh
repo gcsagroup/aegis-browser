@@ -144,7 +144,9 @@ xcodebuild test \
   -only-testing:"AegisTests/AccessEmbeddedCoreManifestTests" \
   -resultBundlePath "$RESULT" \
   -derivedDataPath "$OUTPUT/DerivedData" \
-  CODE_SIGNING_ALLOWED=YES | tee "$LOG"
+  CODE_SIGNING_ALLOWED=YES \
+  TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_CONFIG="$NODE_FILE" \
+  TEST_RUNNER_AEGIS_ACCESS_LOCAL_V2RAY_LIVE=1 | tee "$LOG"
 STATUS=${PIPESTATUS[0]}
 set -e
 

@@ -113,7 +113,10 @@ public enum AccessLocalV2RayConfigLoader {
         guard network == AccessRealityVisionParameters.admittedNetwork else {
             throw AccessLocalV2RayConfigError.unsupportedNetwork(network)
         }
-        if let encryption = query["encryption"], encryption != AccessRealityVisionParameters.admittedEncryption {
+        // Some share URIs emit `encryption=` (empty). Treat missing/empty as admitted `none`.
+        if let encryption = query["encryption"],
+           !encryption.isEmpty,
+           encryption != AccessRealityVisionParameters.admittedEncryption {
             throw AccessLocalV2RayConfigError.fieldNotCanonical("encryption")
         }
         if query["allowInsecure"] != nil {
