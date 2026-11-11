@@ -143,6 +143,7 @@ jobs:
             --source-lock apps/ios/EmbeddedCore/embedded-core-lock.json --products "$IOS_CI_ROOT/EmbeddedCore"
           xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_CI_ROOT/Aegis.xcarchive" -derivedDataPath "$IOS_CI_ROOT/DerivedData" -clonedSourcePackagesDirPath "$IOS_CI_ROOT/SourcePackages" -packageCachePath "$IOS_CI_ROOT/PackageCache" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 AEGIS_EMBEDDED_CORE_PRODUCTS="$IOS_CI_ROOT/EmbeddedCore" archive > "$IOS_CI_ROOT/xcodebuild.log" 2>&1
           python3 scripts/release/verify-ios-archive.py "$IOS_CI_ROOT/Aegis.xcarchive" 1.0.0 1
+          python3 -B scripts/release/test_ios_linked_bundle.py "$IOS_CI_ROOT/Aegis.xcarchive/Products/Applications/Aegis.app" "$IOS_CI_ROOT/EmbeddedCore" "$IOS_CI_ROOT/DerivedData" device
           python3 -I -B scripts/ci/ios-ci-storage.py seal --root "$IOS_CI_ROOT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() && steps.storage.outcome == 'success' }}

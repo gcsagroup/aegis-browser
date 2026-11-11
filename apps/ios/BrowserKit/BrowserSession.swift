@@ -100,7 +100,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         var allowSequence: UInt64
         var failureID: UUID?
         var recoveryOperationID: UUID?
-        var isOtherPolicyAction = false
+        var policyType: WKNavigationType?
+
+        func acceptsRedirectPolicy(_ type: WKNavigationType?) -> Bool {
+            type != nil && (type == .other || type == policyType)
+        }
     }
     private var nextAllowSequence: UInt64 = 0
     private var attempt = MainFrameAttempt(
@@ -126,6 +130,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     /// Set only after the recovery navigation commits while this attempt is a proxy retry.
     @Published public private(set) var proxyRecoveryCommitted = false
     internal private(set) var recoveryLoadCount = 0
+    var currentAttemptIDForTests: String { attempt.navigationID }
     var currentNavigationForTests: WKNavigation? { pendingNavigation }
 
     /// Records the pending main-frame URL as committed. Unit tests have no WebKit commit callback.
@@ -271,7 +276,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         url: URL,
         method: String,
         hasReplayableBody: Bool = false,
-        isOtherPolicyAction: Bool = false
+        policyType: WKNavigationType? = nil
     ) {
         invalidateDeferredDocumentLoad()
         hostCoordinator?.pendingRecoveryInvalidated(tab: self)
@@ -293,7 +298,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             allowSequence: nextAllowSequence,
             failureID: nil,
             recoveryOperationID: nil,
-            isOtherPolicyAction: isOtherPolicyAction
+            policyType: policyType
         )
         // Keep prior unbound rows so a competing allow cannot erase an earlier
         // identity before didStart binds it. Abandoned rows are retired when a
@@ -343,10 +348,10 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         method: String,
         continuesExistingNavigation: Bool,
         hasReplayableBody: Bool = false,
-        isOtherPolicyAction: Bool = false
+        policyType: WKNavigationType? = nil
     ) {
         let normalizedMethod = method.uppercased()
-        let confirmedRedirect = isOtherPolicyAction
+        let confirmedRedirect = attempt.acceptsRedirectPolicy(policyType)
             && confirmedRedirectPolicy?.navigationID == attempt.navigationID
             && confirmedRedirectPolicy?.url == url
         if continuesExistingNavigation || confirmedRedirect {
@@ -388,24 +393,32 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         // `WKWebView.load` may call decidePolicyFor before it returns the navigation.
         // Keep the identity minted by commitPreservingMethod / retry in that window.
-        if attempt.url == url, attempt.method == normalizedMethod,
-           programmaticPolicyNavigationID == attempt.navigationID {
+        let historyAcknowledgment = attempt.policyType == .backForward
+            && (policyType == .backForward || policyType == .formResubmitted)
+        if attempt.url == url, programmaticPolicyNavigationID == attempt.navigationID,
+           historyAcknowledgment || (attempt.policyType != .backForward && attempt.method == normalizedMethod) {
             programmaticPolicyNavigationID = nil
-            if hasReplayableBody, !attempt.hasReplayableBody {
-                attempt.hasReplayableBody = true
-                if let pending = pendingNavigation,
-                   attemptsByNavigation[ObjectIdentifier(pending)]?.navigationID == attempt.navigationID {
-                    attemptsByNavigation[ObjectIdentifier(pending)] = attempt
-                }
-                if let idx = unboundAttempts.lastIndex(where: { $0.navigationID == attempt.navigationID }) {
-                    unboundAttempts[idx] = attempt
-                }
+            if historyAcknowledgment {
+                // The history item has no request method. The policy request supplies it.
+                attempt.method = normalizedMethod
+                attempt.hasReplayableBody = hasReplayableBody
+            } else {
+                attempt.hasReplayableBody = attempt.hasReplayableBody || hasReplayableBody
             }
+            attempt.policyType = policyType
+            if let pending = pendingNavigation,
+               attemptsByNavigation[ObjectIdentifier(pending)]?.navigationID == attempt.navigationID {
+                attemptsByNavigation[ObjectIdentifier(pending)] = attempt
+            }
+            if let idx = unboundAttempts.lastIndex(where: { $0.navigationID == attempt.navigationID }) {
+                unboundAttempts[idx] = attempt
+            }
+            committedRequestMethod = normalizedMethod
             requestedURL = url
             return
         }
         beginUserNavigation(url: url, method: normalizedMethod, hasReplayableBody: hasReplayableBody,
-                            isOtherPolicyAction: isOtherPolicyAction)
+                            policyType: policyType)
         requestedURL = url
         committedRequestMethod = normalizedMethod
         isLoading = true
@@ -588,7 +601,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let navigation = webView.load(request)
         pendingNavigation = navigation
         if let navigation {
-            bindNavigation(navigation, to: recorded)
+            // A synchronous policy acknowledgment can add request details before load returns.
+            bindNavigation(navigation, to: attempt.navigationID == recorded.navigationID ? attempt : recorded)
         } else {
             retireUnboundAttempt(navigationID: recorded.navigationID)
         }
@@ -808,29 +822,30 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func goBack() {
-        beginUserNavigation(url: requestedURL ?? url ?? URL(string: "about:blank")!, method: "GET")
-        loadTask?.cancel(); loadGeneration = UUID()
-        if webView.canGoBack {
-            navigationEpoch &+= 1
-            lastPolicyIntervention = nil
-            pendingNavigation = webView.goBack()
-            if let pendingNavigation {
-                bindNavigation(pendingNavigation, to: attempt)
-            }
-        }
+        navigateHistory(to: webView.backForwardList.backItem)
     }
 
     public func goForward() {
-        beginUserNavigation(url: requestedURL ?? url ?? URL(string: "about:blank")!, method: "GET")
-        loadTask?.cancel(); loadGeneration = UUID()
-        if webView.canGoForward {
-            navigationEpoch &+= 1
-            lastPolicyIntervention = nil
-            pendingNavigation = webView.goForward()
-            if let pendingNavigation {
-                bindNavigation(pendingNavigation, to: attempt)
-            }
+        navigateHistory(to: webView.backForwardList.forwardItem)
+    }
+
+    private func navigateHistory(to item: WKBackForwardListItem?) {
+        guard let item else { return }
+        beginUserNavigation(url: item.url, method: "GET", hasReplayableBody: true, policyType: .backForward)
+        loadTask?.cancel()
+        navigationEpoch &+= 1
+        lastPolicyIntervention = nil
+        let navigationID = attempt.navigationID
+        programmaticPolicyNavigationID = navigationID
+        guard let navigation = webView.go(to: item) else {
+            retireUnboundAttempt(navigationID: navigationID)
+            if programmaticPolicyNavigationID == navigationID { programmaticPolicyNavigationID = nil }
+            return
         }
+        guard attempt.navigationID == navigationID else { return }
+        pendingNavigation = navigation
+        bindNavigation(navigation, to: attempt)
+        isLoading = true
     }
 
     public func reload() {
@@ -982,7 +997,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 hasReplayableBody: BrowserMainFrameFailure.requestHasUnsafeReplaySurface(
                     navigationAction.request
                 ),
-                isOtherPolicyAction: navigationAction.navigationType == .other
+                policyType: navigationAction.navigationType
             )
             finish(.allow)
         case .blocked:
@@ -1063,10 +1078,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         // 307/308 preserve methods. Retain the original method and replay restrictions
         // rather than inventing GET eligibility for an unsafe request.
         // WebKit may deliver the redirected request policy before this confirmation.
-        // Fold its one unbound `.other` action back into this confirmed chain,
+        // Fold its one matching unbound action back into this confirmed chain,
         // preserving the failure/recovery identity and all unsafe replay surfaces.
         let redirectedAllows = unboundAttempts.filter {
-            $0.isOtherPolicyAction && $0.url == redirected && isLatestAttempt($0)
+            recorded.acceptsRedirectPolicy($0.policyType) && $0.url == redirected
+                && $0.allowSequence == recorded.allowSequence &+ 1 && isLatestAttempt($0)
         }
         if navigation === pendingNavigation, unboundAttempts.count == 1,
            let allowed = redirectedAllows.first {
@@ -1115,6 +1131,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView === loadedWebView, isCurrent(navigation) else { return }
+        confirmedRedirectPolicy = nil
         if let navigation, let recorded = attemptsByNavigation[ObjectIdentifier(navigation)] {
             let scheme = recorded.url.scheme?.lowercased() ?? ""
             if ["http", "https"].contains(scheme) {

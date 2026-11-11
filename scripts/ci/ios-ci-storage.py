@@ -316,13 +316,11 @@ def seal(root, environment):
     workspace = Path(environment["GITHUB_WORKSPACE"])
     source_lock = workspace / "apps/ios/EmbeddedCore/embedded-core-lock.json"
     if source_lock.is_file():
-        import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            "ios_embedded_core", Path(__file__).resolve().parents[1] / "release/ios_embedded_core.py")
-        verifier = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(verifier)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
+        import ios_embedded_core as verifier
         embedded_core = verifier.verify(workspace, source_lock, root / "EmbeddedCore")
-        embedded_core.update(verifier.verify_bundle(archive / "Products/Applications/Aegis.app", root / "EmbeddedCore"))
+        embedded_core.update(verifier.verify_bundle(archive / "Products/Applications/Aegis.app", root / "EmbeddedCore",
+                                                    root / "DerivedData", "device"))
     target = root / "Aegis.xcarchive.zip"
     require(not target.exists() and not target.is_symlink(), "archive evidence already exists")
     # Fixed archiver operation; both operands are absolute paths inside the revalidated job root.

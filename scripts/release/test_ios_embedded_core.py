@@ -14,7 +14,7 @@ class EmbeddedCoreInputsTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         bridge = self.root / "apps/ios/EmbeddedCore/bridge"
         bridge.mkdir(parents=True)
         (bridge / "bridge.go").write_text("package bridge\n")
@@ -74,11 +74,64 @@ class EmbeddedCoreInputsTests(unittest.TestCase):
         resource.write_bytes(self.original)
         (app / "Aegis").write_bytes(b"actual linked app")
         with self.assertRaisesRegex(ValueError, "bundled"):
-            core.verify_bundle(app, self.products)
+            core.verify_bundle(app, self.products, self.root / "DerivedData", "simulator")
         resource.write_bytes((self.products / "embedded-core-lock.json").read_bytes())
         (resource.parent / "embedded-core-build.json").write_bytes((self.products / "build-manifest.json").read_bytes())
-        receipt = core.verify_bundle(app, self.products)
+        with patch("ios_linked_core.verify_link", return_value={"coreCarrierSha256": "fixture"}) as linked:
+            receipt = core.verify_bundle(app, self.products, self.root / "DerivedData", "simulator")
+        linked.assert_called_once_with(app, self.products, self.root / "DerivedData", "simulator")
         self.assertEqual(receipt["appBinarySha256"], core.file_digest(app / "Aegis"))
+
+    def test_internal_archive_upgrades_legacy_cache_and_passes_the_resolved_products_to_xcode(self):
+        from shutil import copy2
+        import os
+        import plistlib
+        import subprocess
+
+        release = self.root / "scripts/release"
+        release.mkdir(parents=True)
+        for name in ("ios_embedded_core.py", "ios-internal-archive.sh"):
+            copy2(Path(__file__).with_name(name), release / name)
+        legacy = self.root / "apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework"
+        legacy.mkdir(parents=True)
+        (legacy / "legacy").write_bytes(b"old cache must not satisfy this build")
+        for target in ("AegisApp", "SafariWebExtension", "ShareExtension"):
+            info = self.root / "apps/ios" / target / "Info.plist"
+            info.parent.mkdir()
+            info.write_bytes(plistlib.dumps({}))
+        tools = self.root / "bin"
+        tools.mkdir()
+        # Stop at the Xcode archive invocation, before signing or packaging.
+        for name, body in {"xcodegen": "exit 0", "xcodebuild": 'printf "%s\\n" "$@" > "$ARGS"; exit 73'}.items():
+            tool = tools / name
+            tool.write_text("#!/bin/sh\n" + body + "\n")
+            tool.chmod(0o755)
+        (release / "prepare-ios-access-core.sh").write_text(
+            'set -eu\nprintf "%s\\n" "$@" >> "$PREP"\nmkdir -p "$(dirname "$2")"\ncp -R "$TEMPLATE" "$2"\n')
+        for relative in (".artifacts/ios-embedded-core", "external cache/products"):
+            original = self.products
+            self.products = self.root / relative
+            self.products.parent.mkdir(exist_ok=True, parents=True)
+            original.rename(self.products)
+            self.record()
+            template = self.root / "prepared-fixture"
+            self.products.rename(template)
+            args, prep = self.root / "args", self.root / "prep"
+            env = dict(os.environ, PATH=str(tools) + ":" + os.environ["PATH"], ARGS=str(args),
+                       PREP=str(prep), TEMPLATE=str(template), AEGIS_EMBEDDED_CORE_DIGEST_MODE="ci-rebuild")
+            env.pop("AEGIS_EMBEDDED_CORE_PRODUCTS", None)
+            if relative.startswith("external"):
+                env["AEGIS_EMBEDDED_CORE_PRODUCTS"] = relative
+            for _ in range(2):
+                result = subprocess.run(["bash", release / "ios-internal-archive.sh"], cwd=self.root, env=env,
+                                        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                self.assertEqual(result.returncode, 73, result.stdout)
+                self.assertIn("AEGIS_EMBEDDED_CORE_PRODUCTS=" + str(self.products), args.read_text().splitlines())
+            self.assertEqual(prep.read_text().splitlines(), [str(self.lock), str(self.products)])
+            self.assertTrue((legacy / "legacy").is_file())
+            prep.unlink()
+            template.rename(original)
+            self.products = original
 
 
 class RequiredLiveLeavesTests(unittest.TestCase):

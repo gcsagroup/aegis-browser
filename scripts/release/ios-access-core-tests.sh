@@ -202,7 +202,7 @@ else
 fi
 # Verify once more so a changed input cannot acquire a successful execution receipt.
 python3 -B scripts/release/ios_embedded_core.py verify --root "$ROOT" \
-  --source-lock "$LOCK" --products "$PRODUCTS" --bundle "$TEST_APP" --output "$OUTPUT/build-inputs.json" || {
+  --source-lock "$LOCK" --products "$PRODUCTS" --bundle "$TEST_APP" --derived "$OUTPUT/DerivedData" --platform "$PLATFORM_KIND" --output "$OUTPUT/build-inputs.json" || {
     write_receipt "FAIL" "EmbeddedCore build inputs changed during the K run"
     exit 4
   }

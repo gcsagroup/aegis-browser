@@ -38,7 +38,11 @@ checkout, actual framework inputs and bundled manifests before sealing the archi
 
 The opt-in K gate accepts `--products /absolute/build/directory`. It verifies the
 actual slices before linking, requires all three live test leaf identifiers to pass,
-and records the actual app binary and bundled manifest hashes. A missing, failed or
+and checks the same link evidence as the unsigned archive. For each architecture
+it verifies the app's load command (including the Debug dylib), the selected
+static archive against the linker's input, the Go table and bridge exports in
+AccessKit, and the bundled carrier's UUID and sections against the linker output.
+The receipt records the binary hashes for the loader and carrier. A missing, failed or
 skipped required leaf cannot produce PASS. Use a new output directory for each run;
 node credentials never belong in the receipt or repository.
 
