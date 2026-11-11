@@ -43,6 +43,19 @@ for relative in ("apps/ios/AegisApp/Info.plist", "apps/ios/SafariWebExtension/In
         plistlib.dump(info, handle)
 PY
 
+# Access channel must match the internal profile. Release defaults would cap Alpha at 16.
+ACCESS_CHANNEL="$PROFILE"
+if [[ "$ACCESS_CHANNEL" == "alpha" || "$ACCESS_CHANNEL" == "dev" ]]; then
+  :
+else
+  ACCESS_CHANNEL=release
+fi
+
+# Clean archives need the locked EmbeddedCore product on disk.
+if [[ ! -d "$ROOT/apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework" ]]; then
+  bash "$ROOT/scripts/release/prepare-ios-access-core.sh"
+fi
+
 mkdir -p "$(dirname "$ARCHIVE")"
 xcodebuild \
   -project apps/ios/Aegis.xcodeproj \
@@ -54,6 +67,7 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   AEGIS_FIREBASE_CHANNEL=disabled \
+  AEGIS_ACCESS_RELEASE_CHANNEL="$ACCESS_CHANNEL" \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD" \
   archive

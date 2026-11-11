@@ -13,14 +13,20 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     let releaseChannel: AccessReleaseChannel
     let prepareBudget: Duration = .seconds(15)
     @Published private(set) var revision: UInt64 = 0
-    /// Explicit `suggestProbe` calls. Recovery and page loads do not increment this.
+    /// Explicit `suggestProbe` / `runProbe` calls. Recovery and page loads do not increment this.
     private(set) var probeInvocationCount: UInt64 = 0
     private let ruleGroups = AccessSiteRuleGroupRegistry()
     private var intents: [AccessHostStoreKey: AccessProxyIntentState] = [:]
     private var executing: Set<AccessHostStoreKey> = []
+    /// Tabs that have actually entered a proxy recovery send for a key. Scope-wide
+    /// `executing` alone must not route a healthy sibling onto the host store.
+    private var executingTabs: Set<String> = []
     private var hostRevisions: [AccessHostStoreKey: UInt64] = [:]
     private var operations: [UUID: RecoveryOperation] = [:]
     private var phases: [String: RecoveryPhase] = [:]
+    private var probeLines: [String: [String]] = [:]
+    private var probeBusyTabs: Set<String> = []
+    private var probeRunner = AccessSiteProbeRunner()
     var tabs: () -> [BrowserTab] = { [] }
     private var sweepTask: Task<Void, Never>?
     private var stateTask: Task<Void, Never>?
@@ -148,6 +154,12 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         )
         snapshot.autoRecoveryEnabled = !listed.isEmpty
         snapshot.autoRecoveryLine = autoRecoveryLine(for: tab, host: host, listed: listed)
+        snapshot.showsDebugSiteGroupDetails = showsDebugSiteGroupDetails
+        if showsDebugSiteGroupDetails {
+            snapshot.debugMemberHosts = listed.first?.memberHosts.map(\.rawValue) ?? []
+            snapshot.probeSuggestionLines = probeLines[tab.id.uuidString] ?? []
+            snapshot.probeBusy = probeBusyTabs.contains(tab.id.uuidString)
+        }
         return snapshot
     }
 
@@ -165,7 +177,11 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             isPrivate: tab.profile.isPrivate,
             targetHost: host,
             boundHost: bound,
-            intent: routeIntent(key: key, boundToTarget: bound == host)
+            intent: routeIntent(
+                key: key,
+                boundToTarget: bound == host,
+                tabID: tab.id.uuidString
+            )
         )
     }
 
@@ -186,6 +202,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                     _ = removeMember(host, from: group)
                 }
             }
+            // The product switch also clears any leftover manual proxy intent for this host.
+            setProxyEnabled(false, host: host, scopeID: scopeID, isPrivate: isPrivate)
             revision &+= 1
             return .revoked
         }
@@ -270,6 +288,43 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         )
     }
 
+    /// DEV/Alpha manual probe. Suggestions only; does not publish groups or prepare entries.
+    @discardableResult
+    func runProbe(for tab: BrowserTab, candidates: [AccessSiteHost]? = nil) -> Bool {
+        guard showsDebugSiteGroupDetails else { return false }
+        let tabID = tab.id.uuidString
+        guard !probeBusyTabs.contains(tabID) else { return false }
+        let groups = autoRecoveryGroups(for: tab)
+        let plannedCandidates: [AccessSiteHost]
+        if let candidates, !candidates.isEmpty {
+            plannedCandidates = candidates
+        } else if let members = groups.first?.memberHosts, !members.isEmpty {
+            plannedCandidates = members
+        } else if let host = host(for: tab) {
+            plannedCandidates = [host]
+        } else {
+            return false
+        }
+        let already = Set(intents.compactMap { key, intent in
+            intent == .on ? key.host : nil
+        }).union(Set(executing.map(\.host)))
+        guard let plan = suggestProbe(candidates: plannedCandidates) else { return false }
+        probeBusyTabs.insert(tabID)
+        revision &+= 1
+        let runner = probeRunner
+        Task { @MainActor in
+            let report = await runner.run(plan: plan, alreadyRequiringProxy: already)
+            self.probeLines[tabID] = report.suggestionLines
+            self.probeBusyTabs.remove(tabID)
+            self.revision &+= 1
+        }
+        return true
+    }
+
+    var showsDebugSiteGroupDetails: Bool {
+        releaseChannel == .dev || releaseChannel == .alpha
+    }
+
     func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError) {
         guard BrowserNavigationFailure.isRecoverableNetworkFailure(error) else { return }
         guard failure.recoveryOperationID == nil else { return }
@@ -281,8 +336,16 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             host: host,
             isPrivate: tab.profile.isPrivate
         )
+        // Consumed / in-flight / finished tickets for the same failure must not re-arm.
         if operations.values.contains(where: {
-            $0.tabID == tab.id.uuidString && $0.failureID == failure.failureID && $0.state == .preparing
+            $0.tabID == tab.id.uuidString && $0.failureID == failure.failureID
+        }) {
+            return
+        }
+        if operations.values.contains(where: {
+            $0.tabID == tab.id.uuidString
+                && $0.navigationID == failure.navigationID
+                && ($0.state == .preparing || $0.state == .sent || $0.state == .completed)
         }) {
             return
         }
@@ -402,8 +465,9 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         operation.ticket = ticket
         operation.state = .sent
         operations[operationID] = operation
-        if operation.authorization != nil {
+        if operation.authorization != nil || intents[operation.key] == .on {
             executing.insert(operation.key)
+            executingTabs.insert(operation.tabID)
         }
         phases[operation.tabID] = .sent
         send(ticket, to: tab)
@@ -418,6 +482,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             operations[id] = cancelled
             publisher.cancel(operationID: id)
         }
+        tab.invalidateDeferredDocumentLoad()
         if !operations.values.contains(where: { $0.tabID == tabID && $0.state == .preparing }) {
             if phases[tabID] == .preparing { phases[tabID] = nil }
         }
@@ -427,6 +492,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     func tabClosed(_ tab: BrowserTab) {
         pendingRecoveryInvalidated(tab: tab)
         registry.unbind(tab.id.uuidString)
+        executingTabs.remove(tab.id.uuidString)
     }
 
     func ordinaryHostStores() -> [WKWebsiteDataStore] {
@@ -441,12 +507,22 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         for key in hostRevisions.keys where key.isPrivate && key.scopeID == scopeID {
             hostRevisions[key, default: 0] += 1
         }
-        for (id, operation) in operations where operation.key.isPrivate && operation.key.scopeID == scopeID && operation.state == .preparing {
-            var cancelled = operation
-            cancelled.state = .cancelled
-            operations[id] = cancelled
-            publisher.cancel(operationID: id)
-            publisher.release(for: operation.key)
+        // Release every private consumer for this scope, including already-sent ones.
+        var releasedKeys = Set<AccessHostStoreKey>()
+        for (id, operation) in operations where operation.key.isPrivate && operation.key.scopeID == scopeID {
+            if operation.state == .preparing || operation.state == .sent {
+                var cancelled = operation
+                cancelled.state = .cancelled
+                operations[id] = cancelled
+                publisher.cancel(operationID: id)
+            }
+            if releasedKeys.insert(operation.key).inserted {
+                publisher.release(for: operation.key)
+            }
+            executingTabs.remove(operation.tabID)
+            if let tab = BrowserSession.openTabs().first(where: { $0.id.uuidString == operation.tabID }) {
+                tab.invalidateDeferredDocumentLoad()
+            }
         }
         registry.endPrivateSession(scopeID: scopeID)
         revision &+= 1
@@ -592,6 +668,17 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                 host: key.host,
                 isPrivate: key.isPrivate
             )
+            // Auto-group hosts must leave the "opened" product line when the entry fails.
+            for (tabID, phase) in phases where phase == .sent {
+                if let tab = BrowserSession.openTabs().first(where: { $0.id.uuidString == tabID }),
+                   let host = host(for: tab),
+                   host == key.host,
+                   tab.browsingScopeID == key.scopeID,
+                   tab.profile.isPrivate == key.isPrivate {
+                    phases[tabID] = .failed
+                }
+            }
+            lastRecoveryFailure = AccessAutoRecoveryCopy.unavailable
         }
         revision &+= 1
     }
@@ -599,6 +686,20 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     private func registryEndpoints() -> [AccessHostStoreKey: AccessManagedProxyEndpoint] {
         var found: [AccessHostStoreKey: AccessManagedProxyEndpoint] = [:]
         for key in intents.keys {
+            if let endpoint = registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate) {
+                found[key] = endpoint
+            }
+        }
+        // Include hosts that are only authorized by an auto-recovery group.
+        for key in executing {
+            if found[key] != nil { continue }
+            if let endpoint = registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate) {
+                found[key] = endpoint
+            }
+        }
+        for operation in operations.values where operation.authorization != nil {
+            let key = operation.key
+            if found[key] != nil { continue }
             if let endpoint = registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate) {
                 found[key] = endpoint
             }
@@ -645,13 +746,18 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         from group: AccessSiteRuleGroup
     ) -> AccessAutoRecoveryChange {
         let remaining = group.memberHosts.filter { $0 != host && $0 != group.primaryHost }
-        return publishGroup(
+        let change = publishGroup(
             scopeID: group.scopeID,
             isPrivate: group.isPrivate,
             primary: group.primaryHost,
             members: remaining,
             prior: group
         )
+        let key = AccessHostStoreKey(scopeID: group.scopeID, host: host, isPrivate: group.isPrivate)
+        if !groupStillLists(key), intents[key] != .on {
+            releaseBinding(key)
+        }
+        return change
     }
 
     private func revokeGroup(_ group: AccessSiteRuleGroup) {
@@ -704,7 +810,12 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         let bound = registry.revoke(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate)
         publisher.release(for: key)
         for tab in BrowserSession.openTabs() where bound.contains(tab.id.uuidString) {
+            executingTabs.remove(tab.id.uuidString)
+            tab.invalidateDeferredDocumentLoad()
             tab.rebindWebsiteDataStore(tab.originalWebsiteDataStore, host: nil)
+        }
+        for operation in operations.values where operation.key == key {
+            executingTabs.remove(operation.tabID)
         }
     }
 
@@ -783,9 +894,23 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         case failed
     }
 
-    private func routeIntent(key: AccessHostStoreKey, boundToTarget: Bool) -> AccessProxyIntentState {
-        if intents[key] == .on || executing.contains(key) { return .on }
-        if boundToTarget, groupStillLists(key) { return .on }
+    private func routeIntent(
+        key: AccessHostStoreKey,
+        boundToTarget: Bool,
+        tabID: String
+    ) -> AccessProxyIntentState {
+        if intents[key] == .on { return .on }
+        // Only the tab that entered recovery (or is already bound) may use the host store.
+        if executingTabs.contains(tabID), executing.contains(key) { return .on }
+        if boundToTarget, groupStillLists(key) || executing.contains(key) { return .on }
+        if operations.values.contains(where: {
+            $0.tabID == tabID
+                && $0.key == key
+                && ($0.state == .preparing || $0.state == .sent)
+                && ($0.authorization != nil || intents[key] == .on)
+        }) {
+            return .on
+        }
         return .off
     }
 }

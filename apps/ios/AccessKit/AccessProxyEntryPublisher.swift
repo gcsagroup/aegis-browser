@@ -100,6 +100,12 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
             inflight = nil
         }
         guard waiters.contains(request.operationID) else {
+            // Last waiter cancelled while provision finished: destroy the unclaimed entry.
+            // If other waiters remain, leave the provision for them to install.
+            if waiters.isEmpty, consumers.isEmpty, instance == nil {
+                closedGenerations.insert(provisioned.endpoint.generation)
+                shutdown(provisioned.endpoint.identity)
+            }
             throw CancellationError()
         }
         guard !closedGenerations.contains(generation) else {

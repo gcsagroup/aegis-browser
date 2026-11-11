@@ -40,10 +40,15 @@ struct AccessSiteProxyToggleView: View {
             Toggle(
                 AccessAutoRecoveryCopy.toggleTitle,
                 isOn: Binding(
-                    get: { snap.autoRecoveryEnabled },
+                    get: { snap.autoRecoveryEnabled || snap.toggleOn },
                     set: { enabled in
                         guard let tab else { return }
-                        _ = store.setAutoRecoveryEnabled(enabled, for: tab)
+                        if enabled {
+                            _ = store.setAutoRecoveryEnabled(true, for: tab)
+                        } else {
+                            _ = store.setAutoRecoveryEnabled(false, for: tab)
+                            store.setProxyEnabled(false, for: tab)
+                        }
                     }
                 )
             )
@@ -54,6 +59,37 @@ struct AccessSiteProxyToggleView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("access-site-auto-recovery-status")
+            }
+            if !snap.debugMemberHosts.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("组成员（只读）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(snap.debugMemberHosts, id: \.self) { member in
+                        Text(member)
+                            .font(.footnote.monospaced())
+                            .textSelection(.enabled)
+                    }
+                }
+                .accessibilityIdentifier("access-site-debug-members")
+            }
+            if snap.showsDebugSiteGroupDetails {
+                Button(snap.probeBusy ? "正在探测…" : "探测候选（建议）") {
+                    guard let tab else { return }
+                    _ = store.runAutoRecoveryProbe(for: tab)
+                }
+                .disabled(tab == nil || snap.probeBusy || !snap.autoRecoveryEnabled)
+                .accessibilityIdentifier("access-site-probe-button")
+                if !snap.probeSuggestionLines.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(snap.probeSuggestionLines, id: \.self) { line in
+                            Text(line)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("access-site-probe-suggestions")
+                }
             }
 
             VStack(alignment: .leading, spacing: 4) {

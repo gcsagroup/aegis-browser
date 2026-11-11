@@ -274,6 +274,9 @@
 		A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */; };
 		A10GROUP000000000000000011 /* AccessSiteRuleGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */; };
 		A10GROUP000000000000000012 /* AccessSiteRuleGroupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */; };
+		A10PROBE000000000000000011 /* AccessSiteProbeRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10PROBE000000000000000001 /* AccessSiteProbeRunner.swift */; };
+		A10PROBE000000000000000012 /* AccessSiteProbeRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10PROBE000000000000000002 /* AccessSiteProbeRunnerTests.swift */; };
+		A10PROBE000000000000000013 /* AccessHostSelectiveProxyCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10PROBE000000000000000003 /* AccessHostSelectiveProxyCapabilityTests.swift */; };
 		A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */; };
 		A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */; };
 		A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */; };
@@ -790,6 +793,9 @@
 		A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapter.swift; sourceTree = "<group>"; };
 		A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteRuleGroup.swift; sourceTree = "<group>"; };
 		A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteRuleGroupTests.swift; sourceTree = "<group>"; };
+		A10PROBE000000000000000001 /* AccessSiteProbeRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProbeRunner.swift; sourceTree = "<group>"; };
+		A10PROBE000000000000000002 /* AccessSiteProbeRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProbeRunnerTests.swift; sourceTree = "<group>"; };
+		A10PROBE000000000000000003 /* AccessHostSelectiveProxyCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostSelectiveProxyCapabilityTests.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedRealityDialer.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapterTests.swift; sourceTree = "<group>"; };
 		A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGoEmbeddedCore.swift; sourceTree = "<group>"; };
@@ -1015,6 +1021,7 @@
 				A10TUNN000000000000000003 /* AccessHostRecoveryWebKitTests.swift */,
 				A10RECV000000000000000007 /* AccessProxyRecoveryViewTests.swift */,
 				A10RECV000000000000000008 /* AccessProxyRecoveryCoordinatorTests.swift */,
+				A10PROBE000000000000000003 /* AccessHostSelectiveProxyCapabilityTests.swift */,
 				C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */,
 				E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */,
 				F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */,
@@ -1402,6 +1409,7 @@
 				A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */,
 				A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */,
 				A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */,
+				A10PROBE000000000000000001 /* AccessSiteProbeRunner.swift */,
 				A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */,
 				A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */,
 				A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */,
@@ -1454,6 +1462,7 @@
 				A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */,
 				A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */,
 				A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */,
+				A10PROBE000000000000000002 /* AccessSiteProbeRunnerTests.swift */,
 				A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */,
 				A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */,
 				A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */,
@@ -2048,6 +2057,8 @@
 				A10CORE000000000000000012 /* AccessEmbeddedCoreManifestTests.swift in Sources */,
 				A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */,
 				A10GROUP000000000000000012 /* AccessSiteRuleGroupTests.swift in Sources */,
+				A10PROBE000000000000000012 /* AccessSiteProbeRunnerTests.swift in Sources */,
+				A10PROBE000000000000000013 /* AccessHostSelectiveProxyCapabilityTests.swift in Sources */,
 				A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */,
 				A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */,
 				A10TUNN000000000000000012 /* AccessHTTPTunnelBridgeTests.swift in Sources */,
@@ -2148,6 +2159,7 @@
 				A10CORE000000000000000013 /* AccessEmbeddedCoreControlling.swift in Sources */,
 				A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */,
 				A10GROUP000000000000000011 /* AccessSiteRuleGroup.swift in Sources */,
+				A10PROBE000000000000000011 /* AccessSiteProbeRunner.swift in Sources */,
 				A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */,
 				A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */,
 				A10CORE000000000000000021 /* AccessNWListenerBootstrap.swift in Sources */,

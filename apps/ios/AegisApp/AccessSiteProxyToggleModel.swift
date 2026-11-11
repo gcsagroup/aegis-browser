@@ -35,6 +35,12 @@ struct AccessSiteProxyToggleSnapshot: Equatable, Sendable {
     /// 「本站打不开时自动重试」. Distinct from the explicit whole-page proxy intent.
     var autoRecoveryEnabled: Bool = false
     var autoRecoveryLine: String?
+    /// DEV/Alpha read-only exact-host members. Empty on Beta/Release.
+    var debugMemberHosts: [String] = []
+    /// DEV/Alpha probe suggestion lines. Never auto-expands authorization.
+    var probeSuggestionLines: [String] = []
+    var probeBusy: Bool = false
+    var showsDebugSiteGroupDetails: Bool = false
 }
 
 /// Pure presentation helpers for the per-site Access proxy toggle.

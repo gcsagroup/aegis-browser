@@ -75,6 +75,36 @@ final class AccessProxyEntryPublisherTests: XCTestCase {
         XCTAssertNil(publisher.currentEndpoint)
     }
 
+    func testLastCancelledWaiterDestroysUnclaimedProvision() async throws {
+        var shutdownIdentities: [String] = []
+        let started = expectation(description: "provision started")
+        let release = expectation(description: "release provision")
+        let publisher = AccessProxyEntryPublisher(
+            provision: { generation, _ in
+                started.fulfill()
+                await self.fulfillment(of: [release], timeout: 2)
+                return self.provision(generation: generation, port: 18_199)
+            },
+            shutdown: { identity in
+                shutdownIdentities.append(identity)
+            }
+        )
+        let operationID = UUID()
+        async let prepare = publisher.prepare(
+            AccessProxyEntryPrepareRequest(operationID: operationID, deadline: .seconds(15))
+        )
+        await fulfillment(of: [started], timeout: 2)
+        publisher.cancel(operationID: operationID)
+        release.fulfill()
+        do {
+            _ = try await prepare
+            XCTFail("cancelled waiter must not claim the entry")
+        } catch is CancellationError {
+        }
+        XCTAssertEqual(shutdownIdentities, ["entry-1"])
+        XCTAssertNil(publisher.currentEndpoint)
+    }
+
     func testCancellingOneWaiterLeavesTheSharedPreparationReady() async throws {
         let started = expectation(description: "provision started")
         let release = expectation(description: "release provision")

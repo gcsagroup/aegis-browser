@@ -264,4 +264,56 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         XCTAssertNil(tab.lastMainFrameFailure)
         XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
     }
+
+    func testInterleavedSameHostNavigationKeepsDistinctURLAndMethod() async throws {
+        let tab = makeTab()
+        var post = URLRequest(url: URL(string: "https://shop.example/checkout")!)
+        post.httpMethod = "POST"
+        tab.load(post)
+        await waitUntil { tab.currentNavigationForTests != nil }
+        let postNavigation = try XCTUnwrap(tab.currentNavigationForTests)
+
+        let getURL = URL(string: "https://shop.example/cart")!
+        tab.adoptPolicyMainFrameNavigationForTests(
+            url: getURL,
+            method: "GET",
+            continuesExistingNavigation: false
+        )
+        // Competing GET must not rewrite the still-pending POST identity in the map.
+        let postError = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+        tab.webView(tab.webView, didFailProvisionalNavigation: postNavigation, withError: postError)
+        XCTAssertEqual(tab.lastMainFrameFailure?.method, "POST")
+        XCTAssertEqual(tab.lastMainFrameFailure?.url.path, "/checkout")
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+    }
+
+    func testStopBeforeDeferredLoadDoesNotSend() async throws {
+        let tab = makeTab()
+        var request = URLRequest(url: URL(string: "https://example.invalid/stop")!)
+        request.httpMethod = "GET"
+        tab.load(request)
+        let loadsBeforeStop = tab.recoveryLoadCount
+        tab.stop()
+        await waitUntil { true }
+        await Task.yield()
+        await Task.yield()
+        XCTAssertEqual(tab.recoveryLoadCount, loadsBeforeStop)
+        XCTAssertNil(tab.currentNavigationForTests)
+    }
+
+    func testLateForeignFailureDoesNotClearNewerPendingNavigation() async throws {
+        let tab = makeTab()
+        tab.load(URLRequest(url: URL(string: "https://shop.example/a")!))
+        await waitUntil { tab.currentNavigationForTests != nil }
+        let first = try XCTUnwrap(tab.currentNavigationForTests)
+        tab.load(URLRequest(url: URL(string: "https://shop.example/b")!))
+        await waitUntil { tab.currentNavigationForTests != nil && tab.currentNavigationForTests !== first }
+        let second = try XCTUnwrap(tab.currentNavigationForTests)
+        XCTAssertTrue(second !== first)
+        let late = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
+        tab.webView(tab.webView, didFailProvisionalNavigation: first, withError: late)
+        XCTAssertEqual(tab.currentNavigationForTests, second)
+        XCTAssertTrue(tab.isLoading)
+        XCTAssertNotEqual(tab.lastMainFrameFailure?.url.path, "/a")
+    }
 }

@@ -707,6 +707,31 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.setAutoRecoveryEnabled(true, for: tab), .rejected(.noTrustedHost))
     }
 
+    func testDevChannelExposesReadOnlyMembersAndProbeEntry() async throws {
+        let coordinator = AccessHostStoreCoordinator(channel: .dev)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        retainedSessions.append(browser)
+        browser.hostCoordinator = coordinator
+        let tab = try XCTUnwrap(browser.activeTab)
+        tab.load(URLRequest(url: URL(string: "https://shop.example/home")!))
+        tab.commitPendingMainFrameForTests()
+        let login = try AccessSiteHost("login.example")
+        _ = coordinator.setAutoRecoveryEnabled(true, for: tab, members: [login])
+        let snap = coordinator.snapshot(for: tab)
+        XCTAssertEqual(snap.debugMemberHosts, ["shop.example", "login.example"])
+        XCTAssertTrue(coordinator.showsDebugSiteGroupDetails)
+        XCTAssertTrue(coordinator.runProbe(for: tab, candidates: [login]))
+        await settle { !coordinator.snapshot(for: tab).probeBusy }
+        let after = coordinator.snapshot(for: tab)
+        XCTAssertFalse(after.probeSuggestionLines.isEmpty)
+
+        let release = AccessHostStoreCoordinator(channel: .release)
+        let releaseTab = try committedTab(coordinator: release, url: "https://shop.example/home")
+        _ = release.setAutoRecoveryEnabled(true, for: releaseTab, members: [login])
+        XCTAssertEqual(release.snapshot(for: releaseTab).debugMemberHosts, [])
+        XCTAssertFalse(release.runProbe(for: releaseTab))
+    }
+
     func testSameHostInPageFailureAutoRecoversOnce() async throws {
         let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_109) }
         let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())
@@ -730,6 +755,71 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(tab.recoveryLoadCount, 1)
         XCTAssertEqual(tab.lastMainFrameFailure?.url, cart)
         XCTAssertEqual(publisher.provisionCount, 1)
+    }
+
+    func testHealthyNewTabDoesNotInheritExecutingHostStore() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_110) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        retainedSessions.append(browser)
+        browser.hostCoordinator = coordinator
+        let origin = try XCTUnwrap(browser.activeTab)
+        fail(origin, url: "https://shop.example/broken")
+        let change = coordinator.setAutoRecoveryEnabled(true, for: origin)
+        XCTAssertTrue(change.isArmed || change.isRecovering)
+        await settle {
+            origin.recoveryLoadCount >= 1 || coordinator.snapshot(for: origin).autoRecoveryEnabled
+        }
+        let healthy = browser.newTab()
+        let url = URL(string: "https://shop.example/fresh")!
+        let routed = coordinator.dataStoreForMainFrame(tab: healthy, url: url)
+        XCTAssertNil(routed, "healthy tab without manual intent must keep its original store")
+    }
+
+    func testTurningOffAutoRecoveryClearsManualProxyIntent() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_111) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        retainedSessions.append(browser)
+        browser.hostCoordinator = coordinator
+        let tab = try XCTUnwrap(browser.activeTab)
+        fail(tab, url: "https://shop.example/manual")
+        XCTAssertNotNil(coordinator.retryViaProxy(tab: tab))
+        await settle { coordinator.snapshot(for: tab).toggleOn }
+        XCTAssertTrue(coordinator.snapshot(for: tab).toggleOn)
+        _ = coordinator.setAutoRecoveryEnabled(true, for: tab)
+        XCTAssertTrue(coordinator.snapshot(for: tab).autoRecoveryEnabled || coordinator.snapshot(for: tab).toggleOn)
+        _ = coordinator.setAutoRecoveryEnabled(false, for: tab)
+        XCTAssertFalse(coordinator.snapshot(for: tab).toggleOn)
+        XCTAssertFalse(coordinator.snapshot(for: tab).autoRecoveryEnabled)
+        let routed = coordinator.dataStoreForMainFrame(
+            tab: tab,
+            url: URL(string: "https://shop.example/manual")!
+        )
+        XCTAssertNil(routed)
+    }
+
+    func testDuplicateFailureCallbackDoesNotPrepareTwice() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_112) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        retainedSessions.append(browser)
+        browser.hostCoordinator = coordinator
+        let tab = try XCTUnwrap(browser.activeTab)
+        tab.load(URLRequest(url: URL(string: "https://shop.example/home")!))
+        tab.commitPendingMainFrameForTests()
+        tab.webView(tab.webView, didFinish: tab.currentNavigationForTests)
+        XCTAssertEqual(coordinator.setAutoRecoveryEnabled(true, for: tab).isArmed, true)
+        let cart = URL(string: "https://shop.example/cart")!
+        tab.adoptPolicyMainFrameNavigationForTests(url: cart, method: "GET")
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: error)
+        let firstCount = publisher.provisionCount
+        await settle { tab.recoveryLoadCount == 1 }
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: error)
+        await settle(seconds: 0.3) { false }
+        XCTAssertEqual(publisher.provisionCount, max(firstCount, 1))
+        XCTAssertEqual(tab.recoveryLoadCount, 1)
     }
 
     private func committedTab(coordinator: AccessHostStoreCoordinator, url: String) throws -> BrowserTab {

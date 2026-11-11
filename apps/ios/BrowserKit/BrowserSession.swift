@@ -257,11 +257,19 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     /// Records the actual main-frame URL/method for policy-allowed navigations,
-    /// redirects, and sanitized replacements. In-flight identities are updated in
-    /// place; a new page navigation mints a fresh attempt.
-    private func adoptMainFrameNavigation(url: URL, method: String) {
+    /// redirects, and sanitized replacements.
+    ///
+    /// Same-navigation redirects may update the in-flight identity in place.
+    /// A competing page navigation (link, form, history) mints a fresh attempt and
+    /// must not rewrite the still-pending navigation's recorded URL/method.
+    private func adoptMainFrameNavigation(
+        url: URL,
+        method: String,
+        continuesExistingNavigation: Bool
+    ) {
         let normalizedMethod = method.uppercased()
-        if let pending = pendingNavigation,
+        if continuesExistingNavigation,
+           let pending = pendingNavigation,
            attemptsByNavigation[ObjectIdentifier(pending)] != nil {
             attempt.url = url
             attempt.method = normalizedMethod
@@ -282,8 +290,26 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     /// Unit tests drive same-host in-page identity without synthesizing `WKNavigationAction`.
-    public func adoptPolicyMainFrameNavigationForTests(url: URL, method: String = "GET") {
-        adoptMainFrameNavigation(url: url, method: method)
+    public func adoptPolicyMainFrameNavigationForTests(
+        url: URL,
+        method: String = "GET",
+        continuesExistingNavigation: Bool = false
+    ) {
+        adoptMainFrameNavigation(
+            url: url,
+            method: method,
+            continuesExistingNavigation: continuesExistingNavigation
+        )
+    }
+
+    /// Cancels a deferred `WKWebView.load` that has not been issued yet (Stop, revoke, tab close).
+    public func invalidateDeferredDocumentLoad() {
+        loadGeneration = UUID()
+        pendingAttachedLoad = nil
+        needsWindowBeforeLoad = false
+        if attempt.recoveryOperationID != nil {
+            attempt.recoveryOperationID = nil
+        }
     }
 
     func alignStore(for url: URL, previous: URL?, method: String, body: Data?) {
@@ -358,9 +384,17 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             return
         }
         needsWindowBeforeLoad = false
+        let generation = loadGeneration
+        let expectedNavigationID = attempt.navigationID
+        let expectedRecoveryID = attempt.recoveryOperationID
         Task { @MainActor [weak self] in
             await Task.yield()
             guard let self else { return }
+            guard generation == self.loadGeneration else { return }
+            guard self.attempt.navigationID == expectedNavigationID else { return }
+            if let expectedRecoveryID {
+                guard self.attempt.recoveryOperationID == expectedRecoveryID else { return }
+            }
             if self.loadedWebView?.window == nil, self.isLoopbackHTTP(request.url) || self.needsWindowBeforeLoad {
                 self.parkUntilWindow(request)
                 return
@@ -394,8 +428,10 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     private func flushPendingAttachedLoad() {
         guard loadedWebView?.window != nil, let request = pendingAttachedLoad else { return }
+        let generation = loadGeneration
         pendingAttachedLoad = nil
         needsWindowBeforeLoad = false
+        guard generation == loadGeneration else { return }
         performLoad(request)
     }
 
@@ -648,7 +684,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         beginUserNavigation(url: requestedURL ?? url ?? URL(string: "about:blank")!, method: committedRequestMethod)
         structureTask?.cancel()
         navigationEpoch &+= 1
-        loadGeneration = UUID()
+        invalidateDeferredDocumentLoad()
         loadTask?.cancel()
         loadedWebView?.stopLoading()
         isLoading = false
@@ -684,6 +720,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let localOrInternal = ["aegis", "about"].contains(requestURL.scheme ?? "") ||
             (requestURL.scheme == "http" && ["127.0.0.1", "localhost", "[::1]", "::1"].contains(requestURL.host ?? ""))
         if localOrInternal { webPreferences.preferredHTTPSNavigationPolicy = .keepAsRequested }
+        // `targetFrame == nil` is a new window / `_blank`, not this tab's main frame.
+        if navigationAction.targetFrame == nil {
+            let decision = navigationDecision(requestURL, method: navigationAction.request.httpMethod ?? "GET")
+            finish(decision.kind == .blocked ? .cancel : .allow)
+            return
+        }
         if navigationAction.targetFrame?.isMainFrame == false {
             if requestURL.scheme == "http", attempt.recoveryOperationID != nil || requestedURL?.scheme == "http" {
                 webPreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
@@ -754,7 +796,12 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 lastPolicyIntervention = nil
             }
             let method = navigationAction.request.httpMethod ?? "GET"
-            adoptMainFrameNavigation(url: requestURL, method: method)
+            let continuesExisting = Self.continuesExistingMainFrameNavigation(navigationAction)
+            adoptMainFrameNavigation(
+                url: requestURL,
+                method: method,
+                continuesExistingNavigation: continuesExisting
+            )
             finish(.allow)
         case .blocked:
             blockNavigation(decision)
@@ -783,21 +830,41 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             var cleanedRequest = navigationAction.request
             cleanedRequest.url = cleanedURL
             let method = cleanedRequest.httpMethod ?? "GET"
-            adoptMainFrameNavigation(url: cleanedURL, method: method)
+            adoptMainFrameNavigation(
+                url: cleanedURL,
+                method: method,
+                continuesExistingNavigation: false
+            )
             finish(.cancel)
             issueDocumentLoad(cleanedRequest)
         }
     }
 
+    /// Redirects and other non-user replacements may update the pending identity.
+    /// Link / form / history activations mint a distinct attempt.
+    private static func continuesExistingMainFrameNavigation(_ action: WKNavigationAction) -> Bool {
+        switch action.navigationType {
+        case .linkActivated, .formSubmitted, .backForward, .reload, .formResubmitted:
+            return false
+        case .other:
+            return true
+        @unknown default:
+            return false
+        }
+    }
+
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard webView === loadedWebView else { return }
-        if pendingNavigation == nil {
+        if pendingNavigation == nil || isCurrent(navigation) {
             pendingNavigation = navigation
             if let navigation {
                 attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
             }
-        } else if !isCurrent(navigation) {
-            return
+        } else if let navigation {
+            // A competing main-frame navigation started; keep the prior map entry for late
+            // failures and bind this navigation to the latest adopted attempt.
+            attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
+            pendingNavigation = navigation
         }
         isLoading = true
         userScripts?.navigated()
@@ -879,16 +946,15 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         let recorded: MainFrameAttempt
         if let navigation {
-            if let match = attemptsByNavigation[ObjectIdentifier(navigation)],
-               pendingNavigation == nil || navigation === pendingNavigation {
-                pendingNavigation = navigation
+            if let match = attemptsByNavigation[ObjectIdentifier(navigation)] {
+                // Prefer the identity recorded for this exact WKNavigation.
+                if navigation === pendingNavigation || pendingNavigation == nil {
+                    pendingNavigation = navigation
+                }
                 recorded = match
-            } else if pendingNavigation == nil, isLoading {
-                attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
-                pendingNavigation = navigation
-                recorded = attempt
+                attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation))
             } else {
-                noteUnidentifiedMainFrameFailure(nsError)
+                noteUnidentifiedMainFrameFailure(nsError, for: navigation)
                 return
             }
         } else if pendingNavigation == nil, isLoading {
@@ -896,43 +962,55 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             // must not reuse a stale attempt for an unidentified callback.
             recorded = attempt
         } else {
-            noteUnidentifiedMainFrameFailure(nsError)
+            noteUnidentifiedMainFrameFailure(nsError, for: nil)
             return
         }
-        pendingNavigation = nil
-        isLoading = false
+        // A late failure for a previous navigation must not clear a newer pending load.
+        let failureBelongsToCurrent = pendingNavigation == nil
+            || (navigation != nil && navigation === pendingNavigation)
+            || recorded.navigationID == attempt.navigationID
+        if failureBelongsToCurrent {
+            pendingNavigation = nil
+            isLoading = false
+        }
         let method = recorded.method.uppercased()
         let failedURL = recorded.url
         let failureID = recorded.failureID
             ?? (lastMainFrameFailure?.navigationID == recorded.navigationID ? lastMainFrameFailure?.failureID : nil)
             ?? UUID()
-        attempt.navigationID = recorded.navigationID
-        attempt.url = failedURL
-        attempt.method = method
-        attempt.failureID = failureID
-        attempt.recoveryOperationID = recorded.recoveryOperationID
-        let failure = BrowserMainFrameFailure(
-            failureID: failureID,
-            navigationID: recorded.navigationID,
-            url: failedURL,
-            method: method,
-            recoveryOperationID: recorded.recoveryOperationID
-        )
-        lastMainFrameFailure = failure
-        loadingErrorPresentation = .error(error)
-        let scheme = failedURL.scheme?.lowercased() ?? ""
-        loadingErrorAllowsProxyRetry = BrowserNavigationFailure.isRecoverableNetworkFailure(nsError)
-            && ["http", "https"].contains(scheme)
-            && (method == "GET" || method == "HEAD")
-        if !loadingErrorAllowsProxyRetry {
-            loadingErrorAllowsProxyRetry = false
+        if failureBelongsToCurrent {
+            attempt.navigationID = recorded.navigationID
+            attempt.url = failedURL
+            attempt.method = method
+            attempt.failureID = failureID
+            attempt.recoveryOperationID = recorded.recoveryOperationID
+            let failure = BrowserMainFrameFailure(
+                failureID: failureID,
+                navigationID: recorded.navigationID,
+                url: failedURL,
+                method: method,
+                recoveryOperationID: recorded.recoveryOperationID
+            )
+            lastMainFrameFailure = failure
+            loadingErrorPresentation = .error(error)
+            let scheme = failedURL.scheme?.lowercased() ?? ""
+            loadingErrorAllowsProxyRetry = BrowserNavigationFailure.isRecoverableNetworkFailure(nsError)
+                && ["http", "https"].contains(scheme)
+                && (method == "GET" || method == "HEAD")
+            if !loadingErrorAllowsProxyRetry {
+                loadingErrorAllowsProxyRetry = false
+            }
+            hostCoordinator?.mainFrameFailed(tab: self, failure: failure, error: nsError)
         }
-        hostCoordinator?.mainFrameFailed(tab: self, failure: failure, error: nsError)
         refreshState()
     }
 
     /// A callback for a different in-flight navigation is not a proxy-retry ticket.
-    private func noteUnidentifiedMainFrameFailure(_ error: NSError) {
+    private func noteUnidentifiedMainFrameFailure(_ error: NSError, for navigation: WKNavigation?) {
+        // Late A must not clear B's pending identity, loading bit, or recovery eligibility.
+        if let pendingNavigation, navigation == nil || navigation !== pendingNavigation, isLoading {
+            return
+        }
         pendingNavigation = nil
         isLoading = false
         loadingErrorPresentation = .error(error)
