@@ -3,6 +3,7 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -22,6 +23,43 @@ verifier = load('cloud_verifier', 'verify-signed-ios.py')
 
 
 class CloudSigningTests(unittest.TestCase):
+    def test_distribution_checks_include_expired_matching_identities(self):
+        def lookup(*args, **_options):
+            return (b'0 valid identities' if '-v' in args else
+                    b'1) ABC "Apple Distribution: expired fixture" (CSSMERR_TP_CERT_EXPIRED)\n0 valid identities')
+        with patch.object(poc, 'run', side_effect=lookup):
+            self.assertTrue(poc.keychain_has_distribution('/owned/development.keychain-db'))
+            with self.assertRaisesRegex(ValueError, 'Distribution private identity'):
+                poc.no_distribution_identity()
+
+    def test_key_access_adapter_scrubs_secrets_for_inventory_and_native_commands(self):
+        environment = {'PATH': '/usr/bin', 'HOME': '/owned', 'DEVELOPER_DIR': '/fixed/Xcode',
+                       'AEGIS_ASC_KEY_BASE64': 'asc-secret', 'GH_TOKEN': 'gh-secret',
+                       'GITHUB_TOKEN': 'gh-secret', 'SDKROOT': '/product/iphoneos'}
+        with patch.object(poc, 'run', return_value=b'') as run:
+            runtime = poc.key_access_runtime(environment)
+            runtime.keychains()
+            runtime.keychain_has_distribution('/owned/development.keychain-db')
+            runtime.run('/usr/bin/security', 'find-certificate', env={'GH_TOKEN': 'injected'})
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs['env'], {'PATH': '/usr/bin', 'HOME': '/owned', 'DEVELOPER_DIR': '/fixed/Xcode'})
+        self.assertNotIn('-v', run.call_args_list[1].args)
+
+    def test_protected_keychain_filter_rejects_case_variants_and_database_aliases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            protected = root / 'Library/Keychains/login.keychain-db'
+            protected.parent.mkdir(parents=True)
+            protected.write_bytes(b'encrypted fixture')
+            alias = root / 'renamed.keychain-db'
+            os.link(protected, alias)
+            with patch.object(Path, 'home', return_value=root):
+                self.assertTrue(poc.unretainable_keychain(alias))
+                self.assertTrue(poc.unretainable_keychain(root / 'Login.keychain-db'))
+                alias.unlink()
+                alias.symlink_to(protected)
+                self.assertTrue(poc.unretainable_keychain(alias))
+
     def test_prepared_inline_selection_is_reused_without_unlocking_or_resolving_twice(self):
         options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
         signing = SimpleNamespace(resolve=Mock(), require_identity=Mock(), verify_archive=Mock())

@@ -37,7 +37,7 @@ class CloudArchiveTests(unittest.TestCase):
             output = Path(temporary) / 'output'
             native = SimpleNamespace(validate_identity=Mock(), source=Mock(return_value={'sha': 'a' * 40}),
                                      run=run, stage=Mock(return_value=output / 'work'), module=module,
-                                     isolated_keychain=isolated)
+                                     isolated_keychain=isolated, key_access_runtime=lambda _env: native)
             with patch.object(archive, 'engine', return_value=native), self.assertRaisesRegex(ValueError, 'archive boundary'):
                 archive.create(output, '1.0.2', '16', 'ABCDEFGHIJ', 'beta', {})
         self.assertEqual(events, ['prepare', 'isolate', 'identity', 'probe', 'archive'])
@@ -82,6 +82,7 @@ class CloudArchiveTests(unittest.TestCase):
             native = SimpleNamespace(validate_identity=Mock(), source=Mock(side_effect=[identity, dict(identity, sha='c' * 40)]),
                                      run=Mock(return_value=b'Xcode 26.6\nBuild version 17F113'),
                                      stage=Mock(return_value=output / 'work'), isolated_keychain=isolated,
+                                     key_access_runtime=lambda _env: native,
                                      module=Mock(side_effect=lambda _name, file: SimpleNamespace(
                                          resolve=Mock(return_value=(['CODE_SIGN_STYLE=Automatic'], {'style': 'automatic'})),
                                          require_identity=Mock(), verify_archive=Mock()) if file == 'development_signing.py'

@@ -1,6 +1,7 @@
 """Activate and test the configured Development key in the actual runner session."""
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 import re
 import stat
@@ -13,9 +14,11 @@ def write_result(directory, name, value):
         output.write('\n')
 
 
-def password_present(directory, selection):
+@contextmanager
+def password_descriptor(directory, selection):
     """Check the optional new Development-only password without reading its bytes."""
     descriptor = selection.open_physical_directory(directory, private=True)
+    password = None
     try:
         info = os.fstat(descriptor)
         if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
@@ -25,18 +28,18 @@ def password_present(directory, selection):
             password = os.open('development-keychain.password', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
                                dir_fd=descriptor)
         except FileNotFoundError:
-            return False
-        try:
-            info = os.fstat(password)
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                    or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600
-                    or not 0 < info.st_size <= 1024):
-                raise ValueError('Invalid owned Development password file')
-            selection.require_no_acl(password)
-        finally:
-            os.close(password)
-        return True
+            yield None
+            return
+        info = os.fstat(password)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600
+                or not 0 < info.st_size <= 1024):
+            raise ValueError('Invalid owned Development password file')
+        selection.require_no_acl(password)
+        yield password
     finally:
+        if password is not None:
+            os.close(password)
         os.close(descriptor)
 
 
@@ -48,7 +51,7 @@ def check_keychain(path, selection):
             info = os.fstat(keychain)
             # Native keychain databases are encrypted and normally mode0644.
             if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                    or info.st_mode & 0o022 or info.st_size <= 0):
+                    or info.st_nlink != 1 or info.st_mode & 0o022 or info.st_size <= 0):
                 raise ValueError('Development keychain must be an owned physical database')
             selection.check_acl(keychain, readonly=True)
         finally:
@@ -60,7 +63,7 @@ def check_keychain(path, selection):
 def prepare(evidence, native, directory, *, configuration_directory=None):
     """Caller holds native_session; never unlock login or change a key's ACL."""
     result = {'status': 'preunlocked_required', 'passwordLogged': False}
-    keychain = None
+    record_attempted = False
     try:
         if evidence['style'] == 'automatic':
             result['status'] = 'automatic_unchanged'
@@ -70,38 +73,48 @@ def prepare(evidence, native, directory, *, configuration_directory=None):
         result.update(certificateSha1=evidence['certificateSha1'],
                       configurationSha256=evidence['configurationSha256'])
         configuration_directory = configuration_directory or Path.home() / '.config/gcsa-aegis-signing'
-        if not password_present(configuration_directory, selection):
-            return None
-        paths = native.keychains()
-        if len(paths) > 64:
-            raise ValueError('Development keychain inventory exceeds the limit')
-        matches = []
-        for value in paths:
-            path = Path(value)
-            if path.name.lower() in {'login.keychain', 'login.keychain-db', 'system.keychain'}:
-                continue
-            certificates = native.run('/usr/bin/security', 'find-certificate', '-a', '-Z', str(path)).decode()
-            if re.search(r'SHA-1 hash: ' + re.escape(evidence['certificateSha1']) + r'\b', certificates):
-                check_keychain(path, selection)
-                if native.keychain_has_distribution(str(path)):
-                    raise ValueError('Configured Development keychain contains a Distribution identity')
-                matches.append(path)
-        if len(matches) != 1:
-            raise ValueError('Unique owned dedicated Development keychain required')
-        keychain = matches[0]
-        result['keychain'] = keychain.name
-        # Reuse only the native unlock primitive, with the new Development password.
-        native.module('development_access_unlock', 'local-ios-signing.py').unlock_keychain(
-            keychain, configuration_directory / 'development-keychain.password')
-        if native.keychain_has_distribution(str(keychain)):
-            raise ValueError('Unlocked Development keychain contains a Distribution identity')
-        result['status'] = 'unlocked_in_runner'
-        return keychain
+        with password_descriptor(configuration_directory, selection) as password:
+            if password is None:
+                return None
+            paths = native.keychains()
+            if len(paths) > 64:
+                raise ValueError('Development keychain inventory exceeds the limit')
+            matches = []
+            for value in paths:
+                path = Path(value)
+                if native.unretainable_keychain(path):
+                    continue
+                certificates = native.run('/usr/bin/security', 'find-certificate', '-a', '-Z', str(path)).decode()
+                if re.search(r'SHA-1 hash: ' + re.escape(evidence['certificateSha1']) + r'\b', certificates):
+                    check_keychain(path, selection)
+                    if native.keychain_has_distribution(str(path)):
+                        raise ValueError('Configured Development keychain contains a Distribution identity')
+                    matches.append(path)
+            if len(matches) != 1:
+                raise ValueError('Unique owned dedicated Development keychain required')
+            keychain = matches[0]
+            result['keychain'] = keychain.name
+            unlock = native.module('development_access_unlock', 'local-ios-signing.py')
+            with unlock.activated_keychain_from_fd(keychain, password) as initially_unlocked:
+                if native.keychain_has_distribution(str(keychain)):
+                    raise ValueError('Unlocked Development keychain contains a Distribution identity')
+                result.update(status='unlocked_in_runner', initiallyUnlocked=initially_unlocked)
+                # Publishing failure is also an activation failure, while the native ref is alive.
+                record_attempted = True
+                write_result(directory, 'development-keychain-activation.json', result)
+            return keychain
     except BaseException:
         result['status'] = 'failed'
         raise
     finally:
-        write_result(directory, 'development-keychain-activation.json', result)
+        if not record_attempted:
+            write_result(directory, 'development-keychain-activation.json', result)
+
+
+def public_environment(environment):
+    return {name: environment[name] for name in (
+        'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'DEVELOPER_DIR', 'LANG', 'LC_ALL')
+        if name in environment}
 
 
 def verify(evidence, native, directory, environment, keychain=None):
@@ -113,15 +126,13 @@ def verify(evidence, native, directory, environment, keychain=None):
         native.module('development_probe_selection', 'development_signing.py').validate_evidence(evidence)
         if keychain is not None and str(keychain) not in native.keychains():
             raise ValueError('Activated Development keychain is absent from archive isolation')
-        public_environment = {name: environment[name] for name in (
-            'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'DEVELOPER_DIR', 'LANG', 'LC_ALL')
-            if name in environment}
+        public_env = public_environment(environment)
         with tempfile.TemporaryDirectory(prefix='development-key-probe-', dir=directory) as temporary:
             root = Path(temporary)
             source, binary = root / 'probe.c', root / 'probe'
             source.write_text('int main(void) { return 0; }\n')
             result['stage'] = 'compile_probe'
-            native.run('/usr/bin/xcrun', '--sdk', 'macosx', 'clang', str(source), '-o', str(binary), env=public_environment,
+            native.run('/usr/bin/xcrun', '--sdk', 'macosx', 'clang', str(source), '-o', str(binary), env=public_env,
                        log=directory / 'development-key-probe-clang.log', timeout=60)
             if not binary.is_file() or binary.is_symlink():
                 raise ValueError('Development signing probe compiler produced no regular binary')
@@ -129,10 +140,11 @@ def verify(evidence, native, directory, environment, keychain=None):
             arguments = ['/usr/bin/codesign', '--force', '--sign', evidence['certificateSha1'], '--timestamp=none']
             if keychain is not None:
                 arguments += ['--keychain', str(keychain)]
-            native.run(*arguments, str(binary), env=public_environment,
+            native.run(*arguments, str(binary), env=public_env,
                        log=directory / 'development-key-probe-codesign.log', timeout=30)
             result['stage'] = 'verify_probe'
-            native.run('/usr/bin/codesign', '--verify', '--strict', str(binary), env=public_environment, timeout=30)
+            native.run('/usr/bin/codesign', '--verify', '--strict', str(binary), env=public_env,
+                       log=directory / 'development-key-probe-verify.log', timeout=30)
         result.update(status='verified_in_runner', stage='complete', certificateSha1=evidence['certificateSha1'])
     except BaseException as error:
         result['status'] = 'failed'

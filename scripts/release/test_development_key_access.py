@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+from contextlib import contextmanager
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -44,6 +45,18 @@ class DevelopmentKeyAccessTests(unittest.TestCase):
         self.signed = False
         self.sign_failure = False
         self.unlock = Mock()
+        self.rollback = Mock()
+        self.initially_unlocked = False
+        @contextmanager
+        def activated(path, descriptor):
+            self.password_inode = os.fstat(descriptor).st_ino
+            self.unlock(path, descriptor)
+            try:
+                yield self.initially_unlocked
+            except BaseException:
+                if not self.initially_unlocked:
+                    self.rollback(path)
+                raise
         def run(*arguments, **options):
             self.commands.append((arguments, options))
             tool = Path(arguments[0]).name
@@ -62,10 +75,12 @@ class DevelopmentKeyAccessTests(unittest.TestCase):
             if filename == 'development_signing.py':
                 return selection
             if filename == 'local-ios-signing.py':
-                return SimpleNamespace(unlock_keychain=self.unlock)
+                return SimpleNamespace(activated_keychain_from_fd=activated)
             raise AssertionError('Unexpected native module')
         self.native = SimpleNamespace(run=run, keychains=lambda: self.visible,
-                                      keychain_has_distribution=Mock(return_value=False), module=module)
+                                      keychain_has_distribution=Mock(return_value=False), module=module,
+                                      unretainable_keychain=lambda p: p.name.casefold() in {
+                                          'login.keychain', 'login.keychain-db', 'system.keychain'})
 
     def prepare(self):
         return access.prepare(self.evidence, self.native, self.output,
@@ -75,7 +90,9 @@ class DevelopmentKeyAccessTests(unittest.TestCase):
         self.visible.insert(0, str(self.root / 'login.keychain-db'))
         self.visible.insert(0, str(self.root / 'Login.keychain-db'))
         self.assertEqual(self.prepare(), self.keychain)
-        self.unlock.assert_called_once_with(self.keychain, self.password)
+        self.unlock.assert_called_once()
+        self.assertEqual(self.unlock.call_args.args[0], self.keychain)
+        self.assertEqual(self.password_inode, self.password.stat().st_ino)
         self.assertEqual(len(self.commands), 1)
         self.assertNotIn('login.keychain-db', self.commands[0][0])
         receipt = json.loads((self.output / 'development-keychain-activation.json').read_bytes())
@@ -138,7 +155,28 @@ class DevelopmentKeyAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unlocked Development keychain contains a Distribution'):
             self.prepare()
         self.unlock.assert_called_once()
+        self.rollback.assert_called_once_with(self.keychain)
         self.assertFalse(any(Path(args[0]).name == 'xcrun' for args, _ in self.commands))
+
+    def test_rejected_activation_preserves_a_previously_unlocked_keychain(self):
+        self.initially_unlocked = True
+        self.native.keychain_has_distribution.side_effect = [False, True]
+        with self.assertRaisesRegex(ValueError, 'Unlocked Development keychain contains a Distribution'):
+            self.prepare()
+        self.rollback.assert_not_called()
+
+    def test_receipt_publication_failure_rolls_back_while_native_reference_is_alive(self):
+        from unittest.mock import patch
+        with patch.object(access, 'write_result', side_effect=OSError('publication failed')):
+            with self.assertRaisesRegex(OSError, 'publication failed'):
+                self.prepare()
+        self.rollback.assert_called_once_with(self.keychain)
+
+    def test_keychain_database_hardlink_is_rejected_before_unlock(self):
+        os.link(self.keychain, self.root / 'alias.keychain-db')
+        with self.assertRaisesRegex(ValueError, 'owned physical database'):
+            self.prepare()
+        self.unlock.assert_not_called()
 
     def test_probe_signs_and_verifies_without_inheriting_asc_or_github_credentials(self):
         keychain = self.prepare()
