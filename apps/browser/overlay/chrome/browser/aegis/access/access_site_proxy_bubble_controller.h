@@ -112,6 +112,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   void OnRestoredCoreVerified(OwnershipKey owner, uint64_t attempt,
       AccessLocalCoreReady result);
   void FinishCoreRequests(bool ready);
+  void FinishNavigationPreparation(bool ready);
   void OnLocalCoreStopped(std::string registration_id);
   void FailCorePreparation(const AccessSiteHost& host, std::string error);
 
@@ -147,7 +148,9 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   std::string core_registration_;
   std::optional<OwnershipKey> core_owner_;
   std::vector<base::OnceCallback<void(bool)>> core_request_waiters_;
+  GURL retry_url_;
   base::OnceCallback<void(bool)> retry_completion_;
+  base::OnceCallback<void(bool)> queued_retry_;
   base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
 };
 

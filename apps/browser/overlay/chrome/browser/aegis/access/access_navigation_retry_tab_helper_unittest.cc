@@ -3,6 +3,7 @@
 #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
 
 #include <utility>
+#include <vector>
 
 #include "base/functional/bind.h"
 #include "base/test/bind.h"
@@ -13,6 +14,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/test_renderer_host.h"
 #include "net/base/net_errors.h"
@@ -226,6 +228,39 @@ TEST_F(AccessNavigationRetryTabHelperTest,
   EXPECT_FALSE(reply.Get());
   EXPECT_FALSE(controller().GetPendingEntry());
   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed);
+}
+
+TEST_F(AccessNavigationRetryTabHelperTest, RefreshesStopWhilePreparingOnIdleTab) {
+  class StopDelegate : public content::WebContentsDelegate {
+   public:
+    void LoadingStateChanged(content::WebContents* source, bool) override {
+      stop_states.push_back(
+          AccessNavigationRetryTabHelper::FromWebContents(source)
+              ->IsPreparingProxyRetry());
+    }
+    std::vector<bool> stop_states;
+  } delegate;
+  Fail(GURL("https://failed.example/idle"));
+  ASSERT_FALSE(web_contents()->IsLoading());
+  auto* previous = web_contents()->GetDelegate();
+  web_contents()->SetDelegate(&delegate);
+  base::OnceCallback<void(bool)> prepared;
+  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
+      [&](const GURL&, base::OnceCallback<void(bool)> callback) {
+        prepared = std::move(callback);
+      }));
+  base::test::TestFuture<bool> reply;
+  EXPECT_TRUE(helper()->RequestProxyRetry(reply.GetCallback()));
+  EXPECT_EQ(delegate.stop_states, std::vector<bool>({true}));
+  web_contents()->Stop();
+  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
+  EXPECT_TRUE(reply.IsReady());
+  if (prepared) {
+    std::move(prepared).Run(true);
+  }
+  EXPECT_FALSE(controller().GetPendingEntry());
+  EXPECT_EQ(delegate.stop_states, std::vector<bool>({true, false}));
+  web_contents()->SetDelegate(previous);
 }
 
 TEST_F(AccessNavigationRetryTabHelperTest, PendingNavigationRevokesLateReady) {

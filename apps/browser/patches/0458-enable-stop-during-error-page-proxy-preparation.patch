@@ -1,0 +1,193 @@
+From 4ec1dda2736bccc534e2fa7e0f8b38270b0c635a Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 12 Nov 2026 02:34:49 +0800
+Subject: [PATCH] fix(access): expose Stop while the active error tab prepares
+ its proxy
+
+---
+ .../access_navigation_retry_tab_helper.cc     | 17 +++++++--
+ .../access_navigation_retry_tab_helper.h      |  3 ++
+ ...ss_navigation_retry_tab_helper_unittest.cc | 35 +++++++++++++++++++
+ chrome/browser/ui/BUILD.gn                    |  1 +
+ .../browser/ui/browser_command_controller.cc  | 15 ++++++--
+ 5 files changed, 67 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index 696f905cc60e75a0c14a194b9d6c342dddb84248..c8826fd5b05d4baa2809d3eb7d61272ebe3bffe3 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -9,6 +9,7 @@
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_delegate.h"
+ #include "content/public/common/page_type.h"
+ #include "ui/base/page_transition_types.h"
+ 
+@@ -83,8 +84,9 @@ bool AccessNavigationRetryTabHelper::RequestProxyRetry(
+     std::move(completion).Run(false);
+     return false;
+   }
+-  pending_retry_reply_ = std::move(completion);
+   const int entry_id = entry->GetUniqueID();
++  pending_retry_reply_ = std::move(completion);
++  UpdateStopControl();
+   // Grant the failed destination; OnRouteReady still reloads the original URL.
+   proxy_retry_handler_.Run(ticket->failed_url, base::BindOnce(
+       &AccessNavigationRetryTabHelper::OnProxyPrepared, weak_factory_.GetWeakPtr(),
+@@ -95,6 +97,7 @@ void AccessNavigationRetryTabHelper::OnProxyPrepared(
+     AccessNavigationRetryTicket ticket, int error_entry_id, bool ready) {
+   // Loading the original URL can synchronously start another navigation.
+   auto reply = std::move(pending_retry_reply_);
++  UpdateStopControl();
+   const auto current = FailureForRetry();
+   const bool retry = ready && current && *current == ticket &&
+       web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID() ==
+@@ -107,7 +110,17 @@ void AccessNavigationRetryTabHelper::CancelPendingPreparation() {
+   weak_factory_.InvalidateWeakPtrs();
+   // Stop can leave the same error document and its Mojo reply pipe alive.
+   if (pending_retry_reply_) {
+-    std::move(pending_retry_reply_).Run(false);
++    auto reply = std::move(pending_retry_reply_);
++    UpdateStopControl();
++    std::move(reply).Run(false);
++  }
++}
++
++void AccessNavigationRetryTabHelper::UpdateStopControl() {
++  auto* contents = web_contents();
++  if (contents && !contents->IsBeingDestroyed() && contents->GetDelegate()) {
++    contents->GetDelegate()->LoadingStateChanged(contents,
++                                                contents->ShouldShowLoadingUI());
+   }
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+index 63120358291d4f01b0fa30c53570e44dc8caab3f..60a386b2c2bf11af91daabf48b2e2c2ecfbbe588 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+@@ -34,6 +34,8 @@ class AccessNavigationRetryTabHelper
+   // error document. The target comes from this helper, never renderer IPC.
+   bool RequestProxyRetry(base::OnceCallback<void(bool)> completion);
+ 
++  bool IsPreparingProxyRetry() const { return !!pending_retry_reply_; }
++
+   void DidStartNavigation(content::NavigationHandle* navigation) override;
+   void DidFinishNavigation(content::NavigationHandle* navigation) override;
+   void NavigationStopped() override;
+@@ -46,6 +48,7 @@ class AccessNavigationRetryTabHelper
+   void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
+                        bool ready);
+   void CancelPendingPreparation();
++  void UpdateStopControl();
+ 
+   AccessNavigationRetryState state_;
+   ProxyRetryHandler proxy_retry_handler_;
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+index 7c1d346bf55d3d4e63446da81183b70f269c3b07..2daaa96d4afe199bed0bc2deddb6baeacb5dcc09 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+@@ -3,6 +3,7 @@
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ 
+ #include <utility>
++#include <vector>
+ 
+ #include "base/functional/bind.h"
+ #include "base/test/bind.h"
+@@ -13,6 +14,7 @@
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_delegate.h"
+ #include "content/public/test/navigation_simulator.h"
+ #include "content/public/test/test_renderer_host.h"
+ #include "net/base/net_errors.h"
+@@ -228,6 +230,39 @@ TEST_F(AccessNavigationRetryTabHelperTest,
+   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed);
+ }
+ 
++TEST_F(AccessNavigationRetryTabHelperTest, RefreshesStopWhilePreparingOnIdleTab) {
++  class StopDelegate : public content::WebContentsDelegate {
++   public:
++    void LoadingStateChanged(content::WebContents* source, bool) override {
++      stop_states.push_back(
++          AccessNavigationRetryTabHelper::FromWebContents(source)
++              ->IsPreparingProxyRetry());
++    }
++    std::vector<bool> stop_states;
++  } delegate;
++  Fail(GURL("https://failed.example/idle"));
++  ASSERT_FALSE(web_contents()->IsLoading());
++  auto* previous = web_contents()->GetDelegate();
++  web_contents()->SetDelegate(&delegate);
++  base::OnceCallback<void(bool)> prepared;
++  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
++      [&](const GURL&, base::OnceCallback<void(bool)> callback) {
++        prepared = std::move(callback);
++      }));
++  base::test::TestFuture<bool> reply;
++  EXPECT_TRUE(helper()->RequestProxyRetry(reply.GetCallback()));
++  EXPECT_EQ(delegate.stop_states, std::vector<bool>({true}));
++  web_contents()->Stop();
++  EXPECT_FALSE(helper()->IsPreparingProxyRetry());
++  EXPECT_TRUE(reply.IsReady());
++  if (prepared) {
++    std::move(prepared).Run(true);
++  }
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(delegate.stop_states, std::vector<bool>({true, false}));
++  web_contents()->SetDelegate(previous);
++}
++
+ TEST_F(AccessNavigationRetryTabHelperTest, PendingNavigationRevokesLateReady) {
+   Fail(GURL("https://failed.example/path"));
+   auto ready = helper()->CaptureRouteReadyCallback();
+diff --git a/chrome/browser/ui/BUILD.gn b/chrome/browser/ui/BUILD.gn
+index 56d155673b7c453f1f5e7a7e1b5be8891f1dd35c..8afe8e2dd179e4b8dc4f9e3cb628330d2464f6b2 100644
+--- a/chrome/browser/ui/BUILD.gn
++++ b/chrome/browser/ui/BUILD.gn
+@@ -2576,6 +2576,7 @@ static_library("ui") {
+       ":browser_commands_mac_impl",
+       ":browser_mac",
+       ":fullscreen_util_mac",
++      "//chrome/browser/aegis/access:access_navigation_retry_tab_helper",
+       "//chrome/browser/apps/app_shim",
+       "//chrome/browser/ui/cocoa",
+       "//chrome/browser/ui/views:certificate_viewer_mac_views",
+diff --git a/chrome/browser/ui/browser_command_controller.cc b/chrome/browser/ui/browser_command_controller.cc
+index dc52e3cb26d934fe3f6027367d9684dbf095b07a..4777b87f2370fa6acc88fba1934720ba25508a68 100644
+--- a/chrome/browser/ui/browser_command_controller.cc
++++ b/chrome/browser/ui/browser_command_controller.cc
+@@ -155,6 +155,7 @@
+ #endif
+ 
+ #if BUILDFLAG(IS_MAC)
++#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ #include "chrome/browser/ui/browser_commands_mac.h"
+ #endif
+ 
+@@ -2648,8 +2649,18 @@ void BrowserCommandController::UpdateReloadStopState(bool is_loading,
+     return;
+   }
+ 
+-  window()->UpdateReloadStopState(is_loading, force);
+-  command_updater_->UpdateCommandEnabled(IDC_STOP, is_loading);
++  bool can_stop = is_loading;
++#if BUILDFLAG(IS_MAC)
++  // Proxy preparation belongs to the committed error document. There is no
++  // provisional navigation until the route has been verified.
++  if (auto* contents = browser_->tab_strip_model()->GetActiveWebContents()) {
++    auto* retry =
++        aegis::access::AccessNavigationRetryTabHelper::FromWebContents(contents);
++    can_stop |= retry && retry->IsPreparingProxyRetry();
++  }
++#endif
++  window()->UpdateReloadStopState(can_stop, force);
++  command_updater_->UpdateCommandEnabled(IDC_STOP, can_stop);
+   UpdateCloseFindOrStop();
+ }
+ 
+-- 
+2.54.0 (Apple Git-157)
+

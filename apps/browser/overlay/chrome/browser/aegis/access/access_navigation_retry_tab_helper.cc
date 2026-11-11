@@ -9,6 +9,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/page_type.h"
 #include "ui/base/page_transition_types.h"
 
@@ -83,8 +84,9 @@ bool AccessNavigationRetryTabHelper::RequestProxyRetry(
     std::move(completion).Run(false);
     return false;
   }
-  pending_retry_reply_ = std::move(completion);
   const int entry_id = entry->GetUniqueID();
+  pending_retry_reply_ = std::move(completion);
+  UpdateStopControl();
   // Grant the failed destination; OnRouteReady still reloads the original URL.
   proxy_retry_handler_.Run(ticket->failed_url, base::BindOnce(
       &AccessNavigationRetryTabHelper::OnProxyPrepared, weak_factory_.GetWeakPtr(),
@@ -95,6 +97,7 @@ void AccessNavigationRetryTabHelper::OnProxyPrepared(
     AccessNavigationRetryTicket ticket, int error_entry_id, bool ready) {
   // Loading the original URL can synchronously start another navigation.
   auto reply = std::move(pending_retry_reply_);
+  UpdateStopControl();
   const auto current = FailureForRetry();
   const bool retry = ready && current && *current == ticket &&
       web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID() ==
@@ -107,7 +110,17 @@ void AccessNavigationRetryTabHelper::CancelPendingPreparation() {
   weak_factory_.InvalidateWeakPtrs();
   // Stop can leave the same error document and its Mojo reply pipe alive.
   if (pending_retry_reply_) {
-    std::move(pending_retry_reply_).Run(false);
+    auto reply = std::move(pending_retry_reply_);
+    UpdateStopControl();
+    std::move(reply).Run(false);
+  }
+}
+
+void AccessNavigationRetryTabHelper::UpdateStopControl() {
+  auto* contents = web_contents();
+  if (contents && !contents->IsBeingDestroyed() && contents->GetDelegate()) {
+    contents->GetDelegate()->LoadingStateChanged(contents,
+                                                contents->ShouldShowLoadingUI());
   }
 }
 

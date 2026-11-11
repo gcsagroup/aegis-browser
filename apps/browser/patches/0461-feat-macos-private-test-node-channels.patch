@@ -1,4 +1,4 @@
-From 989fe29c139208eb5afdcfda5af485813305f448 Mon Sep 17 00:00:00 2001
+From 0916bd98524e800e4fd88b6fd1a0f3d6abe6f0c4 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
 Date: Thu, 12 Nov 2026 01:19:22 +0800
 Subject: [PATCH] feat(access): admit private macOS Alpha and Beta test nodes
@@ -315,10 +315,10 @@ index f2561f9caccb3153dcde76d5d770f87855107b2d..531af210dc6f76cc63c03e241dafe5ba
      const auto published = runtime->PublishRestoredPolicyCandidate(*result.publication);
      ready = published.status == AccessPolicyPublicationStatus::kPublished ||
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-index 77fc6adb6ddf3e8e396a9c23230c5dfc61b6249d..be62de7f3b6efe4d0917cdd1fd495aca32aa209b 100644
+index c8914318aa746fe2867f2d89877c6c8beec250f1..0cfcc0a9abb91f74dc6784f88583110bd35c4b1a 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-@@ -346,6 +346,7 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
+@@ -360,6 +360,7 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
  }
  std::string AccessSiteProxyBubbleController::LocalProxyGroup(
      const OwnershipKey& owner) {
@@ -326,7 +326,7 @@ index 77fc6adb6ddf3e8e396a9c23230c5dfc61b6249d..be62de7f3b6efe4d0917cdd1fd495aca
    return owner.channel == ChannelNamespace::kAlpha ? "alpha-authorized-test-node"
                                                    : "dev-authorized-local-node";
  }
-@@ -362,10 +363,9 @@ bool AccessSiteProxyBubbleController::RegisterPreparedCore(
+@@ -376,10 +377,9 @@ bool AccessSiteProxyBubbleController::RegisterPreparedCore(
      const OwnershipKey& owner, const AccessLocalCoreReady& result) {
    if (!result.ready || !result.local_credentials) return false;
    // Rebinding a child does not change a saved rule or its revision.
@@ -339,7 +339,7 @@ index 77fc6adb6ddf3e8e396a9c23230c5dfc61b6249d..be62de7f3b6efe4d0917cdd1fd495aca
    const auto common = runtime ? runtime->CaptureCommonGenerationTupleOnUiThread(owner)
                                : std::nullopt;
 diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
-index 5c7255895769cb1f4c8c6c92488bbb000ed92a96..f6a5f24cc152811a402823404513b75fc193c700 100644
+index b3532fb584767853461a0eb462c15a76c7d0b392..1035dfab77476e19475001583f4c0e32d579d109 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
 @@ -350,7 +350,7 @@ class ProductAckContext final : public network::TestNetworkContext,

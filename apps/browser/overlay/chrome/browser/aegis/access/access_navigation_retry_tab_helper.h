@@ -34,6 +34,8 @@ class AccessNavigationRetryTabHelper
   // error document. The target comes from this helper, never renderer IPC.
   bool RequestProxyRetry(base::OnceCallback<void(bool)> completion);
 
+  bool IsPreparingProxyRetry() const { return !!pending_retry_reply_; }
+
   void DidStartNavigation(content::NavigationHandle* navigation) override;
   void DidFinishNavigation(content::NavigationHandle* navigation) override;
   void NavigationStopped() override;
@@ -46,6 +48,7 @@ class AccessNavigationRetryTabHelper
   void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
                        bool ready);
   void CancelPendingPreparation();
+  void UpdateStopControl();
 
   AccessNavigationRetryState state_;
   ProxyRetryHandler proxy_retry_handler_;
