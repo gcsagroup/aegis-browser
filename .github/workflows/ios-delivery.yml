@@ -153,6 +153,8 @@ jobs:
           PY
   ios-archive:
     name: ios-archive
+    outputs:
+      manifest_sha256: ${{ steps.archive.outputs.manifest_sha256 }}
     needs: [admission, check-unused, archive-settings]
     if: ${{ !cancelled() && needs.admission.result == 'success' && needs.admission.outputs.signing_mode == 'cloud' && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
     runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
@@ -168,6 +170,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build Development archive without cloud or upload credentials
+        id: archive
         env:
           AEGIS_IOS_FIREBASE_DEV_PLIST_BASE64: ${{ needs.archive-settings.outputs.firebase_dev }}
           AEGIS_IOS_FIREBASE_PROD_PLIST_BASE64: ${{ needs.archive-settings.outputs.firebase_prod }}
@@ -175,6 +178,7 @@ jobs:
           python3 -B scripts/release/cloud-archive.py --output "$RUNNER_TEMP/aegis-development-archive"
           --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
           --profile "$RELEASE_PROFILE" --team "$AEGIS_APPLE_TEAM_ID"
+          --github-output "$GITHUB_OUTPUT"
       - name: Preserve uncredentialed archive diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
@@ -257,6 +261,7 @@ jobs:
       - id: package
         env:
           AEGIS_CLOUD_ARCHIVE_INPUT: ${{ needs.admission.outputs.signing_mode == 'cloud' && format('{0}/aegis-development-input', runner.temp) || '' }}
+          AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256: ${{ needs.ios-archive.outputs.manifest_sha256 }}
           AEGIS_ASC_KEY_ID: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_KEY_ID || '' }}
           AEGIS_ASC_ISSUER_ID: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_ISSUER_ID || '' }}
           AEGIS_ASC_KEY_BASE64: ${{ needs.admission.outputs.signing_mode == 'cloud' && secrets.AEGIS_ASC_KEY_BASE64 || '' }}

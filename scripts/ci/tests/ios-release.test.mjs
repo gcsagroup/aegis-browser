@@ -22,6 +22,11 @@ test('archive gets only non-secret settings from the existing environment', () =
   assert.equal(archive.environment, undefined);
   assert(!JSON.stringify(archive).includes('secrets.'));
   assert(archive.needs.includes('archive-settings'));
+  assert.equal(archive.outputs.manifest_sha256, '${{ steps.archive.outputs.manifest_sha256 }}');
+  const build = archive.steps.find(step => step.id === 'archive');
+  assert(build.run.includes('--github-output "$GITHUB_OUTPUT"'));
+  assert.equal(jobs['ios-package'].steps.find(step => step.id === 'package').env.AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256,
+    '${{ needs.ios-archive.outputs.manifest_sha256 }}');
   const settings = jobs['archive-settings'];
   assert.equal(settings.environment, 'aegis-ios-signing');
   assert(!JSON.stringify(settings).includes('actions/checkout'));
