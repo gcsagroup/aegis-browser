@@ -215,6 +215,9 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   const std::optional<aegis_access::BrowserOwnedRequestMetadata>
       factory_metadata_;
   const std::optional<content::WeakDocumentPtr> document_;
+  // Factory admission may close while existing private request/control pipes
+  // remain live. Their redirect policy must keep the original routing mode.
+  const bool is_private_factory_;
 
   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
   std::set<std::unique_ptr<AccessProxyingURLTrackedRequest>,

@@ -432,3 +432,5 @@
 0432-test-access-inflight-factory-reset.patch
 0433-fix-access-reset-http-fixture.patch
 0434-fix-access-inflight-factory-reset.patch
+0435-test-access-browser-redirect-debug-isolation.patch
+0436-fix-access-browser-redirect-debug-isolation.patch

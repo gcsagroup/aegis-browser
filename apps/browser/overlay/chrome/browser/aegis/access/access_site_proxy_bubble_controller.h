@@ -71,8 +71,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   bool IsDevAllowBlockPanelRegistered() const;
   AccessDevAllowBlockPanelSnapshot DevAllowBlockSnapshotForCommittedUrl(
       const GURL& committed_url) const;
-  // Intent-only allow/block/off for an explicit host. Fail-closed when the
-  // channel does not admit the panel. Does not publish/ACK.
+  // Isolated diagnostic preview for an explicit host. Does not mutate the
+  // committed product intent, connection state or published policy.
   AccessDevAllowBlockApplyResult ApplyDevAllowBlock(
       std::string_view raw_host,
       AccessDevAllowBlockAction action);
@@ -128,6 +128,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
 
   const raw_ptr<Profile> profile_;
   AccessSiteIntentStore intent_store_;
+  AccessSiteIntentStore dev_intent_store_;
   std::set<AccessSiteHost> website_hosts_;
   struct HostState {
     AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;

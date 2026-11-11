@@ -472,6 +472,7 @@ test("access_service_coordinator_unittests") {
   ]
   deps = [
     ":access_async_rule_store",
+    ":access_browser_request_adapter",
     ":access_build_channel",
     ":access_buildflags",
     ":access_navigation_retry_tab_helper",

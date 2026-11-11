@@ -156,7 +156,7 @@ AccessDevAllowBlockPanelSnapshot
 AccessSiteProxyBubbleController::DevAllowBlockSnapshotForCommittedUrl(
     const GURL& committed_url) const {
   return BuildAccessDevAllowBlockPanelSnapshot(chrome::GetChannel(),
-                                               intent_store_, committed_url);
+                                               dev_intent_store_, committed_url);
 }
 
 AccessDevAllowBlockApplyResult
@@ -165,19 +165,11 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
     AccessDevAllowBlockAction action) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   AccessDevAllowBlockApplyResult result = ApplyAccessDevAllowBlock(
-      &intent_store_, chrome::GetChannel(), raw_host, action);
+      &dev_intent_store_, chrome::GetChannel(), raw_host, action);
   if (result.status != AccessDevAllowBlockApplyStatus::kApplied) {
     return result;
   }
-  const auto host = *result.host;
   ++state_revision_;
-  // Keep connection line honest: block/off never claim Access readiness.
-  // Allow leaves connection untouched so the product session path can advance.
-  if (action == AccessDevAllowBlockAction::kBlock ||
-      action == AccessDevAllowBlockAction::kOff) {
-    host_states_[host].connection = AccessSiteConnectionState::kIdle;
-    host_states_[host].failure_reason.clear();
-  }
   return result;
 }
 

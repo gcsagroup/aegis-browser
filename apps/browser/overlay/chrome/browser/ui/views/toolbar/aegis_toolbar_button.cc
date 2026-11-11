@@ -108,16 +108,15 @@ std::u16string DevAllowBlockStatusCopy(
                   u"Open a website to debug ALLOW / BLOCK",
                   u"請先開啟需要偵錯的網站");
     case Id::kOff:
-      return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
+      return Copy(u"DEV 预览：关闭", u"DEV preview: off", u"DEV 預覽：關閉");
     case Id::kAllowProxyIntent:
-      return Copy(u"DEV 意图：ALLOW（代理）", u"DEV intent: ALLOW (proxy)",
-                  u"DEV 意圖：ALLOW（代理）");
+      return Copy(u"DEV 预览：ALLOW", u"DEV preview: ALLOW",
+                  u"DEV 預覽：ALLOW");
     case Id::kBlockLocalRefuse:
-      return Copy(u"DEV 意图：BLOCK（本地拒绝）",
-                  u"DEV intent: BLOCK (local refuse)",
-                  u"DEV 意圖：BLOCK（本地拒絕）");
+      return Copy(u"DEV 预览：BLOCK", u"DEV preview: BLOCK",
+                  u"DEV 預覽：BLOCK");
   }
-  return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
+  return Copy(u"DEV 预览：关闭", u"DEV preview: off", u"DEV 預覽：關閉");
 }
 
 std::u16string IntentStatusCopy(
@@ -450,8 +449,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       return;
     }
     AddLabel(parent,
-             Copy(u"DEV ALLOW / BLOCK", u"DEV ALLOW / BLOCK",
-                  u"DEV ALLOW / BLOCK"),
+             Copy(u"DEV ALLOW / BLOCK 预览", u"DEV ALLOW / BLOCK preview",
+                  u"DEV ALLOW / BLOCK 預覽"),
              views::style::CONTEXT_DIALOG_TITLE);
     AddLabel(parent, DevAllowBlockStatusCopy(snap.status_id));
     if (!snap.has_explicit_host) {
@@ -471,9 +470,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                                base::Unretained(this),
                                aegis::access::AccessDevAllowBlockAction::kOff));
     AddLabel(parent,
-             Copy(u"仅对明确主机生效；不是通用规则编辑器。",
-                  u"Applies to an explicit host only; not a general rule editor.",
-                  u"僅對明確主機生效；不是通用規則編輯器。"));
+             Copy(u"此处仅预览主机意图；请用网站代理开关改变请求路由。",
+                  u"Host intent preview. Use the site proxy switch to change routing.",
+                  u"此處僅預覽主機意圖；請用網站代理開關改變請求路由。"));
   }
   void Build() {
     if (!Valid()) return;

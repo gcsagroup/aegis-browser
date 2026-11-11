@@ -51,9 +51,8 @@ struct AccessDevAllowBlockApplyResult {
   AccessSiteIntent intent = AccessSiteIntent::kOff;
 };
 
-// Applies product intent for an explicit host when the channel admits the
-// panel. Never invents DIRECT success for allow/block. Does not publish/ACK
-// (session finalize stays on the product toggle / P-mac-3 path).
+// Applies a diagnostic preview for an explicit host to a separate local store.
+// Product routing and committed intent use the transactional product toggle.
 AccessDevAllowBlockApplyResult ApplyAccessDevAllowBlock(
     AccessSiteIntentStore* store,
     version_info::Channel channel,

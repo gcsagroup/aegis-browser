@@ -12,7 +12,7 @@
 
 **Spec:** [阶段一验收清单](../access-product-phase1-acceptance.zh-CN.md)、[功能拆分](../access-product-phase1-feat-split.zh-CN.md)、[本站意图 API](../macos-access-site-intent-api-NOTES.md)，以及本聊天已授权的请求隔离、持久恢复和原标签页重试要求。本文不将旧文档的历史状态当作当前证据；冲突时沿用当前任务授权和当前 AGENTS.md。
 
-**最新快照：** 2026-11-11 08:36 Asia/Shanghai。434/f063081a完整chrome/15正式目标312项实际SUCCESS零skip，reset的3项真实RED→GREEN，ignore例外及取消寿命回归保留；GN/432–434精确回放PASS。r4确认原9项finding已修、iOS拆分窄审PASS，新增工厂reset寿命P2已实施并原生验证，准备新macOS候选exacthead fullquality/fresh复审；GUI/单组smoke策略限制及两PR/issue外部交付仍开放。
+**最新快照：** 2026-11-11 09:11 Asia/Shanghai。Native436/9f316355完整chrome/15正式目标316项实际SUCCESS零skip，新增4回归GREEN、owning GN/435–436精确tree回放PASS；r5两个P2已实现修复，尚需新交付候选fullquality及fresh复审。Mac6e旧质量不转新head，iOS81ff质量/拆分窄审有效。GUI/单组smoke策略限制及两Draft PR/issue仍开放。
 
 ## 1. 状态与证据规则
 
@@ -649,3 +649,28 @@
 - 原`native-review-reset-red-433-tests-result.json`3项实际客户端提前断开FAIL，434全部GREEN：清factory入口后native/proxy响应仍完成，随后显式取消仍可正常abort及清理。Context销毁仍完整teardown。432夹具CRASH/NOTRUN未升级。
 - IPC测试exe与433相同而NetworkService共享库更新，本轮312均真实重跑；仅exe字节相同不足以转移结果。回执新增当前5个生产文件哈希，没有为旧RED补造seal。
 - 下一项：新macOS候选fullquality及带原10项finding/原始证据的fresh只读复审；无活动native构建/测试，不重复434。原419 GUI仍历史，工具限制不绕过；iOS全产品/设备、实际包/签名、两个PR/issue分别开放。
+
+### 2026-11-11 08:46 — 最终239路径候选质量通过，fresh r5审查运行中
+
+- `pr97-both-platform-local-quality-v6-result.json`绑定Mac6e465f522e4c8b372a4277e4a845857683ba6c54/tree66ca4cc8与iOS81ff51c2f174838555c9850ea2d18603adcfa8af/treebb25630d，双方exacthead完整localquality/sourceStable/public-export PASS。历史r3/r4/r5候选质量不覆盖当前门，旧FAIL/INVALID保留。
+- 唯一fresh内置只读审查`pr97-platform-final-rereview-r5-launch.json`于00:40 UTC启动，实际Astra/xhigh/read-only，完整Mac6e diff及iOS拆分保留/新增CI断言窄范围，带原10项finding和原始证据；当前RUNNING而非PASS。候选工作树保持clean和冻结，不重复审查/构建。
+- 当前Native434完整chrome/15正式目标312实际SUCCESS零skip、117个变更overlay逐字节绑定有效。当前生产候选与419不同，419 GUI仅历史；实际GUI主流程/取消及适用一组20站smoke仍NOT_RUN/PARTIAL_POLICY_STOP。
+- 两PR及8个issue正文managed块持续更新准备；须以r5实际结论、最新remote head/base及真实PR URL交付。无独立评论/合并/签名/DMG/发行；不恢复P01/T90或iOS设备暂停。下一项收取r5，修复实际finding并fresh复审，或门通过后正常推新分支、创建两Draft并更新相应issue。
+
+### 2026-11-11 08:57 — r5两个P2接续，435测试候选构建中
+
+- `pr97-platform-final-rereview-r5-assessment.json`记录实际verdict：原九finding已修，R4 NetworkService寿命修复存在但Browser wrapper在factory入口断开后丢失路由模式，后续native/proxy重定向均拒绝；DEV Clear/BLOCK共用产品committed intent/state缓存造成UI与实际已提交policy不一致。原log、exit0及来源哈希保留；进程完成不等于审查PASS。iOS81ff仅拆分/CI窄范围结论有效。
+- Native435/707787ba67632533e2c62ba426dedbc34864a9ce仅测试/BUILD：实际生产Browser wrapper/public及private Mojo、保持独立loader/control的受控redirect target，新增native/proxy入口reset后redirect及network epoch变化负例；真实core/controller/store下DEV预览与committed Website状态不串写。`review-r5-red-435-source.json`封存输入，唯一`native-review-r5-red-435-build-result.json`RUNNING。该Browser target为受控夹具，不宣称真实NetworkService HTTP或GUI。
+- 下一项实际运行相关回归复现，修复持久私有路由身份与隔离debug预览存储；再必要native/质量及fresh最终复审。Mac6e质量PASS不抵消review finding，两Draft PR/8issue尚未外写；CUA禁用URL限制、419历史身份、48h/100GiB及其他owner/暂停均保留。
+
+### 2026-11-11 09:07 — r5实际3RED与436修复构建
+
+- `native-review-r5-red-435-build-result.json` owning coordinator编译PASS/inputsunChanged=true；`native-review-r5-red-435-tests-result.json`4项实际执行，3FAIL/1SUCCESS零skip：native/proxy redirect在factory admission关闭后失败，DEV Clear/BLOCK改写产品intent/connection；network epoch变化负例正常拒绝。不是编译/夹具崩溃，也不是GUI证据。
+- 436/9f3163555ceac3f81d50ecc35c2ed4b65d7a543a以不可变private-factory mode评估存活请求每一跳，继续校验可信metadata/current完整policy ACK/epoch及私有control；新请求admission仍要求有效factory remote。DEV独立preview store，不写产品committed intent/connection，三语UI标明preview与正式路由开关。`review-r5-green-436-source.json`封存六源码哈希；仅在435构建/测试结束后复制到Native并刷新mtime。
+- `boundary-435-436-replay-result.json`独立index逐段精确tree PASS，复用之前434有效回放前缀，不改Native构建输入。唯一`native-review-436-full-build-result.json`完整chrome/15目标RUNNING；后续GREEN/新候选质量/fresh复审均NOT_RUN，不因旧质量通过而提前交付。
+
+### 2026-11-11 09:11 — 436完整原生316项GREEN
+
+- `boundary-436-validation-receipt.json`绑定Native9f3163555ceac3f81d50ecc35c2ed4b65d7a543a、完整chrome/15正式目标build及316实际SUCCESS零skip，3 owning GN及435–436精确tree回放PASS。原3FAIL+epoch负例PASS，当前四项全部GREEN，coordinator正式目标从39到43；旧RED/夹具失败历史完整保留。
+- 本轮真实重跑全部316，不根据相同exe复用共享库测试。回执记录当前5个生产二进制SHA256；日志实际编译Browser private factory、bubble controller、toolbar及product test对象。当前生产Browser包装层、privatemojo/受控redirect和真实core/controller/store范围通过，不扩大为actualGUI/完整NetworkService联合新验收。
+- 下一项组成Mac新独立候选、exacthead fullquality、带原12个finding及原始证据的fresh最终复审；iOS81ff source/质量范围复用。无活动native构建/测试，不重复436；当前GUI主流程/取消/单组smoke仍策略受限，旧419 GUI身份保留，两PR/8issue尚未外写。

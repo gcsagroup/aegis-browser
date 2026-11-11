@@ -673,6 +673,7 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
       factory_owner_(std::move(factory_owner)),
       factory_metadata_(std::move(factory_metadata)),
       document_(std::move(document)),
+      is_private_factory_(private_target.is_valid()),
       private_context_(std::move(private_context)),
       on_disconnect_(std::move(on_disconnect)) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -958,27 +959,27 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
   // policy fall through to DIRECT when attribution cannot be established.
   if (!factory_metadata_) {
     if (factory_snapshot && !factory_snapshot->rules.empty()) return RequestDisposition::kBlock;
-    if (private_target_factory_.is_bound()) {
+    if (is_private_factory_) {
       aegis_access::BrowserOwnedRequestMetadata native{
           stable_request_id.value_or(base::Uuid::GenerateRandomV4().AsLowercaseString()),
           factory_owner_, aegis_access::RequestAttributionKind::kProfileOnly, {}, {}, std::nullopt};
       return EvaluatePreparedMetadata(request_url, runtime, std::move(native),
                                       net_error, ownership_record);
     }
-    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock : RequestDisposition::kPreserveNative;
+    return (factory_snapshot || is_private_factory_) ? RequestDisposition::kBlock : RequestDisposition::kPreserveNative;
   }
 
   AccessBrowserRequestMetadataResult metadata = CaptureCurrentMetadata();
   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
       !metadata.metadata.has_value()) {
-    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock
+    return (factory_snapshot || is_private_factory_) ? RequestDisposition::kBlock
                             : RequestDisposition::kPreserveNative;
   }
 
   aegis_access::BrowserOwnedRequestMetadata evaluated_metadata =
       std::move(*metadata.metadata);
   if (!SameAttributionScope(*factory_metadata_, evaluated_metadata)) {
-    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock
+    return (factory_snapshot || is_private_factory_) ? RequestDisposition::kBlock
                             : RequestDisposition::kPreserveNative;
   }
   if (stable_request_id.has_value()) {
@@ -1000,11 +1001,11 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
   const aegis_access::PublishedAccessPolicySnapshot* snapshot =
       runtime ? runtime->GetPublishedPolicySnapshot(metadata.owner) : nullptr;
   if (!snapshot) {
-    return private_target_factory_.is_bound() ? RequestDisposition::kBlock
+    return is_private_factory_ ? RequestDisposition::kBlock
                                              : RequestDisposition::kPreserveNative;
   }
 
-  if (private_target_factory_.is_bound()) {
+  if (is_private_factory_) {
     auto* transport = AccessNetworkContextTransport::Get(profile_);
     const auto common =
         runtime->CaptureCommonGenerationTupleOnUiThread(metadata.owner);
@@ -1026,7 +1027,7 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
   const MatchedPolicyDisposition policy_disposition =
       ClassifyPolicyMatch(match);
   if (policy_disposition == MatchedPolicyDisposition::kPreserveNative) {
-    if (!private_target_factory_.is_bound()) return RequestDisposition::kPreserveNative;
+    if (!is_private_factory_) return RequestDisposition::kPreserveNative;
     auto common = runtime->CaptureCommonGenerationTupleOnUiThread(metadata.owner);
     auto* dispatch = AccessRequestDispatchState::GetOrCreate(profile_);
     if (!common || !dispatch) return RequestDisposition::kBlock;
@@ -1045,7 +1046,7 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
   }
   auto* transport = AccessNetworkContextTransport::Get(profile_);
   if (transport && !transport->PrivateEndpoints(metadata.owner).empty() &&
-      !private_target_factory_.is_bound()) {
+      !is_private_factory_) {
     *net_error = net::ERR_PROXY_CONNECTION_FAILED;
     return RequestDisposition::kBlock;
   }
