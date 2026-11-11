@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import shutil
 import stat
 import subprocess
@@ -79,20 +80,25 @@ def create(output, version, build, team, profile, environment):
                 transfer.write(path, path.relative_to(archive).as_posix())
     manifest['archive_sha256'] = native.module('archive_digest', 'artifact-transport.py').digest(archive_zip)
     native.write(output / 'archive-manifest.json', manifest)
+    return hashlib.sha256((output / 'archive-manifest.json').read_bytes()).hexdigest()
 
 
-def extract(source, output, identity, version, build, team, profile):
+def extract(source, output, identity, version, build, team, profile, *, expected_manifest_sha256):
     """Authenticate the complete transfer before creating any extracted file."""
     native = engine()
     manifest_path = source / 'archive-manifest.json'
-    if manifest_path.is_symlink() or manifest_path.stat().st_size > 16 * 1024**2:
-        raise ValueError('Invalid archive manifest')
-    manifest = json.loads(manifest_path.read_text())
+    signing = native.module('development_signing', 'development_signing.py')
+    raw = signing.read_regular(manifest_path, 16 * 1024**2)
+    if (type(expected_manifest_sha256) is not str
+            or re.fullmatch(r'[0-9a-f]{64}', expected_manifest_sha256) is None
+            or hashlib.sha256(raw).hexdigest() != expected_manifest_sha256):
+        raise ValueError('Development archive manifest differs from its producer job output')
+    manifest = json.loads(raw)
     expected = {'schema': 'aegis-development-archive-v2', 'source': identity, 'version': version,
                 'build': build, 'team': team, 'profile': profile, 'keychainRestored': True}
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError('Development archive identity differs')
-    native.module('development_signing', 'development_signing.py').validate_evidence(manifest.get('developmentSigning'))
+    signing.validate_evidence(manifest.get('developmentSigning'))
     archive_zip = source / 'archive.zip'
     if (archive_zip.is_symlink() or archive_zip.stat().st_size > 2 * 1024**3
             or hashlib.sha256(archive_zip.read_bytes()).hexdigest() != manifest['archive_sha256']):
@@ -119,8 +125,7 @@ def extract(source, output, identity, version, build, team, profile):
             target.chmod((row.external_attr >> 16) & 0o755)
     if native.archive_files(output) != manifest['files']:
         raise ValueError('Extracted archive differs from its original manifest')
-    native.module('development_signing', 'development_signing.py').verify_archive(
-        output, manifest.get('developmentSigning'), native.run)
+    signing.verify_archive(output, manifest.get('developmentSigning'), native.run)
     return manifest
 
 
@@ -131,9 +136,13 @@ def main():
     parser.add_argument('--build', required=True)
     parser.add_argument('--team', required=True)
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], required=True)
+    parser.add_argument('--github-output', type=Path, help='Publish the manifest digest independently of artifact bytes')
     args = parser.parse_args()
     with engine().native_session():
-        create(args.output, args.version, args.build, args.team, args.profile, os.environ)
+        digest = create(args.output, args.version, args.build, args.team, args.profile, os.environ)
+    if args.github_output:
+        with args.github_output.open('a') as stream:
+            stream.write('manifest_sha256=' + digest + '\n')
 
 
 if __name__ == '__main__':

@@ -3,7 +3,10 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -23,7 +26,7 @@ class DevelopmentSigningTests(unittest.TestCase):
         self.directory.mkdir()
         self.certificate = b'approved Development certificate fixture'
         self.fingerprint = hashlib.sha1(self.certificate).hexdigest().upper()
-        self.profile_ids = {identifier: str(uuid.UUID(int=index + 1))
+        self.profile_ids = {identifier: f'abcdef0{index + 1}-2345-6789-abcd-{index + 1:012x}'
                             for index, identifier in enumerate(signing.TARGETS)}
         self.config = {'schema': signing.SCHEMA, 'team': 'ABCDEFGHIJ',
                        'certificateSha1': self.fingerprint, 'profiles': self.profile_ids}
@@ -84,9 +87,52 @@ class DevelopmentSigningTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Duplicate'):
             self.resolve()
 
+    def test_uppercase_profile_ids_and_case_variant_filenames_are_supported(self):
+        for profile in self.profiles.values():
+            profile['UUID'] = profile['UUID'].upper()
+        self.config['profiles'] = {key: value.upper() for key, value in self.profile_ids.items()}
+        self.save()
+        args, evidence = self.resolve()
+        for identifier, (target, _) in signing.TARGETS.items():
+            self.assertEqual(evidence['profiles'][identifier]['uuid'], self.profile_ids[identifier].lower())
+            self.assertIn('AEGIS_DEVELOPMENT_PROFILE_' + target + '=' + self.profile_ids[identifier].upper(), args)
+        self.config['profiles'] = self.profile_ids
+        self.save()
+        self.resolve()
+
+    def test_invalid_configuration_ancestors_do_not_fall_back_to_automatic(self):
+        not_directory = self.root / 'regular-file-parent'
+        not_directory.write_text('not a directory')
+        loop = self.root / 'loop'
+        loop.symlink_to('loop', target_is_directory=True)
+        for invalid in [not_directory / 'configuration.json', loop / 'configuration.json']:
+            with self.subTest(path=invalid), self.assertRaises(OSError):
+                signing.resolve('ABCDEFGHIJ', lambda raw: self.profiles[raw], config_path=invalid,
+                                profile_directories=[self.directory])
+
     def test_configuration_file_must_be_owner_only(self):
         self.config_path.chmod(0o644)
         with self.assertRaises(ValueError):
+            self.resolve()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Native extended ACL regression')
+    def test_extended_acl_grants_are_rejected_even_with_private_modes(self):
+        for path in [self.config_path, self.root]:
+            with self.subTest(path=path):
+                subprocess.run(['chmod', '+a', 'everyone allow write', str(path)], check=True)
+                try:
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o600 if path == self.config_path else 0o700)
+                    with self.assertRaisesRegex(ValueError, 'extended ACL'):
+                        self.resolve()
+                finally:
+                    subprocess.run(['chmod', '-N', str(path)], check=True)
+        self.resolve()
+
+    @unittest.skipIf(sys.platform == 'darwin', 'POSIX ACL regression')
+    def test_posix_acl_grants_are_rejected(self):
+        from unittest.mock import patch
+        with patch.object(os, 'listxattr', return_value=['system.posix_acl_access']), \
+                self.assertRaisesRegex(ValueError, 'extended ACL'):
             self.resolve()
 
     def test_profile_trust_failure_is_not_ignored(self):

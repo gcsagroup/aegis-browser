@@ -73,7 +73,8 @@ secret and uses the existing Development identity and profiles.
 
 Automatic archive signing uses Xcode-managed Development profiles. On a host with
 dedicated manually created Development profiles, explicitly configure the owner-only
-`~/.config/gcsa-aegis-signing/development-archive.json` (directory `0700`, file `0600`):
+`~/.config/gcsa-aegis-signing/development-archive.json` (directory `0700`, file `0600`,
+both owned by the runner account with no extended ACLs):
 
 ```json
 {
@@ -100,8 +101,10 @@ This selection changes only Development archive signing. Xcode 26.6's installed
 `xcodebuild -help` explicitly supports a manually signed archive followed by automatic
 distribution, including managed cloud signing certificates. Cloud export remains
 `signingStyle=automatic` and imports no Distribution P12. Archive transfer v2 requires
-the matching producer source and includes the Development signing evidence; older
-source-bound transfers remain with their original implementation.
+the matching producer source and includes the Development signing evidence. The
+producer job publishes the whole manifest SHA-256 separately as a job output; export
+requires that pin before importing artifact bytes or trusting their signing record.
+Older source-bound transfers remain with their original implementation.
 
 Successful package jobs are sealed independently of later upload results. Small
 create-only records under `refs/heads/ios-delivery/` retain the Apple allocation,

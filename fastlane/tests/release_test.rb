@@ -126,6 +126,24 @@ class ReleaseTest < ReleaseFixture
     assert_equal [:cloud], attempts
   end
 
+  def test_cloud_archive_requires_a_separately_supplied_producer_digest
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    [['', ''], ['/fixture', 'a' * 64], ['/fixture', ''], ['', 'a' * 64], ['/fixture', 'invalid']].each do |path, digest|
+      ENV[keys[0]], ENV[keys[1]] = path, digest
+      if path.empty? && digest.empty?
+        assert_empty flow.cloud_archive_arguments
+      elsif !path.empty? && digest == 'a' * 64
+        assert_equal ['--archive-input', path, '--archive-manifest-sha256', digest], flow.cloud_archive_arguments
+      else
+        assert_raises(AegisRelease::Error) { flow.cloud_archive_arguments }
+      end
+    end
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
   def test_store_readonly_stages_authorize_before_asc_authentication
     [->(flow) { flow.store }, ->(flow) { flow.status }, ->(flow) { flow.wait }].each do |operation|
       flow = AegisRelease::Pipeline.new(request(destination: 'testflight'), Object.new)

@@ -51,6 +51,7 @@ class CloudArchiveTests(unittest.TestCase):
                  'files': {path: hashlib.sha256(content).hexdigest() for path, content in original.items()},
                  'archive_sha256': hashlib.sha256((root / 'archive.zip').read_bytes()).hexdigest()}
         (root / 'archive-manifest.json').write_text(json.dumps(value))
+        self.producer_digest = hashlib.sha256((root / 'archive-manifest.json').read_bytes()).hexdigest()
         return identity
 
     def test_build_environment_removes_cloud_upload_and_github_credentials(self):
@@ -69,7 +70,8 @@ class CloudArchiveTests(unittest.TestCase):
             root = Path(temp)
             identity = self.fixture(root)
             output = root / 'extracted'
-            archive.extract(root, output, identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
+            archive.extract(root, output, identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha',
+                            expected_manifest_sha256=self.producer_digest)
             self.assertEqual((output / 'Products/Applications/Aegis.app/Aegis').read_bytes(), b'native')
             self.assertEqual((output / 'Products/Applications/Aegis.app/Aegis').stat().st_mode & 0o777, 0o755)
 
@@ -78,10 +80,12 @@ class CloudArchiveTests(unittest.TestCase):
             root = Path(temp)
             identity = self.fixture(root)
             with self.assertRaises(ValueError):
-                archive.extract(root, root / 'bad', dict(identity, sha='c' * 40), '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
+                archive.extract(root, root / 'bad', dict(identity, sha='c' * 40), '1.0.0', '20', 'ABCDEFGHIJ', 'alpha',
+                                expected_manifest_sha256=self.producer_digest)
             (root / 'archive.zip').write_bytes(b'changed')
             with self.assertRaises(ValueError):
-                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
+                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha',
+                                expected_manifest_sha256=self.producer_digest)
             self.assertFalse((root / 'bad').exists())
 
     def test_missing_development_selection_is_rejected_before_extraction(self):
@@ -92,8 +96,10 @@ class CloudArchiveTests(unittest.TestCase):
             value = json.loads(path.read_text())
             value.pop('developmentSigning')
             path.write_text(json.dumps(value))
+            producer_digest = hashlib.sha256(path.read_bytes()).hexdigest()
             with self.assertRaises(ValueError):
-                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
+                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha',
+                                expected_manifest_sha256=producer_digest)
             self.assertFalse((root / 'bad').exists())
 
     def test_archive_zip_escape_is_rejected_even_with_a_matching_transfer_digest(self):
@@ -101,9 +107,41 @@ class CloudArchiveTests(unittest.TestCase):
             root = Path(temp)
             identity = self.fixture(root, '../escape')
             with self.assertRaises(ValueError):
-                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
+                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha',
+                                expected_manifest_sha256=self.producer_digest)
             self.assertFalse((root / 'bad').exists())
             self.assertFalse((root.parent / 'escape').exists())
+
+    def test_sidecar_cannot_disable_manual_signer_checks_with_unchanged_archive_bytes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            identity = self.fixture(root)
+            path = root / 'archive-manifest.json'
+            value = json.loads(path.read_text())
+            value['developmentSigning'] = {
+                'style': 'manual', 'certificateSha1': 'C' * 40, 'configurationSha256': 'd' * 64,
+                'profiles': {identifier: {'uuid': 'abcdef01-2345-6789-abcd-123456789abc', 'sha256': 'e' * 64}
+                             for identifier in ['com.gcsa.aegis', 'com.gcsa.aegis.safari', 'com.gcsa.aegis.share']}}
+            path.write_text(json.dumps(value))
+            original_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            original_archive = (root / 'archive.zip').read_bytes()
+            value['developmentSigning'] = {'style': 'automatic'}
+            path.write_text(json.dumps(value))
+            with self.assertRaisesRegex(ValueError, 'producer job output'):
+                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha',
+                                expected_manifest_sha256=original_digest)
+            self.assertEqual((root / 'archive.zip').read_bytes(), original_archive)
+            self.assertFalse((root / 'bad').exists())
+
+    def test_missing_or_invalid_independent_digest_fails_before_extraction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            identity = self.fixture(root)
+            for digest in [None, '', 'A' * 64, '0' * 64, ['a' * 64]]:
+                with self.subTest(digest=digest), self.assertRaisesRegex(ValueError, 'producer job output'):
+                    archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha',
+                                    expected_manifest_sha256=digest)
+                self.assertFalse((root / 'bad').exists())
 
 
 if __name__ == '__main__':
