@@ -1,5 +1,6 @@
 import importlib.util
 import ctypes
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -116,6 +117,135 @@ class LocalSigningTests(unittest.TestCase):
                 subprocess.assert_not_called()
             self.assertEqual(bytes(buffers[0]), b'\0' * 16)
             core.CFRelease.assert_called_once()
+
+    def native_unlock_fixture(self, initially_unlocked):
+        security, core = MagicMock(), MagicMock()
+        buffers, statuses = [], [int(initially_unlocked), 1]
+        def opened(_path, reference):
+            ctypes.cast(reference, ctypes.POINTER(ctypes.c_void_p))[0] = 123
+            return 0
+        def unlocked(reference, _size, buffer, _use_password):
+            self.assertEqual(reference.value, 123)
+            buffers.append(buffer)
+            return 0
+        def status(_reference, output):
+            ctypes.cast(output, ctypes.POINTER(ctypes.c_uint32))[0] = statuses.pop(0)
+            return 0
+        security.SecKeychainOpen.side_effect = opened
+        security.SecKeychainUnlock.side_effect = unlocked
+        security.SecKeychainGetStatus.side_effect = status
+        security.SecKeychainLock.return_value = 0
+        return security, core, buffers
+
+    def test_activation_failure_restores_initial_lock_state_on_the_same_reference(self):
+        for initially_unlocked in (False, True):
+            with self.subTest(initially_unlocked=initially_unlocked), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'password'
+                path.write_bytes(b'fixture-password\n')
+                path.chmod(0o600)
+                descriptor = os.open(path, os.O_RDONLY)
+                security, core, buffers = self.native_unlock_fixture(initially_unlocked)
+                try:
+                    with patch.object(signing.ctypes, 'CDLL', side_effect=[security, core]):
+                        with self.assertRaisesRegex(ValueError, 'postcondition rejected'):
+                            with signing.activated_keychain_from_fd(Path('/fixture/keychain'), descriptor) as before:
+                                self.assertEqual(before, initially_unlocked)
+                                self.assertEqual(bytes(buffers[0]), b'\0' * 16)
+                                raise ValueError('postcondition rejected')
+                    self.assertEqual(security.SecKeychainLock.call_count, int(not initially_unlocked))
+                    if not initially_unlocked:
+                        self.assertEqual(security.SecKeychainLock.call_args.args[0].value, 123)
+                    core.CFRelease.assert_called_once()
+                finally:
+                    os.close(descriptor)
+
+    def test_password_fd_remains_bound_when_the_path_is_rotated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'password'
+            path.write_bytes(b'fixture-password\n')
+            path.chmod(0o600)
+            descriptor = os.open(path, os.O_RDONLY)
+            path.rename(path.with_name('previous'))
+            path.write_bytes(b'replacement must not be read')
+            security, core, _buffers = self.native_unlock_fixture(False)
+            try:
+                def unlocked(_reference, _size, buffer, _use_password):
+                    self.assertEqual(bytes(buffer), b'fixture-password')
+                    return 0
+                security.SecKeychainUnlock.side_effect = unlocked
+                with patch.object(signing.ctypes, 'CDLL', side_effect=[security, core]), \
+                        patch.object(Path, 'read_bytes', side_effect=AssertionError('Password path reopened')):
+                    with signing.activated_keychain_from_fd(Path('/fixture/keychain'), descriptor):
+                        pass
+                security.SecKeychainLock.assert_not_called()
+            finally:
+                os.close(descriptor)
+
+    def test_password_is_wiped_on_format_and_native_library_initialization_errors(self):
+        for value in (b'first\nsecond', b'fixture-password'):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'password'
+                path.write_bytes(value)
+                path.chmod(0o600)
+                descriptor = os.open(path, os.O_RDONLY)
+                buffers = []
+                original = os.readv
+                def readv(fd, target):
+                    buffers.append(target[0])
+                    return original(fd, target)
+                try:
+                    with patch.object(signing.os, 'readv', side_effect=readv), \
+                            patch.object(signing.ctypes, 'CDLL', side_effect=OSError('native unavailable')):
+                        with self.assertRaises((ValueError, OSError)):
+                            with signing.activated_keychain_from_fd(Path('/fixture/keychain'), descriptor):
+                                self.fail('Invalid activation completed')
+                    self.assertTrue(buffers)
+                    self.assertFalse(any(buffers[0]))
+                finally:
+                    os.close(descriptor)
+
+    def test_password_storage_is_fixed_until_the_complete_buffer_is_wiped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'password'
+            path.write_bytes(b'fixture-password\r\n')
+            path.chmod(0o600)
+            descriptor = os.open(path, os.O_RDONLY)
+            security, core, _buffers = self.native_unlock_fixture(False)
+            recorded = []
+            original = os.readv
+            def readv(fd, targets):
+                buffer = targets[0]
+                recorded.append((buffer, ctypes.addressof(ctypes.c_ubyte.from_buffer(buffer)), len(buffer)))
+                return original(fd, targets)
+            def unlocked(_reference, size, buffer, _use_password):
+                self.assertEqual(size, 16)
+                self.assertEqual(bytes(buffer), b'fixture-password')
+                self.assertEqual(ctypes.addressof(buffer), recorded[0][1])
+                self.assertEqual(len(recorded[0][0]), recorded[0][2])
+                return 0
+            security.SecKeychainUnlock.side_effect = unlocked
+            try:
+                with patch.object(signing.os, 'readv', side_effect=readv), patch.object(signing.ctypes, 'CDLL', side_effect=[security, core]):
+                    with signing.activated_keychain_from_fd(Path('/fixture/keychain'), descriptor):
+                        self.assertFalse(any(recorded[0][0]))
+                buffer, address, size = recorded[0]
+                self.assertEqual(len(buffer), size)
+                self.assertEqual(ctypes.addressof(ctypes.c_ubyte.from_buffer(buffer)), address)
+                self.assertFalse(any(buffer))
+            finally:
+                os.close(descriptor)
+
+    def test_manual_unlock_accepts_1024_password_bytes_with_lf_or_crlf(self):
+        for ending in (b'\n', b'\r\n'):
+            with self.subTest(ending=ending), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory).resolve() / 'password'
+                path.write_bytes(b'x' * 1024 + ending)
+                path.chmod(0o600)
+                security, core, buffers = self.native_unlock_fixture(False)
+                with patch.object(signing.ctypes, 'CDLL', side_effect=[security, core]):
+                    signing.unlock_keychain(Path('/fixture/keychain'), path)
+                self.assertEqual(security.SecKeychainUnlock.call_args.args[1], 1024)
+                self.assertFalse(any(buffers[0]))
 
     def test_multiline_password_is_rejected_without_native_or_ui_calls(self):
         with tempfile.TemporaryDirectory() as directory:
