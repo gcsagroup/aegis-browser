@@ -100,6 +100,39 @@ class DevelopmentSigningTests(unittest.TestCase):
         self.save()
         self.resolve()
 
+    def test_mixed_case_profile_filenames_match_the_complete_uuid(self):
+        for profile_id in self.profile_ids.values():
+            original = self.directory / (profile_id + '.mobileprovision')
+            mixed = 'AbCdEf' + profile_id[6:]
+            original.rename(self.directory / (mixed + '.mobileprovision'))
+        _, evidence = self.resolve()
+        self.assertEqual(set(evidence['profiles']), set(signing.TARGETS))
+
+    def test_profile_directories_and_ancestors_must_be_physical(self):
+        direct = self.root / 'profile-directory-link'
+        direct.symlink_to(self.directory, target_is_directory=True)
+        ancestor = self.root / 'ancestor-link'
+        ancestor.symlink_to(self.root, target_is_directory=True)
+        for directory in [direct, ancestor / self.directory.name]:
+            with self.subTest(directory=directory), self.assertRaises(OSError):
+                signing.resolve('ABCDEFGHIJ', lambda raw: self.profiles[raw], config_path=self.config_path,
+                                profile_directories=[directory])
+
+    def test_profile_read_stays_bound_to_the_open_directory_if_its_path_changes(self):
+        from unittest.mock import patch
+        profile_id = next(iter(self.profile_ids.values()))
+        expected = (self.directory / (profile_id + '.mobileprovision')).read_bytes()
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (outside / (profile_id + '.mobileprovision')).write_bytes(b'outside bytes must not be read')
+        original_scandir = os.scandir
+        def replace_path(descriptor):
+            self.directory.rename(self.root / 'original-profiles')
+            self.directory.symlink_to(outside, target_is_directory=True)
+            return original_scandir(descriptor)
+        with patch.object(os, 'scandir', side_effect=replace_path):
+            self.assertEqual(signing.installed_profile_contents(profile_id, [self.directory]), expected)
+
     def test_invalid_configuration_ancestors_do_not_fall_back_to_automatic(self):
         not_directory = self.root / 'regular-file-parent'
         not_directory.write_text('not a directory')

@@ -43,19 +43,33 @@ def require_no_acl(descriptor):
         raise ValueError('Development configuration must not have extended ACLs')
 
 
-def read_regular(path, limit, *, private=False):
-    parent_fd = None
-    if private:
-        parent = path.parent
-        parent_fd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK)
+def open_physical_directory(path):
+    if not path.is_absolute() or '..' in path.parts:
+        raise ValueError('Expected an absolute physical Development signing directory')
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK
+    descriptor = os.open(path.anchor, flags)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def read_regular(path, limit, *, private=False, directory_fd=None):
+    if directory_fd is not None and (private or path != Path(path.name) or path.name in {'.', '..'}):
+        raise ValueError('Expected a direct Development profile entry')
+    parent_fd = open_physical_directory(path.parent) if private else directory_fd
     try:
         if private:
             info = os.fstat(parent_fd)
-            if (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700
-                    or parent.resolve() != parent):
+            if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
                 raise ValueError('Development configuration requires an owner-only physical directory')
             require_no_acl(parent_fd)
-        descriptor = os.open(path.name if private else path,
+        descriptor = os.open(path.name if parent_fd is not None else path,
                              os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent_fd)
         with os.fdopen(descriptor, 'rb') as stream:
             info = os.fstat(stream.fileno())
@@ -69,8 +83,33 @@ def read_regular(path, limit, *, private=False):
                 raise ValueError('Development signing input changed during reading')
             return data
     finally:
-        if parent_fd is not None:
+        if private and parent_fd is not None:
             os.close(parent_fd)
+
+
+def installed_profile_contents(uuid, directories):
+    contents = []
+    for directory in directories:
+        try:
+            descriptor = open_physical_directory(directory)
+        except FileNotFoundError:
+            continue
+        try:
+            with os.scandir(descriptor) as entries:
+                for index, entry in enumerate(entries):
+                    if index >= 50000:
+                        raise ValueError('Development profile directory exceeds the inventory limit')
+                    if (entry.name.endswith('.mobileprovision')
+                            and UUID.fullmatch(entry.name[:-16]) is not None
+                            and entry.name[:-16].lower() == uuid.lower()):
+                        contents.append(read_regular(Path(entry.name), 5 * 1024**2, directory_fd=descriptor))
+        finally:
+            os.close(descriptor)
+    if not contents:
+        raise ValueError('Configured Development profile is not installed')
+    if any(content != contents[0] for content in contents):
+        raise ValueError('Conflicting installed Development profiles')
+    return contents[0]
 
 
 def unique_object(pairs):
@@ -115,16 +154,8 @@ def resolve(team, verify_profile, *, config_path=None, profile_directories=None)
         uuid = config['profiles'][identifier]
         if type(uuid) is not str or UUID.fullmatch(uuid) is None:
             raise ValueError('Expected Development profile UUID')
-        candidates = [directory / (value + '.mobileprovision') for directory in directories
-                      for value in dict.fromkeys((uuid, uuid.lower(), uuid.upper()))
-                      if (directory / (value + '.mobileprovision')).exists()
-                      or (directory / (value + '.mobileprovision')).is_symlink()]
-        if not candidates:
-            raise ValueError('Configured Development profile is not installed: ' + identifier)
-        contents = [read_regular(candidate, 5 * 1024**2) for candidate in candidates]
-        if any(content != contents[0] for content in contents):
-            raise ValueError('Conflicting installed Development profiles')
-        profile = verify_profile(contents[0])
+        raw_profile = installed_profile_contents(uuid, directories)
+        profile = verify_profile(raw_profile)
         entitlement = profile.get('Entitlements', {})
         certificates = profile.get('DeveloperCertificates')
         devices = profile.get('ProvisionedDevices')
@@ -142,7 +173,7 @@ def resolve(team, verify_profile, *, config_path=None, profile_directories=None)
                 or not all(type(item) is bytes for item in certificates)
                 or not any(hashlib.sha1(item).hexdigest().upper() == config['certificateSha1'] for item in certificates)):
             raise ValueError('Configured Development profile identity differs: ' + identifier)
-        evidence['profiles'][identifier] = {'uuid': uuid.lower(), 'sha256': hashlib.sha256(contents[0]).hexdigest()}
+        evidence['profiles'][identifier] = {'uuid': uuid.lower(), 'sha256': hashlib.sha256(raw_profile).hexdigest()}
         arguments.append('AEGIS_DEVELOPMENT_PROFILE_' + target + '=' + profile['UUID'])
     return arguments, evidence
 

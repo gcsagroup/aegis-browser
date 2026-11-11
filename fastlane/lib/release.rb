@@ -374,6 +374,15 @@ module AegisRelease
       return [] if path.empty? && digest.empty?
       AegisRelease.require!(!path.empty? && /\A[0-9a-f]{64}\z/.match?(digest),
                             'Cloud archive requires the original producer job manifest digest')
+      manifest_path = AegisRelease.file!(File.join(path, 'archive-manifest.json'))
+      File.open(manifest_path, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |file|
+        info = file.stat
+        AegisRelease.require!(info.file? && info.size.positive? && info.size <= 16 * 1024**2,
+                              'Invalid Development archive manifest')
+        bytes = file.read(16 * 1024**2 + 1)
+        AegisRelease.require!(bytes.bytesize == info.size && Digest::SHA256.hexdigest(bytes) == digest,
+                              'Development archive manifest differs from its producer before export allocation')
+      end
       ['--archive-input', path, '--archive-manifest-sha256', digest]
     end
 
