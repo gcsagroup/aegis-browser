@@ -215,11 +215,17 @@ class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
       else manager->Stop(ordinary_stop.GetCallback());
       // Confirm StopChild is already inside its termination wait, including
       // service destruction, before requesting the session-ending rundown.
-      ASSERT_TRUE(base::test::RunUntil([&] {
+      base::test::TestFuture<void> signal_received;
+      observation.Start(FROM_HERE, base::Milliseconds(10),
+          base::BindLambdaForTesting([&] {
         std::string marker;
-        return base::ReadFileToString(state_.AddExtensionASCII("sigterm"), &marker) &&
-               !marker.empty();
+        if (base::ReadFileToString(state_.AddExtensionASCII("sigterm"), &marker) &&
+            !marker.empty()) {
+          observation.Stop();
+          signal_received.SetValue();
+        }
       }));
+      ASSERT_TRUE(signal_received.Wait());
       EXPECT_FALSE(ordinary_stop.IsReady());
     }
     auto stopped = std::make_shared<base::WaitableEvent>();
