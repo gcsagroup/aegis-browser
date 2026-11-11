@@ -1,4 +1,4 @@
-> **当前内置审查R7提出3项P2，已逐项复现并完成本地修复；Native440完整Chrome/15目标320项实际PASS，等待新提交本地完整quality、fresh复审和新head托管CI。PR145当前仍为61e；真实GUI为合并前置，Computer Use限制未解除；smoke已取消。iOS由独立窗口继续，不覆盖其工作。**
+> **内置审查R7三项P2和R8新增取消竞态均已复现修复；Native442完整Chrome、15目标322项实际SUCCESS零skip，GN/117overlay/补丁回放PASS。正在绑定新源码候选，待完整quality、fresh最终复审及新head托管CI；真实GUI仍未通过，smoke已取消。**
 
 # Aegis macOS Access #139/#140/#141 — SDD Implementation Plan / TODO
 
@@ -12,7 +12,7 @@
 
 **Spec:** [阶段一验收清单](../access-product-phase1-acceptance.zh-CN.md)、[功能拆分](../access-product-phase1-feat-split.zh-CN.md)、[本站意图 API](../macos-access-site-intent-api-NOTES.md)，以及本聊天已授权的请求隔离、持久恢复和原标签页重试要求。本文不将旧文档的历史状态当作当前证据；冲突时沿用当前任务授权和当前 AGENTS.md。
 
-**最新快照：** 2026-11-11 12:46 Asia/Shanghai。原发布H61e的完整CI/C++/Codacy PASS保留；用户请求的fresh内置R7实质审查发现重定向授权目标、重定向冷启动核心/ACK及workflow/job准入3项P2。均已复现，本地修复后的Native440/b21bdb60完整Chrome/15目标320项实际SUCCESS零skip、3 owning GN/437–440逐段完整index回放/117overlay绑定PASS；准入离线7项（6负例/18合法执行组合）PASS，无hosthook部署。当前本地源码候选将绑定review-r7-macos-fix-candidate.json；新quality/fresh复审/发布及新head CI待完成。当前版本GUI仍未验收；旧419 GUI/436离线包只保留原范围。smoke无需再做，任务未完成。
+**最新快照：** 2026-11-11 13:33 Asia/Shanghai。R8 fresh内置复审于4a3新增P2：排队ready回调执行前caller loader/client关闭，断连通知晚到仍发送redirect。Native441两项正式真实Mojo用例均实际RED（target.followed=true）；Native442/70ae889a同步检查两caller的peer-closed信号，定向8项GREEN、完整Chrome/15正式目标322项实际SUCCESS零skip、GN3/117overlay精确绑定/441–442完整index逐段tree回放PASS。将提交新MAC候选后运行完整quality与fresh最终复审，再正常更新145和新head CI；旧61e CI、4a3 quality及440/320原范围保留。当前GUI仍NOT_RUN_POLICY_BLOCK，站点smoke NOT_REQUIRED，任务未完成。
 
 ## 1. 状态与证据规则
 
@@ -31,19 +31,19 @@
 - 当前受管产品执行先覆盖 HTTP 本机入站；SOCKS5 未产品验收，不能因独立核心测试通过而标成完成。
 - 使用用户新提供并指定为Alpha内置测试的节点；私有引用见本地alpha-test-node-binding.json。旧V2Ray节点配置及证据保留，不自动回退或转移验收；凭据不进入文档、日志、补丁或PR。
 - 最新用户授权最终将#97拆成iOS/macOS独立两份PR，并更新对应issue；此前先更新PR再扩展的0948检查点顺序已完成。保留#97历史、最新iOS提交与其他窗口工作，不强推。仍无独立评论、合并、签名、DMG或发行授权。
-- **退出条件：** R1–R7 对应任务及必要测试完成，同候选真实 Aegis 浏览器验收通过，问题修复后对最终候选完成最新 AGENTS 要求的 fresh read-only 内置独立审查，无未解决阻断项（PR 自动审查须另外取得 PR 权限），再停用 `aegis-macos` 循环。
+- **退出条件：** R1–R7 对应任务及必要测试完成，同候选真实 Aegis 浏览器验收通过，问题修复后对最终候选完成最新 AGENTS 要求的 fresh read-only 内置独立审查，无未解决阻断项（PR/issue更新已有授权；自动PR审查usage-limit失败与源码审查分别记录），再停用 `aegis-macos` 循环。
 
 ## 3. 需求 → 设计 → 验收追踪
 
 | ID | 必须满足的行为 / 不变量 | 实现任务 | 验收条件 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| R1 | Browser 私有权限不可由 renderer 字段伪造；保留原工厂安全参数 | T1 | 私有工厂接通；来源锁、非可信 TrustedParams、失效归属拒绝且零发送 | 当前Native436正式15目标316项PASS、Mac61e源码fresh r6 PASS；历史0419普通/私密实际路径证据保留，当前GUI/最终产品退出仍缺 |
-| R2 | 每跳独立决定 native / proxy / reject；预检、连接池、认证和缓存不串用 | T1、T2 | 导航/子资源/重定向按当前策略；无 DIRECT 降级、旧代际复用或共享代理授权 | 私有factory/wire/CORS回归PASS；0419网站根域/www/CDN实际代理及独立CDN原生隔离有证据；100站仅部分，不扩称全协议验收 |
-| R3 | NetworkContext 完整快照安装及精确 ACK；恢复期间先阻断再发送 | T2 | 重启/断连/乱序 ACK 不放行；新 incarnation 完整恢复后才发送 | 0419实际新Network进程暂停时已开气泡保持ALLOW但unavailable；恢复ACK后原页代理/ready，修复已实测PASS |
-| R4 | 真实内核启动、认证入站和指定目标路径均就绪后才显示可用 | T3 | 启动失败、错凭据、进程退出均 fail-closed；实际目标经授权出口 | 0419实际Alpha内置/完整ACK/加载及退出恢复PASS；0425对应core10含6项故障与取消/25秒超时PASS；占端口与更多GUI故障范围仍未全验 |
-| R5 | 普通 Profile 持久恢复；私密 Profile 不落盘且相互隔离 | T4 | 重启恢复已提交意图；损坏/未提交事务不误放行；首次请求不抢跑 | 0417迁移保留旧精确grant；0419普通冷启动/私密清理重开PASS；0425原生store43/async5及新Open失败/持久提交失败回滚恢复联合用例PASS，GUI故障范围另列 |
-| R6 | 真实 ready 后，仅原失败标签页、原导航最多自动重试一次 | T5 | 新导航、关闭、停止、POST/TLS 错误均不误重试 | 0419受控DNS及自然Pinterest一次Retry原页加载PASS；helper15及0425新4项导航/持久提交联合用例PASS；实际GUI取消竞态仍缺 |
-| R7 | 实际 macOS 浏览器完成开启→指定出口→故障→恢复→关闭 | T6、T7 | 同候选日志、关联 ID、界面证据与最终独立审查闭环 | 0419实际主流程/恢复/隔离仅历史PASS；Mac61e源码r6通过，当前436实际GUI/边界与最终产品门仍未闭环。用户取消后续站点smoke；既有PARTIAL/NOT_RUN保留 |
+| R1 | Browser 私有权限不可由 renderer 字段伪造；保留原工厂安全参数 | T1 | 私有工厂接通；来源锁、非可信 TrustedParams、失效归属拒绝且零发送 | 当前Native442正式15目标322项PASS；R7/R8修复待新候选fresh最终复审。419普通/私密GUI仅历史，当前同候选GUI未完成 |
+| R2 | 每跳独立决定 native / proxy / reject；预检、连接池、认证和缓存不串用 | T1、T2 | 导航/子资源/重定向按当前策略；无 DIRECT 降级、旧代际复用或共享代理授权 | Native442 Browser私有factory/wire/CORS/每跳回归PASS，取消ready后不得发送的新双端回归GREEN；419 Website/CDN GUI仅历史，smoke已撤销 |
+| R3 | NetworkContext 完整快照安装及精确 ACK；恢复期间先阻断再发送 | T2 | 重启/断连/乱序 ACK 不放行；新 incarnation 完整恢复后才发送 | Native442完整快照/精确ACK与Context恢复原生回归PASS；419暂停Network进程/unavailable→ready GUI保留原范围，当前GUI未验 |
+| R4 | 真实内核启动、认证入站和指定目标路径均就绪后才显示可用 | T3 | 启动失败、错凭据、进程退出均 fail-closed；实际目标经授权出口 | Native442真实owned Alpha core/认证TLS204及core10故障回归PASS；端口占用与更广当前GUI故障验收仍缺 |
+| R5 | 普通 Profile 持久恢复；私密 Profile 不落盘且相互隔离 | T4 | 重启恢复已提交意图；损坏/未提交事务不误放行；首次请求不抢跑 | Native442 store43/async5/coordinator48含Open失败、事务回滚、持久恢复联合用例PASS；419普通冷启动/私密清理GUI仅历史 |
+| R6 | 真实 ready 后，仅原失败标签页、原导航最多自动重试一次 | T5 | 新导航、关闭、停止、POST/TLS 错误均不误重试 | Native442 helper16/coordinator48含换站/关闭/Stop/晚ACK，以及排队ready前关闭caller两端的新RED→GREEN；当前实际GUI取消竞态仍缺 |
+| R7 | 实际 macOS 浏览器完成开启→指定出口→故障→恢复→关闭 | T6、T7 | 同候选日志、关联 ID、界面证据与最终独立审查闭环 | Native442正式构建/322项PASS；新候选quality/fresh复审/托管CI和同候选真实GUI未闭环。smoke用户已取消，历史PARTIAL/NOT_RUN保留 |
 
 ### 审查与测试重点
 
@@ -752,3 +752,25 @@
 - **证据与候选：** Native440=b21bdb601d46fa63a2c0a5e9f035a1d710f67a5c，review-r7-440-native-validation-receipt.json绑定完整build/tests、生产字节pin、GN、RED/GREEN及回放；四个新patch/series已同步任务树与MAC交付树。此时PR145仍为61e旧源码，后继本地提交详见review-r7-macos-fix-candidate.json，待完整quality、fresh独立复审及新head CI，不把旧61e/Native436证据提升。
 - **并行审计和GUI归属：** Astra/Max冻结审计未发现原97到两PR的源内容/链接遗漏，iOS b112/d946存在独立源码/归档缺口，报告在split-audit-astra-max/freeze-20261111T1141-TJV4TU6o/。用户在该审计窗口另开后续iOS修复工作，本MAC窗口仍负责MAC实现及实际GUI。收到其GUI归属接续说明，但该消息未解除工具网址限制；本轮没有启动实际App/CUA。旧419 GUI和436离线包各自保留为历史，需在最终新候选运行身份上验收；smoke不恢复。
 - **下一项：** 完成当前源码提交和本地完整quality，fresh只读built-in复审3项处置/交互；若需修复再复审最终候选。普通push后跟进新head CI及对应正文，保留自动PR code-review额度失败，不冒充服务PASS。仅政策允许时开展最终同候选GUI主流程、恢复/隔离和取消/故障边界。原48h/100GiB起点/截止、P01/T90暂停和其他owner内容不变，任务仍未完成。
+
+
+### 2026-11-11 13:03 Asia/Shanghai — 新候选完整quality通过，fresh内置修复复审r2运行中
+
+- 本地不可变候选`4a3dcab648bbbda1dd75ee161d9999c2da8e8c19`/tree`9c091ca3f2483ab4d9750226cac03f9f77d0cbb3`，完整MAC diff245路径；`pr145-review-r7-fix-quality-full-r9-launch.json`验证正确base/tested-head、full/sourceStable/public-export PASS。未重复Native440构建或320项正式测试。
+- `pr145-current-builtin-review-r2-launch.json`实际fresh进程为Astra/xhigh/read-only，范围为61e..4a3的15路径修复及受影响集成；未提供实施对话。运行中不当PASS，不称全245路径新全面审查；当前交付树保持clean冻结。
+- Astra/max独立拆分审计已报告冻结范围未发现源文件遗漏，iOS d946缺陷/归档问题移交其他机器修复；其结论不覆盖本窗口已复现R7缺陷，也不解除CUA限制。
+- 下一项：评估r2实际verdict，必要时修复后验证/复审；通过后核实时remote头及base，正常fast-forward更新145，再核新H/merge候选托管检查。GUI仍NOT_RUN_POLICY_BLOCK；站点smoke NOT_REQUIRED；不部署hosthook、不增加评论或合并权限。
+
+
+### 2026-11-11 13:22 Asia/Shanghai — fresh复审新增R8F1取消竞态，推进精确时序回归
+
+- `pr145-current-builtin-review-r2-assessment.json`保留真实Astra/xhigh/read-only结论：R7F1/R7F3已修；R7F2冷启动修复有效，但OnRedirectPrepared未同步检查调用方两条pipe的peer-closed信号，异步断连通知晚到可导致取消后发送。源审查FAIL，exit0不能提升PASS。
+- Native441/f51ce4f9仅新增两项正式产品回归：实际Browser wrapper及真实公私Mojo、真实Alpha owned core，在完整私有策略ready完成任务已经排队且即将执行时关闭caller loader或client；观察目标FollowRedirect是否为零。构建RUNNING、RED尚未运行，不将早期等待ACK取消测试当作该时序证据。
+- 不改动活动构建输入；下一项完成RED，再修同步peer检查，受影响验证/最终新候选quality及fresh复审，核最新remote后更新145。旧61e CI、4a3 quality和Native440原记录保留。
+
+### 2026-11-11 13:33 Asia/Shanghai — R8两个实际RED关闭；Native442完整验证322项PASS
+
+- `review-r8-441-red-tests-result.json`记录loader/client两端分别在完整私有策略就绪任务已排队、即将执行时关闭，实际目标仍收到private FollowRedirect，2 FAILURE零skip；不是夹具失败或GUI证据。原r2 verdict保留。
+- Native442/`70ae889a64059b22dd2a9c064d341d3bf863328f`在OnRedirectPrepared重登记/发送前同步检查两caller的peer-closed信号，5行生产修复；同两项及6项既有redirect/core/epoch/入口寿命用例共8 GREEN。完整Chrome和15目标build PASS，322项均实际重跑SUCCESS零skip，不靠测试exe相同迁移共享库结果。
+- `review-r8-442-native-validation-receipt.json`/完整原始summaries/logs、GN3、117overlay绑定及`review-r8-441-442-replay-result.json`封存具体身份；437/439/441真实RED、438编译失败及旧候选质量/审查证据均保留。
+- 下一项固定新的MAC不可变提交（原发布61e的后继，无强推），跑正确base的完整localquality和fresh只读内置最终复审，再更新145并核新H/M托管检查。最终实际GUI仍受既有CUA限制，smoke已撤销，不能标完成；iOS由其他owner处理。

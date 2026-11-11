@@ -8,9 +8,14 @@
 #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
 #include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
 
+#include <string_view>
+
 #include "base/command_line.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
+#include "base/pending_task.h"
+#include "base/task/current_thread.h"
+#include "base/task/task_observer.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/test_future.h"
@@ -69,6 +74,33 @@ class AccessNetworkContextTransportTestPeer {
   }
 };
 namespace {
+
+// Cancel after the real transport has queued its ready callback, immediately
+// before it is delivered. The Mojo disconnect notification cannot run between
+// closing the caller and resuming that callback on this sequence.
+class CancelAtQueuedPolicyCompletion final : public base::TaskObserver {
+ public:
+  explicit CancelAtQueuedPolicyCompletion(base::OnceClosure cancel)
+      : cancel_(std::move(cancel)) {
+    base::CurrentThread::Get()->AddTaskObserver(this);
+  }
+  ~CancelAtQueuedPolicyCompletion() override {
+    base::CurrentThread::Get()->RemoveTaskObserver(this);
+  }
+  void WillProcessTask(const base::PendingTask& task, bool) override {
+    if (cancel_ && std::string_view(task.posted_from.function_name()).find(
+                       "SettlePrivatePublication") != std::string_view::npos) {
+      cancelled_ = true;
+      std::move(cancel_).Run();
+    }
+  }
+  void DidProcessTask(const base::PendingTask&) override {}
+  bool cancelled() const { return cancelled_; }
+
+ private:
+  base::OnceClosure cancel_;
+  bool cancelled_ = false;
+};
 
 class CountingPrivateFactory final
     : public network::mojom::AegisAccessURLLoaderFactory {
@@ -997,6 +1029,38 @@ TEST_F(AccessRetryNavigationProductTest,
            AccessSiteConnectionState::kConnecting;
   }));
   EXPECT_NE(request->client.completion_status().error_code, net::OK);
+  EXPECT_FALSE(request->target.followed);
+  EXPECT_EQ(request->target.public_follows, 0);
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       RedirectLoaderCancelledAtQueuedReadyIsNotFollowed) {
+  auto request = StartHeldRedirect(true);
+  ASSERT_TRUE(request->client.has_received_redirect());
+  ASSERT_TRUE(request->target.initial);
+  ASSERT_FALSE(request->target.initial->registration_id.empty());
+  CancelAtQueuedPolicyCompletion cancel(base::BindOnce(
+      [](HeldRedirectBrowserRequest* request) { request->loader.reset(); },
+      base::Unretained(request.get())));
+  request->loader->FollowRedirect({}, std::nullopt);
+  ASSERT_TRUE(base::test::RunUntil([&] { return cancel.cancelled(); }));
+  task_environment()->RunUntilIdle();
+  EXPECT_FALSE(request->target.followed);
+  EXPECT_EQ(request->target.public_follows, 0);
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       RedirectClientCancelledAtQueuedReadyIsNotFollowed) {
+  auto request = StartHeldRedirect(true);
+  ASSERT_TRUE(request->client.has_received_redirect());
+  ASSERT_TRUE(request->target.initial);
+  ASSERT_FALSE(request->target.initial->registration_id.empty());
+  CancelAtQueuedPolicyCompletion cancel(base::BindOnce(
+      [](HeldRedirectBrowserRequest* request) { request->client.Unbind(); },
+      base::Unretained(request.get())));
+  request->loader->FollowRedirect({}, std::nullopt);
+  ASSERT_TRUE(base::test::RunUntil([&] { return cancel.cancelled(); }));
+  task_environment()->RunUntilIdle();
   EXPECT_FALSE(request->target.followed);
   EXPECT_EQ(request->target.public_follows, 0);
 }

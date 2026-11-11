@@ -152,7 +152,12 @@ void AccessProxyingURLTrackedRequest::OnRedirectPrepared(
     network::HttpRequestHeadersUpdateParams headers,
     std::optional<GURL> new_url, GURL follow_url, bool ready) {
   redirect_preparation_pending_ = false;
+  // A ready callback can precede the queued disconnect notification. Observe
+  // both caller peers synchronously before registering or sending another hop.
   if (finished_ || !ready || !pending_redirect_url_ ||
+      !loader_receiver_.is_bound() || !target_client_.is_bound() ||
+      loader_receiver_.internal_state()->handle().QuerySignalsState().peer_closed() ||
+      target_client_.internal_state()->handle().QuerySignalsState().peer_closed() ||
       !target_loader_.is_bound() ||
       (private_route_ && !private_control_.is_connected())) {
     FailClosed(/*complete_registry=*/true);
