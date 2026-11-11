@@ -279,6 +279,7 @@ module AegisRelease
       AegisRelease.real_path!(request.directory)
       AegisRelease.require!(!File.exist?(request.directory), 'Attempt already exists; use a new run ID or upload the verified package')
       required('AEGIS_APPLE_TEAM_ID')
+      archive_args = cloud_archive_arguments if request.signing_mode == 'cloud'
       if request.signing_mode == 'manual'
         certificate = required('AEGIS_IOS_CERT_SHA1')
         AegisRelease.require!(/\A[0-9A-Fa-f]{40}\z/.match?(certificate), 'Provide AEGIS_IOS_CERT_SHA1')
@@ -291,7 +292,7 @@ module AegisRelease
       end
       FileUtils.mkdir_p(File.dirname(request.directory))
       Dir.mkdir(request.directory, 0o700)
-      paths, details = package_ios
+      paths, details = package_ios(archive_args)
       sha = Receipt.create(request, paths, source, details)
       publish_args = request.destination == 'github-draft' ? ['--draft'] : []
       begin
@@ -313,8 +314,8 @@ module AegisRelease
       profiles
     end
 
-    def package_ios
-      return package_ios_cloud if request.signing_mode == 'cloud'
+    def package_ios(archive_args = nil)
+      return package_ios_cloud(archive_args) if request.signing_mode == 'cloud'
       profiles = ios_profiles
       work = File.join(request.directory, 'work')
       # Copy only committed inputs; ignored local files must not enter the archive.
@@ -367,16 +368,57 @@ module AegisRelease
                 'testFlightInternalTestingOnly' => request.profile == 'alpha' }]
     end
 
-    def package_ios_cloud
+    def cloud_archive_arguments
+      path = ENV['AEGIS_CLOUD_ARCHIVE_INPUT'].to_s
+      digest = ENV['AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256'].to_s
+      return [] if path.empty? && digest.empty?
+      AegisRelease.require!(!path.empty? && /\A[0-9a-f]{64}\z/.match?(digest),
+                            'Cloud archive requires the original producer job manifest digest')
+      path = File.expand_path(path, request.root)
+      manifest_path = AegisRelease.file!(File.join(path, 'archive-manifest.json'))
+      File.open(manifest_path, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |file|
+        info = file.stat
+        AegisRelease.require!(info.file? && info.size.positive? && info.size <= 16 * 1024**2,
+                              'Invalid Development archive manifest')
+        bytes = file.read(16 * 1024**2 + 1)
+        AegisRelease.require!(bytes.bytesize == info.size && Digest::SHA256.hexdigest(bytes) == digest,
+                              'Development archive manifest differs from its producer before export allocation')
+        begin
+          archive_digest = JSON.parse(bytes).fetch('archive_sha256')
+        rescue JSON::ParserError, KeyError, TypeError
+          raise Error, 'Invalid Development archive manifest'
+        end
+        AegisRelease.require!(archive_digest.is_a?(String) && /\A[0-9a-f]{64}\z/.match?(archive_digest),
+                              'Invalid Development archive ZIP digest')
+        archive_path = AegisRelease.file!(File.join(path, 'archive.zip'))
+        File.open(archive_path, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |archive|
+          archive_info = archive.stat
+          AegisRelease.require!(archive_info.file? && archive_info.size.positive? && archive_info.size <= 2 * 1024**3,
+                                'Invalid Development archive ZIP')
+          checksum = Digest::SHA256.new
+          total = 0
+          while (chunk = archive.read(1024**2))
+            total += chunk.bytesize
+            AegisRelease.require!(total <= archive_info.size, 'Development archive ZIP changed during verification')
+            checksum.update(chunk)
+          end
+          AegisRelease.require!(total == archive_info.size && checksum.hexdigest == archive_digest,
+                                'Development archive ZIP differs from its producer before export allocation')
+        end
+      end
+      ['--archive-input', path, '--archive-manifest-sha256', digest]
+    end
+
+    def package_ios_cloud(archive_args = nil)
       runtime = ENV['RUNNER_ENVIRONMENT'].to_s
       AegisRelease.require!(ENV['GITHUB_ACTIONS'] == 'true' && %w[github-hosted self-hosted].include?(runtime) &&
                             ENV['RUNNER_OS'] == 'macOS',
                             'Cloud production packaging requires a GitHub Actions macOS runner; use the explicit local fallback separately')
+      archive_args ||= cloud_archive_arguments
       source = AegisRelease.source(request.root)
       client = AppleStore.new(request, @fastlane, admission: method(:preflight_upload)).tap(&:authenticate)
       before = CloudReservations.preflight(client, request, source)
       engine_run_id = 'production-' + Digest::SHA256.hexdigest(request.run_id)[0,32]
-      archive_args = ENV['AEGIS_CLOUD_ARCHIVE_INPUT'].to_s.empty? ? [] : ['--archive-input', ENV.fetch('AEGIS_CLOUD_ARCHIVE_INPUT')]
       run('python3', File.join(request.root, 'scripts/release/cloud-signing-poc.py'), '--signing-mode', 'cloud',
           '--runtime', runtime, '--profile', request.profile, '--version', request.version, '--build', request.build,
           '--team', required('AEGIS_APPLE_TEAM_ID'), '--run-id', engine_run_id, *archive_args)

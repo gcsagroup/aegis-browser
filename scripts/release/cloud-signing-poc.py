@@ -271,8 +271,43 @@ def stage(directory, environment, profile='beta'):
     return work
 
 
+def build_inline_archive(work, directory, options, archive_signing, environment, evidence, archive_transfer):
+    """Direct Fastlane/PoC archives share the production Development selection."""
+    archive = work / 'Aegis.xcarchive'
+    signing = None
+    if archive_signing == 'ad-hoc':
+        signing_args = ['CODE_SIGN_STYLE=Automatic', 'PROVISIONING_PROFILE_SPECIFIER=',
+                        'CODE_SIGN_IDENTITY=-', 'AD_HOC_CODE_SIGNING_ALLOWED=YES', 'CODE_SIGNING_REQUIRED=NO']
+    else:
+        signing = module('inline_development_signing', 'development_signing.py')
+        signing_args, proof = signing.resolve(
+            options.team, module('inline_profile_trust', 'verify-signed-ios.py').verified_profile)
+        signing.require_identity(proof, run)
+        evidence['developmentSigning'] = proof
+    run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'), '-scheme', 'Aegis-Release',
+        '-configuration', 'Release', '-destination', 'generic/platform=iOS',
+        '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
+        '-disableAutomaticPackageResolution', 'archive', *signing_args,
+        'DEVELOPMENT_TEAM=' + options.team, 'MARKETING_VERSION=' + options.version,
+        'CURRENT_PROJECT_VERSION=' + options.build, 'AEGIS_FIREBASE_CHANNEL=' + options.profile,
+        env=environment, log=directory / 'archive.log', timeout=2400)
+    if signing:
+        archive_transfer.verify_development(archive, options.team, run)
+        signing.verify_archive(archive, proof, run)
+    else:
+        verify_ad_hoc_archive(archive)
+        evidence['adHocArchiveSignaturesVerified'] = True
+    evidence['archiveCompleted'] = True
+
+
 def experiment(options, environment):
     validate_identity(options.version, options.build, options.team)
+    archive_input = getattr(options, 'archive_input', None)
+    manifest_sha256 = getattr(options, 'archive_manifest_sha256', None)
+    if (bool(archive_input) != bool(manifest_sha256)
+            or (archive_input and (options.archive_from
+                or type(manifest_sha256) is not str or re.fullmatch(r'[0-9a-f]{64}', manifest_sha256) is None))):
+        raise ValueError('Archive input requires its independent producer manifest digest and cannot reuse another archive')
     validate_runtime(options.runtime, environment, options.archive_from)
     identity = source()
     directory = ROOT / '.artifacts/cloud-signing-poc' / options.run_id
@@ -322,7 +357,8 @@ def experiment(options, environment):
         elif getattr(options, 'archive_input', None):
             work = stage(directory, archive_environment, options.profile)
             archive_transfer.extract(options.archive_input, work / 'Aegis.xcarchive', identity,
-                                     options.version, options.build, options.team, options.profile)
+                                     options.version, options.build, options.team, options.profile,
+                                     expected_manifest_sha256=manifest_sha256)
             archive_transfer.verify_development(work / 'Aegis.xcarchive', options.team, run)
             snapshot_archive(directory, identity)
             evidence.update(archiveCompleted=True, archiveTransferred=True,
@@ -333,20 +369,7 @@ def experiment(options, environment):
         with isolated_keychain(directory, evidence, retain_development=(archive_signing == 'development')):
             if not options.archive_from and not getattr(options, 'archive_input', None):
                 print('Archiving with ' + archive_signing + ' signing and no Distribution identity', flush=True)
-                signing_args = (['CODE_SIGN_IDENTITY=-', 'AD_HOC_CODE_SIGNING_ALLOWED=YES', 'CODE_SIGNING_REQUIRED=NO']
-                                if archive_signing == 'ad-hoc' else ['CODE_SIGN_IDENTITY=Apple Development'])
-                run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'), '-scheme', 'Aegis-Release',
-                    '-configuration', 'Release', '-destination', 'generic/platform=iOS',
-                    '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
-                    '-disableAutomaticPackageResolution', 'archive',
-                    'CODE_SIGN_STYLE=Automatic', *signing_args,
-                    'PROVISIONING_PROFILE_SPECIFIER=', 'DEVELOPMENT_TEAM=' + options.team,
-                    'MARKETING_VERSION=' + options.version, 'CURRENT_PROJECT_VERSION=' + options.build,
-                    'AEGIS_FIREBASE_CHANNEL=' + options.profile, env=archive_environment, log=directory / 'archive.log', timeout=2400)
-                evidence['archiveCompleted'] = True
-                if archive_signing == 'ad-hoc':
-                    verify_ad_hoc_archive(archive)
-                    evidence['adHocArchiveSignaturesVerified'] = True
+                build_inline_archive(work, directory, options, archive_signing, archive_environment, evidence, archive_transfer)
                 snapshot_archive(directory, identity)
                 evidence['archiveManifestSha256'] = hashlib.sha256((directory / 'archive-provenance.json').read_bytes()).hexdigest()
             no_distribution_identity()
@@ -403,6 +426,7 @@ def main():
     parser.add_argument('--runtime', choices=['local-fallback', 'github-hosted', 'self-hosted'], default='local-fallback')
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], default='beta')
     parser.add_argument('--archive-input', type=Path, help='Development transfer from the separate credential-free archive job')
+    parser.add_argument('--archive-manifest-sha256', help='Independent manifest digest from the original archive job output')
     parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'],
                         help='Archive identity before cloud Distribution export (default: development; Xcode 26.6 rejects ad-hoc for entitlement-bearing targets)')
     parser.add_argument('--version', required=True)

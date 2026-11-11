@@ -116,7 +116,7 @@ class ReleaseTest < ReleaseFixture
   def test_cloud_failure_never_retries_manual_signing_implicitly
     attempts = []
     flow = AegisRelease::Pipeline.new(request, Object.new)
-    flow.define_singleton_method(:package_ios_cloud) do
+    flow.define_singleton_method(:package_ios_cloud) do |_archive_args = nil|
       attempts << :cloud
       raise AegisRelease::Error, 'cloud signing unavailable'
     end
@@ -124,6 +124,109 @@ class ReleaseTest < ReleaseFixture
     error = assert_raises(AegisRelease::Error) { flow.package_ios }
     assert_equal 'cloud signing unavailable', error.message
     assert_equal [:cloud], attempts
+  end
+
+  def test_cloud_archive_requires_a_separately_supplied_producer_digest
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    archive = write('.artifacts/development-transfer/archive.zip', 'archive fixture')
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    directory = File.dirname(manifest)
+    original_digest = AegisRelease.digest(manifest)
+    [['', ''], [directory, original_digest], [directory, ''], ['', original_digest],
+     [directory, 'invalid'], [directory, '0' * 64]].each do |path, digest|
+      ENV[keys[0]], ENV[keys[1]] = path, digest
+      if path.empty? && digest.empty?
+        assert_empty flow.cloud_archive_arguments
+      elsif !path.empty? && digest == original_digest
+        assert_equal ['--archive-input', path, '--archive-manifest-sha256', digest], flow.cloud_archive_arguments
+      else
+        assert_raises(AegisRelease::Error) { flow.cloud_archive_arguments }
+      end
+    end
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_changed_manifest_is_rejected_before_permanent_export_allocation
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID GITHUB_ACTIONS]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', '{"fixture":"original"}')
+    ENV[keys[0]] = File.dirname(manifest)
+    ENV[keys[1]] = AegisRelease.digest(manifest)
+    ENV[keys[2]] = 'ABCDEFGHIJ'
+    ENV[keys[3]] = 'true'
+    File.write(manifest, '{"fixture":"changed"}')
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    commands = []
+    flow.define_singleton_method(:run) { |*arguments, **_options| commands << arguments; true }
+    error = assert_raises(AegisRelease::Error) { flow.package }
+    assert_match(/producer before export allocation/, error.message)
+    assert_empty commands
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_changed_or_missing_archive_zip_is_rejected_before_any_export_command
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID GITHUB_ACTIONS]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    archive = write('.artifacts/development-transfer/archive.zip', 'original archive')
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    ENV[keys[0]], ENV[keys[1]], ENV[keys[2]], ENV[keys[3]] = File.dirname(manifest), AegisRelease.digest(manifest), 'ABCDEFGHIJ', 'true'
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    commands = []
+    flow.define_singleton_method(:run) { |*arguments, **_options| commands << arguments; true }
+    File.write(archive, 'corrupt bytes')
+    error = assert_raises(AegisRelease::Error) { flow.package }
+    assert_match(/ZIP differs.*before export allocation/, error.message)
+    File.unlink(archive)
+    assert_raises(AegisRelease::Error) { flow.package }
+    assert_empty commands
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_relative_archive_input_is_bound_to_request_root_from_a_fastlane_working_directory
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    archive = write('.artifacts/fixture-transfer/archive.zip', 'original archive')
+    manifest = write('.artifacts/fixture-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    FileUtils.mkdir_p(File.join(@root, 'fastlane'))
+    ENV[keys[0]], ENV[keys[1]] = '.artifacts/fixture-transfer', AegisRelease.digest(manifest)
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    Dir.chdir(File.join(@root, 'fastlane')) do
+      assert_equal ['--archive-input', File.dirname(manifest), '--archive-manifest-sha256', ENV[keys[1]]], flow.cloud_archive_arguments
+    end
+  ensure
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_package_passes_the_preallocation_transfer_arguments_without_reading_them_twice
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    previous = ENV['AEGIS_APPLE_TEAM_ID']
+    ENV['AEGIS_APPLE_TEAM_ID'] = 'ABCDEFGHIJ'
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    verified = ['--archive-input', '/verified/original', '--archive-manifest-sha256', 'a' * 64]
+    calls = 0
+    flow.define_singleton_method(:cloud_archive_arguments) { calls += 1; verified }
+    flow.define_singleton_method(:run) { |*_arguments, **_options| true }
+    flow.define_singleton_method(:package_ios_cloud) { |arguments| throw(:at_builder, arguments) }
+    assert_same verified, catch(:at_builder) { flow.package }
+    assert_equal 1, calls
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous ? ENV['AEGIS_APPLE_TEAM_ID'] = previous : ENV.delete('AEGIS_APPLE_TEAM_ID')
   end
 
   def test_store_readonly_stages_authorize_before_asc_authentication
