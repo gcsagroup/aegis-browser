@@ -58,6 +58,27 @@ TEST(AccessNavigationRetryStateTest, AnotherTabCannotConsumeTheSameUrlTicket) {
   EXPECT_TRUE(second.Consume(*second.Capture()));
 }
 
+TEST(AccessNavigationRetryStateTest, StoppedFailureBelongsToItsOriginalEntry) {
+  AccessNavigationRetryState state;
+  state.BeginNavigation(17);
+  ASSERT_TRUE(state.RecordFailure(17, OriginalUrl(), FailedUrl(), "GET",
+                                  net::ERR_CONNECTION_RESET, true));
+  const auto old = state.Capture();
+  ASSERT_TRUE(old);
+  state.StopOnErrorEntry(10);
+  state.StopOnErrorEntry(11);
+  EXPECT_FALSE(state.Capture());
+  EXPECT_FALSE(state.Consume(*old));
+  EXPECT_FALSE(state.CaptureForUserRetry(11));
+  const auto fresh = state.CaptureForUserRetry(10);
+  ASSERT_TRUE(fresh);
+  EXPECT_NE(fresh->identity, old->identity);
+  EXPECT_FALSE(state.Consume(*old));
+  state.StopOnErrorEntry(10);
+  state.BeginNavigation(18);
+  EXPECT_FALSE(state.CaptureForUserRetry(10));
+}
+
 TEST(AccessNavigationRetryStateTest, DoesNotReplayNonIdempotentInitialMethod) {
   for (const auto* method : {"POST", "PATCH", "PUT", "DELETE"}) {
     AccessNavigationRetryState state;

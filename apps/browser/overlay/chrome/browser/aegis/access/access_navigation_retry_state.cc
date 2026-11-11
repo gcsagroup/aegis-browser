@@ -35,6 +35,23 @@ AccessNavigationRetryState::~AccessNavigationRetryState() = default;
 void AccessNavigationRetryState::BeginNavigation(int64_t navigation_id) {
   navigation_id_ = navigation_id;
   ticket_.reset();
+  stopped_entry_id_.reset();
+}
+
+void AccessNavigationRetryState::StopOnErrorEntry(int entry_id) {
+  navigation_id_ = 0;
+  if (ticket_ && !stopped_entry_id_) {
+    stopped_entry_id_ = entry_id;
+  }
+}
+
+std::optional<AccessNavigationRetryTicket>
+AccessNavigationRetryState::CaptureForUserRetry(int entry_id) {
+  if (stopped_entry_id_ == entry_id) {
+    ticket_->identity = base::UnguessableToken::Create();
+    stopped_entry_id_.reset();
+  }
+  return Capture();
 }
 
 bool AccessNavigationRetryState::RecordFailure(
@@ -62,12 +79,12 @@ bool AccessNavigationRetryState::RecordFailure(
 
 std::optional<AccessNavigationRetryTicket>
 AccessNavigationRetryState::Capture() const {
-  return ticket_;
+  return stopped_entry_id_ ? std::nullopt : ticket_;
 }
 
 bool AccessNavigationRetryState::Consume(
     const AccessNavigationRetryTicket& ticket) {
-  if (!ticket_ || *ticket_ != ticket) {
+  if (stopped_entry_id_ || !ticket_ || *ticket_ != ticket) {
     return false;
   }
   // Revoke before the caller starts a navigation, including any re-entrant

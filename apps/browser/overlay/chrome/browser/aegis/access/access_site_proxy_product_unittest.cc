@@ -959,6 +959,15 @@ TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry) 
   EXPECT_FALSE(completed_.Get());
   EXPECT_FALSE(controller().GetPendingEntry());
   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
+
+  base::test::TestFuture<bool> fresh_click;
+  ASSERT_TRUE(helper()->RequestProxyRetry(fresh_click.GetCallback()));
+  ASSERT_TRUE(fresh_click.Get());
+  ASSERT_TRUE(controller().GetPendingEntry());
+  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), failed_);
+  content::NavigationSimulator::CreateFromPending(controller())->Commit();
+  EXPECT_FALSE(helper()->FailureForRetry());
+  EXPECT_FALSE(controller().GetPendingEntry());
 }
 
 TEST_F(AccessRetryNavigationProductTest,

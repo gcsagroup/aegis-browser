@@ -33,6 +33,10 @@ class AccessNavigationRetryState {
   AccessNavigationRetryState& operator=(const AccessNavigationRetryState&) = delete;
 
   void BeginNavigation(int64_t navigation_id);
+  // Stop revokes the current ticket. Only a new user request from this
+  // same committed error entry may receive a new one.
+  void StopOnErrorEntry(int entry_id);
+  std::optional<AccessNavigationRetryTicket> CaptureForUserRetry(int entry_id);
   bool RecordFailure(int64_t navigation_id,
                      const GURL& original_url,
                      const GURL& failed_url,
@@ -45,6 +49,7 @@ class AccessNavigationRetryState {
  private:
   int64_t navigation_id_ = 0;
   std::optional<AccessNavigationRetryTicket> ticket_;
+  std::optional<int> stopped_entry_id_;
 };
 
 }  // namespace aegis::access

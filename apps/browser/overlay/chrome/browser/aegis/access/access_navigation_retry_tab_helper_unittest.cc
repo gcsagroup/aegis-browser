@@ -243,6 +243,40 @@ TEST_F(AccessNavigationRetryTabHelperTest, PendingNavigationRevokesLateReady) {
   navigation->Commit();
 }
 
+TEST_F(AccessNavigationRetryTabHelperTest,
+       FreshClickAfterStopOnlyAcceptsItsOwnReadyReply) {
+  const GURL failed("https://failed.example/again");
+  Fail(failed);
+  base::OnceCallback<void(bool)> prepared;
+  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
+      [&](const GURL&, base::OnceCallback<void(bool)> callback) {
+        prepared = std::move(callback);
+      }));
+  const auto first_ticket = helper()->FailureForRetry();
+  ASSERT_TRUE(first_ticket);
+  base::test::TestFuture<bool> stopped;
+  ASSERT_TRUE(helper()->RequestProxyRetry(stopped.GetCallback()));
+  auto late_ready = std::move(prepared);
+  web_contents()->Stop();
+  ASSERT_TRUE(stopped.IsReady());
+  EXPECT_FALSE(stopped.Get());
+  EXPECT_FALSE(helper()->CaptureRouteReadyCallback());
+
+  base::test::TestFuture<bool> fresh;
+  ASSERT_TRUE(helper()->RequestProxyRetry(fresh.GetCallback()));
+  const auto fresh_ticket = helper()->FailureForRetry();
+  ASSERT_TRUE(fresh_ticket);
+  EXPECT_NE(fresh_ticket->identity, first_ticket->identity);
+  std::move(late_ready).Run(true);
+  EXPECT_FALSE(fresh.IsReady());
+  EXPECT_FALSE(controller().GetPendingEntry());
+  std::move(prepared).Run(true);
+  ASSERT_TRUE(fresh.IsReady());
+  EXPECT_TRUE(fresh.Get());
+  ASSERT_TRUE(controller().GetPendingEntry());
+  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), failed);
+}
+
 TEST_F(AccessNavigationRetryTabHelperTest, LateObserverUsesTrustedNavigationId) {
   auto other = CreateTestWebContents();
   auto navigation = content::NavigationSimulator::CreateBrowserInitiated(

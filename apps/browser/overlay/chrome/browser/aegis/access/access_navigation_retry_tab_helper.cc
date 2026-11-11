@@ -22,7 +22,8 @@ AccessNavigationRetryTabHelper::AccessNavigationRetryTabHelper(
       content::WebContentsUserData<AccessNavigationRetryTabHelper>(*contents) {}
 
 AccessNavigationRetryTabHelper::~AccessNavigationRetryTabHelper() {
-  ResetForNavigation(0);
+  state_.BeginNavigation(0);
+  CancelPendingPreparation();
 }
 
 void AccessNavigationRetryTabHelper::ObservePendingNavigation(
@@ -35,18 +36,23 @@ void AccessNavigationRetryTabHelper::ObservePendingNavigation(
   FromWebContents(contents)->state_.BeginNavigation(navigation_id);
 }
 
-std::optional<AccessNavigationRetryTicket>
-AccessNavigationRetryTabHelper::FailureForRetry() const {
+const content::NavigationEntry*
+AccessNavigationRetryTabHelper::CurrentErrorEntry() const {
   if (!web_contents()) {
-    return std::nullopt;
+    return nullptr;
   }
   auto& controller = web_contents()->GetController();
   const auto* entry = controller.GetLastCommittedEntry();
   if (controller.GetPendingEntry() || !entry ||
       entry->GetPageType() != content::PAGE_TYPE_ERROR) {
-    return std::nullopt;
+    return nullptr;
   }
-  return state_.Capture();
+  return entry;
+}
+
+std::optional<AccessNavigationRetryTicket>
+AccessNavigationRetryTabHelper::FailureForRetry() const {
+  return CurrentErrorEntry() ? state_.Capture() : std::nullopt;
 }
 
 base::OnceClosure AccessNavigationRetryTabHelper::CaptureRouteReadyCallback() {
@@ -65,7 +71,9 @@ void AccessNavigationRetryTabHelper::SetProxyRetryHandler(ProxyRetryHandler hand
 }
 bool AccessNavigationRetryTabHelper::RequestProxyRetry(
     base::OnceCallback<void(bool)> completion) {
-  auto ticket = FailureForRetry();
+  const auto* entry = CurrentErrorEntry();
+  auto ticket = entry ? state_.CaptureForUserRetry(entry->GetUniqueID())
+                      : std::nullopt;
   VLOG(1) << "Aegis proxy retry request: ticket=" << ticket.has_value()
           << " remembered_ticket=" << state_.Capture().has_value()
           << " pending_entry=" << !!web_contents()->GetController().GetPendingEntry()
@@ -76,8 +84,7 @@ bool AccessNavigationRetryTabHelper::RequestProxyRetry(
     return false;
   }
   pending_retry_reply_ = std::move(completion);
-  const int entry_id =
-      web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID();
+  const int entry_id = entry->GetUniqueID();
   // Grant the failed destination; OnRouteReady still reloads the original URL.
   proxy_retry_handler_.Run(ticket->failed_url, base::BindOnce(
       &AccessNavigationRetryTabHelper::OnProxyPrepared, weak_factory_.GetWeakPtr(),
@@ -96,9 +103,8 @@ void AccessNavigationRetryTabHelper::OnProxyPrepared(
   std::move(reply).Run(retry);
 }
 
-void AccessNavigationRetryTabHelper::ResetForNavigation(int64_t navigation_id) {
+void AccessNavigationRetryTabHelper::CancelPendingPreparation() {
   weak_factory_.InvalidateWeakPtrs();
-  state_.BeginNavigation(navigation_id);
   // Stop can leave the same error document and its Mojo reply pipe alive.
   if (pending_retry_reply_) {
     std::move(pending_retry_reply_).Run(false);
@@ -109,7 +115,8 @@ void AccessNavigationRetryTabHelper::DidStartNavigation(
     content::NavigationHandle* navigation) {
   if (navigation->IsInPrimaryMainFrame()) {
     VLOG(1) << "Aegis proxy retry start: id=" << navigation->GetNavigationId();
-    ResetForNavigation(navigation->GetNavigationId());
+    state_.BeginNavigation(navigation->GetNavigationId());
+    CancelPendingPreparation();
   }
 }
 
@@ -143,7 +150,12 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
 }
 
 void AccessNavigationRetryTabHelper::NavigationStopped() {
-  ResetForNavigation(0);
+  if (const auto* entry = CurrentErrorEntry()) {
+    state_.StopOnErrorEntry(entry->GetUniqueID());
+  } else {
+    state_.BeginNavigation(0);
+  }
+  CancelPendingPreparation();
 }
 
 void AccessNavigationRetryTabHelper::OnRouteReady(

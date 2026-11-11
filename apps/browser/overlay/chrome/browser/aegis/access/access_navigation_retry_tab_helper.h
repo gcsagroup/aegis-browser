@@ -9,6 +9,10 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
+namespace content {
+class NavigationEntry;
+}
+
 namespace aegis::access {
 
 class AccessNavigationRetryTabHelper
@@ -37,10 +41,11 @@ class AccessNavigationRetryTabHelper
  private:
   friend class content::WebContentsUserData<AccessNavigationRetryTabHelper>;
   explicit AccessNavigationRetryTabHelper(content::WebContents* contents);
+  const content::NavigationEntry* CurrentErrorEntry() const;
   void OnRouteReady(AccessNavigationRetryTicket ticket, int error_entry_id);
   void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
                        bool ready);
-  void ResetForNavigation(int64_t navigation_id);
+  void CancelPendingPreparation();
 
   AccessNavigationRetryState state_;
   ProxyRetryHandler proxy_retry_handler_;
