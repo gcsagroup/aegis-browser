@@ -104,7 +104,7 @@ class DevelopmentSigningTests(unittest.TestCase):
         for profile_id in self.profile_ids.values():
             original = self.directory / (profile_id + '.mobileprovision')
             mixed = 'AbCdEf' + profile_id[6:]
-            original.rename(self.directory / (mixed + '.mobileprovision'))
+            original.rename(self.directory / (mixed + '.MoBiLePrOvIsIoN'))
         _, evidence = self.resolve()
         self.assertEqual(set(evidence['profiles']), set(signing.TARGETS))
 
@@ -142,6 +142,51 @@ class DevelopmentSigningTests(unittest.TestCase):
             with self.subTest(path=invalid), self.assertRaises(OSError):
                 signing.resolve('ABCDEFGHIJ', lambda raw: self.profiles[raw], config_path=invalid,
                                 profile_directories=[self.directory])
+
+    def test_dangling_configuration_directory_does_not_fall_back_to_automatic(self):
+        link = self.root / 'dangling-config-directory'
+        link.symlink_to(self.root / 'missing-directory', target_is_directory=True)
+        for invalid in [link / 'configuration.json', link / 'nested/configuration.json']:
+            with self.subTest(path=invalid), self.assertRaises(OSError):
+                signing.resolve('ABCDEFGHIJ', lambda raw: self.profiles[raw], config_path=invalid,
+                                profile_directories=[self.directory])
+
+    def test_extension_case_cannot_hide_a_conflicting_installed_profile(self):
+        duplicate = self.root / 'other-profile-directory'
+        duplicate.mkdir()
+        profile_id = next(iter(self.profile_ids.values()))
+        (duplicate / (profile_id + '.MobileProvision')).write_bytes(b'conflicting profile')
+        with self.assertRaisesRegex(ValueError, 'Conflicting'):
+            signing.installed_profile_contents(profile_id, [self.directory, duplicate])
+
+    def test_matching_profile_copies_have_a_bounded_total_read_budget(self):
+        from unittest.mock import patch
+        profile_id = next(iter(self.profile_ids.values()))
+        raw = (self.directory / (profile_id + '.mobileprovision')).read_bytes()
+        directories = [self.directory]
+        for index in range(8):
+            directory = self.root / ('replica-' + str(index))
+            directory.mkdir()
+            (directory / (profile_id + '.mobileprovision')).write_bytes(raw)
+            directories.append(directory)
+        with patch.object(signing, 'read_regular', wraps=signing.read_regular) as read:
+            with self.assertRaisesRegex(ValueError, 'Too many matching'):
+                signing.installed_profile_contents(profile_id, directories)
+            self.assertEqual(read.call_count, 8)
+
+    def test_first_conflicting_profile_stops_before_reading_later_copies(self):
+        from unittest.mock import patch
+        profile_id = next(iter(self.profile_ids.values()))
+        directories = [self.directory]
+        for index in range(3):
+            directory = self.root / ('conflict-' + str(index))
+            directory.mkdir()
+            (directory / (profile_id + '.mobileprovision')).write_bytes(b'conflicting profile')
+            directories.append(directory)
+        with patch.object(signing, 'read_regular', wraps=signing.read_regular) as read:
+            with self.assertRaisesRegex(ValueError, 'Conflicting'):
+                signing.installed_profile_contents(profile_id, directories)
+            self.assertEqual(read.call_count, 2)
 
     def test_configuration_file_must_be_owner_only(self):
         self.config_path.chmod(0o644)
@@ -184,7 +229,7 @@ class DevelopmentSigningTests(unittest.TestCase):
         saved = self.root / 'saved.json'
         self.config_path.rename(saved)
         self.config_path.symlink_to(saved)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(OSError):
             self.resolve()
         self.config_path.unlink()
         import os

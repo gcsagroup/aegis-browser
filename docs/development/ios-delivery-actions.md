@@ -94,7 +94,10 @@ Development entitlements, team, exact bundle IDs, certificate membership and exp
 it then pins each target's profile and the Development identity. The archive transfer
 records this selection and checks actual embedded profiles and signer fingerprints.
 An invalid configured selection fails without falling back. With no configuration,
-the existing automatic Development selection remains in use. The dedicated keychain
+the existing automatic Development selection remains in use; existing path components
+must be physical directories, including when a linked destination is missing. Lookup
+compares full profile filenames without case assumptions, allows at most eight matching
+copies across the approved directories, and rejects the first content conflict. The dedicated keychain
 must already be unlocked and available to headless `codesign`.
 
 This selection changes only Development archive signing. Xcode 26.6's installed

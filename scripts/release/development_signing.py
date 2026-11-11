@@ -88,7 +88,9 @@ def read_regular(path, limit, *, private=False, directory_fd=None):
 
 
 def installed_profile_contents(uuid, directories):
-    contents = []
+    original = None
+    matches = 0
+    expected_name = uuid.lower() + '.mobileprovision'
     for directory in directories:
         try:
             descriptor = open_physical_directory(directory)
@@ -99,17 +101,21 @@ def installed_profile_contents(uuid, directories):
                 for index, entry in enumerate(entries):
                     if index >= 50000:
                         raise ValueError('Development profile directory exceeds the inventory limit')
-                    if (entry.name.endswith('.mobileprovision')
-                            and UUID.fullmatch(entry.name[:-16]) is not None
-                            and entry.name[:-16].lower() == uuid.lower()):
-                        contents.append(read_regular(Path(entry.name), 5 * 1024**2, directory_fd=descriptor))
+                    if entry.name.lower() == expected_name:
+                        matches += 1
+                        if matches > 8:
+                            raise ValueError('Too many matching Development profiles')
+                        candidate = read_regular(Path(entry.name), 5 * 1024**2, directory_fd=descriptor)
+                        if original is None:
+                            original = candidate
+                        elif candidate != original:
+                            raise ValueError('Conflicting installed Development profiles')
+                        del candidate
         finally:
             os.close(descriptor)
-    if not contents:
+    if original is None:
         raise ValueError('Configured Development profile is not installed')
-    if any(content != contents[0] for content in contents):
-        raise ValueError('Conflicting installed Development profiles')
-    return contents[0]
+    return original
 
 
 def unique_object(pairs):
@@ -125,15 +131,12 @@ def resolve(team, verify_profile, *, config_path=None, profile_directories=None)
     """The opt-in file contains only a public certificate pin and profile UUIDs."""
     path = config_path or Path.home() / '.config/gcsa-aegis-signing/development-archive.json'
     try:
-        config_info = path.lstat()
+        raw = read_regular(path, 8192, private=True)
     except OSError as error:
         if error.errno != errno.ENOENT:
             raise
         return ['CODE_SIGN_STYLE=Automatic', 'CODE_SIGN_IDENTITY=Apple Development',
                 'PROVISIONING_PROFILE_SPECIFIER='], {'style': 'automatic'}
-    if stat.S_ISLNK(config_info.st_mode):
-        raise ValueError('Development configuration symlink refused')
-    raw = read_regular(path, 8192, private=True)
     config = json.loads(raw, object_pairs_hook=unique_object)
     if (type(config) is not dict or set(config) != {'schema', 'team', 'certificateSha1', 'profiles'}
             or config['schema'] != SCHEMA or config['team'] != team
