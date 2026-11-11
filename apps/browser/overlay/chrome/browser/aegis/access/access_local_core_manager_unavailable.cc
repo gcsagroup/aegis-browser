@@ -36,6 +36,10 @@ void AccessLocalCoreManager::Stop(base::OnceClosure completion) {
       FROM_HERE, std::move(completion));
 }
 
+void AccessLocalCoreManager::StopAllForSessionEnding(base::OnceClosure completion) {
+  std::move(completion).Run();
+}
+
 void AccessLocalCoreManager::SetStoppedCallback(
     base::RepeatingCallback<void(std::string)>) {}
 

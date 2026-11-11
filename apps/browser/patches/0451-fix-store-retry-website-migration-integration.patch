@@ -1,0 +1,134 @@
+From 0f55da289bd315aebc32c6a090d118f0c3ff5f9c Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 22:23:11 +0800
+Subject: [PATCH] fix(access): reconcile store Open retry with Website
+ migration
+
+---
+ .../browser/aegis/access/access_rule_store.cc |  8 ++--
+ .../browser/aegis/access/access_rule_store.h  |  2 -
+ .../access/access_rule_store_unittest.cc      | 39 +++++++++++++++++++
+ 3 files changed, 44 insertions(+), 5 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index aa65f1a0b7fa463816c8d48a18115a1d8c592dd1..69d5ee190b6ce73cd867870c1b441e6073b30f43 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -13,6 +13,7 @@
+ #include "base/functional/callback_helpers.h"
+ #include "base/time/time.h"
+ #include "net/base/schemeful_site.h"
++#include "sql/meta_table.h"
+ #include "sql/statement.h"
+ #include "sql/transaction.h"
+ #include "url/gurl.h"
+@@ -702,9 +703,10 @@ StoreStatus AccessRuleStore::Open() {
+     return terminal_status_;
+   }
+ 
++  sql::MetaTable meta_table;
+   sql::Transaction transaction(&database_);
+   if (!transaction.Begin() ||
+-      !meta_table_.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
++      !meta_table.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
+     terminal_status_ = StoreStatus::kIoError;
+     return terminal_status_;
+   }
+@@ -776,8 +778,8 @@ StoreStatus AccessRuleStore::Open() {
+           "website_context INTEGER NOT NULL DEFAULT 0") ||
+         !database_.Execute("UPDATE access_store_identity SET schema_version=2 WHERE schema_version=1") ||
+         !database_.Execute("UPDATE access_mutation_journal SET schema_version=2 WHERE schema_version=1") ||
+-        !meta_table_.SetVersionNumber(kSchemaVersion) ||
+-        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion)) {
++        !meta_table.SetVersionNumber(kSchemaVersion) ||
++        !meta_table.SetCompatibleVersionNumber(kCompatibleVersion)) {
+       terminal_status_ = StoreStatus::kIoError;
+       return terminal_status_;
+     }
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+index 24436d57b1ade059563b6988e5ac2ac15e02907d..a72bd89ae571b42a41fac49cff1b13cf37d78c28 100644
+--- a/chrome/browser/aegis/access/access_rule_store.h
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -13,7 +13,6 @@
+ #include "components/aegis_access/access_policy_evaluator.h"
+ #include "components/aegis_access/site_proxy_rule_group.h"
+ #include "sql/database.h"
+-#include "sql/meta_table.h"
+ 
+ namespace aegis::access {
+ 
+@@ -310,7 +309,6 @@ class AccessRuleStore {
+ 
+   AccessStoreBinding binding_;
+   sql::Database database_;
+-  sql::MetaTable meta_table_;
+   bool is_open_ = false;
+   StoreStatus terminal_status_ = StoreStatus::kIoError;
+   FailurePointForTesting failure_point_for_testing_ =
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index 90b548e28b0643a2d5cc677c926faba885c23d5c..2ce06a06f2290fe8fe59616c1a58256560f1a190 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -323,6 +323,8 @@ TEST(AccessRuleStoreTest, EmptyPersistentDatabaseIsMissingAndOwnerBound) {
+       temp.GetPath(), ChannelNamespace::kBeta, "durable-profile-B",
+       "profile-B"));
+   EXPECT_EQ(wrong_owner.Open(), StoreStatus::kConflict);
++  EXPECT_EQ(wrong_owner.Open(), StoreStatus::kConflict);
++  EXPECT_FALSE(wrong_owner.is_open());
+ }
+ 
+ TEST(AccessRuleStoreTest, ReopenRebindsStoredRowsToCurrentRuntimeOwner) {
+@@ -768,6 +770,22 @@ TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
+   EXPECT_EQ(missing_mutation.status, StoreStatus::kCorrupt);
+   EXPECT_FALSE(missing_mutation.value.has_value());
+ 
++  // Repair the fixture while the failed store is closed, then retry that
++  // same store. The committed rule and its operation sequence must survive.
++  {
++    sql::Database database("AegisAccess");
++    ASSERT_TRUE(database.Open(missing_binding.database_path()));
++    ASSERT_TRUE(database.Execute(
++        "INSERT INTO access_store_counters(singleton,operation_sequence) "
++        "VALUES(1,1)"));
++  }
++  ASSERT_EQ(missing_counter.Open(), StoreStatus::kValid);
++  const auto recovered = missing_counter.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(recovered.status, StoreStatus::kValid);
++  ASSERT_TRUE(recovered.value);
++  ASSERT_EQ(recovered.value->site_groups.size(), 1u);
++  EXPECT_EQ(recovered.value->policy_generation, 1u);
++
+   base::ScopedTempDir lagging_temp;
+   ASSERT_TRUE(lagging_temp.CreateUniqueTempDir());
+   const AccessStoreBinding lagging_binding =
+@@ -1663,6 +1681,27 @@ TEST(AccessRuleStoreTest, LegacySchemaCannotReinterpretUnknownOrdinalAsWebsiteGr
+   }
+   AccessRuleStore migrated(binding);
+   EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
++  EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
++  EXPECT_FALSE(migrated.is_open());
++  {
++    // Both failed migrations must roll back. Repair only the unsupported
++    // ordinal, then retry the same store and preserve its exact-host rule.
++    sql::Database legacy("AegisAccess");
++    ASSERT_TRUE(legacy.Open(binding.database_path()));
++    const auto repair = "UPDATE access_rules SET scope=" +
++        std::to_string(static_cast<int>(PolicyScope::kSite)) +
++        " WHERE rule_id='future-scope'";
++    ASSERT_TRUE(legacy.Execute(repair.c_str()));
++  }
++  ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
++  const auto recovered = migrated.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(recovered.status, StoreStatus::kValid);
++  ASSERT_TRUE(recovered.value);
++  ASSERT_EQ(recovered.value->independent_rules.size(), 1u);
++  const auto& restored = recovered.value->independent_rules.front().policy;
++  EXPECT_EQ(restored.scope, PolicyScope::kSite);
++  EXPECT_EQ(restored.destination_host, "example.com");
++  EXPECT_FALSE(restored.include_subdomains);
+ }
+ 
+ }  // namespace
+-- 
+2.54.0 (Apple Git-157)
+

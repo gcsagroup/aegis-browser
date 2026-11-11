@@ -13,6 +13,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/time/time.h"
 #include "net/base/schemeful_site.h"
+#include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
 #include "url/gurl.h"
@@ -702,9 +703,10 @@ StoreStatus AccessRuleStore::Open() {
     return terminal_status_;
   }
 
+  sql::MetaTable meta_table;
   sql::Transaction transaction(&database_);
   if (!transaction.Begin() ||
-      !meta_table_.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
+      !meta_table.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
     terminal_status_ = StoreStatus::kIoError;
     return terminal_status_;
   }
@@ -776,8 +778,8 @@ StoreStatus AccessRuleStore::Open() {
           "website_context INTEGER NOT NULL DEFAULT 0") ||
         !database_.Execute("UPDATE access_store_identity SET schema_version=2 WHERE schema_version=1") ||
         !database_.Execute("UPDATE access_mutation_journal SET schema_version=2 WHERE schema_version=1") ||
-        !meta_table_.SetVersionNumber(kSchemaVersion) ||
-        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion)) {
+        !meta_table.SetVersionNumber(kSchemaVersion) ||
+        !meta_table.SetCompatibleVersionNumber(kCompatibleVersion)) {
       terminal_status_ = StoreStatus::kIoError;
       return terminal_status_;
     }

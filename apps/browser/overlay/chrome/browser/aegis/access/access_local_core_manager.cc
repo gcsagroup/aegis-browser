@@ -1,6 +1,10 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
+#include <atomic>
+#include <vector>
+
+#include "base/barrier_closure.h"
 #include "base/command_line.h"
 #include "base/base_paths.h"
 #include "base/files/file.h"
@@ -9,12 +13,16 @@
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/memory/raw_ptr.h"
+#include "base/no_destructor.h"
 #include "base/process/launch.h"
 #include "base/process/kill.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/timer/timer.h"
 #include "base/uuid.h"
@@ -69,12 +77,78 @@ constexpr char kCanary[] = "https://www.gstatic.com/generate_204";
 std::string Token() { return base::Uuid::GenerateRandomV4().AsLowercaseString(); }
 }  // namespace
 
+class AccessLocalCoreManager::ShutdownHandle
+    : public std::enable_shared_from_this<ShutdownHandle> {
+ public:
+  explicit ShutdownHandle(scoped_refptr<base::SequencedTaskRunner> runner)
+      : runner_(std::move(runner)) {}
+
+  // Registry access stays on the owning Browser sequence. The worker retains
+  // its handle through asynchronous destruction, so removing a service cannot
+  // hide a still-running child from session-ending cleanup.
+  static std::vector<std::weak_ptr<ShutdownHandle>>& Registry() {
+    static base::NoDestructor<std::vector<std::weak_ptr<ShutdownHandle>>> handles;
+    return *handles;
+  }
+  bool stop_requested() const { return stop_requested_.load(); }
+  void SetWorker(Worker* worker) { worker_ = worker; }  // Core thread only.
+
+  void RequestStop(base::OnceClosure completion) {
+    stop_requested_.store(true);
+    bool stopped;
+    {
+      base::AutoLock lock(lock_);
+      stopped = stopped_;
+      if (!stopped) completions_.push_back(std::move(completion));
+    }
+    if (stopped) {
+      std::move(completion).Run();
+      return;
+    }
+    // If the thread is already stopping and rejects the task, destruction of
+    // its queued SequenceBound worker completes the same cleanup barrier.
+    runner_->PostTask(FROM_HERE, base::BindOnce(
+        [](std::shared_ptr<ShutdownHandle> handle) {
+          handle->StopOnCoreThread();
+        }, shared_from_this()));
+  }
+  void CompleteStop() {
+    std::vector<base::OnceClosure> completions;
+    {
+      base::AutoLock lock(lock_);
+      stopped_ = true;
+      completions.swap(completions_);
+    }
+    for (auto& completion : completions) std::move(completion).Run();
+  }
+
+ private:
+  void StopOnCoreThread();
+  scoped_refptr<base::SequencedTaskRunner> runner_;
+  raw_ptr<Worker> worker_ = nullptr;  // Accessed only on the core thread.
+  std::atomic_bool stop_requested_{false};
+  base::Lock lock_;
+  bool stopped_ GUARDED_BY(lock_) = false;
+  std::vector<base::OnceClosure> completions_ GUARDED_BY(lock_);
+};
+
 class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
  public:
-  explicit Worker(AccessLocalCoreInput input) : input_(std::move(input)) {}
-  ~Worker() override { StopChild(); }
+  Worker(AccessLocalCoreInput input, std::shared_ptr<ShutdownHandle> shutdown)
+      : input_(std::move(input)), shutdown_(std::move(shutdown)) {
+    shutdown_->SetWorker(this);
+  }
+  ~Worker() override {
+    StopChild();
+    shutdown_->SetWorker(nullptr);
+    shutdown_->CompleteStop();
+  }
 
   void Prepare(base::OnceCallback<void(AccessLocalCoreReady)> completion) {
+    if (shutdown_->stop_requested()) {
+      std::move(completion).Run({.error = "The local proxy is shutting down."});
+      return;
+    }
     if (completion_) {
       std::move(completion).Run({.error = "Proxy preparation is already running."});
       return;
@@ -97,6 +171,10 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
   }
 
   void Verify(base::OnceCallback<void(AccessLocalCoreReady)> completion) {
+    if (shutdown_->stop_requested()) {
+      std::move(completion).Run({.error = "The local proxy is shutting down."});
+      return;
+    }
     if (completion_) {
       std::move(completion).Run({.error = "Proxy preparation is already running."});
       return;
@@ -320,6 +398,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
   }
 
   AccessLocalCoreInput input_;
+  std::shared_ptr<ShutdownHandle> shutdown_;
   base::ScopedTempDir directory_;
   base::Process process_;
   uint16_t port_ = 0;
@@ -337,12 +416,27 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
   base::RepeatingCallback<void(std::string)> stopped_callback_;
 };
 
+void AccessLocalCoreManager::ShutdownHandle::StopOnCoreThread() {
+  if (!worker_) {
+    CompleteStop();
+    return;
+  }
+  worker_->Stop(base::BindOnce([](std::shared_ptr<ShutdownHandle> handle) {
+    handle->CompleteStop();
+  }, shared_from_this()));
+}
+
 AccessLocalCoreManager::AccessLocalCoreManager(AccessLocalCoreInput input) {
   base::Thread::Options options;
   options.message_pump_type = base::MessagePumpType::IO;
   thread_ = std::make_unique<base::Thread>("AccessLocalCore");
   CHECK(thread_->StartWithOptions(std::move(options)));
-  worker_ = base::SequenceBound<Worker>(thread_->task_runner(), std::move(input));
+  shutdown_ = std::make_shared<ShutdownHandle>(thread_->task_runner());
+  auto& handles = ShutdownHandle::Registry();
+  std::erase_if(handles, [](const auto& handle) { return handle.expired(); });
+  handles.emplace_back(shutdown_);
+  worker_ = base::SequenceBound<Worker>(thread_->task_runner(), std::move(input),
+                                      shutdown_);
 }
 AccessLocalCoreManager::~AccessLocalCoreManager() {
   worker_.Reset();
@@ -366,6 +460,18 @@ void AccessLocalCoreManager::Verify(
 void AccessLocalCoreManager::Stop(base::OnceClosure completion) {
   worker_.AsyncCall(&Worker::Stop).WithArgs(
       base::BindPostTaskToCurrentDefault(std::move(completion)));
+}
+void AccessLocalCoreManager::StopAllForSessionEnding(base::OnceClosure completion) {
+  std::vector<std::shared_ptr<ShutdownHandle>> handles;
+  for (auto& weak : ShutdownHandle::Registry()) {
+    if (auto handle = weak.lock()) handles.push_back(std::move(handle));
+  }
+  if (handles.empty()) {
+    std::move(completion).Run();
+    return;
+  }
+  auto stopped = base::BarrierClosure(handles.size(), std::move(completion));
+  for (auto& handle : handles) handle->RequestStop(base::OnceClosure(stopped));
 }
 void AccessLocalCoreManager::SetStoppedCallback(
     base::RepeatingCallback<void(std::string)> callback) {

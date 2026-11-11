@@ -447,3 +447,6 @@
 0447-access-off-race-committed-state-fixture.patch
 0448-access-retry-fixture-current-network-context.patch
 0449-access-off-supersedes-verify-and-platform-core.patch
+0450-fix-access-core-session-ending-cleanup.patch
+# Upstream0350 is preserved verbatim;0451 reapplies it after Website schema changes.
+0451-fix-store-retry-website-migration-integration.patch

@@ -1,6 +1,10 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
+#include <signal.h>
+
+#include <cerrno>
+
 #include "base/command_line.h"
 #include "base/base_paths.h"
 #include "base/files/file_util.h"
@@ -9,6 +13,7 @@
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/synchronization/waitable_event.h"
 #include "base/test/task_environment.h"
 #include "base/test/bind.h"
 #include "base/test/run_until.h"
@@ -16,6 +21,7 @@
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_path_override.h"
 #include "base/test/test_future.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/aegis/access/access_buildflags.h"
 #include "build/build_config.h"
@@ -106,6 +112,34 @@ TEST_F(AccessLocalCoreManagerTest, AuthorizedNodeHttpsRecheckAndStop) {
   manager.Verify(after.GetCallback());
   EXPECT_FALSE(after.Get().ready);
   EXPECT_FALSE(after.Get().local_credentials);
+}
+
+TEST_F(AccessLocalCoreManagerTest, SessionEndingStopsAllReadyCoresWithoutUiReplies) {
+  const auto input = ResolveAccessLocalCoreInput();
+  if (!input) GTEST_SKIP() << "Authorized private core binding is required.";
+  AccessLocalCoreManager ordinary(*input);
+  AccessLocalCoreManager private_profile(*input);
+  base::test::TestFuture<AccessLocalCoreReady> first, second;
+  ordinary.Prepare(first.GetCallback());
+  private_profile.Prepare(second.GetCallback());
+  ASSERT_TRUE(first.Get().ready) << first.Get().error;
+  ASSERT_TRUE(second.Get().ready) << second.Get().error;
+  EXPECT_NE(first.Get().port, second.Get().port);
+  auto stopped = std::make_shared<base::WaitableEvent>();
+  AccessLocalCoreManager::StopAllForSessionEnding(base::BindOnce(
+      [](std::shared_ptr<base::WaitableEvent> event) { event->Signal(); },
+      stopped));
+  {
+    // EndSession blocks the UI sequence. A normal Stop reply posted back to
+    // that sequence would leave the child alive until its rundown times out.
+    base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
+    ASSERT_TRUE(stopped->TimedWait(base::Seconds(5)));
+  }
+  base::test::TestFuture<AccessLocalCoreReady> after_ordinary, after_private;
+  ordinary.Verify(after_ordinary.GetCallback());
+  private_profile.Prepare(after_private.GetCallback());
+  EXPECT_FALSE(after_ordinary.Get().ready);
+  EXPECT_FALSE(after_private.Get().ready);
 }
 
 #if BUILDFLAG(IS_MAC)
@@ -220,6 +254,79 @@ TEST_F(AccessLocalCoreFaultTest, StopCancelsARealPendingProbe) {
   base::test::TestFuture<AccessLocalCoreReady> after;
   manager.Verify(after.GetCallback());
   ExpectUnavailable(after.Get());
+}
+
+TEST_F(AccessLocalCoreFaultTest, SessionEndingCancelsPendingAuthenticatedProbe) {
+  AccessLocalCoreManager manager(Input("hold-tunnel"));
+  base::test::TestFuture<AccessLocalCoreReady> prepared;
+  manager.Prepare(prepared.GetCallback());
+  base::test::TestFuture<void> tunnel;
+  base::RepeatingTimer observation;
+  observation.Start(FROM_HERE, base::Milliseconds(10),
+      base::BindLambdaForTesting([&] {
+    auto state = State();
+    if (state && state->FindString("phase") &&
+        *state->FindString("phase") == "authenticated-tunnel-held") {
+      observation.Stop();
+      tunnel.SetValue();
+    }
+  }));
+  ASSERT_TRUE(tunnel.Wait());
+  ASSERT_FALSE(prepared.IsReady());
+  const auto child_pid = State()->FindInt("pid");
+  ASSERT_TRUE(child_pid);
+  ASSERT_EQ(kill(*child_pid, 0), 0);
+  auto stopped = std::make_shared<base::WaitableEvent>();
+  AccessLocalCoreManager::StopAllForSessionEnding(base::BindOnce(
+      [](std::shared_ptr<base::WaitableEvent> event) { event->Signal(); },
+      stopped));
+  {
+    base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
+    ASSERT_TRUE(stopped->TimedWait(base::Seconds(5)));
+  }
+  EXPECT_EQ(kill(*child_pid, 0), -1);
+  EXPECT_EQ(errno, ESRCH);
+  ExpectUnavailable(prepared.Get());
+  EXPECT_EQ(prepared.Get().error, "Proxy preparation was cancelled.");
+  base::test::TestFuture<AccessLocalCoreReady> after;
+  manager.Prepare(after.GetCallback());
+  ExpectUnavailable(after.Get());
+  EXPECT_EQ(after.Get().error, "The local proxy is shutting down.");
+}
+
+TEST_F(AccessLocalCoreFaultTest, SessionEndingIncludesPendingServiceDestruction) {
+  auto manager = std::make_unique<AccessLocalCoreManager>(Input("hold-tunnel"));
+  base::test::TestFuture<AccessLocalCoreReady> prepared;
+  manager->Prepare(prepared.GetCallback());
+  base::test::TestFuture<void> tunnel;
+  base::RepeatingTimer observation;
+  observation.Start(FROM_HERE, base::Milliseconds(10),
+      base::BindLambdaForTesting([&] {
+    auto state = State();
+    if (state && state->FindString("phase") &&
+        *state->FindString("phase") == "authenticated-tunnel-held") {
+      observation.Stop();
+      tunnel.SetValue();
+    }
+  }));
+  ASSERT_TRUE(tunnel.Wait());
+  const auto child_pid = State()->FindInt("pid");
+  ASSERT_TRUE(child_pid);
+  ASSERT_EQ(kill(*child_pid, 0), 0);
+
+  // Service destruction schedules Worker destruction and a thread-pool join.
+  // EndSession must include the outstanding child even if no UI replies run.
+  manager.reset();
+  auto stopped = std::make_shared<base::WaitableEvent>();
+  AccessLocalCoreManager::StopAllForSessionEnding(base::BindOnce(
+      [](std::shared_ptr<base::WaitableEvent> event) { event->Signal(); },
+      stopped));
+  {
+    base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
+    ASSERT_TRUE(stopped->TimedWait(base::Seconds(5)));
+  }
+  EXPECT_EQ(kill(*child_pid, 0), -1);
+  EXPECT_EQ(errno, ESRCH);
 }
 
 TEST_F(AccessLocalCoreFaultTest, StalledAuthenticatedTunnelTimesOut) {

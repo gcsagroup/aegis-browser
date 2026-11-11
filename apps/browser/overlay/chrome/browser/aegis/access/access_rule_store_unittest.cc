@@ -323,6 +323,8 @@ TEST(AccessRuleStoreTest, EmptyPersistentDatabaseIsMissingAndOwnerBound) {
       temp.GetPath(), ChannelNamespace::kBeta, "durable-profile-B",
       "profile-B"));
   EXPECT_EQ(wrong_owner.Open(), StoreStatus::kConflict);
+  EXPECT_EQ(wrong_owner.Open(), StoreStatus::kConflict);
+  EXPECT_FALSE(wrong_owner.is_open());
 }
 
 TEST(AccessRuleStoreTest, ReopenRebindsStoredRowsToCurrentRuntimeOwner) {
@@ -767,6 +769,22 @@ TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
           Mutation("must-not-prepare", AccessMode::kProxy, 1));
   EXPECT_EQ(missing_mutation.status, StoreStatus::kCorrupt);
   EXPECT_FALSE(missing_mutation.value.has_value());
+
+  // Repair the fixture while the failed store is closed, then retry that
+  // same store. The committed rule and its operation sequence must survive.
+  {
+    sql::Database database("AegisAccess");
+    ASSERT_TRUE(database.Open(missing_binding.database_path()));
+    ASSERT_TRUE(database.Execute(
+        "INSERT INTO access_store_counters(singleton,operation_sequence) "
+        "VALUES(1,1)"));
+  }
+  ASSERT_EQ(missing_counter.Open(), StoreStatus::kValid);
+  const auto recovered = missing_counter.ReadCommittedSnapshot("partition-A");
+  ASSERT_EQ(recovered.status, StoreStatus::kValid);
+  ASSERT_TRUE(recovered.value);
+  ASSERT_EQ(recovered.value->site_groups.size(), 1u);
+  EXPECT_EQ(recovered.value->policy_generation, 1u);
 
   base::ScopedTempDir lagging_temp;
   ASSERT_TRUE(lagging_temp.CreateUniqueTempDir());
@@ -1663,6 +1681,27 @@ TEST(AccessRuleStoreTest, LegacySchemaCannotReinterpretUnknownOrdinalAsWebsiteGr
   }
   AccessRuleStore migrated(binding);
   EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
+  EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
+  EXPECT_FALSE(migrated.is_open());
+  {
+    // Both failed migrations must roll back. Repair only the unsupported
+    // ordinal, then retry the same store and preserve its exact-host rule.
+    sql::Database legacy("AegisAccess");
+    ASSERT_TRUE(legacy.Open(binding.database_path()));
+    const auto repair = "UPDATE access_rules SET scope=" +
+        std::to_string(static_cast<int>(PolicyScope::kSite)) +
+        " WHERE rule_id='future-scope'";
+    ASSERT_TRUE(legacy.Execute(repair.c_str()));
+  }
+  ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
+  const auto recovered = migrated.ReadCommittedSnapshot("partition-A");
+  ASSERT_EQ(recovered.status, StoreStatus::kValid);
+  ASSERT_TRUE(recovered.value);
+  ASSERT_EQ(recovered.value->independent_rules.size(), 1u);
+  const auto& restored = recovered.value->independent_rules.front().policy;
+  EXPECT_EQ(restored.scope, PolicyScope::kSite);
+  EXPECT_EQ(restored.destination_host, "example.com");
+  EXPECT_FALSE(restored.include_subdomains);
 }
 
 }  // namespace

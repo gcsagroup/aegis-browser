@@ -2,6 +2,7 @@
 #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
 #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
 
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -45,13 +46,20 @@ class AccessLocalCoreManager {
   void Prepare(base::OnceCallback<void(AccessLocalCoreReady)> completion);
   void Verify(base::OnceCallback<void(AccessLocalCoreReady)> completion);
   void Stop(base::OnceClosure completion);
+  // Called on the owning Browser sequence before the session-ending rundown
+  // wait. Completion runs after child cleanup on core threads, without needing
+  // the blocked Browser sequence to pump replies. Pending worker destruction
+  // remains covered after its owning service has gone away.
+  static void StopAllForSessionEnding(base::OnceClosure completion);
   // Reports an unexpected exit of this manager's prepared child. The private
   // registration ID lets the Browser ignore a late notification after rebind.
   void SetStoppedCallback(base::RepeatingCallback<void(std::string)> callback);
 
  private:
   class Worker;
+  class ShutdownHandle;
   std::unique_ptr<base::Thread> thread_;
+  std::shared_ptr<ShutdownHandle> shutdown_;
   base::SequenceBound<Worker> worker_;
 };
 }  // namespace aegis::access

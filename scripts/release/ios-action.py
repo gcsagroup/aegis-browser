@@ -16,6 +16,9 @@ spec.loader.exec_module(transport)
 receipt_spec = importlib.util.spec_from_file_location('ios_delivery_receipt', Path(__file__).with_name('ios-delivery-receipt.py'))
 receipt_codec = importlib.util.module_from_spec(receipt_spec)
 receipt_spec.loader.exec_module(receipt_codec)
+durable_spec = importlib.util.spec_from_file_location('ios_durable', Path(__file__).with_name('ios-durable.py'))
+durable = importlib.util.module_from_spec(durable_spec)
+durable_spec.loader.exec_module(durable)
 
 
 def run(*args, capture=False):
@@ -112,7 +115,7 @@ def receipt():
     output('delivery_receipt', value)
     with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
         summary.write(f'### iOS Delivery receipt\n\n{manifest["version"]} ({manifest["build"]}) · {manifest["profile"]}\n\n'
-                      'After the whole run succeeds, copy the line below into **Delivery receipt** in the Full workflow and keep **Product** on **Auto**.\n\n'
+                      'After the package and seal-package jobs succeed, retain this original receipt. The Full workflow verifies the sealed producer before recovery. Keep **Product** on **Auto**.\n\n'
                       f'```text\n{value}\n```\n\n'
                       'Keep the original receipt and use the latest successful receipt for each next step. Upload, processing, metadata/compliance and distribution remain explicit operations.\n\n'
                       'This receipt pins package identity. Admin, source, integrity and replay checks run separately.\n')
@@ -229,12 +232,18 @@ def import_package():
     record = api(f'actions/runs/{state_run}')
     # Explicit attempt prevents a successful historical attempt masking a later rerun.
     attempt = int(os.environ['SOURCE_ATTEMPT'])
-    transport.verify_run(record, repository, sha, state_run, attempt)
+    sealed = verify_package_run(record, repository, sha, state_run, attempt) if state_run == package_run else None
+    if state_run != package_run:
+        transport.verify_run(record, repository, sha, state_run, attempt)
     if state_run == package_run and record['path'] not in transport.PACKAGE_WORKFLOWS:
         raise ValueError('Original package run is not an iOS package workflow')
     artifacts = api(f'actions/runs/{state_run}/artifacts?per_page=100')
     expected_name = f'ios-delivery-{state_run}-{attempt}'
-    rows = [a for a in artifacts['artifacts'] if a['name'] == expected_name and not a['expired']]
+    rows = [a for a in artifacts['artifacts'] if
+            ((sealed is None and a['name'] == expected_name) or
+             (sealed is not None and a['id'] == sealed['artifact_id']
+              and a.get('digest') == sealed['artifact_digest'] and a['name'] == sealed['artifact_name']))
+            and not a['expired']]
     if artifacts['total_count'] > 100 or len(rows) != 1:
         raise ValueError('Exact delivery artifact unavailable')
     with tempfile.TemporaryDirectory(prefix='ios-download-') as tmp:
@@ -244,6 +253,8 @@ def import_package():
             result = subprocess.run(['gh', 'api', '-H', 'Accept: application/vnd.github+json', f'repos/{repository}/actions/artifacts/{rows[0]["id"]}/zip'], stdout=f, stderr=subprocess.PIPE)
         if result.returncode:
             raise ValueError('Artifact download failed')
+        if sealed is not None and 'sha256:' + transport.digest(archive) != sealed['artifact_digest']:
+            raise ValueError('Sealed platform artifact bytes differ')
         # The Actions envelope must contain just our package.zip, not arbitrary files.
         import zipfile
         with zipfile.ZipFile(archive) as zipped:
@@ -261,7 +272,7 @@ def import_package():
             raise ValueError('Requested package identity mismatch')
         origin = json.loads((staged/'package-origin.json').read_text())
         original = api(f'actions/runs/{package_run}')
-        transport.verify_run(original, repository, sha, package_run, int(origin['attempt']))
+        verify_package_run(original, repository, sha, package_run, int(origin['attempt']))
         if original['path'] not in transport.PACKAGE_WORKFLOWS or origin['repository'] != repository or origin['runId'] != package_run or origin['sourceSha'] != sha or origin['sourceTree'] != tree or origin['manifestSha256'] != digest:
             raise ValueError('Original package run/source/manifest mismatch')
         if state_run == package_run and origin['attempt'] != attempt:
@@ -283,6 +294,24 @@ def import_package():
             receipt = 'apple-upload' if stage == 'upload' else 'ios-'+stage
             if not (target/(receipt+'-result.json')).is_file():
                 check_prior_stage_runs(stage, state_run)
+
+
+def verify_package_run(record, repository, sha, run_id, attempt):
+    if record.get('conclusion') == 'success' and record.get('run_attempt') == attempt:
+        transport.verify_run(record, repository, sha, run_id, attempt)
+        return None
+    store = durable.records()
+    sealed = store.read('package', durable.key(os.environ['RELEASE_VERSION'], os.environ['RELEASE_BUILD']))
+    if (sealed is None or repository != durable.REPOSITORY
+            or sealed['origin']['runId'] != run_id or sealed['origin']['attempt'] != attempt
+            or sealed['origin']['sourceSha'] != sha
+            or sealed['origin']['manifestSha256'] != os.environ['RELEASE_MANIFEST_SHA256']
+            or sealed['profile'] != os.environ['RELEASE_PROFILE']):
+        raise ValueError('Unsuccessful run has no exact sealed package')
+    job = durable.producer(store.api, run_id, attempt, sha)
+    if job['id'] != sealed['package_job_id']:
+        raise ValueError('Sealed package job differs')
+    return sealed
 
 
 def stage():
