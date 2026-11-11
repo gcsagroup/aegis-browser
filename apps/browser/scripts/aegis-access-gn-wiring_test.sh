@@ -68,12 +68,12 @@ SITE_DEV_ALLOW_BLOCK_TARGET="//chrome/browser/aegis/access:access_site_dev_allow
 OWNERSHIP_TARGET="//components/aegis_access:request_ownership_registry_unittests"
 DISPATCH_GATE_TARGET="//components/aegis_access:request_dispatch_gate_unittests"
 BROWSER_METADATA_TARGET="//components/aegis_access:browser_request_metadata_seed_unittests"
-SITE_INTENT_PATCH_FILE="$BROWSER_DIR/patches/0350-feat-access-site-intent-api.patch"
-SITE_PROXY_BUBBLE_PATCH_FILE="$BROWSER_DIR/patches/0351-feat-access-toolbar-bubble.patch"
-SITE_PROXY_SESSION_PATCH_FILE="$BROWSER_DIR/patches/0352-feat-access-bubble-session.patch"
-SITE_PROXY_FAULT_PATCH_FILE="$BROWSER_DIR/patches/0353-feat-access-fault-no-direct.patch"
-SITE_DEV_ALLOW_BLOCK_PATCH_FILE="$BROWSER_DIR/patches/0354-feat-access-dev-allow-block-panel.patch"
-SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE="$BROWSER_DIR/patches/0355-feat-access-phase1-evidence.patch"
+SITE_INTENT_PATCH_FILE="$BROWSER_DIR/patches/0351-feat-access-site-intent-api.patch"
+SITE_PROXY_BUBBLE_PATCH_FILE="$BROWSER_DIR/patches/0352-feat-access-toolbar-bubble.patch"
+SITE_PROXY_SESSION_PATCH_FILE="$BROWSER_DIR/patches/0353-feat-access-bubble-session.patch"
+SITE_PROXY_FAULT_PATCH_FILE="$BROWSER_DIR/patches/0354-feat-access-fault-no-direct.patch"
+SITE_DEV_ALLOW_BLOCK_PATCH_FILE="$BROWSER_DIR/patches/0355-feat-access-dev-allow-block-panel.patch"
+SITE_PROXY_PHASE1_EVIDENCE_PATCH_FILE="$BROWSER_DIR/patches/0356-feat-access-phase1-evidence.patch"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2

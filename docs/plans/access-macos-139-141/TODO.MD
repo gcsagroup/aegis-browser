@@ -1,4 +1,4 @@
-> **内置审查R7三项P2和R8新增取消竞态均已复现修复；Native442完整Chrome、15目标322项实际SUCCESS零skip，GN/117overlay/补丁回放PASS。正在绑定新源码候选，待完整quality、fresh最终复审及新head托管CI；真实GUI仍未通过，smoke已取消。**
+> **当前base已整合上游a80 Windows#147：保留其0349，本任务94补丁仅改名为0350–0443。新Native443/aab5845d完整Chrome/15目标322项实际SUCCESS零skip；全443严格lineage核验运行中。正在固定整合候选，待正确a80 base的quality/fresh最终复审/新CI；旧e1 PASS仅原范围。GUI仍受CUA限制，smoke取消。**
 
 # Aegis macOS Access #139/#140/#141 — SDD Implementation Plan / TODO
 
@@ -37,13 +37,13 @@
 
 | ID | 必须满足的行为 / 不变量 | 实现任务 | 验收条件 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| R1 | Browser 私有权限不可由 renderer 字段伪造；保留原工厂安全参数 | T1 | 私有工厂接通；来源锁、非可信 TrustedParams、失效归属拒绝且零发送 | 当前Native442正式15目标322项PASS；R7/R8修复待新候选fresh最终复审。419普通/私密GUI仅历史，当前同候选GUI未完成 |
-| R2 | 每跳独立决定 native / proxy / reject；预检、连接池、认证和缓存不串用 | T1、T2 | 导航/子资源/重定向按当前策略；无 DIRECT 降级、旧代际复用或共享代理授权 | Native442 Browser私有factory/wire/CORS/每跳回归PASS，取消ready后不得发送的新双端回归GREEN；419 Website/CDN GUI仅历史，smoke已撤销 |
-| R3 | NetworkContext 完整快照安装及精确 ACK；恢复期间先阻断再发送 | T2 | 重启/断连/乱序 ACK 不放行；新 incarnation 完整恢复后才发送 | Native442完整快照/精确ACK与Context恢复原生回归PASS；419暂停Network进程/unavailable→ready GUI保留原范围，当前GUI未验 |
-| R4 | 真实内核启动、认证入站和指定目标路径均就绪后才显示可用 | T3 | 启动失败、错凭据、进程退出均 fail-closed；实际目标经授权出口 | Native442真实owned Alpha core/认证TLS204及core10故障回归PASS；端口占用与更广当前GUI故障验收仍缺 |
-| R5 | 普通 Profile 持久恢复；私密 Profile 不落盘且相互隔离 | T4 | 重启恢复已提交意图；损坏/未提交事务不误放行；首次请求不抢跑 | Native442 store43/async5/coordinator48含Open失败、事务回滚、持久恢复联合用例PASS；419普通冷启动/私密清理GUI仅历史 |
-| R6 | 真实 ready 后，仅原失败标签页、原导航最多自动重试一次 | T5 | 新导航、关闭、停止、POST/TLS 错误均不误重试 | Native442 helper16/coordinator48含换站/关闭/Stop/晚ACK，以及排队ready前关闭caller两端的新RED→GREEN；当前实际GUI取消竞态仍缺 |
-| R7 | 实际 macOS 浏览器完成开启→指定出口→故障→恢复→关闭 | T6、T7 | 同候选日志、关联 ID、界面证据与最终独立审查闭环 | Native442正式构建/322项PASS；新候选quality/fresh复审/托管CI和同候选真实GUI未闭环。smoke用户已取消，历史PARTIAL/NOT_RUN保留 |
+| R1 | Browser 私有权限不可由 renderer 字段伪造；保留原工厂安全参数 | T1 | 私有工厂接通；来源锁、非可信 TrustedParams、失效归属拒绝且零发送 | 当前当前a80 Native443/aab5845d正式15目标322项PASS；R7/R8修复待新候选fresh最终复审。419普通/私密GUI仅历史，当前同候选GUI未完成 |
+| R2 | 每跳独立决定 native / proxy / reject；预检、连接池、认证和缓存不串用 | T1、T2 | 导航/子资源/重定向按当前策略；无 DIRECT 降级、旧代际复用或共享代理授权 | 当前a80 Native443/aab5845d Browser私有factory/wire/CORS/每跳回归PASS，取消ready后不得发送的新双端回归GREEN；419 Website/CDN GUI仅历史，smoke已撤销 |
+| R3 | NetworkContext 完整快照安装及精确 ACK；恢复期间先阻断再发送 | T2 | 重启/断连/乱序 ACK 不放行；新 incarnation 完整恢复后才发送 | 当前a80 Native443/aab5845d完整快照/精确ACK与Context恢复原生回归PASS；419暂停Network进程/unavailable→ready GUI保留原范围，当前GUI未验 |
+| R4 | 真实内核启动、认证入站和指定目标路径均就绪后才显示可用 | T3 | 启动失败、错凭据、进程退出均 fail-closed；实际目标经授权出口 | 当前a80 Native443/aab5845d真实owned Alpha core/认证TLS204及core10故障回归PASS；端口占用与更广当前GUI故障验收仍缺 |
+| R5 | 普通 Profile 持久恢复；私密 Profile 不落盘且相互隔离 | T4 | 重启恢复已提交意图；损坏/未提交事务不误放行；首次请求不抢跑 | 当前a80 Native443/aab5845d store43/async5/coordinator48含Open失败、事务回滚、持久恢复联合用例PASS；419普通冷启动/私密清理GUI仅历史 |
+| R6 | 真实 ready 后，仅原失败标签页、原导航最多自动重试一次 | T5 | 新导航、关闭、停止、POST/TLS 错误均不误重试 | 当前a80 Native443/aab5845d helper16/coordinator48含换站/关闭/Stop/晚ACK，以及排队ready前关闭caller两端的新RED→GREEN；当前实际GUI取消竞态仍缺 |
+| R7 | 实际 macOS 浏览器完成开启→指定出口→故障→恢复→关闭 | T6、T7 | 同候选日志、关联 ID、界面证据与最终独立审查闭环 | 当前a80 Native443/aab5845d正式构建/322项PASS；新候选quality/fresh复审/托管CI和同候选真实GUI未闭环。smoke用户已取消，历史PARTIAL/NOT_RUN保留 |
 
 ### 审查与测试重点
 
@@ -774,3 +774,26 @@
 - Native442/`70ae889a64059b22dd2a9c064d341d3bf863328f`在OnRedirectPrepared重登记/发送前同步检查两caller的peer-closed信号，5行生产修复；同两项及6项既有redirect/core/epoch/入口寿命用例共8 GREEN。完整Chrome和15目标build PASS，322项均实际重跑SUCCESS零skip，不靠测试exe相同迁移共享库结果。
 - `review-r8-442-native-validation-receipt.json`/完整原始summaries/logs、GN3、117overlay绑定及`review-r8-441-442-replay-result.json`封存具体身份；437/439/441真实RED、438编译失败及旧候选质量/审查证据均保留。
 - 下一项固定新的MAC不可变提交（原发布61e的后继，无强推），跑正确base的完整localquality和fresh只读内置最终复审，再更新145并核新H/M托管检查。最终实际GUI仍受既有CUA限制，smoke已撤销，不能标完成；iOS由其他owner处理。
+
+
+### 2026-11-11 13:43 Asia/Shanghai — exacthead e1完整quality PASS，fresh最终17路径复审运行中
+
+- `e1dcfdc103b3e6c63d9d3e5fbc13bcca1a3cd879`/tree`b27c4589ab83ca59acb7ca9e2faf59b445208e52`在正确basea34c412下fullquality-r10 PASS、sourceStable/input-final一致、public-export PASS，见`pr145-review-r8-fix-quality-full-r10-launch.json`及原始report.json。
+- `pr145-current-builtin-review-r3-launch.json`记录实际fresh Astra/xhigh/read-only进程及独立prompt，61e..e1共17路径和受影响集成；带原R7三项/R8F1及真实RED/GREEN，RUNNING，不称全247路径重新全面审计，不用exit0代替verdict。交付工作树clean冻结，Native442不重复构建。
+- `pr145-r8-final-source-private-scan.json`绑定247不可变源码、4个实际私有字段零匹配，值未打印或记录；此为特定凭据核验，不是通用安全审计。13:41读取146已由其他owner更新到c29a90b2，仅登记观察，不移植旧iOS证据、不修改其分支或正文。
+- 下一项评估r3，必要时回原owner修复/验证/复审；通过后live头/base预检、普通fast-forward更新145及相关MAC状态块，跟到新H/M CI终态。GUI仍NOT_RUN_POLICY_BLOCK、smoke NOT_REQUIRED，任务未完成。
+
+
+### 2026-11-11 14:02 Asia/Shanghai — 真实上游前移a80，修补丁编号冲突并验证完整新顺序
+
+- live git核到目标main已为`a80d66863cdf6a95b3b031299cf841ebc657e8bb`（Windows#147），非provider旧diff-basea34；真实merge-tree只在series冲突，未push。`pr145-r8-upstream-base-advance-conflict.json`保留阻断，e1/R10/R3 PASS仍仅旧候选原范围，不能转用新整合。
+- status.sh既有合同强制编号等于序列位置，因此保留上游`0349-brand-windows-uninstall-prompts.patch`及另外4文件原字节，本任务94补丁仅改名0350–0443，修改GN wiring现有6个路径引用。`pr145-upstream-a80-local-conflict-resolution.json`/重命名mapping绑定94个原SHA；原任务树原文件名和历史日志未重写，最终交付映射另列。
+- `native-a80-ordered-history-result.json`独立index逐项对比：Windows349先行，再94个Access补丁；每步等于旧Access树+不相交82个Windows资源输入，95个有序commit，176个原Access Native源文件字节完全保留。新Native`aab5845d5eb0ffef1ab9c27870748ef0aca971bd`/tree`d41cd1c29bec892268dad8476610a6462e1a79e4`切到独立codex分支，旧history保留，Windows输入mtime刷新；这是源码回放PASS而非运行通过。
+- `native-a80-443-full-build-result.json`运行中；下一项完成必要原生验证、提交当前base整合、fullquality与fresh只读最终复审，核最新remote后普通fast-forward更新145及新H/M CI。没有GitHub merge、强推、hosthook部署、签名/发行；GUI NOT_RUN_POLICY_BLOCK，smoke NOT_REQUIRED。
+
+
+### 2026-11-11 14:10 Asia/Shanghai — 当前a80基线完整Chrome/15目标322项实际PASS，固定整合候选
+
+- `native-a80-443-full-build-result.json`/原始log记录463实际动作（含GRIT、locale.pak、App资源与主可执行更新）SUCCESS；`native-a80-443-full-tests-result.json`记录全部15 owning目标322项实际SUCCESS零skip，新head`aab5845d5eb0ffef1ab9c27870748ef0aca971bd`，未用旧test exe相等替代重跑。82个上游Windows输入及117个Access overlay逐字节后核通过。
+- 严格有序新95步回放已PASS；仓库既有`patch-lineage.mjs`正在从固定Chromium base43a195105613ac83c21d3f14de279f4a045c7da0验证全部443个patch的逐步exact-tree/canonicalID，见`native-a80-full443-lineage-launch.json`。运行中不称PASS；Win语言包产品验证不在本MAC范围。
+- 此次本地merge只整合main的Windows修改，保留4个原上游非series文件原字节、94个Access patch原字节、全部176个Access Native代码及117 overlay；GN wiring6引用随路径更名。旧e1/Native442/source reviewR3、旧basea34质量均保留原身份，整合候选将使用正确basea80重新quality/fresh复审，普通ff更新145后核新H/B/M CI；不执行GitHub merge。
