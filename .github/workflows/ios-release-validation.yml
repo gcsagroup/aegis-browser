@@ -93,7 +93,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         if: ${{ github.event_name == 'workflow_dispatch' }}
       - name: Verify Apple profile trust regressions without credentials
-        run: python3 -B -m unittest discover -s scripts/release -p test_ios_profile_trust.py -v
+        run: python3 -B -m unittest scripts.release.test_ios_profile_trust scripts.release.test_development_signing -v
       # Host enrollment, retained failures and evidence: docs/ci-storage.md.
       - name: Admit unsigned CI storage
         id: storage

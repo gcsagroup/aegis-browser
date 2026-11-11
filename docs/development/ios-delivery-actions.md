@@ -103,13 +103,27 @@ compares full profile filenames without case assumptions, allows at most eight m
 copies across the approved directories, and rejects the first content conflict. The dedicated keychain
 must already be unlocked and available to headless `codesign`.
 
+Private configuration ancestors must be owned by the runner account or root and
+exclude directory mutation by other accounts, including extended ACL grants.
+Writable ancestor ACL entries are accepted only when native membership lookup
+identifies their principal as the runner account or root; groups and unknown principals fail closed.
+Root/account-owned sticky temporary ancestors are allowed; the private signing
+directory and configuration file still require their exact private modes and no ACLs.
+Direct Fastlane/PoC inline Development archives apply the same explicit selection
+and signed archive verification. The production transfer workflow provides the
+separate archive/export jobs.
+
 This selection changes only Development archive signing. Xcode 26.6's installed
 `xcodebuild -help` explicitly supports a manually signed archive followed by automatic
 distribution, including managed cloud signing certificates. Cloud export remains
 `signingStyle=automatic` and imports no Distribution P12. Archive transfer v2 requires
 the matching producer source and includes the Development signing evidence. The
 producer job publishes the whole manifest SHA-256 separately as a job output; export
-requires that pin before importing artifact bytes or trusting their signing record.
+requires that pin and verifies the ZIP digest before permanently allocating the
+export coordinate. The producer serializes the manifest once and binds its output
+digest to those exact written bytes; import repeats the integrity checks. Relative
+transfer paths are resolved once from the request repository root, and the verified
+arguments pass to export without a second Ruby ZIP read.
 Older source-bound transfers remain with their original implementation.
 
 Successful package jobs are sealed independently of later upload results. Small
