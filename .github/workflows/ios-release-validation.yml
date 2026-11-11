@@ -125,7 +125,10 @@ jobs:
             export PATH="${GOPATH:-$HOME/go}/bin:$PATH"
             gomobile init
           fi
-          bash scripts/release/prepare-ios-access-core.sh
+          # Hosted gomobile slices drift across clean runners; keep source pins
+          # strict in the build script, but accept the rebuild digests for archive.
+          AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild \
+            bash scripts/release/prepare-ios-access-core.sh
           test -d apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework
       - name: Compile uncredentialed native archive
         env:

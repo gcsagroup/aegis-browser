@@ -62,9 +62,16 @@ if ! grep -q "${COMMIT:0:12}" go.mod go.sum; then
 fi
 
 echo "building AegisEmbeddedCore.xcframework (ios + iossimulator)..."
+# Prefer reproducible inputs: trim paths, drop VCS stamping and Go buildids.
+# Mach-O UUIDs may still drift across hosted clang links; prepare may accept
+# digests under AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild when source pins match.
+export GOFLAGS="${GOFLAGS:--trimpath -buildvcs=false}"
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 gomobile bind \
   -target ios,iossimulator \
   -iosversion 15.0 \
+  -trimpath \
+  -ldflags "-buildid=" \
   -o "$WORK/AegisEmbeddedCore.xcframework" \
   .
 
