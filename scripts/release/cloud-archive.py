@@ -79,8 +79,17 @@ def create(output, version, build, team, profile, environment):
             if path.is_file():
                 transfer.write(path, path.relative_to(archive).as_posix())
     manifest['archive_sha256'] = native.module('archive_digest', 'artifact-transport.py').digest(archive_zip)
-    native.write(output / 'archive-manifest.json', manifest)
-    return hashlib.sha256((output / 'archive-manifest.json').read_bytes()).hexdigest()
+    return write_manifest(output / 'archive-manifest.json', manifest)
+
+
+def write_manifest(path, manifest):
+    """Bind the independent output to the exact bytes produced, without rereading a path."""
+    raw = (json.dumps(manifest, indent=2) + '\n').encode()
+    if len(raw) > 16 * 1024**2:
+        raise ValueError('Development archive manifest exceeds the size limit')
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as stream:
+        stream.write(raw)
+    return hashlib.sha256(raw).hexdigest()
 
 
 def extract(source, output, identity, version, build, team, profile, *, expected_manifest_sha256):
