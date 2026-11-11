@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh-Hans</string>
+	<key>AegisAccountServiceOrigin</key>
+	<string>$(AEGIS_ACCOUNT_SERVICE_ORIGIN)</string>
 	<key>AegisFirebaseChannel</key>
 	<string>$(AEGIS_FIREBASE_CHANNEL)</string>
 	<key>FirebaseAppDelegateProxyEnabled</key>
