@@ -150,12 +150,99 @@ xcodebuild test \
 STATUS=${PIPESTATUS[0]}
 set -e
 
-if [[ "$STATUS" -eq 0 ]]; then
-  write_receipt "PASS" "AccessEmbeddedCore live/adapter/manifest tests exited 0 ($PLATFORM_KIND)"
-  printf 'PASS (%s). receipt %s\n' "$PLATFORM_KIND" "$RECEIPT"
-  exit 0
+if [[ "$STATUS" -ne 0 ]]; then
+  write_receipt "FAIL" "xcodebuild exit $STATUS ($PLATFORM_KIND); see xcodebuild.log"
+  printf 'FAIL: xcodebuild exit %s\n' "$STATUS" >&2
+  exit "$STATUS"
 fi
 
-write_receipt "FAIL" "xcodebuild exit $STATUS ($PLATFORM_KIND); see xcodebuild.log"
-printf 'FAIL: xcodebuild exit %s\n' "$STATUS" >&2
-exit "$STATUS"
+# Exit 0 with every live case skipped must not become a K PASS (device config often invisible).
+LIVE_SUMMARY="$(
+  python3 - "$RESULT" <<'PY'
+import json, subprocess, sys
+from pathlib import Path
+result = Path(sys.argv[1])
+if not result.exists():
+    print("MISSING")
+    raise SystemExit(0)
+try:
+  raw = subprocess.check_output(
+      ["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", str(result)],
+      stderr=subprocess.DEVNULL,
+      text=True,
+  )
+except Exception:
+    # Older xcresulttool: fall back to legacy get --format json (best effort).
+    try:
+        raw = subprocess.check_output(
+            ["xcrun", "xcresulttool", "get", "--path", str(result), "--format", "json"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except Exception:
+        print("UNREADABLE")
+        raise SystemExit(0)
+text = raw.lower()
+# Prefer summary JSON when present.
+live_name = "accessembeddedcorelivetests"
+try:
+    data = json.loads(raw)
+except Exception:
+    data = None
+
+def walk(node, acc):
+    if isinstance(node, dict):
+        name = str(node.get("name") or node.get("identifier") or node.get("testName") or "").lower()
+        status = str(node.get("status") or node.get("result") or node.get("testStatus") or "").lower()
+        if live_name in name or "livetest" in name:
+            acc.append((name, status))
+        for value in node.values():
+            walk(value, acc)
+    elif isinstance(node, list):
+        for item in node:
+            walk(item, acc)
+
+hits = []
+if data is not None:
+    walk(data, hits)
+if not hits:
+    # Textual fallback for summary output.
+    skipped = text.count("skipped") + text.count("xctskip")
+    passed = "accessembeddedcorelivetests" in text and ("passed" in text or "succeeded" in text)
+    if "accessembeddedcorelivetests" not in text and "live" not in text:
+        print("NO_LIVE_SIGNAL")
+    elif skipped and not passed:
+        print("ALL_SKIPPED")
+    else:
+        print("EXECUTED")
+    raise SystemExit(0)
+
+live_hits = [s for n, s in hits if live_name in n or n.endswith("live") or "livetest" in n]
+if not live_hits:
+    print("NO_LIVE_SIGNAL")
+elif all(("skip" in s or s in {"expected failure", "unknown"}) for s in live_hits):
+    print("ALL_SKIPPED")
+elif any(s in {"success", "passed", "succeeded"} for s in live_hits):
+    print("EXECUTED")
+else:
+    print("NO_LIVE_SIGNAL")
+PY
+)"
+
+case "$LIVE_SUMMARY" in
+  EXECUTED)
+    write_receipt "PASS" "AccessEmbeddedCore live/adapter/manifest tests exited 0 with executed live cases ($PLATFORM_KIND)"
+    printf 'PASS (%s). receipt %s\n' "$PLATFORM_KIND" "$RECEIPT"
+    exit 0
+    ;;
+  ALL_SKIPPED)
+    write_receipt "FAIL" "live AccessEmbeddedCore tests were all skipped ($PLATFORM_KIND); refusing K PASS"
+    printf 'FAIL: live tests all skipped (%s)\n' "$PLATFORM_KIND" >&2
+    exit 4
+    ;;
+  *)
+    write_receipt "FAIL" "could not verify live AccessEmbeddedCore execution from xcresult ($PLATFORM_KIND: $LIVE_SUMMARY)"
+    printf 'FAIL: live execution unverified (%s: %s)\n' "$PLATFORM_KIND" "$LIVE_SUMMARY" >&2
+    exit 4
+    ;;
+esac

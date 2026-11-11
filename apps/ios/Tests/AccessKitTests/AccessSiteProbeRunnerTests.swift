@@ -46,4 +46,32 @@ final class AccessSiteProbeRunnerTests: XCTestCase {
             ["skip.example · 已要求代理，跳过直连探测"]
         )
     }
+
+    func testRunnerRechecksProxyRequirementPerHost() async throws {
+        let first = try AccessSiteHost("a.example")
+        let second = try AccessSiteHost("b.example")
+        final class Gate: @unchecked Sendable {
+            private let lock = NSLock()
+            private var armed: Set<AccessSiteHost> = []
+            func require(_ host: AccessSiteHost, arming other: AccessSiteHost) -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                if host == other { return armed.contains(host) }
+                armed.insert(other)
+                return true
+            }
+        }
+        let gate = Gate()
+        let runner = AccessSiteProbeRunner(sessionFactory: {
+            XCTFail("recheck skip must not dial")
+            return URLSession(configuration: .ephemeral)
+        })
+        let report = await runner.run(
+            plan: AccessSiteProbePlan(hosts: [first, second]),
+            alreadyRequiringProxy: [],
+            requiresProxy: { host in
+                gate.require(host, arming: second)
+            }
+        )
+        XCTAssertEqual(report.results.map(\.outcome), [.skippedAlreadyProxied, .skippedAlreadyProxied])
+    }
 }

@@ -42,9 +42,9 @@ final class AccessHostSelectiveProxyCapabilityTests: XCTestCase {
         let sawSibling = expectation(description: "suffix sibling reaches proxy")
         sawMember.assertForOverFulfill = false
         sawSibling.assertForOverFulfill = false
-        proxy.onText = { text in
-            if text.contains("login.example") { sawMember.fulfill() }
-            if text.contains("api.login.example") { sawSibling.fulfill() }
+        proxy.onHost = { host in
+            if host == "login.example" { sawMember.fulfill() }
+            if host == "api.login.example" { sawSibling.fulfill() }
         }
 
         let html = """
@@ -57,14 +57,17 @@ final class AccessHostSelectiveProxyCapabilityTests: XCTestCase {
         page.loadHTMLString(html, baseURL: URL(string: "http://shop.example/"))
         await fulfillment(of: [sawMember, sawSibling], timeout: 8)
 
-        XCTAssertTrue(proxy.transcript.contains("login.example"), proxy.transcript)
         XCTAssertTrue(
-            proxy.transcript.contains("api.login.example"),
-            "WebKit matchDomains is suffix-based; deeper hosts inherit the member label. Exact-host same-page selective proxy remains unproven. transcript=\(proxy.transcript)"
+            proxy.requestedHosts.contains("login.example"),
+            "member host missing. hosts=\(proxy.requestedHosts) transcript=\(proxy.transcript)"
+        )
+        XCTAssertTrue(
+            proxy.requestedHosts.contains("api.login.example"),
+            "WebKit matchDomains is suffix-based; deeper hosts inherit the member label. Exact-host same-page selective proxy remains unproven. hosts=\(proxy.requestedHosts)"
         )
         XCTAssertFalse(
-            proxy.transcript.contains("cdn.unrelated.invalid"),
-            "Unrelated hosts should stay off this matchDomains proxy. transcript=\(proxy.transcript)"
+            proxy.requestedHosts.contains("cdn.unrelated.invalid"),
+            "Unrelated hosts should stay off this matchDomains proxy. hosts=\(proxy.requestedHosts)"
         )
     }
 }
@@ -75,11 +78,17 @@ private final class RouteProbe: @unchecked Sendable {
     private let queue = DispatchQueue(label: "access.selective.proxy")
     private let lock = NSLock()
     private var _transcript = ""
-    var onText: (@Sendable (String) -> Void)?
+    private var _requestedHosts: [String] = []
+    var onHost: (@Sendable (String) -> Void)?
 
     var transcript: String {
         lock.lock(); defer { lock.unlock() }
         return _transcript
+    }
+
+    var requestedHosts: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _requestedHosts
     }
 
     func start() async throws {
@@ -123,10 +132,16 @@ private final class RouteProbe: @unchecked Sendable {
             var next = buffer
             if let data { next.append(data) }
             if let text = String(data: next, encoding: .utf8), text.contains("\r\n\r\n") {
+                let host = Self.exactHost(from: text)
                 self.lock.lock()
                 self._transcript += text
+                if let host {
+                    self._requestedHosts.append(host)
+                }
                 self.lock.unlock()
-                self.onText?(text)
+                if let host {
+                    self.onHost?(host)
+                }
                 let body = Data("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8)
                 connection.send(content: body, completion: .contentProcessed { _ in
                     connection.cancel()
@@ -139,5 +154,27 @@ private final class RouteProbe: @unchecked Sendable {
                 connection.cancel()
             }
         }
+    }
+
+    /// Prefer CONNECT authority, absolute-form request URL, or Host header; never substring-match.
+    private static func exactHost(from request: String) -> String? {
+        let lines = request.split(whereSeparator: \.isNewline).map(String.init)
+        if let connect = lines.first(where: { $0.uppercased().hasPrefix("CONNECT ") }) {
+            let parts = connect.split(separator: " ")
+            if parts.count >= 2 {
+                return String(parts[1].split(separator: ":").first ?? parts[1]).lowercased()
+            }
+        }
+        if let requestLine = lines.first {
+            let parts = requestLine.split(separator: " ")
+            if parts.count >= 2, let url = URL(string: String(parts[1])), let host = url.host {
+                return host.lowercased()
+            }
+        }
+        if let hostLine = lines.first(where: { $0.lowercased().hasPrefix("host:") }) {
+            let value = hostLine.dropFirst(5).trimmingCharacters(in: .whitespacesAndNewlines)
+            return String(value.split(separator: ":").first ?? Substring(value)).lowercased()
+        }
+        return nil
     }
 }

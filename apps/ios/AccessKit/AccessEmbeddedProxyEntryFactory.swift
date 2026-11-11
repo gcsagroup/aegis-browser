@@ -47,6 +47,9 @@ public enum AccessEmbeddedProxyEntryFactory {
                 },
                 shutdown: { identity in
                     session.shutdown(identity: identity)
+                },
+                healthCheck: {
+                    session.isRuntimeHealthy
                 }
             )
         } catch {
@@ -159,6 +162,11 @@ final class AccessEmbeddedProxyEntrySession {
             runtimeHealthy: true,
             bridgeInstalled: true
         )
+    }
+
+    var isRuntimeHealthy: Bool {
+        guard let listener, identity != nil else { return false }
+        return listener.isListening && core.isRunning
     }
 
     func shutdown(identity: String) {

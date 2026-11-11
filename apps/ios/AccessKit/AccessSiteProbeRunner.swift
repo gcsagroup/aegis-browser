@@ -70,7 +70,8 @@ public struct AccessSiteProbeRunner: Sendable {
         plan: AccessSiteProbePlan,
         alreadyRequiringProxy: Set<AccessSiteHost>,
         budget: Duration = AccessSiteProbePlan.budget,
-        now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now }
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
+        requiresProxy: (@Sendable (AccessSiteHost) async -> Bool)? = nil
     ) async -> AccessSiteProbeReport {
         let started = now()
         let deadline = started.advanced(by: budget)
@@ -82,7 +83,14 @@ public struct AccessSiteProbeRunner: Sendable {
                 session?.invalidateAndCancel()
                 return AccessSiteProbeReport(results: results, exhaustedBudget: true)
             }
-            if alreadyRequiringProxy.contains(host) {
+            // Recheck per host so a mid-batch proxy arm skips the remaining direct probes.
+            let skipDirect: Bool
+            if let requiresProxy {
+                skipDirect = await requiresProxy(host)
+            } else {
+                skipDirect = alreadyRequiringProxy.contains(host)
+            }
+            if skipDirect {
                 results.append(
                     AccessSiteProbeHostResult(
                         host: host,

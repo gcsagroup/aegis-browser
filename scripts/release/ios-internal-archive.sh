@@ -52,7 +52,55 @@ else
 fi
 
 # Clean archives need the locked EmbeddedCore product on disk.
-if [[ ! -d "$ROOT/apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework" ]]; then
+# Reuse only when both slice digests still match the current lock.
+XCFW="$ROOT/apps/ios/EmbeddedCore/Products/AegisEmbeddedCore.xcframework"
+LOCK_FILE="$ROOT/apps/ios/EmbeddedCore/embedded-core-lock.json"
+need_prepare=0
+if [[ ! -d "$XCFW" ]]; then
+  need_prepare=1
+else
+  if ! python3 - "$LOCK_FILE" "$XCFW" <<'PY'
+import hashlib, json, sys
+from pathlib import Path
+lock = json.loads(Path(sys.argv[1]).read_text())
+root = Path(sys.argv[2])
+arts = lock.get("artifacts") or {}
+expected = {
+    "ios-arm64": arts.get("iosArm64Sha256"),
+    "ios-arm64-simulator": arts.get("iosArm64SimulatorSha256"),
+}
+if not all(expected.values()):
+    raise SystemExit("lock missing slice digests")
+
+def digest_slice(slice_dir: Path) -> str:
+    binaries = sorted(p for p in slice_dir.rglob("*") if p.is_file() and not p.name.startswith("."))
+    if not binaries:
+        raise SystemExit(f"empty slice: {slice_dir}")
+    h = hashlib.sha256()
+    for path in binaries:
+        h.update(path.relative_to(slice_dir).as_posix().encode())
+        h.update(b"\0")
+        h.update(path.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
+
+actual = {}
+for slice_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+    name = slice_dir.name
+    if name == "ios-arm64":
+        actual["ios-arm64"] = digest_slice(slice_dir)
+    elif "simulator" in name and "arm64" in name:
+        actual["ios-arm64-simulator"] = digest_slice(slice_dir)
+for key, want in expected.items():
+    got = actual.get(key)
+    if got != want:
+        raise SystemExit(f"digest mismatch for {key}")
+PY
+  then
+    need_prepare=1
+  fi
+fi
+if [[ "$need_prepare" -eq 1 ]]; then
   bash "$ROOT/scripts/release/prepare-ios-access-core.sh"
 fi
 

@@ -45,8 +45,10 @@ struct AccessSiteProxyToggleView: View {
                         guard let tab else { return }
                         if enabled {
                             _ = store.setAutoRecoveryEnabled(true, for: tab)
-                        } else {
+                        } else if snap.autoRecoveryEnabled {
+                            // Auto-off must keep an independently armed manual proxy.
                             _ = store.setAutoRecoveryEnabled(false, for: tab)
+                        } else {
                             store.setProxyEnabled(false, for: tab)
                         }
                     }

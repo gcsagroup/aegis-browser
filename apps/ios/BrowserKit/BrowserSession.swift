@@ -29,6 +29,9 @@ public struct BrowserMainFrameFailure: Equatable, Sendable {
     public var navigationID: String
     public var url: URL
     public var method: String
+    /// True when the original request carried a body, stream, or auth context
+    /// that this process cannot safely replay. Blocks automatic proxy retry.
+    public var hasReplayableBody: Bool
     public var recoveryOperationID: UUID?
 
     public init(
@@ -36,13 +39,23 @@ public struct BrowserMainFrameFailure: Equatable, Sendable {
         navigationID: String,
         url: URL,
         method: String,
+        hasReplayableBody: Bool = false,
         recoveryOperationID: UUID? = nil
     ) {
         self.failureID = failureID
         self.navigationID = navigationID
         self.url = url
         self.method = method
+        self.hasReplayableBody = hasReplayableBody
         self.recoveryOperationID = recoveryOperationID
+    }
+
+    /// Body, upload stream, or Authorization header cannot be reconstructed for retry.
+    public static func requestHasUnsafeReplaySurface(_ request: URLRequest) -> Bool {
+        if request.httpBody != nil { return true }
+        if request.httpBodyStream != nil { return true }
+        if request.value(forHTTPHeaderField: "Authorization") != nil { return true }
+        return false
     }
 }
 
@@ -81,6 +94,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         var navigationID: String
         var url: URL
         var method: String
+        var hasReplayableBody: Bool
         var failureID: UUID?
         var recoveryOperationID: UUID?
     }
@@ -88,10 +102,14 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         navigationID: UUID().uuidString,
         url: URL(string: "about:blank")!,
         method: "GET",
+        hasReplayableBody: false,
         failureID: nil,
         recoveryOperationID: nil
     )
     private var attemptsByNavigation: [ObjectIdentifier: MainFrameAttempt] = [:]
+    /// Policy-approved main-frame attempts waiting for a matching `didStart` / load bind.
+    /// Paired FIFO so a late start cannot inherit a newer sibling's URL/method.
+    private var unboundAttempts: [MainFrameAttempt] = []
     @Published public private(set) var lastMainFrameFailure: BrowserMainFrameFailure?
     @Published public private(set) var loadingErrorAllowsProxyRetry = false
     /// Set only after the recovery navigation commits while this attempt is a proxy retry.
@@ -238,7 +256,11 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         userScripts?.tab = self
     }
 
-    private func beginUserNavigation(url: URL, method: String) {
+    private func beginUserNavigation(
+        url: URL,
+        method: String,
+        hasReplayableBody: Bool = false
+    ) {
         hostCoordinator?.pendingRecoveryInvalidated(tab: self)
         if realignedNavigationURL != url { realignedNavigationURL = nil }
         if contentRulesNavigationURL != url { contentRulesNavigationURL = nil }
@@ -251,9 +273,33 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             navigationID: UUID().uuidString,
             url: url,
             method: method.uppercased(),
+            hasReplayableBody: hasReplayableBody,
             failureID: nil,
             recoveryOperationID: nil
         )
+        unboundAttempts.append(attempt)
+    }
+
+    private func dequeueUnboundAttempt() -> MainFrameAttempt? {
+        guard !unboundAttempts.isEmpty else { return nil }
+        return unboundAttempts.removeFirst()
+    }
+
+    private func bindNavigation(_ navigation: WKNavigation, to recorded: MainFrameAttempt) {
+        attemptsByNavigation[ObjectIdentifier(navigation)] = recorded
+        unboundAttempts.removeAll { $0.navigationID == recorded.navigationID }
+    }
+
+    private func retireNavigationIdentity(_ navigation: WKNavigation?) {
+        if let navigation {
+            attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation))
+        }
+    }
+
+    private func retireAllNavigationIdentities() {
+        attemptsByNavigation.removeAll()
+        unboundAttempts.removeAll()
+        pendingNavigation = nil
     }
 
     /// Records the actual main-frame URL/method for policy-allowed navigations,
@@ -265,25 +311,52 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private func adoptMainFrameNavigation(
         url: URL,
         method: String,
-        continuesExistingNavigation: Bool
+        continuesExistingNavigation: Bool,
+        hasReplayableBody: Bool = false
     ) {
         let normalizedMethod = method.uppercased()
-        if continuesExistingNavigation,
-           let pending = pendingNavigation,
-           attemptsByNavigation[ObjectIdentifier(pending)] != nil {
-            attempt.url = url
-            attempt.method = normalizedMethod
-            attemptsByNavigation[ObjectIdentifier(pending)] = attempt
-            requestedURL = url
-            return
+        if continuesExistingNavigation {
+            if let pending = pendingNavigation,
+               var mapped = attemptsByNavigation[ObjectIdentifier(pending)] {
+                mapped.url = url
+                mapped.method = normalizedMethod
+                // Redirects must not clear an earlier unsafe replay surface.
+                mapped.hasReplayableBody = mapped.hasReplayableBody || hasReplayableBody
+                attemptsByNavigation[ObjectIdentifier(pending)] = mapped
+                if attempt.navigationID == mapped.navigationID {
+                    attempt = mapped
+                }
+                requestedURL = url
+                return
+            }
+            if var unbound = unboundAttempts.last {
+                unbound.url = url
+                unbound.method = normalizedMethod
+                unbound.hasReplayableBody = unbound.hasReplayableBody || hasReplayableBody
+                unboundAttempts[unboundAttempts.count - 1] = unbound
+                if attempt.navigationID == unbound.navigationID {
+                    attempt = unbound
+                }
+                requestedURL = url
+                return
+            }
         }
         // `WKWebView.load` may call decidePolicyFor before it returns the navigation.
         // Keep the identity minted by commitPreservingMethod / retry in that window.
         if attempt.url == url, attempt.method == normalizedMethod {
+            if hasReplayableBody, !attempt.hasReplayableBody {
+                attempt.hasReplayableBody = true
+                if let pending = pendingNavigation {
+                    attemptsByNavigation[ObjectIdentifier(pending)] = attempt
+                }
+                if let idx = unboundAttempts.lastIndex(where: { $0.navigationID == attempt.navigationID }) {
+                    unboundAttempts[idx] = attempt
+                }
+            }
             requestedURL = url
             return
         }
-        beginUserNavigation(url: url, method: normalizedMethod)
+        beginUserNavigation(url: url, method: normalizedMethod, hasReplayableBody: hasReplayableBody)
         requestedURL = url
         committedRequestMethod = normalizedMethod
         isLoading = true
@@ -293,12 +366,14 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     public func adoptPolicyMainFrameNavigationForTests(
         url: URL,
         method: String = "GET",
-        continuesExistingNavigation: Bool = false
+        continuesExistingNavigation: Bool = false,
+        hasReplayableBody: Bool = false
     ) {
         adoptMainFrameNavigation(
             url: url,
             method: method,
-            continuesExistingNavigation: continuesExistingNavigation
+            continuesExistingNavigation: continuesExistingNavigation,
+            hasReplayableBody: hasReplayableBody
         )
     }
 
@@ -330,11 +405,19 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     func commitPreservingMethod(_ request: URLRequest, continuesAttempt: Bool = false) {
         let method = request.httpMethod ?? "GET"
         let url = request.url ?? URL(string: "about:blank")!
+        let unsafeReplay = BrowserMainFrameFailure.requestHasUnsafeReplaySurface(request)
         if !continuesAttempt {
-            beginUserNavigation(url: url, method: method)
+            beginUserNavigation(url: url, method: method, hasReplayableBody: unsafeReplay)
         } else {
             attempt.url = url
             attempt.method = method
+            attempt.hasReplayableBody = attempt.hasReplayableBody || unsafeReplay
+            if let idx = unboundAttempts.lastIndex(where: { $0.navigationID == attempt.navigationID }) {
+                unboundAttempts[idx] = attempt
+            } else {
+                // Recovery / continue loads still need a didStart pairing slot.
+                unboundAttempts.append(attempt)
+            }
         }
         committedRequestMethod = method
         alignStore(for: url, previous: requestedURL, method: method, body: request.httpBody)
@@ -422,7 +505,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let navigation = webView.load(request)
         pendingNavigation = navigation
         if let navigation {
-            attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
+            bindNavigation(navigation, to: attempt)
         }
     }
 
@@ -644,7 +727,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             lastPolicyIntervention = nil
             pendingNavigation = webView.goBack()
             if let pendingNavigation {
-                attemptsByNavigation[ObjectIdentifier(pendingNavigation)] = attempt
+                bindNavigation(pendingNavigation, to: attempt)
             }
         }
     }
@@ -657,7 +740,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             lastPolicyIntervention = nil
             pendingNavigation = webView.goForward()
             if let pendingNavigation {
-                attemptsByNavigation[ObjectIdentifier(pendingNavigation)] = attempt
+                bindNavigation(pendingNavigation, to: attempt)
             }
         }
     }
@@ -682,12 +765,17 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func stop() {
         beginUserNavigation(url: requestedURL ?? url ?? URL(string: "about:blank")!, method: committedRequestMethod)
+        // Stop retires every in-flight WKNavigation identity so a late failure
+        // cannot reopen automatic proxy recovery for the cancelled load.
+        retireAllNavigationIdentities()
         structureTask?.cancel()
         navigationEpoch &+= 1
         invalidateDeferredDocumentLoad()
         loadTask?.cancel()
         loadedWebView?.stopLoading()
         isLoading = false
+        loadingErrorAllowsProxyRetry = false
+        lastMainFrameFailure = nil
     }
 
     private func configureTrackingProtection(for url: URL) {
@@ -796,11 +884,17 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 lastPolicyIntervention = nil
             }
             let method = navigationAction.request.httpMethod ?? "GET"
-            let continuesExisting = Self.continuesExistingMainFrameNavigation(navigationAction)
+            let continuesExisting = Self.continuesExistingMainFrameNavigation(
+                navigationAction,
+                hasPendingNavigation: pendingNavigation != nil
+            )
             adoptMainFrameNavigation(
                 url: requestURL,
                 method: method,
-                continuesExistingNavigation: continuesExisting
+                continuesExistingNavigation: continuesExisting,
+                hasReplayableBody: BrowserMainFrameFailure.requestHasUnsafeReplaySurface(
+                    navigationAction.request
+                )
             )
             finish(.allow)
         case .blocked:
@@ -833,21 +927,29 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             adoptMainFrameNavigation(
                 url: cleanedURL,
                 method: method,
-                continuesExistingNavigation: false
+                continuesExistingNavigation: false,
+                hasReplayableBody: BrowserMainFrameFailure.requestHasUnsafeReplaySurface(
+                    cleanedRequest
+                )
             )
             finish(.cancel)
             issueDocumentLoad(cleanedRequest)
         }
     }
 
-    /// Redirects and other non-user replacements may update the pending identity.
-    /// Link / form / history activations mint a distinct attempt.
-    private static func continuesExistingMainFrameNavigation(_ action: WKNavigationAction) -> Bool {
+    /// Confirmed in-flight redirects may update the pending identity.
+    /// Link / form / history / script-driven top-level jumps mint a distinct attempt.
+    private static func continuesExistingMainFrameNavigation(
+        _ action: WKNavigationAction,
+        hasPendingNavigation: Bool
+    ) -> Bool {
         switch action.navigationType {
         case .linkActivated, .formSubmitted, .backForward, .reload, .formResubmitted:
             return false
         case .other:
-            return true
+            // `.other` covers redirects and script navigations. Only inherit when a
+            // provisional main-frame navigation is already mapped/pending.
+            return hasPendingNavigation
         @unknown default:
             return false
         }
@@ -855,16 +957,42 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         guard webView === loadedWebView else { return }
-        if pendingNavigation == nil || isCurrent(navigation) {
-            pendingNavigation = navigation
-            if let navigation {
-                attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
+        if let navigation {
+            let recorded: MainFrameAttempt
+            if let existing = attemptsByNavigation[ObjectIdentifier(navigation)] {
+                // Programmatic load already bound this navigation.
+                recorded = existing
+            } else if let next = dequeueUnboundAttempt() {
+                recorded = next
+                bindNavigation(navigation, to: recorded)
+            } else if let pending = pendingNavigation,
+                      pending !== navigation,
+                      let prior = attemptsByNavigation[ObjectIdentifier(pending)] {
+                // Redirect minted a new WKNavigation; transfer the prior identity.
+                recorded = prior
+                retireNavigationIdentity(pending)
+                bindNavigation(navigation, to: recorded)
+            } else if pendingNavigation == nil || isCurrent(navigation) {
+                // Programmatic load / recovery whose allow identity is already `attempt`.
+                recorded = attempt
+                bindNavigation(navigation, to: recorded)
+            } else {
+                // Late competing start with no paired allow — do not invent from latest.
+                isLoading = true
+                userScripts?.navigated()
+                inspectionEnabled = false; webView.isInspectable = false
+                navigationEpoch &+= 1
+                structureTask?.cancel()
+                refreshState()
+                return
             }
-        } else if let navigation {
-            // A competing main-frame navigation started; keep the prior map entry for late
-            // failures and bind this navigation to the latest adopted attempt.
-            attemptsByNavigation[ObjectIdentifier(navigation)] = attempt
-            pendingNavigation = navigation
+            if pendingNavigation == nil || isCurrent(navigation) || pendingNavigation === navigation {
+                attempt = recorded
+                pendingNavigation = navigation
+            } else {
+                // Late start for an older allow: keep the newer pending attempt intact.
+                bindNavigation(navigation, to: recorded)
+            }
         }
         isLoading = true
         userScripts?.navigated()
@@ -894,6 +1022,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard webView === loadedWebView, isCurrent(navigation) else { return }
+        retireNavigationIdentity(navigation)
         pendingNavigation = nil
         isLoading = false
         loadingErrorPresentation = nil
@@ -901,6 +1030,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         lastMainFrameFailure = nil
         attempt.recoveryOperationID = nil
         attempt.failureID = nil
+        attempt.hasReplayableBody = false
         refreshState()
         // History can restore a start document whose DOM predates the current
         // language; a newly loaded document may also finish after a selection.
@@ -938,6 +1068,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
             loadingErrorAllowsProxyRetry = false
+            retireNavigationIdentity(navigation)
             if navigation == nil || navigation === pendingNavigation {
                 pendingNavigation = nil
             }
@@ -946,21 +1077,26 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         let recorded: MainFrameAttempt
         if let navigation {
-            if let match = attemptsByNavigation[ObjectIdentifier(navigation)] {
-                // Prefer the identity recorded for this exact WKNavigation.
-                if navigation === pendingNavigation || pendingNavigation == nil {
-                    pendingNavigation = navigation
-                }
-                recorded = match
-                attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation))
-            } else {
+            guard let match = attemptsByNavigation[ObjectIdentifier(navigation)] else {
+                // Retired (Stop / finish / replace) identities must not reopen recovery.
                 noteUnidentifiedMainFrameFailure(nsError, for: navigation)
                 return
             }
+            // Prefer the identity recorded for this exact WKNavigation.
+            if navigation === pendingNavigation || pendingNavigation == nil {
+                pendingNavigation = navigation
+            }
+            recorded = match
+            attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation))
         } else if pendingNavigation == nil, isLoading {
             // Only while a policy-adopted main frame is in flight. Finished pages
             // must not reuse a stale attempt for an unidentified callback.
-            recorded = attempt
+            if let unbound = unboundAttempts.last {
+                recorded = unbound
+                unboundAttempts.removeAll { $0.navigationID == unbound.navigationID }
+            } else {
+                recorded = attempt
+            }
         } else {
             noteUnidentifiedMainFrameFailure(nsError, for: nil)
             return
@@ -982,6 +1118,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             attempt.navigationID = recorded.navigationID
             attempt.url = failedURL
             attempt.method = method
+            attempt.hasReplayableBody = recorded.hasReplayableBody
             attempt.failureID = failureID
             attempt.recoveryOperationID = recorded.recoveryOperationID
             let failure = BrowserMainFrameFailure(
@@ -989,6 +1126,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
                 navigationID: recorded.navigationID,
                 url: failedURL,
                 method: method,
+                hasReplayableBody: recorded.hasReplayableBody,
                 recoveryOperationID: recorded.recoveryOperationID
             )
             lastMainFrameFailure = failure
@@ -997,9 +1135,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             loadingErrorAllowsProxyRetry = BrowserNavigationFailure.isRecoverableNetworkFailure(nsError)
                 && ["http", "https"].contains(scheme)
                 && (method == "GET" || method == "HEAD")
-            if !loadingErrorAllowsProxyRetry {
-                loadingErrorAllowsProxyRetry = false
-            }
+                && !recorded.hasReplayableBody
             hostCoordinator?.mainFrameFailed(tab: self, failure: failure, error: nsError)
         }
         refreshState()

@@ -316,4 +316,46 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         XCTAssertTrue(tab.isLoading)
         XCTAssertNotEqual(tab.lastMainFrameFailure?.url.path, "/a")
     }
+
+    func testStopRetiresNavigationIdentitySoLateFailureCannotRetry() async throws {
+        let tab = makeTab()
+        tab.load(URLRequest(url: URL(string: "https://shop.example/pending")!))
+        await waitUntil { tab.currentNavigationForTests != nil }
+        let navigation = try XCTUnwrap(tab.currentNavigationForTests)
+        tab.stop()
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
+        tab.webView(tab.webView, didFailProvisionalNavigation: navigation, withError: error)
+        XCTAssertNil(tab.lastMainFrameFailure)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+    }
+
+    func testGetWithBodyDoesNotAllowAutomaticProxyRetry() throws {
+        let tab = makeTab()
+        var request = URLRequest(url: URL(string: "https://shop.example/search")!)
+        request.httpMethod = "GET"
+        request.httpBody = Data("q=1".utf8)
+        tab.load(request)
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
+        tab.webView(tab.webView, didFailProvisionalNavigation: tab.currentNavigationForTests, withError: error)
+        XCTAssertEqual(tab.lastMainFrameFailure?.hasReplayableBody, true)
+        XCTAssertFalse(tab.loadingErrorAllowsProxyRetry)
+    }
+
+    func testOtherNavigationWithoutPendingMintsFreshAttempt() throws {
+        let tab = makeTab()
+        tab.load(URLRequest(url: URL(string: "https://shop.example/home")!))
+        tab.commitPendingMainFrameForTests()
+        tab.webView(tab.webView, didFinish: tab.currentNavigationForTests)
+        let next = URL(string: "https://shop.example/scripted")!
+        // Script-driven `.other` with no pending navigation must not continue the finished page.
+        tab.adoptPolicyMainFrameNavigationForTests(
+            url: next,
+            method: "GET",
+            continuesExistingNavigation: false
+        )
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost)
+        tab.webView(tab.webView, didFailProvisionalNavigation: nil, withError: error)
+        XCTAssertEqual(tab.lastMainFrameFailure?.url, next)
+        XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
+    }
 }

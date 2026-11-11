@@ -75,6 +75,49 @@ final class AccessProxyEntryPublisherTests: XCTestCase {
         XCTAssertNil(publisher.currentEndpoint)
     }
 
+    func testFailedGenerationWaiterDoesNotBlockLaterReap() async throws {
+        var shutdownIdentities: [String] = []
+        var shouldFail = true
+        let publisher = AccessProxyEntryPublisher(
+            provision: { generation, _ in
+                if shouldFail {
+                    shouldFail = false
+                    throw AccessSiteSessionError.prepareFailed("boom")
+                }
+                return self.provision(generation: generation, port: 18_198)
+            },
+            shutdown: { identity in
+                shutdownIdentities.append(identity)
+            }
+        )
+        let staleID = UUID()
+        do {
+            _ = try await publisher.prepare(
+                AccessProxyEntryPrepareRequest(operationID: staleID, deadline: .seconds(15))
+            )
+            XCTFail("first prepare must fail")
+        } catch {
+        }
+        let liveID = UUID()
+        let ready = try await publisher.prepare(
+            AccessProxyEntryPrepareRequest(operationID: liveID, deadline: .seconds(15))
+        )
+        XCTAssertTrue(publisher.retain(ready.endpoint, for: AccessHostStoreKey(
+            scopeID: "ordinary",
+            host: try AccessSiteHost("reap.example"),
+            isPrivate: false
+        )))
+        publisher.cancel(operationID: liveID)
+        publisher.cancel(operationID: staleID)
+        publisher.release(for: AccessHostStoreKey(
+            scopeID: "ordinary",
+            host: try AccessSiteHost("reap.example"),
+            isPrivate: false
+        ))
+        XCTAssertEqual(shutdownIdentities, ["entry-1"])
+        XCTAssertNil(publisher.currentEndpoint)
+    }
+
     func testLastCancelledWaiterDestroysUnclaimedProvision() async throws {
         var shutdownIdentities: [String] = []
         let started = expectation(description: "provision started")
