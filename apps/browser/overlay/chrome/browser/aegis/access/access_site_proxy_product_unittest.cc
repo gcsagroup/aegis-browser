@@ -948,6 +948,44 @@ TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOthe
   EXPECT_EQ(other->GetLastCommittedURL(), replacement);
 }
 
+TEST_F(AccessRetryNavigationProductTest, ImmediateReclickWaitsForItsOwnAck) {
+  BeginHeldRetry();
+  web_contents()->Stop();
+  ASSERT_TRUE(completed_.IsReady());
+  EXPECT_FALSE(completed_.Get());
+  base::test::TestFuture<bool> fresh;
+  ASSERT_TRUE(helper()->RequestProxyRetry(fresh.GetCallback()));
+  ASSERT_FALSE(fresh.IsReady());
+  context_.hold_next = true;
+  context_.Reply(true);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return context_.has_reply() || fresh.IsReady();
+  }));
+  ASSERT_TRUE(context_.has_reply());
+  EXPECT_FALSE(fresh.IsReady());
+  EXPECT_FALSE(controller().GetPendingEntry());
+  context_.Reply(true);
+  ASSERT_TRUE(fresh.Get());
+  ASSERT_TRUE(controller().GetPendingEntry());
+  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), failed_);
+  content::NavigationSimulator::CreateFromPending(controller())->Commit();
+  EXPECT_FALSE(controller().GetPendingEntry());
+}
+
+TEST_F(AccessRetryNavigationProductTest, SecondStopRevokesQueuedReclick) {
+  BeginHeldRetry();
+  web_contents()->Stop();
+  base::test::TestFuture<bool> fresh;
+  ASSERT_TRUE(helper()->RequestProxyRetry(fresh.GetCallback()));
+  ASSERT_FALSE(fresh.IsReady());
+  web_contents()->Stop();
+  ASSERT_TRUE(fresh.IsReady());
+  EXPECT_FALSE(fresh.Get());
+  DrainHeldRetry();
+  EXPECT_FALSE(controller().GetPendingEntry());
+  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
+}
+
 TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry) {
   BeginHeldRetry();
   web_contents()->Stop();

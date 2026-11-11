@@ -458,3 +458,4 @@
 0456-fix-managed-https-and-error-page-cancellation.patch
 0457-fix-explicit-retry-after-stop.patch
 0458-enable-stop-during-error-page-proxy-preparation.patch
+0459-serialize-explicit-retry-after-stop.patch

@@ -188,6 +188,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     return false;
   }
   base::OnceCallback<void(bool)> superseded_retry;
+  base::OnceCallback<void(bool)> superseded_queue;
   if (publication_in_flight_ && !enabled && verifying_host_ == host) {
     // The ON transaction is already committed. Its connectivity recheck may
     // finish later, but a newer OFF owns both the choice and the retry now.
@@ -195,6 +196,8 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     ++committed_verification_attempt_;
     publication_in_flight_ = false;
     superseded_retry = std::move(retry_completion_);
+    superseded_queue = std::move(queued_retry_);
+    retry_url_ = GURL();
   }
   if (publication_in_flight_ || (enabled && restoring_core_)) {
     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
@@ -209,6 +212,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     host_states_[host].failure_reason.clear();
     BeginDisablePublication(host);
     if (superseded_retry) std::move(superseded_retry).Run(false);
+    if (superseded_queue) std::move(superseded_queue).Run(false);
     return true;
   }
 
@@ -223,13 +227,24 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
 void AccessSiteProxyBubbleController::RequestFailedNavigationProxy(
     const GURL& original_url, base::OnceCallback<void(bool)> completion) {
   const auto host = ResolveTrustedNavigationHost(original_url);
+  // Stop revokes the document callback immediately. The old transaction may
+  // still own the publisher while the user clicks Retry on that page again.
+  if (publication_in_flight_ && retry_url_ == original_url &&
+      retry_completion_ && retry_completion_.IsCancelled() &&
+      (!queued_retry_ || queued_retry_.IsCancelled())) {
+    queued_retry_ = std::move(completion);
+    return;
+  }
   if (!host.host || publication_in_flight_) {
     std::move(completion).Run(false);
     return;
   }
+  retry_url_ = original_url;
   retry_completion_ = std::move(completion);
-  if (!RequestHostProxySession(*host.host, true) && retry_completion_)
+  if (!RequestHostProxySession(*host.host, true) && retry_completion_) {
+    retry_url_ = GURL();
     std::move(retry_completion_).Run(false);
+  }
 }
 base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
 AccessSiteProxyBubbleController::GetFailedNavigationRetryHandler() {
@@ -285,8 +300,7 @@ void AccessSiteProxyBubbleController::FailCorePreparation(
   ++state_revision_;
   host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
   host_states_[host].failure_reason = std::move(error);
-  if (retry_completion_) std::move(retry_completion_).Run(false);
-  FinishCoreRequests(false);
+  FinishNavigationPreparation(false);
 }
 void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& host) {
   auto* transport = AccessNetworkContextTransport::Get(profile_);
@@ -430,8 +444,7 @@ void AccessSiteProxyBubbleController::OnCommittedCoreVerified(
   host_states_[host].connection = AccessSiteConnectionState::kReady;
   host_states_[host].failure_reason.clear();
   local_core_ready_ = true;
-  if (retry_completion_) std::move(retry_completion_).Run(true);
-  FinishCoreRequests(true);
+  FinishNavigationPreparation(true);
 }
 
 bool AccessSiteProxyBubbleController::IsCurrentPreparedCore(
@@ -549,6 +562,19 @@ void AccessSiteProxyBubbleController::OnRestoredCoreVerified(
   ++state_revision_;
   FinishCoreRequests(ready);
 }
+void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
+  auto retry = std::move(retry_completion_);
+  auto next = std::move(queued_retry_);
+  GURL url = std::exchange(retry_url_, GURL());
+  if (retry) std::move(retry).Run(ready);
+  FinishCoreRequests(ready);
+  // Never reuse the first attempt's result. The new document ticket needs its
+  // own core verification and acknowledgement before it can reload.
+  if (next && !next.IsCancelled()) {
+    RequestFailedNavigationProxy(url, std::move(next));
+  }
+}
+
 void AccessSiteProxyBubbleController::FinishCoreRequests(bool ready) {
   if (restoring_core_ && !ready) {
     for (auto& [host, state] : host_states_) {
@@ -831,8 +857,7 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
     // Preserve the last committed choice; preparation is not a commit.
     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
     host_states_[host].failure_reason = MutationStatusReadableMessage(result.status);
-    if (retry_completion_) std::move(retry_completion_).Run(false);
-    FinishCoreRequests(false);
+    FinishNavigationPreparation(false);
     return;
   }
 
