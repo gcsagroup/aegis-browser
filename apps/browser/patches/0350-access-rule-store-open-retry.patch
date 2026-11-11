@@ -1,0 +1,94 @@
+From d53eec15ea94dde88e236bd31a8d04e785f8c641 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 19:22:22 +0800
+Subject: [PATCH] fix(access): scope rule store metadata to each open attempt
+
+---
+ .../browser/aegis/access/access_rule_store.cc  |  4 +++-
+ .../browser/aegis/access/access_rule_store.h   |  2 --
+ .../aegis/access/access_rule_store_unittest.cc | 18 ++++++++++++++++++
+ 3 files changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 108b9c891a60d089e29770865d79ab2e632e1536..bcea0fcddcb22ecaf7f9b1491bcb4ea510cfb257 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -13,6 +13,7 @@
+ #include "base/functional/callback_helpers.h"
+ #include "base/time/time.h"
+ #include "net/base/schemeful_site.h"
++#include "sql/meta_table.h"
+ #include "sql/statement.h"
+ #include "sql/transaction.h"
+ #include "url/gurl.h"
+@@ -632,9 +633,10 @@ StoreStatus AccessRuleStore::Open() {
+     return terminal_status_;
+   }
+ 
++  sql::MetaTable meta_table;
+   sql::Transaction transaction(&database_);
+   if (!transaction.Begin() ||
+-      !meta_table_.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
++      !meta_table.Init(&database_, kSchemaVersion, kCompatibleVersion)) {
+     terminal_status_ = StoreStatus::kIoError;
+     return terminal_status_;
+   }
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+index 55b18924055220eeee41921dda85d50bed931f9f..429bc9606c4487d5bc9d19aab01a891bcbe26ee3 100644
+--- a/chrome/browser/aegis/access/access_rule_store.h
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -13,7 +13,6 @@
+ #include "components/aegis_access/access_policy_evaluator.h"
+ #include "components/aegis_access/site_proxy_rule_group.h"
+ #include "sql/database.h"
+-#include "sql/meta_table.h"
+ 
+ namespace aegis::access {
+ 
+@@ -284,7 +283,6 @@ class AccessRuleStore {
+ 
+   AccessStoreBinding binding_;
+   sql::Database database_;
+-  sql::MetaTable meta_table_;
+   bool is_open_ = false;
+   StoreStatus terminal_status_ = StoreStatus::kIoError;
+   FailurePointForTesting failure_point_for_testing_ =
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index 51f763a101ca8cc78842297cc6be580a43a4de5e..c776927a71e769672f655b92b945b7cfb43af47e 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -323,6 +323,8 @@ TEST(AccessRuleStoreTest, EmptyPersistentDatabaseIsMissingAndOwnerBound) {
+       temp.GetPath(), ChannelNamespace::kBeta, "durable-profile-B",
+       "profile-B"));
+   EXPECT_EQ(wrong_owner.Open(), StoreStatus::kConflict);
++  EXPECT_EQ(wrong_owner.Open(), StoreStatus::kConflict);
++  EXPECT_FALSE(wrong_owner.is_open());
+ }
+ 
+ TEST(AccessRuleStoreTest, ReopenRebindsStoredRowsToCurrentRuntimeOwner) {
+@@ -706,6 +708,22 @@ TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
+   EXPECT_EQ(missing_mutation.status, StoreStatus::kCorrupt);
+   EXPECT_FALSE(missing_mutation.value.has_value());
+ 
++  // Repair the fixture while the failed store is closed, then retry that
++  // same store. The committed rule and its operation sequence must survive.
++  {
++    sql::Database database("AegisAccess");
++    ASSERT_TRUE(database.Open(missing_binding.database_path()));
++    ASSERT_TRUE(database.Execute(
++        "INSERT INTO access_store_counters(singleton,operation_sequence) "
++        "VALUES(1,1)"));
++  }
++  ASSERT_EQ(missing_counter.Open(), StoreStatus::kValid);
++  const auto recovered = missing_counter.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(recovered.status, StoreStatus::kValid);
++  ASSERT_TRUE(recovered.value);
++  ASSERT_EQ(recovered.value->site_groups.size(), 1u);
++  EXPECT_EQ(recovered.value->policy_generation, 1u);
++
+   base::ScopedTempDir lagging_temp;
+   ASSERT_TRUE(lagging_temp.CreateUniqueTempDir());
+   const AccessStoreBinding lagging_binding =
+-- 
+2.54.0 (Apple Git-157)
+
