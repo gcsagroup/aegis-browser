@@ -273,6 +273,12 @@ def stage(directory, environment, profile='beta'):
 
 def experiment(options, environment):
     validate_identity(options.version, options.build, options.team)
+    archive_input = getattr(options, 'archive_input', None)
+    manifest_sha256 = getattr(options, 'archive_manifest_sha256', None)
+    if (bool(archive_input) != bool(manifest_sha256)
+            or (archive_input and (options.archive_from
+                or type(manifest_sha256) is not str or re.fullmatch(r'[0-9a-f]{64}', manifest_sha256) is None))):
+        raise ValueError('Archive input requires its independent producer manifest digest and cannot reuse another archive')
     validate_runtime(options.runtime, environment, options.archive_from)
     identity = source()
     directory = ROOT / '.artifacts/cloud-signing-poc' / options.run_id
@@ -322,7 +328,8 @@ def experiment(options, environment):
         elif getattr(options, 'archive_input', None):
             work = stage(directory, archive_environment, options.profile)
             archive_transfer.extract(options.archive_input, work / 'Aegis.xcarchive', identity,
-                                     options.version, options.build, options.team, options.profile)
+                                     options.version, options.build, options.team, options.profile,
+                                     expected_manifest_sha256=manifest_sha256)
             archive_transfer.verify_development(work / 'Aegis.xcarchive', options.team, run)
             snapshot_archive(directory, identity)
             evidence.update(archiveCompleted=True, archiveTransferred=True,
@@ -403,6 +410,7 @@ def main():
     parser.add_argument('--runtime', choices=['local-fallback', 'github-hosted', 'self-hosted'], default='local-fallback')
     parser.add_argument('--profile', choices=['alpha', 'beta', 'release'], default='beta')
     parser.add_argument('--archive-input', type=Path, help='Development transfer from the separate credential-free archive job')
+    parser.add_argument('--archive-manifest-sha256', help='Independent manifest digest from the original archive job output')
     parser.add_argument('--archive-signing', choices=['development', 'ad-hoc'],
                         help='Archive identity before cloud Distribution export (default: development; Xcode 26.6 rejects ad-hoc for entitlement-bearing targets)')
     parser.add_argument('--version', required=True)

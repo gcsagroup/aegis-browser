@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -21,6 +22,16 @@ verifier = load('cloud_verifier', 'verify-signed-ios.py')
 
 
 class CloudSigningTests(unittest.TestCase):
+    def test_transfer_requires_independent_digest_and_cannot_be_combined_with_reuse(self):
+        for values in [dict(archive_input=Path('/fixture'), archive_manifest_sha256=None),
+                       dict(archive_input=None, archive_manifest_sha256='a' * 64),
+                       dict(archive_input=Path('/fixture'), archive_manifest_sha256='bad'),
+                       dict(archive_input=Path('/fixture'), archive_manifest_sha256='a' * 64, archive_from='prior')]:
+            options = SimpleNamespace(**dict(dict(version='1.0.2', build='16', team='ABCDEFGHIJ', archive_from=None), **values))
+            with self.subTest(values=values), patch.object(poc, 'source', side_effect=AssertionError('Native work started')), \
+                    self.assertRaisesRegex(ValueError, 'producer manifest digest'):
+                poc.experiment(options, {})
+
     def test_hosted_proof_requires_a_fresh_github_runner_and_refuses_archive_reuse(self):
         good = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'macOS'}
         self_hosted = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'self-hosted', 'RUNNER_OS': 'macOS'}
