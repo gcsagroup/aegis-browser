@@ -175,6 +175,14 @@ jobs:
           python3 -B scripts/release/cloud-archive.py --output "$RUNNER_TEMP/aegis-development-archive"
           --version "$RELEASE_VERSION" --build "$RELEASE_BUILD"
           --profile "$RELEASE_PROFILE" --team "$AEGIS_APPLE_TEAM_ID"
+      - name: Preserve uncredentialed archive diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-archive-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/aegis-development-archive/archive.log
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ios-development-archive-${{ github.run_id }}-${{ github.run_attempt }}
