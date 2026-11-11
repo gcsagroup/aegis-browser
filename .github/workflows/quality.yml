@@ -41,6 +41,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # pull_request.base.sha can lag the merge ref's first parent when the PR is
+      # behind main; ci-identity requires B/H to be the exact merge parents.
+      - name: Resolve pull request merge base tip
+        id: merge_base
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          parents="$(git rev-list --parents -n 1 HEAD)"
+          test "$(printf '%s\n' "$parents" | awk '{print NF}')" -eq 3
+          base="$(printf '%s\n' "$parents" | awk '{print $2}')"
+          head="$(printf '%s\n' "$parents" | awk '{print $3}')"
+          test -n "$base" && test -n "$head"
+          printf 'sha=%s\n' "$base" >> "$GITHUB_OUTPUT"
       - name: Install Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -64,7 +76,7 @@ jobs:
         run: bash scripts/ci/install-ripgrep.sh
       - name: Run full quality gate
         env:
-          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || inputs.base_sha }}
+          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && steps.merge_base.outputs.sha || github.event_name == 'push' && github.event.before || inputs.base_sha }}
           CI_EVENT: ${{ github.event_name }}
           CI_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || inputs.target_sha }}
           CI_PR_NUMBER: ${{ github.event.pull_request.number }}
