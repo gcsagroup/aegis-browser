@@ -374,6 +374,7 @@ module AegisRelease
       return [] if path.empty? && digest.empty?
       AegisRelease.require!(!path.empty? && /\A[0-9a-f]{64}\z/.match?(digest),
                             'Cloud archive requires the original producer job manifest digest')
+      path = File.expand_path(path, request.root)
       manifest_path = AegisRelease.file!(File.join(path, 'archive-manifest.json'))
       File.open(manifest_path, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |file|
         info = file.stat
@@ -382,6 +383,28 @@ module AegisRelease
         bytes = file.read(16 * 1024**2 + 1)
         AegisRelease.require!(bytes.bytesize == info.size && Digest::SHA256.hexdigest(bytes) == digest,
                               'Development archive manifest differs from its producer before export allocation')
+        begin
+          archive_digest = JSON.parse(bytes).fetch('archive_sha256')
+        rescue JSON::ParserError, KeyError, TypeError
+          raise Error, 'Invalid Development archive manifest'
+        end
+        AegisRelease.require!(archive_digest.is_a?(String) && /\A[0-9a-f]{64}\z/.match?(archive_digest),
+                              'Invalid Development archive ZIP digest')
+        archive_path = AegisRelease.file!(File.join(path, 'archive.zip'))
+        File.open(archive_path, File::RDONLY | File::NOFOLLOW | File::NONBLOCK) do |archive|
+          archive_info = archive.stat
+          AegisRelease.require!(archive_info.file? && archive_info.size.positive? && archive_info.size <= 2 * 1024**3,
+                                'Invalid Development archive ZIP')
+          checksum = Digest::SHA256.new
+          total = 0
+          while (chunk = archive.read(1024**2))
+            total += chunk.bytesize
+            AegisRelease.require!(total <= archive_info.size, 'Development archive ZIP changed during verification')
+            checksum.update(chunk)
+          end
+          AegisRelease.require!(total == archive_info.size && checksum.hexdigest == archive_digest,
+                                'Development archive ZIP differs from its producer before export allocation')
+        end
       end
       ['--archive-input', path, '--archive-manifest-sha256', digest]
     end

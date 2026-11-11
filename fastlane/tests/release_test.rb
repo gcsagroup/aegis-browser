@@ -130,7 +130,8 @@ class ReleaseTest < ReleaseFixture
     keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
     previous = keys.to_h { |key| [key, ENV[key]] }
     flow = AegisRelease::Pipeline.new(request, Object.new)
-    manifest = write('.artifacts/development-transfer/archive-manifest.json', '{"fixture":"original archive manifest"}')
+    archive = write('.artifacts/development-transfer/archive.zip', 'archive fixture')
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
     directory = File.dirname(manifest)
     original_digest = AegisRelease.digest(manifest)
     [['', ''], [directory, original_digest], [directory, ''], ['', original_digest],
@@ -149,13 +150,15 @@ class ReleaseTest < ReleaseFixture
   end
 
   def test_changed_manifest_is_rejected_before_permanent_export_allocation
-    skip 'Native package entrypoint is macOS-only' unless RbConfig::CONFIG['host_os'].include?('darwin')
-    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID]
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID GITHUB_ACTIONS]
     previous = keys.to_h { |key| [key, ENV[key]] }
     manifest = write('.artifacts/development-transfer/archive-manifest.json', '{"fixture":"original"}')
     ENV[keys[0]] = File.dirname(manifest)
     ENV[keys[1]] = AegisRelease.digest(manifest)
     ENV[keys[2]] = 'ABCDEFGHIJ'
+    ENV[keys[3]] = 'true'
     File.write(manifest, '{"fixture":"changed"}')
     flow = AegisRelease::Pipeline.new(request, Object.new)
     flow.define_singleton_method(:admit_source!) { true }
@@ -164,6 +167,45 @@ class ReleaseTest < ReleaseFixture
     error = assert_raises(AegisRelease::Error) { flow.package }
     assert_match(/producer before export allocation/, error.message)
     assert_empty commands
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_changed_or_missing_archive_zip_is_rejected_before_any_export_command
+    original_host = RbConfig::CONFIG['host_os']
+    RbConfig::CONFIG['host_os'] = 'darwin'
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256 AEGIS_APPLE_TEAM_ID GITHUB_ACTIONS]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    archive = write('.artifacts/development-transfer/archive.zip', 'original archive')
+    manifest = write('.artifacts/development-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    ENV[keys[0]], ENV[keys[1]], ENV[keys[2]], ENV[keys[3]] = File.dirname(manifest), AegisRelease.digest(manifest), 'ABCDEFGHIJ', 'true'
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    flow.define_singleton_method(:admit_source!) { true }
+    commands = []
+    flow.define_singleton_method(:run) { |*arguments, **_options| commands << arguments; true }
+    File.write(archive, 'corrupt bytes')
+    error = assert_raises(AegisRelease::Error) { flow.package }
+    assert_match(/ZIP differs.*before export allocation/, error.message)
+    File.unlink(archive)
+    assert_raises(AegisRelease::Error) { flow.package }
+    assert_empty commands
+  ensure
+    RbConfig::CONFIG['host_os'] = original_host if original_host
+    previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
+  end
+
+  def test_relative_archive_input_is_bound_to_request_root_from_a_fastlane_working_directory
+    keys = %w[AEGIS_CLOUD_ARCHIVE_INPUT AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256]
+    previous = keys.to_h { |key| [key, ENV[key]] }
+    archive = write('.artifacts/fixture-transfer/archive.zip', 'original archive')
+    manifest = write('.artifacts/fixture-transfer/archive-manifest.json', JSON.generate('archive_sha256' => AegisRelease.digest(archive)))
+    FileUtils.mkdir_p(File.join(@root, 'fastlane'))
+    ENV[keys[0]], ENV[keys[1]] = '.artifacts/fixture-transfer', AegisRelease.digest(manifest)
+    flow = AegisRelease::Pipeline.new(request, Object.new)
+    Dir.chdir(File.join(@root, 'fastlane')) do
+      assert_equal ['--archive-input', File.dirname(manifest), '--archive-manifest-sha256', ENV[keys[1]]], flow.cloud_archive_arguments
+    end
   ensure
     previous&.each { |key, value| value ? ENV[key] = value : ENV.delete(key) }
   end

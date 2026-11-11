@@ -22,8 +22,8 @@ UUID = re.compile(r'[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}')
 CERTIFICATE = re.compile(r'[0-9A-F]{40}')
 
 
-def require_no_acl(descriptor):
-    """POSIX modes do not exclude additional macOS ACL grants."""
+def check_acl(descriptor, *, readonly=False):
+    """Exclude extended grants that POSIX modes alone cannot describe."""
     if sys.platform == 'darwin':
         library = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
         library.acl_get_fd_np.argtypes = [ctypes.c_int, ctypes.c_int]
@@ -33,26 +33,79 @@ def require_no_acl(descriptor):
         ctypes.set_errno(0)
         acl = library.acl_get_fd_np(descriptor, 0x100)  # ACL_TYPE_EXTENDED in sys/acl.h
         error = ctypes.get_errno()
-        if acl:
-            library.acl_free(acl)
-            raise ValueError('Development configuration must not have extended ACLs')
-        if error != errno.ENOENT:
+        if not acl and error != errno.ENOENT:
             raise OSError(error, 'Cannot inspect Development configuration ACL')
+        if not acl:
+            return
+        try:
+            if not readonly:
+                raise ValueError('Development configuration must not have extended ACLs')
+            library.acl_get_entry.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)]
+            library.acl_get_entry.restype = ctypes.c_int
+            library.acl_get_tag_type.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+            library.acl_get_tag_type.restype = ctypes.c_int
+            library.acl_get_permset.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+            library.acl_get_permset.restype = ctypes.c_int
+            library.acl_get_perm_np.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+            library.acl_get_perm_np.restype = ctypes.c_int
+            # Darwin sys/acl.h: data/add, delete, append/add-directory, delete-child,
+            # attributes, extended attributes, security and owner changes.
+            mutable = [1 << bit for bit in (2, 4, 5, 6, 8, 10, 12, 13)]
+            for index in range(1024):
+                entry = ctypes.c_void_p()
+                ctypes.set_errno(0)
+                if library.acl_get_entry(acl, index, ctypes.byref(entry)):
+                    if ctypes.get_errno() == errno.EINVAL:
+                        return  # Darwin uses EINVAL after the last indexed entry.
+                    raise OSError(ctypes.get_errno(), 'Cannot inspect ancestor ACL entry')
+                tag = ctypes.c_int()
+                permissions = ctypes.c_void_p()
+                if library.acl_get_tag_type(entry, ctypes.byref(tag)) or tag.value not in (1, 2):
+                    raise ValueError('Invalid Development configuration ancestor ACL')
+                if tag.value == 2:  # ACL_EXTENDED_DENY is not a grant.
+                    continue
+                if library.acl_get_permset(entry, ctypes.byref(permissions)):
+                    raise ValueError('Cannot inspect Development configuration ancestor ACL')
+                for permission in mutable:
+                    granted = library.acl_get_perm_np(permissions, permission)
+                    if granted == -1:
+                        raise OSError(ctypes.get_errno(), 'Cannot inspect ancestor ACL permission')
+                    if granted:
+                        raise ValueError('Development configuration ancestor has a writable extended ACL')
+            raise ValueError('Development configuration ancestor ACL exceeds the entry limit')
+        finally:
+            library.acl_free(acl)
     elif any(name in {'system.posix_acl_access', 'system.posix_acl_default'}
              for name in os.listxattr(descriptor)):
         raise ValueError('Development configuration must not have extended ACLs')
 
 
-def open_physical_directory(path):
+def require_no_acl(descriptor):
+    check_acl(descriptor)
+
+
+def require_trusted_ancestor(descriptor):
+    info = os.fstat(descriptor)
+    if (info.st_uid not in {0, os.getuid()}
+            or (info.st_mode & 0o022 and not info.st_mode & stat.S_ISVTX)):
+        raise ValueError('Development configuration ancestor permits untrusted directory changes')
+    check_acl(descriptor, readonly=True)
+
+
+def open_physical_directory(path, *, private=False):
     if not path.is_absolute() or '..' in path.parts:
         raise ValueError('Expected an absolute physical Development signing directory')
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK
     descriptor = os.open(path.anchor, flags)
     try:
+        if private:
+            require_trusted_ancestor(descriptor)
         for part in path.parts[1:]:
             child = os.open(part, flags, dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
+            if private:
+                require_trusted_ancestor(descriptor)
         return descriptor
     except BaseException:
         os.close(descriptor)
@@ -62,7 +115,7 @@ def open_physical_directory(path):
 def read_regular(path, limit, *, private=False, directory_fd=None):
     if directory_fd is not None and (private or path != Path(path.name) or path.name in {'.', '..'}):
         raise ValueError('Expected a direct Development profile entry')
-    parent_fd = open_physical_directory(path.parent) if private else directory_fd
+    parent_fd = open_physical_directory(path.parent, private=True) if private else directory_fd
     try:
         if private:
             info = os.fstat(parent_fd)
