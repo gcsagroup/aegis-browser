@@ -143,7 +143,7 @@ class DevelopmentKeyAccessTests(unittest.TestCase):
     def test_probe_signs_and_verifies_without_inheriting_asc_or_github_credentials(self):
         keychain = self.prepare()
         environment = dict(PATH='/usr/bin', HOME=str(self.root), TMPDIR=str(self.root),
-                           DEVELOPER_DIR='/fixed/Xcode', AEGIS_ASC_KEY_BASE64='asc-secret',
+                           DEVELOPER_DIR='/fixed/Xcode', SDKROOT='/product/iphoneos-sdk', AEGIS_ASC_KEY_BASE64='asc-secret',
                            GH_TOKEN='github-secret', GITHUB_TOKEN='github-secret', SOME_P12='p12-secret')
         access.verify(self.evidence, self.native, self.output, environment, keychain)
         commands = [(args, options) for args, options in self.commands if Path(args[0]).name != 'security']

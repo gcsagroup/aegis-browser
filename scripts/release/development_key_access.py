@@ -114,14 +114,14 @@ def verify(evidence, native, directory, environment, keychain=None):
         if keychain is not None and str(keychain) not in native.keychains():
             raise ValueError('Activated Development keychain is absent from archive isolation')
         public_environment = {name: environment[name] for name in (
-            'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'DEVELOPER_DIR', 'SDKROOT', 'LANG', 'LC_ALL')
+            'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'DEVELOPER_DIR', 'LANG', 'LC_ALL')
             if name in environment}
         with tempfile.TemporaryDirectory(prefix='development-key-probe-', dir=directory) as temporary:
             root = Path(temporary)
             source, binary = root / 'probe.c', root / 'probe'
             source.write_text('int main(void) { return 0; }\n')
             result['stage'] = 'compile_probe'
-            native.run('/usr/bin/xcrun', 'clang', str(source), '-o', str(binary), env=public_environment,
+            native.run('/usr/bin/xcrun', '--sdk', 'macosx', 'clang', str(source), '-o', str(binary), env=public_environment,
                        log=directory / 'development-key-probe-clang.log', timeout=60)
             if not binary.is_file() or binary.is_symlink():
                 raise ValueError('Development signing probe compiler produced no regular binary')
