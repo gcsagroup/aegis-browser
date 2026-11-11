@@ -71,6 +71,38 @@ The settings job passes only validated team and Firebase variables from the exis
 signing Environment. It checks out no product code. The archive job receives no ASC
 secret and uses the existing Development identity and profiles.
 
+Automatic archive signing uses Xcode-managed Development profiles. On a host with
+dedicated manually created Development profiles, explicitly configure the owner-only
+`~/.config/gcsa-aegis-signing/development-archive.json` (directory `0700`, file `0600`):
+
+```json
+{
+  "schema": "aegis-development-signing-v1",
+  "team": "YOURTEAMID",
+  "certificateSha1": "UPPERCASE_SHA1_OF_DEVELOPMENT_CERTIFICATE",
+  "profiles": {
+    "com.gcsa.aegis": "APP_PROFILE_UUID",
+    "com.gcsa.aegis.safari": "SAFARI_PROFILE_UUID",
+    "com.gcsa.aegis.share": "SHARE_PROFILE_UUID"
+  }
+}
+```
+
+This file contains public identifiers only. The archive verifies Apple CMS trust,
+Development entitlements, team, exact bundle IDs, certificate membership and expiry;
+it then pins each target's profile and the Development identity. The archive transfer
+records this selection and checks actual embedded profiles and signer fingerprints.
+An invalid configured selection fails without falling back. With no configuration,
+the existing automatic Development selection remains in use. The dedicated keychain
+must already be unlocked and available to headless `codesign`.
+
+This selection changes only Development archive signing. Xcode 26.6's installed
+`xcodebuild -help` explicitly supports a manually signed archive followed by automatic
+distribution, including managed cloud signing certificates. Cloud export remains
+`signingStyle=automatic` and imports no Distribution P12. Archive transfer v2 requires
+the matching producer source and includes the Development signing evidence; older
+source-bound transfers remain with their original implementation.
+
 Successful package jobs are sealed independently of later upload results. Small
 create-only records under `refs/heads/ios-delivery/` retain the Apple allocation,
 original package job, artifact ID/digest and upload intent/result. A successful

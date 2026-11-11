@@ -51,23 +51,27 @@ def create(output, version, build, team, profile, environment):
     build_env = build_environment(environment)
     work = native.stage(output, build_env, profile)
     archive = work / 'Aegis.xcarchive'
+    signing = native.module('development_signing', 'development_signing.py')
+    signing_args, signing_evidence = signing.resolve(
+        team, native.module('development_profile_trust', 'verify-signed-ios.py').verified_profile)
     evidence = {}
     with native.isolated_keychain(output, evidence, retain_development=True):
+        signing.require_identity(signing_evidence, native.run)
         native.run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'),
                    '-scheme', 'Aegis-Release', '-configuration', 'Release', '-destination', 'generic/platform=iOS',
                    '-archivePath', str(archive), '-derivedDataPath', str(work / 'DerivedData'),
-                   '-disableAutomaticPackageResolution', 'archive', 'CODE_SIGN_STYLE=Automatic',
-                   'CODE_SIGN_IDENTITY=Apple Development', 'PROVISIONING_PROFILE_SPECIFIER=',
+                   '-disableAutomaticPackageResolution', 'archive', *signing_args,
                    'DEVELOPMENT_TEAM=' + team, 'MARKETING_VERSION=' + version,
                    'CURRENT_PROJECT_VERSION=' + build, 'AEGIS_FIREBASE_CHANNEL=' + profile,
                    env=build_env, log=output / 'archive.log', timeout=2400)
         verify_development(archive, team, native.run)
+        signing.verify_archive(archive, signing_evidence, native.run)
     native.module('archive_structure', 'verify-ios-archive.py').verify(archive, version, build)
     if native.source() != identity:
         raise ValueError('Source changed during Development archive construction')
-    manifest = {'schema': 'aegis-development-archive-v1', 'source': identity, 'version': version,
+    manifest = {'schema': 'aegis-development-archive-v2', 'source': identity, 'version': version,
                 'build': build, 'team': team, 'profile': profile, 'files': native.archive_files(archive),
-                'keychainRestored': evidence['keychainRestored']}
+                'keychainRestored': evidence['keychainRestored'], 'developmentSigning': signing_evidence}
     archive_zip = output / 'archive.zip'
     with zipfile.ZipFile(archive_zip, 'x', compression=zipfile.ZIP_DEFLATED) as transfer:
         for path in sorted(archive.rglob('*')):
@@ -84,10 +88,11 @@ def extract(source, output, identity, version, build, team, profile):
     if manifest_path.is_symlink() or manifest_path.stat().st_size > 16 * 1024**2:
         raise ValueError('Invalid archive manifest')
     manifest = json.loads(manifest_path.read_text())
-    expected = {'schema': 'aegis-development-archive-v1', 'source': identity, 'version': version,
+    expected = {'schema': 'aegis-development-archive-v2', 'source': identity, 'version': version,
                 'build': build, 'team': team, 'profile': profile, 'keychainRestored': True}
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError('Development archive identity differs')
+    native.module('development_signing', 'development_signing.py').validate_evidence(manifest.get('developmentSigning'))
     archive_zip = source / 'archive.zip'
     if (archive_zip.is_symlink() or archive_zip.stat().st_size > 2 * 1024**3
             or hashlib.sha256(archive_zip.read_bytes()).hexdigest() != manifest['archive_sha256']):
@@ -114,6 +119,8 @@ def extract(source, output, identity, version, build, team, profile):
             target.chmod((row.external_attr >> 16) & 0o755)
     if native.archive_files(output) != manifest['files']:
         raise ValueError('Extracted archive differs from its original manifest')
+    native.module('development_signing', 'development_signing.py').verify_archive(
+        output, manifest.get('developmentSigning'), native.run)
     return manifest
 
 

@@ -27,7 +27,10 @@ class CloudArchiveTests(unittest.TestCase):
             native = SimpleNamespace(validate_identity=Mock(), source=Mock(side_effect=[identity, dict(identity, sha='c' * 40)]),
                                      run=Mock(return_value=b'Xcode 26.6\nBuild version 17F113'),
                                      stage=Mock(return_value=output / 'work'), isolated_keychain=isolated,
-                                     module=Mock(return_value=SimpleNamespace(verify=Mock())))
+                                     module=Mock(side_effect=lambda _name, file: SimpleNamespace(
+                                         resolve=Mock(return_value=(['CODE_SIGN_STYLE=Automatic'], {'style': 'automatic'})),
+                                         require_identity=Mock(), verify_archive=Mock()) if file == 'development_signing.py'
+                                         else SimpleNamespace(verify=Mock(), verified_profile=Mock())))
             with patch.object(archive, 'engine', return_value=native), patch.object(archive, 'verify_development'), \
                     self.assertRaisesRegex(ValueError, 'Source changed'):
                 archive.create(output, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha', {})
@@ -42,8 +45,9 @@ class CloudArchiveTests(unittest.TestCase):
                 item.external_attr = 0o100755 << 16
                 transfer.writestr(item, content)
         identity = {'sha': 'a' * 40, 'tree': 'b' * 40}
-        value = {'schema': 'aegis-development-archive-v1', 'source': identity, 'version': '1.0.0',
+        value = {'schema': 'aegis-development-archive-v2', 'source': identity, 'version': '1.0.0',
                  'build': '20', 'team': 'ABCDEFGHIJ', 'profile': 'alpha', 'keychainRestored': True,
+                 'developmentSigning': {'style': 'automatic'},
                  'files': {path: hashlib.sha256(content).hexdigest() for path, content in original.items()},
                  'archive_sha256': hashlib.sha256((root / 'archive.zip').read_bytes()).hexdigest()}
         (root / 'archive-manifest.json').write_text(json.dumps(value))
@@ -76,6 +80,18 @@ class CloudArchiveTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 archive.extract(root, root / 'bad', dict(identity, sha='c' * 40), '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
             (root / 'archive.zip').write_bytes(b'changed')
+            with self.assertRaises(ValueError):
+                archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
+            self.assertFalse((root / 'bad').exists())
+
+    def test_missing_development_selection_is_rejected_before_extraction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            identity = self.fixture(root)
+            path = root / 'archive-manifest.json'
+            value = json.loads(path.read_text())
+            value.pop('developmentSigning')
+            path.write_text(json.dumps(value))
             with self.assertRaises(ValueError):
                 archive.extract(root, root / 'bad', identity, '1.0.0', '20', 'ABCDEFGHIJ', 'alpha')
             self.assertFalse((root / 'bad').exists())
