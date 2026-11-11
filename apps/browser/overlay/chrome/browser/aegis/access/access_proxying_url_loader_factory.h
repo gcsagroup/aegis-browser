@@ -150,6 +150,17 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       uint64_t expected_policy_generation, std::string expected_group, bool ready);
   void PublishRequestPolicy(base::WeakPtr<PendingStart> pending);
   void FinishPendingStart(PendingStart* pending);
+  void PrepareRedirectPolicy(
+      const GURL& redirect_url, aegis_access::GenerationTuple expected,
+      base::OnceCallback<void(bool)> completion);
+  void OnRedirectCoreReady(
+      GURL redirect_url, aegis_access::GenerationTuple expected,
+      std::string expected_group, base::OnceCallback<void(bool)> completion,
+      bool ready);
+  void OnRedirectPolicyReady(
+      GURL redirect_url, aegis_access::GenerationTuple expected,
+      std::string expected_group, base::OnceCallback<void(bool)> completion,
+      bool accepted);
   void StartEvaluatedRequest(
       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
       int32_t request_id, uint32_t options,

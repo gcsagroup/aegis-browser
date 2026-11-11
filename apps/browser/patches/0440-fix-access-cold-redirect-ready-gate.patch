@@ -1,0 +1,253 @@
+From b21bdb601d46fa63a2c0a5e9f035a1d710f67a5c Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 12:29:05 +0800
+Subject: [PATCH] fix(access): await saved redirect core and private policy
+ readiness
+
+---
+ .../access_proxying_url_loader_factory.cc     | 74 +++++++++++++++++++
+ .../access_proxying_url_loader_factory.h      | 11 +++
+ .../access_proxying_url_tracked_request.cc    | 25 ++++++-
+ .../access_proxying_url_tracked_request.h     |  4 +
+ .../access_site_proxy_product_unittest.cc     | 53 +++++++++++++
+ 5 files changed, 166 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index b3e1479f0cc0be9e5979ec728cb1d549d8b92418..a702736e3766ac0c19c17653c27a9cc463c9c13e 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -1223,6 +1223,80 @@ void AccessProxyingURLLoaderFactory::FinishPendingStart(PendingStart* pending) {
+   MaybeDestroySelf();
+ }
+ 
++void AccessProxyingURLLoaderFactory::PrepareRedirectPolicy(
++    const GURL& redirect_url, aegis_access::GenerationTuple expected,
++    base::OnceCallback<void(bool)> completion) {
++  // A redirect may select a saved Website whose core was not needed for the
++  // initial native URL. Preserve the request's common generation while waiting.
++  expected.selection_generation = 0;
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto current = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
++      : std::nullopt;
++  if (!is_private_factory_ || !transport || !current || *current != expected) {
++    std::move(completion).Run(false);
++    return;
++  }
++  const auto local_group = SelectedLocalCoreGroup(redirect_url);
++  if (!local_group) {
++    std::move(completion).Run(
++        transport->HasCurrentPrivatePolicy(factory_owner_, *current));
++    return;
++  }
++  auto* controller = AccessSiteProxyBubbleController::GetOrCreate(profile_);
++  if (!controller) {
++    std::move(completion).Run(false);
++    return;
++  }
++  controller->EnsureLocalCoreForRequest(
++      factory_owner_, *local_group,
++      base::BindOnce(&AccessProxyingURLLoaderFactory::OnRedirectCoreReady,
++                     weak_factory_.GetWeakPtr(), redirect_url, expected,
++                     *local_group, std::move(completion)));
++}
++
++void AccessProxyingURLLoaderFactory::OnRedirectCoreReady(
++    GURL redirect_url, aegis_access::GenerationTuple expected,
++    std::string expected_group, base::OnceCallback<void(bool)> completion,
++    bool ready) {
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto* policy = runtime
++      ? runtime->GetPublishedPolicySnapshot(factory_owner_) : nullptr;
++  const auto current = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
++      : std::nullopt;
++  if (!ready || !transport || !policy || !current || *current != expected ||
++      SelectedLocalCoreGroup(redirect_url) != expected_group) {
++    std::move(completion).Run(false);
++    return;
++  }
++  // Existing request/control pipes can outlive factory admission. Publish on
++  // the private Context without requiring its factory admission pipe to live.
++  transport->PublishPrivatePolicy(
++      *policy, *current,
++      base::BindOnce(&AccessProxyingURLLoaderFactory::OnRedirectPolicyReady,
++                     weak_factory_.GetWeakPtr(), std::move(redirect_url),
++                     expected, std::move(expected_group),
++                     std::move(completion)));
++}
++
++void AccessProxyingURLLoaderFactory::OnRedirectPolicyReady(
++    GURL redirect_url, aegis_access::GenerationTuple expected,
++    std::string expected_group, base::OnceCallback<void(bool)> completion,
++    bool accepted) {
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto current = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
++      : std::nullopt;
++  std::move(completion).Run(
++      accepted && current && *current == expected && transport &&
++      SelectedLocalCoreGroup(redirect_url) == expected_group &&
++      transport->HasCurrentPrivatePolicy(factory_owner_, expected));
++}
++
+ void AccessProxyingURLLoaderFactory::StartEvaluatedRequest(
+     mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+     int32_t request_id, uint32_t options,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 1aa755bc26484942811a43d525f24c28bc5da577..c035247f38109fb0e463c6372f2138c333f29abd 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -150,6 +150,17 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       uint64_t expected_policy_generation, std::string expected_group, bool ready);
+   void PublishRequestPolicy(base::WeakPtr<PendingStart> pending);
+   void FinishPendingStart(PendingStart* pending);
++  void PrepareRedirectPolicy(
++      const GURL& redirect_url, aegis_access::GenerationTuple expected,
++      base::OnceCallback<void(bool)> completion);
++  void OnRedirectCoreReady(
++      GURL redirect_url, aegis_access::GenerationTuple expected,
++      std::string expected_group, base::OnceCallback<void(bool)> completion,
++      bool ready);
++  void OnRedirectPolicyReady(
++      GURL redirect_url, aegis_access::GenerationTuple expected,
++      std::string expected_group, base::OnceCallback<void(bool)> completion,
++      bool accepted);
+   void StartEvaluatedRequest(
+       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+       int32_t request_id, uint32_t options,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+index 765db57e071437e317aa1d3e146a1e0df7251acd..f49d52d65d90fa46a8a80699cf04c2e086a76df6 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+@@ -122,7 +122,8 @@ void AccessProxyingURLTrackedRequest::FollowRedirect(
+     network::HttpRequestHeadersUpdateParams headers,
+     const std::optional<GURL>& new_url) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  if (finished_ || !pending_redirect_url_.has_value() ||
++  if (finished_ || redirect_preparation_pending_ ||
++      !pending_redirect_url_.has_value() ||
+       !target_loader_.is_bound()) {
+     FailClosed(/*complete_registry=*/true);
+     return;
+@@ -135,6 +136,28 @@ void AccessProxyingURLTrackedRequest::FollowRedirect(
+     FailClosed(/*complete_registry=*/true);
+     return;
+   }
++  if (private_route_) {
++    redirect_preparation_pending_ = true;
++    factory_->PrepareRedirectPolicy(
++        follow_url, ownership_record_.generations,
++        base::BindOnce(&AccessProxyingURLTrackedRequest::OnRedirectPrepared,
++                       weak_factory_.GetWeakPtr(), std::move(headers), new_url,
++                       follow_url));
++    return;
++  }
++  OnRedirectPrepared(std::move(headers), new_url, follow_url, true);
++}
++
++void AccessProxyingURLTrackedRequest::OnRedirectPrepared(
++    network::HttpRequestHeadersUpdateParams headers,
++    std::optional<GURL> new_url, GURL follow_url, bool ready) {
++  redirect_preparation_pending_ = false;
++  if (finished_ || !ready || !pending_redirect_url_ ||
++      !target_loader_.is_bound() ||
++      (private_route_ && !private_control_.is_connected())) {
++    FailClosed(/*complete_registry=*/true);
++    return;
++  }
+   if (!RebindOwnershipForRedirect(follow_url)) {
+     FailClosed(/*complete_registry=*/ownership_registered_);
+     return;
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+index 6895d40d170921958e6785860f82f414cd56931b..0fb6d24ac6cbb3337578318c06d12e0eb5b9d886 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+@@ -81,6 +81,9 @@ class AccessProxyingURLTrackedRequest final
+   void OnComplete(const network::URLLoaderCompletionStatus& status) override;
+ 
+  private:
++  void OnRedirectPrepared(network::HttpRequestHeadersUpdateParams headers,
++                          std::optional<GURL> new_url, GURL follow_url,
++                          bool ready);
+   bool RebindOwnershipForRedirect(const GURL& follow_url);
+   void OnBindingError();
+   void OnTargetLoaderDisconnected();
+@@ -92,6 +95,7 @@ class AccessProxyingURLTrackedRequest final
+   aegis_access::RequestOwnershipRecord ownership_record_;
+   std::optional<GURL> pending_redirect_url_;
+   std::string pending_redirect_method_;
++  bool redirect_preparation_pending_ = false;
+   uint32_t hop_ = 0;
+   bool private_route_ = false;
+   bool ownership_registered_ = true;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index e5448e0716c7da0b450f579dd5a5059b76a29626..0da729a0f067f60d1a47827da999fcd1be820870 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -948,6 +948,59 @@ TEST_F(AccessRetryNavigationProductTest,
+   navigation->Commit();
+ }
+ 
++TEST_F(AccessRetryNavigationProductTest,
++       SavedWebsiteRedirectCancelledDuringCoreAckIsNotFollowed) {
++  SaveRedirectWebsiteAndStopCore();
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      GURL("https://news.example/redirect"), web_contents());
++  auto request = StartPendingNavigationRedirect(navigation.get());
++  ASSERT_TRUE(request->client.has_received_redirect());
++  context_.hold_next = true;
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return context_.has_reply() || request->client.has_received_completion();
++  }));
++  ASSERT_TRUE(context_.has_reply());
++  request->loader.reset();
++  context_.Reply(true);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return bubble_->SnapshotForCommittedUrl(
++               GURL("https://cdn.example/redirect-final")).connection ==
++           AccessSiteConnectionState::kReady;
++  }));
++  task_environment()->RunUntilIdle();
++  EXPECT_FALSE(request->target.followed);
++  EXPECT_EQ(request->target.public_follows, 0);
++}
++
++TEST_F(AccessRetryNavigationProductTest,
++       SavedWebsiteRedirectRejectsNetworkChangeDuringCoreAck) {
++  SaveRedirectWebsiteAndStopCore();
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      GURL("https://news.example/redirect"), web_contents());
++  auto request = StartPendingNavigationRedirect(navigation.get());
++  ASSERT_TRUE(request->client.has_received_redirect());
++  context_.hold_next = true;
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return context_.has_reply() || request->client.has_received_completion();
++  }));
++  ASSERT_TRUE(context_.has_reply());
++  AccessNetworkContextTransportTestPeer::AdvanceNetwork(transport_);
++  context_.Reply(true);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return request->client.has_received_completion();
++  }));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return bubble_->SnapshotForCommittedUrl(
++               GURL("https://cdn.example/redirect-final")).connection !=
++           AccessSiteConnectionState::kConnecting;
++  }));
++  EXPECT_NE(request->client.completion_status().error_code, net::OK);
++  EXPECT_FALSE(request->target.followed);
++  EXPECT_EQ(request->target.public_follows, 0);
++}
++
+ TEST_F(AccessRetryNavigationProductTest,
+        NativeRedirectSurvivesPrivateFactoryAdmissionReset) {
+   auto request = StartHeldRedirect(false);
+-- 
+2.54.0 (Apple Git-157)
+

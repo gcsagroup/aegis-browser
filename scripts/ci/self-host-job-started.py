@@ -10,26 +10,17 @@ from pathlib import Path
 # AEGIS_FORK_INTERNAL_ADMISSION
 REPOSITORY = "quinn521/aegis-browser"
 REPOSITORY_ID = 1363949860
-WORKFLOW_FILES = {
-    "quality.yml",
-    "cpp-unit-tests.yml",
-    "ios-release-validation.yml",
-    "ios-delivery.yml",
-    "ios-delivery-full.yml",
-    "ios-fork-access.yml",
-    "macos-delivery.yml",
+WORKFLOW_JOBS = {
+    "quality.yml": {"quality", "quality-summary"},
+    "cpp-unit-tests.yml": {"cpp-unit-tests"},
+    "ios-release-validation.yml": {"ios-archive", "cloud-poc"},
+    "ios-delivery.yml": {"ios-package", "store", "upload-new", "ios-draft"},
+    # This caller delegates to ios-delivery; workers execute the called job IDs.
+    "ios-delivery-full.yml": {"ios-package", "store", "upload-new", "ios-draft"},
+    "ios-fork-access.yml": {"simulator", "internal"},
+    "macos-delivery.yml": {"access-tests", "package", "internal-dmg"},
 }
-IOS_JOBS = {
-    "ios-archive",
-    "cloud-poc",
-    "ios-package",
-    "store",
-    "upload-new",
-    "ios-draft",
-}
-TEST_JOBS = {"quality", "quality-summary", "cpp-unit-tests"}
 INTERNAL_WORKFLOW_FILES = {"ios-fork-access.yml", "macos-delivery.yml"}
-INTERNAL_JOBS = {"simulator", "internal", "access-tests", "package", "internal-dmg"}
 ALLOWED_BRANCH_REFS = {"refs/heads/main", "refs/heads/develop"}
 DEVELOPMENT_REFS = ALLOWED_BRANCH_REFS | {"refs/heads/promote/ios-access-closed-loop-2cd7"}
 
@@ -57,17 +48,11 @@ def check():
         raise ValueError("unsupported event")
     workflow = os.environ.get("GITHUB_WORKFLOW_REF", "")
     file_name = workflow_file_name(workflow)
-    if file_name not in WORKFLOW_FILES:
+    if file_name not in WORKFLOW_JOBS:
         raise ValueError("unsupported test workflow")
     job = os.environ.get("GITHUB_JOB")
-    if file_name in {"quality.yml", "cpp-unit-tests.yml"}:
-        if job not in TEST_JOBS:
-            raise ValueError("unsupported test job")
-    elif file_name in INTERNAL_WORKFLOW_FILES:
-        if job not in INTERNAL_JOBS:
-            raise ValueError("unsupported internal job")
-    elif job not in IOS_JOBS:
-        raise ValueError("unsupported ios job")
+    if job not in WORKFLOW_JOBS[file_name]:
+        raise ValueError("unsupported workflow/job combination")
     payload = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
     repository = payload.get("repository", {})
     if repository_id(repository.get("id")) != REPOSITORY_ID or repository.get("full_name") != REPOSITORY:

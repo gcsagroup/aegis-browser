@@ -17,14 +17,15 @@ REPOSITORY = {'id': HOOK['REPOSITORY_ID'], 'full_name': HOOK['REPOSITORY']}
 
 class AdmissionTests(unittest.TestCase):
     def check(self, job='cpp-unit-tests', event='push', ref='refs/heads/develop',
-              repository=REPOSITORY, head=REPOSITORY):
+              repository=REPOSITORY, head=REPOSITORY,
+              workflow='cpp-unit-tests.yml'):
         with tempfile.TemporaryDirectory() as directory:
             payload = Path(directory) / 'event.json'
             payload.write_text(json.dumps({'repository': repository, 'pull_request': {
                 'head': {'repo': head}, 'base': {'ref': 'main'}}}))
             environment = {
                 'GITHUB_REPOSITORY': HOOK['REPOSITORY'], 'GITHUB_EVENT_NAME': event,
-                'GITHUB_WORKFLOW_REF': f"{HOOK['REPOSITORY']}/.github/workflows/cpp-unit-tests.yml@{ref}",
+                'GITHUB_WORKFLOW_REF': f"{HOOK['REPOSITORY']}/.github/workflows/{workflow}@{ref}",
                 'GITHUB_JOB': job, 'GITHUB_REF': ref, 'GITHUB_EVENT_PATH': str(payload),
             }
             # The host's admission marker and runner processes are outside this test.
@@ -39,7 +40,7 @@ class AdmissionTests(unittest.TestCase):
         self.check(job=jobs[0])
 
     def test_display_name_is_not_the_job_key(self):
-        with self.assertRaisesRegex(ValueError, 'unsupported test job'):
+        with self.assertRaisesRegex(ValueError, 'unsupported workflow/job combination'):
             self.check(job='c++-unit-tests')
 
     def test_trusted_pull_request_is_admitted(self):
@@ -55,6 +56,46 @@ class AdmissionTests(unittest.TestCase):
     def test_unapproved_push_branch_is_rejected(self):
         with self.assertRaisesRegex(ValueError, 'unsupported test branch'):
             self.check(ref='refs/heads/unapproved')
+
+    def test_workflow_and_job_must_be_admitted_as_one_pair(self):
+        mismatched = [
+            ('quality.yml', 'cpp-unit-tests'),
+            ('cpp-unit-tests.yml', 'quality'),
+            ('macos-delivery.yml', 'simulator'),
+            ('ios-fork-access.yml', 'access-tests'),
+            ('ios-release-validation.yml', 'store'),
+            ('ios-delivery.yml', 'ios-archive'),
+        ]
+        for workflow, job in mismatched:
+            with self.subTest(workflow=workflow, job=job):
+                with self.assertRaises(ValueError):
+                    self.check(workflow=workflow, job=job)
+
+    def test_each_supported_executing_job_keeps_its_workflow_binding(self):
+        valid = [
+            ('quality.yml', 'quality'),
+            ('quality.yml', 'quality-summary'),
+            ('cpp-unit-tests.yml', 'cpp-unit-tests'),
+            ('ios-release-validation.yml', 'ios-archive'),
+            ('ios-release-validation.yml', 'cloud-poc'),
+            ('ios-delivery.yml', 'ios-package'),
+            ('ios-delivery.yml', 'store'),
+            ('ios-delivery.yml', 'upload-new'),
+            ('ios-delivery.yml', 'ios-draft'),
+            # A reusable workflow keeps the caller ref and executing job ID.
+            ('ios-delivery-full.yml', 'ios-package'),
+            ('ios-delivery-full.yml', 'store'),
+            ('ios-delivery-full.yml', 'upload-new'),
+            ('ios-delivery-full.yml', 'ios-draft'),
+            ('ios-fork-access.yml', 'simulator'),
+            ('ios-fork-access.yml', 'internal'),
+            ('macos-delivery.yml', 'access-tests'),
+            ('macos-delivery.yml', 'package'),
+            ('macos-delivery.yml', 'internal-dmg'),
+        ]
+        for workflow, job in valid:
+            with self.subTest(workflow=workflow, job=job):
+                self.check(workflow=workflow, job=job)
 
 
 if __name__ == '__main__':

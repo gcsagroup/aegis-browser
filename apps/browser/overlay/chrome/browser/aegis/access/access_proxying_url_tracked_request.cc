@@ -122,7 +122,8 @@ void AccessProxyingURLTrackedRequest::FollowRedirect(
     network::HttpRequestHeadersUpdateParams headers,
     const std::optional<GURL>& new_url) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (finished_ || !pending_redirect_url_.has_value() ||
+  if (finished_ || redirect_preparation_pending_ ||
+      !pending_redirect_url_.has_value() ||
       !target_loader_.is_bound()) {
     FailClosed(/*complete_registry=*/true);
     return;
@@ -132,6 +133,28 @@ void AccessProxyingURLTrackedRequest::FollowRedirect(
   if (private_route_ && (!private_control_.is_connected() ||
       !url::Origin::Create(follow_url).IsSameOriginWith(
           url::Origin::Create(*pending_redirect_url_)))) {
+    FailClosed(/*complete_registry=*/true);
+    return;
+  }
+  if (private_route_) {
+    redirect_preparation_pending_ = true;
+    factory_->PrepareRedirectPolicy(
+        follow_url, ownership_record_.generations,
+        base::BindOnce(&AccessProxyingURLTrackedRequest::OnRedirectPrepared,
+                       weak_factory_.GetWeakPtr(), std::move(headers), new_url,
+                       follow_url));
+    return;
+  }
+  OnRedirectPrepared(std::move(headers), new_url, follow_url, true);
+}
+
+void AccessProxyingURLTrackedRequest::OnRedirectPrepared(
+    network::HttpRequestHeadersUpdateParams headers,
+    std::optional<GURL> new_url, GURL follow_url, bool ready) {
+  redirect_preparation_pending_ = false;
+  if (finished_ || !ready || !pending_redirect_url_ ||
+      !target_loader_.is_bound() ||
+      (private_route_ && !private_control_.is_connected())) {
     FailClosed(/*complete_registry=*/true);
     return;
   }

@@ -434,3 +434,7 @@
 0434-fix-access-inflight-factory-reset.patch
 0435-test-access-browser-redirect-debug-isolation.patch
 0436-fix-access-browser-redirect-debug-isolation.patch
+0437-test-access-failed-redirect-site.patch
+0438-fix-access-retry-site-cold-redirect-regression.patch
+0439-fix-access-redirect-regression-navigation-handle.patch
+0440-fix-access-cold-redirect-ready-gate.patch

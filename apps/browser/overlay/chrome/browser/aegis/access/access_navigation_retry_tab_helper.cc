@@ -76,7 +76,8 @@ bool AccessNavigationRetryTabHelper::RequestProxyRetry(
   proxy_preparation_pending_ = true;
   const int entry_id =
       web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID();
-  proxy_retry_handler_.Run(ticket->original_url, base::BindOnce(
+  // Grant the failed destination; OnRouteReady still reloads the original URL.
+  proxy_retry_handler_.Run(ticket->failed_url, base::BindOnce(
       &AccessNavigationRetryTabHelper::OnProxyPrepared, weak_factory_.GetWeakPtr(),
       *ticket, entry_id, std::move(completion)));
   return true;

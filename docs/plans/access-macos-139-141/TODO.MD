@@ -1,4 +1,4 @@
-> **当前已按用户指令恢复：优先推进第2项边界验收；100站作为来源库分5组、每组20站，每轮只选一组做smoke。此前Computer Use网址限制保留。最终将#97拆为iOS/macOS独立PR并更新对应issue。**
+> **当前内置审查R7提出3项P2，已逐项复现并完成本地修复；Native440完整Chrome/15目标320项实际PASS，等待新提交本地完整quality、fresh复审和新head托管CI。PR145当前仍为61e；真实GUI为合并前置，Computer Use限制未解除；smoke已取消。iOS由独立窗口继续，不覆盖其工作。**
 
 # Aegis macOS Access #139/#140/#141 — SDD Implementation Plan / TODO
 
@@ -12,7 +12,7 @@
 
 **Spec:** [阶段一验收清单](../access-product-phase1-acceptance.zh-CN.md)、[功能拆分](../access-product-phase1-feat-split.zh-CN.md)、[本站意图 API](../macos-access-site-intent-api-NOTES.md)，以及本聊天已授权的请求隔离、持久恢复和原标签页重试要求。本文不将旧文档的历史状态当作当前证据；冲突时沿用当前任务授权和当前 AGENTS.md。
 
-**最新快照：** 2026-11-11 09:19 Asia/Shanghai。Native436/9f316355完整chrome/15目标316 SUCCESS零skip、GN/精确tree回放PASS；r5两个P2实现修复。Mac c755质量首轮Node预检FAIL，固定工具链后因435/436索引缩写FAIL；已按完整blob索引重导出，现有4项校验及精确回放PASS，Native输入/产物未变。新交付候选fullquality/fresh复审尚未通过；GUI/单组smoke及两Draft PR/issue仍开放。
+**最新快照：** 2026-11-11 12:46 Asia/Shanghai。原发布H61e的完整CI/C++/Codacy PASS保留；用户请求的fresh内置R7实质审查发现重定向授权目标、重定向冷启动核心/ACK及workflow/job准入3项P2。均已复现，本地修复后的Native440/b21bdb60完整Chrome/15目标320项实际SUCCESS零skip、3 owning GN/437–440逐段完整index回放/117overlay绑定PASS；准入离线7项（6负例/18合法执行组合）PASS，无hosthook部署。当前本地源码候选将绑定review-r7-macos-fix-candidate.json；新quality/fresh复审/发布及新head CI待完成。当前版本GUI仍未验收；旧419 GUI/436离线包只保留原范围。smoke无需再做，任务未完成。
 
 ## 1. 状态与证据规则
 
@@ -20,13 +20,13 @@
 - `[ ]` 表示未完成、部分实现、运行中或未验收；具体状态写在条目中。
 - `PASS` 必须附候选身份、执行范围和原始结果；编译、隔离测试、完整原生测试、真实浏览器、独立审查分别记录。
 - `${TASK_ARTIFACTS}` 指本任务既有 `access-macos-139-141` 证据根目录；物理绑定见本地 `progress.json`。本文件仅引用脱敏文件名，不记录节点凭据。
-- `progress.json` 中 `verified`、`pendingSource` 和 `nextSteps` 含历史快照；读者应结合最新 `lastHourlyRound`、0375/0376 条目和原始 receipt，不能照抄旧的 pending 状态。
+- progress.json的verified/pendingSource/nextSteps保留历史；当前以lastHourlyRound、currentRemaining、activeExecution、currentBuiltInReview及原始receipt为准，不照抄旧pending/Draft/自动review状态。
 
 ## 2. 约束与完成定义
 
 - 单一实现负责人；保留其他窗口工作、旧 P01/T90 暂停边界与失败记录。
 - 原生构建累计 48 小时、100 GiB；继续使用 `resource-budget.json` 的 `startedEpoch=1794254695.128022`，不重置、不重复申请。
-- 该预算的时间截止为 **2026-11-12 04:04:55 Asia/Shanghai**；2026-11-11 04:00 快照剩余约 **24.0 小时**。以账本及守护程序为准，不能将一周开发目标理解为额外构建授权。
+- 该预算的时间截止为 **2026-11-12 04:04:55 Asia/Shanghai**；2026-11-11 11:07 快照剩余约 **16.95 小时**，累计计入 **60.23 GiB**（含本轮离线运行包）。以原始账本及守护程序为准，不能将一周开发目标理解为额外构建授权。
 - 最近已封存实际GUI证据的历史生产候选0419（79eec0e7）：完整chrome/13正式目标263项PASS零skip；核心主流程和恢复/隔离实际CUA证据已封存PASS。0420–0425仅测试/BUILD变更，11项新边界已PASS，5项生产二进制与0419相同；GUI证据只按原范围复用。405为历史旧节点基线，当前单组smoke为PARTIAL。
 - 当前受管产品执行先覆盖 HTTP 本机入站；SOCKS5 未产品验收，不能因独立核心测试通过而标成完成。
 - 使用用户新提供并指定为Alpha内置测试的节点；私有引用见本地alpha-test-node-binding.json。旧V2Ray节点配置及证据保留，不自动回退或转移验收；凭据不进入文档、日志、补丁或PR。
@@ -37,13 +37,13 @@
 
 | ID | 必须满足的行为 / 不变量 | 实现任务 | 验收条件 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| R1 | Browser 私有权限不可由 renderer 字段伪造；保留原工厂安全参数 | T1 | 私有工厂接通；来源锁、非可信 TrustedParams、失效归属拒绝且零发送 | 0419 Browser终端/可信归属已连接；13目标263项正式原生测试PASS，真实普通/私密路径已验证；最终审查仍缺 |
+| R1 | Browser 私有权限不可由 renderer 字段伪造；保留原工厂安全参数 | T1 | 私有工厂接通；来源锁、非可信 TrustedParams、失效归属拒绝且零发送 | 当前Native436正式15目标316项PASS、Mac61e源码fresh r6 PASS；历史0419普通/私密实际路径证据保留，当前GUI/最终产品退出仍缺 |
 | R2 | 每跳独立决定 native / proxy / reject；预检、连接池、认证和缓存不串用 | T1、T2 | 导航/子资源/重定向按当前策略；无 DIRECT 降级、旧代际复用或共享代理授权 | 私有factory/wire/CORS回归PASS；0419网站根域/www/CDN实际代理及独立CDN原生隔离有证据；100站仅部分，不扩称全协议验收 |
 | R3 | NetworkContext 完整快照安装及精确 ACK；恢复期间先阻断再发送 | T2 | 重启/断连/乱序 ACK 不放行；新 incarnation 完整恢复后才发送 | 0419实际新Network进程暂停时已开气泡保持ALLOW但unavailable；恢复ACK后原页代理/ready，修复已实测PASS |
 | R4 | 真实内核启动、认证入站和指定目标路径均就绪后才显示可用 | T3 | 启动失败、错凭据、进程退出均 fail-closed；实际目标经授权出口 | 0419实际Alpha内置/完整ACK/加载及退出恢复PASS；0425对应core10含6项故障与取消/25秒超时PASS；占端口与更多GUI故障范围仍未全验 |
 | R5 | 普通 Profile 持久恢复；私密 Profile 不落盘且相互隔离 | T4 | 重启恢复已提交意图；损坏/未提交事务不误放行；首次请求不抢跑 | 0417迁移保留旧精确grant；0419普通冷启动/私密清理重开PASS；0425原生store43/async5及新Open失败/持久提交失败回滚恢复联合用例PASS，GUI故障范围另列 |
 | R6 | 真实 ready 后，仅原失败标签页、原导航最多自动重试一次 | T5 | 新导航、关闭、停止、POST/TLS 错误均不误重试 | 0419受控DNS及自然Pinterest一次Retry原页加载PASS；helper15及0425新4项导航/持久提交联合用例PASS；实际GUI取消竞态仍缺 |
-| R7 | 实际 macOS 浏览器完成开启→指定出口→故障→恢复→关闭 | T6、T7 | 同候选日志、关联 ID、界面证据与最终独立审查闭环 | 0419核心主流程/五步/普通和私密/Network故障PASS；100站20自然尝试、10最终页面观察、80未运行，CUA网址策略中止；最终审查未运行 |
+| R7 | 实际 macOS 浏览器完成开启→指定出口→故障→恢复→关闭 | T6、T7 | 同候选日志、关联 ID、界面证据与最终独立审查闭环 | 0419实际主流程/恢复/隔离仅历史PASS；Mac61e源码r6通过，当前436实际GUI/边界与最终产品门仍未闭环。用户取消后续站点smoke；既有PARTIAL/NOT_RUN保留 |
 
 ### 审查与测试重点
 
@@ -153,13 +153,14 @@
 ### T6 — 最终候选构建与真实浏览器验收（P0；依赖 T1–T5；R7）
 
 - [x] 0370 `chrome` 全构建于 2026-11-10 13:40 Asia/Shanghai PASS（16442 个 action），`native-chrome-370-build-result.json` 的 `inputsUnchanged=true`；该候选不包括后续私有通道。已复用原对象，不重复启动该构建。
-- [ ] 对最终 overlay/补丁做完整有序回放、源码一致性和 GN 检查；尤其核验 0376 `url_loader_base` 的 Mojo 依赖，不能以手工生成成功替代。
+- [x] 当前Native436/9f316355与Mac61e的117变更overlay逐字节一致；有序回放前缀和435–436完整index精确tree回放、3个owning GN检查PASS。证据为native436-platform-all-overlay-binding-v8.json、boundary-435-436-replay-result.json及boundary-436-gn-check-result.json；当前GUI另列。
 - [x] 0419/79eec0e7完整chrome及13目标构建PASS，inputs/externalInputs稳定；native-network-ready-419-build-result.json完整sourceInputs哈希、GN args及cua-main-flow-419-identity.json二进制身份。
-- [ ] 跑最终候选的相关单元/回归/浏览器测试和仓库必要质量门；变更 ABI 时重编译头文件消费者，避免旧对象产生假结果。
+- [x] 当前Native436完整chrome/15正式owning目标重建及316项原生单元/回归/Browser产品联合测试实际SUCCESS零skip；不是按exe相同迁移共享库测试。Mac61e完整localquality-r8/sourceStable/public-export PASS。boundary-436-validation-receipt.json和pr97-both-platform-local-quality-v9-result.json绑定范围；实际GUI及最终适用托管门另列未完成。
 - [x] 0419同候选实际Alpha内置授权节点完成开启/绑定核心代理加载/仅停自有核心/新请求新核心恢复/OFF回原生五步；cua-main-flow-419-pass-receipt.json。
+- [x] Native436离线运行产物准备：按当前GN runtime_deps封存5,664文件/10链接，523个dylib含根组件库517；五个生产二进制、两套当前resources.pak及三份Alpha资源匹配，独立inode并移除写位。551个Mach-O/30,845条bundled依赖的含LC_RPATH静态目标检查PASS。native436-offline-runtime-binding-receipt.json及完整文件哈希清单绑定Mac61e/Native9f；仅文件/静态准备，不是加载、签名、ready或GUI验收。
 - [ ] 同候选补验 HTTPS、CORS/预检、导航/子资源、跨域跳转、Profile 隔离、普通 Profile 重启恢复、安全防护不解除及原标签页重试。
-- [x] 用户新策略：100站来源库固定分5组×20，每轮只跑一组smoke；smoke-group-strategy.json验证100个唯一ID、每组20、maxGroupsPerRun=1。这仅是分组配置PASS。
-- [ ] 本轮单组smoke完成门：默认group1，已有20站自然导航尝试、10站最终代理页面观察、11站主文档代理证据（第17站缺最终UI），仍PARTIAL；partial-run-sealed.json保留。其余80站NOT_RUN且不自动在本轮补跑。Computer Use当前网址策略仍有效、未披露禁用URL；不推断某域、不重置/换浏览器/换工具绕过。
+- [x] 历史分组配置已验证：smoke-group-strategy.json包含100个唯一ID、5组×20；仅配置PASS。后续执行要求已被本轮用户取消，原来源库/配置保留。
+- 站点smoke：`NOT_REQUIRED_BY_USER`（2026-11-11 11:26），不再作为本任务退出门，不再运行任何分组。smoke-scope-retirement-20261111.json记录范围变更；旧group1的20自然尝试/10最终UI/11主文档证据仍PARTIAL，其他80站仍NOT_RUN，均未提升为PASS。原Computer Use限制继续适用于剩余GUI验收。
 - [x] 核心主流程的29项原始UI、5张截图、浏览器/核心SHA/子PID/端点/主文档路由及私有日志哈希已封存cua-main-flow-419-pass-receipt.json；百站部分证据另封存，不扩大通过范围。
 - [x] 0419明确OFF后原失败URL走DIRECT并DNS失败；核心故障前/新请求恢复的business控制器均代理、端口变化，无故障降级DIRECT；无关百度原生可达单独记录。
 - [ ] 管理页与 DEV 面板按阶段一 B1 单独核验：若未交付，保留缺口，不能宣称完整阶段一退出；SOCKS5 产品路径仍单列 PARTIAL/NOT_RUN。
@@ -168,9 +169,18 @@
 
 - [ ] 汇总并修复功能/测试/真实验收发现的问题；修复影响的证据必须在最终候选重跑。
 - [ ] 最新用户 AGENTS 恢复最终交接前的 fresh read-only built-in codex review；在相关验证、真实浏览器验收和修复后，对最终候选明确范围与哈希，在新进程执行；修复后重新审查。历史取消规则保留为已被替代的历史，不作为当前流程。
-- [ ] 记录实际PR自动审查结果，缺失/失败不算通过；Auto-review操作权限单独处理。用户后续已授权本范围PR代码/说明更新，0948检查点已交付，Alpha/Website后续候选尚未更新；仍无评论、合并、签名或发行授权。
-- [x] 证据范围分别记录；0419原生/核心实际验收PASS，百站PARTIAL_POLICY_STOP，最终独立审查/后续PR自动审查/签名发行保持NOT_RUN或原FAIL，不相互替代。
-- [ ] 最终准备iOS #135–#138、macOS #139–#141两份独立PR并更新共同#98及对应issue，绑定各自候选/依赖/证据；未完成项不关闭。仅在本范围验收、审查及适用交付门闭环后停用小时循环；保留无独立评论、合并、签名或发布限制。
+- [ ] 当前用户请求的内置Review和Astra/Max拆分完整性审计须读取实质终态并按发现修复；自动PR Code Review已实际触发，但因usage limits失败，记录服务门未完成，不冒充代码结论。最新本地审计结果与GitHub自动审查结果分别记账。
+- [x] 分范围记证据：Native436316项/完整构建、Mac61e本地quality-r8/历史fresh r6及当前H/M完整托管CI/C++/Codacy已PASS；当前用户请求的内置Review/新AstraMax拆分审计RUNNING；当前GUI仍NOT_RUN_POLICY_BLOCK；自动PR review为FAILED_USAGE_LIMIT，smoke为NOT_REQUIRED_BY_USER。MAC PR的无凭据iOS CI archive不等于iOS146产品/设备/Beta通过。
+- [x] 已创建macOS Draft [#145](https://github.com/gcsagroup/aegis-browser/pull/145)和iOS Draft [#146](https://github.com/gcsagroup/aegis-browser/pull/146)，并更新#97/#98/#135–#141正文managed块；原正文、勾选项、状态和#97头保留，逐项API返回内容已核验（pr97-platform-draft-pr-creation-v8.json、platform-issue-*-split-body-write-v8.json、platform-pr-97-split-body-write-v8.json）。只表示创建/正文交付，不表示两个PR已验收。
+- [x] 历史源码r6在H61e对当时12项finding给出PASS，记录保留；用户后续R7在同H新发现3项P2并由RED回归确认，旧PASS不覆盖新发现。当前本地修复候选仍须新的独立复审。
+- [ ] 完成本范围当前候选真实主流程、GUI取消/故障边界及修复后的最终适用审查门；当前H完整托管CI/C++已实际通过，源码改变后重绑受影响门。smoke已取消。用户要求的两份本地审计各自取实际结论，自动PR审查额度失败单列。仅所有适用退出证据闭环后停用循环，iOS/签名发行独立范围不外推。
+
+- [x] #145 Ready后精确H61e/M835完整托管CI含quality/quality-gate、C++、macOS合同、iOS无凭据合同/archive及Codacy实际SUCCESS；pr145-ready-hosted-validation-receipt.json及raw日志/质量ZIP/report.json核验，原Draft SKIPPED保留。仅托管源码门，不是当前GUI或iOS146设备验收。
+- [x] 用户要求的当前内置R7已实质完成：Astra/xhigh/read-only/never对H61e完整diff提出3项P2，pr145-current-builtin-review-r1-assessment.json，非PASS。独立复现及本地修复见下条，新的最终候选须fresh复审。
+- [x] 新Astra/Max窗口完成原冻结拆分覆盖审计及iOS d946补审：freeze-20261111T1141-TJV4TU6o/30-冻结审计报告.md和31-d946-补充审计.md。原97文件/hunk/链接覆盖未发现拆分遗漏；iOS源码有独立未修finding/归档失败，不能宣称产品收敛。后续iOS由该窗口在隔离树推进；本窗口只修MAC并保留其并发工作。
+
+- [x] R7F1/R7F2/R7F3本地修复和相关回归：失败页准备failed_url、原original_url仅一次重载；重定向选择已保存代理时等待真实core及当前ACK，并保持请求代际/取消/存活私有control约束；准入绑定每个workflow的执行job集合。Native440 320项/15目标、GN3与准入7项PASS；review-r7-440-native-validation-receipt.json、review-r7-f3-admission-green-receipt.json。不把此勾选当最终独立审查/GUI通过。
+- [ ] 新MAC源码提交、exact-head full local quality/public-export、含3项R7处置的fresh只读built-in复审和新head托管CI；只在当前候选证据闭环后普通push/更新PR，旧61e绿灯不能替代新head。
 
 ## 6. 一周目标与关键路径
 
@@ -185,6 +195,9 @@
 **资源风险：** 当前构建预算先于一周目标到期。到限必须停止相关资源消耗，并记录已完成对象、所缺目标/测试、预计新增资源；不自动续期。尚未完成的源码工作不因构建到限而被标成通过。
 
 每小时至少推进一个可核验实现、受影响测试、有效构建或真实验收/修复对象。不得只复制构建进度。建议顺序为 T1 → T2 → T3/T4 → T5 → T6 → T7；没有第二个实现负责人。
+
+
+
 
 ## 7. 历史候选及逐轮记录（当前以首部和末条为准）
 
@@ -680,3 +693,62 @@
 - `pr97-macos-v7-quality-preflight-failure.json`保留首轮：调用漏固定PATH，Node26.4不符22.23.1，在测试启动/输入指纹前停止。已仅对子进程使用既有Node22.23.1/pnpm9.15.0/Python3.11.9，未改全局环境或CI基础设施。
 - 固定工具链的`pr97-macos-split-quality-full-r7-r2-launch.json`sourceStable=true但quality:fast FAIL：merged-main补丁验收要求完整40位最终blob，435/436导出漏full-index。原两份缩写补丁与原始失败报告保留，验收器未修改。现在从相同Native435/436提交重导出`--full-index --binary`；`review-r5-full-index-merged-main-check.log`4项现有校验PASS，`boundary-435-436-full-index-replay-result.json`逐段精确tree PASS。
 - 只是补丁索引/交付文档修正，Native436源码/二进制完全未变，316实际测试与117overlay绑定有效，不重复编译或测试。新的241路径平台候选需新head fullquality和fresh复审；原v7质量FAIL不改为PASS。
+
+### 2026-11-11 09:24 — v8最终质量PASS，fresh复审r6启动
+
+- Mac61e635eb37582c89c0ce83b663be917e680766ed/treeb5dc2e2e（241路径）`pr97-macos-split-quality-full-r8-launch.json`完整localquality PASS、base/tested SHA正确、sourceStable/public-export通过；iOS81ff q-r2复用，汇总`pr97-both-platform-local-quality-v8-result.json`。前两次Node预检/补丁格式FAIL原样保留，不覆盖。
+- `pr97-platform-split-integrity-v8.json`保留407原路径、最新六iOS文件及双方61基础检查，合成merge无冲突；`native436-platform-all-overlay-binding-v8.json`117overlay绑定Native436，316实际测试有效。`pr97-platform-private-source-scan-v8.json`455个最终不可变源码blob对4个真实私有字段匹配为零；此为特定凭据检查，不是通用安全审查。
+- 唯一fresh内置复审`pr97-platform-final-rereview-r6-launch.json`审最终Mac完整diff/原12finding及iOS拆分交互窄范围，Astra/xhigh/read-only；当前RUNNING，候选clean且冻结。PR正文/8issue managed块已更新到最新候选待实际verdict，仍NOT_SENT。下一项评估r6并修复/复审，或通过后核最新remote并交付授权两Draft PR及issue。
+
+### 2026-11-11 09:49 — 两Draft及9个正文交付，修复托管iOS拆分依赖
+
+- 已普通atomic push两个新codex分支，无强推/改写旧97：macOS[#145](https://github.com/gcsagroup/aegis-browser/pull/145) head61e635eb37582c89c0ce83b663be917e680766ed，iOS[#146](https://github.com/gcsagroup/aegis-browser/pull/146)当前head81ff51c2f174838555c9850ea2d18603adcfa8af；共同base a34c412，fresh读取两PR都open/draft/mergeable。`pr97-platform-draft-pr-creation-v8.json`及各写回执封存。#98/#135–#141与#97正文共9次body-only更新已核验实际返回，原勾选/state/97head4a658保留；无额外评论/自动关闭。
+- `pr97-split-hosted-exacthead-initial-v8.json`：macOS Delivery contracts run42939792679SUCCESS、两平台Secret ScanningSUCCESS；Draft CI/C++/iOSRelease任务SKIPPED不能当PASS；两PR无自动review/thread记录，NOT_RUN而非通过。
+- iOS Fork Access run42939834266/job130258738507在merge908428a8（head81ff/basea34）实际Node证据7项SUCCESS，随后误调用已拆至macOS的`test_macos_dmg.py`而ModuleNotFoundError FAIL，原日志/steps/候选身份保存于`ios-fork-access-run17-failure-assessment.json`。这是workflow代码依赖，不是runner基础设施；Simulator/internal archive均SKIPPED，没有恢复暂停。
+- 本地iOSfbfb49241aa06b6e45bb6525b8fee9264d3c97db只删`.github/workflows/ios-fork-access.yml`那一条macOS测试调用；其macOS owning命令在61e/macOS Delivery保留且托管PASS。`ios-fork-selector-fix-focused-result.json`执行YAML提取的实际contracts步骤和现有workflow guard全PASS，无新增低影响重复测试/依赖/runner/权限改动。`pr97-ios-split-quality-full-r3-launch.json`新head完整quality RUNNING，fresh窄审尚NOT_RUN；修复未push，不提升托管结果。
+- Mac61e/Native436及全部316证据不受此一行iOS workflow改变影响，无活动原生build/test、不重复。下一项完成iOS新head质量/只读窄审，普通更新#146并观测实际托管复验，刷新各managed块当前SHA；当前MACGUI/取消/单组smoke策略缺口仍开放。
+
+### 2026-11-11 10:13 — 最终双PR/issue交付及托管合同修复闭环，产品门仍开放
+
+- `pr97-platform-external-delivery-v10.json`绑定共同base a34c412158ff95a689dd810ae624119b3f2b279b、macOS[#145](https://github.com/gcsagroup/aegis-browser/pull/145) 61e635eb37582c89c0ce83b663be917e680766ed/treeb5dc2e2e、iOS[#146](https://github.com/gcsagroup/aegis-browser/pull/146) fbfb49241aa06b6e45bb6525b8fee9264d3c97db/tree889a415a。两新分支普通push/fastforward，无强推；#97历史仍open/head4a658。#98/#135–#141、#97及两新PR最终正文共11次body-only更新逐项核验，原勾选/state/并发内容保留，两新PR保持Draft。
+- Mac Native9f316355/完整chrome+15正式目标316项实际SUCCESS零skip、GN/完整索引精确回放、117overlay逐字节绑定、fullquality-r8和完整源码fresh r6 PASS有效；iOS仅workflow单行修复，未改Swift/runtime或恢复设备/Beta。`pr97-both-platform-local-quality-v9-result.json`为两最终head本地完整门，`pr97-platform-split-integrity-v9.json`保留407原路径/最新六iOS文件/双方61基础检查、合成源树无冲突；不是实际merge。
+- `pr97-ios-fork-selector-final-review-r1-assessment.json`为Astra/high/read-only实际窄审PASS，旧r6对未变拆分scope复用；完整iOS产品实现审查仍独立。`ios-fork-access-run18-validation-receipt.json`实际托管run42942020925/job130265839500、mergec426c090（headfbfb/basea34）Node7SUCCESS，Simulator/archiveSKIPPED；Secret Scanning42942020909SUCCESS。旧run17的Python跨平台依赖FAIL和全原始日志保留。Mac合同42939792679/Secret Scanning42939792725均SUCCESS；全Draft CI/C++/release-validationSKIPPED、自动PRreview/thread为空，未提升PASS。
+- `pr97-platform-private-source-scan-v9.json`复用454个未变blob并检查唯一删除命令的workflow，完整455源码范围私有字段为零；`pr97-platform-final-body-prewrite-scan-v10.json`检查11个最终外部正文无真实节点字段。没有URI/UUID/密钥/完整配置进入Git或PR。`pr97-split-final-resource-and-owner-check.json`确认无活动task native/runtime PID、无build/quality/review锁，原五个release来源文件哈希完全未变；root TODO/P01/T90/原V2Ray未动。
+- 原资源起点1794254695.128022和48h/100GiB未变，`resource-observation-20261111-final-pr-split.json`观察累计58.88GiB、时间剩余约17.95小时，硬截止2026-11-12 04:04:55 Asia/Shanghai；不自动续期。Native436不重复构建/测试。校验树已恢复macOS61e且clean，iOSfbfb分支和证据保留。
+- **未闭环/下一项：** 仅在Computer Use政策允许恢复后，将实际App/全部共享库/私有Alpha资源绑定Native436，进行真实Aegis原失败页→真实ready→原标签原URL一次重试、GUI取消/换站/Stop及故障边界和最多一组20站smoke；419旧GUI不迁移。再按实际发现修复、受影响验证及最终适用fresh/PR自动审查门收口。禁止重试未知被禁URL、重置/另开Browser或换工具绕过。iOS完整产品/设备和签名发行保持独立范围。小时循环ACTIVE，产品退出条件未满足，不能标完成/删除。
+
+
+### 2026-11-11 11:15 — Native436离线运行包封存，实际浏览器门仍开放
+
+- **候选及复用：** Mac61e635eb37582c89c0ce83b663be917e680766ed/treeb5dc2e2e、Native9f3163555ceac3f81d50ecc35c2ed4b65d7a543a不变；iOSfbfb4924及两Draft PR/issue正文未改。原316项/15目标、完整quality及fresh源码审查复用，没有重复构建、原生测试或审查，也未改变Native输入。
+- **实际推进/PASS：** native436-offline-runtime-gn-deps-query.json记录GN实际8,938条运行依赖，当前输出复制到私有offline-runtimes/native436-61e635eb；独立COW inode封存5,664常规文件、10链接、1,423,158,280逻辑字节，保留523个dylib（根组件517），三份Alpha资源与授权私有pin匹配，双Framework资源包等于本轮gen/repack。native436-offline-runtime-file-manifest.json完整清单SHA256=c096c3ae1d2d5831e4ba96d4f580a74cacceaae8865ab31e35d601d0ef27da23；native436-offline-runtime-binding-receipt.json汇总源/目的哈希和范围。
+- **静态检查/PASS及失败保留：** otool只读文件描述符检查551个Mach-O、30,845条非系统加载目标，结合实际LC_RPATH后未解析目标为0；native436-offline-runtime-static-links.json仅证明静态目标可用，不证明dyld执行/签名/产品。首次装配因链接检查顺序FAIL，复用已复制字节后修复；otool括号文件名解析FAIL改用只读FD；首次依赖检查遗漏LC_RPATH，将已存在的8条Aperitif引用误报缺失。原失败和错误诊断原样保留，native436-offline-runtime-missing-library-correction.json明确将缺库诊断INVALID；未增加、删除或替换运行库来掩盖检查器问题。
+- **预算/资源：** resource-observation-20261111-offline436.json记录原起点1794254695.128022、48h/100GiB未变，计入64,666,951,680字节（60.23GiB），当时剩余61,020秒；硬截止2026-11-12 04:04:55 Asia/Shanghai。无活动native build/test/review/runtime锁；未启动App/core、CUA、网络探测、签名或发行；旧419运行目录及其他owner/P01/T90保留。
+- **NOT_RUN/下一项：** 本轮只关闭当前运行产物准备前置项。仅在Computer Use政策允许后，先复核封存清单及实际App路径/PID，再做同436原失败页→真实ready→原标签原URL一次重试、GUI取消/换站/Stop和故障边界，以及最多一组20站smoke；不重试未知禁用URL、不重置/另开Browser或换工具绕过，不将419历史GUI或静态检查迁移为当前PASS。修复后按受影响范围验证及最终适用fresh/PR自动审查收口。源码/双PR交付完成与产品验收未完成分别记账，小时循环保持ACTIVE。
+
+
+### 2026-11-11 11:26 — 用户取消后续站点smoke，保留实际产品及PR退出门
+
+- **授权变更：** 用户明确“smoke不用再做”。100站/5组来源库和所有失败、INVALID、PARTIAL/NOT_RUN证据保留；取消后续单组20站及其他分组执行和本任务smoke退出要求，状态为NOT_REQUIRED_BY_USER，不记作PASS。smoke-scope-retirement-20261111.json记录范围/原候选/原始证据，原进度快照另存progress-before-smoke-retirement-20261111.json。
+- **当前仍缺：** （1）Mac61e/Native436实际Aegis原连接失败→点击Retry→真实owned core/认证目标探测、当前快照精确ACK及持久提交就绪→原标签原URL最多一次重试；同候选普通Profile冷启动恢复及Website/CDN和Profile/私密隔离。（2）实际GUI换站/关闭/Stop与晚ready/ACK竞态、内核故障不DIRECT降级/恢复/OFF及POST/TLS不误重放。（3）适用完整托管CI/C++和自动PR审查的实际结果、验收发现问题的修复/受影响验证与最终适用复审；未变源码r6继续有效，不重复制造审查。
+- **阻断与边界：** Computer Use此前拒绝当前URL且未披露地址，限制未解除；取消smoke并不解除限制，未启动App/core/CUA、网络探测或替代工具。管理页/DEV完整阶段一、SOCKS5和iOS完整产品/设备/签名发行的独立缺口保留，不从本次收窄自动宣称完成。既有48h/100GiB起点与截止不变，root TODO、暂停P01/T90和其他owner工作不改。
+- **本轮结果与下一项：** 仅用户授权的计划/账本/原小时循环配置更新及聚焦一致性检查，无源码/Native输入/PR代码变更，没有重复构建、测试或旧正文写入。循环ACTIVE；只在政策允许时续当前436真实主流程和边界验收，按发现修复后完成适用PR检查/审查。本任务尚未完成。
+
+
+### 2026-11-11 11:58 — Ready授权、精确候选托管CI闭环；当前内置Review及独立拆分审计
+
+- **用户新授权及实际动作：** 用户选择先转Ready跑检查，真实GUI保留为合并前置；pr145-ready-approval-and-preflight-20261111.json核当前Mac61e/basea34和干净工作树及本地门后，于11:39实际Ready。pr145-ready-transition-result-20261111.json记录响应；无代码/Native输入、评论、merge、签名或发行操作。
+- **精确托管验证/PASS：** pr145-ready-hosted-validation-receipt.json及raw-evidence核H61e/Ba34/M835双亲和实际checkout日志；full CI42954179085 quality/quality-gate、C++42954178983、macOS合同42954179077、iOS Release Validation42954179182全部SUCCESS，Codacy check130259066142在同H SUCCESS。质量artifact13826855779 ZIP SHA256=9b29c5efb4c74d410fe36617ecc3d3ed3e267275545596628480046e25f541c5，report.json为full/PASS/sourceStable=true、2786输入输出摘要一致。MAC PR的无凭据iOS archive成功只绑定本H/M，不属于最新iOS146设备/Beta结果；DMG/cloud-poc等SKIPPED不提升。
+- **自动审查实际FAIL及本地新请求：** Codex在Ready自动触发，但PR145 issuecomment6786310272/6786310659说明code-review usage limits用尽，未产出代码结论；summary通用finding flags不当作具体bug。未购买credits、改账号或发独立评论重试。用户指定使用当前内置Review后，fresh codex review已实际按Astra/xhigh/read-only/never运行，完整B..H候选及需求/设计/原始证据已给定、不传实施聊天，见pr145-current-builtin-review-r1-launch.json；当前RUNNING，不记PASS。
+- **用户另开窗口：** 以gpt-6-astra/max创建只读拆分审计聊天01a1c8b2-1404-7da1-a96b-2f12f25cbc76并已观察active；其检查#97到#145/#146覆盖、共用依赖和证据边界，产物只入split-audit-astra-max/，实现仍归本窗口。见pr97-split-astra-max-audit-thread-launch.json；中间观察不是最终finding。
+- **外部正文同步及并发保护：** 已先后对#145/#97/#98/#139–141各6处body-only更新smoke撤销和Ready/实际CI/额度失败，响应和独立读回证据见pr145-smoke-retirement-external-readback.json、pr145-ready-ci-status-external-body-write-result.json；原正文/checklist/state保留，#97仍open/head4a658，不改iOS146。已观察iOS由其他owner推进b112（相对fbfb22路径），不覆盖、不把fbfb旧质量/测试提升为新headPASS。
+- **未完成与下一项：** 当前内置审查及另窗口拆分审计各自收取实际终态，有实际问题再修复/受影响验证/新候选复审；同Native436主流程、恢复/隔离和GUI取消/故障仍NOT_RUN_POLICY_BLOCK，旧419不移植；smoke不再做。原48h/100GiB起点/额度/截止、P01/T90和原V2Ray均不变，小时循环ACTIVE。
+
+
+### 2026-11-11 12:46 — R7三项P2复现修复；Native440完整验证320项PASS
+
+- **实质审查与RED：** pr145-current-builtin-review-r1-assessment.json记录Astra/xhigh只读完整H61e审查的3项P2，不以exit0算PASS。F1新正式helper回归在437实际FAIL（准备A/应为失败B）；F2在439真实Browser wrapper/Mojo/owned Alpha core联合用例实际FAIL（重定向到保存的代理前返回ERR_BLOCKED_BY_CLIENT，未等core/ACK）；F3离线check()复现6个错误workflow/job组合被接受。原始RED分别见review-r7-f1-red-437-tests-result.json、review-r7-f1-green-f2-red-439-tests-result.json和review-r7-f3-admission-red-receipt.json。438新增夹具漏NavigationHandle include导致编译FAIL，439只补头文件后再做真实RED，失败原样保留。
+- **修复及GREEN：** helper只把failed_url交给代理准备，仍只重载original_url；私有重定向等待目标local core和完整当前策略ACK，保留原请求common generation、重查归属/策略、取消弱引用、旧factory-admission关闭后live control可继续；新增取消等待/网络代际变化负例。准入改为每workflow执行job集合，保留full可复用workflow调用的实际子job；受保护原任务树同名其他owner脚本未改，也未部署hosthook。F1全helper16和F2定向6项先PASS；最终Native440完整Chrome/15正式目标320项全部实际SUCCESS零skip，GN3、117overlay精确匹配、437–440完整index逐步tree回放PASS。准入离线7项验证6非法/18合法执行组合PASS。
+- **证据与候选：** Native440=b21bdb601d46fa63a2c0a5e9f035a1d710f67a5c，review-r7-440-native-validation-receipt.json绑定完整build/tests、生产字节pin、GN、RED/GREEN及回放；四个新patch/series已同步任务树与MAC交付树。此时PR145仍为61e旧源码，后继本地提交详见review-r7-macos-fix-candidate.json，待完整quality、fresh独立复审及新head CI，不把旧61e/Native436证据提升。
+- **并行审计和GUI归属：** Astra/Max冻结审计未发现原97到两PR的源内容/链接遗漏，iOS b112/d946存在独立源码/归档缺口，报告在split-audit-astra-max/freeze-20261111T1141-TJV4TU6o/。用户在该审计窗口另开后续iOS修复工作，本MAC窗口仍负责MAC实现及实际GUI。收到其GUI归属接续说明，但该消息未解除工具网址限制；本轮没有启动实际App/CUA。旧419 GUI和436离线包各自保留为历史，需在最终新候选运行身份上验收；smoke不恢复。
+- **下一项：** 完成当前源码提交和本地完整quality，fresh只读built-in复审3项处置/交互；若需修复再复审最终候选。普通push后跟进新head CI及对应正文，保留自动PR code-review额度失败，不冒充服务PASS。仅政策允许时开展最终同候选GUI主流程、恢复/隔离和取消/故障边界。原48h/100GiB起点/截止、P01/T90暂停和其他owner内容不变，任务仍未完成。

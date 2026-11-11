@@ -81,6 +81,9 @@ class AccessProxyingURLTrackedRequest final
   void OnComplete(const network::URLLoaderCompletionStatus& status) override;
 
  private:
+  void OnRedirectPrepared(network::HttpRequestHeadersUpdateParams headers,
+                          std::optional<GURL> new_url, GURL follow_url,
+                          bool ready);
   bool RebindOwnershipForRedirect(const GURL& follow_url);
   void OnBindingError();
   void OnTargetLoaderDisconnected();
@@ -92,6 +95,7 @@ class AccessProxyingURLTrackedRequest final
   aegis_access::RequestOwnershipRecord ownership_record_;
   std::optional<GURL> pending_redirect_url_;
   std::string pending_redirect_method_;
+  bool redirect_preparation_pending_ = false;
   uint32_t hop_ = 0;
   bool private_route_ = false;
   bool ownership_registered_ = true;

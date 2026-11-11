@@ -1223,6 +1223,80 @@ void AccessProxyingURLLoaderFactory::FinishPendingStart(PendingStart* pending) {
   MaybeDestroySelf();
 }
 
+void AccessProxyingURLLoaderFactory::PrepareRedirectPolicy(
+    const GURL& redirect_url, aegis_access::GenerationTuple expected,
+    base::OnceCallback<void(bool)> completion) {
+  // A redirect may select a saved Website whose core was not needed for the
+  // initial native URL. Preserve the request's common generation while waiting.
+  expected.selection_generation = 0;
+  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+  auto* transport = AccessNetworkContextTransport::Get(profile_);
+  const auto current = runtime
+      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
+      : std::nullopt;
+  if (!is_private_factory_ || !transport || !current || *current != expected) {
+    std::move(completion).Run(false);
+    return;
+  }
+  const auto local_group = SelectedLocalCoreGroup(redirect_url);
+  if (!local_group) {
+    std::move(completion).Run(
+        transport->HasCurrentPrivatePolicy(factory_owner_, *current));
+    return;
+  }
+  auto* controller = AccessSiteProxyBubbleController::GetOrCreate(profile_);
+  if (!controller) {
+    std::move(completion).Run(false);
+    return;
+  }
+  controller->EnsureLocalCoreForRequest(
+      factory_owner_, *local_group,
+      base::BindOnce(&AccessProxyingURLLoaderFactory::OnRedirectCoreReady,
+                     weak_factory_.GetWeakPtr(), redirect_url, expected,
+                     *local_group, std::move(completion)));
+}
+
+void AccessProxyingURLLoaderFactory::OnRedirectCoreReady(
+    GURL redirect_url, aegis_access::GenerationTuple expected,
+    std::string expected_group, base::OnceCallback<void(bool)> completion,
+    bool ready) {
+  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+  auto* transport = AccessNetworkContextTransport::Get(profile_);
+  const auto* policy = runtime
+      ? runtime->GetPublishedPolicySnapshot(factory_owner_) : nullptr;
+  const auto current = runtime
+      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
+      : std::nullopt;
+  if (!ready || !transport || !policy || !current || *current != expected ||
+      SelectedLocalCoreGroup(redirect_url) != expected_group) {
+    std::move(completion).Run(false);
+    return;
+  }
+  // Existing request/control pipes can outlive factory admission. Publish on
+  // the private Context without requiring its factory admission pipe to live.
+  transport->PublishPrivatePolicy(
+      *policy, *current,
+      base::BindOnce(&AccessProxyingURLLoaderFactory::OnRedirectPolicyReady,
+                     weak_factory_.GetWeakPtr(), std::move(redirect_url),
+                     expected, std::move(expected_group),
+                     std::move(completion)));
+}
+
+void AccessProxyingURLLoaderFactory::OnRedirectPolicyReady(
+    GURL redirect_url, aegis_access::GenerationTuple expected,
+    std::string expected_group, base::OnceCallback<void(bool)> completion,
+    bool accepted) {
+  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+  auto* transport = AccessNetworkContextTransport::Get(profile_);
+  const auto current = runtime
+      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
+      : std::nullopt;
+  std::move(completion).Run(
+      accepted && current && *current == expected && transport &&
+      SelectedLocalCoreGroup(redirect_url) == expected_group &&
+      transport->HasCurrentPrivatePolicy(factory_owner_, expected));
+}
+
 void AccessProxyingURLLoaderFactory::StartEvaluatedRequest(
     mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
     int32_t request_id, uint32_t options,

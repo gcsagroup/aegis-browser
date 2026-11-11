@@ -26,6 +26,7 @@
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/navigation_simulator.h"
 #include "net/base/net_errors.h"
@@ -192,13 +193,16 @@ struct HeldRedirectBrowserRequest {
   HeldRedirectBrowserRequest(Profile* profile, content::RenderFrameHost* frame,
       const OwnershipKey& owner,
       aegis_access::BrowserOwnedRequestMetadata metadata,
-      std::shared_ptr<AccessPrivateContextClient> context) {
+      std::shared_ptr<AccessPrivateContextClient> context,
+      std::optional<int64_t> navigation_id = std::nullopt) {
+    std::optional<content::WeakDocumentPtr> document;
+    if (!navigation_id) document = frame->GetWeakDocumentPtr();
     wrapper = std::make_unique<AccessProxyingURLLoaderFactory>(
-        profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
+        profile, frame->GetFrameTreeNodeId(), navigation_id, std::nullopt,
         nullptr, owner, std::move(metadata),
         factory.BindNewPipeAndPassReceiver(),
         mojo::PendingRemote<network::mojom::URLLoaderFactory>(),
-        frame->GetWeakDocumentPtr(),
+        std::move(document),
         base::BindOnce([](HeldRedirectBrowserRequest* self,
                           AccessProxyingURLLoaderFactory*) {
           self->wrapper.reset();
@@ -752,6 +756,46 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness 
     }));
     return request;
   }
+  void SaveRedirectWebsiteAndStopCore() {
+    const GURL target("https://cdn.example/redirect-final");
+    ASSERT_TRUE(bubble_->RequestHostProxySession({"cdn.example"}, true));
+    ASSERT_TRUE(base::test::RunUntil([&] {
+      return bubble_->SnapshotForCommittedUrl(target).connection ==
+             AccessSiteConnectionState::kReady;
+    }));
+    const auto endpoint = transport_->CurrentEndpoint(owner_);
+    ASSERT_TRUE(endpoint);
+    AccessSiteProxyProductTestPeer::LoseRuntime(bubble_, endpoint->registration_id);
+    task_environment()->RunUntilIdle();
+    ASSERT_FALSE(AccessSiteProxyProductTestPeer::HasCore(bubble_));
+    ASSERT_FALSE(transport_->CurrentEndpoint(owner_));
+    ASSERT_EQ(bubble_->SnapshotForCommittedUrl(target).intent,
+              AccessSiteIntent::kAllow);
+  }
+  std::unique_ptr<HeldRedirectBrowserRequest> StartPendingNavigationRedirect(
+      content::NavigationSimulator* navigation) {
+    navigation->Start();
+    const int64_t navigation_id =
+        navigation->GetNavigationHandle()->GetNavigationId();
+    auto metadata = BuildBrowserOwnedRequestMetadata(profile(),
+        base::BindRepeating([](content::WebContents* contents) { return contents; },
+                            base::Unretained(web_contents())),
+        main_rfh()->GetFrameTreeNodeId(), navigation_id);
+    CHECK(metadata.metadata);
+    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
+    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
+    auto request = std::make_unique<HeldRedirectBrowserRequest>(
+        profile(), main_rfh(), owner_, std::move(*metadata.metadata), bound.Take(),
+        navigation_id);
+    request->Start();
+    EXPECT_TRUE(base::test::RunUntil([&] {
+      return request->client.has_received_redirect() ||
+             request->client.has_received_completion();
+    }));
+    if (request->client.has_received_redirect())
+      navigation->Redirect(GURL("https://cdn.example/redirect-final"));
+    return request;
+  }
   base::ScopedTempDir directory_;
   ProductAckContext context_;
   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
@@ -867,6 +911,94 @@ TEST_F(AccessRetryNavigationProductTest,
   context_.Reply(true);
   task_environment()->RunUntilIdle();
   EXPECT_EQ(request->target.starts, 0);
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       RedirectToSavedWebsitePreparesMissingCoreAndWaitsForAck) {
+  SaveRedirectWebsiteAndStopCore();
+  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
+      GURL("https://news.example/redirect"), web_contents());
+  auto request = StartPendingNavigationRedirect(navigation.get());
+  ASSERT_TRUE(request->client.has_received_redirect());
+  ASSERT_TRUE(request->target.initial);
+  EXPECT_TRUE(request->target.initial->registration_id.empty());
+  EXPECT_FALSE(AccessSiteProxyProductTestPeer::HasCore(bubble_));
+
+  context_.hold_next = true;
+  request->loader->FollowRedirect({}, std::nullopt);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return context_.has_reply() || request->client.has_received_completion();
+  }));
+  ASSERT_TRUE(context_.has_reply())
+      << "Redirect completed before preparing its saved proxy: "
+      << request->client.completion_status().error_code;
+  EXPECT_FALSE(request->client.has_received_completion());
+  EXPECT_FALSE(request->target.followed);
+  context_.Reply(true);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return request->client.has_received_completion();
+  }));
+  EXPECT_EQ(request->client.completion_status().error_code, net::OK);
+  ASSERT_TRUE(request->target.followed);
+  EXPECT_FALSE(request->target.followed->registration_id.empty());
+  EXPECT_EQ(request->target.followed->hop, 1u);
+  EXPECT_EQ(request->target.followed->request_token,
+            request->target.initial->request_token);
+  EXPECT_EQ(request->target.public_follows, 0);
+  navigation->Commit();
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       SavedWebsiteRedirectCancelledDuringCoreAckIsNotFollowed) {
+  SaveRedirectWebsiteAndStopCore();
+  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
+      GURL("https://news.example/redirect"), web_contents());
+  auto request = StartPendingNavigationRedirect(navigation.get());
+  ASSERT_TRUE(request->client.has_received_redirect());
+  context_.hold_next = true;
+  request->loader->FollowRedirect({}, std::nullopt);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return context_.has_reply() || request->client.has_received_completion();
+  }));
+  ASSERT_TRUE(context_.has_reply());
+  request->loader.reset();
+  context_.Reply(true);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return bubble_->SnapshotForCommittedUrl(
+               GURL("https://cdn.example/redirect-final")).connection ==
+           AccessSiteConnectionState::kReady;
+  }));
+  task_environment()->RunUntilIdle();
+  EXPECT_FALSE(request->target.followed);
+  EXPECT_EQ(request->target.public_follows, 0);
+}
+
+TEST_F(AccessRetryNavigationProductTest,
+       SavedWebsiteRedirectRejectsNetworkChangeDuringCoreAck) {
+  SaveRedirectWebsiteAndStopCore();
+  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
+      GURL("https://news.example/redirect"), web_contents());
+  auto request = StartPendingNavigationRedirect(navigation.get());
+  ASSERT_TRUE(request->client.has_received_redirect());
+  context_.hold_next = true;
+  request->loader->FollowRedirect({}, std::nullopt);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return context_.has_reply() || request->client.has_received_completion();
+  }));
+  ASSERT_TRUE(context_.has_reply());
+  AccessNetworkContextTransportTestPeer::AdvanceNetwork(transport_);
+  context_.Reply(true);
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return request->client.has_received_completion();
+  }));
+  ASSERT_TRUE(base::test::RunUntil([&] {
+    return bubble_->SnapshotForCommittedUrl(
+               GURL("https://cdn.example/redirect-final")).connection !=
+           AccessSiteConnectionState::kConnecting;
+  }));
+  EXPECT_NE(request->client.completion_status().error_code, net::OK);
+  EXPECT_FALSE(request->target.followed);
+  EXPECT_EQ(request->target.public_follows, 0);
 }
 
 TEST_F(AccessRetryNavigationProductTest,

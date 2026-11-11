@@ -65,6 +65,46 @@ TEST_F(AccessNavigationRetryTabHelperTest, ReloadsOriginalUrlOnceAfterRedirect) 
 }
 
 TEST_F(AccessNavigationRetryTabHelperTest,
+       RetryPreparesFailedRedirectSiteAndReloadsOriginalUrlOnce) {
+  const GURL original("https://start.example/path?q=original#section");
+  const GURL failed("https://target.example/redirect?q=failed");
+  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
+      original, web_contents());
+  navigation->Start();
+  navigation->Redirect(failed);
+  navigation->Fail(net::ERR_CONNECTION_RESET);
+  navigation->CommitErrorPage();
+  ASSERT_TRUE(helper()->FailureForRetry());
+  EXPECT_EQ(helper()->FailureForRetry()->original_url, original);
+  EXPECT_EQ(helper()->FailureForRetry()->failed_url, failed);
+
+  base::OnceCallback<void(bool)> prepared;
+  int calls = 0;
+  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
+      [&](const GURL& target, base::OnceCallback<void(bool)> completion) {
+        ++calls;
+        EXPECT_EQ(target, failed);
+        prepared = std::move(completion);
+      }));
+  base::test::TestFuture<bool> result;
+  ASSERT_TRUE(helper()->RequestProxyRetry(result.GetCallback()));
+  EXPECT_EQ(calls, 1);
+  EXPECT_FALSE(controller().GetPendingEntry());
+  ASSERT_TRUE(prepared);
+  std::move(prepared).Run(true);
+  ASSERT_TRUE(result.Get());
+  ASSERT_TRUE(controller().GetPendingEntry());
+  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), original);
+  content::NavigationSimulator::CreateFromPending(controller())->Commit();
+
+  base::test::TestFuture<bool> duplicate;
+  EXPECT_FALSE(helper()->RequestProxyRetry(duplicate.GetCallback()));
+  EXPECT_FALSE(duplicate.Get());
+  EXPECT_EQ(calls, 1);
+  EXPECT_FALSE(controller().GetPendingEntry());
+}
+
+TEST_F(AccessNavigationRetryTabHelperTest,
        ExplicitRecoveryKeepsErrorDocumentStableAcrossConnectionChanges) {
   error_page::NetErrorAutoReloader::CreateForWebContents(web_contents());
   auto* reloader =
