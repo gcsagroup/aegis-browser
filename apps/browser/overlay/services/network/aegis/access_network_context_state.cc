@@ -1,5 +1,6 @@
 // Copyright 2026 GCSA
 #include "services/network/aegis/access_network_context_state.h"
+#include <vector>
 #include "base/check.h"
 #include "base/functional/bind.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -33,9 +34,13 @@ AccessNetworkContextState::~AccessNetworkContextState() {
 void AccessNetworkContextState::ResetFactories() {
   // Match NetworkContext's original factory contract, including extension
   // service-worker factories that must survive webRequest-triggered resets.
-  std::erase_if(factories_, [](const auto& factory) {
-    return !factory->ignore_factory_reset();
-  });
+  // ClearBindings() may synchronously remove an idle factory. Match the
+  // original NetworkContext iteration without invalidating this set's cursor.
+  std::vector<AccessPrivateURLLoaderFactory*> reset;
+  for (const auto& factory : factories_) {
+    if (!factory->ignore_factory_reset()) reset.push_back(factory.get());
+  }
+  for (auto* factory : reset) factory->ClearBindings();
 }
 bool AccessNetworkContextState::Install(
     const mojom::AegisAccessSnapshot& snapshot) {

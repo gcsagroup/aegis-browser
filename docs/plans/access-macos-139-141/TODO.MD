@@ -12,7 +12,7 @@
 
 **Spec:** [阶段一验收清单](../access-product-phase1-acceptance.zh-CN.md)、[功能拆分](../access-product-phase1-feat-split.zh-CN.md)、[本站意图 API](../macos-access-site-intent-api-NOTES.md)，以及本聊天已授权的请求隔离、持久恢复和原标签页重试要求。本文不将旧文档的历史状态当作当前证据；冲突时沿用当前任务授权和当前 AGENTS.md。
 
-**最新快照：** 2026-11-11 07:43 Asia/Shanghai。fresh复审r3确认原F1–F5已修、iOS拆分保留窄范围PASS，但macOS新增4项P2，未通过；本轮全部实施修复。431/4d3e8eda完整chrome/14正式目标287项实际SUCCESS零skip（含IPv6 RED430→GREEN431），GN与精确回放PASS；产品/Chromium校验上下文和x64提前拒绝22项离线回归稳定PASS。准备新macOS精确候选fullquality及fresh复审；iOS81ff原quality/拆分审查范围有效，新候选GUI/取消/单组smoke仍受策略限制，两PR/issue尚未外写。
+**最新快照：** 2026-11-11 08:36 Asia/Shanghai。434/f063081a完整chrome/15正式目标312项实际SUCCESS零skip，reset的3项真实RED→GREEN，ignore例外及取消寿命回归保留；GN/432–434精确回放PASS。r4确认原9项finding已修、iOS拆分窄审PASS，新增工厂reset寿命P2已实施并原生验证，准备新macOS候选exacthead fullquality/fresh复审；GUI/单组smoke策略限制及两PR/issue外部交付仍开放。
 
 ## 1. 状态与证据规则
 
@@ -633,3 +633,19 @@
 - `review-r3-context-arch-red.log`两个真实Node校验边界因错误产品/Chromium上下文拒绝，x64未被admission拒绝；修复选择干净且HEAD匹配的产品工作树校验器、显式绑定App的src/out/AegisRelease，继续完整identity/lineage/overlay/GN检查。workflow既有App打包可指定product_checkout/product_sha；重建仍用workflow工作树。x64从UI选项移除，plan及两个手动wrapper在查源码/大构建前拒绝。
 - `review-r3-context-arch-validation.json`固定Python3.11.9及源码前后哈希不变，22项SUCCESS，包含实际temp Git/Node上下文敏感校验器夹具、错误/dirty checkout不执行校验器、两wrapper提前拒绝及原始锁/来源/F5条件矩阵。该Node夹具不冒充真实App身份或DMG验收。r1在执行期间异常分支源码变更，单列INVALID_FOR_FINAL保留，最终只采用稳定r2。
 - 下一项：新macOS候选exacthead fullquality和fresh复审，带原F1–F5、r3四finding及原始RED/GREEN；源代码修复不会解除CUA网址策略，原419 GUI不转成当前PASS。iOS产品/设备、签名、DMG、hosthook部署和两个PR/issue外部交付仍分别保留门。
+
+
+### 2026-11-11 08:27 — r4工厂reset寿命回归RED与434修复
+
+- `pr97-platform-final-rereview-r4-launch.json`真实只读审查：原F1–F5/R3F1–F4共9项已修，iOS拆分/CI窄范围仍正确；Mac90b因ResetFactories直接erase而中止在途native/proxy加载未通过。原完整quality-r5及Native431287PASS不抵消新增finding。
+- `native-review-reset-red-433-tests-result.json`3项实际功能FAIL、零skip：实际NetworkContext/Mojo、控制HTTP已收到后reset，直连/代理/随后取消的客户端都提前断开。432首次夹具按绝对URI匹配proxy响应，但EmbeddedTestServer http_request.cc127会规范成path，导致proxy夹具超时CRASH/后续NOTRUN；历史完整保留，仅其中直连FAIL属于有效复现。433修正路径并先检查收到请求避免二次FATAL，3项RED不是编译/启动错误。
+- 434实现`ClearBindings()`，保持请求facade和CORS在途加载引用，完成/取消后再删factory；只关闭非ignore_factory_reset入口，snapshot列表避免同步删除时迭代失效；Context销毁仍完整清理。`review-r4-reset-green-434-source.json`绑定源码SHA/patch哈希，新增正式IPC owning目标到本轮15目标；唯一`native-review-434-full-build-result.json`RUNNING。
+- 下一项：原生15目标green/必要GN与432–434精确回放，再新macOS候选quality/fresh复审；iOS81ff原验证有效，GUI策略不绕过，两个PR/issue仍未发送，不因循环长或资源有界标完成。
+
+
+### 2026-11-11 08:36 — 434在途请求reset全套GREEN
+
+- `boundary-434-validation-receipt.json`绑定Native f063081aa42b5ed04878ba41c9a0b83898d1aced，完整chrome/15正式目标build、312项实际SUCCESS零skip、受影响3目标GN及432–434精确tree回放PASS。IPC owning25项包括3个新真实NetworkContext/Mojo/控制HTTP回归；原30项client suite仍保留ignore_factory_reset正例。
+- 原`native-review-reset-red-433-tests-result.json`3项实际客户端提前断开FAIL，434全部GREEN：清factory入口后native/proxy响应仍完成，随后显式取消仍可正常abort及清理。Context销毁仍完整teardown。432夹具CRASH/NOTRUN未升级。
+- IPC测试exe与433相同而NetworkService共享库更新，本轮312均真实重跑；仅exe字节相同不足以转移结果。回执新增当前5个生产文件哈希，没有为旧RED补造seal。
+- 下一项：新macOS候选fullquality及带原10项finding/原始证据的fresh只读复审；无活动native构建/测试，不重复434。原419 GUI仍历史，工具限制不绕过；iOS全产品/设备、实际包/签名、两个PR/issue分别开放。

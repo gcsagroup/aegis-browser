@@ -1,0 +1,46 @@
+From 1026e6d97d9b0330ff13c7688d8a6d15e8bfde87 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 08:22:08 +0800
+Subject: [PATCH] test(access): match proxy response path and guard fixture
+ wait
+
+---
+ .../aegis_access/access_network_context_ipc_unittest.cc   | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc
+index 702f2e7d1c1cf5c539642dcff6c9bb728b3a7a09..eb0e091ee8d41e0ab7bfae6f53874cbc6c781f7f 100644
+--- a/components/aegis_access/access_network_context_ipc_unittest.cc
++++ b/components/aegis_access/access_network_context_ipc_unittest.cc
+@@ -2,6 +2,7 @@
+ #include <atomic>
+ #include "base/functional/bind.h"
+ #include "base/test/task_environment.h"
++#include "base/test/run_until.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+ #include "base/time/time.h"
+ #include "net/test/embedded_test_server/controllable_http_response.h"
+@@ -64,7 +65,7 @@ class AccessNetworkContextIPCTest : public testing::Test {
+     native_held_ = std::make_unique<net::test_server::ControllableHttpResponse>(
+         &server_, "/hold-native");
+     proxy_held_ = std::make_unique<net::test_server::ControllableHttpResponse>(
+-        &server_, "http://destination.test/hold-proxy");
++        &server_, "/hold-proxy");
+     server_.RegisterRequestHandler(base::BindRepeating(
+         &AccessNetworkContextIPCTest::Respond, base::Unretained(this)));
+     ASSERT_TRUE(server_.Start());
+@@ -173,6 +174,11 @@ class AccessNetworkContextIPCTest : public testing::Test {
+     base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Seconds(10));
+     Start(false, false, "", false, native, true);
+     auto& response = native ? *native_held_ : *proxy_held_;
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return response.has_received_request() || client_->has_received_completion() ||
++             client_->has_received_disconnect();
++    }));
++    ASSERT_TRUE(response.has_received_request());
+     response.WaitForRequest();
+     ASSERT_TRUE(response.has_received_request());
+     ASSERT_FALSE(client_->has_received_completion());
+-- 
+2.54.0 (Apple Git-157)
+

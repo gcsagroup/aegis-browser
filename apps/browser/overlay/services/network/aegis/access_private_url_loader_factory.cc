@@ -210,6 +210,12 @@ void AccessPrivateURLLoaderFactory::Clone(
     mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory> receiver) {
   receivers_.Add(this, std::move(receiver));
 }
+void AccessPrivateURLLoaderFactory::ClearBindings() {
+  receivers_.Clear();
+  // Active facades and CORS loaders retain this factory until their normal
+  // completion/cancellation path; only admission through old receivers ends.
+  cors_factory_->DeleteIfNeeded();
+}
 bool AccessPrivateURLLoaderFactory::HasAdditionalReferences() const {
   return !receivers_.empty() || !requests_.empty();
 }

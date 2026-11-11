@@ -51,6 +51,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) AccessPrivateURLLoaderFactory final
   bool HasAdditionalReferences() const override;
   void DestroyURLLoaderFactory(cors::CorsURLLoaderFactory* factory) override;
   bool ignore_factory_reset() const { return ignore_factory_reset_; }
+  void ClearBindings();
 
  private:
   class Request;

@@ -2,6 +2,10 @@
 #include <atomic>
 #include "base/functional/bind.h"
 #include "base/test/task_environment.h"
+#include "base/test/run_until.h"
+#include "base/test/scoped_run_loop_timeout.h"
+#include "base/time/time.h"
+#include "net/test/embedded_test_server/controllable_http_response.h"
 #include "mojo/core/embedder/embedder.h"
 #include "mojo/public/cpp/test_support/test_utils.h"
 #include "mojo/public/cpp/test_support/fake_message_dispatch_context.h"
@@ -58,6 +62,10 @@ class AccessNetworkContextIPCTest : public testing::Test {
  protected:
   void SetUp() override {
     mojo::core::Init();
+    native_held_ = std::make_unique<net::test_server::ControllableHttpResponse>(
+        &server_, "/hold-native");
+    proxy_held_ = std::make_unique<net::test_server::ControllableHttpResponse>(
+        &server_, "/hold-proxy");
     server_.RegisterRequestHandler(base::BindRepeating(
         &AccessNetworkContextIPCTest::Respond, base::Unretained(this)));
     ASSERT_TRUE(server_.Start());
@@ -128,19 +136,22 @@ class AccessNetworkContextIPCTest : public testing::Test {
   }
   void Start(bool wrong_initiator = false, bool fake_trusted = false,
              std::string token = "", bool wrong_target = false,
-             bool native_start = false) {
+             bool native_start = false, bool hold_for_reset = false) {
     loader_.reset();
     client_ = std::make_unique<TestURLLoaderClient>();
     ResourceRequest request;
-    request.url = native_start ? server_.GetURL("localhost", "/native")
-                               : GURL("http://destination.test/resource");
-    request.method = native_start ? "GET" : "PUT";
-    request.mode = native_start ? mojom::RequestMode::kNoCors
-                                : mojom::RequestMode::kCors;
+    request.url = native_start
+        ? server_.GetURL("localhost", hold_for_reset ? "/hold-native" : "/native")
+        : GURL(hold_for_reset ? "http://destination.test/hold-proxy"
+                             : "http://destination.test/resource");
+    request.method = native_start || hold_for_reset ? "GET" : "PUT";
+    request.mode = native_start || hold_for_reset ? mojom::RequestMode::kNoCors
+                                                 : mojom::RequestMode::kCors;
     request.credentials_mode = mojom::CredentialsMode::kOmit;
     request.request_initiator = wrong_initiator
         ? url::Origin::Create(GURL("http://other.test")) : initiator_;
-    if (!native_start) request.headers.SetHeader("x-access-test", "1");
+    if (!native_start && !hold_for_reset)
+      request.headers.SetHeader("x-access-test", "1");
     if (fake_trusted) request.trusted_params.emplace();
     if (token.empty()) token = std::to_string(++request_sequence_);
     auto envelope = mojom::AegisAccessRequestEnvelope::New();
@@ -158,6 +169,40 @@ class AccessNetworkContextIPCTest : public testing::Test {
         0, 0, std::move(routed), client_->CreateRemote(),
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
 
+  }
+  void ResetWhileRequestIsHeld(bool native, bool cancel_after_reset = false) {
+    base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Seconds(10));
+    Start(false, false, "", false, native, true);
+    auto& response = native ? *native_held_ : *proxy_held_;
+    ASSERT_TRUE(base::test::RunUntil([&] {
+      return response.has_received_request() || client_->has_received_completion() ||
+             client_->has_received_disconnect();
+    }));
+    ASSERT_TRUE(response.has_received_request());
+    response.WaitForRequest();
+    ASSERT_TRUE(response.has_received_request());
+    ASSERT_FALSE(client_->has_received_completion());
+    context_remote_->ResetURLLoaderFactories();
+    context_remote_.FlushForTesting();
+    factory_remote_.FlushForTesting();
+    EXPECT_FALSE(factory_remote_.is_connected());
+    environment_.RunUntilIdle();
+    // A factory binding reset must not close an already-started loader/client.
+    ASSERT_FALSE(client_->has_received_disconnect());
+    ASSERT_FALSE(client_->has_received_completion());
+    if (cancel_after_reset) {
+      loader_.reset();
+      client_->RunUntilComplete();
+      EXPECT_EQ(client_->completion_status().error_code, net::ERR_ABORTED);
+      response.Done();
+    } else {
+      response.Send("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 8\r\n\r\nfinished");
+      response.Done();
+      client_->RunUntilComplete();
+      EXPECT_EQ(client_->completion_status().error_code, net::OK);
+      EXPECT_TRUE(client_->has_received_response());
+    }
+    environment_.RunUntilIdle();
   }
   bool Install(const mojom::AegisAccessSnapshot& snapshot) {
     base::test::TestFuture<mojom::AegisAccessSnapshotAckPtr> future;
@@ -191,6 +236,8 @@ class AccessNetworkContextIPCTest : public testing::Test {
   base::test::TaskEnvironment environment_{base::test::TaskEnvironment::MainThreadType::IO};
   mojo::FakeMessageDispatchContext mojo_context_;
   net::EmbeddedTestServer server_;
+  std::unique_ptr<net::test_server::ControllableHttpResponse> native_held_;
+  std::unique_ptr<net::test_server::ControllableHttpResponse> proxy_held_;
   std::atomic<int> preflights_{0}, actual_{0};
   std::atomic<bool> allow_cors_{true}, redirect_first_{false}, require_auth_{false};
   std::atomic<int> auth_challenges_{0}, authenticated_{0};
@@ -438,6 +485,15 @@ TEST_F(AccessNetworkContextIPCTest, ResetFactoriesRevokesAlreadyIssuedPrivateRec
   context_remote_.FlushForTesting();
   factory_remote_.FlushForTesting();
   EXPECT_FALSE(factory_remote_.is_connected());
+}
+TEST_F(AccessNetworkContextIPCTest, FactoryResetPreservesInFlightNativeHttp) {
+  ResetWhileRequestIsHeld(true);
+}
+TEST_F(AccessNetworkContextIPCTest, FactoryResetPreservesInFlightProxyHttp) {
+  ResetWhileRequestIsHeld(false);
+}
+TEST_F(AccessNetworkContextIPCTest, InFlightRequestCanCancelAfterFactoryReset) {
+  ResetWhileRequestIsHeld(true, true);
 }
 TEST_F(AccessNetworkContextIPCTest, RetainedPrivateContextUsesExactOriginalContext) {
   mojo::Remote<mojom::AegisAccessContext> capability;
