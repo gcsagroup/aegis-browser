@@ -6,6 +6,8 @@
 	<string>zh-Hans</string>
 	<key>AegisFirebaseChannel</key>
 	<string>$(AEGIS_FIREBASE_CHANNEL)</string>
+	<key>AegisAccessReleaseChannel</key>
+	<string>$(AEGIS_ACCESS_RELEASE_CHANNEL)</string>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
 	<key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key>

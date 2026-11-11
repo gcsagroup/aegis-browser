@@ -1,6 +1,6 @@
 # iOS Access：本站规则组（Site Rule Group）— TODO 草案
 
-日期：2026-11-10。状态：**草案 / 未实施**。挂靠 PR [#97](https://github.com/gcsagroup/aegis-browser/pull/97)。
+日期：2026-11-11。状态：**草案**。产品行为以 [本站自动连接设计](ios-access-site-auto-connect.zh-CN.md) 为准。渠道容量、站点菜单/失败页开关和无人值守主导航恢复已接线。同页选择性代理不在首版。挂靠 PR [#97](https://github.com/gcsagroup/aegis-browser/pull/97)。
 
 **动机：** 单一精确 host 的失败页重试在登录域、apex/`www`、必要 API 域上体验差。产品方向应是**浏览器内按规则分流**，而不是全局 VPN，也不是把 `matchDomains` 后缀当成精确授权。
 
@@ -32,30 +32,33 @@
 5. **归属上限：** iOS 只保证「目标 host ∈ 已发布组」；不保证「跨顶层站引用同 host 不继承」——该条仍属 Chromium/W1a，此处诚实降级并写进能力矩阵。
 6. **渠道：** DEV/Alpha 可展示组成员与命中；Beta/Release 只展示本站开/关与必要状态。
 
-## 4. TODO 清单（实施前）
+## 4. TODO 清单
 
 ### 4.1 规格
 
-- [ ] 将本草案升为短 SDD（或并入 exact-host SDD 附录），明确组大小上限、发布/撤销原子性、与现 `AccessHostStoreKey` 的关系。
-- [ ] 更新实现方案状态表：增加行 `G`（Site Rule Group），完成含义与 U/K/D/R 分开。
-- [ ] 能力矩阵：标明 iOS 降级项 vs Chromium 完整请求级分流。
+渠道容量与一键恢复以[本站自动连接设计](ios-access-site-auto-connect.zh-CN.md)为准。每组含主 host，去重后上限为 DEV 128、Alpha 64、Beta 32、Release 16。
+
+- [x] 组上限、按预期版本发布、重叠撤销和 `AccessHostStoreKey` 的关系已写入自动连接设计，不另开一份会分叉的 SDD。
+- [x] 实现方案状态表已有行 `G`，完成含义与 U/K/D/R 分开。
+- [x] 能力边界：iOS 只保证顶层 host 是否属于已发布组。组内页的子资源跟随该页存储。组外顶层页保持原连接。请求级「同页只代理某一个子资源」仍属 Chromium，不在本版。
 
 ### 4.2 数据与协调
 
-- [ ] `AccessSiteRuleGroup`：`groupID`、`primaryHost`、`memberHosts[]`、`generation`、scope/private 绑定。
-- [ ] 发布器：一次准备入口，对组内 host 批量 `setEndpoint` / 绑定策略；失败整组不部分生效（或明确部分生效语义并测）。
-- [ ] 关闭代理 / 私密结束：整组解除，淘汰专用存储。
+- [x] `AccessSiteRuleGroup`：`groupID`、`primaryHost`、`memberHosts[]`、`generation`、scope/private 绑定（本机单元测试已绿）。
+- [x] `AccessSiteRuleGroupRegistry`：publish / 按 host 查找 / revoke / 私密会话 revokeAll。
+- [x] 正常页开启只发布组，不批量 `setProxyEnabled`、不建专用存储、不准备入口。超限的整次变更失败并保留旧组。冷失败才为该 host 准备。
+- [x] 关闭组与私密会话结束由协调器撤销该组贡献；没有剩余组且没有手动意图时才释放绑定。
 
 ### 4.3 UI
 
-- [ ] 失败页与本站开关：文案从「仅此 host」改为「本站（含已授权关联域）」；不展示通用规则编辑（非 DEV/Alpha）。
-- [ ] DEV/Alpha：只读或受控列表查看组成员；不加完整 ACL 编辑器除非另开任务。
+- [x] 失败页与站点菜单使用「本站打不开时自动重试」，并说明专用存储会带上该页资源。现有「通过代理重试」仍保留。
+- [ ] DEV/Alpha 只读组成员列表。首版不做；不加规则编辑器。
 
 ### 4.4 验证
 
-- [ ] U 扩展：主 host 开启后，组内第二 host 新标签走代理；组外第三 host 仍原连接。
-- [ ] 故障：入口失效后组内保持绑定且无原连接请求（对齐 S6）。
-- [ ] 不回归：默认发现列表仍不含 live/R；节点与组清单不进 git。
+- [x] 组内成员页及其 `cdn.invalid` 经指定代理监听器；组外顶层页由源站收到。`AccessHostRecoveryWebKitTests` 与 `AccessNavigationRecoveryTests` 于 2026-11-11 模拟器通过。
+- [x] 入口失效后保持代理配置且不再追加直连请求：`testFailedEndpointKeepsTheProxyAndDoesNotAddADirectRequest`。
+- [x] 节点 URI 与本地 Reality 配置不进 git；默认测试门不含 live/R。
 
 ### 4.5 明确不做（本 TODO 周期）
 
@@ -68,10 +71,11 @@
 | 项 | 状态 |
 | --- | --- |
 | exact-host U + 进程内 K（模拟器/live） | 已在 PR 头推进；本 TODO 不回滚 |
-| 本文件 | 仅文档草案，**未接线** |
-| 合并门 | 不因本 TODO 放行或阻断；实施另 commit |
+| 本文件 | 步骤 1–3 已在工作树接线并通过模拟器测试，尚未提交。同页分流与实时探测不在首版 |
+| 合并门 | 不因本 TODO 放行或阻断；提交与更新 PR 另授权 |
 
 ## 6. 完成定义（草案本身）
 
 - PR #97 说明已引用本文件，并写明「体验下一台阶 = 本站精确 host 组，非全局拦截」。
-- 未把组功能标成已交付；未改 required checks。
+- 工作树里的步骤 1–3 以 2026-11-11 模拟器回执为准。未提交前，PR 头不代表这轮实现。
+- 未改 required checks。同页分流、实时探测和真机 D 不标成已交付。

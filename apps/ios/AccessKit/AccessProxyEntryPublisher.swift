@@ -80,21 +80,9 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
             task = started
         }
         let generation = inflightGeneration
+        let provisioned: Provision
         do {
-            let provisioned = try await task.value
-            guard waiters.contains(request.operationID) else {
-                throw CancellationError()
-            }
-            guard !closedGenerations.contains(generation) else {
-                throw AccessSiteSessionError.prepareFailed("入口这一代已经结束")
-            }
-            guard provisioned.endpoint.generation == generation else {
-                throw AccessSiteSessionError.prepareFailed("入口版本与这次准备不一致")
-            }
-            instance = provisioned
-            inflight = nil
-            emit(provisioned.endpoint)
-            return AccessProxyEntryPrepareResult(operationID: request.operationID, endpoint: provisioned.endpoint)
+            provisioned = try await task.value
         } catch {
             if inflightGeneration == generation {
                 closedGenerations.insert(generation)
@@ -108,6 +96,21 @@ public final class AccessProxyEntryPublisher: AccessProxyEntryPublishing {
             }
             throw error
         }
+        if inflightGeneration == generation {
+            inflight = nil
+        }
+        guard waiters.contains(request.operationID) else {
+            throw CancellationError()
+        }
+        guard !closedGenerations.contains(generation) else {
+            throw AccessSiteSessionError.prepareFailed("入口这一代已经结束")
+        }
+        guard provisioned.endpoint.generation == generation else {
+            throw AccessSiteSessionError.prepareFailed("入口版本与这次准备不一致")
+        }
+        instance = provisioned
+        emit(provisioned.endpoint)
+        return AccessProxyEntryPrepareResult(operationID: request.operationID, endpoint: provisioned.endpoint)
     }
 
     /// Removes one waiter. Retained host stores keep the entry.

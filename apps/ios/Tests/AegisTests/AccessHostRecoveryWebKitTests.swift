@@ -1,4 +1,5 @@
 import AccessKit
+import Network
 import os
 import UIKit
 import WebKit
@@ -198,6 +199,79 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertEqual(opener.transcript, seen)
     }
 
+    func testAutoRecoverySendsTheMemberThroughTheProxyAndTheOutsideHostToOrigin() async throws {
+        let origin = OriginReceipt(port: 18_247)
+        try await origin.start()
+        defer { origin.stop() }
+        let opener = AnsweringOpener()
+        let listener = try await makeListener(port: 18_246, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let coordinator = AccessHostStoreCoordinator(
+            publisher: readyPublisher(port: 18_246),
+            clock: AccessContinuousPreparationClock()
+        )
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        defer { browser.standardTabs.forEach { $0.stop() } }
+        browser.hostCoordinator = coordinator
+        let shop = try XCTUnwrap(browser.activeTab)
+        let window = show(shop.webView)
+        defer { window.isHidden = true }
+        shop.load(URLRequest(url: URL(string: "https://shop.example/home")!))
+        shop.commitPendingMainFrameForTests()
+        let login = try AccessSiteHost("login.example")
+        guard case .armed = coordinator.setAutoRecoveryEnabled(true, for: shop, members: [login]) else {
+            return XCTFail("committed shop page should only arm")
+        }
+        XCTAssertEqual(coordinator.registry.ordinaryStores().count, 0)
+
+        let member = browser.newTab()
+        let nonce = UUID().uuidString
+        member.load(URLRequest(url: URL(string: "http://login.example/start?n=\(nonce)")!))
+        member.webView.navigationDelegate = NavigationSink()
+        if member.webView.superview == nil {
+            member.webView.frame = window.bounds
+            window.addSubview(member.webView)
+        }
+        member.webView.stopLoading()
+        deliverFailure(member)
+        try await waitUntil(seconds: 15, {
+            if member.webView.superview == nil {
+                member.webView.frame = window.bounds
+                window.addSubview(member.webView)
+                window.makeKeyAndVisible()
+            }
+            return opener.transcript.contains(nonce) && opener.transcript.contains("cdn.invalid")
+        }, message: "proxy=\(opener.transcript) failure=\(coordinator.lastRecoveryFailure ?? "")")
+        guard opener.transcript.contains(nonce), opener.transcript.contains("cdn.invalid") else { return }
+        XCTAssertEqual(member.recoveryLoadCount, 1)
+
+        var probe = URLRequest(url: URL(string: "http://127.0.0.1:\(origin.port)/ping")!)
+        probe.timeoutInterval = 3
+        let probeResponse = try await URLSession.shared.data(for: probe).1 as? HTTPURLResponse
+        XCTAssertEqual(probeResponse?.statusCode, 200, origin.transcript)
+        XCTAssertTrue(origin.transcript.contains("GET /ping"), origin.transcript)
+
+        let outside = UUID().uuidString
+        let direct = browser.newTab()
+        try await direct.prepareContentRulesForTests()
+        direct.load(URLRequest(url: URL(string: "http://127.0.0.1:\(origin.port)/outside?n=\(outside)")!))
+        direct.webView.frame = window.bounds
+        window.addSubview(direct.webView)
+        window.makeKeyAndVisible()
+        try await waitUntil(seconds: 20, {
+            if direct.webView.superview == nil {
+                direct.webView.frame = window.bounds
+                window.addSubview(direct.webView)
+                window.makeKeyAndVisible()
+            }
+            return origin.transcript.contains(outside)
+        }, message: "port=\(origin.port) origin=\(origin.transcript) url=\(direct.url?.absoluteString ?? "") requested=\(direct.requestedURL?.absoluteString ?? "") loading=\(direct.isLoading) error=\(direct.loadingError ?? "") proxies=\(direct.websiteDataStore.proxyConfigurations.count)")
+        XCTAssertFalse(opener.transcript.contains(outside), opener.transcript)
+        XCTAssertFalse(origin.transcript.contains(nonce))
+        XCTAssertEqual(direct.websiteDataStore.proxyConfigurations.count, 0)
+    }
+
     private func readyPublisher(port: UInt16) -> AccessProxyEntryPublisher {
         AccessProxyEntryPublisher { generation, _ in
             AccessProxyEntryPublisher.Provision(
@@ -229,6 +303,8 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
 
     private func show(_ view: WKWebView) -> UIWindow {
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState != .unattached }
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         view.frame = window.bounds
         window.addSubview(view)
         window.makeKeyAndVisible()
@@ -241,10 +317,11 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
     }
 
     private func waitUntil(
+        seconds: TimeInterval = 8,
         _ condition: @MainActor () -> Bool,
         message: String = ""
     ) async throws {
-        let deadline = Date().addingTimeInterval(8)
+        let deadline = Date().addingTimeInterval(seconds)
         while !condition(), Date() < deadline {
             try await Task.sleep(for: .milliseconds(30))
         }
@@ -253,6 +330,81 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
 }
 
 private final class NavigationSink: NSObject, WKNavigationDelegate {}
+
+private final class OriginReceipt: @unchecked Sendable {
+    let port: UInt16
+    private var listener: NWListener?
+    private let queue = DispatchQueue(label: "access.auto-recovery.origin")
+    private let lock = OSAllocatedUnfairLock(initialState: "")
+
+    init(port: UInt16) { self.port = port }
+
+    var transcript: String { lock.withLock { $0 } }
+
+    func start() async throws {
+        let parameters = NWParameters.tcp
+        parameters.allowLocalEndpointReuse = true
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else { throw URLError(.badURL) }
+        parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: "127.0.0.1", port: nwPort)
+        let listener = try NWListener(using: parameters)
+        listener.newConnectionHandler = { [weak self] connection in
+            self?.receive(connection)
+        }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    let once = OSAllocatedUnfairLock(initialState: false)
+                    listener.stateUpdateHandler = { state in
+                        let first = once.withLock { taken -> Bool in
+                            if taken { return false }
+                            switch state {
+                            case .ready, .failed, .cancelled:
+                                taken = true
+                                return true
+                            default:
+                                return false
+                            }
+                        }
+                        guard first else { return }
+                        switch state {
+                        case .ready:
+                            continuation.resume()
+                        case .failed(let error):
+                            continuation.resume(throwing: error)
+                        default:
+                            continuation.resume(throwing: URLError(.cannotConnectToHost))
+                        }
+                    }
+                    listener.start(queue: self.queue)
+                }
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(3))
+                throw URLError(.timedOut)
+            }
+            try await group.next()
+            group.cancelAll()
+        }
+        self.listener = listener
+    }
+
+    func stop() { listener?.cancel() }
+
+    private func receive(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, _ in
+            if let data {
+                let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+                self?.lock.withLock { $0.append(text) }
+            }
+            let body = "ok"
+            let response = "HTTP/1.1 200 OK\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+            connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+        }
+    }
+}
 
 private final class AnsweringOpener: AccessHTTPTunnelOpening, @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock(initialState: "")

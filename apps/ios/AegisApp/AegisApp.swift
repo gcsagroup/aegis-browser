@@ -94,7 +94,10 @@ struct AegisApp: App {
         _windows = StateObject(wrappedValue: BrowserWindowStore(persistenceURL: windowsURL, legacyURLs: workspaceStore.sessionURLs))
         let registry = AccessSiteProxyStoreRegistry()
         let publisher = AccessEmbeddedProxyEntryFactory.makeProductPublisher()
-        let hostStores = AccessHostStoreCoordinator(publisher: publisher)
+        let hostStores = AccessHostStoreCoordinator(
+            publisher: publisher,
+            channel: AccessProductChannel.resolve()
+        )
         registry.hostRouting = hostStores
         hostStores.startForegroundSweep()
         _accessSiteProxyRegistry = StateObject(wrappedValue: registry)
