@@ -16,6 +16,35 @@ spec.loader.exec_module(archive)
 
 
 class CloudArchiveTests(unittest.TestCase):
+    def test_producer_digest_stays_bound_to_written_bytes_if_the_path_is_replaced_after_close(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'archive-manifest.json'
+            original_fdopen = os.fdopen
+            written = []
+            @contextmanager
+            def replace_after_close(*args, **kwargs):
+                with original_fdopen(*args, **kwargs) as stream:
+                    yield stream
+                written.append(path.read_bytes())
+                path.write_bytes(b'replaced after producer write')
+            with patch.object(os, 'fdopen', side_effect=replace_after_close):
+                digest = archive.write_manifest(path, {'developmentSigning': {'style': 'manual'}})
+            self.assertEqual(digest, hashlib.sha256(written[0]).hexdigest())
+            self.assertNotEqual(digest, hashlib.sha256(path.read_bytes()).hexdigest())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_manifest_writer_preserves_existing_evidence_and_bounds_serialization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'manifest.json'
+            digest = archive.write_manifest(path, {'source': 'original'})
+            with self.assertRaises(FileExistsError):
+                archive.write_manifest(path, {'source': 'changed'})
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
+            oversized = Path(temporary) / 'oversized.json'
+            with self.assertRaisesRegex(ValueError, 'size limit'):
+                archive.write_manifest(oversized, {'oversized': 'x' * (16 * 1024**2)})
+            self.assertFalse(oversized.exists())
+
     def test_source_movement_during_build_cannot_publish_an_old_source_manifest(self):
         identity = {'sha': 'a' * 40, 'tree': 'b' * 40}
         @contextmanager
