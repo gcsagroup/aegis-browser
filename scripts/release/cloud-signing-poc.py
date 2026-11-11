@@ -16,6 +16,7 @@ import shutil
 import signal
 import subprocess
 import sys
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).parent))
@@ -58,32 +59,56 @@ def write(path, value):
         output.write('\n')
 
 
-def keychains():
-    return re.findall(r'"([^"\n]+)"', run('security', 'list-keychains', '-d', 'user').decode())
+def keychains(env=None):
+    options = {'env': env} if env is not None else {}
+    return re.findall(r'"([^"\n]+)"', run('security', 'list-keychains', '-d', 'user', **options).decode())
 
 
 def no_distribution_identity():
-    identities = run('security', 'find-identity', '-v', '-p', 'codesigning').decode()
+    identities = run('security', 'find-identity', '-p', 'codesigning').decode()
     if re.search(r'"(?:Apple Distribution|iPhone Distribution|Developer ID Application):', identities):
         raise ValueError('Distribution private identity is visible; cloud-only proof refused')
 
 
-def keychain_has_distribution(path):
+def keychain_has_distribution(path, env=None):
     """True when a keychain exposes a Distribution/Developer ID private identity."""
-    identities = run('security', 'find-identity', '-v', '-p', 'codesigning', path).decode()
+    options = {'env': env} if env is not None else {}
+    identities = run('security', 'find-identity', '-p', 'codesigning', path, **options).decode()
     return bool(re.search(r'"(?:Apple Distribution|iPhone Distribution|Developer ID Application):', identities))
 
 
 # login/System stay locked or ACL-gated under headless Actions; retaining them
 # makes codesign pick those identities and fail with errSecInternalComponent.
-_UNRETAINABLE_KEYCHAINS = {'login.keychain-db', 'login.keychain', 'System.keychain'}
+_UNRETAINABLE_KEYCHAINS = {'login.keychain-db', 'login.keychain', 'system.keychain'}
+
+
+def unretainable_keychain(value):
+    path = Path(value)
+    if not path.is_absolute() or path.name.casefold() in _UNRETAINABLE_KEYCHAINS:
+        return True
+    try:
+        identity = path.stat()
+    except FileNotFoundError:
+        return False  # The native inventory lookup will reject a missing database.
+    if identity.st_nlink != 1:
+        return True
+    protected = [Path.home() / 'Library/Keychains' / name for name in ('login.keychain-db', 'login.keychain')]
+    protected.append(Path('/Library/Keychains/System.keychain'))
+    for candidate in protected:
+        try:
+            info = candidate.stat()
+        except FileNotFoundError:
+            continue
+        if (info.st_dev, info.st_ino) == (identity.st_dev, identity.st_ino):
+            return True
+    return False
 
 
 def development_keychains(original):
     """Keep unlocked non-login Development identities without exposing Distribution secrets."""
     retained = []
     for path in original:
-        if Path(path).name in _UNRETAINABLE_KEYCHAINS:
+        if unretainable_keychain(path):
             continue
         if keychain_has_distribution(path):
             continue
@@ -271,7 +296,28 @@ def stage(directory, environment, profile='beta'):
     return work
 
 
-def build_inline_archive(work, directory, options, archive_signing, environment, evidence, archive_transfer):
+def key_access_runtime(environment):
+    public = {name: environment[name] for name in (
+        'PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'DEVELOPER_DIR', 'LANG', 'LC_ALL') if name in environment}
+    def public_run(*arguments, **options):
+        options['env'] = public
+        return run(*arguments, **options)
+    return SimpleNamespace(run=public_run, keychains=lambda: keychains(env=public),
+                           keychain_has_distribution=lambda path: keychain_has_distribution(path, env=public),
+                           unretainable_keychain=unretainable_keychain, module=module)
+
+
+def prepare_inline_development(options, directory, environment):
+    signing = module('inline_development_signing', 'development_signing.py')
+    arguments, proof = signing.resolve(
+        options.team, module('inline_profile_trust', 'verify-signed-ios.py').verified_profile)
+    access = module('inline_development_access', 'development_key_access.py')
+    keychain = access.prepare(proof, key_access_runtime(environment), directory)
+    return signing, arguments, proof, access, keychain
+
+
+def build_inline_archive(work, directory, options, archive_signing, environment, evidence, archive_transfer,
+                         development_selection=None):
     """Direct Fastlane/PoC archives share the production Development selection."""
     archive = work / 'Aegis.xcarchive'
     signing = None
@@ -279,10 +325,11 @@ def build_inline_archive(work, directory, options, archive_signing, environment,
         signing_args = ['CODE_SIGN_STYLE=Automatic', 'PROVISIONING_PROFILE_SPECIFIER=',
                         'CODE_SIGN_IDENTITY=-', 'AD_HOC_CODE_SIGNING_ALLOWED=YES', 'CODE_SIGNING_REQUIRED=NO']
     else:
-        signing = module('inline_development_signing', 'development_signing.py')
-        signing_args, proof = signing.resolve(
-            options.team, module('inline_profile_trust', 'verify-signed-ios.py').verified_profile)
-        signing.require_identity(proof, run)
+        signing, signing_args, proof, access, keychain = (development_selection
+            if development_selection is not None else prepare_inline_development(options, directory, environment))
+        runtime = key_access_runtime(environment)
+        signing.require_identity(proof, runtime.run)
+        access.verify(proof, runtime, directory, environment, keychain)
         evidence['developmentSigning'] = proof
     run('xcodebuild', '-project', str(work / 'apps/ios/Aegis.xcodeproj'), '-scheme', 'Aegis-Release',
         '-configuration', 'Release', '-destination', 'generic/platform=iOS',
@@ -366,10 +413,15 @@ def experiment(options, environment):
         else:
             work = stage(directory, archive_environment, options.profile)
         archive = work / 'Aegis.xcarchive'
+        inline_selection = None
+        if archive_signing == 'development' and not options.archive_from and not getattr(options, 'archive_input', None):
+            # Activate in this worker's session before isolation inventories identities.
+            inline_selection = prepare_inline_development(options, directory, archive_environment)
         with isolated_keychain(directory, evidence, retain_development=(archive_signing == 'development')):
             if not options.archive_from and not getattr(options, 'archive_input', None):
                 print('Archiving with ' + archive_signing + ' signing and no Distribution identity', flush=True)
-                build_inline_archive(work, directory, options, archive_signing, archive_environment, evidence, archive_transfer)
+                build_inline_archive(work, directory, options, archive_signing, archive_environment, evidence,
+                                     archive_transfer, inline_selection)
                 snapshot_archive(directory, identity)
                 evidence['archiveManifestSha256'] = hashlib.sha256((directory / 'archive-provenance.json').read_bytes()).hexdigest()
             no_distribution_identity()
