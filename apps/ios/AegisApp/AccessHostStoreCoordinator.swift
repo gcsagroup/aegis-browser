@@ -186,6 +186,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                 snapshot.probeSuggestionLines = []
             }
             snapshot.probeBusy = probeBusyTabs.contains(tabID)
+                && (probeSiteHosts[tabID] == nil || probeSiteHosts[tabID] == host)
         }
         return snapshot
     }
@@ -324,7 +325,15 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     func runProbe(for tab: BrowserTab, candidates: [AccessSiteHost]? = nil) -> Bool {
         guard showsDebugSiteGroupDetails else { return false }
         let tabID = tab.id.uuidString
-        guard !probeBusyTabs.contains(tabID) else { return false }
+        let currentHost = host(for: tab)
+        if probeBusyTabs.contains(tabID) {
+            // Busy only blocks another probe of the same site. A new host may start.
+            if probeSiteHosts[tabID] == nil || probeSiteHosts[tabID] == currentHost {
+                return false
+            }
+            probeTasks[tabID]?.cancel()
+            probeBusyTabs.remove(tabID)
+        }
         let groups = autoRecoveryGroups(for: tab)
         let plannedCandidates: [AccessSiteHost]
         if let candidates, !candidates.isEmpty {

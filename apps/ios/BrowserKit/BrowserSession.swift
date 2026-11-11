@@ -533,10 +533,16 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func deliverDocumentLoad(_ request: URLRequest) {
-        // Failure / supersede already cleared loading — do not resurrect identity.
-        guard isLoading, lastMainFrameFailure?.navigationID != attempt.navigationID else {
+        // A nil-failure must not be replayed by a late deferred load of the same allow.
+        // Recovery intentionally reuses that navigation ID; let that replay through.
+        let replayingFailure = attempt.recoveryOperationID != nil
+            && lastMainFrameFailure?.navigationID == attempt.navigationID
+        guard isLoading, replayingFailure || lastMainFrameFailure?.navigationID != attempt.navigationID else {
             retireUnboundAttempt(navigationID: attempt.navigationID)
             return
+        }
+        if replayingFailure {
+            lastMainFrameFailure = nil
         }
         let navigation = webView.load(request)
         pendingNavigation = navigation
@@ -579,7 +585,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         loadingErrorAllowsProxyRetry = false
         recoveryLoadCount += 1
         commitPreservingMethod(request, continuesAttempt: true)
-        return pendingNavigation != nil
+        // The document load is deferred one turn, so pendingNavigation is still nil here.
+        return isLoading
     }
 
     public func rebindWebsiteDataStore(_ store: WKWebsiteDataStore, host: String?) {
@@ -1131,17 +1138,31 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         let nsError = error as NSError
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorCancelled {
             loadingErrorAllowsProxyRetry = false
+            let recorded = navigation.flatMap { attemptsByNavigation[ObjectIdentifier($0)] }
             let cancelledID: String?
-            if let navigation, let recorded = attemptsByNavigation[ObjectIdentifier(navigation)] {
+            if let recorded {
                 cancelledID = recorded.navigationID
             } else if navigation == nil || navigation === pendingNavigation {
                 cancelledID = attempt.navigationID
             } else {
                 cancelledID = nil
             }
+            let superseded = recorded.map {
+                $0.navigationID != attempt.navigationID
+                    && $0.allowSequence < attempt.allowSequence
+                    && isLoading
+            } ?? false
             retireNavigationIdentity(navigation)
             if let cancelledID {
                 retireUnboundAttempt(navigationID: cancelledID)
+            }
+            if superseded {
+                // A newer allow is already current. Drop the old provisional only.
+                if navigation === pendingNavigation {
+                    pendingNavigation = nil
+                }
+                refreshState()
+                return
             }
             if navigation == nil || navigation === pendingNavigation
                 || (cancelledID != nil && cancelledID == attempt.navigationID) {
@@ -1167,6 +1188,15 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             }
             recorded = match
             attemptsByNavigation.removeValue(forKey: ObjectIdentifier(navigation))
+            if recorded.navigationID != attempt.navigationID,
+               recorded.allowSequence < attempt.allowSequence,
+               isLoading {
+                if navigation === pendingNavigation {
+                    pendingNavigation = nil
+                }
+                refreshState()
+                return
+            }
         } else if pendingNavigation == nil, isLoading {
             // Nil-navigation callbacks need a unique owner. Competing unbound allows
             // must not borrow the newest URL/method for an earlier failure.

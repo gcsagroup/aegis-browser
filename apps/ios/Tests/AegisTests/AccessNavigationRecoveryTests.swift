@@ -403,4 +403,36 @@ final class AccessNavigationRecoveryTests: XCTestCase {
         tab.webView(tab.webView, didCommit: second)
         XCTAssertEqual(tab.url?.path, "/b")
     }
+
+    func testRetryIssuesADocumentLoadForTheFailedNavigation() async throws {
+        let tab = makeTab()
+        var request = URLRequest(url: URL(string: "https://example.invalid/a")!)
+        request.httpMethod = "GET"
+        tab.load(request)
+        deliver(tab)
+        let failure = try XCTUnwrap(tab.lastMainFrameFailure)
+        XCTAssertTrue(tab.retryFailedNavigation(
+            request,
+            expectedNavigationID: failure.navigationID,
+            recoveryOperationID: UUID()
+        ))
+        await waitUntil { tab.currentNavigationForTests != nil }
+        XCTAssertNotNil(tab.currentNavigationForTests)
+        XCTAssertNil(tab.lastMainFrameFailure)
+    }
+
+    func testOlderProvisionalCancelDoesNotAbortANewerDeferredLoad() async throws {
+        let tab = makeTab()
+        tab.load(URLRequest(url: URL(string: "https://shop.example/a")!))
+        await waitUntil { tab.currentNavigationForTests != nil }
+        let first = try XCTUnwrap(tab.currentNavigationForTests)
+        tab.load(URLRequest(url: URL(string: "https://shop.example/b")!))
+        tab.webView(
+            tab.webView,
+            didFailProvisionalNavigation: first,
+            withError: NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        )
+        await waitUntil { tab.currentNavigationForTests != nil && tab.currentNavigationForTests !== first }
+        XCTAssertNotEqual(tab.currentNavigationForTests, first)
+    }
 }
