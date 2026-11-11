@@ -167,3 +167,29 @@ Use `--draft` for the Draft folder. The catalogue contains IPA, dSYM and deliver
 evidence. On a self-hosted runner the default root belongs to that runner's user.
 Use the same copy command on downloaded, verified original files for a local
 catalogue.
+
+## Routine execution without AI / 无 AI 日常执行
+
+The checked-in Actions, release scripts and Fastlane lanes execute independently
+of an AI assistant. Once the exact current main has passed admission and signing
+materials are configured, an Admin selects **Simple → Package and upload**, fills
+in **Version**, **Build** and **Product**, and keeps **cloud** as the signing mode.
+The workflow performs its source, capacity, signing and allocation checks, then
+archives, exports, verifies, seals and uploads the original package. Protected
+Environment approvals continue to follow repository policy.
+
+日常发包无需 AI 参与。已通过准入的当前 main 和签名材料就绪后，管理员选择
+**Simple → Package and upload**，填写版本、build 和包型，沿用 **cloud**。
+工作流执行源码、容量、签名和占号检查，再归档、导出、验包、封存并上传原件。
+
+Use **Status** or **Wait** for the same version/build to read Apple's processing
+result. A timeout or uncertain transport result requires query and reconciliation;
+it does not authorize another upload. Certificate renewal, permission changes and
+source review are separate maintenance work. A GitHub-hosted runner's Downloads
+folder belongs to that runner. For this Mac's Downloads catalogue, download and
+verify the retained original artifact, then run the copy command above with its
+independently retained manifest digest.
+
+上传后用相同版本/build 的 **Status** 或 **Wait** 回读 Apple 处理结果；超时或运输结果
+不明时先查询对账。证书续期、权限变更和源码审查另行处理。本机下载目录使用已下载并
+验证的原始 artifact，按上面的复制命令和独立保留的 manifest 摘要归档。
