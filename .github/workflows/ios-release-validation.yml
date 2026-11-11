@@ -101,6 +101,12 @@ jobs:
           CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
           CI_RUNNER_NAME: ${{ runner.name }}
         run: python3 -I -B scripts/ci/ios-ci-storage.py prepare --runner-environment "$CI_RUNNER_ENVIRONMENT" --runner-name "$CI_RUNNER_NAME"
+      # Fork PRs land on macos-26 without mise Go; pin the lock's toolchain for both hosted and self-hosted.
+      - name: Install Go for EmbeddedCore prepare
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
       - name: Prepare locked EmbeddedCore XCFramework
         run: |
           export MISE_TRUSTED_CONFIG_PATHS="${MISE_TRUSTED_CONFIG_PATHS:-$PWD}"
@@ -113,6 +119,7 @@ jobs:
           fi
           export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
           command -v go >/dev/null || { echo "go missing on archive runner" >&2; exit 2; }
+          go version | grep -F 'go1.27.3' >/dev/null || { echo "expected go1.27.3 on archive runner" >&2; go version >&2; exit 2; }
           if ! command -v gomobile >/dev/null 2>&1; then
             go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20261011034528-197770444867
             export PATH="${GOPATH:-$HOME/go}/bin:$PATH"
