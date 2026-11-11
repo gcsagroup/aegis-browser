@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "verified_build",
-  "note": "Thin StartInstance/Dial bridge built from Xray-core v26.11.9 / 676eaf66\u2026 with Go 1.27.3 gomobile. Product path: Swift listener + core.Dial. Stock LibXray Invoke/RunXray is not the linked ABI. Framework lives under EmbeddedCore/Products (build artifact, not committed). Digests refreshed 2026-11-11 from enrolled archive runner prepare (ios-archive run 42976943263 / mac-01); local Mac digests are not interchangeable.",
+  "note": "Thin StartInstance/Dial bridge built from Xray-core v26.11.9 / 676eaf66\u2026 with Go 1.27.3 gomobile. Product path: Swift listener + core.Dial. Stock LibXray Invoke/RunXray is not the linked ABI. Framework lives under EmbeddedCore/Products (build artifact, not committed). Digests refreshed 2026-11-11 from hosted macos-26 ios-archive prepare (run 42987133501); self-hosted mac-01 digests are not interchangeable with the clean hosted runner.",
   "xrayCore": {
     "repository": "https://github.com/XTLS/Xray-core",
     "tag": "v26.11.9",
@@ -44,7 +44,7 @@
   },
   "artifacts": {
     "xcframework": "AegisEmbeddedCore.xcframework",
-    "iosArm64Sha256": "53bea577bd40bd1525814c6a8d93e2c227e588e1fa5a379c95836ecc2a2ddca1",
-    "iosArm64SimulatorSha256": "2fff955dc99e6be16021620b2f80d9ebf7a8a96f4cfaed71da436e2fc32bc84a"
+    "iosArm64Sha256": "10999d3aa4f6147c597534a5290dbd3640f16e5f76430ff77d3591e76b2897e7",
+    "iosArm64SimulatorSha256": "00199d1f7049ace803ea0f068d04f1c1797ccbf32db5b871ee1e9fd9e22f7c67"
   }
 }

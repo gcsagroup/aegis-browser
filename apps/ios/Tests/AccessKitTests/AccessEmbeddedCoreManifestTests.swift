@@ -16,11 +16,11 @@ final class AccessEmbeddedCoreManifestTests: XCTestCase {
         XCTAssertEqual(manifest.libXrayCommit, "5a0f7d8d1c28b34afb5727b04b26a10f6dbac7e3")
         XCTAssertEqual(
             manifest.iosArm64Sha256,
-            "53bea577bd40bd1525814c6a8d93e2c227e588e1fa5a379c95836ecc2a2ddca1"
+            "10999d3aa4f6147c597534a5290dbd3640f16e5f76430ff77d3591e76b2897e7"
         )
         XCTAssertEqual(
             manifest.iosArm64SimulatorSha256,
-            "2fff955dc99e6be16021620b2f80d9ebf7a8a96f4cfaed71da436e2fc32bc84a"
+            "00199d1f7049ace803ea0f068d04f1c1797ccbf32db5b871ee1e9fd9e22f7c67"
         )
         XCTAssertTrue(manifest.mayLink)
     }

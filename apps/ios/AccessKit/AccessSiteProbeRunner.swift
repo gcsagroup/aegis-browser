@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Outcome of one DEV/Alpha suggestion probe. Never expands authorization.
 public enum AccessSiteProbeOutcome: String, Sendable, Equatable {
@@ -105,9 +106,21 @@ public struct AccessSiteProbeRunner: Sendable {
                 session = created
                 return created
             }()
+            // Recheck again immediately before the socket work so a mid-batch arm
+            // that landed after the first check still skips the direct probe.
+            if let requiresProxy, await requiresProxy(host) {
+                results.append(
+                    AccessSiteProbeHostResult(
+                        host: host,
+                        outcome: .skippedAlreadyProxied,
+                        detail: "already requiring proxy"
+                    )
+                )
+                continue
+            }
             let result = await probe(host: host, session: active)
             results.append(result)
-            if result.outcome == .redirectedOffHost {
+            if result.outcome == AccessSiteProbeOutcome.redirectedOffHost {
                 break
             }
         }
@@ -166,13 +179,10 @@ public struct AccessSiteProbeRunner: Sendable {
 
 private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let expectedHost: String
-    private let lock = NSLock()
-    private var _redirectedOffHost = false
+    private let flags = Mutex(false)
 
     var redirectedOffHost: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return _redirectedOffHost
+        flags.withLock { $0 }
     }
 
     init(expectedHost: String) {
@@ -188,12 +198,13 @@ private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked 
     ) {
         let nextHost = request.url?.host?.lowercased()
         if nextHost != expectedHost {
-            lock.lock()
-            _redirectedOffHost = true
-            lock.unlock()
+            flags.withLock { $0 = true }
             completionHandler(nil)
             return
         }
-        completionHandler(request)
+        // Never follow same-host redirects on ephemeral probes. Following would
+        // issue another direct hop after the caller may have armed proxy mid-flight.
+        // The redirect response itself (3xx) still counts as reachable above.
+        completionHandler(nil)
     }
 }

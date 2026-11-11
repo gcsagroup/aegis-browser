@@ -22,6 +22,8 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     private struct State {
         var admissionSummary = ""
         var listener: NWListener?
+        /// Set when NWListener reports `.failed` after the initial ready handshake.
+        var listenerFailed = false
         var acceptedConnections: UInt64 = 0
         var establishedConnects: UInt64 = 0
         var openConnections: [NWConnection] = []
@@ -39,7 +41,9 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
     }
 
     public var isListening: Bool {
-        gate.withLock { $0.listener != nil }
+        gate.withLock { state in
+            state.listener != nil && state.listenerFailed == false
+        }
     }
 
     public var acceptedConnectionCount: UInt64 {
@@ -105,11 +109,22 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         let installed = gate.withLock { state -> Bool in
             if state.listener != nil { return false }
             state.listener = nwListener
+            state.listenerFailed = false
             return true
         }
         if !installed {
             nwListener.cancel()
             throw AccessHTTPInboundError.alreadyListening
+        }
+        // Keep observing after the bootstrap handshake so a later `.failed`
+        // clears readiness for the product health check.
+        nwListener.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            if case .failed = state {
+                self.gate.withLock { gateState in
+                    gateState.listenerFailed = true
+                }
+            }
         }
     }
 
@@ -118,6 +133,7 @@ public final class AccessHTTPInboundListener: @unchecked Sendable {
         let snapshot: (NWListener, [NWConnection], [AccessHTTPTunnelBridge])? = gate.withLock { state in
             guard let active = state.listener else { return nil }
             state.listener = nil
+            state.listenerFailed = false
             let connections = state.openConnections
             state.openConnections.removeAll()
             state.sessions.removeAll()

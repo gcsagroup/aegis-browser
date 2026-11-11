@@ -168,11 +168,12 @@ enum AccessSiteProxyToggleModel {
     }
 
     static func attachmentLine(for attachment: AccessProxyAttachment, intent: AccessSiteIntent) -> String? {
-        guard intent == .allow else { return nil }
         switch attachment {
         case .notAttached:
+            guard intent == .allow else { return nil }
             return "尚未接入代理，当前页面仍使用原连接"
         case .attachedUnavailable:
+            // Bound auto-recovery may have no manual allow intent; still explain the fault.
             return "代理请求失败，未切回原连接"
         case .ready:
             return nil

@@ -29,6 +29,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     private var probeBusyTabs: Set<String> = []
     private var probeTasks: [String: Task<Void, Never>] = [:]
     private var probeGenerations: [String: UInt64] = [:]
+    /// Site host the probe was started for; results must not survive an in-place navigation.
+    private var probeSiteHosts: [String: AccessSiteHost] = [:]
     private var probeRunner = AccessSiteProbeRunner()
     var tabs: () -> [BrowserTab] = { [] }
     private var sweepTask: Task<Void, Never>?
@@ -160,6 +162,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         )
         snapshot.attachment = attachment
         if boundUnavailable, intentOn || autoListed || executingTabs[tab.id.uuidString] == key {
+            // Auto-bound failures must still explain the broken proxy path when
+            // manual intent is off (attachmentLine used to no-op on `.off`).
             snapshot.failureReason = AccessSiteProxyToggleModel.attachmentLine(
                 for: .attachedUnavailable,
                 intent: intentOn ? .allow : .off
@@ -175,8 +179,13 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         snapshot.showsDebugSiteGroupDetails = showsDebugSiteGroupDetails
         if showsDebugSiteGroupDetails {
             snapshot.debugMemberHosts = listed.first?.memberHosts.map(\.rawValue) ?? []
-            snapshot.probeSuggestionLines = probeLines[tab.id.uuidString] ?? []
-            snapshot.probeBusy = probeBusyTabs.contains(tab.id.uuidString)
+            let tabID = tab.id.uuidString
+            if probeSiteHosts[tabID] == host {
+                snapshot.probeSuggestionLines = probeLines[tabID] ?? []
+            } else {
+                snapshot.probeSuggestionLines = []
+            }
+            snapshot.probeBusy = probeBusyTabs.contains(tabID)
         }
         return snapshot
     }
@@ -337,6 +346,10 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         probeBusyTabs.insert(tabID)
         let generation = (probeGenerations[tabID] ?? 0) + 1
         probeGenerations[tabID] = generation
+        let siteHost = host(for: tab)
+        if let siteHost {
+            probeSiteHosts[tabID] = siteHost
+        }
         revision &+= 1
         let runner = probeRunner
         probeTasks[tabID]?.cancel()
@@ -357,7 +370,16 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             )
             guard !Task.isCancelled else { return }
             guard self.probeGenerations[tabID] == generation else { return }
-            self.probeLines[tabID] = report.suggestionLines
+            if let siteHost, self.host(for: tab) != siteHost {
+                // In-place navigation left the originating site; drop stale suggestions.
+                self.probeLines[tabID] = nil
+                self.probeSiteHosts[tabID] = nil
+            } else {
+                self.probeLines[tabID] = report.suggestionLines
+                if let siteHost {
+                    self.probeSiteHosts[tabID] = siteHost
+                }
+            }
             self.probeBusyTabs.remove(tabID)
             self.probeTasks[tabID] = nil
             self.revision &+= 1
@@ -385,6 +407,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             probeTasks[tabID] = nil
             probeBusyTabs.remove(tabID)
             probeLines[tabID] = nil
+            probeSiteHosts[tabID] = nil
             probeGenerations[tabID, default: 0] += 1
             return
         }
@@ -401,6 +424,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             probeTasks[id] = nil
             probeBusyTabs.remove(id)
             probeLines[id] = nil
+            probeSiteHosts[id] = nil
             probeGenerations[id, default: 0] += 1
         }
     }
@@ -862,12 +886,24 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     }
 
     private func invalidateOperations(groupID: UUID) {
-        for (id, operation) in operations where operation.authorization?.groupID == groupID && operation.state == .preparing {
+        for (id, operation) in operations where operation.authorization?.groupID == groupID {
+            let priorState = operation.state
+            guard priorState == .preparing || priorState == .sent else { continue }
             var cancelled = operation
             cancelled.state = .cancelled
             operations[id] = cancelled
-            publisher.cancel(operationID: id)
-            if phases[operation.tabID] == .preparing { phases[operation.tabID] = nil }
+            if priorState == .preparing {
+                publisher.cancel(operationID: id)
+            }
+            if executingTabs[operation.tabID] == operation.key {
+                executingTabs.removeValue(forKey: operation.tabID)
+            }
+            if !groupStillLists(operation.key), intents[operation.key] != .on {
+                executing.remove(operation.key)
+            }
+            if phases[operation.tabID] == .preparing || phases[operation.tabID] == .sent {
+                phases[operation.tabID] = nil
+            }
         }
     }
 
@@ -995,13 +1031,15 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
     ) -> AccessProxyIntentState {
         if intents[key] == .on { return .on }
         // Only the tab that recovered this exact host may keep using its host store.
-        if executingTabs[tabID] == key { return .on }
+        if executingTabs[tabID] == key, groupStillLists(key) || intents[key] == .on || executing.contains(key) {
+            return .on
+        }
         if boundToTarget, groupStillLists(key) || executing.contains(key) { return .on }
         if operations.values.contains(where: {
             $0.tabID == tabID
                 && $0.key == key
                 && ($0.state == .preparing || $0.state == .sent)
-                && ($0.authorization != nil || intents[key] == .on)
+                && authorizationStillValid($0)
         }) {
             return .on
         }

@@ -74,4 +74,5 @@ final class AccessSiteProbeRunnerTests: XCTestCase {
         )
         XCTAssertEqual(report.results.map(\.outcome), [.skippedAlreadyProxied, .skippedAlreadyProxied])
     }
+
 }

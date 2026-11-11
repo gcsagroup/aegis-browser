@@ -157,6 +157,7 @@ if [[ "$STATUS" -ne 0 ]]; then
 fi
 
 # Exit 0 with every live case skipped must not become a K PASS (device config often invisible).
+# Prefer per-test results (`test-results tests`) over summary aggregates.
 LIVE_SUMMARY="$(
   python3 - "$RESULT" <<'PY'
 import json, subprocess, sys
@@ -165,64 +166,107 @@ result = Path(sys.argv[1])
 if not result.exists():
     print("MISSING")
     raise SystemExit(0)
-try:
-  raw = subprocess.check_output(
-      ["xcrun", "xcresulttool", "get", "test-results", "summary", "--path", str(result)],
-      stderr=subprocess.DEVNULL,
-      text=True,
-  )
-except Exception:
-    # Older xcresulttool: fall back to legacy get --format json (best effort).
+
+def run_xcresult(*args):
+    return subprocess.check_output(
+        ["xcrun", "xcresulttool", *args, "--path", str(result)],
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+
+raw = None
+for args in (
+    ("get", "test-results", "tests"),
+    ("get", "test-results", "summary"),
+):
     try:
-        raw = subprocess.check_output(
-            ["xcrun", "xcresulttool", "get", "--path", str(result), "--format", "json"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
+        raw = run_xcresult(*args)
+        break
     except Exception:
-        print("UNREADABLE")
-        raise SystemExit(0)
-text = raw.lower()
-# Prefer summary JSON when present.
-live_name = "accessembeddedcorelivetests"
+        continue
+if raw is None:
+    print("UNREADABLE")
+    raise SystemExit(0)
+
 try:
     data = json.loads(raw)
 except Exception:
-    data = None
+    print("UNREADABLE")
+    raise SystemExit(0)
+
+live_markers = (
+    "accessembeddedcorelivetests",
+    "aegistests/accessembeddedcorelivetests",
+)
+required_live = []
+
+def is_live_name(name: str) -> bool:
+    lowered = name.lower()
+    return any(marker in lowered for marker in live_markers)
+
+def status_of(node: dict) -> str:
+    for key in ("result", "status", "testStatus", "outcome"):
+        value = node.get(key)
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            value = value.get("_value") or value.get("value")
+        text = str(value).lower()
+        if text:
+            return text
+    return ""
+
+def name_of(node: dict) -> str:
+    for key in ("identifier", "name", "testName", "testIdentifier", "nodeIdentifier"):
+        value = node.get(key)
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            value = value.get("_value") or value.get("value") or value.get("identifier")
+        text = str(value)
+        if text:
+            return text
+    return ""
 
 def walk(node, acc):
     if isinstance(node, dict):
-        name = str(node.get("name") or node.get("identifier") or node.get("testName") or "").lower()
-        status = str(node.get("status") or node.get("result") or node.get("testStatus") or "").lower()
-        if live_name in name or "livetest" in name:
-            acc.append((name, status))
+        name = name_of(node)
+        status = status_of(node)
+        # Prefer leaf tests: nodes that look like XCTest cases under LiveTests.
+        if name and is_live_name(name) and (
+            "test" in name.lower()
+            or status in {"passed", "success", "succeeded", "failed", "skipped", "expected failure"}
+        ):
+            # Skip pure suite containers that only mirror the class name.
+            leafish = "/" in name or name.lower().count("test") >= 2 or status in {
+                "passed", "success", "succeeded", "failed", "skipped", "expected failure"
+            }
+            if leafish and not name.lower().endswith("accessembeddedcorelivetests"):
+                acc.append((name, status))
+            elif leafish and status in {"passed", "success", "succeeded", "failed", "skipped"}:
+                acc.append((name, status))
         for value in node.values():
             walk(value, acc)
     elif isinstance(node, list):
         for item in node:
             walk(item, acc)
 
-hits = []
-if data is not None:
-    walk(data, hits)
-if not hits:
-    # Textual fallback for summary output.
-    skipped = text.count("skipped") + text.count("xctskip")
-    passed = "accessembeddedcorelivetests" in text and ("passed" in text or "succeeded" in text)
-    if "accessembeddedcorelivetests" not in text and "live" not in text:
-        print("NO_LIVE_SIGNAL")
-    elif skipped and not passed:
-        print("ALL_SKIPPED")
-    else:
-        print("EXECUTED")
-    raise SystemExit(0)
+walk(data, required_live)
+# Deduplicate while preserving order.
+seen = set()
+live_hits = []
+for name, status in required_live:
+    key = (name.lower(), status)
+    if key in seen:
+        continue
+    seen.add(key)
+    live_hits.append((name, status))
 
-live_hits = [s for n, s in hits if live_name in n or n.endswith("live") or "livetest" in n]
 if not live_hits:
     print("NO_LIVE_SIGNAL")
-elif all(("skip" in s or s in {"expected failure", "unknown"}) for s in live_hits):
+elif all(("skip" in status or status in {"expected failure", "unknown", ""}) for _, status in live_hits):
     print("ALL_SKIPPED")
-elif any(s in {"success", "passed", "succeeded"} for s in live_hits):
+elif any(status in {"success", "passed", "succeeded"} for _, status in live_hits):
     print("EXECUTED")
 else:
     print("NO_LIVE_SIGNAL")
