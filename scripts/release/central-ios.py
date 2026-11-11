@@ -174,6 +174,7 @@ def verify_retained(options, environment):
     p.require(start == prepared and result['request_sha256'] == prepared['request_sha256']
               and result['execution'] == prepared['execution'] and result['destination'] == 'export-only')
     execution = result['execution']
+    operator_proof = None
     run = github_json('gcsagroup/apple-signing', 'actions/runs/' + str(execution['run_id']), token)
     p.require(run['repository']['id'] == run['head_repository']['id'] == 1364015229
               and run['id'] == execution['run_id'] and run['run_attempt'] == execution['attempt'] == 1
@@ -185,6 +186,21 @@ def verify_retained(options, environment):
                   and start['scope'] == expected.scope and start['purpose'] == 'development-test-only'
                   and result.get('scope') == expected.scope and result.get('uploadAuthorized') is False
                   and result.get('submissionAuthorized') is False and result.get('releaseReady') is False)
+        if 'operator_authorization' in start:
+            operator_proof = start['operator_authorization']
+            p.require(isinstance(operator_proof, dict)
+                      and start['registry_commit'] == execution['workflow_commit']
+                      and result.get('registry_commit') == start['registry_commit']
+                      and start['authorization']['request_sha256'] == prepared['request_sha256']
+                      and start['authorization']['executor_commit'] == prepared['executor_commit']
+                      and result.get('operator_authorization_sha256') == p.digest(operator_proof))
+            authority = module('central_operator_authority', 'central_operator_authorization.py')
+            prefix = 'repos/gcsagroup/apple-signing'
+            def central_api(endpoint):
+                p.require(endpoint == prefix or endpoint.startswith(prefix + '/'))
+                return github_json('gcsagroup/apple-signing', endpoint[len(prefix):].lstrip('/'), token)
+            authority.authenticate(central_api, start['authorization'], start['registry_commit'], p,
+                                   historical_proof=operator_proof)
     p.require(result['repository'] == request['producer']['repository']
               and result['repository_id'] == request['producer']['repository_id'])
     expected_assets = {'Aegis.ipa', 'Aegis.dSYM.zip', 'signature-verification.json', 'dsym-verification.json',
@@ -216,6 +232,10 @@ def verify_retained(options, environment):
     if expected == p.QUINN:
         report.update(scope=expected.scope, purpose='development-test-only', releaseReady=False,
                       uploadAuthorized=False, submissionAuthorized=False, promotionReady=False)
+        if operator_proof is not None:
+            report.update(authorizationMode=operator_proof['mode'], activationPr=operator_proof['pr_number'],
+                          activationOperator=operator_proof['operator'], independentHumanApproval=False,
+                          environmentBypassObserved=None)
     (options.output / 'retained-verification.json').write_bytes(p.canonical(report))
 
 

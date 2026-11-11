@@ -97,3 +97,21 @@ producer admission and object write/read/overwrite-denial/tenant-denial/recovery
 proofs. Missing infrastructure or permissions leave the registry inactive. A real
 cross-machine export, original object readback, upload/ASC processing and device
 acceptance have separate evidence.
+### Development administrator authorization
+
+The optional `operator-merged-activation-pr-v1` proof identifies the actual
+`GCSA-ToolsTeam` administrator account (`316909304`) that merged one frozen
+development activation PR. The central executor owns this policy; the activation
+PR cannot change it. Authorization lasts at most 24 hours and consumes the same
+global build allocation. Central signing uses a separate GitHub-hosted `macos-26`
+job with fixed Xcode 26.6.
+
+`verify-retained --scope quinn-develop-poc` authenticates this proof from original
+START/RESULT records and frozen Git/PR evidence, including its canonical digest.
+Its central read token additionally needs Pull requests read access. Later admin
+removal, main movement and admission expiry do not invalidate original readback.
+The report states `independentHumanApproval: false` and
+`environmentBypassObserved: null`: administrator merge identity and Environment
+bypass capability do not establish an independent person's approval or an actual
+deployment bypass event. Both registries remain inactive until a separate exact
+authorization is prepared after infrastructure and Apple-role verification.
