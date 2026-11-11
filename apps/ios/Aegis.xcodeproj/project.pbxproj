@@ -269,6 +269,7 @@
 		A10CCE55ACC0020000000000CB /* AccessSiteProxyToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */; };
 		A10CCE55ACC0020000000000CC /* AccessSiteProxySessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */; };
 		A10CCE55ACC0020000000000CD /* AccessSiteProxyToggleModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */; };
+		A10CCE55ACC0020000000001A2 /* AccessAccountSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001A2 /* AccessAccountSessionTests.swift */; };
 		A10CCE55ACC0020000000000D0 /* AccessBrowsingBucket.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D0 /* AccessBrowsingBucket.swift */; };
 		A10CCE55ACC0020000000000D1 /* AccessBrowsingIsolationError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D1 /* AccessBrowsingIsolationError.swift */; };
 		A10CCE55ACC0020000000000D2 /* AccessBrowsingAccessState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */; };
@@ -277,6 +278,8 @@
 		A10CCE55ACC0020000000000F0 /* AccessDevAllowBlockPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */; };
 		A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */; };
 		A10CCE55ACC0020000000000F2 /* AccessDevAllowBlockSectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */; };
+		A10CCE55ACC0020000000001A1 /* AccessAccountSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001A1 /* AccessAccountSession.swift */; };
+		A10CCE55ACC0020000000001A0 /* AccessAccountEntitlement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001A0 /* AccessAccountEntitlement.swift */; };
 		A10CCE55ACC0020000000000F3 /* AccessDevAllowBlockSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */; };
 		A10CCE55ACC0020000000000F8 /* AccessSitePhase1Evidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */; };
 		A10CCE55ACC0020000000000F9 /* AccessSitePhase1EvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */; };
@@ -743,6 +746,7 @@
 		A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleView.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxySessionStore.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleModelTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000001A2 /* AccessAccountSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessAccountSessionTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000D0 /* AccessBrowsingBucket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingBucket.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000D1 /* AccessBrowsingIsolationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingIsolationError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingAccessState.swift; sourceTree = "<group>"; };
@@ -751,6 +755,8 @@
 		A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanel.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanelTests.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionModel.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000001A1 /* AccessAccountSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessAccountSession.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000001A0 /* AccessAccountEntitlement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessAccountEntitlement.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionView.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1Evidence.swift; sourceTree = "<group>"; };
 		A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceTests.swift; sourceTree = "<group>"; };
@@ -921,6 +927,7 @@
 				BB1984028F943ED514E4B2BF /* BrowserWindowTests.swift */,
 				7DA26E91B481872DFF7904C7 /* ContentFilterTests.swift */,
 				A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */,
+				A10CCE55ACC0010000000001A2 /* AccessAccountSessionTests.swift */,
 				C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */,
 				E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */,
 				F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */,
@@ -1133,6 +1140,8 @@
 				A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */,
 				A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */,
 				A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */,
+				A10CCE55ACC0010000000001A1 /* AccessAccountSession.swift */,
+				A10CCE55ACC0010000000001A0 /* AccessAccountEntitlement.swift */,
 				A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */,
 				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
 				9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */,
@@ -1834,6 +1843,8 @@
 				A10CCE55ACC0020000000000CB /* AccessSiteProxyToggleView.swift in Sources */,
 				A10CCE55ACC0020000000000CC /* AccessSiteProxySessionStore.swift in Sources */,
 				A10CCE55ACC0020000000000F2 /* AccessDevAllowBlockSectionModel.swift in Sources */,
+				A10CCE55ACC0020000000001A1 /* AccessAccountSession.swift in Sources */,
+				A10CCE55ACC0020000000001A0 /* AccessAccountEntitlement.swift in Sources */,
 				A10CCE55ACC0020000000000F3 /* AccessDevAllowBlockSectionView.swift in Sources */,
 				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
 				EA17336CE13C643EFF37AD29 /* FirebaseControlsView.swift in Sources */,
@@ -1888,6 +1899,7 @@
 				A81B549D1197E1C4752D1B75 /* CapabilitySecurityTests.swift in Sources */,
 				8FD86E55938A81B726515530 /* ContentFilterTests.swift in Sources */,
 				A10CCE55ACC0020000000000CD /* AccessSiteProxyToggleModelTests.swift in Sources */,
+				A10CCE55ACC0020000000001A2 /* AccessAccountSessionTests.swift in Sources */,
 				F1DB30017933EE43C6660F04 /* DownloadPlanTests.swift in Sources */,
 				FC29A4E60162F5F98F194385 /* ExternalPageLinkTests.swift in Sources */,
 				A3D7B09E532CEACA66A14C52 /* FirebaseInstallPreferencesTests.swift in Sources */,

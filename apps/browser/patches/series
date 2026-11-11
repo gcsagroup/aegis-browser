@@ -355,3 +355,4 @@
 0355-feat-access-phase1-evidence.patch
 0356-brand-windows-uninstall-prompts.patch
 0357-access-rule-store-open-retry.patch
+0358-macos-current-access-account-query.patch

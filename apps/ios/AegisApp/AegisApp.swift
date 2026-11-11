@@ -26,6 +26,7 @@ struct AegisApp: App {
     @StateObject private var settings: BrowserSettings
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
+    @StateObject private var accountSession = AccessAccountSession.product()
     @StateObject private var readingLibrary: ReadingLibrary
 
     init() {
@@ -105,6 +106,7 @@ struct AegisApp: App {
                 .environmentObject(downloads)
                 .environmentObject(assistantTasks)
                 .environmentObject(readingLibrary)
+                .environmentObject(accountSession)
                 .preferredColorScheme(settings.colorScheme)
                 .tint(Color(red: 0.09, green: 0.47, blue: 0.37))
         } defaultValue: {
@@ -113,6 +115,10 @@ struct AegisApp: App {
         .commands { BrowserKeyboardCommands(language: language) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { language.refresh(); AegisFirebase.shared.refreshOnForeground() }
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active { accountSession.refresh() }
+            else { accountSession.suspend() }
         }
     }
 
