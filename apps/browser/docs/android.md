@@ -6,6 +6,7 @@ This document covers the Android browser target only. iOS and a WebView wrapper 
 
 ## Current evidence boundary
 
+- 2026-11-11 Android 源码候选为正式 Stable `157.0.8103.50`，桌面为 `157.0.8103.51`。334 个 Android 补丁已独立回放通过；APK 构建、原签名和真实设备验收仍未完成。
 - 2026-11-07 Android 正式 Stable 为 `157.0.8103.46`，桌面为 `157.0.8103.39`。Android 独立回放通过 328 个 Chromium 补丁和 3 个 V8 补丁。APK 构建、发行签名和实机验收待完成。
 - 2026-11-01 Android 源码候选使用正式 Stable `156.0.8078.79`；桌面为 `156.0.8078.80`。Android 保留独立 pin 与补丁目录，325 个 Chromium 和 3 个 V8 补丁回放通过。尚未编译 APK、签名或实机验收；真实构建前递增产品版本，不能使用历史产物冒充本版本验收。
 - The reserved application ID is `app.gcsa.aegis`; reservation does not establish a valid package or Play identity.

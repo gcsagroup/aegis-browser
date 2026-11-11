@@ -8,6 +8,8 @@ GCSA-aegis Browser integrates privacy and security controls into Chromium and it
 
 Policy logic originates in `packages/core` and is integrated through generated rule snapshots, an embedded policy worker, Chromium browser services, and Blink/V8 hooks.
 
+> **2026-11-11 · 安全更新源码候选**　桌面正式 Stable 为 `157.0.8103.51`，Android 为 `157.0.8103.50`。309 候选的 364 个桌面、334 个 Android 补丁已独立回放通过；源码准备完成，最终构建与三平台发行验收尚未完成。
+
 > **2026-11-07 · 安全更新源码候选**　桌面正式 Stable 为 `157.0.8103.39`，Android 为 `157.0.8103.46`。桌面 358 个、Android 328 个 Chromium 补丁和两套各 3 个 V8 补丁均已回放。三平台构建、签名和实机验收待完成。[本轮证据](../../docs/audit/upstream-157-2026-11-07.zh-CN.md)
 
 > **2026-11-01 · 安全更新源码候选：** 桌面更新至 `156.0.8078.80`，Android 更新至 `156.0.8078.79`。338 个桌面、325 个 Android 及两套各 3 个 V8 补丁回放通过。尚未编译或实机验收；原 303 构建失败证据保留，下次真实编译前递增产品版本。详见[本轮证据](../../docs/audit/upstream-156-80-2026-11-01.zh-CN.md)。
@@ -26,7 +28,7 @@ The [2026-09-10 audit](../../docs/audit/main-consolidation-2026-09-10.md) record
 
 | File | Meaning |
 |---|---|
-| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `157.0.8103.39`，尚未正式发布 |
+| [CHROMIUM_VERSION](./CHROMIUM_VERSION) | 本分支桌面基线 `157.0.8103.51`，尚未正式发布 |
 | [CHROMIUM_COMMIT](./CHROMIUM_COMMIT) | Exact Chromium commit used as the patch base |
 
 The pin is a fixed snapshot. It does not track newer Stable releases automatically.
