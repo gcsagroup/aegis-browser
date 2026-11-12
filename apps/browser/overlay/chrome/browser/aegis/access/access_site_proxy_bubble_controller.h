@@ -10,6 +10,7 @@
 #include <string_view>
 #include <vector>
 
+#include "build/build_config.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
@@ -22,6 +23,11 @@
 #include "url/gurl.h"
 
 class Profile;
+namespace content { class WebContents; }
+#if BUILDFLAG(IS_MAC)
+#include "base/callback_list.h"
+#include "chrome/browser/aegis/access/access_core_log_share.h"
+#endif
 
 namespace aegis::access {
 
@@ -41,6 +47,13 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
 
   AccessSiteIntentStore& intent_store() { return intent_store_; }
   const AccessSiteIntentStore& intent_store() const { return intent_store_; }
+
+  bool CanViewCoreLogs() const;
+  AccessCoreLogStore* core_logs() const { return core_logs_.get(); }
+  void SetCoreLogLevel(std::string_view level);
+#if BUILDFLAG(IS_MAC)
+  void ShareCoreLogs(content::WebContents* tab, std::string preview, uint64_t version, base::OnceCallback<void(bool)> done);
+#endif
 
   uint64_t state_revision() const { return state_revision_; }
 
@@ -129,6 +142,11 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
       const OwnershipKey& owner) const;
 
   const raw_ptr<Profile> profile_;
+#if BUILDFLAG(IS_MAC)
+  CoreLogShareSession log_share_;
+  base::CallbackListSubscription app_terminating_;
+#endif
+  scoped_refptr<AccessCoreLogStore> core_logs_;
   AccessSiteIntentStore intent_store_;
   AccessSiteIntentStore dev_intent_store_;
   std::set<AccessSiteHost> website_hosts_;

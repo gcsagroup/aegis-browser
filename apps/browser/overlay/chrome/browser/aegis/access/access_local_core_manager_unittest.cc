@@ -15,6 +15,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/task_environment.h"
+#include "base/task/thread_pool.h"
+#include <atomic>
 #include "base/test/bind.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_run_loop_timeout.h"
@@ -27,6 +29,8 @@
 #include "chrome/browser/aegis/access/access_buildflags.h"
 #include "build/build_config.h"
 #include "crypto/hash.h"
+#include "chrome/browser/aegis/access/access_core_log_share.h"
+#include "third_party/zlib/google/compression_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace aegis::access {
@@ -153,6 +157,36 @@ TEST_F(AccessLocalCoreManagerTest, SessionEndingStopsAllReadyCoresWithoutUiRepli
 }
 
 #if BUILDFLAG(IS_MAC)
+TEST_F(AccessLocalCoreManagerTest, AuthorizedCoreWritesRestoresAndClearsHistory) {
+  auto input = ResolveAccessLocalCoreInput();
+  if (!input) GTEST_SKIP() << "Authorized core/node binding required.";
+  base::ScopedTempDir profile;
+  ASSERT_TRUE(profile.CreateUniqueTempDir());
+  auto logs = AccessCoreLogStore::Open(profile.GetPath(), CoreLogProfile::kPrivate, "warning");
+  input->log_store = logs;
+  AccessLocalCoreManager manager(std::move(*input));
+  base::test::TestFuture<AccessLocalCoreReady> started;
+  manager.Prepare(started.GetCallback());
+  ASSERT_TRUE(started.Get().ready) << started.Get().error;
+  base::test::TestFuture<void> stopped;
+  manager.Stop(stopped.GetCallback());
+  ASSERT_TRUE(stopped.Wait());
+  environment_.RunUntilIdle();
+  const auto text = logs->Snapshot();
+  ASSERT_NE(text.find("[Warning] core: Xray "), text.npos);
+  const auto directory = profile.GetPath().AppendASCII(kCoreLogDirectory);
+  std::string saved;
+  ASSERT_TRUE(base::ReadFileToString(directory.AppendASCII("private.log"), &saved));
+  EXPECT_EQ(saved, text);
+  EXPECT_FALSE(base::PathExists(directory.AppendASCII("regular.log")));
+  auto restored = AccessCoreLogStore::Open(profile.GetPath(), CoreLogProfile::kPrivate, "warning");
+  environment_.RunUntilIdle();
+  EXPECT_EQ(restored->Snapshot(), text);
+  restored->Clear();
+  environment_.RunUntilIdle();
+  EXPECT_FALSE(base::PathExists(directory.AppendASCII("private.log")));
+}
+
 class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
  protected:
   void SetUp() override {
@@ -262,6 +296,206 @@ class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
   std::string pin_;
   base::test::ScopedRunLoopTimeout timeout_{FROM_HERE, base::Seconds(45)};
 };
+
+TEST(AccessCoreLogArchiveTest, PrivateCompressedCopyWithoutOverwrite) {
+  base::ScopedTempDir dir;
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
+  const std::string text = "2026/11/11 01:02:03 [Warning] core: Xray 26.1.18 started";
+  EXPECT_FALSE(WriteCoreLogArchive(dir.GetPath(), ""));
+  ASSERT_TRUE(WriteCoreLogArchive(dir.GetPath(), text));
+  auto path = dir.GetPath().AppendASCII(kCoreLogArchive);
+  int mode = 0;
+  ASSERT_TRUE(base::GetPosixFilePermissions(path, &mode));
+  EXPECT_EQ(mode, 0600);
+  std::string compressed, decoded;
+  ASSERT_TRUE(base::ReadFileToString(path, &compressed));
+  ASSERT_TRUE(compression::GzipUncompress(compressed, &decoded));
+  EXPECT_EQ(decoded, text);
+  EXPECT_FALSE(WriteCoreLogArchive(dir.GetPath(), "replacement"));
+  ASSERT_TRUE(base::DeleteFile(path));
+  auto other = dir.GetPath().AppendASCII("other");
+  ASSERT_TRUE(base::WriteFile(other, "unchanged"));
+  ASSERT_TRUE(base::CreateSymbolicLink(other, path));
+  EXPECT_FALSE(WriteCoreLogArchive(dir.GetPath(), "replacement"));
+  ASSERT_TRUE(base::ReadFileToString(other, &decoded));
+  EXPECT_EQ(decoded, "unchanged");
+}
+
+TEST(AccessCoreLogArchiveTest, QuitWhileWriteIsQueuedCleansWithoutUiReply) {
+  base::test::TaskEnvironment environment(
+      base::test::TaskEnvironment::ThreadPoolExecutionMode::QUEUED);
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
+  CoreLogShareSession session;
+  bool picker_opened = false;
+  session.StartForTesting("private destination", base::BindLambdaForTesting(
+      [&](base::FilePath, base::ScopedClosureRunner) { picker_opened = true; }),
+      runner, parent.GetPath());
+  std::atomic_bool created{false};
+  runner->PostTask(FROM_HERE, base::BindLambdaForTesting(
+      [&] { created = !base::IsDirectoryEmpty(parent.GetPath()); }));
+  session.ShutDown();
+  environment.RunUntilIdle();
+  EXPECT_TRUE(created.load());
+  EXPECT_FALSE(picker_opened);
+  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
+}
+
+TEST(AccessCoreLogArchiveTest, ClosingPickerReleasesFileAndAllowsNextShare) {
+  base::test::TaskEnvironment environment;
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
+  CoreLogShareSession session;
+  base::OnceClosure picker_callback;
+  auto show_picker = [&](base::FilePath path, base::ScopedClosureRunner release) {
+    ASSERT_TRUE(base::PathExists(path));
+    picker_callback = base::BindOnce([](base::ScopedClosureRunner) {}, std::move(release));
+  };
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    session.StartForTesting("text", base::BindLambdaForTesting(show_picker),
+                            runner, parent.GetPath());
+    environment.RunUntilIdle();
+    ASSERT_TRUE(picker_callback);
+    picker_callback.Reset();
+    environment.RunUntilIdle();
+    EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
+  }
+}
+
+bool WaitWithoutUiReplies(const std::shared_ptr<base::WaitableEvent>& event) {
+  base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
+  return event->TimedWait(base::Seconds(5));
+}
+
+TEST(AccessCoreLogArchiveTest, SessionEndingCleansAnOpenPickerWithoutUiReplies) {
+  base::test::TaskEnvironment environment;
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
+  base::FilePath archive;
+  base::ScopedClosureRunner picker_release;
+  CoreLogShareSession session;
+  session.StartForTesting("private destination", base::BindLambdaForTesting(
+      [&](base::FilePath path, base::ScopedClosureRunner release) {
+        archive = path;
+        picker_release = std::move(release);
+      }), runner, parent.GetPath());
+  environment.RunUntilIdle();
+  ASSERT_FALSE(archive.empty());
+  ASSERT_TRUE(base::PathExists(archive));
+  auto completed = std::make_shared<base::WaitableEvent>();
+  AccessLocalCoreManager::StopAllForSessionEnding(base::BindLambdaForTesting(
+      [completed] { completed->Signal(); }));
+  EXPECT_TRUE(WaitWithoutUiReplies(completed));
+  EXPECT_FALSE(base::PathExists(archive));
+  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
+}
+
+TEST(AccessCoreLogArchiveTest, SessionEndingIncludesADestroyedShareOwner) {
+  base::test::TaskEnvironment environment;
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::WithBaseSyncPrimitives(),
+       base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
+  bool picker_opened = false;
+  auto session = std::make_unique<CoreLogShareSession>();
+  session->StartForTesting("private destination", base::BindLambdaForTesting(
+      [&](base::FilePath, base::ScopedClosureRunner) { picker_opened = true; }),
+      runner, parent.GetPath());
+  auto written = std::make_shared<base::WaitableEvent>();
+  runner->PostTask(FROM_HERE, base::BindLambdaForTesting(
+      [written] { written->Signal(); }));
+  ASSERT_TRUE(WaitWithoutUiReplies(written));
+  ASSERT_FALSE(base::IsDirectoryEmpty(parent.GetPath()));
+  auto blocked = std::make_shared<base::WaitableEvent>();
+  auto resume = std::make_shared<base::WaitableEvent>();
+  base::ScopedClosureRunner unblock(base::BindLambdaForTesting(
+      [resume] { resume->Signal(); }));
+  runner->PostTask(FROM_HERE, base::BindLambdaForTesting([blocked, resume] {
+    blocked->Signal();
+    resume->Wait();
+  }));
+  ASSERT_TRUE(WaitWithoutUiReplies(blocked));
+  session.reset();
+  auto completed = std::make_shared<base::WaitableEvent>();
+  AccessLocalCoreManager::StopAllForSessionEnding(base::BindLambdaForTesting(
+      [completed] { completed->Signal(); }));
+  unblock.RunAndReset();
+  EXPECT_TRUE(WaitWithoutUiReplies(completed));
+  EXPECT_FALSE(picker_opened);
+  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
+}
+
+TEST(AccessCoreLogArchiveTest, SessionEndingSuppressesAQueuedArchiveWrite) {
+  base::test::TaskEnvironment environment;
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::WithBaseSyncPrimitives(),
+       base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
+  auto blocked = std::make_shared<base::WaitableEvent>();
+  auto resume = std::make_shared<base::WaitableEvent>();
+  base::ScopedClosureRunner unblock(base::BindLambdaForTesting(
+      [resume] { resume->Signal(); }));
+  runner->PostTask(FROM_HERE, base::BindLambdaForTesting([blocked, resume] {
+    blocked->Signal();
+    resume->Wait();
+  }));
+  ASSERT_TRUE(WaitWithoutUiReplies(blocked));
+  bool replied = false;
+  CoreLogShareSession session;
+  session.StartForTesting("private destination", base::BindLambdaForTesting(
+      [&](base::FilePath path, base::ScopedClosureRunner) {
+        EXPECT_TRUE(path.empty());
+        replied = true;
+      }), runner, parent.GetPath());
+  auto completed = std::make_shared<base::WaitableEvent>();
+  AccessLocalCoreManager::StopAllForSessionEnding(base::BindLambdaForTesting(
+      [completed] { completed->Signal(); }));
+  unblock.RunAndReset();
+  EXPECT_TRUE(WaitWithoutUiReplies(completed));
+  EXPECT_FALSE(replied);
+  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
+  environment.RunUntilIdle();
+  EXPECT_TRUE(replied);
+}
+
+TEST_F(AccessLocalCoreFaultTest, MissingDiagnosticPipeStillStartsPinnedChild) {
+  auto input = Input("unauthenticated-response");
+  auto log = base::MakeRefCounted<AccessCoreLogStore>();
+  input.log_store = log;
+  input.create_log_pipe_for_testing =
+      [](base::ScopedFD*, base::ScopedFD*, bool) { return false; };
+  AccessLocalCoreManager manager(std::move(input));
+  base::test::TestFuture<AccessLocalCoreReady> prepared;
+  manager.Prepare(prepared.GetCallback());
+  ExpectUnavailable(prepared.Get());
+  ASSERT_TRUE(State());
+  EXPECT_EQ(*State()->FindString("phase"), "unauthenticated-response");
+  EXPECT_TRUE(log->Snapshot().empty());
+}
+
+TEST_F(AccessLocalCoreFaultTest, CapturesDiagnosticWithoutAdmittingFailedChild) {
+  auto input = Input("exit-with-diagnostic");
+  auto log = base::MakeRefCounted<AccessCoreLogStore>();
+  input.log_store = log;
+  AccessLocalCoreManager manager(std::move(input));
+  base::test::TestFuture<AccessLocalCoreReady> prepared;
+  manager.Prepare(prepared.GetCallback());
+  ExpectUnavailable(prepared.Get());
+  EXPECT_EQ(log->Snapshot(), "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started");
+  auto [level, generation] = log->LaunchConfig();
+  log->SetLevel("none");
+  log->SetLevel("debug");
+  log->Add(generation, "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started", {});
+  EXPECT_TRUE(log->Snapshot().empty());
+}
 
 TEST_F(AccessLocalCoreFaultTest, PinnedChildExitCannotBecomeReady) {
   AccessLocalCoreManager manager(Input("exit-before-listen"));

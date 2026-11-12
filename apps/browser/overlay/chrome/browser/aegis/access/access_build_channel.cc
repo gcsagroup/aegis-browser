@@ -50,4 +50,9 @@ const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel) {
   if (channel == aegis_access::ChannelNamespace::kAlpha) return "alpha";
   return "dev";
 }
+
+std::string_view DefaultCoreLogLevelForCurrentBuild() {
+  return DefaultCoreLogLevelForBuild(
+      BrowserReleaseChannel(), BundledAccessTestChannel());
+}
 }  // namespace aegis::access
