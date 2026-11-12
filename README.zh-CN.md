@@ -10,7 +10,7 @@
 
 [English](README.md) | **简体中文** | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store 1.0.0](https://img.shields.io/badge/App_Store-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/cn/app/gcsa-aegis/id6827988433)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ 单元测试](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store (HK) 1.0.0](https://img.shields.io/badge/App_Store_HK-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433)
 
 **一个本地优先的隐私与安全浏览器，内置可控的 AI Agent。**
 
@@ -59,7 +59,7 @@ mise exec -- pnpm run quality:fast
 | 平台 | 阶段 | 状态 |
 | --- | --- | --- |
 | macOS | 当前 | Chromium 集成和 Access Service 持续推进；当前源码的运行与分发验收仍待完成。 |
-| iOS / iPadOS | 已上架 | 原生 SwiftUI/WKWebView 应用。[App Store 1.0.0](https://apps.apple.com/cn/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
+| iOS / iPadOS | 已上架 | 原生 SwiftUI/WKWebView 应用。App Store 1.0.0：[美国](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [香港](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
 | Windows / Android / Linux | 后续 | 已有源码和评估入口；当前不承诺近期发行。 |
 
 macOS 可独立于 iOS 达到发行条件。完成标准见[路线图](docs/roadmap.zh-CN.md)。
