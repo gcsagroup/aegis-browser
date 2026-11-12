@@ -1,6 +1,6 @@
 {
   "lines": [
     {"name": "main", "ref": "refs/heads/main"},
-    {"name": "patch/ios/1.0.2", "ref": "refs/heads/patch/ios/1.0.2"}
+    {"name": "releases/ios/1.0", "ref": "refs/heads/releases/ios/1.0"}
   ]
 }

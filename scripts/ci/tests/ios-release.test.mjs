@@ -237,7 +237,7 @@ test('version/build-only status has no artifact, signing or mutation route', () 
 test('maintenance release lines package from their own tip, not current main', async () => {
   const lines = JSON.parse(readFileSync('scripts/ci/ios-release-lines.json', 'utf8')).lines;
   const pushed = parse(readFileSync('.github/workflows/quality.yml', 'utf8')).on.push.branches;
-  assert.deepEqual(lines.map(line => line.name), ['main', 'patch/ios/1.0.2']);
+  assert.deepEqual(lines.map(line => line.name), ['main', 'releases/ios/1.0']);
   for (const line of lines) assert.ok(pushed.includes(line.name));
   const patchSha = 'd'.repeat(40);
   const {iosReleasePreflight} = await load();
@@ -245,17 +245,17 @@ test('maintenance release lines package from their own tip, not current main', a
   const api = async (repo, path) => {
     if (path === '') return {id: 1348409663, default_branch: 'main'};
     if (path === '/git/ref/heads/main') return {object: {sha}};
-    if (path === '/git/ref/heads/patch/ios/1.0.2') return {object: {sha: patchSha}};
+    if (path === '/git/ref/heads/releases/ios/1.0') return {object: {sha: patchSha}};
     throw new Error(`Unexpected fixture endpoint ${path}`);
   };
   const admitted = await iosReleasePreflight(patchSha, {
-    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/patch/ios/1.0.2'},
+    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
     api, quality: async (_repo, branch) => { qualityBranch = branch; return true; },
   });
-  assert.equal(admitted.line, 'patch/ios/1.0.2');
-  assert.equal(qualityBranch, 'patch/ios/1.0.2');
+  assert.equal(admitted.line, 'releases/ios/1.0');
+  assert.equal(qualityBranch, 'releases/ios/1.0');
   await assert.rejects(iosReleasePreflight(sha, {
-    environment: {...environment, GITHUB_REF: 'refs/heads/patch/ios/1.0.2'},
+    environment: {...environment, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
     api, quality: async () => true,
   }), /release line/u);
   await assert.rejects(iosReleasePreflight(patchSha, {
