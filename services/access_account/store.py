@@ -49,7 +49,7 @@ def _response(account, usage, now):
     age = None if measured is None else now - measured
     freshness = ("unavailable" if age is None or age > 15000 else
                  "delayed" if age > 5000 else "current")
-    result.update(status=status, expiresAt=expiry, quotaBytes=str(quota),
+    result.update(status=status, evaluatedAt=now, expiresAt=expiry, quotaBytes=str(quota),
                   uploadedBytes=str(up), downloadedBytes=str(down), usedBytes=str(used),
                   remainingBytes=str(max(0, quota - used)), measuredAt=measured,
                   receivedAt=received, snapshotAgeMs=age, freshness=freshness)

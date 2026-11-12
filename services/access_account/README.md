@@ -54,6 +54,8 @@ service `origin`, expected `accountId`, opaque Aegis `token` and a fresh UUID
 
 ## Response
 
+For subscribed accounts, `evaluatedAt` is the server time used to determine the entitlement status. A client can add monotonic elapsed time since receipt to evaluate expiry at delivery. The original source receipt and measurement timestamps retain their separate meanings.
+
 A successful response identifies the account and returns `status`,
 `planId`, `periodId`, `periodStart`, `periodEnd`, `expiresAt`, byte
 counters and freshness. Exact byte counts are decimal strings, including

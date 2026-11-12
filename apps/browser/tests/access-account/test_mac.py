@@ -168,6 +168,24 @@ class NativeQuery(unittest.TestCase):
             self.assertGreater(reply["snapshotAgeMs"], age)
             self.assertEqual(reply["freshness"], expected)
 
+    def test_expiry_during_delivery_with_unknown_measurement_time(self):
+        self.bind(self.a)
+        self.db.execute("UPDATE plans SET period_end=? WHERE account_id='A'", (NOW + 25,))
+        self.db.execute("UPDATE snapshots SET measured_at=NULL, received_at=? WHERE account_id='A'",
+                        (NOW - 9000,))
+        self.db.commit()
+        with subprocess.Popen([self.driver, self.a, "--hold-delivery"],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE) as job:
+            self.assertEqual(job.stdout.readline(), b"queued\n")
+            time.sleep(.08)
+            output, _ = job.communicate(b"deliver\n", timeout=10)
+        reply = json.loads(output)["entitlement"]
+        self.assertEqual(reply["status"], "expired")
+        self.assertEqual(reply["receivedAt"], NOW - 9000)
+        self.assertIsNone(reply["measuredAt"])
+        self.assertIsNone(reply["snapshotAgeMs"])
+        self.assertEqual(reply["freshness"], "unavailable")
+
     def test_redirect_modes_and_untrusted_binding(self):
         captured = []
 
@@ -228,11 +246,13 @@ class NativeQuery(unittest.TestCase):
             measured = NOW if age is not None else None
             wire[1] = {**response, "receivedAt": NOW, "measuredAt": measured,
                        "snapshotAgeMs": age, "freshness": freshness}
+            if age is None:
+                wire[1]["evaluatedAt"] = NOW
             if age is not None and NOW + age >= wire[1]["periodEnd"]:
                 wire[1]["status"] = "expired"
             delivered = self.query(self.a)["entitlement"]
             if age is None:
-                self.assertEqual(delivered, wire[1])
+                self.assertEqual(delivered, {k: v for k, v in wire[1].items() if k != "evaluatedAt"})
             else:
                 actual_age = delivered["snapshotAgeMs"]
                 self.assertGreaterEqual(actual_age, age)
