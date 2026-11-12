@@ -124,8 +124,12 @@ test('unsigned archive isolates fork PRs and tolerates missing runner labels', (
   assert(trusted >= 0 && trusted < selfHosted, 'fork PRs must select the hosted fallback');
   assert(route.endsWith("|| 'macos-26' }}"), 'unsigned validation uses the standard hosted Mac fallback');
   assert(!workflow.jobs['ios-archive'].environment, 'unsigned validation must not require a protected signing environment');
+  const goSetup = workflow.jobs['ios-archive'].steps.find(s => String(s.uses ?? '').startsWith('actions/setup-go@'));
+  assert.equal(goSetup?.with?.['go-version'], '1.27.3', 'hosted archive must install lock Go before prepare');
+  assert.equal(goSetup?.with?.cache, false, 'archive Go install must not rely on module cache restoration');
+  const prepare = workflow.jobs['ios-archive'].steps.find(s => s.name === 'Prepare locked EmbeddedCore XCFramework');
+  assert(String(prepare?.run ?? '').includes('expected go1.27.3'), 'prepare must refuse a mismatched Go toolchain');
 });
-
 test('every protected delivery route depends on Admin admission and normalized operation', () => {
   const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   for (const id of ['ios-package', 'ios-draft', 'import', 'store']) {

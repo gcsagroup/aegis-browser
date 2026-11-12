@@ -62,3 +62,10 @@ __pycache__/
 
 # Local Firebase registrations staged by the operator.
 /apps/ios/Firebase/*/GoogleService-Info.plist
+
+# Local Access Reality Vision test endpoints (vless:// / client JSON). Never commit.
+/.local/access-service/
+
+# Rebuildable iOS Access embedded core products (gomobile xcframework).
+/apps/ios/EmbeddedCore/Products/
+/apps/ios/EmbeddedCore/bridge/.artifacts/

@@ -24,7 +24,8 @@ struct ThirdPartyNoticesDocument {
             let prefixes = [ThirdPartyNoticesDocument.webVendor,
                             "apps/ios/BrowserKit/Resources/",
                             "apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai/",
-                            "scripts/licenses/sdk-licenses/"]
+                            "scripts/licenses/sdk-licenses/",
+                            "scripts/licenses/access-core/"]
             guard prefixes.contains(where: { source.hasPrefix($0) }),
                   lines.count == 1 || (lines.count == 2
                     && source.hasPrefix("scripts/licenses/sdk-licenses/")

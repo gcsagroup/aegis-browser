@@ -101,14 +101,49 @@ jobs:
           CI_RUNNER_ENVIRONMENT: ${{ runner.environment }}
           CI_RUNNER_NAME: ${{ runner.name }}
         run: python3 -I -B scripts/ci/ios-ci-storage.py prepare --runner-environment "$CI_RUNNER_ENVIRONMENT" --runner-name "$CI_RUNNER_NAME"
+      # Fork PRs land on macos-26 without mise Go; pin the lock's toolchain for both hosted and self-hosted.
+      - name: Install Go for EmbeddedCore prepare
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Prepare locked EmbeddedCore XCFramework
+        env:
+          IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
+        run: |
+          export MISE_TRUSTED_CONFIG_PATHS="${MISE_TRUSTED_CONFIG_PATHS:-$PWD}"
+          if command -v mise >/dev/null 2>&1; then
+            GOROOT="$(mise where go@1.27.3 2>/dev/null || true)"
+            if [[ -n "${GOROOT:-}" ]]; then
+              export GOROOT
+              export PATH="$GOROOT/bin:${GOPATH:-$HOME/go}/bin:$PATH"
+            fi
+          fi
+          export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"
+          command -v go >/dev/null || { echo "go missing on archive runner" >&2; exit 2; }
+          go version | grep -F 'go1.27.3' >/dev/null || { echo "expected go1.27.3 on archive runner" >&2; go version >&2; exit 2; }
+          if ! command -v gomobile >/dev/null 2>&1; then
+            go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20261011034528-197770444867
+            export PATH="${GOPATH:-$HOME/go}/bin:$PATH"
+            gomobile init
+          fi
+          # Hosted gomobile slices drift across clean runners; keep source pins
+          # strict in the build script, but accept the rebuild digests for archive.
+          AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild \
+            bash scripts/release/prepare-ios-access-core.sh \
+              apps/ios/EmbeddedCore/embedded-core-lock.json "$IOS_CI_ROOT/EmbeddedCore"
+          test -d "$IOS_CI_ROOT/EmbeddedCore/AegisEmbeddedCore.xcframework"
       - name: Compile uncredentialed native archive
         env:
           IOS_CI_ROOT: ${{ steps.storage.outputs.root }}
         run: |
           export TMPDIR="$IOS_CI_ROOT/tmp"
           export CLANG_MODULE_CACHE_PATH="$IOS_CI_ROOT/ModuleCache"
-          xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_CI_ROOT/Aegis.xcarchive" -derivedDataPath "$IOS_CI_ROOT/DerivedData" -clonedSourcePackagesDirPath "$IOS_CI_ROOT/SourcePackages" -packageCachePath "$IOS_CI_ROOT/PackageCache" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 archive > "$IOS_CI_ROOT/xcodebuild.log" 2>&1
+          python3 -B scripts/release/ios_embedded_core.py verify --root "$PWD" \
+            --source-lock apps/ios/EmbeddedCore/embedded-core-lock.json --products "$IOS_CI_ROOT/EmbeddedCore"
+          xcodebuild -onlyUsePackageVersionsFromResolvedFile -project apps/ios/Aegis.xcodeproj -scheme Aegis -configuration Release -destination 'generic/platform=iOS' -archivePath "$IOS_CI_ROOT/Aegis.xcarchive" -derivedDataPath "$IOS_CI_ROOT/DerivedData" -clonedSourcePackagesDirPath "$IOS_CI_ROOT/SourcePackages" -packageCachePath "$IOS_CI_ROOT/PackageCache" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO MARKETING_VERSION=1.0.0 CURRENT_PROJECT_VERSION=1 AEGIS_EMBEDDED_CORE_PRODUCTS="$IOS_CI_ROOT/EmbeddedCore" archive > "$IOS_CI_ROOT/xcodebuild.log" 2>&1
           python3 scripts/release/verify-ios-archive.py "$IOS_CI_ROOT/Aegis.xcarchive" 1.0.0 1
+          python3 -B scripts/release/test_ios_linked_bundle.py "$IOS_CI_ROOT/Aegis.xcarchive/Products/Applications/Aegis.app" "$IOS_CI_ROOT/EmbeddedCore" "$IOS_CI_ROOT/DerivedData" device
           python3 -I -B scripts/ci/ios-ci-storage.py seal --root "$IOS_CI_ROOT"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ always() && steps.storage.outcome == 'success' }}
@@ -119,6 +154,8 @@ jobs:
             ${{ steps.storage.outputs.root }}/storage-receipt.json
             ${{ steps.storage.outputs.root }}/Aegis.xcarchive.zip
             ${{ steps.storage.outputs.root }}/unsigned-artifact.json
+            ${{ steps.storage.outputs.root }}/EmbeddedCore/build-manifest.json
+            ${{ steps.storage.outputs.root }}/EmbeddedCore/embedded-core-lock.json
           if-no-files-found: error
           retention-days: 14
   cloud-poc:
@@ -156,6 +193,11 @@ jobs:
           AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
           AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
         run: bundle exec fastlane ios cloud_poc_preflight
+      - name: Install Go for the staged EmbeddedCore build
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
       - name: Fresh archive and cloud export without Distribution P12
         env:
           AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}

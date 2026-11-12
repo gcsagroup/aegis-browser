@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "kind": "ios-access-product-phase1-evidence",
+  "status": "NOT_RUN",
+  "candidate": {
+    "sourceSha": "REPLACE_WITH_40_LOWERCASE_HEX",
+    "channel": "SIMULATOR"
+  },
+  "runId": "REPLACE_RUN_ID",
+  "exitCriteria": {
+    "pios1": "required",
+    "pios2": "required",
+    "pios3": "required",
+    "pios4": "excluded-while-open",
+    "pios5": "required",
+    "pios6": "required"
+  },
+  "rules": {
+    "forbidDirectAsAccessSuccess": true,
+    "sameCandidateOnly": true,
+    "simulatorBuildAllowed": true,
+    "deviceAndTestFlightOutOfScope": true,
+    "unitTestsAloneNotPass": true
+  },
+  "steps": [
+    {
+      "id": "A2-1",
+      "name": "on",
+      "correlationId": "aegis-ios-p1/REPLACE8/REPLACE_RUN_ID/on",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    },
+    {
+      "id": "A2-2",
+      "name": "load",
+      "correlationId": "aegis-ios-p1/REPLACE8/REPLACE_RUN_ID/load",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    },
+    {
+      "id": "A2-3",
+      "name": "fault",
+      "correlationId": "aegis-ios-p1/REPLACE8/REPLACE_RUN_ID/fault",
+      "verdict": "NOT_RUN",
+      "artifacts": [],
+      "pending": "pios5-fault-fixture"
+    },
+    {
+      "id": "A2-4",
+      "name": "recovery",
+      "correlationId": "aegis-ios-p1/REPLACE8/REPLACE_RUN_ID/recovery",
+      "verdict": "NOT_RUN",
+      "artifacts": [],
+      "pending": "pios5-fault-fixture"
+    },
+    {
+      "id": "A2-5",
+      "name": "off",
+      "correlationId": "aegis-ios-p1/REPLACE8/REPLACE_RUN_ID/off",
+      "verdict": "NOT_RUN",
+      "artifacts": []
+    }
+  ],
+  "uiEvidence": {
+    "onCapture": null,
+    "offCapture": null
+  },
+  "deviceEvidence": {
+    "status": "NOT_RUN",
+    "testFlight": "NOT_RUN"
+  },
+  "notes": [
+    "Fill artifacts from one Simulator candidate only for SIMULATOR_PASS.",
+    "Do not claim DIRECT page success as Access success.",
+    "Fault/recovery require P-iOS-5 fail-closed fixture API before SIMULATOR_PASS.",
+    "Device/TestFlight stay NOT_RUN / out of scope for this pack.",
+    "Unit drills are scaffolding; they are not A4 SIMULATOR_PASS."
+  ]
+}
