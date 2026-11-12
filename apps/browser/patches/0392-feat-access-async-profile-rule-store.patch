@@ -1,0 +1,382 @@
+From d78e39fc9b4627e02eb7824cf4fe4f6d218ef008 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 17:57:38 +0800
+Subject: [PATCH] feat(access): keep Profile rule store lifecycle and recovery
+ off UI sequence
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  22 +++
+ .../aegis/access/access_async_rule_store.cc   | 118 ++++++++++++++
+ .../aegis/access/access_async_rule_store.h    |  47 ++++++
+ .../access_async_rule_store_unittest.cc       | 150 ++++++++++++++++++
+ 4 files changed, 337 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_async_rule_store.cc
+ create mode 100644 chrome/browser/aegis/access/access_async_rule_store.h
+ create mode 100644 chrome/browser/aegis/access/access_async_rule_store_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index bceb74ffdfe55959ee3ff2b4d26c669975aea814..05c3ceb5951c58fddbe8a2755abe429352c0660e 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -475,3 +475,25 @@ source_set("access_private_context_client") {
+     "//services/network/public/mojom",
+   ]
+ }
++
++source_set("access_async_rule_store") {
++  sources = [
++    "access_async_rule_store.cc",
++    "access_async_rule_store.h",
++  ]
++  public_deps = [
++    ":access_rule_store",
++    "//base",
++  ]
++}
++
++test("access_async_rule_store_unittests") {
++  sources = [ "access_async_rule_store_unittest.cc" ]
++  deps = [
++    ":access_async_rule_store",
++    ":access_site_intent",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//testing/gtest",
++  ]
++}
+diff --git a/chrome/browser/aegis/access/access_async_rule_store.cc b/chrome/browser/aegis/access/access_async_rule_store.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..93ac8c7afff4e27716af02a58c9b079c0d2f043a
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_async_rule_store.cc
+@@ -0,0 +1,118 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_async_rule_store.h"
++#include <set>
++#include "base/task/thread_pool.h"
++
++namespace aegis::access {
++class AccessAsyncRuleStore::Worker {
++ public:
++  explicit Worker(AccessStoreBinding binding) : store_(std::move(binding)) {}
++  AsyncAccessStoreRestoration InitializeAndRestore(const std::string& partition) {
++    if (initialized_.contains(partition))
++      return {.status = StoreStatus::kConflict, .detail = "already_initialized"};
++    if (!store_.is_open()) {
++      const auto opened = store_.Open();
++      if (opened != StoreStatus::kValid) return {.status = opened};
++    }
++    auto recovery = store_.LoadRecoveryState();
++    if (!recovery.value) return {.status = recovery.status, .detail = recovery.detail};
++    size_t count = 0;
++    for (const auto& pending : recovery.value->pending) {
++      if (pending.owner.storage_partition_token != partition) continue;
++      const auto status = store_.SupersedePreparedMutation(
++          pending.operation_id, pending.request_fingerprint);
++      if (status != StoreStatus::kValid) return {.status = status};
++      ++count;
++    }
++    auto restored = ReserveCommitted(partition);
++    restored.recovered_prepared = count;
++    if (restored.status == StoreStatus::kValid) initialized_.insert(partition);
++    return restored;
++  }
++  AsyncAccessStorePrepared Prepare(const SiteGroupMutationRequest& request) {
++    const auto& partition = request.candidate_group.owner.storage_partition_token;
++    if (!initialized_.contains(partition))
++      return {.status = StoreStatus::kMissing, .detail = "partition_not_initialized"};
++    auto previous = store_.ReadCommittedSnapshot(partition);
++    if (!previous.value || (previous.status != StoreStatus::kValid &&
++                            previous.status != StoreStatus::kMissing))
++      return {.status = previous.status, .detail = previous.detail};
++    auto prepared = store_.PrepareSiteGroupMutation(request);
++    AsyncAccessStorePrepared result{.status = prepared.status,
++        .previous = std::move(previous.value), .pending = std::move(prepared.value),
++        .detail = prepared.detail};
++    if (!result.pending || result.pending->phase == MutationPhase::kCommitted)
++      return result;
++    if (result.pending->phase != MutationPhase::kPrepared) {
++      result.status = StoreStatus::kConflict;
++      return result;
++    }
++    auto built = store_.BuildPreparedCandidateSnapshot(*result.pending);
++    result.status = built.status;
++    result.candidate = std::move(built.value);
++    result.detail = built.detail;
++    return result;
++  }
++  StoreResult<PendingMutationRecord> Commit(const PendingMutationRecord& expected) {
++    return store_.CommitPreparedMutation(expected);
++  }
++  AsyncAccessStoreRestoration RecoverFailedMutation(
++      const PendingMutationRecord& expected) {
++    const auto& partition = expected.owner.storage_partition_token;
++    if (!initialized_.contains(partition) ||
++        expected.owner.channel != store_.binding().channel() ||
++        expected.owner.profile_token != store_.binding().runtime_profile_token())
++      return {.status = StoreStatus::kConflict, .detail = "mutation_owner_mismatch"};
++    const auto status = store_.SupersedePreparedMutation(expected.operation_id,
++                                                        expected.request_fingerprint);
++    if (status != StoreStatus::kValid) return {.status = status};
++    return ReserveCommitted(partition);
++  }
++  StoreResult<StoredPolicySnapshot> ReadCommitted(const std::string& partition) {
++    return store_.ReadCommittedSnapshot(partition);
++  }
++ private:
++  AsyncAccessStoreRestoration ReserveCommitted(const std::string& partition) {
++    auto publication = store_.ReserveCommittedPolicyForPublication(partition);
++    if (!publication.value)
++      return {.status = publication.status, .detail = publication.detail};
++    auto committed = store_.ReadCommittedSnapshot(partition);
++    if (!committed.value)
++      return {.status = committed.status, .detail = committed.detail};
++    return {.status = StoreStatus::kValid, .committed = std::move(committed.value),
++            .publication = std::move(publication.value)};
++  }
++  AccessRuleStore store_;
++  std::set<std::string> initialized_;
++};
++AccessAsyncRuleStore::AccessAsyncRuleStore(AccessStoreBinding binding)
++    : worker_(base::ThreadPool::CreateSequencedTaskRunner(
++          {base::MayBlock(), base::TaskPriority::USER_VISIBLE,
++           base::TaskShutdownBehavior::BLOCK_SHUTDOWN}), std::move(binding)) {}
++AccessAsyncRuleStore::~AccessAsyncRuleStore() = default;
++void AccessAsyncRuleStore::InitializeAndRestore(std::string partition,
++    base::OnceCallback<void(AsyncAccessStoreRestoration)> completion) {
++  worker_.AsyncCall(&Worker::InitializeAndRestore).WithArgs(std::move(partition))
++      .Then(std::move(completion));
++}
++void AccessAsyncRuleStore::Prepare(SiteGroupMutationRequest request,
++    base::OnceCallback<void(AsyncAccessStorePrepared)> completion) {
++  worker_.AsyncCall(&Worker::Prepare).WithArgs(std::move(request))
++      .Then(std::move(completion));
++}
++void AccessAsyncRuleStore::Commit(PendingMutationRecord expected,
++    base::OnceCallback<void(StoreResult<PendingMutationRecord>)> completion) {
++  worker_.AsyncCall(&Worker::Commit).WithArgs(std::move(expected))
++      .Then(std::move(completion));
++}
++void AccessAsyncRuleStore::RecoverFailedMutation(PendingMutationRecord expected,
++    base::OnceCallback<void(AsyncAccessStoreRestoration)> completion) {
++  worker_.AsyncCall(&Worker::RecoverFailedMutation).WithArgs(std::move(expected))
++      .Then(std::move(completion));
++}
++void AccessAsyncRuleStore::ReadCommitted(std::string partition,
++    base::OnceCallback<void(StoreResult<StoredPolicySnapshot>)> completion) {
++  worker_.AsyncCall(&Worker::ReadCommitted).WithArgs(std::move(partition))
++      .Then(std::move(completion));
++}
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_async_rule_store.h b/chrome/browser/aegis/access/access_async_rule_store.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..1b9c6cf254374da40f7a45f51a60a22222138a43
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_async_rule_store.h
+@@ -0,0 +1,47 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_ASYNC_RULE_STORE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_ASYNC_RULE_STORE_H_
++
++#include <optional>
++#include "base/functional/callback.h"
++#include "base/threading/sequence_bound.h"
++#include "chrome/browser/aegis/access/access_rule_store.h"
++
++namespace aegis::access {
++struct AsyncAccessStoreRestoration {
++  StoreStatus status = StoreStatus::kIoError;
++  std::optional<StoredPolicySnapshot> committed;
++  std::optional<aegis_access::PublishedAccessPolicySnapshot> publication;
++  size_t recovered_prepared = 0;
++  std::string detail;
++};
++struct AsyncAccessStorePrepared {
++  StoreStatus status = StoreStatus::kIoError;
++  std::optional<StoredPolicySnapshot> previous;
++  std::optional<PendingMutationRecord> pending;
++  std::optional<StoredPolicySnapshot> candidate;
++  std::string detail;
++};
++// Owns the SQLite store on one blocking sequenced runner for its entire
++// lifetime. Callbacks return to the calling sequence with plain value data.
++// Opening a Profile and reserving a restore publication never performs UI I/O.
++class AccessAsyncRuleStore {
++ public:
++  explicit AccessAsyncRuleStore(AccessStoreBinding binding);
++  ~AccessAsyncRuleStore();
++  void InitializeAndRestore(std::string partition,
++      base::OnceCallback<void(AsyncAccessStoreRestoration)> completion);
++  void Prepare(SiteGroupMutationRequest request,
++      base::OnceCallback<void(AsyncAccessStorePrepared)> completion);
++  void Commit(PendingMutationRecord expected,
++      base::OnceCallback<void(StoreResult<PendingMutationRecord>)> completion);
++  void RecoverFailedMutation(PendingMutationRecord expected,
++      base::OnceCallback<void(AsyncAccessStoreRestoration)> completion);
++  void ReadCommitted(std::string partition,
++      base::OnceCallback<void(StoreResult<StoredPolicySnapshot>)> completion);
++ private:
++  class Worker;
++  base::SequenceBound<Worker> worker_;
++};
++}  // namespace aegis::access
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_ASYNC_RULE_STORE_H_
+diff --git a/chrome/browser/aegis/access/access_async_rule_store_unittest.cc b/chrome/browser/aegis/access/access_async_rule_store_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..faf4098ca49123efff3552ccd2d2b76b5bfb14a6
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_async_rule_store_unittest.cc
+@@ -0,0 +1,150 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_async_rule_store.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/test/task_environment.h"
++#include "base/test/test_future.h"
++#include "base/threading/thread_restrictions.h"
++#include "chrome/browser/aegis/access/access_site_intent.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++class AccessAsyncRuleStoreTest : public testing::Test {
++ protected:
++  AccessStoreBinding Binding(std::string token = "profile") {
++    return *TrustedAccessStoreBindingFactory::CreatePersistent(
++        ChannelNamespace::kDev, "async-profile", token, directory_.GetPath());
++  }
++  void SetUp() override { ASSERT_TRUE(directory_.CreateUniqueTempDir()); }
++  void TearDown() override { environment_.RunUntilIdle(); }
++  SiteGroupMutationRequest Mutation(std::string operation, bool enable,
++                                   uint64_t revision = 0,
++                                   std::string token = "profile") {
++    auto built = BuildOrdinarySiteGroupMutation({
++        enable ? AccessSiteIntent::kAllow : AccessSiteIntent::kOff,
++        *MakeAccessSiteHost("example.test").host,
++        {ChannelNamespace::kDev, token, "partition"}, "site", operation,
++        "fingerprint-" + operation, enable ? "group" : "", revision});
++    EXPECT_EQ(built.status, AccessSiteIntentMutationStatus::kReady);
++    return *built.request;
++  }
++  AsyncAccessStoreRestoration Restore(AccessAsyncRuleStore* store) {
++    base::test::TestFuture<AsyncAccessStoreRestoration> future;
++    store->InitializeAndRestore("partition", future.GetCallback());
++    return future.Take();
++  }
++  AsyncAccessStorePrepared Prepare(AccessAsyncRuleStore* store,
++                                   SiteGroupMutationRequest request) {
++    base::test::TestFuture<AsyncAccessStorePrepared> future;
++    store->Prepare(std::move(request), future.GetCallback());
++    return future.Take();
++  }
++  base::test::TaskEnvironment environment_;
++  base::ScopedTempDir directory_;
++};
++TEST_F(AccessAsyncRuleStoreTest, UIBlockingDisallowedDuringOpenReadWriteAndClose) {
++  {
++    base::ScopedDisallowBlocking disallow_blocking;
++    auto store = std::make_unique<AccessAsyncRuleStore>(Binding());
++    auto restored = Restore(store.get());
++    ASSERT_EQ(restored.status, StoreStatus::kValid);
++    ASSERT_TRUE(restored.publication);
++    EXPECT_EQ(restored.publication->policy_generation, 1u);
++    auto prepared = Prepare(store.get(), Mutation("enable", true));
++    ASSERT_EQ(prepared.status, StoreStatus::kValid);
++    ASSERT_TRUE(prepared.pending);
++    EXPECT_EQ(prepared.pending->operation_sequence, 2u);
++    base::test::TestFuture<StoreResult<PendingMutationRecord>> committed;
++    store->Commit(*prepared.pending, committed.GetCallback());
++    EXPECT_EQ(committed.Get().status, StoreStatus::kValid);
++    base::test::TestFuture<StoreResult<StoredPolicySnapshot>> read;
++    store->ReadCommitted("partition", read.GetCallback());
++    EXPECT_EQ(read.Get().status, StoreStatus::kValid);
++    store.reset();
++    environment_.RunUntilIdle();
++  }
++  AccessAsyncRuleStore reopened(Binding("new-profile"));
++  auto restored = Restore(&reopened);
++  ASSERT_TRUE(restored.publication);
++  EXPECT_EQ(restored.publication->owner.profile_token, "new-profile");
++  EXPECT_GT(restored.publication->policy_generation, 2u);
++  EXPECT_EQ(restored.publication->rules.size(), 2u);
++}
++TEST_F(AccessAsyncRuleStoreTest, RestartSupersedesPreparedWithoutPublishingItsRules) {
++  PendingMutationRecord pending;
++  {
++    AccessAsyncRuleStore store(Binding());
++    ASSERT_EQ(Restore(&store).status, StoreStatus::kValid);
++    auto prepared = Prepare(&store, Mutation("incomplete", true));
++    ASSERT_TRUE(prepared.pending);
++    pending = *prepared.pending;
++    EXPECT_EQ(Restore(&store).status, StoreStatus::kConflict);
++    base::test::TestFuture<StoreResult<StoredPolicySnapshot>> read;
++    store.ReadCommitted("partition", read.GetCallback());
++    EXPECT_EQ(read.Get().status, StoreStatus::kRecoveryRequired);
++  }
++  environment_.RunUntilIdle();
++  AccessAsyncRuleStore reopened(Binding("new-profile"));
++  auto restored = Restore(&reopened);
++  ASSERT_EQ(restored.status, StoreStatus::kValid);
++  ASSERT_TRUE(restored.publication);
++  EXPECT_TRUE(restored.publication->rules.empty());
++  EXPECT_EQ(restored.recovered_prepared, 1u);
++  EXPECT_GT(restored.publication->policy_generation, pending.operation_sequence);
++  auto next = Prepare(&reopened, Mutation("next", true, 0, "new-profile"));
++  ASSERT_TRUE(next.pending);
++  EXPECT_GT(next.pending->operation_sequence, restored.publication->policy_generation);
++}
++TEST_F(AccessAsyncRuleStoreTest, FailedMutationRestoresOnlyCommittedContentsAtFreshVersion) {
++  AccessAsyncRuleStore store(Binding());
++  ASSERT_EQ(Restore(&store).status, StoreStatus::kValid);
++  auto enabled = Prepare(&store, Mutation("enable", true));
++  ASSERT_TRUE(enabled.pending);
++  base::test::TestFuture<StoreResult<PendingMutationRecord>> committed;
++  store.Commit(*enabled.pending, committed.GetCallback());
++  ASSERT_EQ(committed.Get().status, StoreStatus::kValid);
++  auto failed = Prepare(&store, Mutation("failed-off", false, 1));
++  ASSERT_TRUE(failed.pending);
++  base::test::TestFuture<AsyncAccessStoreRestoration> recovered;
++  store.RecoverFailedMutation(*failed.pending, recovered.GetCallback());
++  const auto& result = recovered.Get();
++  ASSERT_EQ(result.status, StoreStatus::kValid);
++  ASSERT_TRUE(result.publication);
++  EXPECT_GT(result.publication->policy_generation, failed.pending->operation_sequence);
++  ASSERT_EQ(result.publication->rules.size(), 2u);
++  for (const auto& rule : result.publication->rules)
++    EXPECT_EQ(rule.mode, AccessMode::kProxy);
++  base::test::TestFuture<AsyncAccessStoreRestoration> invalid;
++  store.RecoverFailedMutation(*enabled.pending, invalid.GetCallback());
++  EXPECT_EQ(invalid.Get().status, StoreStatus::kConflict);
++}
++TEST_F(AccessAsyncRuleStoreTest, RestoringAnotherPartitionCannotSupersedeLiveMutation) {
++  AccessAsyncRuleStore store(Binding());
++  ASSERT_EQ(Restore(&store).status, StoreStatus::kValid);
++  auto live = Prepare(&store, Mutation("live", true));
++  ASSERT_TRUE(live.pending);
++  base::test::TestFuture<AsyncAccessStoreRestoration> other;
++  store.InitializeAndRestore("other-partition", other.GetCallback());
++  ASSERT_EQ(other.Get().status, StoreStatus::kValid);
++  EXPECT_EQ(other.Get().recovered_prepared, 0u);
++  auto forged = *live.pending;
++  forged.owner.profile_token = "foreign";
++  base::test::TestFuture<AsyncAccessStoreRestoration> rejected;
++  store.RecoverFailedMutation(std::move(forged), rejected.GetCallback());
++  EXPECT_EQ(rejected.Get().status, StoreStatus::kConflict);
++  base::test::TestFuture<StoreResult<StoredPolicySnapshot>> read;
++  store.ReadCommitted("partition", read.GetCallback());
++  EXPECT_EQ(read.Get().status, StoreStatus::kRecoveryRequired);
++  base::test::TestFuture<StoreResult<PendingMutationRecord>> committed;
++  store.Commit(*live.pending, committed.GetCallback());
++  EXPECT_EQ(committed.Get().status, StoreStatus::kValid);
++}
++TEST_F(AccessAsyncRuleStoreTest, MutationCannotSkipInitialRestore) {
++  AccessAsyncRuleStore store(Binding());
++  auto prepared = Prepare(&store, Mutation("premature", true));
++  EXPECT_EQ(prepared.status, StoreStatus::kMissing);
++  EXPECT_FALSE(prepared.pending);
++  ASSERT_EQ(Restore(&store).status, StoreStatus::kValid);
++}
++}  // namespace
++}  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

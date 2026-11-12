@@ -1,0 +1,38 @@
+From eb80ea6af49aa64e42599beee874bad5e37a6f2d Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 15:41:59 +0800
+Subject: [PATCH] test(access): bind current private context after initial
+ navigation
+
+---
+ .../access/access_site_proxy_product_unittest.cc   | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index afb49b3ca8c2ad86039c2c384bfd9ddbaf45970f..673732c17605555f718d482c75f6e92e4ece28f0 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -758,6 +758,20 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+   void BeginHeldRetry() {
+     content::NavigationSimulator::NavigateAndFailFromBrowser(
+         web_contents(), failed_, net::ERR_CONNECTION_RESET);
++    // The first simulated navigation creates its default NetworkContext and
++    // replaces the fixture's setup-time binding. Bind and ACK that current
++    // context before testing transaction completion rather than scope failure.
++    task_environment()->RunUntilIdle();
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
++    ASSERT_TRUE(bound.Get());
++    auto* runtime = AccessPublishedRequestRuntime::Get(profile());
++    const auto common = runtime->CaptureCommonGenerationTupleOnUiThread(owner_);
++    ASSERT_TRUE(common);
++    base::test::TestFuture<bool> published;
++    transport_->PublishPrivatePolicy(*runtime->GetPublishedPolicySnapshot(owner_),
++                                    *common, published.GetCallback());
++    ASSERT_TRUE(published.Get());
+     context_.hold_next = true;
+     ASSERT_TRUE(helper()->RequestProxyRetry(completed_.GetCallback()));
+     ASSERT_TRUE(base::test::RunUntil([&] {
+-- 
+2.54.0 (Apple Git-157)
+

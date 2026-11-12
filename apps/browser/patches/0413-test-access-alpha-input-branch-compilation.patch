@@ -1,0 +1,34 @@
+From 5532ae7fe0dac0d38a17a909f4b9fb75b5c39ef3 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 00:58:03 +0800
+Subject: [PATCH] test(access): compile only the active Alpha input admission
+ branch
+
+---
+ .../aegis/access/access_site_proxy_product_unittest.cc     | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index db68a1a34b29ce4d12a790c6acdf0073ae51d86a..cf3e0e8890c56c1ad29548fa3d20cf35422a04a5 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -97,12 +97,13 @@ class ProductAckContext final : public network::TestNetworkContext,
+ class AccessSiteProxyProductTest : public testing::Test {
+  protected:
+   void SetUp() override {
++#if !BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+     const auto* command = base::CommandLine::ForCurrentProcess();
+-    if (!BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED) &&
+-        (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
+-        command->GetSwitchValuePath("aegis-access-dev-node-config").empty())) {
++    if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
++        command->GetSwitchValuePath("aegis-access-dev-node-config").empty()) {
+       GTEST_SKIP() << "Real product core tests require authorized DEV inputs.";
+     }
++#endif
+     ASSERT_TRUE(directory_.CreateUniqueTempDir());
+     profile_ = TestingProfile::Builder()
+         .SetPath(directory_.GetPath())
+-- 
+2.54.0 (Apple Git-157)
+

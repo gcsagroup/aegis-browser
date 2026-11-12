@@ -1,0 +1,107 @@
+From 3023fe7d038d37fbb0e711ef26cd2f36759dd9da Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 15:38:48 +0800
+Subject: [PATCH] test(access): act on committed verification state and drain
+ late probe
+
+---
+ .../access_site_proxy_product_unittest.cc     | 43 ++++++++++++-------
+ 1 file changed, 28 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index bd9dc01cb4298db9900cb08fe0f33cae7261a6eb..afb49b3ca8c2ad86039c2c384bfd9ddbaf45970f 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -59,6 +59,10 @@ class AccessSiteProxyProductTestPeer {
+   static bool IsPreparing(AccessSiteProxyBubbleController* bubble) {
+     return bubble->publication_in_flight_;
+   }
++  static void StopCore(AccessSiteProxyBubbleController* bubble,
++                       base::OnceClosure completion) {
++    bubble->local_core_->Stop(std::move(completion));
++  }
+ };
+ class AccessServiceCoordinatorTestPeer {
+  public:
+@@ -103,30 +107,29 @@ class CancelAtQueuedPolicyCompletion final : public base::TaskObserver {
+   bool cancelled_ = false;
+ };
+ 
+-// Act after the authenticated recheck has completed on IO but before its
+-// result can reach the Browser controller. This is the committed-ON window
+-// where the toolbar already offers OFF.
+-class DisableAtQueuedCoreVerification final : public base::TaskObserver {
++// Act after the enable transaction's UI task commits ON and starts its
++// asynchronous verification, before another UI task can finish that recheck.
++class DisableDuringCommittedVerification final : public base::TaskObserver {
+  public:
+-  explicit DisableAtQueuedCoreVerification(base::OnceClosure disable)
+-      : disable_(std::move(disable)) {
++  DisableDuringCommittedVerification(base::RepeatingCallback<bool()> committed,
++                                      base::OnceClosure disable)
++      : committed_(std::move(committed)), disable_(std::move(disable)) {
+     base::CurrentThread::Get()->AddTaskObserver(this);
+   }
+-  ~DisableAtQueuedCoreVerification() override {
++  ~DisableDuringCommittedVerification() override {
+     base::CurrentThread::Get()->RemoveTaskObserver(this);
+   }
+-  void WillProcessTask(const base::PendingTask& task, bool) override {
+-    if (disable_ && std::string_view(task.posted_from.file_name()).find(
+-                        "access_local_core_manager.cc") != std::string_view::npos &&
+-        std::string_view(task.posted_from.function_name()) == "Verify") {
++  void WillProcessTask(const base::PendingTask&, bool) override {}
++  void DidProcessTask(const base::PendingTask&) override {
++    if (disable_ && committed_.Run()) {
+       disabled_ = true;
+       std::move(disable_).Run();
+     }
+   }
+-  void DidProcessTask(const base::PendingTask&) override {}
+   bool disabled() const { return disabled_; }
+ 
+  private:
++  base::RepeatingCallback<bool()> committed_;
+   base::OnceClosure disable_;
+   bool disabled_ = false;
+ };
+@@ -868,10 +871,14 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+ };
+ 
+ TEST_F(AccessRetryNavigationProductTest,
+-       OffAtQueuedCommittedVerificationRevokesRetryAndPersistsOff) {
++       OffDuringCommittedVerificationRevokesRetryAndPersistsOff) {
+   BeginHeldRetry();
+   bool accepted = false;
+-  DisableAtQueuedCoreVerification disable(base::BindLambdaForTesting([&] {
++  DisableDuringCommittedVerification disable(base::BindLambdaForTesting([&] {
++    return bubble_->SnapshotForCommittedUrl(failed_).intent ==
++               AccessSiteIntent::kAllow &&
++           AccessSiteProxyProductTestPeer::IsPreparing(bubble_);
++  }), base::BindLambdaForTesting([&] {
+     EXPECT_EQ(bubble_->SnapshotForCommittedUrl(failed_).intent,
+               AccessSiteIntent::kAllow);
+     EXPECT_TRUE(AccessSiteProxyProductTestPeer::IsPreparing(bubble_));
+@@ -881,12 +888,18 @@ TEST_F(AccessRetryNavigationProductTest,
+   }));
+   context_.Reply(true);
+   ASSERT_TRUE(completed_.Wait());
+-  ASSERT_TRUE(disable.disabled());
++  ASSERT_TRUE(disable.disabled())
++      << bubble_->SnapshotForCommittedUrl(failed_).failure_reason;
+   EXPECT_TRUE(accepted);
+   EXPECT_FALSE(completed_.Get());
+   ASSERT_TRUE(base::test::RunUntil([&] {
+     return !AccessSiteProxyProductTestPeer::IsPreparing(bubble_);
+   }));
++  // Stop runs on the core sequence after Verify. Its reply reaches UI after
++  // that older Verify result, including when Stop must cancel a live probe.
++  base::test::TestFuture<void> stopped;
++  AccessSiteProxyProductTestPeer::StopCore(bubble_, stopped.GetCallback());
++  ASSERT_TRUE(stopped.Wait());
+   EXPECT_FALSE(controller().GetPendingEntry());
+   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
+   const auto state = bubble_->SnapshotForCommittedUrl(failed_);
+-- 
+2.54.0 (Apple Git-157)
+

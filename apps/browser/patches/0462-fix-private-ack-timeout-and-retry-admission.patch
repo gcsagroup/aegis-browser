@@ -1,0 +1,274 @@
+From abdded2f2902349c7308a014145ce96e50772bd3 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 12 Nov 2026 11:53:01 +0800
+Subject: [PATCH] fix(access): bound rollback acknowledgements and admit retry
+ per tab
+
+---
+ .../access_navigation_retry_tab_helper.cc     |  2 +-
+ .../access_navigation_retry_tab_helper.h      |  1 +
+ ...ss_navigation_retry_tab_helper_unittest.cc | 19 ++++++++++
+ .../access_proxying_url_loader_factory.cc     |  7 ++++
+ .../access_proxying_url_loader_factory.h      |  2 ++
+ .../access/access_service_coordinator.cc      | 35 ++++++++++++-------
+ .../aegis/access/access_service_coordinator.h |  2 ++
+ .../access_site_proxy_bubble_controller.cc    |  1 +
+ .../access_site_proxy_product_unittest.cc     | 27 ++++++++++++++
+ .../browser/chrome_content_browser_client.cc  |  6 ++--
+ 10 files changed, 87 insertions(+), 15 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index c8826fd5b05d4baa2809d3eb7d61272ebe3bffe3..9bbbf4335273a84facb63096d649c58835098185 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -145,7 +145,7 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
+       navigation->GetURL(), navigation->GetRequestMethod(),
+       navigation->GetNetErrorCode(),
+       navigation->HasCommitted() && navigation->IsErrorPage());
+-  if (recorded) {
++  if (recorded && HasProxyRetryHandler()) {
+     if (auto* auto_reloader =
+             error_page::NetErrorAutoReloader::FromWebContents(web_contents())) {
+       // Chromium's background reload may be aborted without replacing the
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+index 60a386b2c2bf11af91daabf48b2e2c2ecfbbe588..fb2ce36619194c1f80f61c0fbbfac2236df3d367 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+@@ -29,6 +29,7 @@ class AccessNavigationRetryTabHelper
+   base::OnceClosure CaptureRouteReadyCallback();
+   using ProxyRetryHandler = base::RepeatingCallback<void(
+       const GURL&, base::OnceCallback<void(bool)>)>;
++  bool HasProxyRetryHandler() const { return !!proxy_retry_handler_; }
+   void SetProxyRetryHandler(ProxyRetryHandler handler);
+   // Called only after Browser validates the sender is the current primary
+   // error document. The target comes from this helper, never renderer IPC.
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+index 2daaa96d4afe199bed0bc2deddb6baeacb5dcc09..363d6e9e330ba02971deeeab53946eed95639506 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+@@ -106,8 +106,25 @@ TEST_F(AccessNavigationRetryTabHelperTest,
+   EXPECT_FALSE(controller().GetPendingEntry());
+ }
+ 
++TEST_F(AccessNavigationRetryTabHelperTest, NoProxyHandlerPreservesNativeRecovery) {
++  error_page::NetErrorAutoReloader::CreateForWebContents(web_contents());
++  auto* reloader =
++      error_page::NetErrorAutoReloader::FromWebContents(web_contents());
++  reloader->DisableConnectionChangeObservationForTesting();
++  reloader->OnConnectionChanged(
++      net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
++  Fail(GURL("https://failed.example/"));
++  EXPECT_FALSE(helper()->HasProxyRetryHandler());
++  base::test::TestFuture<bool> reply;
++  EXPECT_FALSE(helper()->RequestProxyRetry(reply.GetCallback()));
++  EXPECT_FALSE(reply.Get());
++  EXPECT_TRUE(reloader->next_reload_timer_for_testing());
++}
++
+ TEST_F(AccessNavigationRetryTabHelperTest,
+        ExplicitRecoveryKeepsErrorDocumentStableAcrossConnectionChanges) {
++  helper()->SetProxyRetryHandler(base::BindRepeating(
++      [](const GURL&, base::OnceCallback<void(bool)>) {}));
+   error_page::NetErrorAutoReloader::CreateForWebContents(web_contents());
+   auto* reloader =
+       error_page::NetErrorAutoReloader::FromWebContents(web_contents());
+@@ -144,6 +161,8 @@ TEST_F(AccessNavigationRetryTabHelperTest,
+   reloader->OnConnectionChanged(
+       net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
+   AccessNavigationRetryTabHelper::CreateForWebContents(other.get());
++  AccessNavigationRetryTabHelper::FromWebContents(other.get())->SetProxyRetryHandler(
++      base::BindRepeating([](const GURL&, base::OnceCallback<void(bool)>) {}));
+   content::NavigationSimulator::NavigateAndFailFromBrowser(
+       other.get(), GURL("https://failed.example/"), net::ERR_CONNECTION_RESET);
+   EXPECT_TRUE(AccessNavigationRetryTabHelper::FromWebContents(other.get())
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index a702736e3766ac0c19c17653c27a9cc463c9c13e..ea463b2c1c42f03a1484596d92c34a192d3f000b 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -842,6 +842,13 @@ void AccessProxyingURLLoaderFactory::MaybeProxyBrowserProcessPrefetch(
+       partition, std::move(*metadata), factory_builder);
+ }
+ 
++// static
++bool AccessProxyingURLLoaderFactory::CanOfferProxyRetry(
++    content::WebContents* contents) {
++  auto* helper = AccessNavigationRetryTabHelper::FromWebContents(contents);
++  return helper && helper->HasProxyRetryHandler();
++}
++
+ // static
+ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
+     Profile* profile,
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index c035247f38109fb0e463c6372f2138c333f29abd..95aaa79754b05dce7a42f4e03921df188bda5392 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -29,6 +29,7 @@ class Profile;
+ namespace content {
+ class RenderFrameHost;
+ class StoragePartition;
++class WebContents;
+ }
+ 
+ namespace aegis::access {
+@@ -113,6 +114,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       Profile* profile,
+       content::StoragePartition* partition,
+       network::URLLoaderFactoryBuilder& factory_builder);
++  static bool CanOfferProxyRetry(content::WebContents* contents);
+   static void MaybeProxyNavigation(
+       Profile* profile,
+       content::RenderFrameHost* frame,
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index 531af210dc6f76cc63c03e241dafe5bad9b5ab54..0430224ed24a9e6f1dbea26cc6c858c699a144f2 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -499,9 +499,24 @@ void AccessServiceCoordinator::RequestPublicationAck(
+     return;
+   }
+   if (common) transaction->common_generations = *common;
++  auto reply = WithPublicationTimeout(base::BindOnce(
++      &AccessServiceCoordinator::OnNetworkContextPublicationAck,
++      weak_factory_.GetWeakPtr(), std::move(transaction)));
++  if (async_store_) {
++    AccessRequestDispatchState::Get(profile_)->RequestPrivateSnapshotAck(
++        identity, *runtime->GetPublishedPolicySnapshot(owner), *common,
++        std::move(reply));
++    return;
++  }
++  AccessRequestDispatchState::Get(profile_)
++      ->RequestNetworkContextPublicationAck(identity, owner,
++                                            std::move(reply));
++}
++
++base::OnceCallback<void(bool)> AccessServiceCoordinator::WithPublicationTimeout(
++    base::OnceCallback<void(bool)> completion) {
+   auto settlement = std::make_shared<base::OnceCallback<void(bool)>>(
+-      base::BindOnce(&AccessServiceCoordinator::OnNetworkContextPublicationAck,
+-                     weak_factory_.GetWeakPtr(), std::move(transaction)));
++      std::move(completion));
+   auto settle = [](std::shared_ptr<base::OnceCallback<void(bool)>> callback,
+                    bool accepted) {
+     if (*callback) {
+@@ -510,15 +525,7 @@ void AccessServiceCoordinator::RequestPublicationAck(
+   };
+   publication_timeout_.Start(
+       FROM_HERE, base::Seconds(30), base::BindOnce(settle, settlement, false));
+-  if (async_store_) {
+-    AccessRequestDispatchState::Get(profile_)->RequestPrivateSnapshotAck(
+-        identity, *runtime->GetPublishedPolicySnapshot(owner), *common,
+-        base::BindOnce(settle, settlement));
+-    return;
+-  }
+-  AccessRequestDispatchState::Get(profile_)
+-      ->RequestNetworkContextPublicationAck(identity, owner,
+-                                            base::BindOnce(settle, settlement));
++  return base::BindOnce(settle, settlement);
+ }
+ 
+ bool AccessServiceCoordinator::CandidateStillCurrent(
+@@ -594,12 +601,16 @@ void AccessServiceCoordinator::OnAsyncRecovered(
+       } else if (auto common = runtime->CaptureCommonGenerationTupleOnUiThread(
+                      transaction->pending.owner)) {
+         auto* transport = AccessNetworkContextTransport::Get(profile_);
+-        transport->PublishPrivatePolicy(*result.publication, *common, base::BindOnce(
++        // A live NetworkContext can hold the original ACK indefinitely.
++        // Bound rollback as well; a late ACK must not finish a later mutation.
++        auto recovered = WithPublicationTimeout(base::BindOnce(
+             [](base::WeakPtr<AccessServiceCoordinator> self,
+                std::unique_ptr<MutationTransaction> transaction,
+                AccessMutationTransactionResult failure, bool restored) {
+               if (self) self->Finish(std::move(transaction->completion), failure);
+             }, weak_factory_.GetWeakPtr(), std::move(transaction), failure));
++        transport->PublishPrivatePolicy(*result.publication, *common,
++                                        std::move(recovered));
+         return;
+       }
+     } else {
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index a2bd74173dd3ca2ba187a06d719ef1c17d39f60b..14dbda98ada8b2d129ad37a3f6fd56c957c09da3 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -112,6 +112,8 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+   void PrepareTransportCandidate(MutationTransaction& transaction);
+   std::optional<AccessMutationTransactionResult> PublishCandidate(
+       MutationTransaction& transaction);
++  base::OnceCallback<void(bool)> WithPublicationTimeout(
++      base::OnceCallback<void(bool)> completion);
+   void RequestPublicationAck(std::unique_ptr<MutationTransaction> transaction);
+   bool CandidateStillCurrent(const MutationTransaction& transaction) const;
+   void FailTransaction(std::unique_ptr<MutationTransaction> transaction,
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 0cfcc0a9abb91f74dc6784f88583110bd35c4b1a..615412526f75a55921f01e814ee6abedbf3ed152 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -248,6 +248,7 @@ void AccessSiteProxyBubbleController::RequestFailedNavigationProxy(
+ }
+ base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
+ AccessSiteProxyBubbleController::GetFailedNavigationRetryHandler() {
++  if (!ResolveAccessLocalCoreInput()) return {};
+   return base::BindRepeating(
+       &AccessSiteProxyBubbleController::RequestFailedNavigationProxy,
+       weak_factory_.GetWeakPtr());
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 1035dfab77476e19475001583f4c0e32d579d109..ea643929765a40a7aa4ef0c7dcc315d2dd6b37ae 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -66,6 +66,10 @@ class AccessSiteProxyProductTestPeer {
+ };
+ class AccessServiceCoordinatorTestPeer {
+  public:
++  static base::OneShotTimer& PublicationTimer(AccessServiceCoordinator* coordinator) {
++    return coordinator->publication_timeout_;
++  }
++
+   static void SetFailure(AccessServiceCoordinator* coordinator,
+                         AccessRuleStore::FailurePointForTesting point) {
+     CHECK(coordinator->async_store_);
+@@ -421,6 +425,29 @@ class AccessSiteProxyProductTest : public testing::Test {
+   OwnershipKey owner_;
+ };
+ 
++TEST_F(AccessSiteProxyProductTest, RecoveryTimesOutWhileCandidateAckIsStillHeld) {
++  context_.hold_next = true;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++
++  auto& timer = AccessServiceCoordinatorTestPeer::PublicationTimer(coordinator_);
++  ASSERT_TRUE(timer.IsRunning());
++  timer.FireNow();
++  // The store restores its committed state on a worker. Hold the original
++  // NetworkContext reply through both publication deadlines.
++  ASSERT_TRUE(base::test::RunUntil([&] { return timer.IsRunning(); }));
++  EXPECT_FALSE(coordinator_->CanDispatch(owner_));
++  timer.FireNow();
++  WaitFor(AccessSiteConnectionState::kUnavailable);
++  EXPECT_TRUE(coordinator_->CanDispatch(owner_));
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
++
++  context_.Reply(true);
++  environment_.RunUntilIdle();
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
++  Enable();
++}
++
+ TEST_F(AccessSiteProxyProductTest, CandidateReadFailureRecoversPreparedWithoutRestart) {
+   AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
+       AccessRuleStore::FailurePointForTesting::kBuildPreparedCandidateBeforeRead);
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 1ed82707d43b5dcad2ebe3ab9734b11ab2efb720..accefdbae982abadcaa706176b432b28eefcb5f0 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -8843,8 +8843,10 @@ ChromeContentBrowserClient::GetAlternativeErrorPageOverrideInfo(
+ #if BUILDFLAG(IS_MAC)
+   // The renderer builds the error document from the final request method.
+   // The browser retry ticket is bound to the original navigation method.
+-  if (navigation_handle.IsInPrimaryMainFrame() && !navigation_handle.IsPost() &&
+-      navigation_handle.GetRequestMethod() != "GET") {
++  if (navigation_handle.IsInPrimaryMainFrame() &&
++      ((!navigation_handle.IsPost() && navigation_handle.GetRequestMethod() != "GET") ||
++       !aegis::access::AccessProxyingURLLoaderFactory::CanOfferProxyRetry(
++           navigation_handle.GetWebContents()))) {
+     auto info = content::mojom::AlternativeErrorPageOverrideInfo::New();
+     info->alternative_error_page_params.Set(error_page::kSuppressAegisProxyRetry,
+                                             true);

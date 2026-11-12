@@ -1,0 +1,162 @@
+From a5dc6bcea7e9a2b5e0cf5e63c7d2067a049dee1b Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 05:02:41 +0800
+Subject: [PATCH] test(access): cover durable retry failures with initialized
+ RVH context
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  1 -
+ .../access_service_coordinator_unittest.cc    | 27 +++++++++
+ .../access_site_proxy_product_unittest.cc     | 55 +++++++++++++++----
+ 3 files changed, 72 insertions(+), 11 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index ebd2d34f42f9d1f977df31bdb59b8f38ded1280f..6c65bcaac716f90381f1382dd7af5c8137c39877 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -486,7 +486,6 @@ test("access_service_coordinator_unittests") {
+     "//chrome/test:test_support_unit",
+     "//components/prefs",
+     "//components/proxy_config",
+-    "//components/variations:test_support",
+     "//content/test:test_support",
+     "//mojo/public/cpp/bindings",
+     "//services/network:test_support",
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+index c20ad1d6a48936ec84da807e86ba3930464d453f..a63d69db2fc64d7b0abcccf6a13aa92540c047be 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -6,6 +6,7 @@
+ #include <memory>
+ #include <optional>
+ 
++#include "base/files/file_util.h"
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/test/test_future.h"
+@@ -99,6 +100,32 @@ TEST_F(AccessServiceCoordinatorTest, ProductStartupRestoresOnBackgroundSequence)
+   EXPECT_GT(policy->policy_generation, 0u);
+   EXPECT_TRUE(policy->rules.empty());
+ }
++
++TEST_F(AccessServiceCoordinatorTest,
++       UnavailableProfileStoreCannotBecomeEmptyDirectPolicy) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  // A directory at the SQLite file path deterministically fails Open without
++  // changing filesystem permissions or depending on the executing user's UID.
++  ASSERT_TRUE(base::CreateDirectory(directory.GetPath().AppendASCII("access.db")));
++  auto profile = TestingProfile::Builder().SetPath(directory.GetPath()).Build();
++  network::mojom::NetworkContextParams params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
++  const auto owner = *AccessNetworkContextTransport::Get(profile.get())->OwnerForPartition(
++      ChannelNamespace::kDev, {});
++  auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile.get());
++  for (int attempt = 0; attempt != 2; ++attempt) {
++    base::test::TestFuture<bool> restored;
++    coordinator->InitializeForProfile(owner, restored.GetCallback());
++    EXPECT_FALSE(restored.Get());
++    EXPECT_FALSE(coordinator->CanDispatch(owner));
++    EXPECT_FALSE(coordinator->ReadCommittedSnapshot(owner.storage_partition_token).value);
++    EXPECT_FALSE(AccessPublishedRequestRuntime::Get(profile.get())
++                     ->GetPublishedPolicySnapshot(owner));
++  }
++  EXPECT_TRUE(base::DirectoryExists(directory.GetPath().AppendASCII("access.db")));
++}
++
+ TEST_F(AccessServiceCoordinatorTest, ProductStartupReservationSurvivesOrdinaryProfileRestart) {
+   base::ScopedTempDir directory;
+   ASSERT_TRUE(directory.CreateUniqueTempDir());
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index ddc9a401bbf66de38f8876a317f5c96297c266fe..39de8526bb7e34576a124c1ee90cda8f7451ee23 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -21,7 +21,6 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/proxy_config/proxy_config_pref_names.h"
+ #include "components/proxy_config/proxy_config_dictionary.h"
+-#include "components/variations/scoped_variations_ids_provider.h"
+ #include "content/public/test/browser_task_environment.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+@@ -437,17 +436,20 @@ TEST_F(AccessSiteProxyProductTest, ReadyUiRequiresCurrentContextAckAfterDisconne
+ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness {
+  protected:
+   std::unique_ptr<TestingProfile> CreateTestingProfile() override {
+-    return TestingProfile::Builder().SetPath(directory_.GetPath())
+-        .AddTestingFactory(ProfileNetworkContextServiceFactory::GetInstance(),
+-            base::BindRepeating([](content::BrowserContext* context)
+-                -> std::unique_ptr<KeyedService> {
+-              return std::make_unique<ProfileNetworkContextService>(
+-                  Profile::FromBrowserContext(context));
+-            })).Build();
++    return TestingProfile::Builder().SetPath(directory_.GetPath()).Build();
+   }
+   void SetUp() override {
+     ASSERT_TRUE(directory_.CreateUniqueTempDir());
+     ChromeRenderViewHostTestHarness::SetUp();
++    // Let the RVH harness create its default test NetworkContext first.
++    // TestingBrowserProcess intentionally has no SystemNetworkContextManager;
++    // the Access policy ACK in this fixture belongs to context_ below.
++    ProfileNetworkContextServiceFactory::GetInstance()->SetTestingFactoryAndUse(
++        profile(), base::BindRepeating([](content::BrowserContext* context)
++            -> std::unique_ptr<KeyedService> {
++          return std::make_unique<ProfileNetworkContextService>(
++              Profile::FromBrowserContext(context));
++        }));
+ #if !BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+     const auto* command = base::CommandLine::ForCurrentProcess();
+     if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
+@@ -502,8 +504,6 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+     }));
+   }
+   base::ScopedTempDir directory_;
+-  variations::test::ScopedVariationsIdsProvider variations_ids_provider_{
+-      variations::VariationsIdsProvider::Mode::kUseSignedInState};
+   ProductAckContext context_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+   raw_ptr<AccessServiceCoordinator> coordinator_ = nullptr;
+@@ -545,5 +545,40 @@ TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry)
+   EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
+ }
+ 
++TEST_F(AccessRetryNavigationProductTest,
++       DurableCommitFailureAfterRealAckCannotReloadAndCanRecover) {
++  BeginHeldRetry();
++  const auto before = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(before.value);
++  AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
++      AccessRuleStore::FailurePointForTesting::kCommitAfterFirstMemberInsert);
++  context_.Reply(true);
++  ASSERT_TRUE(completed_.Wait());
++  EXPECT_FALSE(completed_.Get());
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
++  const auto snapshot = bubble_->SnapshotForCommittedUrl(failed_);
++  EXPECT_EQ(snapshot.intent, AccessSiteIntent::kOff);
++  EXPECT_EQ(snapshot.connection, AccessSiteConnectionState::kUnavailable);
++  const auto after = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(after.value);
++  EXPECT_EQ(after.value->site_groups, before.value->site_groups);
++  EXPECT_EQ(after.value->rules, before.value->rules);
++
++  AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
++      AccessRuleStore::FailurePointForTesting::kNone);
++  base::test::TestFuture<bool> recovered;
++  ASSERT_TRUE(helper()->RequestProxyRetry(recovered.GetCallback()));
++  ASSERT_TRUE(recovered.Get());
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), failed_);
++  content::NavigationSimulator::CreateFromPending(controller())->Commit();
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
++  base::test::TestFuture<bool> duplicate;
++  EXPECT_FALSE(helper()->RequestProxyRetry(duplicate.GetCallback()));
++  EXPECT_FALSE(duplicate.Get());
++  EXPECT_FALSE(controller().GetPendingEntry());
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

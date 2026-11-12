@@ -10,3 +10,7 @@ android/*.pepk
 .gclient
 .gclient_entries
 depot_tools/
+
+# Codacy-safe local evidence test fixtures
+scripts/.tmp-ios-p1-evidence/
+scripts/.tmp-mac-p1-evidence/

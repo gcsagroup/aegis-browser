@@ -1,0 +1,74 @@
+From 1fb8fe30be18f3cddea996b08f4cb4ae511786b1 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 20:44:16 +0800
+Subject: [PATCH] test(access): use real native config monitor for product
+ sessions
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  3 +++
+ .../access_site_proxy_product_unittest.cc     | 22 ++++++++++++++++++-
+ 2 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 264c345edbc6bfdcd8cc5db3b80f9a20c7832bc3..079e11764bbe2a97817f2d544d625f8c1944ee03 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -390,6 +390,9 @@ test("access_service_coordinator_unittests") {
+     ":access_service_coordinator",
+     "//build:chromeos_buildflags",
+     "//chrome/browser/profiles:test_support",
++    "//chrome/browser/net:impl",
++    "//components/prefs",
++    "//components/proxy_config",
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
+     "//content/test:test_support",
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index ec4b89496f892c803753c0e8ababfeb3de19d8a4..d6e00b0136e59c8b8e8986aace0f7214676adb08 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -4,12 +4,18 @@
+ 
+ #include "base/command_line.h"
+ #include "base/files/scoped_temp_dir.h"
++#include "base/functional/bind.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
++#include "chrome/browser/net/profile_network_context_service.h"
++#include "chrome/browser/net/profile_network_context_service_factory.h"
+ #include "chrome/test/base/testing_profile.h"
++#include "components/prefs/pref_service.h"
++#include "components/proxy_config/proxy_config_pref_names.h"
++#include "components/proxy_config/proxy_config_dictionary.h"
+ #include "content/public/test/browser_task_environment.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "services/network/test/test_network_context.h"
+@@ -86,7 +92,21 @@ class AccessSiteProxyProductTest : public testing::Test {
+       GTEST_SKIP() << "Real product core tests require authorized DEV inputs.";
+     }
+     ASSERT_TRUE(directory_.CreateUniqueTempDir());
+-    profile_ = TestingProfile::Builder().SetPath(directory_.GetPath()).Build();
++    profile_ = TestingProfile::Builder()
++        .SetPath(directory_.GetPath())
++        .AddTestingFactory(ProfileNetworkContextServiceFactory::GetInstance(),
++            base::BindRepeating([](content::BrowserContext* context)
++                -> std::unique_ptr<KeyedService> {
++              return std::make_unique<ProfileNetworkContextService>(
++                  Profile::FromBrowserContext(context));
++            }))
++        .Build();
++    ASSERT_TRUE(ProfileNetworkContextServiceFactory::GetForContext(profile_.get()));
++    // TestingProfile disables this service by default. Publish an actual
++    // native DIRECT preference change so its monitor owns the C generation.
++    profile_->GetPrefs()->SetDict(proxy_config::prefs::kProxy,
++                                  ProxyConfigDictionary::CreateDirect());
++    environment_.RunUntilIdle();
+     network::mojom::NetworkContextParams params;
+     ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
+         profile_.get(), {}, &params));
+-- 
+2.54.0 (Apple Git-157)
+

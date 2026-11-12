@@ -1,0 +1,502 @@
+From ccac88eb1978ae81f29cdb364f22c476c910507c Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 19:01:48 +0800
+Subject: [PATCH] feat(access): prepare authenticated managed core with real
+ HTTPS readiness
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  22 ++
+ .../aegis/access/access_local_core_manager.cc | 314 ++++++++++++++++++
+ .../aegis/access/access_local_core_manager.h  |  50 +++
+ .../access_local_core_manager_unittest.cc     |  68 ++++
+ 4 files changed, 454 insertions(+)
+ create mode 100644 chrome/browser/aegis/access/access_local_core_manager.cc
+ create mode 100644 chrome/browser/aegis/access/access_local_core_manager.h
+ create mode 100644 chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 05c3ceb5951c58fddbe8a2755abe429352c0660e..c84dad6092a2700d6329f41a208777a94ced7c79 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -3,6 +3,28 @@
+ 
+ import("//testing/test.gni")
+ 
++source_set("access_local_core_manager") {
++  sources = [
++    "access_local_core_manager.cc",
++    "access_local_core_manager.h",
++  ]
++  deps = [
++    "//base",
++    "//crypto",
++    "//net",
++    "//url",
++  ]
++}
++
++test("access_local_core_manager_unittests") {
++  sources = [ "access_local_core_manager_unittest.cc" ]
++  deps = [
++    ":access_local_core_manager",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++  ]
++}
++
+ source_set("access_navigation_retry_tab_helper") {
+   sources = [
+     "access_navigation_retry_tab_helper.cc",
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..37c9b3415df1c7851649569867b02830ae613e49
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -0,0 +1,314 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_local_core_manager.h"
++
++#include "base/command_line.h"
++#include "base/files/file.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/functional/bind.h"
++#include "base/json/json_reader.h"
++#include "base/json/json_writer.h"
++#include "base/process/launch.h"
++#include "base/process/kill.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/utf_string_conversions.h"
++#include "base/task/bind_post_task.h"
++#include "base/task/thread_pool.h"
++#include "base/timer/timer.h"
++#include "base/uuid.h"
++#include "base/values.h"
++#include "crypto/hash.h"
++#include "net/base/auth.h"
++#include "net/base/ip_address.h"
++#include "net/base/ip_endpoint.h"
++#include "net/base/load_flags.h"
++#include "net/base/net_errors.h"
++#include "net/log/net_log_source.h"
++#include "net/proxy_resolution/proxy_config_service_fixed.h"
++#include "net/socket/tcp_server_socket.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "net/url_request/url_request.h"
++#include "net/url_request/url_request_context.h"
++#include "net/url_request/url_request_context_builder.h"
++
++namespace aegis::access {
++namespace {
++constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
++    "aegis_access_local_core_canary", R"(
++      semantics {
++        sender: "Aegis Access local core"
++        description: "Checks the user-authorized DEV proxy before retrying a failed navigation."
++        trigger: "User asks to retry through the proxy."
++        data: "A fixed HTTPS connectivity request and process-local proxy authentication. No browsing URL or cookies."
++        destination: GOOGLE_OWNED_SERVICE
++      }
++      policy {
++        cookies_allowed: NO
++        setting: "Only the explicitly enabled DEV local-node binding can start this check."
++        policy_exception_justification: "User-initiated DEV proxy validation."
++      })");
++constexpr char kCanary[] = "https://www.gstatic.com/generate_204";
++std::string Token() { return base::Uuid::GenerateRandomV4().AsLowercaseString(); }
++}  // namespace
++
++class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
++ public:
++  explicit Worker(AccessLocalCoreInput input) : input_(std::move(input)) {}
++  ~Worker() override { StopChild(); }
++
++  void Prepare(base::OnceCallback<void(AccessLocalCoreReady)> completion) {
++    if (completion_) {
++      std::move(completion).Run({.error = "Proxy preparation is already running."});
++      return;
++    }
++    if (Running()) {
++      Verify(std::move(completion));
++      return;
++    }
++    StopChild();
++    completion_ = std::move(completion);
++    if (!Launch()) {
++      Complete(false, "Cannot start the authorized local proxy.");
++      return;
++    }
++    started_ = base::TimeTicks::Now();
++    timeout_.Start(FROM_HERE, base::Seconds(25), base::BindOnce(
++        &Worker::Complete, base::Unretained(this), false,
++        "Proxy connectivity check timed out."));
++    StartProbe();
++  }
++
++  void Verify(base::OnceCallback<void(AccessLocalCoreReady)> completion) {
++    if (completion_) {
++      std::move(completion).Run({.error = "Proxy preparation is already running."});
++      return;
++    }
++    completion_ = std::move(completion);
++    if (!Running()) {
++      Complete(false, "The local proxy has stopped.");
++      return;
++    }
++    started_ = base::TimeTicks();  // A recheck never relaunches or retries startup.
++    timeout_.Start(FROM_HERE, base::Seconds(25), base::BindOnce(
++        &Worker::Complete, base::Unretained(this), false,
++        "Proxy connectivity check timed out."));
++    StartProbe();
++  }
++
++  void Stop(base::OnceClosure completion) {
++    if (completion_) Complete(false, "Proxy preparation was cancelled.");
++    StopChild();
++    std::move(completion).Run();
++  }
++
++ private:
++  bool Running() {
++    int code = 0;
++    return process_.IsValid() &&
++        base::GetTerminationStatus(process_.Handle(), &code) ==
++            base::TERMINATION_STATUS_STILL_RUNNING;
++  }
++  bool Launch() {
++    std::string manifest_json;
++    std::string node_json;
++    if (!base::ReadFileToStringWithMaxSize(input_.manifest, &manifest_json, 65536) ||
++        !base::ReadFileToStringWithMaxSize(input_.node_config, &node_json, 1024 * 1024))
++      return false;
++    auto manifest = base::JSONReader::ReadDict(manifest_json, base::JSON_PARSE_RFC);
++    auto node = base::JSONReader::ReadDict(node_json, base::JSON_PARSE_RFC);
++    if (!manifest || !node) return false;
++    const auto* path = manifest->FindString("binaryPath");
++    const auto* pin = manifest->FindString("binarySha256");
++    if (!path || !pin) return false;
++    const base::FilePath binary(*path);
++    auto bytes = base::ReadFileToBytes(binary);
++    if (!binary.IsAbsolute() || !bytes ||
++        base::HexEncodeLower(crypto::hash::Sha256(*bytes)) != *pin)
++      return false;
++    const auto* outbounds = node->FindList("outbounds");
++    if (!outbounds || outbounds->empty() || !outbounds->front().is_dict()) return false;
++    const auto& outbound = outbounds->front().GetDict();
++    const auto* protocol = outbound.FindString("protocol");
++    const auto* transport = outbound.FindStringByDottedPath("streamSettings.network");
++    const auto* security = outbound.FindStringByDottedPath("streamSettings.security");
++    if (!protocol || *protocol != "vless" || !transport || *transport != "tcp" ||
++        !security || *security != "reality") return false;
++    // The selected outbound is copied privately; no subscription, system
++    // routing, original V2Ray process or original input file is changed.
++    if (!directory_.CreateUniqueTempDir() ||
++        !base::SetPosixFilePermissions(directory_.GetPath(), 0700)) return false;
++    auto reservation = std::make_unique<net::TCPServerSocket>(nullptr, net::NetLogSource());
++    if (reservation->Listen(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0),
++                            1, std::nullopt) != net::OK) return false;
++    net::IPEndPoint address;
++    if (reservation->GetLocalAddress(&address) != net::OK) return false;
++    port_ = address.port();
++    const auto user = Token();
++    const auto password = Token();
++    credentials_.emplace(base::UTF8ToUTF16(user), base::UTF8ToUTF16(password));
++    registration_ = Token();
++    auto config = base::DictValue()
++        .Set("log", base::DictValue().Set("loglevel", "none"))
++        .Set("inbounds", base::ListValue().Append(base::DictValue()
++            .Set("listen", "127.0.0.1").Set("port", port_).Set("protocol", "http")
++            .Set("settings", base::DictValue().Set("accounts", base::ListValue()
++                .Append(base::DictValue().Set("user", user).Set("pass", password))))))
++        .Set("outbounds", base::ListValue().Append(outbound.Clone()));
++    const auto config_path = directory_.GetPath().AppendASCII("config.json");
++    std::string serialized;
++    if (!base::JSONWriter::Write(config, &serialized)) return false;
++    // Create private before writing secret bytes, rather than chmod after.
++    base::File file(config_path, base::File::FLAG_CREATE | base::File::FLAG_WRITE);
++    if (!file.IsValid() || !base::SetPosixFilePermissions(config_path, 0600) ||
++        !file.WriteAtCurrentPosAndCheck(base::as_byte_span(serialized))) return false;
++    file.Close();
++    base::CommandLine command(binary);
++    command.AppendArg("run");
++    command.AppendArg("-config");
++    command.AppendArgPath(config_path);
++    base::LaunchOptions options;
++    options.clear_environment = true;
++    options.current_directory = directory_.GetPath();
++    // Release the reservation immediately before launching. A port race is a
++    // preparation failure: only the authenticated HTTPS probe may admit it.
++    reservation.reset();
++    base::File null_output(base::FilePath("/dev/null"),
++                           base::File::FLAG_OPEN | base::File::FLAG_WRITE);
++    if (!null_output.IsValid()) return false;
++    options.fds_to_remap = {{null_output.GetPlatformFile(), 1},
++                            {null_output.GetPlatformFile(), 2}};
++    process_ = base::LaunchProcess(command, options);
++    return process_.IsValid();
++  }
++  void StartProbe() {
++    if (!Running()) {
++      Complete(false, "The local proxy exited before becoming ready.");
++      return;
++    }
++    request_.reset();
++    if (!context_) {
++      net::ProxyConfig proxy;
++      proxy.proxy_rules().ParseFromString("http://127.0.0.1:" + base::NumberToString(port_));
++      net::URLRequestContextBuilder builder;
++      builder.DisableHttpCache();
++      builder.set_proxy_config_service(std::make_unique<net::ProxyConfigServiceFixed>(
++          net::ProxyConfigWithAnnotation(proxy, kCanaryAnnotation)));
++      context_ = builder.Build();
++    }
++    auth_attempts_ = 0;
++    request_ = context_->CreateRequest(GURL(kCanary), net::DEFAULT_PRIORITY,
++                                       this, kCanaryAnnotation,
++                                       net::handles::kInvalidNetworkHandle);
++    request_->SetLoadFlags(net::LOAD_DISABLE_CACHE | net::LOAD_DO_NOT_SAVE_COOKIES);
++    request_->set_disallow_credentials();
++    request_->set_site_for_cookies(net::SiteForCookies());
++    request_->Start();
++  }
++  void OnAuthRequired(net::URLRequest* request,
++                      const net::AuthChallengeInfo& challenge) override {
++    if (!challenge.is_proxy || challenge.challenger.host() != "127.0.0.1" ||
++        challenge.challenger.port() != port_ || ++auth_attempts_ > 1) {
++      Complete(false, "Local proxy authentication failed.");
++      return;
++    }
++    authenticated_ = true;
++    request->SetAuth(*credentials_);
++  }
++  void OnReceivedRedirect(net::URLRequest*, const net::RedirectInfo&,
++                          bool* defer_redirect) override {
++    *defer_redirect = true;
++    Complete(false, "Unexpected proxy connectivity response.");
++  }
++  void OnSSLCertificateError(net::URLRequest*, int,
++                             const net::SSLInfo&, bool) override {
++    Complete(false, "Proxy connectivity certificate verification failed.");
++  }
++  void OnResponseStarted(net::URLRequest* request, int error) override {
++    if (error == net::ERR_PROXY_CONNECTION_FAILED && !started_.is_null() &&
++        base::TimeTicks::Now() - started_ < base::Seconds(3) && Running()) {
++      retry_.Start(FROM_HERE, base::Milliseconds(100),
++                   base::BindOnce(&Worker::StartProbe, base::Unretained(this)));
++      return;
++    }
++    Complete(error == net::OK && request->GetResponseCode() == 204 && authenticated_,
++              "The authorized proxy could not complete the HTTPS check.");
++  }
++  void OnReadCompleted(net::URLRequest*, int) override {}
++  void Complete(bool ready, std::string error) {
++    timeout_.Stop();
++    retry_.Stop();
++    request_.reset();
++    AccessLocalCoreReady result;
++    result.ready = ready;
++    if (ready) {
++      result.port = port_;
++      result.registration_id = registration_;
++      result.local_credentials = credentials_;
++    } else {
++      result.error = std::move(error);
++      StopChild();
++    }
++    if (completion_) std::move(completion_).Run(std::move(result));
++  }
++  void StopChild() {
++    timeout_.Stop();
++    retry_.Stop();
++    request_.reset();
++    context_.reset();
++    if (process_.IsValid()) {
++      if (Running()) process_.Terminate(0, true);
++      process_.Close();
++    }
++    credentials_.reset();
++    authenticated_ = false;
++    const bool deleted = directory_.Delete();
++    (void)deleted;
++  }
++
++  AccessLocalCoreInput input_;
++  base::ScopedTempDir directory_;
++  base::Process process_;
++  uint16_t port_ = 0;
++  std::string registration_;
++  std::optional<net::AuthCredentials> credentials_;
++  bool authenticated_ = false;
++  int auth_attempts_ = 0;
++  base::TimeTicks started_;
++  base::OneShotTimer timeout_;
++  base::OneShotTimer retry_;
++  std::unique_ptr<net::URLRequestContext> context_;
++  std::unique_ptr<net::URLRequest> request_;
++  base::OnceCallback<void(AccessLocalCoreReady)> completion_;
++};
++
++AccessLocalCoreManager::AccessLocalCoreManager(AccessLocalCoreInput input) {
++  base::Thread::Options options;
++  options.message_pump_type = base::MessagePumpType::IO;
++  thread_ = std::make_unique<base::Thread>("AccessLocalCore");
++  CHECK(thread_->StartWithOptions(std::move(options)));
++  worker_ = base::SequenceBound<Worker>(thread_->task_runner(), std::move(input));
++}
++AccessLocalCoreManager::~AccessLocalCoreManager() {
++  worker_.Reset();
++  thread_->DetachFromSequence();
++  base::ThreadPool::PostTask(FROM_HERE,
++      {base::MayBlock(), base::WithBaseSyncPrimitives(),
++       base::TaskShutdownBehavior::BLOCK_SHUTDOWN},
++      base::BindOnce([](std::unique_ptr<base::Thread> thread) { thread->Stop(); },
++                     std::move(thread_)));
++}
++void AccessLocalCoreManager::Prepare(
++    base::OnceCallback<void(AccessLocalCoreReady)> completion) {
++  worker_.AsyncCall(&Worker::Prepare).WithArgs(
++      base::BindPostTaskToCurrentDefault(std::move(completion)));
++}
++void AccessLocalCoreManager::Verify(
++    base::OnceCallback<void(AccessLocalCoreReady)> completion) {
++  worker_.AsyncCall(&Worker::Verify).WithArgs(
++      base::BindPostTaskToCurrentDefault(std::move(completion)));
++}
++void AccessLocalCoreManager::Stop(base::OnceClosure completion) {
++  worker_.AsyncCall(&Worker::Stop).WithArgs(
++      base::BindPostTaskToCurrentDefault(std::move(completion)));
++}
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.h b/chrome/browser/aegis/access/access_local_core_manager.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..82eb34ac7f623f9120b75798d633fed54346fad2
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_local_core_manager.h
+@@ -0,0 +1,50 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
++
++#include <optional>
++#include <string>
++
++#include "base/files/file_path.h"
++#include "base/functional/callback.h"
++#include "base/threading/sequence_bound.h"
++#include "base/threading/thread.h"
++#include "net/base/auth.h"
++
++namespace aegis::access {
++// Supplied by Browser's explicitly admitted DEV command-line binding. Neither
++// a page nor the retry IPC supplies an executable, node, URL or credential.
++struct AccessLocalCoreInput {
++  base::FilePath manifest;
++  base::FilePath node_config;
++};
++struct AccessLocalCoreReady {
++  bool ready = false;
++  uint16_t port = 0;
++  std::string registration_id;
++  std::optional<net::AuthCredentials> local_credentials;
++  std::string error;
++};
++
++// One independently authenticated child per owning Browser service. File and
++// process operations and the TLS canary run on a dedicated IO thread. Ready
++// means a certificate-validated HTTPS 204 through the authenticated child, not
++// merely a listening socket. NetworkContext publication must still be ACKed.
++class AccessLocalCoreManager {
++ public:
++  explicit AccessLocalCoreManager(AccessLocalCoreInput input);
++  ~AccessLocalCoreManager();
++  AccessLocalCoreManager(const AccessLocalCoreManager&) = delete;
++  AccessLocalCoreManager& operator=(const AccessLocalCoreManager&) = delete;
++
++  void Prepare(base::OnceCallback<void(AccessLocalCoreReady)> completion);
++  void Verify(base::OnceCallback<void(AccessLocalCoreReady)> completion);
++  void Stop(base::OnceClosure completion);
++
++ private:
++  class Worker;
++  std::unique_ptr<base::Thread> thread_;
++  base::SequenceBound<Worker> worker_;
++};
++}  // namespace aegis::access
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..1f5233938d40e569c6795782f24ca676dcb24780
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -0,0 +1,68 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_local_core_manager.h"
++
++#include "base/command_line.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/test/task_environment.h"
++#include "base/test/test_future.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++class AccessLocalCoreManagerTest : public testing::Test {
++ protected:
++  base::test::TaskEnvironment environment_;
++};
++TEST_F(AccessLocalCoreManagerTest, MissingBindingCannotBecomeReady) {
++  AccessLocalCoreManager manager({});
++  base::test::TestFuture<AccessLocalCoreReady> future;
++  manager.Prepare(future.GetCallback());
++  const auto& result = future.Get();
++  EXPECT_FALSE(result.ready);
++  EXPECT_FALSE(result.error.empty());
++  EXPECT_FALSE(result.local_credentials);
++  EXPECT_EQ(result.port, 0);
++}
++TEST_F(AccessLocalCoreManagerTest, IncorrectBinaryPinCannotLaunch) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto manifest = directory.GetPath().AppendASCII("manifest.json");
++  const auto node = directory.GetPath().AppendASCII("node.json");
++  ASSERT_TRUE(base::WriteFile(manifest,
++      R"({"binaryPath":"/usr/bin/false","binarySha256":"incorrect"})"));
++  ASSERT_TRUE(base::WriteFile(node, "{}"));
++  AccessLocalCoreManager manager({manifest, node});
++  base::test::TestFuture<AccessLocalCoreReady> future;
++  manager.Prepare(future.GetCallback());
++  EXPECT_FALSE(future.Get().ready);
++  EXPECT_FALSE(future.Get().local_credentials);
++}
++TEST_F(AccessLocalCoreManagerTest, AuthorizedNodeHttpsRecheckAndStop) {
++  const auto* command = base::CommandLine::ForCurrentProcess();
++  const auto manifest = command->GetSwitchValuePath("aegis-access-dev-core-manifest");
++  const auto node = command->GetSwitchValuePath("aegis-access-dev-node-config");
++  if (manifest.empty() || node.empty())
++    GTEST_SKIP() << "Authorized DEV core/node binding is required for real HTTPS acceptance.";
++  AccessLocalCoreManager manager({manifest, node});
++  base::test::TestFuture<AccessLocalCoreReady> first;
++  manager.Prepare(first.GetCallback());
++  ASSERT_TRUE(first.Get().ready) << first.Get().error;
++  ASSERT_TRUE(first.Get().local_credentials);
++  EXPECT_NE(first.Get().port, 0);
++  EXPECT_FALSE(first.Get().registration_id.empty());
++  base::test::TestFuture<AccessLocalCoreReady> recheck;
++  manager.Verify(recheck.GetCallback());
++  ASSERT_TRUE(recheck.Get().ready) << recheck.Get().error;
++  EXPECT_EQ(recheck.Get().registration_id, first.Get().registration_id);
++  EXPECT_TRUE(recheck.Get().local_credentials->Equals(*first.Get().local_credentials));
++  base::test::TestFuture<void> stopped;
++  manager.Stop(stopped.GetCallback());
++  ASSERT_TRUE(stopped.Wait());
++  base::test::TestFuture<AccessLocalCoreReady> after;
++  manager.Verify(after.GetCallback());
++  EXPECT_FALSE(after.Get().ready);
++  EXPECT_FALSE(after.Get().local_credentials);
++}
++}  // namespace
++}  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

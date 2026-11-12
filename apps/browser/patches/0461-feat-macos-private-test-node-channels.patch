@@ -1,0 +1,522 @@
+From 0916bd98524e800e4fd88b6fd1a0f3d6abe6f0c4 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 12 Nov 2026 01:19:22 +0800
+Subject: [PATCH] feat(access): admit private macOS Alpha and Beta test nodes
+
+---
+ chrome/BUILD.gn                               |  4 +--
+ chrome/browser/aegis/access/BUILD.gn          | 32 ++++++++++++++-----
+ .../aegis/access/access_build_channel.cc      | 27 +++++++++++++---
+ .../aegis/access/access_build_channel.h       |  4 ++-
+ .../aegis/access/access_local_core_manager.cc | 20 ++++++++----
+ .../aegis/access/access_local_core_manager.h  |  2 +-
+ .../access_local_core_manager_unittest.cc     | 16 ++++++++--
+ .../access/access_service_coordinator.cc      |  3 +-
+ .../access_site_proxy_bubble_controller.cc    |  4 +--
+ .../access_site_proxy_product_unittest.cc     |  4 +--
+ chrome/browser/aegis/access/alpha_access.gni  | 20 +++++++++---
+ .../access/prepare_alpha_access_resources.py  | 18 +++++------
+ .../prepare_alpha_access_resources_test.py    | 15 ++++++++-
+ .../verify_no_alpha_access_resources.py       |  8 ++---
+ 14 files changed, 127 insertions(+), 50 deletions(-)
+
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index f8e7701432de883f07b68053e166811f6eebda80..08af2daeeb3e6865effb0cdd548566b007c03c4c 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -1407,7 +1407,7 @@ if (is_win) {
+     ]
+ 
+     public_deps = [ ":chrome_dll" ]
+-    if (!aegis_alpha_test_node_enabled) {
++    if (!aegis_private_test_node_enabled) {
+       public_deps +=
+           [ "//chrome/browser/aegis/access:alpha_test_resource_guard" ]
+     }
+@@ -1423,7 +1423,7 @@ if (is_win) {
+       "//chrome/browser/web_applications/isolated_web_apps/key_distribution/preload:component_bundle",
+       "//components/privacy_sandbox/privacy_sandbox_attestations/preload:component_bundle",
+     ]
+-    if (aegis_alpha_test_node_enabled) {
++    if (aegis_private_test_node_enabled) {
+       bundle_deps +=
+           [ "//chrome/browser/aegis/access:alpha_access_bundle_data" ]
+     }
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index ba2ef93753d931f45f77b39c415d914ca0bfae95..35d16216da660d57ca57f0857746b5a2ce507a9a 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -7,16 +7,29 @@ import("//testing/test.gni")
+ 
+ buildflag_header("access_buildflags") {
+   header = "access_buildflags.h"
+-  flags = [ "AEGIS_ALPHA_TEST_NODE_ENABLED=$aegis_alpha_test_node_enabled" ]
++  allow_dev_files = !is_official_build
++  flags = [
++    "AEGIS_DEV_LOCAL_NODE_ALLOWED=$allow_dev_files",
++    "AEGIS_PRIVATE_TEST_NODE_ENABLED=$aegis_private_test_node_enabled",
++    "AEGIS_BETA_TEST_NODE_ENABLED=$aegis_beta_test_node_enabled",
++  ]
+ }
+ 
+-if (aegis_alpha_test_node_enabled) {
++if (aegis_private_test_node_enabled) {
++  private_channel = "alpha"
++  private_dir = aegis_alpha_test_resources_dir
++  if (aegis_beta_test_node_enabled) {
++    private_channel = "beta"
++    private_dir = aegis_beta_test_resources_dir
++  }
++  # Both variants overwrite the same three resources. This also keeps the
++  # normal-build guard effective for output directories reused across channels.
+   action("alpha_access_resource_files") {
+     script = "prepare_alpha_access_resources.py"
+     inputs = [
+-      "$aegis_alpha_test_resources_dir/core-manifest.json",
+-      "$aegis_alpha_test_resources_dir/node.json",
+-      "$aegis_alpha_test_resources_dir/xray",
++      "$private_dir/core-manifest.json",
++      "$private_dir/node.json",
++      "$private_dir/xray",
+     ]
+     outputs = [
+       "$root_out_dir/AegisAlphaAccess/core-manifest.json",
+@@ -25,9 +38,9 @@ if (aegis_alpha_test_node_enabled) {
+     ]
+     args = [
+       "--channel",
+-      "alpha",
++      private_channel,
+       "--source-dir",
+-      rebase_path(aegis_alpha_test_resources_dir, root_build_dir),
++      rebase_path(private_dir, root_build_dir),
+       "--output-dir",
+       rebase_path("$root_out_dir/AegisAlphaAccess", root_build_dir),
+     ]
+@@ -75,13 +88,14 @@ source_set("access_local_core_manager") {
+     sources += [ "access_local_core_manager_unavailable.cc" ]
+   }
+   deps = [
++    ":access_build_channel",
+     ":access_buildflags",
+     "//base",
+     "//crypto",
+     "//net",
+     "//url",
+   ]
+-  if (aegis_alpha_test_node_enabled) {
++  if (aegis_private_test_node_enabled) {
+     data_deps = [ ":alpha_access_resource_files" ]
+   } else {
+     data_deps = [ ":alpha_test_resource_guard" ]
+@@ -110,6 +124,7 @@ test("access_local_core_manager_unittests") {
+     sources = [ "access_local_core_manager_unavailable_unittest.cc" ]
+   }
+   deps = [
++    ":access_build_channel",
+     ":access_buildflags",
+     ":access_local_core_manager",
+     "//base",
+@@ -344,6 +359,7 @@ source_set("access_service_coordinator") {
+   ]
+   deps = [
+     ":access_async_rule_store",
++    ":access_build_channel",
+     ":access_identity_generation_source",
+     ":access_proxy_selection_generation_source",
+     ":access_published_request_runtime",
+diff --git a/chrome/browser/aegis/access/access_build_channel.cc b/chrome/browser/aegis/access/access_build_channel.cc
+index c446f9b69ab4c6a76e6222f18524a89d567b073f..f91e3e05582b7b4adfa7a042f4974263661ceafd 100644
+--- a/chrome/browser/aegis/access/access_build_channel.cc
++++ b/chrome/browser/aegis/access/access_build_channel.cc
+@@ -25,12 +25,29 @@ aegis_access::BrowserReleaseChannel BrowserReleaseChannel() {
+ }
+ }  // namespace
+ 
++aegis_access::ChannelNamespace BundledAccessTestChannel() {
++#if BUILDFLAG(AEGIS_BETA_TEST_NODE_ENABLED)
++  return aegis_access::ChannelNamespace::kBeta;
++#elif BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
++  return aegis_access::ChannelNamespace::kAlpha;
++#else
++  return aegis_access::ChannelNamespace::kInvalid;
++#endif
++}
++
+ aegis_access::ChannelNamespace AccessChannelForCurrentBuild() {
+-  auto channel = aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
+-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+-  if (channel == aegis_access::ChannelNamespace::kDev)
+-    channel = aegis_access::ChannelNamespace::kAlpha;
++  const auto browser_channel = BrowserReleaseChannel();
++#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
++  // Only the unbranded UNKNOWN channel takes its identity from the build.
++  if (browser_channel == aegis_access::BrowserReleaseChannel::kUnknown)
++    return BundledAccessTestChannel();
+ #endif
+-  return channel;
++  return aegis_access::MapBrowserReleaseChannel(browser_channel);
++}
++
++const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel) {
++  if (channel == aegis_access::ChannelNamespace::kBeta) return "beta";
++  if (channel == aegis_access::ChannelNamespace::kAlpha) return "alpha";
++  return "dev";
+ }
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_build_channel.h b/chrome/browser/aegis/access/access_build_channel.h
+index 5eed2306026a999b179ad31a08680753c23af91a..21d45462b50cf7d9f7a159be555fba8c35510662 100644
+--- a/chrome/browser/aegis/access/access_build_channel.h
++++ b/chrome/browser/aegis/access/access_build_channel.h
+@@ -5,8 +5,10 @@
+ #include "components/aegis_access/access_route_types.h"
+ 
+ namespace aegis::access {
+-// Explicit Alpha test builds use Alpha ownership even when unbranded Chromium
++// Explicit private test builds use their selected channel even when unbranded Chromium
+ // reports UNKNOWN. Chromium branding and the normal channel mapping are kept.
+ aegis_access::ChannelNamespace AccessChannelForCurrentBuild();
++aegis_access::ChannelNamespace BundledAccessTestChannel();
++const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel);
+ }  // namespace aegis::access
+ #endif
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index 0b80b2bea40abb99a8818e28f50f3304941adca6..0b680a6f12acf368ff4cad26e2bc4194ba78c5af 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -30,6 +30,7 @@
+ #include "base/timer/timer.h"
+ #include "base/uuid.h"
+ #include "base/values.h"
++#include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "crypto/hash.h"
+ #include "net/base/auth.h"
+@@ -47,18 +48,24 @@
+ 
+ namespace aegis::access {
+ std::optional<AccessLocalCoreInput> ResolveAccessLocalCoreInput() {
+-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
++#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
++  if (AccessChannelForCurrentBuild() != BundledAccessTestChannel())
++    return std::nullopt;
+   base::FilePath assets;
+   if (!base::PathService::Get(base::DIR_ASSETS, &assets)) return std::nullopt;
+   assets = assets.AppendASCII("AegisAlphaAccess");
+   return AccessLocalCoreInput{assets.AppendASCII("core-manifest.json"),
+-      assets.AppendASCII("node.json"), AccessLocalCoreSource::kAlphaBundle};
+-#else
++      assets.AppendASCII("node.json"), AccessLocalCoreSource::kPrivateTestBundle};
++#elif BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
++  if (AccessChannelForCurrentBuild() != aegis_access::ChannelNamespace::kDev)
++    return std::nullopt;
+   const auto* command = base::CommandLine::ForCurrentProcess();
+   auto manifest = command->GetSwitchValuePath("aegis-access-dev-core-manifest");
+   auto node = command->GetSwitchValuePath("aegis-access-dev-node-config");
+   if (manifest.empty() || node.empty()) return std::nullopt;
+   return AccessLocalCoreInput{std::move(manifest), std::move(node)};
++#else
++  return std::nullopt;
+ #endif
+ }
+ namespace {
+@@ -224,13 +231,14 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     auto node = base::JSONReader::ReadDict(node_json, base::JSON_PARSE_RFC);
+     if (!manifest || !node) return false;
+     base::FilePath binary;
+-    if (input_.source == AccessLocalCoreSource::kAlphaBundle) {
+-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
++    if (input_.source == AccessLocalCoreSource::kPrivateTestBundle) {
++#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
+       const auto* channel = manifest->FindString("channel");
+       const auto* relative = manifest->FindString("binaryRelativePath");
+       const auto* node_name = manifest->FindString("nodeConfigRelativePath");
+       const auto* node_pin = manifest->FindString("nodeConfigSha256");
+-      if (manifest->FindInt("schemaVersion") != 1 || !channel || *channel != "alpha" ||
++      if (manifest->FindInt("schemaVersion") != 1 || !channel ||
++          *channel != LocalAccessIdentityChannel(BundledAccessTestChannel()) ||
+           !relative || *relative != "xray" || !node_name || *node_name != "node.json" ||
+           input_.node_config != input_.manifest.DirName().AppendASCII("node.json") ||
+           !node_pin || base::HexEncodeLower(crypto::hash::Sha256(base::as_byte_span(node_json))) != *node_pin)
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.h b/chrome/browser/aegis/access/access_local_core_manager.h
+index 97997097c479c7f8e302d7af1dcd1d1222a4cfe6..08796f8e5c86e095ec975957ad3f6485f14bc7d4 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.h
++++ b/chrome/browser/aegis/access/access_local_core_manager.h
+@@ -13,7 +13,7 @@
+ #include "net/base/auth.h"
+ 
+ namespace aegis::access {
+-enum class AccessLocalCoreSource { kDevFiles, kAlphaBundle };
++enum class AccessLocalCoreSource { kDevFiles, kPrivateTestBundle };
+ // Supplied by Browser's private Dev binding or its explicit Alpha build asset.
+ // Neither a page nor the retry IPC supplies a path, node, URL or credential.
+ struct AccessLocalCoreInput {
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index b695cb737fa5b3022b91e33f73ddf9777fae3275..b218f007a633f68916708766d3f3fcf37649b2b6 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -23,6 +23,7 @@
+ #include "base/test/test_future.h"
+ #include "base/threading/thread_restrictions.h"
+ #include "base/timer/timer.h"
++#include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "build/build_config.h"
+ #include "crypto/hash.h"
+@@ -42,17 +43,26 @@ TEST(AccessLocalCoreInputTest, BuildControlsPrivateInputSource) {
+   command.GetProcessCommandLine()->AppendSwitchPath(
+       "aegis-access-dev-node-config", canonical_directory.AppendASCII("dev-node"));
+   const auto input = ResolveAccessLocalCoreInput();
++#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
+   ASSERT_TRUE(input);
+-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+-  EXPECT_EQ(input->source, AccessLocalCoreSource::kAlphaBundle);
++  EXPECT_EQ(input->source, AccessLocalCoreSource::kPrivateTestBundle);
++  EXPECT_EQ(AccessChannelForCurrentBuild(), BundledAccessTestChannel());
++#if BUILDFLAG(AEGIS_BETA_TEST_NODE_ENABLED)
++  EXPECT_EQ(BundledAccessTestChannel(), aegis_access::ChannelNamespace::kBeta);
++#else
++  EXPECT_EQ(BundledAccessTestChannel(), aegis_access::ChannelNamespace::kAlpha);
++#endif
+   EXPECT_EQ(input->manifest, canonical_directory.AppendASCII(
+       "AegisAlphaAccess/core-manifest.json"));
+   EXPECT_EQ(input->node_config, canonical_directory.AppendASCII(
+       "AegisAlphaAccess/node.json"));
+-#else
++#elif BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
++  ASSERT_TRUE(input);
+   EXPECT_EQ(input->source, AccessLocalCoreSource::kDevFiles);
+   EXPECT_EQ(input->manifest, canonical_directory.AppendASCII("dev-manifest"));
+   EXPECT_EQ(input->node_config, canonical_directory.AppendASCII("dev-node"));
++#else
++  EXPECT_FALSE(input);
+ #endif
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index f2561f9caccb3153dcde76d5d770f87855107b2d..531af210dc6f76cc63c03e241dafe5bad9b5ab54 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -11,6 +11,7 @@
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/time/time.h"
++#include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_identity_generation_source.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+@@ -171,7 +172,7 @@ void AccessServiceCoordinator::OnStoreInitialized(
+     auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
+     if (!identity->binding()) identity->CommitIdentity(
+         {aegis_access::AccessIdentityKind::kSignedOut, {}, {},
+-         owner.channel == ChannelNamespace::kAlpha ? "alpha" : "dev",
++         LocalAccessIdentityChannel(owner.channel),
+          "authorized-local-node"});
+     const auto published = runtime->PublishRestoredPolicyCandidate(*result.publication);
+     ready = published.status == AccessPolicyPublicationStatus::kPublished ||
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index c8914318aa746fe2867f2d89877c6c8beec250f1..0cfcc0a9abb91f74dc6784f88583110bd35c4b1a 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -360,6 +360,7 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
+ }
+ std::string AccessSiteProxyBubbleController::LocalProxyGroup(
+     const OwnershipKey& owner) {
++  if (owner.channel == ChannelNamespace::kBeta) return "beta-authorized-test-node";
+   return owner.channel == ChannelNamespace::kAlpha ? "alpha-authorized-test-node"
+                                                   : "dev-authorized-local-node";
+ }
+@@ -376,10 +377,9 @@ bool AccessSiteProxyBubbleController::RegisterPreparedCore(
+     const OwnershipKey& owner, const AccessLocalCoreReady& result) {
+   if (!result.ready || !result.local_credentials) return false;
+   // Rebinding a child does not change a saved rule or its revision.
+-  const bool alpha = owner.channel == ChannelNamespace::kAlpha;
+   auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
+   if (!identity->binding()) identity->CommitIdentity(
+-      {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, alpha ? "alpha" : "dev", "authorized-local-node"});
++      {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, LocalAccessIdentityChannel(owner.channel), "authorized-local-node"});
+   auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+   const auto common = runtime ? runtime->CaptureCommonGenerationTupleOnUiThread(owner)
+                               : std::nullopt;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index b3532fb584767853461a0eb462c15a76c7d0b392..1035dfab77476e19475001583f4c0e32d579d109 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -350,7 +350,7 @@ class ProductAckContext final : public network::TestNetworkContext,
+ class AccessSiteProxyProductTest : public testing::Test {
+  protected:
+   void SetUp() override {
+-#if !BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
++#if !BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
+     const auto* command = base::CommandLine::ForCurrentProcess();
+     if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
+         command->GetSwitchValuePath("aegis-access-dev-node-config").empty()) {
+@@ -713,7 +713,7 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+           return std::make_unique<ProfileNetworkContextService>(
+               Profile::FromBrowserContext(context));
+         }));
+-#if !BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
++#if !BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
+     const auto* command = base::CommandLine::ForCurrentProcess();
+     if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
+         command->GetSwitchValuePath("aegis-access-dev-node-config").empty())
+diff --git a/chrome/browser/aegis/access/alpha_access.gni b/chrome/browser/aegis/access/alpha_access.gni
+index 84d5b0b7f9f9f7db9dc5a79d189e1532429dc0cf..bd1b3a851d1f4104a4386892ce19a269852d85b5 100644
+--- a/chrome/browser/aegis/access/alpha_access.gni
++++ b/chrome/browser/aegis/access/alpha_access.gni
+@@ -1,13 +1,23 @@
+ # Copyright 2026 GCSA
+ 
++import("//build/config/chrome_build.gni")
++
+ declare_args() {
+-  # Explicit local Alpha test build. Normal Dev/Beta/Release builds have no
+-  # bundled node, executable, or private resource dependency.
+   aegis_alpha_test_node_enabled = false
+   aegis_alpha_test_resources_dir = ""
++  aegis_beta_test_node_enabled = false
++  aegis_beta_test_resources_dir = ""
+ }
+ 
+-assert(!aegis_alpha_test_node_enabled || (is_mac && !is_official_build),
+-       "The built-in test node is limited to non-official macOS Alpha builds.")
++assert(!(aegis_alpha_test_node_enabled && aegis_beta_test_node_enabled),
++       "Select one private test channel per build.")
+ assert(aegis_alpha_test_node_enabled == (aegis_alpha_test_resources_dir != ""),
+-       "Alpha test resources require the explicit Alpha test build flag.")
++       "Alpha resources require an explicit Alpha test build.")
++assert(aegis_beta_test_node_enabled == (aegis_beta_test_resources_dir != ""),
++       "Beta resources require an explicit Beta test build.")
++
++aegis_private_test_node_enabled =
++    aegis_alpha_test_node_enabled || aegis_beta_test_node_enabled
++assert(!aegis_private_test_node_enabled ||
++           (is_mac && !is_official_build && !is_chrome_branded),
++       "Private test nodes require a non-official, unbranded macOS test build.")
+diff --git a/chrome/browser/aegis/access/prepare_alpha_access_resources.py b/chrome/browser/aegis/access/prepare_alpha_access_resources.py
+index 2090af3960b32e1fa024c1948fa973a943d9e195..10a9db3b6a11930020e2de8cfda5089e02df86e7 100644
+--- a/chrome/browser/aegis/access/prepare_alpha_access_resources.py
++++ b/chrome/browser/aegis/access/prepare_alpha_access_resources.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Stage private Alpha Access inputs without printing node values."""
++"""Stage private Access inputs without printing node values."""
+ 
+ import argparse
+ import hashlib
+@@ -10,25 +10,25 @@ import tempfile
+ 
+ 
+ def stage(source: Path, output: Path, channel: str) -> None:
+-    if channel != "alpha":
+-        raise ValueError("Test resources are restricted to the Alpha channel")
++    if channel not in ("alpha", "beta"):
++        raise ValueError("Test resources are restricted to Alpha and Beta")
+     manifest_bytes = (source / "core-manifest.json").read_bytes()
+     manifest = json.loads(manifest_bytes)
+-    if (manifest.get("schemaVersion") != 1 or manifest.get("channel") != "alpha"
++    if (manifest.get("schemaVersion") != 1 or manifest.get("channel") != channel
+             or manifest.get("binaryRelativePath") != "xray"
+             or manifest.get("nodeConfigRelativePath") != "node.json"):
+-        raise ValueError("Invalid Alpha resource manifest")
++        raise ValueError("Invalid private resource manifest")
+     binary = (source / "xray").read_bytes()
+     node_bytes = (source / "node.json").read_bytes()
+     if (hashlib.sha256(binary).hexdigest() != manifest.get("binarySha256")
+             or hashlib.sha256(node_bytes).hexdigest() != manifest.get("nodeConfigSha256")):
+-        raise ValueError("Alpha resource pin mismatch")
++        raise ValueError("Private resource pin mismatch")
+     node = json.loads(node_bytes)
+     outbound = node.get("outbounds", [None])[0]
+     if (not isinstance(outbound, dict) or outbound.get("protocol") != "vless"
+             or outbound.get("streamSettings", {}).get("network") != "tcp"
+             or outbound.get("streamSettings", {}).get("security") != "reality"):
+-        raise ValueError("Unsupported Alpha test transport")
++        raise ValueError("Unsupported private test transport")
+     output.mkdir(parents=True, exist_ok=True, mode=0o700)
+     os.chmod(output, 0o700)
+     # Replace inodes, so an already assembled/running immutable candidate
+@@ -36,7 +36,7 @@ def stage(source: Path, output: Path, channel: str) -> None:
+     for name, data, mode in (("core-manifest.json", manifest_bytes, 0o600),
+                              ("node.json", node_bytes, 0o600),
+                              ("xray", binary, 0o700)):
+-        descriptor, temporary = tempfile.mkstemp(dir=output, prefix=".alpha-")
++        descriptor, temporary = tempfile.mkstemp(dir=output, prefix=".private-")
+         try:
+             with os.fdopen(descriptor, "wb") as stream:
+                 os.fchmod(stream.fileno(), mode)
+@@ -57,7 +57,7 @@ def main() -> int:
+         stage(args.source_dir, args.output_dir, args.channel)
+     except (OSError, ValueError, KeyError, IndexError, TypeError):
+         # Private input values and exception payloads never enter build logs.
+-        parser.exit(1, "Cannot prepare validated private Alpha test resources.\n")
++        parser.exit(1, "Cannot prepare validated private test resources.\n")
+     return 0
+ 
+ 
+diff --git a/chrome/browser/aegis/access/prepare_alpha_access_resources_test.py b/chrome/browser/aegis/access/prepare_alpha_access_resources_test.py
+index dc47db7ef4c6bc32c2577b35cfc24d4d7ea88327..dc164dcba1fe3950878c4fb279476efcd8818354 100644
+--- a/chrome/browser/aegis/access/prepare_alpha_access_resources_test.py
++++ b/chrome/browser/aegis/access/prepare_alpha_access_resources_test.py
+@@ -38,12 +38,25 @@ class AlphaResourcesTest(unittest.TestCase):
+         self.assertEqual((output / "xray").stat().st_mode & 0o777, 0o700)
+ 
+     def test_other_channels_do_not_create_resources(self):
+-        for channel in ("dev", "beta", "release", ""):
++        for channel in ("dev", "stable", "release", ""):
+             output = self.root / ("output-" + channel)
+             with self.assertRaises(ValueError):
+                 stage(self.source, output, channel)
+             self.assertFalse(output.exists())
+ 
++    def test_beta_requires_matching_manifest_and_preserves_bytes(self):
++        output = self.root / "output"
++        with self.assertRaises(ValueError):
++            stage(self.source, output, "beta")
++        self.assertFalse(output.exists())
++        self.manifest["channel"] = "beta"
++        self.write_manifest()
++        with self.assertRaises(ValueError):
++            stage(self.source, output, "alpha")
++        self.assertFalse(output.exists())
++        stage(self.source, output, "beta")
++        self.assertEqual((output / "node.json").read_bytes(), self.node)
++
+     def test_tampered_node_or_binary_is_rejected_before_output(self):
+         for name, original in (("node.json", self.node), ("xray", self.binary)):
+             (self.source / name).write_bytes(original + b"tamper")
+diff --git a/chrome/browser/aegis/access/verify_no_alpha_access_resources.py b/chrome/browser/aegis/access/verify_no_alpha_access_resources.py
+index 602b4f2aef99dec4b97015cafb334c9e3c3c059a..2e4e234ca754b0e2a67da16e7eeec288af7360ec 100644
+--- a/chrome/browser/aegis/access/verify_no_alpha_access_resources.py
++++ b/chrome/browser/aegis/access/verify_no_alpha_access_resources.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Reject stale private Alpha assets in a reused normal build output."""
++"""Reject stale private test assets in a reused normal build output."""
+ 
+ import argparse
+ from pathlib import Path
+@@ -11,7 +11,7 @@ def verify(output: Path) -> None:
+     candidates.extend(output.glob(
+         "*.app/Contents/Frameworks/*.framework/Resources/AegisAlphaAccess"))
+     if any(path.exists() for path in candidates):
+-        raise ValueError("Normal output contains Alpha test assets")
++        raise ValueError("Normal output contains private test assets")
+ 
+ 
+ def main() -> int:
+@@ -22,9 +22,9 @@ def main() -> int:
+     try:
+         verify(args.output_dir)
+     except ValueError:
+-        parser.exit(1, "Normal output contains Alpha test assets; use a normal output directory.\n")
++        parser.exit(1, "Normal output contains private test assets; use a normal output directory.\n")
+     args.stamp.parent.mkdir(parents=True, exist_ok=True)
+-    args.stamp.write_text("Alpha test resources absent\n")
++    args.stamp.write_text("private test resources absent\n")
+     return 0
+ 
+ 
+-- 
+2.54.0 (Apple Git-157)
+

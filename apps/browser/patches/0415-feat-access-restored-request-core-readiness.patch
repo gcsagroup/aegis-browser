@@ -1,0 +1,853 @@
+From 24180145c897ba23c9804d4f0a1a738c55947668 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 01:55:19 +0800
+Subject: [PATCH] feat(access): restore prepared core before selected requests
+
+---
+ .../aegis/access/access_local_core_manager.cc |  20 ++
+ .../aegis/access/access_local_core_manager.h  |   3 +
+ .../access_local_core_manager_unittest.cc     |  13 +-
+ .../access_network_context_transport.cc       |  21 +-
+ .../access/access_network_context_transport.h |   5 +
+ .../access_proxying_url_loader_factory.cc     |  73 +++++-
+ .../access_proxying_url_loader_factory.h      |  13 +
+ .../access/access_service_coordinator.cc      |   4 +-
+ .../access_site_proxy_bubble_controller.cc    | 241 +++++++++++++++---
+ .../access_site_proxy_bubble_controller.h     |  26 ++
+ .../access_site_proxy_product_unittest.cc     |  86 +++++++
+ 11 files changed, 461 insertions(+), 44 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index a92aaf7d8fe4897a697143b5f91ec18fa67283b3..d74c4411c4df03d63495a9d432f5584ec75fb40e 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -102,6 +102,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+       return;
+     }
+     completion_ = std::move(completion);
++    health_.Stop();
+     if (!Running()) {
+       Complete(false, "The local proxy has stopped.");
+       return;
+@@ -121,6 +122,9 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     StopChild();
+     std::move(completion).Run();
+   }
++  void SetStoppedCallback(base::RepeatingCallback<void(std::string)> callback) {
++    stopped_callback_ = std::move(callback);
++  }
+ 
+  private:
+   bool Running() {
+@@ -285,13 +289,22 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+       result.port = port_;
+       result.registration_id = registration_;
+       result.local_credentials = credentials_;
++      health_.Start(FROM_HERE, base::Seconds(1), base::BindRepeating(
++          &Worker::CheckChild, base::Unretained(this)));
+     } else {
+       result.error = std::move(error);
+       StopChild();
+     }
+     if (completion_) std::move(completion_).Run(std::move(result));
+   }
++  void CheckChild() {
++    if (Running()) return;
++    const auto registration = registration_;
++    StopChild();
++    if (stopped_callback_) stopped_callback_.Run(registration);
++  }
+   void StopChild() {
++    health_.Stop();
+     timeout_.Stop();
+     retry_.Stop();
+     request_.reset();
+@@ -317,9 +330,11 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+   base::TimeTicks started_;
+   base::OneShotTimer timeout_;
+   base::OneShotTimer retry_;
++  base::RepeatingTimer health_;
+   std::unique_ptr<net::URLRequestContext> context_;
+   std::unique_ptr<net::URLRequest> request_;
+   base::OnceCallback<void(AccessLocalCoreReady)> completion_;
++  base::RepeatingCallback<void(std::string)> stopped_callback_;
+ };
+ 
+ AccessLocalCoreManager::AccessLocalCoreManager(AccessLocalCoreInput input) {
+@@ -352,4 +367,9 @@ void AccessLocalCoreManager::Stop(base::OnceClosure completion) {
+   worker_.AsyncCall(&Worker::Stop).WithArgs(
+       base::BindPostTaskToCurrentDefault(std::move(completion)));
+ }
++void AccessLocalCoreManager::SetStoppedCallback(
++    base::RepeatingCallback<void(std::string)> callback) {
++  worker_.AsyncCall(&Worker::SetStoppedCallback).WithArgs(
++      base::BindPostTaskToCurrentDefault(std::move(callback)));
++}
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.h b/chrome/browser/aegis/access/access_local_core_manager.h
+index a6e2acae5d5586d929489b61dc8769945dfc2e26..e64c7e58e23aa9c170db008caa85e80921893792 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.h
++++ b/chrome/browser/aegis/access/access_local_core_manager.h
+@@ -45,6 +45,9 @@ class AccessLocalCoreManager {
+   void Prepare(base::OnceCallback<void(AccessLocalCoreReady)> completion);
+   void Verify(base::OnceCallback<void(AccessLocalCoreReady)> completion);
+   void Stop(base::OnceClosure completion);
++  // Reports an unexpected exit of this manager's prepared child. The private
++  // registration ID lets the Browser ignore a late notification after rebind.
++  void SetStoppedCallback(base::RepeatingCallback<void(std::string)> callback);
+ 
+  private:
+   class Worker;
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index 369265511ece51fbfc340462cb24e40edc2c76d5..a06be13692fcc4264c3ab92585fccdd1a1dcaeff 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -69,12 +69,13 @@ TEST_F(AccessLocalCoreManagerTest, IncorrectBinaryPinCannotLaunch) {
+   EXPECT_FALSE(future.Get().local_credentials);
+ }
+ TEST_F(AccessLocalCoreManagerTest, AuthorizedNodeHttpsRecheckAndStop) {
+-  const auto* command = base::CommandLine::ForCurrentProcess();
+-  const auto manifest = command->GetSwitchValuePath("aegis-access-dev-core-manifest");
+-  const auto node = command->GetSwitchValuePath("aegis-access-dev-node-config");
+-  if (manifest.empty() || node.empty())
++  const auto input = ResolveAccessLocalCoreInput();
++  if (!input)
+     GTEST_SKIP() << "Authorized DEV core/node binding is required for real HTTPS acceptance.";
+-  AccessLocalCoreManager manager({manifest, node});
++  AccessLocalCoreManager manager(*input);
++  const auto unexpected_exits = std::make_shared<int>(0);
++  manager.SetStoppedCallback(base::BindRepeating(
++      [](std::shared_ptr<int> count, std::string) { ++*count; }, unexpected_exits));
+   base::test::TestFuture<AccessLocalCoreReady> first;
+   manager.Prepare(first.GetCallback());
+   ASSERT_TRUE(first.Get().ready) << first.Get().error;
+@@ -89,6 +90,8 @@ TEST_F(AccessLocalCoreManagerTest, AuthorizedNodeHttpsRecheckAndStop) {
+   base::test::TestFuture<void> stopped;
+   manager.Stop(stopped.GetCallback());
+   ASSERT_TRUE(stopped.Wait());
++  environment_.RunUntilIdle();
++  EXPECT_EQ(*unexpected_exits, 0);
+   base::test::TestFuture<AccessLocalCoreReady> after;
+   manager.Verify(after.GetCallback());
+   EXPECT_FALSE(after.Get().ready);
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 10e519bdcabe94f55f69ed3ccf217986cd22b4dd..e15dbead36ec2de6434393a80730ee6a418eb582 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -252,6 +252,7 @@ bool AccessNetworkContextTransport::RegisterPreparedProxy(
+          !old.local_credentials->Equals(*entry.local_credentials))) return false;
+   }
+   state.private_endpoints.insert_or_assign(endpoint.proxy_group_id, entry);
++  state.private_unavailable_generations.erase(endpoint.proxy_group_id);
+   state.endpoint = endpoint;
+   return true;
+ }
+@@ -263,6 +264,22 @@ std::vector<AccessPrivateEndpoint> AccessNetworkContextTransport::PrivateEndpoin
+     endpoints.push_back(entry);
+   return endpoints;
+ }
++bool AccessNetworkContextTransport::ForgetPreparedProxy(
++    const aegis_access::OwnershipKey& owner, const std::string& group,
++    const std::string& registration_id) {
++  if (!OwnsConfiguredPartition(owner)) return false;
++  auto& state = partitions_.at(owner.storage_partition_token);
++  const auto found = state.private_endpoints.find(group);
++  if (found == state.private_endpoints.end() ||
++      found->second.registration.owner != owner ||
++      found->second.registration.registration_id != registration_id) return false;
++  state.private_unavailable_generations.insert_or_assign(
++      group, found->second.registration.generations.selection_generation);
++  state.private_endpoints.erase(found);
++  if (state.endpoint && state.endpoint->registration_id == registration_id)
++    state.endpoint.reset();
++  return true;
++}
+ bool AccessNetworkContextTransport::HasReadyPrivateContext(
+     const aegis_access::OwnershipKey& owner) const {
+   if (!OwnsConfiguredPartition(owner)) return false;
+@@ -360,7 +377,9 @@ AccessNetworkConfigAckResult AccessNetworkContextTransport::PublishPrivatePolicy
+       candidate.unavailable.emplace(group, g.selection_generation);
+     } else {
+       // This process has not selected an endpoint for the restored group.
+-      candidate.unavailable.emplace(group, 0);
++      const auto high_water = state.private_unavailable_generations.find(group);
++      candidate.unavailable.emplace(group,
++          high_water == state.private_unavailable_generations.end() ? 0 : high_water->second);
+     }
+   }
+   if (!state.private_publication || !SamePrivatePublication(*state.private_publication, candidate)) {
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index fecad03365d144369a405cf9de562e4bd02f92ea..59e3b5c32b02da25e6adbbaaef9c60640d227753 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -104,6 +104,10 @@ class AccessNetworkContextTransport
+   // Records a real prepared child for private per-request publication. This
+   // does not alter native proxy settings or publish the user's site intent.
+   bool RegisterPreparedProxy(const AccessPrivateEndpoint& endpoint);
++  // Revokes only the named private child. Intent and native proxy settings
++  // remain intact; the next full snapshot marks this group unavailable.
++  bool ForgetPreparedProxy(const aegis_access::OwnershipKey& owner,
++      const std::string& group, const std::string& registration_id);
+   std::vector<AccessPrivateEndpoint> PrivateEndpoints(
+       const aegis_access::OwnershipKey& owner) const;
+   bool HasReadyPrivateContext(const aegis_access::OwnershipKey& owner) const;
+@@ -177,6 +181,7 @@ class AccessNetworkContextTransport
+   };
+   struct PartitionState {
+     std::map<std::string, AccessPrivateEndpoint> private_endpoints;
++    std::map<std::string, uint64_t> private_unavailable_generations;
+     std::map<std::string, PrivateContextEntry> private_contexts;
+     std::optional<PrivatePublication> private_publication;
+     uint64_t private_revision = 0;
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index f3be9886b99dab5dcda2cfd4a15b8f8b6da9cf3a..1882ca5a917665f12339be7fd8fccc88bb44f54c 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -1009,6 +1009,71 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
+   }
+ 
+   if (private_target_factory_.is_bound()) {
++    ++pending_starts_;
++    const auto local_group = SelectedLocalCoreGroup(request.url);
++    if (local_group) {
++      auto* controller = AccessSiteProxyBubbleController::GetOrCreate(profile_);
++      auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++      const auto* policy = runtime->GetPublishedPolicySnapshot(factory_owner_);
++      controller->EnsureLocalCoreForRequest(factory_owner_, *local_group, base::BindOnce(
++          &AccessProxyingURLLoaderFactory::OnRequestCoreReady,
++          weak_factory_.GetWeakPtr(), std::move(loader_receiver), request_id,
++          options, request, std::move(client), traffic_annotation,
++          policy->policy_generation, *local_group));
++      return;
++    }
++    PublishRequestPolicy(std::move(loader_receiver), request_id, options, request,
++                         std::move(client), traffic_annotation);
++    return;
++  }
++  StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
++                         std::move(client), traffic_annotation);
++}
++
++std::optional<std::string> AccessProxyingURLLoaderFactory::SelectedLocalCoreGroup(
++    const GURL& target) {
++  if (!factory_metadata_ || (document_ && !document_->AsRenderFrameHostIfValid()))
++    return std::nullopt;
++  const auto metadata = CaptureCurrentMetadata();
++  if (!metadata.metadata || !SameAttributionScope(*factory_metadata_, *metadata.metadata))
++    return std::nullopt;
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_) : nullptr;
++  const auto request = aegis_access::CanonicalizeBrowserOwnedRequest(*metadata.metadata, target);
++  if (!policy || !request.context) return std::nullopt;
++  const auto match = aegis_access::EvaluateAccessPolicy(*request.context, *policy);
++  if (ClassifyPolicyMatch(match) != MatchedPolicyDisposition::kProxy ||
++      match.effective_proxy_group_id != AccessSiteProxyBubbleController::LocalProxyGroup(factory_owner_))
++    return std::nullopt;
++  return match.effective_proxy_group_id;
++}
++
++void AccessProxyingURLLoaderFactory::OnRequestCoreReady(
++    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++    int32_t request_id, uint32_t options, network::ResourceRequest request,
++    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++    net::MutableNetworkTrafficAnnotationTag traffic_annotation,
++    uint64_t expected_policy_generation, std::string expected_group, bool ready) {
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_) : nullptr;
++  // A pending readiness callback grants no route to a replacement document,
++  // a new navigation, or a policy that changed while the core was preparing.
++  if (!ready || !policy || policy->policy_generation != expected_policy_generation ||
++      SelectedLocalCoreGroup(request.url) != expected_group || !private_target_factory_.is_bound()) {
++    BlockRequest(std::move(loader_receiver), std::move(client),
++                 ready ? net::ERR_NETWORK_CHANGED : net::ERR_PROXY_CONNECTION_FAILED);
++    FinishPendingStart();
++    return;
++  }
++  PublishRequestPolicy(std::move(loader_receiver), request_id, options, std::move(request),
++                       std::move(client), traffic_annotation);
++}
++
++void AccessProxyingURLLoaderFactory::PublishRequestPolicy(
++    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++    int32_t request_id, uint32_t options, network::ResourceRequest request,
++    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++    net::MutableNetworkTrafficAnnotationTag traffic_annotation) {
+     auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+     auto* transport = AccessNetworkContextTransport::Get(profile_);
+     const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_)
+@@ -1019,20 +1084,17 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
+     if (!transport || !policy || !common) {
+       BlockRequest(std::move(loader_receiver), std::move(client),
+                    net::ERR_NETWORK_CHANGED);
++      FinishPendingStart();
+       return;
+     }
+     // An open document keeps its factory across network/identity/config
+     // changes. Publish the new tuple and wait for the exact ACK before
+     // stamping either native or proxy requests with that tuple.
+-    ++pending_starts_;
+     transport->PublishPrivatePolicy(*policy, *common, base::BindOnce(
+         &AccessProxyingURLLoaderFactory::OnRequestPolicyReady,
+         weak_factory_.GetWeakPtr(), std::move(loader_receiver), request_id,
+         options, request, std::move(client), traffic_annotation, *common));
+     return;
+-  }
+-  StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
+-                         std::move(client), traffic_annotation);
+ }
+ 
+ void AccessProxyingURLLoaderFactory::OnRequestPolicyReady(
+@@ -1053,6 +1115,9 @@ void AccessProxyingURLLoaderFactory::OnRequestPolicyReady(
+     StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
+                            std::move(client), traffic_annotation);
+   }
++  FinishPendingStart();
++}
++void AccessProxyingURLLoaderFactory::FinishPendingStart() {
+   // Keep the factory alive while StartEvaluatedRequest can remove a failed
+   // tracked request, including when its public factory receiver has closed.
+   CHECK_GT(pending_starts_, 0u);
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 6cffceff8e7c365c80549c8468acfddc7f9d547c..edf2314f0a148c99e4eac9cfdcc233662183112b 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -146,6 +146,19 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+       net::MutableNetworkTrafficAnnotationTag traffic_annotation,
+       aegis_access::GenerationTuple expected, bool accepted);
++  std::optional<std::string> SelectedLocalCoreGroup(const GURL& target);
++  void OnRequestCoreReady(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++      int32_t request_id, uint32_t options, network::ResourceRequest request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      net::MutableNetworkTrafficAnnotationTag traffic_annotation,
++      uint64_t expected_policy_generation, std::string expected_group, bool ready);
++  void PublishRequestPolicy(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
++      int32_t request_id, uint32_t options, network::ResourceRequest request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      net::MutableNetworkTrafficAnnotationTag traffic_annotation);
++  void FinishPendingStart();
+   void StartEvaluatedRequest(
+       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+       int32_t request_id, uint32_t options,
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index 608071c970b524ff242ee43c8fd0476f52c994d0..df624ef529f20f42cae4715e4e26009c200f544f 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -169,7 +169,9 @@ void AccessServiceCoordinator::OnStoreInitialized(
+   if (ready) {
+     auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
+     if (!identity->binding()) identity->CommitIdentity(
+-        {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, "dev", "authorized-local-node"});
++        {aegis_access::AccessIdentityKind::kSignedOut, {}, {},
++         owner.channel == ChannelNamespace::kAlpha ? "alpha" : "dev",
++         "authorized-local-node"});
+     const auto published = runtime->PublishRestoredPolicyCandidate(*result.publication);
+     ready = published.status == AccessPolicyPublicationStatus::kPublished ||
+             published.status == AccessPolicyPublicationStatus::kUnchanged;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 9e3e67343bf189a3ba9f2f2f87a9d8ead5e05b22..1707e2016af41378b3087d6268e8715d025a1c8c 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -171,7 +171,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+     return false;
+   }
+-  if (publication_in_flight_) {
++  if (publication_in_flight_ || (enabled && restoring_core_)) {
+     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
+         AccessSiteProxySessionError::kBusy);
+     return false;
+@@ -227,19 +227,24 @@ void AccessSiteProxyBubbleController::RestoreSavedIntents(OwnershipKey owner,
+     if (group.members.empty() ||
+         group.group.site_toggle_id != "bubble:" + group.group.canonical_host) continue;
+     const auto host = MakeAccessSiteHost(group.group.canonical_host);
+-    if (host.host) intent_store_.Set(*host.host,
+-        group.members.front().policy.mode == AccessMode::kProxy
+-            ? AccessSiteIntent::kAllow : AccessSiteIntent::kOff);
++    if (host.host) {
++      intent_store_.Set(*host.host,
++          group.members.front().policy.mode == AccessMode::kProxy
++              ? AccessSiteIntent::kAllow : AccessSiteIntent::kOff);
++      host_states_.try_emplace(*host.host);
++    }
+   }
+   ++state_revision_;
+ }
+ void AccessSiteProxyBubbleController::FailCorePreparation(
+     const AccessSiteHost& host, std::string error) {
+   publication_in_flight_ = false;
++  local_core_ready_ = false;
+   ++state_revision_;
+   host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+   host_states_[host].failure_reason = std::move(error);
+   if (retry_completion_) std::move(retry_completion_).Run(false);
++  FinishCoreRequests(false);
+ }
+ void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& host) {
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+@@ -267,13 +272,10 @@ void AccessSiteProxyBubbleController::OnProfileRestoredForCore(
+     return;
+   }
+   RestoreSavedIntents(owner, true);
++  CreateLocalCore();
+   if (!local_core_) {
+-    const auto input = ResolveAccessLocalCoreInput();
+-    if (!input) {
+-      FailCorePreparation(host, "The authorized proxy configuration is unavailable.");
+-      return;
+-    }
+-    local_core_ = std::make_unique<AccessLocalCoreManager>(*input);
++    FailCorePreparation(host, "The authorized proxy configuration is unavailable.");
++    return;
+   }
+   local_core_->Prepare(base::BindOnce(
+       &AccessSiteProxyBubbleController::OnLocalCorePrepared,
+@@ -289,8 +291,35 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
+     FailCorePreparation(host, std::move(result.error));
+     return;
+   }
+-  // Core preparation does not replace actual Profile restoration or policy
+-  // publication. Missing sources remain a visible failure, never guessed G/S.
++  if (!RegisterPreparedCore(owner, result)) {
++    FailCorePreparation(host, "The prepared proxy registration could not be installed.");
++    return;
++  }
++  AccessSiteProxyLocalProxyReadyInfo ready;
++  if (EnsureLocalProxyReady(host, &ready) != AccessSiteProxySessionError::kOk) {
++    FailCorePreparation(host, "The prepared proxy has not been registered with this Profile.");
++    return;
++  }
++  BeginEnablePublication(host, std::move(ready));
++}
++std::string AccessSiteProxyBubbleController::LocalProxyGroup(
++    const OwnershipKey& owner) {
++  return owner.channel == ChannelNamespace::kAlpha ? "alpha-authorized-test-node"
++                                                  : "dev-authorized-local-node";
++}
++void AccessSiteProxyBubbleController::CreateLocalCore() {
++  if (local_core_) return;
++  const auto input = ResolveAccessLocalCoreInput();
++  if (!input) return;
++  local_core_ = std::make_unique<AccessLocalCoreManager>(*input);
++  local_core_->SetStoppedCallback(base::BindRepeating(
++      &AccessSiteProxyBubbleController::OnLocalCoreStopped,
++      weak_factory_.GetWeakPtr()));
++}
++bool AccessSiteProxyBubbleController::RegisterPreparedCore(
++    const OwnershipKey& owner, const AccessLocalCoreReady& result) {
++  if (!result.ready || !result.local_credentials) return false;
++  // Rebinding a child does not change a saved rule or its revision.
+   const bool alpha = owner.channel == ChannelNamespace::kAlpha;
+   auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
+   if (!identity->binding()) identity->CommitIdentity(
+@@ -299,13 +328,11 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
+   const auto common = runtime ? runtime->CaptureCommonGenerationTupleOnUiThread(owner)
+                               : std::nullopt;
+   if (!common || !result.local_credentials) {
+-    FailCorePreparation(host, "Access rules have not completed startup restoration.");
+-    return;
++    return false;
+   }
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+   auto* selections = AccessProxySelectionGenerationSource::GetOrCreate(profile_);
+-  const std::string group = alpha ? "alpha-authorized-test-node"
+-                                  : "dev-authorized-local-node";
++  const std::string group = LocalProxyGroup(owner);
+   const auto* old = selections->binding_for_group(group);
+   const bool same = old && old->endpoint_id == result.registration_id;
+   const auto selected = selections->CommitSelection(
+@@ -314,34 +341,25 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
+        same ? old->binding_revision : old ? old->binding_revision + 1 : 1});
+   if (selected.status != aegis_access::ProxySelectionGenerationCommitStatus::kCommitted &&
+       selected.status != aegis_access::ProxySelectionGenerationCommitStatus::kUnchanged) {
+-    FailCorePreparation(host, "The proxy selection generation could not be committed.");
+-    return;
++    return false;
+   }
+   auto generations = *common;
+   generations.selection_generation = selected.generation;
+-  if (!selected.generation || !transport->RegisterPreparedProxy({
++  if (!selected.generation || !transport || !transport->RegisterPreparedProxy({
+           {result.registration_id, group, owner, generations,
+            aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1", result.port},
+           result.local_credentials})) {
+-    FailCorePreparation(host, "The prepared proxy registration could not be installed.");
+-    return;
+-  }
+-  AccessSiteProxyLocalProxyReadyInfo ready;
+-  if (EnsureLocalProxyReady(host, &ready) != AccessSiteProxySessionError::kOk) {
+-    FailCorePreparation(host, "The prepared proxy has not been registered with this Profile.");
+-    return;
+-  }
+-  const auto endpoint = transport->CurrentEndpoint(owner);
+-  if (!endpoint || endpoint->registration_id != result.registration_id ||
+-      endpoint->port != result.port) {
+-    FailCorePreparation(host, "The Profile proxy registration is not current.");
+-    return;
++    return false;
+   }
+-  BeginEnablePublication(host, std::move(ready));
++  core_owner_ = owner;
++  core_registration_ = result.registration_id;
++  local_core_ready_ = false;
++  return true;
+ }
+ void AccessSiteProxyBubbleController::OnCommittedCoreVerified(
+     AccessSiteHost host, AccessLocalCoreReady result) {
+   if (!result.ready) {
++    OnLocalCoreStopped(core_registration_);
+     FailCorePreparation(host, std::move(result.error));
+     return;
+   }
+@@ -366,7 +384,162 @@ void AccessSiteProxyBubbleController::OnCommittedCoreVerified(
+   ++state_revision_;
+   host_states_[host].connection = AccessSiteConnectionState::kReady;
+   host_states_[host].failure_reason.clear();
++  local_core_ready_ = true;
+   if (retry_completion_) std::move(retry_completion_).Run(true);
++  FinishCoreRequests(true);
++}
++
++bool AccessSiteProxyBubbleController::IsCurrentPreparedCore(
++    const OwnershipKey& owner, const AccessLocalCoreReady& result) const {
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto endpoint = transport ? transport->CurrentEndpoint(owner) : std::nullopt;
++  const auto live = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(owner) : std::nullopt;
++  auto bound = endpoint ? std::make_optional(endpoint->generations) : std::nullopt;
++  if (bound) bound->selection_generation = 0;
++  return result.ready && endpoint && live && bound == live &&
++      endpoint->proxy_group_id == LocalProxyGroup(owner) &&
++      endpoint->registration_id == result.registration_id &&
++      endpoint->port == result.port && transport->HasCurrentPrivatePolicy(owner, *live);
++}
++
++void AccessSiteProxyBubbleController::EnsureLocalCoreForRequest(
++    const OwnershipKey& owner, const std::string& group,
++    base::OnceCallback<void(bool)> completion) {
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto expected_owner = transport ? transport->OwnerForPartition(
++      AccessChannelForCurrentBuild(), {}) : std::nullopt;
++  auto* coordinator = AccessServiceCoordinator::Get(profile_);
++  if (!expected_owner || *expected_owner != owner ||
++      !transport->OwnsConfiguredPartition(owner) || group != LocalProxyGroup(owner) ||
++      !IsDevAllowBlockPanelRegistered() || !coordinator || !coordinator->CanDispatch(owner)) {
++    std::move(completion).Run(false);
++    return;
++  }
++  const auto endpoint = transport->CurrentEndpoint(owner);
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto common = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(owner) : std::nullopt;
++  if (local_core_ready_ && core_owner_ == owner && endpoint && common &&
++      endpoint->registration_id == core_registration_ &&
++      endpoint->generations.identity_generation == common->identity_generation &&
++      endpoint->generations.network_epoch == common->network_epoch &&
++      endpoint->generations.base_proxy_config_generation == common->base_proxy_config_generation) {
++    std::move(completion).Run(true);
++    return;
++  }
++  core_request_waiters_.push_back(std::move(completion));
++  if (restoring_core_ || publication_in_flight_) return;
++  CreateLocalCore();
++  if (!local_core_) {
++    FinishCoreRequests(false);
++    return;
++  }
++  local_core_ready_ = false;
++  restoring_core_ = true;
++  const auto attempt = ++core_attempt_;
++  for (auto& [host, state] : host_states_) {
++    if (intent_store_.Get(host) == AccessSiteIntent::kAllow) {
++      state.connection = AccessSiteConnectionState::kConnecting;
++      state.failure_reason.clear();
++    }
++  }
++  ++state_revision_;
++  local_core_->Prepare(base::BindOnce(
++      &AccessSiteProxyBubbleController::OnRestoredCorePrepared,
++      weak_factory_.GetWeakPtr(), owner, attempt));
++}
++
++void AccessSiteProxyBubbleController::OnRestoredCorePrepared(
++    OwnershipKey owner, uint64_t attempt, AccessLocalCoreReady result) {
++  if (attempt != core_attempt_ || !restoring_core_) return;
++  if (!RegisterPreparedCore(owner, result)) {
++    OnLocalCoreStopped(core_registration_);
++    FinishCoreRequests(false);
++    return;
++  }
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(owner) : nullptr;
++  const auto common = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(owner) : std::nullopt;
++  if (!transport || !policy || !common) {
++    FinishCoreRequests(false);
++    return;
++  }
++  transport->PublishPrivatePolicy(*policy, *common, base::BindOnce(
++      &AccessSiteProxyBubbleController::OnRestoredCorePolicyReady,
++      weak_factory_.GetWeakPtr(), owner, attempt, *common));
++}
++void AccessSiteProxyBubbleController::OnRestoredCorePolicyReady(
++    OwnershipKey owner, uint64_t attempt,
++    aegis_access::GenerationTuple expected, bool accepted) {
++  if (attempt != core_attempt_ || !restoring_core_) return;
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto common = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(owner) : std::nullopt;
++  if (!accepted || !common || *common != expected) {
++    FinishCoreRequests(false);
++    return;
++  }
++  local_core_->Verify(base::BindOnce(
++      &AccessSiteProxyBubbleController::OnRestoredCoreVerified,
++      weak_factory_.GetWeakPtr(), owner, attempt));
++}
++void AccessSiteProxyBubbleController::OnRestoredCoreVerified(
++    OwnershipKey owner, uint64_t attempt, AccessLocalCoreReady result) {
++  if (attempt != core_attempt_ || !restoring_core_) return;
++  const bool ready = IsCurrentPreparedCore(owner, result);
++  if (!ready && !result.ready) OnLocalCoreStopped(core_registration_);
++  local_core_ready_ = ready;
++  for (auto& [host, state] : host_states_) {
++    if (intent_store_.Get(host) == AccessSiteIntent::kAllow) {
++      state.connection = ready ? AccessSiteConnectionState::kReady
++                                           : AccessSiteConnectionState::kUnavailable;
++      state.failure_reason = ready ? std::string() :
++          "The saved proxy binding is not ready.";
++    }
++  }
++  ++state_revision_;
++  FinishCoreRequests(ready);
++}
++void AccessSiteProxyBubbleController::FinishCoreRequests(bool ready) {
++  if (restoring_core_ && !ready) {
++    for (auto& [host, state] : host_states_) {
++      if (intent_store_.Get(host) == AccessSiteIntent::kAllow) {
++        state.connection = AccessSiteConnectionState::kUnavailable;
++        state.failure_reason = "The saved proxy binding is not ready.";
++      }
++    }
++    ++state_revision_;
++  }
++  restoring_core_ = false;
++  auto callbacks = std::move(core_request_waiters_);
++  core_request_waiters_.clear();
++  for (auto& callback : callbacks) std::move(callback).Run(ready);
++}
++void AccessSiteProxyBubbleController::OnLocalCoreStopped(std::string registration_id) {
++  if (registration_id.empty() || registration_id != core_registration_ || !core_owner_) return;
++  local_core_ready_ = false;
++  ++core_attempt_;
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  if (transport && transport->ForgetPreparedProxy(*core_owner_, LocalProxyGroup(*core_owner_),
++                                                 registration_id) && runtime) {
++    const auto* policy = runtime->GetPublishedPolicySnapshot(*core_owner_);
++    const auto common = runtime->CaptureCommonGenerationTupleOnUiThread(*core_owner_);
++    if (policy && common)
++      transport->PublishPrivatePolicy(*policy, *common, base::BindOnce([](bool) {}));
++  }
++  for (auto& [host, state] : host_states_) {
++    if (intent_store_.Get(host) == AccessSiteIntent::kAllow) {
++      state.connection = AccessSiteConnectionState::kUnavailable;
++      state.failure_reason = "The local proxy has stopped.";
++    }
++  }
++  ++state_revision_;
++  FinishCoreRequests(false);
+ }
+ 
+ bool AccessSiteProxyBubbleController::NotifyHostProxyRuntimeFault(
+@@ -613,6 +786,7 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
+     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+     host_states_[host].failure_reason = MutationStatusReadableMessage(result.status);
+     if (retry_completion_) std::move(retry_completion_).Run(false);
++    FinishCoreRequests(false);
+     return;
+   }
+ 
+@@ -625,6 +799,7 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
+     host_states_[host].failure_reason.clear();
+   }
+   (void)host;
++  if (!restoring_core_) FinishCoreRequests(false);
+ }
+ 
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index a6ccbc5c804f22c2f1230fd78f3872d5e9a43b35..b4e8faec6e84f184fc0989438a6c47f801e4c966 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -7,6 +7,7 @@
+ #include <memory>
+ #include <string>
+ #include <string_view>
++#include <vector>
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -58,6 +59,11 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
+   GetFailedNavigationRetryHandler();
+   void EnsureProfileRestored(const OwnershipKey& owner);
++  static std::string LocalProxyGroup(const OwnershipKey& owner);
++  // Called only after Browser-owned policy evaluation selects this local
++  // group. Restores its runtime binding without mutating persisted intent.
++  void EnsureLocalCoreForRequest(const OwnershipKey& owner,
++      const std::string& group, base::OnceCallback<void(bool)> completion);
+ 
+   // P-mac-4 DEV panel. False on Beta/Release — UI must not register the
+   // section. Never admits a general Access rule editor.
+@@ -82,6 +88,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   bool RebuildHostProxyAfterNetworkServiceRestart(const AccessSiteHost& host);
+ 
+  private:
++  friend class AccessSiteProxyProductTestPeer;
+   explicit AccessSiteProxyBubbleController(Profile* profile);
+   void PrepareLocalCore(const AccessSiteHost& host);
+   void RestoreSavedIntents(OwnershipKey owner, bool restored);
+@@ -90,6 +97,19 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   void OnLocalCorePrepared(AccessSiteHost host, OwnershipKey owner,
+                           AccessLocalCoreReady result);
+   void OnCommittedCoreVerified(AccessSiteHost host, AccessLocalCoreReady result);
++  void CreateLocalCore();
++  bool RegisterPreparedCore(const OwnershipKey& owner,
++                            const AccessLocalCoreReady& result);
++  bool IsCurrentPreparedCore(const OwnershipKey& owner,
++                             const AccessLocalCoreReady& result) const;
++  void OnRestoredCorePrepared(OwnershipKey owner, uint64_t attempt,
++      AccessLocalCoreReady result);
++  void OnRestoredCorePolicyReady(OwnershipKey owner, uint64_t attempt,
++      aegis_access::GenerationTuple expected, bool accepted);
++  void OnRestoredCoreVerified(OwnershipKey owner, uint64_t attempt,
++      AccessLocalCoreReady result);
++  void FinishCoreRequests(bool ready);
++  void OnLocalCoreStopped(std::string registration_id);
+   void FailCorePreparation(const AccessSiteHost& host, std::string error);
+ 
+   AccessSiteProxySessionError EnsureLocalProxyReady(
+@@ -114,6 +134,12 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   uint64_t state_revision_ = 0;
+   bool publication_in_flight_ = false;
+   std::unique_ptr<AccessLocalCoreManager> local_core_;
++  bool local_core_ready_ = false;
++  bool restoring_core_ = false;
++  uint64_t core_attempt_ = 0;
++  std::string core_registration_;
++  std::optional<OwnershipKey> core_owner_;
++  std::vector<base::OnceCallback<void(bool)>> core_request_waiters_;
+   base::OnceCallback<void(bool)> retry_completion_;
+   base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
+ };
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index cf3e0e8890c56c1ad29548fa3d20cf35422a04a5..3078ed442c5c5c099ff537fba38c795e46f9455f 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -25,6 +25,17 @@
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
++class AccessSiteProxyProductTestPeer {
++ public:
++  static void LoseRuntime(AccessSiteProxyBubbleController* bubble,
++                          const std::string& registration) {
++    bubble->local_core_.reset();
++    bubble->OnLocalCoreStopped(registration);
++  }
++  static bool HasCore(AccessSiteProxyBubbleController* bubble) {
++    return !!bubble->local_core_;
++  }
++};
+ class AccessServiceCoordinatorTestPeer {
+  public:
+   static void SetFailure(AccessServiceCoordinator* coordinator,
+@@ -287,5 +298,80 @@ TEST_F(AccessSiteProxyProductTest, SubdomainEnablePersistsCanonicalSites) {
+   }
+ }
+ 
++TEST_F(AccessSiteProxyProductTest, RestoredCoreWaitsForAckWithoutChangingSavedIntent) {
++  Enable();
++  const auto before = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(before.value);
++  const auto previous = transport_->CurrentEndpoint(owner_);
++  ASSERT_TRUE(previous);
++  AccessSiteProxyProductTestPeer::LoseRuntime(bubble_, previous->registration_id);
++  environment_.RunUntilIdle();
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kUnavailable);
++  EXPECT_FALSE(transport_->CurrentEndpoint(owner_));
++
++  context_.hold_next = true;
++  base::test::TestFuture<bool> first, second;
++  bubble_->EnsureLocalCoreForRequest(owner_, previous->proxy_group_id, first.GetCallback());
++  bubble_->EnsureLocalCoreForRequest(owner_, previous->proxy_group_id, second.GetCallback());
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++  EXPECT_FALSE(first.IsReady());
++  EXPECT_FALSE(second.IsReady());
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kConnecting);
++  const auto prepared = transport_->CurrentEndpoint(owner_);
++  ASSERT_TRUE(prepared);
++  EXPECT_NE(prepared->registration_id, previous->registration_id);
++  EXPECT_GT(prepared->generations.selection_generation,
++            previous->generations.selection_generation);
++  context_.Reply(true);
++  ASSERT_TRUE(first.Get());
++  ASSERT_TRUE(second.Get());
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
++  const auto after = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(after.value);
++  EXPECT_EQ(after.value->policy_generation, before.value->policy_generation);
++  EXPECT_EQ(after.value->site_groups, before.value->site_groups);
++}
++
++TEST_F(AccessSiteProxyProductTest, FailedRestoreAckRetainsAllowAndCanRecover) {
++  Enable();
++  const auto endpoint = transport_->CurrentEndpoint(owner_);
++  ASSERT_TRUE(endpoint);
++  const auto before = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  AccessSiteProxyProductTestPeer::LoseRuntime(bubble_, endpoint->registration_id);
++  environment_.RunUntilIdle();
++  context_.hold_next = true;
++  base::test::TestFuture<bool> rejected;
++  bubble_->EnsureLocalCoreForRequest(owner_, endpoint->proxy_group_id, rejected.GetCallback());
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++  context_.Reply(false);
++  EXPECT_FALSE(rejected.Get());
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kUnavailable);
++  base::test::TestFuture<bool> recovered;
++  bubble_->EnsureLocalCoreForRequest(owner_, endpoint->proxy_group_id, recovered.GetCallback());
++  EXPECT_TRUE(recovered.Get());
++  const auto after = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(before.value);
++  ASSERT_TRUE(after.value);
++  EXPECT_EQ(before.value->site_groups, after.value->site_groups);
++  EXPECT_EQ(before.value->policy_generation, after.value->policy_generation);
++}
++
++TEST_F(AccessSiteProxyProductTest, RequestReadinessRejectsForeignOwnerOrGroup) {
++  EXPECT_FALSE(AccessSiteProxyProductTestPeer::HasCore(bubble_));
++  auto foreign = owner_;
++  foreign.profile_token += "-foreign";
++  for (const auto& owner : {foreign, owner_}) {
++    base::test::TestFuture<bool> denied;
++    bubble_->EnsureLocalCoreForRequest(owner,
++        owner == foreign ? AccessSiteProxyBubbleController::LocalProxyGroup(owner_)
++                         : "unowned-group", denied.GetCallback());
++    EXPECT_FALSE(denied.Get());
++  }
++  EXPECT_FALSE(AccessSiteProxyProductTestPeer::HasCore(bubble_));
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

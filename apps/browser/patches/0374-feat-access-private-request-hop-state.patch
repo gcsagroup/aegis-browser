@@ -1,0 +1,336 @@
+From a482da35d7f14578fe213b87b5056a1f9e0ab9b3 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 11:50:24 +0800
+Subject: [PATCH] feat(access): bind single-send request and redirect
+ authorization state
+
+---
+ components/aegis_access/BUILD.gn              |   1 +
+ .../access_request_route_state_unittest.cc    | 105 ++++++++++++++++++
+ services/network/aegis/BUILD.gn               |   2 +
+ .../aegis/access_request_route_state.cc       |  83 ++++++++++++++
+ .../aegis/access_request_route_state.h        |  53 +++++++++
+ .../network/aegis/access_route_registry.h     |   6 +
+ 6 files changed, 250 insertions(+)
+ create mode 100644 components/aegis_access/access_request_route_state_unittest.cc
+ create mode 100644 services/network/aegis/access_request_route_state.cc
+ create mode 100644 services/network/aegis/access_request_route_state.h
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 904d48464c8c48228147b7c2cc80021485de7357..c0765f839518427cc01bc6e3e2b8f12031ff07f8 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -377,6 +377,7 @@ test("access_terminal_factory_unittests") {
+ test("access_network_route_registry_unittests") {
+   sources = [
+     "access_network_route_registry_unittest.cc",
++    "access_request_route_state_unittest.cc",
+     "access_policy_evaluator_unittest.cc",
+   ]
+   include_dirs = [ "$target_gen_dir" ]
+diff --git a/components/aegis_access/access_request_route_state_unittest.cc b/components/aegis_access/access_request_route_state_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..06bbc968b542380ab8c6fa8929e201e7d2f1ba98
+--- /dev/null
++++ b/components/aegis_access/access_request_route_state_unittest.cc
+@@ -0,0 +1,105 @@
++// Copyright 2026 GCSA
++#include "services/network/aegis/access_request_route_state.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace network {
++namespace {
++using namespace aegis_access;
++class AccessRequestRouteStateTest : public testing::Test {
++ protected:
++  OwnershipKey owner_{ChannelNamespace::kDev, "profile", "partition"};
++  GenerationTuple common_{1, 1, 0, 1, 1};
++  BrowserOwnedRequestMetadata metadata_{
++      "request", owner_, RequestAttributionKind::kDocument, "document", {},
++      net::SchemefulSite(GURL("https://a.test"))};
++  std::unique_ptr<AccessRouteRegistry> registry_ =
++      std::make_unique<AccessRouteRegistry>(owner_, "incarnation");
++  AccessRouteRegistry::Expectation expectation_{"incarnation", common_, {}};
++  void SetUp() override {
++    ASSERT_TRUE(registry_->Install(1, {{owner_, 1, {}}, common_, {}}));
++  }
++  scoped_refptr<AccessRequestRouteState> Create(std::string method = "GET") {
++    return AccessRequestRouteState::Create(registry_->GetWeakPtr(), metadata_,
++        GURL("https://a.test/start"), method, expectation_);
++  }
++};
++TEST_F(AccessRequestRouteStateTest, PreflightDoesNotConsumeActualRequest) {
++  auto state = Create("POST");
++  ASSERT_TRUE(state);
++  EXPECT_EQ(state->BeginSend(GURL("https://a.test/start"), "OPTIONS", true).net_error,
++            net::OK);
++  EXPECT_EQ(state->BeginSend(GURL("https://a.test/start"), "POST", false).net_error,
++            net::OK);
++  EXPECT_NE(state->BeginSend(GURL("https://a.test/start"), "POST", false).net_error,
++            net::OK);
++}
++TEST_F(AccessRequestRouteStateTest, NativeRedirectRequiresPrivateNextHopApproval) {
++  auto state = Create();
++  ASSERT_TRUE(state);
++  ASSERT_EQ(state->BeginSend(GURL("https://a.test/start"), "GET", false).net_error,
++            net::OK);
++  ASSERT_TRUE(state->ObserveRedirect(GURL("https://b.test/next"), "GET"));
++  EXPECT_NE(state->BeginSend(GURL("https://b.test/next"), "GET", false).net_error,
++            net::OK);
++  ASSERT_TRUE(state->ApproveRedirect(1, GURL("https://b.test/next"), "GET",
++                                     expectation_));
++  EXPECT_EQ(state->BeginSend(GURL("https://b.test/next"), "GET", false).net_error,
++            net::OK);
++  EXPECT_FALSE(state->ApproveRedirect(1, GURL("https://b.test/next"), "GET",
++                                      expectation_));
++}
++TEST_F(AccessRequestRouteStateTest, RedirectRejectsWrongHopMethodOrOverrideOrigin) {
++  for (int kind = 0; kind < 3; ++kind) {
++    auto state = Create("POST");
++    ASSERT_TRUE(state);
++    ASSERT_EQ(state->BeginSend(GURL("https://a.test/start"), "POST", false).net_error,
++              net::OK);
++    ASSERT_TRUE(state->ObserveRedirect(GURL("https://b.test/next"), "POST"));
++    EXPECT_FALSE(state->ApproveRedirect(kind == 0 ? 2 : 1,
++        GURL(kind == 1 ? "https://evil.test/next" : "https://b.test/next"),
++        kind == 2 ? "GET" : "POST", expectation_));
++    EXPECT_NE(state->BeginSend(GURL("https://b.test/next"), "POST", false).net_error,
++              net::OK);
++  }
++}
++TEST_F(AccessRequestRouteStateTest, RechecksRegistryAfterSchedulingDelayAndDestruction) {
++  auto state = Create();
++  ASSERT_TRUE(state);
++  registry_->EnterRestoring();
++  EXPECT_NE(state->BeginSend(GURL("https://a.test/start"), "GET", false).net_error,
++            net::OK);
++  registry_.reset();
++  EXPECT_NE(state->BeginSend(GURL("https://a.test/start"), "GET", false).net_error,
++            net::OK);
++}
++TEST_F(AccessRequestRouteStateTest, PreflightCannotChangeTargetOrReplayActualMethod) {
++  auto state = Create("POST");
++  ASSERT_TRUE(state);
++  EXPECT_NE(state->BeginSend(GURL("https://b.test/start"), "OPTIONS", true).net_error,
++            net::OK);
++  EXPECT_NE(state->BeginSend(GURL("https://a.test/start"), "POST", true).net_error,
++            net::OK);
++}
++TEST_F(AccessRequestRouteStateTest, SubframeNavigationRetainsTrustedTopSite) {
++  for (bool main_frame : {false, true}) {
++    registry_ = std::make_unique<AccessRouteRegistry>(owner_, "incarnation");
++    AccessPolicyRule reject{"rule", owner_, PolicyScope::kSite, "https://a.test",
++        "b.test", false, {RequestScheme::kHttps},
++        {PortScope::kAllBrowserPermitted, {}}, AccessMode::kReject, {},
++        ProtectionOverride::kNone, 1, 1};
++    ASSERT_TRUE(registry_->Install(1, {{owner_, 1, {reject}}, common_, {}}));
++    metadata_.attribution_kind = RequestAttributionKind::kPendingNavigation;
++    metadata_.document_token.clear();
++    metadata_.pending_navigation_token = "navigation";
++    if (main_frame) metadata_.top_frame_site.reset();
++    auto state = Create();
++    ASSERT_TRUE(state);
++    ASSERT_EQ(state->BeginSend(GURL("https://a.test/start"), "GET", false).net_error,
++              net::OK);
++    ASSERT_TRUE(state->ObserveRedirect(GURL("https://b.test/next"), "GET"));
++    EXPECT_EQ(state->ApproveRedirect(1, GURL("https://b.test/next"), "GET",
++                                     expectation_), main_frame);
++  }
++}
++}  // namespace
++}  // namespace network
+diff --git a/services/network/aegis/BUILD.gn b/services/network/aegis/BUILD.gn
+index d29b7afcd0894258a53b5af7a06626981a3236e2..f5287d36c70671f0ad0ff747879092b84c1b4256 100644
+--- a/services/network/aegis/BUILD.gn
++++ b/services/network/aegis/BUILD.gn
+@@ -3,6 +3,8 @@ source_set("access_route_registry") {
+   sources = [
+     "access_route_registry.cc",
+     "access_route_registry.h",
++    "access_request_route_state.cc",
++    "access_request_route_state.h",
+   ]
+   public_deps = [
+     "//base",
+diff --git a/services/network/aegis/access_request_route_state.cc b/services/network/aegis/access_request_route_state.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef2cfae01a4dbd26c8c5d35a9b65b9914c6eb58b
+--- /dev/null
++++ b/services/network/aegis/access_request_route_state.cc
+@@ -0,0 +1,83 @@
++// Copyright 2026 GCSA
++#include "services/network/aegis/access_request_route_state.h"
++#include <limits>
++#include "net/http/http_util.h"
++#include "url/origin.h"
++
++namespace network {
++scoped_refptr<AccessRequestRouteState> AccessRequestRouteState::Create(
++    base::WeakPtr<AccessRouteRegistry> registry,
++    aegis_access::BrowserOwnedRequestMetadata metadata, GURL target,
++    std::string method, AccessRouteRegistry::Expectation expected) {
++  if (!registry || !net::HttpUtil::IsToken(method)) {
++    return nullptr;
++  }
++  auto result = base::WrapRefCounted(new AccessRequestRouteState(
++      std::move(registry), std::move(metadata), std::move(target),
++      std::move(method), std::move(expected)));
++  if (result->registry_->Resolve(result->metadata_,
++                               result->target_, result->expected_).net_error !=
++      net::OK) {
++    return nullptr;
++  }
++  return result;
++}
++AccessRequestRouteState::AccessRequestRouteState(
++    base::WeakPtr<AccessRouteRegistry> registry,
++    aegis_access::BrowserOwnedRequestMetadata metadata, GURL target,
++    std::string method, AccessRouteRegistry::Expectation expected)
++    : registry_(std::move(registry)), metadata_(std::move(metadata)),
++      target_(std::move(target)), method_(std::move(method)),
++      expected_(std::move(expected)) {}
++AccessRequestRouteState::~AccessRequestRouteState() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++}
++// Preserve Browser metadata verbatim: the canonicalizer derives the hop site
++// only for a main navigation (no top_frame_site). Subframe navigations carry
++// the parent's explicit top_frame_site and must retain it across redirects.
++AccessRouteRegistry::Result AccessRequestRouteState::BeginSend(
++    const GURL& target, const std::string& method, bool is_internal_preflight) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!registry_ || pending_redirect_ || target != target_ || sent_for_hop_ ||
++      (is_internal_preflight ? method != "OPTIONS" : method != method_)) {
++    return {};
++  }
++  auto result = registry_->Resolve(metadata_, target, expected_);
++  if (result.net_error == net::OK && !is_internal_preflight) {
++    sent_for_hop_ = true;
++  }
++  return result;
++}
++bool AccessRequestRouteState::ObserveRedirect(
++    const GURL& target, const std::string& method) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!registry_ || !sent_for_hop_ || pending_redirect_ || !target.is_valid() ||
++      !net::HttpUtil::IsToken(method) ||
++      hop_ == std::numeric_limits<uint32_t>::max()) {
++    return false;
++  }
++  pending_redirect_ = PendingRedirect{target, method};
++  return true;
++}
++bool AccessRequestRouteState::ApproveRedirect(
++    uint32_t hop, const GURL& target, const std::string& method,
++    AccessRouteRegistry::Expectation expected) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!registry_ || !pending_redirect_ || hop_ == std::numeric_limits<uint32_t>::max() ||
++      hop != hop_ + 1 || method != pending_redirect_->method ||
++      !target.is_valid() ||
++      !url::Origin::Create(target).IsSameOriginWith(
++          url::Origin::Create(pending_redirect_->target)) ||
++      registry_->Resolve(metadata_, target, expected).net_error !=
++          net::OK) {
++    return false;
++  }
++  hop_ = hop;
++  target_ = target;
++  method_ = method;
++  expected_ = std::move(expected);
++  pending_redirect_.reset();
++  sent_for_hop_ = false;
++  return true;
++}
++}  // namespace network
+diff --git a/services/network/aegis/access_request_route_state.h b/services/network/aegis/access_request_route_state.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..548a9f8539560e2160f277c17e217d1cb9af7d4a
+--- /dev/null
++++ b/services/network/aegis/access_request_route_state.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 GCSA
++#ifndef SERVICES_NETWORK_AEGIS_ACCESS_REQUEST_ROUTE_STATE_H_
++#define SERVICES_NETWORK_AEGIS_ACCESS_REQUEST_ROUTE_STATE_H_
++
++#include "base/memory/ref_counted.h"
++#include "services/network/aegis/access_route_registry.h"
++
++namespace network {
++// One private-factory request, shared only by its CORS loader, internal
++// preflight and net loader. No fields are stored in renderer ResourceRequest.
++// The factory validates the original Browser binding before constructing this.
++class AccessRequestRouteState : public base::RefCounted<AccessRequestRouteState> {
++ public:
++  static scoped_refptr<AccessRequestRouteState> Create(
++      base::WeakPtr<AccessRouteRegistry> registry,
++      aegis_access::BrowserOwnedRequestMetadata metadata, GURL target,
++      std::string method, AccessRouteRegistry::Expectation expected);
++  AccessRouteRegistry::Result BeginSend(const GURL& target,
++                                        const std::string& method,
++                                        bool is_internal_preflight);
++  // Called for the actual request, never its OPTIONS child. Merely seeing a
++  // redirect revokes the old decision, including when that decision was native.
++  bool ObserveRedirect(const GURL& target, const std::string& method);
++  // Called only by the private Browser control. The CORS URLLoader still
++  // validates headers and new_url before the underlying redirect can proceed.
++  bool ApproveRedirect(uint32_t hop, const GURL& target,
++                       const std::string& method,
++                       AccessRouteRegistry::Expectation expected);
++  uint32_t hop() const { return hop_; }
++
++ private:
++  friend class base::RefCounted<AccessRequestRouteState>;
++  AccessRequestRouteState(base::WeakPtr<AccessRouteRegistry> registry,
++      aegis_access::BrowserOwnedRequestMetadata metadata, GURL target,
++      std::string method, AccessRouteRegistry::Expectation expected);
++  ~AccessRequestRouteState();
++
++  base::WeakPtr<AccessRouteRegistry> registry_;
++  const aegis_access::BrowserOwnedRequestMetadata metadata_;
++  GURL target_;
++  std::string method_;
++  AccessRouteRegistry::Expectation expected_;
++  uint32_t hop_ = 0;
++  bool sent_for_hop_ = false;
++  struct PendingRedirect {
++    GURL target;
++    std::string method;
++  };
++  std::optional<PendingRedirect> pending_redirect_;
++  SEQUENCE_CHECKER(sequence_checker_);
++};
++}  // namespace network
++#endif  // SERVICES_NETWORK_AEGIS_ACCESS_REQUEST_ROUTE_STATE_H_
+diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
+index 2cb485558b005cba562e87f66325a9cf3a840ea5..f1a7ebf6a1b2858ba92f84c1c3e9edc1110d627d 100644
+--- a/services/network/aegis/access_route_registry.h
++++ b/services/network/aegis/access_route_registry.h
+@@ -6,6 +6,7 @@
+ #include <optional>
+ #include <string>
+ #include "base/sequence_checker.h"
++#include "base/memory/weak_ptr.h"
+ #include "components/aegis_access/access_policy_evaluator.h"
+ #include "net/base/net_errors.h"
+ #include "net/http/access_proxy_route.h"
+@@ -43,6 +44,10 @@ class AccessRouteRegistry {
+   // Even an empty policy must be explicitly installed before native dispatch.
+   bool Install(uint64_t sequence, Snapshot snapshot);
+   void EnterRestoring();
++  base::WeakPtr<AccessRouteRegistry> GetWeakPtr() {
++    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++    return weak_factory_.GetWeakPtr();
++  }
+   Result Resolve(const aegis_access::BrowserOwnedRequestMetadata& metadata,
+                  const GURL& target, const Expectation& expected) const;
+ 
+@@ -60,6 +65,7 @@ class AccessRouteRegistry {
+   std::map<std::string, RegistrationBinding> registrations_;
+   std::optional<Snapshot> snapshot_;
+   SEQUENCE_CHECKER(sequence_checker_);
++  base::WeakPtrFactory<AccessRouteRegistry> weak_factory_{this};
+ };
+ }  // namespace network
+ #endif  // SERVICES_NETWORK_AEGIS_ACCESS_ROUTE_REGISTRY_H_
+-- 
+2.54.0 (Apple Git-157)
+

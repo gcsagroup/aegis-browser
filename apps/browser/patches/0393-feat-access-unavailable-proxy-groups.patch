@@ -1,0 +1,429 @@
+From b550409a2146281a58cf1030f8abb6401909fc25 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 18:19:43 +0800
+Subject: [PATCH] feat(access): preserve proxy intent for unavailable groups
+
+---
+ .../access/access_private_context_client.cc   | 20 ++++++-
+ .../access/access_private_context_client.h    |  7 +++
+ .../access_network_route_registry_unittest.cc | 51 ++++++++++++++++++
+ .../access_private_context_client_unittest.cc | 54 +++++++++++++++++++
+ .../access_route_wire_unittest.cc             | 36 +++++++++++++
+ .../network/aegis/access_route_registry.cc    | 17 +++++-
+ .../network/aegis/access_route_registry.h     |  5 +-
+ services/network/aegis/access_route_wire.cc   |  6 +++
+ services/network/network_context.cc           |  3 ++
+ .../mojom/aegis_access_route_types.mojom      | 10 +++-
+ 10 files changed, 205 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_private_context_client.cc b/chrome/browser/aegis/access/access_private_context_client.cc
+index 571d9deba13b70abeeadb0385f043b639b0c8591..4654ca1a1b899299059e7966e88acf018a8f3c38 100644
+--- a/chrome/browser/aegis/access/access_private_context_client.cc
++++ b/chrome/browser/aegis/access/access_private_context_client.cc
+@@ -73,7 +73,8 @@ bool Matches(const mojom::AegisAccessSnapshot& expected,
+       !ack->owner->Equals(*expected.owner) ||
+       ack->incarnation != expected.incarnation || ack->sequence != expected.sequence ||
+       !ack->common_generations->Equals(*expected.common_generations) ||
+-      ack->registrations.size() != expected.endpoints.size()) return false;
++      ack->registrations.size() != expected.endpoints.size() ||
++      ack->unavailable_groups.size() != expected.unavailable_groups.size()) return false;
+   for (size_t i = 0; i < expected.endpoints.size(); ++i) {
+     const auto& endpoint = expected.endpoints[i];
+     const auto& registration = ack->registrations[i];
+@@ -81,6 +82,11 @@ bool Matches(const mojom::AegisAccessSnapshot& expected,
+         registration->registration_id != endpoint->registration_id ||
+         registration->selection_generation != endpoint->selection_generation) return false;
+   }
++  for (size_t i = 0; i < expected.unavailable_groups.size(); ++i) {
++    if (!ack->unavailable_groups[i] ||
++        !ack->unavailable_groups[i]->Equals(*expected.unavailable_groups[i]))
++      return false;
++  }
+   return true;
+ }
+ }  // namespace
+@@ -154,6 +160,14 @@ void AccessPrivateContextClient::PublishPolicy(
+     const aegis_access::GenerationTuple& common, uint64_t sequence,
+     const std::vector<AccessPrivateEndpoint>& endpoints,
+     base::OnceCallback<void(bool)> completion) {
++  PublishPolicy(policy, common, sequence, endpoints, {}, std::move(completion));
++}
++void AccessPrivateContextClient::PublishPolicy(
++    const aegis_access::PublishedAccessPolicySnapshot& policy,
++    const aegis_access::GenerationTuple& common, uint64_t sequence,
++    const std::vector<AccessPrivateEndpoint>& endpoints,
++    const std::map<std::string, uint64_t>& unavailable_groups,
++    base::OnceCallback<void(bool)> completion) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+   auto reject = [&] { std::move(completion).Run(false); };
+   if (aegis_access::ValidateAccessPolicySnapshot(policy) !=
+@@ -226,6 +240,10 @@ void AccessPrivateContextClient::PublishPolicy(
+     encoded->credentials = endpoint.local_credentials;
+     snapshot->endpoints.push_back(std::move(encoded));
+   }
++  for (const auto& [group, selection] : unavailable_groups) {
++    snapshot->unavailable_groups.push_back(
++        network::mojom::AegisAccessUnavailableGroup::New(group, selection));
++  }
+   PublishSnapshot(std::move(snapshot), std::move(completion));
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_private_context_client.h b/chrome/browser/aegis/access/access_private_context_client.h
+index c52362a6eaffd64e8015e1ca719a30adac755793..c34dbe50b008a1267baa56dc06c062448f6bac10 100644
+--- a/chrome/browser/aegis/access/access_private_context_client.h
++++ b/chrome/browser/aegis/access/access_private_context_client.h
+@@ -2,6 +2,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PRIVATE_CONTEXT_CLIENT_H_
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PRIVATE_CONTEXT_CLIENT_H_
+ 
++#include <map>
+ #include <string>
+ #include <optional>
+ #include <vector>
+@@ -40,6 +41,12 @@ class AccessPrivateContextClient {
+       uint64_t publication_sequence,
+       const std::vector<AccessPrivateEndpoint>& endpoints,
+       base::OnceCallback<void(bool)> completion);
++  void PublishPolicy(const aegis_access::PublishedAccessPolicySnapshot& policy,
++      const aegis_access::GenerationTuple& common_generations,
++      uint64_t publication_sequence,
++      const std::vector<AccessPrivateEndpoint>& endpoints,
++      const std::map<std::string, uint64_t>& unavailable_groups,
++      base::OnceCallback<void(bool)> completion);
+   void BeginRestore(base::OnceCallback<void(bool)> completion);
+   void CreateFactory(network::mojom::URLLoaderFactoryParamsPtr params,
+       network::mojom::AegisAccessFactoryBindingPtr binding,
+diff --git a/components/aegis_access/access_network_route_registry_unittest.cc b/components/aegis_access/access_network_route_registry_unittest.cc
+index 4328178d4513b24bd012c54f8561579ca38fd158..0228d7c89007390f113b684ea20ba89675352db7 100644
+--- a/components/aegis_access/access_network_route_registry_unittest.cc
++++ b/components/aegis_access/access_network_route_registry_unittest.cc
+@@ -37,6 +37,57 @@ AccessRouteRegistry::Expectation Expected(std::string group = "x",
+ }
+ GURL Target() { return GURL("https://cdn.test/resource"); }
+ 
++TEST(AccessNetworkRouteRegistryTest, UnavailableProxyGroupDoesNotBlockUnmatchedNativeTraffic) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  auto snapshot = Snapshot();
++  snapshot.routes.erase("x");
++  snapshot.unavailable_groups.emplace("x", 8);
++  ASSERT_TRUE(registry.Install(1, std::move(snapshot)));
++  EXPECT_EQ(registry.Resolve(Metadata(), Target(), Expected()).net_error,
++            net::ERR_PROXY_CONNECTION_FAILED);
++  EXPECT_FALSE(registry.Resolve(Metadata(), Target(), Expected()).route);
++  AccessRouteRegistry::Expectation native{"incarnation", Common(), {}};
++  EXPECT_EQ(registry.Resolve(Metadata(), GURL("https://native.test/resource"),
++                             native).net_error, net::OK);
++  EXPECT_EQ(registry.Resolve(Metadata("https://b.test"), Target(),
++                             Expected("y", 11)).net_error, net::OK);
++}
++TEST(AccessNetworkRouteRegistryTest, UnavailableGroupPreservesSelectionAndRegistrationHighWater) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  auto unavailable = Snapshot();
++  unavailable.routes.erase("x");
++  unavailable.unavailable_groups.emplace("x", 8);
++  ASSERT_TRUE(registry.Install(2, unavailable));
++  registry.EnterRestoring();
++  unavailable.unavailable_groups["x"] = 7;
++  EXPECT_FALSE(registry.Install(3, unavailable));
++  unavailable.unavailable_groups["x"] = 8;
++  ASSERT_TRUE(registry.Install(3, unavailable));
++  auto overlap = Snapshot();
++  overlap.unavailable_groups.emplace("x", 8);
++  EXPECT_FALSE(registry.Install(4, overlap));
++  auto replaced = Snapshot();
++  auto key = replaced.routes.at("x")->isolation_key();
++  replaced.routes["x"] = net::AccessProxyRoute::Create(key, net::ProxyChain(
++      net::ProxyServer::FromSchemeHostAndPort(net::ProxyServer::SCHEME_HTTP,
++                                             "127.0.0.1", 54321)));
++  EXPECT_FALSE(registry.Install(4, replaced));
++  ASSERT_TRUE(registry.Install(4, Snapshot()));
++  EXPECT_EQ(registry.Resolve(Metadata(), Target(), Expected()).net_error, net::OK);
++}
++TEST(AccessNetworkRouteRegistryTest, ExplicitUnavailableGroupAllowsUnselectedStartupOnly) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  auto startup = Snapshot();
++  startup.routes.erase("x");
++  startup.unavailable_groups.emplace("x", 0);
++  ASSERT_TRUE(registry.Install(1, startup));
++  EXPECT_EQ(registry.Resolve(Metadata(), Target(), Expected()).net_error,
++            net::ERR_PROXY_CONNECTION_FAILED);
++  ASSERT_TRUE(registry.Install(2, Snapshot()));
++  EXPECT_FALSE(registry.Install(3, startup));
++}
++
+ TEST(AccessNetworkRouteRegistryTest, RestoringRequiresExplicitInstalledSnapshot) {
+   AccessRouteRegistry registry(Owner(), "incarnation");
+   AccessRouteRegistry::Expectation native{"incarnation", Common(), {}};
+diff --git a/components/aegis_access/access_private_context_client_unittest.cc b/components/aegis_access/access_private_context_client_unittest.cc
+index d2ac865716544636a7354555696625cdf8b38e98..53df8aedf8e4b8748a63ad3c1c3347db19ba3012 100644
+--- a/components/aegis_access/access_private_context_client_unittest.cc
++++ b/components/aegis_access/access_private_context_client_unittest.cc
+@@ -80,6 +80,9 @@ class AckContext final : public TestNetworkContext,
+           endpoint->proxy_group_id, endpoint->registration_id,
+           endpoint->selection_generation));
+     }
++    for (const auto& group : snapshot->unavailable_groups) {
++      ack->unavailable_groups.push_back(group.Clone());
++    }
+     switch (mutation) {
+       case 0: ack->owner->channel = mojom::AegisAccessChannel::kAlpha; break;
+       case 1: ack->owner->profile_token = "foreign"; break;
+@@ -95,6 +98,9 @@ class AckContext final : public TestNetworkContext,
+       case 11: ack->registrations[0]->registration_id = "foreign"; break;
+       case 12: ++ack->registrations[0]->selection_generation; break;
+       case 13: ack->registrations.clear(); break;
++      case 14: ack->unavailable_groups[0]->proxy_group_id = "foreign"; break;
++      case 15: ++ack->unavailable_groups[0]->selection_generation; break;
++      case 16: ack->unavailable_groups.clear(); break;
+     }
+     if (hold_ack) {
+       held_ack = std::move(ack);
+@@ -162,6 +168,22 @@ TEST_F(AccessPrivateContextAckTest, LateAckCannotReleaseRestoringBarrier) {
+   EXPECT_FALSE(published.Get());
+   EXPECT_FALSE(client->is_ready());
+ }
++TEST_F(AccessPrivateContextAckTest, UnavailableGroupAckMustMatchCompleteCandidate) {
++  for (int mutation = 14; mutation < 17; ++mutation) {
++    SCOPED_TRACE(mutation);
++    auto client = Client();
++    context_.mutation = mutation;
++    auto snapshot = Snapshot();
++    snapshot->endpoints.clear();
++    snapshot->unavailable_groups.push_back(
++        mojom::AegisAccessUnavailableGroup::New("group", 0));
++    base::test::TestFuture<bool> future;
++    client->PublishSnapshot(std::move(snapshot), future.GetCallback());
++    EXPECT_FALSE(future.Get());
++    EXPECT_FALSE(client->is_ready());
++    EXPECT_EQ(client->published_sequence(), 0u);
++  }
++}
+ TEST_F(AccessPrivateContextAckTest, DisconnectedCapabilityCannotReuseReadyState) {
+   auto client = Client();
+   base::test::TestFuture<bool> published;
+@@ -612,6 +634,38 @@ TEST_F(AccessPrivateContextClientTest, TypedEmptyPolicyIsExplicitAndDoesNotInven
+   EXPECT_EQ(actual_, 1);
+   EXPECT_EQ(preflights_, 0);
+ }
++TEST_F(AccessPrivateContextClientTest, UnavailableProxyFailsWhileNativeAndLaterRecoveryWork) {
++  AccessPolicyRule rule{"rule", key_, PolicyScope::kProfile, {}, "destination.test",
++      false, {RequestScheme::kHttp}, {PortScope::kAllBrowserPermitted, {}},
++      AccessMode::kProxy, "group", ProtectionOverride::kNone, 1, 2};
++  base::test::TestFuture<bool> unavailable;
++  context_client_->PublishPolicy({key_, 2, {rule}}, {2,1,0,1,1}, 2, {},
++      {{"group", 1}}, unavailable.GetCallback());
++  ASSERT_TRUE(unavailable.Get());
++  policy_generation_ = 2;
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code,
++            net::ERR_PROXY_CONNECTION_FAILED);
++  EXPECT_EQ(preflights_, 0);
++  EXPECT_EQ(actual_, 0);
++  Start(false, false, "unmatched-native", false, true);
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(actual_, 1);
++  RegisteredProxyEndpoint endpoint{"replacement", "group", key_, {2,1,2,1,1},
++      RegisteredProxyTransport::kHttp, "127.0.0.1", server_.port()};
++  base::test::TestFuture<bool> recovered;
++  context_client_->PublishPolicy({key_, 2, {rule}}, {2,1,0,1,1}, 3,
++      {{endpoint, std::nullopt}}, recovered.GetCallback());
++  ASSERT_TRUE(recovered.Get());
++  selection_generation_ = 2;
++  registration_id_ = "replacement";
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(actual_, 2);
++}
+ TEST_F(AccessPrivateContextClientTest, OriginalInitiatorLockStillRejectsMismatch) {
+   mojo::test::BadMessageObserver observer;
+   Start(true);
+diff --git a/components/aegis_access/access_route_wire_unittest.cc b/components/aegis_access/access_route_wire_unittest.cc
+index e708ec82c016aacfde8b12fb6341a7de95824bbb..e944aaaf0728bdc00940aea79d6cdf62f8c426a0 100644
+--- a/components/aegis_access/access_route_wire_unittest.cc
++++ b/components/aegis_access/access_route_wire_unittest.cc
+@@ -101,5 +101,41 @@ TEST(AccessRouteWireTest, EmptyPolicyRequiresExplicitValidSnapshot) {
+   s->sequence = 0;
+   EXPECT_FALSE(DecodeAccessRouteSnapshot(*s));
+ }
++TEST(AccessRouteWireTest, UnavailableGroupPreservesProxyPolicyWithoutEndpoint) {
++  auto wire = WireSnapshot();
++  wire->endpoints.clear();
++  wire->unavailable_groups.push_back(
++      mojom::AegisAccessUnavailableGroup::New("group", 0));
++  auto decoded = DecodeAccessRouteSnapshot(*wire);
++  ASSERT_TRUE(decoded);
++  EXPECT_TRUE(decoded->snapshot.routes.empty());
++  EXPECT_EQ(decoded->snapshot.unavailable_groups.at("group"), 0u);
++  AccessRouteRegistry registry(decoded->owner, decoded->incarnation);
++  ASSERT_TRUE(registry.Install(decoded->sequence, std::move(decoded->snapshot)));
++  aegis_access::BrowserOwnedRequestMetadata metadata{"request", decoded->owner,
++      aegis_access::RequestAttributionKind::kProfileOnly, {}, {}, std::nullopt};
++  EXPECT_EQ(registry.Resolve(metadata, GURL("http://destination.test/"),
++      {"incarnation", {1,1,0,1,1}, {}}).net_error,
++      net::ERR_PROXY_CONNECTION_FAILED);
++  EXPECT_EQ(registry.Resolve(metadata, GURL("http://unmatched.test/"),
++      {"incarnation", {1,1,0,1,1}, {}}).net_error, net::OK);
++}
++TEST(AccessRouteWireTest, UnavailableGroupMustBeExplicitUniqueAndNotReady) {
++  auto wire = WireSnapshot();
++  wire->endpoints.clear();
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*wire));
++  wire->unavailable_groups.push_back(
++      mojom::AegisAccessUnavailableGroup::New("group", 0));
++  wire->unavailable_groups.push_back(wire->unavailable_groups.front().Clone());
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*wire));
++  wire = WireSnapshot();
++  wire->unavailable_groups.push_back(
++      mojom::AegisAccessUnavailableGroup::New("group", 1));
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*wire));
++  wire = WireSnapshot();
++  wire->unavailable_groups.push_back(
++      mojom::AegisAccessUnavailableGroup::New("", 0));
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*wire));
++}
+ }  // namespace
+ }  // namespace network
+diff --git a/services/network/aegis/access_route_registry.cc b/services/network/aegis/access_route_registry.cc
+index 9a1d8060213b7371e02933e0ba47b87c5465a06f..371fe8ce03a14441efa628ef513d20e61a8e54c4 100644
+--- a/services/network/aegis/access_route_registry.cc
++++ b/services/network/aegis/access_route_registry.cc
+@@ -86,6 +86,14 @@ bool AccessRouteRegistry::Install(uint64_t sequence, Snapshot snapshot) {
+       return false;
+     }
+   }
++  for (const auto& [group, selection] : snapshot.unavailable_groups) {
++    const auto high_water = selection_high_water_.find(group);
++    if (group.empty() || snapshot.routes.contains(group) ||
++        (high_water != selection_high_water_.end() &&
++         selection < high_water->second)) {
++      return false;
++    }
++  }
+   std::map<std::string, std::string> candidate_registrations;
+   for (const auto& [group, route] : snapshot.routes) {
+     const auto& key = route->isolation_key();
+@@ -107,11 +115,15 @@ bool AccessRouteRegistry::Install(uint64_t sequence, Snapshot snapshot) {
+   }
+   for (const auto& rule : snapshot.policy.rules) {
+     if (rule.mode == aegis_access::AccessMode::kProxy &&
+-        !snapshot.routes.contains(rule.proxy_group_id)) {
++        !snapshot.routes.contains(rule.proxy_group_id) &&
++        !snapshot.unavailable_groups.contains(rule.proxy_group_id)) {
+       return false;
+     }
+   }
+   // All validation completes before any live state or high-water mark changes.
++  for (const auto& [group, selection] : snapshot.unavailable_groups) {
++    selection_high_water_[group] = selection;
++  }
+   for (const auto& [group, route] : snapshot.routes) {
+     const auto& key = route->isolation_key();
+     selection_high_water_[group] = key.selection_generation;
+@@ -159,6 +171,9 @@ AccessRouteRegistry::Result AccessRouteRegistry::Resolve(
+       }
+       return {};
+     case aegis_access::AccessMode::kProxy: {
++      if (snapshot_->unavailable_groups.contains(match.effective_proxy_group_id)) {
++        return {net::ERR_PROXY_CONNECTION_FAILED, nullptr};
++      }
+       auto found = snapshot_->routes.find(match.effective_proxy_group_id);
+       if (found == snapshot_->routes.end()) {
+         return {};
+diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
+index 8a6008a388fc2578ddbf0aa31c888e07d2334fc7..2810dc6dee270d356fd7c4a58752b4d3ae0553a0 100644
+--- a/services/network/aegis/access_route_registry.h
++++ b/services/network/aegis/access_route_registry.h
+@@ -24,11 +24,14 @@ class AccessRouteRegistry {
+     // Selection is per group and must be zero here. Other counters are live.
+     aegis_access::GenerationTuple common_generations;
+     std::map<std::string, scoped_refptr<net::AccessProxyRoute>> routes;
++    // Explicit failed/not-yet-ready groups remain PROXY policy, without a
++    // fabricated endpoint. Zero only precedes the first group selection.
++    std::map<std::string, uint64_t> unavailable_groups;
+   };
+   struct Expectation {
+     std::string incarnation;
+     aegis_access::GenerationTuple generations;
+-    // Empty only for a native decision; never interpreted as an endpoint.
++    // Empty for native or an unavailable group; never interpreted as an endpoint.
+     std::string registration_id;
+   };
+   struct Result {
+diff --git a/services/network/aegis/access_route_wire.cc b/services/network/aegis/access_route_wire.cc
+index 039be40b0d729ea18fa43ea80ff59edff3f8e65d..420dc3fb904850ed05469672550cdd062e517d3a 100644
+--- a/services/network/aegis/access_route_wire.cc
++++ b/services/network/aegis/access_route_wire.cc
+@@ -111,6 +111,12 @@ std::optional<DecodedAccessRouteSnapshot> DecodeAccessRouteSnapshot(
+     if (!snapshot.routes.emplace(endpoint->proxy_group_id, std::move(route)).second)
+       return std::nullopt;
+   }
++  for (const auto& group : wire.unavailable_groups) {
++    if (!group ||
++        !snapshot.unavailable_groups.emplace(group->proxy_group_id,
++                                             group->selection_generation).second)
++      return std::nullopt;
++  }
+   AccessRouteRegistry validator(owner, wire.incarnation);
+   if (!validator.Install(wire.sequence, snapshot)) return std::nullopt;
+   return DecodedAccessRouteSnapshot{std::move(owner), wire.incarnation,
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+index c3d3cc13367f9b9c5ef4c643bd52266b8c37d697..9d7e611a5e595770676e437d0b50659050f83402 100644
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -1192,6 +1192,9 @@ void NetworkContext::InstallAegisAccessSnapshot(
+         endpoint->proxy_group_id, endpoint->registration_id,
+         endpoint->selection_generation));
+   }
++  for (const auto& group : snapshot->unavailable_groups) {
++    ack->unavailable_groups.push_back(group.Clone());
++  }
+   std::move(callback).Run(std::move(ack));
+ }
+ void NetworkContext::BeginAegisAccessRestore(
+diff --git a/services/network/public/mojom/aegis_access_route_types.mojom b/services/network/public/mojom/aegis_access_route_types.mojom
+index 825e3fc47b7eb27877c7f6a0a8ad0c08d79b2f0f..d9ffbb65b46ea241d32b92842a89c11fd58bb45a 100644
+--- a/services/network/public/mojom/aegis_access_route_types.mojom
++++ b/services/network/public/mojom/aegis_access_route_types.mojom
+@@ -62,6 +62,12 @@ struct AegisAccessHttpEndpoint {
+   // These are not echoed in ACKs, request envelopes, diagnostics or renderer IPC.
+   AuthCredentials? credentials;
+ };
++// A saved PROXY group without a ready core still fails as PROXY. Selection zero
++// is allowed only before that group has selected an endpoint in this Context.
++struct AegisAccessUnavailableGroup {
++  string proxy_group_id;
++  uint64 selection_generation;
++};
+ struct AegisAccessSnapshot {
+   AegisAccessOwner owner;
+   string incarnation;
+@@ -70,6 +76,7 @@ struct AegisAccessSnapshot {
+   AegisAccessGenerations common_generations;
+   array<AegisAccessRule> rules;
+   array<AegisAccessHttpEndpoint> endpoints;
++  array<AegisAccessUnavailableGroup> unavailable_groups;
+ };
+ struct AegisAccessRequestEnvelope {
+   string request_token;
+@@ -78,7 +85,7 @@ struct AegisAccessRequestEnvelope {
+   url.mojom.Url target;
+   string method;
+   AegisAccessGenerations generations;
+-  // Empty only for an independently validated native decision.
++  // Empty for an independently validated native or unavailable-group decision.
+   string registration_id;
+ };
+ 
+@@ -101,4 +108,5 @@ struct AegisAccessSnapshotAck {
+   uint64 sequence;
+   AegisAccessGenerations common_generations;
+   array<AegisAccessRegistrationAck> registrations;
++  array<AegisAccessUnavailableGroup> unavailable_groups;
+ };
+-- 
+2.54.0 (Apple Git-157)
+

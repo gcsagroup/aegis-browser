@@ -1,0 +1,33 @@
+From 4d3e8eda33312cd84dce32340705650e89b41e89 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 07:36:51 +0800
+Subject: [PATCH] fix(access): preserve canonical IPv6 host brackets
+
+---
+ chrome/browser/aegis/access/access_site_intent.cc | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_intent.cc b/chrome/browser/aegis/access/access_site_intent.cc
+index ffd0851850011614544e3f2af7611502ab377c3f..5780233389e90ad8b4cc553f7e4227e9c075d3c4 100644
+--- a/chrome/browser/aegis/access/access_site_intent.cc
++++ b/chrome/browser/aegis/access/access_site_intent.cc
+@@ -60,7 +60,15 @@ std::string StripToHostCandidate(std::string_view raw) {
+   if (!text.empty() && text.front() == '[') {
+     const size_t end = text.find(']');
+     if (end != std::string::npos) {
+-      text = text.substr(1, end - 1);
++      const std::string_view suffix = std::string_view(text).substr(end + 1);
++      if (!suffix.empty() &&
++          (suffix.front() != ':' || suffix.size() == 1 ||
++           !std::ranges::all_of(suffix.substr(1), [](unsigned char character) {
++             return base::IsAsciiDigit(character);
++           }))) {
++        return text;
++      }
++      text.resize(end + 1);
+     }
+   } else {
+     const size_t colon = text.rfind(':');
+-- 
+2.54.0 (Apple Git-157)
+
