@@ -86,6 +86,9 @@ export class SettingsAegisPageElement extends PolymerElement {
     if (typeof id !== 'string' || !/^settings-\d+$/.test(id) || typeof method !== 'string' || !Array.isArray(args)) return;
     const signatures = new Map<string, string[]>(Object.entries({
       getStatus: [], setModuleEnabled: ['string', 'boolean'],
+      // <if expr="is_macosx">
+      getCurrentAccessAccount: [],
+      // </if>
       openBrowserAgent: [], updateFilterLists: [], summarizeActiveTab: [],
       completePreparedSummary: ['string', 'object'], cancelPreparedSummary: ['string'],
       setModelSettings: ['string', 'string', 'string', 'string', 'boolean'],

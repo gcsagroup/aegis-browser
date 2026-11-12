@@ -96,6 +96,9 @@ class AegisUIHandler : public content::WebUIMessageHandler,
   void OnMetalinkParsed(std::string callback_id,
                         aegis::MetalinkParseResult result);
 #if BUILDFLAG(IS_MAC)
+  void HandleGetCurrentAccessAccount(const base::ListValue& args);
+  void OnAccessAccountStatus(std::string callback_id, base::DictValue account);
+  void OnJavascriptDisallowed() override;
   void OnTorrentValidated(std::string callback_id,
                           std::vector<uint8_t> torrent_data,
                           std::string magnet_uri,
@@ -147,6 +150,9 @@ class AegisUIHandler : public content::WebUIMessageHandler,
   base::ScopedObservation<aegis::AegisService, aegis::AegisServiceObserver>
       service_observation_{this};
 
+#if BUILDFLAG(IS_MAC)
+  base::WeakPtrFactory<AegisUIHandler> account_weak_factory_{this};
+#endif
   base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
 };
 

@@ -26,6 +26,7 @@ struct AegisApp: App {
     @StateObject private var settings: BrowserSettings
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
+    @StateObject private var accountSession = AccessAccountSession.product()
     @StateObject private var readingLibrary: ReadingLibrary
 
     init() {
@@ -105,6 +106,7 @@ struct AegisApp: App {
                 .environmentObject(downloads)
                 .environmentObject(assistantTasks)
                 .environmentObject(readingLibrary)
+                .environmentObject(accountSession)
                 .preferredColorScheme(settings.colorScheme)
                 .tint(Color(red: 0.09, green: 0.47, blue: 0.37))
         } defaultValue: {
@@ -113,6 +115,10 @@ struct AegisApp: App {
         .commands { BrowserKeyboardCommands(language: language) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { language.refresh(); AegisFirebase.shared.refreshOnForeground() }
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active { accountSession.refresh() }
+            else { accountSession.suspend() }
         }
     }
 
@@ -171,18 +177,21 @@ struct AegisApp: App {
 private struct AegisWindowView: View {
     @EnvironmentObject private var language: AppLanguageSettings
     @StateObject private var browser: BrowserSession
+    @StateObject private var accessSiteProxy: AccessSiteProxySessionStore
     @ObservedObject var windows: BrowserWindowStore
     init(id: UUID, dataStore: BrowserDataStore, workspaces: WorkspaceStore, windows: BrowserWindowStore,
          preferences: BrowserPreferences) {
         self.windows = windows
         _browser = StateObject(wrappedValue: BrowserSession(dataStore: dataStore, workspaceStore: workspaces,
             windowID: id, windowStore: windows, preferences: preferences))
+        _accessSiteProxy = StateObject(wrappedValue: AccessSiteProxySessionStore())
     }
     @Environment(\.locale) private var localizationLocale
     var body: some View {
         let _ = localizationLocale
         AegisRootView()
             .environmentObject(browser)
+            .environmentObject(accessSiteProxy)
             .onChange(of: language.revision) { _, _ in browser.refreshLocalizedPresentation() }
             .onAppear {
                 windows.register(browser.windowID)

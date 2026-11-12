@@ -1,27 +1,11 @@
-# Aegis Browser optional Copilot review instructions
+# Optional Copilot review
 
-Use these instructions only when Copilot review is explicitly invoked. Copilot review is not automatically requested and is not a Ready, merge, or promotion prerequisite. Focus on defects, security/privacy regressions, incorrect assumptions, missing tests, and delivery-governance violations. Avoid repeating formatting or low-value style findings that deterministic tooling already covers.
+Apply only when Copilot review is explicitly requested. It is supplementary evidence, not a Ready, merge or promotion prerequisite, and does not replace independent review, CI, upstream Codacy, Chromium integration, device, signing or release acceptance.
 
-## Review priorities
+Report actionable defects with file/line, trigger, impact and a useful fix or test. Inspect affected callers/contracts and error, cancellation, lifecycle, concurrency and ownership paths. Browser/network routing, privacy, credentials, native integration, install/update and CI/release governance deserve security scrutiny. Avoid duplicating deterministic style findings without semantic impact.
 
-- Verify behavior and invariants, including error paths, cancellation, lifecycle changes, concurrency, ownership, compatibility, and state transitions.
-- Treat browser/network routing, privacy controls, credential or secret handling, update/install paths, native integration, and CI/release governance as security-sensitive.
-- For product feature changes, verify that the same PR contains executable unit tests for the new logic and at least one regression test for an existing safety/compatibility invariant or a relevant historical failure.
-- Read the surrounding implementation when a diff changes an interface or shared contract. Flag callers, serializers, generated data, platform adapters, or tests that must change together.
-- Prefer findings that identify a concrete trigger, impact, and verification method. Do not invent findings merely to produce review output.
+Product feature PRs include executable unit tests for new logic and a regression for an existing safety/compatibility invariant or relevant historical failure.
 
-## Delivery evidence boundaries
+[Development CI guide](../docs/development/ci.zh-CN.md) owns delivery and promotion. Preserve H/B/M/S identity: PR head, base, GitHub merge candidate and post-merge commit are separate evidence. Claim live protection, checks or merge readiness only from exact-candidate service evidence.
 
-- `docs/development/ci.zh-CN.md` is the delivery authority for the personal fork. Follow its current `develop` branch flow and evidence identity rules.
-- An explicitly requested GitHub Copilot review is optional supplementary evidence only. Its absence does not block the current workflow, and its presence does not replace the independent reviewer, hosted CI, upstream Codacy, human approval requirements, Chromium integration evidence, device evidence, signing, or release acceptance.
-- Codacy is the deterministic quality/security scanner. Do not duplicate a Codacy-style finding unless it has a concrete semantic, security, or compatibility impact that the PR author should act on.
-- Do not infer a green `quality-gate`, Codacy result, branch protection, server-side setting, or merge readiness from repository text, badges, comments, or local output. Those states require live evidence for the exact final head.
-- Preserve the H/B/M/S distinction documented by the project: PR head, PR base, GitHub merge candidate, and post-merge branch commit are separate evidence identities.
-
-## Public-upstream review
-
-- Freeze a develop SHA into an independent promotion branch targeting upstream main. Personal main is an exact upstream SHA mirror, never an intermediate promotion target. Review fixes may be appended to the frozen batch and must return to develop after upstream merge.
-- Flag any public-export history that adds, modifies, deletes, or renames private agent-control files such as `AGENTS.md` or case variants.
-- README and workflow sources are shared normally; there is no README replacement exception. Codacy runs on upstream promotion PRs, not personal develop. Future personal-main release workflows must preserve mirror parity and use repository/environment guards; synchronization does not authorize release.
-
-Keep review comments concise and actionable. When reporting a finding, name the affected file/line, the trigger, the likely impact, and the smallest useful fix or test.
+Public promotion freezes develop into an independent upstream-main branch; personal main stays an exact fast-forward mirror. Review fixes return to develop after upstream merge. Flag any public-export commit that adds, changes, removes or renames private agent-control files such as `AGENTS.md` or case variants. README/workflow sources remain shared; there is no README replacement exception. Upstream Codacy is required where the guide specifies it; synchronization alone does not authorize release.
