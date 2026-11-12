@@ -10,7 +10,7 @@
 
 **English** | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md)
 
-[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store 1.0.0](https://img.shields.io/badge/App_Store-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/us/app/gcsa-aegis/id6827988433)
+[![CI](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/quality.yml) [![C++ Unit Tests](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml/badge.svg?branch=main&event=push)](https://github.com/gcsagroup/aegis-browser/actions/workflows/cpp-unit-tests.yml) [![Codacy Grade](https://app.codacy.com/project/badge/Grade/7b3008e649154ca0a7d5906c514488cc?branch=main)](https://app.codacy.com/gh/gcsagroup/aegis-browser/dashboard?branch=main) [![License: Apache-2.0](assets/badges/license.svg)](LICENSE) [![App Store (US) 1.0.0](https://img.shields.io/badge/App_Store_US-1.0.0-007AFF?logo=apple&logoColor=white)](https://apps.apple.com/us/app/gcsa-aegis/id6827988433)
 
 **A local-first privacy and security browser with a controllable AI Agent.**
 
@@ -59,7 +59,7 @@ Open `apps/ios/Aegis.xcodeproj`; follow the [iOS guide](apps/ios/README.md) for 
 | Platform | Stage | Status |
 | --- | --- | --- |
 | macOS | Now | Chromium integration and Access Service work continue; current-source runtime and distribution qualification remain open. |
-| iOS / iPadOS | Available | Native SwiftUI/WKWebView app. [App Store 1.0.0](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
+| iOS / iPadOS | Available | Native SwiftUI/WKWebView app. App Store 1.0.0: [United States](https://apps.apple.com/us/app/gcsa-aegis/id6827988433) · [Hong Kong](https://apps.apple.com/hk/app/gcsa-aegis/id6827988433) · [TestFlight Beta](https://testflight.apple.com/join/EwUW1VDx) |
 | Windows / Android / Linux | Later | Source and evaluation entry points exist; no near-term release commitment. |
 
 macOS can qualify independently of iOS. See the [roadmap](docs/roadmap.md) for release criteria.
