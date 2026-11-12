@@ -42,6 +42,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Resolve push base for a new release line
+        id: push_base
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          before="${{ github.event.before }}"
+          if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags origin main
+            before="$(git merge-base HEAD origin/main)"
+          fi
+          git rev-parse --verify "${before}^{commit}" >/dev/null
+          printf 'sha=%s\n' "$before" >> "$GITHUB_OUTPUT"
       - name: Install Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -65,7 +76,7 @@ jobs:
         run: bash scripts/ci/install-ripgrep.sh
       - name: Run full quality gate
         env:
-          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || inputs.base_sha }}
+          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && steps.push_base.outputs.sha || inputs.base_sha }}
           CI_EVENT: ${{ github.event_name }}
           CI_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || inputs.target_sha }}
           CI_PR_NUMBER: ${{ github.event.pull_request.number }}
