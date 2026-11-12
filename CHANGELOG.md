@@ -11,7 +11,8 @@ The workspace package, historical iOS development candidates and source previews
 - Prepared from the released 1.0.1 (build 20) line `releases/ios/1.0`. Later work on main is not included.
 - The language menu now uses regional options. Follow System stays first, followed by Simplified Chinese, Traditional Chinese (Taiwan and Hong Kong), English (United States and United Kingdom), then the remaining languages. A saved language choice is kept, and system date and number formats stay in effect.
 - The support and privacy-policy URLs in this submission are https://www.gcsa.com .
-- The maintenance package is version 1.0.2, build 18.
+- Packaged and uploaded Release 1.0.2 (build 18) from `releases/ios/1.0` (`c012851d`). Apple processing completed as VALID. [Package and upload](https://github.com/gcsagroup/aegis-browser/actions/runs/43296000198)
+- Submitted build 18 for App Review. App Store Connect reports WAITING_FOR_REVIEW with manual release.
 
 ## iOS / iPadOS 1.0.1 · TestFlight
 

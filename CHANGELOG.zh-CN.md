@@ -11,7 +11,8 @@
 - 基于已发布的 1.0.1（构建 20）维护线 `releases/ios/1.0` 准备本版，不纳入此后 main 上的其他功能。
 - 语言菜单改为地区选项。跟随系统仍排在最前，其后为简体中文、繁体中文（台湾、香港）、英语（美国、英国），然后是其余语言。已保存的语言选择会保留，并继续使用系统的日期与数字格式。
 - 本版送审资料中的技术支持与隐私政策网址为 https://www.gcsa.com 。
-- 维护包使用版本 1.0.2、构建 18。
+- 已从 `releases/ios/1.0`（`c012851d`）打包并上传 Release 1.0.2（构建 18），Apple 处理完成且状态为 VALID。[打包与上传](https://github.com/gcsagroup/aegis-browser/actions/runs/43296000198)
+- 已将构建 18 提交 App Review。App Store Connect 显示 WAITING_FOR_REVIEW，并采用手动发布。
 
 ## iOS / iPadOS 1.0.1 · TestFlight
 
