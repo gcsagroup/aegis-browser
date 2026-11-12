@@ -7,6 +7,7 @@ const expectedActions = new Set([
   'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
   'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
   'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
+  'actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff',
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
   'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903',
   'actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a',
@@ -264,6 +265,23 @@ try {
   if (!qualityRun) fail('Quality job must call the shared run-quality entrypoint');
   for (const name of ['CI_BASE_SHA', 'CI_HEAD_SHA', 'CI_TESTED_SHA', 'CI_EVENT', 'CI_REF', 'REPORT_DIR']) {
     if (!qualityRun.env?.[name]) fail(`Quality entrypoint environment is missing ${name}`);
+  }
+  const mergeBase = array(quality.steps).find((step) => step.id === 'merge_base');
+  if (
+    mergeBase?.if !== "${{ github.event_name == 'pull_request' }}" ||
+    !String(mergeBase?.run ?? '').includes('git rev-list --parents -n 1 HEAD') ||
+    !String(qualityRun.env.CI_BASE_SHA).includes('steps.merge_base.outputs.sha')
+  ) {
+    fail('Quality PR base must resolve from the merge commit first parent, not a possibly stale pull_request.base.sha');
+  }
+  const iosArchiveGo = array(iosValidationWorkflow.jobs?.['ios-archive']?.steps).find((step) =>
+    String(step.uses ?? '').startsWith('actions/setup-go@'));
+  if (
+    !expectedActions.has(iosArchiveGo?.uses) ||
+    String(iosArchiveGo?.with?.['go-version']) !== '1.27.3' ||
+    iosArchiveGo?.with?.cache !== false
+  ) {
+    fail('ios-archive must install approved pinned Go 1.27.3 before EmbeddedCore prepare');
   }
   const ripgrepInstall = array(quality.steps).find((step) => String(step.run ?? '') === 'bash scripts/ci/install-ripgrep.sh');
   if (!ripgrepInstall || ripgrepInstall['timeout-minutes'] !== 5) {

@@ -1,4 +1,6 @@
 import AccessKit
+import BrowserKit
+import WebKit
 import XCTest
 @testable import Aegis
 
@@ -124,6 +126,24 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
         )
     }
 
+    func testAutomaticallyAttachedProxyReportsItsActualPathWhileManualToggleIsOff() {
+        for (attachment, connection, expected) in [
+            (AccessProxyAttachment.ready, AccessSiteSessionConnectionState.ready,
+             AccessSiteProxyIntentStatusId.automaticConnected),
+            (.attachedUnavailable, .unavailable, .automaticUnavailable)
+        ] {
+            let status = AccessSiteProxyToggleModel.intentStatus(
+                intent: .off, connection: connection, attachment: attachment
+            )
+            XCTAssertEqual(status, expected)
+            XCTAssertFalse(AccessSiteProxyToggleModel.intentLine(for: status).contains("使用浏览器原有连接"))
+        }
+        XCTAssertEqual(
+            AccessSiteProxyToggleModel.attachmentLine(for: .attachedUnavailable, intent: .off),
+            "代理请求失败，未切回原连接"
+        )
+    }
+
     func testReadyPathKeepsIntentAndConnectionLinesDistinct() throws {
         let controller = AccessSiteSessionController(orchestrator: ToggleTestOrchestrator())
         let url = URL(string: "https://ready.example/article")!
@@ -150,5 +170,60 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
         XCTAssertEqual(snap.connection, .unavailable)
         XCTAssertEqual(snap.connectionStatus, .unavailable)
         XCTAssertNotNil(snap.failureReason)
+    }
+
+    /// Window close discards private tabs, then the window disappear discards
+    /// again. The queued stores must still release only those Access sessions.
+    @MainActor
+    func testSecondDiscardStillReleasesPrivateSessionAndKeepsOrdinary() async throws {
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        defer {
+            browser.standardTabs.forEach { $0.stop() }
+            browser.privateTabs.forEach { $0.stop() }
+        }
+        let ordinaryTab = try XCTUnwrap(browser.activeTab)
+        let ordinaryStore = ordinaryTab.websiteDataStore
+        XCTAssertTrue(ordinaryStore === WKWebsiteDataStore.default())
+
+        let registry = AccessSiteProxyStoreRegistry()
+        let url = URL(string: "https://isolated.example/path")!
+        let ordinary = registry.store(for: ordinaryStore, isPrivate: false)
+        ordinary.setProxyEnabled(true, for: url)
+        XCTAssertEqual(ordinary.snapshot(for: url).intent, .allow)
+
+        browser.switchProfile(to: .privateMode)
+        let privateTab = try XCTUnwrap(browser.activeTab)
+        let privateStore = privateTab.websiteDataStore
+        XCTAssertFalse(privateStore.isPersistent)
+        XCTAssertFalse(privateStore === ordinaryStore)
+        let privateSession = registry.store(for: privateStore, isPrivate: true)
+        privateSession.setProxyEnabled(true, for: url)
+        XCTAssertFalse(privateSession === ordinary)
+        XCTAssertEqual(privateSession.snapshot(for: url).intent, .allow)
+        XCTAssertEqual(ordinary.snapshot(for: url).intent, .allow)
+
+        browser.discardPrivateSession()
+        browser.discardPrivateSession()
+        let deadline = Date().addingTimeInterval(5)
+        while browser.retiredPrivateWebsiteDataStoreRevision == 0, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let retired = browser.consumeRetiredPrivateWebsiteDataStores()
+        XCTAssertEqual(retired.count, 1)
+        XCTAssertTrue(try XCTUnwrap(retired.first) === privateStore)
+        XCTAssertTrue(browser.consumeRetiredPrivateWebsiteDataStores().isEmpty)
+
+        let revision = registry.revision
+        registry.release(retired)
+        XCTAssertGreaterThan(registry.revision, revision)
+        let reborn = registry.store(for: privateStore, isPrivate: true)
+        XCTAssertFalse(reborn === privateSession)
+        XCTAssertEqual(reborn.snapshot(for: url).intent, .off)
+        XCTAssertTrue(registry.store(for: ordinaryStore, isPrivate: false) === ordinary)
+        XCTAssertEqual(ordinary.snapshot(for: url).intent, .allow)
+
+        let stable = registry.revision
+        registry.release([WKWebsiteDataStore.nonPersistent()])
+        XCTAssertEqual(registry.revision, stable)
     }
 }

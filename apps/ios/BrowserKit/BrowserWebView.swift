@@ -57,13 +57,77 @@ public struct BrowserWebView: UIViewRepresentable {
 
 /// 网页取得焦点后，查找快捷键由 WebKit 的响应链处理。
 final class BrowserContentWebView: WKWebView {
+    private var terminalNavigation: TerminalNavigation?
+    private var installingTerminalDocument = false
+    private static let inertHTML = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'none'\"><title></title>"
+
+    func terminateDocument(completion: @escaping @MainActor () -> Void) {
+        guard terminalNavigation == nil else { return }
+        stopLoading()
+        onFind = nil; onDidMoveToWindow = nil
+        configuration.userContentController.removeAllUserScripts()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        let terminal = TerminalNavigation(completion: completion)
+        terminalNavigation = terminal
+        navigationDelegate = terminal
+        installingTerminalDocument = true
+        terminal.navigation = super.loadHTMLString(Self.inertHTML, baseURL: URL(string: "about:blank")!)
+        installingTerminalDocument = false
+    }
+
+    override func load(_ request: URLRequest) -> WKNavigation? {
+        guard terminalNavigation == nil || installingTerminalDocument else { return nil }
+        return super.load(request)
+    }
+    override func loadHTMLString(_ string: String, baseURL: URL?) -> WKNavigation? {
+        guard terminalNavigation == nil || installingTerminalDocument else { return nil }
+        return super.loadHTMLString(string, baseURL: baseURL)
+    }
+    override func loadFileURL(_ URL: URL, allowingReadAccessTo readAccessURL: URL) -> WKNavigation? {
+        guard terminalNavigation == nil || installingTerminalDocument else { return nil }
+        return super.loadFileURL(URL, allowingReadAccessTo: readAccessURL)
+    }
+    override func reload() -> WKNavigation? { terminalNavigation == nil ? super.reload() : nil }
+    override func reloadFromOrigin() -> WKNavigation? { terminalNavigation == nil ? super.reloadFromOrigin() : nil }
+    override func goBack() -> WKNavigation? { terminalNavigation == nil ? super.goBack() : nil }
+    override func goForward() -> WKNavigation? { terminalNavigation == nil ? super.goForward() : nil }
+    override func go(to item: WKBackForwardListItem) -> WKNavigation? {
+        terminalNavigation == nil ? super.go(to: item) : nil
+    }
+
+    /// A committed inert document has destroyed the prior JS realm. If UIKit
+    /// releases the view first, delegate destruction supplies the same receipt.
+    private final class TerminalNavigation: NSObject, WKNavigationDelegate {
+        var navigation: WKNavigation?
+        private var completion: (@MainActor () -> Void)?
+        init(completion: @escaping @MainActor () -> Void) { self.completion = completion }
+        func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+            guard let navigation, navigation === self.navigation else { return }
+            let finish = completion; completion = nil
+            finish?()
+        }
+        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(completion != nil && action.request.url?.absoluteString == "about:blank" ? .allow : .cancel)
+        }
+        deinit {
+            let finish = completion
+            Task { @MainActor in finish?() }
+        }
+    }
     var onFind: (() -> Void)?
+    var onDidMoveToWindow: (() -> Void)?
     override var canBecomeFirstResponder: Bool { true }
     override var keyCommands: [UIKeyCommand]? {
         let find = UIKeyCommand(input: "f", modifierFlags: .command, action: #selector(showPageFind))
         find.discoverabilityTitle = AegisLocalization.string("在页面中查找")
         find.wantsPriorityOverSystemBehavior = true
         return [find] + (super.keyCommands ?? [])
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { onDidMoveToWindow?() }
     }
 
     @objc private func showPageFind() {

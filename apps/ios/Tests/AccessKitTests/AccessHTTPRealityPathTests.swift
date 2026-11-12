@@ -1,16 +1,18 @@
 import XCTest
 @testable import AccessKit
 
-private final class FakeStream: AccessRealityPathStream {
+private final class FakeStream: AccessRealityPathStream, @unchecked Sendable {
     private(set) var isOpen = true
+    func read(maxBytes: Int) async throws -> Data? { nil }
+    func write(_ data: Data) async throws {}
     func close() { isOpen = false }
 }
 
-private final class FakeDialer: AccessRealityPathDialing {
+private final class FakeDialer: AccessRealityPathDialing, @unchecked Sendable {
     var lastHost: String?
     var lastPort: UInt16?
     var shouldFail = false
-    func dial(host: String, port: UInt16) throws -> AccessRealityPathStream {
+    func dial(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
         if shouldFail { throw AccessHTTPRealityPathError.dialFailed("forced") }
         lastHost = host
         lastPort = port
@@ -82,7 +84,7 @@ final class AccessHTTPRealityPathTests: XCTestCase {
         return (runtime, url)
     }
 
-    func testOpensRealityPathForHTTPConnect() throws {
+    func testOpensRealityPathForHTTPConnect() async throws {
         let registration = try makeRegistration()
         let (runtime, url) = try makeRunningRuntime()
         defer {
@@ -91,7 +93,7 @@ final class AccessHTTPRealityPathTests: XCTestCase {
         }
         let dialer = FakeDialer()
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        let (handle, stream) = try AccessHTTPRealityPath.open(
+        let (handle, stream) = try await AccessHTTPRealityPath.open(
             connect: connect,
             registration: registration,
             runtime: runtime,
@@ -107,7 +109,7 @@ final class AccessHTTPRealityPathTests: XCTestCase {
         XCTAssertFalse(stream.isOpen)
     }
 
-    func testRejectsNonHTTPRegistrationAndInactiveLease() throws {
+    func testRejectsNonHTTPRegistrationAndInactiveLease() async throws {
         let https = try makeRegistration(transport: .https)
         let (runtime, url) = try makeRunningRuntime()
         defer {
@@ -115,48 +117,52 @@ final class AccessHTTPRealityPathTests: XCTestCase {
             try? FileManager.default.removeItem(at: url)
         }
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        XCTAssertThrowsError(
-            try AccessHTTPRealityPath.open(
+        do {
+            _ = try await AccessHTTPRealityPath.open(
                 connect: connect,
                 registration: https,
                 runtime: runtime,
                 dialer: FakeDialer(),
                 at: Date(timeIntervalSince1970: 1_700_000_000)
             )
-        ) { error in
-            XCTAssertEqual(error as? AccessHTTPRealityPathError, .transportNotHTTP(.https))
+            XCTFail("expected transport rejection")
+        } catch let error as AccessHTTPRealityPathError {
+            XCTAssertEqual(error, .transportNotHTTP(.https))
         }
 
         let http = try makeRegistration()
-        XCTAssertThrowsError(
-            try AccessHTTPRealityPath.open(
+        do {
+            _ = try await AccessHTTPRealityPath.open(
                 connect: connect,
                 registration: http,
                 runtime: runtime,
                 dialer: FakeDialer(),
                 at: Date(timeIntervalSince1970: 1_700_000_000 + 120)
             )
-        ) { error in
-            XCTAssertEqual(error as? AccessHTTPRealityPathError, .leaseInactive)
+            XCTFail("expected inactive lease")
+        } catch let error as AccessHTTPRealityPathError {
+            XCTAssertEqual(error, .leaseInactive)
         }
     }
 
-    func testRejectsStoppedRuntimeAndDirectDialFlag() throws {
+    func testRejectsStoppedRuntimeAndDirectDialFlag() async throws {
         let registration = try makeRegistration()
         let runtime = try AccessXrayRuntime(
             processController: FakeController(),
             digestVerifier: AcceptingVerifier()
         )
         let connect = try AccessHTTPConnectRequest(host: "example.com", port: 443, httpVersion: "HTTP/1.1")
-        XCTAssertThrowsError(
-            try AccessHTTPRealityPath.open(
+        do {
+            _ = try await AccessHTTPRealityPath.open(
                 connect: connect,
                 registration: registration,
                 runtime: runtime,
-                dialer: FakeDialer()
+                dialer: FakeDialer(),
+                at: Date(timeIntervalSince1970: 1_700_000_000)
             )
-        ) { error in
-            XCTAssertEqual(error as? AccessHTTPRealityPathError, .runtimeNotRunning)
+            XCTFail("expected stopped runtime")
+        } catch let error as AccessHTTPRealityPathError {
+            XCTAssertEqual(error, .runtimeNotRunning)
         }
 
         let (running, url) = try makeRunningRuntime()
@@ -164,8 +170,8 @@ final class AccessHTTPRealityPathTests: XCTestCase {
             try? running.stop()
             try? FileManager.default.removeItem(at: url)
         }
-        XCTAssertThrowsError(
-            try AccessHTTPRealityPath.open(
+        do {
+            _ = try await AccessHTTPRealityPath.open(
                 connect: connect,
                 registration: registration,
                 runtime: running,
@@ -173,8 +179,9 @@ final class AccessHTTPRealityPathTests: XCTestCase {
                 at: Date(timeIntervalSince1970: 1_700_000_000),
                 allowDirectDial: true
             )
-        ) { error in
-            XCTAssertEqual(error as? AccessHTTPRealityPathError, .directDialNotAdmitted)
+            XCTFail("expected direct dial rejection")
+        } catch let error as AccessHTTPRealityPathError {
+            XCTAssertEqual(error, .directDialNotAdmitted)
         }
     }
 }

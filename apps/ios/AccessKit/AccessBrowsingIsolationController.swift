@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Keeps ordinary and private Access state in independent buckets.
 ///
@@ -12,7 +13,7 @@ import Foundation
 /// real ownership controller. WebKit write paths still use the applicator; this
 /// type decides which fixture / registration is legal for each store.
 public final class AccessBrowsingIsolationController: @unchecked Sendable {
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private var ordinary = AccessBrowsingAccessState(bucket: .ordinary)
     private var privateState = AccessBrowsingAccessState(bucket: .privateBrowsing)
 
@@ -55,6 +56,8 @@ public final class AccessBrowsingIsolationController: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         try ensureBucketWritable(bucket)
         try rejectCrossBucketRegistrationReuse(registration.id, into: bucket)
+        // Reject before any write. A failed install must not replace the slot's owner.
+        try rejectCrossBucketCredentialReuse(registration.credentialSlot, into: bucket)
 
         let ownerBucket = try AccessBrowsingBucket.from(ownerProfile: registration.owner.profile)
         guard ownerBucket == bucket else {

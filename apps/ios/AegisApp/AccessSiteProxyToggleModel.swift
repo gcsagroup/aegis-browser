@@ -5,6 +5,8 @@ import Foundation
 enum AccessSiteProxyIntentStatusId: String, Equatable, Sendable {
     case noTrustedSite
     case offBrowserDefault
+    case automaticConnected
+    case automaticUnavailable
     case allowNotConnected
     case allowConnected
     case blockLocalRefuse
@@ -31,6 +33,16 @@ struct AccessSiteProxyToggleSnapshot: Equatable, Sendable {
     var intentStatus: AccessSiteProxyIntentStatusId = .noTrustedSite
     var connectionStatus: AccessSiteProxyConnectionStatusId = .idle
     var failureReason: String?
+    var attachment: AccessProxyAttachment = .notAttached
+    /// 「本站打不开时自动重试」. Distinct from the explicit whole-page proxy intent.
+    var autoRecoveryEnabled: Bool = false
+    var autoRecoveryLine: String?
+    /// DEV/Alpha read-only exact-host members. Empty on Beta/Release.
+    var debugMemberHosts: [String] = []
+    /// DEV/Alpha probe suggestion lines. Never auto-expands authorization.
+    var probeSuggestionLines: [String] = []
+    var probeBusy: Bool = false
+    var showsDebugSiteGroupDetails: Bool = false
 }
 
 /// Pure presentation helpers for the per-site Access proxy toggle.
@@ -63,11 +75,16 @@ enum AccessSiteProxyToggleModel {
 
     static func intentStatus(
         intent: AccessSiteIntent,
-        connection: AccessSiteSessionConnectionState
+        connection: AccessSiteSessionConnectionState,
+        attachment: AccessProxyAttachment = .notAttached
     ) -> AccessSiteProxyIntentStatusId {
         switch intent {
         case .off:
-            return .offBrowserDefault
+            switch attachment {
+            case .ready: return .automaticConnected
+            case .attachedUnavailable: return .automaticUnavailable
+            case .notAttached: return .offBrowserDefault
+            }
         case .block:
             return .blockLocalRefuse
         case .allow:
@@ -135,6 +152,10 @@ enum AccessSiteProxyToggleModel {
             return "当前页不是可代理的网站"
         case .offBrowserDefault:
             return "未使用本服务代理 / 使用浏览器原有连接"
+        case .automaticConnected:
+            return "本站自动重试正在使用代理"
+        case .automaticUnavailable:
+            return "本站自动重试的代理连接不可用"
         case .allowNotConnected:
             return "本站代理已开启 · 连接尚未就绪"
         case .allowConnected:
@@ -154,6 +175,19 @@ enum AccessSiteProxyToggleModel {
             return "连接：已就绪"
         case .unavailable:
             return "连接：不可用"
+        }
+    }
+
+    static func attachmentLine(for attachment: AccessProxyAttachment, intent: AccessSiteIntent) -> String? {
+        switch attachment {
+        case .notAttached:
+            guard intent == .allow else { return nil }
+            return "尚未接入代理，当前页面仍使用原连接"
+        case .attachedUnavailable:
+            // Bound auto-recovery may have no manual allow intent; still explain the fault.
+            return "代理请求失败，未切回原连接"
+        case .ready:
+            return nil
         }
     }
 }

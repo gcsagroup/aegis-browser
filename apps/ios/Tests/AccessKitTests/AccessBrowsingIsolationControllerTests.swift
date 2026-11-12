@@ -310,4 +310,41 @@ final class AccessBrowsingIsolationControllerTests: XCTestCase {
             )
         }
     }
+
+    func testCredentialSlotReuseIsRejectedWithoutReplacingOwner() throws {
+        let controller = AccessBrowsingIsolationController()
+        let ordinaryReg = try makeRegistration(
+            id: "reg-slot-owner",
+            profile: "ordinary",
+            credential: "cred-shared-slot",
+            port: 18_601
+        )
+        try controller.install(registration: ordinaryReg, into: .ordinary)
+
+        let stolen = try makeRegistration(
+            id: "reg-slot-thief",
+            profile: "private",
+            credential: "cred-shared-slot",
+            port: 18_602
+        )
+        XCTAssertThrowsError(
+            try controller.install(registration: stolen, into: .privateBrowsing)
+        ) { error in
+            XCTAssertEqual(
+                error as? AccessBrowsingIsolationError,
+                .crossBucketReuseRejected(
+                    resource: "credential:cred-shared-slot",
+                    owningBucket: .ordinary,
+                    requestedBucket: .privateBrowsing
+                )
+            )
+        }
+
+        XCTAssertEqual(try controller.registration(in: .ordinary).id.rawValue, "reg-slot-owner")
+        XCTAssertThrowsError(try controller.registration(in: .privateBrowsing))
+        try controller.requireCredentialSlot(ordinaryReg.credentialSlot, belongsTo: .ordinary)
+        XCTAssertThrowsError(
+            try controller.requireCredentialSlot(stolen.credentialSlot, belongsTo: .privateBrowsing)
+        )
+    }
 }

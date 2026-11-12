@@ -33,7 +33,7 @@ public enum AccessHTTPRealityPath {
         dialer: AccessRealityPathDialing,
         at now: Date = Date(),
         allowDirectDial: Bool = false
-    ) throws -> (Handle, AccessRealityPathStream) {
+    ) async throws -> (Handle, any AccessRealityPathStream) {
         guard registration.transport == .http else {
             throw AccessHTTPRealityPathError.transportNotHTTP(registration.transport)
         }
@@ -54,9 +54,9 @@ public enum AccessHTTPRealityPath {
             throw AccessHTTPRealityPathError.emptyTargetHost
         }
 
-        let stream: AccessRealityPathStream
+        let stream: any AccessRealityPathStream
         do {
-            stream = try dialer.dial(host: host, port: connect.port)
+            stream = try await dialer.dial(host: host, port: connect.port)
         } catch {
             throw AccessHTTPRealityPathError.dialFailed(String(describing: error))
         }

@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import Synchronization
 
 /// Loopback-only SOCKS5 inbound listener (no username/password).
 ///
@@ -13,12 +14,15 @@ public final class AccessSOCKS5InboundListener: @unchecked Sendable {
     public let registration: AccessRegistration
 
     private let queue: DispatchQueue
-    private let lock = NSLock()
-    private var listener: NWListener?
-    private var acceptedConnections: UInt64 = 0
-    private var establishedConnects: UInt64 = 0
-    private var openConnections: [NWConnection] = []
-    private var sessions: [ObjectIdentifier: AccessSOCKS5InboundSession] = [:]
+    private let gate = Mutex(State())
+
+    private struct State {
+        var listener: NWListener?
+        var acceptedConnections: UInt64 = 0
+        var establishedConnects: UInt64 = 0
+        var openConnections: [NWConnection] = []
+        var sessions: [ObjectIdentifier: AccessSOCKS5InboundSession] = [:]
+    }
 
     public init(registration: AccessRegistration) throws {
         guard registration.transport == .socks5 else {
@@ -29,29 +33,22 @@ public final class AccessSOCKS5InboundListener: @unchecked Sendable {
     }
 
     public var isListening: Bool {
-        lock.lock(); defer { lock.unlock() }
-        return listener != nil
+        gate.withLock { $0.listener != nil }
     }
 
     public var acceptedConnectionCount: UInt64 {
-        lock.lock(); defer { lock.unlock() }
-        return acceptedConnections
+        gate.withLock { $0.acceptedConnections }
     }
 
     public var establishedConnectCount: UInt64 {
-        lock.lock(); defer { lock.unlock() }
-        return establishedConnects
+        gate.withLock { $0.establishedConnects }
     }
 
-    public func start(at now: Date = Date()) throws {
+    public func start(at now: Date = Date()) async throws {
         guard registration.isActive(at: now, observedGeneration: registration.generation) else {
             throw AccessSOCKS5InboundError.leaseInactive
         }
-
-        lock.lock()
-        let already = listener != nil
-        lock.unlock()
-        if already {
+        if gate.withLock({ $0.listener != nil }) {
             throw AccessSOCKS5InboundError.alreadyListening
         }
 
@@ -81,53 +78,42 @@ public final class AccessSOCKS5InboundListener: @unchecked Sendable {
             self?.accept(connection)
         }
 
-        let started = DispatchSemaphore(value: 0)
-        let startError = AccessInboundStartErrorBox()
-        nwListener.stateUpdateHandler = { state in
-            switch state {
-            case .ready:
-                started.signal()
-            case .failed(let error):
-                startError.value = String(describing: error)
-                started.signal()
-            default:
-                break
-            }
-        }
-        nwListener.start(queue: queue)
-
-        let waitResult = started.wait(timeout: .now() + 2.0)
-        if waitResult == .timedOut {
+        do {
+            try await AccessNWListenerBootstrap.awaitReady(nwListener, on: queue)
+        } catch AccessNWListenerBootstrap.Failure.timedOut {
             nwListener.cancel()
             throw AccessSOCKS5InboundError.bindFailed("listener start timed out")
-        }
-        if let message = startError.value {
+        } catch AccessNWListenerBootstrap.Failure.failed(let message) {
             nwListener.cancel()
             throw AccessSOCKS5InboundError.bindFailed(message)
+        } catch is CancellationError {
+            nwListener.cancel()
+            throw AccessSOCKS5InboundError.bindFailed("listener start cancelled")
         }
 
-        lock.lock()
-        if listener != nil {
-            lock.unlock()
+        let installed = gate.withLock { state -> Bool in
+            if state.listener != nil { return false }
+            state.listener = nwListener
+            return true
+        }
+        if !installed {
             nwListener.cancel()
             throw AccessSOCKS5InboundError.alreadyListening
         }
-        listener = nwListener
-        lock.unlock()
     }
 
     public func stop() throws {
-        lock.lock()
-        guard let active = listener else {
-            lock.unlock()
+        let snapshot: (NWListener, [NWConnection])? = gate.withLock { state in
+            guard let active = state.listener else { return nil }
+            state.listener = nil
+            let connections = state.openConnections
+            state.openConnections.removeAll()
+            state.sessions.removeAll()
+            return (active, connections)
+        }
+        guard let (active, connections) = snapshot else {
             throw AccessSOCKS5InboundError.notListening
         }
-        listener = nil
-        let connections = openConnections
-        openConnections.removeAll()
-        sessions.removeAll()
-        lock.unlock()
-
         active.cancel()
         for connection in connections {
             connection.cancel()
@@ -135,19 +121,19 @@ public final class AccessSOCKS5InboundListener: @unchecked Sendable {
     }
 
     private func accept(_ connection: NWConnection) {
-        lock.lock()
-        acceptedConnections &+= 1
-        openConnections.append(connection)
-        lock.unlock()
+        gate.withLock { state in
+            state.acceptedConnections &+= 1
+            state.openConnections.append(connection)
+        }
 
         connection.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             switch state {
             case .failed, .cancelled:
-                self.lock.lock()
-                self.openConnections.removeAll { $0 === connection }
-                self.sessions.removeValue(forKey: ObjectIdentifier(connection))
-                self.lock.unlock()
+                self.gate.withLock { gateState in
+                    gateState.openConnections.removeAll { $0 === connection }
+                    gateState.sessions.removeValue(forKey: ObjectIdentifier(connection))
+                }
             default:
                 break
             }
@@ -156,16 +142,14 @@ public final class AccessSOCKS5InboundListener: @unchecked Sendable {
 
         let session = AccessSOCKS5InboundSession(connection: connection, queue: queue) { [weak self] outcome in
             guard let self else { return }
-            self.lock.lock()
-            if case .established = outcome {
-                self.establishedConnects &+= 1
+            self.gate.withLock { state in
+                if case .established = outcome {
+                    state.establishedConnects &+= 1
+                }
+                state.sessions.removeValue(forKey: ObjectIdentifier(connection))
             }
-            self.sessions.removeValue(forKey: ObjectIdentifier(connection))
-            self.lock.unlock()
         }
-        lock.lock()
-        sessions[ObjectIdentifier(connection)] = session
-        lock.unlock()
+        gate.withLock { $0.sessions[ObjectIdentifier(connection)] = session }
         session.start()
     }
 }

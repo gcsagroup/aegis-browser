@@ -1,4 +1,5 @@
 import AccessKit
+import BrowserKit
 import Combine
 import Foundation
 
@@ -16,6 +17,14 @@ final class AccessSiteProxySessionStore: ObservableObject {
 
     /// Bumps when session state changes so SwiftUI can re-query snapshots.
     @Published private(set) var revision: UInt64 = 0
+    private var routingWatch: AnyCancellable?
+    weak var hostRouting: AccessHostStoreCoordinator? {
+        didSet {
+            routingWatch = hostRouting?.$revision.sink { [weak self] _ in
+                self?.revision &+= 1
+            }
+        }
+    }
 
     init(
         intentStore: AccessSiteIntentStore = AccessSiteIntentStore(),
@@ -36,7 +45,43 @@ final class AccessSiteProxySessionStore: ObservableObject {
         return AccessSiteProxyToggleModel.buildSnapshot(url: url, controller: controller)
     }
 
-    func setProxyEnabled(_ enabled: Bool, for url: URL?) {
+    func setProxyEnabled(_ enabled: Bool, for tab: BrowserTab) {
+        hostRouting?.setProxyEnabled(enabled, for: tab)
+        revision &+= 1
+    }
+
+    @discardableResult
+    func setAutoRecoveryEnabled(
+        _ enabled: Bool,
+        for tab: BrowserTab,
+        members: [AccessSiteHost] = []
+    ) -> AccessAutoRecoveryChange {
+        let change = hostRouting?.setAutoRecoveryEnabled(enabled, for: tab, members: members)
+            ?? .rejected(.noTrustedHost)
+        revision &+= 1
+        return change
+    }
+
+    @discardableResult
+    func runAutoRecoveryProbe(for tab: BrowserTab) -> Bool {
+        let started = hostRouting?.runProbe(for: tab) ?? false
+        revision &+= 1
+        return started
+    }
+
+    func snapshot(for tab: BrowserTab) -> AccessSiteProxyToggleSnapshot {
+        if let hostRouting {
+            return hostRouting.snapshot(for: tab)
+        }
+        return snapshot(for: tab.requestedURL ?? tab.url)
+    }
+
+    func setProxyEnabled(
+        _ enabled: Bool,
+        for url: URL?,
+        scopeID: String = "ordinary",
+        isPrivate: Bool = false
+    ) {
         guard let host = AccessSiteProxyToggleModel.resolveTrustedHost(from: url) else {
             return
         }
@@ -45,7 +90,13 @@ final class AccessSiteProxySessionStore: ObservableObject {
             host: host,
             controller: controller
         )
+        hostRouting?.setProxyEnabled(enabled, host: host, scopeID: scopeID, isPrivate: isPrivate)
         revision &+= 1
+    }
+
+    func attachment(tab: BrowserTab, url: URL?) -> AccessProxyAttachment {
+        guard let host = AccessSiteProxyToggleModel.resolveTrustedHost(from: url) else { return .notAttached }
+        return hostRouting?.attachment(tab: tab, host: host) ?? .notAttached
     }
 
     /// DEV/Alpha debug snapshot. Beta/Release keep `panelRegistered == false`.

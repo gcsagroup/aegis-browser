@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {cp, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -21,16 +21,11 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 
 const withCopy = async action => {
   const root = await mkdtemp(join(tmpdir(), 'aegis-ios-p1-evidence-'));
-  let error = null;
   try {
     await cp(packRoot, root, {recursive: true});
     await action(root);
-  } catch (caught) {
-    error = caught;
-  }
-  await rm(root, {recursive: true, force: true});
-  if (error) {
-    throw error;
+  } finally {
+    await rm(root, {recursive: true, force: true});
   }
 };
 
@@ -51,7 +46,7 @@ test('checked-in pack scaffold stays NOT_RUN and excludes pios4', async () => {
   assert.ok(result.exitCriteria.includes('pios5'));
   assert.ok(result.exitCriteria.includes('pios6'));
   assert.equal(result.deviceAndTestFlight, 'NOT_RUN');
-  assert.equal(result.faultStep, 'pending-pios5');
+  assert.equal(result.faultStep, 'fixture-present');
   await assertCorrelationFixturePresent(repoRoot);
 });
 
@@ -188,9 +183,38 @@ test('template forbids claiming pios4 as required exit', async () => {
   assert.equal(template.deviceEvidence.status, 'NOT_RUN');
 });
 
-test('fault fixture inspection reports absent until P-iOS-5 lands', async () => {
+test('fault fixture inspection finds the P-iOS-5 API on this branch', async () => {
   const fault = await inspectFaultFixturePresent(repoRoot);
-  // Develop tip may or may not have P-iOS-5 yet; only assert shape.
-  assert.equal(typeof fault.present, 'boolean');
-  assert.ok('path' in fault);
+  assert.equal(fault.present, true);
+  assert.equal(typeof fault.path, 'string');
+  assert.ok(fault.path.endsWith('AccessSiteSessionFault.swift'));
 });
+
+for (const linkKind of ['file', 'directory']) {
+  test(`artifact ${linkKind} symlink cannot escape the evidence pack`, async () => {
+    await withCopy(async outside => {
+      const bytes = 'external evidence must not be accepted';
+      await writeFile(join(outside, 'outside.log'), bytes);
+      await withCopy(async root => {
+        const linkPath = join(root, 'artifacts', 'external');
+        await symlink(linkKind === 'file' ? join(outside, 'outside.log') : outside,
+            linkPath, linkKind === 'file' ? 'file' : 'dir');
+        const manifest = JSON.parse(await readFile(
+            join(root, 'manifest.template.json'), 'utf8'));
+        const sourceSha = 'd'.repeat(40);
+        manifest.candidate = {sourceSha, channel: 'SIMULATOR'};
+        manifest.runId = 'symlink-escape';
+        manifest.steps.forEach(step => {
+          step.correlationId = `aegis-ios-p1/${sourceSha.slice(0, 8)}/${manifest.runId}/${step.name}`;
+          step.artifacts = [{
+            path: linkKind === 'file' ? 'artifacts/external' : 'artifacts/external/outside.log',
+            sha256: digest(bytes),
+          }];
+        });
+        await writeFile(join(root, 'manifest.json'), JSON.stringify(manifest));
+        await assert.rejects(() => validatePhase1EvidencePack(root, {repoRoot}),
+            /artifact path escapes pack/);
+      });
+    });
+  });
+}

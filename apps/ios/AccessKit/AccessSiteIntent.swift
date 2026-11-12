@@ -35,7 +35,10 @@ public struct AccessSiteHost: Codable, Sendable, Equatable, Hashable {
         guard !trimmed.isEmpty else {
             throw AccessSiteIntentError.emptyHost
         }
-        guard trimmed == rawValue, !trimmed.contains("\0") else {
+        guard trimmed == rawValue else {
+            throw AccessSiteIntentError.hostNotCanonical
+        }
+        guard !trimmed.unicodeScalars.contains(where: Self.isRejectedHostScalar) else {
             throw AccessSiteIntentError.hostNotCanonical
         }
         let lower = trimmed.lowercased()
@@ -50,6 +53,12 @@ public struct AccessSiteHost: Codable, Sendable, Equatable, Hashable {
             throw AccessSiteIntentError.hostNotCanonical
         }
         self.rawValue = trimmed
+    }
+
+    private static func isRejectedHostScalar(_ scalar: Unicode.Scalar) -> Bool {
+        CharacterSet.whitespacesAndNewlines.contains(scalar)
+            || CharacterSet.controlCharacters.contains(scalar)
+            || scalar.value == 0x7F
     }
 
     /// Normalizes browser-facing host text into an exact-host key.

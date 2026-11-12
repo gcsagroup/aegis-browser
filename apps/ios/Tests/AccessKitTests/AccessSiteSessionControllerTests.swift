@@ -120,6 +120,26 @@ final class AccessSiteSessionControllerTests: XCTestCase {
         XCTAssertEqual(controller.intentStoreSnapshot().intent(for: host), .allow)
     }
 
+    func testFailedTearDownKeepsIdentityUntilRetrySucceeds() throws {
+        let orchestrator = FakeOrchestrator()
+        let controller = AccessSiteSessionController(orchestrator: orchestrator)
+        let host = try AccessSiteHost("www.example.com")
+        _ = try controller.enable(host: host)
+        orchestrator.failAt = .tearDown
+
+        XCTAssertThrowsError(try controller.disable(host: host)) { error in
+            XCTAssertEqual(error as? AccessSiteSessionError, .tearDownFailed("forced"))
+        }
+        XCTAssertEqual(orchestrator.tearDownCount, 1)
+
+        orchestrator.failAt = nil
+        let snap = try controller.disable(host: host)
+        XCTAssertEqual(orchestrator.tearDownCount, 2)
+        XCTAssertEqual(orchestrator.lastTornDown?.rawValue, "reg-www.example.com")
+        XCTAssertEqual(snap.intent, .off)
+        XCTAssertEqual(snap.phase, .idle)
+    }
+
     func testDisableTearsDownPublishedSession() throws {
         let orchestrator = FakeOrchestrator()
         let controller = AccessSiteSessionController(orchestrator: orchestrator)
@@ -160,7 +180,10 @@ final class AccessSiteSessionControllerTests: XCTestCase {
 
         XCTAssertThrowsError(try controller.enable(host: host)) { error in
             XCTAssertEqual(error as? AccessSiteSessionError, .nodeUnavailable)
-            let sessionError = error as! AccessSiteSessionError
+            guard let sessionError = error as? AccessSiteSessionError else {
+                XCTFail("expected AccessSiteSessionError")
+                return
+            }
             XCTAssertFalse(sessionError.readableMessage.isEmpty)
             XCTAssertFalse(sessionError.readableMessage.lowercased().contains("direct success"))
         }

@@ -1,4 +1,5 @@
 import AccessKit
+import BrowserKit
 import SwiftUI
 
 /// Current-page 「本站代理」 toggle: host + switch + intent/connection lines.
@@ -8,11 +9,18 @@ import SwiftUI
 struct AccessSiteProxyToggleView: View {
     @ObservedObject var store: AccessSiteProxySessionStore
     let url: URL?
+    var tab: BrowserTab?
 
     @Environment(\.locale) private var localizationLocale
 
     private var snapshot: AccessSiteProxyToggleSnapshot {
-        store.snapshot(for: url)
+        if let tab { return store.snapshot(for: tab) }
+        return store.snapshot(for: url)
+    }
+
+    private var attachment: AccessProxyAttachment {
+        guard let tab else { return .notAttached }
+        return store.attachment(tab: tab, url: url)
     }
 
     var body: some View {
@@ -30,14 +38,61 @@ struct AccessSiteProxyToggleView: View {
             }
 
             Toggle(
-                "使用本服务代理",
+                AccessAutoRecoveryCopy.toggleTitle,
                 isOn: Binding(
-                    get: { snap.toggleOn },
-                    set: { store.setProxyEnabled($0, for: url) }
+                    get: { snap.autoRecoveryEnabled || snap.toggleOn },
+                    set: { enabled in
+                        guard let tab else { return }
+                        if enabled {
+                            _ = store.setAutoRecoveryEnabled(true, for: tab)
+                        } else if snap.autoRecoveryEnabled {
+                            // Auto-off must keep an independently armed manual proxy.
+                            _ = store.setAutoRecoveryEnabled(false, for: tab)
+                        } else {
+                            store.setProxyEnabled(false, for: tab)
+                        }
+                    }
                 )
             )
-            .disabled(!snap.toggleEnabled)
+            .disabled(!snap.toggleEnabled || tab == nil)
             .accessibilityIdentifier("access-site-proxy-toggle")
+            if let line = snap.autoRecoveryLine {
+                Text(line)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("access-site-auto-recovery-status")
+            }
+            if !snap.debugMemberHosts.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("组成员（只读）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(snap.debugMemberHosts, id: \.self) { member in
+                        Text(member)
+                            .font(.footnote.monospaced())
+                            .textSelection(.enabled)
+                    }
+                }
+                .accessibilityIdentifier("access-site-debug-members")
+            }
+            if snap.showsDebugSiteGroupDetails {
+                Button(snap.probeBusy ? "正在探测…" : "探测候选（建议）") {
+                    guard let tab else { return }
+                    _ = store.runAutoRecoveryProbe(for: tab)
+                }
+                .disabled(tab == nil || snap.probeBusy || !snap.autoRecoveryEnabled)
+                .accessibilityIdentifier("access-site-probe-button")
+                if !snap.probeSuggestionLines.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(snap.probeSuggestionLines, id: \.self) { line in
+                            Text(line)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("access-site-probe-suggestions")
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(AccessSiteProxyToggleModel.intentLine(for: snap.intentStatus))
@@ -48,6 +103,15 @@ struct AccessSiteProxyToggleView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("access-site-proxy-connection")
+                if let attachment = AccessSiteProxyToggleModel.attachmentLine(
+                    for: attachment,
+                    intent: snap.intent
+                ) {
+                    Text(attachment)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("access-site-proxy-attachment")
+                }
                 if let reason = snap.failureReason, !reason.isEmpty {
                     Text(reason)
                         .font(.footnote)
@@ -58,7 +122,9 @@ struct AccessSiteProxyToggleView: View {
         } header: {
             Text("本站代理")
         } footer: {
-            Text("开关表示本站是否使用本服务代理；连接状态单独显示，开启不等于已连通。关闭后使用浏览器原有连接。")
+            Text(AccessAutoRecoveryCopy.explanation)
+                .font(.footnote)
+            Text(AccessAutoRecoveryCopy.scopeWarning)
                 .font(.footnote)
         }
     }

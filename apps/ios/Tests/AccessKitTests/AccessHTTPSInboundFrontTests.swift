@@ -81,7 +81,7 @@ final class AccessHTTPSInboundFrontTests: XCTestCase {
         XCTAssertEqual(port.rawValue, 18_444)
     }
 
-    func testStartRejectsInactiveLease() throws {
+    func testStartRejectsInactiveLease() async throws {
         let registration = AccessRegistration(
             id: try AccessRegistrationID("reg-https-expired"),
             owner: try AccessOwner(channel: 1, profile: "ordinary", partition: "default"),
@@ -99,7 +99,10 @@ final class AccessHTTPSInboundFrontTests: XCTestCase {
             tlsProvider: EmptyTLSProvider()
         )
         let afterExpiry = Date(timeIntervalSince1970: 1_700_000_000 + 30)
-        XCTAssertThrowsError(try listener.start(at: afterExpiry)) { error in
+        do {
+            try await listener.start(at: afterExpiry)
+            XCTFail("expected throw")
+        } catch {
             XCTAssertEqual(error as? AccessHTTPSInboundError, .leaseInactive)
         }
     }

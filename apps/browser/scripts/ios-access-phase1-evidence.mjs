@@ -21,6 +21,9 @@ const FAULT_FIXTURE_MARKERS = [
   'noDirect',
 ];
 
+const STEP_NAME_BY_INDEX = new Map(STEP_NAMES.map((name, index) => [index, name]));
+const STEP_ID_BY_INDEX = new Map(STEP_IDS.map((id, index) => [index, id]));
+
 export function isValidCorrelationId(value) {
   return typeof value === 'string' && CORRELATION.test(value);
 }
@@ -46,6 +49,18 @@ async function pathExists(path) {
   } catch {
     return false;
   }
+}
+
+function stepIdAt(index) {
+  const id = STEP_ID_BY_INDEX.get(index);
+  requireValue(typeof id === 'string', `unknown step index ${index}`);
+  return id;
+}
+
+function stepNameAt(index) {
+  const name = STEP_NAME_BY_INDEX.get(index);
+  requireValue(typeof name === 'string', `unknown step index ${index}`);
+  return name;
 }
 
 export async function validatePhase1EvidencePack(packDirectory, options = {}) {
@@ -98,8 +113,8 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   requireValue(Array.isArray(template.steps) && template.steps.length === 5,
       'template must list five A2 steps');
   template.steps.forEach((step, index) => {
-    requireValue(step.id === STEP_IDS[index] && step.name === STEP_NAMES[index],
-        `step ${index} must be ${STEP_IDS[index]}/${STEP_NAMES[index]}`);
+    requireValue(step.id === stepIdAt(index) && step.name === stepNameAt(index),
+        `step ${index} must be ${stepIdAt(index)}/${stepNameAt(index)}`);
     requireValue(VERDICTS.includes(step.verdict), `step ${step.id} verdict invalid`);
   });
   requireValue(template.deviceEvidence?.status === 'NOT_RUN',
@@ -130,8 +145,8 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
         'manifest must list five steps');
     const candidate8 = manifest.candidate.sourceSha.slice(0, 8);
     for (let index = 0; index < 5; index += 1) {
-      const step = manifest.steps[index];
-      requireValue(step.id === STEP_IDS[index] && step.name === STEP_NAMES[index],
+      const step = manifest.steps.at(index);
+      requireValue(step && step.id === stepIdAt(index) && step.name === stepNameAt(index),
           `manifest step ${index} id/name mismatch`);
       requireValue(isValidCorrelationId(step.correlationId),
           `invalid correlationId for ${step.id}`);
@@ -261,7 +276,7 @@ export async function inspectFaultFixturePresent(repoRoot) {
 export async function main(argv = process.argv.slice(2)) {
   const checkIndex = argv.indexOf('--check');
   if (checkIndex < 0 || !argv[checkIndex + 1]) {
-    console.error('usage: node ios-access-phase1-evidence.mjs --check <pack-dir>');
+    console.error('usage: node ios-access-phase1-evidence.mjs --check PACK_DIR');
     process.exitCode = 2;
     return;
   }
@@ -274,7 +289,7 @@ export async function main(argv = process.argv.slice(2)) {
   console.log(JSON.stringify({...result, faultFixturePresent: fault.present}, null, 2));
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => {
     console.error(`FAIL: ${error.message}`);
     process.exitCode = 1;

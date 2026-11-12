@@ -433,7 +433,7 @@ final class AegisUITests: XCTestCase {
         XCTAssertTrue(url.waitForExistence(timeout: 5))
         url.tap(); url.clearAndType("http://127.0.0.1:8768/download.bin")
         let hash = app.textFields["download-hash"]
-        hash.tap(); hash.clearAndType("e05bc4162ba70780d59dc6831e0981cf70e317c6ee9825afa5c6915e3a77126c")
+        hash.tap(); hash.clearAndType("098e36bb4a85fa669a62d326a22df3f7faf838741b9d1e5f81ee3056dad58436")
         app.buttons["start-download"].tap()
         XCTAssertTrue(scrollUntilVisible(app.buttons["save-download-file"].firstMatch, in: app))
         XCTAssertTrue(app.staticTexts["与预期 SHA-256 一致。"].waitForExistence(timeout: 20))
@@ -518,8 +518,8 @@ final class AegisUITests: XCTestCase {
         let save = app.buttons.matching(NSPredicate(format: "label == '保存' OR label == '存储' OR label == 'Save' OR label == '儲存'")).firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 8))
         attachScreenshot("工作区系统文件导出", app)
-        let filename = app.textFields["DOCPicker.filenameTextField"]
-        XCTAssertTrue(filename.waitForExistence(timeout: 5))
+        let filename = systemExportFilenameField(in: app)
+        XCTAssertTrue(filename.waitForExistence(timeout: 5), "系统导出文件名控件未出现")
         filename.tap(); filename.clearAndType("Aegis-workspace-test-" + UUID().uuidString)
         save.tap()
         XCTAssertTrue(app.staticTexts["工作区文件已保存。"].waitForExistence(timeout: 8))
@@ -1266,6 +1266,16 @@ final class AegisUITests: XCTestCase {
         let address = app.textFields["address-field"]
         XCTAssertTrue(address.waitForExistence(timeout: 8))
         address.tap(); address.clearAndType(url); address.typeText("\n")
+    }
+
+    /// The system exporter still has to expose a filename field. iOS 26 no longer
+    /// always uses `DOCPicker.filenameTextField`; the default name remains the field.
+    private func systemExportFilenameField(in app: XCUIApplication) -> XCUIElement {
+        let identified = app.textFields["DOCPicker.filenameTextField"]
+        if identified.exists { return identified }
+        let named = app.textFields.matching(NSPredicate(format: "value BEGINSWITH 'Aegis'")).firstMatch
+        if named.exists { return named }
+        return identified
     }
 
     private func attachScreenshot(_ name: String, _ app: XCUIApplication) {
