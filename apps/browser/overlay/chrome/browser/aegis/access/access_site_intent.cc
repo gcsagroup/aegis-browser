@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/strings/string_util.h"
+#include "net/base/schemeful_site.h"
 #include "url/gurl.h"
 
 namespace aegis::access {
@@ -59,7 +60,15 @@ std::string StripToHostCandidate(std::string_view raw) {
   if (!text.empty() && text.front() == '[') {
     const size_t end = text.find(']');
     if (end != std::string::npos) {
-      text = text.substr(1, end - 1);
+      const std::string_view suffix = std::string_view(text).substr(end + 1);
+      if (!suffix.empty() &&
+          (suffix.front() != ':' || suffix.size() == 1 ||
+           !std::ranges::all_of(suffix.substr(1), [](unsigned char character) {
+             return base::IsAsciiDigit(character);
+           }))) {
+        return text;
+      }
+      text.resize(end + 1);
     }
   } else {
     const size_t colon = text.rfind(':');
@@ -99,6 +108,7 @@ SiteProxyRuleMember MakeMember(const AccessSiteIntentMutationInput& input,
       mode == AccessMode::kProxy ? input.proxy_group_id : std::string();
   member.protection_override = ProtectionOverride::kNone;
   member.last_operation_sequence = 0;
+  member.scope = input.website_context ? PolicyScope::kWebsite : PolicyScope::kSite;
   return member;
 }
 
@@ -158,6 +168,12 @@ AccessSiteHostResult MakeAccessSiteHost(std::string_view exact_host) {
 AccessSiteHostResult NormalizeAccessSiteHost(std::string_view raw) {
   return MakeAccessSiteHost(StripToHostCandidate(raw));
 }
+AccessSiteHostResult CanonicalWebsiteHost(const AccessSiteHost& host) {
+  const auto checked = MakeAccessSiteHost(host.value);
+  if (!checked.host) return checked;
+  return MakeAccessSiteHost(net::SchemefulSite(GURL("https://" + host.value))
+                                .GetURL().host());
+}
 
 std::optional<aegis_access::AccessMode> OrdinaryAccessModeForIntent(
     AccessSiteIntent intent) {
@@ -188,6 +204,10 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
     result.status = AccessSiteIntentMutationStatus::kInvalidHost;
     return result;
   }
+  if (input.website_context && CanonicalWebsiteHost(input.host).host != input.host) {
+    result.status = AccessSiteIntentMutationStatus::kInvalidHost;
+    return result;
+  }
 
   if (input.intent == AccessSiteIntent::kBlock) {
     result.status = AccessSiteIntentMutationStatus::kBlockNotOrdinary;
@@ -208,8 +228,13 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
     return result;
   }
 
-  const std::string http_site = "http://" + input.host.value;
-  const std::string https_site = "https://" + input.host.value;
+  // The rule still matches this exact destination host. Its top-level site
+  // uses Chromium's registrable-site identity, as required by the store and
+  // by the trusted request metadata (e.g. www.example.com -> example.com).
+  const std::string http_site =
+      net::SchemefulSite(GURL("http://" + input.host.value)).Serialize();
+  const std::string https_site =
+      net::SchemefulSite(GURL("https://" + input.host.value)).Serialize();
 
   SiteGroupMutationRequest request;
   request.operation_id = input.operation_id;
@@ -223,6 +248,7 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
       .https_top_level_site = https_site,
       .member_rule_ids = {input.site_toggle_id + ":http",
                           input.site_toggle_id + ":https"},
+      .website_context = input.website_context,
   };
   request.candidate_members = {
       MakeMember(input, "http", http_site, *mode),
@@ -234,6 +260,9 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
   result.request = std::move(request);
   return result;
 }
+
+AccessSiteIntentStore::AccessSiteIntentStore() = default;
+AccessSiteIntentStore::~AccessSiteIntentStore() = default;
 
 AccessSiteIntent AccessSiteIntentStore::Get(const AccessSiteHost& host) const {
   const auto it = values_.find(host);

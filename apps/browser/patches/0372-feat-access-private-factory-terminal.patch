@@ -1,0 +1,291 @@
+From 2c654c9e9859d14ece4eab365387afc0e83ea7a0 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 11:35:57 +0800
+Subject: [PATCH] feat(access): preserve security parameters through private
+ factory terminal
+
+---
+ components/aegis_access/BUILD.gn              |  22 ++++
+ .../aegis_access/access_network_test_main.cc  |  10 ++
+ .../access_terminal_factory_unittest.cc       | 106 ++++++++++++++++++
+ .../public/cpp/url_loader_factory_builder.cc  |  22 +++-
+ .../public/cpp/url_loader_factory_builder.h   |  20 +++-
+ 5 files changed, 175 insertions(+), 5 deletions(-)
+ create mode 100644 components/aegis_access/access_network_test_main.cc
+ create mode 100644 components/aegis_access/access_terminal_factory_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 7678e9d21a4e8c5c05cd2102ac8ca2b350ebbce2..47c0d18cd757b959d55bf4fab7b6407da4cbdc84 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -351,3 +351,25 @@ source_set("request_ownership_registry_test_support") {
+     ":request_ownership_registry_unittests",
+   ]
+ }
++
++// Exercises the Browser-only terminal hook without changing factory security.
++test("access_terminal_factory_unittests") {
++  sources = [
++    "access_network_test_main.cc",
++    "access_terminal_factory_unittest.cc",
++    "//services/network/public/cpp/url_loader_factory_builder_unittest.cc",
++  ]
++  deps = [
++    "//base",
++    "//base/test:test_support",
++    "//mojo/core/embedder",
++    "//mojo/public/cpp/bindings",
++    "//net",
++    "//services/network:test_support",
++    "//services/network/public/cpp",
++    "//services/network/public/mojom",
++    "//testing/gmock",
++    "//testing/gtest",
++    "//url",
++  ]
++}
+diff --git a/components/aegis_access/access_network_test_main.cc b/components/aegis_access/access_network_test_main.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d1d9f8f1efd27f33ba1806d0ec8a55ab48500a1
+--- /dev/null
++++ b/components/aegis_access/access_network_test_main.cc
+@@ -0,0 +1,10 @@
++#include "base/functional/bind.h"
++#include "base/test/launcher/unit_test_launcher.h"
++#include "base/test/test_suite.h"
++#include "mojo/core/embedder/embedder.h"
++int main(int argc, char** argv) {
++  base::TestSuite test_suite(argc, argv);
++  mojo::core::Init();
++  return base::LaunchUnitTests(argc, argv,
++      base::BindOnce(&base::TestSuite::Run, base::Unretained(&test_suite)));
++}
+diff --git a/components/aegis_access/access_terminal_factory_unittest.cc b/components/aegis_access/access_terminal_factory_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..84b8874626b655e376b0d3308da8f495e11c0765
+--- /dev/null
++++ b/components/aegis_access/access_terminal_factory_unittest.cc
+@@ -0,0 +1,106 @@
++// Copyright 2026 GCSA
++#include "services/network/public/cpp/url_loader_factory_builder.h"
++
++#include "base/functional/bind.h"
++#include "base/test/gtest_util.h"
++#include "base/test/bind.h"
++#include "base/test/task_environment.h"
++#include "mojo/core/embedder/embedder.h"
++#include "services/network/test/test_network_context.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace network {
++namespace {
++class AccessTerminalFactoryTest : public testing::Test {
++ protected:
++  AccessTerminalFactoryTest() { mojo::core::Init(); }
++  base::test::SingleThreadTaskEnvironment environment_;
++  TestNetworkContext context_;
++};
++
++TEST_F(AccessTerminalFactoryTest, PrivateTerminalRequiresFreshFactory) {
++  URLLoaderFactoryBuilder builder;
++  EXPECT_FALSE(builder.RequiresFreshFactory());
++  builder.SetTerminalFactoryInterceptor(base::BindOnce(
++      [](mojo::PendingReceiver<mojom::URLLoaderFactory>, mojom::NetworkContext*,
++         mojom::URLLoaderFactoryParamsPtr) {}));
++  EXPECT_TRUE(builder.RequiresFreshFactory());
++  builder.SetTargetNetwork(net::handles::kInvalidNetworkHandle);
++  EXPECT_TRUE(builder.RequiresFreshFactory());
++}
++
++TEST_F(AccessTerminalFactoryTest, EmptyBuilderPreservesExactSecurityParameters) {
++  URLLoaderFactoryBuilder builder;
++  auto params = mojom::URLLoaderFactoryParams::New();
++  params->is_trusted = false;
++  params->request_initiator_origin_lock = url::Origin::Create(GURL("https://a.test"));
++  auto* original_params = params.get();
++  int calls = 0;
++  builder.SetTerminalFactoryInterceptor(base::BindLambdaForTesting(
++      [&](mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
++          mojom::NetworkContext* context, mojom::URLLoaderFactoryParamsPtr passed) {
++        ++calls;
++        EXPECT_TRUE(receiver.is_valid());
++        EXPECT_EQ(context, &context_);
++        EXPECT_EQ(passed.get(), original_params);
++        EXPECT_FALSE(passed->is_trusted);
++        EXPECT_EQ(passed->request_initiator_origin_lock,
++                  url::Origin::Create(GURL("https://a.test")));
++      }));
++  auto result = std::move(builder).Finish<mojo::PendingRemote<mojom::URLLoaderFactory>>(
++      &context_, std::move(params));
++  EXPECT_TRUE(result.is_valid());
++  EXPECT_EQ(calls, 1);
++}
++
++TEST_F(AccessTerminalFactoryTest, ReceiverFinishPreservesTargetNetwork) {
++  URLLoaderFactoryBuilder builder;
++  builder.SetTargetNetwork(37);
++  int calls = 0;
++  builder.SetTerminalFactoryInterceptor(base::BindLambdaForTesting(
++      [&](mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
++          mojom::NetworkContext*, mojom::URLLoaderFactoryParamsPtr params) {
++        EXPECT_TRUE(receiver.is_valid());
++        EXPECT_EQ(params->target_network, 37);
++        ++calls;
++      }));
++  mojo::PendingRemote<mojom::URLLoaderFactory> remote;
++  std::move(builder).Finish(remote.InitWithNewPipeAndPassReceiver(), &context_,
++                            mojom::URLLoaderFactoryParams::New());
++  EXPECT_EQ(calls, 1);
++}
++
++TEST_F(AccessTerminalFactoryTest, InterceptorChainRetainsTerminalOverrideAfterMove) {
++  URLLoaderFactoryBuilder builder;
++  auto [receiver, tail] = builder.Append();
++  int calls = 0;
++  builder.SetTerminalFactoryInterceptor(base::BindLambdaForTesting(
++      [&](mojo::PendingReceiver<mojom::URLLoaderFactory> terminal_receiver,
++          mojom::NetworkContext*, mojom::URLLoaderFactoryParamsPtr) {
++        EXPECT_TRUE(terminal_receiver.is_valid());
++        ++calls;
++      }));
++  URLLoaderFactoryBuilder moved = std::move(builder);
++  EXPECT_EQ(moved.num_interceptors(), 1u);
++  EXPECT_TRUE(moved.RequiresFreshFactory());
++  auto result = std::move(moved).Finish<mojo::PendingRemote<mojom::URLLoaderFactory>>(
++      &context_, mojom::URLLoaderFactoryParams::New());
++  EXPECT_TRUE(result.is_valid());
++  EXPECT_TRUE(receiver.is_valid());
++  EXPECT_TRUE(tail.is_valid());
++  EXPECT_EQ(calls, 1);
++}
++
++TEST_F(AccessTerminalFactoryTest, RejectsAlreadyCreatedTerminal) {
++  EXPECT_CHECK_DEATH({
++    URLLoaderFactoryBuilder builder;
++    builder.SetTerminalFactoryInterceptor(base::BindOnce(
++        [](mojo::PendingReceiver<mojom::URLLoaderFactory>, mojom::NetworkContext*,
++           mojom::URLLoaderFactoryParamsPtr) {}));
++    mojo::PendingRemote<mojom::URLLoaderFactory> terminal;
++    auto receiver = terminal.InitWithNewPipeAndPassReceiver();
++    auto result = std::move(builder).Finish(std::move(terminal));
++  });
++}
++}  // namespace
++}  // namespace network
+diff --git a/services/network/public/cpp/url_loader_factory_builder.cc b/services/network/public/cpp/url_loader_factory_builder.cc
+index adc9e8893e1b25296db3dc65844c314ad56b0718..d7a39790c3e8e036f0a7717cb8d1079e2100da04 100644
+--- a/services/network/public/cpp/url_loader_factory_builder.cc
++++ b/services/network/public/cpp/url_loader_factory_builder.cc
+@@ -46,8 +46,16 @@ void URLLoaderFactoryBuilder::SetTargetNetwork(
+   target_network_ = target_network;
+ }
+ 
++void URLLoaderFactoryBuilder::SetTerminalFactoryInterceptor(
++    TerminalFactoryInterceptor interceptor) {
++  CHECK(interceptor);
++  CHECK(!terminal_factory_interceptor_);
++  terminal_factory_interceptor_ = std::move(interceptor);
++}
++
+ bool URLLoaderFactoryBuilder::RequiresFreshFactory() const {
+-  return target_network_ != net::handles::kInvalidNetworkHandle;
++  return target_network_ != net::handles::kInvalidNetworkHandle ||
++         !terminal_factory_interceptor_.is_null();
+ }
+ 
+ bool URLLoaderFactoryBuilder::IsEmpty() const {
+@@ -68,6 +76,8 @@ bool URLLoaderFactoryBuilder::IsEmpty() const {
+ void URLLoaderFactoryBuilder::ConnectTerminal(
+     mojo::PendingReceiver<mojom::URLLoaderFactory> pending_receiver,
+     mojo::Remote<mojom::URLLoaderFactory> terminal_factory) {
++  CHECK(!terminal_factory_interceptor_)
++      << "Private terminal requires a fresh NetworkContext factory.";
+   CHECK_EQ(target_network_, net::handles::kInvalidNetworkHandle)
+       << "target_network set on builder but terminal is an already created "
+          "factory.";
+@@ -77,6 +87,8 @@ void URLLoaderFactoryBuilder::ConnectTerminal(
+ void URLLoaderFactoryBuilder::ConnectTerminal(
+     mojo::PendingReceiver<mojom::URLLoaderFactory> pending_receiver,
+     mojo::PendingRemote<mojom::URLLoaderFactory> terminal_factory) {
++  CHECK(!terminal_factory_interceptor_)
++      << "Private terminal requires a fresh NetworkContext factory.";
+   CHECK_EQ(target_network_, net::handles::kInvalidNetworkHandle)
+       << "target_network set on builder but terminal is an already created "
+          "factory.";
+@@ -87,6 +99,8 @@ void URLLoaderFactoryBuilder::ConnectTerminal(
+ void URLLoaderFactoryBuilder::ConnectTerminal(
+     mojo::PendingReceiver<mojom::URLLoaderFactory> pending_receiver,
+     scoped_refptr<SharedURLLoaderFactory> terminal_factory) {
++  CHECK(!terminal_factory_interceptor_)
++      << "Private terminal requires a fresh NetworkContext factory.";
+   CHECK_EQ(target_network_, net::handles::kInvalidNetworkHandle)
+       << "target_network set on builder but terminal is an already created "
+          "factory.";
+@@ -100,6 +114,12 @@ void URLLoaderFactoryBuilder::ConnectTerminal(
+   if (target_network_ != net::handles::kInvalidNetworkHandle) {
+     factory_param->target_network = target_network_;
+   }
++  if (terminal_factory_interceptor_) {
++    std::move(terminal_factory_interceptor_)
++        .Run(std::move(pending_receiver), terminal_context,
++             std::move(factory_param));
++    return;
++  }
+   terminal_context->CreateURLLoaderFactory(std::move(pending_receiver),
+                                            std::move(factory_param));
+ }
+diff --git a/services/network/public/cpp/url_loader_factory_builder.h b/services/network/public/cpp/url_loader_factory_builder.h
+index f0e41b291984b1a92f194e3dec1a453062ede9b9..9e7dcccedd50320099000b5e1aec3f9214d4b1d6 100644
+--- a/services/network/public/cpp/url_loader_factory_builder.h
++++ b/services/network/public/cpp/url_loader_factory_builder.h
+@@ -8,6 +8,7 @@
+ #include <tuple>
+ 
+ #include "base/component_export.h"
++#include "base/functional/callback.h"
+ #include "mojo/public/cpp/bindings/pending_receiver.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+@@ -73,6 +74,16 @@ class COMPONENT_EXPORT(NETWORK_CPP) URLLoaderFactoryBuilder final {
+ 
+   void SetTargetNetwork(net::handles::NetworkHandle target_network);
+ 
++  // Browser-side terminal replacement for private NetworkContext factories.
++  // Runs exactly once at Finish, after target_network is applied, with the
++  // original factory security parameters and interceptor chain intact. It
++  // must bind the receiver; dropping it fails closed. A pre-existing terminal
++  // cannot be reused when this hook is installed.
++  using TerminalFactoryInterceptor = base::OnceCallback<void(
++      mojo::PendingReceiver<mojom::URLLoaderFactory>,
++      mojom::NetworkContext*, mojom::URLLoaderFactoryParamsPtr)>;
++  void SetTerminalFactoryInterceptor(TerminalFactoryInterceptor interceptor);
++
+   // Whether a new URLLoaderFactory has to be created, or an existing
+   // SharedURLLoaderFactory can be reused.
+   bool RequiresFreshFactory() const;
+@@ -91,10 +102,9 @@ class COMPONENT_EXPORT(NETWORK_CPP) URLLoaderFactoryBuilder final {
+   template <typename OutType = scoped_refptr<SharedURLLoaderFactory>,
+             typename... Args>
+   [[nodiscard]] OutType Finish(Args... terminal_args) && {
+-    if (target_network_ != net::handles::kInvalidNetworkHandle && IsEmpty()) {
+-      // If `target_network_` is set, prevent short-circuiting the call to
+-      // `ConnectTerminal` when the builder has no interceptors. This is
+-      // necessary because `ConnectTerminal` is what handles `target_network_`.
++    if (RequiresFreshFactory() && IsEmpty()) {
++      // Prevent bypassing target-network handling or the private terminal
++      // interceptor when this builder has no ordinary interceptors.
+       // This is done by adding an "empty" interceptor when the builder would
+       // otherwise have none (i.e. `IsEmpty()` returns true).
+       tail_ = head_.InitWithNewPipeAndPassReceiver();
+@@ -178,6 +188,8 @@ class COMPONENT_EXPORT(NETWORK_CPP) URLLoaderFactoryBuilder final {
+   net::handles::NetworkHandle target_network_ =
+       net::handles::kInvalidNetworkHandle;
+ 
++  TerminalFactoryInterceptor terminal_factory_interceptor_;
++
+   size_t num_interceptors_ = 0;
+ };
+ 
+-- 
+2.54.0 (Apple Git-157)
+

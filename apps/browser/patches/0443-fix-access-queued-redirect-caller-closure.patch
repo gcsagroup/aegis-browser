@@ -1,0 +1,29 @@
+From 70ae889a64059b22dd2a9c064d341d3bf863328f Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 13:24:24 +0800
+Subject: [PATCH] fix(access): reject closed callers at redirect readiness
+
+---
+ .../aegis/access/access_proxying_url_tracked_request.cc      | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+index f49d52d65d90fa46a8a80699cf04c2e086a76df6..397862ff13decb4dae497c402d5bfddd09777a5c 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+@@ -152,7 +152,12 @@ void AccessProxyingURLTrackedRequest::OnRedirectPrepared(
+     network::HttpRequestHeadersUpdateParams headers,
+     std::optional<GURL> new_url, GURL follow_url, bool ready) {
+   redirect_preparation_pending_ = false;
++  // A ready callback can precede the queued disconnect notification. Observe
++  // both caller peers synchronously before registering or sending another hop.
+   if (finished_ || !ready || !pending_redirect_url_ ||
++      !loader_receiver_.is_bound() || !target_client_.is_bound() ||
++      loader_receiver_.internal_state()->handle().QuerySignalsState().peer_closed() ||
++      target_client_.internal_state()->handle().QuerySignalsState().peer_closed() ||
+       !target_loader_.is_bound() ||
+       (private_route_ && !private_control_.is_connected())) {
+     FailClosed(/*complete_registry=*/true);
+-- 
+2.54.0 (Apple Git-157)
+

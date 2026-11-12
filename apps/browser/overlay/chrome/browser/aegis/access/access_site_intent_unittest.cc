@@ -51,6 +51,22 @@ TEST(AccessSiteIntentTest, NormalizesExactHostLikeSiteGroup) {
   EXPECT_EQ(MakeAccessSiteHost("").status, AccessSiteHostStatus::kEmpty);
 }
 
+TEST(AccessSiteIntentTest, KeepsCanonicalIpv6BracketsForTrustedSites) {
+  const auto url = NormalizeAccessSiteHost("https://[2001:db8::1]:8443/path?q=1");
+  ASSERT_EQ(url.status, AccessSiteHostStatus::kOk);
+  EXPECT_EQ(url.host->value, "[2001:db8::1]");
+  const auto local = NormalizeAccessSiteHost("[::1]:443");
+  ASSERT_EQ(local.status, AccessSiteHostStatus::kOk);
+  EXPECT_EQ(local.host->value, "[::1]");
+}
+
+TEST(AccessSiteIntentTest, DoesNotDiscardInvalidIpv6SuffixOrMissingBracket) {
+  for (const auto* host : {"[::1]junk", "[::1]:wrong", "[::1", "2001:db8::1"}) {
+    SCOPED_TRACE(host);
+    EXPECT_NE(NormalizeAccessSiteHost(host).status, AccessSiteHostStatus::kOk);
+  }
+}
+
 TEST(AccessSiteIntentTest, MapsIntentOntoOrdinaryCoordinatorModes) {
   EXPECT_EQ(OrdinaryAccessModeForIntent(AccessSiteIntent::kAllow),
             AccessMode::kProxy);
@@ -117,6 +133,54 @@ TEST(AccessSiteIntentTest, StoreDefaultsOffAndOmitsOffEntries) {
   store.Set(host, AccessSiteIntent::kOff);
   EXPECT_EQ(store.Get(host), AccessSiteIntent::kOff);
   EXPECT_TRUE(store.All().empty());
+}
+
+TEST(AccessSiteIntentTest, SubdomainRulesUseCanonicalSitesButKeepExactHostScope) {
+  struct Case {
+    const char* host;
+    const char* site_host;
+  };
+  for (const auto& [host, site_host] :
+       {Case{"www.google.com", "google.com"},
+        Case{"news.example.co.uk", "example.co.uk"},
+        Case{"project.github.io", "project.github.io"},
+        Case{"[::1]", "[::1]"}}) {
+    SCOPED_TRACE(host);
+    AccessSiteIntentMutationInput input;
+    input.host = Host(host);
+    input.owner = TestOwner();
+    input.site_toggle_id = "toggle";
+    input.operation_id = "op";
+    input.request_fingerprint = "fingerprint";
+    input.intent = AccessSiteIntent::kAllow;
+    input.proxy_group_id = "proxy-group";
+    auto result = BuildOrdinarySiteGroupMutation(input);
+    ASSERT_EQ(result.status, AccessSiteIntentMutationStatus::kReady);
+    ASSERT_TRUE(result.request);
+    const auto& request = *result.request;
+    EXPECT_EQ(request.candidate_group.canonical_host, host);
+    EXPECT_EQ(request.candidate_group.http_top_level_site,
+              "http://" + std::string(site_host));
+    EXPECT_EQ(request.candidate_group.https_top_level_site,
+              "https://" + std::string(site_host));
+    ASSERT_EQ(request.candidate_members.size(), 2u);
+    for (const auto& member : request.candidate_members) {
+      EXPECT_EQ(member.exact_host, host);
+      EXPECT_FALSE(member.include_subdomains);
+    }
+    EXPECT_EQ(request.candidate_members[0].top_level_site,
+              request.candidate_group.http_top_level_site);
+    EXPECT_EQ(request.candidate_members[1].top_level_site,
+              request.candidate_group.https_top_level_site);
+  }
+}
+
+TEST(AccessSiteIntentTest, WebsiteAnchorUsesPrivateSuffixAndIpBoundaries) {
+  EXPECT_EQ(CanonicalWebsiteHost({"www.example.com"}).host, (AccessSiteHost{"example.com"}));
+  EXPECT_EQ(CanonicalWebsiteHost({"sub.tenant.github.io"}).host,
+            (AccessSiteHost{"tenant.github.io"}));
+  EXPECT_EQ(CanonicalWebsiteHost({"127.0.0.1"}).host, (AccessSiteHost{"127.0.0.1"}));
+  EXPECT_FALSE(CanonicalWebsiteHost({"https://example.com/path"}).host);
 }
 
 }  // namespace

@@ -1,0 +1,38 @@
+From 37ec2e57566a616dc9d7954d10c5cc6a22c9f9d4 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 16:48:37 +0800
+Subject: [PATCH] fix(access): iterate generation test members without raw
+ indexing
+
+---
+ .../access_network_route_registry_unittest.cc       | 13 ++++++-------
+ 1 file changed, 6 insertions(+), 7 deletions(-)
+
+diff --git a/components/aegis_access/access_network_route_registry_unittest.cc b/components/aegis_access/access_network_route_registry_unittest.cc
+index d4d9a76d1aeff3020fb36d2d829e180dba1eff87..4328178d4513b24bd012c54f8561579ca38fd158 100644
+--- a/components/aegis_access/access_network_route_registry_unittest.cc
++++ b/components/aegis_access/access_network_route_registry_unittest.cc
+@@ -76,14 +76,13 @@ TEST(AccessNetworkRouteRegistryTest, RejectsForeignOwnerAndStaleIncarnation) {
+ TEST(AccessNetworkRouteRegistryTest, EveryGenerationAndRegistrationIsBound) {
+   AccessRouteRegistry registry(Owner(), "incarnation");
+   ASSERT_TRUE(registry.Install(1, Snapshot()));
+-  for (int i = 0; i < 5; ++i) {
++  for (auto field : {&GenerationTuple::policy_generation,
++                     &GenerationTuple::identity_generation,
++                     &GenerationTuple::selection_generation,
++                     &GenerationTuple::network_epoch,
++                     &GenerationTuple::base_proxy_config_generation}) {
+     auto expected = Expected();
+-    uint64_t* fields[] = {&expected.generations.policy_generation,
+-                         &expected.generations.identity_generation,
+-                         &expected.generations.selection_generation,
+-                         &expected.generations.network_epoch,
+-                         &expected.generations.base_proxy_config_generation};
+-    ++*fields[i];
++    ++(expected.generations.*field);
+     EXPECT_NE(registry.Resolve(Metadata(), Target(), expected).net_error, net::OK);
+   }
+   auto expected = Expected();
+-- 
+2.54.0 (Apple Git-157)
+

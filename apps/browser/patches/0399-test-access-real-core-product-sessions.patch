@@ -1,0 +1,385 @@
+From c8f27bfea7a64ee957e35f8f4fbdbb10d223d39c Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 20:28:43 +0800
+Subject: [PATCH] test(access): exercise product sessions with real managed
+ core and private ACK
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   6 +-
+ .../access_service_coordinator_unittest.cc    | 111 ---------
+ .../access_site_proxy_product_unittest.cc     | 217 ++++++++++++++++++
+ 3 files changed, 222 insertions(+), 112 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 09595735704b55b02abc0e1c9d3f8308e72ca53e..264c345edbc6bfdcd8cc5db3b80f9a20c7832bc3 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -375,7 +375,10 @@ test("access_site_dev_allow_block_panel_unittests") {
+ }
+ 
+ test("access_service_coordinator_unittests") {
+-  sources = [ "access_service_coordinator_unittest.cc" ]
++  sources = [
++    "access_service_coordinator_unittest.cc",
++    "access_site_proxy_product_unittest.cc",
++  ]
+   deps = [
+     ":access_site_proxy_bubble",
+     ":access_network_context_transport",
+@@ -383,6 +386,7 @@ test("access_service_coordinator_unittests") {
+     ":access_proxy_selection_generation_source",
+     "//mojo/public/cpp/bindings",
+     "//services/network/public/mojom",
++    "//services/network:test_support",
+     ":access_service_coordinator",
+     "//build:chromeos_buildflags",
+     "//chrome/browser/profiles:test_support",
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+index 9851086abb1166e7ce36f03c020de1fd31fde641..c20ad1d6a48936ec84da807e86ba3930464d453f 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -260,117 +260,6 @@ class AccessMutationTransactionTest : public AccessServiceCoordinatorTest {
+   std::unique_ptr<HeldPolicyClient> client_;
+ };
+ 
+-TEST_F(AccessMutationTransactionTest, BubbleOnOffOnUsesCommittedRevision) {
+-  ConfigurePrimaryProxyGroup();
+-  auto* bubble = AccessSiteProxyBubbleController::GetOrCreate(profile_.get());
+-  const AccessSiteHost host{"news.example"};
+-  uint64_t previous_generation = 0;
+-  for (bool enabled : {true, false, true}) {
+-    ASSERT_TRUE(bubble->RequestHostProxySession(host, enabled));
+-    task_environment_.RunUntilIdle();
+-    ASSERT_TRUE(client_->reply);
+-    const auto before_ack = bubble->state_revision();
+-    std::move(client_->reply).Run(true);
+-    task_environment_.RunUntilIdle();
+-    EXPECT_GT(bubble->state_revision(), before_ack);
+-    const auto state = bubble->SnapshotForCommittedUrl(GURL("https://news.example"));
+-    EXPECT_EQ(state.connection, enabled ? AccessSiteConnectionState::kReady
+-                                       : AccessSiteConnectionState::kIdle);
+-    EXPECT_TRUE(state.failure_reason.empty());
+-    const auto stored = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
+-    ASSERT_TRUE(stored.value);
+-    EXPECT_GT(stored.value->policy_generation, previous_generation);
+-    previous_generation = stored.value->policy_generation;
+-  }
+-}
+-
+-TEST_F(AccessMutationTransactionTest, BubbleFailedAckCanRetryAndRecoveryRepublishes) {
+-  ConfigurePrimaryProxyGroup();
+-  auto* bubble = AccessSiteProxyBubbleController::GetOrCreate(profile_.get());
+-  const AccessSiteHost host{"news.example"};
+-  ASSERT_TRUE(bubble->RequestHostProxySession(host, true));
+-  task_environment_.RunUntilIdle();
+-  ASSERT_TRUE(client_->reply);
+-  std::move(client_->reply).Run(false);
+-  task_environment_.RunUntilIdle();
+-  EXPECT_TRUE(coordinator_->has_retained_store());
+-  EXPECT_EQ(bubble->SnapshotForCommittedUrl(GURL("https://news.example")).connection,
+-            AccessSiteConnectionState::kUnavailable);
+-  for (int recovery = 0; recovery != 2; ++recovery) {
+-    ASSERT_TRUE(bubble->RecoverHostProxySession(host));
+-    task_environment_.RunUntilIdle();
+-    // An old committed journal must not turn a new recovery into ready.
+-    ASSERT_TRUE(client_->reply);
+-    EXPECT_EQ(bubble->SnapshotForCommittedUrl(GURL("https://news.example")).connection,
+-              AccessSiteConnectionState::kConnecting);
+-    std::move(client_->reply).Run(true);
+-    task_environment_.RunUntilIdle();
+-    EXPECT_EQ(bubble->SnapshotForCommittedUrl(GURL("https://news.example")).connection,
+-              AccessSiteConnectionState::kReady);
+-  }
+-}
+-
+-TEST_F(AccessMutationTransactionTest, BubbleReusesStoreRetainedAfterPrepareFailure) {
+-  ConfigurePrimaryProxyGroup();
+-  auto invalid = Mutation();
+-  invalid.expected_revision = 99;
+-  base::test::TestFuture<AccessMutationTransactionResult> rejected;
+-  coordinator_->CommitSiteGroupMutation(OpenStore(), invalid, Selector(), rejected.GetCallback());
+-  ASSERT_TRUE(rejected.Wait());
+-  ASSERT_EQ(rejected.Get().status, AccessMutationTransactionStatus::kPrepareFailed);
+-  ASSERT_TRUE(coordinator_->has_retained_store());
+-  auto* bubble = AccessSiteProxyBubbleController::GetOrCreate(profile_.get());
+-  ASSERT_TRUE(bubble->RequestHostProxySession({"news.example"}, true));
+-  task_environment_.RunUntilIdle();
+-  ASSERT_TRUE(client_->reply);
+-  std::move(client_->reply).Run(true);
+-  task_environment_.RunUntilIdle();
+-  EXPECT_EQ(bubble->SnapshotForCommittedUrl(GURL("https://news.example")).connection,
+-            AccessSiteConnectionState::kReady);
+-}
+-
+-TEST_F(AccessMutationTransactionTest, BubbleCanDisableAfterEndpointIsUnavailable) {
+-  ConfigurePrimaryProxyGroup();
+-  auto* bubble = AccessSiteProxyBubbleController::GetOrCreate(profile_.get());
+-  ASSERT_TRUE(bubble->RequestHostProxySession({"news.example"}, true));
+-  task_environment_.RunUntilIdle();
+-  ASSERT_TRUE(client_->reply);
+-  std::move(client_->reply).Run(true);
+-  task_environment_.RunUntilIdle();
+-  ASSERT_TRUE(transport_->ClearProxySelection({}));
+-  ASSERT_TRUE(bubble->RequestHostProxySession({"news.example"}, false));
+-  task_environment_.RunUntilIdle();
+-  ASSERT_TRUE(client_->reply);
+-  std::move(client_->reply).Run(true);
+-  task_environment_.RunUntilIdle();
+-  const auto state = bubble->SnapshotForCommittedUrl(GURL("https://news.example"));
+-  EXPECT_EQ(state.intent, AccessSiteIntent::kOff);
+-  EXPECT_TRUE(state.failure_reason.empty());
+-  const auto stored = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
+-  ASSERT_TRUE(stored.value);
+-  ASSERT_EQ(stored.value->site_groups.size(), 1u);
+-  EXPECT_EQ(stored.value->site_groups[0].members[0].policy.mode, AccessMode::kDirect);
+-}
+-
+-TEST_F(AccessMutationTransactionTest, BubbleHostFailuresAreIndependent) {
+-  auto* bubble = AccessSiteProxyBubbleController::GetOrCreate(profile_.get());
+-  ASSERT_TRUE(bubble->RequestHostProxySession({"news.example"}, true));
+-  const auto failed = bubble->SnapshotForCommittedUrl(GURL("https://news.example"));
+-  ASSERT_EQ(failed.connection, AccessSiteConnectionState::kUnavailable);
+-  ASSERT_FALSE(failed.failure_reason.empty());
+-  EXPECT_EQ(failed.intent, AccessSiteIntent::kOff);
+-  ASSERT_TRUE(bubble->RequestHostProxySession({"other.example"}, false));
+-  task_environment_.RunUntilIdle();
+-  ASSERT_TRUE(client_->reply);
+-  std::move(client_->reply).Run(true);
+-  task_environment_.RunUntilIdle();
+-  const auto still_failed = bubble->SnapshotForCommittedUrl(GURL("https://news.example"));
+-  EXPECT_EQ(still_failed.connection, failed.connection);
+-  EXPECT_EQ(still_failed.failure_reason, failed.failure_reason);
+-  EXPECT_EQ(bubble->SnapshotForCommittedUrl(GURL("https://other.example")).connection,
+-            AccessSiteConnectionState::kIdle);
+-}
+-
+ TEST_F(AccessMutationTransactionTest, PublishesPreparedThenCommitsOnlyAfterAck) {
+   auto store = OpenStore();
+   auto* pending_store = store.get();
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec4b89496f892c803753c0e8ababfeb3de19d8a4
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -0,0 +1,217 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
++
++#include "base/command_line.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/test/run_until.h"
++#include "base/test/scoped_run_loop_timeout.h"
++#include "base/test/test_future.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/browser/aegis/access/access_published_request_runtime.h"
++#include "chrome/test/base/testing_profile.h"
++#include "content/public/test/browser_task_environment.h"
++#include "mojo/public/cpp/bindings/receiver_set.h"
++#include "services/network/test/test_network_context.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++// Real Mojo ACK with an explicit hold at the product PREPARED boundary. The
++// core is not mocked: these tests require the authorized local DEV inputs.
++class ProductAckContext final : public network::TestNetworkContext,
++                                public network::mojom::AegisAccessContext {
++ public:
++  void BindAegisAccessContext(
++      mojo::PendingReceiver<network::mojom::AegisAccessContext> receiver,
++      BindAegisAccessContextCallback callback) override {
++    receivers_.Add(this, std::move(receiver));
++    std::move(callback).Run("product-test-context");
++  }
++  void InstallSnapshot(network::mojom::AegisAccessSnapshotPtr snapshot,
++                       InstallSnapshotCallback callback) override {
++    auto ack = network::mojom::AegisAccessSnapshotAck::New();
++    ack->accepted = true;
++    ack->owner = snapshot->owner.Clone();
++    ack->incarnation = snapshot->incarnation;
++    ack->sequence = snapshot->sequence;
++    ack->common_generations = snapshot->common_generations.Clone();
++    for (const auto& endpoint : snapshot->endpoints)
++      ack->registrations.push_back(
++          network::mojom::AegisAccessRegistrationAck::New(
++              endpoint->proxy_group_id, endpoint->registration_id,
++              endpoint->selection_generation));
++    for (const auto& group : snapshot->unavailable_groups)
++      ack->unavailable_groups.push_back(group.Clone());
++    if (hold_next) {
++      hold_next = false;
++      held_ack_ = std::move(ack);
++      held_reply_ = std::move(callback);
++    } else {
++      std::move(callback).Run(std::move(ack));
++    }
++  }
++  bool has_reply() const { return !!held_reply_; }
++  void Reply(bool accepted) {
++    CHECK(held_reply_);
++    held_ack_->accepted = accepted;
++    std::move(held_reply_).Run(std::move(held_ack_));
++  }
++  void BeginRestore(network::mojom::AegisAccessOwnerPtr, const std::string&,
++                    BeginRestoreCallback callback) override {
++    std::move(callback).Run(true);
++  }
++  void CreateFactory(
++      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderFactory>,
++      network::mojom::URLLoaderFactoryParamsPtr,
++      network::mojom::AegisAccessFactoryBindingPtr,
++      CreateFactoryCallback callback) override {
++    std::move(callback).Run(true);
++  }
++  bool hold_next = false;
++
++ private:
++  network::mojom::AegisAccessSnapshotAckPtr held_ack_;
++  InstallSnapshotCallback held_reply_;
++  mojo::ReceiverSet<network::mojom::AegisAccessContext> receivers_;
++};
++
++class AccessSiteProxyProductTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    const auto* command = base::CommandLine::ForCurrentProcess();
++    if (command->GetSwitchValuePath("aegis-access-dev-core-manifest").empty() ||
++        command->GetSwitchValuePath("aegis-access-dev-node-config").empty()) {
++      GTEST_SKIP() << "Real product core tests require authorized DEV inputs.";
++    }
++    ASSERT_TRUE(directory_.CreateUniqueTempDir());
++    profile_ = TestingProfile::Builder().SetPath(directory_.GetPath()).Build();
++    network::mojom::NetworkContextParams params;
++    ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), {}, &params));
++    transport_ = AccessNetworkContextTransport::Get(profile_.get());
++    owner_ = *transport_->OwnerForPartition(ChannelNamespace::kDev, {});
++    coordinator_ = AccessServiceCoordinator::GetOrCreate(profile_.get());
++    base::test::TestFuture<bool> restored;
++    coordinator_->InitializeForProfile(owner_, restored.GetCallback());
++    ASSERT_TRUE(restored.Get());
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
++    ASSERT_TRUE(bound.Get());
++    auto* runtime = AccessPublishedRequestRuntime::Get(profile_.get());
++    const auto common = runtime->CaptureCommonGenerationTupleOnUiThread(owner_);
++    ASSERT_TRUE(common);
++    base::test::TestFuture<bool> published;
++    transport_->PublishPrivatePolicy(*runtime->GetPublishedPolicySnapshot(owner_),
++                                    *common, published.GetCallback());
++    ASSERT_TRUE(published.Get());
++    bubble_ = AccessSiteProxyBubbleController::GetOrCreate(profile_.get());
++    ASSERT_TRUE(bubble_);
++  }
++  AccessSiteProxyBubbleSnapshot Snapshot(const char* host = "news.example") {
++    return bubble_->SnapshotForCommittedUrl(GURL(std::string("https://") + host));
++  }
++  void WaitFor(AccessSiteConnectionState state, const char* host = "news.example") {
++    ASSERT_TRUE(base::test::RunUntil([&] { return Snapshot(host).connection == state; }));
++  }
++  void Enable() {
++    context_.hold_next = true;
++    ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
++    ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++    EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kConnecting);
++    context_.Reply(true);
++    WaitFor(AccessSiteConnectionState::kReady);
++  }
++
++  content::BrowserTaskEnvironment environment_;
++  base::test::ScopedRunLoopTimeout timeout_{FROM_HERE, base::Seconds(90)};
++  base::ScopedTempDir directory_;
++  ProductAckContext context_;
++  std::unique_ptr<TestingProfile> profile_;
++  raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
++  raw_ptr<AccessServiceCoordinator> coordinator_ = nullptr;
++  raw_ptr<AccessSiteProxyBubbleController> bubble_ = nullptr;
++  OwnershipKey owner_;
++};
++
++TEST_F(AccessSiteProxyProductTest, OnOffOnUsesRealCoreAndCommittedRevision) {
++  uint64_t previous = 0;
++  for (bool enabled : {true, false, true}) {
++    context_.hold_next = true;
++    ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, enabled));
++    ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++    EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kConnecting);
++    context_.Reply(true);
++    WaitFor(enabled ? AccessSiteConnectionState::kReady : AccessSiteConnectionState::kIdle);
++    EXPECT_TRUE(Snapshot().failure_reason.empty());
++    const auto stored = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++    ASSERT_TRUE(stored.value);
++    EXPECT_GT(stored.value->policy_generation, previous);
++    previous = stored.value->policy_generation;
++    EXPECT_EQ(Snapshot().intent, enabled ? AccessSiteIntent::kAllow : AccessSiteIntent::kOff);
++  }
++}
++
++TEST_F(AccessSiteProxyProductTest, FailedAckPreservesOffAndExplicitRecoveryRepublishes) {
++  context_.hold_next = true;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++  context_.Reply(false);
++  WaitFor(AccessSiteConnectionState::kUnavailable);
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
++  ASSERT_TRUE(coordinator_->has_retained_store());
++  Enable();
++  ASSERT_TRUE(bubble_->NotifyHostProxyRuntimeFault({"news.example"}, false));
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
++  Enable();
++}
++
++TEST_F(AccessSiteProxyProductTest, RetainedProductStoreSurvivesPrepareFailure) {
++  auto plan = BuildSiteProxySessionMutationPlan(
++      {"news.example"}, AccessSiteIntent::kAllow, owner_,
++      "dev-authorized-local-node", "invalid-stale-revision", 99);
++  ASSERT_TRUE(plan.mutation.request);
++  base::test::TestFuture<AccessMutationTransactionResult> failed;
++  coordinator_->CommitSiteGroupMutation(nullptr, std::move(*plan.mutation.request),
++                                       plan.selector, failed.GetCallback());
++  EXPECT_EQ(failed.Get().status, AccessMutationTransactionStatus::kPrepareFailed);
++  ASSERT_TRUE(coordinator_->has_retained_store());
++  Enable();
++}
++
++TEST_F(AccessSiteProxyProductTest, CanDisableAfterEndpointBecomesUnavailable) {
++  Enable();
++  ASSERT_TRUE(transport_->ClearProxySelection({}));
++  context_.hold_next = true;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, false));
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++  context_.Reply(true);
++  WaitFor(AccessSiteConnectionState::kIdle);
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
++  const auto stored = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(stored.value);
++  ASSERT_EQ(stored.value->site_groups.size(), 1u);
++  EXPECT_EQ(stored.value->site_groups[0].members[0].policy.mode, AccessMode::kDirect);
++}
++
++TEST_F(AccessSiteProxyProductTest, HostFailuresRemainIndependent) {
++  context_.hold_next = true;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++  context_.Reply(false);
++  WaitFor(AccessSiteConnectionState::kUnavailable);
++  const auto failed = Snapshot();
++  ASSERT_FALSE(failed.failure_reason.empty());
++  context_.hold_next = true;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"other.example"}, false));
++  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
++  context_.Reply(true);
++  WaitFor(AccessSiteConnectionState::kIdle, "other.example");
++  EXPECT_EQ(Snapshot().connection, failed.connection);
++  EXPECT_EQ(Snapshot().failure_reason, failed.failure_reason);
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
++}
++
++}  // namespace
++}  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

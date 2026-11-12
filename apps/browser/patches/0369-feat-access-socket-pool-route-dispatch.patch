@@ -1,0 +1,510 @@
+From 1239d81d5a82497858a6325adad69a2dd0a62b54 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 10:26:31 +0800
+Subject: [PATCH] feat(access): retain route identity across socket pool
+ dispatch
+
+---
+ .../access_route_pool_isolation_unittest.cc   | 103 ++++++++++++++++++
+ net/http/http_stream_factory_job.cc           |   9 +-
+ net/socket/client_socket_pool.cc              |  21 +++-
+ net/socket/client_socket_pool.h               |  15 ++-
+ net/socket/client_socket_pool_manager.cc      |  42 +++++--
+ net/socket/client_socket_pool_manager.h       |  15 ++-
+ net/socket/transport_client_socket_pool.cc    |   8 ++
+ .../websocket_transport_client_socket_pool.cc |   8 ++
+ 8 files changed, 195 insertions(+), 26 deletions(-)
+
+diff --git a/components/aegis_access/access_route_pool_isolation_unittest.cc b/components/aegis_access/access_route_pool_isolation_unittest.cc
+index dd3e977f9778686ae1226cfedd39f5372671a2dd..5fa5c65bb96eb7643b37ad901bd308c9c7784c07 100644
+--- a/components/aegis_access/access_route_pool_isolation_unittest.cc
++++ b/components/aegis_access/access_route_pool_isolation_unittest.cc
+@@ -16,12 +16,16 @@
+ #include "net/base/privacy_mode.h"
+ #include "net/base/proxy_chain.h"
+ #include "net/base/session_usage.h"
++#include "net/http/access_proxy_route.h"
+ #include "net/http/http_network_session.h"
+ #include "net/http/http_transaction_factory.h"
+ #include "net/log/net_log_source.h"
+ #include "net/log/net_log_with_source.h"
+ #include "net/socket/client_socket_handle.h"
+ #include "net/socket/client_socket_pool.h"
++#include "net/socket/client_socket_pool_manager.h"
++#include "net/proxy_resolution/proxy_info.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "net/socket/socket_tag.h"
+ #include "net/socket/stream_socket.h"
+ #include "net/socket/tcp_server_socket.h"
+@@ -193,5 +197,104 @@ TEST(AccessRoutePoolIsolationTest, LiveTcpPoolReusesOnlyTheSameRoute) {
+   EXPECT_EQ(first, acquire(key));
+ }
+ 
++TEST(AccessRoutePoolIsolationTest, ManagedHttpPoolDispatchKeepsRouteIsolation) {
++  base::test::TaskEnvironment tasks(
++      base::test::TaskEnvironment::MainThreadType::IO);
++  auto notifier = net::NetworkChangeNotifier::CreateMockIfNeeded();
++  auto context = net::URLRequestContextBuilder().Build();
++  auto* session = context->http_transaction_factory()->GetSession();
++  net::TCPServerSocket listener(nullptr, net::NetLogSource());
++  ASSERT_EQ(listener.Listen(net::IPEndPoint(net::IPAddress::IPv4Localhost(), 0),
++                            8, std::nullopt), net::OK);
++  net::IPEndPoint bound;
++  ASSERT_EQ(listener.GetLocalAddress(&bound), net::OK);
++  const auto chain = net::ProxyChain::FromSchemeHostAndPort(
++      net::ProxyServer::SCHEME_HTTP, "127.0.0.1", bound.port());
++  net::ProxyInfo proxy;
++  proxy.UseProxyChain(chain);
++  proxy.set_traffic_annotation(
++      net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
++  auto route = net::AccessProxyRoute::Create(Key(), chain);
++  ASSERT_TRUE(route);
++
++  const auto acquire = [&](scoped_refptr<net::AccessProxyRoute> selected)
++      -> std::optional<uint32_t> {
++    net::ClientSocketHandle handle;
++    base::test::TestFuture<int> completion;
++    int result = net::InitSocketHandleForHttpRequest(
++        url::SchemeHostPort("http", "destination.invalid", 80), 0,
++        net::DEFAULT_PRIORITY, session, proxy, {}, net::PRIVACY_MODE_DISABLED,
++        net::NetworkAnonymizationKey(), net::SecureDnsPolicy::kAllow,
++        net::SocketTag(), net::handles::kInvalidNetworkHandle,
++        net::NetLogWithSource(), &handle, completion.GetCallback(), {}, selected);
++    if (result == net::ERR_IO_PENDING) {
++      result = completion.Get();
++    }
++    EXPECT_EQ(result, net::OK);
++    if (result != net::OK || !handle.socket()) {
++      return std::nullopt;
++    }
++    const uint32_t identity = handle.socket()->NetLog().source().id;
++    handle.Reset();
++    tasks.RunUntilIdle();
++    return identity;
++  };
++  const auto first = acquire(route);
++  ASSERT_TRUE(first);
++  EXPECT_EQ(first, acquire(route));
++  auto changed = Key();
++  ++changed.selection_generation;
++  auto replacement = net::AccessProxyRoute::Create(changed, chain);
++  const auto next = acquire(replacement);
++  ASSERT_TRUE(next);
++  EXPECT_NE(first, next);
++  const auto native = acquire(nullptr);
++  ASSERT_TRUE(native);
++  EXPECT_NE(first, native);
++  EXPECT_NE(next, native);
++  EXPECT_EQ(native, acquire(nullptr));
++  EXPECT_EQ(first, acquire(route));
++
++  // Reject a mismatched credential context before an existing socket can be
++  // reused, even if a caller bypasses the HTTP manager's key construction.
++  net::ClientSocketPool::GroupId original_group(
++      url::SchemeHostPort("http", "destination.invalid", 80),
++      net::PRIVACY_MODE_DISABLED, net::NetworkAnonymizationKey(),
++      net::SecureDnsPolicy::kAllow, false,
++      net::handles::kInvalidNetworkHandle, Key());
++  auto wrong_params = base::MakeRefCounted<net::ClientSocketPool::SocketParams>(
++      std::vector<net::SSLConfig::CertAndStatus>(), replacement);
++  net::ClientSocketHandle mismatched;
++  base::test::TestFuture<int> wrong_completion;
++  EXPECT_EQ(mismatched.Init(
++                original_group, wrong_params, TRAFFIC_ANNOTATION_FOR_TESTS,
++                net::DEFAULT_PRIORITY, net::SocketTag(),
++                net::ClientSocketPool::RespectLimits::ENABLED,
++                wrong_completion.GetCallback(), {},
++                session->GetSocketPool(
++                    net::HttpNetworkSession::SocketPoolType::kNormal, chain),
++                net::NetLogWithSource()),
++            net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_FALSE(mismatched.socket());
++  EXPECT_FALSE(wrong_completion.IsReady());
++  EXPECT_EQ(first, acquire(route));
++
++  // A managed request cannot be redirected into a native/direct socket pool.
++  net::ProxyInfo direct;
++  direct.UseDirect();
++  net::ClientSocketHandle blocked;
++  base::test::TestFuture<int> completion;
++  EXPECT_EQ(net::InitSocketHandleForHttpRequest(
++                url::SchemeHostPort("http", "destination.invalid", 80), 0,
++                net::DEFAULT_PRIORITY, session, direct, {},
++                net::PRIVACY_MODE_DISABLED, net::NetworkAnonymizationKey(),
++                net::SecureDnsPolicy::kAllow, net::SocketTag(),
++                net::handles::kInvalidNetworkHandle, net::NetLogWithSource(),
++                &blocked, completion.GetCallback(), {}, route),
++            net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_FALSE(blocked.socket());
++  EXPECT_FALSE(completion.IsReady());
++}
++
+ }  // namespace
+ }  // namespace aegis_access
+diff --git a/net/http/http_stream_factory_job.cc b/net/http/http_stream_factory_job.cc
+index 73800fe4d6b779b790d4f4488203df485e08841e..0026ab3ed47da643b01370e36c83290132db6c76 100644
+--- a/net/http/http_stream_factory_job.cc
++++ b/net/http/http_stream_factory_job.cc
+@@ -824,7 +824,8 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
+         proxy_info_, allowed_bad_certs_, request_info_.privacy_mode,
+         request_info_.network_anonymization_key,
+         request_info_.secure_dns_policy, request_info_.target_network, net_log_,
+-        num_streams_, std::move(preconnect_callback));
++        num_streams_, std::move(preconnect_callback),
++        request_info_.access_proxy_route);
+   }
+ 
+   ClientSocketPool::ProxyAuthCallback proxy_auth_callback =
+@@ -837,7 +838,8 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
+         destination_, request_info_.load_flags, priority_, session_,
+         proxy_info_, allowed_bad_certs_, request_info_.privacy_mode,
+         request_info_.network_anonymization_key, request_info_.target_network,
+-        net_log_, connection_.get(), io_callback_, proxy_auth_callback);
++        net_log_, connection_.get(), io_callback_, proxy_auth_callback,
++        request_info_.access_proxy_route);
+   }
+ 
+   return InitSocketHandleForHttpRequest(
+@@ -845,7 +847,8 @@ int HttpStreamFactory::Job::DoInitConnectionImpl() {
+       allowed_bad_certs_, request_info_.privacy_mode,
+       request_info_.network_anonymization_key, request_info_.secure_dns_policy,
+       request_info_.socket_tag, request_info_.target_network, net_log_,
+-      connection_.get(), io_callback_, proxy_auth_callback);
++      connection_.get(), io_callback_, proxy_auth_callback,
++      request_info_.access_proxy_route);
+ }
+ 
+ int HttpStreamFactory::Job::DoInitConnectionImplQuic() {
+diff --git a/net/socket/client_socket_pool.cc b/net/socket/client_socket_pool.cc
+index 341c7ee7e588df36d001b3f52dcaac191254552a..7e6cfdac1131051532f075d5417cf9072cbffbe8 100644
+--- a/net/socket/client_socket_pool.cc
++++ b/net/socket/client_socket_pool.cc
+@@ -77,11 +77,21 @@ OnHostResolutionCallbackResult OnHostResolution(
+ }  // namespace
+ 
+ ClientSocketPool::SocketParams::SocketParams(
+-    const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs)
+-    : allowed_bad_certs_(allowed_bad_certs) {}
++    const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs,
++    scoped_refptr<AccessProxyRoute> access_proxy_route)
++    : allowed_bad_certs_(allowed_bad_certs),
++      access_proxy_route_(std::move(access_proxy_route)) {}
+ 
+ ClientSocketPool::SocketParams::~SocketParams() = default;
+ 
++bool ClientSocketPool::SocketParams::MatchesAccessRoute(
++    const GroupId& group, const ProxyChain& chain) const {
++  return !access_proxy_route_ ||
++         (group.access_route_key() == access_proxy_route_->isolation_key() &&
++          chain == access_proxy_route_->proxy_chain() &&
++          chain.GetProxyServer(0).is_http());
++}
++
+ scoped_refptr<ClientSocketPool::SocketParams>
+ ClientSocketPool::SocketParams::CreateForHttpForTesting() {
+   return base::MakeRefCounted<SocketParams>(
+@@ -220,6 +230,7 @@ std::unique_ptr<ConnectJob> ClientSocketPool::CreateConnectJob(
+     RequestPriority request_priority,
+     SocketTag socket_tag,
+     ConnectJob::Delegate* delegate) {
++  CHECK(socket_params->MatchesAccessRoute(group_id, GetProxyChain()));
+   bool using_ssl = GURL::SchemeIsCryptographic(group_id.destination().scheme());
+ 
+   // If applicable, set up a callback to handle checking for H2 IP pooling
+@@ -235,7 +246,8 @@ std::unique_ptr<ConnectJob> ClientSocketPool::CreateConnectJob(
+             group_id.privacy_mode(), GetProxyChain(),
+             SessionUsage::kDestination, socket_tag,
+             group_id.network_anonymization_key(), group_id.secure_dns_policy(),
+-            group_id.disable_cert_network_fetches(), group_id.target_network()),
++            group_id.disable_cert_network_fetches(), group_id.target_network(),
++            group_id.access_route_key()),
+         is_for_websockets_);
+   }
+ 
+@@ -262,7 +274,8 @@ std::unique_ptr<ConnectJob> ClientSocketPool::CreateConnectJob(
+       group_id.privacy_mode(), resolution_callback, request_priority,
+       socket_tag, group_id.network_anonymization_key(),
+       group_id.secure_dns_policy(), group_id.disable_cert_network_fetches(),
+-      common_connect_job_params_, group_id.target_network(), delegate);
++      common_connect_job_params_, group_id.target_network(), delegate,
++      socket_params->access_proxy_route());
+ }
+ 
+ void ClientSocketPool::UpdateExpandabilityBeforeAllocation() {
+diff --git a/net/socket/client_socket_pool.h b/net/socket/client_socket_pool.h
+index ca67cf0679176887577d9d33ccfb195a0ebcd7f8..07152ea5b2f5247665b9be6404be4bb68441bdc7 100644
+--- a/net/socket/client_socket_pool.h
++++ b/net/socket/client_socket_pool.h
+@@ -25,6 +25,7 @@
+ #include "net/base/request_priority.h"
+ #include "net/dns/host_resolver.h"
+ #include "net/dns/public/secure_dns_policy.h"
++#include "net/http/access_proxy_route.h"
+ #include "net/http/http_request_info.h"
+ #include "net/log/net_log_capture_mode.h"
+ #include "net/socket/connect_job.h"
+@@ -194,7 +195,9 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+   // Parameters that, in combination with GroupId, proxy, websocket information,
+   // and global state, are sufficient to create a ConnectJob.
+   //
+-  // DO NOT ADD ANY FIELDS TO THIS CLASS.
++  // Any transport identity must be represented in GroupId. The route reference
++  // below retains state whose identity is already in GroupId::access_route_key;
++  // it must never introduce a separate pooling identity.
+   //
+   // TODO(crbug.com/40609237) In order to resolve longstanding issues
+   // related to pooling distinguishable sockets together, remove this class
+@@ -205,7 +208,8 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+     // For non-SSL requests, `allowed_bad_certs` argument will be ignored (and
+     // is likely empty, anyways).
+     explicit SocketParams(
+-        const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs);
++        const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs,
++        scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+ 
+     SocketParams(const SocketParams&) = delete;
+     SocketParams& operator=(const SocketParams&) = delete;
+@@ -214,6 +218,12 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+     // works for the HTTP case only.
+     static scoped_refptr<SocketParams> CreateForHttpForTesting();
+ 
++    const scoped_refptr<AccessProxyRoute>& access_proxy_route() const {
++      return access_proxy_route_;
++    }
++
++    bool MatchesAccessRoute(const GroupId& group, const ProxyChain& chain) const;
++
+     const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs() const {
+       return allowed_bad_certs_;
+     }
+@@ -223,6 +233,7 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+     ~SocketParams();
+ 
+     std::vector<SSLConfig::CertAndStatus> allowed_bad_certs_;
++    const scoped_refptr<AccessProxyRoute> access_proxy_route_;
+   };
+ 
+   ClientSocketPool(const ClientSocketPool&) = delete;
+diff --git a/net/socket/client_socket_pool_manager.cc b/net/socket/client_socket_pool_manager.cc
+index 7c7946b3b98a7fa6c47584c77a674ac756d19a1b..2c97a5f31349e3dc7c2645e8de6969e6af8c062b 100644
+--- a/net/socket/client_socket_pool_manager.cc
++++ b/net/socket/client_socket_pool_manager.cc
+@@ -72,10 +72,12 @@ bool g_allow_size_randomization_for_proxy = true;
+ // entirely.
+ scoped_refptr<ClientSocketPool::SocketParams> CreateSocketParams(
+     const ClientSocketPool::GroupId& group_id,
+-    const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs) {
++    const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs,
++    scoped_refptr<AccessProxyRoute> access_proxy_route) {
+   bool using_ssl = GURL::SchemeIsCryptographic(group_id.destination().scheme());
+   return base::MakeRefCounted<ClientSocketPool::SocketParams>(
+-      using_ssl ? allowed_bad_certs : std::vector<SSLConfig::CertAndStatus>());
++      using_ssl ? allowed_bad_certs : std::vector<SSLConfig::CertAndStatus>(),
++      std::move(access_proxy_route));
+ }
+ 
+ int InitSocketPoolHelper(
+@@ -96,8 +98,17 @@ int InitSocketPoolHelper(
+     HttpNetworkSession::SocketPoolType socket_pool_type,
+     CompletionOnceCallback callback,
+     const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback,
+-    ClientSocketPool::PreconnectCompletionCallback preconnect_callback) {
++    ClientSocketPool::PreconnectCompletionCallback preconnect_callback,
++    scoped_refptr<AccessProxyRoute> access_proxy_route) {
+   DCHECK(endpoint.IsValid());
++  if (access_proxy_route) {
++    if (proxy_info.proxy_chain() != access_proxy_route->proxy_chain()) {
++      return ERR_BLOCKED_BY_CLIENT;
++    }
++    if (!proxy_info.proxy_chain().GetProxyServer(0).is_http()) {
++      return ERR_NOT_IMPLEMENTED;
++    }
++  }
+ 
+   session->ApplyTestingFixedPort(endpoint);
+ 
+@@ -105,9 +116,12 @@ int InitSocketPoolHelper(
+       !!(request_load_flags & LOAD_DISABLE_CERT_NETWORK_FETCHES);
+   ClientSocketPool::GroupId connection_group(
+       std::move(endpoint), privacy_mode, std::move(network_anonymization_key),
+-      secure_dns_policy, disable_cert_network_fetches, target_network);
++      secure_dns_policy, disable_cert_network_fetches, target_network,
++      access_proxy_route ? std::make_optional(access_proxy_route->isolation_key())
++                         : std::nullopt);
+   scoped_refptr<ClientSocketPool::SocketParams> socket_params =
+-      CreateSocketParams(connection_group, allowed_bad_certs);
++      CreateSocketParams(connection_group, allowed_bad_certs,
++                         std::move(access_proxy_route));
+ 
+   ClientSocketPool* pool =
+       session->GetSocketPool(socket_pool_type, proxy_info.proxy_chain());
+@@ -226,7 +240,8 @@ int InitSocketHandleForHttpRequest(
+     const NetLogWithSource& net_log,
+     ClientSocketHandle* socket_handle,
+     CompletionOnceCallback callback,
+-    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback) {
++    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback,
++    scoped_refptr<AccessProxyRoute> access_proxy_route) {
+   DCHECK(socket_handle);
+   return InitSocketPoolHelper(
+       std::move(endpoint), request_load_flags, request_priority, session,
+@@ -234,7 +249,8 @@ int InitSocketHandleForHttpRequest(
+       std::move(network_anonymization_key), secure_dns_policy, socket_tag,
+       target_network, net_log, 0, socket_handle,
+       HttpNetworkSession::SocketPoolType::kNormal, std::move(callback),
+-      proxy_auth_callback, ClientSocketPool::PreconnectCompletionCallback());
++      proxy_auth_callback, ClientSocketPool::PreconnectCompletionCallback(),
++      std::move(access_proxy_route));
+ }
+ 
+ int InitSocketHandleForWebSocketRequest(
+@@ -250,7 +266,8 @@ int InitSocketHandleForWebSocketRequest(
+     const NetLogWithSource& net_log,
+     ClientSocketHandle* socket_handle,
+     CompletionOnceCallback callback,
+-    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback) {
++    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback,
++    scoped_refptr<AccessProxyRoute> access_proxy_route) {
+   DCHECK(socket_handle);
+ 
+   // QUIC proxies are currently not supported through this method.
+@@ -267,7 +284,8 @@ int InitSocketHandleForWebSocketRequest(
+       std::move(network_anonymization_key), SecureDnsPolicy::kAllow,
+       SocketTag(), target_network, net_log, 0, socket_handle,
+       HttpNetworkSession::SocketPoolType::kWebSocket, std::move(callback),
+-      proxy_auth_callback, ClientSocketPool::PreconnectCompletionCallback());
++      proxy_auth_callback, ClientSocketPool::PreconnectCompletionCallback(),
++      std::move(access_proxy_route));
+ }
+ 
+ int PreconnectSocketsForHttpRequest(
+@@ -283,7 +301,8 @@ int PreconnectSocketsForHttpRequest(
+     handles::NetworkHandle target_network,
+     const NetLogWithSource& net_log,
+     int num_preconnect_streams,
+-    ClientSocketPool::PreconnectCompletionCallback callback) {
++    ClientSocketPool::PreconnectCompletionCallback callback,
++    scoped_refptr<AccessProxyRoute> access_proxy_route) {
+   // Expect websocket schemes (ws and wss) to be converted to the http(s)
+   // equivalent.
+   DCHECK(endpoint.scheme() == url::kHttpScheme ||
+@@ -295,7 +314,8 @@ int PreconnectSocketsForHttpRequest(
+       std::move(network_anonymization_key), secure_dns_policy, SocketTag(),
+       target_network, net_log, num_preconnect_streams, nullptr,
+       HttpNetworkSession::SocketPoolType::kNormal, CompletionOnceCallback(),
+-      ClientSocketPool::ProxyAuthCallback(), std::move(callback));
++      ClientSocketPool::ProxyAuthCallback(), std::move(callback),
++      std::move(access_proxy_route));
+ }
+ 
+ }  // namespace net
+diff --git a/net/socket/client_socket_pool_manager.h b/net/socket/client_socket_pool_manager.h
+index 9ce5cf88813fe0cbb75e06f3c000bc7f0c272d79..2f14b6b38d8e3e5f5253b81d99cca9c0ea8cdf16 100644
+--- a/net/socket/client_socket_pool_manager.h
++++ b/net/socket/client_socket_pool_manager.h
+@@ -82,7 +82,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolManager {
+ // ClientSocketHandle with the relevant socket pool. Use this method for
+ // HTTP/HTTPS requests. `allowed_bad_certs` is only used if the request
+ // uses SSL.
+-int InitSocketHandleForHttpRequest(
++NET_EXPORT_PRIVATE int InitSocketHandleForHttpRequest(
+     url::SchemeHostPort endpoint,
+     int request_load_flags,
+     RequestPriority request_priority,
+@@ -97,13 +97,14 @@ int InitSocketHandleForHttpRequest(
+     const NetLogWithSource& net_log,
+     ClientSocketHandle* socket_handle,
+     CompletionOnceCallback callback,
+-    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback);
++    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback,
++    scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+ 
+ // A helper method that uses the passed in proxy information to initialize a
+ // ClientSocketHandle with the relevant socket pool. Use this method for
+ // HTTP/HTTPS requests for WebSocket handshake. This function uses
+ // kWebSocket socket pools.
+-int InitSocketHandleForWebSocketRequest(
++NET_EXPORT_PRIVATE int InitSocketHandleForWebSocketRequest(
+     url::SchemeHostPort endpoint,
+     int request_load_flags,
+     RequestPriority request_priority,
+@@ -116,11 +117,12 @@ int InitSocketHandleForWebSocketRequest(
+     const NetLogWithSource& net_log,
+     ClientSocketHandle* socket_handle,
+     CompletionOnceCallback callback,
+-    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback);
++    const ClientSocketPool::ProxyAuthCallback& proxy_auth_callback,
++    scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+ 
+ // Similar to InitSocketHandleForHttpRequest except that it initiates the
+ // desired number of preconnect streams from the relevant socket pool.
+-int PreconnectSocketsForHttpRequest(
++NET_EXPORT_PRIVATE int PreconnectSocketsForHttpRequest(
+     url::SchemeHostPort endpoint,
+     int request_load_flags,
+     RequestPriority request_priority,
+@@ -133,7 +135,8 @@ int PreconnectSocketsForHttpRequest(
+     handles::NetworkHandle target_network,
+     const NetLogWithSource& net_log,
+     int num_preconnect_streams,
+-    ClientSocketPool::PreconnectCompletionCallback callback);
++    ClientSocketPool::PreconnectCompletionCallback callback,
++    scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+ 
+ }  // namespace net
+ 
+diff --git a/net/socket/transport_client_socket_pool.cc b/net/socket/transport_client_socket_pool.cc
+index 13bcf4eb5058d00879b091928f6ebd9f47948334..1384b1e07b7c71bf9bde4f013118877c67a73677 100644
+--- a/net/socket/transport_client_socket_pool.cc
++++ b/net/socket/transport_client_socket_pool.cc
+@@ -250,6 +250,10 @@ int TransportClientSocketPool::RequestSocket(
+     CompletionOnceCallback callback,
+     const ProxyAuthCallback& proxy_auth_callback,
+     const NetLogWithSource& net_log) {
++  if (params && !params->MatchesAccessRoute(group_id, GetProxyChain())) {
++    return ERR_BLOCKED_BY_CLIENT;
++  }
++
+   CHECK(callback);
+   CHECK(handle);
+ 
+@@ -300,6 +304,10 @@ int TransportClientSocketPool::RequestSockets(
+     size_t num_sockets,
+     PreconnectCompletionCallback callback,
+     const NetLogWithSource& net_log) {
++  if (params && !params->MatchesAccessRoute(group_id, GetProxyChain())) {
++    return ERR_BLOCKED_BY_CLIENT;
++  }
++
+   // TODO(eroman): Split out the host and port parameters.
+   net_log.AddEvent(NetLogEventType::TCP_CLIENT_SOCKET_POOL_REQUESTED_SOCKETS,
+                    [&] { return NetLogGroupIdParams(group_id); });
+diff --git a/net/socket/websocket_transport_client_socket_pool.cc b/net/socket/websocket_transport_client_socket_pool.cc
+index eadc1444a01a58fc40a393a32768ef7960380b1b..c174b30124111359146faace3a6657a93f301d4d 100644
+--- a/net/socket/websocket_transport_client_socket_pool.cc
++++ b/net/socket/websocket_transport_client_socket_pool.cc
+@@ -78,6 +78,10 @@ int WebSocketTransportClientSocketPool::RequestSocket(
+     CompletionOnceCallback callback,
+     const ProxyAuthCallback& proxy_auth_callback,
+     const NetLogWithSource& request_net_log) {
++  if (params && !params->MatchesAccessRoute(group_id, GetProxyChain())) {
++    return ERR_BLOCKED_BY_CLIENT;
++  }
++
+   DCHECK(params);
+   CHECK(!callback.is_null());
+   CHECK(handle);
+@@ -140,6 +144,10 @@ int WebSocketTransportClientSocketPool::RequestSockets(
+     size_t num_sockets,
+     PreconnectCompletionCallback callback,
+     const NetLogWithSource& net_log) {
++  if (params && !params->MatchesAccessRoute(group_id, GetProxyChain())) {
++    return ERR_BLOCKED_BY_CLIENT;
++  }
++
+   NOTIMPLEMENTED();
+   return OK;
+ }
+-- 
+2.54.0 (Apple Git-157)
+

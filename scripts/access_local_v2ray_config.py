@@ -214,7 +214,6 @@ def parameters_from_outbound(outbound: dict[str, Any]) -> dict[str, Any]:
 
 
 def parse_root(root: dict[str, Any]) -> dict[str, Any]:
-    _reject_poison(root)
     outbounds = root.get("outbounds")
     if isinstance(outbounds, list):
         for outbound in outbounds:

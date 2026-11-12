@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {cp, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {dirname, join, resolve} from 'node:path';
+import {cp, mkdir, rm, writeFile} from 'node:fs/promises';
+import {dirname, resolve} from 'node:path';
+import {openAsBlob} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 import {
@@ -13,23 +13,20 @@ import {
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '../../..');
-const packRoot = join(repoRoot,
+const packRoot = resolve(repoRoot,
     'docs/audit/evidence/macos-access-product-phase1');
+const fixtureRoot = resolve(scriptDir, '.tmp-mac-p1-evidence');
 
 const digest = value => createHash('sha256').update(value).digest('hex');
 
 const withCopy = async action => {
-  const root = await mkdtemp(join(tmpdir(), 'aegis-mac-p1-evidence-'));
-  let error = null;
+  await rm(fixtureRoot, {recursive: true, force: true});
+  await mkdir(fixtureRoot, {recursive: true});
+  await cp(packRoot, fixtureRoot, {recursive: true});
   try {
-    await cp(packRoot, root, {recursive: true});
-    await action(root);
-  } catch (caught) {
-    error = caught;
-  }
-  await rm(root, {recursive: true, force: true});
-  if (error) {
-    throw error;
+    await action();
+  } finally {
+    await rm(fixtureRoot, {recursive: true, force: true});
   }
 };
 
@@ -53,7 +50,7 @@ test('checked-in pack scaffold stays NOT_RUN and excludes pmac4', async () => {
 });
 
 test('PASS without native artifacts is rejected', async () => {
-  await withCopy(async root => {
+  await withCopy(async () => {
     const sourceSha = 'a'.repeat(40);
     const runId = 'synthetic-pass';
     const steps = ['on', 'load', 'fault', 'recovery', 'off'].map((name, index) => ({
@@ -63,7 +60,7 @@ test('PASS without native artifacts is rejected', async () => {
       verdict: 'PASS',
       artifacts: [],
     }));
-    await writeFile(join(root, 'manifest.json'), JSON.stringify({
+    await writeFile(resolve(fixtureRoot, 'manifest.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'macos-access-product-phase1-evidence',
       status: 'PASS',
@@ -82,33 +79,29 @@ test('PASS without native artifacts is rejected', async () => {
       steps,
       uiEvidence: {onCapture: null, offCapture: null},
     }, null, 2));
-    await assert.rejects(() => validatePhase1EvidencePack(root),
+    await assert.rejects(() => validatePhase1EvidencePack(fixtureRoot),
         /artifacts for B2-1|onCapture UI evidence/);
   });
 });
 
 test('filled same-candidate pack with UI captures validates', async () => {
-  await withCopy(async root => {
+  await withCopy(async () => {
     const sourceSha = 'b'.repeat(40);
     const runId = 'mac-run-1';
     const bytes = 'synthetic-log-line aegis-mac-p1\n';
-    const relative = 'artifacts/on.log';
-    await writeFile(join(root, relative), bytes);
-    const offRelative = 'artifacts/off.png';
-    await writeFile(join(root, offRelative), 'png-bytes');
-    const onUi = 'artifacts/ui-on.png';
-    const offUi = 'artifacts/ui-off.png';
-    await writeFile(join(root, onUi), 'on-ui');
-    await writeFile(join(root, offUi), 'off-ui');
+    await writeFile(resolve(fixtureRoot, 'artifacts/on.log'), bytes);
+    await writeFile(resolve(fixtureRoot, 'artifacts/off.png'), 'png-bytes');
+    await writeFile(resolve(fixtureRoot, 'artifacts/ui-on.png'), 'on-ui');
+    await writeFile(resolve(fixtureRoot, 'artifacts/ui-off.png'), 'off-ui');
     const logDigest = digest(bytes);
     const steps = ['on', 'load', 'fault', 'recovery', 'off'].map((name, index) => ({
       id: `B2-${index + 1}`,
       name,
       correlationId: `aegis-mac-p1/${sourceSha.slice(0, 8)}/${runId}/${name}`,
       verdict: 'PASS',
-      artifacts: [{path: relative, sha256: logDigest}],
+      artifacts: [{path: 'artifacts/on.log', sha256: logDigest}],
     }));
-    await writeFile(join(root, 'manifest.json'), JSON.stringify({
+    await writeFile(resolve(fixtureRoot, 'manifest.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'macos-access-product-phase1-evidence',
       status: 'PASS',
@@ -125,16 +118,16 @@ test('filled same-candidate pack with UI captures validates', async () => {
         unitTestsAloneNotPass: true,
       },
       steps,
-      uiEvidence: {onCapture: onUi, offCapture: offUi},
+      uiEvidence: {onCapture: 'artifacts/ui-on.png', offCapture: 'artifacts/ui-off.png'},
     }, null, 2));
-    const result = await validatePhase1EvidencePack(root);
+    const result = await validatePhase1EvidencePack(fixtureRoot);
     assert.equal(result.manifestStatus, 'PASS');
   });
 });
 
 test('template forbids claiming pmac4 as required exit', async () => {
-  const template = JSON.parse(await readFile(
-      join(packRoot, 'manifest.template.json'), 'utf8'));
+  const templatePath = resolve(packRoot, 'manifest.template.json');
+  const template = JSON.parse(await (await openAsBlob(templatePath)).text());
   assert.equal(template.exitCriteria.pmac4, 'excluded-while-open');
   assert.equal(template.rules.unitTestsAloneNotPass, true);
 });

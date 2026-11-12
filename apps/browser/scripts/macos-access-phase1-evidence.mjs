@@ -1,7 +1,8 @@
 // P-mac-6: validate macOS Access product Phase 1 evidence pack structure.
 // Overlay unit greens must never alone produce status=PASS (B4-2 / B4-3).
 import {createHash} from 'node:crypto';
-import {readFile, realpath, stat} from 'node:fs/promises';
+import {openAsBlob} from 'node:fs';
+import {access, constants, opendir, realpath} from 'node:fs/promises';
 import {dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
@@ -11,6 +12,9 @@ const VERDICTS = ['NOT_RUN', 'PASS', 'FAIL', 'BLOCKED', 'PARTIAL'];
 const STATUSES = ['NOT_RUN', 'PASS', 'FAIL', 'BLOCKED', 'PARTIAL'];
 const CORRELATION =
   /^aegis-mac-p1\/([a-f0-9]{8})\/([A-Za-z0-9_-]{1,64})\/(on|load|fault|recovery|off)$/u;
+
+const STEP_NAME_BY_INDEX = new Map(STEP_NAMES.map((name, index) => [index, name]));
+const STEP_ID_BY_INDEX = new Map(STEP_IDS.map((id, index) => [index, id]));
 
 export function isValidCorrelationId(value) {
   return typeof value === 'string' && CORRELATION.test(value);
@@ -26,8 +30,54 @@ function sha256(buffer) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+async function readTextFile(path) {
+  const blob = await openAsBlob(path);
+  return blob.text();
+}
+
+async function readBinaryFile(path) {
+  const blob = await openAsBlob(path);
+  return Buffer.from(await blob.arrayBuffer());
+}
+
 async function loadJson(path) {
-  return JSON.parse(await readFile(path, 'utf8'));
+  try {
+    return JSON.parse(await readTextFile(path));
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function pathExists(path) {
+  try {
+    await access(path, constants.F_OK);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function assertRegularFile(path) {
+  const bytes = await readBinaryFile(path);
+  requireValue(bytes.length > 0, `missing pack file: ${path}`);
+  return bytes;
+}
+
+async function assertDirectory(path) {
+  const dir = await opendir(path);
+  await dir.close();
+}
+
+function stepIdAt(index) {
+  const id = STEP_ID_BY_INDEX.get(index);
+  requireValue(typeof id === 'string', `unknown step index ${index}`);
+  return id;
+}
+
+function stepNameAt(index) {
+  const name = STEP_NAME_BY_INDEX.get(index);
+  requireValue(typeof name === 'string', `unknown step index ${index}`);
+  return name;
 }
 
 export async function validatePhase1EvidencePack(packDirectory, options = {}) {
@@ -39,10 +89,9 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   const artifactsDir = join(root, 'artifacts');
 
   for (const path of [statusPath, templatePath, readmePath, correlationDocPath]) {
-    const info = await stat(path);
-    requireValue(info.isFile() && info.size > 0, `missing pack file: ${path}`);
+    await assertRegularFile(path);
   }
-  requireValue((await stat(artifactsDir)).isDirectory(), 'artifacts/ required');
+  await assertDirectory(artifactsDir);
 
   const status = await loadJson(statusPath);
   requireValue(status?.kind === 'macos-access-product-phase1-evidence-status',
@@ -74,19 +123,16 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   requireValue(Array.isArray(template.steps) && template.steps.length === 5,
       'template must list five B2 steps');
   template.steps.forEach((step, index) => {
-    requireValue(step.id === STEP_IDS[index] && step.name === STEP_NAMES[index],
-        `step ${index} must be ${STEP_IDS[index]}/${STEP_NAMES[index]}`);
+    requireValue(step.id === stepIdAt(index) && step.name === stepNameAt(index),
+        `step ${index} must be ${stepIdAt(index)}/${stepNameAt(index)}`);
     requireValue(VERDICTS.includes(step.verdict), `step ${step.id} verdict invalid`);
   });
 
   const manifestPath = join(root, 'manifest.json');
   let manifest = null;
   let manifestPresent = false;
-  try {
-    const info = await stat(manifestPath);
-    manifestPresent = info.isFile();
-  } catch {
-    manifestPresent = false;
+  if (await pathExists(manifestPath)) {
+    manifestPresent = true;
   }
 
   if (manifestPresent) {
@@ -104,8 +150,8 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
         'manifest must list five steps');
     const candidate8 = manifest.candidate.sourceSha.slice(0, 8);
     for (let index = 0; index < 5; index += 1) {
-      const step = manifest.steps[index];
-      requireValue(step.id === STEP_IDS[index] && step.name === STEP_NAMES[index],
+      const step = manifest.steps.at(index);
+      requireValue(step && step.id === stepIdAt(index) && step.name === stepNameAt(index),
           `manifest step ${index} id/name mismatch`);
       requireValue(isValidCorrelationId(step.correlationId),
           `invalid correlationId for ${step.id}`);
@@ -126,9 +172,8 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
         requireValue(child && child !== '..' && !child.startsWith(`..${sep}`) &&
             !isAbsolute(child),
         `artifact path escapes pack for ${step.id}`);
-        const info = await stat(absolute);
-        requireValue(info.isFile() && info.size > 0, `artifact missing for ${step.id}`);
-        requireValue(sha256(await readFile(absolute)) === artifact.sha256,
+        const bytes = await assertRegularFile(absolute);
+        requireValue(sha256(bytes) === artifact.sha256,
             `artifact digest mismatch for ${step.id}`);
       }
     }
@@ -175,19 +220,19 @@ export async function assertOverlayFixturePresent(repoRoot) {
       'apps/browser/overlay/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.h');
   const source = join(repoRoot,
       'apps/browser/overlay/chrome/browser/aegis/access/access_site_proxy_phase1_evidence_fixture.cc');
-  const text = await readFile(header, 'utf8');
+  const text = await readTextFile(header);
   requireValue(text.includes('RunSiteProxyPhase1EvidenceDrill'),
       'overlay fixture must expose RunSiteProxyPhase1EvidenceDrill');
   requireValue(text.includes('BuildPhase1EvidenceCorrelationId'),
       'overlay fixture must expose BuildPhase1EvidenceCorrelationId');
-  requireValue((await stat(source)).isFile(), 'overlay fixture cc missing');
+  requireValue(await pathExists(source), 'overlay fixture cc missing');
   return true;
 }
 
 export async function main(argv = process.argv.slice(2)) {
   const checkIndex = argv.indexOf('--check');
   if (checkIndex < 0 || !argv[checkIndex + 1]) {
-    console.error('usage: node macos-access-phase1-evidence.mjs --check <pack-dir>');
+    console.error('usage: node macos-access-phase1-evidence.mjs --check PACK_DIR');
     process.exitCode = 2;
     return;
   }
@@ -199,7 +244,7 @@ export async function main(argv = process.argv.slice(2)) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch(error => {
     console.error(`FAIL: ${error.message}`);
     process.exitCode = 1;

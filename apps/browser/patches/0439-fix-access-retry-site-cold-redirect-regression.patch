@@ -1,0 +1,141 @@
+From 4117828e4731a803b929f379989732fa600d597e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 12:22:09 +0800
+Subject: [PATCH] fix(access): prepare failed redirect site and cover saved
+ redirect core startup
+
+---
+ .../access_navigation_retry_tab_helper.cc     |  3 +-
+ .../access_site_proxy_product_unittest.cc     | 84 ++++++++++++++++++-
+ 2 files changed, 83 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index ddcfba3a3d55467fc428e1dd018333d0c257d2c8..53e79facc02bfbeadb8d23a42bdced3281cee483 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -76,7 +76,8 @@ bool AccessNavigationRetryTabHelper::RequestProxyRetry(
+   proxy_preparation_pending_ = true;
+   const int entry_id =
+       web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID();
+-  proxy_retry_handler_.Run(ticket->original_url, base::BindOnce(
++  // Grant the failed destination; OnRouteReady still reloads the original URL.
++  proxy_retry_handler_.Run(ticket->failed_url, base::BindOnce(
+       &AccessNavigationRetryTabHelper::OnProxyPrepared, weak_factory_.GetWeakPtr(),
+       *ticket, entry_id, std::move(completion)));
+   return true;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 8c1dbb9ade812ed7e2277410781af4557bfd4214..a29bc06be75cc8d836bd324e7b7366b292af7397 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -192,13 +192,16 @@ struct HeldRedirectBrowserRequest {
+   HeldRedirectBrowserRequest(Profile* profile, content::RenderFrameHost* frame,
+       const OwnershipKey& owner,
+       aegis_access::BrowserOwnedRequestMetadata metadata,
+-      std::shared_ptr<AccessPrivateContextClient> context) {
++      std::shared_ptr<AccessPrivateContextClient> context,
++      std::optional<int64_t> navigation_id = std::nullopt) {
++    std::optional<content::WeakDocumentPtr> document;
++    if (!navigation_id) document = frame->GetWeakDocumentPtr();
+     wrapper = std::make_unique<AccessProxyingURLLoaderFactory>(
+-        profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
++        profile, frame->GetFrameTreeNodeId(), navigation_id, std::nullopt,
+         nullptr, owner, std::move(metadata),
+         factory.BindNewPipeAndPassReceiver(),
+         mojo::PendingRemote<network::mojom::URLLoaderFactory>(),
+-        frame->GetWeakDocumentPtr(),
++        std::move(document),
+         base::BindOnce([](HeldRedirectBrowserRequest* self,
+                           AccessProxyingURLLoaderFactory*) {
+           self->wrapper.reset();
+@@ -752,6 +755,46 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+     }));
+     return request;
+   }
++  void SaveRedirectWebsiteAndStopCore() {
++    const GURL target("https://cdn.example/redirect-final");
++    ASSERT_TRUE(bubble_->RequestHostProxySession({"cdn.example"}, true));
++    ASSERT_TRUE(base::test::RunUntil([&] {
++      return bubble_->SnapshotForCommittedUrl(target).connection ==
++             AccessSiteConnectionState::kReady;
++    }));
++    const auto endpoint = transport_->CurrentEndpoint(owner_);
++    ASSERT_TRUE(endpoint);
++    AccessSiteProxyProductTestPeer::LoseRuntime(bubble_, endpoint->registration_id);
++    task_environment()->RunUntilIdle();
++    ASSERT_FALSE(AccessSiteProxyProductTestPeer::HasCore(bubble_));
++    ASSERT_FALSE(transport_->CurrentEndpoint(owner_));
++    ASSERT_EQ(bubble_->SnapshotForCommittedUrl(target).intent,
++              AccessSiteIntent::kAllow);
++  }
++  std::unique_ptr<HeldRedirectBrowserRequest> StartPendingNavigationRedirect(
++      content::NavigationSimulator* navigation) {
++    navigation->Start();
++    const int64_t navigation_id =
++        navigation->GetNavigationHandle()->GetNavigationId();
++    auto metadata = BuildBrowserOwnedRequestMetadata(profile(),
++        base::BindRepeating([](content::WebContents* contents) { return contents; },
++                            base::Unretained(web_contents())),
++        main_rfh()->GetFrameTreeNodeId(), navigation_id);
++    CHECK(metadata.metadata);
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
++    auto request = std::make_unique<HeldRedirectBrowserRequest>(
++        profile(), main_rfh(), owner_, std::move(*metadata.metadata), bound.Take(),
++        navigation_id);
++    request->Start();
++    EXPECT_TRUE(base::test::RunUntil([&] {
++      return request->client.has_received_redirect() ||
++             request->client.has_received_completion();
++    }));
++    if (request->client.has_received_redirect())
++      navigation->Redirect(GURL("https://cdn.example/redirect-final"));
++    return request;
++  }
+   base::ScopedTempDir directory_;
+   ProductAckContext context_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+@@ -869,6 +912,41 @@ TEST_F(AccessRetryNavigationProductTest,
+   EXPECT_EQ(request->target.starts, 0);
+ }
+ 
++TEST_F(AccessRetryNavigationProductTest,
++       RedirectToSavedWebsitePreparesMissingCoreAndWaitsForAck) {
++  SaveRedirectWebsiteAndStopCore();
++  auto navigation = content::NavigationSimulator::CreateBrowserInitiated(
++      GURL("https://news.example/redirect"), web_contents());
++  auto request = StartPendingNavigationRedirect(navigation.get());
++  ASSERT_TRUE(request->client.has_received_redirect());
++  ASSERT_TRUE(request->target.initial);
++  EXPECT_TRUE(request->target.initial->registration_id.empty());
++  EXPECT_FALSE(AccessSiteProxyProductTestPeer::HasCore(bubble_));
++
++  context_.hold_next = true;
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return context_.has_reply() || request->client.has_received_completion();
++  }));
++  ASSERT_TRUE(context_.has_reply())
++      << "Redirect completed before preparing its saved proxy: "
++      << request->client.completion_status().error_code;
++  EXPECT_FALSE(request->client.has_received_completion());
++  EXPECT_FALSE(request->target.followed);
++  context_.Reply(true);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return request->client.has_received_completion();
++  }));
++  EXPECT_EQ(request->client.completion_status().error_code, net::OK);
++  ASSERT_TRUE(request->target.followed);
++  EXPECT_FALSE(request->target.followed->registration_id.empty());
++  EXPECT_EQ(request->target.followed->hop, 1u);
++  EXPECT_EQ(request->target.followed->request_token,
++            request->target.initial->request_token);
++  EXPECT_EQ(request->target.public_follows, 0);
++  navigation->Commit();
++}
++
+ TEST_F(AccessRetryNavigationProductTest,
+        NativeRedirectSurvivesPrivateFactoryAdmissionReset) {
+   auto request = StartHeldRedirect(false);
+-- 
+2.54.0 (Apple Git-157)
+

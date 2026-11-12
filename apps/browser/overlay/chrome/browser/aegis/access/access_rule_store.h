@@ -229,6 +229,7 @@ class AccessRuleStore {
     kPrepareAfterCounterUpdate,
     kPrepareBeforeJournalInsert,
     kPrepareAfterJournalInsert,
+    kBuildPreparedCandidateBeforeRead,
     kCommitAfterRuleDelete,
     kCommitAfterGroupDelete,
     kCommitAfterGroupInsert,
@@ -247,6 +248,14 @@ class AccessRuleStore {
   const AccessStoreBinding& binding() const { return binding_; }
 
   StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
+      const std::string& storage_partition_token);
+  // Atomically reserves a fresh policy version for the currently committed
+  // contents, including an empty bootstrap snapshot. Rows are not changed.
+  // The returned value is only a publication candidate; Network ACK and the
+  // Browser restoration barrier still govern use. PREPARED rows must be
+  // explicitly recovered before this method can return committed contents.
+  StoreResult<aegis_access::PublishedAccessPolicySnapshot>
+  ReserveCommittedPolicyForPublication(
       const std::string& storage_partition_token);
   StoreResult<PendingMutationRecord> PrepareSiteGroupMutation(
       const SiteGroupMutationRequest& request);
@@ -270,6 +279,7 @@ class AccessRuleStore {
 
  private:
   friend class AccessRuleStoreTestPeer;
+  friend class AccessAsyncRuleStore;
 
   // Restricted friend-only fixture seam for persistence/matcher regressions.
   // It is intentionally unavailable to production callers.

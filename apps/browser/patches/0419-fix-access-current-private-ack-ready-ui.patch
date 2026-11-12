@@ -1,0 +1,142 @@
+From 70068d26a55a04530ed569b431b08f825ac5b2e1 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 03:05:53 +0800
+Subject: [PATCH] fix(access): require current private ACK for ready UI
+
+---
+ .../access_site_proxy_bubble_controller.cc    | 14 ++++++++-
+ .../access/access_site_proxy_bubble_model.h   |  3 ++
+ .../access_site_proxy_product_unittest.cc     | 31 ++++++++++++++++++-
+ .../ui/views/toolbar/aegis_toolbar_button.cc  |  7 ++++-
+ 4 files changed, 52 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index edba8bd08d75b5fb6839a3441e727f1b423bac4c..7878f2478f3c661d4862f79827c012688276b844 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -121,7 +121,19 @@ AccessSiteProxyBubbleController::SnapshotForCommittedUrl(
+     if (pending != host_states_.end() &&
+         pending->second.connection == AccessSiteConnectionState::kConnecting) found = pending;
+   }
+-  const HostState state = found == host_states_.end() ? HostState() : found->second;
++  HostState state = found == host_states_.end() ? HostState() : found->second;
++  if (state.connection == AccessSiteConnectionState::kReady) {
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    const auto owner = transport ? transport->OwnerForPartition(
++        AccessChannelForCurrentBuild(), {}) : std::nullopt;
++    auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++    const auto common = owner && runtime
++        ? runtime->CaptureCommonGenerationTupleOnUiThread(*owner) : std::nullopt;
++    if (!local_core_ready_ || !common || !transport->HasCurrentPrivatePolicy(*owner, *common)) {
++      state.connection = AccessSiteConnectionState::kUnavailable;
++      state.failure_reason = "The proxy network context is not ready.";
++    }
++  }
+   AccessSiteIntentStore presentation;
+   if (host.host && key) presentation.Set(*host.host, intent_store_.Get(*key));
+   return BuildSiteProxyBubbleSnapshot(committed_url, presentation,
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_model.h b/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
+index 471bc23738c9b326518c59e0331f7db65fdd3f68..e0fd04da8ae8070ce84ffe7e26112b640a65ddb3 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_model.h
+@@ -53,6 +53,9 @@ struct AccessSiteProxyBubbleSnapshot {
+       AccessSiteProxyConnectionStatusId::kIdle;
+   // Readable publication/session failure from P-mac-3. Empty when healthy.
+   std::string failure_reason;
++
++  friend bool operator==(const AccessSiteProxyBubbleSnapshot&,
++                         const AccessSiteProxyBubbleSnapshot&) = default;
+ };
+ 
+ std::string_view AccessSiteConnectionStateToString(
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 7ec2ba43c3be10b25c5a97671f425e89883c5cf9..e5e63ef7e021926a6423c1fb1638f37bc383c334 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -55,7 +55,7 @@ class ProductAckContext final : public network::TestNetworkContext,
+       mojo::PendingReceiver<network::mojom::AegisAccessContext> receiver,
+       BindAegisAccessContextCallback callback) override {
+     receivers_.Add(this, std::move(receiver));
+-    std::move(callback).Run("product-test-context");
++    std::move(callback).Run(incarnation);
+   }
+   void InstallSnapshot(network::mojom::AegisAccessSnapshotPtr snapshot,
+                        InstallSnapshotCallback callback) override {
+@@ -98,6 +98,8 @@ class ProductAckContext final : public network::TestNetworkContext,
+     std::move(callback).Run(true);
+   }
+   bool hold_next = false;
++  std::string incarnation = "product-test-context";
++  void Disconnect() { receivers_.Clear(); }
+ 
+  private:
+   network::mojom::AegisAccessSnapshotAckPtr held_ack_;
+@@ -395,5 +397,32 @@ TEST_F(AccessSiteProxyProductTest, CanDisableOneWebsiteWhileOtherSavedProxyHasNo
+   EXPECT_FALSE(transport_->CurrentEndpoint(owner_));
+ }
+ 
++TEST_F(AccessSiteProxyProductTest, ReadyUiRequiresCurrentContextAckAfterDisconnect) {
++  Enable();
++  context_.Disconnect();
++  environment_.RunUntilIdle();
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kUnavailable);
++  EXPECT_FALSE(Snapshot().failure_reason.empty());
++  ProductAckContext replacement;
++  replacement.incarnation = "replacement-context";
++  base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++  transport_->BindPrivateContext(owner_, &replacement, bound.GetCallback());
++  ASSERT_TRUE(bound.Get());
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_.get());
++  const auto common = runtime->CaptureCommonGenerationTupleOnUiThread(owner_);
++  ASSERT_TRUE(common);
++  replacement.hold_next = true;
++  base::test::TestFuture<bool> ack;
++  transport_->PublishPrivatePolicy(*runtime->GetPublishedPolicySnapshot(owner_),
++                                   *common, ack.GetCallback());
++  ASSERT_TRUE(base::test::RunUntil([&] { return replacement.has_reply(); }));
++  EXPECT_FALSE(ack.IsReady());
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kUnavailable);
++  replacement.Reply(true);
++  ASSERT_TRUE(ack.Get());
++  EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 67bf7ec26580e8a91be03b9b050912e071c2e458..437c46f1c55e8d030c1cbb9acc88885c2341dbd1 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -264,8 +264,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     auto* access = aegis::access::AccessSiteProxyBubbleController::Get(
+         browser_->GetProfile());
+     const uint64_t access_revision = access ? access->state_revision() : 0;
++    const auto access_snapshot = access
++        ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
+     if (revision != revision_ || snapshot != snapshot_ ||
+-        access_revision != access_revision_) Build();
++        access_revision != access_revision_ || access_snapshot != access_snapshot_) Build();
+   }
+   void RefreshSoon() {
+     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+@@ -481,6 +483,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     auto* access = aegis::access::AccessSiteProxyBubbleController::Get(
+         browser_->GetProfile());
+     access_revision_ = access ? access->state_revision() : 0;
++    access_snapshot_ = access
++        ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
+     panel_->RemoveAllChildViews();
+     if (!address_.SchemeIsHTTPOrHTTPS()) {
+       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
+@@ -614,6 +618,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   base::DictValue snapshot_;
+   int revision_ = -1;
+   uint64_t access_revision_ = 0;
++  std::optional<aegis::access::AccessSiteProxyBubbleSnapshot> access_snapshot_;
+   std::set<std::string> expanded_;
+   std::u16string notice_;
+   base::RepeatingTimer timer_;
+-- 
+2.54.0 (Apple Git-157)
+

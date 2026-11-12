@@ -53,6 +53,9 @@ struct AccessSiteProxyBubbleSnapshot {
       AccessSiteProxyConnectionStatusId::kIdle;
   // Readable publication/session failure from P-mac-3. Empty when healthy.
   std::string failure_reason;
+
+  friend bool operator==(const AccessSiteProxyBubbleSnapshot&,
+                         const AccessSiteProxyBubbleSnapshot&) = default;
 };
 
 std::string_view AccessSiteConnectionStateToString(

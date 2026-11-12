@@ -1,16 +1,17 @@
-From 717ea51b7404714445001b8411eb92540fb22b0f Mon Sep 17 00:00:00 2001
+From 0f55da289bd315aebc32c6a090d118f0c3ff5f9c Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
-Date: Wed, 11 Nov 2026 19:20:27 +0800
-Subject: [PATCH] fix(access): scope rule store metadata to each open attempt
+Date: Wed, 11 Nov 2026 22:23:11 +0800
+Subject: [PATCH] fix(access): reconcile store Open retry with Website
+ migration
 
 ---
- .../browser/aegis/access/access_rule_store.cc  |  4 +++-
- .../browser/aegis/access/access_rule_store.h   |  2 --
- .../aegis/access/access_rule_store_unittest.cc | 18 ++++++++++++++++++
- 3 files changed, 21 insertions(+), 3 deletions(-)
+ .../browser/aegis/access/access_rule_store.cc |  8 ++--
+ .../browser/aegis/access/access_rule_store.h  |  2 -
+ .../access/access_rule_store_unittest.cc      | 39 +++++++++++++++++++
+ 3 files changed, 44 insertions(+), 5 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
-index 89efd848f0c0774e628a27f86a9659b0619c0700..28d35414cd2aaf1e16ae80b24078e3c72968dd8a 100644
+index aa65f1a0b7fa463816c8d48a18115a1d8c592dd1..69d5ee190b6ce73cd867870c1b441e6073b30f43 100644
 --- a/chrome/browser/aegis/access/access_rule_store.cc
 +++ b/chrome/browser/aegis/access/access_rule_store.cc
 @@ -13,6 +13,7 @@
@@ -21,7 +22,7 @@ index 89efd848f0c0774e628a27f86a9659b0619c0700..28d35414cd2aaf1e16ae80b24078e3c7
  #include "sql/statement.h"
  #include "sql/transaction.h"
  #include "url/gurl.h"
-@@ -664,9 +665,10 @@ StoreStatus AccessRuleStore::Open() {
+@@ -702,9 +703,10 @@ StoreStatus AccessRuleStore::Open() {
      return terminal_status_;
    }
  
@@ -33,8 +34,19 @@ index 89efd848f0c0774e628a27f86a9659b0619c0700..28d35414cd2aaf1e16ae80b24078e3c7
      terminal_status_ = StoreStatus::kIoError;
      return terminal_status_;
    }
+@@ -776,8 +778,8 @@ StoreStatus AccessRuleStore::Open() {
+           "website_context INTEGER NOT NULL DEFAULT 0") ||
+         !database_.Execute("UPDATE access_store_identity SET schema_version=2 WHERE schema_version=1") ||
+         !database_.Execute("UPDATE access_mutation_journal SET schema_version=2 WHERE schema_version=1") ||
+-        !meta_table_.SetVersionNumber(kSchemaVersion) ||
+-        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion)) {
++        !meta_table.SetVersionNumber(kSchemaVersion) ||
++        !meta_table.SetCompatibleVersionNumber(kCompatibleVersion)) {
+       terminal_status_ = StoreStatus::kIoError;
+       return terminal_status_;
+     }
 diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
-index fdef7b6afc15e339b0a04cbc532489a011a5a398..90feccc90d8110e6b4e6476bb51dae827ca0d956 100644
+index 24436d57b1ade059563b6988e5ac2ac15e02907d..a72bd89ae571b42a41fac49cff1b13cf37d78c28 100644
 --- a/chrome/browser/aegis/access/access_rule_store.h
 +++ b/chrome/browser/aegis/access/access_rule_store.h
 @@ -13,7 +13,6 @@
@@ -45,7 +57,7 @@ index fdef7b6afc15e339b0a04cbc532489a011a5a398..90feccc90d8110e6b4e6476bb51dae82
  
  namespace aegis::access {
  
-@@ -300,7 +299,6 @@ class AccessRuleStore {
+@@ -310,7 +309,6 @@ class AccessRuleStore {
  
    AccessStoreBinding binding_;
    sql::Database database_;
@@ -54,7 +66,7 @@ index fdef7b6afc15e339b0a04cbc532489a011a5a398..90feccc90d8110e6b4e6476bb51dae82
    StoreStatus terminal_status_ = StoreStatus::kIoError;
    FailurePointForTesting failure_point_for_testing_ =
 diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
-index 51f763a101ca8cc78842297cc6be580a43a4de5e..c776927a71e769672f655b92b945b7cfb43af47e 100644
+index 90b548e28b0643a2d5cc677c926faba885c23d5c..2ce06a06f2290fe8fe59616c1a58256560f1a190 100644
 --- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
 +++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
 @@ -323,6 +323,8 @@ TEST(AccessRuleStoreTest, EmptyPersistentDatabaseIsMissingAndOwnerBound) {
@@ -66,7 +78,7 @@ index 51f763a101ca8cc78842297cc6be580a43a4de5e..c776927a71e769672f655b92b945b7cf
  }
  
  TEST(AccessRuleStoreTest, ReopenRebindsStoredRowsToCurrentRuntimeOwner) {
-@@ -706,6 +708,22 @@ TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
+@@ -768,6 +770,22 @@ TEST(AccessRuleStoreTest, MissingOrLaggingCounterFailsClosedOnReopen) {
    EXPECT_EQ(missing_mutation.status, StoreStatus::kCorrupt);
    EXPECT_FALSE(missing_mutation.value.has_value());
  
@@ -89,6 +101,34 @@ index 51f763a101ca8cc78842297cc6be580a43a4de5e..c776927a71e769672f655b92b945b7cf
    base::ScopedTempDir lagging_temp;
    ASSERT_TRUE(lagging_temp.CreateUniqueTempDir());
    const AccessStoreBinding lagging_binding =
+@@ -1663,6 +1681,27 @@ TEST(AccessRuleStoreTest, LegacySchemaCannotReinterpretUnknownOrdinalAsWebsiteGr
+   }
+   AccessRuleStore migrated(binding);
+   EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
++  EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
++  EXPECT_FALSE(migrated.is_open());
++  {
++    // Both failed migrations must roll back. Repair only the unsupported
++    // ordinal, then retry the same store and preserve its exact-host rule.
++    sql::Database legacy("AegisAccess");
++    ASSERT_TRUE(legacy.Open(binding.database_path()));
++    const auto repair = "UPDATE access_rules SET scope=" +
++        std::to_string(static_cast<int>(PolicyScope::kSite)) +
++        " WHERE rule_id='future-scope'";
++    ASSERT_TRUE(legacy.Execute(repair.c_str()));
++  }
++  ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
++  const auto recovered = migrated.ReadCommittedSnapshot("partition-A");
++  ASSERT_EQ(recovered.status, StoreStatus::kValid);
++  ASSERT_TRUE(recovered.value);
++  ASSERT_EQ(recovered.value->independent_rules.size(), 1u);
++  const auto& restored = recovered.value->independent_rules.front().policy;
++  EXPECT_EQ(restored.scope, PolicyScope::kSite);
++  EXPECT_EQ(restored.destination_host, "example.com");
++  EXPECT_FALSE(restored.include_subdomains);
+ }
+ 
+ }  // namespace
 -- 
 2.54.0 (Apple Git-157)
 

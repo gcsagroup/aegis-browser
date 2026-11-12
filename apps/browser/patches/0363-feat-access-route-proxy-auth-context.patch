@@ -1,0 +1,322 @@
+From 81ab5dae999f3dcaa578459fc8473324bb7d4578 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 06:26:31 +0800
+Subject: [PATCH] feat(access): isolate route proxy authentication state
+
+---
+ components/aegis_access/BUILD.gn              |  11 ++
+ .../access_proxy_route_context_unittest.cc    | 148 ++++++++++++++++++
+ net/BUILD.gn                                  |   2 +
+ net/http/access_proxy_route.cc                |  48 ++++++
+ net/http/access_proxy_route.h                 |  54 +++++++
+ 5 files changed, 263 insertions(+)
+ create mode 100644 components/aegis_access/access_proxy_route_context_unittest.cc
+ create mode 100644 net/http/access_proxy_route.cc
+ create mode 100644 net/http/access_proxy_route.h
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 3b6d17f03179264051a44f81738559c02693c4a0..38e127012d18cde98ca2c798032cbc7e73164dc8 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -242,6 +242,17 @@ test("request_dispatch_gate_unittests") {
+   deps += [ ":request_ownership_registry_test_support" ]
+ }
+ 
++test("access_proxy_route_context_unittests") {
++  sources = [ "access_proxy_route_context_unittest.cc" ]
++  deps = [
++    "//base",
++    "//base/test:run_all_unittests",
++    "//net",
++    "//testing/gtest",
++    "//url",
++  ]
++}
++
+ test("access_route_pool_isolation_unittests") {
+   sources = [ "access_route_pool_isolation_unittest.cc" ]
+   deps = [
+diff --git a/components/aegis_access/access_proxy_route_context_unittest.cc b/components/aegis_access/access_proxy_route_context_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e6fb39847d3fe86b043e4fb8cacc350fa315797
+--- /dev/null
++++ b/components/aegis_access/access_proxy_route_context_unittest.cc
+@@ -0,0 +1,148 @@
++// Copyright 2026 GCSA
++
++#include "net/http/access_proxy_route.h"
++
++#include <cstdint>
++#include <optional>
++#include <utility>
++
++#include "net/base/proxy_server.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access {
++namespace {
++
++net::AccessRouteIsolationKey RouteKey() {
++  return {.channel = 0,
++          .profile = "profile-a",
++          .partition = "partition-a",
++          .group = "group-a",
++          .registration = "registration-a",
++          .incarnation = "context-a",
++          .policy_generation = 1,
++          .identity_generation = 2,
++          .selection_generation = 3,
++          .network_epoch = 4,
++          .base_proxy_config_generation = 5};
++}
++
++net::ProxyChain LocalProxy() {
++  return net::ProxyChain::FromSchemeHostAndPort(
++      net::ProxyServer::SCHEME_HTTP, "127.0.0.1", 8080);
++}
++
++url::SchemeHostPort ProxyOrigin() {
++  return url::SchemeHostPort("http", "127.0.0.1", 8080);
++}
++
++net::HttpAuthCache::Entry* Find(net::HttpAuthCache* cache) {
++  return cache->Lookup(ProxyOrigin(), net::HttpAuth::AUTH_PROXY, "access",
++                       net::HttpAuth::AUTH_SCHEME_BASIC,
++                       net::NetworkAnonymizationKey());
++}
++
++void Add(net::HttpAuthCache* cache, const net::AuthCredentials& credentials) {
++  cache->Add(ProxyOrigin(), net::HttpAuth::AUTH_PROXY, "access",
++             net::HttpAuth::AUTH_SCHEME_BASIC, net::NetworkAnonymizationKey(),
++             "Basic realm=\"access\"", credentials, "");
++}
++
++TEST(AccessProxyRouteContextTest, AcceptsOnlyCompleteLoopbackProxyValues) {
++  for (auto scheme : {net::ProxyServer::SCHEME_HTTP,
++                      net::ProxyServer::SCHEME_SOCKS5}) {
++    for (const auto* address : {"127.0.0.1", "::1"}) {
++      const auto chain = net::ProxyChain::FromSchemeHostAndPort(
++          scheme, address, 8080);
++      auto route = net::AccessProxyRoute::Create(RouteKey(), chain);
++      ASSERT_TRUE(route);
++      EXPECT_EQ(route->isolation_key(), RouteKey());
++      EXPECT_EQ(route->proxy_chain(), chain);
++      EXPECT_EQ(route->proxy_auth_cache()->GetEntriesSizeForTesting(), 0u);
++    }
++  }
++}
++
++TEST(AccessProxyRouteContextTest, RejectsInvalidOrUnregisteredTransportValues) {
++  EXPECT_FALSE(net::AccessProxyRoute::Create({}, LocalProxy()));
++  auto incomplete = RouteKey();
++  incomplete.incarnation.clear();
++  EXPECT_FALSE(net::AccessProxyRoute::Create(incomplete, LocalProxy()));
++  EXPECT_FALSE(net::AccessProxyRoute::Create(RouteKey(), net::ProxyChain()));
++  EXPECT_FALSE(net::AccessProxyRoute::Create(RouteKey(), net::ProxyChain::Direct()));
++  for (const auto* address : {"localhost", "192.0.2.1", "0.0.0.0", "::"}) {
++    EXPECT_FALSE(net::AccessProxyRoute::Create(
++        RouteKey(), net::ProxyChain::FromSchemeHostAndPort(
++                        net::ProxyServer::SCHEME_HTTP, address, 8080)));
++  }
++  EXPECT_FALSE(net::AccessProxyRoute::Create(
++      RouteKey(), net::ProxyChain::FromSchemeHostAndPort(
++                      net::ProxyServer::SCHEME_HTTP, "127.0.0.1",
++                      std::optional<uint16_t>(0))));
++  for (auto scheme : {net::ProxyServer::SCHEME_HTTPS,
++                      net::ProxyServer::SCHEME_SOCKS4}) {
++    EXPECT_FALSE(net::AccessProxyRoute::Create(
++        RouteKey(), net::ProxyChain::FromSchemeHostAndPort(
++                        scheme, "127.0.0.1", 8080)));
++  }
++}
++
++TEST(AccessProxyRouteContextTest, ProxyCredentialsDoNotEnterNativeCache) {
++  net::HttpAuthCache native(true);
++  const net::AuthCredentials native_credentials(u"native", u"native-password");
++  const net::AuthCredentials managed_credentials(u"managed", u"managed-password");
++  Add(&native, native_credentials);
++  auto route = net::AccessProxyRoute::Create(RouteKey(), LocalProxy());
++  ASSERT_TRUE(route);
++  EXPECT_FALSE(Find(route->proxy_auth_cache()));
++  Add(route->proxy_auth_cache(), managed_credentials);
++  ASSERT_TRUE(Find(&native));
++  EXPECT_TRUE(Find(&native)->credentials().Equals(native_credentials));
++  ASSERT_TRUE(Find(route->proxy_auth_cache()));
++  EXPECT_TRUE(Find(route->proxy_auth_cache())->credentials().Equals(
++      managed_credentials));
++  EXPECT_TRUE(route->proxy_auth_cache()->ClearAllEntries());
++  EXPECT_TRUE(Find(&native));
++}
++
++TEST(AccessProxyRouteContextTest, NewOwnerOrRegistrationNeverInheritsCredentials) {
++  auto original = net::AccessProxyRoute::Create(RouteKey(), LocalProxy());
++  ASSERT_TRUE(original);
++  Add(original->proxy_auth_cache(), net::AuthCredentials(u"a", u"password-a"));
++  for (auto member : {&net::AccessRouteIsolationKey::profile,
++                      &net::AccessRouteIsolationKey::partition,
++                      &net::AccessRouteIsolationKey::group,
++                      &net::AccessRouteIsolationKey::registration,
++                      &net::AccessRouteIsolationKey::incarnation}) {
++    auto changed = RouteKey();
++    changed.*member += "-new";
++    auto next = net::AccessProxyRoute::Create(changed, LocalProxy());
++    ASSERT_TRUE(next);
++    EXPECT_FALSE(Find(next->proxy_auth_cache()));
++    EXPECT_FALSE(next->proxy_auth_cache()->LookupByPath(
++        ProxyOrigin(), net::HttpAuth::AUTH_PROXY,
++        net::NetworkAnonymizationKey(), ""));
++  }
++  auto changed = RouteKey();
++  ++changed.selection_generation;
++  auto next = net::AccessProxyRoute::Create(changed, LocalProxy());
++  ASSERT_TRUE(next);
++  EXPECT_FALSE(Find(next->proxy_auth_cache()));
++  EXPECT_TRUE(Find(original->proxy_auth_cache()));
++}
++
++TEST(AccessProxyRouteContextTest, InFlightReferenceRetainsOnlyItsOwnCache) {
++  auto installed = net::AccessProxyRoute::Create(RouteKey(), LocalProxy());
++  ASSERT_TRUE(installed);
++  Add(installed->proxy_auth_cache(), net::AuthCredentials(u"old", u"old-secret"));
++  auto in_flight = installed;
++  auto replacement = RouteKey();
++  ++replacement.policy_generation;
++  installed = net::AccessProxyRoute::Create(replacement, LocalProxy());
++  ASSERT_TRUE(installed);
++  EXPECT_FALSE(Find(installed->proxy_auth_cache()));
++  ASSERT_TRUE(Find(in_flight->proxy_auth_cache()));
++  EXPECT_EQ(Find(in_flight->proxy_auth_cache())->credentials().username(), u"old");
++}
++
++}  // namespace
++}  // namespace aegis_access
+diff --git a/net/BUILD.gn b/net/BUILD.gn
+index 88190e217fc4df2c0599fe82326f31d8135d100a..e94ce900eba52700bb9ec4c0b567ff00da95fc69 100644
+--- a/net/BUILD.gn
++++ b/net/BUILD.gn
+@@ -600,6 +600,8 @@ component("net") {
+     "http/cache_body_decompressor.h",
+     "http/http_auth.cc",
+     "http/http_auth.h",
++    "http/access_proxy_route.cc",
++    "http/access_proxy_route.h",
+     "http/http_auth_cache.cc",
+     "http/http_auth_cache.h",
+     "http/http_auth_challenge_tokenizer.cc",
+diff --git a/net/http/access_proxy_route.cc b/net/http/access_proxy_route.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..a4802b159ea53e998658107834b761973cf8861e
+--- /dev/null
++++ b/net/http/access_proxy_route.cc
+@@ -0,0 +1,48 @@
++// Copyright 2026 GCSA
++
++#include "net/http/access_proxy_route.h"
++
++#include <utility>
++
++#include "net/base/ip_address.h"
++
++namespace net {
++
++scoped_refptr<AccessProxyRoute> AccessProxyRoute::Create(
++    AccessRouteIsolationKey isolation_key,
++    ProxyChain proxy_chain) {
++  if (!isolation_key.IsComplete() || !proxy_chain.is_single_proxy()) {
++    return nullptr;
++  }
++  const auto& proxy = proxy_chain.GetProxyServer(0);
++  if (!proxy.is_valid() ||
++      (proxy.scheme() != ProxyServer::SCHEME_HTTP &&
++       proxy.scheme() != ProxyServer::SCHEME_SOCKS5) ||
++      proxy.host_port_pair().port() == 0) {
++    return nullptr;
++  }
++  IPAddress address;
++  if (!address.AssignFromIPLiteral(proxy.host_port_pair().host()) ||
++      !address.IsLoopback()) {
++    return nullptr;
++  }
++  return base::WrapRefCounted(new AccessProxyRoute(std::move(isolation_key),
++                                                 std::move(proxy_chain)));
++}
++
++AccessProxyRoute::AccessProxyRoute(AccessRouteIsolationKey isolation_key,
++                                 ProxyChain proxy_chain)
++    : isolation_key_(std::move(isolation_key)),
++      proxy_chain_(std::move(proxy_chain)),
++      proxy_auth_cache_(/*key_server_entries_by_network_anonymization_key=*/true) {}
++
++AccessProxyRoute::~AccessProxyRoute() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++}
++
++HttpAuthCache* AccessProxyRoute::proxy_auth_cache() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  return &proxy_auth_cache_;
++}
++
++}  // namespace net
+diff --git a/net/http/access_proxy_route.h b/net/http/access_proxy_route.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d74338241195feb3b00bfde138e546da6b1465d
+--- /dev/null
++++ b/net/http/access_proxy_route.h
+@@ -0,0 +1,54 @@
++// Copyright 2026 GCSA
++
++#ifndef NET_HTTP_ACCESS_PROXY_ROUTE_H_
++#define NET_HTTP_ACCESS_PROXY_ROUTE_H_
++
++#include "base/memory/ref_counted.h"
++#include "base/sequence_checker.h"
++#include "net/base/access_route_isolation_key.h"
++#include "net/base/net_export.h"
++#include "net/base/proxy_chain.h"
++#include "net/http/http_auth_cache.h"
++
++namespace net {
++
++// Network-sequence transport state for one installed Access route. The private
++// Network Service registry must authorize owner, incarnation, policy and
++// endpoint before attaching this object to a request. This value constructor
++// is NOT an authorization or listener-health check.
++//
++// The installed route and its in-flight requests share a reference. Replacing
++// the installed route creates a fresh cache; credentials are never inserted in
++// the session's native proxy cache or copied across route incarnations.
++class NET_EXPORT AccessProxyRoute : public base::RefCounted<AccessProxyRoute> {
++ public:
++  // An invalid requested proxy returns null. Callers must fail that request,
++  // not interpret this failure as permission to use a native/DIRECT route.
++  static scoped_refptr<AccessProxyRoute> Create(
++      AccessRouteIsolationKey isolation_key,
++      ProxyChain proxy_chain);
++
++  AccessProxyRoute(const AccessProxyRoute&) = delete;
++  AccessProxyRoute& operator=(const AccessProxyRoute&) = delete;
++
++  const AccessRouteIsolationKey& isolation_key() const { return isolation_key_; }
++  const ProxyChain& proxy_chain() const { return proxy_chain_; }
++
++  // For AUTH_PROXY controllers on this route only. Origin authentication
++  // continues to use the native session cache and its existing NAK semantics.
++  HttpAuthCache* proxy_auth_cache();
++
++ private:
++  friend class base::RefCounted<AccessProxyRoute>;
++  AccessProxyRoute(AccessRouteIsolationKey isolation_key, ProxyChain proxy_chain);
++  ~AccessProxyRoute();
++
++  const AccessRouteIsolationKey isolation_key_;
++  const ProxyChain proxy_chain_;
++  HttpAuthCache proxy_auth_cache_;
++  SEQUENCE_CHECKER(sequence_checker_);
++};
++
++}  // namespace net
++
++#endif  // NET_HTTP_ACCESS_PROXY_ROUTE_H_
+-- 
+2.54.0 (Apple Git-157)
+

@@ -1,8 +1,8 @@
-From e1d82c7f259e805af5b7ac7a99c5721c6fa3fe8f Mon Sep 17 00:00:00 2001
+From 3378ca75b2c2629383e43f8a4923f28bb0d49432 Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
-Date: Thu, 12 Nov 2026 01:48:17 +0800
-Subject: [PATCH] feat(access-account): query the current account from its
- macOS Profile
+Date: Thu, 12 Nov 2026 12:49:05 +0800
+Subject: [PATCH] feat(access-account): retain the macOS account query on the
+ integrated Access tree
 
 ---
  chrome/browser/aegis/BUILD.gn                 |   5 +
@@ -602,6 +602,3 @@ index 7d53f3d9f245a70bfe3eb3f0ceffa4a7724e646a..f657d2e1dc0f8b4cb6fe799b4fb50a3b
    base::WeakPtrFactory<AegisUIHandler> weak_factory_{this};
  };
  
--- 
-2.54.0 (Apple Git-157)
-

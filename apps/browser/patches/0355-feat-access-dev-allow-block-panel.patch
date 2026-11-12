@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Aegis Packaging Proposal <aegis-proposal@invalid>
-Date: Sun, 8 Nov 2026 15:30:00 +0000
+Date: Sun, 8 Nov 2026 15:45:00 +0000
 Subject: [PATCH] feat: add macOS DEV allow/block debug panel
 
 DEV/Alpha debug panel for explicit-host ALLOW/BLOCK via the site intent
@@ -8,10 +8,10 @@ API. Beta/Release do not register the panel or a general rule editor.
 
 ---
 diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
-index 40a2c0d6b3d5f35b9269f2458df220e887e8864d..c65cde9bc3d15e1928705663cb81d2bcfa7cd778 100644
+index 01d094fac3e004712478905978e705f47170211a..c491344334069cdfb8820ff9698d60f3772131c6 100644
 --- a/chrome/browser/aegis/access/BUILD.gn
 +++ b/chrome/browser/aegis/access/BUILD.gn
-@@ -233,13 +233,16 @@
+@@ -235,13 +235,16 @@
      ":access_network_context_transport",
      ":access_rule_store",
      ":access_service_coordinator",
@@ -29,7 +29,7 @@ index 40a2c0d6b3d5f35b9269f2458df220e887e8864d..c65cde9bc3d15e1928705663cb81d2bc
      "//content/public/browser",
      "//url",
    ]
-@@ -251,6 +254,30 @@
+@@ -253,6 +256,30 @@
      ":access_site_proxy_bubble_model",
      "//base/test:run_all_unittests",
      "//testing/gtest",
@@ -507,7 +507,7 @@ index 0000000000000000000000000000000000000000..c40b28a3b1fd17949cdb27a6d3a2d17b
 +}  // namespace
 +}  // namespace aegis::access
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
-index a3af98ed56e6362dd588b41b6b8d8208ee9d4b81..e3f073d00411c083595b4f932137e4e527d34862 100644
+index a3af98ed56e6362dd588b41b6b8d8208ee9d4b81..4431ee13fcda42922d9e63bb40cab8a599df75b6 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
 @@ -5,12 +5,14 @@
@@ -525,9 +525,9 @@ index a3af98ed56e6362dd588b41b6b8d8208ee9d4b81..e3f073d00411c083595b4f932137e4e5
  #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
  #include "chrome/browser/aegis/access/access_site_proxy_session.h"
  #include "url/gurl.h"
-@@ -68,6 +70,17 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
-   // Rebuild PROXY publication after Network Service restart (no DIRECT).
-   bool RebuildHostProxyAfterNetworkServiceRestart(const AccessSiteHost& host);
+@@ -57,6 +59,17 @@
+   // Returns false only when the host/toggle cannot be accepted.
+   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
  
 +  // P-mac-4 DEV panel. False on Beta/Release — UI must not register the
 +  // section. Never admits a general Access rule editor.
@@ -540,11 +540,11 @@ index a3af98ed56e6362dd588b41b6b8d8208ee9d4b81..e3f073d00411c083595b4f932137e4e5
 +      std::string_view raw_host,
 +      AccessDevAllowBlockAction action);
 +
-  private:
-   explicit AccessSiteProxyBubbleController(Profile* profile);
- 
+   // P-mac-5: node/runtime fault while allow stays allow. Never clears the
+   // PROXY selection or publishes DIRECT. |wait| holds new requests; otherwise
+   // they fail closed.
 diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
-index fb514fb341a895e77cc5aa358efb4186d98fa997..bc77dc01af627cf1d57e0ec9914f5a7e2081b43b 100644
+index da4ea6c1e33f7e4869a735817a5627e0a4fb0ddd..bc77dc01af627cf1d57e0ec9914f5a7e2081b43b 100644
 --- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 +++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
 @@ -9,7 +9,9 @@

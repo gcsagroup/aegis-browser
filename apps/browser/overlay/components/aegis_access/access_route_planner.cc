@@ -75,6 +75,7 @@ bool IsValidPolicyShape(const RouteInput& input) {
              input.effective_proxy_group_id.empty();
     case PolicyState::kValid:
       if (input.policy_scope != PolicyScope::kSite &&
+          input.policy_scope != PolicyScope::kWebsite &&
           input.policy_scope != PolicyScope::kProfile) {
         return false;
       }
@@ -118,7 +119,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
                     RouteReason::kOwnershipMismatch);
   }
   if (input.policy_state == PolicyState::kValid &&
-      input.policy_scope == PolicyScope::kSite &&
+      (input.policy_scope == PolicyScope::kSite || input.policy_scope == PolicyScope::kWebsite) &&
       !input.site_ownership_reliable) {
     return MakePlan(input, RouteAction::kFail,
                     RouteReason::kSiteOwnershipUnavailable);

@@ -1,0 +1,344 @@
+From 80da1c06b84c08d8d32aa3af6e3df9ad7d9b5263 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 12:36:55 +0800
+Subject: [PATCH] feat(access): define private route IPC and independent CORS
+ ownership
+
+---
+ .../access_cors_route_unittest.cc             | 29 ++++++
+ services/network/BUILD.gn                     |  1 +
+ .../network/cors/cors_url_loader_factory.cc   |  4 +-
+ .../network/cors/cors_url_loader_factory.h    |  6 +-
+ .../cors/cors_url_loader_factory_owner.h      | 20 +++++
+ .../prefetch_matching_url_loader_factory.h    |  8 +-
+ services/network/public/mojom/BUILD.gn        |  2 +
+ .../public/mojom/aegis_access_route.mojom     | 25 ++++++
+ .../mojom/aegis_access_route_types.mojom      | 89 +++++++++++++++++++
+ 9 files changed, 176 insertions(+), 8 deletions(-)
+ create mode 100644 services/network/cors/cors_url_loader_factory_owner.h
+ create mode 100644 services/network/public/mojom/aegis_access_route.mojom
+ create mode 100644 services/network/public/mojom/aegis_access_route_types.mojom
+
+diff --git a/components/aegis_access/access_cors_route_unittest.cc b/components/aegis_access/access_cors_route_unittest.cc
+index d68c7e9d5daf6f449772a711b19b61b1467a20e8..99c9e86e90d4c4828cbc1d872ca3da949cef8c73 100644
+--- a/components/aegis_access/access_cors_route_unittest.cc
++++ b/components/aegis_access/access_cors_route_unittest.cc
+@@ -10,6 +10,7 @@
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "services/network/aegis/access_request_route_state.h"
+ #include "services/network/cors/cors_url_loader_factory.h"
++#include "services/network/cors/cors_url_loader_factory_owner.h"
+ #include "services/network/network_context.h"
+ #include "services/network/network_service.h"
+ #include "services/network/resource_scheduler/resource_scheduler_client.h"
+@@ -113,6 +114,34 @@ class AccessCorsRouteTest : public testing::Test {
+   mojo::Remote<mojom::URLLoader> loader_;
+   std::unique_ptr<TestURLLoaderClient> client_;
+ };
++TEST_F(AccessCorsRouteTest, IndependentOwnerControlsFactoryLifetime) {
++  class PrivateOwner final : public cors::CorsURLLoaderFactoryOwner {
++   public:
++    bool HasAdditionalReferences() const override { return has_receiver; }
++    void DestroyURLLoaderFactory(cors::CorsURLLoaderFactory* factory) override {
++      EXPECT_EQ(factory, child.get());
++      child.reset();
++      destroyed = true;
++    }
++    bool has_receiver = true;
++    bool destroyed = false;
++    std::unique_ptr<cors::CorsURLLoaderFactory> child;
++  } private_owner;
++  auto params = mojom::URLLoaderFactoryParams::New();
++  params->process_id = OriginatingProcessId::FromUnsafeValue(42);
++  params->is_trusted = false;
++  params->request_initiator_origin_lock = initiator_;
++  params->isolation_info = net::IsolationInfo::CreateForInternalRequest(initiator_);
++  private_owner.child = std::make_unique<cors::CorsURLLoaderFactory>(
++      context_.get(), std::move(params), nullptr, &origin_access_list_,
++      &private_owner);
++  private_owner.child->DeleteIfNeeded();
++  EXPECT_FALSE(private_owner.destroyed);
++  private_owner.has_receiver = false;
++  private_owner.child->DeleteIfNeeded();
++  EXPECT_TRUE(private_owner.destroyed);
++  EXPECT_FALSE(private_owner.child);
++}
+ TEST_F(AccessCorsRouteTest, PreflightAndActualUseSameRegisteredProxy) {
+   Start();
+   client_->RunUntilComplete();
+diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
+index b93ebab26ee243805009253b052fd6080d69cfd1..ac104a577b09edbad12b3849ceb1c457d4a6814f 100644
+--- a/services/network/BUILD.gn
++++ b/services/network/BUILD.gn
+@@ -29,6 +29,7 @@ component("network_service") {
+     "cors/cors_url_loader.h",
+     "cors/cors_url_loader_factory.cc",
+     "cors/cors_url_loader_factory.h",
++    "cors/cors_url_loader_factory_owner.h",
+     "cors/cors_util.cc",
+     "cors/cors_util.h",
+     "cors/preflight_cache.cc",
+diff --git a/services/network/cors/cors_url_loader_factory.cc b/services/network/cors/cors_url_loader_factory.cc
+index 91515ed55ff58f15badafbbf94421c84e4183e9b..cb6ee097f22185cf92cc7e139f4e8fcd1b1982dd 100644
+--- a/services/network/cors/cors_url_loader_factory.cc
++++ b/services/network/cors/cors_url_loader_factory.cc
+@@ -33,7 +33,7 @@
+ #include "services/network/cors/cors_util.h"
+ #include "services/network/cors/preflight_controller.h"
+ #include "services/network/network_service.h"
+-#include "services/network/prefetch_matching_url_loader_factory.h"
++#include "services/network/cors/cors_url_loader_factory_owner.h"
+ #include "services/network/public/cpp/cors/cors.h"
+ #include "services/network/public/cpp/features.h"
+ #include "services/network/public/cpp/header_util.h"
+@@ -256,7 +256,7 @@ CorsURLLoaderFactory::CorsURLLoaderFactory(
+     mojom::URLLoaderFactoryParamsPtr params,
+     scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
+     const OriginAccessList* origin_access_list,
+-    PrefetchMatchingURLLoaderFactory* owner)
++    CorsURLLoaderFactoryOwner* owner)
+     : context_(context),
+       is_trusted_(params->is_trusted),
+       disable_web_security_(params->disable_web_security),
+diff --git a/services/network/cors/cors_url_loader_factory.h b/services/network/cors/cors_url_loader_factory.h
+index cd1ce2b7f392c3df2fa740e8b03c17b69fc24dad..589517dc61a40ed3f8814a1c197fa8b5c3be8eed 100644
+--- a/services/network/cors/cors_url_loader_factory.h
++++ b/services/network/cors/cors_url_loader_factory.h
+@@ -30,7 +30,6 @@ namespace network {
+ 
+ class AccessRequestRouteState;
+ 
+-class PrefetchMatchingURLLoaderFactory;
+ class ResourceSchedulerClient;
+ class URLLoader;
+ class URLLoaderFactory;
+@@ -39,6 +38,7 @@ class SharedDictionaryStorage;
+ 
+ namespace cors {
+ class CorsURLLoader;
++class CorsURLLoaderFactoryOwner;
+ 
+ // A factory class to create a URLLoader that supports CORS.
+ // This class takes a network::mojom::URLLoaderFactory instance in the
+@@ -64,7 +64,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
+       mojom::URLLoaderFactoryParamsPtr params,
+       scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
+       const OriginAccessList* origin_access_list,
+-      PrefetchMatchingURLLoaderFactory* owner);
++      CorsURLLoaderFactoryOwner* owner);
+ 
+   CorsURLLoaderFactory(const CorsURLLoaderFactory&) = delete;
+   CorsURLLoaderFactory& operator=(const CorsURLLoaderFactory&) = delete;
+@@ -245,7 +245,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
+ 
+   scoped_refptr<SharedDictionaryStorage> shared_dictionary_storage_;
+ 
+-  const raw_ptr<PrefetchMatchingURLLoaderFactory> owner_;
++  const raw_ptr<CorsURLLoaderFactoryOwner> owner_;
+ 
+   static bool allow_external_preflights_for_testing_;
+ 
+diff --git a/services/network/cors/cors_url_loader_factory_owner.h b/services/network/cors/cors_url_loader_factory_owner.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..212b2d7fab22c7bc270632e9d9e9d0b9d259595e
+--- /dev/null
++++ b/services/network/cors/cors_url_loader_factory_owner.h
+@@ -0,0 +1,20 @@
++// Copyright 2026 GCSA
++#ifndef SERVICES_NETWORK_CORS_CORS_URL_LOADER_FACTORY_OWNER_H_
++#define SERVICES_NETWORK_CORS_CORS_URL_LOADER_FACTORY_OWNER_H_
++
++namespace network::cors {
++class CorsURLLoaderFactory;
++
++// Lifetime contract shared by ordinary prefetch factories and Browser-private
++// factories. Neither owner may expose the other's receiver or request path.
++class CorsURLLoaderFactoryOwner {
++ public:
++  virtual ~CorsURLLoaderFactoryOwner() = default;
++  virtual bool HasAdditionalReferences() const = 0;
++  // Called only after all child loaders and external references are gone.
++  // This may synchronously destroy the calling factory and its owner.
++  virtual void DestroyURLLoaderFactory(CorsURLLoaderFactory* factory) = 0;
++};
++}  // namespace network::cors
++
++#endif  // SERVICES_NETWORK_CORS_CORS_URL_LOADER_FACTORY_OWNER_H_
+diff --git a/services/network/prefetch_matching_url_loader_factory.h b/services/network/prefetch_matching_url_loader_factory.h
+index 6b87a140b9b0ddeed10d73f9a53f682f246ea8df..fd88a3dc31d7f6a1359658b3fc3ce60a0a56767f 100644
+--- a/services/network/prefetch_matching_url_loader_factory.h
++++ b/services/network/prefetch_matching_url_loader_factory.h
+@@ -17,6 +17,7 @@
+ #include "mojo/public/cpp/bindings/pending_remote.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "net/base/network_handle.h"
++#include "services/network/cors/cors_url_loader_factory_owner.h"
+ #include "services/network/public/mojom/network_context.mojom-forward.h"
+ #include "services/network/public/mojom/url_loader.mojom-forward.h"
+ #include "services/network/public/mojom/url_loader_factory.mojom.h"
+@@ -42,7 +43,8 @@ struct ResourceRequest;
+ // of available prefetches. It no matching prefetches are available, it falls
+ // back to the CORSUrlLoaderFactory.
+ class COMPONENT_EXPORT(NETWORK_SERVICE) PrefetchMatchingURLLoaderFactory final
+-    : public mojom::URLLoaderFactory {
++    : public mojom::URLLoaderFactory,
++      public cors::CorsURLLoaderFactoryOwner {
+  public:
+   // If `cache` is nullptr this class will operate in pass-through mode. Every
+   // request will be sent to CORSURLLoaderFactory and no matching will be
+@@ -86,11 +88,11 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) PrefetchMatchingURLLoaderFactory final
+   net::handles::NetworkHandle GetBoundNetworkForTesting() const;
+ 
+   // Methods called from CorsURLLoaderFactory.
+-  void DestroyURLLoaderFactory(cors::CorsURLLoaderFactory* factory);
++  void DestroyURLLoaderFactory(cors::CorsURLLoaderFactory* factory) override;
+ 
+   // Returns true if there are live mojo connections requiring this class and
+   // the CorsURLLoaderFactory it owns be kept alive.
+-  bool HasAdditionalReferences() const;
++  bool HasAdditionalReferences() const override;
+ 
+   // Returns true if this URLLoaderFactory should not be reset when
+   // calling `ResetURLLoaderFactories()`.
+diff --git a/services/network/public/mojom/BUILD.gn b/services/network/public/mojom/BUILD.gn
+index c6871b55405e127b7e2370bd364753db5db25fa2..f307ffb65c1d33b3f09414c46d2819cd297d3d7a 100644
+--- a/services/network/public/mojom/BUILD.gn
++++ b/services/network/public/mojom/BUILD.gn
+@@ -619,6 +619,8 @@ mojom("url_loader_base") {
+     "timing_allow_origin.mojom",
+     "trust_token_access_observer.mojom",
+     "trust_tokens.mojom",
++    "aegis_access_route.mojom",
++    "aegis_access_route_types.mojom",
+     "url_loader.mojom",
+     "url_loader_completion_status.mojom",
+     "url_loader_network_service_observer.mojom",
+diff --git a/services/network/public/mojom/aegis_access_route.mojom b/services/network/public/mojom/aegis_access_route.mojom
+new file mode 100644
+index 0000000000000000000000000000000000000000..a1981096d5d7e38b4fa8cf1117ca6cac68f2bc0e
+--- /dev/null
++++ b/services/network/public/mojom/aegis_access_route.mojom
+@@ -0,0 +1,25 @@
++// Copyright 2026 GCSA
++module network.mojom;
++
++import "services/network/public/mojom/aegis_access_route_types.mojom";
++import "services/network/public/mojom/http_request_headers.mojom";
++import "services/network/public/mojom/mutable_network_traffic_annotation_tag.mojom";
++import "services/network/public/mojom/url_loader.mojom";
++import "url/mojom/url.mojom";
++
++interface AegisAccessURLLoaderControl {
++  // The private receiver is held by Browser. Public URLLoader.FollowRedirect
++  // cannot approve a controlled hop. Original CORS/header checks still run.
++  FollowRedirectWithRoute(HttpRequestHeadersUpdateParams headers_update_params,
++                          url.mojom.Url? new_url,
++                          AegisAccessRequestEnvelope envelope);
++};
++interface AegisAccessURLLoaderFactory {
++  CreateLoaderAndStartWithRoute(
++      pending_receiver<URLLoader> loader,
++      pending_receiver<AegisAccessURLLoaderControl> control,
++      int32 request_id, uint32 options, AegisAccessRoutedRequest request,
++      pending_remote<URLLoaderClient> client,
++      MutableNetworkTrafficAnnotationTag traffic_annotation);
++  Clone(pending_receiver<AegisAccessURLLoaderFactory> receiver);
++};
+diff --git a/services/network/public/mojom/aegis_access_route_types.mojom b/services/network/public/mojom/aegis_access_route_types.mojom
+new file mode 100644
+index 0000000000000000000000000000000000000000..17c1cff75ae38753c4f7c86f9c92b8a267c95d6d
+--- /dev/null
++++ b/services/network/public/mojom/aegis_access_route_types.mojom
+@@ -0,0 +1,89 @@
++// Copyright 2026 GCSA
++module network.mojom;
++
++import "services/network/public/mojom/auth.mojom";
++import "url/mojom/url.mojom";
++import "services/network/public/mojom/url_request.mojom";
++
++// These interfaces are issued only through the Browser-owned NetworkContext.
++// They must never be exposed to a renderer or embedded in ResourceRequest.
++enum AegisAccessChannel { kDev, kAlpha, kBeta, kRelease };
++enum AegisAccessAttribution { kDocument, kPendingNavigation, kProfileOnly };
++enum AegisAccessRuleScope { kSite, kProfile };
++enum AegisAccessMode { kNone, kDirect, kProxy, kReject };
++enum AegisAccessScheme { kHttp, kHttps, kWs, kWss };
++enum AegisAccessPortScope { kAllBrowserPermitted, kExplicitSubset };
++enum AegisAccessProtection { kNone, kTracker, kEasyList, kCname };
++
++struct AegisAccessOwner {
++  AegisAccessChannel channel;
++  string profile_token;
++  string storage_partition_token;
++};
++struct AegisAccessGenerations {
++  uint64 policy_generation;
++  uint64 identity_generation;
++  uint64 selection_generation;
++  uint64 network_epoch;
++  uint64 base_proxy_config_generation;
++};
++struct AegisAccessFactoryBinding {
++  AegisAccessOwner owner;
++  string incarnation;
++  AegisAccessAttribution attribution;
++  string document_token;
++  string pending_navigation_token;
++  // Absent for a main navigation, whose site is derived per approved hop.
++  // Subframe navigation and document requests retain the Browser's top site.
++  url.mojom.Url? top_frame_site;
++};
++struct AegisAccessRule {
++  string rule_id;
++  AegisAccessRuleScope scope;
++  string top_level_site;
++  string destination_host;
++  bool include_subdomains;
++  array<AegisAccessScheme> schemes;
++  AegisAccessPortScope port_scope;
++  array<uint16> explicit_ports;
++  AegisAccessMode mode;
++  string proxy_group_id;
++  AegisAccessProtection protection_override;
++  uint64 row_revision;
++  uint64 last_operation_sequence;
++};
++struct AegisAccessHttpEndpoint {
++  string proxy_group_id;
++  string registration_id;
++  uint64 selection_generation;
++  string numeric_loopback_host;
++  uint16 port;
++  // Process-local inbound credentials, never the upstream node credentials.
++  // These are not echoed in ACKs, request envelopes, diagnostics or renderer IPC.
++  AuthCredentials? credentials;
++};
++struct AegisAccessSnapshot {
++  AegisAccessOwner owner;
++  string incarnation;
++  uint64 sequence;
++  // Selection generation is zero here and is explicit for each endpoint.
++  AegisAccessGenerations common_generations;
++  array<AegisAccessRule> rules;
++  array<AegisAccessHttpEndpoint> endpoints;
++};
++struct AegisAccessRequestEnvelope {
++  string request_token;
++  string incarnation;
++  uint32 hop;
++  url.mojom.Url target;
++  string method;
++  AegisAccessGenerations generations;
++  // Empty only for an independently validated native decision.
++  string registration_id;
++};
++
++// The envelope travels only with this Browser-private message.
++struct AegisAccessRoutedRequest {
++  URLRequest request;
++  AegisAccessRequestEnvelope envelope;
++};
+-- 
+2.54.0 (Apple Git-157)
+

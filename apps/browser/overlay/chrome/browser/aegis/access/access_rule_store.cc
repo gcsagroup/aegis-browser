@@ -21,8 +21,8 @@
 namespace aegis::access {
 namespace {
 
-constexpr int kSchemaVersion = 1;
-constexpr int kCompatibleVersion = 1;
+constexpr int kSchemaVersion = 2;
+constexpr int kCompatibleVersion = 2;
 constexpr int kPrepared = 0;
 constexpr int kCommitted = 1;
 constexpr int kSuperseded = 2;
@@ -61,6 +61,7 @@ constexpr char kCreateGroupsSql[] = R"sql(
     revision INTEGER NOT NULL,
     last_operation_sequence INTEGER NOT NULL,
     committed_policy_generation INTEGER NOT NULL,
+    website_context INTEGER NOT NULL DEFAULT 0 CHECK(website_context IN (0,1)),
     PRIMARY KEY(storage_partition_token, site_toggle_id),
     UNIQUE(storage_partition_token, canonical_host)
   ))sql";
@@ -117,7 +118,8 @@ constexpr char kCreateJournalSql[] = R"sql(
     created_at_micros INTEGER NOT NULL,
     completed_at_micros INTEGER NOT NULL,
     before_image TEXT NOT NULL,
-    after_image TEXT NOT NULL
+    after_image TEXT NOT NULL,
+    website_context INTEGER NOT NULL DEFAULT 0 CHECK(website_context IN (0,1))
   ))sql";
 
 bool IsKnownStoreChannel(ChannelNamespace channel) {
@@ -210,6 +212,12 @@ aegis_access::GroupValidation ValidateBoundSiteGroup(
       group->https_top_level_site != expected_sites->second) {
     validation.selection = aegis_access::GroupSelection::kUnknown;
     validation.error = GroupValidationError::kTopLevelSiteMismatch;
+    return validation;
+  }
+  if (group->website_context &&
+      GURL(expected_sites->first).host() != group->canonical_host) {
+    validation.selection = aegis_access::GroupSelection::kUnknown;
+    validation.error = GroupValidationError::kHostMismatch;
     return validation;
   }
   for (const SiteProxyRuleMember& member : members) {
@@ -343,7 +351,7 @@ bool ValidateStoredRule(const StoredAccessRule& rule,
       !std::ranges::is_sorted(policy.schemes)) {
     return false;
   }
-  if (policy.scope == PolicyScope::kSite) {
+  if (policy.scope == PolicyScope::kSite || policy.scope == PolicyScope::kWebsite) {
     if (!IsSchemefulSiteLike(policy.top_level_site, "http://") &&
         !IsSchemefulSiteLike(policy.top_level_site, "https://")) {
       return false;
@@ -391,7 +399,7 @@ bool ValidateStoredRule(const StoredAccessRule& rule,
     return rule.site_toggle_id.empty() && rule.site_toggle_revision == 0;
   }
   return Bounded(rule.site_toggle_id) && rule.site_toggle_revision != 0 &&
-         policy.scope == PolicyScope::kSite &&
+         (policy.scope == PolicyScope::kSite || policy.scope == PolicyScope::kWebsite) &&
          policy.row_revision == rule.site_toggle_revision &&
          rule.lifetime == StoredRuleLifetime::kPersistent &&
          rule.expires_at_micros == 0;
@@ -421,7 +429,33 @@ std::string GroupImage(const StoredSiteGroup* stored) {
         .push_back(':');
     AppendImageField(&result, member.policy.proxy_group_id);
   }
+  // Keep legacy journal images byte-identical across the schema migration.
+  if (group.website_context) AppendImageField(&result, "website-context-v1");
   return result;
+}
+
+bool ReplacedLegacyAlias(const SiteProxyRuleGroup& candidate,
+                         const SiteProxyRuleGroup& existing) {
+  return candidate.website_context && !existing.website_context &&
+      candidate.site_toggle_id == "bubble-site:" + candidate.canonical_host &&
+      existing.site_toggle_id == "bubble:" + existing.canonical_host &&
+      existing.owner == candidate.owner &&
+      existing.http_top_level_site == candidate.http_top_level_site &&
+      existing.https_top_level_site == candidate.https_top_level_site;
+}
+
+std::string MutationBeforeImage(const StoredPolicySnapshot* current,
+    const SiteProxyRuleGroup& candidate, const StoredSiteGroup* before) {
+  std::string image = GroupImage(before);
+  if (!candidate.website_context) return image;
+  AppendImageField(&image, "website-base-v1");
+  if (current) {
+    for (const auto& existing : current->site_groups) {
+      if (ReplacedLegacyAlias(candidate, existing.group))
+        AppendImageField(&image, GroupImage(&existing));
+    }
+  }
+  return image;
 }
 
 StoreResult<StoredPolicySnapshot> SnapshotError(StoreStatus status,
@@ -487,6 +521,9 @@ bool IsPreparedCandidateValid(const PendingMutationRecord& expected) {
 
 void ReplacePreparedSiteGroup(StoredPolicySnapshot* candidate,
                               const PendingMutationRecord& expected) {
+  std::erase_if(candidate->site_groups, [&](const StoredSiteGroup& group) {
+    return ReplacedLegacyAlias(expected.candidate.group, group.group);
+  });
   bool replaced = false;
   for (StoredSiteGroup& group : candidate->site_groups) {
     if (group.group.site_toggle_id != expected.candidate.group.site_toggle_id) {
@@ -643,6 +680,7 @@ StoreStatus AccessRuleStore::Open() {
   const bool complete =
       has_identity && has_counters && has_groups && has_rules && has_journal;
   const bool initialize_schema = !has_any;
+  int stored_version = kSchemaVersion;
   if (has_meta) {
     sql::Statement version(database_.GetUniqueStatement(
         "SELECT value FROM meta WHERE key='version'"));
@@ -652,10 +690,10 @@ StoreStatus AccessRuleStore::Open() {
       terminal_status_ = StoreStatus::kCorrupt;
       return terminal_status_;
     }
-    const int stored_version = version.ColumnInt(0);
+    stored_version = version.ColumnInt(0);
     const int stored_compatible = compatible.ColumnInt(0);
-    if (stored_version != kSchemaVersion ||
-        stored_compatible > kCompatibleVersion) {
+    if ((stored_version != 1 && stored_version != kSchemaVersion) ||
+        stored_compatible != stored_version) {
       terminal_status_ = StoreStatus::kIncompatible;
       return terminal_status_;
     }
@@ -689,7 +727,7 @@ StoreStatus AccessRuleStore::Open() {
       "SELECT schema_version,channel,durable_profile_id,profile_path FROM "
       "access_store_identity WHERE singleton=1"));
   if (identity.Step()) {
-    if (identity.ColumnInt(0) != kSchemaVersion ||
+    if (identity.ColumnInt(0) != stored_version ||
         identity.ColumnInt(1) != static_cast<int>(binding_.channel()) ||
         identity.ColumnString(2) != binding_.durable_profile_id() ||
         identity.ColumnString(3) != trusted_path) {
@@ -708,6 +746,40 @@ StoreStatus AccessRuleStore::Open() {
     insert.BindString(2, binding_.durable_profile_id());
     insert.BindString(3, trusted_path);
     if (!insert.Run()) {
+      terminal_status_ = StoreStatus::kIoError;
+      return terminal_status_;
+    }
+  }
+  identity.Reset(true);
+  if (stored_version == 1) {
+    // All existing groups and journal images remain exact-host grants. Only
+    // a subsequent explicit website toggle creates the wider typed scope.
+    sql::Statement legacy_rules(database_.GetUniqueStatement(
+        "SELECT 1 FROM access_rules WHERE scope NOT IN (?,?) OR "
+        "(site_toggle_id<>'' AND scope<>?) LIMIT 1"));
+    legacy_rules.BindInt(0, static_cast<int>(PolicyScope::kSite));
+    legacy_rules.BindInt(1, static_cast<int>(PolicyScope::kProfile));
+    legacy_rules.BindInt(2, static_cast<int>(PolicyScope::kSite));
+    if (legacy_rules.Step()) {
+      terminal_status_ = StoreStatus::kCorrupt;
+      return terminal_status_;
+    }
+    if (!legacy_rules.Succeeded()) {
+      terminal_status_ = StoreStatus::kIoError;
+      return terminal_status_;
+    }
+    legacy_rules.Reset(true);
+    // This Chromium SQLite omits the pragma table used by ALTER's CHECK
+    // validation. Add the plain defaulted column; both readers below still
+    // reject every value other than 0 or 1 before interpreting its scope.
+    if (!database_.Execute("ALTER TABLE access_site_groups ADD COLUMN "
+          "website_context INTEGER NOT NULL DEFAULT 0") ||
+        !database_.Execute("ALTER TABLE access_mutation_journal ADD COLUMN "
+          "website_context INTEGER NOT NULL DEFAULT 0") ||
+        !database_.Execute("UPDATE access_store_identity SET schema_version=2 WHERE schema_version=1") ||
+        !database_.Execute("UPDATE access_mutation_journal SET schema_version=2 WHERE schema_version=1") ||
+        !meta_table.SetVersionNumber(kSchemaVersion) ||
+        !meta_table.SetCompatibleVersionNumber(kCompatibleVersion)) {
       terminal_status_ = StoreStatus::kIoError;
       return terminal_status_;
     }
@@ -764,6 +836,48 @@ StoreResult<StoredPolicySnapshot> AccessRuleStore::ReadCommittedSnapshot(
   return ReadCommittedSnapshotInternal(partition, true);
 }
 
+StoreResult<aegis_access::PublishedAccessPolicySnapshot>
+AccessRuleStore::ReserveCommittedPolicyForPublication(
+    const std::string& partition) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (!is_open_) return {terminal_status_, std::nullopt, "store_not_open"};
+  if (!Bounded(partition))
+    return {StoreStatus::kInvalidArgument, std::nullopt, "invalid_partition"};
+  sql::Transaction transaction(&database_);
+  if (!transaction.Begin())
+    return {StoreStatus::kIoError, std::nullopt, "publication_reserve_begin_failed"};
+  auto stored = ReadCommittedSnapshotInternal(partition, true);
+  if (!stored.value || (stored.status != StoreStatus::kValid &&
+                        stored.status != StoreStatus::kMissing))
+    return {stored.status, std::nullopt, stored.detail};
+  std::vector<AccessPolicyRule> rules;
+  if (stored.status == StoreStatus::kValid) {
+    auto adapted = AdaptMatcherSnapshot(*stored.value);
+    if (!adapted.value) return {adapted.status, std::nullopt, adapted.detail};
+    rules = std::move(adapted.value->rules);
+  }
+  sql::Statement counter(database_.GetUniqueStatement(
+      "SELECT operation_sequence FROM access_store_counters WHERE singleton=1"));
+  if (!counter.Step())
+    return {StoreStatus::kCorrupt, std::nullopt, "missing_counters"};
+  const int64_t sequence = counter.ColumnInt64(0);
+  if (sequence < 0 || static_cast<uint64_t>(sequence) < stored.value->policy_generation)
+    return {StoreStatus::kCorrupt, std::nullopt, "invalid_counters"};
+  if (sequence == std::numeric_limits<int64_t>::max())
+    return {StoreStatus::kConflict, std::nullopt, "counter_overflow"};
+  aegis_access::PublishedAccessPolicySnapshot candidate{
+      stored.value->owner, static_cast<uint64_t>(sequence) + 1, std::move(rules)};
+  if (aegis_access::ValidateAccessPolicySnapshot(candidate) !=
+      aegis_access::PolicyMatchReason::kNone)
+    return {StoreStatus::kCorrupt, std::nullopt, "invalid_committed_policy"};
+  sql::Statement reserve(database_.GetUniqueStatement(
+      "UPDATE access_store_counters SET operation_sequence=? WHERE singleton=1"));
+  reserve.BindInt64(0, sequence + 1);
+  if (!reserve.Run() || !transaction.Commit())
+    return {StoreStatus::kIoError, std::nullopt, "publication_reserve_commit_failed"};
+  return {StoreStatus::kValid, std::move(candidate), {}};
+}
+
 StoreResult<StoredPolicySnapshot>
 AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
                                                bool check_recovery) {
@@ -804,7 +918,7 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
       "SELECT channel,durable_profile_id,site_toggle_id,canonical_host,"
       "http_top_level_site,https_top_level_site,http_member_rule_id,"
       "https_member_rule_id,revision,last_operation_sequence,"
-      "committed_policy_generation FROM access_site_groups WHERE "
+      "committed_policy_generation,website_context FROM access_site_groups WHERE "
       "storage_partition_token=? ORDER BY site_toggle_id"));
   groups.BindString(0, partition);
   while (groups.Step()) {
@@ -823,6 +937,9 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
     const int64_t revision = groups.ColumnInt64(8);
     const int64_t sequence = groups.ColumnInt64(9);
     const int64_t generation = groups.ColumnInt64(10);
+    if (groups.ColumnInt(11) != 0 && groups.ColumnInt(11) != 1)
+      return SnapshotError(StoreStatus::kCorrupt, "invalid_website_context");
+    stored.group.website_context = groups.ColumnBool(11);
     if (revision <= 0 || sequence <= 0 || generation <= 0 ||
         generation != sequence ||
         !group_ids.insert(stored.group.site_toggle_id).second) {
@@ -906,6 +1023,7 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
           rule.policy.proxy_group_id,
           rule.policy.protection_override,
           rule.policy.last_operation_sequence,
+          rule.policy.scope,
       });
     }
     if (ValidateBoundSiteGroup(snapshot.owner, &stored.group,
@@ -1079,6 +1197,11 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
   const StoredSiteGroup* before = nullptr;
   if (current.value.has_value()) {
     for (const StoredSiteGroup& group : current.value->site_groups) {
+      if (ReplacedLegacyAlias(request.candidate_group, group.group)) continue;
+      if (!request.candidate_group.website_context && group.group.website_context &&
+          group.group.http_top_level_site == request.candidate_group.http_top_level_site &&
+          group.group.https_top_level_site == request.candidate_group.https_top_level_site)
+        return MutationError(StoreStatus::kConflict, "website_scope_requires_explicit_mutation");
       if (group.group.canonical_host ==
               request.candidate_group.canonical_host ||
           group.group.site_toggle_id ==
@@ -1101,10 +1224,14 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
   }
   sql::Statement pending(database_.GetUniqueStatement(
       "SELECT 1 FROM access_mutation_journal WHERE state=? AND "
-      "storage_partition_token=? AND site_toggle_id=? LIMIT 1"));
+      "storage_partition_token=? AND (site_toggle_id=? OR "
+      "((? OR website_context=1) AND http_top_level_site=? AND https_top_level_site=?)) LIMIT 1"));
   pending.BindInt(0, kPrepared);
   pending.BindString(1, expected_owner.storage_partition_token);
   pending.BindString(2, request.candidate_group.site_toggle_id);
+  pending.BindBool(3, request.candidate_group.website_context);
+  pending.BindString(4, request.candidate_group.http_top_level_site);
+  pending.BindString(5, request.candidate_group.https_top_level_site);
   if (pending.Step()) {
     return MutationError(StoreStatus::kRecoveryRequired,
                          "pending_mutation_exists");
@@ -1171,7 +1298,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
     stored.policy = {
         .rule_id = member.rule_id,
         .owner = member.owner,
-        .scope = PolicyScope::kSite,
+        .scope = request.candidate_group.website_context ? PolicyScope::kWebsite : PolicyScope::kSite,
         .top_level_site = member.top_level_site,
         .destination_host = member.exact_host,
         .include_subdomains = member.include_subdomains,
@@ -1201,7 +1328,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
     return MutationError(StoreStatus::kInvalidArgument,
                          "invalid_site_group_candidate");
   }
-  record.before_image = GroupImage(before);
+  record.before_image = MutationBeforeImage(current.value ? &*current.value : nullptr,
+                                           record.candidate.group, before);
   record.after_image = GroupImage(&record.candidate);
 
   sql::Statement update(database_.GetUniqueStatement(
@@ -1225,7 +1353,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
       "https_member_rule_id,target_mode,proxy_group_id,expected_revision,"
       "target_revision,operation_sequence,committed_policy_generation,"
       "created_at_micros,completed_at_micros,before_image,"
-      "after_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
+      "after_image,website_context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
   insert.BindString(0, record.operation_id);
   insert.BindString(1, record.request_fingerprint);
   insert.BindInt(2, kPrepared);
@@ -1252,6 +1380,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
   insert.BindInt64(21, 0);
   insert.BindString(22, record.before_image);
   insert.BindString(23, record.after_image);
+  insert.BindBool(24, record.candidate.group.website_context);
   if (!insert.Run() ||
       ShouldFail(FailurePointForTesting::kPrepareAfterJournalInsert) ||
       !transaction.Commit()) {
@@ -1274,7 +1403,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
       "http_member_rule_id,https_member_rule_id,target_mode,proxy_group_id,"
       "expected_revision,target_revision,operation_sequence,"
       "committed_policy_generation,created_at_micros,completed_at_micros,"
-      "before_image,after_image FROM access_mutation_journal WHERE "
+      "before_image,after_image,website_context FROM access_mutation_journal WHERE "
       "operation_id=?"));
   row.BindString(0, operation_id);
   if (!row.Step()) {
@@ -1336,6 +1465,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
   record.completed_at_micros = completed_at_micros;
   record.before_image = row.ColumnString(21);
   record.after_image = row.ColumnString(22);
+  if (row.ColumnInt(23) != 0 && row.ColumnInt(23) != 1)
+    return MutationError(StoreStatus::kCorrupt, "invalid_website_context");
   record.candidate.group = {
       .site_toggle_id = row.ColumnString(7),
       .canonical_host = row.ColumnString(8),
@@ -1345,6 +1476,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
       .member_rule_ids = {row.ColumnString(11), row.ColumnString(12)},
       .revision = record.target_revision,
       .last_operation_sequence = record.operation_sequence,
+      .website_context = row.ColumnBool(23),
   };
   record.candidate.policy_generation = record.operation_sequence;
   const std::string proxy_group_id = row.ColumnString(14);
@@ -1356,7 +1488,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
     member.policy = {
         .rule_id = record.candidate.group.member_rule_ids[i],
         .owner = record.owner,
-        .scope = PolicyScope::kSite,
+        .scope = record.candidate.group.website_context ? PolicyScope::kWebsite : PolicyScope::kSite,
         .top_level_site = i == 0 ? record.candidate.group.http_top_level_site
                                  : record.candidate.group.https_top_level_site,
         .destination_host = record.candidate.group.canonical_host,
@@ -1440,6 +1572,8 @@ StoreResult<StoredPolicySnapshot>
 AccessRuleStore::BuildPreparedCandidateSnapshot(
     const PendingMutationRecord& expected) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (ShouldFail(FailurePointForTesting::kBuildPreparedCandidateBeforeRead))
+    return SnapshotError(StoreStatus::kIoError, "injected_candidate_read_failure");
   if (!is_open_) {
     return SnapshotError(terminal_status_, "store_not_open");
   }
@@ -1522,7 +1656,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
     }
   }
   if ((before ? before->group.revision : 0) != record.expected_revision ||
-      GroupImage(before) != record.before_image) {
+      MutationBeforeImage(current.value ? &*current.value : nullptr,
+                          record.candidate.group, before) != record.before_image) {
     return MutationError(StoreStatus::kConflict, "committed_base_changed");
   }
   sql::Statement latest_generation(database_.GetUniqueStatement(
@@ -1535,6 +1670,22 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
       committed_policy_generation <=
           static_cast<uint64_t>(latest_generation.ColumnInt64(0))) {
     return MutationError(StoreStatus::kConflict, "generation_not_monotonic");
+  }
+
+  if (current.value) {
+    for (const auto& existing : current.value->site_groups) {
+      if (!ReplacedLegacyAlias(record.candidate.group, existing.group)) continue;
+      sql::Statement rules(database_.GetUniqueStatement(
+          "DELETE FROM access_rules WHERE storage_partition_token=? AND site_toggle_id=?"));
+      rules.BindString(0, record.owner.storage_partition_token);
+      rules.BindString(1, existing.group.site_toggle_id);
+      sql::Statement group(database_.GetUniqueStatement(
+          "DELETE FROM access_site_groups WHERE storage_partition_token=? AND site_toggle_id=?"));
+      group.BindString(0, record.owner.storage_partition_token);
+      group.BindString(1, existing.group.site_toggle_id);
+      if (!rules.Run() || !group.Run())
+        return MutationError(StoreStatus::kIoError, "legacy_alias_replace_failed");
+    }
   }
 
   sql::Statement delete_rules(database_.GetUniqueStatement(
@@ -1562,7 +1713,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
       "storage_partition_token,site_toggle_id,canonical_host,"
       "http_top_level_site,https_top_level_site,http_member_rule_id,"
       "https_member_rule_id,revision,last_operation_sequence,"
-      "committed_policy_generation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"));
+      "committed_policy_generation,website_context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)"));
   insert_group.BindInt(0, static_cast<int>(record.owner.channel));
   insert_group.BindString(1, binding_.durable_profile_id());
   insert_group.BindString(2, record.owner.storage_partition_token);
@@ -1575,6 +1726,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
   insert_group.BindInt64(9, group.revision);
   insert_group.BindInt64(10, group.last_operation_sequence);
   insert_group.BindInt64(11, committed_policy_generation);
+  insert_group.BindBool(12, group.website_context);
   if (!insert_group.Run() ||
       ShouldFail(FailurePointForTesting::kCommitAfterGroupInsert)) {
     return MutationError(StoreStatus::kIoError, "group_insert_failed");
@@ -1676,6 +1828,7 @@ StoreResult<MatcherRuleSetCandidate> AccessRuleStore::AdaptMatcherSnapshot(
           .proxy_group_id = rule.policy.proxy_group_id,
           .protection_override = rule.policy.protection_override,
           .last_operation_sequence = rule.policy.last_operation_sequence,
+          .scope = rule.policy.scope,
       });
     }
     const aegis_access::GroupValidation validation =

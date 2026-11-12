@@ -1,0 +1,147 @@
+From 6128d49ddebdbaff44ca22c1e47ccbe624c84735 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 20:49:46 +0800
+Subject: [PATCH] fix(access): track native requests without a proxy selection
+ generation
+
+---
+ .../access_proxying_url_loader_factory.cc     |  1 +
+ .../request_ownership_registry.cc             | 20 ++++++---
+ .../aegis_access/request_ownership_registry.h |  8 ++++
+ .../request_ownership_registry_unittest.cc    | 45 +++++++++++++++++++
+ 4 files changed, 67 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 5abe7ace5bb969d689c7673fa7830e3bc16b3dff..102ec5816d26c6d4c11843741f26626f02dac3fa 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -950,6 +950,7 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+     auto* dispatch = AccessRequestDispatchState::GetOrCreate(profile_);
+     if (!common || !dispatch) return RequestDisposition::kBlock;
+     auto record = context_result.context->ToOwnershipRecord(*common);
++    record.route = aegis_access::RequestOwnershipRoute::kNative;
+     const auto barrier = dispatch->barriers().EvaluateRequest(record);
+     if (barrier.status != aegis_access::RequestDispatchBarrierStatus::kOk ||
+         barrier.decision != aegis_access::RequestDispatchDecision::kAllow ||
+diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
+index 80a2ed567e2957a7c2af0490b00549316e993275..a19599eab3159cbf920a39d8ce45e17cab90cf72 100644
+--- a/components/aegis_access/request_ownership_registry.cc
++++ b/components/aegis_access/request_ownership_registry.cc
+@@ -7,12 +7,18 @@
+ namespace aegis_access {
+ namespace {
+ 
+-bool IsComplete(const GenerationTuple& generations) {
+-  return generations.policy_generation != 0 &&
+-         generations.identity_generation != 0 &&
+-         generations.selection_generation != 0 &&
+-         generations.network_epoch != 0 &&
+-         generations.base_proxy_config_generation != 0;
++bool IsComplete(const RequestOwnershipRecord& record) {
++  const auto& generations = record.generations;
++  if (!generations.policy_generation || !generations.identity_generation ||
++      !generations.network_epoch || !generations.base_proxy_config_generation)
++    return false;
++  switch (record.route) {
++    case RequestOwnershipRoute::kProxy:
++      return generations.selection_generation != 0;
++    case RequestOwnershipRoute::kNative:
++      return generations.selection_generation == 0;
++  }
++  return false;
+ }
+ 
+ bool IsKnown(RequestScheme scheme) {
+@@ -40,7 +46,7 @@ bool HasExactlyOneAttributionToken(const RequestCancellationSelector& selector)
+ 
+ bool HasValidRequestMetadata(const RequestOwnershipRecord& record) {
+   return !record.request_id.empty() && IsCompleteOwner(record.owner) &&
+-         IsComplete(record.generations) && !record.exact_host.empty() &&
++         IsComplete(record) && !record.exact_host.empty() &&
+          IsKnown(record.scheme) && record.port != 0;
+ }
+ 
+diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
+index 4af26307bd911349198e91ba68a8130bd2c927a3..726f3ba6b12e3c4c302f7dcb3a1dd405aff1109a 100644
+--- a/components/aegis_access/request_ownership_registry.h
++++ b/components/aegis_access/request_ownership_registry.h
+@@ -45,6 +45,11 @@ class RequestTerminationHandle {
+ // Browser-owned, already-normalized identity for one in-flight request. The
+ // registry does not parse URLs or trust renderer-provided Profile/partition
+ // strings. RequestPolicyContext is the intended source for these fields.
++enum class RequestOwnershipRoute {
++  kProxy,
++  kNative,
++};
++
+ struct RequestOwnershipRecord {
+   std::string request_id;
+   OwnershipKey owner;
+@@ -56,6 +61,9 @@ struct RequestOwnershipRecord {
+   std::string exact_host;
+   RequestScheme scheme = RequestScheme::kInvalid;
+   uint16_t port = 0;
++  // Native tracking has no proxy selection. This flag grants no route: the
++  // private NetworkContext independently evaluates the actual target policy.
++  RequestOwnershipRoute route = RequestOwnershipRoute::kProxy;
+ 
+   friend bool operator==(const RequestOwnershipRecord&,
+                          const RequestOwnershipRecord&) = default;
+diff --git a/components/aegis_access/request_ownership_registry_unittest.cc b/components/aegis_access/request_ownership_registry_unittest.cc
+index a24811e1afddf4165f9b112d714269d090fd04c2..712779f92788c049cf177cca27ff94dca4094e64 100644
+--- a/components/aegis_access/request_ownership_registry_unittest.cc
++++ b/components/aegis_access/request_ownership_registry_unittest.cc
+@@ -45,5 +45,50 @@ TEST(RequestDispatchBarrierRegressionTest, SharedRegressionContract) {
+   RunRequestDispatchBarrierRegressionTests(observer);
+ }
+ 
++TEST(RequestOwnershipRegistryTest, NativeRequestHasNoInventedProxySelection) {
++  auto record = DocumentOwnershipRecord();
++  record.generations.selection_generation = 0;
++  RequestOwnershipRegistry registry(2);
++  // The existing proxy contract still rejects an absent selection.
++  EXPECT_EQ(registry.Register(record), RequestOwnershipStatus::kInvalidRecord);
++  record.route = RequestOwnershipRoute::kNative;
++  ASSERT_EQ(registry.Register(record), RequestOwnershipStatus::kOk);
++  int terminated = 0;
++  EXPECT_EQ(registry.MarkDispatched(record.request_id, record.owner,
++      record.generations, std::make_unique<RecordingTerminationHandle>(&terminated)),
++      RequestOwnershipStatus::kOk);
++  EXPECT_EQ(registry.MarkStreaming(record.request_id, record.owner, record.generations),
++            RequestOwnershipStatus::kOk);
++  EXPECT_EQ(registry.Complete(record.request_id, record.owner, record.generations).status,
++            RequestOwnershipStatus::kOk);
++  EXPECT_EQ(terminated, 0);
++  record.generations.selection_generation = 1;
++  EXPECT_EQ(registry.Register(record), RequestOwnershipStatus::kInvalidRecord);
++  record.generations.selection_generation = 0;
++  record.generations.identity_generation = 0;
++  EXPECT_EQ(registry.Register(record), RequestOwnershipStatus::kInvalidRecord);
++}
++
++TEST(RequestDispatchBarrierTest, NativeTrackingStillHonorsBlockAndCancellation) {
++  auto record = DocumentOwnershipRecord();
++  record.route = RequestOwnershipRoute::kNative;
++  record.generations.selection_generation = 0;
++  RequestDispatchBarrierRegistry barriers(2);
++  EXPECT_EQ(barriers.EvaluateRequest(record).decision, RequestDispatchDecision::kAllow);
++  ASSERT_EQ(barriers.InstallBlockBarrier({"block", 1, DocumentCancellationSelector()}),
++            RequestDispatchBarrierStatus::kOk);
++  EXPECT_EQ(barriers.EvaluateRequest(record).decision, RequestDispatchDecision::kBlock);
++  RequestOwnershipRegistry registry(2);
++  ASSERT_EQ(registry.Register(record), RequestOwnershipStatus::kOk);
++  int terminated = 0;
++  ASSERT_EQ(registry.MarkDispatched(record.request_id, record.owner,
++      record.generations, std::make_unique<RecordingTerminationHandle>(&terminated)),
++      RequestOwnershipStatus::kOk);
++  const auto cancelled = registry.CancelMatchingPageTarget(DocumentCancellationSelector());
++  EXPECT_EQ(cancelled.status, RequestOwnershipStatus::kOk);
++  EXPECT_EQ(cancelled.cancellations.size(), 1u);
++  EXPECT_EQ(terminated, 1);
++}
++
+ }  // namespace
+ }  // namespace aegis_access::test
+-- 
+2.54.0 (Apple Git-157)
+

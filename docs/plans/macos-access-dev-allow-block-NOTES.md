@@ -14,7 +14,7 @@ register this panel or a general Access rule editor.
 | `BuildAccessDevAllowBlockPanelSnapshot` | Presentation; `panel_registered` false off-channel |
 | `AccessSiteProxyBubbleController` | Channel-gated apply + snapshot wrappers |
 | Toolbar `AppendDevAllowBlockSection` | Renders only when the panel is registered |
-| Patch `0353` | Keeps Chromium series synced with the overlay |
+| Patch `0354` | Keeps Chromium series synced with the overlay |
 
 ## Mapping
 

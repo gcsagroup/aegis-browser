@@ -9,6 +9,7 @@
 
 #include <optional>
 
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/aegis/access/access_site_intent.h"
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
 #include "components/aegis_access/access_route_types.h"
@@ -82,6 +83,7 @@ struct AccessSiteProxySessionSnapshot {
 struct AccessSiteProxyLocalProxyReadyInfo {
   OwnershipKey owner;
   std::string proxy_group_id;
+  uint64_t committed_revision = 0;
 };
 
 struct AccessSiteProxySessionPublicationInfo {
@@ -102,6 +104,8 @@ class AccessSiteProxySessionOrchestrating {
       AccessSiteProxyLocalProxyReadyInfo* out) = 0;
 
   // Runs PrepareCandidate → Publish → wait ACK for an ordinary mutation.
+  // On failure, rolls back the candidate while preserving the last committed
+  // selection. The caller must not tear down that selection during recovery.
   virtual AccessSiteProxySessionError PublishAndAcknowledge(
       const SiteGroupMutationRequest& request,
       const aegis_access::RequestCancellationSelector& selector,
@@ -119,6 +123,7 @@ class AccessSiteProxySessionController {
  public:
   explicit AccessSiteProxySessionController(
       AccessSiteProxySessionOrchestrating* orchestrator);
+  ~AccessSiteProxySessionController();
 
   AccessSiteIntentStore& intent_store() { return intent_store_; }
   const AccessSiteIntentStore& intent_store() const { return intent_store_; }
@@ -162,7 +167,7 @@ class AccessSiteProxySessionController {
       const AccessSiteHost& host,
       std::string_view operation_suffix);
 
-  AccessSiteProxySessionOrchestrating* const orchestrator_;
+  const raw_ptr<AccessSiteProxySessionOrchestrating> orchestrator_;
   AccessSiteIntentStore intent_store_;
   std::map<AccessSiteHost, AccessSiteProxySessionSnapshot> snapshots_;
 };
@@ -195,7 +200,9 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
     AccessSiteIntent intent,
     const OwnershipKey& owner,
     std::string_view proxy_group_id,
-    std::string_view operation_suffix);
+    std::string_view operation_id,
+    uint64_t expected_revision,
+    bool website_context = false);
 
 }  // namespace aegis::access
 

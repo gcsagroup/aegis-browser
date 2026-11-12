@@ -4,7 +4,8 @@
 
 #include <utility>
 
-#include "base/strings/strcat.h"
+#include "base/uuid.h"
+
 #include "components/aegis_access/access_route_planner.h"
 
 namespace aegis::access {
@@ -12,6 +13,12 @@ namespace {
 
 std::string DetailOr(std::string_view detail, std::string_view fallback) {
   return detail.empty() ? std::string(fallback) : std::string(detail);
+}
+
+std::string AppendMessage(std::string_view prefix, std::string_view detail) {
+  std::string out(prefix);
+  out.append(detail.data(), detail.size());
+  return out;
 }
 
 }  // namespace
@@ -83,9 +90,9 @@ std::string AccessSiteProxySessionErrorReadableMessage(
     case AccessSiteProxySessionError::kLocalProxyUnavailable:
       return "Local Access proxy is unavailable for this profile.";
     case AccessSiteProxySessionError::kLocalProxyNotReady:
-      return base::StrCat(
-          {"Local Access proxy is not ready: ",
-           DetailOr(detail, "no loopback endpoint published")});
+      return AppendMessage(
+          "Local Access proxy is not ready: ",
+          DetailOr(detail, "no loopback endpoint published"));
     case AccessSiteProxySessionError::kMissingOwner:
       return "Access ownership for this profile partition is missing.";
     case AccessSiteProxySessionError::kMissingCoordinator:
@@ -95,38 +102,38 @@ std::string AccessSiteProxySessionErrorReadableMessage(
     case AccessSiteProxySessionError::kMissingProxyGroup:
       return "No Access proxy group is bound for publication.";
     case AccessSiteProxySessionError::kPrepareFailed:
-      return base::StrCat(
-          {"Failed to prepare Access candidate: ", DetailOr(detail, "prepare")});
+      return AppendMessage(
+          "Failed to prepare Access candidate: ", DetailOr(detail, "prepare"));
     case AccessSiteProxySessionError::kPublishFailed:
-      return base::StrCat(
-          {"Failed to publish Access session: ", DetailOr(detail, "publish")});
+      return AppendMessage(
+          "Failed to publish Access session: ", DetailOr(detail, "publish"));
     case AccessSiteProxySessionError::kAckFailed:
-      return base::StrCat(
-          {"Access session acknowledgement failed: ",
-           DetailOr(detail, "ack")});
+      return AppendMessage(
+          "Access session acknowledgement failed: ",
+          DetailOr(detail, "ack"));
     case AccessSiteProxySessionError::kMutationFailed:
-      return base::StrCat(
-          {"Access site mutation failed: ", DetailOr(detail, "mutation")});
+      return AppendMessage(
+          "Access site mutation failed: ", DetailOr(detail, "mutation"));
     case AccessSiteProxySessionError::kServiceUnavailable:
-      return base::StrCat(
-          {"Access service is unavailable: ",
-           DetailOr(detail, "service down")});
+      return AppendMessage(
+          "Access service is unavailable: ",
+          DetailOr(detail, "service down"));
     case AccessSiteProxySessionError::kBusy:
       return "Another Access site mutation is already in progress.";
     case AccessSiteProxySessionError::kDirectFallbackNotAdmitted:
       return "Direct fallback is not admitted on the allow path.";
     case AccessSiteProxySessionError::kTearDownFailed:
-      return base::StrCat(
-          {"Failed to tear down Access session: ",
-           DetailOr(detail, "tear-down")});
+      return AppendMessage(
+          "Failed to tear down Access session: ",
+          DetailOr(detail, "tear-down"));
     case AccessSiteProxySessionError::kRuntimeFault:
-      return base::StrCat(
-          {"Access node or runtime fault: ",
-           DetailOr(detail, "new requests fail closed without DIRECT")});
+      return AppendMessage(
+          "Access node or runtime fault: ",
+          DetailOr(detail, "new requests fail closed without DIRECT"));
     case AccessSiteProxySessionError::kNetworkServiceRebuildFailed:
-      return base::StrCat(
-          {"Failed to rebuild Access proxy after Network Service restart: ",
-           DetailOr(detail, "rebuild")});
+      return AppendMessage(
+          "Failed to rebuild Access proxy after Network Service restart: ",
+          DetailOr(detail, "rebuild"));
   }
   return "Access session failed.";
 }
@@ -155,34 +162,56 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
     AccessSiteIntent intent,
     const OwnershipKey& owner,
     std::string_view proxy_group_id,
-    std::string_view operation_suffix) {
+    std::string_view operation_id,
+    uint64_t expected_revision,
+    bool website_context) {
   AccessSiteProxySessionMutationPlan plan;
   AccessSiteIntentMutationInput input;
   input.intent = intent;
   input.host = host;
   input.owner = owner;
-  input.site_toggle_id = base::StrCat({"bubble:", host.value});
-  input.operation_id =
-      base::StrCat({"bubble-session:", host.value, ":", operation_suffix});
-  input.request_fingerprint = input.operation_id;
+  input.website_context = website_context;
+  input.site_toggle_id = AppendMessage(website_context ? "bubble-site:" : "bubble:", host.value);
+  input.operation_id = std::string(operation_id);
+  input.expected_revision = expected_revision;
+  // Length-prefixed fields make the fingerprint unambiguous even when owner
+  // or group identifiers contain separators. The operation nonce is separate:
+  // retries reuse it, while a new publication must receive a new nonce.
+  auto append_field = [&](std::string_view value) {
+    input.request_fingerprint += std::to_string(value.size()) + ":";
+    input.request_fingerprint.append(value);
+  };
+  append_field(website_context ? "bubble-website-session-v1" : "bubble-session-v1");
+  append_field(host.value);
+  append_field(std::to_string(static_cast<int>(intent)));
+  append_field(std::to_string(static_cast<int>(owner.channel)));
+  append_field(owner.profile_token);
+  append_field(owner.storage_partition_token);
+  append_field(proxy_group_id);
+  append_field(std::to_string(expected_revision));
   input.proxy_group_id =
       intent == AccessSiteIntent::kAllow ? std::string(proxy_group_id)
                                          : std::string();
   plan.mutation = BuildOrdinarySiteGroupMutation(input);
 
   plan.selector.owner = owner;
-  plan.selector.document_token =
-      base::StrCat({"bubble-session-doc:", host.value});
-  plan.selector.top_level_site = base::StrCat({"https://", host.value});
+  plan.selector.document_token = AppendMessage("bubble-session-doc:", host.value);
+  if (plan.mutation.request) {
+    plan.selector.top_level_site =
+        plan.mutation.request->candidate_group.https_top_level_site;
+  }
   plan.selector.exact_host = host.value;
   plan.selector.scheme = RequestScheme::kHttps;
   plan.selector.port = 443;
+  plan.selector.website_context = website_context;
   return plan;
 }
 
 AccessSiteProxySessionController::AccessSiteProxySessionController(
     AccessSiteProxySessionOrchestrating* orchestrator)
     : orchestrator_(orchestrator) {}
+
+AccessSiteProxySessionController::~AccessSiteProxySessionController() = default;
 
 AccessSiteProxySessionSnapshot AccessSiteProxySessionController::SnapshotFor(
     const AccessSiteHost& host) const {
@@ -302,7 +331,9 @@ AccessSiteProxySessionController::RepublishAllow(
       BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kAllow,
                                         ready_info.owner,
                                         ready_info.proxy_group_id,
-                                        operation_suffix);
+                                        std::string(operation_suffix) + ":" +
+                                            base::Uuid::GenerateRandomV4().AsLowercaseString(),
+                                        ready_info.committed_revision);
   if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
       !plan.mutation.request.has_value()) {
     return MarkUnavailable(
@@ -333,7 +364,12 @@ AccessSiteProxySessionController::RepublishAllow(
       orchestrator_->PublishAndAcknowledge(*plan.mutation.request,
                                            plan.selector, &publication);
   if (publish_status != AccessSiteProxySessionError::kOk) {
-    (void)orchestrator_->TearDownPublishedHost(host);
+    // The transaction owns candidate rollback. A failed recovery must not
+    // tear down the previously committed PROXY selection: that could expose
+    // the host to native routing while its saved intent still requires PROXY.
+    if (SnapshotFor(host).policy_generation == 0) {
+      (void)orchestrator_->TearDownPublishedHost(host);
+    }
     return MarkUnavailable(host, AccessSiteIntent::kAllow, publish_status);
   }
 
@@ -384,7 +420,9 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
     const AccessSiteProxySessionMutationPlan plan =
         BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kOff,
                                           ready_info.owner,
-                                          /*proxy_group_id=*/"", "disable");
+                                          /*proxy_group_id=*/"",
+                                          base::Uuid::GenerateRandomV4().AsLowercaseString(),
+                                          ready_info.committed_revision);
     if (plan.mutation.status == AccessSiteIntentMutationStatus::kReady &&
         plan.mutation.request.has_value()) {
       AccessSiteProxySessionPublicationInfo publication;
@@ -413,6 +451,13 @@ AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Disable(
 
 AccessSiteProxySessionSnapshot AccessSiteProxySessionController::Write(
     AccessSiteProxySessionSnapshot snapshot) {
+  // Preparing or failing a new candidate does not erase the last committed
+  // generation. Retain it through repeated recovery attempts; OFF clears it.
+  const auto previous = snapshots_.find(snapshot.host);
+  if (snapshot.intent == AccessSiteIntent::kAllow &&
+      snapshot.policy_generation == 0 && previous != snapshots_.end()) {
+    snapshot.policy_generation = previous->second.policy_generation;
+  }
   snapshots_[snapshot.host] = snapshot;
   return snapshot;
 }

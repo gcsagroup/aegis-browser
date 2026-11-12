@@ -75,6 +75,7 @@ struct AccessSiteIntentMutationInput {
   // Required for kAllow; must be empty for kOff.
   std::string proxy_group_id;
   uint64_t expected_revision = 0;
+  bool website_context = false;
 };
 
 struct AccessSiteIntentMutationResult {
@@ -92,6 +93,7 @@ std::string_view AccessSiteIntentToString(AccessSiteIntent intent);
 
 // Accepts only an already-canonical exact host.
 AccessSiteHostResult MakeAccessSiteHost(std::string_view exact_host);
+AccessSiteHostResult CanonicalWebsiteHost(const AccessSiteHost& host);
 // Strips scheme/userinfo/path/port and lowercases into an exact-host key.
 AccessSiteHostResult NormalizeAccessSiteHost(std::string_view raw);
 
@@ -110,6 +112,9 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
 // ACK, or call AccessServiceCoordinator.
 class AccessSiteIntentStore {
  public:
+  AccessSiteIntentStore();
+  ~AccessSiteIntentStore();
+
   AccessSiteIntent Get(const AccessSiteHost& host) const;
   void Set(const AccessSiteHost& host, AccessSiteIntent intent);
   const std::map<AccessSiteHost, AccessSiteIntent>& All() const {
