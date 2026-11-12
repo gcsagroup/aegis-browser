@@ -77,3 +77,84 @@ bytes remain visible. Neither this query nor its business status authorizes
 traffic or enforces a quota.
 
 Run the service's unit and HTTP regression tests with `pnpm run test:access-account`.
+
+## S2: trusted sandbox orders (no payment channel)
+
+No merchant/order verifier exists in this repository. Until a payment channel is
+selected, this integration accepts **operator-confirmed local sandbox records**.
+It does not verify real payments. Use a separate private sandbox database, never
+a production node database. The operator's filesystem access is the authority;
+protect the database and SQLite journal with `umask 077`. Public callers cannot
+create orders, assert payment, choose accounts, or supply grant terms. There is
+no unsigned callback or public administrative import route.
+
+Existing S1 databases require no recreation. This additive migration is
+transactional and idempotent; enabling sandbox orders also runs it at startup:
+
+```sh
+python3 -m services.access_account.orders --database accounts.sqlite migrate
+python3 -m services.access_account.orders --database accounts.sqlite record \
+  --order-id sandbox-order-001 --account-id A --plan-id sandbox-plan \
+  --period-id sandbox-period-A --panel-client sandbox-client-A \
+  --quota-bytes 1048576 --duration-ms 86400000 --paid
+python3 -m services.access_account.server --database accounts.sqlite \
+  --stored-snapshots --sandbox-orders --port 8787
+```
+
+Provision account A and its session as described above before importing. These
+are confirmed terms, not browser-selected catalog values. The order identity,
+account, plan, period, client, byte increment and duration are immutable.
+Omitting `--paid` records an unpaid order which cannot be redeemed. The trusted
+operator can confirm it later by rerunning the same `record` command with
+identical terms and `--paid`. Duplicate confirmations are no-ops; stale unpaid
+imports with identical terms also succeed without downgrading the paid state.
+Conflicting terms always fail, including during confirmation. Payment can only
+advance from unpaid to paid; this is internal controlled confirmation, not real
+payment verification. The migration also upgrades the earlier S2 trigger while
+retaining existing orders and grant receipts.
+
+With that account's existing Bearer session, send
+`POST /v1/me/orders/redeem`, `Content-Type: application/json`, and
+`{"orderId":"sandbox-order-001"}`. No other body fields are accepted. Success
+returns `{orderId, grantedAt, mode: "sandbox"}`; read the resulting entitlement
+through the existing `GET /v1/me/entitlement`. Invalid sessions return 401;
+unknown, unpaid, differently owned or incompatible orders return the same 409;
+invalid request bodies return 400 and storage failures return 503. Incomplete
+bodies (EOF or the five-second read timeout), excessive JSON recursion, and
+escaped lone surrogates return a JSON 400 without granting an order. Retry the
+same order after a timeout or 503. The endpoint is disabled by default (404).
+
+A SQLite `BEGIN IMMEDIATE` transaction checks the current session, paid record
+and account binding, then commits the plan/snapshot changes and unique order
+receipt together. Concurrent requests, response loss and process restarts
+cannot duplicate a grant. A replay returns its original receipt even if the
+current plan later changes; it never recreates that plan. Retain receipts and
+orders permanently. Other operator writers must also use transactions and
+foreign keys; direct privileged database edits remain outside this trust boundary.
+
+For initial subscription, the grant starts a new snapshot at zero consumption.
+For renewal, confirmed plan/period/client must match the existing binding.
+Quota is added to the existing total; uploaded/downloaded bytes, period start,
+and measurement timestamps are retained. Expiry and period end become
+`max(now, min(previous period end, previous expiry)) + duration`, using S1's
+effective expiry. A later inactive bound cannot add unpurchased time. An expired account
+can renew without losing consumption. Missing/inconsistent snapshots and
+numeric overflow fail atomically. Orders cannot roll usage into another period.
+
+**Snapshot versus panel:** this is an offline sandbox ledger, not node quota
+provisioning or traffic enforcement. The sandbox flag cannot be combined with
+panel mode. S1 panel reads continue to report the panel's actual finite quota,
+expiry and consumption, never the sandbox quota increment. A snapshot grant is
+not evidence that a node can deliver that allowance. Production activation
+requires the selected merchant verifier and a node provisioning/reconciliation
+protocol with confirmed enforceable limits before exposing paid capacity;
+real payment, refunds, chargebacks, reset/rollover policy and that protocol are
+not implemented here. No live secrets or release artifacts are needed.
+
+`pnpm run test:access-account` includes order unit/regression tests, repeated S1
+migration, operator CLI, concurrent same/different orders, crash rollback,
+restart replay, consumed/expired renewal, panel authority, and end-to-end
+loopback HTTP authentication, rejection, response-loss and entitlement reads.
+Targeted regressions cover monotonic operator confirmation, immutable terms,
+stale unpaid notifications, both S1 expiry orderings, incomplete HTTP bodies,
+JSON recursion and non-SQLite-encodable order IDs.
