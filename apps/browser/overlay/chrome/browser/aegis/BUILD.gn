@@ -263,6 +263,9 @@ source_set("aegis") {
       "summary_session.cc",
       "summary_session.h",
     ]
+    # Toolbar site-proxy bubble reads Access product intent (P-mac-2).
+    public_deps +=
+        [ "//chrome/browser/aegis/access:access_site_proxy_bubble" ]
     deps += [
       "//chrome/browser/resources/aegis:resources",
       "//chrome/browser/ui/tabs:tab_strip",
@@ -272,7 +275,11 @@ source_set("aegis") {
     deps += [ "//chrome/android:chrome_jni_headers" ]
   }
   if (is_mac) {
+    frameworks = [ "Foundation.framework" ]
     sources += [
+      "access/access_account_mac.h",
+      "access/access_account_mac.mm",
+      "aegis_service_access_account_mac.mm",
       "aegis_torrent_client.cc",
       "aegis_torrent_client.h",
     ]
@@ -530,6 +537,7 @@ test("aegis_browser_unittests") {
     ]
   }
   if (is_mac) {
+    deps += [ "//net:test_support" ]
     sources += [
       "aegis_torrent_client_unittest.cc",
       "aegis_mac_signing_unittest.cc",

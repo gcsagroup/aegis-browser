@@ -327,27 +327,25 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 REPO_ROOT="$(git -C "${IOS_ROOT}" rev-parse --show-toplevel)"
-GIT_SHA="$(git -C "${IOS_ROOT}" rev-parse HEAD)"
-if [[ -n "$(git -C "${IOS_ROOT}" status --short)" ]]; then
-  GIT_TREE_STATE="dirty"
-else
-  GIT_TREE_STATE="clean"
-fi
+capture_git_state() {
+  GIT_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  GIT_TREE="$(git -C "$REPO_ROOT" rev-parse 'HEAD^{tree}')"
+  if [[ -n "$(git -C "$REPO_ROOT" status --short)" ]]; then
+    GIT_TREE_STATE="dirty"
+  else
+    GIT_TREE_STATE="clean"
+  fi
+}
+capture_git_state
 XCODE_VERSION="$(xcodebuild -version | tr '\n' ' ')"
 
 write_input_manifest() {
   local destination="$1"
-  (
-    cd "$REPO_ROOT"
-    git ls-files --cached --others --exclude-standard -- apps/ios \
-      | LC_ALL=C sort \
-      | while IFS= read -r input_path; do
-          [[ -n "$input_path" ]] || continue
-          shasum -a 256 "$input_path"
-        done
-  ) > "$destination"
+  node "${SCRIPT_DIR}/simulator-input-manifest.mjs" "$REPO_ROOT" "$destination"
 }
 
+write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-source.txt"
+SOURCE_MANIFEST_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/ios-input-sha256-source.txt" | awk '{print $1}')"
 
 xcrun simctl list runtimes -j \
   | env AEGIS_RUNTIME_ID="$RUNTIME_ID" node -e '
@@ -365,8 +363,11 @@ xcrun simctl list runtimes -j \
   printf 'test_plan=%s\n' "${TEST_PLAN:-<scheme-default>}"
   printf 'test_filter=%s\n' "${ONLY_TESTING[*]:-<all>}"
   printf 'runtime=%s\n' "$RUNTIME_ID"
-  printf 'git_sha=%s\n' "$GIT_SHA"
-  printf 'git_tree_state=%s\n' "$GIT_TREE_STATE"
+  printf 'source_git_sha=%s\n' "$GIT_SHA"
+  printf 'source_git_tree=%s\n' "$GIT_TREE"
+  printf 'source_git_tree_state=%s\n' "$GIT_TREE_STATE"
+  printf 'source_input_manifest_sha256=%s\n' "$SOURCE_MANIFEST_SHA256"
+  printf 'input_scope=apps/ios,packages/core,apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared\n'
   printf 'host_os=%s\n' "$(sw_vers -productName) $(sw_vers -productVersion) $(sw_vers -buildVersion)"
   printf 'host_arch=%s\n' "$(uname -m)"
   printf 'developer_dir=%s\n' "$(xcode-select -p)"
@@ -426,6 +427,7 @@ run_test() {
         --device-label "$label" \
         --git-sha "$GIT_SHA" \
         --git-tree-state "$GIT_TREE_STATE" \
+        --build-number "$BUILD_NUMBER" \
         --input-manifest-sha256 "$INPUT_MANIFEST_SHA256" \
         --runtime-id "$RUNTIME_ID" \
         --device-name "$([[ "$label" == "iPhone" ]] && printf '%s' "$PHONE_NAME" || printf '%s' "$TABLET_NAME")" \
@@ -478,19 +480,39 @@ if ! fixture_ready; then
   done
   fixture_ready || die "验收服务尚未就绪"
 fi
-python3 - "$IOS_ROOT/project.yml" <<'PYTHON'
+BUILD_NUMBER="$(python3 - "$IOS_ROOT/project.yml" <<'PYTHON'
 import pathlib, re, sys
 path = pathlib.Path(sys.argv[1])
 text = path.read_text()
 text, count = re.subn(r'CURRENT_PROJECT_VERSION: (\d+)', lambda m: f'CURRENT_PROJECT_VERSION: {int(m[1]) + 1}', text)
 assert count == 1
 path.write_text(text)
+print(re.search(r'CURRENT_PROJECT_VERSION: (\d+)', text)[1])
 PYTHON
+)"
 xcodegen generate --spec "${IOS_ROOT}/project.yml"
+capture_git_state
 write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-before.txt"
 INPUT_MANIFEST_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/ios-input-sha256-before.txt" | awk '{print $1}')"
-printf 'input_manifest_sha256=%s\n' "$INPUT_MANIFEST_SHA256" >> "${OUTPUT_DIR}/run-metadata.txt"
+{
+  # Legacy coverage fields describe the actual inputs after project generation.
+  printf 'git_sha=%s\n' "$GIT_SHA"
+  printf 'git_tree=%s\n' "$GIT_TREE"
+  printf 'git_tree_state=%s\n' "$GIT_TREE_STATE"
+  printf 'build_number=%s\n' "$BUILD_NUMBER"
+  printf 'input_manifest_sha256=%s\n' "$INPUT_MANIFEST_SHA256"
+} >> "${OUTPUT_DIR}/run-metadata.txt"
 "${BUILD_COMMAND[@]}" > "${OUTPUT_DIR}/build.log" 2>&1 || die "构建失败，见 ${OUTPUT_DIR}/build.log"
+python3 - "${DERIVED_DATA}/Build/Products/Debug-iphonesimulator/Aegis.app/Info.plist" "$BUILD_NUMBER" \
+  >> "${OUTPUT_DIR}/run-metadata.txt" <<'PYTHON' || die "构建产物的构建号与本次输入不一致"
+import pathlib, plistlib, sys
+app_info = pathlib.Path(sys.argv[1])
+with app_info.open('rb') as stream:
+    actual = str(plistlib.load(stream)['CFBundleVersion'])
+print(f'built_app_build_number={actual}')
+if actual != sys.argv[2]:
+    sys.exit(f'CFBundleVersion mismatch: expected {sys.argv[2]}, got {actual}')
+PYTHON
 
 phone_status=0
 tablet_status=0
@@ -504,7 +526,7 @@ write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-after.txt"
 if ! cmp -s \
   "${OUTPUT_DIR}/ios-input-sha256-before.txt" \
   "${OUTPUT_DIR}/ios-input-sha256-after.txt"; then
-  printf '错误：测试执行期间 apps/ios 输入发生变化；前后 SHA-256 清单已保留。\n' >&2
+  printf '错误：构建或测试期间 iOS/Core 输入发生变化；前后 SHA-256 清单已保留。\n' >&2
   input_status=1
 fi
 

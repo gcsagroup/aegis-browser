@@ -1,6 +1,6 @@
-From d53eec15ea94dde88e236bd31a8d04e785f8c641 Mon Sep 17 00:00:00 2001
+From 717ea51b7404714445001b8411eb92540fb22b0f Mon Sep 17 00:00:00 2001
 From: Quinn <coderquinn@gmail.com>
-Date: Wed, 11 Nov 2026 19:22:22 +0800
+Date: Wed, 11 Nov 2026 19:20:27 +0800
 Subject: [PATCH] fix(access): scope rule store metadata to each open attempt
 
 ---
@@ -10,7 +10,7 @@ Subject: [PATCH] fix(access): scope rule store metadata to each open attempt
  3 files changed, 21 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
-index 108b9c891a60d089e29770865d79ab2e632e1536..bcea0fcddcb22ecaf7f9b1491bcb4ea510cfb257 100644
+index 89efd848f0c0774e628a27f86a9659b0619c0700..28d35414cd2aaf1e16ae80b24078e3c72968dd8a 100644
 --- a/chrome/browser/aegis/access/access_rule_store.cc
 +++ b/chrome/browser/aegis/access/access_rule_store.cc
 @@ -13,6 +13,7 @@
@@ -21,7 +21,7 @@ index 108b9c891a60d089e29770865d79ab2e632e1536..bcea0fcddcb22ecaf7f9b1491bcb4ea5
  #include "sql/statement.h"
  #include "sql/transaction.h"
  #include "url/gurl.h"
-@@ -632,9 +633,10 @@ StoreStatus AccessRuleStore::Open() {
+@@ -664,9 +665,10 @@ StoreStatus AccessRuleStore::Open() {
      return terminal_status_;
    }
  
@@ -34,7 +34,7 @@ index 108b9c891a60d089e29770865d79ab2e632e1536..bcea0fcddcb22ecaf7f9b1491bcb4ea5
      return terminal_status_;
    }
 diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
-index 55b18924055220eeee41921dda85d50bed931f9f..429bc9606c4487d5bc9d19aab01a891bcbe26ee3 100644
+index fdef7b6afc15e339b0a04cbc532489a011a5a398..90feccc90d8110e6b4e6476bb51dae827ca0d956 100644
 --- a/chrome/browser/aegis/access/access_rule_store.h
 +++ b/chrome/browser/aegis/access/access_rule_store.h
 @@ -13,7 +13,6 @@
@@ -45,7 +45,7 @@ index 55b18924055220eeee41921dda85d50bed931f9f..429bc9606c4487d5bc9d19aab01a891b
  
  namespace aegis::access {
  
-@@ -284,7 +283,6 @@ class AccessRuleStore {
+@@ -300,7 +299,6 @@ class AccessRuleStore {
  
    AccessStoreBinding binding_;
    sql::Database database_;

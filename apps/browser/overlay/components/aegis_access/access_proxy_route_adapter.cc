@@ -20,6 +20,8 @@ net::ProxyServer::Scheme ToProxyScheme(RegisteredProxyTransport transport) {
   switch (transport) {
     case RegisteredProxyTransport::kHttp:
       return net::ProxyServer::SCHEME_HTTP;
+    case RegisteredProxyTransport::kSocks5:
+      return net::ProxyServer::SCHEME_SOCKS5;
     case RegisteredProxyTransport::kInvalid:
       return net::ProxyServer::SCHEME_INVALID;
   }
