@@ -7,7 +7,7 @@ import {requireIosAdministrator} from './ios-operator.mjs';
 
 export const IOS_REPOSITORY = 'gcsagroup/aegis-browser';
 export const IOS_REPOSITORY_ID = '1348409663';
-const RELEASE_LINE_NAME = /^(?:main|patch\/ios\/[0-9]{1,10}\.[0-9]{1,10}\.[0-9]{1,10})$/u;
+const RELEASE_LINE_NAME = /^(?:main|releases\/ios\/[0-9]{1,10}\.[0-9]{1,10})$/u;
 
 export function releaseLines(read = () => readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ios-release-lines.json'), 'utf8')) {
   const parsed = JSON.parse(read());

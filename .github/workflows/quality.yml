@@ -10,7 +10,7 @@ on:
     branches:
       - main
       - develop
-      - patch/ios/1.0.2
+      - releases/ios/1.0
   workflow_dispatch:
     inputs:
       base_sha:
