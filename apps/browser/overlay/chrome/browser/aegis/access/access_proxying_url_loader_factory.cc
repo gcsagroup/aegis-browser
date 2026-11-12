@@ -843,6 +843,13 @@ void AccessProxyingURLLoaderFactory::MaybeProxyBrowserProcessPrefetch(
 }
 
 // static
+bool AccessProxyingURLLoaderFactory::CanOfferProxyRetry(
+    content::WebContents* contents) {
+  auto* helper = AccessNavigationRetryTabHelper::FromWebContents(contents);
+  return helper && helper->HasProxyRetryHandler();
+}
+
+// static
 void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
     Profile* profile,
     content::RenderFrameHost* frame,

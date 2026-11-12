@@ -112,6 +112,8 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
   void PrepareTransportCandidate(MutationTransaction& transaction);
   std::optional<AccessMutationTransactionResult> PublishCandidate(
       MutationTransaction& transaction);
+  base::OnceCallback<void(bool)> WithPublicationTimeout(
+      base::OnceCallback<void(bool)> completion);
   void RequestPublicationAck(std::unique_ptr<MutationTransaction> transaction);
   bool CandidateStillCurrent(const MutationTransaction& transaction) const;
   void FailTransaction(std::unique_ptr<MutationTransaction> transaction,

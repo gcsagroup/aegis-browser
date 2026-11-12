@@ -499,9 +499,24 @@ void AccessServiceCoordinator::RequestPublicationAck(
     return;
   }
   if (common) transaction->common_generations = *common;
+  auto reply = WithPublicationTimeout(base::BindOnce(
+      &AccessServiceCoordinator::OnNetworkContextPublicationAck,
+      weak_factory_.GetWeakPtr(), std::move(transaction)));
+  if (async_store_) {
+    AccessRequestDispatchState::Get(profile_)->RequestPrivateSnapshotAck(
+        identity, *runtime->GetPublishedPolicySnapshot(owner), *common,
+        std::move(reply));
+    return;
+  }
+  AccessRequestDispatchState::Get(profile_)
+      ->RequestNetworkContextPublicationAck(identity, owner,
+                                            std::move(reply));
+}
+
+base::OnceCallback<void(bool)> AccessServiceCoordinator::WithPublicationTimeout(
+    base::OnceCallback<void(bool)> completion) {
   auto settlement = std::make_shared<base::OnceCallback<void(bool)>>(
-      base::BindOnce(&AccessServiceCoordinator::OnNetworkContextPublicationAck,
-                     weak_factory_.GetWeakPtr(), std::move(transaction)));
+      std::move(completion));
   auto settle = [](std::shared_ptr<base::OnceCallback<void(bool)>> callback,
                    bool accepted) {
     if (*callback) {
@@ -510,15 +525,7 @@ void AccessServiceCoordinator::RequestPublicationAck(
   };
   publication_timeout_.Start(
       FROM_HERE, base::Seconds(30), base::BindOnce(settle, settlement, false));
-  if (async_store_) {
-    AccessRequestDispatchState::Get(profile_)->RequestPrivateSnapshotAck(
-        identity, *runtime->GetPublishedPolicySnapshot(owner), *common,
-        base::BindOnce(settle, settlement));
-    return;
-  }
-  AccessRequestDispatchState::Get(profile_)
-      ->RequestNetworkContextPublicationAck(identity, owner,
-                                            base::BindOnce(settle, settlement));
+  return base::BindOnce(settle, settlement);
 }
 
 bool AccessServiceCoordinator::CandidateStillCurrent(
@@ -594,12 +601,16 @@ void AccessServiceCoordinator::OnAsyncRecovered(
       } else if (auto common = runtime->CaptureCommonGenerationTupleOnUiThread(
                      transaction->pending.owner)) {
         auto* transport = AccessNetworkContextTransport::Get(profile_);
-        transport->PublishPrivatePolicy(*result.publication, *common, base::BindOnce(
+        // A live NetworkContext can hold the original ACK indefinitely.
+        // Bound rollback as well; a late ACK must not finish a later mutation.
+        auto recovered = WithPublicationTimeout(base::BindOnce(
             [](base::WeakPtr<AccessServiceCoordinator> self,
                std::unique_ptr<MutationTransaction> transaction,
                AccessMutationTransactionResult failure, bool restored) {
               if (self) self->Finish(std::move(transaction->completion), failure);
             }, weak_factory_.GetWeakPtr(), std::move(transaction), failure));
+        transport->PublishPrivatePolicy(*result.publication, *common,
+                                        std::move(recovered));
         return;
       }
     } else {

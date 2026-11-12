@@ -106,8 +106,25 @@ TEST_F(AccessNavigationRetryTabHelperTest,
   EXPECT_FALSE(controller().GetPendingEntry());
 }
 
+TEST_F(AccessNavigationRetryTabHelperTest, NoProxyHandlerPreservesNativeRecovery) {
+  error_page::NetErrorAutoReloader::CreateForWebContents(web_contents());
+  auto* reloader =
+      error_page::NetErrorAutoReloader::FromWebContents(web_contents());
+  reloader->DisableConnectionChangeObservationForTesting();
+  reloader->OnConnectionChanged(
+      net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
+  Fail(GURL("https://failed.example/"));
+  EXPECT_FALSE(helper()->HasProxyRetryHandler());
+  base::test::TestFuture<bool> reply;
+  EXPECT_FALSE(helper()->RequestProxyRetry(reply.GetCallback()));
+  EXPECT_FALSE(reply.Get());
+  EXPECT_TRUE(reloader->next_reload_timer_for_testing());
+}
+
 TEST_F(AccessNavigationRetryTabHelperTest,
        ExplicitRecoveryKeepsErrorDocumentStableAcrossConnectionChanges) {
+  helper()->SetProxyRetryHandler(base::BindRepeating(
+      [](const GURL&, base::OnceCallback<void(bool)>) {}));
   error_page::NetErrorAutoReloader::CreateForWebContents(web_contents());
   auto* reloader =
       error_page::NetErrorAutoReloader::FromWebContents(web_contents());
@@ -144,6 +161,8 @@ TEST_F(AccessNavigationRetryTabHelperTest,
   reloader->OnConnectionChanged(
       net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
   AccessNavigationRetryTabHelper::CreateForWebContents(other.get());
+  AccessNavigationRetryTabHelper::FromWebContents(other.get())->SetProxyRetryHandler(
+      base::BindRepeating([](const GURL&, base::OnceCallback<void(bool)>) {}));
   content::NavigationSimulator::NavigateAndFailFromBrowser(
       other.get(), GURL("https://failed.example/"), net::ERR_CONNECTION_RESET);
   EXPECT_TRUE(AccessNavigationRetryTabHelper::FromWebContents(other.get())

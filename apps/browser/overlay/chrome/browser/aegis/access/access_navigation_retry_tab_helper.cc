@@ -145,7 +145,7 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
       navigation->GetURL(), navigation->GetRequestMethod(),
       navigation->GetNetErrorCode(),
       navigation->HasCommitted() && navigation->IsErrorPage());
-  if (recorded) {
+  if (recorded && HasProxyRetryHandler()) {
     if (auto* auto_reloader =
             error_page::NetErrorAutoReloader::FromWebContents(web_contents())) {
       // Chromium's background reload may be aborted without replacing the

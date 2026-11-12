@@ -248,6 +248,7 @@ void AccessSiteProxyBubbleController::RequestFailedNavigationProxy(
 }
 base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
 AccessSiteProxyBubbleController::GetFailedNavigationRetryHandler() {
+  if (!ResolveAccessLocalCoreInput()) return {};
   return base::BindRepeating(
       &AccessSiteProxyBubbleController::RequestFailedNavigationProxy,
       weak_factory_.GetWeakPtr());

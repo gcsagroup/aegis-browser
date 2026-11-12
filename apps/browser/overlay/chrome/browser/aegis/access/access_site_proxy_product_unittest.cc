@@ -66,6 +66,10 @@ class AccessSiteProxyProductTestPeer {
 };
 class AccessServiceCoordinatorTestPeer {
  public:
+  static base::OneShotTimer& PublicationTimer(AccessServiceCoordinator* coordinator) {
+    return coordinator->publication_timeout_;
+  }
+
   static void SetFailure(AccessServiceCoordinator* coordinator,
                         AccessRuleStore::FailurePointForTesting point) {
     CHECK(coordinator->async_store_);
@@ -420,6 +424,29 @@ class AccessSiteProxyProductTest : public testing::Test {
   raw_ptr<AccessSiteProxyBubbleController> bubble_ = nullptr;
   OwnershipKey owner_;
 };
+
+TEST_F(AccessSiteProxyProductTest, RecoveryTimesOutWhileCandidateAckIsStillHeld) {
+  context_.hold_next = true;
+  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
+  ASSERT_TRUE(base::test::RunUntil([&] { return context_.has_reply(); }));
+
+  auto& timer = AccessServiceCoordinatorTestPeer::PublicationTimer(coordinator_);
+  ASSERT_TRUE(timer.IsRunning());
+  timer.FireNow();
+  // The store restores its committed state on a worker. Hold the original
+  // NetworkContext reply through both publication deadlines.
+  ASSERT_TRUE(base::test::RunUntil([&] { return timer.IsRunning(); }));
+  EXPECT_FALSE(coordinator_->CanDispatch(owner_));
+  timer.FireNow();
+  WaitFor(AccessSiteConnectionState::kUnavailable);
+  EXPECT_TRUE(coordinator_->CanDispatch(owner_));
+  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
+
+  context_.Reply(true);
+  environment_.RunUntilIdle();
+  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
+  Enable();
+}
 
 TEST_F(AccessSiteProxyProductTest, CandidateReadFailureRecoversPreparedWithoutRestart) {
   AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,

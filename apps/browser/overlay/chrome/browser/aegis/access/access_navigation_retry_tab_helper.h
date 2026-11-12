@@ -29,6 +29,7 @@ class AccessNavigationRetryTabHelper
   base::OnceClosure CaptureRouteReadyCallback();
   using ProxyRetryHandler = base::RepeatingCallback<void(
       const GURL&, base::OnceCallback<void(bool)>)>;
+  bool HasProxyRetryHandler() const { return !!proxy_retry_handler_; }
   void SetProxyRetryHandler(ProxyRetryHandler handler);
   // Called only after Browser validates the sender is the current primary
   // error document. The target comes from this helper, never renderer IPC.

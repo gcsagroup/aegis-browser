@@ -29,6 +29,7 @@ class Profile;
 namespace content {
 class RenderFrameHost;
 class StoragePartition;
+class WebContents;
 }
 
 namespace aegis::access {
@@ -113,6 +114,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       Profile* profile,
       content::StoragePartition* partition,
       network::URLLoaderFactoryBuilder& factory_builder);
+  static bool CanOfferProxyRetry(content::WebContents* contents);
   static void MaybeProxyNavigation(
       Profile* profile,
       content::RenderFrameHost* frame,
