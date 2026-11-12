@@ -61,7 +61,7 @@ import XCTest
         [first, second, restored].forEach { session in (session.standardTabs + session.privateTabs).forEach { $0.stop() } }
     }
 
-    func testPrivateWebsiteDataStoreRetiresOnCloseAndDiscard() throws {
+    func testPrivateWebsiteDataStoreRetiresOnCloseAndDiscard() async throws {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
         browser.switchProfile(to: .privateMode)
         let first = try XCTUnwrap(browser.activeTab)
@@ -70,12 +70,14 @@ import XCTest
         XCTAssertFalse(firstStore === WKWebsiteDataStore.default())
 
         browser.close(first.id)
+        try await waitUntil { browser.retiredPrivateWebsiteDataStoreRevision == 1 }
         let closed = browser.consumeRetiredPrivateWebsiteDataStores()
         XCTAssertTrue(closed.contains { $0 === firstStore })
         let replacement = try XCTUnwrap(browser.privateTabs.first)
         XCTAssertFalse(replacement.websiteDataStore === firstStore)
 
         browser.discardPrivateSession()
+        try await waitUntil { browser.retiredPrivateWebsiteDataStoreRevision == 2 }
         let discarded = browser.consumeRetiredPrivateWebsiteDataStores()
         XCTAssertTrue(discarded.contains { $0 === replacement.websiteDataStore })
         XCTAssertTrue(browser.privateTabs.isEmpty)

@@ -81,6 +81,8 @@ public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     public let id: UUID
+    /// Live ownership is never reused when a saved tab UUID is restored.
+    public let instanceID = UUID()
     private var configuration: WKWebViewConfiguration
     /// Store captured when the tab was created. Returning to the original connection uses this object.
     public let originalWebsiteDataStore: WKWebsiteDataStore
@@ -732,6 +734,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     /// A retained BrowserTab can only expose an inert, non-navigable placeholder.
     func dispose(completion: @escaping @MainActor () -> Void) {
         guard !isDisposed else { return }
+        if isActive, !restoresScrollOffset, let view = loadedWebView {
+            savedScrollOffset = view.scrollView.contentOffset
+        }
         isDisposed = true
         stop()
         if let view = loadedWebView as? BrowserContentWebView {
@@ -1590,6 +1595,8 @@ public final class BrowserSession: ObservableObject {
     /// Bumps when a private `WKWebsiteDataStore` is retired and waiting to be released.
     @Published public private(set) var retiredPrivateWebsiteDataStoreRevision: UInt64 = 0
     private var retiredPrivateWebsiteDataStores: [WKWebsiteDataStore] = []
+    private var pendingPrivateTabClosures: [String: Int] = [:]
+    private var endingPrivateSessions: [String: () -> Void] = [:]
     @Published public var activeTabID: UUID?
     @Published public var profile: BrowserProfile = .standard
     @Published public private(set) var extensionStatus = "WebExtension 正在初始化"
@@ -1762,43 +1769,56 @@ public final class BrowserSession: ObservableObject {
     /// Call only for explicit closure or release of the root window owner.
     public func closeWindow() {
         guard !isWindowClosed else { return }
-        isWindowClosed = true
         persistSession()
-        let closingTabs = standardTabs + privateTabs
-        let privateStores = privateTabs.map(\.websiteDataStore)
-        let endingScope = privateSessionID.uuidString
-        let coordinator = hostCoordinator
-        var remaining = closingTabs.count
-        for tab in closingTabs {
-            tab.dispose { [self] in
-                coordinator?.tabClosed(tab)
-                remaining -= 1
-                if remaining == 0 {
-                    coordinator?.endPrivateSession(scopeID: endingScope)
-                    privateStores.forEach { retirePrivateWebsiteDataStore($0) }
-                }
-            }
-        }
+        isWindowClosed = true
+        disposeTabs(standardTabs + privateTabs, endingPrivateScopeID: privateSessionID.uuidString)
         // Do not switch profile: that would activate and reload a suspended
         // ordinary tab. A closed session is a restoration snapshot only.
         privateTabs = []; privateGroups = []; privateGroupID = nil
         privateSessionID = UUID()
-        if closingTabs.isEmpty { coordinator?.endPrivateSession(scopeID: endingScope) }
 
         windowStore?.unregister(windowID)
     }
 
     public func discardPrivateSession() {
         let endingScope = privateSessionID.uuidString
-        privateTabs.forEach {
-            hostCoordinator?.tabClosed($0)
-            retirePrivateWebsiteDataStore($0.websiteDataStore)
-            $0.stop()
-        }
+        disposeTabs(privateTabs, endingPrivateScopeID: endingScope)
         privateTabs = []; privateGroups = []; privateGroupID = nil
         privateSessionID = UUID()
-        hostCoordinator?.endPrivateSession(scopeID: endingScope)
         if profile.isPrivate { switchProfile(to: .standard) }
+    }
+
+    /// Every terminal entry point shares the document-confirmed cleanup. A
+    /// private scope also waits for tabs removed by earlier close calls.
+    private func disposeTabs(_ tabs: [BrowserTab], endingPrivateScopeID: String? = nil) {
+        let tabs = tabs.filter { !$0.isDisposed }
+        let coordinator = hostCoordinator
+        for tab in tabs where tab.profile.isPrivate {
+            pendingPrivateTabClosures[tab.browsingScopeID, default: 0] += 1
+        }
+        if let scope = endingPrivateScopeID {
+            endingPrivateSessions[scope] = { coordinator?.endPrivateSession(scopeID: scope) }
+        }
+        for tab in tabs {
+            let store = tab.websiteDataStore
+            tab.dispose { [self] in
+                coordinator?.tabClosed(tab)
+                if tab.profile.isPrivate {
+                    retirePrivateWebsiteDataStore(store)
+                    let scope = tab.browsingScopeID
+                    pendingPrivateTabClosures[scope, default: 0] -= 1
+                    finishPrivateSessionIfReady(scope)
+                }
+            }
+        }
+        if let scope = endingPrivateScopeID { finishPrivateSessionIfReady(scope) }
+    }
+
+    private func finishPrivateSessionIfReady(_ scope: String) {
+        guard pendingPrivateTabClosures[scope, default: 0] == 0 else { return }
+        pendingPrivateTabClosures[scope] = nil
+        let finish = endingPrivateSessions.removeValue(forKey: scope)
+        finish?()
     }
 
     /// Hands retired private data stores to the Access registry. Ordinary
@@ -1858,11 +1878,8 @@ public final class BrowserSession: ObservableObject {
     public func close(_ tabID: UUID) {
         let closingPrivate = profile == .privateMode
         let endingScope = privateSessionID.uuidString
-        if let tab = visibleTabs.first(where: { $0.id == tabID }) {
-            hostCoordinator?.tabClosed(tab)
-            if closingPrivate { retirePrivateWebsiteDataStore(tab.websiteDataStore) }
-            tab.stop()
-        }
+        guard let tab = visibleTabs.first(where: { $0.id == tabID }) else { return }
+        disposeTabs([tab], endingPrivateScopeID: closingPrivate && privateTabs.count == 1 ? endingScope : nil)
         if profile == .standard {
             standardTabs.removeAll { $0.id == tabID }
             if standardTabs.isEmpty { standardTabs = [makeTab(profile: .standard)] }
@@ -1871,7 +1888,6 @@ public final class BrowserSession: ObservableObject {
             if privateTabs.isEmpty {
                 privateEnhancements = WebsiteEnhancementStore()
                 privateSessionID = UUID()
-                hostCoordinator?.endPrivateSession(scopeID: endingScope)
                 privateTabs = [makeTab(profile: .privateMode)]
             }
         }
@@ -1928,6 +1944,9 @@ public final class BrowserSession: ObservableObject {
     }
 
     public func persistSession() {
+        // The final close snapshot is immutable. A retained old window must not
+        // overwrite a new session restoring the same window ID.
+        guard !isWindowClosed else { return }
         do {
             if let windowStore {
                 if profile == .standard { standardActiveID = activeTabID }

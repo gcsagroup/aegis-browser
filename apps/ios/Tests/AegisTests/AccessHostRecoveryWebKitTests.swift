@@ -171,7 +171,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         }, message: "proxy=\(opener.transcript) loads=\(tab.recoveryLoadCount) loading=\(tab.isLoading) failure=\(coordinator.lastRecoveryFailure ?? "") error=\(tab.loadingError ?? "")")
         let host = try AccessSiteHost("example.invalid")
         let store = try XCTUnwrap(coordinator.registry.storeForTab(
-            tabID: tab.id.uuidString,
+            tabID: tab.instanceID.uuidString,
             scopeID: "ordinary",
             isPrivate: false,
             targetHost: host,
@@ -399,6 +399,245 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         live.closeWindow()
     }
 
+    func testClosingFinalPrivateTabTerminatesRetainedPagesBeforeRetiringScope() async throws {
+        try await assertTerminalTabCleanup(.lastPrivate)
+    }
+
+    func testExplicitPrivateDiscardTerminatesRetainedPageBeforeRetiringScope() async throws {
+        try await assertTerminalTabCleanup(.discardPrivate)
+    }
+
+    func testOrdinaryTabCloseTerminatesRetainedPageBeforeIdleRetirement() async throws {
+        try await assertTerminalTabCleanup(.ordinary)
+    }
+
+    private enum TerminalEntry { case lastPrivate, discardPrivate, ordinary }
+
+    private func assertTerminalTabCleanup(_ entry: TerminalEntry) async throws {
+        let html = "<script>setInterval(()=>fetch('/pulse'+location.search,{cache:'no-store'}),40)</script>"
+        let origin = OriginReceipt(port: 18_261, body: html)
+        try await origin.start()
+        defer { origin.stop() }
+        let opener = AnsweringOpener(body: html)
+        let listener = try await makeListener(port: 18_260, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let coordinator = AccessHostStoreCoordinator(publisher: readyPublisher(port: 18_260))
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        let other = BrowserSession(dataStore: browser.dataStore)
+        browser.hostCoordinator = coordinator; other.hostCoordinator = coordinator
+        defer { browser.closeWindow(); other.closeWindow() }
+        if entry == .ordinary { other.switchProfile(to: .privateMode) }
+        else { browser.switchProfile(to: .privateMode) }
+        let host = try AccessSiteHost("localhost")
+        let tab = try XCTUnwrap(browser.activeTab), sibling = try XCTUnwrap(other.activeTab)
+        for tab in [tab, sibling] { arm(tab, host: host, port: 18_260, coordinator: coordinator) }
+        let url = URL(string: "http://localhost:18261/page?terminal")!
+        tab.load(url); sibling.load(URL(string: "http://localhost:18261/page?sibling")!)
+        let window = show(tab.webView), otherWindow = show(sibling.webView)
+        defer { window.isHidden = true; otherWindow.isHidden = true }
+        try await waitUntil(seconds: 10, {
+            attach(tab.webView, to: window); attach(sibling.webView, to: otherWindow)
+            return opener.transcript.components(separatedBy: "/pulse?terminal").count > 3
+                && opener.transcript.components(separatedBy: "/pulse?sibling").count > 3
+        }, message: opener.transcript)
+        let retainedView = tab.webView, store = tab.websiteDataStore, oldScope = tab.browsingScopeID
+        var earlierView: WKWebView?
+        var earlierWindow: UIWindow?
+        defer { earlierWindow?.isHidden = true }
+        if entry != .ordinary {
+            let earlier = browser.newTab()
+            earlier.load(URL(string: "http://localhost:18261/page?earlier")!)
+            let attached = show(earlier.webView)
+            earlierWindow = attached
+            try await waitUntil {
+                attach(earlier.webView, to: attached)
+                return opener.transcript.components(separatedBy: "/pulse?earlier").count > 3
+            }
+            earlierView = earlier.webView
+            if entry == .lastPrivate {
+                // The final close must also wait for a previously removed tab
+                // whose terminal document receipt has not arrived yet.
+                browser.close(earlier.id)
+            }
+        }
+        if entry == .discardPrivate {
+            browser.discardPrivateSession()
+            XCTAssertEqual(browser.profile, .standard)
+        } else { browser.close(tab.id) }
+        XCTAssertTrue(tab.isDisposed)
+        XCTAssertFalse(store.proxyConfigurations.isEmpty, "the retained document has not committed its terminal page yet")
+        if entry != .ordinary {
+            browser.switchProfile(to: .privateMode)
+            let replacement = try XCTUnwrap(browser.activeTab)
+            XCTAssertNotEqual(replacement.browsingScopeID, oldScope)
+            arm(replacement, host: host, port: 18_260, coordinator: coordinator)
+            replacement.load(URL(string: "http://localhost:18261/page?replacement")!)
+            attach(replacement.webView, to: window)
+        }
+        try await waitUntil(seconds: 10, {
+            if let active = browser.activeTab { attach(active.webView, to: window) }
+            coordinator.registry.sweep(now: Date().addingTimeInterval(1801))
+            return coordinator.registry.store(scopeID: oldScope, host: host, isPrivate: tab.profile.isPrivate) == nil
+        }, message: "scope retired before all terminal receipts or never retired")
+        XCTAssertTrue(store.proxyConfigurations.isEmpty)
+        XCTAssertNil(retainedView.load(URLRequest(url: url)))
+        XCTAssertNil(tab.webView.load(URLRequest(url: url)))
+        tab.load(url)
+        let closedCount = opener.transcript.components(separatedBy: "/pulse?terminal").count
+        let directCount = origin.transcript.components(separatedBy: "terminal").count
+        let earlierCount = opener.transcript.components(separatedBy: "/pulse?earlier").count
+        let earlierDirectCount = origin.transcript.components(separatedBy: "earlier").count
+        let siblingCount = opener.transcript.components(separatedBy: "/pulse?sibling").count
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(opener.transcript.components(separatedBy: "/pulse?terminal").count, closedCount)
+        XCTAssertEqual(origin.transcript.components(separatedBy: "terminal").count, directCount)
+        XCTAssertEqual(opener.transcript.components(separatedBy: "/pulse?earlier").count, earlierCount)
+        XCTAssertEqual(origin.transcript.components(separatedBy: "earlier").count, earlierDirectCount)
+        XCTAssertGreaterThan(opener.transcript.components(separatedBy: "/pulse?sibling").count, siblingCount)
+        XCTAssertFalse(sibling.websiteDataStore.proxyConfigurations.isEmpty)
+        if entry != .ordinary {
+            let replacement = try XCTUnwrap(browser.activeTab)
+            try await waitUntil { opener.transcript.contains("/pulse?replacement") }
+            XCTAssertFalse(replacement.websiteDataStore === store)
+            XCTAssertFalse(replacement.websiteDataStore.proxyConfigurations.isEmpty)
+        }
+        withExtendedLifetime((browser, retainedView, earlierView)) {}
+    }
+
+    func testOldInstanceCleanupCannotUnbindRestoredTabOrCancelItsRecoveryAndProbe() async throws {
+        let opener = AnsweringOpener(body: "<title>Restore ownership</title>")
+        let listener = try await makeListener(port: 18_262, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let gate = WindowPrepareGate()
+        defer { gate.finish() }
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            await gate.wait()
+            return .init(endpoint: .init(identity: "ownership", generation: generation,
+                loopbackHost: "127.0.0.1", port: 18_262, state: .ready),
+                listenerReady: true, runtimeHealthy: true, bridgeInstalled: true)
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher,
+            clock: AccessManualPreparationClock(), channel: .dev,
+            probeRunner: AccessSiteProbeRunner(sessionFactory: {
+                XCTFail("already-proxied candidate must not issue a probe request")
+                return URLSession(configuration: .ephemeral)
+            }))
+        let delayed = DelayedWindowTabCleanup(coordinator)
+        let windows = BrowserWindowStore()
+        let first = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil),
+                                   windowID: try windows.createWindow(), windowStore: windows)
+        first.hostCoordinator = delayed
+        let old = try XCTUnwrap(first.activeTab), host = try AccessSiteHost("localhost")
+        arm(old, host: host, port: 18_262, coordinator: coordinator)
+        old.load(URL(string: "http://localhost:18263/page")!)
+        let window = show(old.webView)
+        defer { window.isHidden = true; first.closeWindow() }
+        try await waitUntil {
+            attach(old.webView, to: window)
+            return old.url?.path == "/page" && !old.isLoading
+        }
+        let oldView = old.webView, oldStore = old.websiteDataStore
+        first.closeWindow()
+        try await waitUntil { delayed.pending.count == 1 }
+        let restored = BrowserSession(dataStore: first.dataStore, windowID: first.windowID, windowStore: windows)
+        restored.hostCoordinator = coordinator
+        defer { restored.closeWindow() }
+        let new = try XCTUnwrap(restored.activeTab)
+        XCTAssertEqual(new.id, old.id)
+        XCTAssertNotEqual(new.instanceID, old.instanceID)
+        try await waitUntil {
+            attach(new.webView, to: window)
+            return new.url?.path == "/page" && !new.isLoading
+        }
+        XCTAssertTrue(new.websiteDataStore === oldStore)
+        var unavailable = try XCTUnwrap(coordinator.registry.endpoint(scopeID: "ordinary", host: host, isPrivate: false))
+        unavailable.state = .unavailable
+        coordinator.registry.setEndpoint(unavailable, scopeID: "ordinary", host: host, isPrivate: false)
+        new.stop()
+        new.adoptPolicyMainFrameNavigationForTests(url: URL(string: "http://localhost:18263/recover")!)
+        new.webView(new.webView, didFailProvisionalNavigation: nil,
+                    withError: NSError(domain: NSURLErrorDomain, code: NSURLErrorCannotFindHost))
+        XCTAssertNotNil(coordinator.retryViaProxy(tab: new))
+        try await waitUntil { gate.started }
+        XCTAssertTrue(coordinator.runProbe(for: new, candidates: [host]))
+        XCTAssertTrue(coordinator.snapshot(for: new).probeBusy)
+        delayed.finish()
+        coordinator.pendingRecoveryInvalidated(tab: old) // Another late old-instance callback.
+        coordinator.tabClosed(old) // Idempotent late close cannot target the replacement.
+        XCTAssertTrue(coordinator.snapshot(for: new).probeBusy)
+        coordinator.registry.sweep(now: Date().addingTimeInterval(1801))
+        XCTAssertTrue(coordinator.registry.store(scopeID: "ordinary", host: host, isPrivate: false) === oldStore)
+        XCTAssertFalse(oldStore.proxyConfigurations.isEmpty)
+        gate.finish()
+        try await waitUntil {
+            attach(new.webView, to: window)
+            return new.recoveryLoadCount == 1 && !coordinator.snapshot(for: new).probeBusy
+        }
+        XCTAssertFalse(coordinator.snapshot(for: new).probeSuggestionLines.isEmpty)
+        restored.closeWindow()
+        try await waitUntil {
+            coordinator.registry.sweep(now: Date().addingTimeInterval(1801))
+            return coordinator.registry.store(scopeID: "ordinary", host: host, isPrivate: false) == nil
+        }
+        withExtendedLifetime((first, old, oldView, restored)) {}
+    }
+
+    func testTerminalScrollSnapshotSurvivesDisappearAndCannotOverwriteRestoredWindow() async throws {
+        let opener = AnsweringOpener(body: "<meta name='viewport' content='width=device-width'><div style='height:8000px'>Scroll restoration</div>")
+        let listener = try await makeListener(port: 18_264, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let coordinator = AccessHostStoreCoordinator(publisher: readyPublisher(port: 18_264))
+        let windows = BrowserWindowStore()
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil),
+                                     windowID: try windows.createWindow(), windowStore: windows)
+        browser.hostCoordinator = coordinator
+        let tab = try XCTUnwrap(browser.activeTab), host = try AccessSiteHost("localhost")
+        arm(tab, host: host, port: 18_264, coordinator: coordinator)
+        tab.load(URL(string: "http://localhost:18265/scroll")!)
+        let window = show(tab.webView)
+        defer { window.isHidden = true; browser.closeWindow() }
+        try await waitUntil {
+            attach(tab.webView, to: window)
+            return !tab.isLoading && tab.webView.scrollView.contentSize.height > 6000
+        }
+        _ = try await tab.webView.evaluateJavaScript("window.scrollTo(0,1000)")
+        try await waitUntil({ tab.scrollOffset > 900 }, message: "initial scroll model=\(tab.scrollOffset) actual=\(tab.webView.scrollView.contentOffset.y) height=\(tab.webView.scrollView.contentSize.height) url=\(String(describing: tab.url))")
+        let offset = tab.scrollOffset
+        browser.closeWindow()
+        browser.persistSession(); browser.persistSession() // Root onDisappear after terminal release.
+        XCTAssertEqual(tab.scrollOffset, offset, accuracy: 1)
+        XCTAssertEqual(try XCTUnwrap(windows.snapshot(browser.windowID)?.tabs.first?.scrollOffset), offset, accuracy: 1)
+        let restored = BrowserSession(dataStore: browser.dataStore, windowID: browser.windowID, windowStore: windows)
+        restored.hostCoordinator = coordinator
+        defer { restored.closeWindow() }
+        let active = try XCTUnwrap(restored.activeTab)
+        try await waitUntil({
+            attach(active.webView, to: window)
+            return !active.isLoading && abs(active.webView.scrollView.contentOffset.y - offset) < 2
+        }, message: "restore expected=\(offset) actual=\(active.webView.scrollView.contentOffset.y) model=\(active.scrollOffset) height=\(active.webView.scrollView.contentSize.height) inset=\(active.webView.scrollView.adjustedContentInset.top) url=\(String(describing: active.url))")
+        XCTAssertEqual(active.id, tab.id)
+        _ = try await active.webView.evaluateJavaScript("window.scrollTo(0,1700)")
+        try await waitUntil { active.scrollOffset > 1600 }
+        restored.persistSession()
+        let current = try XCTUnwrap(windows.snapshot(browser.windowID))
+        browser.persistSession(); browser.closeWindow(); browser.persistSession()
+        XCTAssertEqual(windows.snapshot(browser.windowID), current)
+        XCTAssertGreaterThan(try XCTUnwrap(current.tabs.first?.scrollOffset), offset)
+        XCTAssertTrue(BrowserSession.openTabs().contains { $0 === active })
+        XCTAssertFalse(BrowserSession.openTabs().contains { $0 === tab })
+    }
+
+    private func arm(_ tab: BrowserTab, host: AccessSiteHost, port: UInt16,
+                     coordinator: AccessHostStoreCoordinator) {
+        coordinator.registry.setEndpoint(.init(identity: "window-terminal", generation: 1,
+            loopbackHost: "127.0.0.1", port: port, state: .ready),
+            scopeID: tab.browsingScopeID, host: host, isPrivate: tab.profile.isPrivate)
+        coordinator.setProxyEnabled(true, host: host, scopeID: tab.browsingScopeID, isPrivate: tab.profile.isPrivate)
+    }
+
     private func readyPublisher(port: UInt16) -> AccessProxyEntryPublisher {
         AccessProxyEntryPublisher { generation, _ in
             AccessProxyEntryPublisher.Provision(
@@ -450,13 +689,14 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
     private func waitUntil(
         seconds: TimeInterval = 8,
         _ condition: @MainActor () -> Bool,
-        message: @autoclosure () -> String = ""
+        message: @autoclosure () -> String = "",
+        file: StaticString = #filePath, line: UInt = #line
     ) async throws {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition(), Date() < deadline {
             try await Task.sleep(for: .milliseconds(30))
         }
-        XCTAssertTrue(condition(), message())
+        XCTAssertTrue(condition(), message(), file: file, line: line)
     }
 }
 
@@ -658,4 +898,31 @@ private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendabl
             return pending
         }
     }
+}
+
+/// Delay only the old terminal receipt; all binding/recovery work uses the real coordinator.
+@MainActor
+private final class DelayedWindowTabCleanup: BrowserHostStoreCoordinating {
+    let base: AccessHostStoreCoordinator
+    var pending: [BrowserTab] = []
+    init(_ base: AccessHostStoreCoordinator) { self.base = base }
+    func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore? { base.dataStoreForMainFrame(tab: tab, url: url) }
+    func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError) { base.mainFrameFailed(tab: tab, failure: failure, error: error) }
+    func pendingRecoveryInvalidated(tab: BrowserTab) { base.pendingRecoveryInvalidated(tab: tab) }
+    func tabClosed(_ tab: BrowserTab) { pending.append(tab) }
+    func ordinaryHostStores() -> [WKWebsiteDataStore] { base.ordinaryHostStores() }
+    func endPrivateSession(scopeID: String) { base.endPrivateSession(scopeID: scopeID) }
+    func finish() { let tabs = pending; pending = []; tabs.forEach { base.tabClosed($0) } }
+}
+
+@MainActor
+private final class WindowPrepareGate {
+    private(set) var started = false
+    private var released = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    func wait() async {
+        guard !released else { return }
+        await withCheckedContinuation { continuation = $0; started = true }
+    }
+    func finish() { released = true; let pending = continuation; continuation = nil; pending?.resume() }
 }

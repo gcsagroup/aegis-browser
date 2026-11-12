@@ -41,7 +41,7 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(tab.recoveryLoadCount, 0)
         let host = try AccessSiteHost("example.invalid")
         XCTAssertNil(coordinator.registry.storeForTab(
-            tabID: tab.id.uuidString,
+            tabID: tab.instanceID.uuidString,
             scopeID: "ordinary",
             isPrivate: false,
             targetHost: host,

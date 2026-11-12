@@ -175,7 +175,7 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
     /// Window close discards private tabs, then the window disappear discards
     /// again. The queued stores must still release only those Access sessions.
     @MainActor
-    func testSecondDiscardStillReleasesPrivateSessionAndKeepsOrdinary() throws {
+    func testSecondDiscardStillReleasesPrivateSessionAndKeepsOrdinary() async throws {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
         defer {
             browser.standardTabs.forEach { $0.stop() }
@@ -204,9 +204,13 @@ final class AccessSiteProxyToggleModelTests: XCTestCase {
 
         browser.discardPrivateSession()
         browser.discardPrivateSession()
+        let deadline = Date().addingTimeInterval(5)
+        while browser.retiredPrivateWebsiteDataStoreRevision == 0, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         let retired = browser.consumeRetiredPrivateWebsiteDataStores()
         XCTAssertEqual(retired.count, 1)
-        XCTAssertTrue(retired[0] === privateStore)
+        XCTAssertTrue(try XCTUnwrap(retired.first) === privateStore)
         XCTAssertTrue(browser.consumeRetiredPrivateWebsiteDataStores().isEmpty)
 
         let revision = registry.revision
