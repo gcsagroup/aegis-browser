@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-import {readFileSync} from 'node:fs';
-import {dirname, join, resolve} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {resolve} from 'node:path';
 import {fail, git, parseArgs, repoRoot, resolveCommit} from './common.mjs';
 
 function parentShas(commit, cwd) {
@@ -38,10 +36,10 @@ try {
   } else {
     if (head !== tested) fail(`${event} must test its exact head SHA`);
     requireAncestor(base, head, cwd);
-    const releaseRefs = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ios-release-lines.json'), 'utf8')).lines.map(line => line.ref);
-    const allowed = new Set(['refs/heads/develop', ...releaseRefs]);
-    if (!allowed.has(values.ref)) {
-      fail(`${event} is restricted to an admitted release line or develop, got ${values.ref ?? 'missing'}`);
+    const branch = typeof values.ref === 'string' && values.ref.startsWith('refs/heads/') ? values.ref.slice('refs/heads/'.length) : '';
+    const releaseLine = branch === 'main' || branch === 'develop' || /^releases\/ios\/[0-9]{1,10}\.[0-9]{1,10}$/u.test(branch);
+    if (!releaseLine) {
+      fail(`${event} is restricted to main, develop, or a releases/ios line, got ${values.ref ?? 'missing'}`);
     }
   }
   const trees = Object.fromEntries(

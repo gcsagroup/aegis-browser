@@ -21,16 +21,12 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def admitted_line_refs():
-    path = Path(__file__).resolve().parents[1] / 'ci' / 'ios-release-lines.json'
-    lines = json.loads(path.read_text())['lines']
-    refs = [line['ref'] for line in lines]
-    require(refs and len(refs) == len(set(refs)) and 'refs/heads/main' in refs, 'iOS release lines are invalid')
-    return set(refs)
+def admitted_dispatch(ref):
+    return ref == 'refs/heads/main' or re.fullmatch(r'refs/heads/releases/ios/[0-9]{1,10}\.[0-9]{1,10}', ref or '') is not None
 
 
 def require_admitted_dispatch(event, ref):
-    require(event == 'workflow_dispatch' and ref in admitted_line_refs(),
+    require(event == 'workflow_dispatch' and admitted_dispatch(ref),
             'Delivery requires an admitted release line or exact candidate tag')
 
 

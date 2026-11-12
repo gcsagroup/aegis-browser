@@ -9,6 +9,13 @@ export const IOS_REPOSITORY = 'gcsagroup/aegis-browser';
 export const IOS_REPOSITORY_ID = '1348409663';
 const RELEASE_LINE_NAME = /^(?:main|releases\/ios\/[0-9]{1,10}\.[0-9]{1,10})$/u;
 
+export function lineFromRef(ref) {
+  if (ref === 'refs/heads/main') return {name: 'main', ref};
+  const name = typeof ref === 'string' && ref.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : '';
+  if (RELEASE_LINE_NAME.test(name)) return {name, ref: `refs/heads/${name}`};
+  return null;
+}
+
 export function releaseLines(read = () => readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ios-release-lines.json'), 'utf8')) {
   const parsed = JSON.parse(read());
   const lines = parsed?.lines;
@@ -42,7 +49,7 @@ async function lineTip(api, repository, name, token) {
   if (!/^[0-9a-f]{40}$/u.test(tip ?? '')) throw new Error('Admitted release line tip is missing');
   return tip;
 }
-export async function iosReleasePreflight(sha, {environment = process.env, api = githubApi, quality = requireGreenQuality, authorize = requireIosAdministrator, lines = releaseLines()} = {}) {
+export async function iosReleasePreflight(sha, {environment = process.env, api = githubApi, quality = requireGreenQuality, authorize = requireIosAdministrator} = {}) {
   if (!/^[0-9a-f]{40}$/u.test(sha ?? '')) throw new Error('Full source SHA required');
   const token = environment.GH_TOKEN || environment.GITHUB_TOKEN;
   if (!token || environment.AEGIS_IOS_RELEASE_ENABLED !== 'true') throw new Error('iOS release must be explicitly enabled with an admission token');
@@ -50,7 +57,7 @@ export async function iosReleasePreflight(sha, {environment = process.env, api =
   if (repository !== IOS_REPOSITORY) throw new Error('Privileged iOS delivery requires canonical upstream');
   await authorize({environment});
   const candidate = environment.GITHUB_EVENT_NAME === 'push' && environment.GITHUB_REF === `refs/tags/${environment.RELEASE_TAG}` && environment.RELEASE_DESTINATION === 'github-draft';
-  const dispatchLine = lines.find(line => line.ref === environment.GITHUB_REF);
+  const dispatchLine = lineFromRef(environment.GITHUB_REF);
   if (environment.GITHUB_ACTIONS === 'true' && (environment.GITHUB_SHA !== sha || (!candidate && environment.GITHUB_EVENT_NAME !== 'workflow_dispatch'))) {
     throw new Error('iOS release requires exact-source dispatch or candidate tag');
   }
@@ -72,8 +79,11 @@ export async function iosReleasePreflight(sha, {environment = process.env, api =
       return dispatchLine;
     }
     const matched = [];
-    for (const line of lines) {
-      if (await lineTip(api, repository, line.name, token) === sha) matched.push(line);
+    if (await lineTip(api, repository, 'main', token) === sha) matched.push(lineFromRef('refs/heads/main'));
+    const listed = await api(repository, '/git/matching-refs/heads/releases/ios/', {token});
+    for (const item of Array.isArray(listed) ? listed : []) {
+      const line = lineFromRef(item?.ref);
+      if (line && item?.object?.sha === sha) matched.push(line);
     }
     if (matched.length !== 1) throw new Error('Source must equal exactly one admitted release line tip');
     return matched[0];

@@ -187,17 +187,17 @@ test('version/build-only status has no artifact, signing or mutation route', () 
 });
 
 test('maintenance release lines package from their own tip, not current main', async () => {
-  const lines = JSON.parse(readFileSync('scripts/ci/ios-release-lines.json', 'utf8')).lines;
   const pushed = parse(readFileSync('.github/workflows/quality.yml', 'utf8')).on.push.branches;
-  assert.deepEqual(lines.map(line => line.name), ['main', 'releases/ios/1.0']);
-  for (const line of lines) assert.ok(pushed.includes(line.name));
+  assert.ok(pushed.includes('releases/ios/**'));
   const patchSha = 'd'.repeat(40);
+  const laterSha = 'e'.repeat(40);
   const {iosReleasePreflight} = await load();
   let qualityBranch;
   const api = async (repo, path) => {
     if (path === '') return {id: 1348409663, default_branch: 'main'};
     if (path === '/git/ref/heads/main') return {object: {sha}};
     if (path === '/git/ref/heads/releases/ios/1.0') return {object: {sha: patchSha}};
+    if (path === '/git/ref/heads/releases/ios/1.2') return {object: {sha: laterSha}};
     throw new Error(`Unexpected fixture endpoint ${path}`);
   };
   const admitted = await iosReleasePreflight(patchSha, {
@@ -206,6 +206,11 @@ test('maintenance release lines package from their own tip, not current main', a
   });
   assert.equal(admitted.line, 'releases/ios/1.0');
   assert.equal(qualityBranch, 'releases/ios/1.0');
+  const later = await iosReleasePreflight(laterSha, {
+    environment: {...environment, GITHUB_SHA: laterSha, GITHUB_REF: 'refs/heads/releases/ios/1.2'},
+    api, quality: async () => true,
+  });
+  assert.equal(later.line, 'releases/ios/1.2');
   await assert.rejects(iosReleasePreflight(sha, {
     environment: {...environment, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
     api, quality: async () => true,
