@@ -180,6 +180,17 @@ class IosActionTests(unittest.TestCase):
         self.assertEqual(command[command.index('--repository')+1], 'owner/repo')
         self.assertNotIn('upload', command)
 
+    def test_cancelled_upload_with_no_steps_is_unstarted(self):
+        row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery.yml', status='completed', conclusion='cancelled')
+        job = dict(name='upload-new', status='completed', conclusion='cancelled', steps=[], run_id=10, run_attempt=1, head_sha='b'*40)
+        def api(path):
+            return dict(total_count=1, jobs=[job]) if path.endswith('/jobs?per_page=100') else row
+        with patch.object(action, 'api', api):
+            self.assertTrue(action.unstarted_store_run(row))
+        job['steps'] = [{'name': 'start'}]
+        with patch.object(action, 'api', api):
+            self.assertFalse(action.unstarted_store_run(row))
+
     def test_nested_full_store_execution_is_not_mistaken_for_unstarted(self):
         row = dict(id=10, run_attempt=1, head_sha='b'*40, path='.github/workflows/ios-delivery-full.yml', status='completed')
         job = dict(name='delivery / store', status='completed', conclusion='success', steps=[{'name': 'upload'}], run_id=10, run_attempt=1, head_sha='b'*40)

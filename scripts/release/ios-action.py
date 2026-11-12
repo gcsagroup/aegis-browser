@@ -215,7 +215,9 @@ def unstarted_store_run(row):
         for job in jobs:
             if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
                 return False
-            if (job.get('name') in {'store', 'upload-new'} or any(str(job.get('name', '')).endswith(' / '+name) for name in ['store', 'upload-new'])) and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
+            store_job = job.get('name') in {'store', 'upload-new'} or any(str(job.get('name', '')).endswith(' / '+name) for name in ['store', 'upload-new'])
+            never_ran = job.get('status') == 'completed' and job.get('steps') == [] and job.get('conclusion') in {'skipped', 'cancelled'}
+            if store_job and not never_ran:
                 return False
     final = api(f'actions/runs/{row["id"]}')
     return final.get('run_attempt') == attempts and final.get('status') == 'completed' and final.get('head_sha') == record['head_sha']
