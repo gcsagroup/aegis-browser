@@ -1,0 +1,190 @@
+From 4f2fdf24a13b29286e41f7031705bbe68454a5ae Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Thu, 12 Nov 2026 02:45:10 +0800
+Subject: [PATCH] fix(access): honor an immediate error-page retry after Stop
+
+---
+ .../access_site_proxy_bubble_controller.cc    | 39 +++++++++++++++----
+ .../access_site_proxy_bubble_controller.h     |  3 ++
+ .../access_site_proxy_product_unittest.cc     | 38 ++++++++++++++++++
+ 3 files changed, 73 insertions(+), 7 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 77fc6adb6ddf3e8e396a9c23230c5dfc61b6249d..c8914318aa746fe2867f2d89877c6c8beec250f1 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -188,6 +188,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     return false;
+   }
+   base::OnceCallback<void(bool)> superseded_retry;
++  base::OnceCallback<void(bool)> superseded_queue;
+   if (publication_in_flight_ && !enabled && verifying_host_ == host) {
+     // The ON transaction is already committed. Its connectivity recheck may
+     // finish later, but a newer OFF owns both the choice and the retry now.
+@@ -195,6 +196,8 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     ++committed_verification_attempt_;
+     publication_in_flight_ = false;
+     superseded_retry = std::move(retry_completion_);
++    superseded_queue = std::move(queued_retry_);
++    retry_url_ = GURL();
+   }
+   if (publication_in_flight_ || (enabled && restoring_core_)) {
+     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
+@@ -209,6 +212,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     host_states_[host].failure_reason.clear();
+     BeginDisablePublication(host);
+     if (superseded_retry) std::move(superseded_retry).Run(false);
++    if (superseded_queue) std::move(superseded_queue).Run(false);
+     return true;
+   }
+ 
+@@ -223,13 +227,24 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+ void AccessSiteProxyBubbleController::RequestFailedNavigationProxy(
+     const GURL& original_url, base::OnceCallback<void(bool)> completion) {
+   const auto host = ResolveTrustedNavigationHost(original_url);
++  // Stop revokes the document callback immediately. The old transaction may
++  // still own the publisher while the user clicks Retry on that page again.
++  if (publication_in_flight_ && retry_url_ == original_url &&
++      retry_completion_ && retry_completion_.IsCancelled() &&
++      (!queued_retry_ || queued_retry_.IsCancelled())) {
++    queued_retry_ = std::move(completion);
++    return;
++  }
+   if (!host.host || publication_in_flight_) {
+     std::move(completion).Run(false);
+     return;
+   }
++  retry_url_ = original_url;
+   retry_completion_ = std::move(completion);
+-  if (!RequestHostProxySession(*host.host, true) && retry_completion_)
++  if (!RequestHostProxySession(*host.host, true) && retry_completion_) {
++    retry_url_ = GURL();
+     std::move(retry_completion_).Run(false);
++  }
+ }
+ base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
+ AccessSiteProxyBubbleController::GetFailedNavigationRetryHandler() {
+@@ -285,8 +300,7 @@ void AccessSiteProxyBubbleController::FailCorePreparation(
+   ++state_revision_;
+   host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+   host_states_[host].failure_reason = std::move(error);
+-  if (retry_completion_) std::move(retry_completion_).Run(false);
+-  FinishCoreRequests(false);
++  FinishNavigationPreparation(false);
+ }
+ void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& host) {
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+@@ -430,8 +444,7 @@ void AccessSiteProxyBubbleController::OnCommittedCoreVerified(
+   host_states_[host].connection = AccessSiteConnectionState::kReady;
+   host_states_[host].failure_reason.clear();
+   local_core_ready_ = true;
+-  if (retry_completion_) std::move(retry_completion_).Run(true);
+-  FinishCoreRequests(true);
++  FinishNavigationPreparation(true);
+ }
+ 
+ bool AccessSiteProxyBubbleController::IsCurrentPreparedCore(
+@@ -549,6 +562,19 @@ void AccessSiteProxyBubbleController::OnRestoredCoreVerified(
+   ++state_revision_;
+   FinishCoreRequests(ready);
+ }
++void AccessSiteProxyBubbleController::FinishNavigationPreparation(bool ready) {
++  auto retry = std::move(retry_completion_);
++  auto next = std::move(queued_retry_);
++  GURL url = std::exchange(retry_url_, GURL());
++  if (retry) std::move(retry).Run(ready);
++  FinishCoreRequests(ready);
++  // Never reuse the first attempt's result. The new document ticket needs its
++  // own core verification and acknowledgement before it can reload.
++  if (next && !next.IsCancelled()) {
++    RequestFailedNavigationProxy(url, std::move(next));
++  }
++}
++
+ void AccessSiteProxyBubbleController::FinishCoreRequests(bool ready) {
+   if (restoring_core_ && !ready) {
+     for (auto& [host, state] : host_states_) {
+@@ -831,8 +857,7 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
+     // Preserve the last committed choice; preparation is not a commit.
+     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+     host_states_[host].failure_reason = MutationStatusReadableMessage(result.status);
+-    if (retry_completion_) std::move(retry_completion_).Run(false);
+-    FinishCoreRequests(false);
++    FinishNavigationPreparation(false);
+     return;
+   }
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index 986e2e5a822c2217ac2c59d576ddcb0df62085b5..516268956e96ab34c5ff8825c8a73b1b1d95f1e6 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -112,6 +112,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   void OnRestoredCoreVerified(OwnershipKey owner, uint64_t attempt,
+       AccessLocalCoreReady result);
+   void FinishCoreRequests(bool ready);
++  void FinishNavigationPreparation(bool ready);
+   void OnLocalCoreStopped(std::string registration_id);
+   void FailCorePreparation(const AccessSiteHost& host, std::string error);
+ 
+@@ -147,7 +148,9 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   std::string core_registration_;
+   std::optional<OwnershipKey> core_owner_;
+   std::vector<base::OnceCallback<void(bool)>> core_request_waiters_;
++  GURL retry_url_;
+   base::OnceCallback<void(bool)> retry_completion_;
++  base::OnceCallback<void(bool)> queued_retry_;
+   base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 5c7255895769cb1f4c8c6c92488bbb000ed92a96..b3532fb584767853461a0eb462c15a76c7d0b392 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -948,6 +948,44 @@ TEST_F(AccessRetryNavigationProductTest, ClosedTabBeforeRealAckDoesNotReloadOthe
+   EXPECT_EQ(other->GetLastCommittedURL(), replacement);
+ }
+ 
++TEST_F(AccessRetryNavigationProductTest, ImmediateReclickWaitsForItsOwnAck) {
++  BeginHeldRetry();
++  web_contents()->Stop();
++  ASSERT_TRUE(completed_.IsReady());
++  EXPECT_FALSE(completed_.Get());
++  base::test::TestFuture<bool> fresh;
++  ASSERT_TRUE(helper()->RequestProxyRetry(fresh.GetCallback()));
++  ASSERT_FALSE(fresh.IsReady());
++  context_.hold_next = true;
++  context_.Reply(true);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return context_.has_reply() || fresh.IsReady();
++  }));
++  ASSERT_TRUE(context_.has_reply());
++  EXPECT_FALSE(fresh.IsReady());
++  EXPECT_FALSE(controller().GetPendingEntry());
++  context_.Reply(true);
++  ASSERT_TRUE(fresh.Get());
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), failed_);
++  content::NavigationSimulator::CreateFromPending(controller())->Commit();
++  EXPECT_FALSE(controller().GetPendingEntry());
++}
++
++TEST_F(AccessRetryNavigationProductTest, SecondStopRevokesQueuedReclick) {
++  BeginHeldRetry();
++  web_contents()->Stop();
++  base::test::TestFuture<bool> fresh;
++  ASSERT_TRUE(helper()->RequestProxyRetry(fresh.GetCallback()));
++  ASSERT_FALSE(fresh.IsReady());
++  web_contents()->Stop();
++  ASSERT_TRUE(fresh.IsReady());
++  EXPECT_FALSE(fresh.Get());
++  DrainHeldRetry();
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), failed_);
++}
++
+ TEST_F(AccessRetryNavigationProductTest, StopBeforeRealAckRevokesOriginalRetry) {
+   BeginHeldRetry();
+   web_contents()->Stop();
+-- 
+2.54.0 (Apple Git-157)
+

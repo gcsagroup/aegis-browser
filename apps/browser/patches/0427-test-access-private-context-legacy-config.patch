@@ -1,0 +1,100 @@
+From e52c0c7d9c14f78049eb1c982c8536ae5bc9431e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 06:25:10 +0800
+Subject: [PATCH] test(access): reproduce legacy proxy leak across private
+ contexts
+
+---
+ .../access_private_publication_unittest.cc    | 62 +++++++++++++++++++
+ 1 file changed, 62 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_private_publication_unittest.cc b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+index c79feac4c037304c34c204d72f289df62b4e5607..dbd0046ee058daa26be75f03ae50c0ec0fdb8866 100644
+--- a/chrome/browser/aegis/access/access_private_publication_unittest.cc
++++ b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+@@ -7,6 +7,10 @@
+ #include "chrome/test/base/testing_profile.h"
+ #include "content/public/test/browser_task_environment.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/base/schemeful_site.h"
++#include "net/proxy_resolution/proxy_info.h"
++#include "services/network/network_service_proxy_delegate.h"
+ #include "services/network/test/test_network_context.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -100,6 +104,35 @@ class AccessPrivatePublicationTest : public testing::Test {
+                             .row_revision = 1,
+                             .last_operation_sequence = 1});
+   }
++  std::unique_ptr<network::NetworkServiceProxyDelegate> CreateLegacyDelegate() {
++    network::mojom::NetworkContextParams params;
++    EXPECT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), {}, &params));
++    return std::make_unique<network::NetworkServiceProxyDelegate>(
++        std::move(params.initial_custom_proxy_config),
++        std::move(params.custom_proxy_config_client_receiver),
++        mojo::PendingRemote<network::mojom::CustomProxyConnectionObserver>());
++  }
++  aegis_access::RegisteredProxyEndpoint Endpoint() {
++    return {"private-registration", "private-group", owner_,
++            {1, 2, 3, transport_->network_epoch(), 5},
++            aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1", 18080};
++  }
++  net::ProxyInfo ResolveFromOtherWebsite(
++      network::NetworkServiceProxyDelegate& delegate) {
++    net::ProxyInfo result;
++    result.UseNamedProxy("http://native.example:3128;direct://");
++    delegate.OnResolveProxy(GURL("https://anchor.example/resource"),
++        net::NetworkAnonymizationKey::CreateSameSite(
++            net::SchemefulSite(GURL("https://other.example"))),
++        "GET", {}, &result);
++    return result;
++  }
++  void ExpectOriginalConnection(network::NetworkServiceProxyDelegate& delegate) {
++    const auto result = ResolveFromOtherWebsite(delegate);
++    EXPECT_EQ(result.proxy_chain().First().GetHost(), "native.example");
++    EXPECT_EQ(result.proxy_chain().First().GetPort(), 3128);
++  }
+ 
+   content::BrowserTaskEnvironment environment_;
+   std::unique_ptr<TestingProfile> profile_;
+@@ -107,6 +140,35 @@ class AccessPrivatePublicationTest : public testing::Test {
+   aegis_access::OwnershipKey owner_;
+ };
+ 
++TEST_F(AccessPrivatePublicationTest, PrivateBindingClearsLegacyGlobalSelection) {
++  auto legacy = CreateLegacyDelegate();
++  ASSERT_TRUE(transport_->PublishProxySelection({}, {"anchor.example"}, Endpoint()));
++  transport_->FlushClientsForTesting({});
++  EXPECT_EQ(ResolveFromOtherWebsite(*legacy).proxy_chain().First().GetHost(),
++            "127.0.0.1");
++  HeldPrivateContext context;
++  ASSERT_TRUE(Bind(context));
++  transport_->FlushClientsForTesting({});
++  ExpectOriginalConnection(*legacy);
++}
++
++TEST_F(AccessPrivatePublicationTest,
++       RecreatedPrivateContextAndOffDoNotInstallGlobalHostProxy) {
++  HeldPrivateContext context;
++  ASSERT_TRUE(Bind(context));
++  auto before = transport_->CurrentSelection(owner_);
++  ASSERT_TRUE(before);
++  ASSERT_TRUE(transport_->ReplaceSelection(owner_, *before,
++      {Endpoint(), {"anchor.example"}}));
++  auto recreated = CreateLegacyDelegate();
++  ExpectOriginalConnection(*recreated);
++  const auto enabled = transport_->CurrentSelection(owner_);
++  ASSERT_TRUE(enabled);
++  ASSERT_TRUE(transport_->ReplaceSelection(owner_, *enabled, {}));
++  transport_->FlushClientsForTesting({});
++  ExpectOriginalConnection(*recreated);
++}
++
+ TEST_F(AccessPrivatePublicationTest, ChangedCommonTupleRequiresFreshPrivateAck) {
+   auto notifier = net::NetworkChangeNotifier::CreateMockIfNeeded();
+   HeldPrivateContext context;
+-- 
+2.54.0 (Apple Git-157)
+

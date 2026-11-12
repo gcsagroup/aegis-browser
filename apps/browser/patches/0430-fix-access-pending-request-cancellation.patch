@@ -1,0 +1,355 @@
+From f8ec3d0606910de08f0c188c8102b0ae41b3d1a0 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 06:51:24 +0800
+Subject: [PATCH] fix(access): observe request cancellation before readiness
+ waits
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   1 +
+ .../access_proxying_url_loader_factory.cc     | 211 +++++++++++++-----
+ .../access_proxying_url_loader_factory.h      |  22 +-
+ 3 files changed, 162 insertions(+), 72 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index b8bd372d001b0bde4eb845170f2677cff59189bc..bf0f7a6bd4978406afa3fbf3b682f29655624952 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -270,6 +270,7 @@ source_set("access_proxying_url_loader_factory") {
+     "//components/aegis_access:published_request_runtime",
+     "//content/public/browser",
+     "//mojo/public/cpp/bindings",
++    "//mojo/public/cpp/system",
+     "//net",
+     "//services/network/public/cpp",
+     "//services/network/public/mojom",
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 1882ca5a917665f12339be7fd8fccc88bb44f54c..1ab8c1acee8e2dc171d69b5a05224f469818e1cc 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -34,6 +34,7 @@
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/browser/web_contents_observer.h"
+ #include "mojo/public/cpp/bindings/receiver.h"
++#include "mojo/public/cpp/system/simple_watcher.h"
+ #include "net/base/net_errors.h"
+ #include "services/network/public/cpp/resource_request.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+@@ -584,6 +585,72 @@ void MaybeProxyProfileOnlyFactory(
+ 
+ }  // namespace
+ 
++// Observe both IPC peers before waiting for core readiness or snapshot ACK.
++// Keeping the pipes unbound preserves queued URLLoader methods for the normal
++// tracked request. A synchronous signal check also catches cancellation whose
++// notification has not run yet when a readiness callback arrives.
++struct AccessProxyingURLLoaderFactory::PendingStart {
++  PendingStart(AccessProxyingURLLoaderFactory* factory,
++               mojo::PendingReceiver<network::mojom::URLLoader> loader,
++               int32_t id,
++               uint32_t flags,
++               const network::ResourceRequest& value,
++               mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++               const net::MutableNetworkTrafficAnnotationTag& annotation)
++      : factory(factory),
++        request_id(id),
++        options(flags),
++        request(value),
++        traffic_annotation(annotation),
++        loader_pipe(loader.PassPipe()),
++        client_version(client.version()),
++        client_pipe(client.PassPipe()) {}
++
++  bool IsConnected() const {
++    return loader_pipe.is_valid() && client_pipe.is_valid() &&
++           !loader_pipe->QuerySignalsState().peer_closed() &&
++           !client_pipe->QuerySignalsState().peer_closed();
++  }
++  bool Observe() {
++    if (!IsConnected()) {
++      return false;
++    }
++    auto disconnected = base::BindRepeating(&PendingStart::OnDisconnected,
++                                           weak_factory.GetWeakPtr());
++    return loader_watch.Watch(loader_pipe.get(), MOJO_HANDLE_SIGNAL_PEER_CLOSED,
++                              MOJO_WATCH_CONDITION_SATISFIED, disconnected) ==
++               MOJO_RESULT_OK &&
++           client_watch.Watch(client_pipe.get(), MOJO_HANDLE_SIGNAL_PEER_CLOSED,
++                              MOJO_WATCH_CONDITION_SATISFIED, disconnected) ==
++               MOJO_RESULT_OK;
++  }
++  auto TakeEndpoints() {
++    loader_watch.Cancel();
++    client_watch.Cancel();
++    return std::make_pair(
++        mojo::PendingReceiver<network::mojom::URLLoader>(std::move(loader_pipe)),
++        mojo::PendingRemote<network::mojom::URLLoaderClient>(
++            std::move(client_pipe), client_version));
++  }
++  void OnDisconnected(MojoResult, const mojo::HandleSignalsState&) {
++    factory->FinishPendingStart(this);
++  }
++
++  const raw_ptr<AccessProxyingURLLoaderFactory> factory;
++  const int32_t request_id;
++  const uint32_t options;
++  const network::ResourceRequest request;
++  const net::MutableNetworkTrafficAnnotationTag traffic_annotation;
++  mojo::ScopedMessagePipeHandle loader_pipe;
++  const uint32_t client_version;
++  mojo::ScopedMessagePipeHandle client_pipe;
++  mojo::SimpleWatcher loader_watch{
++      FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC};
++  mojo::SimpleWatcher client_watch{
++      FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC};
++  base::WeakPtrFactory<PendingStart> weak_factory{this};
++};
++
+ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+     Profile* profile,
+     content::FrameTreeNodeId frame_tree_node_id,
+@@ -1009,21 +1076,28 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
+   }
+ 
+   if (private_target_factory_.is_bound()) {
+-    ++pending_starts_;
++    auto start = std::make_unique<PendingStart>(
++        this, std::move(loader_receiver), request_id, options, request,
++        std::move(client), traffic_annotation);
++    auto pending = start->weak_factory.GetWeakPtr();
++    pending_starts_.insert(std::move(start));
++    if (!pending->Observe()) {
++      FinishPendingStart(pending.get());
++      return;
++    }
+     const auto local_group = SelectedLocalCoreGroup(request.url);
+     if (local_group) {
+       auto* controller = AccessSiteProxyBubbleController::GetOrCreate(profile_);
+       auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+       const auto* policy = runtime->GetPublishedPolicySnapshot(factory_owner_);
+-      controller->EnsureLocalCoreForRequest(factory_owner_, *local_group, base::BindOnce(
+-          &AccessProxyingURLLoaderFactory::OnRequestCoreReady,
+-          weak_factory_.GetWeakPtr(), std::move(loader_receiver), request_id,
+-          options, request, std::move(client), traffic_annotation,
+-          policy->policy_generation, *local_group));
++      controller->EnsureLocalCoreForRequest(
++          factory_owner_, *local_group,
++          base::BindOnce(&AccessProxyingURLLoaderFactory::OnRequestCoreReady,
++                         weak_factory_.GetWeakPtr(), pending,
++                         policy->policy_generation, *local_group));
+       return;
+     }
+-    PublishRequestPolicy(std::move(loader_receiver), request_id, options, request,
+-                         std::move(client), traffic_annotation);
++    PublishRequestPolicy(pending);
+     return;
+   }
+   StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
+@@ -1049,79 +1123,102 @@ std::optional<std::string> AccessProxyingURLLoaderFactory::SelectedLocalCoreGrou
+ }
+ 
+ void AccessProxyingURLLoaderFactory::OnRequestCoreReady(
+-    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+-    int32_t request_id, uint32_t options, network::ResourceRequest request,
+-    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-    net::MutableNetworkTrafficAnnotationTag traffic_annotation,
+-    uint64_t expected_policy_generation, std::string expected_group, bool ready) {
++    base::WeakPtr<PendingStart> pending,
++    uint64_t expected_policy_generation,
++    std::string expected_group,
++    bool ready) {
++  if (!pending) {
++    return;
++  }
++  if (!pending->IsConnected()) {
++    FinishPendingStart(pending.get());
++    return;
++  }
+   auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+   const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_) : nullptr;
+   // A pending readiness callback grants no route to a replacement document,
+   // a new navigation, or a policy that changed while the core was preparing.
+-  if (!ready || !policy || policy->policy_generation != expected_policy_generation ||
+-      SelectedLocalCoreGroup(request.url) != expected_group || !private_target_factory_.is_bound()) {
+-    BlockRequest(std::move(loader_receiver), std::move(client),
+-                 ready ? net::ERR_NETWORK_CHANGED : net::ERR_PROXY_CONNECTION_FAILED);
+-    FinishPendingStart();
++  if (!ready || !policy ||
++      policy->policy_generation != expected_policy_generation ||
++      SelectedLocalCoreGroup(pending->request.url) != expected_group ||
++      !private_target_factory_.is_bound()) {
++    auto endpoints = pending->TakeEndpoints();
++    BlockRequest(std::move(endpoints.first), std::move(endpoints.second),
++                 ready ? net::ERR_NETWORK_CHANGED
++                       : net::ERR_PROXY_CONNECTION_FAILED);
++    FinishPendingStart(pending.get());
+     return;
+   }
+-  PublishRequestPolicy(std::move(loader_receiver), request_id, options, std::move(request),
+-                       std::move(client), traffic_annotation);
++  PublishRequestPolicy(pending);
+ }
+ 
+ void AccessProxyingURLLoaderFactory::PublishRequestPolicy(
+-    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+-    int32_t request_id, uint32_t options, network::ResourceRequest request,
+-    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-    net::MutableNetworkTrafficAnnotationTag traffic_annotation) {
+-    auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+-    auto* transport = AccessNetworkContextTransport::Get(profile_);
+-    const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_)
+-                                 : nullptr;
+-    const auto common = runtime
+-        ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
+-        : std::nullopt;
+-    if (!transport || !policy || !common) {
+-      BlockRequest(std::move(loader_receiver), std::move(client),
+-                   net::ERR_NETWORK_CHANGED);
+-      FinishPendingStart();
+-      return;
+-    }
+-    // An open document keeps its factory across network/identity/config
+-    // changes. Publish the new tuple and wait for the exact ACK before
+-    // stamping either native or proxy requests with that tuple.
+-    transport->PublishPrivatePolicy(*policy, *common, base::BindOnce(
+-        &AccessProxyingURLLoaderFactory::OnRequestPolicyReady,
+-        weak_factory_.GetWeakPtr(), std::move(loader_receiver), request_id,
+-        options, request, std::move(client), traffic_annotation, *common));
++    base::WeakPtr<PendingStart> pending) {
++  if (!pending) {
++    return;
++  }
++  if (!pending->IsConnected()) {
++    FinishPendingStart(pending.get());
++    return;
++  }
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto* policy =
++      runtime ? runtime->GetPublishedPolicySnapshot(factory_owner_) : nullptr;
++  const auto common = runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
++      : std::nullopt;
++  if (!transport || !policy || !common) {
++    auto endpoints = pending->TakeEndpoints();
++    BlockRequest(std::move(endpoints.first), std::move(endpoints.second),
++                 net::ERR_NETWORK_CHANGED);
++    FinishPendingStart(pending.get());
+     return;
++  }
++  // An open document keeps its factory across network/identity/config
++  // changes. Publish the new tuple and wait for the exact ACK before
++  // stamping either native or proxy requests with that tuple.
++  transport->PublishPrivatePolicy(
++      *policy, *common,
++      base::BindOnce(&AccessProxyingURLLoaderFactory::OnRequestPolicyReady,
++                     weak_factory_.GetWeakPtr(), pending, *common));
+ }
+ 
+ void AccessProxyingURLLoaderFactory::OnRequestPolicyReady(
+-    mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+-    int32_t request_id, uint32_t options, network::ResourceRequest request,
+-    mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-    net::MutableNetworkTrafficAnnotationTag traffic_annotation,
+-    aegis_access::GenerationTuple expected, bool accepted) {
++    base::WeakPtr<PendingStart> pending,
++    aegis_access::GenerationTuple expected,
++    bool accepted) {
++  if (!pending) {
++    return;
++  }
++  if (!pending->IsConnected()) {
++    FinishPendingStart(pending.get());
++    return;
++  }
+   auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+   const auto current = runtime
+       ? runtime->CaptureCommonGenerationTupleOnUiThread(factory_owner_)
+       : std::nullopt;
+   if (!accepted || !current || *current != expected ||
+       !private_target_factory_.is_bound()) {
+-    BlockRequest(std::move(loader_receiver), std::move(client),
++    auto endpoints = pending->TakeEndpoints();
++    BlockRequest(std::move(endpoints.first), std::move(endpoints.second),
+                  net::ERR_NETWORK_CHANGED);
+   } else {
+-    StartEvaluatedRequest(std::move(loader_receiver), request_id, options, request,
+-                           std::move(client), traffic_annotation);
++    auto endpoints = pending->TakeEndpoints();
++    StartEvaluatedRequest(
++        std::move(endpoints.first), pending->request_id, pending->options,
++        pending->request, std::move(endpoints.second), pending->traffic_annotation);
+   }
+-  FinishPendingStart();
++  FinishPendingStart(pending.get());
+ }
+-void AccessProxyingURLLoaderFactory::FinishPendingStart() {
++
++void AccessProxyingURLLoaderFactory::FinishPendingStart(PendingStart* pending) {
+   // Keep the factory alive while StartEvaluatedRequest can remove a failed
+   // tracked request, including when its public factory receiver has closed.
+-  CHECK_GT(pending_starts_, 0u);
+-  --pending_starts_;
++  const auto found = pending_starts_.find(pending);
++  CHECK(found != pending_starts_.end());
++  pending_starts_.erase(found);
+   MaybeDestroySelf();
+ }
+ 
+@@ -1297,7 +1394,7 @@ void AccessProxyingURLLoaderFactory::OnProxyBindingError() {
+ 
+ void AccessProxyingURLLoaderFactory::MaybeDestroySelf() {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  if (!proxy_receivers_.empty() || !requests_.empty() || pending_starts_ ||
++  if (!proxy_receivers_.empty() || !requests_.empty() || !pending_starts_.empty() ||
+       !on_disconnect_) {
+     return;
+   }
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index edf2314f0a148c99e4eac9cfdcc233662183112b..72ae56f5d378628d8a9deadef27bee7487e6302b 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -139,26 +139,17 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+     kDispatchControlled,
+     kBlock,
+   };
++  struct PendingStart;
+ 
+   void OnRequestPolicyReady(
+-      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+-      int32_t request_id, uint32_t options, network::ResourceRequest request,
+-      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-      net::MutableNetworkTrafficAnnotationTag traffic_annotation,
++      base::WeakPtr<PendingStart> pending,
+       aegis_access::GenerationTuple expected, bool accepted);
+   std::optional<std::string> SelectedLocalCoreGroup(const GURL& target);
+   void OnRequestCoreReady(
+-      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+-      int32_t request_id, uint32_t options, network::ResourceRequest request,
+-      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-      net::MutableNetworkTrafficAnnotationTag traffic_annotation,
++      base::WeakPtr<PendingStart> pending,
+       uint64_t expected_policy_generation, std::string expected_group, bool ready);
+-  void PublishRequestPolicy(
+-      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+-      int32_t request_id, uint32_t options, network::ResourceRequest request,
+-      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-      net::MutableNetworkTrafficAnnotationTag traffic_annotation);
+-  void FinishPendingStart();
++  void PublishRequestPolicy(base::WeakPtr<PendingStart> pending);
++  void FinishPendingStart(PendingStart* pending);
+   void StartEvaluatedRequest(
+       mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+       int32_t request_id, uint32_t options,
+@@ -233,7 +224,8 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+   mojo::Remote<network::mojom::AegisAccessURLLoaderFactory> private_target_factory_;
+   std::shared_ptr<AccessPrivateContextClient> private_context_;
+   DisconnectCallback on_disconnect_;
+-  size_t pending_starts_ = 0;
++  std::set<std::unique_ptr<PendingStart>, base::UniquePtrComparator>
++      pending_starts_;
+   base::WeakPtrFactory<AccessProxyingURLLoaderFactory> weak_factory_{this};
+ };
+ 
+-- 
+2.54.0 (Apple Git-157)
+

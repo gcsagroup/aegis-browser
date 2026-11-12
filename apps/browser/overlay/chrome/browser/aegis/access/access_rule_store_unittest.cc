@@ -408,6 +408,68 @@ TEST(AccessRuleStoreTest, EphemeralProfileNeverCreatesAccessDb) {
   EXPECT_TRUE(store.binding().profile_path().empty());
 }
 
+TEST(AccessRuleStoreTest, EmptyBootstrapReservesLiveGenerationBeforeFirstMutation) {
+  base::ScopedTempDir temp;
+  ASSERT_TRUE(temp.CreateUniqueTempDir());
+  auto binding = AccessRuleStoreTestPeer::Persistent(temp.GetPath());
+  {
+    AccessRuleStore store(binding);
+    ASSERT_EQ(store.Open(), StoreStatus::kValid);
+    auto initial = store.ReserveCommittedPolicyForPublication("partition-A");
+    ASSERT_EQ(initial.status, StoreStatus::kValid);
+    ASSERT_TRUE(initial.value);
+    EXPECT_EQ(initial.value->owner, Owner());
+    EXPECT_EQ(initial.value->policy_generation, 1u);
+    EXPECT_TRUE(initial.value->rules.empty());
+    EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status, StoreStatus::kMissing);
+  }
+  AccessRuleStore reopened(binding);
+  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
+  auto pending = Prepare(&reopened, Mutation("first-enable", AccessMode::kProxy));
+  EXPECT_EQ(pending.operation_sequence, 2u);
+}
+TEST(AccessRuleStoreTest, RestoreRepublishesCommittedContentAboveFailedCandidate) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "ephemeral-A", "profile-A"));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  Commit(&store, Prepare(&store, Mutation("enabled", AccessMode::kProxy)));
+  auto original = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(original.value);
+  auto expected = AccessRuleStore::AdaptMatcherSnapshot(*original.value);
+  ASSERT_TRUE(expected.value);
+  auto failed = Prepare(&store, Mutation("failed-disable", AccessMode::kDirect, 1));
+  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("partition-A").status,
+            StoreStatus::kRecoveryRequired);
+  ASSERT_EQ(store.SupersedePreparedMutation(failed.operation_id,
+                                           failed.request_fingerprint),
+            StoreStatus::kValid);
+  auto restored = store.ReserveCommittedPolicyForPublication("partition-A");
+  ASSERT_EQ(restored.status, StoreStatus::kValid);
+  ASSERT_TRUE(restored.value);
+  EXPECT_GT(restored.value->policy_generation, failed.operation_sequence);
+  EXPECT_EQ(restored.value->rules, expected.value->rules);
+  auto committed = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(committed.value);
+  EXPECT_EQ(committed.value->site_groups, original.value->site_groups);
+  auto next = Prepare(&store, Mutation("next-disable", AccessMode::kDirect, 1));
+  EXPECT_GT(next.operation_sequence, restored.value->policy_generation);
+}
+TEST(AccessRuleStoreTest, InvalidRestoreDoesNotConsumeGenerationAndOverflowRejects) {
+  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
+      ChannelNamespace::kBeta, "ephemeral-A", "profile-A"));
+  EXPECT_FALSE(store.ReserveCommittedPolicyForPublication("partition-A").value);
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("").status,
+            StoreStatus::kInvalidArgument);
+  auto live = store.ReserveCommittedPolicyForPublication("partition-A");
+  ASSERT_TRUE(live.value);
+  EXPECT_EQ(live.value->policy_generation, 1u);
+  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(&store,
+      "UPDATE access_store_counters SET operation_sequence=9223372036854775807"));
+  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("partition-A").status,
+            StoreStatus::kConflict);
+}
+
 TEST(AccessRuleStoreTest, PrepareIsDurableButDoesNotReplaceCommittedRows) {
   base::ScopedTempDir temp;
   ASSERT_TRUE(temp.CreateUniqueTempDir());
@@ -1469,6 +1531,177 @@ TEST(AccessRuleStoreTest, UnsupportedIndependentFixtureShapeIsRejected) {
   invalid.expires_at_micros = 0;
   EXPECT_EQ(AccessRuleStoreTestPeer::Import(&store, invalid),
             StoreStatus::kInvalidArgument);
+}
+
+SiteGroupMutationRequest BubbleWebsiteFixture(std::string operation,
+    std::string host, bool website, AccessMode mode = AccessMode::kProxy,
+    uint64_t revision = 0) {
+  auto request = Mutation(std::move(operation), mode, revision, Owner(), host);
+  const std::string site(net::SchemefulSite(GURL("https://" + host)).GetURL().host());
+  const std::string id = (website ? "bubble-site:" : "bubble:") + host;
+  request.candidate_group.site_toggle_id = id;
+  request.candidate_group.website_context = website;
+  request.candidate_group.member_rule_ids = {id + ":http", id + ":https"};
+  SetTopLevelSites(&request, "http://" + site, "https://" + site);
+  for (size_t i = 0; i < request.candidate_members.size(); ++i) {
+    auto& member = request.candidate_members[i];
+    member.rule_id = request.candidate_group.member_rule_ids[i];
+    member.site_toggle_id = id;
+    member.scope = website ? PolicyScope::kWebsite : PolicyScope::kSite;
+  }
+  return request;
+}
+
+TEST(AccessRuleStoreTest, ExplicitWebsiteMutationAtomicallyCoalescesLegacyAliases) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto binding = AccessRuleStoreTestPeer::Persistent(directory.GetPath());
+  AccessRuleStore store(binding);
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  for (const char* host : {"example.com", "www.example.com", "help.example.com"})
+    Commit(&store, Prepare(&store, BubbleWebsiteFixture(host, host, false)));
+  const auto before = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(before.value);
+  ASSERT_EQ(before.value->site_groups.size(), 3u);
+  const auto pending = Prepare(&store, BubbleWebsiteFixture("website", "example.com", true));
+  const auto candidate = store.BuildPreparedCandidateSnapshot(pending);
+  ASSERT_TRUE(candidate.value);
+  ASSERT_EQ(candidate.value->site_groups.size(), 1u);
+  EXPECT_TRUE(candidate.value->site_groups[0].group.website_context);
+  EXPECT_EQ(candidate.value->site_groups[0].members[0].policy.scope, PolicyScope::kWebsite);
+  Commit(&store, pending);
+  AccessRuleStoreTestPeer::Close(&store);
+  AccessRuleStore reopened(binding);
+  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
+  const auto persisted = reopened.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(persisted.value);
+  EXPECT_EQ(persisted.value->site_groups, candidate.value->site_groups);
+  auto matcher = AccessRuleStore::AdaptMatcherSnapshot(*persisted.value);
+  ASSERT_TRUE(matcher.value);
+  const BrowserOwnedRequestMetadata page{"cdn", Owner(), RequestAttributionKind::kDocument,
+      "doc", {}, net::SchemefulSite(GURL("https://www.example.com/"))};
+  const auto context = CanonicalizeBrowserOwnedRequest(page, GURL("https://cdn.other.test/app.js"));
+  ASSERT_TRUE(context.context);
+  const PublishedAccessPolicySnapshot published{matcher.value->owner,
+      matcher.value->committed_policy_generation, matcher.value->rules};
+  EXPECT_EQ(EvaluateAccessPolicy(*context.context, published).effective_mode, AccessMode::kProxy);
+}
+
+TEST(AccessRuleStoreTest, WebsiteAliasDeletionRollsBackWithTheWholeMutation) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  AccessRuleStore store(AccessRuleStoreTestPeer::Persistent(directory.GetPath()));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  for (const char* host : {"example.com", "www.example.com"})
+    Commit(&store, Prepare(&store, BubbleWebsiteFixture(host, host, false)));
+  const auto before = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(before.value);
+  const auto pending = Prepare(&store, BubbleWebsiteFixture("website-rollback", "example.com", true));
+  AccessRuleStoreTestPeer::FailAt(&store, AccessRuleStore::FailurePointForTesting::kCommitAfterRuleDelete);
+  EXPECT_EQ(store.CommitPreparedMutation(pending).status, StoreStatus::kIoError);
+  AccessRuleStoreTestPeer::FailAt(&store, AccessRuleStore::FailurePointForTesting::kNone);
+  ASSERT_EQ(store.SupersedePreparedMutation(pending.operation_id, pending.request_fingerprint), StoreStatus::kValid);
+  const auto after = store.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(after.value);
+  EXPECT_EQ(after.value->site_groups, before.value->site_groups);
+}
+
+TEST(AccessRuleStoreTest, WebsiteAndLegacyPendingMutationsCannotCross) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  AccessRuleStore store(AccessRuleStoreTestPeer::Persistent(directory.GetPath()));
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  const auto legacy = Prepare(&store, BubbleWebsiteFixture("legacy-pending", "www.example.com", false));
+  EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("website-conflict", "example.com", true)).status,
+            StoreStatus::kRecoveryRequired);
+  ASSERT_EQ(store.SupersedePreparedMutation(legacy.operation_id, legacy.request_fingerprint), StoreStatus::kValid);
+  const auto website = Prepare(&store, BubbleWebsiteFixture("website-pending", "example.com", true));
+  EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("legacy-conflict", "www.example.com", false)).status,
+            StoreStatus::kRecoveryRequired);
+  Commit(&store, website);
+  EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("legacy-after-upgrade", "help.example.com", false)).status,
+            StoreStatus::kConflict);
+}
+
+TEST(AccessRuleStoreTest, LegacySchemaMigrationPreservesExactGrantAndPreparedJournal) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto binding = AccessRuleStoreTestPeer::Persistent(directory.GetPath());
+  AccessRuleStore store(binding);
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  Commit(&store, Prepare(&store, BubbleWebsiteFixture("old-enable", "www.example.com", false)));
+  const auto pending = Prepare(&store, BubbleWebsiteFixture("old-disable", "www.example.com", false,
+                                                           AccessMode::kDirect, 1));
+  AccessRuleStoreTestPeer::Close(&store);
+  {
+    sql::Database legacy("AegisAccess");
+    ASSERT_TRUE(legacy.Open(binding.database_path()));
+    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_site_groups DROP COLUMN website_context"));
+    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_mutation_journal DROP COLUMN website_context"));
+    ASSERT_TRUE(legacy.Execute("UPDATE access_store_identity SET schema_version=1"));
+    ASSERT_TRUE(legacy.Execute("UPDATE access_mutation_journal SET schema_version=1"));
+    ASSERT_TRUE(legacy.Execute("UPDATE meta SET value=1 WHERE key IN ('version','last_compatible_version')"));
+  }
+  AccessRuleStore migrated(binding);
+  ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
+  const auto recovery = migrated.LoadRecoveryState();
+  ASSERT_TRUE(recovery.value);
+  ASSERT_EQ(recovery.value->pending.size(), 1u);
+  EXPECT_EQ(recovery.value->pending[0].before_image, pending.before_image);
+  EXPECT_EQ(recovery.value->pending[0].after_image, pending.after_image);
+  EXPECT_FALSE(recovery.value->pending[0].candidate.group.website_context);
+  ASSERT_EQ(migrated.SupersedePreparedMutation(pending.operation_id, pending.request_fingerprint), StoreStatus::kValid);
+  const auto restored = migrated.ReadCommittedSnapshot("partition-A");
+  ASSERT_TRUE(restored.value);
+  ASSERT_EQ(restored.value->site_groups.size(), 1u);
+  EXPECT_FALSE(restored.value->site_groups[0].group.website_context);
+  EXPECT_EQ(restored.value->site_groups[0].group.canonical_host, "www.example.com");
+  EXPECT_EQ(restored.value->site_groups[0].members[0].policy.scope, PolicyScope::kSite);
+}
+
+TEST(AccessRuleStoreTest, LegacySchemaCannotReinterpretUnknownOrdinalAsWebsiteGrant) {
+  base::ScopedTempDir directory;
+  ASSERT_TRUE(directory.CreateUniqueTempDir());
+  const auto binding = AccessRuleStoreTestPeer::Persistent(directory.GetPath());
+  AccessRuleStore store(binding);
+  ASSERT_EQ(store.Open(), StoreStatus::kValid);
+  auto independent = IndependentRule("future-scope", AccessMode::kProxy,
+      "example.com", "https://example.com", AllSchemes(),
+      {PortScope::kAllBrowserPermitted, {}}, 1);
+  ASSERT_EQ(AccessRuleStoreTestPeer::Import(&store, independent), StoreStatus::kValid);
+  AccessRuleStoreTestPeer::Close(&store);
+  {
+    sql::Database legacy("AegisAccess");
+    ASSERT_TRUE(legacy.Open(binding.database_path()));
+    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_site_groups DROP COLUMN website_context"));
+    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_mutation_journal DROP COLUMN website_context"));
+    ASSERT_TRUE(legacy.Execute("UPDATE access_store_identity SET schema_version=1"));
+    ASSERT_TRUE(legacy.Execute("UPDATE meta SET value=1 WHERE key IN ('version','last_compatible_version')"));
+    ASSERT_TRUE(legacy.Execute("UPDATE access_rules SET scope=4 WHERE rule_id='future-scope'"));
+  }
+  AccessRuleStore migrated(binding);
+  EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
+  EXPECT_EQ(migrated.Open(), StoreStatus::kCorrupt);
+  EXPECT_FALSE(migrated.is_open());
+  {
+    // Both failed migrations must roll back. Repair only the unsupported
+    // ordinal, then retry the same store and preserve its exact-host rule.
+    sql::Database legacy("AegisAccess");
+    ASSERT_TRUE(legacy.Open(binding.database_path()));
+    const auto repair = "UPDATE access_rules SET scope=" +
+        std::to_string(static_cast<int>(PolicyScope::kSite)) +
+        " WHERE rule_id='future-scope'";
+    ASSERT_TRUE(legacy.Execute(repair));
+  }
+  ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
+  const auto recovered = migrated.ReadCommittedSnapshot("partition-A");
+  ASSERT_EQ(recovered.status, StoreStatus::kValid);
+  ASSERT_TRUE(recovered.value);
+  ASSERT_EQ(recovered.value->independent_rules.size(), 1u);
+  const auto& restored = recovered.value->independent_rules.front().policy;
+  EXPECT_EQ(restored.scope, PolicyScope::kSite);
+  EXPECT_EQ(restored.destination_host, "example.com");
+  EXPECT_FALSE(restored.include_subdomains);
 }
 
 }  // namespace

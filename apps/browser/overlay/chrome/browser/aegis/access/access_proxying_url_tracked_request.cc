@@ -16,6 +16,7 @@
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/early_hints.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
+#include "url/origin.h"
 
 namespace aegis::access {
 namespace {
@@ -92,9 +93,17 @@ void AccessProxyingURLTrackedRequest::Start(
       &AccessProxyingURLTrackedRequest::OnBindingError,
       weak_factory_.GetWeakPtr()));
 
+  private_route_ = factory_->private_target_factory_.is_bound();
+  mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl> control;
+  if (private_route_) {
+    control = private_control_.BindNewPipeAndPassReceiver();
+    private_control_.set_disconnect_handler(base::BindOnce(
+        &AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected,
+        weak_factory_.GetWeakPtr()));
+  }
   factory_->StartTargetRequest(
       target_loader_.BindNewPipeAndPassReceiver(), request_id, options, request,
-      std::move(proxy_client), traffic_annotation);
+      std::move(proxy_client), traffic_annotation, ownership_record_, std::move(control));
   target_loader_.set_disconnect_handler(base::BindOnce(
       &AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected,
       weak_factory_.GetWeakPtr()));
@@ -113,20 +122,65 @@ void AccessProxyingURLTrackedRequest::FollowRedirect(
     network::HttpRequestHeadersUpdateParams headers,
     const std::optional<GURL>& new_url) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (finished_ || !pending_redirect_url_.has_value() ||
+  if (finished_ || redirect_preparation_pending_ ||
+      !pending_redirect_url_.has_value() ||
       !target_loader_.is_bound()) {
     FailClosed(/*complete_registry=*/true);
     return;
   }
 
   const GURL follow_url = new_url.value_or(*pending_redirect_url_);
+  if (private_route_ && (!private_control_.is_connected() ||
+      !url::Origin::Create(follow_url).IsSameOriginWith(
+          url::Origin::Create(*pending_redirect_url_)))) {
+    FailClosed(/*complete_registry=*/true);
+    return;
+  }
+  if (private_route_) {
+    redirect_preparation_pending_ = true;
+    factory_->PrepareRedirectPolicy(
+        follow_url, ownership_record_.generations,
+        base::BindOnce(&AccessProxyingURLTrackedRequest::OnRedirectPrepared,
+                       weak_factory_.GetWeakPtr(), std::move(headers), new_url,
+                       follow_url));
+    return;
+  }
+  OnRedirectPrepared(std::move(headers), new_url, follow_url, true);
+}
+
+void AccessProxyingURLTrackedRequest::OnRedirectPrepared(
+    network::HttpRequestHeadersUpdateParams headers,
+    std::optional<GURL> new_url, GURL follow_url, bool ready) {
+  redirect_preparation_pending_ = false;
+  // A ready callback can precede the queued disconnect notification. Observe
+  // both caller peers synchronously before registering or sending another hop.
+  if (finished_ || !ready || !pending_redirect_url_ ||
+      !loader_receiver_.is_bound() || !target_client_.is_bound() ||
+      loader_receiver_.internal_state()->handle().QuerySignalsState().peer_closed() ||
+      target_client_.internal_state()->handle().QuerySignalsState().peer_closed() ||
+      !target_loader_.is_bound() ||
+      (private_route_ && !private_control_.is_connected())) {
+    FailClosed(/*complete_registry=*/true);
+    return;
+  }
   if (!RebindOwnershipForRedirect(follow_url)) {
     FailClosed(/*complete_registry=*/ownership_registered_);
     return;
   }
 
   pending_redirect_url_.reset();
-  target_loader_->FollowRedirect(std::move(headers), new_url);
+  if (private_route_) {
+    auto envelope = factory_->BuildEnvelope(ownership_record_, follow_url,
+                                             pending_redirect_method_, ++hop_);
+    if (!envelope) {
+      FailClosed(/*complete_registry=*/true);
+      return;
+    }
+    private_control_->FollowRedirectWithRoute(std::move(headers), new_url,
+                                               std::move(envelope));
+  } else {
+    target_loader_->FollowRedirect(std::move(headers), new_url);
+  }
 }
 
 void AccessProxyingURLTrackedRequest::SetPriority(net::RequestPriority priority,
@@ -174,6 +228,7 @@ void AccessProxyingURLTrackedRequest::OnReceiveRedirect(
   }
 
   pending_redirect_url_ = redirect_info.new_url;
+  pending_redirect_method_ = redirect_info.new_method;
   target_client_->OnReceiveRedirect(redirect_info, std::move(head));
 }
 
@@ -227,7 +282,7 @@ bool AccessProxyingURLTrackedRequest::RebindOwnershipForRedirect(
   const auto disposition = factory_->EvaluateRedirect(
       follow_url, stable_request_id, &net_error, &redirected_record);
   if (disposition !=
-      AccessProxyingURLLoaderFactory::RequestDisposition::kDispatchProxy) {
+      AccessProxyingURLLoaderFactory::RequestDisposition::kDispatchControlled) {
     return false;
   }
   if (redirected_record.request_id != stable_request_id) {
@@ -293,6 +348,7 @@ void AccessProxyingURLTrackedRequest::Finish(bool complete_registry) {
     return;
   }
   finished_ = true;
+  private_control_.reset();
   client_completion_watchdog_.Stop();
   if (complete_registry && ownership_registered_) {
     dispatch_state_->ownership().Complete(

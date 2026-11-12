@@ -1,0 +1,754 @@
+From 45114c5d6d72e5b2127e8d7c130dca2e666e930e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 19:01:48 +0800
+Subject: [PATCH] feat(access): route failed-page retry through Browser-owned
+ navigation
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   4 +
+ .../access_navigation_retry_tab_helper.cc     |  32 +++++
+ .../access_navigation_retry_tab_helper.h      |  10 ++
+ ...ss_navigation_retry_tab_helper_unittest.cc |  60 ++++++++
+ .../access_proxying_url_loader_factory.cc     |   6 +
+ .../access_site_proxy_bubble_controller.cc    | 132 ++++++++++++++++--
+ .../access_site_proxy_bubble_controller.h     |  12 ++
+ chrome/browser/net/BUILD.gn                   |   1 +
+ chrome/browser/net/net_error_tab_helper.cc    |  21 +++
+ chrome/browser/net/net_error_tab_helper.h     |   1 +
+ .../common/net/net_error_page_support.mojom   |   2 +
+ chrome/renderer/net/net_error_helper.cc       |  39 ++++++
+ chrome/renderer/net/net_error_helper.h        |   3 +-
+ .../renderer/net/net_error_page_controller.cc |   6 +
+ .../renderer/net/net_error_page_controller.h  |   2 +
+ components/neterror/resources/neterror.ts     |  32 ++++-
+ 16 files changed, 349 insertions(+), 14 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index c84dad6092a2700d6329f41a208777a94ced7c79..5e6d668e307ac0ab74f20411283fa92abfe54544 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -163,6 +163,7 @@ source_set("access_proxying_url_loader_factory") {
+   deps = [
+     ":access_browser_request_adapter",
+     ":access_navigation_retry_tab_helper",
++    ":access_site_proxy_bubble",
+     ":access_network_context_transport",
+     ":access_published_request_runtime",
+     ":access_request_dispatch_state",
+@@ -308,6 +309,9 @@ source_set("access_site_proxy_bubble") {
+     "access_site_proxy_bubble_controller.h",
+   ]
+   deps = [
++    ":access_local_core_manager",
++    ":access_identity_generation_source",
++    ":access_published_request_runtime",
+     ":access_network_context_transport",
+     ":access_rule_store",
+     ":access_service_coordinator",
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index ae766d3ee6182ec9d1ccdbd90c392f851bbc282c..d7663a45e569594335213cbbf9dd3517ce1846f8 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -56,9 +56,40 @@ base::OnceClosure AccessNavigationRetryTabHelper::CaptureRouteReadyCallback() {
+                         weak_factory_.GetWeakPtr(), *ticket, entry_id);
+ }
+ 
++void AccessNavigationRetryTabHelper::SetProxyRetryHandler(ProxyRetryHandler handler) {
++  proxy_retry_handler_ = std::move(handler);
++}
++bool AccessNavigationRetryTabHelper::RequestProxyRetry(
++    base::OnceCallback<void(bool)> completion) {
++  auto ticket = FailureForRetry();
++  if (!ticket || !proxy_retry_handler_ || proxy_preparation_pending_) {
++    std::move(completion).Run(false);
++    return false;
++  }
++  proxy_preparation_pending_ = true;
++  const int entry_id =
++      web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID();
++  proxy_retry_handler_.Run(ticket->original_url, base::BindOnce(
++      &AccessNavigationRetryTabHelper::OnProxyPrepared, weak_factory_.GetWeakPtr(),
++      *ticket, entry_id, std::move(completion)));
++  return true;
++}
++void AccessNavigationRetryTabHelper::OnProxyPrepared(
++    AccessNavigationRetryTicket ticket, int error_entry_id,
++    base::OnceCallback<void(bool)> completion, bool ready) {
++  proxy_preparation_pending_ = false;
++  const auto current = FailureForRetry();
++  const bool retry = ready && current && *current == ticket &&
++      web_contents()->GetController().GetLastCommittedEntry()->GetUniqueID() ==
++          error_entry_id;
++  if (retry) OnRouteReady(ticket, error_entry_id);
++  std::move(completion).Run(retry);
++}
++
+ void AccessNavigationRetryTabHelper::DidStartNavigation(
+     content::NavigationHandle* navigation) {
+   if (navigation->IsInPrimaryMainFrame()) {
++    proxy_preparation_pending_ = false;
+     weak_factory_.InvalidateWeakPtrs();
+     state_.BeginNavigation(navigation->GetNavigationId());
+   }
+@@ -79,6 +110,7 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
+ }
+ 
+ void AccessNavigationRetryTabHelper::NavigationStopped() {
++  proxy_preparation_pending_ = false;
+   weak_factory_.InvalidateWeakPtrs();
+   state_.BeginNavigation(0);
+ }
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+index ae406f444967074a1ae859db2e3701bcfc31193d..7b5555af62af6e6e4b14381081381fe0a58a3eb4 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.h
+@@ -23,6 +23,12 @@ class AccessNavigationRetryTabHelper
+                                        int64_t navigation_id);
+   std::optional<AccessNavigationRetryTicket> FailureForRetry() const;
+   base::OnceClosure CaptureRouteReadyCallback();
++  using ProxyRetryHandler = base::RepeatingCallback<void(
++      const GURL&, base::OnceCallback<void(bool)>)>;
++  void SetProxyRetryHandler(ProxyRetryHandler handler);
++  // Called only after Browser validates the sender is the current primary
++  // error document. The target comes from this helper, never renderer IPC.
++  bool RequestProxyRetry(base::OnceCallback<void(bool)> completion);
+ 
+   void DidStartNavigation(content::NavigationHandle* navigation) override;
+   void DidFinishNavigation(content::NavigationHandle* navigation) override;
+@@ -32,8 +38,12 @@ class AccessNavigationRetryTabHelper
+   friend class content::WebContentsUserData<AccessNavigationRetryTabHelper>;
+   explicit AccessNavigationRetryTabHelper(content::WebContents* contents);
+   void OnRouteReady(AccessNavigationRetryTicket ticket, int error_entry_id);
++  void OnProxyPrepared(AccessNavigationRetryTicket ticket, int error_entry_id,
++      base::OnceCallback<void(bool)> completion, bool ready);
+ 
+   AccessNavigationRetryState state_;
++  ProxyRetryHandler proxy_retry_handler_;
++  bool proxy_preparation_pending_ = false;
+   WEB_CONTENTS_USER_DATA_KEY_DECL();
+   base::WeakPtrFactory<AccessNavigationRetryTabHelper> weak_factory_{this};
+ };
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+index 23334f3932ba5bb0429b1edc85c8e6d9d363ed33..b55a781808494b0d814330a1e2095a8f5cd6ba05 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+@@ -4,6 +4,10 @@
+ 
+ #include <utility>
+ 
++#include "base/functional/bind.h"
++#include "base/test/bind.h"
++#include "base/test/test_future.h"
++
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+@@ -164,5 +168,61 @@ TEST_F(AccessNavigationRetryTabHelperTest, InitialPostRedirectDoesNotOfferReplay
+   EXPECT_FALSE(helper()->CaptureRouteReadyCallback());
+ }
+ 
++TEST_F(AccessNavigationRetryTabHelperTest, ErrorPageRequestWaitsForActualReadyAndCoalesces) {
++  const GURL original("https://failed.example/path?q=1#fragment");
++  Fail(original);
++  base::OnceCallback<void(bool)> prepared;
++  int calls = 0;
++  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
++      [&](const GURL& target, base::OnceCallback<void(bool)> completion) {
++        ++calls;
++        EXPECT_EQ(target, original);
++        prepared = std::move(completion);
++      }));
++  base::test::TestFuture<bool> result;
++  EXPECT_TRUE(helper()->RequestProxyRetry(result.GetCallback()));
++  EXPECT_FALSE(controller().GetPendingEntry());
++  base::test::TestFuture<bool> duplicate;
++  EXPECT_FALSE(helper()->RequestProxyRetry(duplicate.GetCallback()));
++  EXPECT_FALSE(duplicate.Get());
++  EXPECT_EQ(calls, 1);
++  std::move(prepared).Run(true);
++  ASSERT_TRUE(result.Get());
++  ASSERT_TRUE(controller().GetPendingEntry());
++  EXPECT_EQ(controller().GetPendingEntry()->GetURL(), original);
++}
++TEST_F(AccessNavigationRetryTabHelperTest, FailedPreparationDoesNotReloadAndAllowsManualRetry) {
++  Fail(GURL("https://failed.example/"));
++  int calls = 0;
++  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
++      [&](const GURL&, base::OnceCallback<void(bool)> completion) {
++        ++calls;
++        std::move(completion).Run(false);
++      }));
++  for (int attempt = 0; attempt < 2; ++attempt) {
++    base::test::TestFuture<bool> result;
++    EXPECT_TRUE(helper()->RequestProxyRetry(result.GetCallback()));
++    EXPECT_FALSE(result.Get());
++    EXPECT_FALSE(controller().GetPendingEntry());
++    EXPECT_TRUE(helper()->FailureForRetry());
++  }
++  EXPECT_EQ(calls, 2);
++}
++TEST_F(AccessNavigationRetryTabHelperTest, ErrorPageRequestCannotRetryNewNavigation) {
++  Fail(GURL("https://failed.example/"));
++  base::OnceCallback<void(bool)> prepared;
++  helper()->SetProxyRetryHandler(base::BindLambdaForTesting(
++      [&](const GURL&, base::OnceCallback<void(bool)> completion) {
++        prepared = std::move(completion);
++      }));
++  base::test::TestFuture<bool> result;
++  EXPECT_TRUE(helper()->RequestProxyRetry(result.GetCallback()));
++  const GURL other("https://other.example/");
++  content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(), other);
++  std::move(prepared).Run(true);
++  EXPECT_FALSE(controller().GetPendingEntry());
++  EXPECT_EQ(web_contents()->GetLastCommittedURL(), other);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 3c21307330d9333b8c4b9bf19197d61c4937fa83..7287a52abb20ee20c1e0305e5a478b7f3a511838 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -16,6 +16,7 @@
+ #include "base/supports_user_data.h"
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+@@ -692,6 +693,11 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
+   if (frame && frame->IsInPrimaryMainFrame() && navigation_id > 0) {
+     AccessNavigationRetryTabHelper::ObservePendingNavigation(
+         content::WebContents::FromRenderFrameHost(frame), navigation_id);
++    auto* helper = AccessNavigationRetryTabHelper::FromWebContents(
++        content::WebContents::FromRenderFrameHost(frame));
++    if (auto* controller = AccessSiteProxyBubbleController::GetOrCreate(profile)) {
++      helper->SetProxyRetryHandler(controller->GetFailedNavigationRetryHandler());
++    }
+   }
+ 
+   std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata =
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index cfa3838b117e842859d557c6796074c98ef6a578..aec962fc82e81c07a7a786d87450d89754097387 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -3,6 +3,9 @@
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ 
+ #include <utility>
++#include "base/command_line.h"
++#include "chrome/browser/aegis/access/access_identity_generation_source.h"
++#include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ 
+ #include "base/strings/string_number_conversions.h"
+ #include "base/uuid.h"
+@@ -182,18 +185,116 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+   host_states_[host].connection = AccessSiteConnectionState::kConnecting;
+   host_states_[host].failure_reason.clear();
+ 
++  publication_in_flight_ = true;
++  PrepareLocalCore(host);
++  return true;
++}
++
++void AccessSiteProxyBubbleController::RequestFailedNavigationProxy(
++    const GURL& original_url, base::OnceCallback<void(bool)> completion) {
++  const auto host = ResolveTrustedNavigationHost(original_url);
++  if (!host.host || publication_in_flight_) {
++    std::move(completion).Run(false);
++    return;
++  }
++  retry_completion_ = std::move(completion);
++  if (!RequestHostProxySession(*host.host, true) && retry_completion_)
++    std::move(retry_completion_).Run(false);
++}
++base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
++AccessSiteProxyBubbleController::GetFailedNavigationRetryHandler() {
++  return base::BindRepeating(
++      &AccessSiteProxyBubbleController::RequestFailedNavigationProxy,
++      weak_factory_.GetWeakPtr());
++}
++void AccessSiteProxyBubbleController::FailCorePreparation(
++    const AccessSiteHost& host, std::string error) {
++  publication_in_flight_ = false;
++  ++state_revision_;
++  host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
++  host_states_[host].failure_reason = std::move(error);
++  if (retry_completion_) std::move(retry_completion_).Run(false);
++}
++void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& host) {
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto owner = transport
++      ? transport->OwnerForPartition(ChannelNamespace::kDev, base::FilePath())
++      : std::nullopt;
++  if (!owner || !transport->OwnsConfiguredPartition(*owner) ||
++      !IsDevAllowBlockPanelRegistered()) {
++    FailCorePreparation(host, "An authorized DEV proxy binding is required.");
++    return;
++  }
++  if (!local_core_) {
++    const auto* command = base::CommandLine::ForCurrentProcess();
++    const auto manifest = command->GetSwitchValuePath("aegis-access-dev-core-manifest");
++    const auto node = command->GetSwitchValuePath("aegis-access-dev-node-config");
++    if (manifest.empty() || node.empty()) {
++      FailCorePreparation(host, "The authorized proxy configuration is unavailable.");
++      return;
++    }
++    local_core_ = std::make_unique<AccessLocalCoreManager>(AccessLocalCoreInput{manifest, node});
++  }
++  local_core_->Prepare(base::BindOnce(
++      &AccessSiteProxyBubbleController::OnLocalCorePrepared,
++      weak_factory_.GetWeakPtr(), host, *owner));
++}
++void AccessSiteProxyBubbleController::OnLocalCorePrepared(
++    AccessSiteHost host, OwnershipKey owner, AccessLocalCoreReady result) {
++  if (retry_completion_ && retry_completion_.IsCancelled()) {
++    FailCorePreparation(host, "The failed navigation is no longer current.");
++    return;
++  }
++  if (!result.ready) {
++    FailCorePreparation(host, std::move(result.error));
++    return;
++  }
++  // Core preparation does not replace actual Profile restoration or policy
++  // publication. Missing sources remain a visible failure, never guessed G/S.
++  auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
++  if (!identity->binding()) identity->CommitIdentity(
++      {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, "dev", "authorized-local-node"});
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  if (!runtime || !runtime->CaptureCommonGenerationTupleOnUiThread(owner)) {
++    FailCorePreparation(host, "Access rules have not completed startup restoration.");
++    return;
++  }
+   AccessSiteProxyLocalProxyReadyInfo ready;
+-  const AccessSiteProxySessionError ready_status =
+-      EnsureLocalProxyReady(host, &ready);
+-  if (ready_status != AccessSiteProxySessionError::kOk) {
+-    host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+-    host_states_[host].failure_reason =
+-        AccessSiteProxySessionErrorReadableMessage(ready_status);
+-    return true;
++  if (EnsureLocalProxyReady(host, &ready) != AccessSiteProxySessionError::kOk) {
++    FailCorePreparation(host, "The prepared proxy has not been registered with this Profile.");
++    return;
++  }
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto endpoint = transport->CurrentEndpoint(owner);
++  if (!endpoint || endpoint->registration_id != result.registration_id ||
++      endpoint->port != result.port) {
++    FailCorePreparation(host, "The Profile proxy registration is not current.");
++    return;
+   }
+-
+   BeginEnablePublication(host, std::move(ready));
+-  return true;
++}
++void AccessSiteProxyBubbleController::OnCommittedCoreVerified(
++    AccessSiteHost host, AccessLocalCoreReady result) {
++  if (!result.ready) {
++    FailCorePreparation(host, std::move(result.error));
++    return;
++  }
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  const auto owner = transport
++      ? transport->OwnerForPartition(ChannelNamespace::kDev, base::FilePath())
++      : std::nullopt;
++  const auto endpoint = owner ? transport->CurrentEndpoint(*owner) : std::nullopt;
++  if (!endpoint || endpoint->registration_id != result.registration_id ||
++      endpoint->port != result.port ||
++      endpoint->generations.network_epoch != transport->network_epoch()) {
++    FailCorePreparation(host, "The proxy binding changed during verification.");
++    return;
++  }
++  publication_in_flight_ = false;
++  ++state_revision_;
++  host_states_[host].connection = AccessSiteConnectionState::kReady;
++  host_states_[host].failure_reason.clear();
++  if (retry_completion_) std::move(retry_completion_).Run(true);
+ }
+ 
+ bool AccessSiteProxyBubbleController::NotifyHostProxyRuntimeFault(
+@@ -298,6 +399,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
+     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
+         AccessSiteProxySessionError::kMissingCoordinator);
++    FailCorePreparation(host, host_states_[host].failure_reason);
+     return;
+   }
+ 
+@@ -308,7 +410,8 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
+       host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+       host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
+           AccessSiteProxySessionError::kMissingStore);
+-      return;
++      FailCorePreparation(host, host_states_[host].failure_reason);
++    return;
+     }
+   }
+ 
+@@ -319,6 +422,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
+       (committed.status != StoreStatus::kValid || !committed.value)) {
+     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+     host_states_[host].failure_reason = "Access rule store requires recovery.";
++    FailCorePreparation(host, host_states_[host].failure_reason);
+     return;
+   }
+   uint64_t expected_revision = 0;
+@@ -343,6 +447,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
+                 AccessSiteIntentMutationStatus::kMissingProxyGroup
+             ? AccessSiteProxySessionError::kMissingProxyGroup
+             : AccessSiteProxySessionError::kPrepareFailed);
++    FailCorePreparation(host, host_states_[host].failure_reason);
+     return;
+   }
+ 
+@@ -425,13 +530,16 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
+ 
+   if (enabling) {
+     if (result.status == AccessMutationTransactionStatus::kCommitted) {
+-      host_states_[host].connection = AccessSiteConnectionState::kReady;
+-      host_states_[host].failure_reason.clear();
++      publication_in_flight_ = true;
++      local_core_->Verify(base::BindOnce(
++          &AccessSiteProxyBubbleController::OnCommittedCoreVerified,
++          weak_factory_.GetWeakPtr(), host));
+       return;
+     }
+     // Preserve the last committed choice; preparation is not a commit.
+     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+     host_states_[host].failure_reason = MutationStatusReadableMessage(result.status);
++    if (retry_completion_) std::move(retry_completion_).Run(false);
+     return;
+   }
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index 8919d49d32d87d3d76c554f371a8896de234cd57..ea9a847953a4054ffdee8246db176f4b7c3caad4 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -10,6 +10,7 @@
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
++#include "chrome/browser/aegis/access/access_local_core_manager.h"
+ #include "base/supports_user_data.h"
+ #include "chrome/browser/aegis/access/access_rule_store.h"
+ #include "chrome/browser/aegis/access/access_service_coordinator.h"
+@@ -52,6 +53,10 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   // Disable does not require a live proxy; publication failures remain visible.
+   // Returns false only when the host/toggle cannot be accepted.
+   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
++  void RequestFailedNavigationProxy(const GURL& original_url,
++      base::OnceCallback<void(bool)> completion);
++  base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
++  GetFailedNavigationRetryHandler();
+ 
+   // P-mac-4 DEV panel. False on Beta/Release — UI must not register the
+   // section. Never admits a general Access rule editor.
+@@ -77,6 +82,11 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+ 
+  private:
+   explicit AccessSiteProxyBubbleController(Profile* profile);
++  void PrepareLocalCore(const AccessSiteHost& host);
++  void OnLocalCorePrepared(AccessSiteHost host, OwnershipKey owner,
++                          AccessLocalCoreReady result);
++  void OnCommittedCoreVerified(AccessSiteHost host, AccessLocalCoreReady result);
++  void FailCorePreparation(const AccessSiteHost& host, std::string error);
+ 
+   AccessSiteProxySessionError EnsureLocalProxyReady(
+       const AccessSiteHost& host,
+@@ -99,6 +109,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   std::map<AccessSiteHost, HostState> host_states_;
+   uint64_t state_revision_ = 0;
+   bool publication_in_flight_ = false;
++  std::unique_ptr<AccessLocalCoreManager> local_core_;
++  base::OnceCallback<void(bool)> retry_completion_;
+   base::WeakPtrFactory<AccessSiteProxyBubbleController> weak_factory_{this};
+ };
+ 
+diff --git a/chrome/browser/net/BUILD.gn b/chrome/browser/net/BUILD.gn
+index 30290bab2c41815b3cb5a0a34f06c4f1d48230d2..a8489bdf3d63ec8935727ec2875f708656afeb65 100644
+--- a/chrome/browser/net/BUILD.gn
++++ b/chrome/browser/net/BUILD.gn
+@@ -176,6 +176,7 @@ source_set("impl") {
+     "//chrome/browser:browser_process_platform_part",
+     "//chrome/browser:primitives",
+     "//chrome/browser/aegis/access:access_network_context_transport",
++    "//chrome/browser/aegis/access:access_navigation_retry_tab_helper",
+     "//chrome/browser/browsing_data:constants",
+     "//chrome/browser/component_updater",
+     "//chrome/browser/content_settings:content_settings_factory",
+diff --git a/chrome/browser/net/net_error_tab_helper.cc b/chrome/browser/net/net_error_tab_helper.cc
+index 8568010340cff531fa44899cbcd2d82d36f87a4f..d8ec6a90fd4ab32f138d4d3cb7efad1222113db7 100644
+--- a/chrome/browser/net/net_error_tab_helper.cc
++++ b/chrome/browser/net/net_error_tab_helper.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "chrome/browser/net/net_error_tab_helper.h"
+ 
++#if BUILDFLAG(IS_MAC)
++#include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
++#endif
++
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+ #include "chrome/browser/net/dns_probe_service.h"
+@@ -153,6 +157,23 @@ void NetErrorTabHelper::DidFinishNavigation(
+   }
+ }
+ 
++void NetErrorTabHelper::RetryWithAegisProxy(RetryWithAegisProxyCallback callback) {
++#if BUILDFLAG(IS_MAC)
++  auto& sender = net_error_page_support_.CurrentTargetFrame();
++  const auto* entry = web_contents()->GetController().GetLastCommittedEntry();
++  if (&sender == web_contents()->GetPrimaryMainFrame() &&
++      entry && entry->GetPageType() == content::PAGE_TYPE_ERROR) {
++    auto* helper = aegis::access::AccessNavigationRetryTabHelper::FromWebContents(
++        web_contents());
++    if (helper) {
++      helper->RequestProxyRetry(std::move(callback));
++      return;
++    }
++  }
++#endif
++  std::move(callback).Run(false);
++}
++
+ #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+ void NetErrorTabHelper::DownloadPageLater() {
+   // Makes sure that this is coming from an error page.
+diff --git a/chrome/browser/net/net_error_tab_helper.h b/chrome/browser/net/net_error_tab_helper.h
+index a2e9482fdc49ef55143693be9a107efb0aeddfb6..867f233d29bd0b46989dfa662d23a392d17ef15f 100644
+--- a/chrome/browser/net/net_error_tab_helper.h
++++ b/chrome/browser/net/net_error_tab_helper.h
+@@ -88,6 +88,7 @@ class NetErrorTabHelper
+       content::NavigationHandle* navigation_handle) override;
+ 
+   // chrome::mojom::NetErrorPageSupport:
++  void RetryWithAegisProxy(RetryWithAegisProxyCallback callback) override;
+ #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
+   void DownloadPageLater() override;
+   void SetIsShowingDownloadButtonInErrorPage(
+diff --git a/chrome/common/net/net_error_page_support.mojom b/chrome/common/net/net_error_page_support.mojom
+index 10654147aa0e308e81e3ebc3470d8da28b16f241..539b8451d0d2a115482e658fa2baef50dfd75e3c 100644
+--- a/chrome/common/net/net_error_page_support.mojom
++++ b/chrome/common/net/net_error_page_support.mojom
+@@ -7,6 +7,8 @@ module chrome.mojom;
+ // A per-frame interface used to support network error pages.
+ // TODO(darin): Consolidate other such interfaces into this interface.
+ interface NetErrorPageSupport {
++  // No URL or node fields: Browser uses its current failed navigation ticket.
++  RetryWithAegisProxy() => (bool retried);
+   // Called to schedule a download of the current page at a later time.
+   [EnableIf=enable_offline_pages]
+   DownloadPageLater();
+diff --git a/chrome/renderer/net/net_error_helper.cc b/chrome/renderer/net/net_error_helper.cc
+index 247c4b3090286c572a38ca87ed0bed2909e8be42..e8b0f228cea36ab757ab65ba7c6e68d90bdf6f0b 100644
+--- a/chrome/renderer/net/net_error_helper.cc
++++ b/chrome/renderer/net/net_error_helper.cc
+@@ -74,6 +74,34 @@ using error_page::LocalizedError;
+ 
+ namespace {
+ 
++void AddAegisProxyRetryStrings(const error_page::Error& error, bool post,
++                              bool main_frame, base::DictValue& strings) {
++#if BUILDFLAG(IS_MAC)
++  if (!main_frame || post || !error.url().SchemeIsHTTPOrHTTPS()) return;
++  bool eligible = error.domain() == error_page::Error::kDnsProbeErrorDomain;
++  if (error.domain() == error_page::Error::kNetErrorDomain) {
++    switch (error.reason()) {
++      case net::ERR_NAME_NOT_RESOLVED:
++      case net::ERR_CONNECTION_REFUSED:
++      case net::ERR_CONNECTION_RESET:
++      case net::ERR_CONNECTION_CLOSED:
++      case net::ERR_CONNECTION_TIMED_OUT:
++      case net::ERR_TIMED_OUT:
++      case net::ERR_INTERNET_DISCONNECTED:
++      case net::ERR_NETWORK_CHANGED:
++        eligible = true;
++    }
++  }
++  if (!eligible) return;
++  const bool chinese = RenderThread::Get()->GetLocale().starts_with("zh");
++  strings.Set("aegisProxyRetry", base::DictValue()
++      .Set("button", chinese ? "通过代理重试" : "Retry through proxy")
++      .Set("connecting", chinese ? "正在连接代理…" : "Connecting to proxy…")
++      .Set("failure", chinese ? "暂时无法连接代理，请重试。" :
++                                "Unable to connect to the proxy. Try again."));
++#endif
++}
++
+ NetErrorHelperCore::FrameType GetFrameType(RenderFrame* render_frame) {
+   if (render_frame->IsMainFrame())
+     return NetErrorHelperCore::MAIN_FRAME;
+@@ -226,6 +254,8 @@ LocalizedError::PageState NetErrorHelper::GenerateLocalizedErrorPage(
+         IsExtensionExtendedErrorCode(error.extended_reason()),
+         &error_page_params_);
+   }
++  AddAegisProxyRetryStrings(error, is_failed_post,
++                            render_frame()->IsMainFrame(), page_state.strings);
+   std::string template_html =
+       ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
+           resource_id);
+@@ -238,6 +268,13 @@ void NetErrorHelper::EnablePageHelperFunctions() {
+   NetErrorPageController::Install(
+       render_frame(), weak_controller_delegate_factory_.GetWeakPtr());
+ }
++void NetErrorHelper::RetryWithAegisProxy() {
++  GetRemoteNetErrorPageSupport()->RetryWithAegisProxy(base::BindOnce(
++      [](base::WeakPtr<NetErrorHelper> self, bool retried) {
++        if (self && !retried) self->render_frame()->ExecuteJavaScript(
++            u"window.dispatchEvent(new Event('aegis-proxy-retry-failed'));");
++      }, weak_controller_delegate_factory_.GetWeakPtr()));
++}
+ 
+ LocalizedError::PageState NetErrorHelper::UpdateErrorPage(
+     const error_page::Error& error,
+@@ -252,6 +289,8 @@ LocalizedError::PageState NetErrorHelper::UpdateErrorPage(
+       IsExtensionExtendedErrorCode(error.extended_reason()),
+       &error_page_params_);
+ 
++  AddAegisProxyRetryStrings(error, is_failed_post,
++                            render_frame()->IsMainFrame(), page_state.strings);
+   std::string json = base::WriteJson(page_state.strings).value_or("");
+ 
+   std::string js = "if (window.updateForDnsProbe) "
+diff --git a/chrome/renderer/net/net_error_helper.h b/chrome/renderer/net/net_error_helper.h
+index 49b9b32d7b908d0ae5058624be0c67056fdad92d..582a008e50a590a7316b8fe377750dd0a3c3f261 100644
+--- a/chrome/renderer/net/net_error_helper.h
++++ b/chrome/renderer/net/net_error_helper.h
+@@ -52,6 +52,7 @@ class NetErrorHelper
+ 
+   // NetErrorPageController::Delegate implementation
+   void ButtonPressed(NetErrorHelperCore::Button button) override;
++  void RetryWithAegisProxy() override;
+   void SavePageForLater() override;
+   void CancelSavePage() override;
+   void UpdateEasterEggHighScore(int high_score) override;
+@@ -129,7 +130,7 @@ class NetErrorHelper
+   // Weak factories for vending weak pointers to PageControllers. Weak
+   // pointers are invalidated on each commit, to prevent getting messages from
+   // Controllers used for the previous commit that haven't yet been cleaned up.
+-  base::WeakPtrFactory<NetErrorPageController::Delegate>
++  base::WeakPtrFactory<NetErrorHelper>
+       weak_controller_delegate_factory_{this};
+ };
+ 
+diff --git a/chrome/renderer/net/net_error_page_controller.cc b/chrome/renderer/net/net_error_page_controller.cc
+index 5a2377904dbee97d9bfcd9a3b2e82f875f140e16..ce4eb87fe0eb7661901319c35bdcdee180cbd30d 100644
+--- a/chrome/renderer/net/net_error_page_controller.cc
++++ b/chrome/renderer/net/net_error_page_controller.cc
+@@ -51,6 +51,10 @@ bool NetErrorPageController::DownloadButtonClick() {
+ bool NetErrorPageController::ReloadButtonClick() {
+   return ButtonClick(NetErrorHelperCore::RELOAD_BUTTON);
+ }
++bool NetErrorPageController::RetryWithAegisProxy() {
++  if (delegate_) delegate_->RetryWithAegisProxy();
++  return true;
++}
+ 
+ bool NetErrorPageController::DetailsButtonClick() {
+   return ButtonClick(NetErrorHelperCore::MORE_BUTTON);
+@@ -110,6 +114,8 @@ gin::ObjectTemplateBuilder NetErrorPageController::GetObjectTemplateBuilder(
+                  &NetErrorPageController::DownloadButtonClick)
+       .SetMethod("reloadButtonClick",
+                  &NetErrorPageController::ReloadButtonClick)
++      .SetMethod("retryWithAegisProxy",
++                 &NetErrorPageController::RetryWithAegisProxy)
+       .SetMethod("detailsButtonClick",
+                  &NetErrorPageController::DetailsButtonClick)
+       .SetMethod("diagnoseErrorsButtonClick",
+diff --git a/chrome/renderer/net/net_error_page_controller.h b/chrome/renderer/net/net_error_page_controller.h
+index 95beca0b0723640f62474c1229c864404c9d907e..07fb4f19a22b01fdb987ef638cf602af0a5b0b12 100644
+--- a/chrome/renderer/net/net_error_page_controller.h
++++ b/chrome/renderer/net/net_error_page_controller.h
+@@ -31,6 +31,7 @@ class NetErrorPageController : public gin::Wrappable<NetErrorPageController> {
+ 
+     // Button press notification from error page.
+     virtual void ButtonPressed(NetErrorHelperCore::Button button) = 0;
++    virtual void RetryWithAegisProxy() = 0;
+ 
+     // Schedules a request to save the page later. This is different from the
+     // download button in that the page is only saved temporarily. This is used
+@@ -78,6 +79,7 @@ class NetErrorPageController : public gin::Wrappable<NetErrorPageController> {
+ 
+   // Execute a "Reload" button click.
+   bool ReloadButtonClick();
++  bool RetryWithAegisProxy();
+ 
+   // Execute a "Details" button click.
+   bool DetailsButtonClick();
+diff --git a/components/neterror/resources/neterror.ts b/components/neterror/resources/neterror.ts
+index c638ccd028a6f78901ec398f6d759aea033eecc6..84280edee0f48cff782a6cea3ec560dab791c922 100644
+--- a/components/neterror/resources/neterror.ts
++++ b/components/neterror/resources/neterror.ts
+@@ -21,6 +21,7 @@ declare global {
+ }
+ 
+ interface ErrorPageController {
++  retryWithAegisProxy(): void;
+   downloadButtonClick(): void;
+   reloadButtonClick(url?: string): void;
+   detailsButtonClick(): void;
+@@ -34,6 +35,7 @@ interface ErrorPageController {
+ }
+ 
+ interface TemplateData {
++  aegisProxyRetry?: {button: string, connecting: string, failure: string};
+   // Properties that exist in both error pages and chrome://dino.
+   errorCode: string;
+   heading: {
+@@ -80,6 +82,25 @@ interface TemplateData {
+ }
+ 
+ let showingDetails: boolean = false;
++let aegisProxyRetryPending = false;
++let aegisProxyRetryFailed = false;
++
++function retryWithAegisProxy() {
++  if (!window.errorPageController || aegisProxyRetryPending) {
++    return;
++  }
++  aegisProxyRetryPending = true;
++  aegisProxyRetryFailed = false;
++  assert(lastData);
++  render(getHtml(lastData, showingDetails), getRequiredElement('content'));
++  window.errorPageController.retryWithAegisProxy();
++}
++window.addEventListener('aegis-proxy-retry-failed', () => {
++  aegisProxyRetryPending = false;
++  aegisProxyRetryFailed = true;
++  assert(lastData);
++  render(getHtml(lastData, showingDetails), getRequiredElement('content'));
++});
+ let lastData: TemplateData|null = null;
+ // Flag to ensure that the Dino game's global singletons (like loadTimeData.data
+ // and the Runner instance) are only initialized once. This prevents assertion
+@@ -209,7 +230,7 @@ function shouldShowControlButtons(data: TemplateData): boolean {
+   const downloadButtonVisible =
+       !!data.downloadButton && !!data.downloadButton.msg;
+   const reloadButtonVisible = !!data.reloadButton && !!data.reloadButton.msg;
+-  return reloadButtonVisible || downloadButtonVisible;
++  return reloadButtonVisible || downloadButtonVisible || !!data.aegisProxyRetry;
+ }
+ 
+ function shouldShowDetailsButton(data: TemplateData): boolean {
+@@ -330,6 +351,15 @@ function getHtml(data: TemplateData, showingDetails: boolean) {
+       </div>
+       <div id="buttons" class="nav-wrapper ${getButtonsCssClass()}">
+         <div id="control-buttons" ?hidden="${!shouldShowControlButtons(data)}">
++          ${data.aegisProxyRetry ? html`
++            <button id="aegis-proxy-retry-button" class="blue-button text-button"
++                ?disabled="${aegisProxyRetryPending}" @click="${retryWithAegisProxy}">
++              ${aegisProxyRetryPending ? data.aegisProxyRetry.connecting : data.aegisProxyRetry.button}
++            </button>
++            <span role="status" ?hidden="${!aegisProxyRetryFailed}">
++              ${data.aegisProxyRetry.failure}
++            </span>
++          ` : ''}
+           ${data.reloadButton ? html`
+             <button id="reload-button"
+                 class="blue-button text-button"
+-- 
+2.54.0 (Apple Git-157)
+

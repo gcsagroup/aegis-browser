@@ -1,0 +1,433 @@
+From da14ac1eca19944eec97a64a60d654ee06737370 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 20:20:24 +0800
+Subject: [PATCH] fix(access): reap owned cores during macOS session ending
+
+---
+ chrome/browser/BUILD.gn                       |   5 +-
+ .../aegis/access/access_local_core_manager.cc | 112 +++++++++++++++++-
+ .../aegis/access/access_local_core_manager.h  |   8 ++
+ .../access_local_core_manager_unavailable.cc  |   4 +
+ .../access_local_core_manager_unittest.cc     | 107 +++++++++++++++++
+ chrome/browser/browser_process_impl.cc        |   8 ++
+ 6 files changed, 240 insertions(+), 4 deletions(-)
+
+diff --git a/chrome/browser/BUILD.gn b/chrome/browser/BUILD.gn
+index f8a6fd0cff7e565425af61367ae4fde974ce8e8e..fa2bb8fb26df3e8d053a655ccb189461a79c3664 100644
+--- a/chrome/browser/BUILD.gn
++++ b/chrome/browser/BUILD.gn
+@@ -1974,7 +1974,10 @@ source_set("core") {
+   }
+ 
+   if (is_mac) {
+-    deps += [ ":chrome_browser_main_mac" ]
++    deps += [
++      ":chrome_browser_main_mac",
++      "//chrome/browser/aegis/access:access_local_core_manager",
++    ]
+   }
+ 
+   if (is_chrome_for_testing) {
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index d74c4411c4df03d63495a9d432f5584ec75fb40e..c522b2920c102dda228c333e86eb2789450f2e42 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -1,6 +1,10 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/aegis/access/access_local_core_manager.h"
+ 
++#include <atomic>
++#include <vector>
++
++#include "base/barrier_closure.h"
+ #include "base/command_line.h"
+ #include "base/base_paths.h"
+ #include "base/files/file.h"
+@@ -9,12 +13,16 @@
+ #include "base/functional/bind.h"
+ #include "base/json/json_reader.h"
+ #include "base/json/json_writer.h"
++#include "base/memory/raw_ptr.h"
++#include "base/no_destructor.h"
+ #include "base/process/launch.h"
+ #include "base/process/kill.h"
+ #include "base/path_service.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/utf_string_conversions.h"
++#include "base/synchronization/lock.h"
+ #include "base/task/bind_post_task.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "base/task/thread_pool.h"
+ #include "base/timer/timer.h"
+ #include "base/uuid.h"
+@@ -69,12 +77,78 @@ constexpr char kCanary[] = "https://www.gstatic.com/generate_204";
+ std::string Token() { return base::Uuid::GenerateRandomV4().AsLowercaseString(); }
+ }  // namespace
+ 
++class AccessLocalCoreManager::ShutdownHandle
++    : public std::enable_shared_from_this<ShutdownHandle> {
++ public:
++  explicit ShutdownHandle(scoped_refptr<base::SequencedTaskRunner> runner)
++      : runner_(std::move(runner)) {}
++
++  // Registry access stays on the owning Browser sequence. The worker retains
++  // its handle through asynchronous destruction, so removing a service cannot
++  // hide a still-running child from session-ending cleanup.
++  static std::vector<std::weak_ptr<ShutdownHandle>>& Registry() {
++    static base::NoDestructor<std::vector<std::weak_ptr<ShutdownHandle>>> handles;
++    return *handles;
++  }
++  bool stop_requested() const { return stop_requested_.load(); }
++  void SetWorker(Worker* worker) { worker_ = worker; }  // Core thread only.
++
++  void RequestStop(base::OnceClosure completion) {
++    stop_requested_.store(true);
++    bool stopped;
++    {
++      base::AutoLock lock(lock_);
++      stopped = stopped_;
++      if (!stopped) completions_.push_back(std::move(completion));
++    }
++    if (stopped) {
++      std::move(completion).Run();
++      return;
++    }
++    // If the thread is already stopping and rejects the task, destruction of
++    // its queued SequenceBound worker completes the same cleanup barrier.
++    runner_->PostTask(FROM_HERE, base::BindOnce(
++        [](std::shared_ptr<ShutdownHandle> handle) {
++          handle->StopOnCoreThread();
++        }, shared_from_this()));
++  }
++  void CompleteStop() {
++    std::vector<base::OnceClosure> completions;
++    {
++      base::AutoLock lock(lock_);
++      stopped_ = true;
++      completions.swap(completions_);
++    }
++    for (auto& completion : completions) std::move(completion).Run();
++  }
++
++ private:
++  void StopOnCoreThread();
++  scoped_refptr<base::SequencedTaskRunner> runner_;
++  raw_ptr<Worker> worker_ = nullptr;  // Accessed only on the core thread.
++  std::atomic_bool stop_requested_{false};
++  base::Lock lock_;
++  bool stopped_ GUARDED_BY(lock_) = false;
++  std::vector<base::OnceClosure> completions_ GUARDED_BY(lock_);
++};
++
+ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+  public:
+-  explicit Worker(AccessLocalCoreInput input) : input_(std::move(input)) {}
+-  ~Worker() override { StopChild(); }
++  Worker(AccessLocalCoreInput input, std::shared_ptr<ShutdownHandle> shutdown)
++      : input_(std::move(input)), shutdown_(std::move(shutdown)) {
++    shutdown_->SetWorker(this);
++  }
++  ~Worker() override {
++    StopChild();
++    shutdown_->SetWorker(nullptr);
++    shutdown_->CompleteStop();
++  }
+ 
+   void Prepare(base::OnceCallback<void(AccessLocalCoreReady)> completion) {
++    if (shutdown_->stop_requested()) {
++      std::move(completion).Run({.error = "The local proxy is shutting down."});
++      return;
++    }
+     if (completion_) {
+       std::move(completion).Run({.error = "Proxy preparation is already running."});
+       return;
+@@ -97,6 +171,10 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+   }
+ 
+   void Verify(base::OnceCallback<void(AccessLocalCoreReady)> completion) {
++    if (shutdown_->stop_requested()) {
++      std::move(completion).Run({.error = "The local proxy is shutting down."});
++      return;
++    }
+     if (completion_) {
+       std::move(completion).Run({.error = "Proxy preparation is already running."});
+       return;
+@@ -320,6 +398,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+   }
+ 
+   AccessLocalCoreInput input_;
++  std::shared_ptr<ShutdownHandle> shutdown_;
+   base::ScopedTempDir directory_;
+   base::Process process_;
+   uint16_t port_ = 0;
+@@ -337,12 +416,27 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+   base::RepeatingCallback<void(std::string)> stopped_callback_;
+ };
+ 
++void AccessLocalCoreManager::ShutdownHandle::StopOnCoreThread() {
++  if (!worker_) {
++    CompleteStop();
++    return;
++  }
++  worker_->Stop(base::BindOnce([](std::shared_ptr<ShutdownHandle> handle) {
++    handle->CompleteStop();
++  }, shared_from_this()));
++}
++
+ AccessLocalCoreManager::AccessLocalCoreManager(AccessLocalCoreInput input) {
+   base::Thread::Options options;
+   options.message_pump_type = base::MessagePumpType::IO;
+   thread_ = std::make_unique<base::Thread>("AccessLocalCore");
+   CHECK(thread_->StartWithOptions(std::move(options)));
+-  worker_ = base::SequenceBound<Worker>(thread_->task_runner(), std::move(input));
++  shutdown_ = std::make_shared<ShutdownHandle>(thread_->task_runner());
++  auto& handles = ShutdownHandle::Registry();
++  std::erase_if(handles, [](const auto& handle) { return handle.expired(); });
++  handles.emplace_back(shutdown_);
++  worker_ = base::SequenceBound<Worker>(thread_->task_runner(), std::move(input),
++                                      shutdown_);
+ }
+ AccessLocalCoreManager::~AccessLocalCoreManager() {
+   worker_.Reset();
+@@ -367,6 +461,18 @@ void AccessLocalCoreManager::Stop(base::OnceClosure completion) {
+   worker_.AsyncCall(&Worker::Stop).WithArgs(
+       base::BindPostTaskToCurrentDefault(std::move(completion)));
+ }
++void AccessLocalCoreManager::StopAllForSessionEnding(base::OnceClosure completion) {
++  std::vector<std::shared_ptr<ShutdownHandle>> handles;
++  for (auto& weak : ShutdownHandle::Registry()) {
++    if (auto handle = weak.lock()) handles.push_back(std::move(handle));
++  }
++  if (handles.empty()) {
++    std::move(completion).Run();
++    return;
++  }
++  auto stopped = base::BarrierClosure(handles.size(), std::move(completion));
++  for (auto& handle : handles) handle->RequestStop(base::OnceClosure(stopped));
++}
+ void AccessLocalCoreManager::SetStoppedCallback(
+     base::RepeatingCallback<void(std::string)> callback) {
+   worker_.AsyncCall(&Worker::SetStoppedCallback).WithArgs(
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.h b/chrome/browser/aegis/access/access_local_core_manager.h
+index e64c7e58e23aa9c170db008caa85e80921893792..97997097c479c7f8e302d7af1dcd1d1222a4cfe6 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.h
++++ b/chrome/browser/aegis/access/access_local_core_manager.h
+@@ -2,6 +2,7 @@
+ #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_LOCAL_CORE_MANAGER_H_
+ 
++#include <memory>
+ #include <optional>
+ #include <string>
+ 
+@@ -45,13 +46,20 @@ class AccessLocalCoreManager {
+   void Prepare(base::OnceCallback<void(AccessLocalCoreReady)> completion);
+   void Verify(base::OnceCallback<void(AccessLocalCoreReady)> completion);
+   void Stop(base::OnceClosure completion);
++  // Called on the owning Browser sequence before the session-ending rundown
++  // wait. Completion runs after child cleanup on core threads, without needing
++  // the blocked Browser sequence to pump replies. Pending worker destruction
++  // remains covered after its owning service has gone away.
++  static void StopAllForSessionEnding(base::OnceClosure completion);
+   // Reports an unexpected exit of this manager's prepared child. The private
+   // registration ID lets the Browser ignore a late notification after rebind.
+   void SetStoppedCallback(base::RepeatingCallback<void(std::string)> callback);
+ 
+  private:
+   class Worker;
++  class ShutdownHandle;
+   std::unique_ptr<base::Thread> thread_;
++  std::shared_ptr<ShutdownHandle> shutdown_;
+   base::SequenceBound<Worker> worker_;
+ };
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unavailable.cc b/chrome/browser/aegis/access/access_local_core_manager_unavailable.cc
+index 629de43150123e89598a1024a2853d0ab97a5d84..91be7eea3bc125a6a06e6096cc96f1fa373d848f 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unavailable.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unavailable.cc
+@@ -36,6 +36,10 @@ void AccessLocalCoreManager::Stop(base::OnceClosure completion) {
+       FROM_HERE, std::move(completion));
+ }
+ 
++void AccessLocalCoreManager::StopAllForSessionEnding(base::OnceClosure completion) {
++  std::move(completion).Run();
++}
++
+ void AccessLocalCoreManager::SetStoppedCallback(
+     base::RepeatingCallback<void(std::string)>) {}
+ 
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index a861e3408f04f5ec681db9ffe867008840949333..9271bee64864ebaea15f40ee8f3a28397d8478c6 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -1,6 +1,10 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/aegis/access/access_local_core_manager.h"
+ 
++#include <signal.h>
++
++#include <cerrno>
++
+ #include "base/command_line.h"
+ #include "base/base_paths.h"
+ #include "base/files/file_util.h"
+@@ -9,6 +13,7 @@
+ #include "base/json/json_writer.h"
+ #include "base/path_service.h"
+ #include "base/strings/string_number_conversions.h"
++#include "base/synchronization/waitable_event.h"
+ #include "base/test/task_environment.h"
+ #include "base/test/bind.h"
+ #include "base/test/run_until.h"
+@@ -16,6 +21,7 @@
+ #include "base/test/scoped_command_line.h"
+ #include "base/test/scoped_path_override.h"
+ #include "base/test/test_future.h"
++#include "base/threading/thread_restrictions.h"
+ #include "base/timer/timer.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "build/build_config.h"
+@@ -108,6 +114,34 @@ TEST_F(AccessLocalCoreManagerTest, AuthorizedNodeHttpsRecheckAndStop) {
+   EXPECT_FALSE(after.Get().local_credentials);
+ }
+ 
++TEST_F(AccessLocalCoreManagerTest, SessionEndingStopsAllReadyCoresWithoutUiReplies) {
++  const auto input = ResolveAccessLocalCoreInput();
++  if (!input) GTEST_SKIP() << "Authorized private core binding is required.";
++  AccessLocalCoreManager ordinary(*input);
++  AccessLocalCoreManager private_profile(*input);
++  base::test::TestFuture<AccessLocalCoreReady> first, second;
++  ordinary.Prepare(first.GetCallback());
++  private_profile.Prepare(second.GetCallback());
++  ASSERT_TRUE(first.Get().ready) << first.Get().error;
++  ASSERT_TRUE(second.Get().ready) << second.Get().error;
++  EXPECT_NE(first.Get().port, second.Get().port);
++  auto stopped = std::make_shared<base::WaitableEvent>();
++  AccessLocalCoreManager::StopAllForSessionEnding(base::BindOnce(
++      [](std::shared_ptr<base::WaitableEvent> event) { event->Signal(); },
++      stopped));
++  {
++    // EndSession blocks the UI sequence. A normal Stop reply posted back to
++    // that sequence would leave the child alive until its rundown times out.
++    base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
++    ASSERT_TRUE(stopped->TimedWait(base::Seconds(5)));
++  }
++  base::test::TestFuture<AccessLocalCoreReady> after_ordinary, after_private;
++  ordinary.Verify(after_ordinary.GetCallback());
++  private_profile.Prepare(after_private.GetCallback());
++  EXPECT_FALSE(after_ordinary.Get().ready);
++  EXPECT_FALSE(after_private.Get().ready);
++}
++
+ #if BUILDFLAG(IS_MAC)
+ class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
+  protected:
+@@ -222,6 +256,79 @@ TEST_F(AccessLocalCoreFaultTest, StopCancelsARealPendingProbe) {
+   ExpectUnavailable(after.Get());
+ }
+ 
++TEST_F(AccessLocalCoreFaultTest, SessionEndingCancelsPendingAuthenticatedProbe) {
++  AccessLocalCoreManager manager(Input("hold-tunnel"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  base::test::TestFuture<void> tunnel;
++  base::RepeatingTimer observation;
++  observation.Start(FROM_HERE, base::Milliseconds(10),
++      base::BindLambdaForTesting([&] {
++    auto state = State();
++    if (state && state->FindString("phase") &&
++        *state->FindString("phase") == "authenticated-tunnel-held") {
++      observation.Stop();
++      tunnel.SetValue();
++    }
++  }));
++  ASSERT_TRUE(tunnel.Wait());
++  ASSERT_FALSE(prepared.IsReady());
++  const auto child_pid = State()->FindInt("pid");
++  ASSERT_TRUE(child_pid);
++  ASSERT_EQ(kill(*child_pid, 0), 0);
++  auto stopped = std::make_shared<base::WaitableEvent>();
++  AccessLocalCoreManager::StopAllForSessionEnding(base::BindOnce(
++      [](std::shared_ptr<base::WaitableEvent> event) { event->Signal(); },
++      stopped));
++  {
++    base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
++    ASSERT_TRUE(stopped->TimedWait(base::Seconds(5)));
++  }
++  EXPECT_EQ(kill(*child_pid, 0), -1);
++  EXPECT_EQ(errno, ESRCH);
++  ExpectUnavailable(prepared.Get());
++  EXPECT_EQ(prepared.Get().error, "Proxy preparation was cancelled.");
++  base::test::TestFuture<AccessLocalCoreReady> after;
++  manager.Prepare(after.GetCallback());
++  ExpectUnavailable(after.Get());
++  EXPECT_EQ(after.Get().error, "The local proxy is shutting down.");
++}
++
++TEST_F(AccessLocalCoreFaultTest, SessionEndingIncludesPendingServiceDestruction) {
++  auto manager = std::make_unique<AccessLocalCoreManager>(Input("hold-tunnel"));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager->Prepare(prepared.GetCallback());
++  base::test::TestFuture<void> tunnel;
++  base::RepeatingTimer observation;
++  observation.Start(FROM_HERE, base::Milliseconds(10),
++      base::BindLambdaForTesting([&] {
++    auto state = State();
++    if (state && state->FindString("phase") &&
++        *state->FindString("phase") == "authenticated-tunnel-held") {
++      observation.Stop();
++      tunnel.SetValue();
++    }
++  }));
++  ASSERT_TRUE(tunnel.Wait());
++  const auto child_pid = State()->FindInt("pid");
++  ASSERT_TRUE(child_pid);
++  ASSERT_EQ(kill(*child_pid, 0), 0);
++
++  // Service destruction schedules Worker destruction and a thread-pool join.
++  // EndSession must include the outstanding child even if no UI replies run.
++  manager.reset();
++  auto stopped = std::make_shared<base::WaitableEvent>();
++  AccessLocalCoreManager::StopAllForSessionEnding(base::BindOnce(
++      [](std::shared_ptr<base::WaitableEvent> event) { event->Signal(); },
++      stopped));
++  {
++    base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
++    ASSERT_TRUE(stopped->TimedWait(base::Seconds(5)));
++  }
++  EXPECT_EQ(kill(*child_pid, 0), -1);
++  EXPECT_EQ(errno, ESRCH);
++}
++
+ TEST_F(AccessLocalCoreFaultTest, StalledAuthenticatedTunnelTimesOut) {
+   AccessLocalCoreManager manager(Input("hold-tunnel"));
+   base::test::TestFuture<AccessLocalCoreReady> prepared;
+diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
+index 548441ccaf07cf35026b78835b0382dd53a7e652..e48a86e5ca2759303ebcc405ef5bda65916ab0f6 100644
+--- a/chrome/browser/browser_process_impl.cc
++++ b/chrome/browser/browser_process_impl.cc
+@@ -170,6 +170,7 @@
+ #include "chrome/installer/util/install_util.h"
+ #include "components/os_crypt/async/browser/dpapi_key_provider.h"
+ #elif BUILDFLAG(IS_MAC)
++#include "chrome/browser/aegis/access/access_local_core_manager.h"
+ #include "chrome/browser/chrome_browser_main_mac.h"
+ #include "chrome/browser/shutdown_watchdog_mac.h"
+ #endif
+@@ -874,6 +875,13 @@ void BrowserProcessImpl::EndSession() {
+   ProfileManager* pm = profile_manager();
+   scoped_refptr<RundownTaskCounter> rundown_counter =
+       base::MakeRefCounted<RundownTaskCounter>();
++#if BUILDFLAG(IS_MAC)
++  // SessionEnding terminates the Browser without destroying profile services.
++  // Reap owned proxy children on their core threads within the existing bounded
++  // rundown, without posting a completion back to this blocked sequence.
++  aegis::access::AccessLocalCoreManager::StopAllForSessionEnding(
++      rundown_counter->GetRundownClosure());
++#endif
+   for (Profile* profile : pm->GetLoadedProfiles()) {
+ #if BUILDFLAG(ENABLE_SESSION_SERVICE)
+     ExitTypeService* exit_type_service =
+-- 
+2.54.0 (Apple Git-157)
+

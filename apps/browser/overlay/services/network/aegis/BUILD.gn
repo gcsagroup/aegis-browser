@@ -1,0 +1,17 @@
+# Copyright 2026 GCSA
+source_set("access_route_registry") {
+  sources = [
+    "access_route_wire.cc",
+    "access_route_wire.h",
+    "access_route_registry.cc",
+    "access_route_registry.h",
+    "access_request_route_state.cc",
+    "access_request_route_state.h",
+  ]
+  public_deps = [
+    "//base",
+    "//components/aegis_access:aegis_access",
+    "//net",
+    "//services/network/public/mojom:url_loader_base",
+  ]
+}

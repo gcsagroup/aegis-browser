@@ -1,0 +1,25 @@
+From 8d3e2c8ca1931ab638650f93d48739e2d6305c12 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 12:24:01 +0800
+Subject: [PATCH] test(access): include navigation handle for redirect
+ regression
+
+---
+ .../browser/aegis/access/access_site_proxy_product_unittest.cc   | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index a29bc06be75cc8d836bd324e7b7366b292af7397..e5448e0716c7da0b450f579dd5a5059b76a29626 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -26,6 +26,7 @@
+ #include "content/public/test/browser_task_environment.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
++#include "content/public/browser/navigation_handle.h"
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/navigation_simulator.h"
+ #include "net/base/net_errors.h"
+-- 
+2.54.0 (Apple Git-157)
+

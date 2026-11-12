@@ -1,0 +1,225 @@
+From 5a70dbcfa67fa44eb5e0b239e3fe9bc58c68beb7 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 00:39:37 +0800
+Subject: [PATCH] fix(access): isolate Alpha channel mapping from browser
+ adapter dependencies
+
+---
+ chrome/browser/aegis/access/BUILD.gn          | 19 ++++++++--
+ .../access/access_browser_request_adapter.cc  | 27 +-------------
+ .../access/access_browser_request_adapter.h   |  4 ---
+ .../aegis/access/access_build_channel.cc      | 36 +++++++++++++++++++
+ .../aegis/access/access_build_channel.h       | 12 +++++++
+ .../access_site_proxy_bubble_controller.cc    |  2 +-
+ .../access_site_proxy_product_unittest.cc     |  2 +-
+ 7 files changed, 67 insertions(+), 35 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/access_build_channel.cc
+ create mode 100644 chrome/browser/aegis/access/access_build_channel.h
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index c874750664684095b7f1c771cddcbf8e1d558824..2053ecb7e51a035c8b12dc387c697f37c592dbb4 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -41,6 +41,19 @@ if (aegis_alpha_test_node_enabled) {
+   }
+ }
+ 
++source_set("access_build_channel") {
++  sources = [
++    "access_build_channel.cc",
++    "access_build_channel.h",
++  ]
++  deps = [
++    ":access_buildflags",
++    "//chrome/common:channel_info",
++    "//components/aegis_access:browser_request_metadata_seed",
++    "//components/version_info:channel",
++  ]
++}
++
+ source_set("access_local_core_manager") {
+   sources = [
+     "access_local_core_manager.cc",
+@@ -128,7 +141,7 @@ source_set("access_browser_request_adapter") {
+     "access_browser_request_adapter.h",
+   ]
+   deps = [
+-    ":access_buildflags",
++    ":access_build_channel",
+     ":access_network_context_transport",
+     "//base",
+     "//chrome/browser/aegis",
+@@ -368,7 +381,7 @@ source_set("access_site_proxy_bubble") {
+     "access_site_proxy_bubble_controller.h",
+   ]
+   deps = [
+-    ":access_browser_request_adapter",
++    ":access_build_channel",
+     ":access_identity_generation_source",
+     ":access_local_core_manager",
+     ":access_network_context_transport",
+@@ -430,7 +443,7 @@ test("access_service_coordinator_unittests") {
+     "access_site_proxy_product_unittest.cc",
+   ]
+   deps = [
+-    ":access_browser_request_adapter",
++    ":access_build_channel",
+     ":access_buildflags",
+     ":access_network_context_transport",
+     ":access_proxy_selection_generation_source",
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter.cc b/chrome/browser/aegis/access/access_browser_request_adapter.cc
+index 4da7fbc5728ae12d3f544636a2335bd93d977051..8e760ff8b225f3322d716c308d250bc85a7aeb66 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter.cc
++++ b/chrome/browser/aegis/access/access_browser_request_adapter.cc
+@@ -1,7 +1,7 @@
+ // Copyright 2026 GCSA
+ 
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+-#include "chrome/browser/aegis/access/access_buildflags.h"
++#include "chrome/browser/aegis/access/access_build_channel.h"
+ 
+ #include <string>
+ #include <utility>
+@@ -34,22 +34,6 @@ AccessBrowserRequestMetadataResult Error(
+   return {status, std::nullopt};
+ }
+ 
+-aegis_access::BrowserReleaseChannel BrowserReleaseChannel() {
+-  switch (chrome::GetChannel()) {
+-    case version_info::Channel::STABLE:
+-      return aegis_access::BrowserReleaseChannel::kStable;
+-    case version_info::Channel::BETA:
+-      return aegis_access::BrowserReleaseChannel::kBeta;
+-    case version_info::Channel::DEV:
+-      return aegis_access::BrowserReleaseChannel::kDev;
+-    case version_info::Channel::CANARY:
+-      return aegis_access::BrowserReleaseChannel::kCanary;
+-    case version_info::Channel::UNKNOWN:
+-      return aegis_access::BrowserReleaseChannel::kUnknown;
+-  }
+-  return aegis_access::BrowserReleaseChannel::kInvalid;
+-}
+-
+ std::optional<base::FilePath> RelativePartitionPath(
+     Profile* profile,
+     content::StoragePartition* partition) {
+@@ -301,15 +285,6 @@ AccessBrowserRequestMetadataResult BuildMetadataFromSeed(
+ 
+ }  // namespace
+ 
+-aegis_access::ChannelNamespace AccessChannelForCurrentBuild() {
+-  auto channel = aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
+-#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+-  if (channel == aegis_access::ChannelNamespace::kDev)
+-    channel = aegis_access::ChannelNamespace::kAlpha;
+-#endif
+-  return channel;
+-}
+-
+ AccessBrowserRequestMetadataResult BuildBrowserOwnedRequestMetadata(
+     Profile* profile,
+     const base::RepeatingCallback<content::WebContents*()>& wc_getter,
+diff --git a/chrome/browser/aegis/access/access_browser_request_adapter.h b/chrome/browser/aegis/access/access_browser_request_adapter.h
+index 10a8b8a5abad12408f291142dde52f54a3a72b65..1e269232e48eac70046c12cc631e882d9551eb97 100644
+--- a/chrome/browser/aegis/access/access_browser_request_adapter.h
++++ b/chrome/browser/aegis/access/access_browser_request_adapter.h
+@@ -19,10 +19,6 @@ class WebContents;
+ 
+ namespace aegis::access {
+ 
+-// Access namespace for this build. Explicit Alpha test builds use Alpha even
+-// when unbranded Chromium reports UNKNOWN; Chromium branding is unaffected.
+-aegis_access::ChannelNamespace AccessChannelForCurrentBuild();
+-
+ enum class AccessBrowserRequestMetadataStatus {
+   kOk,
+   kUnsupportedProfile,
+diff --git a/chrome/browser/aegis/access/access_build_channel.cc b/chrome/browser/aegis/access/access_build_channel.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..c446f9b69ab4c6a76e6222f18524a89d567b073f
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_build_channel.cc
+@@ -0,0 +1,36 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_build_channel.h"
++
++#include "chrome/browser/aegis/access/access_buildflags.h"
++#include "chrome/common/channel_info.h"
++#include "components/aegis_access/browser_request_metadata_seed.h"
++#include "components/version_info/channel.h"
++
++namespace aegis::access {
++namespace {
++aegis_access::BrowserReleaseChannel BrowserReleaseChannel() {
++  switch (chrome::GetChannel()) {
++    case version_info::Channel::STABLE:
++      return aegis_access::BrowserReleaseChannel::kStable;
++    case version_info::Channel::BETA:
++      return aegis_access::BrowserReleaseChannel::kBeta;
++    case version_info::Channel::DEV:
++      return aegis_access::BrowserReleaseChannel::kDev;
++    case version_info::Channel::CANARY:
++      return aegis_access::BrowserReleaseChannel::kCanary;
++    case version_info::Channel::UNKNOWN:
++      return aegis_access::BrowserReleaseChannel::kUnknown;
++  }
++  return aegis_access::BrowserReleaseChannel::kInvalid;
++}
++}  // namespace
++
++aegis_access::ChannelNamespace AccessChannelForCurrentBuild() {
++  auto channel = aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
++#if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
++  if (channel == aegis_access::ChannelNamespace::kDev)
++    channel = aegis_access::ChannelNamespace::kAlpha;
++#endif
++  return channel;
++}
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_build_channel.h b/chrome/browser/aegis/access/access_build_channel.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..5eed2306026a999b179ad31a08680753c23af91a
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_build_channel.h
+@@ -0,0 +1,12 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_BUILD_CHANNEL_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_BUILD_CHANNEL_H_
++
++#include "components/aegis_access/access_route_types.h"
++
++namespace aegis::access {
++// Explicit Alpha test builds use Alpha ownership even when unbranded Chromium
++// reports UNKNOWN. Chromium branding and the normal channel mapping are kept.
++aegis_access::ChannelNamespace AccessChannelForCurrentBuild();
++}  // namespace aegis::access
++#endif
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index af9b3b1b39c99f9d8a924d0f5a4bc711f85ff819..9e3e67343bf189a3ba9f2f2f87a9d8ead5e05b22 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -1,7 +1,7 @@
+ // Copyright 2026 GCSA
+ 
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+-#include "chrome/browser/aegis/access/access_browser_request_adapter.h"
++#include "chrome/browser/aegis/access/access_build_channel.h"
+ 
+ #include <utility>
+ #include "base/command_line.h"
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index de882308db3444b88ce2057570de68cd9820f465..db68a1a34b29ce4d12a790c6acdf0073ae51d86a 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -2,7 +2,7 @@
+ 
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ #include "chrome/browser/aegis/access/access_async_rule_store.h"
+-#include "chrome/browser/aegis/access/access_browser_request_adapter.h"
++#include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ 
+ #include "base/command_line.h"
+-- 
+2.54.0 (Apple Git-157)
+

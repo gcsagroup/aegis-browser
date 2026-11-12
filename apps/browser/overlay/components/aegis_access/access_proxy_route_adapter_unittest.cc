@@ -249,5 +249,30 @@ TEST(AccessProxyRouteAdapterTest, SupportsBracketedIpv6HttpLoopback) {
   EXPECT_EQ(info.proxy_chain().First().GetPort(), 19091u);
 }
 
+TEST(AccessProxyRouteAdapterTest, SupportsSocks5LoopbackEndpoint) {
+  RegisteredProxyEndpoint endpoint = TestEndpoint();
+  endpoint.transport = RegisteredProxyTransport::kSocks5;
+  endpoint.port = 18085;
+  net::ProxyInfo info;
+  info.UseNamedProxy("http://native.example:3128;direct://");
+
+  EXPECT_EQ(ApplyRoutePlanToProxyInfo(TestPlan(RouteAction::kUseRegisteredProxy),
+                                      &endpoint, &info),
+            ProxyRouteApplyStatus::kAppliedProxy);
+  ASSERT_EQ(info.proxy_list().size(), 1u);
+  EXPECT_FALSE(info.is_direct());
+  EXPECT_TRUE(info.proxy_chain().First().is_socks());
+  EXPECT_EQ(info.proxy_chain().First().GetHost(), "127.0.0.1");
+  EXPECT_EQ(info.proxy_chain().First().GetPort(), 18085u);
+}
+
+TEST(AccessProxyRouteAdapterTest, Socks5NonLoopbackFailsClosed) {
+  RegisteredProxyEndpoint endpoint = TestEndpoint();
+  endpoint.transport = RegisteredProxyTransport::kSocks5;
+  endpoint.host = "proxy.example";
+  ExpectInvalidEndpointFailsClosed(TestPlan(RouteAction::kUseRegisteredProxy),
+                                   &endpoint);
+}
+
 }  // namespace
 }  // namespace aegis_access

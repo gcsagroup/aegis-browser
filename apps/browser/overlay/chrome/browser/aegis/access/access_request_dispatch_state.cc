@@ -208,4 +208,24 @@ void AccessRequestDispatchState::OnNetworkContextPublicationAck(
   }
 }
 
+AccessNetworkConfigAckResult AccessRequestDispatchState::RequestPrivateSnapshotAck(
+    const aegis_access::PolicyPublicationIdentity& identity,
+    const aegis_access::PublishedAccessPolicySnapshot& policy,
+    const aegis_access::GenerationTuple& common,
+    base::OnceCallback<void(bool)> completion) {
+  auto* transport = AccessNetworkContextTransport::Get(profile_);
+  if (!transport || policy.owner != identity.selector.owner ||
+      policy.policy_generation != identity.policy_generation) {
+    publication_acks_.MarkFailed(identity);
+    std::move(completion).Run(false);
+    return {AccessNetworkConfigAckStatus::kInvalidPublication, 0};
+  }
+  const auto result = transport->PublishPrivatePolicy(policy, common,
+      base::BindOnce(&AccessRequestDispatchState::OnNetworkContextPublicationAck,
+          weak_factory_.GetWeakPtr(), identity, std::move(completion)));
+  if (result.status != AccessNetworkConfigAckStatus::kStarted)
+    publication_acks_.MarkFailed(identity);
+  return result;
+}
+
 }  // namespace aegis::access

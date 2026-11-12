@@ -1,0 +1,39 @@
+From 0aba8071d29bdf194a2cd3294b6c2c3512acbd3b Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 05:15:37 +0800
+Subject: [PATCH] test(access): align retry fixture teardown with RVH task
+ environment
+
+---
+ .../aegis/access/access_site_proxy_product_unittest.cc    | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 307da9fa46fc94b2865c0dd992715c20f3de7476..7b6ef259af9d0ba562bc0ba1c5ce0c65ad837a43 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -485,6 +485,13 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+     AccessNavigationRetryTabHelper::CreateForWebContents(web_contents());
+     helper()->SetProxyRetryHandler(bubble_->GetFailedNavigationRetryHandler());
+   }
++  void TearDown() override {
++    transport_ = nullptr;
++    coordinator_ = nullptr;
++    bubble_ = nullptr;
++    context_.Disconnect();
++    ChromeRenderViewHostTestHarness::TearDown();
++  }
+   AccessNavigationRetryTabHelper* helper() {
+     return AccessNavigationRetryTabHelper::FromWebContents(web_contents());
+   }
+@@ -521,7 +528,6 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+   OwnershipKey owner_;
+   const GURL failed_{"https://failed.example/path?q=original#fragment"};
+   base::test::TestFuture<bool> completed_;
+-  base::test::ScopedRunLoopTimeout timeout_{FROM_HERE, base::Seconds(90)};
+ };
+ 
+ TEST_F(AccessRetryNavigationProductTest, NewNavigationBeforeRealAckIsNotReloaded) {
+-- 
+2.54.0 (Apple Git-157)
+

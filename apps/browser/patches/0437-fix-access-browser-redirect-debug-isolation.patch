@@ -1,0 +1,232 @@
+From 9f3163555ceac3f81d50ecc35c2ed4b65d7a543a Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 08:59:55 +0800
+Subject: [PATCH] fix(access): preserve redirect routing mode and isolate DEV
+ preview
+
+---
+ .../access_proxying_url_loader_factory.cc     | 17 +++++++-------
+ .../access_proxying_url_loader_factory.h      |  3 +++
+ .../access_site_dev_allow_block_panel.h       |  5 ++--
+ .../access_site_proxy_bubble_controller.cc    | 12 ++--------
+ .../access_site_proxy_bubble_controller.h     |  5 ++--
+ .../ui/views/toolbar/aegis_toolbar_button.cc  | 23 +++++++++----------
+ 6 files changed, 30 insertions(+), 35 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 1ab8c1acee8e2dc171d69b5a05224f469818e1cc..b3e1479f0cc0be9e5979ec728cb1d549d8b92418 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -673,6 +673,7 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+       factory_owner_(std::move(factory_owner)),
+       factory_metadata_(std::move(factory_metadata)),
+       document_(std::move(document)),
++      is_private_factory_(private_target.is_valid()),
+       private_context_(std::move(private_context)),
+       on_disconnect_(std::move(on_disconnect)) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+@@ -958,27 +959,27 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
+   // policy fall through to DIRECT when attribution cannot be established.
+   if (!factory_metadata_) {
+     if (factory_snapshot && !factory_snapshot->rules.empty()) return RequestDisposition::kBlock;
+-    if (private_target_factory_.is_bound()) {
++    if (is_private_factory_) {
+       aegis_access::BrowserOwnedRequestMetadata native{
+           stable_request_id.value_or(base::Uuid::GenerateRandomV4().AsLowercaseString()),
+           factory_owner_, aegis_access::RequestAttributionKind::kProfileOnly, {}, {}, std::nullopt};
+       return EvaluatePreparedMetadata(request_url, runtime, std::move(native),
+                                       net_error, ownership_record);
+     }
+-    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock : RequestDisposition::kPreserveNative;
++    return (factory_snapshot || is_private_factory_) ? RequestDisposition::kBlock : RequestDisposition::kPreserveNative;
+   }
+ 
+   AccessBrowserRequestMetadataResult metadata = CaptureCurrentMetadata();
+   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
+       !metadata.metadata.has_value()) {
+-    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock
++    return (factory_snapshot || is_private_factory_) ? RequestDisposition::kBlock
+                             : RequestDisposition::kPreserveNative;
+   }
+ 
+   aegis_access::BrowserOwnedRequestMetadata evaluated_metadata =
+       std::move(*metadata.metadata);
+   if (!SameAttributionScope(*factory_metadata_, evaluated_metadata)) {
+-    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock
++    return (factory_snapshot || is_private_factory_) ? RequestDisposition::kBlock
+                             : RequestDisposition::kPreserveNative;
+   }
+   if (stable_request_id.has_value()) {
+@@ -1000,11 +1001,11 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+   const aegis_access::PublishedAccessPolicySnapshot* snapshot =
+       runtime ? runtime->GetPublishedPolicySnapshot(metadata.owner) : nullptr;
+   if (!snapshot) {
+-    return private_target_factory_.is_bound() ? RequestDisposition::kBlock
++    return is_private_factory_ ? RequestDisposition::kBlock
+                                              : RequestDisposition::kPreserveNative;
+   }
+ 
+-  if (private_target_factory_.is_bound()) {
++  if (is_private_factory_) {
+     auto* transport = AccessNetworkContextTransport::Get(profile_);
+     const auto common =
+         runtime->CaptureCommonGenerationTupleOnUiThread(metadata.owner);
+@@ -1026,7 +1027,7 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+   const MatchedPolicyDisposition policy_disposition =
+       ClassifyPolicyMatch(match);
+   if (policy_disposition == MatchedPolicyDisposition::kPreserveNative) {
+-    if (!private_target_factory_.is_bound()) return RequestDisposition::kPreserveNative;
++    if (!is_private_factory_) return RequestDisposition::kPreserveNative;
+     auto common = runtime->CaptureCommonGenerationTupleOnUiThread(metadata.owner);
+     auto* dispatch = AccessRequestDispatchState::GetOrCreate(profile_);
+     if (!common || !dispatch) return RequestDisposition::kBlock;
+@@ -1045,7 +1046,7 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+   }
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+   if (transport && !transport->PrivateEndpoints(metadata.owner).empty() &&
+-      !private_target_factory_.is_bound()) {
++      !is_private_factory_) {
+     *net_error = net::ERR_PROXY_CONNECTION_FAILED;
+     return RequestDisposition::kBlock;
+   }
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 72ae56f5d378628d8a9deadef27bee7487e6302b..1aa755bc26484942811a43d525f24c28bc5da577 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -215,6 +215,9 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+   const std::optional<aegis_access::BrowserOwnedRequestMetadata>
+       factory_metadata_;
+   const std::optional<content::WeakDocumentPtr> document_;
++  // Factory admission may close while existing private request/control pipes
++  // remain live. Their redirect policy must keep the original routing mode.
++  const bool is_private_factory_;
+ 
+   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
+   std::set<std::unique_ptr<AccessProxyingURLTrackedRequest>,
+diff --git a/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
+index 0a57a693ad9b6e5c6f207bdbcd717a7fdc9bdfa0..aa272e05659727950891a2e3b32788a1a5cd4ee3 100644
+--- a/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
++++ b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
+@@ -51,9 +51,8 @@ struct AccessDevAllowBlockApplyResult {
+   AccessSiteIntent intent = AccessSiteIntent::kOff;
+ };
+ 
+-// Applies product intent for an explicit host when the channel admits the
+-// panel. Never invents DIRECT success for allow/block. Does not publish/ACK
+-// (session finalize stays on the product toggle / P-mac-3 path).
++// Applies a diagnostic preview for an explicit host to a separate local store.
++// Product routing and committed intent use the transactional product toggle.
+ AccessDevAllowBlockApplyResult ApplyAccessDevAllowBlock(
+     AccessSiteIntentStore* store,
+     version_info::Channel channel,
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 8d5e9ff0f58976b0cda42721bd997fa53bf9af8a..37df60a62083bc231b9d6efe04bf8005defa78a0 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -156,7 +156,7 @@ AccessDevAllowBlockPanelSnapshot
+ AccessSiteProxyBubbleController::DevAllowBlockSnapshotForCommittedUrl(
+     const GURL& committed_url) const {
+   return BuildAccessDevAllowBlockPanelSnapshot(chrome::GetChannel(),
+-                                               intent_store_, committed_url);
++                                               dev_intent_store_, committed_url);
+ }
+ 
+ AccessDevAllowBlockApplyResult
+@@ -165,19 +165,11 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
+     AccessDevAllowBlockAction action) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   AccessDevAllowBlockApplyResult result = ApplyAccessDevAllowBlock(
+-      &intent_store_, chrome::GetChannel(), raw_host, action);
++      &dev_intent_store_, chrome::GetChannel(), raw_host, action);
+   if (result.status != AccessDevAllowBlockApplyStatus::kApplied) {
+     return result;
+   }
+-  const auto host = *result.host;
+   ++state_revision_;
+-  // Keep connection line honest: block/off never claim Access readiness.
+-  // Allow leaves connection untouched so the product session path can advance.
+-  if (action == AccessDevAllowBlockAction::kBlock ||
+-      action == AccessDevAllowBlockAction::kOff) {
+-    host_states_[host].connection = AccessSiteConnectionState::kIdle;
+-    host_states_[host].failure_reason.clear();
+-  }
+   return result;
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index 893dadf774e6ccd05878c3b40c39ece52b6bee4e..1e4aee7700c0738e04679c24440eba7ec650d913 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -71,8 +71,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   bool IsDevAllowBlockPanelRegistered() const;
+   AccessDevAllowBlockPanelSnapshot DevAllowBlockSnapshotForCommittedUrl(
+       const GURL& committed_url) const;
+-  // Intent-only allow/block/off for an explicit host. Fail-closed when the
+-  // channel does not admit the panel. Does not publish/ACK.
++  // Isolated diagnostic preview for an explicit host. Does not mutate the
++  // committed product intent, connection state or published policy.
+   AccessDevAllowBlockApplyResult ApplyDevAllowBlock(
+       std::string_view raw_host,
+       AccessDevAllowBlockAction action);
+@@ -128,6 +128,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+ 
+   const raw_ptr<Profile> profile_;
+   AccessSiteIntentStore intent_store_;
++  AccessSiteIntentStore dev_intent_store_;
+   std::set<AccessSiteHost> website_hosts_;
+   struct HostState {
+     AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 437c46f1c55e8d030c1cbb9acc88885c2341dbd1..eb81acfae16042030ba1a25c6c54e5cace7e41fb 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -108,16 +108,15 @@ std::u16string DevAllowBlockStatusCopy(
+                   u"Open a website to debug ALLOW / BLOCK",
+                   u"請先開啟需要偵錯的網站");
+     case Id::kOff:
+-      return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
++      return Copy(u"DEV 预览：关闭", u"DEV preview: off", u"DEV 預覽：關閉");
+     case Id::kAllowProxyIntent:
+-      return Copy(u"DEV 意图：ALLOW（代理）", u"DEV intent: ALLOW (proxy)",
+-                  u"DEV 意圖：ALLOW（代理）");
++      return Copy(u"DEV 预览：ALLOW", u"DEV preview: ALLOW",
++                  u"DEV 預覽：ALLOW");
+     case Id::kBlockLocalRefuse:
+-      return Copy(u"DEV 意图：BLOCK（本地拒绝）",
+-                  u"DEV intent: BLOCK (local refuse)",
+-                  u"DEV 意圖：BLOCK（本地拒絕）");
++      return Copy(u"DEV 预览：BLOCK", u"DEV preview: BLOCK",
++                  u"DEV 預覽：BLOCK");
+   }
+-  return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
++  return Copy(u"DEV 预览：关闭", u"DEV preview: off", u"DEV 預覽：關閉");
+ }
+ 
+ std::u16string IntentStatusCopy(
+@@ -450,8 +449,8 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+       return;
+     }
+     AddLabel(parent,
+-             Copy(u"DEV ALLOW / BLOCK", u"DEV ALLOW / BLOCK",
+-                  u"DEV ALLOW / BLOCK"),
++             Copy(u"DEV ALLOW / BLOCK 预览", u"DEV ALLOW / BLOCK preview",
++                  u"DEV ALLOW / BLOCK 預覽"),
+              views::style::CONTEXT_DIALOG_TITLE);
+     AddLabel(parent, DevAllowBlockStatusCopy(snap.status_id));
+     if (!snap.has_explicit_host) {
+@@ -471,9 +470,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+                                base::Unretained(this),
+                                aegis::access::AccessDevAllowBlockAction::kOff));
+     AddLabel(parent,
+-             Copy(u"仅对明确主机生效；不是通用规则编辑器。",
+-                  u"Applies to an explicit host only; not a general rule editor.",
+-                  u"僅對明確主機生效；不是通用規則編輯器。"));
++             Copy(u"此处仅预览主机意图；请用网站代理开关改变请求路由。",
++                  u"Host intent preview. Use the site proxy switch to change routing.",
++                  u"此處僅預覽主機意圖；請用網站代理開關改變請求路由。"));
+   }
+   void Build() {
+     if (!Valid()) return;
+-- 
+2.54.0 (Apple Git-157)
+
