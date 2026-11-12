@@ -40,6 +40,9 @@ function createFixture(t) {
   }
   write(root, 'apps/ios/Tests/SharedWebExtension/SafariNavigationIdentityTests.mjs', '// Fixture preflight.\n');
   write(root, 'apps/ios/scripts/simulator-fixture-server.py', '# Fixture self-test.\n');
+  // Upstream Access packaging calls this before xcodegen; keep the fixture self-contained.
+  write(root, 'scripts/release/prepare-ios-package-core.sh',
+    '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p "${2:?missing EmbeddedCore products}"\n');
   git(root, ['init', '-q']);
   git(root, ['add', '.']);
   git(root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',

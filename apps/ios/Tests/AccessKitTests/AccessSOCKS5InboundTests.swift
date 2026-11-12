@@ -56,10 +56,10 @@ final class AccessSOCKS5InboundTests: XCTestCase {
         }
     }
 
-    func testListenerEstablishesNoAuthConnect() throws {
+    func testListenerEstablishesNoAuthConnect() async throws {
         let port: UInt16 = 18_807
         let listener = try AccessSOCKS5InboundListener(registration: try makeRegistration(port: port))
-        try listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
 
         let gotReply = expectation(description: "socks5 success reply")
         let connection = NWConnection(
@@ -94,12 +94,12 @@ final class AccessSOCKS5InboundTests: XCTestCase {
             }
         }
         connection.start(queue: .global())
-        wait(for: [gotReply], timeout: 3.0)
+        await fulfillment(of: [gotReply], timeout: 3.0)
         connection.cancel()
 
         let deadline = Date().addingTimeInterval(1.0)
         while listener.establishedConnectCount == 0, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.02)
+            try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertGreaterThanOrEqual(listener.establishedConnectCount, 1)
         try listener.stop()

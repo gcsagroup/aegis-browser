@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Orchestrates per-host Access sessions onto the reality_vision path.
 ///
@@ -12,7 +13,7 @@ import Foundation
 /// Intent and connection health stay separate. Failures stay readable and must
 /// not be reported as DIRECT success.
 public final class AccessSiteSessionController: @unchecked Sendable {
-    private let lock = NSLock()
+    private let lock = OSAllocatedUnfairLock()
     private var intentStore: AccessSiteIntentStore
     private let orchestrator: AccessSiteSessionOrchestrating
     private var snapshots: [AccessSiteHost: AccessSiteSessionSnapshot] = [:]
@@ -331,7 +332,7 @@ public final class AccessSiteSessionController: @unchecked Sendable {
 
     private func tearDownActiveIfNeeded(host: AccessSiteHost) throws {
         lock.lock()
-        let candidate = activeCandidates.removeValue(forKey: host)
+        let candidate = activeCandidates[host]
         lock.unlock()
         guard let candidate else { return }
         do {
@@ -341,6 +342,11 @@ public final class AccessSiteSessionController: @unchecked Sendable {
         } catch {
             throw AccessSiteSessionError.tearDownFailed(String(describing: error))
         }
+        lock.lock()
+        if activeCandidates[host]?.registration.id == candidate.registration.id {
+            activeCandidates.removeValue(forKey: host)
+        }
+        lock.unlock()
     }
 
     private func markUnavailable(

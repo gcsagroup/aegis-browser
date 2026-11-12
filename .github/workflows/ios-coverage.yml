@@ -28,6 +28,11 @@ jobs:
         run: node scripts/ci/ios-operator.mjs --context coverage
         env:
           GH_TOKEN: ${{ github.token }}
+      - name: Install Go for the locked EmbeddedCore build
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
       - name: Run iPhone and iPad tests with Swift coverage
         env:
           DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer

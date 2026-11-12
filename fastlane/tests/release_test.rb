@@ -553,6 +553,7 @@ class ReleaseTest < ReleaseFixture
       builder.define_singleton_method(:build_app) do |**build_options|
         checks.assert_equal(profile == 'alpha', build_options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
         checks.assert_includes(build_options.fetch(:xcargs).split, "AEGIS_FIREBASE_CHANNEL=#{profile}")
+        checks.assert_includes(build_options.fetch(:xcargs).split, "AEGIS_ACCESS_RELEASE_CHANNEL=#{profile}")
         File.write(File.join(build_options.fetch(:output_directory), build_options.fetch(:output_name)), 'fixture IPA')
       end
       keys = %w[AEGIS_APPLE_TEAM_ID AEGIS_IOS_PROFILES AEGIS_IOS_CERT_SHA1]
@@ -572,6 +573,7 @@ class ReleaseTest < ReleaseFixture
 
   def test_ios_snapshot_includes_committed_shared_resources_and_excludes_local_files
     shared = 'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared'
+    write('scripts/release/ios_embedded_core.py', '# tracked Xcode verifier')
     write("#{shared}/viewer.html", '<html>committed viewer</html>')
     write("#{shared}/vendor/purify.min.js", 'committed sanitizer')
     vectors = 'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json'
@@ -585,6 +587,7 @@ class ReleaseTest < ReleaseFixture
     checks = self
     builder.define_singleton_method(:build_app) do |**options|
       snapshot = File.expand_path('../..', File.dirname(options.fetch(:project)))
+      checks.assert File.file?(File.join(snapshot, 'scripts/release/ios_embedded_core.py'))
       checks.assert_equal '<html>committed viewer</html>', File.read(File.join(snapshot, shared, 'viewer.html'))
       checks.assert_equal 'committed sanitizer', File.read(File.join(snapshot, shared, 'vendor/purify.min.js'))
       checks.assert_equal '{"vectors":[]}', File.read(File.join(snapshot, vectors))

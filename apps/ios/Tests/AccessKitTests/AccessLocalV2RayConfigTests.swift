@@ -10,6 +10,35 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
         + "&pbk=abcdefghijklmnopqrstuvwxyzABCDEFG&sid=abcd1234"
         + "&headerType=none#demo-reality-vision"
 
+    func testProductPathInEachAppChannelWithAStaleResource() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? fm.removeItem(at: root) }
+        let dev = "/dev-config-from-environment"
+        let environment = [AccessLocalV2RayConfig.environmentVariable: dev]
+        for channel in ["alpha", "beta", "release", "stable", "dev", "unexpected", ""] {
+            let dir = root.appendingPathComponent(UUID().uuidString + ".bundle")
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            let node = dir.appendingPathComponent("AegisPrivateTestNode.vless")
+            try Data(sampleShareURI.utf8).write(to: node)
+            var info = ["CFBundleIdentifier": "test." + UUID().uuidString]
+            if !channel.isEmpty { info["AegisAccessReleaseChannel"] = channel }
+            let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            try plist.write(to: dir.appendingPathComponent("Info.plist"))
+            let bundle = try XCTUnwrap(Bundle(url: dir))
+            let path = AccessLocalV2RayConfigLoader.productPath(bundle: bundle, environment: environment)
+            switch channel {
+            case "alpha", "beta":
+                let config = try AccessLocalV2RayConfigLoader.load(path: XCTUnwrap(path))
+                XCTAssertEqual(config.parameters.address, "198.51.100.10")
+            case "dev":
+                XCTAssertEqual(path, dev)
+            default:
+                XCTAssertNil(path, channel)
+            }
+        }
+    }
+
     func testParsesShareURI() throws {
         let parameters = try AccessLocalV2RayConfigLoader.parseShareURI(sampleShareURI)
         XCTAssertEqual(parameters.address, "198.51.100.10")
@@ -19,6 +48,17 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
         XCTAssertEqual(parameters.publicKey, "abcdefghijklmnopqrstuvwxyzABCDEFG")
         XCTAssertEqual(parameters.shortID, "abcd1234")
         XCTAssertEqual(parameters.fingerprint, "chrome")
+    }
+
+    func testParsesShareURIWithEmptyEncryptionQuery() throws {
+        let uri =
+            "vless://550e8400-e29b-41d4-a716-446655440000@198.51.100.10:443"
+            + "?flow=xtls-rprx-vision&security=reality&encryption=&type=tcp"
+            + "&sni=www.example.com&fp=chrome"
+            + "&pbk=abcdefghijklmnopqrstuvwxyzABCDEFG&sid=abcd1234"
+        let parameters = try AccessLocalV2RayConfigLoader.parseShareURI(uri)
+        XCTAssertEqual(parameters.address, "198.51.100.10")
+        XCTAssertEqual(parameters.shortID, "abcd1234")
     }
 
     func testParsesShareURIFromFileBytes() throws {
@@ -104,13 +144,13 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
         }
     }
 
-    func testLiveSuiteSkipsWithoutLocalConfig() throws {
-        if AccessLocalV2RayConfigLoader.configuredPath() == nil {
-            throw XCTSkip(
-                "Set \(AccessLocalV2RayConfig.environmentVariable) to a local vless:// file for live import"
-            )
-        }
-        let imported = try AccessLocalV2RayConfigLoader.loadFromEnvironment()
+    func testLoadsConfigFromProvidedEnvironmentPath() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(sampleShareURI.utf8).write(to: url)
+        let imported = try AccessLocalV2RayConfigLoader.loadFromEnvironment(
+            environment: [AccessLocalV2RayConfig.environmentVariable: url.path]
+        )
         let config = try AccessRealityVisionOutboundConfigBuilder.build(parameters: imported.parameters)
         XCTAssertEqual(config.profile, .realityVision)
         XCTAssertFalse(imported.parameters.address.isEmpty)

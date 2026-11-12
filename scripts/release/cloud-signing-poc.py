@@ -267,16 +267,16 @@ def reusable_archive(run_id, version, build, team, profile='beta'):
     old_sha = receipt['source']['sha']
     if not re.fullmatch(r'[0-9a-f]{40}', old_sha):
         raise ValueError('Invalid archive source SHA')
-    if run('git', 'diff', old_sha, 'HEAD', '--', 'apps/ios',
+    if run('git', 'diff', old_sha, 'HEAD', '--', 'apps/ios', 'scripts/release/*ios*core*',
            'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared',
            'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json').strip():
         raise ValueError('Native inputs changed; a fresh archive is required')
     return directory, receipt['source']
 
 
-def stage(directory, environment, profile='beta'):
+def stage(directory, environment, profile='beta', *, build_core=True):
     work = directory / 'work'
-    files = run('git', 'ls-files', '-z', 'apps/ios',
+    files = run('git', 'ls-files', '-z', 'apps/ios', 'scripts/release/ios_embedded_core.py',
                 'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared',
                 'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json').decode().split('\0')
     for relative in filter(None, files):
@@ -288,11 +288,9 @@ def stage(directory, environment, profile='beta'):
         shutil.copyfile(original, target)
     firebase = work / 'apps/ios/scripts/firebase_config.py'
     run(sys.executable, str(firebase), 'stage', '--root', str(work / 'apps/ios/Firebase'), '--channel', profile, env=environment)
-    for target in ('AegisApp', 'SafariWebExtension', 'ShareExtension'):
-        path = work / 'apps/ios' / target / 'Info.plist'
-        info = plistlib.loads(path.read_bytes())
-        info['AegisReleaseProfile'] = profile
-        path.write_bytes(plistlib.dumps(info))
+    if build_core:
+        run('bash', str(ROOT / 'scripts/release/prepare-ios-package-core.sh'), str(work),
+            env=environment, log=directory / 'embedded-core.log', timeout=2400)
     return work
 
 
@@ -337,7 +335,7 @@ def build_inline_archive(work, directory, options, archive_signing, environment,
         '-disableAutomaticPackageResolution', 'archive', *signing_args,
         'DEVELOPMENT_TEAM=' + options.team, 'MARKETING_VERSION=' + options.version,
         'CURRENT_PROJECT_VERSION=' + options.build, 'AEGIS_FIREBASE_CHANNEL=' + options.profile,
-        env=environment, log=directory / 'archive.log', timeout=2400)
+        'AEGIS_ACCESS_RELEASE_CHANNEL=' + options.profile, env=environment, log=directory / 'archive.log', timeout=2400)
     if signing:
         archive_transfer.verify_development(archive, options.team, run)
         signing.verify_archive(archive, proof, run)
@@ -402,7 +400,7 @@ def experiment(options, environment):
                             archiveCompleted=True, distributionIdentityAbsentBeforeArchive=True,
                             archiveManifestSha256=hashlib.sha256((previous / 'archive-provenance.json').read_bytes()).hexdigest())
         elif getattr(options, 'archive_input', None):
-            work = stage(directory, archive_environment, options.profile)
+            work = stage(directory, archive_environment, options.profile, build_core=False)
             archive_transfer.extract(options.archive_input, work / 'Aegis.xcarchive', identity,
                                      options.version, options.build, options.team, options.profile,
                                      expected_manifest_sha256=manifest_sha256)

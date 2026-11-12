@@ -3,7 +3,7 @@ import XCTest
 @testable import AccessKit
 
 private final class FakeXrayHandle: AccessXrayProcessHandle {
-    private(set) var isRunning: Bool = true
+    var isRunning: Bool = true
     private(set) var terminateCount = 0
     func terminate() {
         isRunning = false
@@ -163,5 +163,42 @@ final class AccessXrayRuntimeTests: XCTestCase {
         XCTAssertThrowsError(try runtime.stop()) { error in
             XCTAssertEqual(error as? AccessXrayRuntimeError, .notRunning)
         }
+    }
+
+    func testIndependentCoreExitClearsRunningCacheAndAllowsRestart() throws {
+        final class RestartController: AccessXrayProcessControlling {
+            var handles: [FakeXrayHandle] = []
+            func launch(executableURL: URL, configData: Data) throws -> AccessXrayProcessHandle {
+                _ = executableURL
+                _ = configData
+                let handle = FakeXrayHandle()
+                handles.append(handle)
+                return handle
+            }
+        }
+
+        let controller = RestartController()
+        let runtime = try AccessXrayRuntime(
+            processController: controller,
+            digestVerifier: AcceptingDigestVerifier()
+        )
+        let executable = try writeTempExecutable()
+        defer { try? FileManager.default.removeItem(at: executable) }
+        let config = try makeConfig()
+        try runtime.start(executableURL: executable, config: config)
+        controller.handles[0].isRunning = false
+
+        XCTAssertFalse(runtime.isRunning)
+        XCTAssertEqual(runtime.state, .idle)
+        XCTAssertThrowsError(try runtime.stop()) { error in
+            XCTAssertEqual(error as? AccessXrayRuntimeError, .notRunning)
+        }
+
+        try runtime.start(executableURL: executable, config: config)
+        XCTAssertEqual(controller.handles.count, 2)
+        XCTAssertTrue(runtime.isRunning)
+        XCTAssertEqual(runtime.state, .running)
+        try runtime.stop()
+        XCTAssertEqual(runtime.state, .idle)
     }
 }

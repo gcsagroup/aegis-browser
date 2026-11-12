@@ -4,13 +4,34 @@ import Foundation
 public enum AccessHTTPConnectParser {
     public static let maxHeaderBytes = 8_192
 
-    /// Returns a request once the header block is complete (`\r\n\r\n`).
-    public static func parse(buffer: Data) throws -> AccessHTTPConnectRequest? {
-        guard buffer.count <= maxHeaderBytes else {
+    /// Header bytes and any tunnel payload that arrived in the same buffer.
+    /// The size limit applies to the header only.
+    public static func split(buffer: Data) throws -> (AccessHTTPConnectRequest, Data)? {
+        guard let headerEnd = indexOfHeaderTerminator(in: buffer) else {
+            if buffer.count > maxHeaderBytes {
+                throw AccessHTTPConnectError.headersTooLarge
+            }
+            return nil
+        }
+        if headerEnd > maxHeaderBytes {
             throw AccessHTTPConnectError.headersTooLarge
         }
+        let headerLength = headerEnd + 4
+        let header = Data(buffer.prefix(headerLength))
+        guard let request = try parse(buffer: header) else { return nil }
+        return (request, Data(buffer.dropFirst(headerLength)))
+    }
+
+    /// Returns a request once the header block is complete (`\r\n\r\n`).
+    public static func parse(buffer: Data) throws -> AccessHTTPConnectRequest? {
         guard let headerEnd = indexOfHeaderTerminator(in: buffer) else {
+            if buffer.count > maxHeaderBytes {
+                throw AccessHTTPConnectError.headersTooLarge
+            }
             return nil
+        }
+        if headerEnd > maxHeaderBytes {
+            throw AccessHTTPConnectError.headersTooLarge
         }
         let headerData = buffer.prefix(headerEnd)
         guard let text = String(data: headerData, encoding: .utf8) else {

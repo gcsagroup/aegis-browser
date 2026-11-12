@@ -30,7 +30,7 @@ final class AccessHTTPConnectTests: XCTestCase {
         }
     }
 
-    func testListenerEstablishesConnectWithoutDirectDial() throws {
+    func testListenerEstablishesConnectWithoutDirectDial() async throws {
         let port: UInt16 = 18_190
         let registration = AccessRegistration(
             id: try AccessRegistrationID("reg-http-connect"),
@@ -43,9 +43,9 @@ final class AccessHTTPConnectTests: XCTestCase {
                 expiresAt: Date(timeIntervalSince1970: 1_700_000_000 + 60)
             )
         )
-        let listener = try AccessHTTPInboundListener(registration: registration)
+        let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        try listener.start(at: now)
+        try await listener.start(at: now)
 
         let response = expectation(description: "200 connection established")
         let connection = NWConnection(
@@ -65,12 +65,12 @@ final class AccessHTTPConnectTests: XCTestCase {
             }
         }
         connection.start(queue: .global())
-        wait(for: [response], timeout: 3.0)
+        await fulfillment(of: [response], timeout: 3.0)
         connection.cancel()
 
         let deadline = Date().addingTimeInterval(1.0)
         while listener.establishedConnectCount == 0, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.02)
+            try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertGreaterThanOrEqual(listener.acceptedConnectionCount, 1)
         XCTAssertGreaterThanOrEqual(listener.establishedConnectCount, 1)
@@ -78,7 +78,7 @@ final class AccessHTTPConnectTests: XCTestCase {
         try listener.stop()
     }
 
-    func testListenerRejectsNonConnectMethod() throws {
+    func testListenerRejectsNonConnectMethod() async throws {
         let port: UInt16 = 18_191
         let registration = AccessRegistration(
             id: try AccessRegistrationID("reg-http-connect-get"),
@@ -91,8 +91,8 @@ final class AccessHTTPConnectTests: XCTestCase {
                 expiresAt: Date(timeIntervalSince1970: 1_700_000_000 + 60)
             )
         )
-        let listener = try AccessHTTPInboundListener(registration: registration)
-        try listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        let listener = try AccessHTTPInboundListener(registration: registration, tunnels: HoldingTunnel())
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
 
         let response = expectation(description: "405 method not allowed")
         let connection = NWConnection(
@@ -112,9 +112,22 @@ final class AccessHTTPConnectTests: XCTestCase {
             }
         }
         connection.start(queue: .global())
-        wait(for: [response], timeout: 3.0)
+        await fulfillment(of: [response], timeout: 3.0)
         connection.cancel()
         XCTAssertEqual(listener.establishedConnectCount, 0)
         try listener.stop()
+    }
+}
+
+private final class HoldingStream: AccessRealityPathStream, @unchecked Sendable {
+    private(set) var isOpen = true
+    func read(maxBytes: Int) async throws -> Data? { nil }
+    func write(_ data: Data) async throws {}
+    func close() { isOpen = false }
+}
+
+private final class HoldingTunnel: AccessHTTPTunnelOpening, @unchecked Sendable {
+    func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
+        HoldingStream()
     }
 }

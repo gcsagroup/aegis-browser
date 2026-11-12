@@ -472,18 +472,23 @@ private func scriptStatusText(_ item: ScriptRunStatus) -> String {
 
 struct CurrentWebsiteView: View {
   @EnvironmentObject private var browser: BrowserSession
-  @EnvironmentObject private var accessSiteProxy: AccessSiteProxySessionStore
+  @EnvironmentObject private var accessRegistry: AccessSiteProxyStoreRegistry
+  @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
   @Environment(\.dismiss) private var dismiss
   @Environment(\.locale) private var localizationLocale
   var body: some View {
       let _ = localizationLocale
+      let _ = accessRegistry.revision
     NavigationStack {
       if let tab = browser.activeTab {
         CurrentWebsitePanel(
           tab: tab,
           store: browser.enhancements,
           isPrivate: browser.profile.isPrivate,
-          accessSiteProxy: accessSiteProxy
+          accessSiteProxy: accessRegistry.store(
+            for: tab.websiteDataStore,
+            isPrivate: tab.profile.isPrivate
+          )
         )
           .id(tab.id)
           .localizedNavigationTitle("当前网站").navigationBarTitleDisplayMode(.inline)
@@ -498,6 +503,7 @@ private struct CurrentWebsitePanel: View {
   @ObservedObject var store: WebsiteEnhancementStore
   let isPrivate: Bool
   @ObservedObject var accessSiteProxy: AccessSiteProxySessionStore
+  @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
   @State private var message: AegisLocalizedMessage = .verbatim("")
   @State private var markdownDocument: MarkdownDocument?
   @State private var readingPage = false
@@ -508,7 +514,8 @@ private struct CurrentWebsitePanel: View {
   var body: some View {
       let _ = localizationLocale
     Form {
-      AccessSiteProxyToggleView(store: accessSiteProxy, url: tab.url)
+      AccessSiteProxyToggleView(store: accessSiteProxy, url: tab.url, tab: tab)
+        .onAppear { accessSiteProxy.hostRouting = hostStores }
         .onChange(of: tab.navigationEpoch) { _, _ in accessSiteProxy.noteNavigationChanged() }
       AccessDevAllowBlockSectionView(store: accessSiteProxy, url: tab.url)
       if let url = tab.url, ScriptMatch.origin(url) != nil {

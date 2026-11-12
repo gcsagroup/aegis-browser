@@ -1,3 +1,6 @@
+import UIKit
+import Darwin
+@testable import Aegis
 import XCTest
 @testable import BrowserKit
 
@@ -167,5 +170,71 @@ import XCTest
         let item = try XCTUnwrap(manager.items.first)
         XCTAssertEqual(item.received, Int64("Aegis Browser simulator download verification\n".utf8.count * 1024 * 32))
         XCTAssertEqual(try DownloadManager.hashFile(manager.fileURL(item)), item.sha256)
+    }
+}
+
+@MainActor
+final class FileExportHandoffTests: XCTestCase {
+    func testFiveGBSparseFileReachesProductionPickerByOriginalURL() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("Original download.tar.gz")
+        XCTAssertTrue(FileManager.default.createFile(atPath: url.path, contents: nil))
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: 5_000_000_000)
+        try handle.close()
+        var before = stat()
+        XCTAssertEqual(stat(url.path, &before), 0)
+        XCTAssertEqual(before.st_size, 5_000_000_000)
+        XCTAssertLessThan(before.st_blocks * 512, 1_048_576, "fixture must actually be sparse")
+        let memoryBefore = residentBytes()
+        let start = ContinuousClock.now
+        let file = try ExportedFile(url: url)
+        var results: [Bool] = []
+        let exporter = FileExportPicker(url: file.url) { results.append($0) }
+        let delegate = exporter.makeCoordinator()
+        var handedURLs: [URL] = []
+        var handedAsCopy = false
+        let picker = exporter.makePicker(coordinator: delegate) { urls, asCopy in
+            handedURLs = urls
+            handedAsCopy = asCopy
+            return UIDocumentPickerViewController(forExporting: urls, asCopy: asCopy)
+        }
+        let elapsed = start.duration(to: .now)
+        let memoryGrowth = residentBytes() - memoryBefore
+        XCTAssertEqual(handedURLs, [url])
+        XCTAssertTrue(handedAsCopy)
+        XCTAssertEqual(handedURLs.first?.lastPathComponent, "Original download.tar.gz")
+        XCTAssertTrue(picker.delegate === delegate)
+        XCTAssertLessThan(elapsed, .seconds(2), "handoff must not synchronously read/copy 5 GB")
+        XCTAssertLessThan(memoryGrowth, 128 * 1024 * 1024, "handoff memory must not scale with file bytes")
+        var after = stat()
+        XCTAssertEqual(stat(url.path, &after), 0)
+        XCTAssertEqual(after.st_blocks, before.st_blocks)
+        XCTAssertEqual(after.st_size, before.st_size)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [url.lastPathComponent])
+        delegate.documentPickerWasCancelled(picker)
+        XCTAssertEqual(results, [false])
+        delegate.documentPicker(picker, didPickDocumentsAt: [directory.appendingPathComponent("saved.tar.gz")])
+        XCTAssertEqual(results, [false, true])
+        print("FILE_EXPORT_HANDOFF bytes=\(before.st_size) allocated=\(before.st_blocks * 512) duration=\(elapsed) residentGrowth=\(memoryGrowth)")
+    }
+
+    func testMissingExportSourceReportsErrorBeforePresentation() {
+        XCTAssertThrowsError(try ExportedFile(url: URL(fileURLWithPath: "/missing-\(UUID()).pdf")))
+        XCTAssertThrowsError(try ExportedFile(url: URL(string: "https://example.invalid/file.pdf")!))
+    }
+
+    private func residentBytes() -> Int64 {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        XCTAssertEqual(result, KERN_SUCCESS)
+        return Int64(info.resident_size)
     }
 }

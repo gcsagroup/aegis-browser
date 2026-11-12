@@ -1,6 +1,7 @@
 import AgentKit
 import BrowserKit
 import SwiftUI
+import UIKit
 
 struct AegisRootView: View {
     @EnvironmentObject private var browser: BrowserSession
@@ -386,23 +387,85 @@ private struct BrowserPane: View {
     }
 }
 
+struct ProxyRetryButton: UIViewRepresentable {
+    var title: String
+    var action: () -> Void
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(title, for: .normal)
+        button.accessibilityIdentifier = "page-load-proxy-retry"
+        button.contentHorizontalAlignment = .leading
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        button.setTitle(title, for: .normal)
+    }
+}
+
+struct PageLoadFailureBanner: View {
+    @ObservedObject var tab: BrowserTab
+    var autoRecoveryOn: Bool = false
+    var autoRecoveryLine: String? = nil
+    var setAutoRecovery: ((BrowserTab, Bool) -> Void)? = nil
+    var proxyRetry: (BrowserTab) -> Void
+
+    var body: some View {
+        if let error = tab.loadingError {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("页面加载失败：\(error)").font(.caption)
+                Button("重试") { tab.reload() }
+                if setAutoRecovery != nil {
+                    Toggle(AccessAutoRecoveryCopy.toggleTitle, isOn: Binding(
+                        get: { autoRecoveryOn },
+                        set: { setAutoRecovery?(tab, $0) }
+                    ))
+                    .accessibilityIdentifier("page-load-auto-recovery")
+                    Text(AccessAutoRecoveryCopy.explanation).font(.caption)
+                    Text(AccessAutoRecoveryCopy.scopeWarning).font(.caption)
+                    if let autoRecoveryLine {
+                        Text(autoRecoveryLine)
+                            .font(.caption)
+                            .accessibilityIdentifier("page-load-auto-recovery-status")
+                    }
+                }
+                if tab.loadingErrorAllowsProxyRetry {
+                    ProxyRetryButton(title: "通过代理重试") { proxyRetry(tab) }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(12)
+            .foregroundStyle(.red)
+            .accessibilityIdentifier("page-load-error")
+        }
+    }
+}
+
 private struct ActiveTabView: View {
     @ObservedObject var tab: BrowserTab
     @Binding var address: String
     let addressIsEditing: Bool
     let onFind: () -> Void
     let onScroll: (Bool) -> Void
+    @EnvironmentObject private var hostStores: AccessHostStoreCoordinator
 
     @Environment(\.locale) private var localizationLocale
     var body: some View {
         let _ = localizationLocale
         VStack(spacing: 0) {
-            if let error = tab.loadingError {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("页面加载失败：\(error)").font(.caption)
-                    Button("重试") { tab.reload() }
-                }.padding(12).foregroundStyle(.red).accessibilityIdentifier("page-load-error")
-            }
+            PageLoadFailureBanner(
+                tab: tab,
+                autoRecoveryOn: hostStores.snapshot(for: tab).autoRecoveryEnabled,
+                autoRecoveryLine: hostStores.snapshot(for: tab).autoRecoveryLine,
+                setAutoRecovery: { failed, enabled in
+                    _ = hostStores.setAutoRecoveryEnabled(enabled, for: failed)
+                },
+                proxyRetry: { failed in
+                    _ = hostStores.retryViaProxy(tab: failed)
+                }
+            )
             if let decision = tab.lastPolicyIntervention {
                 NavigationPolicyBanner(decision: decision) {
                     tab.dismissPolicyIntervention()
@@ -431,7 +494,7 @@ private struct ActiveTabView: View {
                         .font(.caption).padding(8).accessibilityIdentifier("fingerprint-observation")
                 }
                 BrowserWebView(webView: tab.webView, onFind: onFind, onScroll: onScroll)
-                    .id(ObjectIdentifier(tab.webView))
+                    .id("\(tab.webViewGeneration)-\(ObjectIdentifier(tab.webView))")
                     .accessibilityIdentifier("browser-webview")
             }
         }

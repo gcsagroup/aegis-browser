@@ -18,11 +18,10 @@ is out of scope for the pack exit claim while unfinished.
 
 ### Fault step dependency
 
-A2-3 (fault, no silent DIRECT) and A2-4 (recovery) require the fail-closed
-fixture API from **P-iOS-5** (`feat/ios-access-fault-no-direct-2cd7`). While that
-PR is not on `develop`, treat the **fault** (and recovery) step as **pending**:
-scaffold verdicts stay `NOT_RUN`, and `SIMULATOR_PASS` is refused until the
-fault fixture is present and same-candidate artifacts cover those steps.
+A2-3 (fault, no silent DIRECT) and A2-4 (recovery) use the fail-closed
+fixture API from **P-iOS-5**. That API is on this branch. Product verdicts stay
+`NOT_RUN` until same-candidate Simulator artifacts cover those steps.
+`SIMULATOR_PASS` is still refused without those artifacts.
 
 ## Correlation ID
 
@@ -59,8 +58,8 @@ screenshot filenames so one operation can be joined without stitching SHAs.
 `aegis-ios-p1/…` convention for Simulator unit hosts. They are **evidence
 scaffolding**, not an A4 product `SIMULATOR_PASS`.
 
-The full on→load→fault→recovery→off drill fixture binds to the P-iOS-5 fault
-API; until that lands, only correlation helpers ship in-tree.
+The on→load→fault→recovery→off drill fixture is in AccessKit. It locks the
+step IDs. It is not an A4 product `SIMULATOR_PASS`.
 
 ## Files
 
@@ -70,3 +69,7 @@ API; until that lands, only correlation helpers ship in-tree.
 | `correlation.md` | ID convention |
 | `status.json` | Current pack verdict (`NOT_RUN`) |
 | `artifacts/` | Place same-candidate logs/UI captures here |
+| `K/` | Desensitized in-process core (K) receipt template; see `K/README.md` |
+
+Opt-in K runner: `scripts/release/ios-access-core-tests.sh` (not the default U
+`ios-access-tests.sh` gate).

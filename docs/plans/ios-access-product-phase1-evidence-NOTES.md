@@ -34,20 +34,22 @@ the unit inventory; this feat is the **product** A2/A4 pack analogous to
 4. **Recovery (A2-4):** recover → PROXY ready again; `…/recovery`
 5. **Off (A2-5):** disable → native / cleared ProxyConfiguration; `…/off`
 
-## Fault step pending (P-iOS-5)
+## Fault fixture present; product evidence pending (P-iOS-5)
 
-While `feat/ios-access-fault-no-direct-2cd7` is not on `develop`:
+The P-iOS-5 fault API is present on this branch. Fixture availability is not
+a product run or a completed five-step drill:
 
-- `status.json` keeps `faultStep: pending-pios5`
+- `status.json` keeps `faultStep: fixture-present` while product artifacts are still `NOT_RUN`
 - Template fault/recovery verdicts stay `NOT_RUN`
 - Validator refuses `SIMULATOR_PASS` unless a P-iOS-5 fault fixture is present
   (and same-candidate artifacts cover all five steps)
 - Required fixture API (capability level): fail-closed runtime fault that
   refuses silent DIRECT as Access success, plus recoverable PROXY-ready path
 
-When P-iOS-5 lands: update-branch onto `develop`, flip
-`AccessSitePhase1EvidenceFaultRequirement.isPending` in a follow-up if the
-drill binds the concrete symbols, and re-run the validator.
+`AccessSitePhase1EvidenceFaultRequirement.isPending` remains true in the
+legacy correlation scaffold. The native owner must bind the concrete five-step
+drill before changing that flag; `fixture-present` reports only API presence.
+Re-run the validator and collect same-candidate product artifacts separately.
 
 ## Evidence rules (A4)
 

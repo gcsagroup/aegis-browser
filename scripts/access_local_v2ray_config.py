@@ -228,7 +228,7 @@ def parse_root(root: dict[str, Any]) -> dict[str, Any]:
     return parameters_from_flat(root)
 
 
-def parse_text(text: str) -> dict[str, Any]:
+def parse_text(text: str, *, strict_document: bool = False) -> dict[str, Any]:
     stripped = text.strip()
     if not stripped:
         raise LocalV2RayError("invalidJSON")
@@ -241,13 +241,15 @@ def parse_text(text: str) -> dict[str, Any]:
         raise LocalV2RayError("invalidJSON") from exc
     if not isinstance(root, dict):
         raise LocalV2RayError("invalidJSON")
+    if strict_document:
+        _reject_poison(root)
     return parse_root(root)
 
 
-def load(path: Path) -> dict[str, Any]:
+def load(path: Path, *, strict_document: bool = False) -> dict[str, Any]:
     if not path.is_file():
         raise LocalV2RayError(f"fileNotFound:{path}")
-    return parse_text(path.read_text(encoding="utf-8"))
+    return parse_text(path.read_text(encoding="utf-8"), strict_document=strict_document)
 
 
 def redacted_summary(path: Path, params: dict[str, Any]) -> str:
@@ -271,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Run synthetic fixture checks (no local secrets required)",
     )
+    parser.add_argument("--strict-document", action="store_true",
+                        help="Reject unsupported settings anywhere in a JSON document")
     args = parser.parse_args(argv)
 
     if args.self_test:
@@ -344,6 +348,14 @@ def main(argv: list[str] | None = None) -> int:
             ]
         }
         require(parse_root(sing)["source"] == "sing-box", "sing-box source")
+        mixed = json.dumps({**xray, "unrelated": {"allowInsecure": True}})
+        require(parse_text(mixed)["source"] == "xray-core", "admitted outbound selection")
+        try:
+            parse_text(mixed, strict_document=True)
+        except LocalV2RayError as exc:
+            require(str(exc) == "allowInsecureRejected", "strict document rejection")
+        else:
+            raise SystemExit("self-test failed: strict document accepted insecure setting")
         print("ok self-test (vless-uri + xray-core + sing-box)")
         return 0
 
@@ -356,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     path = Path(raw).expanduser()
     try:
-        params = load(path)
+        params = load(path, strict_document=args.strict_document)
     except LocalV2RayError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

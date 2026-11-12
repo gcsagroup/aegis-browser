@@ -18,6 +18,21 @@ public enum AccessLocalV2RayConfigLoader {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// The signed app channel selects the source for the product publisher.
+    public static func productPath(
+        bundle: Bundle = .main,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        switch bundle.object(forInfoDictionaryKey: "AegisAccessReleaseChannel") as? String {
+        case "dev":
+            return configuredPath(environment: environment)
+        case "alpha", "beta":
+            return bundle.url(forResource: "AegisPrivateTestNode", withExtension: "vless")?.path
+        default:
+            return nil
+        }
+    }
+
     /// Loads from the environment variable path. Throws `pathNotSet` when unset.
     public static func loadFromEnvironment(
         environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -113,7 +128,10 @@ public enum AccessLocalV2RayConfigLoader {
         guard network == AccessRealityVisionParameters.admittedNetwork else {
             throw AccessLocalV2RayConfigError.unsupportedNetwork(network)
         }
-        if let encryption = query["encryption"], encryption != AccessRealityVisionParameters.admittedEncryption {
+        // Some share URIs emit `encryption=` (empty). Treat missing/empty as admitted `none`.
+        if let encryption = query["encryption"],
+           !encryption.isEmpty,
+           encryption != AccessRealityVisionParameters.admittedEncryption {
             throw AccessLocalV2RayConfigError.fieldNotCanonical("encryption")
         }
         if query["allowInsecure"] != nil {

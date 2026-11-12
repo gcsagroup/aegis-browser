@@ -68,7 +68,7 @@ def create(output, version, build, team, profile, environment):
                    '-disableAutomaticPackageResolution', 'archive', *signing_args,
                    'DEVELOPMENT_TEAM=' + team, 'MARKETING_VERSION=' + version,
                    'CURRENT_PROJECT_VERSION=' + build, 'AEGIS_FIREBASE_CHANNEL=' + profile,
-                   env=build_env, log=output / 'archive.log', timeout=2400)
+                   'AEGIS_ACCESS_RELEASE_CHANNEL=' + profile, env=build_env, log=output / 'archive.log', timeout=2400)
         verify_development(archive, team, native.run)
         signing.verify_archive(archive, signing_evidence, native.run)
     native.module('archive_structure', 'verify-ios-archive.py').verify(archive, version, build)

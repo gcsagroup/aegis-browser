@@ -27,5 +27,5 @@ if [[ -z "${!ENV_NAME:-}" ]]; then
 fi
 
 echo "== import local config (secrets redacted) =="
-python3 "$PY" "${!ENV_NAME}"
+python3 "$PY" --strict-document "${!ENV_NAME}"
 echo "done"

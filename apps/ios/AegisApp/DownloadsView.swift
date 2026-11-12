@@ -1,7 +1,6 @@
 import BrowserKit
 import QuickLook
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct DownloadsView: View {
     @EnvironmentObject private var downloads: DownloadManager
@@ -158,7 +157,7 @@ struct DownloadsView: View {
         .sheet(item: $exportFile) { file in
             FileExportPicker(url: file.url) { saved in
                 exportFile = nil
-                if saved { savedMessage = .resource("文件已保存。") }
+                savedMessage = .resource(saved ? "文件已保存。" : "已取消")
             }
         }
     }
@@ -318,7 +317,17 @@ struct DownloadsView: View {
         guard FileManager.default.fileExists(atPath: url.path) else { error = .error(DownloadError.missingFile); return }
         if preview, MarkdownDocument.accepts(url) {
             do { markdownDocument = try MarkdownDocument.read(url) } catch { self.error = .error(error) }
-        } else if preview { previewURL = url } else { exportFile = ExportedFile(url: url) }
+        } else if preview {
+            previewURL = url
+        } else {
+            do {
+                exportFile = try ExportedFile(url: url)
+                savedMessage = nil
+                error = nil
+            } catch {
+                self.error = .error(error)
+            }
+        }
     }
     private func remove(includingFiles: Bool) {
         do {

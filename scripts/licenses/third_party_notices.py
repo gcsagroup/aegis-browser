@@ -16,6 +16,7 @@ ENHANCEMENTS = "apps/browser/overlay/chrome/browser/resources/aegis/enhancements
 LOCAL_AI = "apps/browser/overlay/chrome/browser/resources/aegis_agent/local_ai"
 RULES = "apps/ios/BrowserKit/Resources"
 SDK = "scripts/licenses/sdk-licenses"
+ACCESS = "scripts/licenses/access-core"
 IOS_OUTPUT = "apps/ios/AegisApp/ThirdPartyNotices.txt"
 MAC_OUTPUT = "apps/browser/MACOS_THIRD_PARTY_NOTICES.txt"
 JS_LICENSES = ["markdown-it-LICENSE", "DOMPurify-LICENSE", "task-lists-LICENSE",
@@ -43,6 +44,22 @@ def sdk_records(root):
                 raise ValueError("Invalid SDK license filename")
             if hashlib.sha256(read(root, f"{SDK}/{name}")).hexdigest() != notice["sha256"]:
                 raise ValueError(f"SDK license hash mismatch: {item['identity']} / {name}")
+    return records
+
+
+def access_core_records(root):
+    records = json.loads(read(root, f"{ACCESS}/manifest.json"))
+    if not records:
+        raise ValueError("Access-core license inventory is empty")
+    for item in records:
+        name = item["file"]
+        if Path(name).name != name:
+            raise ValueError("Invalid access-core license filename")
+        if hashlib.sha256(read(root, f"{ACCESS}/{name}")).hexdigest() != item["sha256"]:
+            raise ValueError(f"Access-core license hash mismatch: {item['identity']}")
+        for key in ("identity", "version", "license", "commit", "repository", "url"):
+            if not item.get(key):
+                raise ValueError(f"Access-core license missing {key}: {name}")
     return records
 
 
@@ -87,6 +104,14 @@ def render(platform, root=ROOT):
                         "Source snapshot: https://github.com/publicsuffix/list/blob/"
                         "3929462652695bad04f0a27afb600974014a3c8b/public_suffix_list.dat\n")
         include("Mozilla Public License 2.0 (Public Suffix List)", f"{LOCAL_AI}/bergamot/LICENSE")
+        sections.append("\nAccess runtime open-source notices\n"
+                        "These preserve upstream licenses for the Access entry/core path.\n"
+                        "They acknowledge source and license obligations; they are not proof that a verified binary is linked in this build.\n")
+        for item in access_core_records(root):
+            include(
+                f"{item['identity']} {item['version']} — {item['license']} — {item['repository']}",
+                f"{ACCESS}/{item['file']}",
+            )
         sections.append("\nSwift Package SDK notices\n"
                         "This section preserves the repository license for every resolved package, including optional dependencies.\n"
                         "It is not an assertion that each package is linked into this app.\n"

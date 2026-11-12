@@ -8,13 +8,14 @@ import Network
 /// through `reality_vision` is F11.
 public final class AccessHTTPConnectSession: @unchecked Sendable {
     public enum Outcome: Equatable, Sendable {
-        case established(AccessHTTPConnectRequest)
+        case established(AccessHTTPConnectRequest, Data)
         case rejected(AccessHTTPConnectError)
     }
 
     private let connection: NWConnection
     private let queue: DispatchQueue
     private var buffer = Data()
+    private var lateBytes = Data()
     private var finished = false
     private let onOutcome: (Outcome) -> Void
 
@@ -42,7 +43,10 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
     }
 
     private func handleReceive(data: Data?, isComplete: Bool, error: NWError?) {
-        guard !finished else { return }
+        if finished {
+            if let data, !data.isEmpty { lateBytes.append(data) }
+            return
+        }
         if error != nil {
             finish(.rejected(.incompleteRequest))
             connection.cancel()
@@ -52,8 +56,8 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
             buffer.append(data)
         }
         do {
-            if let request = try AccessHTTPConnectParser.parse(buffer: buffer) {
-                writeSuccess(for: request)
+            if let (request, remainder) = try AccessHTTPConnectParser.split(buffer: buffer) {
+                writeSuccess(for: request, remainder: remainder)
                 return
             }
         } catch let connectError as AccessHTTPConnectError {
@@ -76,19 +80,21 @@ public final class AccessHTTPConnectSession: @unchecked Sendable {
         receiveMore()
     }
 
-    private func writeSuccess(for request: AccessHTTPConnectRequest) {
+    private func writeSuccess(for request: AccessHTTPConnectRequest, remainder: Data) {
+        finished = true
         let response = AccessHTTPConnectParser.successResponse(httpVersion: request.httpVersion)
         connection.send(content: response, completion: .contentProcessed { [weak self] error in
             guard let self else { return }
             self.queue.async {
                 if error != nil {
-                    self.finish(.rejected(.responseWriteFailed))
+                    self.onOutcome(.rejected(.responseWriteFailed))
                     self.connection.cancel()
                     return
                 }
-                self.finish(.established(request))
-                // Tunnel endpoint held open for F11 wiring; idle cancel is the
-                // caller's responsibility via listener stop / client close.
+                var payload = remainder
+                payload.append(self.lateBytes)
+                self.lateBytes.removeAll()
+                self.onOutcome(.established(request, payload))
             }
         })
     }
