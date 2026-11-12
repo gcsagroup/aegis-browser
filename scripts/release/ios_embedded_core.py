@@ -56,7 +56,7 @@ def input_list(root, source_lock, products, framework):
     return "".join(str(path) + "\n" for path in inputs)
 
 
-def record(root, source_lock, products, mode):
+def record(root, source_lock, products, mode, xcode_root=None, xcode_lock=None):
     root, source_lock, products = Path(root).resolve(), Path(source_lock).resolve(), Path(products).resolve()
     lock = json.loads(source_lock.read_text())
     if lock.get("status") != "verified_build":
@@ -67,7 +67,8 @@ def record(root, source_lock, products, mode):
         raise ValueError("actual EmbeddedCore slices differ from frozen digests")
     effective = {**lock, "artifacts": {**lock["artifacts"], **actual}}
     write_json(products / "embedded-core-lock.json", effective)
-    (products / "build-inputs.xcfilelist").write_text(input_list(root, source_lock, products, framework))
+    (products / "build-inputs.xcfilelist").write_text(input_list(
+        Path(xcode_root or root).resolve(), Path(xcode_lock or source_lock).resolve(), products, framework))
     binding = shutil.which("gomobile")
     if not binding:
         raise ValueError("gomobile build tool is missing")
@@ -153,8 +154,11 @@ def main():
     parser.add_argument("--bundle", type=Path)
     parser.add_argument("--derived", type=Path)
     parser.add_argument("--platform", choices=("device", "simulator"))
+    parser.add_argument("--xcode-root", type=Path)
+    parser.add_argument("--xcode-lock", type=Path)
     args = parser.parse_args()
-    result = (record(args.root, args.source_lock, args.products, args.mode or "strict") if args.operation == "record"
+    result = (record(args.root, args.source_lock, args.products, args.mode or "strict",
+                     args.xcode_root, args.xcode_lock) if args.operation == "record"
               else verify(args.root, args.source_lock, args.products, args.mode))
     if args.operation == "install":
         if not args.bundle:

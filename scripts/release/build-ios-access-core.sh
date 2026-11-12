@@ -42,7 +42,7 @@ if command -v mise >/dev/null 2>&1; then
   GOROOT="$(mise where go@1.27.3 2>/dev/null || true)"
   if [[ -n "${GOROOT:-}" ]]; then
     export GOROOT
-    export PATH="$GOROOT/bin:${GOPATH:-$HOME/go}/bin:$PATH"
+    export PATH="$GOROOT/bin:$PATH:${GOPATH:-$HOME/go}/bin"
   fi
 fi
 export GOTOOLCHAIN="${GOTOOLCHAIN:-local}"

@@ -37,8 +37,10 @@ import sys
 
 app, channel, source = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
 info = plistlib.loads((app / 'Info.plist').read_bytes())
+for bundle in (app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex'):
+    if plistlib.loads((bundle / 'Info.plist').read_bytes()).get('AegisReleaseProfile') != channel:
+        sys.exit('Private archive release profile mismatch: ' + bundle.name)
 if (info.get('AegisAccessReleaseChannel') != channel or
-        info.get('AegisReleaseProfile', channel) != channel or
         (app / 'AegisPrivateTestNode.vless').read_bytes() != source.read_bytes().strip()):
     sys.exit('Private archive channel or packaged test node differs from requested input.')
 VERIFY

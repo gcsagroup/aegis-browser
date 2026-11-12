@@ -31,18 +31,6 @@ if command -v xcodegen >/dev/null 2>&1; then
   xcodegen generate --spec apps/ios/project.yml
 fi
 
-python3 - "$PROFILE" <<'PY'
-import plistlib, sys
-profile = sys.argv[1]
-for relative in ("apps/ios/AegisApp/Info.plist", "apps/ios/SafariWebExtension/Info.plist", "apps/ios/ShareExtension/Info.plist"):
-    path = relative
-    with open(path, "rb") as handle:
-        info = plistlib.load(handle)
-    info["AegisReleaseProfile"] = profile
-    with open(path, "wb") as handle:
-        plistlib.dump(info, handle)
-PY
-
 # Access channel must match the internal profile. Release defaults would cap Alpha at 16.
 ACCESS_CHANNEL="$PROFILE"
 if [[ "$ACCESS_CHANNEL" == "alpha" || "$ACCESS_CHANNEL" == "dev" ]]; then

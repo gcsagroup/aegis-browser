@@ -28,12 +28,12 @@ class EmbeddedCoreInputsTests(unittest.TestCase):
             binary.parent.mkdir(parents=True)
             binary.write_bytes((name + " actual binary bytes").encode())
 
-    def record(self):
+    def record(self, **kwargs):
         def tool_output(args, **_kwargs):
             return "\tmod\tgolang.org/x/mobile\tv-fixture\n" if args[:3] == ["go", "version", "-m"] else "fixture toolchain/source\n"
         with patch.object(core.shutil, "which", return_value="/fixture/gomobile"), \
                 patch.object(core.subprocess, "check_output", side_effect=tool_output):
-            return core.record(self.root, self.lock, self.products, "ci-rebuild")
+            return core.record(self.root, self.lock, self.products, "ci-rebuild", **kwargs)
 
     def test_hosted_rebuild_keeps_source_lock_and_binds_the_actual_slices(self):
         self.record()
@@ -41,6 +41,19 @@ class EmbeddedCoreInputsTests(unittest.TestCase):
         self.assertEqual(self.original, self.lock.read_bytes())
         self.assertEqual(verified["slices"], core.slice_digests(self.products / "AegisEmbeddedCore.xcframework"))
         self.assertNotEqual(verified["slices"]["iosArm64Sha256"], "0" * 64)
+
+    def test_packaging_work_uses_its_own_xcode_inputs_and_verifies_staged_sources(self):
+        from shutil import copytree
+        work = self.root / "clean work"
+        copytree(self.root / "apps", work / "apps")
+        staged_lock = work / self.lock.relative_to(self.root)
+        self.record(xcode_root=work, xcode_lock=staged_lock)
+        core.verify(work, staged_lock, self.products)
+        with self.assertRaisesRegex(ValueError, "Xcode input list"):
+            core.verify(self.root, self.lock, self.products)
+        (work / "apps/ios/EmbeddedCore/bridge/bridge.go").write_text("changed")
+        with self.assertRaisesRegex(ValueError, "manifest"):
+            core.verify(work, staged_lock, self.products)
 
     def test_strict_build_does_not_accept_a_new_binary_digest(self):
         with self.assertRaisesRegex(ValueError, "frozen digests"):

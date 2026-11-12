@@ -318,22 +318,9 @@ module AegisRelease
       return package_ios_cloud(archive_args) if request.signing_mode == 'cloud'
       profiles = ios_profiles
       work = File.join(request.directory, 'work')
-      # Copy only committed inputs; ignored local files must not enter the archive.
-      tracked = AegisRelease.command('git', 'ls-files', '-z', 'apps/ios',
-                                     'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared',
-                                     'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json', cwd: request.root).split("\0")
-      tracked.each do |relative|
-        original = File.join(request.root, relative)
-        AegisRelease.real_path!(original)
-        AegisRelease.require!(File.file?(original), 'Missing tracked iOS input')
-        target = File.join(work, relative)
-        FileUtils.mkdir_p(File.dirname(target))
-        FileUtils.cp(original, target)
-      end
       firebase_script = File.join(work, 'apps/ios/scripts/firebase_config.py')
-      firebase_root = File.join(work, 'apps/ios/Firebase')
-      firebase_args = ['--root', firebase_root, '--channel', request.profile]
-      run('python3', firebase_script, 'stage', *firebase_args)
+      firebase_args = ['--root', File.join(work, 'apps/ios/Firebase'), '--channel', request.profile]
+      stage_ios_package(work, firebase_script, firebase_args)
       project = File.join(work, 'apps/ios/Aegis.xcodeproj')
       team = required('AEGIS_APPLE_TEAM_ID')
       @fastlane.update_code_signing_settings(path: project, use_automatic_signing: false,
@@ -341,9 +328,6 @@ module AegisRelease
       IOS_TARGETS.each do |target, app_id|
         @fastlane.update_code_signing_settings(path: project, use_automatic_signing: false, team_id: team,
                                               targets: [target], build_configurations: ['Release'], profile_name: profiles.fetch(app_id))
-      end
-      %w[AegisApp SafariWebExtension ShareExtension].each do |target|
-        run('/usr/libexec/PlistBuddy', '-c', "Add :AegisReleaseProfile string #{request.profile}", File.join(work, 'apps/ios', target, 'Info.plist'))
       end
       name = "Aegis-#{request.profile}-#{request.version}-#{request.build}-ios.ipa"
       admit_source!
@@ -366,6 +350,23 @@ module AegisRelease
       [paths, { 'signing' => 'app-store-export', 'signingMode' => 'manual', 'appleTeamId' => team, 'certificateSha1' => certificate.upcase,
                 'provisioningProfiles' => profiles, 'testflight' => 'not_uploaded', 'deviceAcceptance' => 'not_verified',
                 'testFlightInternalTestingOnly' => request.profile == 'alpha' }]
+    end
+
+    def stage_ios_package(work, firebase_script, firebase_args)
+      # Copy only committed inputs; ignored local files must not enter the archive.
+      tracked = AegisRelease.command('git', 'ls-files', '-z', 'apps/ios', 'scripts/release/ios_embedded_core.py',
+                                     'apps/browser/overlay/chrome/browser/resources/aegis/enhancements_shared',
+                                     'packages/core/src/agent/contracts/v1/agent-contract-v1.vectors.json', cwd: request.root).split("\0")
+      tracked.each do |relative|
+        original = File.join(request.root, relative)
+        AegisRelease.real_path!(original)
+        AegisRelease.require!(File.file?(original), 'Missing tracked iOS input')
+        target = File.join(work, relative)
+        FileUtils.mkdir_p(File.dirname(target))
+        FileUtils.cp(original, target)
+      end
+      run('python3', firebase_script, 'stage', *firebase_args)
+      run('bash', File.join(request.root, 'scripts/release/prepare-ios-package-core.sh'), work)
     end
 
     def cloud_archive_arguments

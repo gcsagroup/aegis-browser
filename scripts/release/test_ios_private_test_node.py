@@ -56,7 +56,7 @@ from pathlib import Path
 args = sys.argv[1:]
 assert 'AEGIS_ACCESS_TEST_NODE_URI' not in os.environ
 assert all('vless://' not in arg for arg in args)
-assert 'AEGIS_ACCESS_RELEASE_CHANNEL=beta' in args
+channel = next(arg.split('=', 1)[1] for arg in args if arg.startswith('AEGIS_ACCESS_RELEASE_CHANNEL='))
 path = Path(next(arg.split('=', 1)[1] for arg in args if arg.startswith('AEGIS_PRIVATE_TEST_NODE_FILE=')))
 assert path.read_bytes() == Path(os.environ['EXPECTED_INPUT']).read_bytes()
 assert path.stat().st_mode & 0o077 == 0
@@ -66,18 +66,32 @@ derived.mkdir()
 app = Path(args[args.index('-archivePath') + 1]) / 'Products/Applications/Aegis.app'
 app.mkdir(parents=True)
 (app / 'AegisPrivateTestNode.vless').write_bytes(path.read_bytes().strip())
-(app / 'Info.plist').write_bytes(plistlib.dumps({'AegisAccessReleaseChannel': os.environ['STAMP']}))
+for name in ('app', 'SafariWebExtension.appex', 'ShareExtension.appex'):
+    bundle = app if name == 'app' else app / 'PlugIns' / name
+    bundle.mkdir(parents=True, exist_ok=True)
+    info = {'AegisAccessReleaseChannel': os.environ['STAMP'], 'AegisReleaseProfile': channel}
+    if os.environ.get('BAD_TARGET') == name:
+        if os.environ['BAD_PROFILE']:
+            info['AegisReleaseProfile'] = os.environ['BAD_PROFILE']
+        else:
+            del info['AegisReleaseProfile']
+    (bundle / 'Info.plist').write_bytes(plistlib.dumps(info))
 Path(os.environ['MARKER']).write_text(str(path))
 sys.exit(int(os.environ['SIMULATED_EXIT']))
 """)
         xcodebuild.chmod(0o700)
         marker = root / 'called'
         wrapper = SCRIPT.parents[3] / 'scripts/release/ios-private-test-node-archive.sh'
-        for channel, stamp, upstream_exit, expected in [
+        cases = [
                 ('release', 'release', 0, 2), ('beta', 'beta', 0, 0),
-                ('beta', 'release', 0, 1), ('beta', 'beta', 7, 7)]:
+                ('beta', 'release', 0, 1), ('beta', 'beta', 7, 7), ('alpha', 'alpha', 0, 0)]
+        cases = [(*case, '', '') for case in cases]
+        cases.extend(('beta', 'beta', 0, 1, target, value)
+                     for target in ('app', 'SafariWebExtension.appex', 'ShareExtension.appex')
+                     for value in ('', 'alpha'))
+        for channel, stamp, upstream_exit, expected, target, value in cases:
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], RUNNER_TEMP=str(root),
-                       EXPECTED_INPUT=str(self.source), MARKER=str(marker), STAMP=stamp, SIMULATED_EXIT=str(upstream_exit),
+                       EXPECTED_INPUT=str(self.source), MARKER=str(marker), STAMP=stamp, BAD_TARGET=target, BAD_PROFILE=value, SIMULATED_EXIT=str(upstream_exit),
                        AEGIS_ACCESS_TEST_NODE_URI=URI.decode())
             result = subprocess.run(['bash', str(wrapper), channel], env=env, capture_output=True)
             self.assertEqual(result.returncode, expected, result.stderr)

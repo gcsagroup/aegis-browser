@@ -33,10 +33,12 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"
   configs:
     Debug:
+      AEGIS_ACCESS_RELEASE_CHANNEL: dev
       DEBUG_INFORMATION_FORMAT: dwarf
       ENABLE_TESTABILITY: YES
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
     Release:
+      AEGIS_ACCESS_RELEASE_CHANNEL: release
       DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
       SWIFT_COMPILATION_MODE: wholemodule
 
@@ -112,11 +114,9 @@ targets:
       configs:
         Debug:
           AEGIS_FIREBASE_CHANNEL: dev
-          AEGIS_ACCESS_RELEASE_CHANNEL: dev
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
         Release:
           AEGIS_FIREBASE_CHANNEL: disabled
-          AEGIS_ACCESS_RELEASE_CHANNEL: release
       base:
         AEGIS_PRIVATE_TEST_NODE_FILE: /dev/null
         OTHER_LDFLAGS: "$(inherited) -ObjC -lresolv"
