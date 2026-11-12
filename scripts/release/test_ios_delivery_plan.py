@@ -278,6 +278,10 @@ class SimpleFullFormTests(unittest.TestCase):
         for event, ref in [('pull_request', 'refs/heads/main'), ('workflow_dispatch', 'refs/heads/foreign')]:
             with self.assertRaises(ValueError):
                 planner.normalize(event, ref, dict(version='1.0.0', build='35'))
+        maintenance = planner.normalize('workflow_dispatch', 'refs/heads/patch/ios/1.0.2',
+                                        dict(version='1.0.2', build='18', product='Release', operation='Package and upload'))
+        self.assertEqual(maintenance['operation'], 'package-upload')
+        self.assertEqual(maintenance['profile'], 'release')
         for profile in ['alpha', 'beta', 'release']:
             value = planner.normalize('push', f'refs/tags/candidate/ios/1.0.0-{profile}.36', {})
             self.assertEqual((value['operation'], value['profile'], value['destination']), ('package', profile, 'github-draft'))
