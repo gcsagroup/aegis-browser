@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Prepare the core for a fresh cloud or manual packaging work directory.
+# Prepare verified Xcode inputs for a staged package or simulator build.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd -P)"
 work="$(cd "$1" && pwd -P)"
-products="$work/.artifacts/ios-embedded-core"
+products="${2:-$work/.artifacts/ios-embedded-core}"
 lock="$root/apps/ios/EmbeddedCore/embedded-core-lock.json"
-export GOBIN="$work/.artifacts/go-bin"
+export GOBIN="$(dirname "$products")/go-bin"
 mkdir -p "$GOBIN"
 go_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["toolchain"]["go"])' "$lock")"
 mobile="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["toolchain"]["gomobile"])' "$lock")"

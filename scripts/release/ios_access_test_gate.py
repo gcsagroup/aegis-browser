@@ -75,14 +75,18 @@ def main() -> int:
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--status", type=int, required=True)
     parser.add_argument("--root", type=Path, action="append", required=True)
+    parser.add_argument("--class", dest="classes", action="append")
     args = parser.parse_args()
     log_text = args.log.read_text(encoding="utf-8", errors="replace")
-    errors = evaluate(expected_cases(args.root), observed_cases(log_text), args.status)
+    expected = expected_cases(args.root)
+    if args.classes:
+        expected = {case for case in expected if case[0] in args.classes}
+    errors = evaluate(expected, observed_cases(log_text), args.status)
     if errors:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
-    print(f"access test gate passed ({len(observed_cases(log_text))} cases)")
+    print(f"access test gate passed ({len(expected)} cases)")
     return 0
 
 

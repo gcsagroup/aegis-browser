@@ -144,13 +144,13 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
         }
     }
 
-    func testLiveSuiteSkipsWithoutLocalConfig() throws {
-        if AccessLocalV2RayConfigLoader.configuredPath() == nil {
-            throw XCTSkip(
-                "Set \(AccessLocalV2RayConfig.environmentVariable) to a local vless:// file for live import"
-            )
-        }
-        let imported = try AccessLocalV2RayConfigLoader.loadFromEnvironment()
+    func testLoadsConfigFromProvidedEnvironmentPath() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(sampleShareURI.utf8).write(to: url)
+        let imported = try AccessLocalV2RayConfigLoader.loadFromEnvironment(
+            environment: [AccessLocalV2RayConfig.environmentVariable: url.path]
+        )
         let config = try AccessRealityVisionOutboundConfigBuilder.build(parameters: imported.parameters)
         XCTAssertEqual(config.profile, .realityVision)
         XCTAssertFalse(imported.parameters.address.isEmpty)

@@ -103,7 +103,10 @@ if [[ -n "${AEGIS_IOS_ACCESS_TEST_CLASSES:-}" ]]; then
     CLASSES+=("$class_name")
   done
 else
-  CLASSES=("${DISCOVERED[@]}")
+  # Real-node tests are mandatory in the dedicated K gate.
+  for class_name in "${DISCOVERED[@]}"; do
+    [[ "$class_name" == AccessEmbeddedCoreLiveTests ]] || CLASSES+=("$class_name")
+  done
 fi
 
 if [[ ${#CLASSES[@]} -eq 0 ]]; then
@@ -112,9 +115,19 @@ if [[ ${#CLASSES[@]} -eq 0 ]]; then
 fi
 
 ONLY=()
+GATE_CLASSES=()
 for class_name in "${CLASSES[@]}"; do
+  GATE_CLASSES+=(--class "$class_name")
   ONLY+=(-only-testing:"AegisTests/${class_name}")
 done
+
+PRODUCTS="${AEGIS_EMBEDDED_CORE_PRODUCTS:-$RUN_ROOT/EmbeddedCore}"
+if [[ -n "${AEGIS_EMBEDDED_CORE_PRODUCTS:-}" ]]; then
+  python3 -B scripts/release/ios_embedded_core.py verify --root "$ROOT" \
+    --source-lock apps/ios/EmbeddedCore/embedded-core-lock.json --products "$PRODUCTS"
+else
+  bash scripts/release/prepare-ios-package-core.sh "$ROOT" "$PRODUCTS"
+fi
 
 printf 'Using destination %s\n' "$DESTINATION"
 printf 'Run directory %s\n' "$RUN_ROOT"
@@ -123,6 +136,8 @@ xcodebuild test \
   -project apps/ios/Aegis.xcodeproj \
   -scheme Aegis \
   -destination "$DESTINATION" \
+  -parallel-testing-enabled NO \
+  "AEGIS_EMBEDDED_CORE_PRODUCTS=$PRODUCTS" \
   "${ONLY[@]}" \
   -resultBundlePath "$RESULT" \
   -derivedDataPath "$RUN_ROOT/DerivedData" \
@@ -130,34 +145,8 @@ xcodebuild test \
 STATUS=${PIPESTATUS[0]}
 set -e
 
-GATE_ROOTS=()
-if [[ -n "${AEGIS_IOS_ACCESS_TEST_CLASSES:-}" ]]; then
-  while IFS= read -r test_file; do
-    [[ -n "$test_file" ]] && GATE_ROOTS+=(--root "$test_file")
-  done < <(python3 - "${CLASSES[@]}" <<'PY'
-import sys
-from pathlib import Path
-wanted = set(sys.argv[1:])
-roots = [Path("apps/ios/Tests/AccessKitTests"), Path("apps/ios/Tests/AegisTests")]
-class_re = __import__("re").compile(r"^(?:final )?class ([A-Za-z0-9_]+)\b")
-for root in roots:
-    for path in sorted(root.rglob("*.swift")):
-        for line in path.read_text(encoding="utf-8").splitlines():
-            match = class_re.match(line)
-            if match and match.group(1) in wanted:
-                print(path)
-                break
-PY
-)
-else
-  GATE_ROOTS=(
-    --root apps/ios/Tests/AccessKitTests
-    --root apps/ios/Tests/AegisTests/AccessSiteProxyToggleModelTests.swift
-    --root apps/ios/Tests/AegisTests/AccessWebKitRoutingCapabilityTests.swift
-  )
-fi
-
 python3 scripts/release/ios_access_test_gate.py \
   --log "$LOG" \
   --status "$STATUS" \
-  "${GATE_ROOTS[@]}"
+  --root apps/ios/Tests/AccessKitTests --root apps/ios/Tests/AegisTests \
+  "${GATE_CLASSES[@]}"

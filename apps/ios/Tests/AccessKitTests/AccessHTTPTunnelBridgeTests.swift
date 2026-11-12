@@ -120,6 +120,32 @@ final class AccessHTTPTunnelBridgeTests: XCTestCase {
         XCTAssertEqual(listener.establishedConnectCount, 1)
     }
 
+    func testUploadWaitsForWriteBeforeReadingAgainAndDrainsFinalBytes() async throws {
+        let reads = OSAllocatedUnfairLock(initialState: 0)
+        let written = OSAllocatedUnfairLock(initialState: Data())
+        let writing = expectation(description: "first upstream write suspended")
+        let (resume, gate) = AsyncStream<Void>.makeStream()
+        let upload = Task {
+            try await AccessHTTPTunnelBridge.forwardUpload(receive: {
+                let count = reads.withLock { $0 += 1; return $0 }
+                return (Data([UInt8(count)]), count == 2)
+            }, write: { chunk in
+                if chunk == Data([1]) {
+                    writing.fulfill()
+                    for await _ in resume { break }
+                }
+                written.withLock { $0.append(chunk) }
+            })
+        }
+        await fulfillment(of: [writing], timeout: 3)
+        XCTAssertEqual(reads.withLock { $0 }, 1)
+        gate.yield(())
+        gate.finish()
+        try await upload.value
+        XCTAssertEqual(reads.withLock { $0 }, 2)
+        XCTAssertEqual(written.withLock { $0 }, Data([1, 2]))
+    }
+
     func testSlowWriteStillDeliversTheChunk() async throws {
         let port: UInt16 = 18_223
         let opener = RecordingOpener()

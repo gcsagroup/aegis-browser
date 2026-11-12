@@ -19,10 +19,6 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
     private var task: Task<Void, Never>?
     private var remote: (any AccessRealityPathStream)?
     private var stopped = false
-    private var inboundChunks: [Data] = []
-    private var remoteStream: (any AccessRealityPathStream)?
-    private var drainTask: Task<Void, Never>?
-
     public init(
         client: NWConnection,
         queue: DispatchQueue,
@@ -35,7 +31,9 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
 
     /// Caller is the connection queue, which is where the 200 completion runs.
     public func start(host: String, port: UInt16, prelude: Data) {
-        receiveNow()
+        lock.lock()
+        defer { lock.unlock() }
+        guard !stopped, task == nil else { return }
         task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -47,8 +45,14 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
                 if !prelude.isEmpty {
                     try await remote.write(prelude)
                 }
-                await self.attachRemote(remote)
-                await self.pumpRemote(remote)
+                async let download: Void = self.pumpRemote(remote)
+                do {
+                    try await Self.forwardUpload(receive: self.receiveClient, write: remote.write)
+                } catch {
+                    // A failed read or write terminates both directions, like EOF.
+                }
+                self.stop()
+                await download
             } catch {
                 self.stop()
             }
@@ -74,90 +78,48 @@ public final class AccessHTTPTunnelBridge: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         stopped = true
-        return (remote, task)
+        let active = (remote, task)
+        remote = nil
+        task = nil
+        return active
     }
 
-    private func receiveNow() {
-        client.receive(minimumIncompleteLength: 1, maximumLength: Self.chunkSize) { [weak self] data, _, isComplete, error in
-            guard let self else { return }
-            self.queue.async {
-                if let data, !data.isEmpty {
-                    self.inboundChunks.append(data)
-                    self.kickDrain()
-                }
-                if error != nil || isComplete || self.isStopped {
-                    self.remoteStream?.close()
-                    return
-                }
-                self.receiveNow()
-            }
-        }
-    }
-
-    private func attachRemote(_ remote: any AccessRealityPathStream) async {
-        await withCheckedContinuation { continuation in
-            self.queue.async {
-                self.remoteStream = remote
-                self.kickDrain()
-                continuation.resume()
-            }
-        }
-    }
-
-    private func kickDrain() {
-        guard remoteStream != nil, drainTask == nil else { return }
-        drainTask = Task { [weak self] in
-            await self?.drainLoop()
-        }
-    }
-
-    private struct PendingWrite: @unchecked Sendable {
-        let remote: any AccessRealityPathStream
-        let data: Data
-    }
-
-    private func drainLoop() async {
+    /// Wait for the current write before requesting another client chunk.
+    static func forwardUpload(
+        receive: () async throws -> (Data?, Bool),
+        write: (Data) async throws -> Void
+    ) async throws {
         while !Task.isCancelled {
-            let pending: PendingWrite? = await withCheckedContinuation { continuation in
-                self.queue.async {
-                    guard let remote = self.remoteStream, !self.inboundChunks.isEmpty else {
-                        self.drainTask = nil
-                        continuation.resume(returning: nil)
-                        return
-                    }
-                    let next = PendingWrite(remote: remote, data: self.inboundChunks.removeFirst())
-                    continuation.resume(returning: next)
-                }
+            let (data, complete) = try await receive()
+            if let data, !data.isEmpty {
+                try await write(data)
             }
-            guard let pending else { return }
-            do {
-                try await pending.remote.write(pending.data)
-            } catch {
-                pending.remote.close()
-                client.cancel()
-                return
-            }
+            if complete { return }
         }
     }
 
-    private var isStopped: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return stopped
+    private func receiveClient() async throws -> (Data?, Bool) {
+        try await withCheckedThrowingContinuation { continuation in
+            client.receive(minimumIncompleteLength: 1, maximumLength: Self.chunkSize) { data, _, complete, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: (data, complete))
+                }
+            }
+        }
     }
 
     private func pumpRemote(_ remote: any AccessRealityPathStream) async {
         while !Task.isCancelled {
             do {
                 guard let chunk = try await remote.read(maxBytes: Self.chunkSize) else {
-                    remote.close()
-                    client.cancel()
+                    stop()
                     return
                 }
                 try await sendClient(chunk)
             } catch {
-                remote.close()
-                client.cancel()
+                stop()
                 return
             }
         }

@@ -1903,12 +1903,12 @@ public final class BrowserSession: ObservableObject {
     private func makeTab(profile: BrowserProfile, id: UUID = UUID()) -> BrowserTab {
         let runtime = profile.isPrivate ? privateRuntime : standardRuntime
         let initialStore: WKWebsiteDataStore = profile.isPrivate ? .nonPersistent() : .default()
-        let factory: (WKWebsiteDataStore) -> WKWebViewConfiguration = { store in
+        let factory: (WKWebsiteDataStore) -> WKWebViewConfiguration = { [preferences] store in
             let configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = store
             configuration.userContentController = WKUserContentController()
-            configuration.preferences.javaScriptCanOpenWindowsAutomatically = self.preferences.values.allowPopups
-            configuration.mediaTypesRequiringUserActionForPlayback = self.preferences.values.requireMediaGesture ? .all : []
+            configuration.preferences.javaScriptCanOpenWindowsAutomatically = preferences.values.allowPopups
+            configuration.mediaTypesRequiringUserActionForPlayback = preferences.values.requireMediaGesture ? .all : []
             configuration.setURLSchemeHandler(FixtureSchemeHandler(), forURLScheme: "aegis")
             runtime.apply(to: configuration)
             return configuration
