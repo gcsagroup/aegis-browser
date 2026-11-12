@@ -78,6 +78,7 @@ final class AccessEmbeddedProxyEntrySession {
     private var listener: AccessHTTPInboundListener?
     private var identity: String?
     private var startedCore = false
+    private var pendingStop: Task<Void, Never>?
 
     init(core: any AccessEmbeddedCoreControlling, configData: Data) {
         self.core = core
@@ -86,6 +87,13 @@ final class AccessEmbeddedProxyEntrySession {
 
     func provision(generation: UInt64, deadline: Duration) async throws -> AccessProxyEntryPublisher.Provision {
         _ = deadline
+        // Synchronous publisher shutdown retains its teardown barrier. A new
+        // generation must not observe the old core as running and reuse it.
+        if let pendingStop {
+            await pendingStop.value
+            self.pendingStop = nil
+        }
+        try Task.checkCancellation()
         if let listener, let identity, listener.isListening, core.isRunning {
             return AccessProxyEntryPublisher.Provision(
                 endpoint: AccessManagedProxyEndpoint(
@@ -179,7 +187,7 @@ final class AccessEmbeddedProxyEntrySession {
         if startedCore {
             startedCore = false
             // Publisher shutdown is synchronous; stop the core without blocking callers.
-            Task { await core.stop() }
+            pendingStop = Task { await core.stop() }
         }
     }
 

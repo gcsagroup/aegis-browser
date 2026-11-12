@@ -1,7 +1,6 @@
 import BrowserKit
 import QuickLook
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct DownloadsView: View {
     @EnvironmentObject private var downloads: DownloadManager
@@ -14,9 +13,7 @@ struct DownloadsView: View {
     @State private var importingMetalink = false
     @State private var importedPlan: DownloadPlan?
     @State private var error: AegisLocalizedMessage?
-    @State private var exportDocument: ExportedFileDocument?
-    @State private var exportFilename = "download"
-    @State private var exportContentType: UTType = .data
+    @State private var exportFile: ExportedFile?
     @State private var savedMessage: AegisLocalizedMessage?
     @State private var query = ""
     @State private var filter: DownloadFilter = .all
@@ -157,17 +154,11 @@ struct DownloadsView: View {
         .onAppear { address = initialURL?.absoluteString ?? ""; downloads.refreshStorageUsage() }
         .quickLookPreview($previewURL)
         .sheet(item: $markdownDocument) { document in MarkdownReaderView(initial: document) }
-        .fileExporter(
-            isPresented: Binding(
-                get: { exportDocument != nil },
-                set: { if !$0 { exportDocument = nil } }
-            ),
-            document: exportDocument,
-            contentType: exportContentType,
-            defaultFilename: exportFilename
-        ) { result in
-            exportDocument = nil
-            if case .success = result { savedMessage = .resource("文件已保存。") }
+        .sheet(item: $exportFile) { file in
+            FileExportPicker(url: file.url) { saved in
+                exportFile = nil
+                savedMessage = .resource(saved ? "文件已保存。" : "已取消")
+            }
         }
     }
 
@@ -330,16 +321,9 @@ struct DownloadsView: View {
             previewURL = url
         } else {
             do {
-                let ext = url.pathExtension
-                exportFilename = ext.isEmpty ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
-                if ext.isEmpty {
-                    exportContentType = .data
-                } else {
-                    exportContentType = UTType(filenameExtension: ext)
-                        ?? UTType(tag: ext, tagClass: .filenameExtension, conformingTo: .data)
-                        ?? .data
-                }
-                exportDocument = try ExportedFileDocument(url: url)
+                exportFile = try ExportedFile(url: url)
+                savedMessage = nil
+                error = nil
             } catch {
                 self.error = .error(error)
             }

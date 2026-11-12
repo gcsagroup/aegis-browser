@@ -1542,7 +1542,10 @@ public final class BrowserSession: ObservableObject {
     private static var sessions: [WeakSession] = []
 
     public static func openTabs() -> [BrowserTab] {
-        sessions.compactMap(\.value).flatMap { $0.standardTabs + $0.privateTabs }
+        // SwiftUI may retain a discarded window's session and ordinary snapshot.
+        // Those tabs must no longer participate in live recovery or registry work.
+        sessions.compactMap(\.value).filter { !$0.isWindowClosed }
+            .flatMap { $0.standardTabs + $0.privateTabs }
     }
     @Published public private(set) var standardTabs: [BrowserTab] = []
     @Published public private(set) var privateTabs: [BrowserTab] = []
@@ -1570,6 +1573,7 @@ public final class BrowserSession: ObservableObject {
     private var evictionTask: Task<Void, Never>?
     public var residentTabCount: Int { (standardTabs + privateTabs).filter(\.isResident).count }
     public let windowID: UUID
+    public private(set) var isWindowClosed = false
     private let windowStore: BrowserWindowStore?
 
     public let standardProfileID = UUID()
@@ -1714,6 +1718,20 @@ public final class BrowserSession: ObservableObject {
         tab.groupID = groupID
         if !displayedTabs.contains(where: { $0.id == activeTabID }) { activeTabID = displayedTabs.first?.id }
         objectWillChange.send(); refreshBookmarkState(); persistSession()
+    }
+
+    /// Ends this window's live bindings while retaining its ordinary snapshot.
+    /// Call only for explicit closure or release of the root window owner.
+    public func closeWindow() {
+        guard !isWindowClosed else { return }
+        isWindowClosed = true
+        persistSession()
+        standardTabs.forEach {
+            hostCoordinator?.tabClosed($0)
+            $0.stop()
+        }
+        discardPrivateSession()
+        windowStore?.unregister(windowID)
     }
 
     public func discardPrivateSession() {

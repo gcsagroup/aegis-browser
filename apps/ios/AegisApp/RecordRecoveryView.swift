@@ -1,6 +1,5 @@
 import BrowserKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct RecordRecoveryView: View {
     let fileURL: URL?
@@ -28,7 +27,8 @@ struct RecordRecoveryView: View {
                     guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else {
                         message = .error(RecordRecoveryError.noFile); return
                     }
-                    exportFile = ExportedFile(url: fileURL)
+                    do { exportFile = try ExportedFile(url: fileURL); message = nil }
+                    catch { message = .error(error) }
                 }.accessibilityIdentifier("export-original-records")
                 Button("重新读取记录") {
                     perform { try await reload() }
@@ -71,7 +71,7 @@ struct RecordRecoveryView: View {
         .sheet(item: $exportFile) { file in
             FileExportPicker(url: file.url) { saved in
                 exportFile = nil
-                if saved { message = .resource("原始记录已导出。") }
+                message = .resource(saved ? "原始记录已导出。" : "已取消")
             }
         }
     }
@@ -89,22 +89,12 @@ struct RecordRecoveryView: View {
 struct ExportedFile: Identifiable {
     let id = UUID()
     let url: URL
-}
-
-struct ExportedFileDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.data] }
-    let data: Data
 
     init(url: URL) throws {
-        data = try Data(contentsOf: url)
-    }
-
-    init(configuration: ReadConfiguration) throws {
-        data = configuration.file.regularFileContents ?? Data()
-    }
-
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
+        guard url.isFileURL, FileManager.default.isReadableFile(atPath: url.path) else {
+            throw RecordRecoveryError.noFile
+        }
+        self.url = url
     }
 }
 
@@ -113,8 +103,18 @@ struct FileExportPicker: UIViewControllerRepresentable {
     let completion: (Bool) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(completion: completion) }
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
-        picker.delegate = context.coordinator
+        makePicker(coordinator: context.coordinator)
+    }
+    // The URL and original filename/extension reach UIKit unchanged. No Data,
+    // FileWrapper or staging copy is needed, including for multi-GB downloads.
+    func makePicker(
+        coordinator: Coordinator,
+        create: ([URL], Bool) -> UIDocumentPickerViewController = {
+            UIDocumentPickerViewController(forExporting: $0, asCopy: $1)
+        }
+    ) -> UIDocumentPickerViewController {
+        let picker = create([url], true)
+        picker.delegate = coordinator
         return picker
     }
     func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
