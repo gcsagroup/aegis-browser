@@ -9,6 +9,8 @@ export GOBIN="$work/.artifacts/go-bin"
 mkdir -p "$GOBIN"
 go_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["toolchain"]["go"])' "$lock")"
 mobile="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["toolchain"]["gomobile"])' "$lock")"
+# Let the selected go binary locate its matching compiler and standard library.
+unset GOROOT
 export GOTOOLCHAIN="go$go_version"
 export PATH="$GOBIN:$PATH"
 go install "golang.org/x/mobile/cmd/gomobile@${mobile##*@}" "golang.org/x/mobile/cmd/gobind@${mobile##*@}"
