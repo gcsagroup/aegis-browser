@@ -6,6 +6,13 @@
 
 軟體套件、歷史 iOS 開發候選及原始碼預覽各自使用獨立於 App Store 的版本號。
 
+## iOS / iPadOS 1.0.2 · 維護更新
+
+- 基於已發布的 1.0.1（組建 20）維護線 `releases/ios/1.0` 準備本版，不納入此後 main 上的其他功能。
+- 語言選單改為地區選項。跟隨系統仍排在最前，其後為簡體中文、繁體中文（台灣、香港）、英語（美國、英國），然後是其餘語言。已儲存的語言選擇會保留，並繼續使用系統的日期與數字格式。
+- 本版送審資料中的技術支援與隱私權政策網址為 https://www.gcsa.com 。
+- 維護套件使用版本 1.0.2、組建 18。
+
 ## iOS / iPadOS 1.0.1 · TestFlight
 
 - 已基於上游 main（`93ead15`）完成 Beta 組建 13 打包，並依交付回執核驗簽名 IPA 與 dSYM。[TestFlight 上傳紀錄](https://github.com/gcsagroup/aegis-browser/actions/runs/41715274104)。[打包紀錄](https://github.com/gcsagroup/aegis-browser/actions/runs/41714005704)

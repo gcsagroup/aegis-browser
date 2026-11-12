@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 The workspace package, historical iOS development candidates and source previews use version numbers independent of the App Store version.
 
+## iOS / iPadOS 1.0.2 · Maintenance update
+
+- Prepared from the released 1.0.1 (build 20) line `releases/ios/1.0`. Later work on main is not included.
+- The language menu now uses regional options. Follow System stays first, followed by Simplified Chinese, Traditional Chinese (Taiwan and Hong Kong), English (United States and United Kingdom), then the remaining languages. A saved language choice is kept, and system date and number formats stay in effect.
+- The support and privacy-policy URLs in this submission are https://www.gcsa.com .
+- The maintenance package is version 1.0.2, build 18.
+
 ## iOS / iPadOS 1.0.1 · TestFlight
 
 - Packaged Beta build 13 from upstream main (`93ead15`) and verified the signed IPA and dSYM against the delivery receipt. [TestFlight upload run](https://github.com/gcsagroup/aegis-browser/actions/runs/41715274104). [Packaging run](https://github.com/gcsagroup/aegis-browser/actions/runs/41714005704)
