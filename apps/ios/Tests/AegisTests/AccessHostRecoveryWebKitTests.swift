@@ -272,6 +272,133 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertEqual(direct.websiteDataStore.proxyConfigurations.count, 0)
     }
 
+    func testRetainedClosedPageStopsBeforeHostStoreRetirement() async throws {
+        let html = """
+        <title>Terminal window fixture</title><script>
+        window.pulses = 0;
+        setInterval(() => { window.pulses++; fetch('/pulse' + location.search, {cache:'no-store'}).catch(()=>{}); }, 40);
+        </script>
+        """
+        let origin = OriginReceipt(port: 18_257, body: html)
+        try await origin.start()
+        defer { origin.stop() }
+        let opener = AnsweringOpener(body: html)
+        let listener = try await makeListener(port: 18_256, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let coordinator = AccessHostStoreCoordinator(publisher: readyPublisher(port: 18_256))
+        let windows = BrowserWindowStore()
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil),
+                                     windowID: try windows.createWindow(), windowStore: windows)
+        let other = BrowserSession(dataStore: browser.dataStore)
+        browser.hostCoordinator = coordinator; other.hostCoordinator = coordinator
+        defer { browser.closeWindow(); other.closeWindow() }
+        let tab = try XCTUnwrap(browser.activeTab)
+        let sibling = try XCTUnwrap(other.activeTab)
+        let host = try AccessSiteHost("localhost"), otherHost = try AccessSiteHost("127.0.0.1")
+        for host in [host, otherHost] {
+            coordinator.registry.setEndpoint(.init(identity: "terminal-test", generation: 1,
+                loopbackHost: "127.0.0.1", port: 18_256, state: .ready), scopeID: "ordinary", host: host, isPrivate: false)
+            coordinator.setProxyEnabled(true, host: host, scopeID: "ordinary", isPrivate: false)
+        }
+        let url = URL(string: "http://localhost:\(origin.port)/page?closed-window")!
+        tab.load(url)
+        sibling.load(URL(string: "http://127.0.0.1:\(origin.port)/page?open-window")!)
+        let window = show(tab.webView), otherWindow = show(sibling.webView)
+        defer { window.isHidden = true; otherWindow.isHidden = true }
+        try await waitUntil(seconds: 15, {
+            attach(tab.webView, to: window); attach(sibling.webView, to: otherWindow)
+            return opener.transcript.components(separatedBy: "/pulse?closed-window").count > 3
+                && origin.transcript.components(separatedBy: "/pulse?open-window").count > 3
+        }, message: opener.transcript)
+        let retainedView = tab.webView // Model UIKit retaining its view after scene discard.
+        let retainedStore = tab.websiteDataStore
+        XCTAssertFalse(retainedStore.proxyConfigurations.isEmpty)
+        browser.persistSession()
+        let snapshot = try XCTUnwrap(windows.snapshot(browser.windowID))
+        browser.closeWindow()
+        XCTAssertTrue(tab.isDisposed)
+        XCTAssertFalse(tab.isResident)
+        // While the old view is externally held, it must commit the inert page
+        // before tabClosed allows the registry to clear its proxy configuration.
+        try await waitUntil(seconds: 10, {
+            coordinator.registry.sweep(now: Date().addingTimeInterval(1801))
+            return coordinator.registry.store(scopeID: "ordinary", host: host, isPrivate: false) == nil
+        }, message: "terminal document did not release its host binding")
+        XCTAssertTrue(retainedStore.proxyConfigurations.isEmpty)
+        let closedCount = opener.transcript.components(separatedBy: "/pulse?closed-window").count
+        let directCount = origin.transcript.components(separatedBy: "closed-window").count
+        let openCount = origin.transcript.components(separatedBy: "/pulse?open-window").count
+        // Retaining/accessing the tab must not recreate or reactivate a document.
+        tab.reload(); tab.load(url); tab.setActive(true)
+        XCTAssertNil(tab.webView.load(URLRequest(url: url)))
+        XCTAssertNil(retainedView.load(URLRequest(url: url)))
+        try await Task.sleep(for: .milliseconds(500))
+        XCTAssertEqual(opener.transcript.components(separatedBy: "/pulse?closed-window").count, closedCount)
+        XCTAssertEqual(origin.transcript.components(separatedBy: "closed-window").count, directCount)
+        XCTAssertGreaterThan(origin.transcript.components(separatedBy: "/pulse?open-window").count, openCount)
+        XCTAssertNotNil(coordinator.registry.store(scopeID: "ordinary", host: otherHost, isPrivate: false))
+        XCTAssertEqual(windows.snapshot(browser.windowID)?.tabs, snapshot.tabs)
+        XCTAssertEqual(windows.snapshot(browser.windowID)?.activeTabID, snapshot.activeTabID)
+        XCTAssertEqual(snapshot.tabs.first?.url, url)
+        XCTAssertFalse(tab.isResident)
+        withExtendedLifetime((browser, tab, retainedView)) {}
+    }
+
+    func testClosingPrivateWindowDoesNotReactivateSuspendedOrdinaryTab() async throws {
+        let opener = AnsweringOpener(body: "<title>Suspension fixture</title><p>safe</p>")
+        let listener = try await makeListener(port: 18_258, tunnels: opener)
+        try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
+        defer { try? listener.stop() }
+        let coordinator = AccessHostStoreCoordinator(publisher: readyPublisher(port: 18_258))
+        let windows = BrowserWindowStore()
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil),
+                                     windowID: try windows.createWindow(), windowStore: windows)
+        browser.hostCoordinator = coordinator
+        let host = try AccessSiteHost("localhost")
+        coordinator.registry.setEndpoint(.init(identity: "suspend-test", generation: 1,
+            loopbackHost: "127.0.0.1", port: 18_258, state: .ready), scopeID: "ordinary", host: host, isPrivate: false)
+        coordinator.setProxyEnabled(true, host: host, scopeID: "ordinary", isPrivate: false)
+        let ordinary = try XCTUnwrap(browser.activeTab)
+        ordinary.load(URL(string: "http://localhost:18259/page")!)
+        let window = show(ordinary.webView)
+        defer { window.isHidden = true; browser.closeWindow() }
+        try await waitUntil(seconds: 15, {
+            attach(ordinary.webView, to: window)
+            return ordinary.url?.path == "/page" && !ordinary.isLoading
+        }, message: opener.transcript)
+        browser.switchProfile(to: .privateMode)
+        let privateTab = try XCTUnwrap(browser.activeTab)
+        let suspended = await ordinary.suspendIfSafe()
+        XCTAssertTrue(suspended)
+        XCTAssertFalse(ordinary.isResident)
+        browser.persistSession()
+        let snapshot = try XCTUnwrap(windows.snapshot(browser.windowID))
+        let requestCount = opener.transcript.components(separatedBy: "GET /page").count
+        browser.closeWindow()
+        let closedEpoch = ordinary.navigationEpoch
+        XCTAssertTrue(ordinary.isDisposed)
+        XCTAssertTrue(privateTab.isDisposed)
+        XCTAssertFalse(ordinary.isResident)
+        coordinator.registry.sweep(now: Date().addingTimeInterval(1801))
+        XCTAssertNil(coordinator.registry.store(scopeID: "ordinary", host: host, isPrivate: false))
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(ordinary.navigationEpoch, closedEpoch)
+        XCTAssertEqual(opener.transcript.components(separatedBy: "GET /page").count, requestCount)
+        XCTAssertFalse(ordinary.isResident)
+        XCTAssertEqual(windows.snapshot(browser.windowID)?.tabs, snapshot.tabs)
+        XCTAssertFalse(BrowserSession.openTabs().contains { $0.id == ordinary.id })
+        // Nonterminal private discard must still return a live window to ordinary browsing.
+        let live = BrowserSession(dataStore: browser.dataStore)
+        let liveOrdinary = try XCTUnwrap(live.activeTab)
+        live.switchProfile(to: .privateMode)
+        live.discardPrivateSession()
+        XCTAssertEqual(live.profile, .standard)
+        XCTAssertTrue(live.activeTab === liveOrdinary)
+        XCTAssertFalse(liveOrdinary.isDisposed)
+        live.closeWindow()
+    }
+
     private func readyPublisher(port: UInt16) -> AccessProxyEntryPublisher {
         AccessProxyEntryPublisher { generation, _ in
             AccessProxyEntryPublisher.Provision(
@@ -299,6 +426,10 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
             lease: try AccessLease(generation: 1, expiresAt: Date(timeIntervalSince1970: 1_700_000_060))
         )
         return try AccessHTTPInboundListener(registration: registration, tunnels: tunnels)
+    }
+
+    private func attach(_ view: WKWebView, to window: UIWindow) {
+        if view.superview == nil { view.frame = window.bounds; window.addSubview(view) }
     }
 
     private func show(_ view: WKWebView) -> UIWindow {
@@ -337,7 +468,8 @@ private final class OriginReceipt: @unchecked Sendable {
     private let queue = DispatchQueue(label: "access.auto-recovery.origin")
     private let lock = OSAllocatedUnfairLock(initialState: "")
 
-    init(port: UInt16) { self.port = port }
+    private let body: String
+    init(port: UInt16, body: String = "ok") { self.port = port; self.body = body }
 
     var transcript: String { lock.withLock { $0 } }
 
@@ -397,8 +529,8 @@ private final class OriginReceipt: @unchecked Sendable {
                 let text = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
                 self?.lock.withLock { $0.append(text) }
             }
-            let body = "ok"
-            let response = "HTTP/1.1 200 OK\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
+            let body = self?.body ?? "ok"
+            let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
             connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
                 connection.cancel()
             })
@@ -407,13 +539,15 @@ private final class OriginReceipt: @unchecked Sendable {
 }
 
 private final class AnsweringOpener: AccessHTTPTunnelOpening, @unchecked Sendable {
+    private let body: String?
+    init(body: String? = nil) { self.body = body }
     private let lock = OSAllocatedUnfairLock(initialState: "")
     var transcript: String {
         lock.withLock { $0 }
     }
 
     func open(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
-        let stream = AnsweringStream(host: host)
+        let stream = AnsweringStream(host: host, body: body)
         stream.onRequest = { [weak self] request in
             self?.append(request)
         }
@@ -438,7 +572,8 @@ private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendabl
     var onRequest: ((String) -> Void)?
     private let lock = OSAllocatedUnfairLock(initialState: State())
 
-    init(host: String) { self.host = host }
+    private let body: String?
+    init(host: String, body: String? = nil) { self.host = host; self.body = body }
 
     var isOpen: Bool {
         lock.withLock { !$0.closed }
@@ -481,9 +616,9 @@ private final class AnsweringStream: AccessRealityPathStream, @unchecked Sendabl
     }
 
     private func answer(for request: String) -> Data {
-        let body = host == "cdn.invalid"
+        let body = self.body.map { request.contains("/pulse") ? "ok" : $0 } ?? (host == "cdn.invalid"
             ? "body{}"
-            : "<link rel=\"stylesheet\" href=\"http://cdn.invalid/a.css\">"
+            : "<link rel=\"stylesheet\" href=\"http://cdn.invalid/a.css\">")
         let type = host == "cdn.invalid" ? "text/css" : "text/html"
         let header = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
         _ = request

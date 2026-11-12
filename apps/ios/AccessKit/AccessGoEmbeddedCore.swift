@@ -24,7 +24,7 @@ public final class AccessGoEmbeddedCore: AccessEmbeddedCoreControlling, @uncheck
         #endif
     }
 
-    /// Uses the same dispatch boundary for production gomobile and controlled tests.
+    /// Uses the same asynchronous contract for gomobile and controlled tests.
     init(native: any AccessGoNativeCore) { self.native = native }
 
     public var isRunning: Bool { native.isRunning }
@@ -33,60 +33,33 @@ public final class AccessGoEmbeddedCore: AccessEmbeddedCoreControlling, @uncheck
         guard let json = String(data: configData, encoding: .utf8) else {
             throw AccessEmbeddedCoreError.unverifiedAsset
         }
-        try await AccessGoBlockingIO.run(on: .control) { [native] in try native.start(json) }
+        try await native.start(json)
     }
 
     public func dial(host: String, port: UInt16) async throws -> any AccessRealityPathStream {
         guard isRunning else { throw AccessEmbeddedCoreError.unverifiedAsset }
-        let id = try await AccessGoBlockingIO.run(on: .io) { [native] in
-            try native.dial(host: host, port: port)
+        let id = try await native.dial(host: host, port: port)
+        if Task.isCancelled {
+            native.close(id)
+            throw CancellationError()
         }
         return AccessGoEmbeddedStream(streamID: id, native: native)
     }
 
     public func stop() async {
-        _ = try? await AccessGoBlockingIO.run(on: .control) { [native] in native.stop() }
+        await native.stop()
     }
 }
 
-/// Synchronous native ABI. Only the short running-state lookup stays on the caller.
+/// Socket waits are owned by Go goroutines. No Swift or dispatch thread parks.
 protocol AccessGoNativeCore: Sendable {
     var isRunning: Bool { get }
-    func start(_ json: String) throws
-    func dial(host: String, port: UInt16) throws -> Int64
-    func read(_ id: Int64, maxBytes: Int) throws -> Data?
-    func write(_ id: Int64, data: Data) throws
+    func start(_ json: String) async throws
+    func dial(host: String, port: UInt16) async throws -> Int64
+    func read(_ id: Int64, maxBytes: Int) async throws -> Data?
+    func write(_ id: Int64, data: Data) async throws
     func close(_ id: Int64)
-    func stop()
-}
-
-/// Blocking Go calls must never occupy Swift's cooperative workers. Separate
-/// concurrent queues let writes/dials and teardown progress while reads park.
-/// Cancellation does not resume early: the native call owns the single resume;
-/// closing a stream or stopping the core wakes its pending I/O.
-private enum AccessGoBlockingIO {
-    enum Lane { case read, io, control }
-    private static let reads = DispatchQueue(label: "accesskit.go.read", qos: .userInitiated, attributes: .concurrent)
-    private static let io = DispatchQueue(label: "accesskit.go.io", qos: .userInitiated, attributes: .concurrent)
-    private static let control = DispatchQueue(label: "accesskit.go.control", qos: .userInitiated, attributes: .concurrent)
-
-    static func run<T: Sendable>(on lane: Lane, _ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            enqueue(on: lane) {
-                continuation.resume(with: Result { try work() })
-            }
-        }
-    }
-
-    static func enqueue(on lane: Lane, _ work: @escaping @Sendable () -> Void) {
-        let queue: DispatchQueue
-        switch lane {
-        case .read: queue = reads
-        case .io: queue = io
-        case .control: queue = control
-        }
-        queue.async(execute: work)
-    }
+    func stop() async
 }
 
 private final class AccessGoEmbeddedStream: AccessRealityPathStream, @unchecked Sendable {
@@ -102,16 +75,16 @@ private final class AccessGoEmbeddedStream: AccessRealityPathStream, @unchecked 
     var isOpen: Bool { closed.withLock { !$0 } }
 
     func read(maxBytes: Int) async throws -> Data? {
-        try await AccessGoBlockingIO.run(on: .read) { [native, streamID] in
-            let data = try native.read(streamID, maxBytes: maxBytes)
+        try await withTaskCancellationHandler {
+            let data = try await native.read(streamID, maxBytes: maxBytes)
             return data?.isEmpty == true ? nil : data
-        }
+        } onCancel: { self.close() }
     }
 
     func write(_ data: Data) async throws {
-        try await AccessGoBlockingIO.run(on: .io) { [native, streamID] in
-            try native.write(streamID, data: data)
-        }
+        try await withTaskCancellationHandler {
+            try await native.write(streamID, data: data)
+        } onCancel: { self.close() }
     }
 
     func close() {
@@ -121,7 +94,7 @@ private final class AccessGoEmbeddedStream: AccessRealityPathStream, @unchecked 
             return true
         }
         guard shouldClose else { return }
-        AccessGoBlockingIO.enqueue(on: .control) { [native, streamID] in native.close(streamID) }
+        native.close(streamID)
     }
 
     deinit { close() }
@@ -130,36 +103,52 @@ private final class AccessGoEmbeddedStream: AccessRealityPathStream, @unchecked 
 #if canImport(AegisEmbeddedCore)
 private struct AccessGomobileCore: AccessGoNativeCore {
     var isRunning: Bool { EmbeddedcoreIsRunning() }
-    func start(_ json: String) throws {
-        var error: NSError?
-        guard EmbeddedcoreStart(json, &error) else {
-            throw error ?? AccessEmbeddedCoreError.unverifiedAsset
+
+    func start(_ json: String) async throws {
+        _ = try await result { EmbeddedcoreStartAsync(json, $0) }
+    }
+    func dial(host: String, port: UInt16) async throws -> Int64 {
+        try await result { EmbeddedcoreDialAsync(host, Int(port), $0) }.id
+    }
+    func read(_ id: Int64, maxBytes: Int) async throws -> Data? {
+        try await result { EmbeddedcoreReadAsync(id, maxBytes, $0) }.data
+    }
+    func write(_ id: Int64, data: Data) async throws {
+        _ = try await result { EmbeddedcoreWriteAsync(id, data, $0) }
+    }
+    func close(_ id: Int64) { EmbeddedcoreCloseStreamAsync(id) }
+    func stop() async { _ = try? await result { EmbeddedcoreStopAsync($0) } }
+
+    private struct NativeResult: Sendable {
+        let id: Int64
+        let data: Data?
+    }
+    private func result(_ begin: (NativeCompletion) -> Void) async throws -> NativeResult {
+        try await withCheckedThrowingContinuation { continuation in
+            begin(NativeCompletion(continuation))
         }
     }
-    func dial(host: String, port: UInt16) throws -> Int64 {
-        var error: NSError?
-        var id: Int64 = 0
-        guard EmbeddedcoreDial(host, Int(port), &id, &error) else {
-            throw error ?? AccessEmbeddedCoreError.unverifiedAsset
+    /// Go retains this callback until the operation returns. Taking the
+    /// continuation under a short lock also guards duplicate native callbacks.
+    private final class NativeCompletion: NSObject, EmbeddedcoreCompletionProtocol, @unchecked Sendable {
+        private let continuation: Mutex<CheckedContinuation<NativeResult, Error>?>
+        init(_ continuation: CheckedContinuation<NativeResult, Error>) {
+            self.continuation = Mutex(continuation)
         }
-        return id
-    }
-    func read(_ id: Int64, maxBytes: Int) throws -> Data? {
-        var error: NSError?
-        let data = EmbeddedcoreRead(id, maxBytes, &error)
-        if let error { throw error }
-        return data
-    }
-    func write(_ id: Int64, data: Data) throws {
-        var error: NSError?
-        guard EmbeddedcoreWrite(id, data, &error) else {
-            throw error ?? AccessEmbeddedCoreError.unverifiedAsset
+        func complete(_ value: Int64, data: Data?, failure: String?) {
+            let pending = continuation.withLock { state in
+                let pending = state; state = nil; return pending
+            }
+            guard let pending else { return }
+            if let failure, !failure.isEmpty {
+                pending.resume(throwing: NSError(domain: "AccessEmbeddedCore", code: 1,
+                                                userInfo: [NSLocalizedDescriptionKey: failure]))
+            } else {
+                // Callback NSData borrows Go memory only until complete returns.
+                let owned = data.map { bytes in bytes.withUnsafeBytes { Data($0) } }
+                pending.resume(returning: NativeResult(id: value, data: owned))
+            }
         }
-    }
-    func close(_ id: Int64) { EmbeddedcoreCloseStream(id) }
-    func stop() {
-        var error: NSError?
-        _ = EmbeddedcoreStop(&error)
     }
 }
 #endif

@@ -286,8 +286,6 @@
 		A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */; };
 		A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */; };
 		A10CORE00000000000000001B /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
-		A10CORE00000000000000001C /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
-		A10CORE00000000000000001D /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
 		A10CORE00000000000000001E /* AegisEmbeddedCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A10CORE00000000000000001F /* AegisEmbeddedCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A10TUNN000000000000000012 /* AccessHTTPTunnelBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */; };
@@ -864,7 +862,6 @@
 				7EEA86B8BEC84C02471EFF1A /* BrowserKit.framework in Frameworks */,
 				8E51BF62C4BB22B94BA6EB87 /* AegisPolicyKit.framework in Frameworks */,
 				A10CCE55ACC0020000000008 /* AccessKit.framework in Frameworks */,
-				A10CORE00000000000000001D /* AegisEmbeddedCore.xcframework in Frameworks */,
 				D7A101D820C862EBB3972680 /* AgentKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -881,7 +878,6 @@
 				6839DB2DB6046A431BA96024 /* BrowserKit.framework in Frameworks */,
 				E9D9727EEFB4A51552E29209 /* AegisPolicyKit.framework in Frameworks */,
 				A10CCE55ACC0020000000007 /* AccessKit.framework in Frameworks */,
-				A10CORE00000000000000001C /* AegisEmbeddedCore.xcframework in Frameworks */,
 				A1774B0BEA41E54381DA0432 /* AgentKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "status": "verified_build",
-  "note": "Thin StartInstance/Dial bridge built from Xray-core v26.11.9 / 676eaf66\u2026 with Go 1.27.3 gomobile. Product path: Swift listener + core.Dial. Stock LibXray Invoke/RunXray is not the linked ABI. Framework lives under EmbeddedCore/Products (build artifact, not committed). Slice digests drift across clean hosted clang/gomobile links; ios-archive prepare uses AEGIS_EMBEDDED_CORE_DIGEST_MODE=ci-rebuild after source pins verify. Digests below are the latest observed hosted rebuild (run 43059625566: ae0dc38d… / 66ae7b01…).",
+  "note": "Thin StartInstance/Dial bridge with asynchronous Go-goroutine completion callbacks. Source pins are unchanged. Digests record the local Xcode 27 / Go 1.27.3 callback-ABI rebuild for the PR146 saturation fix. Clean hosted rebuilds continue to verify pinned inputs with ci-rebuild provenance.",
   "xrayCore": {
     "repository": "https://github.com/XTLS/Xray-core",
     "tag": "v26.11.9",
@@ -35,7 +35,7 @@
   "toolchain": {
     "go": "1.27.3",
     "gomobile": "golang.org/x/mobile@v0.0.0-20261011034528-197770444867",
-    "xcode": "17F113",
+    "xcode": "27A266a",
     "iosVersion": "15.0"
   },
   "rejected": {
@@ -43,8 +43,8 @@
     "reason": "XTLS/Xray-core Contents/Commits API returns no such ref (2026-11-10). Do not invent a digest."
   },
   "artifacts": {
-    "xcframework": "AegisEmbeddedCore.xcframework",
-    "iosArm64Sha256": "ae0dc38d12f2131633118c779d5d0a865b3d4ac84cb3adde6b0391f76484a41f",
-    "iosArm64SimulatorSha256": "66ae7b01e53f756abf1848b8c48e561d95f23df436c3c7ce50bd3ee2e795bb8a"
+    "iosArm64Sha256": "b478fcf73ce919fd4494ac96e6035e4e2879ab5847db4276a142b5259b4f9bdf",
+    "iosArm64SimulatorSha256": "7aa12ce96111a8910cc3eb17692b9de0a025f31f41ebce8a18a4ec7f032f5887",
+    "xcframework": "AegisEmbeddedCore.xcframework"
   }
 }

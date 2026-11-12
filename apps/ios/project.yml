@@ -86,7 +86,8 @@ targets:
       - framework: $(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework
         embed: true
         codeSign: true
-        link: true
+        # AccessKit owns the static Go runtime and callback registry exactly once.
+        link: false
     postBuildScripts:
       - name: Select private Access test node
         script: |

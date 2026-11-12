@@ -162,9 +162,21 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
     }
     private var loadedWebView: WKWebView?
+    public private(set) var isDisposed = false
+    private var closedPlaceholder: BrowserContentWebView?
     private var titleObservation: NSKeyValueObservation?
     /// 只有显式加载或访问当前页面时才创建 WebView；标签列表不得通过此属性读取状态。
     public var webView: WKWebView {
+        if isDisposed {
+            if let closedPlaceholder { return closedPlaceholder }
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = .nonPersistent()
+            config.defaultWebpagePreferences.allowsContentJavaScript = false
+            let placeholder = BrowserContentWebView(frame: .zero, configuration: config)
+            placeholder.terminateDocument {}
+            closedPlaceholder = placeholder
+            return placeholder
+        }
         if let loadedWebView { return loadedWebView }
         let view = BrowserContentWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = self; view.uiDelegate = self
@@ -454,6 +466,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     func alignStore(for url: URL, previous: URL?, method: String, body: Data?) {
+        guard !isDisposed else { return }
         let hostChanged = previous?.host?.lowercased() != nil
             && url.host?.lowercased() != nil
             && previous?.host?.lowercased() != url.host?.lowercased()
@@ -469,6 +482,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     func commitPreservingMethod(_ request: URLRequest, continuesAttempt: Bool = false) {
+        guard !isDisposed else { return }
         let method = request.httpMethod ?? "GET"
         let url = request.url ?? URL(string: "about:blank")!
         let unsafeReplay = BrowserMainFrameFailure.requestHasUnsafeReplaySurface(request)
@@ -520,6 +534,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func performLoad(_ request: URLRequest) {
+        guard !isDisposed else { return }
         if attempt.recoveryOperationID != nil, request.url?.scheme?.lowercased() == "http" {
             configuration.defaultWebpagePreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
             loadedWebView?.configuration.defaultWebpagePreferences.preferredHTTPSNavigationPolicy = .keepAsRequested
@@ -532,6 +547,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     /// The actual load is deferred one turn: `decidePolicy` and `didMoveToWindow`
     /// both drop a re-entrant `WKWebView.load`.
     private func issueDocumentLoad(_ request: URLRequest) {
+        guard !isDisposed else { return }
         deferredDocumentNavigationID = attempt.navigationID
         preserveExplicitHTTP(request.url)
         if loadedWebView?.window == nil, isLoopbackHTTP(request.url) || needsWindowBeforeLoad {
@@ -629,7 +645,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         expectedNavigationID: String,
         recoveryOperationID: UUID
     ) -> Bool {
-        guard lastMainFrameFailure?.navigationID == expectedNavigationID else { return false }
+        guard !isDisposed, lastMainFrameFailure?.navigationID == expectedNavigationID else { return false }
         guard request.url != nil else { return false }
         let method = (request.httpMethod ?? "GET").uppercased()
         guard method == "GET" || method == "HEAD" else { return false }
@@ -647,6 +663,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     public func rebindWebsiteDataStore(_ store: WKWebsiteDataStore, host: String?) {
+        guard !isDisposed else { return }
         guard store !== configuration.websiteDataStore else {
             boundHostName = host
             return
@@ -668,6 +685,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     func setActive(_ value: Bool) {
+        guard !isDisposed else { return }
         // 切换时先记录位置；WebView 离开窗口后，系统可能重设其滚动偏移。
         if isActive, !value, !restoresScrollOffset, let view = loadedWebView { savedScrollOffset = view.scrollView.contentOffset }
         isActive = value
@@ -709,14 +727,33 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if let current { load(current) }
     }
 
-    private func releaseWebView() {
+    /// Terminal teardown is distinct from suspension. Keep the host binding
+    /// until the old document has been replaced or the WebView is destroyed.
+    /// A retained BrowserTab can only expose an inert, non-navigable placeholder.
+    func dispose(completion: @escaping @MainActor () -> Void) {
+        guard !isDisposed else { return }
+        isDisposed = true
+        stop()
+        if let view = loadedWebView as? BrowserContentWebView {
+            view.terminateDocument(completion: completion)
+            releaseWebView(keepTerminalDelegate: true)
+        } else {
+            releaseWebView()
+            completion()
+        }
+        hostCoordinator = nil
+        onNavigation = nil
+    }
+
+    private func releaseWebView(keepTerminalDelegate: Bool = false) {
         userScripts?.navigated()
         inspectionEnabled = false
         navigationEpoch &+= 1
         structureTask?.cancel()
         loadGeneration = UUID(); loadTask?.cancel()
-        loadedWebView?.stopLoading()
-        loadedWebView?.navigationDelegate = nil; loadedWebView?.uiDelegate = nil
+        if !keepTerminalDelegate { loadedWebView?.stopLoading() }
+        if !keepTerminalDelegate { loadedWebView?.navigationDelegate = nil }
+        loadedWebView?.uiDelegate = nil
         loadedWebView?.removeFromSuperview()
         titleObservation = nil
         loadedWebView = nil; pendingNavigation = nil
@@ -729,6 +766,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func load(_ url: URL, preservingScroll: Bool) {
+        guard !isDisposed else { return }
         if !preservingScroll { savedScrollOffset = .zero }
         restoresScrollOffset = preservingScroll
         isSuspended = false
@@ -854,7 +892,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     func prepareForReading() async throws {
-        guard protectionIncident == nil else { throw PageSnapshotError.unavailable }
+        guard !isDisposed, protectionIncident == nil else { throw PageSnapshotError.unavailable }
         if loadedWebView == nil {
             load(requestedURL ?? url ?? URL(string: "aegis://start")!, preservingScroll: true)
         }
@@ -1726,11 +1764,27 @@ public final class BrowserSession: ObservableObject {
         guard !isWindowClosed else { return }
         isWindowClosed = true
         persistSession()
-        standardTabs.forEach {
-            hostCoordinator?.tabClosed($0)
-            $0.stop()
+        let closingTabs = standardTabs + privateTabs
+        let privateStores = privateTabs.map(\.websiteDataStore)
+        let endingScope = privateSessionID.uuidString
+        let coordinator = hostCoordinator
+        var remaining = closingTabs.count
+        for tab in closingTabs {
+            tab.dispose { [self] in
+                coordinator?.tabClosed(tab)
+                remaining -= 1
+                if remaining == 0 {
+                    coordinator?.endPrivateSession(scopeID: endingScope)
+                    privateStores.forEach { retirePrivateWebsiteDataStore($0) }
+                }
+            }
         }
-        discardPrivateSession()
+        // Do not switch profile: that would activate and reload a suspended
+        // ordinary tab. A closed session is a restoration snapshot only.
+        privateTabs = []; privateGroups = []; privateGroupID = nil
+        privateSessionID = UUID()
+        if closingTabs.isEmpty { coordinator?.endPrivateSession(scopeID: endingScope) }
+
         windowStore?.unregister(windowID)
     }
 
@@ -1978,6 +2032,7 @@ public final class BrowserSession: ObservableObject {
     }
 
     private func updateActiveTab() {
+        guard !isWindowClosed else { return }
         let activeID = activeTab?.id
         for tab in standardTabs + privateTabs { tab.setActive(tab.id == activeID) }
         evictionTask?.cancel()

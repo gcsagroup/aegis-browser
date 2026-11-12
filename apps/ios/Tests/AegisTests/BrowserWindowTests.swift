@@ -1,6 +1,7 @@
 import AccessKit
 @testable import Aegis
 import WebKit
+import UIKit
 import XCTest
 @testable import BrowserKit
 
@@ -15,6 +16,14 @@ import XCTest
         let first = BrowserSession(dataStore: shared, windowID: firstID, windowStore: store)
         let second = BrowserSession(dataStore: shared, windowID: secondID, windowStore: store)
         let group = try first.createGroup(name: "论文")
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let firstWindow = UIWindow(windowScene: scene), secondWindow = UIWindow(windowScene: scene)
+        for (window, browser) in [(firstWindow, first), (secondWindow, second)] {
+            window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+            let view = try XCTUnwrap(browser.activeTab).webView
+            view.frame = window.bounds; window.addSubview(view); window.makeKeyAndVisible()
+        }
+        defer { firstWindow.isHidden = true; secondWindow.isHidden = true }
         first.activeTab?.load(URL(string: "http://127.0.0.1:8768/article?token=secret")!)
         second.activeTab?.load(URL(string: "http://127.0.0.1:8768/article-two")!)
         try await waitUntil { first.activeTab?.url?.path == "/article" && second.activeTab?.url?.path == "/article-two" }
@@ -179,6 +188,7 @@ final class BrowserWindowHostCleanupTests: XCTestCase {
         XCTAssertTrue(store.openIDs.contains(second.windowID))
         XCTAssertTrue(first.privateTabs.isEmpty)
         assertBrowsingState(store.snapshot(first.windowID), equals: ordinarySnapshot)
+        await waitForCleanup { coordinator.registry.store(scopeID: privateScope, host: shared, isPrivate: true) == nil }
         XCTAssertNil(coordinator.registry.store(scopeID: privateScope, host: shared, isPrivate: true))
 
         first.closeWindow() // Explicit close followed by root release is harmless.
@@ -189,13 +199,17 @@ final class BrowserWindowHostCleanupTests: XCTestCase {
         XCTAssertTrue(coordinator.registry.store(scopeID: "ordinary", host: shared, isPrivate: false) === sharedStore,
                       "still-open window must retain its shared binding")
         second.closeWindow()
+        await waitForCleanup {
+            coordinator.registry.sweep(now: afterIdle)
+            return coordinator.registry.store(scopeID: "ordinary", host: shared, isPrivate: false) == nil
+        }
         coordinator.registry.sweep(now: afterIdle)
         XCTAssertNil(coordinator.registry.store(scopeID: "ordinary", host: shared, isPrivate: false),
                      "neither closed window may leave an ID in the shared store")
         assertBrowsingState(store.snapshot(first.windowID), equals: ordinarySnapshot)
     }
 
-    func testDiscardedSceneClosesOnlyItsWindowBeforeRootStateIsReleased() throws {
+    func testDiscardedSceneClosesOnlyItsWindowBeforeRootStateIsReleased() async throws {
         let store = BrowserWindowStore()
         let first = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil),
                                    windowID: try store.createWindow(), windowStore: store)
@@ -233,10 +247,19 @@ final class BrowserWindowHostCleanupTests: XCTestCase {
                       "retained closed sessions must not enter active coordinator operations")
         XCTAssertTrue(otherWindowTabIDs.isSubset(of: liveAfter))
         assertBrowsingState(store.snapshot(first.windowID), equals: before)
-        coordinator.registry.sweep(now: Date().addingTimeInterval(1801))
+        await waitForCleanup {
+            coordinator.registry.sweep(now: Date().addingTimeInterval(1801))
+            return coordinator.registry.store(scopeID: "ordinary", host: host, isPrivate: false) == nil
+        }
         XCTAssertNil(coordinator.registry.store(scopeID: "ordinary", host: host, isPrivate: false))
         withExtendedLifetime((firstOwner, secondOwner)) {}
         second.closeWindow()
+    }
+
+    private func waitForCleanup(_ condition: @MainActor () -> Bool) async {
+        let limit = Date().addingTimeInterval(5)
+        while !condition(), Date() < limit { try? await Task.sleep(for: .milliseconds(20)) }
+        XCTAssertTrue(condition(), "terminal document cleanup must finish")
     }
 
     private func assertBrowsingState(_ actual: BrowserWindowSnapshot?, equals expected: BrowserWindowSnapshot?,

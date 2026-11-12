@@ -19,10 +19,12 @@ import (
 )
 
 var (
-	mu       sync.Mutex
-	instance *core.Instance
-	streams  = map[int64]*streamHandle{}
-	nextID   atomic.Int64
+	mu              sync.Mutex
+	instance        *core.Instance
+	streams         = map[int64]*streamHandle{}
+	nextID          atomic.Int64
+	instanceContext context.Context
+	instanceCancel  context.CancelFunc
 )
 
 var (
@@ -50,20 +52,28 @@ func Start(configJSON string) error {
 		return err
 	}
 	instance = inst
+	instanceContext, instanceCancel = context.WithCancel(context.Background())
 	return nil
 }
 
 // Stop closes every open dial stream and the running instance.
 func Stop() error {
 	mu.Lock()
-	defer mu.Unlock()
-	closeAllStreamsLocked()
-	if instance == nil {
-		return nil
+	inst, cancel, closing := instance, instanceCancel, streams
+	instance, instanceContext, instanceCancel = nil, nil, nil
+	streams = map[int64]*streamHandle{}
+	mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
-	err := instance.Close()
-	instance = nil
-	return err
+	for _, handle := range closing {
+		handle.cancel()
+		_ = handle.conn.Close()
+	}
+	if inst != nil {
+		return inst.Close()
+	}
+	return nil
 }
 
 // IsRunning reports whether the embedded instance is live.
@@ -81,12 +91,12 @@ func Dial(host string, port int) (int64, error) {
 		return 0, errEmptyDial
 	}
 	mu.Lock()
-	inst := instance
+	inst, parent := instance, instanceContext
 	mu.Unlock()
 	if inst == nil || !inst.IsRunning() {
 		return 0, errNotRunning
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	dest := net.TCPDestination(net.ParseAddress(host), net.Port(port))
 	conn, err := core.Dial(ctx, inst, dest)
 	if err != nil {
@@ -95,6 +105,12 @@ func Dial(host string, port int) (int64, error) {
 	}
 	id := nextID.Add(1)
 	mu.Lock()
+	if instance != inst {
+		mu.Unlock()
+		cancel()
+		_ = conn.Close()
+		return 0, errNotRunning
+	}
 	streams[id] = &streamHandle{conn: conn, cancel: cancel}
 	mu.Unlock()
 	return id, nil
@@ -159,15 +175,44 @@ func lookup(streamID int64) (*streamHandle, error) {
 	return handle, nil
 }
 
-func closeAllStreamsLocked() {
-	for id, handle := range streams {
-		handle.cancel()
-		_ = handle.conn.Close()
-		delete(streams, id)
-	}
-}
-
 // Version returns the linked Xray-core version string.
 func Version() string {
 	return core.Version()
+}
+
+// Completion is retained by the native operation until exactly one result is
+// delivered. Async entry points return immediately; socket waits park goroutines,
+// never Swift cooperative workers or libdispatch worker threads.
+type Completion interface {
+	Complete(value int64, data []byte, failure string)
+}
+
+func complete(c Completion, value int64, data []byte, err error) {
+	failure := ""
+	if err != nil {
+		failure = err.Error()
+	}
+	c.Complete(value, data, failure)
+}
+
+func StartAsync(configJSON string, c Completion) {
+	go func() { complete(c, 0, nil, Start(configJSON)) }()
+}
+func DialAsync(host string, port int, c Completion) {
+	go func() { id, err := Dial(host, port); complete(c, id, nil, err) }()
+}
+func ReadAsync(streamID int64, maxBytes int, c Completion) {
+	go func() { data, err := Read(streamID, maxBytes); complete(c, 0, data, err) }()
+}
+
+// Gomobile lends argument bytes only for this call; own them before returning.
+func WriteAsync(streamID int64, data []byte, c Completion) {
+	data = append([]byte(nil), data...)
+	go func() { complete(c, 0, nil, Write(streamID, data)) }()
+}
+func StopAsync(c Completion) {
+	go func() { complete(c, 0, nil, Stop()) }()
+}
+func CloseStreamAsync(streamID int64) {
+	go CloseStream(streamID)
 }
