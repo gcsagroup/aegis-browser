@@ -9,11 +9,11 @@ In the upstream `gcsagroup/aegis-browser` repository, open **Actions**, select *
 New packages default to **cloud** in both forms, the CLI, Fastlane and candidate
 tags. Use **manual** explicitly for the existing certificate/profile fallback:
 Actions **Signing mode → manual**, CLI `--signing-mode manual`, Fastlane
-`signing_mode:manual`. Cloud packaging runs on an admitted GitHub-hosted macOS
-runner without importing a Distribution P12. Cloud failure stops the attempt;
+`signing_mode:manual`. Cloud packaging uses the admitted macOS runners configured
+in the workflow without importing a Distribution P12. Cloud failure stops the attempt;
 manual is an operator selection, with a new run ID and an unused build.
 
-两个表单、CLI、Fastlane 和 candidate tag 的新包均默认 **cloud**。显式回退选择：Actions 的 **Signing mode → manual**、CLI 的 `--signing-mode manual`、Fastlane 的 `signing_mode:manual`。cloud 使用获准的 GitHub-hosted macOS runner，不导入分发 P12；失败后停止，由操作者核对状态并选择 manual、未占用 build 与新 run ID。
+两个表单、CLI、Fastlane 和 candidate tag 的新包均默认 **cloud**。显式回退选择：Actions 的 **Signing mode → manual**、CLI 的 `--signing-mode manual`、Fastlane 的 `signing_mode:manual`。cloud 使用工作流指定且通过准入的 macOS runner，不导入分发 P12；失败后停止，由操作者核对状态并选择 manual、未占用 build 与新 run ID。
 
 Signing mode applies only to **Package**, **Package and upload**, and **Draft**.
 Leave it at the default for **Status**, **Wait** and existing-package stages;
@@ -98,7 +98,21 @@ the existing automatic Development selection remains in use; existing path compo
 must be physical directories, including when a linked destination is missing. Lookup
 compares full profile filenames without case assumptions, allows at most eight matching
 copies across the approved directories, and rejects the first content conflict. The dedicated keychain
-must already be unlocked and available to headless `codesign`.
+must be available to headless `codesign`. An optional owned `0600`
+`development-keychain.password` companion in the same private configuration
+directory enables activation in the actual runner session. The archive worker
+finds the unique owned non-login keychain containing the pinned certificate,
+rejects Distribution identities, and passes the password directly to
+Security.framework. It never passes that password to a command or build phase.
+Without the companion file, the existing pre-unlocked-keychain contract applies.
+
+Before building the app, the isolated worker compiles a fixed trivial probe,
+signs it with the configured Development identity and verifies the signature.
+The probe's environment contains only public toolchain/home/temp settings.
+Activation and probe diagnostics are retained separately from the archive;
+`find-identity` success alone is not evidence that the private signing operation
+works in a background runner. Direct inline Development archives use the same
+preparation before isolation and the same probe inside it.
 
 Private configuration ancestors must be owned by the runner account or root and
 exclude directory mutation by other accounts, including extended ACL grants.
@@ -153,3 +167,38 @@ Use `--draft` for the Draft folder. The catalogue contains IPA, dSYM and deliver
 evidence. On a self-hosted runner the default root belongs to that runner's user.
 Use the same copy command on downloaded, verified original files for a local
 catalogue.
+
+## Routine execution without AI / 无 AI 日常执行
+
+The checked-in Actions, release scripts and Fastlane lanes execute independently
+of an AI assistant. Once the exact current main has passed admission and signing
+materials are configured, an Admin selects **Simple → Package and upload**, fills
+in **Version**, **Build** and **Product**, and keeps **cloud** as the signing mode.
+The read-only precheck queries whether Apple already has that version/build.
+After the Development archive and its handoff pass verification, the package job
+records permanent `export-start`. Cloud export then checks capacity and exports;
+a failure at that point leaves the coordinate occupied. Package verification,
+sealing and upload of the original follow. If a protected Environment has approval
+rules, its jobs wait for that approval.
+
+日常发包无需 AI 参与。已通过准入的当前 main 和签名材料就绪后，管理员选择
+**Simple → Package and upload**，填写版本、build 和包型，沿用 **cloud**。
+只读预检查询 Apple 是否已有该版本/build。Development 归档和交接文件验证通过后，
+打包作业写入永久 `export-start`，随后云导出检查容量并导出；此时失败仍保留占号。
+后续验包、封存并上传原件。如受保护环境配置了审批，相关作业会等待批准。
+
+Use **Status** or **Wait** for the same version/build to read Apple's processing
+result. A timeout or uncertain transport result requires query and reconciliation;
+it does not authorize another upload. Certificate renewal, permission changes and
+source review are separate maintenance work. The package job currently runs on
+self-hosted macOS and attempts to copy verified deliverables to that account's
+Downloads catalogue, or the configured `GCSA_DELIVERY_ROOT`. Check the target for
+the required files first. If the copy is missing, download and verify the retained
+original artifact, then run the copy command above with its independently retained
+manifest digest on the machine that needs the catalogue.
+
+上传后用相同版本/build 的 **Status** 或 **Wait** 回读 Apple 处理结果；超时或运输结果
+不明时先查询对账。证书续期、权限变更和源码审查另行处理。当前打包使用 self-hosted
+macOS，自动尝试复制到该运行账号的 Downloads 或配置的 `GCSA_DELIVERY_ROOT`。
+先核对目标所需文件；缺少副本时，再下载并验证原始 artifact，使用独立保留的 manifest
+摘要，在需要归档的机器上运行上述复制命令。

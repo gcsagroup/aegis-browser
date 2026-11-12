@@ -340,8 +340,11 @@ in Downloads; it never evaluates shell code or reads a P12/password file.
 
 The PoC temporarily selects a fresh keychain as the user default and entire user
 search list, restoring both on success, failure, SIGINT, SIGTERM and SIGHUP. Do
-not run concurrent native signing jobs on this host. No existing keychain is
-unlocked or imported, and no ACL is changed. Automatic archive signing may create
+not run concurrent native signing jobs on this host. With explicit Development
+configuration and its private password companion, the selected owned non-login
+Development keychain is unlocked in this worker session and tested before archive.
+Activation failures restore an initially locked keychain; existing unlocked state
+is preserved. No keychain import or ACL change is performed. Automatic archive signing may create
 a development certificate/key and provisioning profiles in the Apple account;
 automatic export may create managed distribution assets. The temporary local key
 is deleted afterward; account-side assets are retained for inspection.
