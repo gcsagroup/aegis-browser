@@ -142,6 +142,7 @@ source_set("prefs") {
   ]
   deps = [
     ":gesture_core",
+    "//chrome/browser/aegis/access:access_build_channel",
     "//chrome/common/aegis",
     "//components/pref_registry",
   ]

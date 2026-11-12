@@ -1,0 +1,2291 @@
+From 8461606f750e1b53c3d2df33cbaf4d14602bbf2d Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Thu, 12 Nov 2026 13:00:00 +0800
+Subject: [PATCH] feat(access): persist scoped diagnostics with channel
+ defaults and compressed sharing
+
+---
+ chrome/browser/aegis/BUILD.gn                 |   1 +
+ chrome/browser/aegis/access/BUILD.gn          |  53 +++-
+ .../aegis/access/access_build_channel.cc      |   5 +
+ .../aegis/access/access_build_channel.h       |  28 +-
+ .../browser/aegis/access/access_core_log.cc   |   7 +
+ chrome/browser/aegis/access/access_core_log.h | 265 ++++++++++++++++++
+ .../aegis/access/access_core_log_disk.cc      | 121 ++++++++
+ .../aegis/access/access_core_log_disk.h       |  21 ++
+ .../access/access_core_log_disk_unittest.cc   | 202 +++++++++++++
+ .../aegis/access/access_core_log_share.cc     | 203 ++++++++++++++
+ .../aegis/access/access_core_log_share.h      |  53 ++++
+ .../aegis/access/access_core_log_store.cc     | 153 ++++++++++
+ .../aegis/access/access_core_log_store.h      |  82 ++++++
+ .../aegis/access/access_core_log_unittest.cc  | 112 ++++++++
+ .../aegis/access/access_local_core_manager.cc |  81 +++++-
+ .../aegis/access/access_local_core_manager.h  |   9 +
+ .../access_local_core_manager_unittest.cc     | 234 ++++++++++++++++
+ .../access/access_local_core_test_child.cc    |   8 +
+ .../access_site_proxy_bubble_controller.cc    |  94 ++++++-
+ .../access_site_proxy_bubble_controller.h     |  18 ++
+ chrome/browser/aegis/aegis_prefs.cc           |   4 +
+ chrome/browser/aegis/aegis_prefs.h            |   4 +
+ .../ui/views/toolbar/aegis_toolbar_button.cc  |  80 ++++++
+ 23 files changed, 1826 insertions(+), 12 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/access_core_log.cc
+ create mode 100644 chrome/browser/aegis/access/access_core_log.h
+ create mode 100644 chrome/browser/aegis/access/access_core_log_disk.cc
+ create mode 100644 chrome/browser/aegis/access/access_core_log_disk.h
+ create mode 100644 chrome/browser/aegis/access/access_core_log_disk_unittest.cc
+ create mode 100644 chrome/browser/aegis/access/access_core_log_share.cc
+ create mode 100644 chrome/browser/aegis/access/access_core_log_share.h
+ create mode 100644 chrome/browser/aegis/access/access_core_log_store.cc
+ create mode 100644 chrome/browser/aegis/access/access_core_log_store.h
+ create mode 100644 chrome/browser/aegis/access/access_core_log_unittest.cc
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index b1e92a2e2988e5272da741a6e0343dcb39bea722..012a42d07bf4124f1205bd4e3e34161018a72672 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -142,6 +142,7 @@ source_set("prefs") {
+   ]
+   deps = [
+     ":gesture_core",
++    "//chrome/browser/aegis/access:access_build_channel",
+     "//chrome/common/aegis",
+     "//components/pref_registry",
+   ]
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 35d16216da660d57ca57f0857746b5a2ce507a9a..f64f175fabdd36b0039bf817ed187bdb6f7c3b8f 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -75,13 +75,30 @@ source_set("access_build_channel") {
+   deps = [
+     ":access_buildflags",
+     "//chrome/common:channel_info",
+-    "//components/aegis_access:browser_request_metadata_seed",
+     "//components/version_info:channel",
+   ]
++  public_deps = [ "//components/aegis_access:browser_request_metadata_seed" ]
++}
++
++source_set("access_core_log") {
++  sources = [
++    "access_core_log.cc",
++    "access_core_log.h",
++    "access_core_log_store.cc",
++    "access_core_log_store.h",
++  ]
++  if (is_mac) {
++    sources += [
++      "access_core_log_disk.cc",
++      "access_core_log_disk.h",
++    ]
++  }
++  public_deps = [ "//base" ]
+ }
+ 
+ source_set("access_local_core_manager") {
+   sources = [ "access_local_core_manager.h" ]
++  public_deps = [ ":access_core_log" ]
+   if (is_mac) {
+     sources += [ "access_local_core_manager.cc" ]
+   } else {
+@@ -95,6 +112,9 @@ source_set("access_local_core_manager") {
+     "//net",
+     "//url",
+   ]
++  if (is_mac) {
++    deps += [ ":access_core_log_archive" ]
++  }
+   if (aegis_private_test_node_enabled) {
+     data_deps = [ ":alpha_access_resource_files" ]
+   } else {
+@@ -109,6 +129,7 @@ test("access_local_core_unavailable_unittests") {
+     "access_local_core_manager_unavailable_unittest.cc",
+   ]
+   deps = [
++    ":access_core_log",
+     "//base",
+     "//base/test:run_all_unittests",
+     "//base/test:test_support",
+@@ -119,7 +140,11 @@ test("access_local_core_unavailable_unittests") {
+ 
+ test("access_local_core_manager_unittests") {
+   if (is_mac) {
+-    sources = [ "access_local_core_manager_unittest.cc" ]
++    sources = [
++      "access_core_log_disk_unittest.cc",
++      "access_core_log_unittest.cc",
++      "access_local_core_manager_unittest.cc",
++    ]
+   } else {
+     sources = [ "access_local_core_manager_unavailable_unittest.cc" ]
+   }
+@@ -135,11 +160,26 @@ test("access_local_core_manager_unittests") {
+     "//testing/gtest",
+   ]
+   if (is_mac) {
++    deps += [
++      ":access_core_log_archive",
++      "//third_party/zlib/google:compression_utils",
++    ]
+     data_deps = [ ":access_local_core_test_child" ]
+   }
+ }
+ 
+ if (is_mac) {
++  source_set("access_core_log_archive") {
++    sources = [
++      "access_core_log_share.cc",
++      "access_core_log_share.h",
++    ]
++    deps = [
++      "//base",
++      "//third_party/zlib/google:compression_utils",
++    ]
++  }
++
+   executable("access_local_core_test_child") {
+     testonly = true
+     sources = [ "access_local_core_test_child.cc" ]
+@@ -463,10 +503,19 @@ source_set("access_site_proxy_bubble") {
+     "//chrome/browser/profiles:profile",
+     "//chrome/common:channel_info",
+     "//components/aegis_access",
++    "//components/prefs",
++    "//chrome/browser/aegis:prefs",
+     "//components/version_info:channel",
+     "//content/public/browser",
+     "//url",
+   ]
++  if (is_mac) {
++    deps += [
++      ":access_core_log_archive",
++      "//chrome/browser/lifetime:termination_notification",
++      "//third_party/blink/public/mojom:android_mojo_bindings",
++    ]
++  }
+ }
+ 
+ test("access_site_proxy_bubble_unittests") {
+diff --git a/chrome/browser/aegis/access/access_build_channel.cc b/chrome/browser/aegis/access/access_build_channel.cc
+index f91e3e05582b7b4adfa7a042f4974263661ceafd..9a488c8ce6af385f7772100f6d4666a69795e8b3 100644
+--- a/chrome/browser/aegis/access/access_build_channel.cc
++++ b/chrome/browser/aegis/access/access_build_channel.cc
+@@ -50,4 +50,9 @@ const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel) {
+   if (channel == aegis_access::ChannelNamespace::kAlpha) return "alpha";
+   return "dev";
+ }
++
++std::string_view DefaultCoreLogLevelForCurrentBuild() {
++  return DefaultCoreLogLevelForBuild(
++      BrowserReleaseChannel(), BundledAccessTestChannel());
++}
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_build_channel.h b/chrome/browser/aegis/access/access_build_channel.h
+index 21d45462b50cf7d9f7a159be555fba8c35510662..39a2ace97365f526a13b03ac7b946c95bb167537 100644
+--- a/chrome/browser/aegis/access/access_build_channel.h
++++ b/chrome/browser/aegis/access/access_build_channel.h
+@@ -2,7 +2,9 @@
+ #ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_BUILD_CHANNEL_H_
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_BUILD_CHANNEL_H_
+ 
+-#include "components/aegis_access/access_route_types.h"
++#include <string_view>
++
++#include "components/aegis_access/browser_request_metadata_seed.h"
+ 
+ namespace aegis::access {
+ // Explicit private test builds use their selected channel even when unbranded Chromium
+@@ -10,5 +12,29 @@ namespace aegis::access {
+ aegis_access::ChannelNamespace AccessChannelForCurrentBuild();
+ aegis_access::ChannelNamespace BundledAccessTestChannel();
+ const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel);
++
++// Match the product channel, including explicit unbranded Alpha/Beta builds.
++// Unrecognized builds keep the production logging baseline.
++constexpr std::string_view DefaultCoreLogLevelForBuild(
++    aegis_access::BrowserReleaseChannel channel,
++    aegis_access::ChannelNamespace bundled_test_channel) {
++  switch (channel) {
++    case aegis_access::BrowserReleaseChannel::kDev:
++      return "debug";
++    case aegis_access::BrowserReleaseChannel::kCanary:
++      return "info";
++    case aegis_access::BrowserReleaseChannel::kUnknown:
++      return bundled_test_channel == aegis_access::ChannelNamespace::kAlpha
++                 ? "info"
++                 : "warning";
++    case aegis_access::BrowserReleaseChannel::kBeta:
++    case aegis_access::BrowserReleaseChannel::kStable:
++    case aegis_access::BrowserReleaseChannel::kInvalid:
++      return "warning";
++  }
++  return "warning";
++}
++
++std::string_view DefaultCoreLogLevelForCurrentBuild();
+ }  // namespace aegis::access
+ #endif
+diff --git a/chrome/browser/aegis/access/access_core_log.cc b/chrome/browser/aegis/access/access_core_log.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..2cdab6c18bd81eeeb704e457b1f969befb2ffb7a
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log.cc
+@@ -0,0 +1,7 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_core_log.h"
++
++namespace aegis::access {
++AccessCoreLog::AccessCoreLog() = default;
++AccessCoreLog::~AccessCoreLog() = default;
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_core_log.h b/chrome/browser/aegis/access/access_core_log.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..62ae0385e140ef8162c127739c8ef278bbe737dd
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log.h
+@@ -0,0 +1,265 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_H_
++
++#include <algorithm>
++#include <array>
++#include <deque>
++#include <string>
++#include <string_view>
++#include <utility>
++#include <vector>
++
++namespace aegis::access {
++inline constexpr std::array<std::string_view, 5> kCoreLogLevels = {
++    "debug", "info", "warning", "error", "none"};
++inline int CoreLogRank(std::string_view value) {
++  auto it = std::find(kCoreLogLevels.begin(), kCoreLogLevels.end(), value);
++  return it == kCoreLogLevels.end()
++             ? 2
++             : static_cast<int>(it - kCoreLogLevels.begin());
++}
++
++// Xray's text protocol is not an escaping boundary: messages may include
++// request URLs, auth, node configuration, local paths, or remote error text.
++// Reconstruct only recognized grammar; never put an arbitrary suffix on screen.
++class AccessCoreLog {
++ public:
++  AccessCoreLog();
++  ~AccessCoreLog();
++  void SetLevel(std::string_view level) {
++    rank_ = CoreLogRank(level);
++    std::erase_if(lines_, [this](const Entry& e) { return e.rank < rank_; });
++  }
++  std::string_view level() const { return kCoreLogLevels[rank_]; }
++  void Clear() { lines_.clear(); }
++  std::string Snapshot() const {
++    std::string result;
++    for (const auto& entry : lines_) {
++      if (!result.empty())
++        result += '\n';
++      result += entry.text;
++    }
++    return result;
++  }
++  bool Add(std::string_view line,
++           const std::vector<std::string>& protected_values = {}) {
++    if (rank_ == 4)
++      return false;
++    // Go's stdlib timestamp, with optional microseconds.
++    constexpr std::string_view mask = "dddd/dd/dd dd:dd:dd";
++    if (line.size() < mask.size() + 1)
++      return false;
++    for (size_t i = 0; i < mask.size(); ++i) {
++      if (mask[i] == 'd' ? !Digit(line[i]) : line[i] != mask[i])
++        return false;
++    }
++    size_t pos = mask.size();
++    if (line[pos] == '.') {
++      if (line.size() < pos + 8)
++        return false;
++      for (size_t i = 1; i <= 6; ++i)
++        if (!Digit(line[pos + i]))
++          return false;
++      pos += 7;
++    }
++    if (line[pos++] != ' ')
++      return false;
++    std::string safe(line.substr(0, pos));
++    line.remove_prefix(pos);
++    int severity = 1;
++    if (line.starts_with("from ")) {
++      // Access records are a separate Xray stream; show only at info/debug.
++      const size_t separator = line.find(' ', 5);
++      if (separator == line.npos)
++        return false;
++      line.remove_prefix(separator + 1);
++      if (line.starts_with("accepted ")) {
++        safe += "from [redacted] accepted ";
++        line.remove_prefix(9);
++      } else if (line.starts_with("rejected ")) {
++        safe += "from [redacted] rejected ";
++        line.remove_prefix(9);
++      } else
++        return false;
++      auto target = line.substr(0, line.find(' '));
++      // Xray HTTP emits request.URL (including path/query); CONNECT can
++      // arrive as an authority without a scheme. Keep only the authority.
++      std::string normalized;
++      if (target.starts_with("http://") || target.starts_with("https://") ||
++          target.starts_with("//")) {
++        const bool https = target.starts_with("https://");
++        target.remove_prefix(target.starts_with("//") ? 2 : (https ? 8 : 7));
++        target = target.substr(0, target.find_first_of("/?#"));
++        normalized = std::string(target);
++        if (!target.empty() &&
++            (target.find(':') == target.npos || target.ends_with("]")))
++          normalized += https ? ":443" : ":80";
++        target = normalized;
++      }
++      safe += SafeTarget(target, protected_values) ? target : "[redacted]";
++    } else {
++      constexpr std::string_view tags[] = {"[Debug] ", "[Info] ", "[Warning] ",
++                                           "[Error] "};
++      for (severity = 0; severity < 4 && !line.starts_with(tags[severity]);
++           ++severity) {
++      }
++      if (severity == 4 || severity < rank_)
++        return false;
++      safe += tags[severity];
++      line.remove_prefix(tags[severity].size());
++      if (line.starts_with("[")) {
++        size_t end = line.find("] ");
++        if (end >= 2 && end <= 11 && Digits(line.substr(1, end - 1))) {
++          safe += line.substr(0, end + 2);
++          line.remove_prefix(end + 2);
++        }
++      }
++      constexpr std::string_view modules[] = {"core",
++                                              "app/log",
++                                              "infra/conf/serial",
++                                              "transport/internet",
++                                              "transport/internet/tcp",
++                                              "proxy/http",
++                                              "proxy/vless/outbound",
++                                              "app/dispatcher",
++                                              "app/proxyman/inbound",
++                                              "app/proxyman/outbound"};
++      const size_t colon = line.find(": ");
++      auto module = line.substr(0, colon);
++      if (colon != line.npos &&
++          std::find(std::begin(modules), std::end(modules), module) !=
++              std::end(modules)) {
++        safe += module;
++        safe += ": ";
++        line.remove_prefix(colon + 2);
++        if (module == "core" && line.starts_with("Xray ") &&
++            line.ends_with(" started") && line.size() > 13 &&
++            line.size() <= 30 &&
++            line.substr(5, line.size() - 13).find_first_not_of("0123456789.") ==
++                line.npos) {
++          safe += line;
++        } else if (module == "app/log" && line == "Logger started") {
++          safe += "Logger started";
++        } else {
++          constexpr std::string_view prefixes[] = {
++              "Reading config:",
++              "listening TCP on",
++              "listening on",
++              "dialing TCP to",
++              "dialing to",
++              "taking detour",
++              "default route for",
++              "received request for",
++              "tunneling request to",
++              "request to Method",
++              "connection ends",
++              "failed to read response from",
++              "failed to process outbound traffic",
++              "failed to pick route for"};
++          for (auto prefix : prefixes) {
++            if (line == prefix ||
++                (line.starts_with(prefix) && line.size() > prefix.size() &&
++                 line[prefix.size()] == ' ')) {
++              safe += prefix;
++              safe += ' ';
++              break;
++            }
++          }
++          safe += "[redacted]";
++        }
++      } else {
++        safe += "[redacted]";
++      }
++    }
++    if (severity < rank_)
++      return false;
++    if (lines_.size() == 128)
++      lines_.pop_front();
++    lines_.push_back({severity, std::move(safe)});
++    return true;
++  }
++
++ private:
++  // Only expose a narrow host:port token. No URL/userinfo, paths, queries,
++  // HTTP headers, access email, tags or node parameters can pass this grammar.
++  static bool SafeTarget(std::string_view target,
++                         const std::vector<std::string>& secrets) {
++    auto endpoint = target;
++    if (endpoint.starts_with("tcp:") || endpoint.starts_with("udp:"))
++      endpoint.remove_prefix(4);
++    const auto colon = endpoint.rfind(':');
++    if (colon == endpoint.npos || endpoint.size() > 265 || colon == 0)
++      return false;
++    auto host = endpoint.substr(0, colon);
++    auto port = endpoint.substr(colon + 1);
++    if (port.empty() || port.size() > 5 || !Digits(port))
++      return false;
++    int n = 0;
++    for (char c : port)
++      n = n * 10 + c - '0';
++    if (n == 0 || n > 65535)
++      return false;
++    auto ascii_lower = [](char c) {
++      return static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
++    };
++    if (host.front() == '[' && host.back() == ']') {
++      host = host.substr(1, host.size() - 2);
++      if (host.find(':') == host.npos ||
++          host.find_first_not_of("0123456789ABCDEFabcdef:.") != host.npos)
++        return false;
++    } else {
++      if (host.front() == '.' || host.back() == '.' ||
++          host.find("..") != host.npos ||
++          host.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRS"
++                                 "TUVWXYZ0123456789-.") != host.npos)
++        return false;
++    }
++    std::string normalized(endpoint);
++    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
++                   ascii_lower);
++    for (const auto& secret : secrets) {
++      if (normalized.find(secret) != normalized.npos)
++        return false;
++    }
++    return true;
++  }
++  static bool Digit(char c) { return c >= '0' && c <= '9'; }
++  static bool Digits(std::string_view s) {
++    return !s.empty() && std::all_of(s.begin(), s.end(), Digit);
++  }
++  struct Entry {
++    int rank;
++    std::string text;
++  };
++  int rank_ = 2;
++  std::deque<Entry> lines_;
++};
++
++// Never interpret the tail of a truncated or split record as a fresh message.
++class CoreLogFramer {
++ public:
++  template <typename Sink>
++  void Feed(std::string_view bytes, Sink sink) {
++    for (char c : bytes) {
++      if (c == '\n') {
++        if (!dropping_)
++          sink(line_);
++        line_.clear();
++        dropping_ = false;
++      } else if (!dropping_) {
++        if (line_.size() == 4096) {
++          line_.clear();
++          dropping_ = true;
++        } else
++          line_ += c;
++      }
++    }
++  }
++
++ private:
++  std::string line_;
++  bool dropping_ = false;
++};
++}  // namespace aegis::access
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_H_
+diff --git a/chrome/browser/aegis/access/access_core_log_disk.cc b/chrome/browser/aegis/access/access_core_log_disk.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..58a9cbdbb798037fc77289fd3f796af22136dc05
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_disk.cc
+@@ -0,0 +1,121 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_core_log_disk.h"
++
++#include <fcntl.h>
++#include <sys/stat.h>
++#include <unistd.h>
++
++#include <array>
++#include <cerrno>
++#include "base/files/file.h"
++#include "base/files/file_util.h"
++#include "base/files/scoped_file.h"
++#include "base/posix/eintr_wrapper.h"
++#include "base/strings/string_view_util.h"
++
++namespace aegis::access {
++namespace {
++constexpr size_t kMaxHistoryBytes = 64 * 1024;
++const char* Name(CoreLogProfile scope) {
++  return scope == CoreLogProfile::kPrivate ? "private.log" : "regular.log";
++}
++const char* Pending(CoreLogProfile scope) {
++  return scope == CoreLogProfile::kPrivate ? ".private.pending"
++                                           : ".regular.pending";
++}
++enum class OpenResult { kOk, kMissing, kError };
++OpenResult OpenDirectory(const base::FilePath& profile,
++                         bool create,
++                         base::ScopedFD* directory) {
++  constexpr int flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC;
++  base::ScopedFD parent(HANDLE_EINTR(open(profile.value().c_str(), flags)));
++  if (!parent.is_valid())
++    return OpenResult::kError;
++  if (create && mkdirat(parent.get(), kCoreLogDirectory, 0700) < 0 &&
++      errno != EEXIST)
++    return OpenResult::kError;
++  directory->reset(
++      HANDLE_EINTR(openat(parent.get(), kCoreLogDirectory, flags)));
++  if (!directory->is_valid())
++    return errno == ENOENT ? OpenResult::kMissing : OpenResult::kError;
++  struct stat info;
++  if (fstat(directory->get(), &info) != 0 || info.st_uid != geteuid() ||
++      (info.st_mode & 0777) != 0700)
++    return OpenResult::kError;
++  return OpenResult::kOk;
++}
++bool Remove(int dir, const char* file) {
++  return unlinkat(dir, file, 0) == 0 || errno == ENOENT;
++}
++bool IsPrivateFile(const struct stat& info) {
++  return S_ISREG(info.st_mode) && info.st_uid == geteuid() &&
++         (info.st_mode & 0777) == 0600 && info.st_nlink == 1;
++}
++}  // namespace
++
++bool ReadCoreLogHistory(const base::FilePath& profile,
++                        CoreLogProfile scope,
++                        std::string* history) {
++  history->clear();
++  base::ScopedFD dir;
++  const auto opened = OpenDirectory(profile, false, &dir);
++  if (opened != OpenResult::kOk)
++    return opened == OpenResult::kMissing;
++  // An interrupted replacement can leave one private staging file. It is not
++  // treated as committed history and never grows into a collection of files.
++  if (!Remove(dir.get(), Pending(scope)))
++    return false;
++  base::ScopedFD fd(HANDLE_EINTR(openat(
++      dir.get(), Name(scope), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)));
++  if (!fd.is_valid())
++    return errno == ENOENT;
++  struct stat info;
++  if (fstat(fd.get(), &info) != 0 || !IsPrivateFile(info) || info.st_size < 0 ||
++      static_cast<uint64_t>(info.st_size) > kMaxHistoryBytes)
++    return false;
++  base::File file(fd.release());
++  std::array<uint8_t, 4096> bytes;
++  while (true) {
++    auto n = file.ReadAtCurrentPosNoBestEffort(bytes);
++    if (!n || history->size() + *n > kMaxHistoryBytes)
++      return false;
++    if (!*n)
++      return true;
++    history->append(base::as_string_view(base::span(bytes).first(*n)));
++  }
++}
++
++bool SaveCoreLogHistory(const base::FilePath& profile,
++                        CoreLogProfile scope,
++                        const std::string& history) {
++  if (history.size() > kMaxHistoryBytes)
++    return false;
++  base::ScopedFD dir;
++  const auto opened = OpenDirectory(profile, !history.empty(), &dir);
++  if (opened != OpenResult::kOk)
++    return opened == OpenResult::kMissing && history.empty();
++  if (!Remove(dir.get(), Pending(scope)))
++    return false;
++  if (history.empty())
++    return Remove(dir.get(), Name(scope));
++  struct stat info;
++  if (fstatat(dir.get(), Name(scope), &info, AT_SYMLINK_NOFOLLOW) == 0) {
++    if (!IsPrivateFile(info))
++      return false;
++  } else if (errno != ENOENT) {
++    return false;
++  }
++  base::ScopedFD fd(HANDLE_EINTR(
++      openat(dir.get(), Pending(scope),
++             O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600)));
++  if (!fd.is_valid())
++    return false;
++  const bool saved =
++      base::WriteFileDescriptor(fd.get(), history) &&
++      HANDLE_EINTR(fsync(fd.get())) == 0 &&
++      renameat(dir.get(), Pending(scope), dir.get(), Name(scope)) == 0;
++  if (!saved)
++    Remove(dir.get(), Pending(scope));
++  return saved;
++}
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_core_log_disk.h b/chrome/browser/aegis/access/access_core_log_disk.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..93de04735d99e7ab0feacffe282ba0f56fc84588
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_disk.h
+@@ -0,0 +1,21 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_DISK_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_DISK_H_
++
++#include <string>
++#include "base/files/file_path.h"
++
++namespace aegis::access {
++inline constexpr char kCoreLogDirectory[] = "AegisAccessDiagnostics";
++enum class CoreLogProfile { kRegular, kPrivate };
++
++// A missing historical file is an empty history. Save with an empty snapshot
++// removes the file. These operations run on the diagnostics I/O sequence.
++bool ReadCoreLogHistory(const base::FilePath& profile,
++                        CoreLogProfile scope,
++                        std::string* history);
++bool SaveCoreLogHistory(const base::FilePath& profile,
++                        CoreLogProfile scope,
++                        const std::string& history);
++}  // namespace aegis::access
++#endif
+diff --git a/chrome/browser/aegis/access/access_core_log_disk_unittest.cc b/chrome/browser/aegis/access/access_core_log_disk_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..dd50fdd9e6a6a55e0958358536db6e207e8d9243
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_disk_unittest.cc
+@@ -0,0 +1,202 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_core_log_store.h"
++
++#include "base/files/file_util.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/functional/callback_helpers.h"
++#include "base/synchronization/waitable_event.h"
++#include "base/test/bind.h"
++#include "base/test/task_environment.h"
++#include "base/threading/thread_restrictions.h"
++#include "chrome/browser/aegis/access/access_local_core_manager.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++using Scope = CoreLogProfile;
++using Status = AccessCoreLogStore::DiskStatus;
++constexpr char kTime[] = "2026/11/11 01:02:03 ";
++std::string Entry(std::string_view target) {
++  return std::string(kTime) + "from 127.0.0.1:3000 accepted https://" +
++         std::string(target) +
++         "/path?token=synthetic-secret [private-tag] email: private-user";
++}
++
++class AccessCoreLogDiskTest : public testing::Test {
++ protected:
++  void SetUp() override { ASSERT_TRUE(profile_.CreateUniqueTempDir()); }
++  auto Open(Scope scope = Scope::kRegular, std::string_view level = "info") {
++    return AccessCoreLogStore::Open(profile_.GetPath(), scope, level);
++  }
++  base::FilePath Directory() {
++    return profile_.GetPath().AppendASCII(kCoreLogDirectory);
++  }
++  base::FilePath Regular() { return Directory().AppendASCII("regular.log"); }
++  base::FilePath Private() { return Directory().AppendASCII("private.log"); }
++  base::test::TaskEnvironment environment_{
++      base::test::TaskEnvironment::ThreadPoolExecutionMode::QUEUED};
++  base::ScopedTempDir profile_;
++};
++
++TEST_F(AccessCoreLogDiskTest,
++       RestoreBoundedSanitizedScopesWithPrivatePermissions) {
++  auto regular = Open();
++  auto priv = Open(Scope::kPrivate);
++  for (int i = 0; i < 160; ++i)
++    regular->Add(0, Entry(std::to_string(i) + ".example"), {});
++  priv->Add(0, Entry("private.example"), {});
++  environment_.RunUntilIdle();
++  EXPECT_EQ(regular->disk_status(), Status::kReady);
++  EXPECT_EQ(priv->disk_status(), Status::kReady);
++  std::string history;
++  ASSERT_TRUE(base::ReadFileToString(Regular(), &history));
++  EXPECT_EQ(history, regular->Snapshot());
++  EXPECT_EQ(std::count(history.begin(), history.end(), '\n'), 127);
++  EXPECT_EQ(history.find("private.example"), history.npos);
++  EXPECT_EQ(history.find("synthetic-secret"), history.npos);
++  EXPECT_EQ(history.find("private-tag"), history.npos);
++  EXPECT_LT(history.size(), 65536u);
++  int mode = 0;
++  ASSERT_TRUE(base::GetPosixFilePermissions(Directory(), &mode));
++  EXPECT_EQ(mode, 0700);
++  for (auto path : {Regular(), Private()}) {
++    ASSERT_TRUE(base::GetPosixFilePermissions(path, &mode));
++    EXPECT_EQ(mode, 0600);
++  }
++  const auto private_text = priv->Snapshot();
++  regular.reset();
++  priv.reset();
++  auto restored = Open();
++  auto restored_private = Open(Scope::kPrivate);
++  restored_private->Add(0, Entry("new.example"), {});
++  environment_.RunUntilIdle();
++  EXPECT_EQ(restored->Snapshot(), history);
++  EXPECT_TRUE(restored_private->Snapshot().starts_with(private_text + "\n"));
++  EXPECT_NE(restored_private->Snapshot().find("new.example"), history.npos);
++}
++TEST_F(AccessCoreLogDiskTest, ClearAndNoneDefeatOlderRestoreAndQueuedWrites) {
++  auto regular = Open();
++  auto priv = Open(Scope::kPrivate);
++  regular->Add(0, Entry("old.example"), {});
++  priv->Add(0, Entry("private.example"), {});
++  environment_.RunUntilIdle();
++  regular.reset();
++  regular = Open();
++  regular->Add(0, Entry("queued.example"), {});
++  regular->Clear();
++  regular->Add(0, Entry("after.example"), {});
++  environment_.RunUntilIdle();
++  std::string contents;
++  ASSERT_TRUE(base::ReadFileToString(Regular(), &contents));
++  EXPECT_NE(contents.find("after.example"), contents.npos);
++  EXPECT_EQ(contents.find("old.example"), contents.npos);
++  EXPECT_EQ(contents.find("queued.example"), contents.npos);
++  regular->Clear();
++  environment_.RunUntilIdle();
++  EXPECT_FALSE(base::PathExists(Regular()));
++  EXPECT_TRUE(base::PathExists(Private()));
++  priv->SetLevel("none");
++  priv->Add(0, Entry("stale.example"), {});
++  environment_.RunUntilIdle();
++  EXPECT_TRUE(priv->Snapshot().empty());
++  EXPECT_FALSE(base::PathExists(Private()));
++  auto reopened = Open(Scope::kPrivate, "none");
++  environment_.RunUntilIdle();
++  EXPECT_TRUE(reopened->Snapshot().empty());
++}
++TEST_F(AccessCoreLogDiskTest, UnsafeFilesShowFailureWithoutFollowingLinks) {
++  auto store = Open();
++  store->Add(0, Entry("seed.example"), {});
++  environment_.RunUntilIdle();
++  ASSERT_TRUE(base::DeleteFile(Regular()));
++  auto unrelated = profile_.GetPath().AppendASCII("other");
++  ASSERT_TRUE(base::WriteFile(unrelated, "do not touch"));
++  ASSERT_TRUE(base::CreateSymbolicLink(unrelated, Regular()));
++  store->Add(0, Entry("still-in-memory.example"), {});
++  environment_.RunUntilIdle();
++  EXPECT_EQ(store->disk_status(), Status::kError);
++  EXPECT_NE(store->Snapshot().find("still-in-memory.example"),
++            std::string::npos);
++  std::string contents;
++  ASSERT_TRUE(base::ReadFileToString(unrelated, &contents));
++  EXPECT_EQ(contents, "do not touch");
++  store->Clear();
++  environment_.RunUntilIdle();
++  EXPECT_EQ(store->disk_status(), Status::kReady);
++  EXPECT_FALSE(base::IsLink(Regular()));
++  EXPECT_TRUE(base::PathExists(unrelated));
++  ASSERT_TRUE(base::SetPosixFilePermissions(Directory(), 0755));
++  store->Clear();
++  environment_.RunUntilIdle();
++  EXPECT_EQ(store->disk_status(), Status::kError);
++  ASSERT_TRUE(base::SetPosixFilePermissions(Directory(), 0700));
++  store->Clear();
++  environment_.RunUntilIdle();
++  EXPECT_EQ(store->disk_status(), Status::kReady);
++}
++
++void CheckPendingDeletionAtSessionEnding(bool disable) {
++  base::test::TaskEnvironment environment;
++  base::ScopedTempDir profile;
++  ASSERT_TRUE(profile.CreateUniqueTempDir());
++  auto regular = AccessCoreLogStore::Open(profile.GetPath(), Scope::kRegular, "info");
++  auto priv = AccessCoreLogStore::Open(profile.GetPath(), Scope::kPrivate, "info");
++  regular->Add(0, Entry("regular.example"), {});
++  priv->Add(0, Entry("private.example"), {});
++  environment.RunUntilIdle();
++  const auto directory = profile.GetPath().AppendASCII(kCoreLogDirectory);
++  const auto regular_file = directory.AppendASCII("regular.log");
++  const auto private_file = directory.AppendASCII("private.log");
++  ASSERT_TRUE(base::PathExists(regular_file));
++  ASSERT_TRUE(base::PathExists(private_file));
++
++  auto entered = std::make_shared<base::WaitableEvent>();
++  auto release = std::make_shared<base::WaitableEvent>();
++  base::ScopedClosureRunner unblock(base::BindLambdaForTesting(
++      [release] { release->Signal(); }));
++  AccessCoreLogStore::FlushAllForSessionEnding(base::BindLambdaForTesting(
++      [entered, release] {
++        base::ScopedAllowBaseSyncPrimitivesForTesting allow;
++        entered->Signal();
++        release->Wait();
++      }));
++  {
++    base::ScopedAllowBaseSyncPrimitivesForTesting allow;
++    ASSERT_TRUE(entered->TimedWait(base::Seconds(5)));
++  }
++  for (auto store : {regular, priv}) {
++    store->Add(0, Entry("queued.example"), {});
++    if (disable) store->SetLevel("none");
++    else store->Clear();
++  }
++  regular.reset();
++  priv.reset();
++  auto stopped = std::make_shared<base::WaitableEvent>();
++  AccessLocalCoreManager::StopAllForSessionEnding(base::BindLambdaForTesting(
++      [stopped] { stopped->Signal(); }));
++  EXPECT_FALSE(stopped->IsSignaled());
++  EXPECT_TRUE(base::PathExists(regular_file));
++  EXPECT_TRUE(base::PathExists(private_file));
++  unblock.RunAndReset();
++  {
++    // The session-ending Browser sequence does not process UI replies.
++    base::ScopedAllowBaseSyncPrimitivesForTesting allow;
++    ASSERT_TRUE(stopped->TimedWait(base::Seconds(5)));
++  }
++  EXPECT_FALSE(base::PathExists(regular_file));
++  EXPECT_FALSE(base::PathExists(private_file));
++  regular = AccessCoreLogStore::Open(profile.GetPath(), Scope::kRegular, "info");
++  priv = AccessCoreLogStore::Open(profile.GetPath(), Scope::kPrivate, "info");
++  environment.RunUntilIdle();
++  EXPECT_TRUE(regular->Snapshot().empty());
++  EXPECT_TRUE(priv->Snapshot().empty());
++}
++
++TEST(AccessCoreLogSessionEndingTest, PendingClearCompletesWithoutUiReplies) {
++  CheckPendingDeletionAtSessionEnding(false);
++}
++TEST(AccessCoreLogSessionEndingTest, PendingNoneCompletesWithoutUiReplies) {
++  CheckPendingDeletionAtSessionEnding(true);
++}
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_core_log_share.cc b/chrome/browser/aegis/access/access_core_log_share.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd54edd7b2faa4955297511acb6068c718523dcb
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_share.cc
+@@ -0,0 +1,203 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_core_log_share.h"
++
++#include <sys/stat.h>
++
++#include <atomic>
++#include <vector>
++
++#include "base/barrier_closure.h"
++#include "base/containers/span.h"
++#include "base/files/file.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/functional/bind.h"
++#include "base/memory/raw_ptr.h"
++#include "base/no_destructor.h"
++#include "base/synchronization/lock.h"
++#include "base/task/thread_pool.h"
++#include "third_party/zlib/google/compression_utils.h"
++
++namespace aegis::access {
++bool WriteCoreLogArchive(const base::FilePath& directory,
++                         const std::string& text) {
++  if (text.empty() || text.size() > 65536)
++    return false;
++  std::string gzip;
++  if (!compression::GzipCompress(base::as_byte_span(text), &gzip))
++    return false;
++  base::File file(directory.AppendASCII(kCoreLogArchive),
++                  base::File::FLAG_CREATE | base::File::FLAG_WRITE);
++  return file.IsValid() && fchmod(file.GetPlatformFile(), 0600) == 0 &&
++         file.WriteAtCurrentPosAndCheck(base::as_byte_span(gzip));
++}
++
++class CoreLogShareSession::ShutdownHandle
++    : public std::enable_shared_from_this<ShutdownHandle> {
++ public:
++  explicit ShutdownHandle(scoped_refptr<base::SequencedTaskRunner> runner)
++      : runner_(std::move(runner)) {}
++
++  // Registry access stays on the owning Browser sequence. The writer keeps
++  // this handle alive through queued construction and destruction.
++  static std::vector<std::weak_ptr<ShutdownHandle>>& Registry() {
++    static base::NoDestructor<std::vector<std::weak_ptr<ShutdownHandle>>> handles;
++    return *handles;
++  }
++  bool stop_requested() const { return stop_requested_.load(); }
++  void SetWriter(Writer* writer) { writer_ = writer; }  // Writer sequence only.
++
++  void RequestStop(base::OnceClosure completion) {
++    stop_requested_.store(true);
++    bool stopped;
++    {
++      base::AutoLock guard(lock_);
++      stopped = stopped_;
++      if (!stopped) completions_.push_back(std::move(completion));
++    }
++    if (stopped) {
++      std::move(completion).Run();
++      return;
++    }
++    // If shutdown rejects the task, the BLOCK_SHUTDOWN writer's queued
++    // destruction completes this same barrier.
++    runner_->PostTask(FROM_HERE, base::BindOnce(
++        [](std::shared_ptr<ShutdownHandle> handle) {
++          handle->StopOnWriter();
++        }, shared_from_this()));
++  }
++
++  void CompleteStop() {
++    std::vector<base::OnceClosure> completions;
++    {
++      base::AutoLock guard(lock_);
++      stopped_ = true;
++      completions.swap(completions_);
++    }
++    for (auto& completion : completions) std::move(completion).Run();
++  }
++
++ private:
++  void StopOnWriter();
++  scoped_refptr<base::SequencedTaskRunner> runner_;
++  raw_ptr<Writer> writer_ = nullptr;
++  std::atomic_bool stop_requested_{false};
++  base::Lock lock_;
++  bool stopped_ GUARDED_BY(lock_) = false;
++  std::vector<base::OnceClosure> completions_ GUARDED_BY(lock_);
++};
++
++class CoreLogShareSession::Writer {
++ public:
++  explicit Writer(std::shared_ptr<ShutdownHandle> shutdown)
++      : shutdown_(std::move(shutdown)) {
++    shutdown_->SetWriter(this);
++  }
++  ~Writer() {
++    CleanUp();
++    shutdown_->SetWriter(nullptr);
++    shutdown_->CompleteStop();
++  }
++  base::FilePath Write(base::FilePath parent, std::string text) {
++    if (shutdown_->stop_requested()) return {};
++    const bool created = parent.empty()
++                             ? directory_.CreateUniqueTempDir()
++                             : directory_.CreateUniqueTempDirUnderPath(parent);
++    // Both calls use mkdtemp on macOS, creating a 0700 directory.
++    if (!created || !WriteCoreLogArchive(directory_.GetPath(), text))
++      return {};
++    return directory_.GetPath().AppendASCII(kCoreLogArchive);
++  }
++  void CleanUp() {
++    if (directory_.IsValid()) {
++      const bool deleted = directory_.Delete();
++      (void)deleted;
++    }
++  }
++
++ private:
++  std::shared_ptr<ShutdownHandle> shutdown_;
++  base::ScopedTempDir directory_;
++};
++
++void CoreLogShareSession::ShutdownHandle::StopOnWriter() {
++  if (writer_) writer_->CleanUp();
++  CompleteStop();
++}
++
++CoreLogShareSession::CoreLogShareSession() = default;
++CoreLogShareSession::~CoreLogShareSession() = default;
++
++void CoreLogShareSession::Start(std::string preview, Ready ready) {
++  StartOn(std::move(preview), std::move(ready),
++          base::ThreadPool::CreateSequencedTaskRunner(
++              {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN}),
++          {});
++}
++
++void CoreLogShareSession::StartForTesting(
++    std::string preview,
++    Ready ready,
++    scoped_refptr<base::SequencedTaskRunner> runner,
++    base::FilePath parent) {
++  StartOn(std::move(preview), std::move(ready), std::move(runner),
++          std::move(parent));
++}
++
++void CoreLogShareSession::StartOn(
++    std::string preview,
++    Ready ready,
++    scoped_refptr<base::SequencedTaskRunner> runner,
++    base::FilePath parent) {
++  if (shutting_down_ || writer_) {
++    std::move(ready).Run({}, {});
++    return;
++  }
++  shutdown_ = std::make_shared<ShutdownHandle>(runner);
++  auto& handles = ShutdownHandle::Registry();
++  std::erase_if(handles, [](const auto& handle) { return handle.expired(); });
++  handles.emplace_back(shutdown_);
++  writer_.emplace(std::move(runner), shutdown_);
++  writer_.AsyncCall(&Writer::Write)
++      .WithArgs(std::move(parent), std::move(preview))
++      .Then(base::BindOnce(&CoreLogShareSession::OnWritten, weak_.GetWeakPtr(),
++                           std::move(ready)));
++}
++
++void CoreLogShareSession::OnWritten(Ready ready, base::FilePath path) {
++  if (shutdown_->stop_requested()) {
++    Finish();
++    std::move(ready).Run({}, {});
++    return;
++  }
++  base::ScopedClosureRunner release(
++      base::BindOnce(&CoreLogShareSession::Finish, weak_.GetWeakPtr()));
++  std::move(ready).Run(std::move(path), std::move(release));
++}
++
++void CoreLogShareSession::Finish() {
++  weak_.InvalidateWeakPtrs();
++  writer_.Reset();
++  shutdown_.reset();
++}
++
++void CoreLogShareSession::ShutDown() {
++  shutting_down_ = true;
++  // Called by Chrome's app-terminating notification while ThreadPool still
++  // accepts work. Destruction is ordered behind any queued or running write
++  // and blocks shutdown even if its UI reply or picker never completes.
++  Finish();
++}
++
++void CoreLogShareSession::StopAllForSessionEnding(base::OnceClosure completion) {
++  std::vector<std::shared_ptr<ShutdownHandle>> handles;
++  for (auto& weak : ShutdownHandle::Registry()) {
++    if (auto handle = weak.lock()) handles.push_back(std::move(handle));
++  }
++  if (handles.empty()) {
++    std::move(completion).Run();
++    return;
++  }
++  auto stopped = base::BarrierClosure(handles.size(), std::move(completion));
++  for (auto& handle : handles) handle->RequestStop(base::OnceClosure(stopped));
++}
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_core_log_share.h b/chrome/browser/aegis/access/access_core_log_share.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a664e9963491b569d14c0831bce7a4b9352e4d3
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_share.h
+@@ -0,0 +1,53 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_SHARE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_SHARE_H_
++
++#include <memory>
++#include <string>
++
++#include "base/files/file_path.h"
++#include "base/functional/callback_helpers.h"
++#include "base/memory/weak_ptr.h"
++#include "base/threading/sequence_bound.h"
++
++namespace aegis::access {
++// Write only inside a freshly created private directory owned by the caller.
++bool WriteCoreLogArchive(const base::FilePath& directory,
++                         const std::string& text);
++inline constexpr char kCoreLogArchive[] = "Aegis-Access.log.gz";
++
++// UI owns the operation. Its worker owns the temporary directory from the
++// first write until cleanup; only a path, never file ownership, crosses to UI.
++class CoreLogShareSession {
++ public:
++  using Ready =
++      base::OnceCallback<void(base::FilePath, base::ScopedClosureRunner)>;
++  CoreLogShareSession();
++  ~CoreLogShareSession();
++  void Start(std::string preview, Ready ready);
++  void ShutDown();
++  // Runs cleanup on writer sequences and completes without a UI reply. Also
++  // includes writers whose UI owner is already awaiting asynchronous destruction.
++  static void StopAllForSessionEnding(base::OnceClosure completion);
++  void StartForTesting(std::string preview,
++                       Ready ready,
++                       scoped_refptr<base::SequencedTaskRunner> runner,
++                       base::FilePath parent);
++
++ private:
++  class Writer;
++  class ShutdownHandle;
++  void StartOn(std::string preview,
++               Ready ready,
++               scoped_refptr<base::SequencedTaskRunner> runner,
++               base::FilePath parent);
++  void OnWritten(Ready ready, base::FilePath path);
++  void Finish();
++
++  bool shutting_down_ = false;
++  std::shared_ptr<ShutdownHandle> shutdown_;
++  base::SequenceBound<Writer> writer_;
++  base::WeakPtrFactory<CoreLogShareSession> weak_{this};
++};
++}  // namespace aegis::access
++#endif
+diff --git a/chrome/browser/aegis/access/access_core_log_store.cc b/chrome/browser/aegis/access/access_core_log_store.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..c5cb390730c186592af5f0d67a12aaf8d58b5d5d
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_store.cc
+@@ -0,0 +1,153 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_core_log_store.h"
++
++#if BUILDFLAG(IS_MAC)
++#include "base/functional/bind.h"
++#include "base/strings/string_split.h"
++#include "base/task/lazy_thread_pool_task_runner.h"
++#endif
++
++namespace aegis::access {
++AccessCoreLogStore::AccessCoreLogStore() = default;
++AccessCoreLogStore::~AccessCoreLogStore() = default;
++
++void AccessCoreLogStore::SetLevel(std::string_view level) {
++  base::AutoLock guard(lock_);
++  ++view_version_;
++  if (level == "none")
++    ++generation_;
++  log_.SetLevel(level);
++#if BUILDFLAG(IS_MAC)
++  if (level == "none")
++    ScheduleClearLocked();
++  else
++    ScheduleSaveLocked();
++#endif
++}
++void AccessCoreLogStore::Add(uint64_t generation,
++                             std::string_view line,
++                             const std::vector<std::string>& protected_values) {
++  base::AutoLock guard(lock_);
++  if (generation != generation_ || !log_.Add(line, protected_values))
++    return;
++#if BUILDFLAG(IS_MAC)
++  ScheduleSaveLocked();
++#endif
++}
++void AccessCoreLogStore::Clear() {
++  base::AutoLock guard(lock_);
++  ++view_version_;
++  log_.Clear();
++#if BUILDFLAG(IS_MAC)
++  ScheduleClearLocked();
++#endif
++}
++
++#if BUILDFLAG(IS_MAC)
++namespace {
++// A shared sequence also orders disk access across closing and reopened
++// profile windows at the same path.
++base::LazyThreadPoolSequencedTaskRunner g_log_disk =
++    LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
++        base::TaskTraits(base::MayBlock(),
++                         base::TaskShutdownBehavior::BLOCK_SHUTDOWN));
++void ReadSanitizedLines(AccessCoreLog& log, std::string_view text) {
++  for (auto line : base::SplitStringPiece(text, "\n", base::KEEP_WHITESPACE,
++                                          base::SPLIT_WANT_NONEMPTY)) {
++    if (line.size() <= 4096)
++      log.Add(line);
++  }
++}
++}  // namespace
++
++void AccessCoreLogStore::FlushAllForSessionEnding(base::OnceClosure completion) {
++  // SessionEnding terminates directly, without ThreadPool shutdown. Its
++  // bounded rundown must also wait for an already-requested history deletion.
++  g_log_disk.Get()->PostTask(FROM_HERE, std::move(completion));
++}
++
++scoped_refptr<AccessCoreLogStore> AccessCoreLogStore::Open(
++    const base::FilePath& profile,
++    CoreLogProfile scope,
++    std::string_view level) {
++  auto store = base::MakeRefCounted<AccessCoreLogStore>();
++  base::AutoLock guard(store->lock_);
++  store->profile_ = profile;
++  store->scope_ = scope;
++  store->disk_runner_ = g_log_disk.Get();
++  store->log_.SetLevel(level);
++  if (store->log_.level() == "none") {
++    store->ScheduleClearLocked();
++  } else {
++    store->disk_status_ = DiskStatus::kLoading;
++    if (!store->disk_runner_->PostTask(
++            FROM_HERE, base::BindOnce(&AccessCoreLogStore::Restore, store,
++                                      store->disk_epoch_)))
++      store->disk_status_ = DiskStatus::kError;
++  }
++  return store;
++}
++AccessCoreLogStore::DiskStatus AccessCoreLogStore::disk_status() {
++  base::AutoLock guard(lock_);
++  return disk_status_;
++}
++void AccessCoreLogStore::Restore(uint64_t epoch) {
++  std::string stored;
++  bool ok = ReadCoreLogHistory(profile_, scope_, &stored);
++  base::AutoLock guard(lock_);
++  if (epoch != disk_epoch_)
++    return;
++  disk_status_ = ok ? DiskStatus::kReady : DiskStatus::kError;
++  if (!ok || stored.empty())
++    return;
++  // Preserve entries accepted while the read was outstanding. Parse all disk
++  // bytes through the same bounded sanitizer used for fresh child records.
++  std::string fresh = log_.Snapshot();
++  log_.Clear();
++  ReadSanitizedLines(log_, stored);
++  ReadSanitizedLines(log_, fresh);
++}
++void AccessCoreLogStore::ScheduleSaveLocked() {
++  lock_.AssertAcquired();
++  if (!disk_runner_ || save_pending_)
++    return;
++  save_pending_ = true;
++  if (!disk_runner_->PostTask(
++          FROM_HERE,
++          base::BindOnce(&AccessCoreLogStore::Flush, base::WrapRefCounted(this),
++                         disk_epoch_, false))) {
++    save_pending_ = false;
++    disk_status_ = DiskStatus::kError;
++  }
++}
++void AccessCoreLogStore::ScheduleClearLocked() {
++  lock_.AssertAcquired();
++  if (!disk_runner_)
++    return;
++  ++disk_epoch_;
++  save_pending_ = false;
++  disk_status_ = DiskStatus::kClearing;
++  if (!disk_runner_->PostTask(
++          FROM_HERE,
++          base::BindOnce(&AccessCoreLogStore::Flush, base::WrapRefCounted(this),
++                         disk_epoch_, true)))
++    disk_status_ = DiskStatus::kError;
++}
++void AccessCoreLogStore::Flush(uint64_t epoch, bool clear) {
++  std::string text;
++  {
++    base::AutoLock guard(lock_);
++    if (epoch != disk_epoch_)
++      return;
++    if (!clear) {
++      save_pending_ = false;
++      text = log_.Snapshot();
++    }
++  }
++  const bool ok = SaveCoreLogHistory(profile_, scope_, text);
++  base::AutoLock guard(lock_);
++  if (epoch == disk_epoch_)
++    disk_status_ = ok ? DiskStatus::kReady : DiskStatus::kError;
++}
++#endif
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_core_log_store.h b/chrome/browser/aegis/access/access_core_log_store.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..7a46839423183a388e4b6ebbe9b640e98923e26e
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_store.h
+@@ -0,0 +1,82 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_STORE_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_STORE_H_
++
++#include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "base/functional/callback.h"
++#include "base/task/sequenced_task_runner.h"
++#include "chrome/browser/aegis/access/access_core_log_disk.h"
++#endif
++#include "base/memory/ref_counted.h"
++#include "base/synchronization/lock.h"
++#include "chrome/browser/aegis/access/access_core_log.h"
++
++namespace aegis::access {
++// Shared only by one profile scope's UI and local proxy worker.
++class AccessCoreLogStore
++    : public base::RefCountedThreadSafe<AccessCoreLogStore> {
++ public:
++  AccessCoreLogStore();
++#if BUILDFLAG(IS_MAC)
++  enum class DiskStatus { kLoading, kReady, kClearing, kError };
++  static scoped_refptr<AccessCoreLogStore> Open(const base::FilePath& profile,
++                                                CoreLogProfile scope,
++                                                std::string_view level);
++  // Call after core writers stop. Completes on the disk sequence after all
++  // queued saves/deletions, without a reply to the blocked Browser sequence.
++  static void FlushAllForSessionEnding(base::OnceClosure completion);
++  DiskStatus disk_status();
++#endif
++  void SetLevel(std::string_view level);
++  std::string Level() {
++    base::AutoLock guard(lock_);
++    return std::string(log_.level());
++  }
++  std::pair<std::string, uint64_t> LaunchConfig() {
++    base::AutoLock guard(lock_);
++    return {std::string(log_.level()), generation_};
++  }
++  void Add(uint64_t generation,
++           std::string_view line,
++           const std::vector<std::string>& protected_values);
++  std::string Snapshot() {
++    base::AutoLock guard(lock_);
++    return log_.Snapshot();
++  }
++  uint64_t view_version() {
++    base::AutoLock guard(lock_);
++    return view_version_;
++  }
++  std::pair<std::string, uint64_t> ViewSnapshot() {
++    base::AutoLock guard(lock_);
++    return {log_.Snapshot(), view_version_};
++  }
++  bool CanShare(uint64_t version) {
++    base::AutoLock guard(lock_);
++    return version == view_version_ && log_.level() != "none";
++  }
++  void Clear();
++
++ private:
++  friend class base::RefCountedThreadSafe<AccessCoreLogStore>;
++  ~AccessCoreLogStore();
++  base::Lock lock_;
++#if BUILDFLAG(IS_MAC)
++  void Restore(uint64_t epoch);
++  void ScheduleSaveLocked();
++  void ScheduleClearLocked();
++  void Flush(uint64_t epoch, bool clear);
++  scoped_refptr<base::SequencedTaskRunner> disk_runner_;
++  base::FilePath profile_;
++  CoreLogProfile scope_ = CoreLogProfile::kRegular;
++  uint64_t disk_epoch_ GUARDED_BY(lock_) = 0;
++  bool save_pending_ GUARDED_BY(lock_) = false;
++  DiskStatus disk_status_ GUARDED_BY(lock_) = DiskStatus::kReady;
++#endif
++  uint64_t view_version_ GUARDED_BY(lock_) = 0;
++  uint64_t generation_ GUARDED_BY(lock_) = 0;
++  AccessCoreLog log_ GUARDED_BY(lock_);
++};
++}  // namespace aegis::access
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_CORE_LOG_STORE_H_
+diff --git a/chrome/browser/aegis/access/access_core_log_unittest.cc b/chrome/browser/aegis/access/access_core_log_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..6dd0b660b42f23c030c87a08e1ecdb244ea5fe62
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_core_log_unittest.cc
+@@ -0,0 +1,112 @@
++// Copyright 2026 GCSA
++#include "chrome/browser/aegis/access/access_core_log.h"
++
++#include "chrome/browser/aegis/access/access_build_channel.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++constexpr char kTime[] = "2026/11/11 13:14:15.123456 ";
++TEST(AccessCoreLogTest, BuildChannelsChooseDiagnosticDefaults) {
++  using Channel = aegis_access::BrowserReleaseChannel;
++  using Bundled = aegis_access::ChannelNamespace;
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kDev, Bundled::kInvalid), "debug");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kCanary, Bundled::kInvalid), "info");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kBeta, Bundled::kInvalid), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kStable, Bundled::kInvalid), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kInvalid), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kInvalid, Bundled::kInvalid), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kAlpha), "info");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kBeta), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kDev, Bundled::kAlpha), "debug");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kStable, Bundled::kAlpha), "warning");
++  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kInvalid, Bundled::kAlpha), "warning");
++}
++
++TEST(AccessCoreLogTest, ChannelDefaultsRetainThresholdRedactionAndManualOff) {
++  using Channel = aegis_access::BrowserReleaseChannel;
++  for (const auto channel : {Channel::kDev, Channel::kCanary, Channel::kBeta,
++                            Channel::kStable, Channel::kUnknown}) {
++    AccessCoreLog log;
++    const auto level = DefaultCoreLogLevelForBuild(
++        channel, aegis_access::ChannelNamespace::kInvalid);
++    log.SetLevel(level);
++    EXPECT_EQ(log.Add(std::string(kTime) + "[Info] untrusted/node: SECRET"),
++              channel == Channel::kDev || channel == Channel::kCanary);
++    EXPECT_TRUE(log.Add(std::string(kTime) + "[Warning] untrusted/node: SECRET"));
++    EXPECT_EQ(log.Snapshot().find("SECRET"), std::string::npos);
++    log.SetLevel("none");
++    EXPECT_TRUE(log.Snapshot().empty());
++    EXPECT_FALSE(log.Add(std::string(kTime) + "[Error] core: SECRET"));
++  }
++}
++
++TEST(AccessCoreLogTest, ThresholdAndRealLineGrammar) {
++  AccessCoreLog log;
++  ASSERT_EQ(log.level(), "warning");
++  log.Add(std::string(kTime) +
++          "[Info] proxy/http: request to Method [GET] Host [site] with URL "
++          "[secret]");
++  log.Add(std::string(kTime) + "[Warning] core: Xray 26.1.18 started");
++  EXPECT_EQ(log.Snapshot(),
++            std::string(kTime) + "[Warning] core: Xray 26.1.18 started");
++  log.SetLevel("error");
++  EXPECT_TRUE(log.Snapshot().empty());
++  log.Add(std::string(kTime) +
++          "[Error] [307] app/dispatcher: failed to pick route for token");
++  EXPECT_EQ(
++      log.Snapshot(),
++      std::string(kTime) +
++          "[Error] [307] app/dispatcher: failed to pick route for [redacted]");
++  log.SetLevel("none");
++  log.Add(std::string(kTime) + "[Error] token");
++  EXPECT_TRUE(log.Snapshot().empty());
++  log.SetLevel("invalid");
++  EXPECT_EQ(log.level(), "warning");
++}
++TEST(AccessCoreLogTest, StripAccessSecretsKeepOnlyDestination) {
++  AccessCoreLog log;
++  log.SetLevel("debug");
++  auto line = [](std::string target) {
++    return std::string(kTime) + "from SECRET_LOCAL accepted " + target +
++           " [SECRET_NODE] email: SECRET_EMAIL";
++  };
++  log.Add(line("tcp:private.example.test:443"));
++  EXPECT_EQ(log.Snapshot(),
++            std::string(kTime) +
++                "from [redacted] accepted tcp:private.example.test:443");
++  log.Clear();
++  log.Add(line("https://private.example.test/path?api_key=SECRET"));
++  EXPECT_EQ(
++      log.Snapshot(),
++      std::string(kTime) + "from [redacted] accepted private.example.test:443");
++  for (std::string target : {"tcp:user:SECRET@host:443", "tcp:host/SECRET:443",
++                             "tcp:DANGEROUS.example:443", "tcp:host:99999"}) {
++    log.Clear();
++    log.Add(line(target), {"dangerous"});
++    EXPECT_EQ(log.Snapshot(),
++              std::string(kTime) + "from [redacted] accepted [redacted]");
++  }
++  log.Clear();
++  log.Add(std::string(kTime) + "[Debug] untrusted/node: secret-token");
++  EXPECT_EQ(log.Snapshot(), std::string(kTime) + "[Debug] [redacted]");
++}
++TEST(AccessCoreLogTest, FragmentOversizeAndBoundedHistory) {
++  CoreLogFramer framer;
++  AccessCoreLog log;
++  auto accept = [&log](std::string_view value) { log.Add(value); };
++  const std::string record =
++      std::string(kTime) + "[Warning] core: Xray 26.1.18 started";
++  framer.Feed(std::string(4097, 'x') + record + "\n", accept);
++  framer.Feed(record.substr(0, 11), accept);
++  EXPECT_TRUE(log.Snapshot().empty());
++  framer.Feed(record.substr(11) + "\n", accept);
++  EXPECT_EQ(log.Snapshot(), record);
++  for (int i = 0; i < 200; ++i)
++    framer.Feed(record + "\n", accept);
++  const auto bounded = log.Snapshot();
++  EXPECT_EQ(std::count(bounded.begin(), bounded.end(), '\n'), 127);
++  EXPECT_LE(bounded.size(), 65536u);
++}
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index 0b680a6f12acf368ff4cad26e2bc4194ba78c5af..18c9e049b089f3246257dff36dbcc016258e05f3 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -2,12 +2,20 @@
+ #include "chrome/browser/aegis/access/access_local_core_manager.h"
+ 
+ #include <signal.h>
++#include <unistd.h>
+ 
+ #include <algorithm>
+ #include <atomic>
++#include <cerrno>
+ #include <vector>
+ 
+ #include "base/barrier_closure.h"
++#include "base/strings/string_util.h"
++
++#include "base/files/file_descriptor_watcher_posix.h"
++#include "base/posix/eintr_wrapper.h"
++#include "base/base64.h"
++#include "chrome/browser/aegis/access/access_core_log_share.h"
+ #include "base/command_line.h"
+ #include "base/base_paths.h"
+ #include "base/files/file.h"
+@@ -85,6 +93,18 @@ constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
+       })");
+ constexpr char kCanary[] = "https://www.gstatic.com/generate_204";
+ std::string Token() { return base::Uuid::GenerateRandomV4().AsLowercaseString(); }
++// Keep configured strings out of access targets as well as free-form messages.
++// Exceeding the small comparison budget disables address disclosure.
++void ProtectValue(const base::Value& value, std::vector<std::string>& values) {
++  if (values.size() >= 256) return;
++  if (value.is_dict()) {
++    for (auto entry : value.GetDict()) ProtectValue(entry.second, values);
++  } else if (value.is_list()) {
++    for (const auto& item : value.GetList()) ProtectValue(item, values);
++  } else if (value.is_string() && !value.GetString().empty()) {
++    values.push_back(base::ToLowerASCII(value.GetString()));
++  }
++}
+ }  // namespace
+ 
+ class AccessLocalCoreManager::ShutdownHandle
+@@ -280,8 +300,18 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     const auto password = Token();
+     credentials_.emplace(base::UTF8ToUTF16(user), base::UTF8ToUTF16(password));
+     registration_ = Token();
++    std::string level = "none";
++    if (input_.log_store) std::tie(level, log_generation_) = input_.log_store->LaunchConfig();
++    protected_values_ = {user, password, registration_,
++                         base::ToLowerASCII(base::Base64Encode(user + ":" + password))};
++    if (CoreLogRank(level) < 2) {
++      ProtectValue(outbounds->front(), protected_values_);
++      if (protected_values_.size() >= 256) protected_values_ = {""};
++    }
++    auto log = base::DictValue().Set("loglevel", level);
++    if (CoreLogRank(level) >= 2) log.Set("access", "none");
+     auto config = base::DictValue()
+-        .Set("log", base::DictValue().Set("loglevel", "none"))
++        .Set("log", std::move(log))
+         .Set("inbounds", base::ListValue().Append(base::DictValue()
+             .Set("listen", "127.0.0.1").Set("port", port_).Set("protocol", "http")
+             .Set("settings", base::DictValue().Set("accounts", base::ListValue()
+@@ -308,11 +338,36 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     base::File null_output(base::FilePath("/dev/null"),
+                            base::File::FLAG_OPEN | base::File::FLAG_WRITE);
+     if (!null_output.IsValid()) return false;
+-    options.fds_to_remap = {{null_output.GetPlatformFile(), 1},
+-                            {null_output.GetPlatformFile(), 2}};
++    base::ScopedFD write_end;
++    int output = null_output.GetPlatformFile();
++    auto create_log_pipe = input_.create_log_pipe_for_testing
++                               ? input_.create_log_pipe_for_testing : &base::CreatePipe;
++    if (level != "none" && create_log_pipe(&log_read_, &write_end, /*non_blocking=*/true)) {
++      // Diagnostic capture is optional; a failed pipe keeps /dev/null.
++      output = write_end.get();
++      log_watch_ = base::FileDescriptorWatcher::WatchReadable(
++          log_read_.get(), base::BindRepeating(&Worker::DrainLog, base::Unretained(this)));
++    }
++    options.fds_to_remap = {{output, STDOUT_FILENO}, {output, STDERR_FILENO}};
+     process_ = base::LaunchProcess(command, options);
+     return process_.IsValid();
+   }
++  void DrainLog() {
++    // Bound each turn so noisy children cannot starve cancellation or probes.
++    char chunk[4096];
++    for (int i = 0; i < 16 && log_read_.is_valid(); ++i) {
++      auto count = HANDLE_EINTR(read(log_read_.get(), chunk, sizeof(chunk)));
++      if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
++      if (count <= 0) {
++        log_watch_.reset();
++        log_read_.reset();
++        break;
++      }
++      framer_.Feed(std::string_view(chunk, count), [this](std::string_view line) {
++        input_.log_store->Add(log_generation_, line, protected_values_);
++      });
++    }
++  }
+   void StartProbe() {
+     if (!Running()) {
+       Complete(false, "The local proxy exited before becoming ready.");
+@@ -427,6 +482,11 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+       }
+       process_.Close();
+     }
++    DrainLog();
++    log_watch_.reset();
++    log_read_.reset();
++    framer_ = CoreLogFramer();
++    protected_values_.clear();
+     credentials_.reset();
+     authenticated_ = false;
+     const bool deleted = directory_.Delete();
+@@ -435,6 +495,11 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+ 
+   AccessLocalCoreInput input_;
+   std::shared_ptr<ShutdownHandle> shutdown_;
++  base::ScopedFD log_read_;
++  std::unique_ptr<base::FileDescriptorWatcher::Controller> log_watch_;
++  CoreLogFramer framer_;
++  uint64_t log_generation_ = 0;
++  std::vector<std::string> protected_values_;
+   base::ScopedTempDir directory_;
+   base::Process process_;
+   uint16_t port_ = 0;
+@@ -502,11 +567,11 @@ void AccessLocalCoreManager::StopAllForSessionEnding(base::OnceClosure completio
+   for (auto& weak : ShutdownHandle::Registry()) {
+     if (auto handle = weak.lock()) handles.push_back(std::move(handle));
+   }
+-  if (handles.empty()) {
+-    std::move(completion).Run();
+-    return;
+-  }
+-  auto stopped = base::BarrierClosure(handles.size(), std::move(completion));
++  auto stopped = base::BarrierClosure(
++      handles.size() + 1,
++      base::BindOnce(&AccessCoreLogStore::FlushAllForSessionEnding,
++                     std::move(completion)));
++  CoreLogShareSession::StopAllForSessionEnding(base::OnceClosure(stopped));
+   for (auto& handle : handles) handle->RequestStop(base::OnceClosure(stopped));
+ }
+ void AccessLocalCoreManager::SetStoppedCallback(
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.h b/chrome/browser/aegis/access/access_local_core_manager.h
+index 08796f8e5c86e095ec975957ad3f6485f14bc7d4..ca66110b027a27fa4a0193d4b659f6f5579df2e9 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.h
++++ b/chrome/browser/aegis/access/access_local_core_manager.h
+@@ -10,7 +10,12 @@
+ #include "base/functional/callback.h"
+ #include "base/threading/sequence_bound.h"
+ #include "base/threading/thread.h"
++#include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "base/files/scoped_file.h"
++#endif
+ #include "net/base/auth.h"
++#include "chrome/browser/aegis/access/access_core_log_store.h"
+ 
+ namespace aegis::access {
+ enum class AccessLocalCoreSource { kDevFiles, kPrivateTestBundle };
+@@ -20,6 +25,10 @@ struct AccessLocalCoreInput {
+   base::FilePath manifest;
+   base::FilePath node_config;
+   AccessLocalCoreSource source = AccessLocalCoreSource::kDevFiles;
++  scoped_refptr<AccessCoreLogStore> log_store = nullptr;
++#if BUILDFLAG(IS_MAC)
++  bool (*create_log_pipe_for_testing)(base::ScopedFD*, base::ScopedFD*, bool) = nullptr;
++#endif
+ };
+ // Resolves paths only. File parsing, pins, process launch and readiness remain
+ // on the core IO thread. Alpha never takes node paths from command-line flags.
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index b218f007a633f68916708766d3f3fcf37649b2b6..f2a93d880b29c08a4a74e70b42474ac5bfcd1347 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -15,6 +15,8 @@
+ #include "base/strings/string_number_conversions.h"
+ #include "base/synchronization/waitable_event.h"
+ #include "base/test/task_environment.h"
++#include "base/task/thread_pool.h"
++#include <atomic>
+ #include "base/test/bind.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+@@ -27,6 +29,8 @@
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "build/build_config.h"
+ #include "crypto/hash.h"
++#include "chrome/browser/aegis/access/access_core_log_share.h"
++#include "third_party/zlib/google/compression_utils.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace aegis::access {
+@@ -153,6 +157,36 @@ TEST_F(AccessLocalCoreManagerTest, SessionEndingStopsAllReadyCoresWithoutUiRepli
+ }
+ 
+ #if BUILDFLAG(IS_MAC)
++TEST_F(AccessLocalCoreManagerTest, AuthorizedCoreWritesRestoresAndClearsHistory) {
++  auto input = ResolveAccessLocalCoreInput();
++  if (!input) GTEST_SKIP() << "Authorized core/node binding required.";
++  base::ScopedTempDir profile;
++  ASSERT_TRUE(profile.CreateUniqueTempDir());
++  auto logs = AccessCoreLogStore::Open(profile.GetPath(), CoreLogProfile::kPrivate, "warning");
++  input->log_store = logs;
++  AccessLocalCoreManager manager(std::move(*input));
++  base::test::TestFuture<AccessLocalCoreReady> started;
++  manager.Prepare(started.GetCallback());
++  ASSERT_TRUE(started.Get().ready) << started.Get().error;
++  base::test::TestFuture<void> stopped;
++  manager.Stop(stopped.GetCallback());
++  ASSERT_TRUE(stopped.Wait());
++  environment_.RunUntilIdle();
++  const auto text = logs->Snapshot();
++  ASSERT_NE(text.find("[Warning] core: Xray "), text.npos);
++  const auto directory = profile.GetPath().AppendASCII(kCoreLogDirectory);
++  std::string saved;
++  ASSERT_TRUE(base::ReadFileToString(directory.AppendASCII("private.log"), &saved));
++  EXPECT_EQ(saved, text);
++  EXPECT_FALSE(base::PathExists(directory.AppendASCII("regular.log")));
++  auto restored = AccessCoreLogStore::Open(profile.GetPath(), CoreLogProfile::kPrivate, "warning");
++  environment_.RunUntilIdle();
++  EXPECT_EQ(restored->Snapshot(), text);
++  restored->Clear();
++  environment_.RunUntilIdle();
++  EXPECT_FALSE(base::PathExists(directory.AppendASCII("private.log")));
++}
++
+ class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
+  protected:
+   void SetUp() override {
+@@ -263,6 +297,206 @@ class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
+   base::test::ScopedRunLoopTimeout timeout_{FROM_HERE, base::Seconds(45)};
+ };
+ 
++TEST(AccessCoreLogArchiveTest, PrivateCompressedCopyWithoutOverwrite) {
++  base::ScopedTempDir dir;
++  ASSERT_TRUE(dir.CreateUniqueTempDir());
++  const std::string text = "2026/11/11 01:02:03 [Warning] core: Xray 26.1.18 started";
++  EXPECT_FALSE(WriteCoreLogArchive(dir.GetPath(), ""));
++  ASSERT_TRUE(WriteCoreLogArchive(dir.GetPath(), text));
++  auto path = dir.GetPath().AppendASCII(kCoreLogArchive);
++  int mode = 0;
++  ASSERT_TRUE(base::GetPosixFilePermissions(path, &mode));
++  EXPECT_EQ(mode, 0600);
++  std::string compressed, decoded;
++  ASSERT_TRUE(base::ReadFileToString(path, &compressed));
++  ASSERT_TRUE(compression::GzipUncompress(compressed, &decoded));
++  EXPECT_EQ(decoded, text);
++  EXPECT_FALSE(WriteCoreLogArchive(dir.GetPath(), "replacement"));
++  ASSERT_TRUE(base::DeleteFile(path));
++  auto other = dir.GetPath().AppendASCII("other");
++  ASSERT_TRUE(base::WriteFile(other, "unchanged"));
++  ASSERT_TRUE(base::CreateSymbolicLink(other, path));
++  EXPECT_FALSE(WriteCoreLogArchive(dir.GetPath(), "replacement"));
++  ASSERT_TRUE(base::ReadFileToString(other, &decoded));
++  EXPECT_EQ(decoded, "unchanged");
++}
++
++TEST(AccessCoreLogArchiveTest, QuitWhileWriteIsQueuedCleansWithoutUiReply) {
++  base::test::TaskEnvironment environment(
++      base::test::TaskEnvironment::ThreadPoolExecutionMode::QUEUED);
++  base::ScopedTempDir parent;
++  ASSERT_TRUE(parent.CreateUniqueTempDir());
++  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
++      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
++  CoreLogShareSession session;
++  bool picker_opened = false;
++  session.StartForTesting("private destination", base::BindLambdaForTesting(
++      [&](base::FilePath, base::ScopedClosureRunner) { picker_opened = true; }),
++      runner, parent.GetPath());
++  std::atomic_bool created{false};
++  runner->PostTask(FROM_HERE, base::BindLambdaForTesting(
++      [&] { created = !base::IsDirectoryEmpty(parent.GetPath()); }));
++  session.ShutDown();
++  environment.RunUntilIdle();
++  EXPECT_TRUE(created.load());
++  EXPECT_FALSE(picker_opened);
++  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
++}
++
++TEST(AccessCoreLogArchiveTest, ClosingPickerReleasesFileAndAllowsNextShare) {
++  base::test::TaskEnvironment environment;
++  base::ScopedTempDir parent;
++  ASSERT_TRUE(parent.CreateUniqueTempDir());
++  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
++      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
++  CoreLogShareSession session;
++  base::OnceClosure picker_callback;
++  auto show_picker = [&](base::FilePath path, base::ScopedClosureRunner release) {
++    ASSERT_TRUE(base::PathExists(path));
++    picker_callback = base::BindOnce([](base::ScopedClosureRunner) {}, std::move(release));
++  };
++  for (int attempt = 0; attempt < 2; ++attempt) {
++    session.StartForTesting("text", base::BindLambdaForTesting(show_picker),
++                            runner, parent.GetPath());
++    environment.RunUntilIdle();
++    ASSERT_TRUE(picker_callback);
++    picker_callback.Reset();
++    environment.RunUntilIdle();
++    EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
++  }
++}
++
++bool WaitWithoutUiReplies(const std::shared_ptr<base::WaitableEvent>& event) {
++  base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
++  return event->TimedWait(base::Seconds(5));
++}
++
++TEST(AccessCoreLogArchiveTest, SessionEndingCleansAnOpenPickerWithoutUiReplies) {
++  base::test::TaskEnvironment environment;
++  base::ScopedTempDir parent;
++  ASSERT_TRUE(parent.CreateUniqueTempDir());
++  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
++      {base::MayBlock(), base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
++  base::FilePath archive;
++  base::ScopedClosureRunner picker_release;
++  CoreLogShareSession session;
++  session.StartForTesting("private destination", base::BindLambdaForTesting(
++      [&](base::FilePath path, base::ScopedClosureRunner release) {
++        archive = path;
++        picker_release = std::move(release);
++      }), runner, parent.GetPath());
++  environment.RunUntilIdle();
++  ASSERT_FALSE(archive.empty());
++  ASSERT_TRUE(base::PathExists(archive));
++  auto completed = std::make_shared<base::WaitableEvent>();
++  AccessLocalCoreManager::StopAllForSessionEnding(base::BindLambdaForTesting(
++      [completed] { completed->Signal(); }));
++  EXPECT_TRUE(WaitWithoutUiReplies(completed));
++  EXPECT_FALSE(base::PathExists(archive));
++  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
++}
++
++TEST(AccessCoreLogArchiveTest, SessionEndingIncludesADestroyedShareOwner) {
++  base::test::TaskEnvironment environment;
++  base::ScopedTempDir parent;
++  ASSERT_TRUE(parent.CreateUniqueTempDir());
++  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
++      {base::MayBlock(), base::WithBaseSyncPrimitives(),
++       base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
++  bool picker_opened = false;
++  auto session = std::make_unique<CoreLogShareSession>();
++  session->StartForTesting("private destination", base::BindLambdaForTesting(
++      [&](base::FilePath, base::ScopedClosureRunner) { picker_opened = true; }),
++      runner, parent.GetPath());
++  auto written = std::make_shared<base::WaitableEvent>();
++  runner->PostTask(FROM_HERE, base::BindLambdaForTesting(
++      [written] { written->Signal(); }));
++  ASSERT_TRUE(WaitWithoutUiReplies(written));
++  ASSERT_FALSE(base::IsDirectoryEmpty(parent.GetPath()));
++  auto blocked = std::make_shared<base::WaitableEvent>();
++  auto resume = std::make_shared<base::WaitableEvent>();
++  base::ScopedClosureRunner unblock(base::BindLambdaForTesting(
++      [resume] { resume->Signal(); }));
++  runner->PostTask(FROM_HERE, base::BindLambdaForTesting([blocked, resume] {
++    blocked->Signal();
++    resume->Wait();
++  }));
++  ASSERT_TRUE(WaitWithoutUiReplies(blocked));
++  session.reset();
++  auto completed = std::make_shared<base::WaitableEvent>();
++  AccessLocalCoreManager::StopAllForSessionEnding(base::BindLambdaForTesting(
++      [completed] { completed->Signal(); }));
++  unblock.RunAndReset();
++  EXPECT_TRUE(WaitWithoutUiReplies(completed));
++  EXPECT_FALSE(picker_opened);
++  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
++}
++
++TEST(AccessCoreLogArchiveTest, SessionEndingSuppressesAQueuedArchiveWrite) {
++  base::test::TaskEnvironment environment;
++  base::ScopedTempDir parent;
++  ASSERT_TRUE(parent.CreateUniqueTempDir());
++  auto runner = base::ThreadPool::CreateSequencedTaskRunner(
++      {base::MayBlock(), base::WithBaseSyncPrimitives(),
++       base::TaskShutdownBehavior::BLOCK_SHUTDOWN});
++  auto blocked = std::make_shared<base::WaitableEvent>();
++  auto resume = std::make_shared<base::WaitableEvent>();
++  base::ScopedClosureRunner unblock(base::BindLambdaForTesting(
++      [resume] { resume->Signal(); }));
++  runner->PostTask(FROM_HERE, base::BindLambdaForTesting([blocked, resume] {
++    blocked->Signal();
++    resume->Wait();
++  }));
++  ASSERT_TRUE(WaitWithoutUiReplies(blocked));
++  bool replied = false;
++  CoreLogShareSession session;
++  session.StartForTesting("private destination", base::BindLambdaForTesting(
++      [&](base::FilePath path, base::ScopedClosureRunner) {
++        EXPECT_TRUE(path.empty());
++        replied = true;
++      }), runner, parent.GetPath());
++  auto completed = std::make_shared<base::WaitableEvent>();
++  AccessLocalCoreManager::StopAllForSessionEnding(base::BindLambdaForTesting(
++      [completed] { completed->Signal(); }));
++  unblock.RunAndReset();
++  EXPECT_TRUE(WaitWithoutUiReplies(completed));
++  EXPECT_FALSE(replied);
++  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
++  environment.RunUntilIdle();
++  EXPECT_TRUE(replied);
++}
++
++TEST_F(AccessLocalCoreFaultTest, MissingDiagnosticPipeStillStartsPinnedChild) {
++  auto input = Input("unauthenticated-response");
++  auto log = base::MakeRefCounted<AccessCoreLogStore>();
++  input.log_store = log;
++  input.create_log_pipe_for_testing =
++      [](base::ScopedFD*, base::ScopedFD*, bool) { return false; };
++  AccessLocalCoreManager manager(std::move(input));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ExpectUnavailable(prepared.Get());
++  ASSERT_TRUE(State());
++  EXPECT_EQ(*State()->FindString("phase"), "unauthenticated-response");
++  EXPECT_TRUE(log->Snapshot().empty());
++}
++
++TEST_F(AccessLocalCoreFaultTest, CapturesDiagnosticWithoutAdmittingFailedChild) {
++  auto input = Input("exit-with-diagnostic");
++  auto log = base::MakeRefCounted<AccessCoreLogStore>();
++  input.log_store = log;
++  AccessLocalCoreManager manager(std::move(input));
++  base::test::TestFuture<AccessLocalCoreReady> prepared;
++  manager.Prepare(prepared.GetCallback());
++  ExpectUnavailable(prepared.Get());
++  EXPECT_EQ(log->Snapshot(), "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started");
++  auto [level, generation] = log->LaunchConfig();
++  log->SetLevel("none");
++  log->SetLevel("debug");
++  log->Add(generation, "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started", {});
++  EXPECT_TRUE(log->Snapshot().empty());
++}
++
+ TEST_F(AccessLocalCoreFaultTest, PinnedChildExitCannotBecomeReady) {
+   AccessLocalCoreManager manager(Input("exit-before-listen"));
+   base::test::TestFuture<AccessLocalCoreReady> prepared;
+diff --git a/chrome/browser/aegis/access/access_local_core_test_child.cc b/chrome/browser/aegis/access/access_local_core_test_child.cc
+index 0e908679beac7f9a902f6d0efc075401ede0c09e..8093eb819233def16d70fa881e6b7fc97696b51b 100644
+--- a/chrome/browser/aegis/access/access_local_core_test_child.cc
++++ b/chrome/browser/aegis/access/access_local_core_test_child.cc
+@@ -74,6 +74,14 @@ int main(int argc, const char* argv[]) {
+   const auto* state = outbound.FindStringByDottedPath("settings.fixtureStateFile");
+   const auto port = inbound.FindInt("port");
+   if (!mode || !state || !port) return 3;
++  if (*mode == "exit-with-diagnostic") {
++    const auto* level = config->FindStringByDottedPath("log.loglevel");
++    if (level && *level == "warning") {
++      constexpr char record[] = "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started\n";
++      if (write(STDERR_FILENO, record, sizeof(record) - 1) < 0) return 5;
++    }
++    return 4;
++  }
+   if (*mode == "exit-before-listen") return 4;
+   const auto* accounts = inbound.FindListByDottedPath("settings.accounts");
+   if (!accounts || accounts->empty()) return 3;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 615412526f75a55921f01e814ee6abedbf3ed152..f5c2a90551825cacee9f5cc3e9d871e38368b46d 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -16,6 +16,17 @@
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/common/channel_info.h"
++#include "chrome/browser/aegis/aegis_prefs.h"
++#include "components/prefs/pref_service.h"
++#include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "chrome/browser/lifetime/termination_notification.h"
++#include "chrome/browser/aegis/access/access_core_log_share.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_widget_host_view.h"
++#include "content/public/browser/web_contents.h"
++#include "third_party/blink/public/mojom/webshare/webshare.mojom.h"
++#endif
+ #include "components/aegis_access/access_proxy_route_adapter.h"
+ #include "components/version_info/channel.h"
+ #include "content/public/browser/browser_thread.h"
+@@ -26,6 +37,35 @@ namespace {
+ const void* const kAccessSiteProxyBubbleControllerKey =
+     &kAccessSiteProxyBubbleControllerKey;
+ 
++#if BUILDFLAG(IS_MAC)
++const void* const kLogHistoryKey = &kLogHistoryKey;
++// Keep both stores on the original profile. Reopening an incognito window
++// reuses its own private store even while the previous core is shutting down.
++class ProfileLogHistories : public base::SupportsUserData::Data {
++ public:
++  scoped_refptr<AccessCoreLogStore> regular;
++  scoped_refptr<AccessCoreLogStore> private_history;
++};
++scoped_refptr<AccessCoreLogStore> GetCoreLogHistory(Profile* profile) {
++  Profile* original = profile->GetOriginalProfile();
++  auto* histories = static_cast<ProfileLogHistories*>(original->GetUserData(kLogHistoryKey));
++  if (!histories) {
++    auto owned = std::make_unique<ProfileLogHistories>();
++    histories = owned.get();
++    original->SetUserData(kLogHistoryKey, std::move(owned));
++  }
++  const bool is_private = profile->IsOffTheRecord();
++  auto& target = is_private ? histories->private_history : histories->regular;
++  if (!target) {
++    const auto level = original->GetPrefs()->GetString(
++        is_private ? kAccessPrivateCoreLogLevel : kAccessCoreLogLevel);
++    target = AccessCoreLogStore::Open(original->GetPath(),
++        is_private ? CoreLogProfile::kPrivate : CoreLogProfile::kRegular, level);
++  }
++  return target;
++}
++#endif
++
+ bool IsNumericLoopbackHost(std::string_view host) {
+   return host == "127.0.0.1" || host == "::1" || host == "[::1]";
+ }
+@@ -76,6 +116,14 @@ AccessSiteProxyBubbleController::AccessSiteProxyBubbleController(
+     Profile* profile)
+     : profile_(profile) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++#if BUILDFLAG(IS_MAC)
++  if ((profile_->IsRegularProfile() || profile_->IsPrimaryOTRProfile()) &&
++      profile_->GetPrefs()->FindPreference(kAccessCoreLogLevel)) {
++    app_terminating_ = browser_shutdown::AddAppTerminatingCallback(
++        base::BindOnce(&CoreLogShareSession::ShutDown, base::Unretained(&log_share_)));
++    core_logs_ = GetCoreLogHistory(profile_);
++  }
++#endif
+ }
+ 
+ AccessSiteProxyBubbleController::~AccessSiteProxyBubbleController() {
+@@ -365,10 +413,54 @@ std::string AccessSiteProxyBubbleController::LocalProxyGroup(
+   return owner.channel == ChannelNamespace::kAlpha ? "alpha-authorized-test-node"
+                                                   : "dev-authorized-local-node";
+ }
++bool AccessSiteProxyBubbleController::CanViewCoreLogs() const {
++  return core_logs_ != nullptr;
++}
++void AccessSiteProxyBubbleController::SetCoreLogLevel(std::string_view level) {
++  if (!CanViewCoreLogs() ||
++      std::find(kCoreLogLevels.begin(), kCoreLogLevels.end(), level) == kCoreLogLevels.end())
++    return;
++  profile_->GetOriginalProfile()->GetPrefs()->SetString(
++      profile_->IsOffTheRecord() ? kAccessPrivateCoreLogLevel : kAccessCoreLogLevel,
++      std::string(level));
++  core_logs_->SetLevel(level);
++  ++state_revision_;
++}
++#if BUILDFLAG(IS_MAC)
++void AccessSiteProxyBubbleController::ShareCoreLogs(content::WebContents* tab, std::string preview, uint64_t version,
++    base::OnceCallback<void(bool)> done) {
++  if (!CanViewCoreLogs() || !tab ||
++      tab->GetBrowserContext() != profile_ || preview.empty() || !core_logs_->CanShare(version)) {
++    std::move(done).Run(false);
++    return;
++  }
++  log_share_.Start(std::move(preview), base::BindOnce(
++      [](base::WeakPtr<content::WebContents> tab, content::GlobalRenderFrameHostId frame,
++         scoped_refptr<AccessCoreLogStore> store, uint64_t version,
++         base::OnceCallback<void(bool)> done, base::FilePath path,
++         base::ScopedClosureRunner release) {
++        if (!tab || path.empty() || !store->CanShare(version) ||
++            tab->GetPrimaryMainFrame()->GetGlobalId() != frame ||
++            tab->GetVisibility() != content::Visibility::VISIBLE ||
++            !tab->GetRenderWidgetHostView()) {
++          std::move(done).Run(false);
++          return;
++        }
++        tab->GetRenderWidgetHostView()->ShowSharePicker("", "", GURL(), {path.value()},
++            base::BindOnce([](base::ScopedClosureRunner release, base::OnceCallback<void(bool)> done,
++                              blink::mojom::ShareError result) {
++              release.RunAndReset();
++              std::move(done).Run(result != blink::mojom::ShareError::INTERNAL_ERROR);
++            }, std::move(release), std::move(done)));
++      }, tab->GetWeakPtr(), tab->GetPrimaryMainFrame()->GetGlobalId(), core_logs_,
++      version, std::move(done)));
++}
++#endif
+ void AccessSiteProxyBubbleController::CreateLocalCore() {
+   if (local_core_) return;
+-  const auto input = ResolveAccessLocalCoreInput();
++  auto input = ResolveAccessLocalCoreInput();
+   if (!input) return;
++  input->log_store = core_logs_;
+   local_core_ = std::make_unique<AccessLocalCoreManager>(*input);
+   local_core_->SetStoppedCallback(base::BindRepeating(
+       &AccessSiteProxyBubbleController::OnLocalCoreStopped,
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index 516268956e96ab34c5ff8825c8a73b1b1d95f1e6..c915f3aa344ee73c7a7acee83b352d82206c1164 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -10,6 +10,7 @@
+ #include <string_view>
+ #include <vector>
+ 
++#include "build/build_config.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "chrome/browser/aegis/access/access_local_core_manager.h"
+@@ -22,6 +23,11 @@
+ #include "url/gurl.h"
+ 
+ class Profile;
++namespace content { class WebContents; }
++#if BUILDFLAG(IS_MAC)
++#include "base/callback_list.h"
++#include "chrome/browser/aegis/access/access_core_log_share.h"
++#endif
+ 
+ namespace aegis::access {
+ 
+@@ -42,6 +48,13 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   AccessSiteIntentStore& intent_store() { return intent_store_; }
+   const AccessSiteIntentStore& intent_store() const { return intent_store_; }
+ 
++  bool CanViewCoreLogs() const;
++  AccessCoreLogStore* core_logs() const { return core_logs_.get(); }
++  void SetCoreLogLevel(std::string_view level);
++#if BUILDFLAG(IS_MAC)
++  void ShareCoreLogs(content::WebContents* tab, std::string preview, uint64_t version, base::OnceCallback<void(bool)> done);
++#endif
++
+   uint64_t state_revision() const { return state_revision_; }
+ 
+   AccessSiteProxyBubbleSnapshot SnapshotForCommittedUrl(
+@@ -129,6 +142,11 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+       const OwnershipKey& owner) const;
+ 
+   const raw_ptr<Profile> profile_;
++#if BUILDFLAG(IS_MAC)
++  CoreLogShareSession log_share_;
++  base::CallbackListSubscription app_terminating_;
++#endif
++  scoped_refptr<AccessCoreLogStore> core_logs_;
+   AccessSiteIntentStore intent_store_;
+   AccessSiteIntentStore dev_intent_store_;
+   std::set<AccessSiteHost> website_hosts_;
+diff --git a/chrome/browser/aegis/aegis_prefs.cc b/chrome/browser/aegis/aegis_prefs.cc
+index 72f2ca7aa9acab0ac2f3a08c90e0a46dca564b16..ac0dcfbbe78ba7554c722253ca4c1e2421f9353d 100644
+--- a/chrome/browser/aegis/aegis_prefs.cc
++++ b/chrome/browser/aegis/aegis_prefs.cc
+@@ -5,6 +5,7 @@
+ 
+ #include <string>
+ 
++#include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/gestures/gesture_settings.h"
+ #include "chrome/common/aegis/features.h"
+ #include "chrome/common/aegis/pref_names.h"
+@@ -13,6 +14,9 @@
+ namespace aegis {
+ 
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
++  const std::string core_log_level(access::DefaultCoreLogLevelForCurrentBuild());
++  registry->RegisterStringPref(kAccessCoreLogLevel, core_log_level);
++  registry->RegisterStringPref(kAccessPrivateCoreLogLevel, core_log_level);
+   registry->RegisterDictionaryPref(kMouseGesturesPref,
+                                    GestureSettings::Defaults().ToValue());
+   registry->RegisterBooleanPref(prefs::kTrackerBlockingEnabled, true);
+diff --git a/chrome/browser/aegis/aegis_prefs.h b/chrome/browser/aegis/aegis_prefs.h
+index b29d5cbaf9b1dd82113c61e3bdc06286462271f4..d52d5510939c83a01970e58f6fab516eddadc105 100644
+--- a/chrome/browser/aegis/aegis_prefs.h
++++ b/chrome/browser/aegis/aegis_prefs.h
+@@ -12,6 +12,10 @@ class PrefRegistrySyncable;
+ 
+ namespace aegis {
+ 
++inline constexpr char kAccessCoreLogLevel[] = "aegis.access_core_log_level";
++
++inline constexpr char kAccessPrivateCoreLogLevel[] = "aegis.access_private_core_log_level";
++
+ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+ 
+ }  // namespace aegis
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index eb81acfae16042030ba1a25c6c54e5cace7e41fb..6bf90ecfbfc4d4f7932595020501f4f0b197dfd6 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -265,6 +265,14 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     const uint64_t access_revision = access ? access->state_revision() : 0;
+     const auto access_snapshot = access
+         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
++#if BUILDFLAG(IS_MAC)
++    if (expanded_.contains("core-logs") && access && access->CanViewCoreLogs() &&
++        (log_disk_status_ != access->core_logs()->disk_status() ||
++         log_view_version_ != access->core_logs()->view_version())) {
++      Build();
++      return;
++    }
++#endif
+     if (revision != revision_ || snapshot != snapshot_ ||
+         access_revision != access_revision_ || access_snapshot != access_snapshot_) Build();
+   }
+@@ -390,6 +398,70 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     controller->RequestHostProxySession(snap.host, !snap.toggle_on);
+     RefreshSoon();
+   }
++#if BUILDFLAG(IS_MAC)
++  void AppendCoreLogs(views::View* parent,
++                      aegis::access::AccessSiteProxyBubbleController* controller) {
++    if (!controller->CanViewCoreLogs()) return;
++    Button(parent, Copy(u"代理诊断日志", u"Proxy diagnostic logs", u"代理診斷日誌"),
++           base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this),
++                               std::string("core-logs")));
++    if (!expanded_.contains("core-logs")) return;
++    AddLabel(parent, Copy(u"普通和隐私浏览日志分开保存在本机磁盘，退出后仍保留最近 128 条，可能包含隐私浏览的目标地址。清除日志或选择 none 可删除当前模式的历史。分享前请检查内容，接收者可保留副本。",
++        u"Regular and private logs are saved separately on this Mac. The latest 128 entries survive quitting and may contain private browsing destinations. Clear logs or choose none to delete this mode’s history. Review before sharing; recipients can keep a copy.",
++        u"一般和私密瀏覽日誌分開儲存在本機磁碟，結束後仍保留最近 128 筆，可能包含私密瀏覽的目標位址。清除日誌或選擇 none 可刪除目前模式的歷史。分享前請檢查內容，接收者可保留副本。"));
++    AddLabel(parent, Copy(u"当前级别：", u"Level: ", u"目前層級：") +
++                     base::UTF8ToUTF16(controller->core_logs()->Level()));
++    AddLabel(parent, Copy(u"提高详细程度需重新启动代理核心；降低级别立即过滤。",
++        u"More detail starts with the next proxy core launch. Lower detail filters immediately.",
++        u"提高詳細程度需重新啟動代理核心；降低層級會立即篩選。"));
++    for (auto level : aegis::access::kCoreLogLevels) {
++      Button(parent, base::UTF8ToUTF16(level),
++          base::BindRepeating([](AegisPageBubble* self, std::string level) {
++            if (!self->Valid()) return;
++            if (auto* controller = self->AccessBubble()) controller->SetCoreLogLevel(level);
++            self->RefreshSoon();
++          }, base::Unretained(this), std::string(level)));
++    }
++    using DiskStatus = aegis::access::AccessCoreLogStore::DiskStatus;
++    log_disk_status_ = controller->core_logs()->disk_status();
++    if (log_disk_status_ == DiskStatus::kError) {
++      AddLabel(parent, Copy(u"磁盘操作失败，历史记录可能仍在磁盘上。请检查磁盘空间和权限，再次清除可重试。",
++          u"A disk operation failed. History may still be on disk. Check space and permissions. Clear logs again to retry deletion.",
++          u"磁碟操作失敗，歷史記錄可能仍在磁碟上。請檢查磁碟空間和權限，再次清除可重試。"));
++    } else if (log_disk_status_ == DiskStatus::kLoading) {
++      AddLabel(parent, Copy(u"正在读取日志…", u"Loading saved logs…", u"正在讀取日誌…"));
++    } else if (log_disk_status_ == DiskStatus::kClearing) {
++      AddLabel(parent, Copy(u"正在删除磁盘记录…", u"Deleting saved logs…", u"正在刪除磁碟記錄…"));
++    }
++      Button(parent, Copy(u"清除日志", u"Clear logs", u"清除日誌"),
++          base::BindRepeating([](AegisPageBubble* self) {
++            if (!self->Valid()) return;
++            if (auto* c = self->AccessBubble(); c && c->CanViewCoreLogs()) c->core_logs()->Clear();
++            self->RefreshSoon();
++          }, base::Unretained(this)));
++    const auto [text, version] = controller->core_logs()->ViewSnapshot();
++    log_view_version_ = version;
++    if (text.empty()) {
++      AddLabel(parent, Copy(u"暂无日志", u"No log entries", u"目前沒有日誌"));
++    } else {
++      AddLabel(parent, base::UTF8ToUTF16(text))->SetSelectable(true);
++      Button(parent, Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…"),
++          base::BindRepeating([](AegisPageBubble* self, std::string preview, uint64_t version) {
++            if (!self->Valid()) return;
++            if (auto* c = self->AccessBubble()) c->ShareCoreLogs(self->source_.get(), std::move(preview), version,
++                base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
++                  if (self && !ok) {
++                    self->log_notice_ = Copy(u"未能打开分享。", u"Could not share the logs.", u"未能開啟分享。");
++                    self->RefreshSoon();
++                  }
++                }, self->weak_.GetWeakPtr()));
++          }, base::Unretained(this), text, version));
++    }
++    Button(parent, Copy(u"刷新日志", u"Refresh logs", u"重新整理日誌"),
++           base::BindRepeating(&AegisPageBubble::RefreshSoon, base::Unretained(this)));
++    if (!log_notice_.empty()) AddLabel(parent, log_notice_);
++  }
++#endif
+   void AppendSiteProxySection(views::View* parent) {
+     AddLabel(parent, Copy(u"本站代理", u"Site proxy", u"本站代理"),
+              views::style::CONTEXT_DIALOG_TITLE);
+@@ -400,6 +472,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+                             u"目前使用者資料不可用"));
+       return;
+     }
++#if BUILDFLAG(IS_MAC)
++    AppendCoreLogs(parent, controller);
++#endif
+     const auto snap = controller->SnapshotForCommittedUrl(address_);
+     if (!snap.has_trusted_site) {
+       AddLabel(parent, IntentStatusCopy(snap.intent_status));
+@@ -620,6 +695,11 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   std::optional<aegis::access::AccessSiteProxyBubbleSnapshot> access_snapshot_;
+   std::set<std::string> expanded_;
+   std::u16string notice_;
++#if BUILDFLAG(IS_MAC)
++  std::u16string log_notice_;
++  uint64_t log_view_version_ = 0;
++  std::optional<aegis::access::AccessCoreLogStore::DiskStatus> log_disk_status_;
++#endif
+   base::RepeatingTimer timer_;
+   base::WeakPtrFactory<AegisPageBubble> weak_{this};
+ };

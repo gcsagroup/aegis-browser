@@ -2,12 +2,20 @@
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
 #include <signal.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <vector>
 
 #include "base/barrier_closure.h"
+#include "base/strings/string_util.h"
+
+#include "base/files/file_descriptor_watcher_posix.h"
+#include "base/posix/eintr_wrapper.h"
+#include "base/base64.h"
+#include "chrome/browser/aegis/access/access_core_log_share.h"
 #include "base/command_line.h"
 #include "base/base_paths.h"
 #include "base/files/file.h"
@@ -85,6 +93,18 @@ constexpr auto kCanaryAnnotation = net::DefineNetworkTrafficAnnotation(
       })");
 constexpr char kCanary[] = "https://www.gstatic.com/generate_204";
 std::string Token() { return base::Uuid::GenerateRandomV4().AsLowercaseString(); }
+// Keep configured strings out of access targets as well as free-form messages.
+// Exceeding the small comparison budget disables address disclosure.
+void ProtectValue(const base::Value& value, std::vector<std::string>& values) {
+  if (values.size() >= 256) return;
+  if (value.is_dict()) {
+    for (auto entry : value.GetDict()) ProtectValue(entry.second, values);
+  } else if (value.is_list()) {
+    for (const auto& item : value.GetList()) ProtectValue(item, values);
+  } else if (value.is_string() && !value.GetString().empty()) {
+    values.push_back(base::ToLowerASCII(value.GetString()));
+  }
+}
 }  // namespace
 
 class AccessLocalCoreManager::ShutdownHandle
@@ -280,8 +300,18 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     const auto password = Token();
     credentials_.emplace(base::UTF8ToUTF16(user), base::UTF8ToUTF16(password));
     registration_ = Token();
+    std::string level = "none";
+    if (input_.log_store) std::tie(level, log_generation_) = input_.log_store->LaunchConfig();
+    protected_values_ = {user, password, registration_,
+                         base::ToLowerASCII(base::Base64Encode(user + ":" + password))};
+    if (CoreLogRank(level) < 2) {
+      ProtectValue(outbounds->front(), protected_values_);
+      if (protected_values_.size() >= 256) protected_values_ = {""};
+    }
+    auto log = base::DictValue().Set("loglevel", level);
+    if (CoreLogRank(level) >= 2) log.Set("access", "none");
     auto config = base::DictValue()
-        .Set("log", base::DictValue().Set("loglevel", "none"))
+        .Set("log", std::move(log))
         .Set("inbounds", base::ListValue().Append(base::DictValue()
             .Set("listen", "127.0.0.1").Set("port", port_).Set("protocol", "http")
             .Set("settings", base::DictValue().Set("accounts", base::ListValue()
@@ -308,10 +338,35 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     base::File null_output(base::FilePath("/dev/null"),
                            base::File::FLAG_OPEN | base::File::FLAG_WRITE);
     if (!null_output.IsValid()) return false;
-    options.fds_to_remap = {{null_output.GetPlatformFile(), 1},
-                            {null_output.GetPlatformFile(), 2}};
+    base::ScopedFD write_end;
+    int output = null_output.GetPlatformFile();
+    auto create_log_pipe = input_.create_log_pipe_for_testing
+                               ? input_.create_log_pipe_for_testing : &base::CreatePipe;
+    if (level != "none" && create_log_pipe(&log_read_, &write_end, /*non_blocking=*/true)) {
+      // Diagnostic capture is optional; a failed pipe keeps /dev/null.
+      output = write_end.get();
+      log_watch_ = base::FileDescriptorWatcher::WatchReadable(
+          log_read_.get(), base::BindRepeating(&Worker::DrainLog, base::Unretained(this)));
+    }
+    options.fds_to_remap = {{output, STDOUT_FILENO}, {output, STDERR_FILENO}};
     process_ = base::LaunchProcess(command, options);
     return process_.IsValid();
+  }
+  void DrainLog() {
+    // Bound each turn so noisy children cannot starve cancellation or probes.
+    char chunk[4096];
+    for (int i = 0; i < 16 && log_read_.is_valid(); ++i) {
+      auto count = HANDLE_EINTR(read(log_read_.get(), chunk, sizeof(chunk)));
+      if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+      if (count <= 0) {
+        log_watch_.reset();
+        log_read_.reset();
+        break;
+      }
+      framer_.Feed(std::string_view(chunk, count), [this](std::string_view line) {
+        input_.log_store->Add(log_generation_, line, protected_values_);
+      });
+    }
   }
   void StartProbe() {
     if (!Running()) {
@@ -427,6 +482,11 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
       }
       process_.Close();
     }
+    DrainLog();
+    log_watch_.reset();
+    log_read_.reset();
+    framer_ = CoreLogFramer();
+    protected_values_.clear();
     credentials_.reset();
     authenticated_ = false;
     const bool deleted = directory_.Delete();
@@ -435,6 +495,11 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
 
   AccessLocalCoreInput input_;
   std::shared_ptr<ShutdownHandle> shutdown_;
+  base::ScopedFD log_read_;
+  std::unique_ptr<base::FileDescriptorWatcher::Controller> log_watch_;
+  CoreLogFramer framer_;
+  uint64_t log_generation_ = 0;
+  std::vector<std::string> protected_values_;
   base::ScopedTempDir directory_;
   base::Process process_;
   uint16_t port_ = 0;
@@ -502,11 +567,11 @@ void AccessLocalCoreManager::StopAllForSessionEnding(base::OnceClosure completio
   for (auto& weak : ShutdownHandle::Registry()) {
     if (auto handle = weak.lock()) handles.push_back(std::move(handle));
   }
-  if (handles.empty()) {
-    std::move(completion).Run();
-    return;
-  }
-  auto stopped = base::BarrierClosure(handles.size(), std::move(completion));
+  auto stopped = base::BarrierClosure(
+      handles.size() + 1,
+      base::BindOnce(&AccessCoreLogStore::FlushAllForSessionEnding,
+                     std::move(completion)));
+  CoreLogShareSession::StopAllForSessionEnding(base::OnceClosure(stopped));
   for (auto& handle : handles) handle->RequestStop(base::OnceClosure(stopped));
 }
 void AccessLocalCoreManager::SetStoppedCallback(
