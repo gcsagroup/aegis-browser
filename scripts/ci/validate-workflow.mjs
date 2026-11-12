@@ -77,9 +77,13 @@ try {
   if (JSON.stringify(triggerNames) !== JSON.stringify(['pull_request', 'push', 'workflow_dispatch'])) {
     fail(`Unexpected workflow triggers: ${triggerNames.join(', ')}`);
   }
+  const releaseLines = JSON.parse(readFileSync(new URL('./ios-release-lines.json', import.meta.url), 'utf8')).lines
+    .map(line => line.name)
+    .filter(name => name !== 'main');
   for (const event of ['pull_request', 'push']) {
     const config = triggers[event] ?? {};
-    if (JSON.stringify(array(config.branches).sort()) !== JSON.stringify(['develop', 'main'])) fail(`${event} must target exactly main and develop`);
+    const expected = (event === 'push' ? ['develop', 'main', ...releaseLines] : ['develop', 'main']).sort();
+    if (JSON.stringify(array(config.branches).sort()) !== JSON.stringify(expected)) fail(`${event} must target exactly main, develop, and admitted release lines`);
     if ('branches-ignore' in config) fail(`${event} may not exclude branches`);
     if ('paths' in config || 'paths-ignore' in config) fail(`${event} may not filter paths`);
   }

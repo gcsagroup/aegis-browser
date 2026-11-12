@@ -45,8 +45,10 @@ jobs:
       - name: Resolve push base for a new release line
         id: push_base
         if: ${{ github.event_name == 'push' }}
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
-          before="${{ github.event.before }}"
+          before="$PUSH_BEFORE"
           if [ "$before" = "0000000000000000000000000000000000000000" ]; then
             git fetch --no-tags origin main
             before="$(git merge-base HEAD origin/main)"
