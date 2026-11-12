@@ -107,17 +107,18 @@ class AccountStoreTest(unittest.TestCase):
             self.read()
 
     def test_source_rejects_invalid_values(self):
-        cases = [
-            ('UPDATE snapshots SET quota_bytes=?', -1),
-            ('UPDATE snapshots SET uploaded_bytes=?', 1.25),
-            ('UPDATE snapshots SET downloaded_bytes=?', None),
-            ('UPDATE snapshots SET expires_at=?', 0),
-            ('UPDATE snapshots SET measured_at=received_at+?', 1),
-            ('UPDATE snapshots SET received_at=?', -1),
-        ]
-        for statement, value in cases:
-            with self.subTest(statement=statement), self.assertRaises(sqlite3.IntegrityError):
-                self.db.execute(statement, (value,))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute('UPDATE snapshots SET quota_bytes=?', (-1,))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute('UPDATE snapshots SET uploaded_bytes=?', (1.25,))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute('UPDATE snapshots SET downloaded_bytes=?', (None,))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute('UPDATE snapshots SET expires_at=?', (0,))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute('UPDATE snapshots SET measured_at=received_at+?', (1,))
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute('UPDATE snapshots SET received_at=?', (-1,))
 
     def test_read_only_open_does_not_create_missing_store(self):
         missing = self.path.with_name('missing.db')
