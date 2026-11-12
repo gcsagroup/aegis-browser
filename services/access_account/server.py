@@ -16,7 +16,7 @@ _BEARER = re.compile(r"Bearer ([A-Za-z0-9_-]{1,256})", re.ASCII | re.IGNORECASE)
 
 
 class _Handler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
+    def log_message(self, fmt, *args):
         # BaseHTTPRequestHandler logs untrusted request targets, including query strings.
         pass
 

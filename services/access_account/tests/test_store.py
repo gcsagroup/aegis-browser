@@ -1,5 +1,6 @@
 import hashlib
 from pathlib import Path
+import secrets
 import sqlite3
 import tempfile
 import unittest
@@ -19,29 +20,30 @@ class AccountStoreTest(unittest.TestCase):
         self.db = sqlite3.connect(self.path, isolation_level=None)
         self.addCleanup(self.db.close)
         self.db.executescript(SCHEMA.read_text())
-        for account in ('A', 'B'):
-            digest = hashlib.sha256(('token-' + account).encode()).digest()
+        self.tokens = {account: secrets.token_urlsafe(24) for account in ('A', 'B')}
+        for account, token in self.tokens.items():
+            digest = hashlib.sha256(token.encode()).digest()
             self.db.execute('INSERT INTO accounts VALUES (?)', (account,))
             self.db.execute('INSERT INTO sessions VALUES (?, ?, 100000, NULL)', (digest, account))
         self.db.execute("INSERT INTO plans VALUES ('A','plan','period',1000,60000,'source-a')")
         self.db.execute("INSERT INTO snapshots VALUES ('A','period',10001,7000,3000,50000,1000,1000)")
 
-    def read(self, now=1000, token='token-A'):
-        return read_current(self.path, token, lambda: now)
+    def read(self, now=1000, account='A'):
+        return read_current(self.path, self.tokens[account], lambda: now)
 
     def test_isolation_without_cache_and_auth_boundaries(self):
         self.assertEqual(self.read()['remainingBytes'], '1')
-        other = self.read(token='token-B')
+        other = self.read(account='B')
         self.assertEqual(other.pop('entitlementAccountId'), 'B')
         self.assertEqual(other.pop('status'), 'not_subscribed')
         self.assertTrue(all(value is None for value in other.values()))
         self.assertEqual(self.read()['planId'], 'plan')
         for token in ('A', '', '☀', None):
-            self.assertIsNone(self.read(token=token))
+            self.assertIsNone(read_current(self.path, token, lambda: 1000))
         self.assertIsNone(self.read(100000))
         self.db.execute("UPDATE sessions SET revoked_at=1000 WHERE account_id='A'")
         self.assertIsNone(self.read())
-        self.assertEqual(self.read(token='token-B')['status'], 'not_subscribed')
+        self.assertEqual(self.read(account='B')['status'], 'not_subscribed')
 
     def test_exact_bytes_expiry_and_overage(self):
         self.assertEqual(self.read()['status'], 'active')
@@ -105,15 +107,22 @@ class AccountStoreTest(unittest.TestCase):
             self.read()
 
     def test_source_rejects_invalid_values(self):
-        for change in ('quota_bytes=-1', 'uploaded_bytes=1.25', 'downloaded_bytes=NULL',
-                       'expires_at=0', 'measured_at=received_at+1', 'received_at=-1'):
-            with self.subTest(change=change), self.assertRaises(sqlite3.IntegrityError):
-                self.db.execute('UPDATE snapshots SET ' + change)
+        cases = [
+            ('UPDATE snapshots SET quota_bytes=?', -1),
+            ('UPDATE snapshots SET uploaded_bytes=?', 1.25),
+            ('UPDATE snapshots SET downloaded_bytes=?', None),
+            ('UPDATE snapshots SET expires_at=?', 0),
+            ('UPDATE snapshots SET measured_at=received_at+?', 1),
+            ('UPDATE snapshots SET received_at=?', -1),
+        ]
+        for statement, value in cases:
+            with self.subTest(statement=statement), self.assertRaises(sqlite3.IntegrityError):
+                self.db.execute(statement, (value,))
 
     def test_read_only_open_does_not_create_missing_store(self):
         missing = self.path.with_name('missing.db')
         with self.assertRaises(Unavailable):
-            read_current(missing, 'token-A', lambda: 1000)
+            read_current(missing, self.tokens['A'], lambda: 1000)
         self.assertFalse(missing.exists())
         self.db.execute('DROP TABLE snapshots')
         with self.assertRaises(Unavailable):

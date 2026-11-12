@@ -28,7 +28,7 @@ class NativeQuery(unittest.TestCase):
         scratch = tempfile.TemporaryDirectory()
         cls.addClassCleanup(scratch.cleanup)
         cls.driver = Path(scratch.name) / "query"
-        subprocess.run(["xcrun", "clang++", "-std=c++20", "-fobjc-arc", "-Wall", "-Werror",
+        subprocess.run(["/usr/bin/xcrun", "clang++", "-std=c++20", "-fobjc-arc", "-Wall", "-Werror",
                         "-I", str(OVERLAY), "-framework", "Foundation", "-o", str(cls.driver),
                         str(Path(__file__).with_name("query_mac.mm")),
                         str(OVERLAY / "chrome/browser/aegis/access/access_account_mac.mm")], check=True)
