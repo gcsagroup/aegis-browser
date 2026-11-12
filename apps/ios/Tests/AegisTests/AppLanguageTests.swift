@@ -24,42 +24,83 @@ final class AppLanguageTests: XCTestCase {
         let dialect: String
         let appResource: String
         let agentResource: String
+        let nativeDialect: String?
+        let nativeAgentResource: String?
     }
 
     func testIndependentPolicyFixturesAndResourceOwners() throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "language-policy", withExtension: "json",
                                                          subdirectory: "Fixtures/Localization"))
         let cases = try JSONDecoder().decode([PolicyCase].self, from: Data(contentsOf: url))
-        XCTAssertEqual(cases.count, 45)
+        XCTAssertEqual(cases.count, 51)
         let agent = try XCTUnwrap(Bundle(identifier: "com.gcsa.aegis.agentkit"))
         for item in cases {
             let snapshot = Aegis.AegisLocalizationSnapshot.resolve(
-                family: item.selected.flatMap(Aegis.AegisLanguageFamily.init(rawValue:)),
+                choice: item.selected.flatMap(Aegis.AegisLanguageChoice.init(rawValue:)),
                 preferences: item.preferences, systemLocale: Locale(identifier: item.systemLocale))
             XCTAssertEqual(snapshot.family.rawValue, item.family, item.name)
             XCTAssertEqual(snapshot.dialect, item.dialect, item.name)
             XCTAssertEqual(Aegis.AegisLocalization.resourceLocalization(in: .main, snapshot: snapshot), item.appResource, item.name)
             XCTAssertEqual(Aegis.AegisLocalization.resourceLocalization(in: agent, snapshot: snapshot), item.agentResource, item.name)
+            let selectedDefaults = Defaults()
+            selectedDefaults.set(item.selected, forKey: Aegis.AegisLanguagePreferenceStore.key)
+            let native = Aegis.AegisLocalization.snapshot(store: .init(defaults: selectedDefaults),
+                preferences: item.preferences, systemLocale: Locale(identifier: item.systemLocale))
+            XCTAssertEqual(native.dialect, item.nativeDialect ?? item.dialect, item.name)
+            XCTAssertEqual(Aegis.AegisLocalization.resourceLocalization(in: agent, snapshot: native),
+                           item.nativeAgentResource ?? item.agentResource, item.name)
         }
     }
 
-    func testControllerPersistsOnlyFamilyAndKeepsUnrelatedPreferences() {
+    func testSortedChoicesAndExplicitTaiwanPersistWithoutChangingSystemFormats() {
+        let choices = Aegis.AegisLanguageChoice.displayOrder
+        XCTAssertEqual(choices.map(\.id), ["zh-Hans", "zh-Hant-TW", "zh-Hant-HK", "en-US", "en-GB", "id", "th", "ja", "ko", "vi", "ms", "de", "fr", "es", "it", "pt"])
+        XCTAssertEqual(Set(choices.map(\.id)).count, choices.count)
+
+        let defaults = Defaults()
+        let store = Aegis.AegisLanguagePreferenceStore(defaults: defaults)
+        let controller = AppLanguageSettings(store: store)
+        controller.selectChoice(.traditionalChineseTaiwan)
+        XCTAssertEqual(AppLanguageSettings(store: store).choice, .traditionalChineseTaiwan)
+        XCTAssertEqual(defaults.string(forKey: Aegis.AegisLanguagePreferenceStore.key), "zh-Hant-TW")
+        let system = Locale(identifier: "th-TH-u-ca-buddhist-hc-h23-nu-thai-tz-usnyc")
+        let snapshot = Aegis.AegisLocalization.snapshot(store: store, preferences: ["zh-HK"], systemLocale: system)
+        XCTAssertEqual(snapshot.dialect, "zh-Hant-TW")
+        XCTAssertEqual(snapshot.resourceCandidates, ["zh-Hant-TW", "zh-Hant", "en"])
+        XCTAssertEqual(snapshot.locale.language.region?.identifier, "TW")
+        XCTAssertEqual(snapshot.locale.region, system.region)
+        XCTAssertEqual(snapshot.locale.calendar.identifier, system.calendar.identifier)
+        XCTAssertEqual(snapshot.locale.numberingSystem, system.numberingSystem)
+        let revision = controller.revision
+        controller.selectChoice(.traditionalChineseHongKong)
+        XCTAssertEqual(controller.choice, .traditionalChineseHongKong)
+        XCTAssertGreaterThan(controller.revision, revision)
+        XCTAssertEqual(Aegis.AegisLocalization.snapshot(store: store, preferences: ["zh-HK"], systemLocale: system).dialect, "zh-Hant-HK")
+        controller.selectChoice(nil)
+        XCTAssertNil(controller.choice)
+        XCTAssertEqual(defaults.values.count, 1)
+    }
+
+    func testControllerPersistsSelectionsAndKeepsUnrelatedPreferences() {
         let defaults = Defaults()
         let store = Aegis.AegisLanguagePreferenceStore(defaults: defaults)
         let controller = AppLanguageSettings(store: store)
         for family in Aegis.AegisLanguageFamily.allCases {
             controller.select(family)
             XCTAssertEqual(controller.family, family)
-            XCTAssertEqual(defaults.string(forKey: Aegis.AegisLanguagePreferenceStore.key), family.rawValue)
+            XCTAssertEqual(defaults.string(forKey: Aegis.AegisLanguagePreferenceStore.key), Aegis.AegisLanguageChoice.family(family).selectableChoice.rawValue)
             XCTAssertEqual(AppLanguageSettings(store: store).family, family)
         }
         controller.select(.en)
-        for (region, dialect) in [("en_GB", "en-GB"), ("en_HK", "en-HK")] {
+        for region in ["en_GB", "en_HK"] {
             let resolved = Aegis.AegisLocalization.snapshot(store: store, preferences: ["en"], systemLocale: Locale(identifier: region))
-            XCTAssertEqual(resolved.dialect, dialect)
+            XCTAssertEqual(resolved.dialect, "en-US")
             XCTAssertEqual(store.family, .en)
         }
         defaults.set("en-GB", forKey: Aegis.AegisLanguagePreferenceStore.key)
+        controller.refresh()
+        XCTAssertEqual(controller.choice, .englishUnitedKingdom)
+        defaults.set("unsupported-language", forKey: Aegis.AegisLanguagePreferenceStore.key)
         controller.refresh()
         XCTAssertNil(controller.family)
         controller.select(nil)
