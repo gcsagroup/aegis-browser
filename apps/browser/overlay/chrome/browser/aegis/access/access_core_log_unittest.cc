@@ -2,11 +2,28 @@
 #include "chrome/browser/aegis/access/access_core_log.h"
 
 #include "chrome/browser/aegis/access/access_build_channel.h"
+#include "chrome/browser/aegis/access/access_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace aegis::access {
 namespace {
 constexpr char kTime[] = "2026/11/11 13:14:15.123456 ";
+// Run with each unbranded Aegis build variant, using the actual compiled
+// channel resolver instead of substituting a Chromium DEV enum value.
+TEST(AccessCoreLogTest, CurrentUnbrandedBuildChoosesDiagnosticDefault) {
+#if BUILDFLAG(AEGIS_PRIVATE_TEST_NODE_ENABLED)
+#if BUILDFLAG(AEGIS_BETA_TEST_NODE_ENABLED)
+  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "warning");
+#else
+  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "info");
+#endif
+#elif BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED)
+  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "debug");
+#else
+  EXPECT_EQ(DefaultCoreLogLevelForCurrentBuild(), "warning");
+#endif
+}
+
 TEST(AccessCoreLogTest, BuildChannelsChooseDiagnosticDefaults) {
   using Channel = aegis_access::BrowserReleaseChannel;
   using Bundled = aegis_access::ChannelNamespace;
@@ -21,6 +38,12 @@ TEST(AccessCoreLogTest, BuildChannelsChooseDiagnosticDefaults) {
   EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kDev, Bundled::kAlpha), "debug");
   EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kStable, Bundled::kAlpha), "warning");
   EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kInvalid, Bundled::kAlpha), "warning");
+  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kInvalid, true), "debug");
+  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kAlpha, true), "info");
+  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kBeta, true), "warning");
+  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kUnknown, Bundled::kRelease, true), "warning");
+  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kInvalid, Bundled::kInvalid, true), "warning");
+  EXPECT_EQ(DefaultCoreLogLevelForBuild(Channel::kStable, Bundled::kInvalid, true), "warning");
 }
 
 TEST(AccessCoreLogTest, ChannelDefaultsRetainThresholdRedactionAndManualOff) {

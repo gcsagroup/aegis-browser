@@ -53,6 +53,7 @@ const char* LocalAccessIdentityChannel(aegis_access::ChannelNamespace channel) {
 
 std::string_view DefaultCoreLogLevelForCurrentBuild() {
   return DefaultCoreLogLevelForBuild(
-      BrowserReleaseChannel(), BundledAccessTestChannel());
+      BrowserReleaseChannel(), BundledAccessTestChannel(),
+      BUILDFLAG(AEGIS_DEV_LOCAL_NODE_ALLOWED));
 }
 }  // namespace aegis::access
