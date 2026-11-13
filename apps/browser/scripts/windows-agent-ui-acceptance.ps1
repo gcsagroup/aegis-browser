@@ -582,11 +582,11 @@ try {
       }
     }
     return $null
-  } 'the GCSA Aegis main window'
+  } 'the Aegis Browser main window'
   $script:BrowserWindow = $browserWindow
   $windowTitle = [string]$browserWindow.Current.Name
-  Assert-Condition ($windowTitle -match 'GCSA Aegis') `
-      "Expected a GCSA Aegis branded window, got '$windowTitle'"
+  Assert-Condition ($windowTitle -match 'Aegis Browser') `
+      "Expected an Aegis Browser branded window, got '$windowTitle'"
   $checks.Add([ordered]@{
       name = 'branded_window_title'
       ok = $true
