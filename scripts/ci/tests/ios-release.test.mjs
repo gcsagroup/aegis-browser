@@ -334,7 +334,11 @@ test('private Beta crosses the store gate without publishing its package', () =>
   assert.equal(store.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
   const restore = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py restore-private-beta');
   const upload = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-upload');
-  assert(restore >= 0 && restore < upload);
+  const quota = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-preflight');
+  assert(restore >= 0 && restore < quota && quota < upload);
+  assert.equal(store.steps[quota].env, undefined);
+  assert(store.steps[upload].if.includes('steps.quota.outputs.manifest_sha256 == needs.ios-package.outputs.manifest_sha256'));
+  assert.equal(store.steps[upload].env.AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256, '${{ steps.quota.outputs.manifest_sha256 }}');
   assert.equal(store.steps[upload].env.AEGIS_ASC_KEY_BASE64, '${{ secrets.AEGIS_ASC_KEY_BASE64 }}');
   assert(!Object.keys(store.steps[upload].env).some(key => key.includes('TEST_NODE') || key.includes('DISTRIBUTION')));
   const archive = steps.find(s => s.with?.path === '.artifacts/ios-delivery/package.zip');

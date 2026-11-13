@@ -366,8 +366,13 @@ jobs:
       - id: restore
         name: Verify the private package and the original runner identity
         run: python3 scripts/release/ios-action.py restore-private-beta
+      - id: quota
+        name: Verify private Beta and live quota without ASC credentials
+        run: python3 scripts/release/ios-action.py private-beta-preflight
       - name: Upload private Beta inside the store environment
+        if: ${{ success() && steps.quota.outputs.manifest_sha256 == needs.ios-package.outputs.manifest_sha256 }}
         env:
+          AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256: ${{ steps.quota.outputs.manifest_sha256 }}
           AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
           AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
           AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}

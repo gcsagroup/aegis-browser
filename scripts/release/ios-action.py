@@ -190,11 +190,20 @@ def checked_private_beta_handoff():
 def restore_private_beta():
     retained = checked_private_beta_handoff()
     root = directory()
-    if root.exists() or root.is_symlink():
-        raise ValueError('Refuse to overwrite a private Beta workspace')
+    if root.exists() or root.is_symlink() or root.resolve() != root:
+        raise ValueError('Refuse to overwrite or alias a private Beta workspace')
     root.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(retained / 'package', root)
-    private_beta_manifest(os.environ['RELEASE_MANIFEST_SHA256'])
+    # A failed copy must not leave even a partial credential-bearing IPA in the workspace.
+    with tempfile.TemporaryDirectory(prefix='.private-beta-restore-', dir=root.parent) as temporary:
+        pending = Path(temporary) / 'package'
+        shutil.copytree(retained / 'package', pending)
+        digest = os.environ['RELEASE_MANIFEST_SHA256']
+        private_beta_manifest(digest, root=pending)
+        sha, tree = source()
+        transport.verify_package(pending, sha, tree, digest)
+        if root.exists() or root.is_symlink():
+            raise ValueError('Private Beta workspace appeared during restoration')
+        pending.rename(root)
 
 
 def cleanup_private_beta_handoff():
@@ -203,7 +212,9 @@ def cleanup_private_beta_handoff():
         shutil.rmtree(checked_private_beta_handoff())
 
 
-def private_beta_upload():
+def private_beta_preflight():
+    if any(os.environ.get(key) for key in ('AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64')):
+        raise ValueError('Private Beta quota preflight must not receive ASC credentials')
     require_private_beta_upload()
     digest = os.environ['RELEASE_MANIFEST_SHA256']
     manifest = private_beta_manifest(digest)
@@ -214,6 +225,20 @@ def private_beta_upload():
         raise ValueError('Private Beta can only run the Apple upload stage')
     ipa = next(asset['name'] for asset in manifest['assets'] if asset['name'].endswith('.ipa'))
     run('python3', Path(__file__).with_name('private-beta-inputs.py'), 'verify-live', '--ipa', directory() / ipa)
+    output('manifest_sha256', digest)
+
+
+def private_beta_upload():
+    require_private_beta_upload()
+    digest = os.environ['RELEASE_MANIFEST_SHA256']
+    if os.environ.get('AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256') != digest:
+        raise ValueError('Private Beta requires a successful credential-free quota preflight')
+    private_beta_manifest(digest)
+    sha, tree = source()
+    transport.verify_package(directory(), sha, tree, digest)
+    check_new_upload_runs()
+    if os.environ.get('RELEASE_STAGE') != 'upload':
+        raise ValueError('Private Beta can only run the Apple upload stage')
     stage()
 
 
@@ -507,6 +532,7 @@ def stage():
 if __name__ == '__main__':
     {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt,
      'check-new-upload': check_new_upload_runs, 'private-beta-upload': private_beta_upload,
+     'private-beta-preflight': private_beta_preflight,
      'private-beta-evidence': private_beta_evidence, 'cleanup-private-beta': cleanup_private_beta,
      'retain-private-beta': retain_private_beta, 'restore-private-beta': restore_private_beta,
      'cleanup-private-beta-handoff': cleanup_private_beta_handoff}[sys.argv[1]]()

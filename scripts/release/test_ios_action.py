@@ -85,6 +85,16 @@ class IosActionTests(unittest.TestCase):
                     action.restore_private_beta()
                 self.assertFalse(workspace.exists())
                 payload.write_bytes(raw_ipa)
+                def partial_copy(_source, destination):
+                    self.assertEqual(destination.parent.stat().st_mode & 0o077, 0)
+                    destination.mkdir(mode=0o700)
+                    (destination / 'fixture.ipa').write_bytes(raw_ipa[:32])
+                    raise OSError('fixture disk full')
+                with patch.object(action.shutil, 'copytree', side_effect=partial_copy), self.assertRaises(OSError):
+                    action.restore_private_beta()
+                self.assertFalse(workspace.exists())
+                self.assertEqual(list(workspace.parent.glob('.private-beta-restore-*')), [])
+                self.assertEqual(payload.read_bytes(), raw_ipa)
                 action.restore_private_beta()
                 self.assertEqual((workspace / 'fixture.ipa').read_bytes(), raw_ipa)
                 with self.assertRaises(ValueError):
@@ -93,6 +103,35 @@ class IosActionTests(unittest.TestCase):
                 action.cleanup_private_beta_handoff()
                 self.assertFalse(workspace.exists())
                 self.assertFalse(retained.exists())
+
+    def test_private_upload_requires_a_credential_free_quota_preflight_for_the_same_manifest(self):
+        digest = 'c' * 64
+        env = dict(RELEASE_MANIFEST_SHA256=digest, RELEASE_STAGE='upload')
+        manifest = dict(assets=[dict(name='fixture.ipa')])
+        with (patch.dict(os.environ, env, clear=True), patch.object(action, 'require_private_beta_upload'),
+              patch.object(action, 'private_beta_manifest', return_value=manifest),
+              patch.object(action, 'source', return_value=('a'*40, 'b'*40)),
+              patch.object(action.transport, 'verify_package'), patch.object(action, 'check_new_upload_runs'),
+              patch.object(action, 'directory', return_value=Path('/fixture')),
+              patch.object(action, 'run') as run, patch.object(action, 'stage') as stage,
+              patch.object(action, 'output') as output):
+            with self.assertRaises(ValueError): action.private_beta_upload()
+            stage.assert_not_called()
+            with patch.dict(os.environ, {'AEGIS_ASC_KEY_BASE64': 'synthetic'}), self.assertRaises(ValueError):
+                action.private_beta_preflight()
+            run.assert_not_called()
+            with patch.object(action, 'run', side_effect=ValueError('quota unavailable')), self.assertRaises(ValueError):
+                action.private_beta_preflight()
+            output.assert_not_called()
+            action.private_beta_preflight()
+            self.assertIn('verify-live', run.call_args.args)
+            output.assert_called_once_with('manifest_sha256', digest)
+            with patch.dict(os.environ, {'AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256': 'd'*64}), self.assertRaises(ValueError):
+                action.private_beta_upload()
+            with patch.dict(os.environ, {'AEGIS_PRIVATE_BETA_VERIFIED_MANIFEST_SHA256': digest}):
+                action.private_beta_upload()
+            stage.assert_called_once()
+            run.assert_called_once()
 
     def test_private_beta_manifest_requires_internal_testflight_audience(self):
         sha, tree = 'a' * 40, 'b' * 40

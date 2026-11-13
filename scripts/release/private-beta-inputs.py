@@ -93,20 +93,19 @@ def check_live_quota(configuration):
         if (response.status != 200 or response.geturl() != url
                 or response.headers.get_content_type() != 'application/json'):
             raise ValueError('Invalid quota response')
+        # Require explicit framing: http.client accepts a truncated chunk trailer as EOF.
         lengths = response.headers.get_all('Content-Length', [])
-        if len(lengths) > 1:
-            raise ValueError('Ambiguous quota response length')
-        length = None
-        if lengths:
-            value = lengths[0].strip()
-            if not value.isascii() or not value.isdecimal() or len(value) > 5:
-                raise ValueError('Invalid quota response length')
-            length = int(value)
-            if length > 65536 or response.headers.get('Transfer-Encoding') is not None:
-                raise ValueError('Invalid quota response framing')
+        if len(lengths) != 1 or response.headers.get('Transfer-Encoding') is not None:
+            raise ValueError('Quota requires one explicit response length')
+        value = lengths[0].strip()
+        if not value.isascii() or not value.isdecimal() or len(value) > 5:
+            raise ValueError('Invalid quota response length')
+        length = int(value)
+        if length > 65536:
+            raise ValueError('Invalid quota response framing')
         raw = response.read(65537)
-    if len(raw) > 65536 or (length is not None and len(raw) != length):
-        raise ValueError('Oversized or incomplete quota response')
+    if len(raw) != length:
+        raise ValueError('Incomplete quota response')
     usage = json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
     if not isinstance(usage, dict):
         raise ValueError('Invalid quota payload')

@@ -2,6 +2,7 @@ import base64
 from email.message import Message
 import importlib.util
 import io
+import http.client
 import json
 from pathlib import Path
 import plistlib
@@ -34,6 +35,7 @@ class PrivateBetaTests(unittest.TestCase):
         response.read.return_value = json.dumps(value or {
             'sId': 'test', 'emails': ['fixture'], 'uploadByte': 123, 'downloadByte': 456,
             'totalByte': 10000000000, 'expire': 0, 'enabled': True}).encode()
+        response.headers['Content-Length'] = str(len(response.read.return_value))
         return response
 
     def test_live_quota_requires_identity_available_allowance_and_valid_transport(self):
@@ -155,7 +157,7 @@ class PrivateBetaTests(unittest.TestCase):
         with patch.object(beta.urllib.request, 'build_opener') as factory:
             response = self.quota_response()
             raw = response.read.return_value
-            response.headers['Content-Length'] = str(len(raw))
+            response.headers.replace_header('Content-Length', str(len(raw)))
             factory.return_value.open.return_value = response
             beta.check_live_quota(json.loads(QUOTA))
             for length in (str(len(raw) + 1), '65537', '-1', 'garbage'):
@@ -170,9 +172,33 @@ class PrivateBetaTests(unittest.TestCase):
                             raw[:-1] + b', "ignored": NaN}', raw[:-1] + b', "ignored": Infinity}'):
                 response = self.quota_response()
                 response.read.return_value = content
+                response.headers.replace_header('Content-Length', str(len(content)))
                 factory.return_value.open.return_value = response
                 with self.subTest(content=content), self.assertRaises(ValueError):
                     beta.check_live_quota(json.loads(QUOTA))
+
+    def test_real_http_parser_requires_complete_explicit_length_framing(self):
+        payload = self.quota_response().read.return_value
+        class Socket:
+            def __init__(self, wire): self.wire = wire
+            def makefile(self, *_args): return io.BytesIO(self.wire)
+        chunks = hex(len(payload))[2:].encode() + b'\r\n' + payload + b'\r\n0\r\n'
+        for name, framing, body, valid in (
+                ('length', b'Content-Length: ' + str(len(payload)).encode(), payload, True),
+                ('truncated-length', b'Content-Length: ' + str(len(payload) + 1).encode(), payload, False),
+                ('truncated-chunk-trailer', b'Transfer-Encoding: chunked', chunks, False),
+                ('complete-chunked', b'Transfer-Encoding: chunked', chunks + b'\r\n', False),
+                ('close-delimited', b'Connection: close', payload, False)):
+            wire = b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n' + framing + b'\r\n\r\n' + body
+            response = http.client.HTTPResponse(Socket(wire))
+            response.begin()
+            response.geturl = lambda: json.loads(QUOTA)['subscriptionInfoURL']
+            with self.subTest(name=name), patch.object(beta.urllib.request, 'build_opener') as factory:
+                factory.return_value.open.return_value = response
+                if valid:
+                    beta.check_live_quota(json.loads(QUOTA))
+                else:
+                    with self.assertRaises(ValueError): beta.check_live_quota(json.loads(QUOTA))
 
     def test_existing_input_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as temp:
