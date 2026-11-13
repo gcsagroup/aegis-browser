@@ -339,7 +339,7 @@ module AegisRelease
                                'AEGIS_PRIVATE_TEST_SUBSCRIPTION_FILE=' + File.join(private_dir, 'subscription.json')]
                                .map { |value| Shellwords.escape(value) }.join(' ')
         paths, details = package_ios_impl(archive_args)
-        run('python3', helper, 'verify', '--directory', private_dir, '--ipa', paths.first)
+        run('python3', helper, 'verify', '--directory', private_dir, '--ipa', paths.first, '--live-quota')
         [paths, details.merge('privateBetaTestNode' => true, 'privateBetaQuota' => true)]
       ensure
         @private_beta_xcargs = nil

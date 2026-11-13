@@ -206,7 +206,8 @@ test('runner rejects shared-vector drift during testing and retains both manifes
   const result = runFixture(fixture, {EVIDENCE_MUTATE_VECTOR: '1'});
   assert.equal(result.status, 1, result.stderr + result.stdout);
   assert.match(result.stderr, /iOS\/Core 输入发生变化/);
-  const metadata = fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- The report path belongs to this temporary test fixture.
+  const metadata = fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8');  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   assert.match(metadata, /^source_git_tree_state=dirty$/m);
   assert.match(metadata, /^input_stability_exit=1$/m);
   assert.notEqual(digest(path.join(result.report, 'ios-input-sha256-before.txt')),

@@ -39,6 +39,18 @@ Enter **Version** and **Build** separately. For a new package, choose **Product*
 
 **Status** 和不使用凭据的 **Wait** 均为只读查询，只需填写准确的版本和构建号。
 
+For an authorized internal test-node Beta, select **Beta**, **manual**, **Package and upload**
+and **private_beta → yes**. The signing environment supplies the private node and subscription
+descriptor. Before uploading, the exported IPA must contain the exact validated resources,
+and its HTTPS quota endpoint must return the matching client, expected allowance, enabled
+state, unexpired access and positive remaining traffic. Redirects and invalid responses stop
+delivery. Private inputs and the IPA are not published as Actions artifacts.
+
+已授权的内置测试节点 Beta 使用 **Beta / manual / Package and upload / private_beta → yes**。
+节点及额度描述由签名环境注入。上传前核对 IPA 内资源与输入完全一致，并通过包内 HTTPS
+入口验证客户端身份、额度、启用状态、有效期和剩余流量。重定向或无效响应会停止交付；
+私密配置及 IPA 不作为 Actions artifact 公开。
+
 If **Wait** times out, the run fails and retains the last observed Apple state in its Summary and status artifact. Use **Status** or **Wait** again to check that same build; do not upload it again.
 
 **Wait** 超时仍会失败，并在 Summary 和状态 artifact 中保留最后一次 Apple 状态。使用 **Status** 或 **Wait** 再次查询同一构建，不要重新上传。

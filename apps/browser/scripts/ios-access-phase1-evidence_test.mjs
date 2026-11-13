@@ -62,6 +62,7 @@ test('SIMULATOR_PASS without native artifacts is rejected', async () => {
       artifacts: [],
     }));
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- This manifest belongs to the temporary test fixture.
     await writeFile(join(root, 'manifest.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'ios-access-product-phase1-evidence',
@@ -101,6 +102,7 @@ test('device PASS status is rejected as out of scope', async () => {
     }));
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
     await writeFile(join(root, 'artifacts/on.log'), 'x');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- This manifest belongs to the temporary test fixture.
     await writeFile(join(root, 'manifest.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'ios-access-product-phase1-evidence',
@@ -149,6 +151,7 @@ test('filled same-candidate Simulator pack with UI captures validates', async ()
       verdict: 'SIMULATOR_PASS',
       artifacts: [{path: relative, sha256: logDigest}],
     }));
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- This manifest belongs to the temporary test fixture.
     await writeFile(join(root, 'manifest.json'), JSON.stringify({
       schemaVersion: 1,
       kind: 'ios-access-product-phase1-evidence',

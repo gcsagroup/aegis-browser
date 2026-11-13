@@ -1,6 +1,6 @@
 ---
 engines:
-  sqlint:
+  SQLint:
     # SQLint parses PostgreSQL. These SQLite migrations are executed by
     # services/access_account/tests, including their STRICT tables and triggers.
     exclude_paths:

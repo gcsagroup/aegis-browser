@@ -48,8 +48,9 @@ async function pathExists(path) {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
     await stat(path);
     return true;
-  } catch (_error) {
-    return false;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
   }
 }
 

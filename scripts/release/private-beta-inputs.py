@@ -2,10 +2,15 @@
 import argparse
 import base64
 import importlib.util
+import json
 import os
 from pathlib import Path
 import plistlib
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 
 
@@ -38,7 +43,46 @@ def stage(directory, environment):
         (directory / filename).chmod(0o600)
 
 
-def verify(directory, ipa):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('Quota redirects are not allowed')
+
+
+def check_live_quota(configuration):
+    url = configuration['subscriptionInfoURL']
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != 'https':
+        raise ValueError('Quota requires HTTPS')
+    # Default HTTPSHandler verifies certificates; never follow a redirect with a private URL.
+    opener = urllib.request.build_opener(NoRedirect())
+    # Match AccessSubscriptionClient's request headers, including the product user agent.
+    request = urllib.request.Request(url, headers={
+        'Accept': 'application/json', 'User-Agent': 'Aegis-Alpha/1.0'})
+    with opener.open(request, timeout=20) as response:
+        if (response.status != 200 or response.geturl() != url
+                or response.headers.get_content_type() != 'application/json'):
+            raise ValueError('Invalid quota response')
+        raw = response.read(65537)
+    if len(raw) > 65536:
+        raise ValueError('Oversized quota response')
+    usage = json.loads(raw)
+    if not isinstance(usage, dict):
+        raise ValueError('Invalid quota payload')
+    maximum = (1 << 64) - 1
+    for key in ('uploadByte', 'downloadByte', 'totalByte', 'expire'):
+        if type(usage[key]) is not int or not 0 <= usage[key] <= maximum:
+            raise ValueError('Invalid quota number')
+    used = usage['uploadByte'] + usage['downloadByte']
+    if (usage['sId'] != urllib.parse.unquote(parts.path.rsplit('/', 1)[-1])
+            or usage['emails'] != [configuration['allowedTestClient']]
+            or usage['totalByte'] != configuration['expectedQuotaBytes']
+            or usage['enabled'] is not True or used >= usage['totalByte']
+            or usage['expire'] > 253_402_300_799
+            or (usage['expire'] != 0 and usage['expire'] <= time.time())):
+        raise ValueError('Quota identity, availability or allowance mismatch')
+
+
+def verify(directory, ipa, live_quota=False):
     root = 'Payload/Aegis.app/'
     with zipfile.ZipFile(ipa) as archive:
         names = archive.namelist()
@@ -53,6 +97,8 @@ def verify(directory, ipa):
                 raise ValueError('Oversized private resource')
             if archive.read(root + member) != (directory / expected).read_bytes():
                 raise ValueError('Private Beta resource mismatch')
+        if live_quota:
+            check_live_quota(json.loads(archive.read(root + 'AegisPrivateTestSubscription.json')))
 
 
 if __name__ == '__main__':
@@ -60,6 +106,7 @@ if __name__ == '__main__':
     parser.add_argument('operation', choices=('stage', 'verify'))
     parser.add_argument('--directory', type=Path, required=True)
     parser.add_argument('--ipa', type=Path)
+    parser.add_argument('--live-quota', action='store_true')
     args = parser.parse_args()
     try:
         if args.operation == 'stage':
@@ -67,6 +114,8 @@ if __name__ == '__main__':
         else:
             if args.ipa is None:
                 raise ValueError('IPA required')
-            verify(args.directory, args.ipa)
-    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile):
+            verify(args.directory, args.ipa, live_quota=args.live_quota)
+            if args.live_quota:
+                print('Private Beta IPA resources and live quota verified.')
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, urllib.error.URLError):
         sys.exit('Private Beta input validation failed; no private values are logged.')
