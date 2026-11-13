@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <map>
+#include <vector>
 
 #include "base/functional/callback_forward.h"
 #include "base/memory/raw_ptr.h"
@@ -13,6 +15,7 @@
 #include "base/supports_user_data.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/aegis/access/access_rule_store.h"
+#include "chrome/browser/aegis/access/access_async_rule_store.h"
 #include "chrome/browser/aegis/access/access_network_context_transport.h"
 #include "components/aegis_access/policy_publication_ack_tracker.h"
 #include "components/aegis_access/access_proxy_route_adapter.h"
@@ -23,6 +26,7 @@ namespace aegis::access {
 
 enum class AccessMutationTransactionStatus {
   kCommitted,
+  kCommittedUnavailable,
   kBusy,
   kInvalidRequest,
   kStoreReadFailed,
@@ -60,6 +64,15 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
   ~AccessServiceCoordinator() override;
 
   uint64_t state_generation() const { return state_generation_; }
+  bool has_retained_store() const { return !!store_ || !!async_store_; }
+  // Product startup: persistent for ordinary Profile, ephemeral for private.
+  // Only the actor opens SQLite; ReadCommittedSnapshot is then a UI cache read.
+  void InitializeForProfile(const OwnershipKey& owner,
+                            base::OnceCallback<void(bool)> completion);
+  bool CanDispatch(const OwnershipKey& owner) const;
+  StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
+      const std::string& storage_partition_token);
+
 
   // Retains the first trusted store for the Profile lifetime, including an
   // ephemeral session database. Later mutations pass nullptr to reuse it.
@@ -73,8 +86,16 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
       base::OnceCallback<void(AccessMutationTransactionResult)> completion);
 
  private:
+  friend class AccessServiceCoordinatorTestPeer;
   explicit AccessServiceCoordinator(Profile* profile);
   struct MutationTransaction;
+  void OnStoreInitialized(OwnershipKey owner, AsyncAccessStoreRestoration result);
+  void OnAsyncPrepared(std::unique_ptr<MutationTransaction> transaction,
+                       AsyncAccessStorePrepared result);
+  void OnAsyncCommitted(std::unique_ptr<MutationTransaction> transaction,
+                       StoreResult<PendingMutationRecord> result);
+  void OnAsyncRecovered(std::unique_ptr<MutationTransaction> transaction,
+      AccessMutationTransactionResult failure, AsyncAccessStoreRestoration result);
   std::optional<AccessMutationTransactionResult> PrepareCandidate(
       MutationTransaction& transaction,
       const SiteGroupMutationRequest& request);
@@ -91,6 +112,8 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
   void PrepareTransportCandidate(MutationTransaction& transaction);
   std::optional<AccessMutationTransactionResult> PublishCandidate(
       MutationTransaction& transaction);
+  base::OnceCallback<void(bool)> WithPublicationTimeout(
+      base::OnceCallback<void(bool)> completion);
   void RequestPublicationAck(std::unique_ptr<MutationTransaction> transaction);
   bool CandidateStillCurrent(const MutationTransaction& transaction) const;
   void FailTransaction(std::unique_ptr<MutationTransaction> transaction,
@@ -105,8 +128,12 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
 
   const raw_ptr<Profile> profile_;
   std::unique_ptr<AccessRuleStore> store_;
+  std::unique_ptr<AccessAsyncRuleStore> async_store_;
+  std::map<std::string, StoredPolicySnapshot> committed_cache_;
+  std::map<std::string, std::vector<base::OnceCallback<void(bool)>>> initializing_;
   uint64_t state_generation_ = 0;
   bool mutation_in_flight_ = false;
+  bool recovery_required_ = false;
   base::OneShotTimer publication_timeout_;
   base::WeakPtrFactory<AccessServiceCoordinator> weak_factory_{this};
 };

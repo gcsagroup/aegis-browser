@@ -53,8 +53,8 @@ run_python "$COMPONENT_DIR/generate_route_planner_vectors.py" \
   "$VECTOR_FILE" "$TEST_ROOT/route_planner_golden_vectors.inc"
 run_python "$COMPONENT_DIR/generate_policy_matcher_vectors.py" \
   "$POLICY_VECTOR_FILE" "$TEST_ROOT/policy_matcher_golden_vectors.inc"
-if [[ "$(rg -c '^vectors.push_back' \
-  "$TEST_ROOT/policy_matcher_golden_vectors.inc")" != 14 ]]; then
+vector_count="$(grep -c '^vectors.push_back' "$TEST_ROOT/policy_matcher_golden_vectors.inc" || true)"
+if [[ "$vector_count" != 14 ]]; then
   printf 'FAIL: expected 14 shared policy matcher vectors\n' >&2
   exit 1
 fi

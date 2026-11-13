@@ -134,6 +134,9 @@ def main():
         for case in cases:
             name = case["name"]
             validate_case_name(name)
+            # Persisted manual defaults may migrate while the pure-family fixture
+            # still describes automatic regional resolution.
+            expected_resource = case.get("nativeAgentResource", case["agentResource"])
             language = case["preferences"][0]
             configuration = copy.deepcopy(resolved)
             target = configuration["AegisTests"]
@@ -143,7 +146,7 @@ def main():
             target["CommandLineArguments"] = locale_arguments(
                 target.get("CommandLineArguments", []), language, region,
                 preferences=case["preferences"], system_locale=case.get("systemLocale"), family=case["selected"])
-            target.setdefault("EnvironmentVariables", {})["AEGIS_EXPECTED_LANGUAGE"] = case["agentResource"]
+            target.setdefault("EnvironmentVariables", {})["AEGIS_EXPECTED_LANGUAGE"] = expected_resource
             target["EnvironmentVariables"]["AEGIS_EXPECTED_FAMILY"] = case["family"]
             target["EnvironmentVariables"]["AEGIS_EXPECTED_REGION"] = region
             target["ParallelizationEnabled"] = False
@@ -151,7 +154,7 @@ def main():
             target.pop("SkipTestIdentifiers", None)
             config = work / f"{name}.xctestrun"
             config.write_bytes(plistlib.dumps(configuration))
-            manifest["runs"].append({"language": name, "expected": case["agentResource"],
+            manifest["runs"].append({"language": name, "expected": expected_resource,
                                      "family": case["family"], "region": region, "preferences": case["preferences"], "configuration": str(config),
                                      "status": "pending"})
         save()

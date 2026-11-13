@@ -13,23 +13,67 @@ final class AppLanguageUITests: XCTestCase {
         launchedApp = nil
     }
 
+    func testTaiwanChoiceIsDistinctAndSurvivesRelaunch() {
+        let app = launch(settings: true)
+        openPicker(app)
+        let system = app.buttons["language-choice-system"]
+        let simplified = app.buttons["language-choice-zh-Hans"]
+        let taiwan = app.buttons["language-choice-zh-Hant-TW"]
+        let hongKong = app.buttons["language-choice-zh-Hant-HK"]
+        XCTAssertTrue(system.exists && simplified.exists && taiwan.exists && hongKong.exists)
+        XCTAssertLessThan(system.frame.minY, simplified.frame.minY)
+        XCTAssertLessThan(simplified.frame.minY, taiwan.frame.minY)
+        XCTAssertLessThan(taiwan.frame.minY, hongKong.frame.minY)
+        hongKong.tap()
+        XCTAssertTrue(app.navigationBars["語言"].waitForExistence(timeout: 5))
+        XCTAssertTrue(hongKong.isSelected)
+        XCTAssertFalse(taiwan.isSelected)
+        let uk = app.buttons["language-choice-en-GB"]
+        reveal(uk, in: app); uk.tap()
+        XCTAssertTrue(app.navigationBars["Language"].waitForExistence(timeout: 5))
+        XCTAssertEqual(uk.label, "English (UK)")
+        XCTAssertTrue(uk.isSelected)
+        let us = app.buttons["language-choice-en-US"]
+        reveal(us, in: app); us.tap()
+        XCTAssertEqual(us.label, "English (US)")
+        XCTAssertTrue(us.isSelected)
+        reveal(taiwan, in: app)
+        XCTAssertEqual(taiwan.label, "中文（台湾）")
+        taiwan.tap()
+        XCTAssertTrue(app.navigationBars["語言"].waitForExistence(timeout: 5))
+        XCTAssertTrue(taiwan.isSelected)
+        reveal(hongKong, in: app)
+        XCTAssertFalse(hongKong.isSelected)
+        capturePicker(app, name: "繁體中文（台灣） selected")
+        app.terminate()
+        app.launchArguments.append("--ui-testing-preferences-keep")
+        app.launch()
+        openPicker(app)
+        reveal(taiwan, in: app)
+        XCTAssertTrue(taiwan.isSelected)
+        app.navigationBars["語言"].buttons.element(boundBy: 0).tap()
+        app.buttons["settings-done"].tap()
+        XCTAssertEqual(app.textFields["address-field"].label, "搜索或輸入網址")
+        XCTAssertTrue(app.webViews.staticTexts["安心瀏覽，清楚掌控。"].waitForExistence(timeout: 8))
+    }
+
     func testLiveSwitchPickerChromeStartPageAndPersistence() {
         let app = launch(settings: true, largeText: true)
         openPicker(app)
-        let english = app.buttons["language-choice-en"]
+        let english = app.buttons["language-choice-en-US"]
         reveal(english, in: app)
-        XCTAssertEqual(app.buttons.matching(identifier: "language-choice-en").count, 1)
-        XCTAssertFalse(app.buttons["language-choice-en-GB"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "language-choice-en-US").count, 1)
+        XCTAssertEqual(english.label, "English (US)")
         XCTAssertFalse(app.buttons["language-choice-en-HK"].exists)
         capturePicker(app, name: "Language picker — English visible — accessibility text")
         let german = app.buttons["language-choice-de"]
         reveal(german, in: app); german.tap()
         XCTAssertTrue(app.navigationBars["Sprache"].waitForExistence(timeout: 5))
         XCTAssertTrue(german.isSelected)
-        let traditional = app.buttons["language-choice-zh-Hant"]
+        let traditional = app.buttons["language-choice-zh-Hant-TW"]
         reveal(traditional, in: app)
-        XCTAssertEqual(app.buttons.matching(identifier: "language-choice-zh-Hant").count, 1)
-        XCTAssertFalse(app.buttons["language-choice-zh-Hant-HK"].exists)
+        XCTAssertEqual(app.buttons.matching(identifier: "language-choice-zh-Hant-TW").count, 1)
+        XCTAssertFalse(app.buttons["language-choice-zh-Hant"].exists)
         traditional.tap()
         XCTAssertTrue(app.navigationBars["語言"].waitForExistence(timeout: 5))
         XCTAssertTrue(traditional.isSelected)
@@ -47,7 +91,9 @@ final class AppLanguageUITests: XCTestCase {
         let find = app.textFields["find-text"]
         XCTAssertTrue(find.waitForExistence(timeout: 5))
         XCTAssertEqual(find.placeholderValue, "Suchtext")
-        find.tap(); find.typeText("KEEP_FIND")
+        find.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        find.typeText("KEEP_FIND")
         XCTAssertEqual(find.value as? String, "KEEP_FIND")
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "Live language switch with accessibility text"
@@ -99,9 +145,9 @@ final class AppLanguageUITests: XCTestCase {
         XCTAssertTrue(before?.contains("LANGUAGE_DRAFT") == true)
         openMenuItem("open-browser-settings", in: app)
         openPicker(app)
-        reveal(app.buttons["language-choice-en"], in: app)
+        reveal(app.buttons["language-choice-en-US"], in: app)
         capturePicker(app, name: "Language picker — English visible — standard text")
-        let traditional = app.buttons["language-choice-zh-Hant"]
+        let traditional = app.buttons["language-choice-zh-Hant-TW"]
         reveal(traditional, in: app); traditional.tap()
         XCTAssertTrue(app.navigationBars["語言"].waitForExistence(timeout: 5))
         XCTAssertTrue(traditional.isSelected)

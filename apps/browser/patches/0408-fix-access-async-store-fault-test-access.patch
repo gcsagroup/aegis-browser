@@ -1,0 +1,25 @@
+From dcb252b05b145b93f0d4d1ed458c0613923492f2 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 23:54:54 +0800
+Subject: [PATCH] fix(access): allow actor fault injection on its store
+ sequence
+
+---
+ chrome/browser/aegis/access/access_rule_store.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+index 43648a6cff845d6a8af0dd3cb93d9f3a34402c98..24436d57b1ade059563b6988e5ac2ac15e02907d 100644
+--- a/chrome/browser/aegis/access/access_rule_store.h
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -280,6 +280,7 @@ class AccessRuleStore {
+ 
+  private:
+   friend class AccessRuleStoreTestPeer;
++  friend class AccessAsyncRuleStore;
+ 
+   // Restricted friend-only fixture seam for persistence/matcher regressions.
+   // It is intentionally unavailable to production callers.
+-- 
+2.54.0 (Apple Git-157)
+

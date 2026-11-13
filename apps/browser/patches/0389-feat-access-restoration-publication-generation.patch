@@ -1,0 +1,160 @@
+From b4ce8ed5a33b8bba0e4aae885ac05948ef87b833 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 17:24:52 +0800
+Subject: [PATCH] feat(access): reserve durable publication generations for
+ bootstrap and recovery
+
+---
+ .../browser/aegis/access/access_rule_store.cc | 42 +++++++++++++
+ .../browser/aegis/access/access_rule_store.h  |  8 +++
+ .../access/access_rule_store_unittest.cc      | 62 +++++++++++++++++++
+ 3 files changed, 112 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 89efd848f0c0774e628a27f86a9659b0619c0700..d5191d4ae4ce9cecfb0eb0746e328fbf0a469310 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -762,6 +762,48 @@ StoreResult<StoredPolicySnapshot> AccessRuleStore::ReadCommittedSnapshot(
+   return ReadCommittedSnapshotInternal(partition, true);
+ }
+ 
++StoreResult<aegis_access::PublishedAccessPolicySnapshot>
++AccessRuleStore::ReserveCommittedPolicyForPublication(
++    const std::string& partition) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!is_open_) return {terminal_status_, std::nullopt, "store_not_open"};
++  if (!Bounded(partition))
++    return {StoreStatus::kInvalidArgument, std::nullopt, "invalid_partition"};
++  sql::Transaction transaction(&database_);
++  if (!transaction.Begin())
++    return {StoreStatus::kIoError, std::nullopt, "publication_reserve_begin_failed"};
++  auto stored = ReadCommittedSnapshotInternal(partition, true);
++  if (!stored.value || (stored.status != StoreStatus::kValid &&
++                        stored.status != StoreStatus::kMissing))
++    return {stored.status, std::nullopt, stored.detail};
++  std::vector<AccessPolicyRule> rules;
++  if (stored.status == StoreStatus::kValid) {
++    auto adapted = AdaptMatcherSnapshot(*stored.value);
++    if (!adapted.value) return {adapted.status, std::nullopt, adapted.detail};
++    rules = std::move(adapted.value->rules);
++  }
++  sql::Statement counter(database_.GetUniqueStatement(
++      "SELECT operation_sequence FROM access_store_counters WHERE singleton=1"));
++  if (!counter.Step())
++    return {StoreStatus::kCorrupt, std::nullopt, "missing_counters"};
++  const int64_t sequence = counter.ColumnInt64(0);
++  if (sequence < 0 || static_cast<uint64_t>(sequence) < stored.value->policy_generation)
++    return {StoreStatus::kCorrupt, std::nullopt, "invalid_counters"};
++  if (sequence == std::numeric_limits<int64_t>::max())
++    return {StoreStatus::kConflict, std::nullopt, "counter_overflow"};
++  aegis_access::PublishedAccessPolicySnapshot candidate{
++      stored.value->owner, static_cast<uint64_t>(sequence) + 1, std::move(rules)};
++  if (aegis_access::ValidateAccessPolicySnapshot(candidate) !=
++      aegis_access::PolicyMatchReason::kNone)
++    return {StoreStatus::kCorrupt, std::nullopt, "invalid_committed_policy"};
++  sql::Statement reserve(database_.GetUniqueStatement(
++      "UPDATE access_store_counters SET operation_sequence=? WHERE singleton=1"));
++  reserve.BindInt64(0, sequence + 1);
++  if (!reserve.Run() || !transaction.Commit())
++    return {StoreStatus::kIoError, std::nullopt, "publication_reserve_commit_failed"};
++  return {StoreStatus::kValid, std::move(candidate), {}};
++}
++
+ StoreResult<StoredPolicySnapshot>
+ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
+                                                bool check_recovery) {
+diff --git a/chrome/browser/aegis/access/access_rule_store.h b/chrome/browser/aegis/access/access_rule_store.h
+index fdef7b6afc15e339b0a04cbc532489a011a5a398..6f6deed05557bd88d47f798803d70c8279798a13 100644
+--- a/chrome/browser/aegis/access/access_rule_store.h
++++ b/chrome/browser/aegis/access/access_rule_store.h
+@@ -249,6 +249,14 @@ class AccessRuleStore {
+ 
+   StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
+       const std::string& storage_partition_token);
++  // Atomically reserves a fresh policy version for the currently committed
++  // contents, including an empty bootstrap snapshot. Rows are not changed.
++  // The returned value is only a publication candidate; Network ACK and the
++  // Browser restoration barrier still govern use. PREPARED rows must be
++  // explicitly recovered before this method can return committed contents.
++  StoreResult<aegis_access::PublishedAccessPolicySnapshot>
++  ReserveCommittedPolicyForPublication(
++      const std::string& storage_partition_token);
+   StoreResult<PendingMutationRecord> PrepareSiteGroupMutation(
+       const SiteGroupMutationRequest& request);
+   // Builds the full in-memory candidate represented by one exact PREPARED
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index 51f763a101ca8cc78842297cc6be580a43a4de5e..a066e6dcbe99766d465ccf0a27adaed4ea60815a 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -406,6 +406,68 @@ TEST(AccessRuleStoreTest, EphemeralProfileNeverCreatesAccessDb) {
+   EXPECT_TRUE(store.binding().profile_path().empty());
+ }
+ 
++TEST(AccessRuleStoreTest, EmptyBootstrapReservesLiveGenerationBeforeFirstMutation) {
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  auto binding = AccessRuleStoreTestPeer::Persistent(temp.GetPath());
++  {
++    AccessRuleStore store(binding);
++    ASSERT_EQ(store.Open(), StoreStatus::kValid);
++    auto initial = store.ReserveCommittedPolicyForPublication("partition-A");
++    ASSERT_EQ(initial.status, StoreStatus::kValid);
++    ASSERT_TRUE(initial.value);
++    EXPECT_EQ(initial.value->owner, Owner());
++    EXPECT_EQ(initial.value->policy_generation, 1u);
++    EXPECT_TRUE(initial.value->rules.empty());
++    EXPECT_EQ(store.ReadCommittedSnapshot("partition-A").status, StoreStatus::kMissing);
++  }
++  AccessRuleStore reopened(binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  auto pending = Prepare(&reopened, Mutation("first-enable", AccessMode::kProxy));
++  EXPECT_EQ(pending.operation_sequence, 2u);
++}
++TEST(AccessRuleStoreTest, RestoreRepublishesCommittedContentAboveFailedCandidate) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "ephemeral-A", "profile-A"));
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  Commit(&store, Prepare(&store, Mutation("enabled", AccessMode::kProxy)));
++  auto original = store.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(original.value);
++  auto expected = AccessRuleStore::AdaptMatcherSnapshot(*original.value);
++  ASSERT_TRUE(expected.value);
++  auto failed = Prepare(&store, Mutation("failed-disable", AccessMode::kDirect, 1));
++  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("partition-A").status,
++            StoreStatus::kRecoveryRequired);
++  ASSERT_EQ(store.SupersedePreparedMutation(failed.operation_id,
++                                           failed.request_fingerprint),
++            StoreStatus::kValid);
++  auto restored = store.ReserveCommittedPolicyForPublication("partition-A");
++  ASSERT_EQ(restored.status, StoreStatus::kValid);
++  ASSERT_TRUE(restored.value);
++  EXPECT_GT(restored.value->policy_generation, failed.operation_sequence);
++  EXPECT_EQ(restored.value->rules, expected.value->rules);
++  auto committed = store.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(committed.value);
++  EXPECT_EQ(committed.value->site_groups, original.value->site_groups);
++  auto next = Prepare(&store, Mutation("next-disable", AccessMode::kDirect, 1));
++  EXPECT_GT(next.operation_sequence, restored.value->policy_generation);
++}
++TEST(AccessRuleStoreTest, InvalidRestoreDoesNotConsumeGenerationAndOverflowRejects) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral(
++      ChannelNamespace::kBeta, "ephemeral-A", "profile-A"));
++  EXPECT_FALSE(store.ReserveCommittedPolicyForPublication("partition-A").value);
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("").status,
++            StoreStatus::kInvalidArgument);
++  auto live = store.ReserveCommittedPolicyForPublication("partition-A");
++  ASSERT_TRUE(live.value);
++  EXPECT_EQ(live.value->policy_generation, 1u);
++  ASSERT_TRUE(AccessRuleStoreTestPeer::Sql(&store,
++      "UPDATE access_store_counters SET operation_sequence=9223372036854775807"));
++  EXPECT_EQ(store.ReserveCommittedPolicyForPublication("partition-A").status,
++            StoreStatus::kConflict);
++}
++
+ TEST(AccessRuleStoreTest, PrepareIsDurableButDoesNotReplaceCommittedRows) {
+   base::ScopedTempDir temp;
+   ASSERT_TRUE(temp.CreateUniqueTempDir());
+-- 
+2.54.0 (Apple Git-157)
+

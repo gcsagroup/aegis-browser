@@ -79,6 +79,9 @@ if ! mkdir "$BUILD_LOCK" 2>/dev/null; then
   exit 1
 fi
 release_build_lock() {
+  if [[ -f "$BUILD_LOCK/package-owner" ]]; then
+    rm "$BUILD_LOCK/package-owner"
+  fi
   rmdir "$BUILD_LOCK" 2>/dev/null || true
 }
 trap release_build_lock EXIT
@@ -165,3 +168,11 @@ node "$ROOT_DIR/scripts/write-build-identity.mjs" \
 echo "Build complete: $APP"
 du -sh "$APP"
 echo "Build identity: $BUILD_MANIFEST"
+
+if [[ "${AEGIS_MACOS_PACKAGE_AFTER_BUILD:-0}" == "1" ]]; then
+  printf '%s\n' "$$" > "$BUILD_LOCK/package-owner"
+  export AEGIS_MACOS_BUILD_LOCK_PID="$$"
+  export AEGIS_MACOS_APP_ROOT="$OUT"
+  bash "$ROOT_DIR/../../scripts/release/macos-internal-dmg.sh" \
+    "${MACOS_VERSION:?}" "${MACOS_ARCH:?}"
+fi

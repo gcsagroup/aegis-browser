@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import {resolve} from 'node:path';
 import {fail, git, parseArgs, repoRoot, resolveCommit} from './common.mjs';
+import {qualityBranchNames} from './ios-release-lines.mjs';
 
 function parentShas(commit, cwd) {
   return git(['rev-list', '--parents', '-n', '1', commit], {cwd}).trim().split(/\s+/u).slice(1);
@@ -36,8 +37,8 @@ try {
   } else {
     if (head !== tested) fail(`${event} must test its exact head SHA`);
     requireAncestor(base, head, cwd);
-    if (!['refs/heads/main', 'refs/heads/develop'].includes(values.ref)) {
-      fail(`${event} is restricted to refs/heads/main or refs/heads/develop, got ${values.ref ?? 'missing'}`);
+    if (!qualityBranchNames().map(name => `refs/heads/${name}`).includes(values.ref)) {
+      fail(`${event} requires an explicitly admitted quality branch, got ${values.ref ?? 'missing'}`);
     }
   }
   const trees = Object.fromEntries(

@@ -1,0 +1,202 @@
+From 0997fd10845ade090290cfbe468bcb6075130545 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Tue, 10 Nov 2026 21:54:52 +0800
+Subject: [PATCH] fix(access): keep explicit error-page recovery stable
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  6 ++-
+ .../access_navigation_retry_tab_helper.cc     | 10 ++++
+ ...ss_navigation_retry_tab_helper_unittest.cc | 46 +++++++++++++++++++
+ .../browser/net_error_auto_reloader.cc        | 14 +++++-
+ .../content/browser/net_error_auto_reloader.h |  7 +++
+ 5 files changed, 80 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 079e11764bbe2a97817f2d544d625f8c1944ee03..6af852c0f08f9b5582440b26bfc03202f2ac8b1b 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -38,13 +38,17 @@ source_set("access_navigation_retry_tab_helper") {
+     "//base",
+     "//content/public/browser",
+   ]
+-  deps = [ "//ui/base" ]
++  deps = [
++    "//components/error_page/content/browser",
++    "//ui/base",
++  ]
+ }
+ 
+ test("access_navigation_retry_tab_helper_unittests") {
+   sources = [ "access_navigation_retry_tab_helper_unittest.cc" ]
+   deps = [
+     ":access_navigation_retry_tab_helper",
++    "//components/error_page/content/browser",
+     "//content/test:run_all_unittests",
+     "//content/test:test_support",
+     "//net",
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+index a7ac89f886a95e18a4e4100aac6058755cef82ae..ddcfba3a3d55467fc428e1dd018333d0c257d2c8 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
++#include "components/error_page/content/browser/net_error_auto_reloader.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+ #include "content/public/browser/navigation_handle.h"
+@@ -114,6 +115,15 @@ void AccessNavigationRetryTabHelper::DidFinishNavigation(
+       navigation->GetURL(), navigation->GetRequestMethod(),
+       navigation->GetNetErrorCode(),
+       navigation->HasCommitted() && navigation->IsErrorPage());
++  if (recorded) {
++    if (auto* auto_reloader =
++            error_page::NetErrorAutoReloader::FromWebContents(web_contents())) {
++      // Chromium's background reload may be aborted without replacing the
++      // visible error document, revoking its retry ticket before the user can
++      // act. Keep this explicit recovery page stable, including during prepare.
++      auto_reloader->SuppressAutoReloadForCurrentDocument();
++    }
++  }
+   VLOG(1) << "Aegis proxy retry navigation: id=" << navigation->GetNavigationId()
+           << " method=" << navigation->GetRequestMethod()
+           << " error=" << navigation->GetNetErrorCode()
+diff --git a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+index b55a781808494b0d814330a1e2095a8f5cd6ba05..c77869c0cd439a756f8e1ec8758029019749f02c 100644
+--- a/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
++++ b/chrome/browser/aegis/access/access_navigation_retry_tab_helper_unittest.cc
+@@ -7,6 +7,7 @@
+ #include "base/functional/bind.h"
+ #include "base/test/bind.h"
+ #include "base/test/test_future.h"
++#include "components/error_page/content/browser/net_error_auto_reloader.h"
+ 
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+@@ -63,6 +64,51 @@ TEST_F(AccessNavigationRetryTabHelperTest, ReloadsOriginalUrlOnceAfterRedirect)
+   EXPECT_FALSE(controller().GetPendingEntry());
+ }
+ 
++TEST_F(AccessNavigationRetryTabHelperTest,
++       ExplicitRecoveryKeepsErrorDocumentStableAcrossConnectionChanges) {
++  error_page::NetErrorAutoReloader::CreateForWebContents(web_contents());
++  auto* reloader =
++      error_page::NetErrorAutoReloader::FromWebContents(web_contents());
++  reloader->DisableConnectionChangeObservationForTesting();
++  reloader->OnConnectionChanged(
++      net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
++  Fail(GURL("https://failed.example/path?q=original"));
++  const auto ticket = helper()->FailureForRetry();
++  ASSERT_TRUE(ticket);
++  EXPECT_FALSE(reloader->next_reload_timer_for_testing());
++  reloader->OnConnectionChanged(
++      net::NetworkChangeNotifier::ConnectionType::CONNECTION_NONE);
++  reloader->OnConnectionChanged(
++      net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
++  reloader->OnVisibilityChanged(content::Visibility::VISIBLE);
++  EXPECT_FALSE(reloader->next_reload_timer_for_testing());
++  EXPECT_EQ(helper()->FailureForRetry(), ticket);
++
++  // A replacement document that has no Access recovery action retains the
++  // existing Chromium automatic-reload behavior.
++  content::NavigationSimulator::NavigateAndFailFromBrowser(
++      web_contents(), GURL("https://other.example/"), net::ERR_EMPTY_RESPONSE);
++  EXPECT_FALSE(helper()->FailureForRetry());
++  EXPECT_TRUE(reloader->next_reload_timer_for_testing());
++}
++
++TEST_F(AccessNavigationRetryTabHelperTest,
++       RecoverySuppressionAlsoWorksWhenAutoReloaderObservesFirst) {
++  auto other = CreateTestWebContents();
++  error_page::NetErrorAutoReloader::CreateForWebContents(other.get());
++  auto* reloader =
++      error_page::NetErrorAutoReloader::FromWebContents(other.get());
++  reloader->DisableConnectionChangeObservationForTesting();
++  reloader->OnConnectionChanged(
++      net::NetworkChangeNotifier::ConnectionType::CONNECTION_WIFI);
++  AccessNavigationRetryTabHelper::CreateForWebContents(other.get());
++  content::NavigationSimulator::NavigateAndFailFromBrowser(
++      other.get(), GURL("https://failed.example/"), net::ERR_CONNECTION_RESET);
++  EXPECT_TRUE(AccessNavigationRetryTabHelper::FromWebContents(other.get())
++                  ->FailureForRetry());
++  EXPECT_FALSE(reloader->next_reload_timer_for_testing());
++}
++
+ TEST_F(AccessNavigationRetryTabHelperTest, NavigationRevokesLateRouteReady) {
+   Fail(GURL("https://failed.example/path"));
+   auto ready = helper()->CaptureRouteReadyCallback();
+diff --git a/components/error_page/content/browser/net_error_auto_reloader.cc b/components/error_page/content/browser/net_error_auto_reloader.cc
+index 8f2bc61a1b5aa5bd3da1fe32b98ff0bc3dd9f377..7ef13c78ca0ff324fc5b0001142045ce50d15773 100644
+--- a/components/error_page/content/browser/net_error_auto_reloader.cc
++++ b/components/error_page/content/browser/net_error_auto_reloader.cc
+@@ -282,6 +282,12 @@ void NetErrorAutoReloader::DisableConnectionChangeObservationForTesting() {
+   }
+ }
+ 
++void NetErrorAutoReloader::SuppressAutoReloadForCurrentDocument() {
++  suppressed_document_ =
++      web_contents()->GetPrimaryMainFrame()->GetWeakDocumentPtr();
++  PauseAutoReloadTimerIfRunning();
++}
++
+ void NetErrorAutoReloader::SetInitialConnectionType(
+     net::NetworkChangeNotifier::ConnectionType type) {
+   // NOTE: Tests may call `DisableConnectionChangeObservationForTesting` to null
+@@ -314,7 +320,9 @@ void NetErrorAutoReloader::ResumeAutoReloadIfPaused() {
+ 
+ void NetErrorAutoReloader::ScheduleNextAutoReload() {
+   DCHECK(current_reloadable_error_page_info_);
+-  if (!is_online_ || !IsWebContentsVisible()) {
++  if (!is_online_ || !IsWebContentsVisible() ||
++      suppressed_document_.AsRenderFrameHostIfValid() ==
++          web_contents()->GetPrimaryMainFrame()) {
+     return;
+   }
+ 
+@@ -329,7 +337,9 @@ void NetErrorAutoReloader::ScheduleNextAutoReload() {
+ 
+ void NetErrorAutoReloader::ReloadMainFrame() {
+   DCHECK(current_reloadable_error_page_info_);
+-  if (!is_online_ || !IsWebContentsVisible()) {
++  if (!is_online_ || !IsWebContentsVisible() ||
++      suppressed_document_.AsRenderFrameHostIfValid() ==
++          web_contents()->GetPrimaryMainFrame()) {
+     return;
+   }
+ 
+diff --git a/components/error_page/content/browser/net_error_auto_reloader.h b/components/error_page/content/browser/net_error_auto_reloader.h
+index 90571901c5dc6710996d316e525e4e26b3511205..614036380de6516182dfb20e19a4075b0f072f25 100644
+--- a/components/error_page/content/browser/net_error_auto_reloader.h
++++ b/components/error_page/content/browser/net_error_auto_reloader.h
+@@ -18,6 +18,7 @@
+ #include "base/types/strong_alias.h"
+ #include "content/public/browser/web_contents_observer.h"
+ #include "content/public/browser/web_contents_user_data.h"
++#include "content/public/browser/weak_document_ptr.h"
+ #include "net/base/net_errors.h"
+ #include "services/network/public/cpp/network_connection_tracker.h"
+ #include "services/network/public/mojom/network_change_manager.mojom.h"
+@@ -73,6 +74,11 @@ class NetErrorAutoReloader
+   // notifications. Used in tests which want to drive this behavior explicitly.
+   void DisableConnectionChangeObservationForTesting();
+ 
++  // An embedder with an explicit recovery action can keep the current error
++  // document stable while the user chooses or prepares that action. A new
++  // committed document automatically ends this suppression.
++  void SuppressAutoReloadForCurrentDocument();
++
+   // Returns the timer used internally to schedule the next auto-reload task,
+   // or null if no auto-reload task is currently scheduled.
+   std::optional<base::OneShotTimer>& next_reload_timer_for_testing() {
+@@ -118,6 +124,7 @@ class NetErrorAutoReloader
+   std::optional<ErrorPageInfo> current_reloadable_error_page_info_;
+   size_t num_reloads_for_current_error_ = 0;
+   bool is_auto_reload_in_progress_ = false;
++  content::WeakDocumentPtr suppressed_document_;
+   base::WeakPtrFactory<NetErrorAutoReloader> weak_ptr_factory_{this};
+ 
+   WEB_CONTENTS_USER_DATA_KEY_DECL();
+-- 
+2.54.0 (Apple Git-157)
+

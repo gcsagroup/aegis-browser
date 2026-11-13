@@ -1,0 +1,1494 @@
+From 48d90bfb887a42772025d493aeb42924d9a53c8e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 20:18:31 +0800
+Subject: [PATCH] feat(access): connect Browser private request routing and
+ exact ready gates
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  17 +-
+ .../aegis/access/access_local_core_manager.cc |   4 +
+ .../access_network_context_transport.cc       | 144 +++++-
+ .../access/access_network_context_transport.h |  32 +-
+ .../access/access_private_context_client.h    |   1 +
+ .../access_private_publication_unittest.cc    | 200 +++++++++
+ .../access_proxying_url_loader_factory.cc     | 420 ++++++++++++------
+ .../access_proxying_url_loader_factory.h      |  15 +-
+ .../access_proxying_url_tracked_request.cc    |  34 +-
+ .../access_proxying_url_tracked_request.h     |   5 +
+ .../access/access_request_dispatch_state.cc   |  20 +
+ .../access/access_request_dispatch_state.h    |   5 +
+ .../access/access_service_coordinator.cc      |  42 +-
+ .../aegis/access/access_service_coordinator.h |   1 +
+ .../access_site_proxy_bubble_controller.cc    |   8 +-
+ 15 files changed, 807 insertions(+), 141 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/access_private_publication_unittest.cc
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index a07d28c727988341962ae7fb4c5b95a07284b74a..09595735704b55b02abc0e1c9d3f8308e72ca53e 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -20,7 +20,10 @@ test("access_local_core_manager_unittests") {
+   sources = [ "access_local_core_manager_unittest.cc" ]
+   deps = [
+     ":access_local_core_manager",
++    "//base",
+     "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//net",
+     "//testing/gtest",
+   ]
+ }
+@@ -124,9 +127,11 @@ source_set("access_network_context_transport") {
+     "access_network_context_transport.cc",
+     "access_network_context_transport.h",
+   ]
+-  public_deps = [ "//components/aegis_access:policy_publication_ack_tracker" ]
+-  deps = [
++  public_deps = [
+     ":access_private_context_client",
++    "//components/aegis_access:policy_publication_ack_tracker",
++  ]
++  deps = [
+     "//base",
+     "//chrome/browser/aegis:profile_support",
+     "//chrome/browser/profiles:profile",
+@@ -164,6 +169,7 @@ source_set("access_proxying_url_loader_factory") {
+   deps = [
+     ":access_browser_request_adapter",
+     ":access_navigation_retry_tab_helper",
++    ":access_private_context_client",
+     ":access_site_proxy_bubble",
+     ":access_service_coordinator",
+     ":access_network_context_transport",
+@@ -446,10 +452,14 @@ test("access_proxy_selection_generation_source_unittests") {
+ }
+ 
+ test("access_network_context_transport_unittests") {
+-  sources = [ "access_network_context_transport_unittest.cc" ]
++  sources = [
++    "access_network_context_transport_unittest.cc",
++    "access_private_publication_unittest.cc",
++  ]
+   deps = [
+     "//content/test:test_support",
+     ":access_network_context_transport",
++    ":access_private_context_client",
+     "//chrome/test:test_support",
+     "//chrome/test:test_support_unit",
+     "//base/test:test_support",
+@@ -458,6 +468,7 @@ test("access_network_context_transport_unittests") {
+     "//mojo/public/cpp/bindings",
+     "//net",
+     "//services/network:network_service",
++    "//services/network:test_support",
+     "//services/network/public/mojom",
+     "//testing/gtest",
+     "//url",
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index 37c9b3415df1c7851649569867b02830ae613e49..31fa8fc5e19c65fb891f1fdf23d7a590dc40d83f 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -89,6 +89,9 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+       return;
+     }
+     started_ = base::TimeTicks();  // A recheck never relaunches or retries startup.
++    request_.reset();
++    context_.reset();
++    authenticated_ = false;  // Each readiness check proves a fresh authenticated connection.
+     timeout_.Start(FROM_HERE, base::Seconds(25), base::BindOnce(
+         &Worker::Complete, base::Unretained(this), false,
+         "Proxy connectivity check timed out."));
+@@ -235,6 +238,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+   }
+   void OnReadCompleted(net::URLRequest*, int) override {}
+   void Complete(bool ready, std::string error) {
++    ready = ready && Running();
+     timeout_.Stop();
+     retry_.Stop();
+     request_.reset();
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 1dde5c5d6f429bc90d2c03cc7165f923ae5cee72..af523b1b641ac60b7f639943876bcba2db4c0fbe 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -5,12 +5,14 @@
+ #include <algorithm>
+ #include <limits>
+ #include <memory>
++#include <set>
+ #include <utility>
+ 
+ #include "base/barrier_closure.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/uuid.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "mojo/public/cpp/bindings/callback_helpers.h"
+@@ -265,8 +267,148 @@ bool AccessNetworkContextTransport::HasReadyPrivateContext(
+     const aegis_access::OwnershipKey& owner) const {
+   if (!OwnsConfiguredPartition(owner)) return false;
+   const auto& contexts = partitions_.at(owner.storage_partition_token).private_contexts;
++  const auto& state = partitions_.at(owner.storage_partition_token);
+   return !contexts.empty() && std::ranges::all_of(contexts,
+-      [](const auto& entry) { return entry.second->is_ready(); });
++      [&](const auto& entry) { return entry.second.client->is_ready() &&
++          entry.second.applied_revision == state.private_revision; });
++}
++
++void AccessNetworkContextTransport::BindPrivateContext(
++    const aegis_access::OwnershipKey& owner, network::mojom::NetworkContext* context,
++    base::OnceCallback<void(PrivateContext)> completion) {
++  if (!context || !OwnsConfiguredPartition(owner)) {
++    std::move(completion).Run(nullptr);
++    return;
++  }
++  auto client = std::make_shared<AccessPrivateContextClient>(owner);
++  client->Initialize(context, base::BindOnce(
++      [](base::WeakPtr<AccessNetworkContextTransport> self,
++         aegis_access::OwnershipKey owner, PrivateContext client,
++         base::OnceCallback<void(PrivateContext)> completion, bool initialized) {
++        if (!self || !initialized || !self->OwnsConfiguredPartition(owner)) {
++          std::move(completion).Run(nullptr);
++          return;
++        }
++        auto& state = self->partitions_.at(owner.storage_partition_token);
++        bool lost = false;
++        std::erase_if(state.private_contexts, [&](const auto& entry) {
++          const bool disconnected = entry.second.client->incarnation().empty();
++          lost |= disconnected;
++          return disconnected;
++        });
++        if (lost) self->SettlePrivatePublication(state, false);
++        const auto incarnation = client->incarnation();
++        auto [entry, inserted] = state.private_contexts.try_emplace(
++            incarnation, PrivateContextEntry{client});
++        // All factories for the same actual Context share one sequence owner.
++        std::move(completion).Run(entry->second.client);
++      }, weak_factory_.GetWeakPtr(), owner, client, std::move(completion)));
++}
++bool AccessNetworkContextTransport::SamePrivatePublication(
++    const PrivatePublication& a, const PrivatePublication& b) {
++  if (a.policy != b.policy || a.common != b.common || a.unavailable != b.unavailable ||
++      a.endpoints.size() != b.endpoints.size()) return false;
++  for (size_t i = 0; i < a.endpoints.size(); ++i) {
++    const auto& left = a.endpoints[i];
++    const auto& right = b.endpoints[i];
++    if (left.registration != right.registration ||
++        left.local_credentials.has_value() != right.local_credentials.has_value() ||
++        (left.local_credentials && !left.local_credentials->Equals(*right.local_credentials)))
++      return false;
++  }
++  return true;
++}
++AccessNetworkConfigAckResult AccessNetworkContextTransport::PublishPrivatePolicy(
++    const aegis_access::PublishedAccessPolicySnapshot& policy,
++    const aegis_access::GenerationTuple& common,
++    base::OnceCallback<void(bool)> completion) {
++  if (!OwnsConfiguredPartition(policy.owner) ||
++      aegis_access::ValidateAccessPolicySnapshot(policy) != aegis_access::PolicyMatchReason::kNone ||
++      common.policy_generation != policy.policy_generation || !common.policy_generation ||
++      !common.identity_generation || !common.network_epoch ||
++      common.network_epoch != network_epoch_ || !common.base_proxy_config_generation ||
++      common.selection_generation != 0) {
++    std::move(completion).Run(false);
++    return {AccessNetworkConfigAckStatus::kInvalidPublication, 0};
++  }
++  auto& state = partitions_.at(policy.owner.storage_partition_token);
++  PrivatePublication candidate{policy, common, {}, {}};
++  std::set<std::string> groups;
++  for (const auto& rule : policy.rules)
++    if (rule.mode == aegis_access::AccessMode::kProxy) groups.insert(rule.proxy_group_id);
++  for (const auto& group : groups) {
++    auto found = state.private_endpoints.find(group);
++    if (found != state.private_endpoints.end()) {
++      auto& entry = found->second;
++      auto& g = entry.registration.generations;
++      if (g.identity_generation == common.identity_generation &&
++          g.network_epoch == common.network_epoch &&
++          g.base_proxy_config_generation == common.base_proxy_config_generation) {
++        g.policy_generation = common.policy_generation;
++        candidate.endpoints.push_back(entry);
++        continue;
++      }
++      candidate.unavailable.emplace(group, g.selection_generation);
++    } else {
++      // This process has not selected an endpoint for the restored group.
++      candidate.unavailable.emplace(group, 0);
++    }
++  }
++  if (!state.private_publication || !SamePrivatePublication(*state.private_publication, candidate)) {
++    SettlePrivatePublication(state, false);
++    state.private_publication = std::move(candidate);
++    ++state.private_revision;
++  }
++  state.private_publication_waiters.push_back(std::move(completion));
++  if (state.private_contexts.empty()) {
++    SettlePrivatePublication(state, false);
++    return {AccessNetworkConfigAckStatus::kNoClients, 0};
++  }
++  const size_t required = state.private_contexts.size();
++  for (const auto& [incarnation, entry] : state.private_contexts)
++    PublishPrivateContext(policy.owner, incarnation);
++  if (HasReadyPrivateContext(policy.owner)) SettlePrivatePublication(state, true);
++  return {AccessNetworkConfigAckStatus::kStarted, required};
++}
++void AccessNetworkContextTransport::PublishPrivateContext(
++    const aegis_access::OwnershipKey& owner, const std::string& incarnation) {
++  auto& state = partitions_.at(owner.storage_partition_token);
++  auto& entry = state.private_contexts.at(incarnation);
++  if (entry.publishing || !state.private_publication ||
++      (entry.applied_revision == state.private_revision && entry.client->is_ready())) return;
++  const auto& publication = *state.private_publication;
++  entry.publishing = true;
++  entry.client->PublishPolicy(publication.policy, publication.common, ++entry.sequence,
++      publication.endpoints, publication.unavailable,
++      base::BindOnce(&AccessNetworkContextTransport::OnPrivateContextPublished,
++          weak_factory_.GetWeakPtr(), owner, incarnation, state.private_revision));
++}
++void AccessNetworkContextTransport::OnPrivateContextPublished(
++    aegis_access::OwnershipKey owner, std::string incarnation,
++    uint64_t revision, bool accepted) {
++  auto found = partitions_.find(owner.storage_partition_token);
++  if (found == partitions_.end()) return;
++  auto& state = found->second;
++  auto entry = state.private_contexts.find(incarnation);
++  if (entry == state.private_contexts.end()) return;
++  entry->second.publishing = false;
++  if (revision != state.private_revision) {
++    PublishPrivateContext(owner, incarnation);
++    return;
++  }
++  if (!accepted) {
++    SettlePrivatePublication(state, false);
++    return;
++  }
++  entry->second.applied_revision = revision;
++  if (HasReadyPrivateContext(owner)) SettlePrivatePublication(state, true);
++}
++void AccessNetworkContextTransport::SettlePrivatePublication(PartitionState& state,
++                                                            bool accepted) {
++  auto callbacks = std::move(state.private_publication_waiters);
++  state.private_publication_waiters.clear();
++  for (auto& callback : callbacks) base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
++      FROM_HERE, base::BindOnce(std::move(callback), accepted));
+ }
+ 
+ std::optional<aegis_access::RegisteredProxyEndpoint>
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index b623c0e963adf83829d625f987548d447320291e..4ee20afffcd2b42413cd5421cf9e639c63b81221 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -107,6 +107,14 @@ class AccessNetworkContextTransport
+   std::vector<AccessPrivateEndpoint> PrivateEndpoints(
+       const aegis_access::OwnershipKey& owner) const;
+   bool HasReadyPrivateContext(const aegis_access::OwnershipKey& owner) const;
++  using PrivateContext = std::shared_ptr<AccessPrivateContextClient>;
++  void BindPrivateContext(const aegis_access::OwnershipKey& owner,
++      network::mojom::NetworkContext* context,
++      base::OnceCallback<void(PrivateContext)> completion);
++  AccessNetworkConfigAckResult PublishPrivatePolicy(
++      const aegis_access::PublishedAccessPolicySnapshot& policy,
++      const aegis_access::GenerationTuple& common,
++      base::OnceCallback<void(bool)> completion);
+ 
+   // Clears the custom selection while keeping the update channel installed.
+   // New requests then use Chromium's native proxy result again.
+@@ -153,9 +161,24 @@ class AccessNetworkContextTransport
+  private:
+   friend class AccessNetworkContextTransportTestPeer;
+ 
++  struct PrivatePublication {
++    aegis_access::PublishedAccessPolicySnapshot policy;
++    aegis_access::GenerationTuple common;
++    std::vector<AccessPrivateEndpoint> endpoints;
++    std::map<std::string, uint64_t> unavailable;
++  };
++  struct PrivateContextEntry {
++    PrivateContext client;
++    uint64_t sequence = 0;
++    uint64_t applied_revision = 0;
++    bool publishing = false;
++  };
+   struct PartitionState {
+     std::map<std::string, AccessPrivateEndpoint> private_endpoints;
+-    std::map<std::string, std::shared_ptr<AccessPrivateContextClient>> private_contexts;
++    std::map<std::string, PrivateContextEntry> private_contexts;
++    std::optional<PrivatePublication> private_publication;
++    uint64_t private_revision = 0;
++    std::vector<base::OnceCallback<void(bool)>> private_publication_waiters;
+     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
+     std::vector<std::string> exact_hosts;
+     mojo::RemoteSet<network::mojom::CustomProxyConfigClient> clients;
+@@ -193,6 +216,13 @@ class AccessNetworkContextTransport
+       const aegis_access::OwnershipKey& owner,
+       base::OnceCallback<void(bool)> all_clients_settled);
+   void Broadcast(PartitionState& state);
++  void PublishPrivateContext(const aegis_access::OwnershipKey& owner,
++                             const std::string& incarnation);
++  void OnPrivateContextPublished(aegis_access::OwnershipKey owner,
++      std::string incarnation, uint64_t revision, bool accepted);
++  void SettlePrivatePublication(PartitionState& state, bool accepted);
++  static bool SamePrivatePublication(const PrivatePublication& a,
++                                     const PrivatePublication& b);
+ 
+   std::string runtime_profile_token_;
+   uint64_t network_epoch_ = 1;
+diff --git a/chrome/browser/aegis/access/access_private_context_client.h b/chrome/browser/aegis/access/access_private_context_client.h
+index c34dbe50b008a1267baa56dc06c062448f6bac10..b739d2fb2dcf54fe3c24256d35a4de25e4df2eb4 100644
+--- a/chrome/browser/aegis/access/access_private_context_client.h
++++ b/chrome/browser/aegis/access/access_private_context_client.h
+@@ -53,6 +53,7 @@ class AccessPrivateContextClient {
+       mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderFactory> receiver,
+       base::OnceCallback<void(bool)> completion);
+   bool is_ready() const { return ready_; }
++  network::mojom::AegisAccessOwnerPtr owner_for_binding() const { return owner_.Clone(); }
+   const std::string& incarnation() const { return incarnation_; }
+   uint64_t published_sequence() const { return published_sequence_; }
+ 
+diff --git a/chrome/browser/aegis/access/access_private_publication_unittest.cc b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..56ae9657a16b94a3d3994cdbc54f7d2e5df97e81
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+@@ -0,0 +1,200 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++
++#include "base/test/test_future.h"
++#include "chrome/browser/aegis/access/access_private_context_client.h"
++#include "chrome/test/base/testing_profile.h"
++#include "content/public/test/browser_task_environment.h"
++#include "mojo/public/cpp/bindings/receiver_set.h"
++#include "services/network/test/test_network_context.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis::access {
++namespace {
++
++class HeldPrivateContext final : public network::TestNetworkContext,
++                                 public network::mojom::AegisAccessContext {
++ public:
++  void BindAegisAccessContext(
++      mojo::PendingReceiver<network::mojom::AegisAccessContext> receiver,
++      BindAegisAccessContextCallback callback) override {
++    receivers.Add(this, std::move(receiver));
++    std::move(callback).Run(incarnation);
++  }
++  void InstallSnapshot(network::mojom::AegisAccessSnapshotPtr value,
++                       InstallSnapshotCallback callback) override {
++    ++install_count;
++    snapshot = std::move(value);
++    reply = std::move(callback);
++  }
++  void Acknowledge() {
++    CHECK(reply);
++    auto ack = network::mojom::AegisAccessSnapshotAck::New();
++    ack->accepted = true;
++    ack->owner = snapshot->owner.Clone();
++    ack->incarnation = snapshot->incarnation;
++    ack->sequence = snapshot->sequence;
++    ack->common_generations = snapshot->common_generations.Clone();
++    for (const auto& endpoint : snapshot->endpoints) {
++      ack->registrations.push_back(
++          network::mojom::AegisAccessRegistrationAck::New(
++              endpoint->proxy_group_id, endpoint->registration_id,
++              endpoint->selection_generation));
++    }
++    for (const auto& unavailable : snapshot->unavailable_groups)
++      ack->unavailable_groups.push_back(unavailable.Clone());
++    std::move(reply).Run(std::move(ack));
++  }
++  void BeginRestore(network::mojom::AegisAccessOwnerPtr, const std::string&,
++                    BeginRestoreCallback callback) override {
++    std::move(callback).Run(true);
++  }
++  void CreateFactory(
++      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderFactory>,
++      network::mojom::URLLoaderFactoryParamsPtr,
++      network::mojom::AegisAccessFactoryBindingPtr,
++      CreateFactoryCallback callback) override {
++    std::move(callback).Run(true);
++  }
++
++  std::string incarnation = "actual-context";
++  size_t install_count = 0;
++  network::mojom::AegisAccessSnapshotPtr snapshot;
++  InstallSnapshotCallback reply;
++  mojo::ReceiverSet<network::mojom::AegisAccessContext> receivers;
++};
++
++class AccessPrivatePublicationTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    profile_ = TestingProfile::Builder().Build();
++    network::mojom::NetworkContextParams params;
++    ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(
++        profile_.get(), {}, &params));
++    transport_ = AccessNetworkContextTransport::Get(profile_.get());
++    owner_ = *transport_->OwnerForPartition(aegis_access::ChannelNamespace::kDev, {});
++  }
++  AccessNetworkContextTransport::PrivateContext Bind(HeldPrivateContext& context) {
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport_->BindPrivateContext(owner_, &context, bound.GetCallback());
++    return bound.Take();
++  }
++  aegis_access::PublishedAccessPolicySnapshot Policy(uint64_t generation = 1) {
++    return {owner_, generation, {}};
++  }
++  aegis_access::GenerationTuple Common(uint64_t generation = 1) {
++    return {generation, 2, 0, transport_->network_epoch(), 5};
++  }
++  void AddProxyRule(aegis_access::PublishedAccessPolicySnapshot& policy,
++                    const std::string& group) {
++    policy.rules.push_back({.rule_id = group,
++                            .owner = owner_,
++                            .scope = aegis_access::PolicyScope::kProfile,
++                            .destination_host = group + ".example",
++                            .schemes = {aegis_access::RequestScheme::kHttps},
++                            .ports = {aegis_access::PortScope::kAllBrowserPermitted, {}},
++                            .mode = aegis_access::AccessMode::kProxy,
++                            .proxy_group_id = group,
++                            .protection_override = aegis_access::ProtectionOverride::kNone,
++                            .row_revision = 1,
++                            .last_operation_sequence = 1});
++  }
++
++  content::BrowserTaskEnvironment environment_;
++  std::unique_ptr<TestingProfile> profile_;
++  raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
++  aegis_access::OwnershipKey owner_;
++};
++
++TEST_F(AccessPrivatePublicationTest, FactoriesShareOneContextAndExactPublication) {
++  HeldPrivateContext context;
++  auto first = Bind(context);
++  auto second = Bind(context);
++  ASSERT_TRUE(first);
++  EXPECT_EQ(first, second);
++  base::test::TestFuture<bool> one;
++  base::test::TestFuture<bool> two;
++  transport_->PublishPrivatePolicy(Policy(), Common(), one.GetCallback());
++  transport_->PublishPrivatePolicy(Policy(), Common(), two.GetCallback());
++  environment_.RunUntilIdle();
++  EXPECT_EQ(context.install_count, 1u);
++  EXPECT_FALSE(one.IsReady());
++  EXPECT_FALSE(transport_->HasReadyPrivateContext(owner_));
++  context.Acknowledge();
++  EXPECT_TRUE(one.Get());
++  EXPECT_TRUE(two.Get());
++  EXPECT_TRUE(transport_->HasReadyPrivateContext(owner_));
++}
++
++TEST_F(AccessPrivatePublicationTest, WholeSnapshotIncludesReadyAndUnavailableGroups) {
++  HeldPrivateContext context;
++  ASSERT_TRUE(Bind(context));
++  auto policy = Policy();
++  AddProxyRule(policy, "ready");
++  AddProxyRule(policy, "cold");
++  auto generations = Common();
++  generations.selection_generation = 3;
++  ASSERT_TRUE(transport_->RegisterPreparedProxy({
++      {"real-registration", "ready", owner_, generations,
++       aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1", 18080},
++      net::AuthCredentials(u"local", u"private") }));
++  base::test::TestFuture<bool> published;
++  transport_->PublishPrivatePolicy(policy, Common(), published.GetCallback());
++  environment_.RunUntilIdle();
++  ASSERT_TRUE(context.snapshot);
++  ASSERT_EQ(context.snapshot->endpoints.size(), 1u);
++  EXPECT_EQ(context.snapshot->endpoints[0]->registration_id, "real-registration");
++  ASSERT_EQ(context.snapshot->unavailable_groups.size(), 1u);
++  EXPECT_EQ(context.snapshot->unavailable_groups[0]->proxy_group_id, "cold");
++  EXPECT_EQ(context.snapshot->unavailable_groups[0]->selection_generation, 0u);
++  EXPECT_EQ(context.snapshot->rules.size(), 2u);
++  context.Acknowledge();
++  EXPECT_TRUE(published.Get());
++}
++
++TEST_F(AccessPrivatePublicationTest, SupersededAckCannotReleaseNewCandidate) {
++  HeldPrivateContext context;
++  ASSERT_TRUE(Bind(context));
++  base::test::TestFuture<bool> previous;
++  base::test::TestFuture<bool> current;
++  transport_->PublishPrivatePolicy(Policy(), Common(), previous.GetCallback());
++  environment_.RunUntilIdle();
++  transport_->PublishPrivatePolicy(Policy(2), Common(2), current.GetCallback());
++  EXPECT_FALSE(previous.Get());
++  context.Acknowledge();
++  environment_.RunUntilIdle();
++  EXPECT_FALSE(current.IsReady());
++  EXPECT_FALSE(transport_->HasReadyPrivateContext(owner_));
++  ASSERT_EQ(context.install_count, 2u);
++  EXPECT_EQ(context.snapshot->sequence, 2u);
++  EXPECT_EQ(context.snapshot->common_generations->policy_generation, 2u);
++  context.Acknowledge();
++  EXPECT_TRUE(current.Get());
++}
++
++TEST_F(AccessPrivatePublicationTest, LostContextRequiresFullNewIncarnationAck) {
++  HeldPrivateContext old;
++  ASSERT_TRUE(Bind(old));
++  base::test::TestFuture<bool> previous;
++  transport_->PublishPrivatePolicy(Policy(), Common(), previous.GetCallback());
++  environment_.RunUntilIdle();
++  old.receivers.Clear();
++  EXPECT_FALSE(previous.Get());
++  EXPECT_FALSE(transport_->HasReadyPrivateContext(owner_));
++  HeldPrivateContext replacement;
++  replacement.incarnation = "new-context";
++  ASSERT_TRUE(Bind(replacement));
++  base::test::TestFuture<bool> restored;
++  transport_->PublishPrivatePolicy(Policy(), Common(), restored.GetCallback());
++  environment_.RunUntilIdle();
++  EXPECT_FALSE(restored.IsReady());
++  EXPECT_EQ(replacement.snapshot->incarnation, "new-context");
++  EXPECT_EQ(replacement.snapshot->sequence, 1u);
++  replacement.Acknowledge();
++  EXPECT_TRUE(restored.Get());
++  EXPECT_TRUE(transport_->HasReadyPrivateContext(owner_));
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 5d630e0bec8b0d9c085becf023b4b9397cfa1a10..5abe7ace5bb969d689c7673fa7830e3bc16b3dff 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -9,6 +9,7 @@
+ #include <utility>
+ 
+ #include "base/check.h"
++#include "base/uuid.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/ptr_util.h"
+ #include "base/memory/weak_ptr.h"
+@@ -221,6 +222,27 @@ CaptureProfileOnlyProxyFactoryMetadata(Profile* profile,
+       BuildBrowserOwnedProfileRequestMetadata(profile, partition));
+ }
+ 
++struct PrivateTerminal : public std::enable_shared_from_this<PrivateTerminal> {
++  mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver;
++  network::mojom::URLLoaderFactoryParamsPtr params;
++  std::shared_ptr<AccessPrivateContextClient> context;
++  bool context_done = false;
++  bool restoration_done = false;
++  bool document_done = false;
++  bool failed = false;
++  base::OnceCallback<void(std::shared_ptr<PrivateTerminal>)> on_ready;
++  void MaybeReady() {
++    if (!context_done || !restoration_done || !document_done || !on_ready) return;
++    if (failed || !context) {
++      receiver.reset();
++      params.reset();
++      on_ready.Reset();
++      return;
++    }
++    std::move(on_ready).Run(shared_from_this());
++  }
++};
++
+ // CommitNavigation constructs and clones this factory before the new document
+ // is active. Keep the wrapper endpoint unbound until the exact navigation
+ // commits, so queued parser requests cannot be attributed to the old document.
+@@ -236,28 +258,21 @@ class PendingDocumentFactory : public content::WebContentsObserver {
+       content::RenderFrameHost* frame,
+       int64_t navigation_id,
+       aegis_access::OwnershipKey owner,
+-      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
+-      mojo::PendingRemote<network::mojom::URLLoaderFactory> target,
++      std::shared_ptr<PrivateTerminal> terminal,
+       CompletionCallback on_complete)
+       : content::WebContentsObserver(contents),
+         profile_(profile),
+         frame_id_(frame->GetGlobalId()),
+         navigation_id_(navigation_id),
+         owner_(std::move(owner)),
+-        receiver_(std::move(receiver)),
+-        target_(std::move(target)),
++        terminal_(std::move(terminal)),
+         on_complete_(std::move(on_complete)) {}
+ 
+   PendingDocumentFactory(const PendingDocumentFactory&) = delete;
+   PendingDocumentFactory& operator=(const PendingDocumentFactory&) = delete;
+   ~PendingDocumentFactory() override = default;
+ 
+-  mojo::PendingReceiver<network::mojom::URLLoaderFactory> TakeReceiver() {
+-    return std::move(receiver_);
+-  }
+-  mojo::PendingRemote<network::mojom::URLLoaderFactory> TakeTarget() {
+-    return std::move(target_);
+-  }
++  std::shared_ptr<PrivateTerminal> TakeTerminal() { return std::move(terminal_); }
+   const aegis_access::OwnershipKey& owner() const { return owner_; }
+ 
+   void DidFinishNavigation(content::NavigationHandle* navigation) override {
+@@ -310,8 +325,7 @@ class PendingDocumentFactory : public content::WebContentsObserver {
+   const content::GlobalRenderFrameHostId frame_id_;
+   const int64_t navigation_id_;
+   const aegis_access::OwnershipKey owner_;
+-  mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver_;
+-  mojo::PendingRemote<network::mojom::URLLoaderFactory> target_;
++  std::shared_ptr<PrivateTerminal> terminal_;
+   CompletionCallback on_complete_;
+ };
+ 
+@@ -321,140 +335,209 @@ class BrowserContextData : public base::SupportsUserData::Data {
+   BrowserContextData& operator=(const BrowserContextData&) = delete;
+   ~BrowserContextData() override = default;
+ 
+-  static void StartProxying(
+-      Profile* profile,
++  static void StartProxying(Profile* profile,
+       content::FrameTreeNodeId frame_tree_node_id,
+       std::optional<int64_t> navigation_id,
+       std::optional<int> profile_only_render_process_id,
+       content::StoragePartition* profile_only_storage_partition,
+-      aegis_access::BrowserOwnedRequestMetadata factory_metadata,
+-      network::URLLoaderFactoryBuilder& factory_builder) {
+-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-    BrowserContextData* self = GetOrCreate(profile);
++      aegis_access::BrowserOwnedRequestMetadata metadata,
++      network::URLLoaderFactoryBuilder& builder) {
++    auto* self = GetOrCreate(profile);
+     std::optional<content::WeakDocumentPtr> document;
+-    if (factory_metadata.attribution_kind ==
+-        aegis_access::RequestAttributionKind::kDocument) {
+-      content::WebContents* contents =
+-          content::WebContents::FromFrameTreeNodeId(frame_tree_node_id);
+-      content::RenderFrameHost* frame =
+-          contents ? contents->UnsafeFindFrameByFrameTreeNodeId(
+-                         frame_tree_node_id)
+-                   : nullptr;
+-      if (!frame) {
+-        return;
+-      }
++    if (metadata.attribution_kind == aegis_access::RequestAttributionKind::kDocument) {
++      auto* contents = content::WebContents::FromFrameTreeNodeId(frame_tree_node_id);
++      auto* frame = contents ? contents->UnsafeFindFrameByFrameTreeNodeId(frame_tree_node_id) : nullptr;
++      if (!frame) return;
+       document = frame->GetWeakDocumentPtr();
+     }
++    const auto owner = metadata.owner;
++    builder.SetTerminalFactoryInterceptor(base::BindOnce(
++        &BrowserContextData::BeginImmediateTerminal, self->weak_factory_.GetWeakPtr(),
++        frame_tree_node_id, navigation_id, profile_only_render_process_id,
++        profile_only_storage_partition, owner, std::move(metadata), std::move(document)));
++  }
+ 
+-    auto [receiver, target] = factory_builder.Append();
+-    const aegis_access::OwnershipKey owner = factory_metadata.owner;
+-    auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
+-        profile, frame_tree_node_id, navigation_id,
+-        profile_only_render_process_id, profile_only_storage_partition,
+-        owner, std::move(factory_metadata), std::move(receiver),
+-        std::move(target),
+-        std::move(document),
+-        base::BindOnce(&BrowserContextData::RemoveProxy,
+-                       self->weak_factory_.GetWeakPtr()));
+-    self->proxies_.emplace(std::move(proxy));
++  static void StartUnattributedDocument(Profile* profile, content::RenderFrameHost* frame,
++      aegis_access::OwnershipKey owner, network::URLLoaderFactoryBuilder& builder) {
++    auto* self = GetOrCreate(profile);
++    builder.SetTerminalFactoryInterceptor(base::BindOnce(
++        &BrowserContextData::BeginImmediateTerminal, self->weak_factory_.GetWeakPtr(),
++        frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
++        static_cast<content::StoragePartition*>(nullptr), owner,
++        std::optional<aegis_access::BrowserOwnedRequestMetadata>(),
++        std::make_optional(frame->GetWeakDocumentPtr())));
+   }
+ 
+-  static void StartPendingDocument(
+-      Profile* profile,
+-      content::WebContents* contents,
+-      content::RenderFrameHost* frame,
+-      int64_t navigation_id,
+-      aegis_access::OwnershipKey owner,
+-      network::URLLoaderFactoryBuilder& factory_builder) {
+-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-    BrowserContextData* self = GetOrCreate(profile);
+-    auto [receiver, target] = factory_builder.Append();
+-    const uint64_t pending_id = ++self->next_pending_id_;
+-    self->pending_documents_.emplace(
+-        pending_id,
+-        std::make_unique<PendingDocumentFactory>(
+-            profile, contents, frame, navigation_id, std::move(owner),
+-            std::move(receiver),
+-            std::move(target),
+-            base::BindOnce(&BrowserContextData::CompletePendingDocument,
+-                           self->weak_factory_.GetWeakPtr(), pending_id)));
++  static void StartPendingDocument(Profile* profile, content::WebContents* contents,
++      content::RenderFrameHost* frame, int64_t navigation_id,
++      aegis_access::OwnershipKey owner, network::URLLoaderFactoryBuilder& builder) {
++    auto* self = GetOrCreate(profile);
++    auto terminal = std::make_shared<PrivateTerminal>();
++    const auto pending_id = ++self->next_pending_id_;
++    self->pending_documents_.emplace(pending_id, std::make_unique<PendingDocumentFactory>(
++        profile, contents, frame, navigation_id, owner, terminal,
++        base::BindOnce(&BrowserContextData::CompletePendingDocument,
++                       self->weak_factory_.GetWeakPtr(), pending_id)));
++    builder.SetTerminalFactoryInterceptor(base::BindOnce(
++        [](base::WeakPtr<BrowserContextData> self, aegis_access::OwnershipKey owner,
++           std::shared_ptr<PrivateTerminal> terminal,
++           mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
++           network::mojom::NetworkContext* context,
++           network::mojom::URLLoaderFactoryParamsPtr params) {
++          if (!self) return;
++          terminal->receiver = std::move(receiver);
++          terminal->params = std::move(params);
++          self->BeginTerminal(terminal, owner, context);
++        }, self->weak_factory_.GetWeakPtr(), owner, terminal));
+   }
+ 
+   void RemoveProxy(AccessProxyingURLLoaderFactory* proxy) {
+-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+     auto it = proxies_.find(proxy);
+     CHECK(it != proxies_.end());
+     proxies_.erase(it);
+   }
+ 
+-  static void StartUnattributedDocument(
+-      Profile* profile,
+-      content::RenderFrameHost* frame,
+-      aegis_access::OwnershipKey owner,
+-      network::URLLoaderFactoryBuilder& factory_builder) {
+-    BrowserContextData* self = GetOrCreate(profile);
+-    auto [receiver, target] = factory_builder.Append();
+-    auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
+-        profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
+-        /*profile_only_storage_partition=*/nullptr, std::move(owner),
+-        std::nullopt, std::move(receiver), std::move(target),
+-        frame->GetWeakDocumentPtr(),
+-        base::BindOnce(&BrowserContextData::RemoveProxy,
+-                       self->weak_factory_.GetWeakPtr()));
+-    self->proxies_.emplace(std::move(proxy));
+-  }
+-
+  private:
++  explicit BrowserContextData(Profile* profile) : profile_(profile) {}
+   static BrowserContextData* GetOrCreate(Profile* profile) {
+-    auto* self = static_cast<BrowserContextData*>(
+-        profile->GetUserData(kBrowserContextDataKey));
++    auto* self = static_cast<BrowserContextData*>(profile->GetUserData(kBrowserContextDataKey));
+     if (!self) {
+       self = new BrowserContextData(profile);
+       profile->SetUserData(kBrowserContextDataKey, base::WrapUnique(self));
+     }
+     return self;
+   }
+-
+-  void CompletePendingDocument(
+-      uint64_t pending_id,
++  void BeginImmediateTerminal(content::FrameTreeNodeId frame_id,
++      std::optional<int64_t> navigation_id, std::optional<int> process,
++      content::StoragePartition* partition, aegis_access::OwnershipKey owner,
++      std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
++      std::optional<content::WeakDocumentPtr> document,
++      mojo::PendingReceiver<network::mojom::URLLoaderFactory> receiver,
++      network::mojom::NetworkContext* context,
++      network::mojom::URLLoaderFactoryParamsPtr params) {
++    auto terminal = std::make_shared<PrivateTerminal>();
++    terminal->receiver = std::move(receiver);
++    terminal->params = std::move(params);
++    terminal->document_done = true;
++    terminal->on_ready = base::BindOnce(&BrowserContextData::PublishAndCreateFactory,
++        weak_factory_.GetWeakPtr(), frame_id, navigation_id, process, partition,
++        owner, std::move(metadata), std::move(document));
++    BeginTerminal(terminal, owner, context);
++  }
++  void BeginTerminal(std::shared_ptr<PrivateTerminal> terminal,
++      const aegis_access::OwnershipKey& owner, network::mojom::NetworkContext* context) {
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile_);
++    if (!transport || !coordinator) {
++      terminal->failed = terminal->context_done = terminal->restoration_done = true;
++      terminal->MaybeReady();
++      return;
++    }
++    // The raw Context is used now, never retained across a deferred commit.
++    transport->BindPrivateContext(owner, context, base::BindOnce(
++        [](std::shared_ptr<PrivateTerminal> terminal,
++           std::shared_ptr<AccessPrivateContextClient> context) {
++          terminal->context = std::move(context);
++          terminal->context_done = true;
++          terminal->MaybeReady();
++        }, terminal));
++    coordinator->InitializeForProfile(owner, base::BindOnce(
++        [](std::shared_ptr<PrivateTerminal> terminal, bool restored) {
++          terminal->restoration_done = true;
++          terminal->failed |= !restored;
++          terminal->MaybeReady();
++        }, terminal));
++  }
++  void CompletePendingDocument(uint64_t pending_id,
+       std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
+       std::optional<content::WeakDocumentPtr> document) {
+-    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+     auto it = pending_documents_.find(pending_id);
+     CHECK(it != pending_documents_.end());
+-    std::unique_ptr<PendingDocumentFactory> owned = std::move(it->second);
++    auto pending = std::move(it->second);
+     pending_documents_.erase(it);
+-    content::RenderFrameHost* frame =
+-        document ? document->AsRenderFrameHostIfValid() : nullptr;
+-    if (!frame || !frame->GetPage().IsPrimary() ||
+-        frame->GetBrowserContext() != profile_) {
+-      return;  // Closing the unbound receiver fails any queued request.
++    auto terminal = pending->TakeTerminal();
++    auto* frame = document ? document->AsRenderFrameHostIfValid() : nullptr;
++    if (!frame || !frame->GetPage().IsPrimary() || frame->GetBrowserContext() != profile_) {
++      terminal->receiver.reset();
++      return;
+     }
+-    if (metadata &&
+-        (metadata->attribution_kind !=
+-             aegis_access::RequestAttributionKind::kDocument ||
+-         metadata->owner != owned->owner())) {
+-      metadata.reset();
++    if (metadata && (metadata->attribution_kind != aegis_access::RequestAttributionKind::kDocument ||
++                     metadata->owner != pending->owner())) metadata.reset();
++    terminal->document_done = true;
++    terminal->on_ready = base::BindOnce(&BrowserContextData::PublishAndCreateFactory,
++        weak_factory_.GetWeakPtr(), frame->GetFrameTreeNodeId(), std::nullopt,
++        std::nullopt, static_cast<content::StoragePartition*>(nullptr), pending->owner(),
++        std::move(metadata), std::move(document));
++    terminal->MaybeReady();
++  }
++  void PublishAndCreateFactory(content::FrameTreeNodeId frame_id,
++      std::optional<int64_t> navigation_id, std::optional<int> process,
++      content::StoragePartition* partition, aegis_access::OwnershipKey owner,
++      std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
++      std::optional<content::WeakDocumentPtr> document,
++      std::shared_ptr<PrivateTerminal> terminal) {
++    auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(owner) : nullptr;
++    const auto common = runtime ? runtime->CaptureCommonGenerationTupleOnUiThread(owner)
++                                : std::nullopt;
++    if (!transport || !policy || !common ||
++        (document && !document->AsRenderFrameHostIfValid())) return;
++    transport->PublishPrivatePolicy(*policy, *common, base::BindOnce(
++        &BrowserContextData::OnTerminalPolicyReady, weak_factory_.GetWeakPtr(),
++        frame_id, navigation_id, process, partition, owner,
++        std::move(metadata), std::move(document), terminal));
++  }
++  void OnTerminalPolicyReady(content::FrameTreeNodeId frame_id,
++      std::optional<int64_t> navigation_id, std::optional<int> process,
++      content::StoragePartition* partition, aegis_access::OwnershipKey owner,
++      std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
++      std::optional<content::WeakDocumentPtr> document,
++      std::shared_ptr<PrivateTerminal> terminal, bool accepted) {
++    if (!accepted || (document && !document->AsRenderFrameHostIfValid())) return;
++    auto binding = network::mojom::AegisAccessFactoryBinding::New();
++    binding->owner = terminal->context->owner_for_binding();
++    binding->attribution = network::mojom::AegisAccessAttribution::kProfileOnly;
++    if (metadata) {
++      binding->document_token = metadata->document_token;
++      binding->pending_navigation_token = metadata->pending_navigation_token;
++      if (metadata->top_frame_site) binding->top_frame_site = metadata->top_frame_site->GetURL();
++      switch (metadata->attribution_kind) {
++        case aegis_access::RequestAttributionKind::kDocument:
++          binding->attribution = network::mojom::AegisAccessAttribution::kDocument; break;
++        case aegis_access::RequestAttributionKind::kPendingNavigation:
++          binding->attribution = network::mojom::AegisAccessAttribution::kPendingNavigation; break;
++        case aegis_access::RequestAttributionKind::kProfileOnly: break;
++        case aegis_access::RequestAttributionKind::kInvalid: return;
++      }
+     }
+-
+-    auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
+-        profile_, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
+-        /*profile_only_storage_partition=*/nullptr, owned->owner(),
+-        std::move(metadata),
+-        owned->TakeReceiver(), owned->TakeTarget(), std::move(document),
+-        base::BindOnce(&BrowserContextData::RemoveProxy,
+-                       weak_factory_.GetWeakPtr()));
+-    proxies_.emplace(std::move(proxy));
++    mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> target;
++    auto receiver = target.InitWithNewPipeAndPassReceiver();
++    terminal->context->CreateFactory(std::move(terminal->params), std::move(binding),
++        std::move(receiver), base::BindOnce(
++            [](base::WeakPtr<BrowserContextData> self, content::FrameTreeNodeId frame_id,
++               std::optional<int64_t> navigation_id, std::optional<int> process,
++               content::StoragePartition* partition, aegis_access::OwnershipKey owner,
++               std::optional<aegis_access::BrowserOwnedRequestMetadata> metadata,
++               std::optional<content::WeakDocumentPtr> document,
++               std::shared_ptr<PrivateTerminal> terminal,
++               mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> target,
++               bool created) {
++              if (!self || !created) return;
++              auto proxy = std::make_unique<AccessProxyingURLLoaderFactory>(
++                  self->profile_, frame_id, navigation_id, process, partition, owner,
++                  std::move(metadata), std::move(terminal->receiver),
++                  mojo::PendingRemote<network::mojom::URLLoaderFactory>(), std::move(document),
++                  base::BindOnce(&BrowserContextData::RemoveProxy, self),
++                  std::move(target), terminal->context);
++              self->proxies_.emplace(std::move(proxy));
++            }, weak_factory_.GetWeakPtr(), frame_id, navigation_id, process, partition,
++            owner, std::move(metadata), std::move(document), terminal, std::move(target)));
+   }
+ 
+-  explicit BrowserContextData(Profile* profile) : profile_(profile) {}
+-
+   const raw_ptr<Profile> profile_;
+-  std::set<std::unique_ptr<AccessProxyingURLLoaderFactory>,
+-           base::UniquePtrComparator>
+-      proxies_;
+-  std::map<uint64_t, std::unique_ptr<PendingDocumentFactory>>
+-      pending_documents_;
++  std::set<std::unique_ptr<AccessProxyingURLLoaderFactory>, base::UniquePtrComparator> proxies_;
++  std::map<uint64_t, std::unique_ptr<PendingDocumentFactory>> pending_documents_;
+   uint64_t next_pending_id_ = 0;
+   base::WeakPtrFactory<BrowserContextData> weak_factory_{this};
+ };
+@@ -512,7 +595,9 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+     mojo::PendingReceiver<network::mojom::URLLoaderFactory> loader_receiver,
+     mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory,
+     std::optional<content::WeakDocumentPtr> document,
+-    DisconnectCallback on_disconnect)
++    DisconnectCallback on_disconnect,
++    mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> private_target,
++    std::shared_ptr<AccessPrivateContextClient> private_context)
+     : profile_(profile),
+       frame_tree_node_id_(frame_tree_node_id),
+       navigation_id_(navigation_id),
+@@ -521,6 +606,7 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+       factory_owner_(std::move(factory_owner)),
+       factory_metadata_(std::move(factory_metadata)),
+       document_(std::move(document)),
++      private_context_(std::move(private_context)),
+       on_disconnect_(std::move(on_disconnect)) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   const bool is_profile_only = factory_metadata_.has_value() &&
+@@ -541,10 +627,16 @@ AccessProxyingURLLoaderFactory::AccessProxyingURLLoaderFactory(
+   } else {
+     CHECK(frame_tree_node_id_);
+   }
+-  target_factory_.Bind(std::move(target_factory));
+-  target_factory_.set_disconnect_handler(base::BindOnce(
+-      &AccessProxyingURLLoaderFactory::OnTargetFactoryError,
+-      base::Unretained(this)));
++  if (private_target.is_valid()) {
++    CHECK(private_context_);
++    private_target_factory_.Bind(std::move(private_target));
++    private_target_factory_.set_disconnect_handler(base::BindOnce(
++        &AccessProxyingURLLoaderFactory::OnTargetFactoryError, base::Unretained(this)));
++  } else {
++    target_factory_.Bind(std::move(target_factory));
++    target_factory_.set_disconnect_handler(base::BindOnce(
++        &AccessProxyingURLLoaderFactory::OnTargetFactoryError, base::Unretained(this)));
++  }
+   proxy_receivers_.Add(this, std::move(loader_receiver));
+   proxy_receivers_.set_disconnect_handler(base::BindRepeating(
+       &AccessProxyingURLLoaderFactory::OnProxyBindingError,
+@@ -795,21 +887,28 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
+   // native behavior without a published policy, but never let a published
+   // policy fall through to DIRECT when attribution cannot be established.
+   if (!factory_metadata_) {
+-    return factory_snapshot ? RequestDisposition::kBlock
+-                            : RequestDisposition::kPreserveNative;
++    if (factory_snapshot && !factory_snapshot->rules.empty()) return RequestDisposition::kBlock;
++    if (private_target_factory_.is_bound()) {
++      aegis_access::BrowserOwnedRequestMetadata native{
++          stable_request_id.value_or(base::Uuid::GenerateRandomV4().AsLowercaseString()),
++          factory_owner_, aegis_access::RequestAttributionKind::kProfileOnly, {}, {}, std::nullopt};
++      return EvaluatePreparedMetadata(request_url, runtime, std::move(native),
++                                      net_error, ownership_record);
++    }
++    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock : RequestDisposition::kPreserveNative;
+   }
+ 
+   AccessBrowserRequestMetadataResult metadata = CaptureCurrentMetadata();
+   if (metadata.status != AccessBrowserRequestMetadataStatus::kOk ||
+       !metadata.metadata.has_value()) {
+-    return factory_snapshot ? RequestDisposition::kBlock
++    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock
+                             : RequestDisposition::kPreserveNative;
+   }
+ 
+   aegis_access::BrowserOwnedRequestMetadata evaluated_metadata =
+       std::move(*metadata.metadata);
+   if (!SameAttributionScope(*factory_metadata_, evaluated_metadata)) {
+-    return factory_snapshot ? RequestDisposition::kBlock
++    return (factory_snapshot || private_target_factory_.is_bound()) ? RequestDisposition::kBlock
+                             : RequestDisposition::kPreserveNative;
+   }
+   if (stable_request_id.has_value()) {
+@@ -831,7 +930,8 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+   const aegis_access::PublishedAccessPolicySnapshot* snapshot =
+       runtime ? runtime->GetPublishedPolicySnapshot(metadata.owner) : nullptr;
+   if (!snapshot) {
+-    return RequestDisposition::kPreserveNative;
++    return private_target_factory_.is_bound() ? RequestDisposition::kBlock
++                                             : RequestDisposition::kPreserveNative;
+   }
+ 
+   aegis_access::RequestPolicyContextResult context_result =
+@@ -845,7 +945,18 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+   const MatchedPolicyDisposition policy_disposition =
+       ClassifyPolicyMatch(match);
+   if (policy_disposition == MatchedPolicyDisposition::kPreserveNative) {
+-    return RequestDisposition::kPreserveNative;
++    if (!private_target_factory_.is_bound()) return RequestDisposition::kPreserveNative;
++    auto common = runtime->CaptureCommonGenerationTupleOnUiThread(metadata.owner);
++    auto* dispatch = AccessRequestDispatchState::GetOrCreate(profile_);
++    if (!common || !dispatch) return RequestDisposition::kBlock;
++    auto record = context_result.context->ToOwnershipRecord(*common);
++    const auto barrier = dispatch->barriers().EvaluateRequest(record);
++    if (barrier.status != aegis_access::RequestDispatchBarrierStatus::kOk ||
++        barrier.decision != aegis_access::RequestDispatchDecision::kAllow ||
++        dispatch->ownership().Register(record) != aegis_access::RequestOwnershipStatus::kOk)
++      return RequestDisposition::kBlock;
++    *ownership_record = std::move(record);
++    return RequestDisposition::kDispatchControlled;
+   }
+   if (policy_disposition == MatchedPolicyDisposition::kBlock) {
+     return RequestDisposition::kBlock;
+@@ -865,7 +976,7 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+   }
+ 
+   *ownership_record = std::move(*preparation.ownership_record);
+-  return RequestDisposition::kDispatchProxy;
++  return RequestDisposition::kDispatchControlled;
+ }
+ 
+ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
+@@ -876,7 +987,7 @@ void AccessProxyingURLLoaderFactory::CreateLoaderAndStart(
+     mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+     const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+-  if (!target_factory_.is_bound()) {
++  if (!target_factory_.is_bound() && !private_target_factory_.is_bound()) {
+     BlockRequest(std::move(loader_receiver), std::move(client),
+                  net::ERR_FAILED);
+     return;
+@@ -933,11 +1044,71 @@ void AccessProxyingURLLoaderFactory::StartTargetRequest(
+     uint32_t options,
+     const network::ResourceRequest& request,
+     mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation) {
++    const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
++    const aegis_access::RequestOwnershipRecord& ownership,
++    mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl> control) {
++  if (private_target_factory_.is_bound()) {
++    auto envelope = BuildEnvelope(ownership, request.url, request.method, 0);
++    if (!envelope) {
++      BlockRequest(std::move(loader_receiver), std::move(client), net::ERR_BLOCKED_BY_CLIENT);
++      return;
++    }
++    auto routed_request = network::mojom::AegisAccessRoutedRequest::New();
++    routed_request->request = request;
++    routed_request->envelope = std::move(envelope);
++    private_target_factory_->CreateLoaderAndStartWithRoute(std::move(loader_receiver),
++        std::move(control), request_id, options,
++        std::move(routed_request),
++        std::move(client), traffic_annotation);
++    return;
++  }
+   ForwardNative(std::move(loader_receiver), request_id, options, request,
+                 std::move(client), traffic_annotation);
+ }
+ 
++network::mojom::AegisAccessRequestEnvelopePtr AccessProxyingURLLoaderFactory::BuildEnvelope(
++    const aegis_access::RequestOwnershipRecord& ownership, const GURL& target,
++    const std::string& method, uint32_t hop) {
++  if (!private_context_ || private_context_->incarnation().empty()) return nullptr;
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto* policy = runtime ? runtime->GetPublishedPolicySnapshot(ownership.owner) : nullptr;
++  if (!policy || policy->policy_generation != ownership.generations.policy_generation) return nullptr;
++  auto attribution = !ownership.document_token.empty()
++      ? aegis_access::RequestAttributionKind::kDocument
++      : !ownership.pending_navigation_token.empty()
++          ? aegis_access::RequestAttributionKind::kPendingNavigation
++          : aegis_access::RequestAttributionKind::kProfileOnly;
++  aegis_access::BrowserOwnedRequestMetadata metadata{ownership.request_id, ownership.owner,
++      attribution, ownership.document_token, ownership.pending_navigation_token, std::nullopt};
++  if (ownership.site_ownership_reliable)
++    metadata.top_frame_site = net::SchemefulSite(GURL(ownership.top_level_site));
++  auto canonical = aegis_access::CanonicalizeBrowserOwnedRequest(metadata, target);
++  if (!canonical.context) return nullptr;
++  const auto match = aegis_access::EvaluateAccessPolicy(*canonical.context, *policy);
++  auto envelope = network::mojom::AegisAccessRequestEnvelope::New();
++  envelope->request_token = ownership.request_id;
++  envelope->incarnation = private_context_->incarnation();
++  envelope->hop = hop;
++  envelope->target = target;
++  envelope->method = method;
++  const auto& g = ownership.generations;
++  envelope->generations = network::mojom::AegisAccessGenerations::New(
++      g.policy_generation, g.identity_generation, g.selection_generation,
++      g.network_epoch, g.base_proxy_config_generation);
++  if (match.effective_mode == aegis_access::AccessMode::kProxy) {
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    const auto endpoint = transport ? transport->CaptureSelectedProxyEndpoint(
++        ownership.owner, match.effective_proxy_group_id, canonical.context->exact_host())
++        : std::nullopt;
++    if (!endpoint || endpoint->generations != g) return nullptr;
++    envelope->registration_id = endpoint->registration_id;
++  } else if ((match.effective_mode != aegis_access::AccessMode::kNone &&
++              match.effective_mode != aegis_access::AccessMode::kDirect) || g.selection_generation) {
++    return nullptr;
++  }
++  return envelope;
++}
++
+ void AccessProxyingURLLoaderFactory::ForwardNative(
+     mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+     int32_t request_id,
+@@ -975,6 +1146,7 @@ void AccessProxyingURLLoaderFactory::RemoveRequest(AccessProxyingURLTrackedReque
+ void AccessProxyingURLLoaderFactory::OnTargetFactoryError() {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   target_factory_.reset();
++  private_target_factory_.reset();
+   proxy_receivers_.Clear();
+   MaybeDestroySelf();
+ }
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 1541803dcdf26e26ab4fd8d1cf974a3e169a437c..a094cf5e4f6c283924dc3004e82a5e4a1b1597a2 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -33,6 +33,7 @@ class StoragePartition;
+ namespace aegis::access {
+ 
+ class AccessPublishedRequestRuntime;
++class AccessPrivateContextClient;
+ class AccessProxyingURLTrackedRequest;
+ 
+ // UI-thread browser-process URLLoaderFactory wrapper for real Access request
+@@ -72,7 +73,9 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       mojo::PendingReceiver<network::mojom::URLLoaderFactory> loader_receiver,
+       mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory,
+       std::optional<content::WeakDocumentPtr> document,
+-      DisconnectCallback on_disconnect);
++      DisconnectCallback on_disconnect,
++      mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> private_target = {},
++      std::shared_ptr<AccessPrivateContextClient> private_context = nullptr);
+   AccessProxyingURLLoaderFactory(const AccessProxyingURLLoaderFactory&) =
+       delete;
+   AccessProxyingURLLoaderFactory& operator=(
+@@ -132,7 +135,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+ 
+   enum class RequestDisposition {
+     kPreserveNative,
+-    kDispatchProxy,
++    kDispatchControlled,
+     kBlock,
+   };
+ 
+@@ -174,7 +177,12 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       uint32_t options,
+       const network::ResourceRequest& request,
+       mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+-      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
++      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
++      const aegis_access::RequestOwnershipRecord& ownership,
++      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl> control);
++  network::mojom::AegisAccessRequestEnvelopePtr BuildEnvelope(
++      const aegis_access::RequestOwnershipRecord& ownership,
++      const GURL& target, const std::string& method, uint32_t hop);
+   void RemoveRequest(AccessProxyingURLTrackedRequest* request);
+   void OnTargetFactoryError();
+   void OnProxyBindingError();
+@@ -196,6 +204,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+       requests_;
+   mojo::Remote<network::mojom::URLLoaderFactory> target_factory_;
+   mojo::Remote<network::mojom::AegisAccessURLLoaderFactory> private_target_factory_;
++  std::shared_ptr<AccessPrivateContextClient> private_context_;
+   DisconnectCallback on_disconnect_;
+ };
+ 
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+index dfe17f85fc7c4f2cdf6cc64a20728fd56c4ffe87..765db57e071437e317aa1d3e146a1e0df7251acd 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.cc
+@@ -16,6 +16,7 @@
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+ #include "services/network/public/mojom/early_hints.mojom.h"
+ #include "services/network/public/mojom/url_response_head.mojom.h"
++#include "url/origin.h"
+ 
+ namespace aegis::access {
+ namespace {
+@@ -92,9 +93,17 @@ void AccessProxyingURLTrackedRequest::Start(
+       &AccessProxyingURLTrackedRequest::OnBindingError,
+       weak_factory_.GetWeakPtr()));
+ 
++  private_route_ = factory_->private_target_factory_.is_bound();
++  mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl> control;
++  if (private_route_) {
++    control = private_control_.BindNewPipeAndPassReceiver();
++    private_control_.set_disconnect_handler(base::BindOnce(
++        &AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected,
++        weak_factory_.GetWeakPtr()));
++  }
+   factory_->StartTargetRequest(
+       target_loader_.BindNewPipeAndPassReceiver(), request_id, options, request,
+-      std::move(proxy_client), traffic_annotation);
++      std::move(proxy_client), traffic_annotation, ownership_record_, std::move(control));
+   target_loader_.set_disconnect_handler(base::BindOnce(
+       &AccessProxyingURLTrackedRequest::OnTargetLoaderDisconnected,
+       weak_factory_.GetWeakPtr()));
+@@ -120,13 +129,30 @@ void AccessProxyingURLTrackedRequest::FollowRedirect(
+   }
+ 
+   const GURL follow_url = new_url.value_or(*pending_redirect_url_);
++  if (private_route_ && (!private_control_.is_connected() ||
++      !url::Origin::Create(follow_url).IsSameOriginWith(
++          url::Origin::Create(*pending_redirect_url_)))) {
++    FailClosed(/*complete_registry=*/true);
++    return;
++  }
+   if (!RebindOwnershipForRedirect(follow_url)) {
+     FailClosed(/*complete_registry=*/ownership_registered_);
+     return;
+   }
+ 
+   pending_redirect_url_.reset();
+-  target_loader_->FollowRedirect(std::move(headers), new_url);
++  if (private_route_) {
++    auto envelope = factory_->BuildEnvelope(ownership_record_, follow_url,
++                                             pending_redirect_method_, ++hop_);
++    if (!envelope) {
++      FailClosed(/*complete_registry=*/true);
++      return;
++    }
++    private_control_->FollowRedirectWithRoute(std::move(headers), new_url,
++                                               std::move(envelope));
++  } else {
++    target_loader_->FollowRedirect(std::move(headers), new_url);
++  }
+ }
+ 
+ void AccessProxyingURLTrackedRequest::SetPriority(net::RequestPriority priority,
+@@ -174,6 +200,7 @@ void AccessProxyingURLTrackedRequest::OnReceiveRedirect(
+   }
+ 
+   pending_redirect_url_ = redirect_info.new_url;
++  pending_redirect_method_ = redirect_info.new_method;
+   target_client_->OnReceiveRedirect(redirect_info, std::move(head));
+ }
+ 
+@@ -227,7 +254,7 @@ bool AccessProxyingURLTrackedRequest::RebindOwnershipForRedirect(
+   const auto disposition = factory_->EvaluateRedirect(
+       follow_url, stable_request_id, &net_error, &redirected_record);
+   if (disposition !=
+-      AccessProxyingURLLoaderFactory::RequestDisposition::kDispatchProxy) {
++      AccessProxyingURLLoaderFactory::RequestDisposition::kDispatchControlled) {
+     return false;
+   }
+   if (redirected_record.request_id != stable_request_id) {
+@@ -293,6 +320,7 @@ void AccessProxyingURLTrackedRequest::Finish(bool complete_registry) {
+     return;
+   }
+   finished_ = true;
++  private_control_.reset();
+   client_completion_watchdog_.Stop();
+   if (complete_registry && ownership_registered_) {
+     dispatch_state_->ownership().Complete(
+diff --git a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+index 1915296d37adc794e883160ba7b82191648828c0..6895d40d170921958e6785860f82f414cd56931b 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
++++ b/chrome/browser/aegis/access/access_proxying_url_tracked_request.h
+@@ -14,6 +14,7 @@
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
+ #include "services/network/public/mojom/url_loader.mojom.h"
++#include "services/network/public/mojom/aegis_access_route.mojom.h"
+ #include "url/gurl.h"
+ 
+ namespace net {
+@@ -90,11 +91,15 @@ class AccessProxyingURLTrackedRequest final
+   const raw_ptr<AccessRequestDispatchState> dispatch_state_;
+   aegis_access::RequestOwnershipRecord ownership_record_;
+   std::optional<GURL> pending_redirect_url_;
++  std::string pending_redirect_method_;
++  uint32_t hop_ = 0;
++  bool private_route_ = false;
+   bool ownership_registered_ = true;
+   bool finished_ = false;
+ 
+   mojo::Receiver<network::mojom::URLLoader> loader_receiver_{this};
+   mojo::Remote<network::mojom::URLLoader> target_loader_;
++  mojo::Remote<network::mojom::AegisAccessURLLoaderControl> private_control_;
+   mojo::Receiver<network::mojom::URLLoaderClient> client_receiver_{this};
+   mojo::Remote<network::mojom::URLLoaderClient> target_client_;
+   base::OneShotTimer client_completion_watchdog_;
+diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.cc b/chrome/browser/aegis/access/access_request_dispatch_state.cc
+index e034a4bc029f36422d93ca506dcc11ec76af13ab..d787116c1cae44543fb5387d1bdcc467d4d43f98 100644
+--- a/chrome/browser/aegis/access/access_request_dispatch_state.cc
++++ b/chrome/browser/aegis/access/access_request_dispatch_state.cc
+@@ -208,4 +208,24 @@ void AccessRequestDispatchState::OnNetworkContextPublicationAck(
+   }
+ }
+ 
++AccessNetworkConfigAckResult AccessRequestDispatchState::RequestPrivateSnapshotAck(
++    const aegis_access::PolicyPublicationIdentity& identity,
++    const aegis_access::PublishedAccessPolicySnapshot& policy,
++    const aegis_access::GenerationTuple& common,
++    base::OnceCallback<void(bool)> completion) {
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  if (!transport || policy.owner != identity.selector.owner ||
++      policy.policy_generation != identity.policy_generation) {
++    publication_acks_.MarkFailed(identity);
++    std::move(completion).Run(false);
++    return {AccessNetworkConfigAckStatus::kInvalidPublication, 0};
++  }
++  const auto result = transport->PublishPrivatePolicy(policy, common,
++      base::BindOnce(&AccessRequestDispatchState::OnNetworkContextPublicationAck,
++          weak_factory_.GetWeakPtr(), identity, std::move(completion)));
++  if (result.status != AccessNetworkConfigAckStatus::kStarted)
++    publication_acks_.MarkFailed(identity);
++  return result;
++}
++
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_request_dispatch_state.h b/chrome/browser/aegis/access/access_request_dispatch_state.h
+index 374dc11136a22e068e44d11d7b0a4c8a88b11d09..92d61fee37900aab0fd269cfbe571d0c6c0ade51 100644
+--- a/chrome/browser/aegis/access/access_request_dispatch_state.h
++++ b/chrome/browser/aegis/access/access_request_dispatch_state.h
+@@ -85,6 +85,11 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
+       const aegis_access::PolicyPublicationIdentity& identity,
+       const aegis_access::OwnershipKey& owner,
+       base::OnceCallback<void(bool)> completion = {});
++  AccessNetworkConfigAckResult RequestPrivateSnapshotAck(
++      const aegis_access::PolicyPublicationIdentity& identity,
++      const aegis_access::PublishedAccessPolicySnapshot& policy,
++      const aegis_access::GenerationTuple& common,
++      base::OnceCallback<void(bool)> completion);
+ 
+  private:
+   explicit AccessRequestDispatchState(Profile* profile);
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index ce6b7760cb9a834aa523b24cdd28822005b8675b..19a0ca409c06383b21f7363e92430e94ff684e7e 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -115,6 +115,7 @@ struct AccessServiceCoordinator::MutationTransaction {
+   AccessTransportSelection previous_selection;
+   AccessTransportSelection candidate_selection;
+   aegis_access::PolicyPublicationIdentity identity;
++  aegis_access::GenerationTuple common_generations;
+   base::OnceCallback<void(AccessMutationTransactionResult)> completion;
+   bool tracker_started = false;
+   bool runtime_published = false;
+@@ -124,7 +125,7 @@ AccessServiceCoordinator::MutationTransaction::MutationTransaction() = default;
+ AccessServiceCoordinator::MutationTransaction::~MutationTransaction() = default;
+ 
+ bool AccessServiceCoordinator::CanDispatch(const OwnershipKey& owner) const {
+-  return !mutation_in_flight_ &&
++  return !recovery_required_ && !mutation_in_flight_ &&
+       (!async_store_ || committed_cache_.contains(owner.storage_partition_token));
+ }
+ 
+@@ -132,7 +133,7 @@ void AccessServiceCoordinator::InitializeForProfile(
+     const OwnershipKey& owner, base::OnceCallback<void(bool)> completion) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+-  if (store_ || !transport || !transport->OwnsConfiguredPartition(owner)) {
++  if (store_ || recovery_required_ || !transport || !transport->OwnsConfiguredPartition(owner)) {
+     std::move(completion).Run(false);
+     return;
+   }
+@@ -469,6 +470,14 @@ void AccessServiceCoordinator::RequestPublicationAck(
+   // Copy arguments before moving ownership into the callback.
+   const auto identity = transaction->identity;
+   const auto owner = transaction->pending.owner;
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  const auto common = async_store_ && runtime
++      ? runtime->CaptureCommonGenerationTupleOnUiThread(owner) : std::nullopt;
++  if (async_store_ && !common) {
++    OnNetworkContextPublicationAck(std::move(transaction), false);
++    return;
++  }
++  if (common) transaction->common_generations = *common;
+   auto settlement = std::make_shared<base::OnceCallback<void(bool)>>(
+       base::BindOnce(&AccessServiceCoordinator::OnNetworkContextPublicationAck,
+                      weak_factory_.GetWeakPtr(), std::move(transaction)));
+@@ -480,6 +489,12 @@ void AccessServiceCoordinator::RequestPublicationAck(
+   };
+   publication_timeout_.Start(
+       FROM_HERE, base::Seconds(30), base::BindOnce(settle, settlement, false));
++  if (async_store_) {
++    AccessRequestDispatchState::Get(profile_)->RequestPrivateSnapshotAck(
++        identity, *runtime->GetPublishedPolicySnapshot(owner), *common,
++        base::BindOnce(settle, settlement));
++    return;
++  }
+   AccessRequestDispatchState::Get(profile_)
+       ->RequestNetworkContextPublicationAck(identity, owner,
+                                             base::BindOnce(settle, settlement));
+@@ -494,6 +509,8 @@ bool AccessServiceCoordinator::CandidateStillCurrent(
+       transport->network_epoch() != transaction.identity.network_epoch) {
+     return false;
+   }
++  if (async_store_ && runtime->CaptureCommonGenerationTupleOnUiThread(owner) !=
++                          transaction.common_generations) return false;
+   const auto* published = runtime->GetPublishedPolicySnapshot(owner);
+   const auto adapted =
+       AccessRuleStore::AdaptMatcherSnapshot(transaction.candidate);
+@@ -549,11 +566,26 @@ void AccessServiceCoordinator::OnAsyncRecovered(
+     committed_cache_.insert_or_assign(transaction->pending.owner.storage_partition_token,
+                                       std::move(*result.committed));
+     if (auto* runtime = AccessPublishedRequestRuntime::Get(profile_)) {
+-      runtime->PublishRestoredPolicyCandidate(*result.publication);
+-      // Keep the failed publication barrier. A newer complete Context ACK must
+-      // restore the reserved committed candidate before requests can resume.
++      const auto published = runtime->PublishRestoredPolicyCandidate(*result.publication);
++      if (published.status != AccessPolicyPublicationStatus::kPublished &&
++          published.status != AccessPolicyPublicationStatus::kUnchanged) {
++        recovery_required_ = true;
++      } else if (auto common = runtime->CaptureCommonGenerationTupleOnUiThread(
++                     transaction->pending.owner)) {
++        auto* transport = AccessNetworkContextTransport::Get(profile_);
++        transport->PublishPrivatePolicy(*result.publication, *common, base::BindOnce(
++            [](base::WeakPtr<AccessServiceCoordinator> self,
++               std::unique_ptr<MutationTransaction> transaction,
++               AccessMutationTransactionResult failure, bool restored) {
++              if (self) self->Finish(std::move(transaction->completion), failure);
++            }, weak_factory_.GetWeakPtr(), std::move(transaction), failure));
++        return;
++      }
++    } else {
++      recovery_required_ = true;
+     }
+   } else {
++    recovery_required_ = true;
+     failure.store_status = result.status;
+   }
+   Finish(std::move(transaction->completion), failure);
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index d824c42ad7eabbd80127751585f5be3c8c1dbbf0..ec2e4930a6031d86d95e4b0d862c8f05dd54705b 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -130,6 +130,7 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+   std::map<std::string, std::vector<base::OnceCallback<void(bool)>>> initializing_;
+   uint64_t state_generation_ = 0;
+   bool mutation_in_flight_ = false;
++  bool recovery_required_ = false;
+   base::OneShotTimer publication_timeout_;
+   base::WeakPtrFactory<AccessServiceCoordinator> weak_factory_{this};
+ };
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 996734828931f207c0a233bf5e02e7937afcd014..9e786a4fe7d66eea815f861a0dc3781545ab3656 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -349,9 +349,15 @@ void AccessSiteProxyBubbleController::OnCommittedCoreVerified(
+       ? transport->OwnerForPartition(ChannelNamespace::kDev, base::FilePath())
+       : std::nullopt;
+   const auto endpoint = owner ? transport->CurrentEndpoint(*owner) : std::nullopt;
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
++  auto live = owner && runtime ? runtime->CaptureCommonGenerationTupleOnUiThread(*owner)
++                               : std::nullopt;
++  auto registered_common = endpoint ? std::make_optional(endpoint->generations) : std::nullopt;
++  if (registered_common) registered_common->selection_generation = 0;
+   if (!endpoint || endpoint->registration_id != result.registration_id ||
+       endpoint->port != result.port ||
+-      endpoint->generations.network_epoch != transport->network_epoch()) {
++      endpoint->generations.network_epoch != transport->network_epoch() ||
++      !transport->HasReadyPrivateContext(*owner) || live != registered_common) {
+     FailCorePreparation(host, "The proxy binding changed during verification.");
+     return;
+   }
+-- 
+2.54.0 (Apple Git-157)
+

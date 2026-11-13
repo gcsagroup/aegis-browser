@@ -1,0 +1,35 @@
+From 46f7ba91e2457a4ea314d4d6520221cbf5abe7fa Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 23:01:26 +0800
+Subject: [PATCH] test(access): wake UI while observing ignored termination
+ signal
+
+---
+ .../access/access_local_core_manager_unittest.cc     | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index 2bacc92a4d4900a184a54a13179b69c04fc037e1..b695cb737fa5b3022b91e33f73ddf9777fae3275 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -215,11 +215,17 @@ class AccessLocalCoreFaultTest : public AccessLocalCoreManagerTest {
+       else manager->Stop(ordinary_stop.GetCallback());
+       // Confirm StopChild is already inside its termination wait, including
+       // service destruction, before requesting the session-ending rundown.
+-      ASSERT_TRUE(base::test::RunUntil([&] {
++      base::test::TestFuture<void> signal_received;
++      observation.Start(FROM_HERE, base::Milliseconds(10),
++          base::BindLambdaForTesting([&] {
+         std::string marker;
+-        return base::ReadFileToString(state_.AddExtensionASCII("sigterm"), &marker) &&
+-               !marker.empty();
++        if (base::ReadFileToString(state_.AddExtensionASCII("sigterm"), &marker) &&
++            !marker.empty()) {
++          observation.Stop();
++          signal_received.SetValue();
++        }
+       }));
++      ASSERT_TRUE(signal_received.Wait());
+       EXPECT_FALSE(ordinary_stop.IsReady());
+     }
+     auto stopped = std::make_shared<base::WaitableEvent>();

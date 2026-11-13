@@ -349,5 +349,69 @@ TEST(AccessPolicyEvaluatorTest, ProxyCarriesLimitedProtectionOverride) {
   EXPECT_EQ(result.protection_override, ProtectionOverride::kTracker);
 }
 
+TEST(AccessPolicyEvaluatorTest, WebsiteResourcesRequireTrustedTopLevelContext) {
+  auto website = Rule("website", PolicyScope::kWebsite, "pinterest.com", AccessMode::kProxy);
+  website.top_level_site = "https://pinterest.com";
+  const auto snapshot = Snapshot({website});
+  ExpectMatch(EvaluateAccessPolicy(DocumentContext("https://s.pinimg.com/app.js",
+      "https://www.pinterest.com/"), snapshot), "website", PolicyScope::kWebsite, AccessMode::kProxy);
+  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext("https://s.pinimg.com/app.js",
+      "https://unrelated.test/"), snapshot).policy_state, PolicyState::kAbsent);
+  EXPECT_EQ(EvaluateAccessPolicy(ProfileOnlyContext("https://s.pinimg.com/app.js"),
+      snapshot).policy_state, PolicyState::kAbsent);
+  auto foreign = snapshot;
+  foreign.owner.profile_token += "-other";
+  foreign.rules[0].owner = foreign.owner;
+  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext("https://s.pinimg.com/app.js",
+      "https://www.pinterest.com/"), foreign).reason, PolicyMatchReason::kOwnershipMismatch);
+}
+
+TEST(AccessPolicyEvaluatorTest, WebsiteMainNavigationReevaluatesEachTrustedHop) {
+  auto website = Rule("website", PolicyScope::kWebsite, "pinterest.com", AccessMode::kProxy);
+  website.top_level_site = "https://pinterest.com";
+  const auto snapshot = Snapshot({website});
+  BrowserOwnedRequestMetadata pending{"main", TestOwner(),
+      RequestAttributionKind::kPendingNavigation, {}, "navigation", std::nullopt};
+  for (const char* target : {"https://pinterest.com/", "https://www.pinterest.com/",
+                             "https://help.pinterest.com/page"}) {
+    const auto context = CanonicalizeBrowserOwnedRequest(pending, GURL(target));
+    ASSERT_TRUE(context.context);
+    ExpectMatch(EvaluateAccessPolicy(*context.context, snapshot), "website",
+                PolicyScope::kWebsite, AccessMode::kProxy);
+  }
+  const auto cross_site = CanonicalizeBrowserOwnedRequest(pending, GURL("https://unrelated.test/"));
+  ASSERT_TRUE(cross_site.context);
+  EXPECT_EQ(EvaluateAccessPolicy(*cross_site.context, snapshot).policy_state, PolicyState::kAbsent);
+}
+
+TEST(AccessPolicyEvaluatorTest, WebsiteTenantBoundaryAndExplicitSiteRestriction) {
+  auto website = Rule("website", PolicyScope::kWebsite, "tenant.github.io", AccessMode::kProxy);
+  website.top_level_site = "https://tenant.github.io";
+  auto snapshot = Snapshot({website});
+  ExpectMatch(EvaluateAccessPolicy(DocumentContext("https://cdn.test/app.js",
+      "https://sub.tenant.github.io/"), snapshot), "website", PolicyScope::kWebsite, AccessMode::kProxy);
+  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext("https://cdn.test/app.js",
+      "https://other.github.io/"), snapshot).policy_state, PolicyState::kAbsent);
+  auto reject = Rule("explicit-reject", PolicyScope::kSite, "cdn.test", AccessMode::kReject);
+  reject.top_level_site = website.top_level_site;
+  snapshot.rules.push_back(reject);
+  ExpectMatch(EvaluateAccessPolicy(DocumentContext("https://cdn.test/app.js",
+      "https://tenant.github.io/"), snapshot), "explicit-reject", PolicyScope::kSite, AccessMode::kReject);
+}
+
+TEST(AccessPolicyEvaluatorTest, WebsiteCannotEncodeDestinationWildcardOrNoncanonicalAnchor) {
+  auto website = Rule("website", PolicyScope::kWebsite, "example.test", AccessMode::kProxy);
+  website.top_level_site = "https://example.test";
+  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kNone);
+  website.include_subdomains = true;
+  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kInvalidRule);
+  website.include_subdomains = false;
+  website.destination_host = "www.example.test";
+  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kInvalidRule);
+  website.destination_host = "example.test";
+  website.scope = static_cast<PolicyScope>(3);  // Persisted invalid ordinal stays invalid.
+  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kInvalidRule);
+}
+
 }  // namespace
 }  // namespace aegis_access

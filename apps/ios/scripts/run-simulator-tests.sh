@@ -311,7 +311,8 @@ TABLET_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" test-without-building
   -resultBundlePath "${OUTPUT_DIR}/iPad.xcresult" ${ONLY_TESTING[@]+"${ONLY_TESTING[@]}"})
 
 BUILD_COMMAND=(xcodebuild "${COMMON_ARGS[@]}" build-for-testing
-  -destination "$PHONE_XCODE_DESTINATION" -derivedDataPath "$DERIVED_DATA")
+  -destination "$PHONE_XCODE_DESTINATION" -derivedDataPath "$DERIVED_DATA"
+  "AEGIS_EMBEDDED_CORE_PRODUCTS=$DERIVED_DATA/EmbeddedCore")
 
 if [[ "$MODE" == "dry-run" ]]; then
   printf '构建时递增 project.yml 构建号，并在固定路径 %s 生成一次测试包。\n' "$DERIVED_DATA"
@@ -486,6 +487,7 @@ text, count = re.subn(r'CURRENT_PROJECT_VERSION: (\d+)', lambda m: f'CURRENT_PRO
 assert count == 1
 path.write_text(text)
 PYTHON
+bash "$REPO_ROOT/scripts/release/prepare-ios-package-core.sh" "$REPO_ROOT" "$DERIVED_DATA/EmbeddedCore"
 xcodegen generate --spec "${IOS_ROOT}/project.yml"
 write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-before.txt"
 INPUT_MANIFEST_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/ios-input-sha256-before.txt" | awk '{print $1}')"

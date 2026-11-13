@@ -90,17 +90,12 @@ function initializeFixtureRepository(root: string) {
     version: "5.9.3-fixture",
   });
   writeFileSync(resolve(repo, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n", "utf8");
+  // Keep the protocol budget so worker startup under coverage is not mistaken
+  // for a hung analyzer. The timeout case below still exercises that deadline.
   cpSync(
     resolve(evaluationDirectory, "protocols/blind-v1.json"),
     resolve(repo, "packages/core/src/script-risk/evaluation/protocols/blind-v1.json"),
   );
-  const fixtureProtocolPath = resolve(
-    repo,
-    "packages/core/src/script-risk/evaluation/protocols/blind-v1.json",
-  );
-  const fixtureProtocol = JSON.parse(readFileSync(fixtureProtocolPath, "utf8"));
-  fixtureProtocol.limits.sampleWorkerTimeoutMs = 500;
-  writeJson(fixtureProtocolPath, fixtureProtocol);
   writeFileSync(
     resolve(repo, "packages/core/dist/script-risk/ast-analyzer.cjs"),
     `"use strict";
@@ -500,7 +495,7 @@ describe("blind prediction and post-prediction scoring CLI", () => {
         "--output",
         timeoutOutputPath,
       ],
-      { encoding: "utf8", timeout: 5_000 },
+      { encoding: "utf8", timeout: protocol.limits.sampleWorkerTimeoutMs + 5_000 },
     );
     expect(timedOut.status).toBe(1);
     expect(timedOut.stderr).toContain("sample worker timed out");
