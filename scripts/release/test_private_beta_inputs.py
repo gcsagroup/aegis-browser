@@ -28,13 +28,14 @@ class PrivateBetaTests(unittest.TestCase):
             beta.stage(directory, self.environment())
             for path in directory.iterdir():
                 self.assertEqual(path.stat().st_mode & 0o077, 0)
-            for change in ('none', 'missing', 'different', 'release'):
+            for change in ('none', 'missing', 'different', 'release', 'external-audience'):
                 ipa = directory / (change + '.ipa')
                 with zipfile.ZipFile(ipa, 'w') as archive:
                     root = 'Payload/Aegis.app/'
                     archive.writestr(root + 'Info.plist', plistlib.dumps({
                         'AegisAccessReleaseChannel': 'beta',
-                        'AegisReleaseProfile': 'release' if change == 'release' else 'beta'}))
+                        'AegisReleaseProfile': 'release' if change == 'release' else 'beta',
+                        'TFInternalTestingOnly': change != 'external-audience'}))
                     archive.writestr(root + 'AegisPrivateTestNode.vless',
                                      b'wrong' if change == 'different' else NODE)
                     if change != 'missing':

@@ -133,7 +133,11 @@ def validate_central_entitlements(signed, requested, identifier, team, profile_e
             raise ValueError('Keychain access group absent from profile: ' + identifier)
 
 
-def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root, *, cloud_poc=False, strict_entitlements=False):
+def verify(ipa, version, build, profile, team, certificate_sha1, profiles, source_root, *,
+           cloud_poc=False, private_beta=False, strict_entitlements=False):
+    if private_beta and (profile != 'beta' or cloud_poc):
+        raise ValueError('Private Beta verification requires the manual Beta profile')
+    internal_testing_only = profile == 'alpha' or private_beta
     if not re.fullmatch(r"[A-Z0-9]{10}", team) or (not cloud_poc and not re.fullmatch(r"[A-Fa-f0-9]{40}", certificate_sha1)):
         raise ValueError("Provide the expected Apple team and certificate SHA-1")
     if not cloud_poc and sorted(profiles) != sorted(TARGETS):
@@ -160,8 +164,8 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
             archive.extractall(root)
             app = root / "Payload/Aegis.app"
             info = plistlib.loads((app / "Info.plist").read_bytes())
-            if info.get("TFInternalTestingOnly", False) is not (profile == "alpha"):
-                raise ValueError("Native TestFlight audience marker differs from profile")
+            if info.get("TFInternalTestingOnly", False) is not internal_testing_only:
+                raise ValueError("Native TestFlight audience marker differs from the requested build")
             source_root = Path(source_root).resolve()
             declaration = verify_encryption_declaration(plistlib.loads((source_root/'apps/ios/AegisApp/Info.plist').read_bytes()), info)
             tracked = command("git", "-C", str(source_root), "ls-files", "-z", str(SHARED)).decode().split("\0")
@@ -214,7 +218,7 @@ def verify(ipa, version, build, profile, team, certificate_sha1, profiles, sourc
                     checked[-1].update(signedEntitlements=signed, profileSha256=hashlib.sha256((bundle / "embedded.mobileprovision").read_bytes()).hexdigest())
     result = {"ipaSha256": hashlib.sha256(Path(ipa).read_bytes()).hexdigest(), "profile": profile,
             "version": version, "build": build, "deepSignatureVerification": True,
-            "testFlightInternalTestingOnly": profile == "alpha", "sharedResourcesVerified": shared_count,
+            "testFlightInternalTestingOnly": internal_testing_only, "sharedResourcesVerified": shared_count,
             "usesNonExemptEncryption": declaration,
             "bundles": checked, "deviceAcceptance": "not_verified"}
     if cloud_poc:
@@ -232,6 +236,7 @@ def main():
     parser.add_argument("--profiles-json")
     parser.add_argument("--expected-verification", type=Path)
     parser.add_argument("--source-root", required=True)
+    parser.add_argument("--private-beta", action="store_true")
     options = parser.parse_args()
     try:
         if options.signing_mode == 'manual' and (not options.certificate_sha1 or not options.profiles_json):
@@ -240,7 +245,7 @@ def main():
             raise ValueError('Cloud re-verification requires the source-bound expected verification receipt')
         result = verify(options.ipa, options.version, options.build, options.profile, options.team,
                         options.certificate_sha1, json.loads(options.profiles_json) if options.profiles_json else None,
-                        options.source_root, cloud_poc=options.signing_mode == 'cloud')
+                        options.source_root, cloud_poc=options.signing_mode == 'cloud', private_beta=options.private_beta)
         if options.signing_mode == 'cloud':
             expected = json.loads(options.expected_verification.read_text())
             if any(result[key] != expected[key] for key in ['ipaSha256', 'version', 'build', 'profile', 'bundles']):

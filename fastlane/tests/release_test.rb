@@ -113,7 +113,7 @@ class ReleaseTest < ReleaseFixture
     end
     [false, true].each do |fail_verification|
       keys.each { |key| ENV[key] = key.end_with?('ENABLED') ? 'true' : 'private-fixture' }
-      req = request(profile: 'beta', signing_mode: 'manual')
+      req = request(profile: 'beta', signing_mode: 'manual', destination: 'testflight')
       flow = AegisRelease::Pipeline.new(req, Object.new)
       checks = self
       calls = []
@@ -588,28 +588,37 @@ class ReleaseTest < ReleaseFixture
     AegisRelease::Pipeline.new(req, fastlane).extend(PipelineStub)
   end
 
-  def test_ios_alpha_export_is_internal_only_even_for_package_and_draft
-    [%w[alpha artifacts], %w[alpha github-draft], %w[beta artifacts], %w[release artifacts]].each do |profile, destination|
+  def test_ios_export_limits_alpha_and_private_beta_to_internal_testing
+    routes = [%w[alpha artifacts], %w[alpha github-draft], %w[beta artifacts], %w[release artifacts],
+              ['beta', 'testflight', true]]
+    routes.each do |profile, destination, private_beta|
       options = { profile: profile, destination: destination, signing_mode: 'manual' }
       options[:tag] = "candidate/ios/3.2-#{profile}.69" if destination == 'github-draft'
       req = request(**options)
       builder = Object.new
       builder.define_singleton_method(:update_code_signing_settings) { |**_options| }
       checks = self
+      internal_only = profile == 'alpha' || private_beta == true
       builder.define_singleton_method(:build_app) do |**build_options|
-        checks.assert_equal(profile == 'alpha', build_options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
+        checks.assert_equal(internal_only, build_options.fetch(:export_options).fetch(:testFlightInternalTestingOnly))
         checks.assert_includes(build_options.fetch(:xcargs).split, "AEGIS_FIREBASE_CHANNEL=#{profile}")
         checks.assert_includes(build_options.fetch(:xcargs).split, "AEGIS_ACCESS_RELEASE_CHANNEL=#{profile}")
         File.write(File.join(build_options.fetch(:output_directory), build_options.fetch(:output_name)), 'fixture IPA')
       end
-      keys = %w[AEGIS_APPLE_TEAM_ID AEGIS_IOS_PROFILES AEGIS_IOS_CERT_SHA1]
+      keys = %w[AEGIS_APPLE_TEAM_ID AEGIS_IOS_PROFILES AEGIS_IOS_CERT_SHA1 AEGIS_IOS_BETA_TEST_NODE_ENABLED
+                AEGIS_IOS_TEST_NODE_BASE64 AEGIS_IOS_TEST_SUBSCRIPTION_BASE64]
       previous = keys.to_h { |key| [key, ENV[key]] }
       ENV['AEGIS_APPLE_TEAM_ID'] = 'ABCDEFGHIJ'
       ENV['AEGIS_IOS_CERT_SHA1'] = 'A' * 40
       ENV['AEGIS_IOS_PROFILES'] = AegisRelease::IOS_TARGETS.values.to_h { |id| [id, 'fixture'] }.to_json
+      if private_beta
+        ENV['AEGIS_IOS_BETA_TEST_NODE_ENABLED'] = 'true'
+        ENV['AEGIS_IOS_TEST_NODE_BASE64'] = 'fixture'
+        ENV['AEGIS_IOS_TEST_SUBSCRIPTION_BASE64'] = 'fixture'
+      end
       FileUtils.mkdir_p(req.directory)
       _paths, details = fixture_pipeline(req, builder).package_ios
-      assert_equal profile == 'alpha', details.fetch('testFlightInternalTestingOnly')
+      assert_equal internal_only, details.fetch('testFlightInternalTestingOnly')
       assert_equal 'ABCDEFGHIJ', details['appleTeamId']
       assert_equal 'A' * 40, details['certificateSha1']
     ensure

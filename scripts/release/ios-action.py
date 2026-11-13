@@ -121,7 +121,8 @@ def private_beta_manifest(digest):
             or manifest.get('repository') != durable.REPOSITORY or manifest.get('platform') != 'ios'
             or any(manifest.get(k) != os.environ['RELEASE_'+k.upper()] for k in ('profile', 'version', 'build'))
             or manifest['details'].get('privateBetaTestNode') is not True
-            or manifest['details'].get('privateBetaQuota') is not True):
+            or manifest['details'].get('privateBetaQuota') is not True
+            or manifest['details'].get('testFlightInternalTestingOnly') is not True):
         raise ValueError('Private Beta manifest identity differs')
     return manifest
 

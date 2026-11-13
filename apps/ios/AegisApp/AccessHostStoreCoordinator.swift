@@ -1149,6 +1149,10 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
                 tab.clearProxyLanding()
                 let landing = AccessHostStoreKey(scopeID: key.scopeID, host: host, isPrivate: key.isPrivate)
                 if intents[landing] == .on || executingTabs[tab.instanceID.uuidString] == landing { continue }
+                // The child owns a different store from the parent being revoked.
+                if let release = registry.retainRetiringDocument(scopeID: key.scopeID, host: host, isPrivate: key.isPrivate) {
+                    tab.afterCurrentDocumentBecomesInert(release)
+                }
             }
             registry.unbind(tab.instanceID.uuidString)
             if executingTabs[tab.instanceID.uuidString] == key {

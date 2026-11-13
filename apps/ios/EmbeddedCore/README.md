@@ -47,15 +47,15 @@ The receipt records the binary hashes for the loader and carrier. A missing, fai
 skipped required leaf cannot produce PASS. Use a new output directory for each run;
 node credentials never belong in the receipt or repository.
 
-## Internal Dev and Alpha test node
+## Internal Dev, Alpha, and Beta test node
 
 The private signing repository owns the GitHub Environment secret
 `AEGIS_ACCESS_TEST_NODE_URI` (one complete VLESS Reality Vision share URI).
 Expose it only in the private internal archive step. With the locked framework
-prepared, call the wrapper from that step, selecting `dev` or `alpha`:
+prepared, call the wrapper from that step, selecting `dev`, `alpha`, or `beta`:
 
 ```bash
-bash scripts/release/ios-private-test-node-archive.sh alpha \
+bash scripts/release/ios-private-test-node-archive.sh beta \
   MARKETING_VERSION=0.8.0 CURRENT_PROJECT_VERSION=1
 ```
 
@@ -65,14 +65,11 @@ from Xcode's environment, and prints the private archive path. The input file
 and DerivedData are removed on exit. Anyone with the resulting app can extract
 the URI. Keep the archive, exported apps, and access to them private.
 
-The shared test node is configured on the server for a 10 GB daily allowance
-(10,000,000,000 bytes), covering upload and download combined. The panel owns
-the reset schedule; the app displays the service's actual counters and quota.
-It is separate from commercial account entitlements. Public PR, signing, and
-release workflows do not need this secret. Ordinary builds omit the node.
-Beta, release, and unrecognized channels remove the resource on a reused build
-directory and ignore it at runtime, including environment overrides. Dev may
-explicitly override the bundled node with its local development config path.
+The shared node's 10 GB daily allowance covers upload and download combined.
+The 3X-UI panel applies the reset schedule. For the TestFlight build that queries
+the node's quota, use the [private Beta delivery operation](../../../docs/development/ios-delivery-actions.md#private-testflight-beta--私有测试包).
+Ordinary builds omit the node. Release and unrecognized channels remove the
+resource on a reused build directory and ignore it at runtime.
 
 ## Toolchain (historical verified local attempt)
 

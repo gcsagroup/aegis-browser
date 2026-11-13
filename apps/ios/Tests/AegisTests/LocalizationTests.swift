@@ -11,7 +11,15 @@ final class LocalizationTests: XCTestCase {
         let catalogKeyCount: Int
         let languageSelectorAddedKeys: [String]
         let paidAccessAddedKeys: [String]
+        let addressProxyAddedKeys: [String]
+        let subscriptionQuotaAddedKeys: [String]
         let identicalEnglishAllowlist: [String: [String: Exception]]
+
+        var expectedKeyCount: Int {
+            catalogKeyCount + Set(
+                languageSelectorAddedKeys + paidAccessAddedKeys + addressProxyAddedKeys + subscriptionQuotaAddedKeys
+            ).count
+        }
     }
 
     private func fixture<T: Decodable>(_ name: String, as type: T.Type) throws -> T {
@@ -31,7 +39,7 @@ final class LocalizationTests: XCTestCase {
         let plugins = try XCTUnwrap(Bundle.main.builtInPlugInsURL)
         let share = try XCTUnwrap(Bundle(url: plugins.appendingPathComponent("ShareExtension.appex")))
         let english = try table(in: Bundle.main, locale: "en")
-        XCTAssertEqual(english.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count + coverage.paidAccessAddedKeys.count)
+        XCTAssertEqual(english.count, coverage.expectedKeyCount)
         for bundle in [Bundle.main, share] {
             for locale in locales {
                 let values = try table(in: bundle, locale: locale)
@@ -63,7 +71,7 @@ final class LocalizationTests: XCTestCase {
         }
         let values = try table(in: Bundle.main, locale: locale)
         let coverage = try fixture("coverage", as: Coverage.self)
-        XCTAssertEqual(values.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count + coverage.paidAccessAddedKeys.count)
+        XCTAssertEqual(values.count, coverage.expectedKeyCount)
         for (key, value) in values {
             XCTAssertEqual(selectedBundle.localizedString(forKey: key, value: "MISSING", table: nil), value, "\(locale)/\(key)")
         }
