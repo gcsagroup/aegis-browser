@@ -10,7 +10,7 @@ Subject: [PATCH] fix(build): declare Access panel and traffic test
  2 files changed, 3 insertions(+)
 
 diff --git a/chrome/browser/ui/views/toolbar/BUILD.gn b/chrome/browser/ui/views/toolbar/BUILD.gn
-index f5264b9ccf..b1f33c549b 100644
+index f5264b9ccfb5c0efd12149a631e1b320cf3a8981..b1f33c549b61e5440a5ec51918e9a3c17719690f 100644
 --- a/chrome/browser/ui/views/toolbar/BUILD.gn
 +++ b/chrome/browser/ui/views/toolbar/BUILD.gn
 @@ -189,6 +189,7 @@ source_set("impl") {
@@ -22,7 +22,7 @@ index f5264b9ccf..b1f33c549b 100644
      "//chrome/browser:flags",
      "//chrome/browser:primitives",
 diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
-index fb04536a38..bcbd62e644 100644
+index fb04536a3806236926f0f9cf073e4e5cc771f40f..bcbd62e644ba653f7bfe6f680e1d64e2f1999c8b 100644
 --- a/components/aegis_access/BUILD.gn
 +++ b/components/aegis_access/BUILD.gn
 @@ -262,6 +262,7 @@ test("access_proxy_tunnel_context_unittests") {
