@@ -471,3 +471,4 @@
 0469-fix-macos-dev-diagnostic-default.patch
 0470-fix-core-log-severity-buffer.patch
 0471-macos-account-node-scoped-connect.patch
+0472-fix-paid-site-test-transport-dependency.patch

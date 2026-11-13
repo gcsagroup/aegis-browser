@@ -1,0 +1,25 @@
+From 017bcd230d10d4f04e7a4c658a68f239e7561414 Mon Sep 17 00:00:00 2001
+From: Aegis Browser <devnull@localhost>
+Date: Fri, 13 Nov 2026 19:13:31 +0800
+Subject: [PATCH] fix(build): declare the paid Access site test transport
+ dependency
+
+---
+ chrome/browser/aegis/BUILD.gn | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 439eda0e1efdb78295fbde0a3364c1fdfebc989f..7dce05b7ce2876b49e954dafe0f0f4ac9993e1e2 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -543,6 +543,7 @@ test("aegis_browser_unittests") {
+   }
+   if (is_mac) {
+     deps += [
++      "//chrome/browser/aegis/access:access_network_context_transport",
+       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
+       "//chrome/browser/aegis/access:access_site_proxy_bubble",
+       "//net:test_support",
+-- 
+2.54.0 (Apple Git-157)
+

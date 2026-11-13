@@ -543,6 +543,7 @@ test("aegis_browser_unittests") {
   }
   if (is_mac) {
     deps += [
+      "//chrome/browser/aegis/access:access_network_context_transport",
       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
       "//chrome/browser/aegis/access:access_site_proxy_bubble",
       "//net:test_support",
