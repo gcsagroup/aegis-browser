@@ -99,8 +99,8 @@ class AccessCoreLog {
       }
       safe += SafeTarget(target, protected_values) ? target : "[redacted]";
     } else {
-      constexpr std::string_view tags[] = {"[Debug] ", "[Info] ", "[Warning] ",
-                                           "[Error] "};
+      constexpr std::array<std::string_view, 4> tags = {
+          "[Debug] ", "[Info] ", "[Warning] ", "[Error] "};
       for (severity = 0; severity < 4 && !line.starts_with(tags[severity]);
            ++severity) {
       }
