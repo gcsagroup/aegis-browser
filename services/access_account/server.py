@@ -93,7 +93,8 @@ def main():
     source.add_argument("--stored-snapshots", action="store_true", help="read provisioned snapshots offline")
     args = parser.parse_args()
     try:
-        panel = Panel(args.panel_url, os.environ.get("AEGIS_3XUI_TOKEN")) if args.panel_url else None
+        panel = None if args.stored_snapshots else Panel(
+            args.panel_url, os.environ.get("AEGIS_3XUI_TOKEN"))
     except ValueError as error:
         parser.error(str(error))
     with create_server(args.database, port=args.port, panel=panel) as server:
