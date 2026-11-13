@@ -67,6 +67,37 @@ final class WebsiteEnhancementUITests: XCTestCase {
     capture("私密设置没有继承")
   }
 
+  func testConfiguredNodeAndBoundQuotaAreVisible() throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let origin = env["AEGIS_S1_FIXTURE_ORIGIN"], let token = env["AEGIS_S1_FIXTURE_C"],
+          let nodeConfig = env["AEGIS_UI_NODE_CONFIG"] else {
+      throw XCTSkip("Start the controlled account service and supply the authorized node config")
+    }
+    let app = XCUIApplication()
+    app.launchArguments = ["--ui-testing", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+    app.launchEnvironment["AEGIS_ACCESS_LOCAL_V2RAY_CONFIG"] = nodeConfig
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_ORIGIN"] = origin
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_ACTION"] = "bind"
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_ID"] = "C"
+    app.launchEnvironment["AEGIS_ACCOUNT_SIM_TOKEN"] = token
+    app.launch()
+    navigate(app, "http://127.0.0.1:8768/enhancements/page")
+    XCTAssertTrue(app.webViews.staticTexts["网站增强验收文章"].firstMatch.waitForExistence(timeout: 12))
+    app.buttons["page-protection"].tap()
+    let protocolSummary = app.staticTexts["VLESS · TCP · REALITY · Vision"]
+    XCTAssertTrue(protocolSummary.waitForExistence(timeout: 10))
+    capture("节点配置和代理状态")
+    let refresh = app.buttons["access-usage-refresh"]
+    for _ in 0..<8 {
+      if refresh.isHittable { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(refresh.isHittable)
+    XCTAssertTrue(app.staticTexts["10000 B"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["9970 B"].exists)
+    capture("受控账户C额度显示")
+  }
+
   func testAccessIntentIsolatedBetweenOrdinaryAndPrivateStores() {
     let app = launch()
     navigate(app, "http://127.0.0.1:8768/enhancements/page")

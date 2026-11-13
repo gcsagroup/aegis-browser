@@ -233,15 +233,21 @@ def main():
     source.add_argument("--stored-snapshots", action="store_true", help="read provisioned snapshots offline")
     parser.add_argument("--sandbox-orders", action="store_true",
                         help="enable trusted local order redemption (stored snapshots only)")
+    parser.add_argument("--alpha-panel-client",
+                        help="opt in to a single Alpha panel client, allowing no panel expiry")
     parser.add_argument("--node-config", help="enable issuance using the JSON file passed to node --config")
     parser.add_argument("--node-host", help="operator-selected TLS CONNECT hostname (no URI)")
     parser.add_argument("--node-port", type=int)
     parser.add_argument("--node-ttl-ms", type=int, default=60_000)
     args = parser.parse_args()
+    if args.alpha_panel_client is not None and (
+            not args.panel_url or args.stored_snapshots or args.sandbox_orders):
+        parser.error("--alpha-panel-client requires --panel-url without stored snapshots or sandbox orders")
     if args.sandbox_orders and not args.stored_snapshots:
         parser.error("--sandbox-orders requires --stored-snapshots")
     try:
-        panel = Panel(args.panel_url, os.environ.get("AEGIS_3XUI_TOKEN")) if args.panel_url else None
+        panel = (Panel(args.panel_url, os.environ.get("AEGIS_3XUI_TOKEN"),
+                       alpha_panel_client=args.alpha_panel_client) if args.panel_url else None)
         node = None
         if any(value is not None for value in (args.node_config, args.node_host, args.node_port)):
             if args.node_config is None:

@@ -5,6 +5,7 @@ import UIKit
 
 struct AegisRootView: View {
     @EnvironmentObject private var browser: BrowserSession
+    @EnvironmentObject private var accountSession: AccessAccountSession
     @Environment(\.scenePhase) private var scenePhase
     @State private var externalURL: URL?
     @State private var showsExternalConfirmation = false
@@ -61,7 +62,7 @@ struct AegisRootView: View {
 #endif
         .sheet(isPresented: $showsReading) { ReadingLibraryView() }
         .sheet(item: $browser.pendingMarkdown) { document in MarkdownReaderView(initial: document) }
-        .sheet(isPresented: $showsFilters) { CurrentWebsiteView() }
+        .sheet(isPresented: $showsFilters) { CurrentWebsiteView().environmentObject(accountSession) }
         .sheet(isPresented: $showsDownloads, onDismiss: { presentedDownload = nil; browser.pendingDownloadURL = nil }) {
             DownloadsView(initialURL: presentedDownload?.url, protectedContext: presentedDownload?.access)
         }

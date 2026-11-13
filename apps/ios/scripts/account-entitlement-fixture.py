@@ -15,6 +15,7 @@ import threading
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from services.access_account.server import create_server
+from services.access_account.credentials import ManagedNode
 
 
 class Redirect(BaseHTTPRequestHandler):
@@ -41,15 +42,19 @@ def run(command):
         env = os.environ.copy()
         with closing(sqlite3.connect(path)) as db:
             db.executescript((ROOT / 'services/access_account/schema.sql').read_text())
-            for account, quota, up, down in [('A', 9007199254740997, 65539, 97), ('B', 1011, 1010, 17)]:
+            for account, quota, up, down in [('A', 9007199254740997, 65539, 97), ('B', 1011, 1010, 17), ('C', 10000, 10, 20)]:
                 token = secrets.token_urlsafe(32)
                 db.execute('INSERT INTO accounts VALUES (?)', (account,))
                 db.execute('INSERT INTO sessions VALUES (?,?,?,NULL)', (sha256(token.encode()).digest(), account, now + 10000))
                 db.execute('INSERT INTO plans VALUES (?,?,?,?,?,?)', (account, 'p', '1', now-10000, now+10000, account))
                 db.execute('INSERT INTO snapshots VALUES (?,?,?,?,?,?,NULL,?)', (account, '1', quota, up, down, now+10000, now))
+                if account == 'C':
+                    db.execute('UPDATE snapshots SET measured_at=? WHERE account_id=?', (now, account))
                 env['TEST_RUNNER_AEGIS_S1_FIXTURE_' + account] = token
             db.commit()
-        with create_server(path, clock_ms=lambda: now) as server, ThreadingHTTPServer(('127.0.0.1', 0), Redirect) as redirect:
+        # Only C can issue a synthetic lease. No proxy listener or external traffic is started.
+        node = ManagedNode('fixture-node', '127.0.0.1', 9443, admitted_clients=frozenset({'C'}))
+        with create_server(path, clock_ms=lambda: now, managed_node=node) as server, ThreadingHTTPServer(('127.0.0.1', 0), Redirect) as redirect:
             redirect.visits = 0
             for service, key in [(server, 'ORIGIN'), (redirect, 'REDIRECT')]:
                 threading.Thread(target=service.serve_forever, daemon=True).start()

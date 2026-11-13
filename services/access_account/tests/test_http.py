@@ -1,6 +1,11 @@
 """Exercise the current-account HTTP endpoint against controlled durable data."""
 
+import contextlib
 import hashlib
+import io
+import os
+import sys
+from unittest.mock import MagicMock, patch
 import http.client
 import json
 from pathlib import Path
@@ -156,6 +161,54 @@ class EntitlementHTTPTest(unittest.TestCase):
             with self.subTest(credential=label):
                 self.assertEqual(self.query(client, token), (401, {"error": "unauthorized"}))
         self.ok(client, "B")
+
+
+class AlphaConfigurationTest(unittest.TestCase):
+    def test_invalid_flag_combinations_fail_before_binding_or_reading_panel(self):
+        from services.access_account import server
+        common = ["access-server", "--database", "unused.db", "--port", "0",
+                  "--alpha-panel-client", "fixture-alpha"]
+        combinations = [[], ["--stored-snapshots"],
+                        ["--stored-snapshots", "--sandbox-orders"],
+                        ["--panel-url", "https://panel.invalid", "--sandbox-orders"],
+                        ["--panel-url", "https://panel.invalid", "--stored-snapshots"]]
+        for flags in combinations:
+            with self.subTest(flags=flags), patch.object(sys, "argv", common + flags), \
+                    patch.object(server, "Panel") as panel, \
+                    patch.object(server, "create_server") as create, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as error:
+                    server.main()
+                self.assertEqual(error.exception.code, 2)
+                panel.assert_not_called()
+                create.assert_not_called()
+
+    def test_cli_explicit_alpha_reaches_panel_without_network(self):
+        from services.access_account import server
+        args = ["access-server", "--database", "unused.db", "--port", "0",
+                "--panel-url", "https://panel.invalid", "--alpha-panel-client", "fixture-alpha"]
+        fake_server = MagicMock()
+        with patch.object(sys, "argv", args), \
+                patch.dict(os.environ, {"AEGIS_3XUI_TOKEN": "fixture-only"}), \
+                patch.object(server, "create_server", return_value=fake_server) as create:
+            server.main()
+        panel = create.call_args.kwargs["panel"]
+        self.assertEqual(panel.alpha_panel_client, "fixture-alpha")
+        self.assertEqual(panel.host, "panel.invalid")
+        self.assertEqual(panel.token, "fixture-only")
+        self.assertFalse(create.call_args.kwargs["sandbox_orders"])
+
+    def test_invalid_alpha_client_is_rejected_at_configuration(self):
+        from services.access_account.panel import Panel
+        for client in ("", ".", "..", "a/b", "a\\b", "a b", "a\n", 1):
+            with self.subTest(client=client), self.assertRaises(ValueError):
+                Panel("https://panel.invalid", "fixture-only", alpha_panel_client=client)
+
+    def test_programmatic_alpha_cannot_enable_sandbox_orders(self):
+        from services.access_account.panel import Panel
+        panel = Panel("https://panel.invalid", "fixture-only", alpha_panel_client="fixture-alpha")
+        with self.assertRaises(ValueError):
+            create_server("unused.db", panel=panel, sandbox_orders=True)
 
 
 if __name__ == "__main__":

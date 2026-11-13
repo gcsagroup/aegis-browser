@@ -952,6 +952,7 @@ private final class DelayedWindowTabCleanup: BrowserHostStoreCoordinating {
     let base: AccessHostStoreCoordinator
     var pending: [BrowserTab] = []
     init(_ base: AccessHostStoreCoordinator) { self.base = base }
+    func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool { base.wouldSwitchStore(tab: tab, url: url) }
     func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore? { base.dataStoreForMainFrame(tab: tab, url: url) }
     func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError) { base.mainFrameFailed(tab: tab, failure: failure, error: error) }
     func pendingRecoveryInvalidated(tab: BrowserTab) { base.pendingRecoveryInvalidated(tab: tab) }
