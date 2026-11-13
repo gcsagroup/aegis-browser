@@ -262,6 +262,7 @@ test("access_proxy_tunnel_context_unittests") {
     "//base/test:run_all_unittests",
     "//base/test:test_support",
     "//net",
+    "//net/traffic_annotation:test_support",
     "//testing/gtest",
     "//url",
   ]
@@ -296,6 +297,7 @@ test("access_route_pool_isolation_unittests") {
     "//base/test:run_all_unittests",
     "//base/test:test_support",
     "//net",
+    "//net/traffic_annotation:test_support",
     "//testing/gtest",
     "//url",
   ]
