@@ -189,7 +189,7 @@ def checked_private_beta_handoff():
 
 def private_beta_restore_staging():
     root = directory()
-    if root.resolve() != root:
+    if root.parent.resolve() != root.parent:
         raise ValueError('Aliased private Beta workspace')
     _, identity = private_beta_handoff(os.environ['RELEASE_MANIFEST_SHA256'])
     return root.parent / ('.private-beta-restore-' + os.environ['RELEASE_RUN_ID']), identity
@@ -210,15 +210,18 @@ def cleanup_private_beta_restore():
             or any(path.name not in {'owner.json', 'package'} for path in staging.iterdir())):
         raise ValueError('Private Beta restore ownership differs')
     copies = [path for path in (staging / 'package', directory()) if path.exists() or path.is_symlink()]
+    conflict = False
     for path in copies:
         if (path.is_symlink() or not path.is_dir() or path.stat().st_uid != os.getuid()
                 or path.stat().st_mode & 0o077
                 or (path.stat().st_dev, path.stat().st_ino) != (owner['device'], owner['inode'])):
-            raise ValueError('Private Beta restore copy differs')
+            conflict = True
+            continue
+        shutil.rmtree(path)
     # The directory identity survives rename and partial deletion. Keep the marker
     # until every private copy is gone, so interrupted cleanup can safely resume.
-    for path in copies:
-        shutil.rmtree(path)
+    if conflict:
+        raise ValueError('Private Beta restore copy differs; foreign paths preserved')
     marker.unlink()
     staging.rmdir()
 

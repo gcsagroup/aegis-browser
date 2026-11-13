@@ -97,9 +97,31 @@ class IosActionTests(unittest.TestCase):
                 self.assertFalse(workspace.exists())
                 self.assertEqual(list(workspace.parent.glob('.private-beta-restore-*')), [])
                 self.assertEqual(payload.read_bytes(), raw_ipa)
+                for foreign_kind in ('directory', 'symlink'):
+                    with self.subTest(conflicting_workspace=foreign_kind):
+                        target = home / 'foreign-target'
+                        target.mkdir(mode=0o700)
+                        (target / 'foreign').write_text('preserve')
+                        def conflicting_copy(_source, destination, **_options):
+                            (destination / 'fixture.ipa').write_bytes(raw_ipa[:32])
+                            if foreign_kind == 'symlink': workspace.symlink_to(target, target_is_directory=True)
+                            else: target.rename(workspace)
+                            raise OSError('fixture copy failed after a conflicting workspace appeared')
+                        with patch.object(action.shutil, 'copytree', side_effect=conflicting_copy), self.assertRaises(ValueError):
+                            action.restore_private_beta()
+                        staging, _ = action.private_beta_restore_staging()
+                        self.assertFalse((staging / 'package').exists())
+                        self.assertTrue((staging / 'owner.json').is_file())
+                        self.assertEqual((workspace / 'foreign').read_text(), 'preserve')
+                        self.assertEqual(payload.read_bytes(), raw_ipa)
+                        if foreign_kind == 'symlink': workspace.unlink()
+                        else: workspace.rename(target)
+                        (target / 'foreign').unlink()
+                        target.rmdir()
+                        action.cleanup_private_beta_restore()
                 child = """
 import importlib.util, os, signal, sys
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(sys.argv[1]).parent))
@@ -107,20 +129,32 @@ spec = importlib.util.spec_from_file_location('ios_action', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 cut = sys.argv[4]
+order = sys.argv[5]
 original_rename, original_unlink = Path.rename, os.unlink
+original_scandir = os.scandir
+@contextmanager
+def reordered_scan(path):
+    with original_scandir(path) as rows:
+        yield iter(sorted(rows, key=lambda row: row.name, reverse=order == 'descending'))
 def interrupted_copy(_source, destination, **_options):
     (destination / 'partial-state').write_text('fixture')
     (destination / 'fixture.ipa').write_bytes(b'partial private fixture')
     if cut == 'cleanup':
+        if order != 'native':
+            stack.enter_context(patch.object(os, 'scandir', reordered_scan))
         raise OSError('fixture disk full')
     os.kill(os.getpid(), signal.SIGTERM)
 def interrupted_rename(path, destination):
     original_rename(path, destination)
     os.kill(os.getpid(), signal.SIGTERM)
 def interrupted_unlink(path, *args, **kwargs):
-    original_unlink(path, *args, **kwargs)
-    if Path(path).name == 'partial-state':
+    if Path(path).name == 'fixture.ipa':
+        try:
+            original_unlink(str(Path(path).with_name('partial-state')), *args, **kwargs)
+        except FileNotFoundError:
+            pass
         os.kill(os.getpid(), signal.SIGTERM)
+    original_unlink(path, *args, **kwargs)
 with ExitStack() as stack:
     stack.enter_context(patch.object(module.Path, 'home', return_value=Path(sys.argv[2])))
     stack.enter_context(patch.object(module, 'directory', return_value=Path(sys.argv[3])))
@@ -133,11 +167,13 @@ with ExitStack() as stack:
         stack.enter_context(patch.object(os, 'unlink', interrupted_unlink))
     module.restore_private_beta()
 """
-                for cut in ('copy', 'rename', 'cleanup'):
-                    with self.subTest(interrupted=cut):
+                cuts = [('copy', 'native'), ('rename', 'native')]
+                cuts += [('cleanup', order) for order in ('native', 'ascending', 'descending')]
+                for cut, order in cuts:
+                    with self.subTest(interrupted=cut, order=order):
                         # Fixed interpreter/literal program and local fixture paths plus a fixed fault label.
                         # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
-                        terminated = subprocess.run([sys.executable, '-c', child, action.__file__, str(home), str(workspace), cut],  # nosec B603
+                        terminated = subprocess.run([sys.executable, '-c', child, action.__file__, str(home), str(workspace), cut, order],  # nosec B603
                                                     env=env, capture_output=True, timeout=10, check=False)
                         self.assertEqual(terminated.returncode, -signal.SIGTERM, terminated.stderr.decode())
                         staging, identity = action.private_beta_restore_staging()
