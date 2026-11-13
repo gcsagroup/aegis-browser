@@ -19,10 +19,10 @@ export function writeInputManifest(repoRoot, destination, embeddedProducts) {
     const include = relative => {
       const input = path.join(embeddedProducts, relative);
       // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read the selected native build products; never follow a product symlink.
-      const stat = fs.lstatSync(input);
+      const stat = fs.lstatSync(input);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
       if (stat.isDirectory()) {
         // eslint-disable-next-line security/detect-non-literal-fs-filename -- Enumerate only the selected native framework's files.
-        for (const name of fs.readdirSync(input)) include(path.join(relative, name));
+        for (const name of fs.readdirSync(input)) include(path.join(relative, name));  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
       } else if (stat.isFile()) {
         files.push([`@EmbeddedCore/${relative.split(path.sep).join('/')}`, input]);
       } else {

@@ -61,7 +61,7 @@ runner 先通过实际适配器只读预检，再启动临时 loopback 中转和
 
 ### CI Beta 私有输入
 
-本轮 TestFlight Beta 1.0.3 使用上游现有 `aegis-ios-signing` 受保护环境和显式 `manual` 签名。在派发时选择 `private_beta=yes` 开启注入。签名环境的 `AEGIS_IOS_TEST_NODE_BASE64` 和 `AEGIS_IOS_TEST_SUBSCRIPTION_BASE64` 分别保存已有私有节点文件和额度描述符的 Base64。真实值不得写入仓库、PR、workflow 输入或日志。
+本轮 TestFlight Beta 1.1.0 使用上游现有 `aegis-ios-signing` 受保护环境和显式 `manual` 签名。在派发时选择 `private_beta=yes` 开启注入。签名环境的 `AEGIS_IOS_TEST_NODE_BASE64` 和 `AEGIS_IOS_TEST_SUBSCRIPTION_BASE64` 分别保存已有私有节点文件和额度描述符的 Base64。真实值不得写入仓库、PR、workflow 输入或日志。
 
 Simple/Full 仅为 Beta manual 包加载这两项 secret。打包器先消费并移除进程环境中的私有值，写入任务专属临时目录，沿用产品校验器验证输入，再向 Xcode 传文件路径。导出的 IPA 必须包含与输入逐字节一致的节点及绑定后的额度描述符；遗漏或不匹配直接失败，不产生成功交付收据。临时输入在成功或失败后清除。签名作业清除签名材料后，将 IPA 和清单保留在 runner 工作区之外的当前用户私有目录。独立 `private-beta-store` 作业经过 `aegis-ios-store` 受保护环境，在同一 runner 上校验 run/源码/清单身份与包哈希，并重新读取包内 HTTPS 额度入口，通过后才加载该环境的 ASC 上传凭据。交接目录权限 0700、文件 0600；上传处理后清理交接和工作目录，若商店作业未启动则保留私有交接副本供核对。公开 Actions 工件只保留构建身份与上传状态 JSON。
 
