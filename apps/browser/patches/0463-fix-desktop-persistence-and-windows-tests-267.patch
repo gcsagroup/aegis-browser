@@ -1,0 +1,94 @@
+From 586c4e770b69ec9755392181d74bfc500e695dd6 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 15:14:02 +0800
+Subject: [PATCH] fix(desktop): preserve persisted configuration and Windows
+ test resources
+
+---
+ chrome/browser/aegis/BUILD.gn                               | 4 ++++
+ .../browser/aegis/enhancements/enhancement_browsertest.cc   | 5 +++++
+ chrome/browser/aegis/enhancements/enhancement_store.cc      | 3 ++-
+ .../aegis/enhancements/enhancement_store_unittest.cc        | 6 ++++++
+ chrome/browser/ui/webui/help/aegis_github_update.h          | 4 ++--
+ 5 files changed, 19 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 033549f3840498426df0f8e6b3e5b5a1cb143b86..5d66274edeb57f75afd254d465d0abcc227a34e7 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -532,6 +532,10 @@ test("aegis_browser_unittests") {
+       "//content/test:test_support",
+     ]
+   }
++  if (is_win) {
++    # 测试进程中的媒体路由也需要安装器本地化资源。
++    deps += [ "//chrome/installer/util:strings" ]
++  }
+   if (is_mac) {
+     sources += [
+       "aegis_torrent_client_unittest.cc",
+diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+index f54fb3fb337d7adb3680ddb43e90a6697e63266f..1bcd6c56d0668a4cb939aecb4b598787255af08b 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
+@@ -75,6 +75,11 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
+     store_ = EnhancementStore::Get(browser()->GetProfile());
+     ASSERT_TRUE(base::test::RunUntil([&] { return store_->ready(); }));
+   }
++  void TearDownOnMainThread() override {
++    // Profile 随浏览器关闭而销毁，测试夹具必须提前释放对其存储的引用。
++    store_ = nullptr;
++    InProcessBrowserTest::TearDownOnMainThread();
++  }
+   content::WebContents* contents() {
+     return browser()->tab_strip_model()->GetActiveWebContents();
+   }
+diff --git a/chrome/browser/aegis/enhancements/enhancement_store.cc b/chrome/browser/aegis/enhancements/enhancement_store.cc
+index f5322dbadac78aa435d1633fb4f14032c5b868a5..52410a7cd8d59d9768ae571795c6437555d5e310 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_store.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_store.cc
+@@ -422,7 +422,8 @@ void EnhancementStore::Commit(base::DictValue state,
+             if (self)
+               self->RunNext();
+           },
+-          weak_.GetWeakPtr(), std::move(state), std::move(*json), policy,
++          // 两个回调都需要完整内容，避免参数求值顺序导致提前移走字符串。
++          weak_.GetWeakPtr(), std::move(state), *json, policy,
+           std::move(done)));
+ }
+ void EnhancementStore::RunNext() {
+diff --git a/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc b/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc
+index e538030ab8794973deef34330ad11370454c315f..1f61d6d73678bc5d1d17889ae5c99e9f9091f865 100644
+--- a/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc
++++ b/chrome/browser/aegis/enhancements/enhancement_store_unittest.cc
+@@ -76,6 +76,12 @@ TEST_F(EnhancementStoreTest, PersistenceDraftVersionAndRollback) {
+                               .Set("source", Script("document.title='first';"))
+                               .Set("world", "isolated")),
+             "");
++  // 成功回调必须对应已落盘的完整配置，不能只更新内存。
++  std::string persisted;
++  ASSERT_TRUE(base::ReadFileToString(path, &persisted));
++  auto persisted_state = base::JSONReader::ReadDict(persisted, base::JSON_PARSE_RFC);
++  ASSERT_TRUE(persisted_state);
++  EXPECT_EQ(*persisted_state, store.state());
+   const auto& first = store.state().FindList("scripts")->front().GetDict();
+   const auto id = EnhancementField(first, "id");
+   EXPECT_EQ(first.FindBool("enabled"), false);
+diff --git a/chrome/browser/ui/webui/help/aegis_github_update.h b/chrome/browser/ui/webui/help/aegis_github_update.h
+index 95ff7d16da5a2a015107d59386156bc7b91462d8..844f40c8a0494680ec92f9511c33bdf95b109296 100644
+--- a/chrome/browser/ui/webui/help/aegis_github_update.h
++++ b/chrome/browser/ui/webui/help/aegis_github_update.h
+@@ -21,8 +21,8 @@ class SimpleURLLoader;
+ 
+ namespace aegis {
+ // 产品版本独立于 Chromium 内核版本；发布 tag 使用对应产品版本。
+-inline constexpr char kProductVersion[] = "6.1.0.266";
+-inline constexpr char kProductVersionLabel[] = "Ver 6.1 (266)";
++inline constexpr char kProductVersion[] = "6.1.0.267";
++inline constexpr char kProductVersionLabel[] = "Ver 6.1 (267)";
+ inline constexpr char kReleaseAPI[] =
+     "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
+ inline constexpr char kReleasePage[] =
+-- 
+2.54.0 (Apple Git-157)
+

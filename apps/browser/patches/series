@@ -462,3 +462,4 @@
 0460-hide-proxy-retry-after-redirected-post.patch
 0461-feat-macos-private-test-node-channels.patch
 0462-fix-private-ack-timeout-and-retry-admission.patch
+0463-fix-desktop-persistence-and-windows-tests-267.patch
