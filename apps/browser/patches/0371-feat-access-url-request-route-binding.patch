@@ -1,0 +1,297 @@
+From d7c7d6545c90c4cbe9c5c866d9864c7118bb7131 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 11:20:19 +0800
+Subject: [PATCH] feat(access): bind URLRequest route and revalidate redirects
+ before cache
+
+---
+ .../access_http_route_execution_unittest.cc   | 123 ++++++++++++++++++
+ net/url_request/url_request.cc                |  11 ++
+ net/url_request/url_request.h                 |  16 +++
+ net/url_request/url_request_http_job.cc       |  17 +++
+ 4 files changed, 167 insertions(+)
+
+diff --git a/components/aegis_access/access_http_route_execution_unittest.cc b/components/aegis_access/access_http_route_execution_unittest.cc
+index bbb911db7c436f97bac0de13acdca20614fbeaa1..fb765d4193016de40977adb76c243ab84d899375 100644
+--- a/components/aegis_access/access_http_route_execution_unittest.cc
++++ b/components/aegis_access/access_http_route_execution_unittest.cc
+@@ -6,6 +6,7 @@
+ 
+ #include "base/functional/bind.h"
+ #include "base/test/task_environment.h"
++#include "net/base/isolation_info.h"
+ #include "net/base/load_flags.h"
+ #include "net/base/net_errors.h"
+ #include "net/base/network_change_notifier.h"
+@@ -21,7 +22,10 @@
+ #include "net/test/embedded_test_server/http_request.h"
+ #include "net/test/embedded_test_server/http_response.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "net/url_request/url_request.h"
++#include "net/url_request/url_request_test_util.h"
+ #include "net/url_request/url_request_context.h"
++#include "url/origin.h"
+ #include "net/url_request/url_request_context_builder.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+@@ -45,6 +49,7 @@ class AccessHttpRouteExecutionTest : public testing::Test {
+           auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+           response->set_code(net::HTTP_OK);
+           response->set_content(body);
++          response->AddCustomHeader("Cache-Control", "public, max-age=600");
+           response->set_content_type("text/plain");
+           return response;
+         }, &hits, body));
+@@ -94,6 +99,23 @@ class AccessHttpRouteExecutionTest : public testing::Test {
+     return net::ReadTransaction(&transaction, body);
+   }
+ 
++  int ExecuteURLRequest(net::URLRequestContext& context, const GURL& url,
++                        scoped_refptr<net::AccessProxyRoute> route,
++                        std::string* body, int flags = 0) {
++    net::TestDelegate delegate;
++    auto request = context.CreateRequest(url, net::DEFAULT_PRIORITY, &delegate,
++                                         TRAFFIC_ANNOTATION_FOR_TESTS,
++                                         net::handles::kInvalidNetworkHandle);
++    request->set_isolation_info(net::IsolationInfo::CreateForInternalRequest(
++        url::Origin::Create(url)));
++    request->SetLoadFlags(flags);
++    request->SetAccessProxyRoute(std::move(route));
++    request->Start();
++    delegate.RunUntilComplete();
++    *body = delegate.data_received();
++    return delegate.request_status();
++  }
++
+   base::test::TaskEnvironment tasks_;
+   std::unique_ptr<net::NetworkChangeNotifier> notifier_;
+ };
+@@ -179,5 +201,106 @@ TEST_F(AccessHttpRouteExecutionTest, ConcurrentSameUrlUsesEachRegisteredProxy) {
+   EXPECT_EQ(hits_b.load(), 1);
+ }
+ 
++TEST_F(AccessHttpRouteExecutionTest, URLRequestBypassesNativeCacheForManagedRoute) {
++  std::atomic<int> native_hits{0}, proxy_hits{0};
++  net::EmbeddedTestServer origin, proxy;
++  ConfigureServer(origin, native_hits, "native-cache");
++  ConfigureServer(proxy, proxy_hits, "managed-network");
++  ASSERT_TRUE(origin.Start());
++  ASSERT_TRUE(proxy.Start());
++  auto context = Context();
++  const auto url = origin.GetURL("/cached");
++  std::string body;
++  ASSERT_EQ(ExecuteURLRequest(*context, url, nullptr, &body), net::OK);
++  EXPECT_EQ(body, "native-cache");
++  ASSERT_EQ(ExecuteURLRequest(*context, url, nullptr, &body), net::OK);
++  EXPECT_EQ(native_hits.load(), 1);
++  ASSERT_EQ(ExecuteURLRequest(*context, url, Route(proxy), &body), net::OK);
++  EXPECT_EQ(body, "managed-network");
++  EXPECT_EQ(proxy_hits.load(), 1);
++  ASSERT_EQ(ExecuteURLRequest(*context, url, nullptr, &body), net::OK);
++  EXPECT_EQ(body, "native-cache");
++  EXPECT_EQ(native_hits.load(), 1);
++}
++
++TEST_F(AccessHttpRouteExecutionTest, ManagedCacheOnlyDoesNotSendNetworkRequest) {
++  std::atomic<int> hits{0};
++  net::EmbeddedTestServer proxy;
++  ConfigureServer(proxy, hits, "must-not-send");
++  ASSERT_TRUE(proxy.Start());
++  auto context = Context();
++  std::string body;
++  EXPECT_EQ(ExecuteURLRequest(*context, GURL("http://destination.invalid/cache"),
++                             Route(proxy), &body, net::LOAD_ONLY_FROM_CACHE),
++            net::ERR_CACHE_MISS);
++  EXPECT_TRUE(body.empty());
++  EXPECT_EQ(hits.load(), 0);
++}
++
++class RouteOnRedirectDelegate : public net::TestDelegate {
++ public:
++  explicit RouteOnRedirectDelegate(scoped_refptr<net::AccessProxyRoute> route)
++      : route_(std::move(route)) {}
++  void OnReceivedRedirect(net::URLRequest* request,
++                          const net::RedirectInfo& redirect,
++                          bool* defer) override {
++    request->SetAccessProxyRoute(route_);
++    net::TestDelegate::OnReceivedRedirect(request, redirect, defer);
++  }
++ private:
++  scoped_refptr<net::AccessProxyRoute> route_;
++};
++
++TEST_F(AccessHttpRouteExecutionTest, NativeRedirectCanAcquireManagedRoute) {
++  std::atomic<int> proxy_hits{0};
++  net::EmbeddedTestServer origin, proxy;
++  ConfigureServer(proxy, proxy_hits, "redirect-managed");
++  origin.RegisterRequestHandler(base::BindRepeating(
++      [](const net::test_server::HttpRequest& request)
++          -> std::unique_ptr<net::test_server::HttpResponse> {
++        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++        response->set_code(net::HTTP_FOUND);
++        response->AddCustomHeader("Location", "http://destination.invalid/next");
++        return response;
++      }));
++  ASSERT_TRUE(origin.Start());
++  ASSERT_TRUE(proxy.Start());
++  auto context = Context();
++  RouteOnRedirectDelegate delegate(Route(proxy));
++  auto request = context->CreateRequest(origin.GetURL("/start"),
++      net::DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS,
++      net::handles::kInvalidNetworkHandle);
++  request->Start();
++  delegate.RunUntilComplete();
++  EXPECT_EQ(delegate.request_status(), net::OK);
++  EXPECT_EQ(delegate.received_redirect_count(), 1);
++  EXPECT_EQ(delegate.data_received(), "redirect-managed");
++  EXPECT_EQ(proxy_hits.load(), 1);
++}
++
++TEST_F(AccessHttpRouteExecutionTest, ManagedRedirectRequiresNewTrustedDecision) {
++  std::atomic<int> origin_hits{0}, proxy_hits{0};
++  net::EmbeddedTestServer origin, proxy;
++  ConfigureServer(origin, origin_hits, "must-not-send");
++  ASSERT_TRUE(origin.Start());
++  proxy.RegisterRequestHandler(base::BindRepeating(
++      [](std::atomic<int>* hits, GURL target,
++         const net::test_server::HttpRequest& request)
++          -> std::unique_ptr<net::test_server::HttpResponse> {
++        ++*hits;
++        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++        response->set_code(net::HTTP_FOUND);
++        response->AddCustomHeader("Location", target.spec());
++        return response;
++      }, &proxy_hits, origin.GetURL("/private")));
++  ASSERT_TRUE(proxy.Start());
++  auto context = Context();
++  std::string body;
++  EXPECT_EQ(ExecuteURLRequest(*context, GURL("http://destination.invalid/start"),
++                             Route(proxy), &body), net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_EQ(proxy_hits.load(), 1);
++  EXPECT_EQ(origin_hits.load(), 0);
++}
++
+ }  // namespace
+ }  // namespace aegis_access
+diff --git a/net/url_request/url_request.cc b/net/url_request/url_request.cc
+index 42f1b1a31b1b10d52eb0c0fddb6065b895b2aae3..f9a70778f56c64372a47884c2ef6f8fd837d296d 100644
+--- a/net/url_request/url_request.cc
++++ b/net/url_request/url_request.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "net/url_request/url_request.h"
+ 
++#include "net/http/access_proxy_route.h"
++
+ #include <utility>
+ 
+ #include "base/compiler_specific.h"
+@@ -479,6 +481,12 @@ void URLRequest::set_maybe_stored_cookies(
+   maybe_stored_cookies_ = std::move(cookies);
+ }
+ 
++void URLRequest::SetAccessProxyRoute(scoped_refptr<AccessProxyRoute> route) {
++  CHECK(!is_pending_ || is_redirecting_);
++  access_proxy_route_ = std::move(route);
++  access_route_requires_confirmation_ = false;
++}
++
+ void URLRequest::SetLoadFlags(int flags) {
+   if ((load_flags() & LOAD_IGNORE_LIMITS) != (flags & LOAD_IGNORE_LIMITS)) {
+     DCHECK(!job_.get());
+@@ -909,6 +917,9 @@ int URLRequest::NotifyConnected(const TransportInfo& info,
+ void URLRequest::ReceivedRedirect(RedirectInfo redirect_info) {
+   DCHECK_EQ(OK, status_);
+   is_redirecting_ = true;
++  if (access_proxy_route_) {
++    access_route_requires_confirmation_ = true;
++  }
+   OnCallToDelegate(NetLogEventType::URL_REQUEST_DELEGATE_RECEIVED_REDIRECT);
+ 
+   // When notifying the URLRequest::Delegate, it can destroy the request,
+diff --git a/net/url_request/url_request.h b/net/url_request/url_request.h
+index 4967f032f2a9c90799993d8c12a23fe2d08b948a..adf655c2bdc94162f7df0fdd7c5df362e104049f 100644
+--- a/net/url_request/url_request.h
++++ b/net/url_request/url_request.h
+@@ -73,6 +73,7 @@
+ 
+ namespace net {
+ 
++class AccessProxyRoute;
+ class CookieOptions;
+ class CookieInclusionStatus;
+ class IOBuffer;
+@@ -665,6 +666,18 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
+   // LOAD_DO_NOT_SAVE_COOKIES.
+   void SetLoadFlags(int flags);
+ 
++  // Trusted network-service callers only; never populated from renderer request
++  // fields. Null is an explicit native decision. Reconfirm each managed redirect
++  // before it can start another HTTP job, even when the route stays unchanged.
++  void SetAccessProxyRoute(scoped_refptr<AccessProxyRoute> route);
++  const scoped_refptr<AccessProxyRoute>& access_proxy_route() const {
++    return access_proxy_route_;
++  }
++  bool access_route_requires_confirmation() const {
++    return access_route_requires_confirmation_;
++  }
++
++
+   // Sets "temporary" load flags. They are cleared upon receiving a redirect.
+   void set_per_hop_load_flags(int flags) { per_hop_load_flags_ = flags; }
+ 
+@@ -1202,6 +1215,9 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
+   // whether the job is active.
+   bool is_pending_ = false;
+ 
++  scoped_refptr<AccessProxyRoute> access_proxy_route_;
++  bool access_route_requires_confirmation_ = false;
++
+   // Indicates if the request is in the process of redirecting to a new
+   // location. It is true from the time the headers complete until a
+   // new request begins.
+diff --git a/net/url_request/url_request_http_job.cc b/net/url_request/url_request_http_job.cc
+index f93d02b8024ee7348ca8a975d813be0408e1def7..220d35d17a6b6758317aa6bbfca56540344f2274 100644
+--- a/net/url_request/url_request_http_job.cc
++++ b/net/url_request/url_request_http_job.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "net/url_request/url_request_http_job.h"
+ 
++#include "net/http/access_proxy_route.h"
++
+ #include <algorithm>
+ #include <iterator>
+ #include <memory>
+@@ -447,6 +449,15 @@ void URLRequestHttpJob::SetPriority(RequestPriority priority) {
+ 
+ void URLRequestHttpJob::Start() {
+   DCHECK(!transaction_.get());
++  if (request_->access_route_requires_confirmation()) {
++    TaskRunner(priority_)->PostTask(
++        FROM_HERE, base::BindOnce(&URLRequestHttpJob::NotifyStartError,
++                                  weak_factory_.GetWeakPtr(),
++                                  ERR_BLOCKED_BY_CLIENT));
++    return;
++  }
++  request_info_.access_proxy_route = request_->access_proxy_route();
++
+ 
+   request_info_.url = request_->url();
+   request_info_.method = request_->method();
+@@ -465,6 +476,12 @@ void URLRequestHttpJob::Start() {
+       request_->isolation_info().IsMainFrameRequest();
+   request_info_.initiator = request_->initiator();
+   request_info_.load_flags = request_->load_flags();
++  if (request_info_.access_proxy_route) {
++    // Keep ONLY_FROM_CACHE intact: a constrained cache-only request must miss,
++    // not silently start network traffic or consume a native cache entry.
++    request_info_.load_flags |= LOAD_DISABLE_CACHE;
++  }
++
+   request_info_.priority_incremental = request_->priority_incremental();
+   request_info_.secure_dns_policy = request_->secure_dns_policy();
+   request_info_.traffic_annotation =
+-- 
+2.54.0 (Apple Git-157)
+

@@ -168,4 +168,4 @@ pnpm --filter @gcsa-aegis/browser package:android
 
 ### 瀏覽器自身更新
 
-「關於 GCSA Aegis」檢查 GitHub 正式版本，自動下載符合平台的安裝套件並校驗，安裝需手動完成。見[更新流程](../../docs/github-browser-updates.zh-CN.md)及[Ver 1.1 (018) 本機驗收](../../docs/ui-copy-acceptance.zh-CN.md)。
+「關於 Aegis Browser」檢查 GitHub 正式版本，自動下載符合平台的安裝套件並校驗，安裝需手動完成。見[更新流程](../../docs/github-browser-updates.zh-CN.md)及[Ver 1.1 (018) 本機驗收](../../docs/ui-copy-acceptance.zh-CN.md)。

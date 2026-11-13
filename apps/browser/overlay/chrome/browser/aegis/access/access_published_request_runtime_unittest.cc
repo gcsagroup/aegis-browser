@@ -43,6 +43,43 @@ class AccessPublishedRequestRuntimeTest : public testing::Test {
   std::optional<aegis_access::OwnershipKey> owner_;
 };
 
+TEST_F(AccessPublishedRequestRuntimeTest, RestorationUsesFreshVersionForCommittedContents) {
+  aegis_access::PublishedAccessPolicySnapshot initial{*owner_, 1, {}};
+  EXPECT_EQ(runtime_->PublishRestoredPolicyCandidate(initial).status,
+            AccessPolicyPublicationStatus::kPublished);
+  aegis_access::AccessPolicyRule rule{"rule", *owner_, aegis_access::PolicyScope::kProfile,
+      {}, "example.test", false, {aegis_access::RequestScheme::kHttps},
+      {aegis_access::PortScope::kAllBrowserPermitted, {}},
+      aegis_access::AccessMode::kProxy, "group",
+      aegis_access::ProtectionOverride::kNone, 1, 2};
+  EXPECT_EQ(runtime_->PublishRestoredPolicyCandidate({*owner_, 2, {rule}}).status,
+            AccessPolicyPublicationStatus::kPublished);
+  EXPECT_EQ(runtime_->PublishRestoredPolicyCandidate(initial).status,
+            AccessPolicyPublicationStatus::kStaleGeneration);
+  initial.policy_generation = 3;
+  EXPECT_EQ(runtime_->PublishRestoredPolicyCandidate(initial).status,
+            AccessPolicyPublicationStatus::kPublished);
+  ASSERT_TRUE(runtime_->GetPublishedPolicySnapshot(*owner_));
+  EXPECT_TRUE(runtime_->GetPublishedPolicySnapshot(*owner_)->rules.empty());
+  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_)->policy_generation, 3u);
+}
+TEST_F(AccessPublishedRequestRuntimeTest, RestorationDoesNotBypassOwnerOrPolicyValidation) {
+  auto foreign = *owner_;
+  foreign.profile_token = "foreign";
+  EXPECT_EQ(runtime_->PublishRestoredPolicyCandidate({foreign, 1, {}}).status,
+            AccessPolicyPublicationStatus::kOwnershipMismatch);
+  EXPECT_EQ(runtime_->PublishRestoredPolicyCandidate({*owner_, 0, {}}).status,
+            AccessPolicyPublicationStatus::kInvalidSnapshot);
+  EXPECT_EQ(runtime_->GetPublishedPolicySnapshot(*owner_), nullptr);
+}
+
+TEST_F(AccessPublishedRequestRuntimeTest, NativeCommonTupleDoesNotInventIdentityOrPublication) {
+  EXPECT_FALSE(runtime_->CaptureCommonGenerationTupleOnUiThread(*owner_));
+  ASSERT_EQ(runtime_->PublishRestoredPolicyCandidate({*owner_, 1, {}}).status,
+            AccessPolicyPublicationStatus::kPublished);
+  EXPECT_FALSE(runtime_->CaptureCommonGenerationTupleOnUiThread(*owner_));
+}
+
 TEST_F(AccessPublishedRequestRuntimeTest, PublishesCommittedSnapshotInMemory) {
   const auto published = runtime_->PublishCommittedPolicySnapshot(Snapshot(1));
   EXPECT_EQ(published.status, AccessPolicyPublicationStatus::kPublished);

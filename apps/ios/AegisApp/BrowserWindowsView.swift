@@ -42,9 +42,7 @@ struct BrowserWindowsView: View {
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("重命名当前窗口") { name = windows.snapshot(browser.windowID)?.name ?? ""; naming = true }
                     Button("关闭当前窗口") {
-                        browser.persistSession()
-                        browser.discardPrivateSession()
-                        windows.unregister(browser.windowID)
+                        browser.closeWindow()
                         dismiss(); dismissWindow(id: "browser", value: browser.windowID)
                     }.accessibilityIdentifier("close-browser-window")
                 }

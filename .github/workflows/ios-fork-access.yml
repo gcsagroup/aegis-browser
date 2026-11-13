@@ -1,0 +1,83 @@
+name: iOS Fork Access
+run-name: iOS Fork Access ${{ github.ref_name }}
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - promote/ios-access-closed-loop-2cd7
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Simulator Access tests, or a 0.8.0 alpha package for development self-test"
+        type: choice
+        options:
+          - Access tests
+          - Alpha package
+        default: Access tests
+      version:
+        description: "Alpha marketing version. Packaged for self-test. Not submitted for review."
+        type: string
+        default: "0.8.0"
+      build:
+        description: "Build number"
+        type: string
+        default: "1"
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: ios-fork-access-${{ github.repository }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+jobs:
+  contracts:
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Access evidence contracts without App Store signing
+        run: |
+          node --test apps/browser/scripts/ios-access-phase1-evidence_test.mjs
+  simulator:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation != 'Alpha package' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') }}
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run AccessKit simulator tests
+        run: bash scripts/release/ios-access-tests.sh
+  internal:
+    name: internal-archive
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'Alpha package' && (github.repository == 'quinn521/aegis-browser' || github.repository == 'gcsagroup/aegis-browser') }}
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Archive the alpha iOS app
+        run: bash scripts/release/ios-internal-archive.sh "${{ inputs.version }}" "${{ inputs.build }}" alpha
+      - name: AccessKit network and session tests
+        if: ${{ always() }}
+        run: bash scripts/release/ios-access-tests.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: ios-alpha-${{ inputs.version }}-${{ inputs.build }}
+          path: |
+            ${{ runner.temp }}/Aegis-${{ inputs.version }}-${{ inputs.build }}.xcarchive
+            ${{ runner.temp }}/ios-internal-receipt.json
+          if-no-files-found: error
+          retention-days: 14

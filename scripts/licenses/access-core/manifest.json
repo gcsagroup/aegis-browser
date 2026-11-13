@@ -1,0 +1,22 @@
+[
+  {
+    "identity": "Xray-core",
+    "version": "v26.11.9",
+    "license": "MPL-2.0",
+    "commit": "676eaf66f8f05d4d558ee7a74b4736623d3feeb9",
+    "repository": "https://github.com/XTLS/Xray-core",
+    "url": "https://raw.githubusercontent.com/XTLS/Xray-core/v26.11.9/LICENSE",
+    "file": "xray-core-LICENSE.txt",
+    "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+  },
+  {
+    "identity": "libXray",
+    "version": "v26.11.9",
+    "license": "MIT",
+    "commit": "5a0f7d8d1c28b34afb5727b04b26a10f6dbac7e3",
+    "repository": "https://github.com/XTLS/libXray",
+    "url": "https://raw.githubusercontent.com/XTLS/libXray/v26.11.9/LICENSE",
+    "file": "libxray-LICENSE.txt",
+    "sha256": "992cf88a505936a11bd0fff17b7842abd9411e8da41fd69f22f47ae915e9d198"
+  }
+]

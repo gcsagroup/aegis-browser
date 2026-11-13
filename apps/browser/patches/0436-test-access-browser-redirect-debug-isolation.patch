@@ -1,0 +1,283 @@
+From 707787ba67632533e2c62ba426dedbc34864a9ce Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 08:56:00 +0800
+Subject: [PATCH] test(access): cover Browser redirect reset and debug state
+ isolation
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   1 +
+ .../access_site_proxy_product_unittest.cc     | 209 ++++++++++++++++++
+ 2 files changed, 210 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index bf0f7a6bd4978406afa3fbf3b682f29655624952..48bbe5c1601c3009f7f03d5acad21c3f08c53b57 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -472,6 +472,7 @@ test("access_service_coordinator_unittests") {
+   ]
+   deps = [
+     ":access_async_rule_store",
++    ":access_browser_request_adapter",
+     ":access_build_channel",
+     ":access_buildflags",
+     ":access_navigation_retry_tab_helper",
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 269ca0ea84f996b0a133527f844fb99187019a42..8c1dbb9ade812ed7e2277410781af4557bfd4214 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -2,6 +2,7 @@
+ 
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ #include "chrome/browser/aegis/access/access_async_rule_store.h"
++#include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "chrome/browser/aegis/access/access_build_channel.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+@@ -28,9 +29,11 @@
+ #include "content/public/browser/web_contents.h"
+ #include "content/public/test/navigation_simulator.h"
+ #include "net/base/net_errors.h"
++#include "net/url_request/redirect_info.h"
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "mojo/public/cpp/bindings/receiver_set.h"
+ #include "services/network/public/cpp/url_loader_completion_status.h"
++#include "services/network/public/mojom/url_response_head.mojom.h"
+ #include "services/network/test/test_network_context.h"
+ #include "services/network/test/test_url_loader_client.h"
+ #include "testing/gtest/include/gtest/gtest.h"
+@@ -129,6 +132,92 @@ struct HeldBrowserRequest {
+   std::unique_ptr<AccessProxyingURLLoaderFactory> wrapper;
+ };
+ 
++// Factory admission can close while an already-created request is waiting at
++// a redirect. Its loader/client/private-control pipes remain independently live.
++class RedirectingPrivateFactory final
++    : public network::mojom::AegisAccessURLLoaderFactory,
++      public network::mojom::URLLoader,
++      public network::mojom::AegisAccessURLLoaderControl {
++ public:
++  mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> Bind() {
++    mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> remote;
++    Clone(remote.InitWithNewPipeAndPassReceiver());
++    return remote;
++  }
++  void Clone(mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderFactory>
++                 receiver) override {
++    factories_.Add(this, std::move(receiver));
++  }
++  void CreateLoaderAndStartWithRoute(
++      mojo::PendingReceiver<network::mojom::URLLoader> loader,
++      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl> control,
++      int32_t, uint32_t, network::mojom::AegisAccessRoutedRequestPtr request,
++      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
++      const net::MutableNetworkTrafficAnnotationTag&) override {
++    initial = std::move(request->envelope);
++    loader_.Bind(std::move(loader));
++    control_.Bind(std::move(control));
++    client_.Bind(std::move(client));
++    net::RedirectInfo redirect;
++    redirect.status_code = 302;
++    redirect.new_method = "GET";
++    redirect.new_url = GURL("https://cdn.example/redirect-final");
++    client_->OnReceiveRedirect(redirect, network::mojom::URLResponseHead::New());
++  }
++  void ResetAdmission() { factories_.Clear(); }
++  void FollowRedirect(network::HttpRequestHeadersUpdateParams,
++                      const std::optional<GURL>&) override {
++    ++public_follows;
++  }
++  void FollowRedirectWithRoute(
++      network::HttpRequestHeadersUpdateParams, const std::optional<GURL>&,
++      network::mojom::AegisAccessRequestEnvelopePtr envelope) override {
++    followed = std::move(envelope);
++    client_->OnComplete(network::URLLoaderCompletionStatus(net::OK));
++  }
++  void SetPriority(net::RequestPriority, int32_t) override {}
++
++  network::mojom::AegisAccessRequestEnvelopePtr initial;
++  network::mojom::AegisAccessRequestEnvelopePtr followed;
++  int public_follows = 0;
++
++ private:
++  mojo::ReceiverSet<network::mojom::AegisAccessURLLoaderFactory> factories_;
++  mojo::Receiver<network::mojom::URLLoader> loader_{this};
++  mojo::Receiver<network::mojom::AegisAccessURLLoaderControl> control_{this};
++  mojo::Remote<network::mojom::URLLoaderClient> client_;
++};
++
++struct HeldRedirectBrowserRequest {
++  HeldRedirectBrowserRequest(Profile* profile, content::RenderFrameHost* frame,
++      const OwnershipKey& owner,
++      aegis_access::BrowserOwnedRequestMetadata metadata,
++      std::shared_ptr<AccessPrivateContextClient> context) {
++    wrapper = std::make_unique<AccessProxyingURLLoaderFactory>(
++        profile, frame->GetFrameTreeNodeId(), std::nullopt, std::nullopt,
++        nullptr, owner, std::move(metadata),
++        factory.BindNewPipeAndPassReceiver(),
++        mojo::PendingRemote<network::mojom::URLLoaderFactory>(),
++        frame->GetWeakDocumentPtr(),
++        base::BindOnce([](HeldRedirectBrowserRequest* self,
++                          AccessProxyingURLLoaderFactory*) {
++          self->wrapper.reset();
++        }, base::Unretained(this)), target.Bind(), std::move(context));
++  }
++  void Start() {
++    network::ResourceRequest request;
++    request.url = GURL("https://news.example/redirect");
++    factory->CreateLoaderAndStart(loader.BindNewPipeAndPassReceiver(), 1, 0,
++        request, client.CreateRemote(),
++        net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
++  }
++  RedirectingPrivateFactory target;
++  mojo::Remote<network::mojom::URLLoaderFactory> factory;
++  network::TestURLLoaderClient client;
++  mojo::Remote<network::mojom::URLLoader> loader;
++  std::unique_ptr<AccessProxyingURLLoaderFactory> wrapper;
++};
++
+ // Real Mojo ACK with an explicit hold at the product PREPARED boundary. The
+ // core is not mocked: these tests require the authorized local DEV inputs.
+ class ProductAckContext final : public network::TestNetworkContext,
+@@ -296,6 +385,36 @@ TEST_F(AccessSiteProxyProductTest, OnOffOnUsesRealCoreAndCommittedRevision) {
+   }
+ }
+ 
++TEST_F(AccessSiteProxyProductTest,
++       DevPreviewDoesNotRewriteCommittedWebsiteIntentOrConnection) {
++  ASSERT_TRUE(bubble_->IsDevAllowBlockPanelRegistered());
++  Enable();
++  const auto stored = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(stored.value);
++  const auto endpoint = transport_->CaptureSelectedProxyEndpoint(
++      owner_, AccessSiteProxyBubbleController::LocalProxyGroup(owner_), "news.example");
++  ASSERT_TRUE(endpoint);
++  for (const auto action : {AccessDevAllowBlockAction::kOff,
++                            AccessDevAllowBlockAction::kBlock}) {
++    ASSERT_EQ(bubble_->ApplyDevAllowBlock("news.example", action).status,
++              AccessDevAllowBlockApplyStatus::kApplied);
++    EXPECT_EQ(bubble_->DevAllowBlockSnapshotForCommittedUrl(
++                  GURL("https://news.example")).intent,
++              action == AccessDevAllowBlockAction::kOff
++                  ? AccessSiteIntent::kOff : AccessSiteIntent::kBlock);
++    EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kAllow);
++    EXPECT_TRUE(Snapshot().toggle_on);
++    EXPECT_EQ(Snapshot().connection, AccessSiteConnectionState::kReady);
++    const auto current = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++    ASSERT_TRUE(current.value);
++    EXPECT_EQ(current.value->policy_generation, stored.value->policy_generation);
++    const auto selected = transport_->CaptureSelectedProxyEndpoint(
++        owner_, endpoint->proxy_group_id, "news.example");
++    ASSERT_TRUE(selected);
++    EXPECT_EQ(selected->registration_id, endpoint->registration_id);
++  }
++}
++
+ TEST_F(AccessSiteProxyProductTest, FailedAckPreservesOffAndExplicitRecoveryRepublishes) {
+   context_.hold_next = true;
+   ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
+@@ -607,6 +726,32 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+     EXPECT_EQ(request->target.starts, 0);
+     return request;
+   }
++  std::unique_ptr<HeldRedirectBrowserRequest> StartHeldRedirect(bool proxy) {
++    content::NavigationSimulator::NavigateAndCommitFromBrowser(
++        web_contents(), GURL("https://news.example"));
++    if (proxy) {
++      EXPECT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
++      EXPECT_TRUE(base::test::RunUntil([&] {
++        return bubble_->SnapshotForCommittedUrl(GURL("https://news.example"))
++                   .connection == AccessSiteConnectionState::kReady;
++      }));
++    }
++    auto metadata = BuildBrowserOwnedRequestMetadata(profile(),
++        base::BindRepeating([](content::WebContents* contents) { return contents; },
++                            base::Unretained(web_contents())),
++        main_rfh()->GetFrameTreeNodeId(), std::nullopt);
++    CHECK(metadata.metadata);
++    base::test::TestFuture<AccessNetworkContextTransport::PrivateContext> bound;
++    transport_->BindPrivateContext(owner_, &context_, bound.GetCallback());
++    auto request = std::make_unique<HeldRedirectBrowserRequest>(
++        profile(), main_rfh(), owner_, std::move(*metadata.metadata), bound.Take());
++    request->Start();
++    EXPECT_TRUE(base::test::RunUntil([&] {
++      return request->client.has_received_redirect() ||
++             request->client.has_received_completion();
++    }));
++    return request;
++  }
+   base::ScopedTempDir directory_;
+   ProductAckContext context_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+@@ -724,5 +869,69 @@ TEST_F(AccessRetryNavigationProductTest,
+   EXPECT_EQ(request->target.starts, 0);
+ }
+ 
++TEST_F(AccessRetryNavigationProductTest,
++       NativeRedirectSurvivesPrivateFactoryAdmissionReset) {
++  auto request = StartHeldRedirect(false);
++  ASSERT_TRUE(request->client.has_received_redirect());
++  ASSERT_TRUE(request->target.initial);
++  EXPECT_TRUE(request->target.initial->registration_id.empty());
++  request->target.ResetAdmission();
++  task_environment()->RunUntilIdle();
++  EXPECT_FALSE(request->factory.is_connected());
++  ASSERT_TRUE(request->wrapper);
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return request->client.has_received_completion();
++  }));
++  EXPECT_EQ(request->client.completion_status().error_code, net::OK);
++  ASSERT_TRUE(request->target.followed);
++  EXPECT_TRUE(request->target.followed->registration_id.empty());
++  EXPECT_EQ(request->target.followed->hop, 1u);
++  EXPECT_EQ(request->target.followed->request_token,
++            request->target.initial->request_token);
++  EXPECT_EQ(request->target.public_follows, 0);
++}
++
++TEST_F(AccessRetryNavigationProductTest,
++       ProxyRedirectSurvivesPrivateFactoryAdmissionReset) {
++  auto request = StartHeldRedirect(true);
++  ASSERT_TRUE(request->client.has_received_redirect());
++  ASSERT_TRUE(request->target.initial);
++  ASSERT_FALSE(request->target.initial->registration_id.empty());
++  request->target.ResetAdmission();
++  task_environment()->RunUntilIdle();
++  EXPECT_FALSE(request->factory.is_connected());
++  ASSERT_TRUE(request->wrapper);
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return request->client.has_received_completion();
++  }));
++  EXPECT_EQ(request->client.completion_status().error_code, net::OK);
++  ASSERT_TRUE(request->target.followed);
++  EXPECT_EQ(request->target.followed->registration_id,
++            request->target.initial->registration_id);
++  EXPECT_EQ(request->target.followed->hop, 1u);
++  EXPECT_EQ(request->target.followed->request_token,
++            request->target.initial->request_token);
++  EXPECT_EQ(request->target.public_follows, 0);
++}
++
++TEST_F(AccessRetryNavigationProductTest,
++       RedirectAfterAdmissionResetStillRejectsChangedNetworkEpoch) {
++  auto request = StartHeldRedirect(true);
++  ASSERT_TRUE(request->client.has_received_redirect());
++  request->target.ResetAdmission();
++  task_environment()->RunUntilIdle();
++  AccessNetworkContextTransportTestPeer::AdvanceNetwork(transport_);
++  task_environment()->RunUntilIdle();
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return request->client.has_received_completion();
++  }));
++  EXPECT_NE(request->client.completion_status().error_code, net::OK);
++  EXPECT_FALSE(request->target.followed);
++  EXPECT_EQ(request->target.public_follows, 0);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

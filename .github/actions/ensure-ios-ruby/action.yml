@@ -1,0 +1,61 @@
+name: Ensure iOS Ruby
+description: >
+  Provide Ruby 3.3.6 and Gemfile deps. On self-hosted macOS, use the runner's
+  preinstalled Ruby (mise/tooling PATH) because ruby/setup-ruby hard-codes
+  /Users/runner/hostedtoolcache regardless of RUNNER_TOOL_CACHE.
+inputs:
+  working-directory:
+    description: Directory containing the Gemfile
+    required: false
+    default: '.'
+runs:
+  using: composite
+  steps:
+    - name: Use preinstalled Ruby on self-hosted
+      if: ${{ runner.environment == 'self-hosted' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -euo pipefail
+        # mise Ruby ships a rubygems plugin that shells out to `mise reshim` on
+        # gem install; keep mise on PATH (runner tooling/bin or ~/.local/bin).
+        for candidate in \
+          "${RUNNER_TOOLING_BIN:-}" \
+          "${RUNNER_HOME:-}/tooling/bin" \
+          "$HOME/.local/bin" \
+          /opt/homebrew/bin
+        do
+          if [ -n "$candidate" ] && [ -x "$candidate/mise" ]; then
+            export PATH="$candidate:$PATH"
+            break
+          fi
+        done
+        if ! command -v ruby >/dev/null 2>&1; then
+          echo "ruby missing on PATH for self-hosted runner" >&2
+          exit 1
+        fi
+        ruby_v="$(ruby -v)"
+        echo "Using preinstalled $ruby_v"
+        case "$ruby_v" in
+          *"3.3.6"*) ;;
+          *)
+            echo "expected Ruby 3.3.6 for Gemfile.lock, got: $ruby_v" >&2
+            exit 1
+            ;;
+        esac
+        if ! command -v mise >/dev/null 2>&1; then
+          echo "mise missing on PATH; gem install would fail reshim" >&2
+          exit 1
+        fi
+        echo "mise: $(command -v mise) ($(mise --version | head -1))"
+        bundle -v
+        bundle config set --local path vendor/bundle
+        bundle install --jobs 4 --retry 3
+        bundle check
+    - name: Setup Ruby on GitHub-hosted
+      if: ${{ runner.environment != 'self-hosted' }}
+      uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f
+      with:
+        ruby-version: 3.3.6
+        bundler-cache: true
+        working-directory: ${{ inputs.working-directory }}

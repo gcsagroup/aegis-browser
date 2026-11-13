@@ -234,7 +234,7 @@ final class SettingsLayoutUITests: XCTestCase {
 
     private func revealNoticeElement(_ element: XCUIElement, in scroll: XCUIElement,
                                      app: XCUIApplication) -> Bool {
-        for _ in 0..<24 {
+        for _ in 0..<26 {
             assertNoNoticeEngineeringText(app)
             // Lazy paragraphs may not exist yet. Selectable Text can report an AX
             // frame taller than the viewport: require visible intersection, not a

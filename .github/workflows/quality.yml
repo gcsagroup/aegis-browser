@@ -10,6 +10,7 @@ on:
     branches:
       - main
       - develop
+      - releases/ios/1.0
   workflow_dispatch:
     inputs:
       base_sha:
@@ -17,7 +18,7 @@ on:
         required: true
         type: string
       target_sha:
-        description: Exact SHA selected on main or develop for this diagnostic run
+        description: Exact SHA selected on an admitted quality branch for this diagnostic run
         required: true
         type: string
 
@@ -33,7 +34,7 @@ jobs:
     name: quality
     if: ${{ github.event_name != 'pull_request' || toJSON(github.event.pull_request.draft) == 'false' }}
     runs-on: >-
-      ${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "aegis-test"]') || 'macos-15' }}
+      ${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted", "macOS", "ARM64", "aegis-test"]') || 'macos-15' }}
     timeout-minutes: 40
     steps:
       - name: Check out tested source
@@ -41,6 +42,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # pull_request.base.sha can lag the merge ref's first parent when the PR is
+      # behind main; ci-identity requires B/H to be the exact merge parents.
+      - name: Resolve pull request merge base tip
+        id: merge_base
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          parents="$(git rev-list --parents -n 1 HEAD)"
+          test "$(printf '%s\n' "$parents" | awk '{print NF}')" -eq 3
+          base="$(printf '%s\n' "$parents" | awk '{print $2}')"
+          head="$(printf '%s\n' "$parents" | awk '{print $3}')"
+          test -n "$base" && test -n "$head"
+          printf 'sha=%s\n' "$base" >> "$GITHUB_OUTPUT"
       - name: Install Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -64,7 +77,7 @@ jobs:
         run: bash scripts/ci/install-ripgrep.sh
       - name: Run full quality gate
         env:
-          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event_name == 'push' && github.event.before || inputs.base_sha }}
+          CI_BASE_SHA: ${{ github.event_name == 'pull_request' && steps.merge_base.outputs.sha || github.event_name == 'push' && github.event.before || inputs.base_sha }}
           CI_EVENT: ${{ github.event_name }}
           CI_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || inputs.target_sha }}
           CI_PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -87,7 +100,7 @@ jobs:
     needs:
       - quality
     runs-on: >-
-      ${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "aegis-test"]') || 'macos-15' }}
+      ${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON('["self-hosted", "macOS", "ARM64", "aegis-test"]') || 'macos-15' }}
     timeout-minutes: 5
     steps:
       - name: Check out gate implementation

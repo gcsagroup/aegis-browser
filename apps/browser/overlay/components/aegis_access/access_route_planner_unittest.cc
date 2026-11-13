@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "components/aegis_access/access_route_isolation_key_contract_test.h"
+
 #include "components/aegis_access/access_route_planner_contract_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -18,6 +20,11 @@ class GtestObserver : public ContractTestObserver {
 TEST(AccessRoutePlannerTest, SharedRoutePlannerContract) {
   GtestObserver observer;
   RunRoutePlannerContractTests(observer);
+}
+
+TEST(AccessRouteIsolationKeyTest, CompleteIdentitySeparatesReuse) {
+  GtestObserver observer;
+  RunAccessRouteIsolationKeyContract(observer);
 }
 
 TEST(SiteProxyRuleGroupTest, CompleteAtomicGroupContract) {

@@ -125,12 +125,13 @@ packaging runs only on GitHub-hosted macOS; the isolated-keychain local command 
 automatic retry after a cloud failure.
 
 The hosted proof must use Xcode 26.6, a clean runner without installed profiles or
-Distribution identities, and a newly created archive. Hosted archive signing is
-ad-hoc, then export performs Apple cloud distribution signing. This avoids
-creating disposable development certificates for every matrix build. Ad-hoc
-archives themselves are not accepted as distributable packages; the exported
-IPA must pass the full Apple-trusted distribution signature/profile/entitlement
-checks. Local fallback retains development-signed archiving by default.
+Distribution identities, and a newly created archive. Archive signing defaults to
+Apple Development (via ASC API key + `-allowProvisioningUpdates`), then export
+performs Apple cloud Distribution signing. Xcode 26.6 rejects ad-hoc/unsigned
+archives when targets carry entitlements, so ad-hoc archive signing is opt-in
+only (`--archive-signing=ad-hoc`) and is not the CI default. Development-signed
+archives are still not distributable packages; the exported IPA must pass the
+full Apple-trusted distribution signature/profile/entitlement checks.
 
 Each package contains a source-bound receipt, IPA, dSYM ZIP and independent
 signature/dSYM checks. Every target's dSYM UUID must match its archived binary.
@@ -339,8 +340,11 @@ in Downloads; it never evaluates shell code or reads a P12/password file.
 
 The PoC temporarily selects a fresh keychain as the user default and entire user
 search list, restoring both on success, failure, SIGINT, SIGTERM and SIGHUP. Do
-not run concurrent native signing jobs on this host. No existing keychain is
-unlocked or imported, and no ACL is changed. Automatic archive signing may create
+not run concurrent native signing jobs on this host. With explicit Development
+configuration and its private password companion, the selected owned non-login
+Development keychain is unlocked in this worker session and tested before archive.
+Activation failures restore an initially locked keychain; existing unlocked state
+is preserved. No keychain import or ACL change is performed. Automatic archive signing may create
 a development certificate/key and provisioning profiles in the Apple account;
 automatic export may create managed distribution assets. The temporary local key
 is deleted afterward; account-side assets are retained for inspection.

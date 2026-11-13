@@ -1,0 +1,28 @@
+From 334d7117f880c1faf87391bd868b42fa85e63bd2 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 15:34:16 +0800
+Subject: [PATCH] test(access): match the compiler callback source location
+
+---
+ .../aegis/access/access_site_proxy_product_unittest.cc       | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 7269364ec306523f2826c2088105ff4512a71fee..bd9dc01cb4298db9900cb08fe0f33cae7261a6eb 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -116,8 +116,9 @@ class DisableAtQueuedCoreVerification final : public base::TaskObserver {
+     base::CurrentThread::Get()->RemoveTaskObserver(this);
+   }
+   void WillProcessTask(const base::PendingTask& task, bool) override {
+-    if (disable_ && std::string_view(task.posted_from.function_name()).find(
+-                        "AccessLocalCoreManager::Verify") != std::string_view::npos) {
++    if (disable_ && std::string_view(task.posted_from.file_name()).find(
++                        "access_local_core_manager.cc") != std::string_view::npos &&
++        std::string_view(task.posted_from.function_name()) == "Verify") {
+       disabled_ = true;
+       std::move(disable_).Run();
+     }
+-- 
+2.54.0 (Apple Git-157)
+

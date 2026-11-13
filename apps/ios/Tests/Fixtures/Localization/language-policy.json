@@ -21,7 +21,9 @@
     "family": "en",
     "dialect": "en-US",
     "appResource": "en",
-    "agentResource": "en"
+    "agentResource": "en",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "manual-es",
@@ -165,7 +167,9 @@
     "family": "zh-Hant",
     "dialect": "zh-Hant-US",
     "appResource": "zh-Hant",
-    "agentResource": "zh-Hant"
+    "agentResource": "zh-Hant",
+    "nativeDialect": "zh-Hant-TW",
+    "nativeAgentResource": "zh-Hant"
   },
   {
     "name": "None-en-US-en_GB14",
@@ -276,7 +280,9 @@
     "family": "en",
     "dialect": "en-US",
     "appResource": "en",
-    "agentResource": "en"
+    "agentResource": "en",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "en-en-GB-en_US23",
@@ -288,7 +294,9 @@
     "family": "en",
     "dialect": "en-GB",
     "appResource": "en",
-    "agentResource": "en-GB"
+    "agentResource": "en-GB",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "en-en-HK-en_US24",
@@ -300,7 +308,9 @@
     "family": "en",
     "dialect": "en-HK",
     "appResource": "en",
-    "agentResource": "en-HK"
+    "agentResource": "en-HK",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "en-en-en_GB25",
@@ -312,7 +322,9 @@
     "family": "en",
     "dialect": "en-GB",
     "appResource": "en",
-    "agentResource": "en-GB"
+    "agentResource": "en-GB",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "en-en-en_HK26",
@@ -324,7 +336,9 @@
     "family": "en",
     "dialect": "en-HK",
     "appResource": "en",
-    "agentResource": "en-HK"
+    "agentResource": "en-HK",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "en-en-AU-en_GB27",
@@ -336,7 +350,9 @@
     "family": "en",
     "dialect": "en-AU",
     "appResource": "en",
-    "agentResource": "en"
+    "agentResource": "en",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "en-en-en_US28",
@@ -350,7 +366,9 @@
     "family": "en",
     "dialect": "en-HK",
     "appResource": "en",
-    "agentResource": "en-HK"
+    "agentResource": "en-HK",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "en-en-GB-en_HK29",
@@ -363,7 +381,9 @@
     "family": "en",
     "dialect": "en-GB",
     "appResource": "en",
-    "agentResource": "en-GB"
+    "agentResource": "en-GB",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "alias-zh-HK",
@@ -496,7 +516,9 @@
     "family": "en",
     "dialect": "en-GB",
     "appResource": "en",
-    "agentResource": "en-GB"
+    "agentResource": "en-GB",
+    "nativeDialect": "en-US",
+    "nativeAgentResource": "en"
   },
   {
     "name": "manual-traditional",
@@ -509,7 +531,9 @@
     "family": "zh-Hant",
     "dialect": "zh-Hant-HK",
     "appResource": "zh-Hant",
-    "agentResource": "zh-Hant-HK"
+    "agentResource": "zh-Hant-HK",
+    "nativeDialect": "zh-Hant-TW",
+    "nativeAgentResource": "zh-Hant"
   },
   {
     "name": "manual-traditional-region",
@@ -521,7 +545,9 @@
     "family": "zh-Hant",
     "dialect": "zh-Hant-HK",
     "appResource": "zh-Hant",
-    "agentResource": "zh-Hant-HK"
+    "agentResource": "zh-Hant-HK",
+    "nativeDialect": "zh-Hant-TW",
+    "nativeAgentResource": "zh-Hant"
   },
   {
     "name": "skip-unsupported",
@@ -547,5 +573,78 @@
     "dialect": "zh-Hans-US",
     "appResource": "zh-Hans",
     "agentResource": "zh-Hans"
+  },
+  {
+    "name": "manual-taiwan-over-hong-kong",
+    "selected": "zh-Hant-TW",
+    "preferences": [
+      "zh-Hant-HK",
+      "zh-TW"
+    ],
+    "systemLocale": "en_HK",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-TW",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "manual-taiwan-over-english",
+    "selected": "zh-Hant-TW",
+    "preferences": [
+      "en-US"
+    ],
+    "systemLocale": "en_US",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-TW",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "manual-taiwan-over-thai",
+    "selected": "zh-Hant-TW",
+    "preferences": [
+      "th-TH"
+    ],
+    "systemLocale": "th_TH",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-TW",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant"
+  },
+  {
+    "name": "manual-hong-kong-over-taiwan",
+    "selected": "zh-Hant-HK",
+    "preferences": [
+      "zh-TW"
+    ],
+    "systemLocale": "en_TW",
+    "family": "zh-Hant",
+    "dialect": "zh-Hant-HK",
+    "appResource": "zh-Hant",
+    "agentResource": "zh-Hant-HK"
+  },
+  {
+    "name": "manual-us-over-uk",
+    "selected": "en-US",
+    "preferences": [
+      "en-GB"
+    ],
+    "systemLocale": "en_GB",
+    "family": "en",
+    "dialect": "en-US",
+    "appResource": "en",
+    "agentResource": "en"
+  },
+  {
+    "name": "manual-uk-over-us",
+    "selected": "en-GB",
+    "preferences": [
+      "en-US"
+    ],
+    "systemLocale": "en_US",
+    "family": "en",
+    "dialect": "en-GB",
+    "appResource": "en",
+    "agentResource": "en-GB"
   }
 ]

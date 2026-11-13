@@ -1,6 +1,7 @@
 // Copyright 2026 GCSA
 
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+#include "chrome/browser/aegis/access/access_build_channel.h"
 
 #include <string>
 #include <utility>
@@ -31,22 +32,6 @@ namespace {
 AccessBrowserRequestMetadataResult Error(
     AccessBrowserRequestMetadataStatus status) {
   return {status, std::nullopt};
-}
-
-aegis_access::BrowserReleaseChannel BrowserReleaseChannel() {
-  switch (chrome::GetChannel()) {
-    case version_info::Channel::STABLE:
-      return aegis_access::BrowserReleaseChannel::kStable;
-    case version_info::Channel::BETA:
-      return aegis_access::BrowserReleaseChannel::kBeta;
-    case version_info::Channel::DEV:
-      return aegis_access::BrowserReleaseChannel::kDev;
-    case version_info::Channel::CANARY:
-      return aegis_access::BrowserReleaseChannel::kCanary;
-    case version_info::Channel::UNKNOWN:
-      return aegis_access::BrowserReleaseChannel::kUnknown;
-  }
-  return aegis_access::BrowserReleaseChannel::kInvalid;
 }
 
 std::optional<base::FilePath> RelativePartitionPath(
@@ -161,7 +146,7 @@ AccessBrowserRequestMetadataStatus ResolveOwnerForPartition(
     return AccessBrowserRequestMetadataStatus::kInvalidPartitionPath;
   }
   const aegis_access::ChannelNamespace channel =
-      aegis_access::MapBrowserReleaseChannel(BrowserReleaseChannel());
+      AccessChannelForCurrentBuild();
   const std::optional<aegis_access::OwnershipKey> resolved_owner =
       transport->OwnerForPartition(channel, *relative_partition_path);
   if (!resolved_owner) {

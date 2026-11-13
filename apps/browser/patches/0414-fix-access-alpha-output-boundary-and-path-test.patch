@@ -1,0 +1,178 @@
+From 1d5159b412f7f3792cbcb01afb3bc35ced6165da Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 01:16:11 +0800
+Subject: [PATCH] fix(access): reject stale Alpha assets in normal build
+ outputs
+
+---
+ chrome/BUILD.gn                               |  4 +++
+ chrome/browser/aegis/access/BUILD.gn          | 15 +++++++++
+ .../access_local_core_manager_unittest.cc     | 16 ++++++----
+ .../verify_no_alpha_access_resources.py       | 32 +++++++++++++++++++
+ .../verify_no_alpha_access_resources_test.py  | 29 +++++++++++++++++
+ 5 files changed, 89 insertions(+), 7 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/verify_no_alpha_access_resources.py
+ create mode 100644 chrome/browser/aegis/access/verify_no_alpha_access_resources_test.py
+
+diff --git a/chrome/BUILD.gn b/chrome/BUILD.gn
+index 120a01b15b070cf0f30d7793b902da6e0be16614..f8e7701432de883f07b68053e166811f6eebda80 100644
+--- a/chrome/BUILD.gn
++++ b/chrome/BUILD.gn
+@@ -1407,6 +1407,10 @@ if (is_win) {
+     ]
+ 
+     public_deps = [ ":chrome_dll" ]
++    if (!aegis_alpha_test_node_enabled) {
++      public_deps +=
++          [ "//chrome/browser/aegis/access:alpha_test_resource_guard" ]
++    }
+ 
+     bundle_deps = [
+       ":aperitif_library",
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index e091e90c5f4f101eb3ef08e19a9081d8eba516bd..5bf445ea3ab1e3b9b9ce2bb74a3294c16d30c0a4 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -39,6 +39,19 @@ if (aegis_alpha_test_node_enabled) {
+         [ "{{bundle_resources_dir}}/AegisAlphaAccess/{{source_file_part}}" ]
+     public_deps = [ ":alpha_access_resource_files" ]
+   }
++} else {
++  action("alpha_test_resource_guard") {
++    script = "verify_no_alpha_access_resources.py"
++    inputs = get_target_outputs(":access_buildflags")
++    outputs = [ "$target_gen_dir/alpha_test_resources_absent.stamp" ]
++    deps = [ ":access_buildflags" ]
++    args = [
++      "--output-dir",
++      rebase_path(root_out_dir, root_build_dir),
++      "--stamp",
++      rebase_path(outputs[0], root_build_dir),
++    ]
++  }
+ }
+ 
+ source_set("access_build_channel") {
+@@ -68,6 +81,8 @@ source_set("access_local_core_manager") {
+   ]
+   if (aegis_alpha_test_node_enabled) {
+     data_deps = [ ":alpha_access_resource_files" ]
++  } else {
++    data_deps = [ ":alpha_test_resource_guard" ]
+   }
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index d511d9addd88647386e830c315dedd52b2681b38..369265511ece51fbfc340462cb24e40edc2c76d5 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -17,24 +17,26 @@ namespace {
+ TEST(AccessLocalCoreInputTest, BuildControlsPrivateInputSource) {
+   base::ScopedTempDir directory;
+   ASSERT_TRUE(directory.CreateUniqueTempDir());
+-  base::ScopedPathOverride resources(base::DIR_ASSETS, directory.GetPath());
++  const auto canonical_directory = base::MakeAbsoluteFilePath(directory.GetPath());
++  ASSERT_FALSE(canonical_directory.empty());
++  base::ScopedPathOverride resources(base::DIR_ASSETS, canonical_directory);
+   base::test::ScopedCommandLine command;
+   command.GetProcessCommandLine()->AppendSwitchPath(
+-      "aegis-access-dev-core-manifest", directory.GetPath().AppendASCII("dev-manifest"));
++      "aegis-access-dev-core-manifest", canonical_directory.AppendASCII("dev-manifest"));
+   command.GetProcessCommandLine()->AppendSwitchPath(
+-      "aegis-access-dev-node-config", directory.GetPath().AppendASCII("dev-node"));
++      "aegis-access-dev-node-config", canonical_directory.AppendASCII("dev-node"));
+   const auto input = ResolveAccessLocalCoreInput();
+   ASSERT_TRUE(input);
+ #if BUILDFLAG(AEGIS_ALPHA_TEST_NODE_ENABLED)
+   EXPECT_EQ(input->source, AccessLocalCoreSource::kAlphaBundle);
+-  EXPECT_EQ(input->manifest, directory.GetPath().AppendASCII(
++  EXPECT_EQ(input->manifest, canonical_directory.AppendASCII(
+       "AegisAlphaAccess/core-manifest.json"));
+-  EXPECT_EQ(input->node_config, directory.GetPath().AppendASCII(
++  EXPECT_EQ(input->node_config, canonical_directory.AppendASCII(
+       "AegisAlphaAccess/node.json"));
+ #else
+   EXPECT_EQ(input->source, AccessLocalCoreSource::kDevFiles);
+-  EXPECT_EQ(input->manifest, directory.GetPath().AppendASCII("dev-manifest"));
+-  EXPECT_EQ(input->node_config, directory.GetPath().AppendASCII("dev-node"));
++  EXPECT_EQ(input->manifest, canonical_directory.AppendASCII("dev-manifest"));
++  EXPECT_EQ(input->node_config, canonical_directory.AppendASCII("dev-node"));
+ #endif
+ }
+ 
+diff --git a/chrome/browser/aegis/access/verify_no_alpha_access_resources.py b/chrome/browser/aegis/access/verify_no_alpha_access_resources.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..602b4f2aef99dec4b97015cafb334c9e3c3c059a
+--- /dev/null
++++ b/chrome/browser/aegis/access/verify_no_alpha_access_resources.py
+@@ -0,0 +1,32 @@
++#!/usr/bin/env python3
++"""Reject stale private Alpha assets in a reused normal build output."""
++
++import argparse
++from pathlib import Path
++
++
++def verify(output: Path) -> None:
++    candidates = [output / "AegisAlphaAccess"]
++    candidates.extend(output.glob("*.framework/Resources/AegisAlphaAccess"))
++    candidates.extend(output.glob(
++        "*.app/Contents/Frameworks/*.framework/Resources/AegisAlphaAccess"))
++    if any(path.exists() for path in candidates):
++        raise ValueError("Normal output contains Alpha test assets")
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--output-dir", required=True, type=Path)
++    parser.add_argument("--stamp", required=True, type=Path)
++    args = parser.parse_args()
++    try:
++        verify(args.output_dir)
++    except ValueError:
++        parser.exit(1, "Normal output contains Alpha test assets; use a normal output directory.\n")
++    args.stamp.parent.mkdir(parents=True, exist_ok=True)
++    args.stamp.write_text("Alpha test resources absent\n")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/chrome/browser/aegis/access/verify_no_alpha_access_resources_test.py b/chrome/browser/aegis/access/verify_no_alpha_access_resources_test.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b0c9b1703ac2e8c73608a0d67e51bc9fb2c8b527
+--- /dev/null
++++ b/chrome/browser/aegis/access/verify_no_alpha_access_resources_test.py
+@@ -0,0 +1,29 @@
++from pathlib import Path
++import tempfile
++import unittest
++
++from verify_no_alpha_access_resources import verify
++
++
++class NormalResourceBoundaryTest(unittest.TestCase):
++    def test_clean_normal_output_is_accepted(self):
++        with tempfile.TemporaryDirectory() as folder:
++            verify(Path(folder))
++
++    def test_stale_alpha_assets_are_rejected_and_preserved(self):
++        for relative in ("AegisAlphaAccess",
++                "Browser.framework/Resources/AegisAlphaAccess",
++                "Browser.app/Contents/Frameworks/Browser.framework/Resources/AegisAlphaAccess"):
++            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as folder:
++                root = Path(folder)
++                assets = root / relative
++                assets.mkdir(parents=True)
++                fixture = assets / "node.json"
++                fixture.write_text("private fixture")
++                with self.assertRaises(ValueError):
++                    verify(root)
++                self.assertEqual(fixture.read_text(), "private fixture")
++
++
++if __name__ == "__main__":
++    unittest.main()
+-- 
+2.54.0 (Apple Git-157)
+

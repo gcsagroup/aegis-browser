@@ -13,7 +13,6 @@
 #include "components/aegis_access/access_policy_evaluator.h"
 #include "components/aegis_access/site_proxy_rule_group.h"
 #include "sql/database.h"
-#include "sql/meta_table.h"
 
 namespace aegis::access {
 
@@ -75,6 +74,22 @@ class AccessStoreBinding {
   std::string runtime_profile_token_;
   base::FilePath profile_path_;
   base::FilePath database_path_;
+};
+
+// Trusted browser-owned factory for Profile-backed AccessRuleStore bindings.
+// Product session publication (P-mac-3) uses ephemeral bindings when a durable
+// profile path is not required for the mutation journal.
+class TrustedAccessStoreBindingFactory {
+ public:
+  static std::optional<AccessStoreBinding> CreateEphemeral(
+      ChannelNamespace channel,
+      std::string durable_profile_id,
+      std::string runtime_profile_token);
+  static std::optional<AccessStoreBinding> CreatePersistent(
+      ChannelNamespace channel,
+      std::string durable_profile_id,
+      std::string runtime_profile_token,
+      base::FilePath profile_path);
 };
 
 enum class StoreStatus {
@@ -214,6 +229,7 @@ class AccessRuleStore {
     kPrepareAfterCounterUpdate,
     kPrepareBeforeJournalInsert,
     kPrepareAfterJournalInsert,
+    kBuildPreparedCandidateBeforeRead,
     kCommitAfterRuleDelete,
     kCommitAfterGroupDelete,
     kCommitAfterGroupInsert,
@@ -232,6 +248,14 @@ class AccessRuleStore {
   const AccessStoreBinding& binding() const { return binding_; }
 
   StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
+      const std::string& storage_partition_token);
+  // Atomically reserves a fresh policy version for the currently committed
+  // contents, including an empty bootstrap snapshot. Rows are not changed.
+  // The returned value is only a publication candidate; Network ACK and the
+  // Browser restoration barrier still govern use. PREPARED rows must be
+  // explicitly recovered before this method can return committed contents.
+  StoreResult<aegis_access::PublishedAccessPolicySnapshot>
+  ReserveCommittedPolicyForPublication(
       const std::string& storage_partition_token);
   StoreResult<PendingMutationRecord> PrepareSiteGroupMutation(
       const SiteGroupMutationRequest& request);
@@ -255,6 +279,7 @@ class AccessRuleStore {
 
  private:
   friend class AccessRuleStoreTestPeer;
+  friend class AccessAsyncRuleStore;
 
   // Restricted friend-only fixture seam for persistence/matcher regressions.
   // It is intentionally unavailable to production callers.
@@ -284,7 +309,6 @@ class AccessRuleStore {
 
   AccessStoreBinding binding_;
   sql::Database database_;
-  sql::MetaTable meta_table_;
   bool is_open_ = false;
   StoreStatus terminal_status_ = StoreStatus::kIoError;
   FailurePointForTesting failure_point_for_testing_ =
