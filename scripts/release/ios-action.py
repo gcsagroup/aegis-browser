@@ -202,10 +202,25 @@ def cleanup_private_beta_restore():
     marker = staging / 'owner.json'
     if (staging.is_symlink() or not staging.is_dir() or staging.stat().st_uid != os.getuid()
             or staging.stat().st_mode & 0o077 or marker.is_symlink() or not marker.is_file()
-            or marker.stat().st_uid != os.getuid() or marker.stat().st_mode & 0o077
-            or json.loads(marker.read_text()) != expected):
+            or marker.stat().st_uid != os.getuid() or marker.stat().st_mode & 0o077):
         raise ValueError('Private Beta restore ownership differs')
-    shutil.rmtree(staging)
+    owner = json.loads(marker.read_text())
+    if (set(owner) != {'identity', 'device', 'inode'} or owner['identity'] != expected
+            or any(type(owner[key]) is not int or owner[key] < 0 for key in ('device', 'inode'))
+            or any(path.name not in {'owner.json', 'package'} for path in staging.iterdir())):
+        raise ValueError('Private Beta restore ownership differs')
+    copies = [path for path in (staging / 'package', directory()) if path.exists() or path.is_symlink()]
+    for path in copies:
+        if (path.is_symlink() or not path.is_dir() or path.stat().st_uid != os.getuid()
+                or path.stat().st_mode & 0o077
+                or (path.stat().st_dev, path.stat().st_ino) != (owner['device'], owner['inode'])):
+            raise ValueError('Private Beta restore copy differs')
+    # The directory identity survives rename and partial deletion. Keep the marker
+    # until every private copy is gone, so interrupted cleanup can safely resume.
+    for path in copies:
+        shutil.rmtree(path)
+    marker.unlink()
+    staging.rmdir()
 
 
 def restore_private_beta():
@@ -216,13 +231,15 @@ def restore_private_beta():
     root.parent.mkdir(parents=True, exist_ok=True)
     staging, identity = private_beta_restore_staging()
     staging.mkdir(mode=0o700)
+    pending = staging / 'package'
+    pending.mkdir(mode=0o700)
+    owner = dict(identity=identity, device=pending.stat().st_dev, inode=pending.stat().st_ino)
     marker = staging / 'owner.json'
     with marker.open('x') as output_file:
-        json.dump(identity, output_file)
+        json.dump(owner, output_file)
     marker.chmod(0o600)
     try:
-        pending = staging / 'package'
-        shutil.copytree(retained / 'package', pending)
+        shutil.copytree(retained / 'package', pending, dirs_exist_ok=True)
         digest = os.environ['RELEASE_MANIFEST_SHA256']
         private_beta_manifest(digest, root=pending)
         sha, tree = source()
@@ -230,9 +247,11 @@ def restore_private_beta():
         if root.exists() or root.is_symlink():
             raise ValueError('Private Beta workspace appeared during restoration')
         pending.rename(root)
-    finally:
-        # The workflow repeats this exact, ownership-bound cleanup after cancellation.
+    except Exception:
         cleanup_private_beta_restore()
+        raise
+    # Retain the marker through upload. The workflow's always() cleanup also owns
+    # the renamed directory if cancellation prevented a successful step result.
 
 
 def cleanup_private_beta_handoff():

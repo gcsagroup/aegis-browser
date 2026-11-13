@@ -88,9 +88,8 @@ class IosActionTests(unittest.TestCase):
                     action.restore_private_beta()
                 self.assertFalse(workspace.exists())
                 payload.write_bytes(raw_ipa)
-                def partial_copy(_source, destination):
+                def partial_copy(_source, destination, **_options):
                     self.assertEqual(destination.parent.stat().st_mode & 0o077, 0)
-                    destination.mkdir(mode=0o700)
                     (destination / 'fixture.ipa').write_bytes(raw_ipa[:32])
                     raise OSError('fixture disk full')
                 with patch.object(action.shutil, 'copytree', side_effect=partial_copy), self.assertRaises(OSError):
@@ -100,45 +99,79 @@ class IosActionTests(unittest.TestCase):
                 self.assertEqual(payload.read_bytes(), raw_ipa)
                 child = """
 import importlib.util, os, signal, sys
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0, str(Path(sys.argv[1]).parent))
 spec = importlib.util.spec_from_file_location('ios_action', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-def interrupted_copy(_source, destination):
-    destination.mkdir(mode=0o700)
+cut = sys.argv[4]
+original_rename, original_unlink = Path.rename, os.unlink
+def interrupted_copy(_source, destination, **_options):
+    (destination / 'partial-state').write_text('fixture')
     (destination / 'fixture.ipa').write_bytes(b'partial private fixture')
+    if cut == 'cleanup':
+        raise OSError('fixture disk full')
     os.kill(os.getpid(), signal.SIGTERM)
-with (patch.object(module.Path, 'home', return_value=Path(sys.argv[2])),
-      patch.object(module, 'directory', return_value=Path(sys.argv[3])),
-      patch.object(module, 'source', return_value=('a'*40, 'b'*40)),
-      patch.object(module.shutil, 'copytree', side_effect=interrupted_copy)):
+def interrupted_rename(path, destination):
+    original_rename(path, destination)
+    os.kill(os.getpid(), signal.SIGTERM)
+def interrupted_unlink(path, *args, **kwargs):
+    original_unlink(path, *args, **kwargs)
+    if Path(path).name == 'partial-state':
+        os.kill(os.getpid(), signal.SIGTERM)
+with ExitStack() as stack:
+    stack.enter_context(patch.object(module.Path, 'home', return_value=Path(sys.argv[2])))
+    stack.enter_context(patch.object(module, 'directory', return_value=Path(sys.argv[3])))
+    stack.enter_context(patch.object(module, 'source', return_value=('a'*40, 'b'*40)))
+    if cut == 'rename':
+        stack.enter_context(patch.object(Path, 'rename', interrupted_rename))
+    else:
+        stack.enter_context(patch.object(module.shutil, 'copytree', side_effect=interrupted_copy))
+    if cut == 'cleanup':
+        stack.enter_context(patch.object(os, 'unlink', interrupted_unlink))
     module.restore_private_beta()
 """
-                # Fixed interpreter and literal test program; all arguments are local fixture paths.
-                # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
-                terminated = subprocess.run([sys.executable, '-c', child, action.__file__, str(home), str(workspace)],  # nosec B603
-                                            env=env, capture_output=True, timeout=10, check=False)
-                self.assertEqual(terminated.returncode, -signal.SIGTERM, terminated.stderr.decode())
-                staging, owner = action.private_beta_restore_staging()
-                self.assertTrue((staging / 'package/fixture.ipa').is_file())
-                self.assertFalse(workspace.exists())
-                self.assertEqual(staging.stat().st_mode & 0o077, 0)
-                self.assertEqual(payload.read_bytes(), raw_ipa)
-                marker = staging / 'owner.json'
-                marker.write_text(json.dumps(dict(owner, runId='other-run')))
-                with self.assertRaises(ValueError): action.cleanup_private_beta_restore()
-                self.assertTrue(staging.exists())
-                marker.write_text(json.dumps(owner))
-                action.cleanup_private_beta_restore()
-                self.assertFalse(staging.exists())
-                self.assertEqual(payload.read_bytes(), raw_ipa)
+                for cut in ('copy', 'rename', 'cleanup'):
+                    with self.subTest(interrupted=cut):
+                        # Fixed interpreter/literal program and local fixture paths plus a fixed fault label.
+                        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+                        terminated = subprocess.run([sys.executable, '-c', child, action.__file__, str(home), str(workspace), cut],  # nosec B603
+                                                    env=env, capture_output=True, timeout=10, check=False)
+                        self.assertEqual(terminated.returncode, -signal.SIGTERM, terminated.stderr.decode())
+                        staging, identity = action.private_beta_restore_staging()
+                        copy = workspace if cut == 'rename' else staging / 'package'
+                        self.assertTrue((copy / 'fixture.ipa').is_file())
+                        self.assertEqual(workspace.exists(), cut == 'rename')
+                        self.assertEqual(staging.stat().st_mode & 0o077, 0)
+                        self.assertEqual(payload.read_bytes(), raw_ipa)
+                        marker = staging / 'owner.json'
+                        owner = json.loads(marker.read_text())
+                        marker.write_text(json.dumps(dict(owner, identity=dict(identity, runId='other-run'))))
+                        with self.assertRaises(ValueError): action.cleanup_private_beta_restore()
+                        self.assertTrue((copy / 'fixture.ipa').exists())
+                        marker.write_text(json.dumps(owner))
+                        if cut == 'rename':
+                            saved = home / 'saved-owned-copy'
+                            workspace.rename(saved)
+                            workspace.mkdir(mode=0o700)
+                            (workspace / 'foreign').write_text('preserve')
+                            with self.assertRaises(ValueError): action.cleanup_private_beta_restore()
+                            self.assertEqual((workspace / 'foreign').read_text(), 'preserve')
+                            (workspace / 'foreign').unlink()
+                            workspace.rmdir()
+                            saved.rename(workspace)
+                        action.cleanup_private_beta_restore()
+                        self.assertFalse(staging.exists())
+                        self.assertFalse(workspace.exists())
+                        self.assertEqual(payload.read_bytes(), raw_ipa)
+                        action.cleanup_private_beta_restore()
                 action.restore_private_beta()
                 self.assertEqual((workspace / 'fixture.ipa').read_bytes(), raw_ipa)
                 with self.assertRaises(ValueError):
                     action.restore_private_beta()
-                action.cleanup_private_beta()
+                action.cleanup_private_beta_restore()
                 action.cleanup_private_beta_handoff()
                 self.assertFalse(workspace.exists())
                 self.assertFalse(retained.exists())

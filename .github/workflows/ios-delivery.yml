@@ -384,14 +384,12 @@ jobs:
         name: Read permanent upload state for private Beta
         if: ${{ always() && steps.restore.outcome == 'success' }}
         run: python3 scripts/release/ios-action.py private-beta-evidence
-      - name: Clean this attempt's private restore staging
+      - id: restore-cleanup
+        name: Clean this attempt's owned private copies
         if: ${{ always() && steps.restore.outcome != 'skipped' }}
         run: python3 scripts/release/ios-action.py cleanup-private-beta-restore
-      - name: Clean restored private Beta workspace
-        if: ${{ always() && steps.restore.outcome == 'success' }}
-        run: python3 scripts/release/ios-action.py cleanup-private-beta
       - name: Clean verified private handoff
-        if: ${{ always() && steps.restore.outcome == 'success' }}
+        if: ${{ always() && steps.restore.outcome == 'success' && steps.restore-cleanup.outcome == 'success' }}
         run: python3 scripts/release/ios-action.py cleanup-private-beta-handoff
       - name: Preserve private Beta upload receipt
         if: ${{ always() && steps.private-evidence.outcome == 'success' }}

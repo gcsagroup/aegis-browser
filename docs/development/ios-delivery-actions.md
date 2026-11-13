@@ -78,8 +78,10 @@ runner 工作区之外的当前用户私有目录。独立的 `private-beta-stor
 
 The private handoff is bound to the repository, run, first attempt, runner, source
 and manifest. It is removed after upload processing. If the store job never starts,
-the owner-only copy remains for reconciliation. A cancelled restore cleans only its
-run-bound staging directory and retains that original copy. It is not a public artifact or a
+the owner-only copy remains for reconciliation. A cancelled restore cleans its
+run-bound staging or restored workspace copy and retains that original copy. Cleanup
+checks the directory identity recorded before copying and keeps its ownership marker
+until the private copy is removed, including after an interrupted cleanup. It is not a public artifact or a
 reusable upload token. Runner admission must explicitly allow `private-beta-store`.
 
 私有交接绑定仓库、run、首次 attempt、runner、源码与清单，上传处理后清除。若商店

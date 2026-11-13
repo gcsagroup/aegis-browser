@@ -353,6 +353,9 @@ test('private Beta crosses the store gate without publishing its package', () =>
   assert(store.steps.some(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-handoff'));
   const cancelledRestoreCleanup = store.steps.find(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-restore');
   assert.equal(cancelledRestoreCleanup.if, "${{ always() && steps.restore.outcome != 'skipped' }}");
+  assert.equal(cancelledRestoreCleanup.id, 'restore-cleanup');
+  assert(!store.steps.some(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta'));
+  assert(store.steps.find(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-handoff').if.includes("steps.restore-cleanup.outcome == 'success'"));
   for (const job of ['seal-package', 'upload-new', 'ios-draft']) {
     assert(jobs[job].if.includes("needs.ios-package.outputs.private_beta == 'false'"));
   }
