@@ -97,27 +97,34 @@ class IosActionTests(unittest.TestCase):
                 self.assertFalse(workspace.exists())
                 self.assertEqual(list(workspace.parent.glob('.private-beta-restore-*')), [])
                 self.assertEqual(payload.read_bytes(), raw_ipa)
-                for foreign_kind in ('directory', 'symlink'):
+                for foreign_kind in ('directory', 'symlink', 'unsearchable-symlink'):
                     with self.subTest(conflicting_workspace=foreign_kind):
-                        target = home / 'foreign-target'
+                        container = home / 'foreign-container'
+                        container.mkdir(mode=0o700)
+                        target = container / 'target'
                         target.mkdir(mode=0o700)
                         (target / 'foreign').write_text('preserve')
                         def conflicting_copy(_source, destination, **_options):
                             (destination / 'fixture.ipa').write_bytes(raw_ipa[:32])
-                            if foreign_kind == 'symlink': workspace.symlink_to(target, target_is_directory=True)
+                            if foreign_kind != 'directory': workspace.symlink_to(target, target_is_directory=True)
                             else: target.rename(workspace)
+                            if foreign_kind == 'unsearchable-symlink': container.chmod(0)
                             raise OSError('fixture copy failed after a conflicting workspace appeared')
-                        with patch.object(action.shutil, 'copytree', side_effect=conflicting_copy), self.assertRaises(ValueError):
-                            action.restore_private_beta()
+                        try:
+                            with patch.object(action.shutil, 'copytree', side_effect=conflicting_copy), self.assertRaises(ValueError):
+                                action.restore_private_beta()
+                        finally:
+                            container.chmod(0o700)
                         staging, _ = action.private_beta_restore_staging()
                         self.assertFalse((staging / 'package').exists())
                         self.assertTrue((staging / 'owner.json').is_file())
                         self.assertEqual((workspace / 'foreign').read_text(), 'preserve')
                         self.assertEqual(payload.read_bytes(), raw_ipa)
-                        if foreign_kind == 'symlink': workspace.unlink()
+                        if foreign_kind != 'directory': workspace.unlink()
                         else: workspace.rename(target)
                         (target / 'foreign').unlink()
                         target.rmdir()
+                        container.rmdir()
                         action.cleanup_private_beta_restore()
                 child = """
 import importlib.util, os, signal, sys

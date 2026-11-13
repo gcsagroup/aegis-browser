@@ -209,7 +209,7 @@ def cleanup_private_beta_restore():
             or any(type(owner[key]) is not int or owner[key] < 0 for key in ('device', 'inode'))
             or any(path.name not in {'owner.json', 'package'} for path in staging.iterdir())):
         raise ValueError('Private Beta restore ownership differs')
-    copies = [path for path in (staging / 'package', directory()) if path.exists() or path.is_symlink()]
+    copies = [path for path in (staging / 'package', directory()) if path.is_symlink() or path.exists()]
     conflict = False
     for path in copies:
         if (path.is_symlink() or not path.is_dir() or path.stat().st_uid != os.getuid()
