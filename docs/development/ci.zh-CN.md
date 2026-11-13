@@ -52,6 +52,8 @@ PR 标题由独立的 `PR Title Policy` 元数据 workflow 自动守护。已经
 
 `quality.yml` 继续验证 develop/main 的 Ready PR 与 push；Draft PR 暂缓自动测试，转为 Ready 后触发。检查身份按仓库、事件、SHA 分开记录。个人 main 的 push CI 不作为镜像同步的前置条件，避免循环等待；它也不能替代上游 S 的验证。服务端默认分支、保护和 Codacy 范围须独立回读，不能由 YAML 或徽章证明。
 
+iOS 维护线由 `scripts/ci/ios-release-lines.json` 显式列出，当前为 `releases/ios/1.0`。维护线 push、CI 身份校验和交付准入共用这份名单；质量 PR 目标仍仅限 main/develop。维护线的质量运行使用托管 `macos-15`，不扩大私有测试 runner 的分支准入。维护包必须绑定自身维护线的 tip 和该线的实际 push quality，不能借用当前 main 的绿灯；质量 push 不授权签名、上传或发布。
+
 ## Dependabot 第一阶段
 
 `.github/dependabot.yml` 仅配置根目录 pnpm workspace（`apps/browser`、`packages/core`）的 npm 生态更新。常规版本检查为每周一北京时间 09:00，最多同时打开 3 个版本更新 PR；lint、Vitest、构建工具的 minor/patch 按工具族分组。major 单独审查，其中 Vitest 与 `@vitest/*` 的 major 保持同组，避免测试运行器和覆盖率插件拆开升级。提交与 PR 标题使用 `chore(deps):`。
@@ -143,7 +145,7 @@ quality 汇总 job 使用中性 ID `quality-summary`，条件为 `always() && (�
 
 PR 检查测试 M；develop/main push 检查 S。协调者必须从 GitHub API 回读最新 run/job、run attempt、check source、H/B/M/S 和冲突状态，不能仅信任候选代码生成的报告或评论。PR 同步、base 前移、rebase、修复或 run attempt 更新后，旧结果不能转用。
 
-人工补跑只允许在 `develop` 或 `main` 上选择该次所选分支的精确 `target_sha`，同时提供其精确祖先 `base_sha`。这种 `workflow_dispatch` 结果保留事件类型，不伪装成 PR 或正常 develop/main push 结果。
+人工补跑只允许在 `develop`、`main` 或显式列出的 iOS 维护线上选择该次所选分支的精确 `target_sha`，同时提供其精确祖先 `base_sha`。这种 `workflow_dispatch` 结果保留事件类型，不伪装成 PR 或正常分支 push 结果。
 
 ## 保护与合并
 
