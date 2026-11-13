@@ -1,12 +1,48 @@
 """Stage protected Beta inputs and require their exact presence in the exported IPA."""
 import argparse
 import base64
+import hashlib
+import http.client
 import importlib.util
+import json
 import os
 from pathlib import Path
 import plistlib
+# Runs only this checked-in helper with the current Python interpreter and fixed argv.
+import subprocess  # nosec B404
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
+
+QUOTA_TIMEOUT_SECONDS = 20
+
+
+def run_live_quota(configuration):
+    # A separate process bounds DNS, TLS, response headers and slow-drip bodies together.
+    # Values travel only over stdin; child output and exception details remain private.
+    try:
+        subprocess.run(  # nosec B603
+            [sys.executable, str(Path(__file__).resolve()), 'quota'],
+            input=json.dumps(configuration).encode(), stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=QUOTA_TIMEOUT_SECONDS, check=True, env={})
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        raise ValueError('Live quota verification failed') from None
+
+
+def unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError('Duplicate quota field')
+        value[key] = item
+    return value
+
+
+def invalid_constant(_value):
+    raise ValueError('Nonstandard JSON constant')
 
 
 def module(name):
@@ -38,7 +74,56 @@ def stage(directory, environment):
         (directory / filename).chmod(0o600)
 
 
-def verify(directory, ipa):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError('Quota redirects are not allowed')
+
+
+def check_live_quota(configuration):
+    url = configuration['subscriptionInfoURL']
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != 'https':
+        raise ValueError('Quota requires HTTPS')
+    # Default HTTPSHandler verifies certificates; never follow a redirect with a private URL.
+    opener = urllib.request.build_opener(NoRedirect())
+    # Match AccessSubscriptionClient's request headers, including the product user agent.
+    request = urllib.request.Request(url, headers={
+        'Accept': 'application/json', 'User-Agent': 'Aegis-Alpha/1.0'})
+    with opener.open(request, timeout=20) as response:
+        if (response.status != 200 or response.geturl() != url
+                or response.headers.get_content_type() != 'application/json'):
+            raise ValueError('Invalid quota response')
+        # Require explicit framing: http.client accepts a truncated chunk trailer as EOF.
+        lengths = response.headers.get_all('Content-Length', [])
+        if len(lengths) != 1 or response.headers.get('Transfer-Encoding') is not None:
+            raise ValueError('Quota requires one explicit response length')
+        value = lengths[0].strip()
+        if not value.isascii() or not value.isdecimal() or len(value) > 5:
+            raise ValueError('Invalid quota response length')
+        length = int(value)
+        if length > 65536:
+            raise ValueError('Invalid quota response framing')
+        raw = response.read(65537)
+    if len(raw) != length:
+        raise ValueError('Incomplete quota response')
+    usage = json.loads(raw, object_pairs_hook=unique_object, parse_constant=invalid_constant)
+    if not isinstance(usage, dict):
+        raise ValueError('Invalid quota payload')
+    maximum = (1 << 64) - 1
+    for key in ('uploadByte', 'downloadByte', 'totalByte', 'expire'):
+        if type(usage[key]) is not int or not 0 <= usage[key] <= maximum:
+            raise ValueError('Invalid quota number')
+    used = usage['uploadByte'] + usage['downloadByte']
+    if (usage['sId'] != urllib.parse.unquote(parts.path.rsplit('/', 1)[-1])
+            or usage['emails'] != [configuration['allowedTestClient']]
+            or usage['totalByte'] != configuration['expectedQuotaBytes']
+            or usage['enabled'] is not True or used >= usage['totalByte']
+            or usage['expire'] > 253_402_300_799
+            or (usage['expire'] != 0 and usage['expire'] <= time.time())):
+        raise ValueError('Quota identity, availability or allowance mismatch')
+
+
+def verify(directory, ipa, live_quota=False):
     root = 'Payload/Aegis.app/'
     with zipfile.ZipFile(ipa) as archive:
         names = archive.namelist()
@@ -55,20 +140,57 @@ def verify(directory, ipa):
                 raise ValueError('Oversized private resource')
             if archive.read(root + member) != (directory / expected).read_bytes():
                 raise ValueError('Private Beta resource mismatch')
+        if live_quota:
+            run_live_quota(json.loads(archive.read(root + 'AegisPrivateTestSubscription.json')))
+
+
+def verify_live_ipa(ipa):
+    root = 'Payload/Aegis.app/'
+    with zipfile.ZipFile(ipa) as archive:
+        names = archive.namelist()
+        if len(names) != len(set(names)):
+            raise ValueError('Duplicate IPA members')
+        info = plistlib.loads(archive.read(root + 'Info.plist'))
+        if (info.get('AegisAccessReleaseChannel') != 'beta' or info.get('AegisReleaseProfile') != 'beta'
+                or info.get('TFInternalTestingOnly') is not True):
+            raise ValueError('Expected internal Beta IPA')
+        resources = []
+        for name in ('AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json'):
+            if archive.getinfo(root + name).file_size > 8192:
+                raise ValueError('Oversized private resource')
+            resources.append(archive.read(root + name))
+        configuration = json.loads(resources[1])
+        if configuration['nodeSHA256'] != hashlib.sha256(resources[0]).hexdigest():
+            raise ValueError('Quota binding differs from the packaged node')
+    run_live_quota(configuration)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('stage', 'verify'))
-    parser.add_argument('--directory', type=Path, required=True)
+    parser.add_argument('operation', choices=('stage', 'verify', 'quota', 'verify-live'))
+    parser.add_argument('--directory', type=Path)
     parser.add_argument('--ipa', type=Path)
+    parser.add_argument('--live-quota', action='store_true')
     args = parser.parse_args()
     try:
-        if args.operation == 'stage':
+        if args.operation in ('stage', 'verify') and args.directory is None:
+            raise ValueError('Directory required')
+        if args.operation == 'quota':
+            raw = sys.stdin.buffer.read(8193)
+            if len(raw) > 8192:
+                raise ValueError('Oversized quota configuration')
+            check_live_quota(json.loads(raw))
+        elif args.operation == 'stage':
             stage(args.directory, os.environ)
         else:
             if args.ipa is None:
                 raise ValueError('IPA required')
-            verify(args.directory, args.ipa)
-    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile):
+            if args.operation == 'verify-live':
+                verify_live_ipa(args.ipa)
+            else:
+                verify(args.directory, args.ipa, live_quota=args.live_quota)
+            if args.live_quota or args.operation == 'verify-live':
+                print('Private Beta IPA resources and live quota verified.')
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile,
+            urllib.error.URLError, http.client.HTTPException):
         sys.exit('Private Beta input validation failed; no private values are logged.')

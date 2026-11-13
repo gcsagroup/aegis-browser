@@ -204,6 +204,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     internal private(set) var recoveryLoadCount = 0
     var currentAttemptIDForTests: String { attempt.navigationID }
     var currentNavigationForTests: WKNavigation? { pendingNavigation }
+    var heldProxyRequestForTests: URLRequest? { pendingProxyRequest }
 
     /// Records the pending main-frame URL as committed. Unit tests have no WebKit commit callback.
     public func commitPendingMainFrameForTests() {
@@ -841,6 +842,14 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         lastMainFrameFailure = BrowserMainFrameFailure(failureID: UUID(), navigationID: attempt.navigationID,
             url: attempt.url, method: attempt.method)
         loadingErrorAllowsProxyRetry = true
+    }
+
+    /// Reuse the held request, including its headers, for the same navigation.
+    public func ensureProxyHold(_ pending: BrowserPendingAddressNavigation) -> Bool {
+        guard matchesPendingAddressNavigation(pending) else { return false }
+        if let request = pendingProxyRequest { return request.url == pending.url }
+        guard let request = safeRouteReloadRequest else { return false }
+        return holdForProxy(request) == pending
     }
 
     public var safeRouteReloadRequest: URLRequest? {

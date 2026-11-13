@@ -124,6 +124,7 @@ class ReleaseTest < ReleaseFixture
         checks.assert(File.directory?(private_path))
         checks.refute(args.join.include?('private-fixture'))
         checks.assert_equal(args[2] == 'stage' ? 2 : 0, env.size)
+        checks.assert_includes(args, '--live-quota') if args[2] == 'verify'
         raise AegisRelease::Error, 'verification failed' if fail_verification && args[2] == 'verify'
       end
       flow.define_singleton_method(:package_ios_impl) do |_|

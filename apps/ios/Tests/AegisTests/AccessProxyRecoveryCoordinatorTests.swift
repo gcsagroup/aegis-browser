@@ -7,6 +7,31 @@ import XCTest
 
 @MainActor
 final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
+    func testPreparingProxyPreservesTheOriginalGetAndHeadHeaders() async throws {
+        for method in ["GET", "HEAD"] {
+            let clock = AccessManualPreparationClock()
+            let publisher = AccessProxyEntryPublisher { generation, _ in
+                try await clock.sleep(until: .seconds(5))
+                return ready(generation, port: 18_291)
+            }
+            let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: clock)
+            let tab = try committedTab(coordinator: coordinator, url: "https://192.0.2.1/old")
+            let host = try AccessSiteHost("192.0.2.1")
+            coordinator.setProxyEnabled(true, host: host, scopeID: tab.browsingScopeID, isPrivate: false)
+            var request = URLRequest(url: URL(string: "https://192.0.2.1/range")!)
+            request.httpMethod = method
+            request.setValue("bytes=100-199", forHTTPHeaderField: "Range")
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+            tab.load(request)
+            XCTAssertTrue(coordinator.isPreparingAddressProxy(tab: tab))
+            let held = try XCTUnwrap(tab.heldProxyRequestForTests)
+            XCTAssertEqual(held.httpMethod, method)
+            XCTAssertEqual(held.value(forHTTPHeaderField: "Range"), "bytes=100-199")
+            XCTAssertEqual(held.value(forHTTPHeaderField: "Accept"), "application/octet-stream")
+            coordinator.setProxyEnabled(false, host: host, scopeID: tab.browsingScopeID, isPrivate: false)
+        }
+    }
+
     func testSiteToggleDoesNotCancelANewerForeignHostNavigation() throws {
         for enabled in [false, true] {
             for held in [false, true] {

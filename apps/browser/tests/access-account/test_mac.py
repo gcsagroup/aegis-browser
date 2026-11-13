@@ -77,6 +77,43 @@ class NativeQuery(unittest.TestCase):
         p = subprocess.run([self.driver, profile], check=True, capture_output=True, timeout=15)
         return json.loads(p.stdout)
 
+    def test_node_delivery_separate_private_authorization_and_confused_account(self):
+        issued = []
+        class Authority(BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_POST(self):
+                if self.path != "/v1/me/node-credentials": self.send_error(404); return
+                payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                token = self.headers.get("Authorization")
+                issued.append((payload, token))
+                cid = str(uuid4())
+                # Synthetic credentials used only by the local test fixture.
+                result = dict(payload, accountId="B" if token == "Bearer private-B" else "A",  # nosec B105
+                              # Synthetic credentials used only by the local test fixture.
+                              periodId="cycle", credentialId=cid, username=cid, password="test_secret",  # nosec B106
+                              host="node.example", port=443, expiresAt=int(time.time()*1000)+60000)
+                self.send_response(200); self.end_headers()
+                self.wfile.write(json.dumps(result).encode())
+            def do_DELETE(self):
+                self.send_response(204); self.end_headers()
+        origin = self.serve(ThreadingHTTPServer(("127.0.0.1", 0), Authority))
+        self.bind(self.a, origin=origin)
+        def issue(mode, binding=None):
+            # Fixed local test program and fixture arguments; shell execution is disabled.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            return subprocess.run([self.driver, self.a, "--node-"+mode], check=True, timeout=14,  # nosec B603
+                                  input=json.dumps(binding).encode() if binding else b"",
+                                  capture_output=True).stdout.strip()
+        self.assertEqual(issue("regular"), b"assigned")
+        self.assertEqual(issue("private"), b"unavailable")
+        # Synthetic credentials used only by the local test fixture.
+        self.assertEqual(issue("private", dict(origin=origin, accountId="B", token="private-B")), b"assigned")  # nosec B106
+        # Synthetic credentials used only by the local test fixture.
+        self.assertEqual(issue("private", dict(origin=origin, accountId="B", token="test-A")), b"unavailable")  # nosec B106
+        self.assertEqual([(p["mode"], t) for p,t in issued], [
+            ("regular","Bearer test-A"), ("private","Bearer private-B"), ("private","Bearer test-A")])
+        self.assertNotEqual(issued[0][0]["contextId"], issued[1][0]["contextId"])
+
     def test_service_two_profiles_signout_and_revocation(self):
         self.bind(self.a)
         self.bind(self.b, "B")

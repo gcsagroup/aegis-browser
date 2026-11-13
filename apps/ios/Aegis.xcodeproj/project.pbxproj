@@ -39,6 +39,7 @@
 		13B54E21C3763A114F93CFD4 /* AccessSiteProxyToggleModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2E3ECA8DE63818F6343B787 /* AccessSiteProxyToggleModelTests.swift */; };
 		1519DBFC5053B6B1BF38F8E6 /* PageProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8B2AA0F3D4460E567A3A15 /* PageProtection.swift */; };
 		1574320BAEC61DF0AC8936C0 /* BrowserPreferenceViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A516AD15208D05CCF03B38F1 /* BrowserPreferenceViews.swift */; };
+		15AAC7C536A6BAE7778AD3FA /* AccessAccountAlphaLiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7D543F457696D3C64AD9ACC /* AccessAccountAlphaLiveTests.swift */; };
 		15E3622E2DBBE73D2D534790 /* AccessDiagnosticLogStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E15216C715019288D968C9 /* AccessDiagnosticLogStorage.swift */; };
 		160A6A7262204A8BDA6C708D /* DownloadPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 614955B474654A3F4433E4DA /* DownloadPlan.swift */; };
 		180B90BB6A48239F7984C179 /* AccessMutexGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C669CC4428605B9AB83C2A36 /* AccessMutexGate.swift */; };
@@ -843,6 +844,7 @@
 		E5C4DC2D4E8DAF8DC3CF5F56 /* AccessSitePhase1EvidenceFaultRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceFaultRequirement.swift; sourceTree = "<group>"; };
 		E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalPageLinkTests.swift; sourceTree = "<group>"; };
 		E78E3F01D2FB48ECD1891483 /* DownloadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadsView.swift; sourceTree = "<group>"; };
+		E7D543F457696D3C64AD9ACC /* AccessAccountAlphaLiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessAccountAlphaLiveTests.swift; sourceTree = "<group>"; };
 		E890B59015A8290C7BBCCF94 /* AccessEmbeddedProxyEntryFactoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedProxyEntryFactoryTests.swift; sourceTree = "<group>"; };
 		E92FE4B9A1A0E18625D0852C /* icon-48.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "icon-48.png"; sourceTree = "<group>"; };
 		E9FEB0F63DCDE63F4E31B1C3 /* th */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = th; path = th.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -1061,6 +1063,7 @@
 			isa = PBXGroup;
 			children = (
 				789DBC11D29E8FC6E27A6E04 /* AccessAccountAlphaEntitlementTests.swift */,
+				E7D543F457696D3C64AD9ACC /* AccessAccountAlphaLiveTests.swift */,
 				8F492483D61E614EB09A519C /* AccessAccountRefreshTests.swift */,
 				DC56926562D9076C19AFB2B2 /* AccessAccountSessionTests.swift */,
 				5F62B80D46D679DE30F6D623 /* AccessAccountUsagePresentationTests.swift */,
@@ -2163,6 +2166,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5AF4B4487C9525D8DEF2481F /* AccessAccountAlphaEntitlementTests.swift in Sources */,
+				15AAC7C536A6BAE7778AD3FA /* AccessAccountAlphaLiveTests.swift in Sources */,
 				3159DBCEF8A402E752A24D79 /* AccessAccountRefreshTests.swift in Sources */,
 				11175DC8D8D663BC399078E1 /* AccessAccountSessionTests.swift in Sources */,
 				E92F333554827583B328E2E2 /* AccessAccountUsagePresentationTests.swift in Sources */,

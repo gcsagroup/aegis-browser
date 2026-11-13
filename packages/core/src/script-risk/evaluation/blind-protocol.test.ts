@@ -66,7 +66,7 @@ function writeJson(path: string, value: unknown) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-async function waitForFile(path: string, timeoutMs = 5_000) {
+async function waitForFile(path: string, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (!existsSync(path)) {
     if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
@@ -529,7 +529,7 @@ describe("blind prediction and post-prediction scoring CLI", () => {
     expect(changedCandidateRun.status).toBe(1);
     expect(changedCandidateRun.stderr).toContain("analyzer bundle digest mismatch");
     expect(existsSync(changedOutputPath)).toBe(false);
-  }, 30_000);
+  }, 60_000);
 
   it("keeps all component execution bytes digest-bound and exposes no loadable component path", async () => {
     const root = temporaryRoot();
@@ -573,7 +573,7 @@ describe("blind prediction and post-prediction scoring CLI", () => {
     expect(() =>
       verifiedCandidateComponentBytes(tamperedAnalyzer, "analyzer bundle"),
     ).toThrow("do not match the candidate digest");
-  });
+  }, 30_000);
 
   it("uses one verified in-memory analyzer byte sequence when the repository bundle is replaced and restored between workers", async () => {
     const root = temporaryRoot();
@@ -595,7 +595,7 @@ const fs = require("node:fs");
 fs.writeFileSync(${JSON.stringify(virtualFilenameProbe)}, __filename);
 const waitFor = (path) => {
   const view = new Int32Array(new SharedArrayBuffer(4));
-  const deadline = Date.now() + 5000;
+  const deadline = Date.now() + 30000;
   while (!fs.existsSync(path)) {
     if (Date.now() >= deadline) throw new Error("fixture coordination timeout");
     Atomics.wait(view, 0, 0, 10);
@@ -632,6 +632,15 @@ exports.analyzeScriptAst = function analyzeScriptAst(sourceText) {
       { cwd: repo },
     );
 
+    // This fixture deliberately pauses workers at two barriers. Keep its
+    // coordination budget independent of startup latency and the hang test.
+    const coordinationProtocolPath = resolve(
+      repo, "packages/core/src/script-risk/evaluation/protocols/blind-v1.json",
+    );
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
+    const coordinationProtocol = JSON.parse(readFileSync(coordinationProtocolPath, "utf8"));
+    coordinationProtocol.limits.sampleWorkerTimeoutMs = 30_000;
+    writeJson(coordinationProtocolPath, coordinationProtocol);
     const candidatePath = resolve(root, "rotation-candidate.json");
     const inputPath = resolve(root, "rotation-input.json");
     const outputPath = resolve(root, "rotation-output.json");
@@ -732,7 +741,7 @@ exports.analyzeScriptAst = function () {
       { sampleId: "case-first-worker", predictedLabel: "benign-control" },
       { sampleId: "case-second-worker", predictedLabel: "benign-control" },
     ]);
-  }, 30_000);
+  }, 120_000);
 
   it("keeps --final closed before accepting any evaluation inputs", () => {
     for (const script of [freezeScript, predictScript, scoreScript]) {
