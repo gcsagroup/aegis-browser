@@ -138,8 +138,8 @@ struct AegisApp: App {
             if phase == .background { Task { try? await AccessDiagnosticLog.shared.flush() } }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            if phase == .active { accountSession.refresh() }
-            else { accountSession.suspend() }
+            accountSession.usageRefresh.setActive(phase == .active)
+            if phase != .active { accountSession.suspend() }
         }
     }
 

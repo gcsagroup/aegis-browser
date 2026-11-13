@@ -39,6 +39,12 @@ def _response(account, usage, now):
     quota = usage["quota_bytes"]
     up, down = usage["uploaded_bytes"], usage["downloaded_bytes"]
     expiry = usage["expires_at"]
+    if "quota_source" in usage.keys() and usage["quota_source"] == "3xui_alpha":
+        result.update(quotaSource="3xui_alpha",
+                      panelExpiryMode="none" if expiry == 0 else "absolute",
+                      panelExpiresAt=None if expiry == 0 else expiry)
+        # A panel without an expiry never grants an unbounded local authorization.
+        expiry = account["period_end"] if expiry == 0 else min(account["period_end"], expiry)
     used = up + down
     if now >= min(account["period_end"], expiry):
         status = "expired"

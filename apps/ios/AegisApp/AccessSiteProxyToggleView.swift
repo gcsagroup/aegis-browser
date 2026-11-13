@@ -10,6 +10,8 @@ struct AccessSiteProxyToggleView: View {
     @ObservedObject var store: AccessSiteProxySessionStore
     let url: URL?
     var tab: BrowserTab?
+    @State private var configuredNodeID: String?
+    @State private var didLoadNodeSummary = false
 
     @EnvironmentObject private var account: AccessAccountSession
     @State private var authorizing = false
@@ -32,7 +34,35 @@ struct AccessSiteProxyToggleView: View {
     var body: some View {
         let _ = localizationLocale
         let snap = snapshot
+        let capability = AccessProxyCapabilityPresentation.make(
+            nodeID: configuredNodeID,
+            attached: attachment != .notAttached,
+            entryReady: attachment == .ready
+        )
         Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("网站级代理，页面内第三方资源随页面连接；不是全设备 VPN。")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("access-proxy-capability")
+                LabeledContent {
+                    if let nodeID = capability.configuredNodeID {
+                        Text(verbatim: nodeID).font(.footnote.monospaced())
+                    } else {
+                        Text("未找到可用节点配置")
+                    }
+                } label: { Text("已配置节点（匿名标识）") }
+                .accessibilityIdentifier("access-proxy-configured-node")
+                if capability.configuredNodeID != nil {
+                    Text(verbatim: "VLESS · TCP · REALITY · Vision")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Text(verbatim: AegisLocalization.string(capability.routeText))
+                    .font(.footnote)
+                    .accessibilityIdentifier("access-proxy-page-route")
+                Text("节点标识仅代表本地配置，不证明远端已连接，也不证明与面板查询账户对应。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             if let host = snap.host {
                 Text(host.rawValue)
                     .font(.headline)
@@ -174,6 +204,14 @@ struct AccessSiteProxyToggleView: View {
                 .font(.footnote)
             Text(AccessAutoRecoveryCopy.scopeWarning)
                 .font(.footnote)
+        }
+        .task {
+            guard !didLoadNodeSummary else { return }
+            didLoadNodeSummary = true
+            // Read once per presentation, outside body and off the UI executor.
+            configuredNodeID = await Task.detached(priority: .utility) {
+                AccessProxyCapabilityPresentation.configuredNodeID()
+            }.value
         }
     }
 }

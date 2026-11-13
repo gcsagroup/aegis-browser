@@ -28,11 +28,14 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
             let bundle = try XCTUnwrap(Bundle(url: dir))
             let path = AccessLocalV2RayConfigLoader.productPath(bundle: bundle, environment: environment)
             switch channel {
-            case "alpha", "beta":
+            case "alpha":
                 let config = try AccessLocalV2RayConfigLoader.load(path: XCTUnwrap(path))
                 XCTAssertEqual(config.parameters.address, "198.51.100.10")
             case "dev":
                 XCTAssertEqual(path, dev)
+                let bundled = AccessLocalV2RayConfigLoader.productPath(bundle: bundle, environment: [:])
+                let config = try AccessLocalV2RayConfigLoader.load(path: XCTUnwrap(bundled))
+                XCTAssertEqual(config.parameters.address, "198.51.100.10")
             default:
                 XCTAssertNil(path, channel)
             }
@@ -48,6 +51,14 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
         XCTAssertEqual(parameters.publicKey, "abcdefghijklmnopqrstuvwxyzABCDEFG")
         XCTAssertEqual(parameters.shortID, "abcd1234")
         XCTAssertEqual(parameters.fingerprint, "chrome")
+    }
+
+    func testExplicitEmptyShortIDAndSpiderPath() throws {
+        let uri = sampleShareURI.replacingOccurrences(of: "sid=abcd1234", with: "sid=&spx=%2Fexample")
+        let parameters = try AccessLocalV2RayConfigLoader.parseShareURI(uri)
+        XCTAssertEqual(parameters.shortID, "")
+        XCTAssertEqual(parameters.spiderX, "/example")
+        XCTAssertThrowsError(try AccessLocalV2RayConfigLoader.parseShareURI(uri.replacingOccurrences(of: "&sid=", with: "")))
     }
 
     func testParsesShareURIWithEmptyEncryptionQuery() throws {

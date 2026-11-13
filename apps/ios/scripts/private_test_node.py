@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 def install(channel, source, output):
     output.unlink(missing_ok=True)
-    if channel not in ('alpha', 'beta') or source == '/dev/null':
+    if channel not in ('dev', 'alpha') or source == '/dev/null':
         return
     # A build setting contains only a path. Never include file contents in errors.
     with open(source, 'rb') as stream:

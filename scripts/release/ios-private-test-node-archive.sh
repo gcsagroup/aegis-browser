@@ -3,8 +3,8 @@
 set +x
 set -euo pipefail
 case "${1:-}" in
-  alpha|beta) channel=$1; shift ;;
-  *) echo "Private test-node builds require alpha or beta." >&2; exit 2 ;;
+  dev|alpha) channel=$1; shift ;;
+  *) echo "Private test-node builds require dev or alpha." >&2; exit 2 ;;
 esac
 node_uri=${AEGIS_ACCESS_TEST_NODE_URI:?Set the private test-node URI in the protected environment}
 unset AEGIS_ACCESS_TEST_NODE_URI

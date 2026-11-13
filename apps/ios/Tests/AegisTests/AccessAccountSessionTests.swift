@@ -314,7 +314,8 @@ final class AccessAccountSessionTests: XCTestCase {
         await account.bind(accountID: try XCTUnwrap(env["AEGIS_S3_ID"]), token: try XCTUnwrap(env["AEGIS_S3_TOKEN"]))?.value
         let first = account.selectProxy(for: tab, host: host, privateMode: false)
         try await waitForHeldIssuance(gate)
-        await account.refresh()?.value
+        let reselected = await account.selectProxy(for: tab, host: host, privateMode: false).value
+        XCTAssertTrue(reselected)
         let replacement = try await account.downloadSession(for: tab, privateMode: false, target: target, downloadDelegate: downloads)
         let staleAccepted = await first.value
         XCTAssertFalse(staleAccepted)
@@ -393,6 +394,33 @@ final class AccessAccountSessionTests: XCTestCase {
             _ = try await account.downloadSession(for: privateTab, privateMode: true, target: target, downloadDelegate: downloads)
             XCTFail("Private bearer survived sign-out")
         } catch AccountQueryError.unauthorized { }
+    }
+
+    func testSignedOutQuotaPollingPreservesIndependentPrivateDownload() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let origin = env["AEGIS_S3_ORIGIN"] else { throw XCTSkip("Start the managed TLS CONNECT/Xray fixture") }
+        let target = try XCTUnwrap(env["AEGIS_S3_SLOW_URL"].flatMap(URL.init(string:)))
+        let account = AccessAccountSession(client: try AccessAccountClient(origin: origin, allowSimulatorLoopback: true),
+                                           keychain: isolatedStore())
+        let downloads = DownloadManager(directory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                        background: false)
+        defer { account.signOut(); try? FileManager.default.removeItem(at: downloads.directory) }
+        try await waitUntil { downloads.isReady }
+        let tab = UUID()
+        let selected = await account.selectProxy(for: tab, host: try XCTUnwrap(target.host), privateMode: true,
+            privateAccount: try XCTUnwrap(env["AEGIS_S3_ID"]), privateToken: try XCTUnwrap(env["AEGIS_S3_TOKEN"])).value
+        XCTAssertTrue(selected)
+        let transport = try await account.downloadSession(for: tab, privateMode: true, target: target, downloadDelegate: downloads)
+        let transfer = try downloads.start(.init(urls: [target]), accessSession: transport)
+        try await waitUntil { downloads.items.contains { $0.id == transfer && $0.received > 0 } }
+        for _ in 0..<3 { await account.refresh()?.value }
+        XCTAssertEqual(account.state, .signedOut)
+        let retained = try await account.downloadSession(for: tab, privateMode: true, target: target, downloadDelegate: downloads)
+        XCTAssertTrue(retained === transport)
+        XCTAssertEqual(downloads.items.first { $0.id == transfer }?.state, .running)
+        account.signOut()
+        XCTAssertThrowsError(try downloads.start(.init(urls: [target]), accessSession: transport))
+        try await waitUntil { downloads.items.contains { $0.id == transfer && [.failed, .cancelled].contains($0.state) } }
     }
 
     func testQueuedProtectedDownloadsKeepOnlyTheirLiveAuthorization() async throws {

@@ -134,7 +134,8 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             host: host,
             isPrivate: tab.profile.isPrivate
         )
-        let intentOn = intents[key] == .on
+        let inherited = tab.boundHostName == host.rawValue && tab.proxyLandingParent != nil
+        let intentOn = intents[key] == .on || inherited
         let attachment = attachment(tab: tab, host: host)
         var snapshot = AccessSiteProxyToggleSnapshot()
         snapshot.hasTrustedSite = true
@@ -193,6 +194,19 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         return snapshot
     }
 
+    /// Preflight body-less writes before touching the registry or releasing the live document.
+    func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool {
+        guard let host = try? AccessSiteHost.normalize(url.host ?? "") else { return tab.boundHostName != nil }
+        let key = AccessHostStoreKey(scopeID: tab.browsingScopeID, host: host, isPrivate: tab.profile.isPrivate)
+        let bound = tab.boundHostName == host.rawValue
+        let intent = routeIntent(key: key, boundToTarget: bound, tabID: tab.instanceID.uuidString)
+        if bound {
+            return intent != .on && tab.parentForProxyLanding(url) == nil
+        }
+        if tab.boundHostName != nil { return true }
+        return intent == .on && registry.endpoint(scopeID: key.scopeID, host: host, isPrivate: key.isPrivate)?.state == .ready
+    }
+
     func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore? {
         guard !tab.isDisposed else { return nil }
         guard let host = try? AccessSiteHost.normalize(url.host ?? "") else { return nil }
@@ -202,17 +216,34 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             isPrivate: tab.profile.isPrivate
         )
         let bound = tab.boundHostName.flatMap { try? AccessSiteHost($0) }
+        var intent = routeIntent(key: key, boundToTarget: bound == host, tabID: tab.instanceID.uuidString)
+        if let rawParent = tab.parentForProxyLanding(url), let parent = try? AccessSiteHost(rawParent) {
+            let source = AccessHostStoreKey(scopeID: key.scopeID, host: parent, isPrivate: key.isPrivate)
+            let sourceAuthorized = intents[source] == .on ||
+                (executingTabs[tab.instanceID.uuidString] == source && groupStillLists(source))
+            let independentReady = intent == .on &&
+                registry.endpoint(scopeID: key.scopeID, host: host, isPrivate: key.isPrivate)?.state == .ready
+            if !independentReady && intents[key] != .off && sourceAuthorized {
+                if bound != host {
+                    // Refuse before storeForTab can unbind the currently displayed document.
+                    guard let bound, let endpoint = registry.endpoint(scopeID: key.scopeID, host: bound, isPrivate: key.isPrivate),
+                          endpoint.state == .ready else { return nil }
+                    registry.setEndpoint(endpoint, scopeID: key.scopeID, host: host, isPrivate: key.isPrivate)
+                }
+                // Once attached, the child store keeps its generation even if the idle
+                // root store is evicted. A failed bound generation stays fail-closed.
+                intent = .on
+            } else if intents[key] == .off || !sourceAuthorized {
+                tab.clearProxyLanding()
+            }
+        }
         return registry.storeForTab(
             tabID: tab.instanceID.uuidString,
             scopeID: tab.browsingScopeID,
             isPrivate: tab.profile.isPrivate,
             targetHost: host,
             boundHost: bound,
-            intent: routeIntent(
-                key: key,
-                boundToTarget: bound == host,
-                tabID: tab.instanceID.uuidString
-            )
+            intent: intent
         )
     }
 
@@ -404,6 +435,10 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         isPrivate: Bool
     ) -> Bool {
         let key = AccessHostStoreKey(scopeID: scopeID, host: host, isPrivate: isPrivate)
+        if BrowserSession.openTabs().contains(where: {
+            $0.browsingScopeID == scopeID && $0.profile.isPrivate == isPrivate &&
+                $0.boundHostName == host.rawValue && $0.proxyLandingParent != nil
+        }) { return true }
         if intents[key] == .on { return true }
         if executing.contains(key) { return true }
         if executingTabs.values.contains(key) { return true }
@@ -788,7 +823,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
 
     private func applySharedState(_ endpoint: AccessManagedProxyEndpoint) {
         guard endpoint.state == .failed else { return }
-        for (key, current) in registryEndpoints() where current.identity == endpoint.identity && current.generation == endpoint.generation {
+        for (key, current) in registry.endpointSnapshot where current.identity == endpoint.identity && current.generation == endpoint.generation {
             registry.setEndpoint(
                 endpoint,
                 scopeID: key.scopeID,
@@ -808,30 +843,6 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             lastRecoveryFailure = AccessAutoRecoveryCopy.unavailable
         }
         revision &+= 1
-    }
-
-    private func registryEndpoints() -> [AccessHostStoreKey: AccessManagedProxyEndpoint] {
-        var found: [AccessHostStoreKey: AccessManagedProxyEndpoint] = [:]
-        for key in intents.keys {
-            if let endpoint = registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate) {
-                found[key] = endpoint
-            }
-        }
-        // Include hosts that are only authorized by an auto-recovery group.
-        for key in executing {
-            if found[key] != nil { continue }
-            if let endpoint = registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate) {
-                found[key] = endpoint
-            }
-        }
-        for operation in operations.values where operation.authorization != nil {
-            let key = operation.key
-            if found[key] != nil { continue }
-            if let endpoint = registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate) {
-                found[key] = endpoint
-            }
-        }
-        return found
     }
 
     private func publishGroup(
@@ -948,7 +959,16 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
         registry.setProxyEnabled(false, scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate)
         let bound = registry.revoke(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate)
         publisher.release(for: key)
-        for tab in BrowserSession.openTabs() where bound.contains(tab.instanceID.uuidString) {
+        for tab in BrowserSession.openTabs() where bound.contains(tab.instanceID.uuidString)
+            || (tab.browsingScopeID == key.scopeID && tab.profile.isPrivate == key.isPrivate
+                && tab.proxyLandingParent == key.host.rawValue) {
+            if tab.proxyLandingParent == key.host.rawValue, let rawHost = tab.boundHostName,
+               let host = try? AccessSiteHost(rawHost), host != key.host {
+                tab.clearProxyLanding()
+                let landing = AccessHostStoreKey(scopeID: key.scopeID, host: host, isPrivate: key.isPrivate)
+                if intents[landing] == .on || executingTabs[tab.instanceID.uuidString] == landing { continue }
+            }
+            registry.unbind(tab.instanceID.uuidString)
             if executingTabs[tab.instanceID.uuidString] == key {
                 executingTabs.removeValue(forKey: tab.instanceID.uuidString)
             }

@@ -44,6 +44,58 @@ For controlled, timestamped source snapshots, run the same command with
 In panel mode every subscribed query reads the panel and rechecks the Aegis
 session and plan after the response. A failed read returns 503.
 
+## Explicit Alpha single-client panel adapter
+
+The default remains strict: a finite quota, absolute positive panel expiry and
+no automatic traffic resets are required. To read an operator-approved Alpha
+client whose panel `expiryTime` is zero, explicitly supply
+`--alpha-panel-client <email>` together with `--panel-url`. This option cannot
+be combined with `--stored-snapshots` or `--sandbox-orders`.
+
+```sh
+# Supply PANEL_URL and ALPHA_CLIENT through the operator's private configuration.
+# AEGIS_3XUI_TOKEN stays in the service environment/secret manager, not source or logs.
+python3 -m services.access_account.server --database accounts.sqlite --port 8787 \
+  --panel-url "${PANEL_URL:?}" --alpha-panel-client "${ALPHA_CLIENT:?}"
+```
+
+The explicit Alpha client may use the panel's `never` or `daily` traffic reset
+policy. Daily readings show that client's current panel counters, including a
+legitimate decrease after its scheduled reset. Measurement time remains unknown.
+The ordinary finite-period adapter still requires `never`.
+
+Only the exact configured client is readable: an authenticated plan bound to any
+other client fails with 503 **before any panel HTTP request**. There is no list,
+search, fallback, or main-account query. Bind the approved client in the private
+account database; the caller cannot select a client using request parameters.
+Invalid Aegis sessions return 401 without querying the panel. A panel credential
+failure or unreadable panel response returns 503, not a cached success. The
+session and plan are still rechecked after the panel response.
+
+Alpha accepts `expiryTime=0` only as **no panel expiry**, not permanent service
+authorization. Its `expiresAt` remains positive and equals the local `periodEnd`.
+For positive panel expiry it equals `min(periodEnd, panel expiry)`. Local period
+expiry takes precedence over quota exhaustion. Negative relative expiries,
+unlimited `totalGB=0`, invalid counters, unsupported reset policies and manually disabled
+clients remain rejected (a disabled exhausted/expired client can still report
+that terminal status, as in strict mode). `totalGB` is already bytes: for example
+`1000000000` is returned as the decimal string `"1000000000"`, without conversion.
+
+A subscribed Alpha response adds all three fields:
+
+- `quotaSource: "3xui_alpha"`
+- `panelExpiryMode: "none" | "absolute"`
+- `panelExpiresAt: null | <positive UTC Unix milliseconds>`
+
+`not_subscribed` and all strict-mode responses retain the original schema and do
+not add those fields. Alpha still reports `measuredAt=null`, `snapshotAgeMs=null`
+and `freshness="unavailable"`: a successful read is not a measurement watermark.
+This is a read-only panel observation, **not a real-time usage ledger, idempotent
+settlement, node authorization or hard quota enforcement**. Existing cumulative
+traffic is not reset or relabeled as newly measured period consumption. Keep its
+original account/period binding. Deployment, HTTPS exposure and any real-node
+operations need separate authorization.
+
 ## Controlled native sessions
 
 On macOS the trusted `chrome://aegis` operation `getCurrentAccessAccount`

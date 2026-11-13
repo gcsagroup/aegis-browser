@@ -48,23 +48,49 @@ struct AccessAccountKeychain {
     }
 }
 
-/// Application-wide current identity. Every refresh, switch and sign-out invalidates earlier responses.
+/// Application-wide identity with single-flight reads. Identity changes invalidate earlier responses.
 @MainActor
 final class AccessAccountSession: ObservableObject {
     enum State: Equatable { case signedOut, loading, unavailable, ready(AccessAccountEntitlement) }
     @Published private(set) var state: State = .signedOut
+    @Published private(set) var lastSnapshot: AccessAccountEntitlement?
+    /// Receipt anchor only; never a substitute for the server's measurement watermark.
+    @Published private(set) var snapshotReceivedUptime: TimeInterval?
+    /// Request start conservatively includes network and MainActor delivery time.
+    /// Invalid or regressing timing makes freshness unavailable, never newer.
+    @Published private(set) var snapshotFreshnessAnchorUptime: TimeInterval?
+    @Published private(set) var isRefreshing = false
+    /// Query validity only. The UI must separately age the server's freshness metadata.
+    var snapshotIsStale: Bool {
+        guard lastSnapshot != nil else { return false }
+        if case .ready = state { return false }
+        return true
+    }
     var supportsAccountAuthorization: Bool { client != nil }
     private let client: AccessAccountClient?
     private let keychain: AccessAccountKeychain
+    private let uptime: () -> TimeInterval
     private let fetch: @Sendable (AccessAccountClient, AccessAccountCredential) async throws -> AccessAccountEntitlement
     private var grants: [UUID: AccessTabGrant] = [:]
     private var generation = UUID()
     private var task: Task<Void, Never>?
+    private var currentCredential: AccessAccountCredential?
+    lazy var usageRefresh = AccessAccountUsageRefreshCoordinator(refresh: { [weak self] in
+        self?.refresh()
+    })
+
+    convenience init(client: AccessAccountClient?, keychain: AccessAccountKeychain = .init(),
+                     fetch: @escaping @Sendable (AccessAccountClient, AccessAccountCredential) async throws -> AccessAccountEntitlement = { try await $0.read($1) }) {
+        self.init(client: client, keychain: keychain,
+                  uptime: { ProcessInfo.processInfo.systemUptime }, fetch: fetch)
+    }
 
     init(client: AccessAccountClient?, keychain: AccessAccountKeychain = .init(),
+         uptime: @escaping () -> TimeInterval,
          fetch: @escaping @Sendable (AccessAccountClient, AccessAccountCredential) async throws -> AccessAccountEntitlement = { try await $0.read($1) }) {
         self.client = client
         self.keychain = keychain
+        self.uptime = uptime
         self.fetch = fetch
     }
 
@@ -91,10 +117,16 @@ final class AccessAccountSession: ObservableObject {
     }
 
     func suspend() {
+        usageRefresh.identityDidChange()
         for grant in grants.values { grant.invalidate(client: client) }
         generation = UUID()
         task?.cancel()
         task = nil
+        isRefreshing = false
+        currentCredential = nil
+        lastSnapshot = nil
+        snapshotReceivedUptime = nil
+        snapshotFreshnessAnchorUptime = nil
         state = .signedOut
     }
 
@@ -125,30 +157,80 @@ final class AccessAccountSession: ObservableObject {
 
     @discardableResult
     func refresh() -> Task<Void, Never>? {
-        suspend()
         do {
-            guard let credential = try keychain.read() else { return nil }
+            guard let credential = try keychain.read() else {
+                // Repeated signed-out quota reads do not end an independent private grant.
+                if currentCredential != nil { suspend() }
+                else { state = .signedOut }
+                return nil
+            }
             guard let client, credential.valid, client.endpoint.absoluteString == credential.endpoint else {
                 throw AccountQueryError.invalid
             }
+            if currentCredential != credential {
+                suspend()
+                currentCredential = credential
+            }
+            // A slow request survives repeated foreground/UI refresh triggers.
+            if let task { return task }
+            generation = UUID()
             let generation = generation
+            let requestStartedUptime = uptime()
             state = .loading
+            isRefreshing = true
             task = Task {
+                defer {
+                    // A cancelled old read must not clear a newer identity's in-flight task.
+                    if self.generation == generation {
+                        self.task = nil
+                        self.isRefreshing = false
+                    }
+                }
                 do {
                     let result = try await fetch(client, credential)
                     guard self.generation == generation else { return }
-                    guard try keychain.read() == credential else { state = .unavailable; return }
+                    guard revalidateIdentity(credential) else { return }
                     try result.validate(for: credential.accountID)
+                    lastSnapshot = result
+                    let receivedUptime = uptime()
+                    snapshotReceivedUptime = receivedUptime
+                    snapshotFreshnessAnchorUptime = requestStartedUptime.isFinite && requestStartedUptime >= 0
+                        && receivedUptime.isFinite && receivedUptime >= requestStartedUptime
+                        ? requestStartedUptime : nil
                     state = .ready(result)
+                    usageRefresh.didComplete(succeeded: true)
                 } catch {
                     guard self.generation == generation else { return }
-                    if case AccountQueryError.unauthorized = error,
-                       (try? keychain.read()) == credential { signOut() }
-                    else { state = .unavailable }
+                    guard revalidateIdentity(credential) else { return }
+                    if case AccountQueryError.unauthorized = error { signOut() }
+                    else {
+                        state = .unavailable
+                        usageRefresh.didComplete(succeeded: false)
+                    }
                 }
             }
-        } catch { state = .unavailable }
+        } catch {
+            // Unknown Keychain identity is not an HTTP outage: discard every old number.
+            suspend()
+            state = .unavailable
+            usageRefresh.didComplete(succeeded: false)
+        }
         return task
+    }
+
+    private func revalidateIdentity(_ credential: AccessAccountCredential) -> Bool {
+        do {
+            guard try keychain.read() == credential else {
+                suspend()
+                state = .unavailable
+                return false
+            }
+            return true
+        } catch {
+            suspend()
+            state = .unavailable
+            return false
+        }
     }
 }
 
@@ -201,9 +283,9 @@ extension AccessAccountSession {
                 AccessAccountCredential(accountID: privateAccount, token: privateToken, endpoint: $0.endpoint.absoluteString)
             } : nil)
         grants[tab] = grant
-        let selectedGeneration = generation
+        let selectedEpoch = grant.epoch
         return Task {
-            guard generation == selectedGeneration else { return false }
+            guard grants[tab] === grant, grant.epoch == selectedEpoch else { return false }
             do { _ = try await prepare(grant, tab: tab); return true }
             catch { return false }
         }
