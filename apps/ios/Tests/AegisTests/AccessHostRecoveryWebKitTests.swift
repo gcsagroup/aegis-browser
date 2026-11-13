@@ -142,7 +142,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
     }
 
     func testFailedEndpointKeepsTheProxyAndDisallowsDirectFailover() async throws {
-        let opener = AnsweringOpener()
+        let opener = AnsweringOpener(body: "<html><body>proxy ready</body></html>")
         let listener = try await makeListener(port: 18_242, tunnels: opener)
         try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
         defer { try? listener.stop() }
@@ -167,7 +167,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
                 window.addSubview(tab.webView)
                 window.makeKeyAndVisible()
             }
-            return opener.transcript.contains("GET /kept")
+            return opener.transcript.contains("GET /kept") && !tab.isLoading
         }, message: "proxy=\(opener.transcript) loads=\(tab.recoveryLoadCount) loading=\(tab.isLoading) failure=\(coordinator.lastRecoveryFailure ?? "") error=\(tab.loadingError ?? "")")
         let host = try AccessSiteHost("example.invalid")
         let store = try XCTUnwrap(coordinator.registry.storeForTab(
@@ -197,11 +197,15 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         // A failed health state retains the existing proxy route. WebKit may
         // still send through that proxy or report its failure; neither result
         // may replace this store or enable DIRECT fallback.
-        try await waitUntil({ !tab.isLoading }, message: opener.transcript)
         XCTAssertEqual(tab.requestedURL, nextURL)
         XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertEqual(store.proxyConfigurations.count, before)
         XCTAssertFalse(store.proxyConfigurations.isEmpty)
+        XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
+        try await waitUntil({
+            opener.transcript.contains("GET /again?n=\(nonce)") || !tab.isLoading
+        }, message: opener.transcript)
+        XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
     }
 
