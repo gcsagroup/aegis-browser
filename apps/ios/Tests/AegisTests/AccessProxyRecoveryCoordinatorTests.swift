@@ -1,5 +1,6 @@
 import AccessKit
 @testable import BrowserKit
+import UIKit
 import WebKit
 import XCTest
 @testable import Aegis
@@ -94,6 +95,68 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         XCTAssertEqual(sibling.recoveryLoadCount, 1)
         XCTAssertEqual(sibling.addressBarURL, target)
         XCTAssertTrue(store.proxyConfigurations.isEmpty)
+    }
+
+    func testDisablingParentKeepsInheritedLandingProxyUntilItsDocumentIsInert() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_291) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher)
+        let parent = try AccessSiteHost("example.invalid")
+        let landing = try AccessSiteHost("www.example.invalid")
+        let tab = try committedTab(coordinator: coordinator, url: "https://example.invalid/start")
+        try await tab.prepareContentRulesForTests()
+        let scope = tab.browsingScopeID
+        let key = AccessHostStoreKey(scopeID: scope, host: parent, isPrivate: false)
+        let operation = UUID()
+        let prepared = try await publisher.prepare(.init(operationID: operation, deadline: .seconds(15)))
+        XCTAssertTrue(publisher.retain(prepared.endpoint, for: key))
+        publisher.cancel(operationID: operation)
+        coordinator.setProxyEnabled(true, host: parent, scopeID: scope, isPrivate: false)
+        coordinator.registry.setEndpoint(prepared.endpoint, scopeID: scope, host: parent, isPrivate: false)
+        let parentStore = try XCTUnwrap(coordinator.dataStoreForMainFrame(tab: tab, url: URL(string: "https://example.invalid/start")!))
+        tab.rebindWebsiteDataStore(parentStore, host: parent.rawValue)
+        var initialViewInert = false
+        tab.afterCurrentDocumentBecomesInert { initialViewInert = true }
+        await settle(seconds: 5) { initialViewInert }
+        XCTAssertTrue(initialViewInert)
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let parentView = tab.webView
+        parentView.frame = window.bounds
+        window.addSubview(parentView)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let target = URL(string: "https://www.example.invalid/landing")!
+        var parentViewInert = false
+        tab.afterCurrentDocumentBecomesInert { parentViewInert = true }
+        XCTAssertNotNil(parentView.load(URLRequest(url: target)))
+        await settle(seconds: 8) { tab.boundHostName == landing.rawValue && parentViewInert }
+        XCTAssertTrue(parentViewInert)
+        XCTAssertEqual(tab.proxyLandingParent, parent.rawValue)
+        XCTAssertEqual(tab.boundHostName, landing.rawValue)
+        let childStore = tab.websiteDataStore
+        XCTAssertFalse(childStore === parentStore)
+        let childView = tab.webView
+        childView.frame = window.bounds
+        window.addSubview(childView)
+
+        var childViewInert = false
+        tab.afterCurrentDocumentBecomesInert { childViewInert = true }
+        coordinator.setProxyEnabled(false, host: parent, scopeID: scope, isPrivate: false)
+        coordinator.releaseIdleResources()
+        XCTAssertFalse(childViewInert)
+        XCTAssertEqual(childStore.proxyConfigurations.count, 1)
+        XCTAssertFalse(childStore.proxyConfigurations.first?.allowFailover ?? true)
+        XCTAssertNil(tab.proxyLandingParent)
+        XCTAssertNil(tab.boundHostName)
+        XCTAssertTrue(tab.websiteDataStore === tab.originalWebsiteDataStore)
+        XCTAssertNil(childView.load(URLRequest(url: target)))
+
+        await settle(seconds: 8) { childViewInert }
+        XCTAssertTrue(childViewInert)
+        coordinator.releaseIdleResources()
+        XCTAssertTrue(childStore.proxyConfigurations.isEmpty)
+        XCTAssertNil(publisher.currentEndpoint)
     }
 
     func testLandingConsumerSurvivesParentEvictionAndReleasesAfterClose() async throws {
