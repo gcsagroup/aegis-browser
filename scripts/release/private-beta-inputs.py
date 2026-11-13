@@ -1,6 +1,7 @@
 """Stage protected Beta inputs and require their exact presence in the exported IPA."""
 import argparse
 import base64
+import http.client
 import importlib.util
 import json
 import os
@@ -117,5 +118,6 @@ if __name__ == '__main__':
             verify(args.directory, args.ipa, live_quota=args.live_quota)
             if args.live_quota:
                 print('Private Beta IPA resources and live quota verified.')
-    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile, urllib.error.URLError):
+    except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile,
+            urllib.error.URLError, http.client.HTTPException):
         sys.exit('Private Beta input validation failed; no private values are logged.')

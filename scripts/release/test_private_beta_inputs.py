@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 import plistlib
+import runpy
+import sys
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -106,6 +108,27 @@ class PrivateBetaTests(unittest.TestCase):
         for environment in cases:
             with tempfile.TemporaryDirectory() as temp, self.assertRaises((ValueError, KeyError)):
                 beta.stage(Path(temp), environment)
+
+    def test_http_protocol_failures_do_not_expose_private_values_in_cli_errors(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            beta.stage(directory, self.environment())
+            ipa = directory / 'fixture.ipa'
+            root = 'Payload/Aegis.app/'
+            with zipfile.ZipFile(ipa, 'w') as archive:
+                archive.writestr(root + 'Info.plist', plistlib.dumps({
+                    'AegisAccessReleaseChannel': 'beta', 'AegisReleaseProfile': 'beta'}))
+                archive.writestr(root + 'AegisPrivateTestNode.vless', NODE)
+                archive.writestr(root + 'AegisPrivateTestSubscription.json',
+                                 (directory / 'expected-subscription').read_bytes())
+            helper = str(Path(beta.__file__))
+            argv = [helper, 'verify', '--directory', str(directory), '--ipa', str(ipa), '--live-quota']
+            with patch.object(sys, 'argv', argv), patch.object(beta.urllib.request, 'build_opener') as factory:
+                factory.return_value.open.side_effect = beta.http.client.BadStatusLine('private-response-marker')
+                with self.assertRaises(SystemExit) as failure:
+                    runpy.run_path(helper, run_name='__main__')
+                self.assertEqual(str(failure.exception),
+                                 'Private Beta input validation failed; no private values are logged.')
 
     def test_existing_input_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as temp:
