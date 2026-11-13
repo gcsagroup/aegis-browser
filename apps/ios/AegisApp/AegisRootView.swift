@@ -15,6 +15,7 @@ struct AegisRootView: View {
     @State private var showsSettings = false
     @State private var showsFilters = false
     @State private var showsDownloads = false
+    @State private var presentedDownload: (url: URL, access: BrowserAccessDownload?)?
     @State private var showsFind = false
     @State private var showsReading = false
     @State private var findText = ""
@@ -61,8 +62,8 @@ struct AegisRootView: View {
         .sheet(isPresented: $showsReading) { ReadingLibraryView() }
         .sheet(item: $browser.pendingMarkdown) { document in MarkdownReaderView(initial: document) }
         .sheet(isPresented: $showsFilters) { CurrentWebsiteView() }
-        .sheet(isPresented: $showsDownloads, onDismiss: { browser.pendingDownloadURL = nil }) {
-            DownloadsView(initialURL: browser.pendingDownloadURL)
+        .sheet(isPresented: $showsDownloads, onDismiss: { presentedDownload = nil; browser.pendingDownloadURL = nil }) {
+            DownloadsView(initialURL: presentedDownload?.url, protectedContext: presentedDownload?.access)
         }
         .sheet(isPresented: $showsFind) {
             NavigationStack {
@@ -83,7 +84,11 @@ struct AegisRootView: View {
                     .toolbar { Button("完成") { showsFind = false }.keyboardShortcut(.escape, modifiers: []) }
             }.presentationDetents([.medium])
         }
-        .onChange(of: browser.pendingDownloadURL) { _, url in if url != nil { showsDownloads = true } }
+        .onChange(of: browser.pendingDownloadURL) { _, url in
+            guard let url, !showsDownloads else { return }
+            presentedDownload = (url, browser.pendingAccessDownload)
+            showsDownloads = true
+        }
         .onChange(of: browser.activeTabID) { _, _ in updateAddress() }
         .onChange(of: browser.profile) { _, profile in
             updateAddress()

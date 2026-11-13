@@ -2,11 +2,20 @@
 
 #include "chrome/browser/ui/webui/aegis/aegis_ui_handler.h"
 
+#include <atomic>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "base/files/file_util.h"
+#include "base/json/json_writer.h"
+#include "base/test/bind.h"
 #include "base/test/test_future.h"
+#include "base/test/test_simple_task_runner.h"
+#include "base/synchronization/waitable_event.h"
+#include "base/threading/thread_restrictions.h"
+#include "base/test/run_until.h"
+#include "base/uuid.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/aegis/agent/aegis_browser_tools.h"
@@ -27,6 +36,8 @@
 #include "components/tabs/public/tab_interface.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_web_ui.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/http_response.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -89,6 +100,114 @@ TEST_F(AegisUIHandlerTest, KeepsCnamePreferenceSeparateFromRuntimeDependency) {
   EXPECT_FALSE(status.FindBool("cnameUncloak").value_or(true));
   EXPECT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kCnameUncloakEnabled));
 }
+
+#if BUILDFLAG(IS_MAC)
+class HeldAccountReplyRunner : public base::TestSimpleTaskRunner {
+ public:
+  bool PostDelayedTask(const base::Location& from, base::OnceClosure task,
+                       base::TimeDelta delay) override {
+    bool accepted = base::TestSimpleTaskRunner::PostDelayedTask(from, std::move(task), delay);
+    posted.Signal();
+    return accepted;
+  }
+  base::WaitableEvent posted;
+
+ protected:
+  ~HeldAccountReplyRunner() override = default;
+};
+
+TEST_F(AegisUIHandlerTest, OnlyExplicitAccountReadQueriesTheCurrentProfile) {
+  std::atomic<int> requests = 0;
+  net::EmbeddedTestServer account_server;
+  account_server.RegisterRequestHandler(base::BindLambdaForTesting(
+      [&](const net::test_server::HttpRequest& request)
+          -> std::unique_ptr<net::test_server::HttpResponse> {
+        ++requests;
+        EXPECT_EQ(request.relative_url, "/v1/me/entitlement");
+        const auto auth = request.headers.find("Authorization");
+        EXPECT_TRUE(auth != request.headers.end() && auth->second == "Bearer test-A");
+        auto response = std::make_unique<net::test_server::BasicHttpResponse>();
+        response->set_code(net::HTTP_OK);
+        response->set_content_type("application/json");
+        response->set_content(R"({"entitlementAccountId":"A","status":"not_subscribed",
+          "planId":null,"periodId":null,"periodStart":null,"periodEnd":null,"expiresAt":null,
+          "quotaBytes":null,"uploadedBytes":null,"downloadedBytes":null,"usedBytes":null,
+          "remainingBytes":null,"measuredAt":null,"receivedAt":null,"snapshotAgeMs":null,
+          "freshness":null})");
+        return response;
+      }));
+  ASSERT_TRUE(account_server.Start());
+  auto binding = base::DictValue().Set("accountId", "A").Set("token", "test-A")
+      .Set("origin", account_server.base_url().spec())
+      .Set("generation", "d8b4c46f-c1da-4b62-bf87-2d5376f00826");
+  const auto file = profile()->GetPath().AppendASCII("AegisAccessAccount.json");
+  ASSERT_TRUE(base::WriteFile(file, base::WriteJson(binding).value()));
+  ASSERT_TRUE(base::SetPosixFilePermissions(file, 0600));
+  auto contents = content::WebContents::Create(content::WebContents::CreateParams(profile()));
+  content::TestWebUI web_ui;
+  web_ui.set_web_contents(contents.get());
+  TestAegisUIHandler handler;
+  handler.set_web_ui(&web_ui);
+  handler.RegisterMessages();
+  base::ListValue args;
+  args.Append("read-test");
+  web_ui.HandleReceivedMessage("getStatus", args);
+  ASSERT_EQ(web_ui.call_data().size(), 1u);
+  EXPECT_FALSE(web_ui.call_data().front()->arg3()->GetDict().contains("accessAccount"));
+  EXPECT_EQ(requests.load(), 0);
+  auto untrusted_args = args.Clone();
+  untrusted_args.Append("other-account");
+  web_ui.HandleReceivedMessage("getCurrentAccessAccount", untrusted_args);
+  EXPECT_EQ(web_ui.call_data().size(), 1u);
+  web_ui.HandleReceivedMessage("getCurrentAccessAccount", args);
+  ASSERT_TRUE(base::test::RunUntil([&] { return web_ui.call_data().size() == 2; }));
+  const auto& result = web_ui.call_data().back()->arg3()->GetDict();
+  EXPECT_EQ(result.FindString("state") ? *result.FindString("state") : "", "available");
+  const auto* account = result.FindStringByDottedPath("entitlement.entitlementAccountId");
+  ASSERT_TRUE(account);
+  EXPECT_EQ(*account, "A");
+  EXPECT_EQ(requests.load(), 1);
+
+  auto install = [&](const char* id) {
+    auto next = binding.Clone();
+    next.Set("accountId", id);
+    next.Set("token", std::string("test-") + id);
+    next.Set("generation", base::Uuid::GenerateRandomV4().AsLowercaseString());
+    auto temp = file.AddExtensionASCII("new");
+    return base::WriteFile(temp, base::WriteJson(next).value()) &&
+           base::SetPosixFilePermissions(temp, 0600) && base::ReplaceFile(temp, file, nullptr);
+  };
+  for (auto action : {"switch", "switch_back", "sign_out"}) {
+    SCOPED_TRACE(action);
+    ASSERT_TRUE(install("A"));
+    auto held = base::MakeRefCounted<HeldAccountReplyRunner>();
+    const size_t prior = web_ui.call_data().size();
+    {
+      base::SingleThreadTaskRunner::CurrentHandleOverrideForTesting override(held);
+      web_ui.HandleReceivedMessage("getCurrentAccessAccount", args);
+    }
+    {
+      // The transport and HTTP server both run independently of the UI thread.
+      base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
+      ASSERT_TRUE(held->posted.TimedWait(base::Seconds(5)));
+    }
+    ASSERT_EQ(web_ui.call_data().size(), prior);
+    bool sign_out = std::string_view(action) == "sign_out";
+    if (sign_out) {
+      ASSERT_TRUE(base::DeleteFile(file));
+    } else {
+      ASSERT_TRUE(install("B"));
+      if (std::string_view(action) == "switch_back") ASSERT_TRUE(install("A"));
+    }
+    held->RunUntilIdle();
+    ASSERT_EQ(web_ui.call_data().size(), prior + 1);
+    const auto& delivered = web_ui.call_data().back()->arg3()->GetDict();
+    const auto* state = delivered.FindString("state");
+    EXPECT_EQ(state ? *state : "", sign_out ? "signed_out" : "superseded");
+    EXPECT_FALSE(delivered.contains("entitlement"));
+  }
+}
+#endif
 
 TEST_F(AegisUIHandlerTest, SelectsNearestHttpTabInSameWindow) {
   AddTab(browser(), GURL("https://left.example/"));

@@ -45,7 +45,8 @@ public struct AccessRealityVisionParameters: Sendable, Equatable {
         guard !trimmed.isEmpty else {
             throw AccessRealityVisionOutboundConfigError.emptyField(field)
         }
-        guard trimmed == value, !trimmed.contains("\0") else {
+        guard trimmed == value,
+              trimmed.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else {
             throw AccessRealityVisionOutboundConfigError.fieldNotCanonical(field)
         }
         return trimmed

@@ -74,6 +74,14 @@ int main(int argc, const char* argv[]) {
   const auto* state = outbound.FindStringByDottedPath("settings.fixtureStateFile");
   const auto port = inbound.FindInt("port");
   if (!mode || !state || !port) return 3;
+  if (*mode == "exit-with-diagnostic") {
+    const auto* level = config->FindStringByDottedPath("log.loglevel");
+    if (level && *level == "warning") {
+      constexpr char record[] = "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started\n";
+      if (write(STDERR_FILENO, record, sizeof(record) - 1) < 0) return 5;
+    }
+    return 4;
+  }
   if (*mode == "exit-before-listen") return 4;
   const auto* accounts = inbound.FindListByDottedPath("settings.accounts");
   if (!accounts || accounts->empty()) return 3;

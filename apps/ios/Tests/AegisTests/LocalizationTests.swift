@@ -10,6 +10,7 @@ final class LocalizationTests: XCTestCase {
         struct Exception: Decodable { let value: String; let reason: String }
         let catalogKeyCount: Int
         let languageSelectorAddedKeys: [String]
+        let paidAccessAddedKeys: [String]
         let identicalEnglishAllowlist: [String: [String: Exception]]
     }
 
@@ -30,7 +31,7 @@ final class LocalizationTests: XCTestCase {
         let plugins = try XCTUnwrap(Bundle.main.builtInPlugInsURL)
         let share = try XCTUnwrap(Bundle(url: plugins.appendingPathComponent("ShareExtension.appex")))
         let english = try table(in: Bundle.main, locale: "en")
-        XCTAssertEqual(english.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count)
+        XCTAssertEqual(english.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count + coverage.paidAccessAddedKeys.count)
         for bundle in [Bundle.main, share] {
             for locale in locales {
                 let values = try table(in: bundle, locale: locale)
@@ -62,7 +63,7 @@ final class LocalizationTests: XCTestCase {
         }
         let values = try table(in: Bundle.main, locale: locale)
         let coverage = try fixture("coverage", as: Coverage.self)
-        XCTAssertEqual(values.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count)
+        XCTAssertEqual(values.count, coverage.catalogKeyCount + coverage.languageSelectorAddedKeys.count + coverage.paidAccessAddedKeys.count)
         for (key, value) in values {
             XCTAssertEqual(selectedBundle.localizedString(forKey: key, value: "MISSING", table: nil), value, "\(locale)/\(key)")
         }

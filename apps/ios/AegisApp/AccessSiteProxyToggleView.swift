@@ -11,6 +11,12 @@ struct AccessSiteProxyToggleView: View {
     let url: URL?
     var tab: BrowserTab?
 
+    @EnvironmentObject private var account: AccessAccountSession
+    @State private var authorizing = false
+    @State private var accountID = ""
+    @State private var sessionToken = ""
+    @State private var authorizationHost: AccessSiteHost?
+
     @Environment(\.locale) private var localizationLocale
 
     private var snapshot: AccessSiteProxyToggleSnapshot {
@@ -56,6 +62,48 @@ struct AccessSiteProxyToggleView: View {
             )
             .disabled(!snap.toggleEnabled || tab == nil)
             .accessibilityIdentifier("access-site-proxy-toggle")
+            if let tab, account.supportsAccountAuthorization {
+                let paidHost = store.paidDownloadHost(for: tab)
+                Toggle(
+                    "通过账户代理下载本站文件",
+                    isOn: Binding(
+                        get: { paidHost.map { account.hasSelectedProxy(for: tab.id, host: $0.rawValue) } ?? false },
+                        set: { enabled in
+                            guard let paidHost else { return }
+                            if enabled && tab.profile.isPrivate {
+                                authorizationHost = paidHost
+                                authorizing = true
+                            } else {
+                                store.setProxyEnabled(enabled, for: tab, account: account, displayedHost: paidHost)
+                            }
+                        }
+                    )
+                )
+                .disabled(paidHost == nil)
+                .accessibilityIdentifier("access-account-site-download-toggle")
+                .sheet(isPresented: $authorizing, onDismiss: { accountID = ""; sessionToken = ""; authorizationHost = nil }) {
+                    NavigationStack {
+                        Form {
+                            TextField("服务账户", text: $accountID).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            SecureField("服务账户会话令牌", text: $sessionToken)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled().privacySensitive()
+                        }
+                        .localizedNavigationTitle("授权本次私密会话")
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) { Button("取消") { authorizing = false } }
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("确认") {
+                                    if let authorizationHost {
+                                        store.setProxyEnabled(true, for: tab, account: account, displayedHost: authorizationHost, privateAccount: accountID, privateToken: sessionToken)
+                                    }
+                                    authorizing = false
+                                }
+                                    .disabled(accountID.isEmpty || sessionToken.isEmpty)
+                            }
+                        }
+                    }
+                }
+            }
             if let line = snap.autoRecoveryLine {
                 Text(line)
                     .font(.footnote)

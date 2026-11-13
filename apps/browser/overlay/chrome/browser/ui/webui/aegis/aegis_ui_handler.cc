@@ -356,6 +356,11 @@ void AegisUIHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getStatus", base::BindRepeating(&AegisUIHandler::HandleGetStatus,
                                        base::Unretained(this)));
+#if BUILDFLAG(IS_MAC)
+  web_ui()->RegisterMessageCallback(
+      "getCurrentAccessAccount", base::BindRepeating(&AegisUIHandler::HandleGetCurrentAccessAccount,
+                                                     base::Unretained(this)));
+#endif
   web_ui()->RegisterMessageCallback(
       "setModuleEnabled",
       base::BindRepeating(&AegisUIHandler::HandleSetModuleEnabled,
@@ -566,6 +571,30 @@ void AegisUIHandler::HandleGetStatus(const base::ListValue& args) {
   const base::Value& callback_id = args[0];
   ResolveJavascriptCallback(callback_id, BuildStatus());
 }
+
+#if BUILDFLAG(IS_MAC)
+void AegisUIHandler::HandleGetCurrentAccessAccount(const base::ListValue& args) {
+  if (args.size() != 1 || !args[0].is_string()) return;
+  AllowJavascript();
+  auto* service = ServiceForWebUI();
+  if (!service) {
+    ResolveJavascriptCallback(args[0], base::DictValue().Set("state", "unavailable"));
+    return;
+  }
+  service->QueryCurrentAccessAccount(base::BindOnce(
+      &AegisUIHandler::OnAccessAccountStatus, account_weak_factory_.GetWeakPtr(),
+      args[0].GetString()));
+}
+
+void AegisUIHandler::OnAccessAccountStatus(std::string callback_id, base::DictValue account) {
+  if (IsJavascriptAllowed())
+    ResolveJavascriptCallback(base::Value(callback_id), account);
+}
+
+void AegisUIHandler::OnJavascriptDisallowed() {
+  account_weak_factory_.InvalidateWeakPtrs();
+}
+#endif
 
 void AegisUIHandler::HandleSetModuleEnabled(const base::ListValue& args) {
   AllowJavascript();

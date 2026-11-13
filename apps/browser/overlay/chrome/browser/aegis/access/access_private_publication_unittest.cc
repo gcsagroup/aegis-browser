@@ -169,6 +169,26 @@ TEST_F(AccessPrivatePublicationTest,
   ExpectOriginalConnection(*recreated);
 }
 
+#if BUILDFLAG(IS_MAC)
+TEST_F(AccessPrivatePublicationTest, AccountSitesCoexistWithPrivateLocalSelection) {
+  HeldPrivateContext context;
+  ASSERT_TRUE(Bind(context));
+  const auto before = transport_->CurrentSelection(owner_);
+  ASSERT_TRUE(before);
+  const AccessTransportSelection local{Endpoint(), {"anchor.example"}};
+  ASSERT_TRUE(transport_->ReplaceSelection(owner_, *before, local));
+  ASSERT_TRUE(transport_->SetAccountNodeSites({"paid.example"}, "account.example", 443, "Basic test"));
+  auto delegate = CreateLegacyDelegate();
+  ExpectOriginalConnection(*delegate);
+  net::ProxyInfo paid;
+  paid.UseDirect();
+  delegate->OnResolveProxy(GURL("https://paid.example./"), {}, "GET", {}, &paid);
+  ASSERT_TRUE(paid.proxy_chain().is_aegis_account_node());
+  ASSERT_TRUE(transport_->SetAccountNodeSites({}, "", 0, ""));
+  EXPECT_EQ(transport_->CurrentSelection(owner_), local);
+}
+#endif
+
 TEST_F(AccessPrivatePublicationTest, ChangedCommonTupleRequiresFreshPrivateAck) {
   auto notifier = net::NetworkChangeNotifier::CreateMockIfNeeded();
   HeldPrivateContext context;
