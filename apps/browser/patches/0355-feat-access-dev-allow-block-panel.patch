@@ -1,0 +1,716 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Aegis Packaging Proposal <aegis-proposal@invalid>
+Date: Sun, 8 Nov 2026 15:45:00 +0000
+Subject: [PATCH] feat: add macOS DEV allow/block debug panel
+
+DEV/Alpha debug panel for explicit-host ALLOW/BLOCK via the site intent
+API. Beta/Release do not register the panel or a general rule editor.
+
+---
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 01d094fac3e004712478905978e705f47170211a..c491344334069cdfb8820ff9698d60f3772131c6 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -235,13 +235,16 @@
+     ":access_network_context_transport",
+     ":access_rule_store",
+     ":access_service_coordinator",
++    ":access_site_dev_allow_block_panel",
+     ":access_site_intent",
+     ":access_site_proxy_bubble_model",
+     ":access_site_proxy_session",
+     "//base",
+     "//chrome/browser/aegis:profile_support",
+     "//chrome/browser/profiles:profile",
+-    "//components/aegis_access",
++    "//chrome/common:channel_info",
++    "//components/aegis_access",
++    "//components/version_info:channel",
+     "//content/public/browser",
+     "//url",
+   ]
+@@ -253,6 +256,30 @@
+     ":access_site_proxy_bubble_model",
+     "//base/test:run_all_unittests",
+     "//testing/gtest",
++  ]
++}
++
++source_set("access_site_dev_allow_block_panel") {
++  sources = [
++    "access_site_dev_allow_block_panel.cc",
++    "access_site_dev_allow_block_panel.h",
++  ]
++  deps = [
++    ":access_site_intent",
++    ":access_site_proxy_bubble_model",
++    "//base",
++    "//components/version_info:channel",
++    "//url",
++  ]
++}
++
++test("access_site_dev_allow_block_panel_unittests") {
++  sources = [ "access_site_dev_allow_block_panel_unittest.cc" ]
++  deps = [
++    ":access_site_dev_allow_block_panel",
++    "//base/test:run_all_unittests",
++    "//testing/gtest",
++    "//url",
+   ]
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a57a693ad9b6e5c6f207bdbcd717a7fdc9bdfa0
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.h
+@@ -0,0 +1,102 @@
++// Copyright 2026 GCSA
++
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_DEV_ALLOW_BLOCK_PANEL_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_DEV_ALLOW_BLOCK_PANEL_H_
++
++#include <optional>
++#include <string>
++#include <string_view>
++
++#include "chrome/browser/aegis/access/access_site_intent.h"
++#include "components/version_info/channel.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++
++// P-mac-4: DEV/Alpha debug panel for explicit-host ALLOW / BLOCK.
++// Beta/Release must not register this panel or a general Access rule editor.
++
++enum class AccessDevAllowBlockChannelAdmission {
++  kAdmitted,
++  kNotAdmitted,
++};
++
++// DEV / Canary / Unknown (local developer builds) admit the panel.
++// Beta / Stable never register it.
++AccessDevAllowBlockChannelAdmission AccessDevAllowBlockPanelAdmissionFor(
++    version_info::Channel channel);
++
++bool IsAccessDevAllowBlockPanelAdmitted(version_info::Channel channel);
++
++// Hard rule for this feat: never register a general rule editor entry.
++// Beta/Release stay false; DEV panel is host ALLOW/BLOCK only.
++bool IsGeneralAccessRuleEditorRegistered(version_info::Channel channel);
++
++enum class AccessDevAllowBlockAction {
++  kAllow,
++  kBlock,
++  kOff,
++};
++
++enum class AccessDevAllowBlockApplyStatus {
++  kApplied,
++  kChannelNotAdmitted,
++  kInvalidHost,
++};
++
++struct AccessDevAllowBlockApplyResult {
++  AccessDevAllowBlockApplyStatus status =
++      AccessDevAllowBlockApplyStatus::kInvalidHost;
++  std::optional<AccessSiteHost> host;
++  AccessSiteIntent intent = AccessSiteIntent::kOff;
++};
++
++// Applies product intent for an explicit host when the channel admits the
++// panel. Never invents DIRECT success for allow/block. Does not publish/ACK
++// (session finalize stays on the product toggle / P-mac-3 path).
++AccessDevAllowBlockApplyResult ApplyAccessDevAllowBlock(
++    AccessSiteIntentStore* store,
++    version_info::Channel channel,
++    std::string_view raw_host,
++    AccessDevAllowBlockAction action);
++
++enum class AccessDevAllowBlockStatusId {
++  kPanelNotRegistered,
++  kNoTrustedHost,
++  kOff,
++  kAllowProxyIntent,
++  kBlockLocalRefuse,
++};
++
++struct AccessDevAllowBlockPanelSnapshot {
++  // False on Beta/Release — UI must not render the section.
++  bool panel_registered = false;
++  // Always false: this feat is not a general rule editor.
++  bool general_rule_editor_registered = false;
++  bool has_explicit_host = false;
++  AccessSiteHost host;
++  AccessSiteIntent intent = AccessSiteIntent::kOff;
++  AccessDevAllowBlockStatusId status_id =
++      AccessDevAllowBlockStatusId::kPanelNotRegistered;
++};
++
++// Presentation for the DEV panel. Host comes from a trusted committed URL or
++// an already-canonical explicit host string.
++AccessDevAllowBlockPanelSnapshot BuildAccessDevAllowBlockPanelSnapshot(
++    version_info::Channel channel,
++    const AccessSiteIntentStore& store,
++    const GURL& committed_url);
++
++AccessDevAllowBlockPanelSnapshot BuildAccessDevAllowBlockPanelSnapshotForHost(
++    version_info::Channel channel,
++    const AccessSiteIntentStore& store,
++    std::string_view raw_host);
++
++std::string_view AccessDevAllowBlockActionToString(
++    AccessDevAllowBlockAction action);
++std::string_view AccessDevAllowBlockApplyStatusToString(
++    AccessDevAllowBlockApplyStatus status);
++
++}  // namespace aegis::access
++
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_SITE_DEV_ALLOW_BLOCK_PANEL_H_
+diff --git a/chrome/browser/aegis/access/access_site_dev_allow_block_panel.cc b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..2e905fc85b54d4a9ee6d501185f7522e627487ba
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_dev_allow_block_panel.cc
+@@ -0,0 +1,164 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_dev_allow_block_panel.h"
++
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
++
++namespace aegis::access {
++namespace {
++
++AccessSiteIntent IntentForAction(AccessDevAllowBlockAction action) {
++  switch (action) {
++    case AccessDevAllowBlockAction::kAllow:
++      return AccessSiteIntent::kAllow;
++    case AccessDevAllowBlockAction::kBlock:
++      return AccessSiteIntent::kBlock;
++    case AccessDevAllowBlockAction::kOff:
++      return AccessSiteIntent::kOff;
++  }
++  return AccessSiteIntent::kOff;
++}
++
++AccessDevAllowBlockStatusId StatusForIntent(AccessSiteIntent intent) {
++  switch (intent) {
++    case AccessSiteIntent::kAllow:
++      return AccessDevAllowBlockStatusId::kAllowProxyIntent;
++    case AccessSiteIntent::kBlock:
++      return AccessDevAllowBlockStatusId::kBlockLocalRefuse;
++    case AccessSiteIntent::kOff:
++      return AccessDevAllowBlockStatusId::kOff;
++  }
++  return AccessDevAllowBlockStatusId::kOff;
++}
++
++AccessDevAllowBlockPanelSnapshot SnapshotForResolvedHost(
++    version_info::Channel channel,
++    const AccessSiteIntentStore& store,
++    const AccessSiteHostResult& host_result) {
++  AccessDevAllowBlockPanelSnapshot snapshot;
++  snapshot.general_rule_editor_registered =
++      IsGeneralAccessRuleEditorRegistered(channel);
++  if (!IsAccessDevAllowBlockPanelAdmitted(channel)) {
++    snapshot.panel_registered = false;
++    snapshot.status_id = AccessDevAllowBlockStatusId::kPanelNotRegistered;
++    return snapshot;
++  }
++  snapshot.panel_registered = true;
++  if (host_result.status != AccessSiteHostStatus::kOk || !host_result.host) {
++    snapshot.status_id = AccessDevAllowBlockStatusId::kNoTrustedHost;
++    return snapshot;
++  }
++  snapshot.has_explicit_host = true;
++  snapshot.host = *host_result.host;
++  snapshot.intent = store.Get(snapshot.host);
++  snapshot.status_id = StatusForIntent(snapshot.intent);
++  return snapshot;
++}
++
++}  // namespace
++
++AccessDevAllowBlockChannelAdmission AccessDevAllowBlockPanelAdmissionFor(
++    version_info::Channel channel) {
++  switch (channel) {
++    case version_info::Channel::DEV:
++    case version_info::Channel::CANARY:
++    case version_info::Channel::UNKNOWN:
++      return AccessDevAllowBlockChannelAdmission::kAdmitted;
++    case version_info::Channel::BETA:
++    case version_info::Channel::STABLE:
++      return AccessDevAllowBlockChannelAdmission::kNotAdmitted;
++  }
++  return AccessDevAllowBlockChannelAdmission::kNotAdmitted;
++}
++
++bool IsAccessDevAllowBlockPanelAdmitted(version_info::Channel channel) {
++  return AccessDevAllowBlockPanelAdmissionFor(channel) ==
++         AccessDevAllowBlockChannelAdmission::kAdmitted;
++}
++
++bool IsGeneralAccessRuleEditorRegistered(version_info::Channel channel) {
++  // P-mac-4 deliberately does not register a general rule editor on any
++  // channel. Beta/Release must stay without that entry.
++  (void)channel;
++  return false;
++}
++
++AccessDevAllowBlockApplyResult ApplyAccessDevAllowBlock(
++    AccessSiteIntentStore* store,
++    version_info::Channel channel,
++    std::string_view raw_host,
++    AccessDevAllowBlockAction action) {
++  AccessDevAllowBlockApplyResult result;
++  if (!store) {
++    result.status = AccessDevAllowBlockApplyStatus::kInvalidHost;
++    return result;
++  }
++  if (!IsAccessDevAllowBlockPanelAdmitted(channel)) {
++    result.status = AccessDevAllowBlockApplyStatus::kChannelNotAdmitted;
++    return result;
++  }
++
++  AccessSiteHostResult host_result = NormalizeAccessSiteHost(raw_host);
++  if (host_result.status != AccessSiteHostStatus::kOk || !host_result.host) {
++    // Already-canonical exact hosts are also accepted.
++    host_result = MakeAccessSiteHost(raw_host);
++  }
++  if (host_result.status != AccessSiteHostStatus::kOk || !host_result.host) {
++    result.status = AccessDevAllowBlockApplyStatus::kInvalidHost;
++    return result;
++  }
++
++  const AccessSiteIntent intent = IntentForAction(action);
++  store->Set(*host_result.host, intent);
++  result.status = AccessDevAllowBlockApplyStatus::kApplied;
++  result.host = *host_result.host;
++  result.intent = intent;
++  return result;
++}
++
++AccessDevAllowBlockPanelSnapshot BuildAccessDevAllowBlockPanelSnapshot(
++    version_info::Channel channel,
++    const AccessSiteIntentStore& store,
++    const GURL& committed_url) {
++  return SnapshotForResolvedHost(channel, store,
++                                 ResolveTrustedNavigationHost(committed_url));
++}
++
++AccessDevAllowBlockPanelSnapshot BuildAccessDevAllowBlockPanelSnapshotForHost(
++    version_info::Channel channel,
++    const AccessSiteIntentStore& store,
++    std::string_view raw_host) {
++  AccessSiteHostResult host_result = NormalizeAccessSiteHost(raw_host);
++  if (host_result.status != AccessSiteHostStatus::kOk || !host_result.host) {
++    host_result = MakeAccessSiteHost(raw_host);
++  }
++  return SnapshotForResolvedHost(channel, store, host_result);
++}
++
++std::string_view AccessDevAllowBlockActionToString(
++    AccessDevAllowBlockAction action) {
++  switch (action) {
++    case AccessDevAllowBlockAction::kAllow:
++      return "allow";
++    case AccessDevAllowBlockAction::kBlock:
++      return "block";
++    case AccessDevAllowBlockAction::kOff:
++      return "off";
++  }
++  return "off";
++}
++
++std::string_view AccessDevAllowBlockApplyStatusToString(
++    AccessDevAllowBlockApplyStatus status) {
++  switch (status) {
++    case AccessDevAllowBlockApplyStatus::kApplied:
++      return "applied";
++    case AccessDevAllowBlockApplyStatus::kChannelNotAdmitted:
++      return "channel_not_admitted";
++    case AccessDevAllowBlockApplyStatus::kInvalidHost:
++      return "invalid_host";
++  }
++  return "invalid_host";
++}
++
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_dev_allow_block_panel_unittest.cc b/chrome/browser/aegis/access/access_site_dev_allow_block_panel_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..c40b28a3b1fd17949cdb27a6d3a2d17b528cb968
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_site_dev_allow_block_panel_unittest.cc
+@@ -0,0 +1,162 @@
++// Copyright 2026 GCSA
++
++#include "chrome/browser/aegis/access/access_site_dev_allow_block_panel.h"
++
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/gurl.h"
++
++namespace aegis::access {
++namespace {
++
++TEST(AccessSiteDevAllowBlockPanelTest, AdmitsDevCanaryUnknownOnly) {
++  EXPECT_TRUE(
++      IsAccessDevAllowBlockPanelAdmitted(version_info::Channel::DEV));
++  EXPECT_TRUE(
++      IsAccessDevAllowBlockPanelAdmitted(version_info::Channel::CANARY));
++  EXPECT_TRUE(
++      IsAccessDevAllowBlockPanelAdmitted(version_info::Channel::UNKNOWN));
++  EXPECT_FALSE(
++      IsAccessDevAllowBlockPanelAdmitted(version_info::Channel::BETA));
++  EXPECT_FALSE(
++      IsAccessDevAllowBlockPanelAdmitted(version_info::Channel::STABLE));
++}
++
++TEST(AccessSiteDevAllowBlockPanelTest,
++     NeverRegistersGeneralRuleEditorOnAnyChannel) {
++  for (version_info::Channel channel :
++       {version_info::Channel::UNKNOWN, version_info::Channel::CANARY,
++        version_info::Channel::DEV, version_info::Channel::BETA,
++        version_info::Channel::STABLE}) {
++    EXPECT_FALSE(IsGeneralAccessRuleEditorRegistered(channel));
++  }
++}
++
++TEST(AccessSiteDevAllowBlockPanelTest, BetaReleaseRefuseApply) {
++  AccessSiteIntentStore store;
++  auto blocked = ApplyAccessDevAllowBlock(
++      &store, version_info::Channel::BETA, "news.example",
++      AccessDevAllowBlockAction::kAllow);
++  EXPECT_EQ(blocked.status,
++            AccessDevAllowBlockApplyStatus::kChannelNotAdmitted);
++  EXPECT_TRUE(store.All().empty());
++
++  auto stable = ApplyAccessDevAllowBlock(
++      &store, version_info::Channel::STABLE, "news.example",
++      AccessDevAllowBlockAction::kBlock);
++  EXPECT_EQ(stable.status,
++            AccessDevAllowBlockApplyStatus::kChannelNotAdmitted);
++  EXPECT_TRUE(store.All().empty());
++}
++
++TEST(AccessSiteDevAllowBlockPanelTest, DevAppliesAllowBlockOffOnExplicitHost) {
++  AccessSiteIntentStore store;
++  auto allow = ApplyAccessDevAllowBlock(
++      &store, version_info::Channel::DEV, "https://NEWS.Example/path",
++      AccessDevAllowBlockAction::kAllow);
++  ASSERT_EQ(allow.status, AccessDevAllowBlockApplyStatus::kApplied);
++  ASSERT_TRUE(allow.host);
++  EXPECT_EQ(allow.host->value, "news.example");
++  EXPECT_EQ(allow.intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(store.Get(*allow.host), AccessSiteIntent::kAllow);
++
++  auto block = ApplyAccessDevAllowBlock(&store, version_info::Channel::DEV,
++                                        "news.example",
++                                        AccessDevAllowBlockAction::kBlock);
++  ASSERT_EQ(block.status, AccessDevAllowBlockApplyStatus::kApplied);
++  EXPECT_EQ(block.intent, AccessSiteIntent::kBlock);
++  EXPECT_EQ(store.Get(*block.host), AccessSiteIntent::kBlock);
++  // Block remains product-local refuse — never mapped to ordinary DIRECT here.
++  EXPECT_EQ(OrdinaryAccessModeForIntent(AccessSiteIntent::kBlock),
++            std::nullopt);
++
++  auto off = ApplyAccessDevAllowBlock(&store, version_info::Channel::CANARY,
++                                      "news.example",
++                                      AccessDevAllowBlockAction::kOff);
++  ASSERT_EQ(off.status, AccessDevAllowBlockApplyStatus::kApplied);
++  EXPECT_EQ(off.intent, AccessSiteIntent::kOff);
++  EXPECT_EQ(store.Get(*off.host), AccessSiteIntent::kOff);
++  EXPECT_TRUE(store.All().empty());
++}
++
++TEST(AccessSiteDevAllowBlockPanelTest, RejectsInvalidHost) {
++  AccessSiteIntentStore store;
++  auto empty = ApplyAccessDevAllowBlock(&store, version_info::Channel::DEV, "",
++                                        AccessDevAllowBlockAction::kAllow);
++  EXPECT_EQ(empty.status, AccessDevAllowBlockApplyStatus::kInvalidHost);
++
++  auto bad = ApplyAccessDevAllowBlock(&store, version_info::Channel::DEV,
++                                      "not a host",
++                                      AccessDevAllowBlockAction::kBlock);
++  EXPECT_EQ(bad.status, AccessDevAllowBlockApplyStatus::kInvalidHost);
++  EXPECT_TRUE(store.All().empty());
++}
++
++TEST(AccessSiteDevAllowBlockPanelTest, SnapshotHidesPanelOnBetaRelease) {
++  AccessSiteIntentStore store;
++  const GURL url("https://news.example/story");
++  auto beta = BuildAccessDevAllowBlockPanelSnapshot(
++      version_info::Channel::BETA, store, url);
++  EXPECT_FALSE(beta.panel_registered);
++  EXPECT_FALSE(beta.general_rule_editor_registered);
++  EXPECT_FALSE(beta.has_explicit_host);
++  EXPECT_EQ(beta.status_id, AccessDevAllowBlockStatusId::kPanelNotRegistered);
++
++  auto stable = BuildAccessDevAllowBlockPanelSnapshot(
++      version_info::Channel::STABLE, store, url);
++  EXPECT_FALSE(stable.panel_registered);
++  EXPECT_EQ(stable.status_id, AccessDevAllowBlockStatusId::kPanelNotRegistered);
++}
++
++TEST(AccessSiteDevAllowBlockPanelTest, SnapshotShowsAllowBlockForTrustedHost) {
++  AccessSiteIntentStore store;
++  const GURL url("https://news.example/story");
++  auto idle = BuildAccessDevAllowBlockPanelSnapshot(
++      version_info::Channel::DEV, store, url);
++  EXPECT_TRUE(idle.panel_registered);
++  EXPECT_FALSE(idle.general_rule_editor_registered);
++  ASSERT_TRUE(idle.has_explicit_host);
++  EXPECT_EQ(idle.host.value, "news.example");
++  EXPECT_EQ(idle.status_id, AccessDevAllowBlockStatusId::kOff);
++
++  ASSERT_EQ(ApplyAccessDevAllowBlock(&store, version_info::Channel::DEV,
++                                     "news.example",
++                                     AccessDevAllowBlockAction::kAllow)
++                .status,
++            AccessDevAllowBlockApplyStatus::kApplied);
++  auto allow = BuildAccessDevAllowBlockPanelSnapshot(
++      version_info::Channel::DEV, store, url);
++  EXPECT_EQ(allow.status_id, AccessDevAllowBlockStatusId::kAllowProxyIntent);
++
++  ASSERT_EQ(ApplyAccessDevAllowBlock(&store, version_info::Channel::DEV,
++                                     "news.example",
++                                     AccessDevAllowBlockAction::kBlock)
++                .status,
++            AccessDevAllowBlockApplyStatus::kApplied);
++  auto block = BuildAccessDevAllowBlockPanelSnapshot(
++      version_info::Channel::DEV, store, url);
++  EXPECT_EQ(block.status_id, AccessDevAllowBlockStatusId::kBlockLocalRefuse);
++
++  auto internal = BuildAccessDevAllowBlockPanelSnapshot(
++      version_info::Channel::DEV, store, GURL("chrome://settings"));
++  EXPECT_TRUE(internal.panel_registered);
++  EXPECT_FALSE(internal.has_explicit_host);
++  EXPECT_EQ(internal.status_id, AccessDevAllowBlockStatusId::kNoTrustedHost);
++}
++
++TEST(AccessSiteDevAllowBlockPanelTest, ExplicitHostSnapshotIndependentOfUrl) {
++  AccessSiteIntentStore store;
++  ASSERT_EQ(ApplyAccessDevAllowBlock(&store, version_info::Channel::UNKNOWN,
++                                     "blocked.example",
++                                     AccessDevAllowBlockAction::kBlock)
++                .status,
++            AccessDevAllowBlockApplyStatus::kApplied);
++  auto snap = BuildAccessDevAllowBlockPanelSnapshotForHost(
++      version_info::Channel::UNKNOWN, store, "blocked.example");
++  EXPECT_TRUE(snap.panel_registered);
++  ASSERT_TRUE(snap.has_explicit_host);
++  EXPECT_EQ(snap.host.value, "blocked.example");
++  EXPECT_EQ(snap.status_id, AccessDevAllowBlockStatusId::kBlockLocalRefuse);
++}
++
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index a3af98ed56e6362dd588b41b6b8d8208ee9d4b81..4431ee13fcda42922d9e63bb40cab8a599df75b6 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -5,12 +5,14 @@
+ 
+ #include <memory>
+ #include <string>
++#include <string_view>
+ 
+ #include "base/memory/raw_ptr.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/supports_user_data.h"
+ #include "chrome/browser/aegis/access/access_rule_store.h"
+ #include "chrome/browser/aegis/access/access_service_coordinator.h"
++#include "chrome/browser/aegis/access/access_site_dev_allow_block_panel.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_model.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_session.h"
+ #include "url/gurl.h"
+@@ -57,6 +59,17 @@
+   // Returns false only when the host/toggle cannot be accepted.
+   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
+ 
++  // P-mac-4 DEV panel. False on Beta/Release — UI must not register the
++  // section. Never admits a general Access rule editor.
++  bool IsDevAllowBlockPanelRegistered() const;
++  AccessDevAllowBlockPanelSnapshot DevAllowBlockSnapshotForCommittedUrl(
++      const GURL& committed_url) const;
++  // Intent-only allow/block/off for an explicit host. Fail-closed when the
++  // channel does not admit the panel. Does not publish/ACK.
++  AccessDevAllowBlockApplyResult ApplyDevAllowBlock(
++      std::string_view raw_host,
++      AccessDevAllowBlockAction action);
++
+   // P-mac-5: node/runtime fault while allow stays allow. Never clears the
+   // PROXY selection or publishes DIRECT. |wait| holds new requests; otherwise
+   // they fail closed.
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index da4ea6c1e33f7e4869a735817a5627e0a4fb0ddd..bc77dc01af627cf1d57e0ec9914f5a7e2081b43b 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -9,7 +9,9 @@
+ #include "chrome/browser/aegis/access/access_service_coordinator.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
++#include "chrome/common/channel_info.h"
+ #include "components/aegis_access/access_proxy_route_adapter.h"
++#include "components/version_info/channel.h"
+ #include "content/public/browser/browser_thread.h"
+ 
+ namespace aegis::access {
+@@ -112,6 +114,38 @@
+   return ApplySiteProxyToggle(&intent_store_, host, enabled);
+ }
+ 
++bool AccessSiteProxyBubbleController::IsDevAllowBlockPanelRegistered() const {
++  return IsAccessDevAllowBlockPanelAdmitted(chrome::GetChannel()) &&
++         !IsGeneralAccessRuleEditorRegistered(chrome::GetChannel());
++}
++
++AccessDevAllowBlockPanelSnapshot
++AccessSiteProxyBubbleController::DevAllowBlockSnapshotForCommittedUrl(
++    const GURL& committed_url) const {
++  return BuildAccessDevAllowBlockPanelSnapshot(chrome::GetChannel(),
++                                               intent_store_, committed_url);
++}
++
++AccessDevAllowBlockApplyResult
++AccessSiteProxyBubbleController::ApplyDevAllowBlock(
++    std::string_view raw_host,
++    AccessDevAllowBlockAction action) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  AccessDevAllowBlockApplyResult result = ApplyAccessDevAllowBlock(
++      &intent_store_, chrome::GetChannel(), raw_host, action);
++  if (result.status != AccessDevAllowBlockApplyStatus::kApplied) {
++    return result;
++  }
++  // Keep connection line honest: block/off never claim Access readiness.
++  // Allow leaves connection untouched so the product session path can advance.
++  if (action == AccessDevAllowBlockAction::kBlock ||
++      action == AccessDevAllowBlockAction::kOff) {
++    connection_state_ = AccessSiteConnectionState::kIdle;
++    failure_reason_.clear();
++  }
++  return result;
++}
++
+ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     const AccessSiteHost& host,
+     bool enabled) {
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 0a19c9d9512552e08b17e51f3da525e518b6e038..ea4e64dc50b7eb8c34a895f7ceb7d7e2e840e0c5 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -14,6 +14,7 @@
+ #include "base/strings/string_util.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
++#include "chrome/browser/aegis/access/access_site_dev_allow_block_panel.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ #include "chrome/browser/aegis/aegis_service_factory.h"
+ #include "chrome/browser/aegis/enhancements/enhancement_store.h"
+@@ -95,6 +96,30 @@
+   return UseChinese() ? std::move(chinese) : std::move(english);
+ }
+ 
++std::u16string DevAllowBlockStatusCopy(
++    aegis::access::AccessDevAllowBlockStatusId id) {
++  using Id = aegis::access::AccessDevAllowBlockStatusId;
++  switch (id) {
++    case Id::kPanelNotRegistered:
++      return Copy(u"调试面板未注册", u"Debug panel not registered",
++                  u"偵錯面板未註冊");
++    case Id::kNoTrustedHost:
++      return Copy(u"请先打开需要调试的网站",
++                  u"Open a website to debug ALLOW / BLOCK",
++                  u"請先開啟需要偵錯的網站");
++    case Id::kOff:
++      return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
++    case Id::kAllowProxyIntent:
++      return Copy(u"DEV 意图：ALLOW（代理）", u"DEV intent: ALLOW (proxy)",
++                  u"DEV 意圖：ALLOW（代理）");
++    case Id::kBlockLocalRefuse:
++      return Copy(u"DEV 意图：BLOCK（本地拒绝）",
++                  u"DEV intent: BLOCK (local refuse)",
++                  u"DEV 意圖：BLOCK（本地拒絕）");
++  }
++  return Copy(u"DEV 意图：关闭", u"DEV intent: off", u"DEV 意圖：關閉");
++}
++
+ std::u16string IntentStatusCopy(
+     aegis::access::AccessSiteProxyIntentStatusId id) {
+   using Id = aegis::access::AccessSiteProxyIntentStatusId;
+@@ -392,6 +417,58 @@
+                   u"Switch state is shown separately from connectivity.",
+                   u"開關狀態與連通狀態分開顯示。"));
+   }
++  void ApplyDevAllowBlock(aegis::access::AccessDevAllowBlockAction action) {
++    if (!Valid()) {
++      return;
++    }
++    auto* controller = AccessBubble();
++    if (!controller || !controller->IsDevAllowBlockPanelRegistered()) {
++      return;
++    }
++    const auto snap = controller->DevAllowBlockSnapshotForCommittedUrl(address_);
++    if (!snap.has_explicit_host) {
++      return;
++    }
++    controller->ApplyDevAllowBlock(snap.host.value, action);
++    RefreshSoon();
++  }
++  // DEV/Alpha only. Beta/Release never register this section or a general
++  // Access rule editor.
++  void AppendDevAllowBlockSection(views::View* parent) {
++    auto* controller = AccessBubble();
++    if (!controller || !controller->IsDevAllowBlockPanelRegistered()) {
++      return;
++    }
++    const auto snap = controller->DevAllowBlockSnapshotForCommittedUrl(address_);
++    if (!snap.panel_registered) {
++      return;
++    }
++    AddLabel(parent,
++             Copy(u"DEV ALLOW / BLOCK", u"DEV ALLOW / BLOCK",
++                  u"DEV ALLOW / BLOCK"),
++             views::style::CONTEXT_DIALOG_TITLE);
++    AddLabel(parent, DevAllowBlockStatusCopy(snap.status_id));
++    if (!snap.has_explicit_host) {
++      return;
++    }
++    AddLabel(parent, base::UTF8ToUTF16(snap.host.value));
++    Button(parent, Copy(u"ALLOW", u"ALLOW", u"ALLOW"),
++           base::BindRepeating(&AegisPageBubble::ApplyDevAllowBlock,
++                               base::Unretained(this),
++                               aegis::access::AccessDevAllowBlockAction::kAllow));
++    Button(parent, Copy(u"BLOCK", u"BLOCK", u"BLOCK"),
++           base::BindRepeating(&AegisPageBubble::ApplyDevAllowBlock,
++                               base::Unretained(this),
++                               aegis::access::AccessDevAllowBlockAction::kBlock));
++    Button(parent, Copy(u"清除", u"Clear", u"清除"),
++           base::BindRepeating(&AegisPageBubble::ApplyDevAllowBlock,
++                               base::Unretained(this),
++                               aegis::access::AccessDevAllowBlockAction::kOff));
++    AddLabel(parent,
++             Copy(u"仅对明确主机生效；不是通用规则编辑器。",
++                  u"Applies to an explicit host only; not a general rule editor.",
++                  u"僅對明確主機生效；不是通用規則編輯器。"));
++  }
+   void Build() {
+     if (!Valid()) return;
+     auto* store = aegis::EnhancementStore::Get(browser_->GetProfile());
+@@ -401,6 +478,7 @@
+     if (!address_.SchemeIsHTTPOrHTTPS()) {
+       AddLabel(panel_, Copy(u"浏览器内部页面", u"Browser internal page", u"瀏覽器內部頁面"), views::style::CONTEXT_DIALOG_TITLE);
+       AppendSiteProxySection(panel_);
++      AppendDevAllowBlockSection(panel_);
+       AddLabel(panel_, Copy(u"此页面不支持网站增强与用户脚本。", u"Website enhancements and scripts are unavailable here.", u"此頁面不支援網站增強與使用者腳本。"));
+       Button(panel_, Copy(u"网站增强与脚本设置", u"Enhancement and script settings", u"網站增強與腳本設定"),
+              base::BindRepeating(&AegisPageBubble::OpenManager, base::Unretained(this), std::string()));
+@@ -410,6 +488,7 @@
+     if (browser_->GetProfile()->IsOffTheRecord())
+       AddLabel(panel_, Copy(u"私密会话 · 设置与脚本仅保留在本次会话", u"Private session · settings and scripts stay in this session", u"私密階段 · 設定與腳本僅保留於本次階段"));
+     AppendSiteProxySection(panel_);
++    AppendDevAllowBlockSection(panel_);
+     AddLabel(panel_, Copy(u"隐私保护", u"Privacy protection", u"隱私保護"), views::style::CONTEXT_DIALOG_TITLE);
+     AddLabel(panel_, (summary_.paused ? Copy(u"本站保护已暂停 · ", u"Protection paused · ", u"本站保護已暫停 · ")
+                                     : Copy(u"保护已开启 · ", u"Protection on · ", u"保護已開啟 · ")) +

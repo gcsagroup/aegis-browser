@@ -1,0 +1,101 @@
+From b7fcdfa88eef0c281dd21c61c2e40b2e134bf879 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 04:57:37 +0800
+Subject: [PATCH] test(access): initialize retry fixture and observe pending
+ core cancel
+
+---
+ chrome/browser/aegis/access/BUILD.gn            |  3 +++
+ .../access_local_core_manager_unittest.cc       | 17 ++++++++++++++---
+ .../access_site_proxy_product_unittest.cc       |  3 +++
+ 3 files changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 35aa35db61da2a4f7afba834b5bb9175d5a9a76b..ebd2d34f42f9d1f977df31bdb59b8f38ded1280f 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -470,8 +470,10 @@ test("access_service_coordinator_unittests") {
+     "access_site_proxy_product_unittest.cc",
+   ]
+   deps = [
++    ":access_async_rule_store",
+     ":access_build_channel",
+     ":access_buildflags",
++    ":access_navigation_retry_tab_helper",
+     ":access_network_context_transport",
+     ":access_proxy_selection_generation_source",
+     ":access_published_request_runtime",
+@@ -484,6 +486,7 @@ test("access_service_coordinator_unittests") {
+     "//chrome/test:test_support_unit",
+     "//components/prefs",
+     "//components/proxy_config",
++    "//components/variations:test_support",
+     "//content/test:test_support",
+     "//mojo/public/cpp/bindings",
+     "//services/network:test_support",
+diff --git a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+index 2a720b4421c27360d5e45b75e5abd2dca5ae46f0..a861e3408f04f5ec681db9ffe867008840949333 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager_unittest.cc
+@@ -10,11 +10,13 @@
+ #include "base/path_service.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/test/task_environment.h"
++#include "base/test/bind.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+ #include "base/test/scoped_command_line.h"
+ #include "base/test/scoped_path_override.h"
+ #include "base/test/test_future.h"
++#include "base/timer/timer.h"
+ #include "chrome/browser/aegis/access/access_buildflags.h"
+ #include "build/build_config.h"
+ #include "crypto/hash.h"
+@@ -195,11 +197,20 @@ TEST_F(AccessLocalCoreFaultTest, StopCancelsARealPendingProbe) {
+   AccessLocalCoreManager manager(Input("hold-tunnel"));
+   base::test::TestFuture<AccessLocalCoreReady> prepared;
+   manager.Prepare(prepared.GetCallback());
+-  ASSERT_TRUE(base::test::RunUntil([&] {
++  // The child is a separate process. Its state-file write cannot wake an idle
++  // UI RunLoop, so observe that handshake explicitly before requesting Stop.
++  base::test::TestFuture<void> tunnel;
++  base::RepeatingTimer observation;
++  observation.Start(FROM_HERE, base::Milliseconds(10),
++      base::BindLambdaForTesting([&] {
+     auto state = State();
+-    return state && state->FindString("phase") &&
+-        *state->FindString("phase") == "authenticated-tunnel-held";
++    if (state && state->FindString("phase") &&
++        *state->FindString("phase") == "authenticated-tunnel-held") {
++      observation.Stop();
++      tunnel.SetValue();
++    }
+   }));
++  ASSERT_TRUE(tunnel.Wait());
+   EXPECT_FALSE(prepared.IsReady());
+   base::test::TestFuture<void> stopped;
+   manager.Stop(stopped.GetCallback());
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index b20f32c5697b0ad8bdb5da608613908d0eec4b78..ddc9a401bbf66de38f8876a317f5c96297c266fe 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -21,6 +21,7 @@
+ #include "components/prefs/pref_service.h"
+ #include "components/proxy_config/proxy_config_pref_names.h"
+ #include "components/proxy_config/proxy_config_dictionary.h"
++#include "components/variations/scoped_variations_ids_provider.h"
+ #include "content/public/test/browser_task_environment.h"
+ #include "content/public/browser/navigation_controller.h"
+ #include "content/public/browser/navigation_entry.h"
+@@ -501,6 +502,8 @@ class AccessRetryNavigationProductTest : public ChromeRenderViewHostTestHarness
+     }));
+   }
+   base::ScopedTempDir directory_;
++  variations::test::ScopedVariationsIdsProvider variations_ids_provider_{
++      variations::VariationsIdsProvider::Mode::kUseSignedInState};
+   ProductAckContext context_;
+   raw_ptr<AccessNetworkContextTransport> transport_ = nullptr;
+   raw_ptr<AccessServiceCoordinator> coordinator_ = nullptr;
+-- 
+2.54.0 (Apple Git-157)
+

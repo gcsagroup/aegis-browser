@@ -1,0 +1,807 @@
+From 23e0788cb8c5e84ee8f6e8d5073a7fd01a88685d Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 19:34:09 +0800
+Subject: [PATCH] feat(access): restore Profile asynchronously and register
+ prepared core
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   5 +
+ .../access_network_context_transport.cc       |  55 +++++-
+ .../access/access_network_context_transport.h |  12 +-
+ .../access_proxying_url_loader_factory.cc     |  15 ++
+ .../access_proxying_url_loader_factory.h      |   2 +
+ .../access/access_service_coordinator.cc      | 180 +++++++++++++++++-
+ .../aegis/access/access_service_coordinator.h |  21 +-
+ .../access_service_coordinator_unittest.cc    |  51 +++++
+ .../access_site_proxy_bubble_controller.cc    |  74 ++++++-
+ .../access_site_proxy_bubble_controller.h     |   4 +
+ 10 files changed, 410 insertions(+), 9 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 5e6d668e307ac0ab74f20411283fa92abfe54544..a07d28c727988341962ae7fb4c5b95a07284b74a 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -126,6 +126,7 @@ source_set("access_network_context_transport") {
+   ]
+   public_deps = [ "//components/aegis_access:policy_publication_ack_tracker" ]
+   deps = [
++    ":access_private_context_client",
+     "//base",
+     "//chrome/browser/aegis:profile_support",
+     "//chrome/browser/profiles:profile",
+@@ -164,6 +165,7 @@ source_set("access_proxying_url_loader_factory") {
+     ":access_browser_request_adapter",
+     ":access_navigation_retry_tab_helper",
+     ":access_site_proxy_bubble",
++    ":access_service_coordinator",
+     ":access_network_context_transport",
+     ":access_published_request_runtime",
+     ":access_request_dispatch_state",
+@@ -225,6 +227,8 @@ source_set("access_service_coordinator") {
+     "access_service_coordinator.h",
+   ]
+   deps = [
++    ":access_async_rule_store",
++    ":access_identity_generation_source",
+     ":access_proxy_selection_generation_source",
+     ":access_published_request_runtime",
+     ":access_request_dispatch_state",
+@@ -311,6 +315,7 @@ source_set("access_site_proxy_bubble") {
+   deps = [
+     ":access_local_core_manager",
+     ":access_identity_generation_source",
++    ":access_proxy_selection_generation_source",
+     ":access_published_request_runtime",
+     ":access_network_context_transport",
+     ":access_rule_store",
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index 487f309c0dace566f09e64456becf1ff8e5f0fb7..1dde5c5d6f429bc90d2c03cc7165f923ae5cee72 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -230,6 +230,45 @@ bool AccessNetworkContextTransport::ClearProxySelection(
+   return true;
+ }
+ 
++bool AccessNetworkContextTransport::RegisterPreparedProxy(
++    const AccessPrivateEndpoint& entry) {
++  const auto& endpoint = entry.registration;
++  const auto& g = endpoint.generations;
++  if (!OwnsConfiguredPartition(endpoint.owner) ||
++      endpoint.transport != aegis_access::RegisteredProxyTransport::kHttp ||
++      (endpoint.host != "127.0.0.1" && endpoint.host != "::1") || !endpoint.port ||
++      endpoint.proxy_group_id.empty() || endpoint.registration_id.empty() ||
++      !g.policy_generation || !g.identity_generation || !g.selection_generation ||
++      g.network_epoch != network_epoch_ || !g.base_proxy_config_generation ||
++      !entry.local_credentials || entry.local_credentials->username().empty() ||
++      entry.local_credentials->password().empty()) return false;
++  auto& state = partitions_.at(endpoint.owner.storage_partition_token);
++  for (const auto& [group, old] : state.private_endpoints) {
++    if (old.registration.registration_id == endpoint.registration_id &&
++        (group != endpoint.proxy_group_id || old.registration.host != endpoint.host ||
++         old.registration.port != endpoint.port ||
++         !old.local_credentials->Equals(*entry.local_credentials))) return false;
++  }
++  state.private_endpoints.insert_or_assign(endpoint.proxy_group_id, entry);
++  state.endpoint = endpoint;
++  return true;
++}
++std::vector<AccessPrivateEndpoint> AccessNetworkContextTransport::PrivateEndpoints(
++    const aegis_access::OwnershipKey& owner) const {
++  std::vector<AccessPrivateEndpoint> endpoints;
++  if (!OwnsConfiguredPartition(owner)) return endpoints;
++  for (const auto& [group, entry] : partitions_.at(owner.storage_partition_token).private_endpoints)
++    endpoints.push_back(entry);
++  return endpoints;
++}
++bool AccessNetworkContextTransport::HasReadyPrivateContext(
++    const aegis_access::OwnershipKey& owner) const {
++  if (!OwnsConfiguredPartition(owner)) return false;
++  const auto& contexts = partitions_.at(owner.storage_partition_token).private_contexts;
++  return !contexts.empty() && std::ranges::all_of(contexts,
++      [](const auto& entry) { return entry.second->is_ready(); });
++}
++
+ std::optional<aegis_access::RegisteredProxyEndpoint>
+ AccessNetworkContextTransport::CaptureSelectedProxyEndpoint(
+     const aegis_access::OwnershipKey& owner,
+@@ -242,6 +281,14 @@ AccessNetworkContextTransport::CaptureSelectedProxyEndpoint(
+   }
+ 
+   const auto it = partitions_.find(owner.storage_partition_token);
++  if (it != partitions_.end()) {
++    const auto entry = it->second.private_endpoints.find(proxy_group_id);
++    if (entry != it->second.private_endpoints.end()) {
++      const auto& endpoint = entry->second.registration;
++      return endpoint.owner == owner && endpoint.generations.network_epoch == network_epoch_
++          ? std::make_optional(endpoint) : std::nullopt;
++    }
++  }
+   // PublishProxySelection() sorts exact_hosts before committing PartitionState.
+   if (it == partitions_.end() || !it->second.endpoint.has_value() ||
+       !std::binary_search(it->second.exact_hosts.begin(),
+@@ -357,8 +404,14 @@ bool AccessNetworkContextTransport::ReplaceSelection(
+   auto& state = partitions_.at(owner.storage_partition_token);
+   state.endpoint = replacement.endpoint;
+   state.exact_hosts = replacement.exact_hosts;
++  if (replacement.endpoint) {
++    auto found = state.private_endpoints.find(replacement.endpoint->proxy_group_id);
++    if (found != state.private_endpoints.end() &&
++        found->second.registration.registration_id == replacement.endpoint->registration_id)
++      found->second.registration = *replacement.endpoint;
++  }
+   // The policy metadata is sent after this config on the same Mojo pipe.
+-  Broadcast(state);
++  if (state.private_endpoints.empty()) Broadcast(state);
+   return true;
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 139d67279b47781e941ca79aeeb8b463ce62b0dc..b623c0e963adf83829d625f987548d447320291e 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -6,6 +6,7 @@
+ #include <cstddef>
+ #include <cstdint>
+ #include <map>
++#include <memory>
+ #include <optional>
+ #include <string>
+ #include <vector>
+@@ -17,6 +18,7 @@
+ #include "components/aegis_access/access_proxy_route_adapter.h"
+ #include "components/aegis_access/policy_publication_ack_tracker.h"
+ #include "components/aegis_access/access_route_types.h"
++#include "chrome/browser/aegis/access/access_private_context_client.h"
+ #include "mojo/public/cpp/bindings/remote_set.h"
+ #include "net/base/network_change_notifier.h"
+ #include "services/network/public/mojom/network_context.mojom-forward.h"
+@@ -99,6 +101,12 @@ class AccessNetworkContextTransport
+       const base::FilePath& relative_partition_path,
+       std::vector<std::string> exact_hosts,
+       const aegis_access::RegisteredProxyEndpoint& endpoint);
++  // Records a real prepared child for private per-request publication. This
++  // does not alter native proxy settings or publish the user's site intent.
++  bool RegisterPreparedProxy(const AccessPrivateEndpoint& endpoint);
++  std::vector<AccessPrivateEndpoint> PrivateEndpoints(
++      const aegis_access::OwnershipKey& owner) const;
++  bool HasReadyPrivateContext(const aegis_access::OwnershipKey& owner) const;
+ 
+   // Clears the custom selection while keeping the update channel installed.
+   // New requests then use Chromium's native proxy result again.
+@@ -146,6 +154,8 @@ class AccessNetworkContextTransport
+   friend class AccessNetworkContextTransportTestPeer;
+ 
+   struct PartitionState {
++    std::map<std::string, AccessPrivateEndpoint> private_endpoints;
++    std::map<std::string, std::shared_ptr<AccessPrivateContextClient>> private_contexts;
+     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
+     std::vector<std::string> exact_hosts;
+     mojo::RemoteSet<network::mojom::CustomProxyConfigClient> clients;
+@@ -192,4 +202,4 @@ class AccessNetworkContextTransport
+ 
+ }  // namespace aegis::access
+ 
+-#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+\ No newline at end of file
++#endif  // CHROME_BROWSER_AEGIS_ACCESS_ACCESS_NETWORK_CONTEXT_TRANSPORT_H_
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index 7287a52abb20ee20c1e0305e5a478b7f3a511838..5d630e0bec8b0d9c085becf023b4b9397cfa1a10 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -17,6 +17,7 @@
+ #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
++#include "chrome/browser/aegis/access/access_service_coordinator.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+@@ -707,6 +708,8 @@ void AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
+           aegis_access::RequestAttributionKind::kPendingNavigation) {
+     return;
+   }
++  if (auto* controller = AccessSiteProxyBubbleController::GetOrCreate(profile))
++    controller->EnsureProfileRestored(metadata->owner);
+ 
+   BrowserContextData::StartProxying(
+       profile, frame->GetFrameTreeNodeId(), navigation_id, std::nullopt,
+@@ -770,6 +773,12 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
+   CHECK(ownership_record);
+   *net_error = net::ERR_BLOCKED_BY_CLIENT;
+ 
++  if (auto* coordinator = AccessServiceCoordinator::Get(profile_);
++      coordinator && !coordinator->CanDispatch(factory_owner_)) {
++    *net_error = net::ERR_NETWORK_CHANGED;
++    return RequestDisposition::kBlock;
++  }
++
+   if (document_.has_value() &&
+       !document_->AsRenderFrameHostIfValid()) {
+     *net_error = net::ERR_ABORTED;
+@@ -841,6 +850,12 @@ AccessProxyingURLLoaderFactory::EvaluatePreparedMetadata(
+   if (policy_disposition == MatchedPolicyDisposition::kBlock) {
+     return RequestDisposition::kBlock;
+   }
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  if (transport && !transport->PrivateEndpoints(metadata.owner).empty() &&
++      !private_target_factory_.is_bound()) {
++    *net_error = net::ERR_PROXY_CONNECTION_FAILED;
++    return RequestDisposition::kBlock;
++  }
+ 
+   ProxyDispatchPreparation preparation = PrepareProxyDispatch(
+       profile_, runtime, metadata, *snapshot, *context_result.context, match);
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+index 282c7a8b677922b15b835be6f3bcda18365e3e84..1541803dcdf26e26ab4fd8d1cf974a3e169a437c 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.h
+@@ -20,6 +20,7 @@
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "services/network/public/cpp/url_loader_factory_builder.h"
+ #include "services/network/public/mojom/url_loader_factory.mojom.h"
++#include "services/network/public/mojom/aegis_access_route.mojom.h"
+ 
+ class GURL;
+ class Profile;
+@@ -194,6 +195,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
+            base::UniquePtrComparator>
+       requests_;
+   mojo::Remote<network::mojom::URLLoaderFactory> target_factory_;
++  mojo::Remote<network::mojom::AegisAccessURLLoaderFactory> private_target_factory_;
+   DisconnectCallback on_disconnect_;
+ };
+ 
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index 5325a1317695bb323dc8fc15b9977ff078e2a400..ce6b7760cb9a834aa523b24cdd28822005b8675b 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -12,6 +12,7 @@
+ #include "base/functional/callback_helpers.h"
+ #include "base/time/time.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/browser/aegis/access/access_identity_generation_source.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
+ #include "chrome/browser/aegis/access/access_request_dispatch_state.h"
+@@ -122,10 +123,74 @@ struct AccessServiceCoordinator::MutationTransaction {
+ AccessServiceCoordinator::MutationTransaction::MutationTransaction() = default;
+ AccessServiceCoordinator::MutationTransaction::~MutationTransaction() = default;
+ 
++bool AccessServiceCoordinator::CanDispatch(const OwnershipKey& owner) const {
++  return !mutation_in_flight_ &&
++      (!async_store_ || committed_cache_.contains(owner.storage_partition_token));
++}
++
++void AccessServiceCoordinator::InitializeForProfile(
++    const OwnershipKey& owner, base::OnceCallback<void(bool)> completion) {
++  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  if (store_ || !transport || !transport->OwnsConfiguredPartition(owner)) {
++    std::move(completion).Run(false);
++    return;
++  }
++  if (committed_cache_.contains(owner.storage_partition_token)) {
++    std::move(completion).Run(true);
++    return;
++  }
++  auto& waiting = initializing_[owner.storage_partition_token];
++  waiting.push_back(std::move(completion));
++  if (waiting.size() > 1) return;
++  if (!async_store_) {
++    const auto durable = "aegis-access-profile:" + profile_->GetPath().AsUTF8Unsafe();
++    auto binding = profile_->IsOffTheRecord()
++        ? TrustedAccessStoreBindingFactory::CreateEphemeral(
++              owner.channel, durable, owner.profile_token)
++        : TrustedAccessStoreBindingFactory::CreatePersistent(
++              owner.channel, durable, owner.profile_token, profile_->GetPath());
++    if (!binding) {
++      OnStoreInitialized(owner, {.status = StoreStatus::kInvalidArgument});
++      return;
++    }
++    async_store_ = std::make_unique<AccessAsyncRuleStore>(*binding);
++  }
++  async_store_->InitializeAndRestore(owner.storage_partition_token,
++      base::BindOnce(&AccessServiceCoordinator::OnStoreInitialized,
++                     weak_factory_.GetWeakPtr(), owner));
++}
++void AccessServiceCoordinator::OnStoreInitialized(
++    OwnershipKey owner, AsyncAccessStoreRestoration result) {
++  auto* runtime = AccessPublishedRequestRuntime::GetOrCreate(profile_);
++  bool ready = result.status == StoreStatus::kValid && result.committed &&
++      result.publication && result.publication->owner == owner && runtime;
++  if (ready) {
++    auto* identity = AccessIdentityGenerationSource::GetOrCreate(profile_);
++    if (!identity->binding()) identity->CommitIdentity(
++        {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, "dev", "authorized-local-node"});
++    const auto published = runtime->PublishRestoredPolicyCandidate(*result.publication);
++    ready = published.status == AccessPolicyPublicationStatus::kPublished ||
++            published.status == AccessPolicyPublicationStatus::kUnchanged;
++    if (ready) committed_cache_.insert_or_assign(
++        owner.storage_partition_token, std::move(*result.committed));
++  }
++  auto callbacks = std::move(initializing_.at(owner.storage_partition_token));
++  initializing_.erase(owner.storage_partition_token);
++  for (auto& callback : callbacks) std::move(callback).Run(ready);
++}
++
+ StoreResult<StoredPolicySnapshot>
+ AccessServiceCoordinator::ReadCommittedSnapshot(
+     const std::string& storage_partition_token) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  if (async_store_) {
++    const auto found = committed_cache_.find(storage_partition_token);
++    return found == committed_cache_.end()
++        ? StoreResult<StoredPolicySnapshot>{.status = StoreStatus::kMissing}
++        : StoreResult<StoredPolicySnapshot>{.status = StoreStatus::kValid,
++                                           .value = found->second};
++  }
+   if (!store_) {
+     return {.status = StoreStatus::kMissing};
+   }
+@@ -145,7 +210,7 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
+     std::move(completion).Run(Result(AccessMutationTransactionStatus::kBusy));
+     return;
+   }
+-  if (supplied_store && store_) {
++  if (supplied_store && (store_ || async_store_)) {
+     std::move(completion).Run(Result(AccessMutationTransactionStatus::kInvalidRequest));
+     return;
+   }
+@@ -156,6 +221,19 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
+   auto transaction = std::make_unique<MutationTransaction>();
+   transaction->completion = std::move(completion);
+   transaction->identity.selector = std::move(selector);
++  if (async_store_) {
++    if (!committed_cache_.contains(request.candidate_group.owner.storage_partition_token) ||
++        !SelectorMatchesMutation(transaction->identity.selector, request) ||
++        !OrdinaryMutationMode(request)) {
++      Finish(std::move(transaction->completion),
++             Result(AccessMutationTransactionStatus::kInvalidRequest));
++      return;
++    }
++    async_store_->Prepare(std::move(request), base::BindOnce(
++        &AccessServiceCoordinator::OnAsyncPrepared, weak_factory_.GetWeakPtr(),
++        std::move(transaction)));
++    return;
++  }
+   if (auto outcome = PrepareCandidate(*transaction, request)) {
+     if (outcome->status == AccessMutationTransactionStatus::kCommitted) {
+       Finish(std::move(transaction->completion), *outcome);
+@@ -174,6 +252,38 @@ void AccessServiceCoordinator::CommitSiteGroupMutation(
+   }
+   RequestPublicationAck(std::move(transaction));
+ }
++void AccessServiceCoordinator::OnAsyncPrepared(
++    std::unique_ptr<MutationTransaction> transaction,
++    AsyncAccessStorePrepared result) {
++  if (result.status != StoreStatus::kValid || !result.pending) {
++    FailTransaction(std::move(transaction),
++        Result(AccessMutationTransactionStatus::kPrepareFailed, result.status));
++    return;
++  }
++  if (result.pending->phase == MutationPhase::kCommitted) {
++    Finish(std::move(transaction->completion),
++        Result(AccessMutationTransactionStatus::kCommitted, StoreStatus::kValid,
++               result.pending->committed_policy_generation));
++    return;
++  }
++  transaction->pending = std::move(*result.pending);
++  transaction->previous = std::move(result.previous);
++  if (!result.candidate) {
++    FailTransaction(std::move(transaction),
++        Result(AccessMutationTransactionStatus::kCandidateBuildFailed, result.status));
++    return;
++  }
++  transaction->candidate = std::move(*result.candidate);
++  if (auto failure = BeginPublication(*transaction)) {
++    FailTransaction(std::move(transaction), *failure);
++    return;
++  }
++  if (auto failure = PublishCandidate(*transaction)) {
++    FailTransaction(std::move(transaction), *failure);
++    return;
++  }
++  RequestPublicationAck(std::move(transaction));
++}
+ 
+ std::optional<AccessMutationTransactionResult>
+ AccessServiceCoordinator::PrepareCandidate(
+@@ -408,6 +518,17 @@ void AccessServiceCoordinator::FailTransaction(
+       dispatch->FailPolicyPublication(transaction->identity);
+     }
+   }
++  if (async_store_) {
++    if (!transaction->pending.operation_id.empty()) {
++      const auto pending = transaction->pending;
++      async_store_->RecoverFailedMutation(pending,
++          base::BindOnce(&AccessServiceCoordinator::OnAsyncRecovered,
++              weak_factory_.GetWeakPtr(), std::move(transaction), result));
++    } else {
++      Finish(std::move(transaction->completion), result);
++    }
++    return;
++  }
+   if (transaction->runtime_published) {
+     RestoreCandidate(*transaction);
+   }
+@@ -421,6 +542,22 @@ void AccessServiceCoordinator::FailTransaction(
+   }
+   Finish(std::move(transaction->completion), result);
+ }
++void AccessServiceCoordinator::OnAsyncRecovered(
++    std::unique_ptr<MutationTransaction> transaction,
++    AccessMutationTransactionResult failure, AsyncAccessStoreRestoration result) {
++  if (result.status == StoreStatus::kValid && result.publication && result.committed) {
++    committed_cache_.insert_or_assign(transaction->pending.owner.storage_partition_token,
++                                      std::move(*result.committed));
++    if (auto* runtime = AccessPublishedRequestRuntime::Get(profile_)) {
++      runtime->PublishRestoredPolicyCandidate(*result.publication);
++      // Keep the failed publication barrier. A newer complete Context ACK must
++      // restore the reserved committed candidate before requests can resume.
++    }
++  } else {
++    failure.store_status = result.status;
++  }
++  Finish(std::move(transaction->completion), failure);
++}
+ 
+ void AccessServiceCoordinator::RestoreCandidate(
+     const MutationTransaction& transaction) {
+@@ -441,7 +578,7 @@ void AccessServiceCoordinator::OnNetworkContextPublicationAck(
+     bool acknowledged) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   auto* dispatch = AccessRequestDispatchState::Get(profile_);
+-  if (!acknowledged || !dispatch || !store_ ||
++  if (!acknowledged || !dispatch || (!store_ && !async_store_) ||
+       !CandidateStillCurrent(*transaction)) {
+     FailTransaction(
+         std::move(transaction),
+@@ -454,6 +591,13 @@ void AccessServiceCoordinator::OnNetworkContextPublicationAck(
+         Result(AccessMutationTransactionStatus::kPublicationTrackerRejected));
+     return;
+   }
++  if (async_store_) {
++    const auto pending = transaction->pending;
++    async_store_->Commit(pending, base::BindOnce(
++        &AccessServiceCoordinator::OnAsyncCommitted, weak_factory_.GetWeakPtr(),
++        std::move(transaction)));
++    return;
++  }
+   // Through finalization, execution is synchronous on UI. The store neither
+   // pumps tasks nor invokes callbacks: validated tracker transitions cannot
+   // change here. Never report a durable commit as a rolled-back transaction.
+@@ -477,6 +621,38 @@ void AccessServiceCoordinator::OnNetworkContextPublicationAck(
+              committed.value->committed_policy_generation));
+ }
+ 
++void AccessServiceCoordinator::OnAsyncCommitted(
++    std::unique_ptr<MutationTransaction> transaction,
++    StoreResult<PendingMutationRecord> committed) {
++  if (committed.status != StoreStatus::kValid || !committed.value) {
++    FailTransaction(std::move(transaction),
++        Result(AccessMutationTransactionStatus::kCommitFailed, committed.status));
++    return;
++  }
++  // Durability cannot be undone if Context/identity changes while IO is pending.
++  // Retain committed intent, report unavailable, and keep the request barrier.
++  committed_cache_.insert_or_assign(transaction->pending.owner.storage_partition_token,
++                                    transaction->candidate);
++  ++state_generation_;
++  auto* dispatch = AccessRequestDispatchState::Get(profile_);
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  bool ready = dispatch && transport &&
++               transport->HasReadyPrivateContext(transaction->pending.owner) &&
++               CandidateStillCurrent(*transaction) &&
++               dispatch->CanCommitPolicyPublication(transaction->identity);
++  if (ready) {
++    ready = dispatch->MarkPolicyPublicationDurablyCommitted(transaction->identity).status ==
++        aegis_access::PolicyPublicationAckStatus::kReady;
++    if (ready) ready = dispatch->FinalizePolicyPublication(transaction->identity).status ==
++        aegis_access::PolicyPublicationAckStatus::kFinalized;
++  }
++  if (!ready && dispatch) dispatch->FailPolicyPublication(transaction->identity);
++  Finish(std::move(transaction->completion), Result(
++      ready ? AccessMutationTransactionStatus::kCommitted
++            : AccessMutationTransactionStatus::kCommittedUnavailable,
++      StoreStatus::kValid, committed.value->committed_policy_generation));
++}
++
+ void AccessServiceCoordinator::Finish(
+     base::OnceCallback<void(AccessMutationTransactionResult)> completion,
+     AccessMutationTransactionResult result) {
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.h b/chrome/browser/aegis/access/access_service_coordinator.h
+index f1114ab1d83a6ab87e1762602cd8b35211ca2173..d824c42ad7eabbd80127751585f5be3c8c1dbbf0 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.h
++++ b/chrome/browser/aegis/access/access_service_coordinator.h
+@@ -6,6 +6,8 @@
+ #include <cstdint>
+ #include <memory>
+ #include <optional>
++#include <map>
++#include <vector>
+ 
+ #include "base/functional/callback_forward.h"
+ #include "base/memory/raw_ptr.h"
+@@ -13,6 +15,7 @@
+ #include "base/supports_user_data.h"
+ #include "base/timer/timer.h"
+ #include "chrome/browser/aegis/access/access_rule_store.h"
++#include "chrome/browser/aegis/access/access_async_rule_store.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "components/aegis_access/policy_publication_ack_tracker.h"
+ #include "components/aegis_access/access_proxy_route_adapter.h"
+@@ -23,6 +26,7 @@ namespace aegis::access {
+ 
+ enum class AccessMutationTransactionStatus {
+   kCommitted,
++  kCommittedUnavailable,
+   kBusy,
+   kInvalidRequest,
+   kStoreReadFailed,
+@@ -60,7 +64,12 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+   ~AccessServiceCoordinator() override;
+ 
+   uint64_t state_generation() const { return state_generation_; }
+-  bool has_retained_store() const { return !!store_; }
++  bool has_retained_store() const { return !!store_ || !!async_store_; }
++  // Product startup: persistent for ordinary Profile, ephemeral for private.
++  // Only the actor opens SQLite; ReadCommittedSnapshot is then a UI cache read.
++  void InitializeForProfile(const OwnershipKey& owner,
++                            base::OnceCallback<void(bool)> completion);
++  bool CanDispatch(const OwnershipKey& owner) const;
+   StoreResult<StoredPolicySnapshot> ReadCommittedSnapshot(
+       const std::string& storage_partition_token);
+ 
+@@ -79,6 +88,13 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+  private:
+   explicit AccessServiceCoordinator(Profile* profile);
+   struct MutationTransaction;
++  void OnStoreInitialized(OwnershipKey owner, AsyncAccessStoreRestoration result);
++  void OnAsyncPrepared(std::unique_ptr<MutationTransaction> transaction,
++                       AsyncAccessStorePrepared result);
++  void OnAsyncCommitted(std::unique_ptr<MutationTransaction> transaction,
++                       StoreResult<PendingMutationRecord> result);
++  void OnAsyncRecovered(std::unique_ptr<MutationTransaction> transaction,
++      AccessMutationTransactionResult failure, AsyncAccessStoreRestoration result);
+   std::optional<AccessMutationTransactionResult> PrepareCandidate(
+       MutationTransaction& transaction,
+       const SiteGroupMutationRequest& request);
+@@ -109,6 +125,9 @@ class AccessServiceCoordinator : public base::SupportsUserData::Data {
+ 
+   const raw_ptr<Profile> profile_;
+   std::unique_ptr<AccessRuleStore> store_;
++  std::unique_ptr<AccessAsyncRuleStore> async_store_;
++  std::map<std::string, StoredPolicySnapshot> committed_cache_;
++  std::map<std::string, std::vector<base::OnceCallback<void(bool)>>> initializing_;
+   uint64_t state_generation_ = 0;
+   bool mutation_in_flight_ = false;
+   base::OneShotTimer publication_timeout_;
+diff --git a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+index 2ed7bc5766e721410c67a234bc7d20185f0a3e3d..9851086abb1166e7ce36f03c020de1fd31fde641 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator_unittest.cc
+@@ -9,6 +9,7 @@
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/test/test_future.h"
++#include "base/threading/thread_restrictions.h"
+ #include "chrome/browser/aegis/access/access_network_context_transport.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
+ #include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
+@@ -78,6 +79,56 @@ TEST_F(AccessServiceCoordinatorTest, ProfilesNeverShareCoordinatorState) {
+   EXPECT_EQ(second->state_generation(), 0u);
+ }
+ 
++TEST_F(AccessServiceCoordinatorTest, ProductStartupRestoresOnBackgroundSequence) {
++  auto profile = TestingProfile::Builder().Build();
++  network::mojom::NetworkContextParams params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
++  const auto owner = *AccessNetworkContextTransport::Get(profile.get())->OwnerForPartition(
++      ChannelNamespace::kDev, {});
++  auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile.get());
++  base::ScopedDisallowBlocking disallow_ui_io;
++  base::test::TestFuture<bool> restored;
++  coordinator->InitializeForProfile(owner, restored.GetCallback());
++  ASSERT_TRUE(restored.Get());
++  ASSERT_TRUE(coordinator->has_retained_store());
++  EXPECT_TRUE(coordinator->ReadCommittedSnapshot(owner.storage_partition_token).value);
++  auto* runtime = AccessPublishedRequestRuntime::Get(profile.get());
++  ASSERT_TRUE(runtime);
++  const auto* policy = runtime->GetPublishedPolicySnapshot(owner);
++  ASSERT_TRUE(policy);
++  EXPECT_GT(policy->policy_generation, 0u);
++  EXPECT_TRUE(policy->rules.empty());
++}
++TEST_F(AccessServiceCoordinatorTest, ProductStartupReservationSurvivesOrdinaryProfileRestart) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  uint64_t first_generation = 0;
++  std::string first_owner;
++  for (int lifetime = 0; lifetime < 2; ++lifetime) {
++    auto profile = TestingProfile::Builder().SetPath(directory.GetPath()).Build();
++    network::mojom::NetworkContextParams params;
++    ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
++    const auto owner = *AccessNetworkContextTransport::Get(profile.get())->OwnerForPartition(
++        ChannelNamespace::kDev, {});
++    auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile.get());
++    base::test::TestFuture<bool> restored;
++    coordinator->InitializeForProfile(owner, restored.GetCallback());
++    ASSERT_TRUE(restored.Get());
++    const auto* policy = AccessPublishedRequestRuntime::Get(profile.get())->GetPublishedPolicySnapshot(owner);
++    ASSERT_TRUE(policy);
++    if (lifetime == 0) {
++      first_generation = policy->policy_generation;
++      first_owner = owner.profile_token;
++    } else {
++      EXPECT_GT(policy->policy_generation, first_generation);
++      EXPECT_NE(owner.profile_token, first_owner);
++      EXPECT_EQ(policy->owner, owner);
++    }
++    profile.reset();
++    task_environment_.RunUntilIdle();
++  }
++}
++
+ // Holds the real Mojo reply across the PREPARED observation point.
+ class HeldPolicyClient : public network::mojom::CustomProxyConfigClient {
+  public:
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index aec962fc82e81c07a7a786d87450d89754097387..996734828931f207c0a233bf5e02e7937afcd014 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -6,6 +6,7 @@
+ #include "base/command_line.h"
+ #include "chrome/browser/aegis/access/access_identity_generation_source.h"
+ #include "chrome/browser/aegis/access/access_published_request_runtime.h"
++#include "chrome/browser/aegis/access/access_proxy_selection_generation_source.h"
+ 
+ #include "base/strings/string_number_conversions.h"
+ #include "base/uuid.h"
+@@ -33,6 +34,8 @@ AccessSiteProxySessionError MutationStatusToSessionError(
+   switch (status) {
+     case AccessMutationTransactionStatus::kCommitted:
+       return AccessSiteProxySessionError::kOk;
++    case AccessMutationTransactionStatus::kCommittedUnavailable:
++      return AccessSiteProxySessionError::kRuntimeFault;
+     case AccessMutationTransactionStatus::kBusy:
+       return AccessSiteProxySessionError::kBusy;
+     case AccessMutationTransactionStatus::kInvalidRequest:
+@@ -207,6 +210,28 @@ AccessSiteProxyBubbleController::GetFailedNavigationRetryHandler() {
+       &AccessSiteProxyBubbleController::RequestFailedNavigationProxy,
+       weak_factory_.GetWeakPtr());
+ }
++void AccessSiteProxyBubbleController::EnsureProfileRestored(const OwnershipKey& owner) {
++  if (auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile_))
++    coordinator->InitializeForProfile(owner, base::BindOnce(
++        &AccessSiteProxyBubbleController::RestoreSavedIntents,
++        weak_factory_.GetWeakPtr(), owner));
++}
++void AccessSiteProxyBubbleController::RestoreSavedIntents(OwnershipKey owner,
++                                                         bool restored) {
++  if (!restored) return;
++  const auto snapshot = AccessServiceCoordinator::Get(profile_)->ReadCommittedSnapshot(
++      owner.storage_partition_token);
++  if (!snapshot.value) return;
++  for (const auto& group : snapshot.value->site_groups) {
++    if (group.members.empty() ||
++        group.group.site_toggle_id != "bubble:" + group.group.canonical_host) continue;
++    const auto host = MakeAccessSiteHost(group.group.canonical_host);
++    if (host.host) intent_store_.Set(*host.host,
++        group.members.front().policy.mode == AccessMode::kProxy
++            ? AccessSiteIntent::kAllow : AccessSiteIntent::kOff);
++  }
++  ++state_revision_;
++}
+ void AccessSiteProxyBubbleController::FailCorePreparation(
+     const AccessSiteHost& host, std::string error) {
+   publication_in_flight_ = false;
+@@ -225,6 +250,22 @@ void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& hos
+     FailCorePreparation(host, "An authorized DEV proxy binding is required.");
+     return;
+   }
++  auto* coordinator = AccessServiceCoordinator::GetOrCreate(profile_);
++  if (!coordinator) {
++    FailCorePreparation(host, "Access rule storage is unavailable.");
++    return;
++  }
++  coordinator->InitializeForProfile(*owner, base::BindOnce(
++      &AccessSiteProxyBubbleController::OnProfileRestoredForCore,
++      weak_factory_.GetWeakPtr(), host, *owner));
++}
++void AccessSiteProxyBubbleController::OnProfileRestoredForCore(
++    AccessSiteHost host, OwnershipKey owner, bool restored) {
++  if (!restored || (retry_completion_ && retry_completion_.IsCancelled())) {
++    FailCorePreparation(host, "Access startup restoration was not completed.");
++    return;
++  }
++  RestoreSavedIntents(owner, true);
+   if (!local_core_) {
+     const auto* command = base::CommandLine::ForCurrentProcess();
+     const auto manifest = command->GetSwitchValuePath("aegis-access-dev-core-manifest");
+@@ -237,7 +278,7 @@ void AccessSiteProxyBubbleController::PrepareLocalCore(const AccessSiteHost& hos
+   }
+   local_core_->Prepare(base::BindOnce(
+       &AccessSiteProxyBubbleController::OnLocalCorePrepared,
+-      weak_factory_.GetWeakPtr(), host, *owner));
++      weak_factory_.GetWeakPtr(), host, owner));
+ }
+ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
+     AccessSiteHost host, OwnershipKey owner, AccessLocalCoreReady result) {
+@@ -255,16 +296,40 @@ void AccessSiteProxyBubbleController::OnLocalCorePrepared(
+   if (!identity->binding()) identity->CommitIdentity(
+       {aegis_access::AccessIdentityKind::kSignedOut, {}, {}, "dev", "authorized-local-node"});
+   auto* runtime = AccessPublishedRequestRuntime::Get(profile_);
+-  if (!runtime || !runtime->CaptureCommonGenerationTupleOnUiThread(owner)) {
++  const auto common = runtime ? runtime->CaptureCommonGenerationTupleOnUiThread(owner)
++                              : std::nullopt;
++  if (!common || !result.local_credentials) {
+     FailCorePreparation(host, "Access rules have not completed startup restoration.");
+     return;
+   }
++  auto* transport = AccessNetworkContextTransport::Get(profile_);
++  auto* selections = AccessProxySelectionGenerationSource::GetOrCreate(profile_);
++  const std::string group = "dev-authorized-local-node";
++  const auto* old = selections->binding_for_group(group);
++  const bool same = old && old->endpoint_id == result.registration_id;
++  const auto selected = selections->CommitSelection(
++      {group, result.registration_id, "dev-process:" + result.registration_id,
++       "dev-binding:" + result.registration_id,
++       same ? old->binding_revision : old ? old->binding_revision + 1 : 1});
++  if (selected.status != aegis_access::ProxySelectionGenerationCommitStatus::kCommitted &&
++      selected.status != aegis_access::ProxySelectionGenerationCommitStatus::kUnchanged) {
++    FailCorePreparation(host, "The proxy selection generation could not be committed.");
++    return;
++  }
++  auto generations = *common;
++  generations.selection_generation = selected.generation;
++  if (!selected.generation || !transport->RegisterPreparedProxy({
++          {result.registration_id, group, owner, generations,
++           aegis_access::RegisteredProxyTransport::kHttp, "127.0.0.1", result.port},
++          result.local_credentials})) {
++    FailCorePreparation(host, "The prepared proxy registration could not be installed.");
++    return;
++  }
+   AccessSiteProxyLocalProxyReadyInfo ready;
+   if (EnsureLocalProxyReady(host, &ready) != AccessSiteProxySessionError::kOk) {
+     FailCorePreparation(host, "The prepared proxy has not been registered with this Profile.");
+     return;
+   }
+-  auto* transport = AccessNetworkContextTransport::Get(profile_);
+   const auto endpoint = transport->CurrentEndpoint(owner);
+   if (!endpoint || endpoint->registration_id != result.registration_id ||
+       endpoint->port != result.port) {
+@@ -524,7 +589,8 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   publication_in_flight_ = false;
+   ++state_revision_;
+-  if (result.status == AccessMutationTransactionStatus::kCommitted) {
++  if (result.status == AccessMutationTransactionStatus::kCommitted ||
++      result.status == AccessMutationTransactionStatus::kCommittedUnavailable) {
+     ApplySiteProxyToggle(&intent_store_, host, enabling);
+   }
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index ea9a847953a4054ffdee8246db176f4b7c3caad4..a6ccbc5c804f22c2f1230fd78f3872d5e9a43b35 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -57,6 +57,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+       base::OnceCallback<void(bool)> completion);
+   base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
+   GetFailedNavigationRetryHandler();
++  void EnsureProfileRestored(const OwnershipKey& owner);
+ 
+   // P-mac-4 DEV panel. False on Beta/Release — UI must not register the
+   // section. Never admits a general Access rule editor.
+@@ -83,6 +84,9 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+  private:
+   explicit AccessSiteProxyBubbleController(Profile* profile);
+   void PrepareLocalCore(const AccessSiteHost& host);
++  void RestoreSavedIntents(OwnershipKey owner, bool restored);
++  void OnProfileRestoredForCore(AccessSiteHost host, OwnershipKey owner,
++                               bool restored);
+   void OnLocalCorePrepared(AccessSiteHost host, OwnershipKey owner,
+                           AccessLocalCoreReady result);
+   void OnCommittedCoreVerified(AccessSiteHost host, AccessLocalCoreReady result);
+-- 
+2.54.0 (Apple Git-157)
+

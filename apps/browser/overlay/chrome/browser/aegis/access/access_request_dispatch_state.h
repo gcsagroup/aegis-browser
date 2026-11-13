@@ -85,6 +85,11 @@ class AccessRequestDispatchState : public base::SupportsUserData::Data {
       const aegis_access::PolicyPublicationIdentity& identity,
       const aegis_access::OwnershipKey& owner,
       base::OnceCallback<void(bool)> completion = {});
+  AccessNetworkConfigAckResult RequestPrivateSnapshotAck(
+      const aegis_access::PolicyPublicationIdentity& identity,
+      const aegis_access::PublishedAccessPolicySnapshot& policy,
+      const aegis_access::GenerationTuple& common,
+      base::OnceCallback<void(bool)> completion);
 
  private:
   explicit AccessRequestDispatchState(Profile* profile);

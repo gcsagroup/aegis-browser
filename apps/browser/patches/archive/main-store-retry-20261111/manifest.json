@@ -1,0 +1,8 @@
+{
+  "sourceRepository": "gcsagroup/aegis-browser",
+  "sourceCommit": "87b13926ad33019584c2716d9004c48cde248b8b",
+  "sourcePath": "apps/browser/patches/0350-access-rule-store-open-retry.patch",
+  "sha256": "2df233bb4fc5cec3a91f46515b93599803a4da7802107489f699d0a70ece52ae",
+  "activeReplacement": "0451-fix-store-retry-website-migration-integration.patch",
+  "reason": "The macOS stack already owns patches0350-0450. Patch0451 reexpresses the upstream Open-retry fix after Website-schema changes and preserves the exact earlier replay prefix. This original patch is retained unchanged as history, not applied twice."
+}

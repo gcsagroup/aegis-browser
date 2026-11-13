@@ -24,6 +24,10 @@ checks. For a manual candidate tag, use the source-bound annotation in the
 
 ## Local stages
 
+Artifact-only local packaging retains read-only GitHub admission. New Apple uploads
+also create and read back a permanent product-owned upload intent, so their GitHub
+credential needs Contents write. Historical completed upload receipts remain readable.
+
 Use Ruby 3.3.6, the locked Bundler/Fastlane dependencies, Node 22.23.1, Python 3.11+ and Xcode on macOS. Start from a clean committed source. `bundle install` installs the pinned dependencies; `./release ios plan` prints source SHA/tree, native input digest and available stages without credentials. Every mutation requires an explicit profile.
 
 ```sh

@@ -1,0 +1,196 @@
+From 6f478a30178acb18e292d48492c553d304c4a56d Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 20:25:12 +0800
+Subject: [PATCH] fix(access): restrict private terminals to network factories
+ and preserve unavailable errors
+
+---
+ .../browser/chrome_content_browser_client.cc  | 74 ++++++++++---------
+ .../loader/url_loader_factory_utils.cc        |  3 +-
+ .../access_private_url_loader_factory.cc      | 11 ++-
+ .../aegis/access_request_route_state.cc       | 11 ++-
+ .../aegis/access_request_route_state.h        |  3 +-
+ 5 files changed, 57 insertions(+), 45 deletions(-)
+
+diff --git a/chrome/browser/chrome_content_browser_client.cc b/chrome/browser/chrome_content_browser_client.cc
+index 91885e9d96cf7a067d90da906f46b30da36aba54..95c4b4a0d007500fb47474159b044b2b2d4b6b9a 100644
+--- a/chrome/browser/chrome_content_browser_client.cc
++++ b/chrome/browser/chrome_content_browser_client.cc
+@@ -6807,46 +6807,50 @@ void ChromeContentBrowserClient::WillCreateURLLoaderFactory(
+       frame, type == URLLoaderFactoryType::kNavigation, request_initiator,
+       isolation_info, factory_builder);
+ 
+-  if (type == URLLoaderFactoryType::kNavigation && frame &&
+-      navigation_id.has_value() &&
+-      navigation_factory_source != NavigationFactorySource::kBuiltInData) {
+-    aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
+-        Profile::FromBrowserContext(browser_context), frame, *navigation_id,
+-        factory_builder);
+-  }
++  // Private Access capabilities require the original fresh NetworkContext.
++  // WebUI and other non-network terminals retain their restricted factories.
++  if (is_for_network_service) {
++    if (type == URLLoaderFactoryType::kNavigation && frame &&
++        navigation_id.has_value() &&
++        navigation_factory_source != NavigationFactorySource::kBuiltInData) {
++      aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyNavigation(
++          Profile::FromBrowserContext(browser_context), frame, *navigation_id,
++          factory_builder);
++    }
+ 
+-  if (type == URLLoaderFactoryType::kWorkerMainResource && frame) {
+-    aegis::access::AccessProxyingURLLoaderFactory::
+-        MaybeProxyWorkerMainResource(
+-            Profile::FromBrowserContext(browser_context), frame,
+-            factory_builder);
+-  }
++    if (type == URLLoaderFactoryType::kWorkerMainResource && frame) {
++      aegis::access::AccessProxyingURLLoaderFactory::
++          MaybeProxyWorkerMainResource(
++              Profile::FromBrowserContext(browser_context), frame,
++              factory_builder);
++    }
+ 
+-  if (type == URLLoaderFactoryType::kWorkerSubResource) {
+-    aegis::access::AccessProxyingURLLoaderFactory::
+-        MaybeProxyWorkerSubResource(
+-            Profile::FromBrowserContext(browser_context), frame,
+-            render_process_id, factory_builder);
+-  }
++    if (type == URLLoaderFactoryType::kWorkerSubResource) {
++      aegis::access::AccessProxyingURLLoaderFactory::
++          MaybeProxyWorkerSubResource(
++              Profile::FromBrowserContext(browser_context), frame,
++              render_process_id, factory_builder);
++    }
+ 
+-  if (type == URLLoaderFactoryType::kServiceWorkerSubResource && !frame) {
+-    aegis::access::AccessProxyingURLLoaderFactory::
+-        MaybeProxyServiceWorkerSubResource(
+-            Profile::FromBrowserContext(browser_context), render_process_id,
+-            factory_builder);
+-  }
++    if (type == URLLoaderFactoryType::kServiceWorkerSubResource && !frame) {
++      aegis::access::AccessProxyingURLLoaderFactory::
++          MaybeProxyServiceWorkerSubResource(
++              Profile::FromBrowserContext(browser_context), render_process_id,
++              factory_builder);
++    }
+ 
+-  if (type == URLLoaderFactoryType::kServiceWorkerScript && !frame &&
+-      render_process_id != content::ChildProcessHost::kInvalidUniqueID) {
+-    aegis::access::AccessProxyingURLLoaderFactory::
+-        MaybeProxyServiceWorkerScript(
+-            Profile::FromBrowserContext(browser_context), render_process_id,
+-            factory_builder);
+-  }
++    if (type == URLLoaderFactoryType::kServiceWorkerScript && !frame &&
++        render_process_id != content::ChildProcessHost::kInvalidUniqueID) {
++      aegis::access::AccessProxyingURLLoaderFactory::
++          MaybeProxyServiceWorkerScript(
++              Profile::FromBrowserContext(browser_context), render_process_id,
++              factory_builder);
++    }
+ 
+-  if (type == URLLoaderFactoryType::kPrefetch && frame) {
+-    aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyPrefetch(
+-        Profile::FromBrowserContext(browser_context), frame, factory_builder);
++    if (type == URLLoaderFactoryType::kPrefetch && frame) {
++      aegis::access::AccessProxyingURLLoaderFactory::MaybeProxyPrefetch(
++          Profile::FromBrowserContext(browser_context), frame, factory_builder);
++    }
+   }
+ 
+ #if BUILDFLAG(ENABLE_CAPTIVE_PORTAL_DETECTION)
+diff --git a/content/browser/loader/url_loader_factory_utils.cc b/content/browser/loader/url_loader_factory_utils.cc
+index 1d7bcd00122d1fafca22fa070295aa4dad2e934c..403a62744e0792dc5cf1cdec46234c9e7f058774 100644
+--- a/content/browser/loader/url_loader_factory_utils.cc
++++ b/content/browser/loader/url_loader_factory_utils.cc
+@@ -196,7 +196,8 @@ void ContentClientParams::Run(
+       factory_override, std::move(navigation_response_task_runner_),
+       is_for_network_service,
+       navigation_factory_source_);
+-  if (type == ContentBrowserClient::URLLoaderFactoryType::kDocumentSubResource &&
++  if (is_for_network_service &&
++      type == ContentBrowserClient::URLLoaderFactoryType::kDocumentSubResource &&
+       document_context_.has_value()) {
+     GetContentClient()->browser()->WillCreateURLLoaderFactoryForDocument(
+         browser_context_.get(), frame_.get(), *document_context_,
+diff --git a/services/network/aegis/access_private_url_loader_factory.cc b/services/network/aegis/access_private_url_loader_factory.cc
+index 34f482e12145646d81da4b0416458bd44ba1c79c..d869ebcd0ba5b11d5dfd7325ef0b60a999fe9ffc 100644
+--- a/services/network/aegis/access_private_url_loader_factory.cc
++++ b/services/network/aegis/access_private_url_loader_factory.cc
+@@ -23,10 +23,11 @@ AccessRouteRegistry::Expectation Expected(
+            g.network_epoch, g.base_proxy_config_generation},
+           envelope.registration_id};
+ }
+-void Reject(mojo::PendingRemote<mojom::URLLoaderClient> pending) {
++void Reject(mojo::PendingRemote<mojom::URLLoaderClient> pending,
++            int error = net::ERR_BLOCKED_BY_CLIENT) {
+   if (!pending.is_valid()) return;
+   mojo::Remote<mojom::URLLoaderClient> client(std::move(pending));
+-  client->OnComplete(URLLoaderCompletionStatus(net::ERR_BLOCKED_BY_CLIENT));
++  client->OnComplete(URLLoaderCompletionStatus(error));
+ }
+ }  // namespace
+ 
+@@ -170,10 +171,12 @@ void AccessPrivateURLLoaderFactory::CreateLoaderAndStartWithRoute(
+   const std::string token = request->envelope->request_token;
+   auto metadata = binding_;
+   metadata.request_id = token;
++  int route_error = net::ERR_BLOCKED_BY_CLIENT;
+   auto state = AccessRequestRouteState::Create(registry_, std::move(metadata),
+-      request->request.url, request->request.method, Expected(*request->envelope));
++      request->request.url, request->request.method, Expected(*request->envelope),
++      &route_error);
+   if (!state) {
+-    Reject(std::move(client));
++    Reject(std::move(client), route_error);
+     return;
+   }
+   used_tokens_.insert(token);
+diff --git a/services/network/aegis/access_request_route_state.cc b/services/network/aegis/access_request_route_state.cc
+index ef2cfae01a4dbd26c8c5d35a9b65b9914c6eb58b..317a4aa84fbf9cdca95628a2fe343824c0806a92 100644
+--- a/services/network/aegis/access_request_route_state.cc
++++ b/services/network/aegis/access_request_route_state.cc
+@@ -8,16 +8,19 @@ namespace network {
+ scoped_refptr<AccessRequestRouteState> AccessRequestRouteState::Create(
+     base::WeakPtr<AccessRouteRegistry> registry,
+     aegis_access::BrowserOwnedRequestMetadata metadata, GURL target,
+-    std::string method, AccessRouteRegistry::Expectation expected) {
++    std::string method, AccessRouteRegistry::Expectation expected,
++    int* initial_error) {
++  if (initial_error) *initial_error = net::ERR_BLOCKED_BY_CLIENT;
+   if (!registry || !net::HttpUtil::IsToken(method)) {
+     return nullptr;
+   }
+   auto result = base::WrapRefCounted(new AccessRequestRouteState(
+       std::move(registry), std::move(metadata), std::move(target),
+       std::move(method), std::move(expected)));
+-  if (result->registry_->Resolve(result->metadata_,
+-                               result->target_, result->expected_).net_error !=
+-      net::OK) {
++  const auto resolved = result->registry_->Resolve(
++      result->metadata_, result->target_, result->expected_);
++  if (initial_error) *initial_error = resolved.net_error;
++  if (resolved.net_error != net::OK) {
+     return nullptr;
+   }
+   return result;
+diff --git a/services/network/aegis/access_request_route_state.h b/services/network/aegis/access_request_route_state.h
+index cbc47b3e663a304ace5e35561e58e2dc3bd18821..766fd7e43271ceb858759b09c923639823448f8c 100644
+--- a/services/network/aegis/access_request_route_state.h
++++ b/services/network/aegis/access_request_route_state.h
+@@ -14,7 +14,8 @@ class AccessRequestRouteState : public base::RefCounted<AccessRequestRouteState>
+   static scoped_refptr<AccessRequestRouteState> Create(
+       base::WeakPtr<AccessRouteRegistry> registry,
+       aegis_access::BrowserOwnedRequestMetadata metadata, GURL target,
+-      std::string method, AccessRouteRegistry::Expectation expected);
++      std::string method, AccessRouteRegistry::Expectation expected,
++      int* initial_error = nullptr);
+   AccessRouteRegistry::Result BeginSend(const GURL& target,
+                                         const std::string& method,
+                                         bool is_internal_preflight);
+-- 
+2.54.0 (Apple Git-157)
+

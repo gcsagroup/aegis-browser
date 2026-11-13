@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFileSync} from 'node:fs';
+import {readFileSync, mkdtempSync, rmSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {parse} from 'yaml';
 
 const sha = 'a'.repeat(40);
@@ -12,11 +15,44 @@ const load = async () => {
   const {iosReleasePreflight: preflight} = await import('../ios-release-preflight.mjs');
   return {iosReleasePreflight: (source, options) => preflight(source, {authorize: async () => true, ...options})};
 };
+
+test('archive gets only non-secret settings from the existing environment', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const archive = jobs['ios-archive'];
+  assert.equal(archive.environment, undefined);
+  assert(!JSON.stringify(archive).includes('secrets.'));
+  assert(archive.needs.includes('archive-settings'));
+  assert.equal(archive.outputs.manifest_sha256, '${{ steps.archive.outputs.manifest_sha256 }}');
+  const build = archive.steps.find(step => step.id === 'archive');
+  assert(build.run.includes('--github-output "$GITHUB_OUTPUT"'));
+  assert.equal(jobs['ios-package'].steps.find(step => step.id === 'package').env.AEGIS_CLOUD_ARCHIVE_MANIFEST_SHA256,
+    '${{ needs.ios-archive.outputs.manifest_sha256 }}');
+  const settings = jobs['archive-settings'];
+  assert.equal(settings.environment, 'aegis-ios-signing');
+  assert(!JSON.stringify(settings).includes('actions/checkout'));
+  assert(!JSON.stringify(settings).includes('secrets.'));
+  const code = settings.steps[0].run.replace(/^python3 - <<'PY'\n/u, '').replace(/\nPY\n?$/u, '');
+  const temp = mkdtempSync(join(tmpdir(), 'aegis-settings-'));
+  try {
+    const output = join(temp, 'settings');
+    const env = {...process.env, TEAM: 'ABCDEFGHIJ', FIREBASE_DEV: 'YWJj', FIREBASE_PROD: '', GITHUB_OUTPUT: output};
+    execFileSync('python3', ['-c', code], {env});
+    assert.equal(readFileSync(output, 'utf8'), 'team=ABCDEFGHIJ\nfirebase_dev=YWJj\nfirebase_prod=\n');
+    assert.throws(() => execFileSync('python3', ['-c', code], {env: {...env, FIREBASE_DEV: 'YWJj\nrogue=secret'}, stdio: 'pipe'}));
+    assert(!readFileSync(output, 'utf8').includes('rogue'));
+  } finally {
+    rmSync(temp, {recursive: true, force: true});
+  }
+});
 function apiFixture({moved = false, parent = repository, pending = false} = {}) {
   let reads = 0;
   return async (repo, path) => {
     if (path === '') return repo === repository ? {id: 1348409663, default_branch: 'main'} : {id: 1363949860, fork: true, parent: {full_name: parent}};
-    if (path === '/git/ref/heads/main') return {object: {sha: moved && ++reads > 1 ? 'b'.repeat(40) : sha}};
+    if (path.startsWith('/git/ref/heads/')) {
+      const name = path.slice('/git/ref/heads/'.length);
+      if (name === 'main') return {object: {sha: moved && ++reads > 1 ? 'b'.repeat(40) : sha}};
+      return {object: {sha: 'c'.repeat(40)}};
+    }
     if (path.startsWith('/commits/')) return {sha: moved ? 'b'.repeat(40) : sha};
     const run = {id: 12, run_attempt: 2, head_sha: sha, head_branch: 'codex/ios-release-upstream-20261030',
       repository: {full_name: repo}, event: 'push', path: '.github/workflows/ios-release-validation.yml', status: pending ? 'in_progress' : 'completed', conclusion: pending ? null : 'success'};
@@ -29,7 +65,7 @@ function apiFixture({moved = false, parent = repository, pending = false} = {}) 
 test('upstream admission rechecks main after quality and rejects moving main or tag', async () => {
   const {iosReleasePreflight} = await load();
   assert.equal((await iosReleasePreflight(sha, {environment, api: apiFixture(), quality: async () => true})).admission, 'upstream_quality_verified');
-  await assert.rejects(iosReleasePreflight(sha, {environment, api: apiFixture({moved: true}), quality: async () => true}), /main|changed/u);
+  await assert.rejects(iosReleasePreflight(sha, {environment, api: apiFixture({moved: true}), quality: async () => true}), /release line|changed/u);
   await assert.rejects(iosReleasePreflight(sha, {environment: {...environment, RELEASE_DESTINATION: 'github-draft', RELEASE_TAG: 'candidate/ios/1.0.0-alpha.6'}, api: apiFixture({moved: true}), quality: async () => true}), /tag|main/u);
 });
 test('disabled path and wrong repository identity cannot reach quality', async () => {
@@ -92,8 +128,12 @@ test('unsigned archive isolates fork PRs and tolerates missing runner labels', (
   assert(trusted >= 0 && trusted < selfHosted, 'fork PRs must select the hosted fallback');
   assert(route.endsWith("|| 'macos-26' }}"), 'unsigned validation uses the standard hosted Mac fallback');
   assert(!workflow.jobs['ios-archive'].environment, 'unsigned validation must not require a protected signing environment');
+  const goSetup = workflow.jobs['ios-archive'].steps.find(s => String(s.uses ?? '').startsWith('actions/setup-go@'));
+  assert.equal(goSetup?.with?.['go-version'], '1.27.3', 'hosted archive must install lock Go before prepare');
+  assert.equal(goSetup?.with?.cache, false, 'archive Go install must not rely on module cache restoration');
+  const prepare = workflow.jobs['ios-archive'].steps.find(s => s.name === 'Prepare locked EmbeddedCore XCFramework');
+  assert(String(prepare?.run ?? '').includes('expected go1.27.3'), 'prepare must refuse a mismatched Go toolchain');
 });
-
 test('every protected delivery route depends on Admin admission and normalized operation', () => {
   const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   for (const id of ['ios-package', 'ios-draft', 'import', 'store']) {
@@ -194,6 +234,36 @@ test('version/build-only status has no artifact, signing or mutation route', () 
   for (const id of ['import', 'store']) assert(doc.jobs[id].if.includes("!= 'status-query'"));
 });
 
+test('maintenance release lines package from their own tip, not current main', async () => {
+  const lines = JSON.parse(readFileSync('scripts/ci/ios-release-lines.json', 'utf8')).lines;
+  const pushed = parse(readFileSync('.github/workflows/quality.yml', 'utf8')).on.push.branches;
+  assert.deepEqual(lines.map(line => line.name), ['main', 'releases/ios/1.0']);
+  for (const line of lines) assert.ok(pushed.includes(line.name));
+  const patchSha = 'd'.repeat(40);
+  const {iosReleasePreflight} = await load();
+  let qualityBranch;
+  const api = async (repo, path) => {
+    if (path === '') return {id: 1348409663, default_branch: 'main'};
+    if (path === '/git/ref/heads/main') return {object: {sha}};
+    if (path === '/git/ref/heads/releases/ios/1.0') return {object: {sha: patchSha}};
+    throw new Error(`Unexpected fixture endpoint ${path}`);
+  };
+  const admitted = await iosReleasePreflight(patchSha, {
+    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
+    api, quality: async (_repo, branch) => { qualityBranch = branch; return true; },
+  });
+  assert.equal(admitted.line, 'releases/ios/1.0');
+  assert.equal(qualityBranch, 'releases/ios/1.0');
+  await assert.rejects(iosReleasePreflight(sha, {
+    environment: {...environment, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
+    api, quality: async () => true,
+  }), /release line/u);
+  await assert.rejects(iosReleasePreflight(patchSha, {
+    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/foreign'},
+    api, quality: async () => { throw new Error('credential boundary crossed'); },
+  }), /dispatch/u);
+});
+
 test('candidate admission bounds version components and rejects trailing data before tag lookup', async () => {
   const {iosReleasePreflight} = await load();
   const run = async tag => iosReleasePreflight(sha, {environment: {...environment, RELEASE_DESTINATION: 'github-draft', RELEASE_TAG: tag}, api: apiFixture(), quality: async () => true});
@@ -217,7 +287,7 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert.equal(fresh.env.RELEASE_QUERY_MODE, 'unused');
   assert.equal(fresh.environment, 'aegis-ios-store');
   const upload = doc.jobs['upload-new'];
-  assert.deepEqual(upload.needs, ['admission', 'ios-package']);
+  assert.deepEqual(upload.needs, ['admission', 'ios-package', 'seal-package']);
   assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' }}");
   assert.equal(upload.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
   assert.equal(upload.env.PACKAGE_RUN_ID, '${{ github.run_id }}');

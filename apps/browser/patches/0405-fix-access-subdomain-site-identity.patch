@@ -1,0 +1,143 @@
+From ed6c49e9adf867806dc20d4aa7ead0484ec370dc Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Tue, 10 Nov 2026 22:09:37 +0800
+Subject: [PATCH] fix(access): canonicalize top-level sites for exact subdomain
+ rules
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |  1 +
+ .../aegis/access/access_site_intent.cc        | 10 ++++-
+ .../access/access_site_intent_unittest.cc     | 40 +++++++++++++++++++
+ .../access_site_proxy_product_unittest.cc     | 27 +++++++++++++
+ 4 files changed, 76 insertions(+), 2 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index 6af852c0f08f9b5582440b26bfc03202f2ac8b1b..01b61e21b6e3c5fdb552cd57beb33088f5cbeaa7 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -265,6 +265,7 @@ source_set("access_site_intent") {
+   ]
+   deps = [
+     "//base",
++    "//net",
+     "//url",
+   ]
+ }
+diff --git a/chrome/browser/aegis/access/access_site_intent.cc b/chrome/browser/aegis/access/access_site_intent.cc
+index 91e4c58cdf01e1e69326bce5f626aed3f8e4f85f..e07b41b3070c6dcc1ca32324e443b882b545e8f5 100644
+--- a/chrome/browser/aegis/access/access_site_intent.cc
++++ b/chrome/browser/aegis/access/access_site_intent.cc
+@@ -7,6 +7,7 @@
+ #include <utility>
+ 
+ #include "base/strings/string_util.h"
++#include "net/base/schemeful_site.h"
+ #include "url/gurl.h"
+ 
+ namespace aegis::access {
+@@ -208,8 +209,13 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
+     return result;
+   }
+ 
+-  const std::string http_site = "http://" + input.host.value;
+-  const std::string https_site = "https://" + input.host.value;
++  // The rule still matches this exact destination host. Its top-level site
++  // uses Chromium's registrable-site identity, as required by the store and
++  // by the trusted request metadata (e.g. www.example.com -> example.com).
++  const std::string http_site =
++      net::SchemefulSite(GURL("http://" + input.host.value)).Serialize();
++  const std::string https_site =
++      net::SchemefulSite(GURL("https://" + input.host.value)).Serialize();
+ 
+   SiteGroupMutationRequest request;
+   request.operation_id = input.operation_id;
+diff --git a/chrome/browser/aegis/access/access_site_intent_unittest.cc b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+index 35e99b6aaca6762042042a744a12e8d158fff401..08bc186ea78bbacdec96b43b706991012b002606 100644
+--- a/chrome/browser/aegis/access/access_site_intent_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+@@ -119,5 +119,45 @@ TEST(AccessSiteIntentTest, StoreDefaultsOffAndOmitsOffEntries) {
+   EXPECT_TRUE(store.All().empty());
+ }
+ 
++TEST(AccessSiteIntentTest, SubdomainRulesUseCanonicalSitesButKeepExactHostScope) {
++  struct Case {
++    const char* host;
++    const char* site_host;
++  };
++  for (const auto& [host, site_host] :
++       {Case{"www.google.com", "google.com"},
++        Case{"news.example.co.uk", "example.co.uk"},
++        Case{"project.github.io", "project.github.io"},
++        Case{"[::1]", "[::1]"}}) {
++    SCOPED_TRACE(host);
++    AccessSiteIntentMutationInput input;
++    input.host = Host(host);
++    input.owner = TestOwner();
++    input.site_toggle_id = "toggle";
++    input.operation_id = "op";
++    input.request_fingerprint = "fingerprint";
++    input.intent = AccessSiteIntent::kAllow;
++    input.proxy_group_id = "proxy-group";
++    auto result = BuildOrdinarySiteGroupMutation(input);
++    ASSERT_EQ(result.status, AccessSiteIntentMutationStatus::kReady);
++    ASSERT_TRUE(result.request);
++    const auto& request = *result.request;
++    EXPECT_EQ(request.candidate_group.canonical_host, host);
++    EXPECT_EQ(request.candidate_group.http_top_level_site,
++              "http://" + std::string(site_host));
++    EXPECT_EQ(request.candidate_group.https_top_level_site,
++              "https://" + std::string(site_host));
++    ASSERT_EQ(request.candidate_members.size(), 2u);
++    for (const auto& member : request.candidate_members) {
++      EXPECT_EQ(member.exact_host, host);
++      EXPECT_FALSE(member.include_subdomains);
++    }
++    EXPECT_EQ(request.candidate_members[0].top_level_site,
++              request.candidate_group.http_top_level_site);
++    EXPECT_EQ(request.candidate_members[1].top_level_site,
++              request.candidate_group.https_top_level_site);
++  }
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index d6e00b0136e59c8b8e8986aace0f7214676adb08..ff1fa59938cedd3c8d3f2f6bffa1ea2c041330c1 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -233,5 +233,32 @@ TEST_F(AccessSiteProxyProductTest, HostFailuresRemainIndependent) {
+   EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
+ }
+ 
++TEST_F(AccessSiteProxyProductTest, SubdomainEnablePersistsCanonicalSites) {
++  context_.hold_next = true;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"www.example.com"}, true));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return context_.has_reply() ||
++           Snapshot("www.example.com").connection ==
++               AccessSiteConnectionState::kUnavailable;
++  }));
++  ASSERT_TRUE(context_.has_reply())
++      << Snapshot("www.example.com").failure_reason;
++  context_.Reply(true);
++  WaitFor(AccessSiteConnectionState::kReady, "www.example.com");
++  const auto stored =
++      coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(stored.value);
++  ASSERT_EQ(stored.value->site_groups.size(), 1u);
++  const auto& group = stored.value->site_groups[0];
++  EXPECT_EQ(group.group.canonical_host, "www.example.com");
++  EXPECT_EQ(group.group.http_top_level_site, "http://example.com");
++  EXPECT_EQ(group.group.https_top_level_site, "https://example.com");
++  ASSERT_EQ(group.members.size(), 2u);
++  for (const auto& member : group.members) {
++    EXPECT_EQ(member.policy.destination_host, "www.example.com");
++    EXPECT_FALSE(member.policy.include_subdomains);
++  }
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+-- 
+2.54.0 (Apple Git-157)
+

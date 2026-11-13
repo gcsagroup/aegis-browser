@@ -3,10 +3,12 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 def load(name, filename):
@@ -21,6 +23,114 @@ verifier = load('cloud_verifier', 'verify-signed-ios.py')
 
 
 class CloudSigningTests(unittest.TestCase):
+    def test_distribution_checks_include_expired_matching_identities(self):
+        def lookup(*args, **_options):
+            return (b'0 valid identities' if '-v' in args else
+                    b'1) ABC "Apple Distribution: expired fixture" (CSSMERR_TP_CERT_EXPIRED)\n0 valid identities')
+        with patch.object(poc, 'run', side_effect=lookup):
+            self.assertTrue(poc.keychain_has_distribution('/owned/development.keychain-db'))
+            with self.assertRaisesRegex(ValueError, 'Distribution private identity'):
+                poc.no_distribution_identity()
+
+    def test_key_access_adapter_scrubs_secrets_for_inventory_and_native_commands(self):
+        environment = {'PATH': '/usr/bin', 'HOME': '/owned', 'DEVELOPER_DIR': '/fixed/Xcode',
+                       'AEGIS_ASC_KEY_BASE64': 'asc-secret', 'GH_TOKEN': 'gh-secret',
+                       'GITHUB_TOKEN': 'gh-secret', 'SDKROOT': '/product/iphoneos'}
+        with patch.object(poc, 'run', return_value=b'') as run:
+            runtime = poc.key_access_runtime(environment)
+            runtime.keychains()
+            runtime.keychain_has_distribution('/owned/development.keychain-db')
+            runtime.run('/usr/bin/security', 'find-certificate', env={'GH_TOKEN': 'injected'})
+        for call in run.call_args_list:
+            self.assertEqual(call.kwargs['env'], {'PATH': '/usr/bin', 'HOME': '/owned', 'DEVELOPER_DIR': '/fixed/Xcode'})
+        self.assertNotIn('-v', run.call_args_list[1].args)
+
+    def test_protected_keychain_filter_rejects_case_variants_and_database_aliases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            protected = root / 'Library/Keychains/login.keychain-db'
+            protected.parent.mkdir(parents=True)
+            protected.write_bytes(b'encrypted fixture')
+            alias = root / 'renamed.keychain-db'
+            os.link(protected, alias)
+            with patch.object(Path, 'home', return_value=root):
+                self.assertTrue(poc.unretainable_keychain(alias))
+                self.assertTrue(poc.unretainable_keychain(root / 'Login.keychain-db'))
+                alias.unlink()
+                alias.symlink_to(protected)
+                self.assertTrue(poc.unretainable_keychain(alias))
+
+    def test_prepared_inline_selection_is_reused_without_unlocking_or_resolving_twice(self):
+        options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
+        signing = SimpleNamespace(resolve=Mock(), require_identity=Mock(), verify_archive=Mock())
+        access = SimpleNamespace(prepare=Mock(), verify=Mock())
+        proof = {'style': 'manual'}
+        prepared = (signing, ['CODE_SIGN_STYLE=Manual'], proof, access, Path('/owned/development.keychain-db'))
+        with patch.object(poc, 'module', side_effect=AssertionError('Prepared selection must not be resolved again')), \
+                patch.object(poc, 'run'):
+            poc.build_inline_archive(Path('/work'), Path('/output'), options, 'development', {}, {},
+                                     SimpleNamespace(verify_development=Mock()), prepared)
+        signing.resolve.assert_not_called()
+        access.prepare.assert_not_called()
+        access.verify.assert_called_once()
+
+    def test_inline_development_archive_uses_the_explicit_selection_without_overwriting_it(self):
+        options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
+        proof = {'style': 'manual', 'certificateSha1': 'A' * 40}
+        arguments = ['CODE_SIGN_STYLE=Manual', 'CODE_SIGN_IDENTITY=' + 'A' * 40,
+                     'PROVISIONING_PROFILE_SPECIFIER=explicit-profile']
+        signing = SimpleNamespace(resolve=Mock(return_value=(arguments, proof)), require_identity=Mock(), verify_archive=Mock())
+        trust = SimpleNamespace(verified_profile=Mock())
+        transfer = SimpleNamespace(verify_development=Mock())
+        access = SimpleNamespace(prepare=Mock(return_value=None), verify=Mock())
+        evidence = {}
+        def modules(_name, filename):
+            if filename == 'development_key_access.py':
+                return access
+            return signing if filename == 'development_signing.py' else trust
+        with patch.object(poc, 'module', side_effect=modules), patch.object(poc, 'run') as run:
+            poc.build_inline_archive(Path('/work'), Path('/output'), options, 'development', {}, evidence, transfer)
+        command = run.call_args.args
+        self.assertTrue(all(value in command for value in arguments))
+        self.assertNotIn('CODE_SIGN_STYLE=Automatic', command)
+        self.assertNotIn('PROVISIONING_PROFILE_SPECIFIER=', command)
+        signing.require_identity.assert_called_once()
+        signing.verify_archive.assert_called_once()
+        access.prepare.assert_called_once()
+        access.verify.assert_called_once()
+        transfer.verify_development.assert_called_once()
+        self.assertEqual(evidence['developmentSigning'], proof)
+        self.assertIs(evidence['archiveCompleted'], True)
+
+    def test_invalid_explicit_selection_stops_inline_archive_before_native_work(self):
+        options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
+        signing = SimpleNamespace(resolve=Mock(side_effect=ValueError('Invalid explicit selection')))
+        trust = SimpleNamespace(verified_profile=Mock())
+        with patch.object(poc, 'module', side_effect=lambda _n, f: signing if f == 'development_signing.py' else trust), \
+                patch.object(poc, 'run') as run, self.assertRaisesRegex(ValueError, 'Invalid explicit'):
+            poc.build_inline_archive(Path('/work'), Path('/output'), options, 'development', {}, {}, Mock())
+        run.assert_not_called()
+
+    def test_explicit_ad_hoc_experiment_does_not_load_development_configuration(self):
+        options = SimpleNamespace(team='ABCDEFGHIJ', version='1.0.2', build='16', profile='beta')
+        evidence = {}
+        with patch.object(poc, 'module', side_effect=AssertionError('Unexpected Development configuration')), \
+                patch.object(poc, 'run') as run, patch.object(poc, 'verify_ad_hoc_archive') as verify:
+            poc.build_inline_archive(Path('/work'), Path('/output'), options, 'ad-hoc', {}, evidence, Mock())
+        self.assertIn('CODE_SIGN_IDENTITY=-', run.call_args.args)
+        verify.assert_called_once()
+        self.assertIs(evidence['adHocArchiveSignaturesVerified'], True)
+
+    def test_transfer_requires_independent_digest_and_cannot_be_combined_with_reuse(self):
+        for values in [dict(archive_input=Path('/fixture'), archive_manifest_sha256=None),
+                       dict(archive_input=None, archive_manifest_sha256='a' * 64),
+                       dict(archive_input=Path('/fixture'), archive_manifest_sha256='bad'),
+                       dict(archive_input=Path('/fixture'), archive_manifest_sha256='a' * 64, archive_from='prior')]:
+            options = SimpleNamespace(**dict(dict(version='1.0.2', build='16', team='ABCDEFGHIJ', archive_from=None), **values))
+            with self.subTest(values=values), patch.object(poc, 'source', side_effect=AssertionError('Native work started')), \
+                    self.assertRaisesRegex(ValueError, 'producer manifest digest'):
+                poc.experiment(options, {})
+
     def test_hosted_proof_requires_a_fresh_github_runner_and_refuses_archive_reuse(self):
         good = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'github-hosted', 'RUNNER_OS': 'macOS'}
         self_hosted = {'GITHUB_ACTIONS': 'true', 'RUNNER_ENVIRONMENT': 'self-hosted', 'RUNNER_OS': 'macOS'}

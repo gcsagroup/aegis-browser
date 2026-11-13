@@ -1,0 +1,382 @@
+From b0aa114ac63bc1da2beb16e58cddd49d05525f79 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 07:20:14 +0800
+Subject: [PATCH] feat(access): bind HTTP proxy authentication to route
+ endpoint
+
+---
+ components/aegis_access/BUILD.gn              | 12 +++
+ .../access_proxy_tunnel_context_unittest.cc   | 86 +++++++++++++++++++
+ net/http/http_network_transaction.cc          | 13 ++-
+ net/http/http_network_transaction.h           |  5 ++
+ net/http/http_proxy_connect_job.cc            | 47 ++++++++--
+ net/http/http_proxy_connect_job.h             | 20 ++++-
+ 6 files changed, 171 insertions(+), 12 deletions(-)
+ create mode 100644 components/aegis_access/access_proxy_tunnel_context_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 52601a89ff1c264adf6fd5ac699e4e96ea54919b..7dfc06740650d055b6811a25786a24853ebb443a 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -242,6 +242,18 @@ test("request_dispatch_gate_unittests") {
+   deps += [ ":request_ownership_registry_test_support" ]
+ }
+ 
++test("access_proxy_tunnel_context_unittests") {
++  sources = [ "access_proxy_tunnel_context_unittest.cc" ]
++  deps = [
++    "//base",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//net",
++    "//testing/gtest",
++    "//url",
++  ]
++}
++
+ test("access_route_request_context_unittests") {
+   sources = [ "access_route_request_context_unittest.cc" ]
+   deps = [
+diff --git a/components/aegis_access/access_proxy_tunnel_context_unittest.cc b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..21261736e82400a7b2e8fe89d0ac881c09b81594
+--- /dev/null
++++ b/components/aegis_access/access_proxy_tunnel_context_unittest.cc
+@@ -0,0 +1,86 @@
++// Copyright 2026 GCSA
++
++#include <optional>
++#include <utility>
++
++#include "net/http/access_proxy_route.h"
++#include "net/http/http_proxy_connect_job.h"
++
++#include "base/test/gtest_util.h"
++#include "net/socket/transport_connect_job.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace aegis_access {
++namespace {
++
++net::ProxyChain Proxy(uint16_t port = 8080) {
++  return net::ProxyChain::FromSchemeHostAndPort(
++      net::ProxyServer::SCHEME_HTTP, "127.0.0.1", port);
++}
++
++scoped_refptr<net::AccessProxyRoute> Route() {
++  return net::AccessProxyRoute::Create(
++      {.channel = 0, .profile = "p", .partition = "s", .group = "g",
++       .registration = "r", .incarnation = "i", .policy_generation = 1,
++       .identity_generation = 1, .selection_generation = 1,
++       .network_epoch = 1, .base_proxy_config_generation = 1}, Proxy());
++}
++
++scoped_refptr<net::HttpProxySocketParams> Tunnel(
++    scoped_refptr<net::AccessProxyRoute> route,
++    net::ProxyChain chain = Proxy(),
++    std::optional<net::HostPortPair> transport_endpoint = std::nullopt) {
++  auto transport = base::MakeRefCounted<net::TransportSocketParams>(
++      transport_endpoint.value_or(chain.GetProxyServer(0).host_port_pair()),
++      net::NetworkAnonymizationKey(), net::SecureDnsPolicy::kAllow,
++      net::handles::kInvalidNetworkHandle, net::OnHostResolutionCallback(),
++      base::flat_set<std::string>());
++  return base::MakeRefCounted<net::HttpProxySocketParams>(
++      net::ConnectJobParams(std::move(transport)),
++      net::HostPortPair("destination.test", 443), chain, 0, true,
++      TRAFFIC_ANNOTATION_FOR_TESTS, net::NetworkAnonymizationKey(),
++      net::SecureDnsPolicy::kAllow, net::handles::kInvalidNetworkHandle,
++      std::move(route));
++}
++
++TEST(AccessProxyTunnelContextTest, TunnelRetainsOriginalRoute) {
++  auto route = Route();
++  ASSERT_TRUE(route);
++  auto params = Tunnel(route);
++  auto* original = route.get();
++  route = nullptr;
++  ASSERT_TRUE(params->access_proxy_route());
++  EXPECT_EQ(params->access_proxy_route().get(), original);
++  EXPECT_EQ(params->access_proxy_route()->proxy_chain(), params->proxy_chain());
++}
++
++TEST(AccessProxyTunnelContextTest, UsesPrivateProxyCacheInsteadOfSessionCache) {
++  net::HttpAuthCache native(true);
++  auto route = Route();
++  ASSERT_TRUE(route);
++  auto params = Tunnel(route);
++  EXPECT_EQ(params->GetProxyAuthCache(&native), route->proxy_auth_cache());
++  EXPECT_NE(params->GetProxyAuthCache(&native), &native);
++  // This remains private even when the session has no cache.
++  EXPECT_EQ(params->GetProxyAuthCache(nullptr), route->proxy_auth_cache());
++}
++
++TEST(AccessProxyTunnelContextTest, NativeTunnelKeepsSessionCache) {
++  net::HttpAuthCache native(true);
++  auto params = Tunnel(nullptr);
++  EXPECT_FALSE(params->access_proxy_route());
++  EXPECT_EQ(params->GetProxyAuthCache(&native), &native);
++}
++
++TEST(AccessProxyTunnelContextTest, MismatchedEndpointCannotReceiveCredentials) {
++  EXPECT_CHECK_DEATH(Tunnel(Route(), Proxy(8081)));
++}
++
++TEST(AccessProxyTunnelContextTest, MismatchedTransportCannotReceiveCredentials) {
++  EXPECT_CHECK_DEATH(Tunnel(Route(), Proxy(),
++                           net::HostPortPair("127.0.0.1", 8081)));
++}
++
++}  // namespace
++}  // namespace aegis_access
+diff --git a/net/http/http_network_transaction.cc b/net/http/http_network_transaction.cc
+index 1788baf80729ca55c0abfba04de999b7b1522d4b..e9970f1bf3d52b9fe8690cde36e521f81d364b61 100644
+--- a/net/http/http_network_transaction.cc
++++ b/net/http/http_network_transaction.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "net/http/http_network_transaction.h"
+ 
++#include "net/http/access_proxy_route.h"
++
+ #include <deque>
+ #include <optional>
+ #include <queue>
+@@ -413,6 +415,7 @@ int HttpNetworkTransaction::Start(const HttpRequestInfo* request_info,
+   DCHECK(request_info->IsConsistent());
+   net_log_ = net_log;
+   request_ = request_info;
++  access_proxy_route_ = request_info->access_proxy_route;
+   url_ = request_->url;
+   network_anonymization_key_ = request_->network_anonymization_key;
+   start_timeticks_ = base::TimeTicks::Now();
+@@ -1335,6 +1338,11 @@ int HttpNetworkTransaction::DoInitStreamComplete(int result) {
+ 
+ int HttpNetworkTransaction::DoGenerateProxyAuthToken() {
+   next_state_ = STATE_GENERATE_PROXY_AUTH_TOKEN_COMPLETE;
++  if (access_proxy_route_ &&
++      proxy_info_.proxy_chain() != access_proxy_route_->proxy_chain()) {
++    // Credentials belong to one registered endpoint, never a fallback proxy.
++    return ERR_PROXY_CONNECTION_FAILED;
++  }
+   if (!ShouldApplyProxyAuth())
+     return OK;
+   HttpAuth::Target target = HttpAuth::AUTH_PROXY;
+@@ -1353,7 +1361,10 @@ int HttpNetworkTransaction::DoGenerateProxyAuthToken() {
+   if (!auth_controllers_[target].get())
+     auth_controllers_[target] = base::MakeRefCounted<HttpAuthController>(
+         target, auth_url, request_->network_anonymization_key,
+-        session_->http_auth_cache(), session_->http_auth_handler_factory(),
++        access_proxy_route_
++            ? access_proxy_route_->proxy_auth_cache()
++            : session_->http_auth_cache(),
++        session_->http_auth_handler_factory(),
+         session_->host_resolver());
+   return auth_controllers_[target]->MaybeGenerateAuthToken(
+       request_, io_callback_, net_log_);
+diff --git a/net/http/http_network_transaction.h b/net/http/http_network_transaction.h
+index 831fcf140ec60237f3493cb10d8aac5eef5c9087..65f3f37df68aa566b56c51d20664e829b0c557ce 100644
+--- a/net/http/http_network_transaction.h
++++ b/net/http/http_network_transaction.h
+@@ -43,6 +43,7 @@
+ 
+ namespace net {
+ 
++class AccessProxyRoute;
+ class BidirectionalStreamImpl;
+ class HttpAuthController;
+ class HttpNetworkSession;
+@@ -372,6 +373,10 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
+   static void SetProxyInfoInResponse(const ProxyInfo& proxy_info,
+                                      HttpResponseInfo* response_info);
+ 
++  // RequestInfo can be released once headers arrive. Retain this route until
++  // the auth controllers below are destroyed: they borrow its private cache.
++  scoped_refptr<AccessProxyRoute> access_proxy_route_;
++
+   std::array<scoped_refptr<HttpAuthController>, HttpAuth::AUTH_NUM_TARGETS>
+       auth_controllers_;
+ 
+diff --git a/net/http/http_proxy_connect_job.cc b/net/http/http_proxy_connect_job.cc
+index e40cf32cb9c1e3624a196fe54f8db74246812b6b..9faaa278764a95d2fc22d72a5b92969046f6e15a 100644
+--- a/net/http/http_proxy_connect_job.cc
++++ b/net/http/http_proxy_connect_job.cc
+@@ -157,7 +157,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+     const NetworkTrafficAnnotationTag traffic_annotation,
+     const NetworkAnonymizationKey& network_anonymization_key,
+     SecureDnsPolicy secure_dns_policy,
+-    handles::NetworkHandle target_network)
++    handles::NetworkHandle target_network,
++    scoped_refptr<AccessProxyRoute> access_proxy_route)
+     : HttpProxySocketParams(std::move(nested_params),
+                             std::nullopt,
+                             endpoint,
+@@ -167,7 +168,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+                             std::move(traffic_annotation),
+                             network_anonymization_key,
+                             secure_dns_policy,
+-                            target_network) {}
++                            target_network,
++                            std::move(access_proxy_route)) {}
+ 
+ HttpProxySocketParams::HttpProxySocketParams(
+     SSLConfig quic_ssl_config,
+@@ -178,7 +180,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+     const NetworkTrafficAnnotationTag traffic_annotation,
+     const NetworkAnonymizationKey& network_anonymization_key,
+     SecureDnsPolicy secure_dns_policy,
+-    handles::NetworkHandle target_network)
++    handles::NetworkHandle target_network,
++    scoped_refptr<AccessProxyRoute> access_proxy_route)
+     : HttpProxySocketParams(std::nullopt,
+                             std::move(quic_ssl_config),
+                             endpoint,
+@@ -188,7 +191,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+                             std::move(traffic_annotation),
+                             network_anonymization_key,
+                             secure_dns_policy,
+-                            target_network) {}
++                            target_network,
++                            std::move(access_proxy_route)) {}
+ 
+ HttpProxySocketParams::HttpProxySocketParams(
+     std::optional<ConnectJobParams> nested_params,
+@@ -200,7 +204,8 @@ HttpProxySocketParams::HttpProxySocketParams(
+     const NetworkTrafficAnnotationTag traffic_annotation,
+     const NetworkAnonymizationKey& network_anonymization_key,
+     SecureDnsPolicy secure_dns_policy,
+-    handles::NetworkHandle target_network)
++    handles::NetworkHandle target_network,
++    scoped_refptr<AccessProxyRoute> access_proxy_route)
+     : nested_params_(std::move(nested_params)),
+       quic_ssl_config_(std::move(quic_ssl_config)),
+       endpoint_(endpoint),
+@@ -210,7 +215,22 @@ HttpProxySocketParams::HttpProxySocketParams(
+       network_anonymization_key_(network_anonymization_key),
+       traffic_annotation_(traffic_annotation),
+       secure_dns_policy_(secure_dns_policy),
+-      target_network_(target_network) {
++      target_network_(target_network),
++      access_proxy_route_(std::move(access_proxy_route)) {
++  if (access_proxy_route_) {
++    // Only the exact registered endpoint may consume this route's credentials.
++    // Value equality alone does not authorize a route; registration happens
++    // before this transport-only object is created.
++    CHECK(proxy_chain_ == access_proxy_route_->proxy_chain());
++    CHECK_EQ(proxy_chain_index_, 0u);
++    CHECK(is_over_transport());
++    CHECK(proxy_server().is_http());
++    CHECK(std::holds_alternative<HostPortPair>(
++        transport_params()->destination()));
++    CHECK(std::get<HostPortPair>(transport_params()->destination()) ==
++          proxy_server().host_port_pair());
++  }
++
+   DCHECK(!proxy_chain_.is_direct());
+   DCHECK(proxy_chain_.IsValid());
+   CHECK(proxy_chain_index_ < proxy_chain_.length());
+@@ -233,6 +253,13 @@ HttpProxySocketParams::HttpProxySocketParams(
+ 
+ HttpProxySocketParams::~HttpProxySocketParams() = default;
+ 
++HttpAuthCache* HttpProxySocketParams::GetProxyAuthCache(
++    HttpAuthCache* native_cache) const {
++  return access_proxy_route_ ? access_proxy_route_->proxy_auth_cache()
++                             : native_cache;
++}
++
++
+ std::unique_ptr<HttpProxyConnectJob> HttpProxyConnectJob::Factory::Create(
+     RequestPriority priority,
+     const SocketTag& socket_tag,
+@@ -267,7 +294,8 @@ HttpProxyConnectJob::HttpProxyConnectJob(
+                     HttpAuth::AUTH_PROXY,
+                     MakeProxyUrl(*params_),
+                     params_->network_anonymization_key(),
+-                    common_connect_job_params->http_auth_cache,
++                    params_->GetProxyAuthCache(
++                        common_connect_job_params->http_auth_cache),
+                     common_connect_job_params->http_auth_handler_factory,
+                     host_resolver())
+               : nullptr) {}
+@@ -938,7 +966,10 @@ SpdySessionKey HttpProxyConnectJob::CreateSpdySessionKey() const {
+       session_key_proxy_chain, SessionUsage::kProxy, socket_tag(),
+       params_->network_anonymization_key(), params_->secure_dns_policy(),
+       /*disable_cert_verification_network_fetches=*/true,
+-      params_->target_network());
++      params_->target_network(),
++      params_->access_proxy_route()
++          ? std::make_optional(params_->access_proxy_route()->isolation_key())
++          : std::nullopt);
+ }
+ 
+ // static
+diff --git a/net/http/http_proxy_connect_job.h b/net/http/http_proxy_connect_job.h
+index ef8e49c4d2dbb00eb3ceacb1d2faf622dcf81676..440df3aa51823b940c037215169fd55771aa64aa 100644
+--- a/net/http/http_proxy_connect_job.h
++++ b/net/http/http_proxy_connect_job.h
+@@ -21,6 +21,7 @@
+ #include "net/base/request_priority.h"
+ #include "net/dns/public/resolve_error_info.h"
+ #include "net/dns/public/secure_dns_policy.h"
++#include "net/http/access_proxy_route.h"
+ #include "net/http/http_auth.h"
+ #include "net/quic/quic_chromium_client_session.h"
+ #include "net/socket/connect_job.h"
+@@ -66,7 +67,8 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
+       const NetworkTrafficAnnotationTag traffic_annotation,
+       const NetworkAnonymizationKey& network_anonymization_key,
+       SecureDnsPolicy secure_dns_policy,
+-      handles::NetworkHandle target_network);
++      handles::NetworkHandle target_network,
++      scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+ 
+   // Construct an `HttpProxyConnectJob` over a QUIC connection using the given
+   // SSL config.
+@@ -84,7 +86,8 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
+       const NetworkTrafficAnnotationTag traffic_annotation,
+       const NetworkAnonymizationKey& network_anonymization_key,
+       SecureDnsPolicy secure_dns_policy,
+-      handles::NetworkHandle target_network);
++      handles::NetworkHandle target_network,
++      scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+ 
+   HttpProxySocketParams(const HttpProxySocketParams&) = delete;
+   HttpProxySocketParams& operator=(const HttpProxySocketParams&) = delete;
+@@ -128,6 +131,15 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
+   SecureDnsPolicy secure_dns_policy() { return secure_dns_policy_; }
+   handles::NetworkHandle target_network() const { return target_network_; }
+ 
++  const scoped_refptr<AccessProxyRoute>& access_proxy_route() const {
++    return access_proxy_route_;
++  }
++
++  // Native tunnels retain the session cache. A managed route must never use
++  // it, including when the route's private cache is empty.
++  HttpAuthCache* GetProxyAuthCache(HttpAuthCache* native_cache) const;
++
++
+  private:
+   friend class base::RefCounted<HttpProxySocketParams>;
+   HttpProxySocketParams(
+@@ -140,7 +152,8 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
+       const NetworkTrafficAnnotationTag traffic_annotation,
+       const NetworkAnonymizationKey& network_anonymization_key,
+       SecureDnsPolicy secure_dns_policy,
+-      handles::NetworkHandle target_network);
++      handles::NetworkHandle target_network,
++      scoped_refptr<AccessProxyRoute> access_proxy_route = nullptr);
+   ~HttpProxySocketParams();
+ 
+   const std::optional<ConnectJobParams> nested_params_;
+@@ -153,6 +166,7 @@ class NET_EXPORT_PRIVATE HttpProxySocketParams
+   const NetworkTrafficAnnotationTag traffic_annotation_;
+   const SecureDnsPolicy secure_dns_policy_;
+   const handles::NetworkHandle target_network_ = handles::kInvalidNetworkHandle;
++  const scoped_refptr<AccessProxyRoute> access_proxy_route_;
+ };
+ 
+ // HttpProxyConnectJob optionally establishes a tunnel through the proxy
+-- 
+2.54.0 (Apple Git-157)
+

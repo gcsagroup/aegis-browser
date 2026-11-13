@@ -1,0 +1,290 @@
+From 2f0f30d6b68e95d5ab7d2a6f88056ad9f9396047 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 17:41:30 +0800
+Subject: [PATCH] feat(access): encode full Browser policy and registered
+ groups for private publication
+
+---
+ chrome/browser/aegis/access/BUILD.gn          |   1 +
+ .../access/access_private_context_client.cc   | 127 ++++++++++++++++++
+ .../access/access_private_context_client.h    |  17 +++
+ .../access_private_context_client_unittest.cc |  41 +++++-
+ 4 files changed, 185 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/BUILD.gn b/chrome/browser/aegis/access/BUILD.gn
+index a724e7927898edd8ff1c8af4797d8794ef4017bf..bceb74ffdfe55959ee3ff2b4d26c669975aea814 100644
+--- a/chrome/browser/aegis/access/BUILD.gn
++++ b/chrome/browser/aegis/access/BUILD.gn
+@@ -471,6 +471,7 @@ source_set("access_private_context_client") {
+     "//base",
+     "//components/aegis_access",
+     "//mojo/public/cpp/bindings",
++    "//net",
+     "//services/network/public/mojom",
+   ]
+ }
+diff --git a/chrome/browser/aegis/access/access_private_context_client.cc b/chrome/browser/aegis/access/access_private_context_client.cc
+index 5b673fb76601e67fd34c180e416acfb3d12229a2..571d9deba13b70abeeadb0385f043b639b0c8591 100644
+--- a/chrome/browser/aegis/access/access_private_context_client.cc
++++ b/chrome/browser/aegis/access/access_private_context_client.cc
+@@ -20,6 +20,53 @@ mojom::AegisAccessChannel Channel(aegis_access::ChannelNamespace channel) {
+   }
+   NOTREACHED();
+ }
++std::optional<mojom::AegisAccessRuleScope> Scope(aegis_access::PolicyScope value) {
++  switch (value) {
++    case aegis_access::PolicyScope::kSite: return mojom::AegisAccessRuleScope::kSite;
++    case aegis_access::PolicyScope::kProfile: return mojom::AegisAccessRuleScope::kProfile;
++    case aegis_access::PolicyScope::kNone:
++    case aegis_access::PolicyScope::kInvalid: return std::nullopt;
++  }
++  return std::nullopt;
++}
++std::optional<mojom::AegisAccessScheme> Scheme(aegis_access::RequestScheme value) {
++  switch (value) {
++    case aegis_access::RequestScheme::kHttp: return mojom::AegisAccessScheme::kHttp;
++    case aegis_access::RequestScheme::kHttps: return mojom::AegisAccessScheme::kHttps;
++    case aegis_access::RequestScheme::kWs: return mojom::AegisAccessScheme::kWs;
++    case aegis_access::RequestScheme::kWss: return mojom::AegisAccessScheme::kWss;
++    case aegis_access::RequestScheme::kInvalid: return std::nullopt;
++  }
++  return std::nullopt;
++}
++std::optional<mojom::AegisAccessPortScope> Ports(aegis_access::PortScope value) {
++  switch (value) {
++    case aegis_access::PortScope::kAllBrowserPermitted: return mojom::AegisAccessPortScope::kAllBrowserPermitted;
++    case aegis_access::PortScope::kExplicitSubset: return mojom::AegisAccessPortScope::kExplicitSubset;
++    case aegis_access::PortScope::kInvalid: return std::nullopt;
++  }
++  return std::nullopt;
++}
++std::optional<mojom::AegisAccessMode> Mode(aegis_access::AccessMode value) {
++  switch (value) {
++    case aegis_access::AccessMode::kNone: return mojom::AegisAccessMode::kNone;
++    case aegis_access::AccessMode::kDirect: return mojom::AegisAccessMode::kDirect;
++    case aegis_access::AccessMode::kProxy: return mojom::AegisAccessMode::kProxy;
++    case aegis_access::AccessMode::kReject: return mojom::AegisAccessMode::kReject;
++    case aegis_access::AccessMode::kInvalid: return std::nullopt;
++  }
++  return std::nullopt;
++}
++std::optional<mojom::AegisAccessProtection> Protection(aegis_access::ProtectionOverride value) {
++  switch (value) {
++    case aegis_access::ProtectionOverride::kNone: return mojom::AegisAccessProtection::kNone;
++    case aegis_access::ProtectionOverride::kTracker: return mojom::AegisAccessProtection::kTracker;
++    case aegis_access::ProtectionOverride::kEasyList: return mojom::AegisAccessProtection::kEasyList;
++    case aegis_access::ProtectionOverride::kCname: return mojom::AegisAccessProtection::kCname;
++    case aegis_access::ProtectionOverride::kInvalid: return std::nullopt;
++  }
++  return std::nullopt;
++}
+ bool Matches(const mojom::AegisAccessSnapshot& expected,
+              const mojom::AegisAccessSnapshotAckPtr& ack) {
+   if (!ack || !ack->accepted || !ack->owner || !ack->common_generations ||
+@@ -102,6 +149,86 @@ void AccessPrivateContextClient::PublishSnapshot(
+           }, weak_factory_.GetWeakPtr(), operation, std::move(expected),
+           std::move(completion)), network::mojom::AegisAccessSnapshotAckPtr()));
+ }
++void AccessPrivateContextClient::PublishPolicy(
++    const aegis_access::PublishedAccessPolicySnapshot& policy,
++    const aegis_access::GenerationTuple& common, uint64_t sequence,
++    const std::vector<AccessPrivateEndpoint>& endpoints,
++    base::OnceCallback<void(bool)> completion) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  auto reject = [&] { std::move(completion).Run(false); };
++  if (aegis_access::ValidateAccessPolicySnapshot(policy) !=
++          aegis_access::PolicyMatchReason::kNone ||
++      policy.policy_generation != common.policy_generation ||
++      common.policy_generation == 0 || common.identity_generation == 0 ||
++      common.network_epoch == 0 || common.base_proxy_config_generation == 0 ||
++      common.selection_generation != 0) {
++    reject();
++    return;
++  }
++  auto snapshot = network::mojom::AegisAccessSnapshot::New();
++  snapshot->owner = network::mojom::AegisAccessOwner::New(Channel(policy.owner.channel),
++      policy.owner.profile_token, policy.owner.storage_partition_token);
++  snapshot->sequence = sequence;
++  snapshot->common_generations = network::mojom::AegisAccessGenerations::New(
++      common.policy_generation, common.identity_generation, 0,
++      common.network_epoch, common.base_proxy_config_generation);
++  for (const auto& rule : policy.rules) {
++    const auto scope = Scope(rule.scope);
++    const auto ports = Ports(rule.ports.scope);
++    const auto mode = Mode(rule.mode);
++    const auto protection = Protection(rule.protection_override);
++    if (!scope || !ports || !mode || !protection) {
++      reject();
++      return;
++    }
++    auto encoded = network::mojom::AegisAccessRule::New();
++    encoded->rule_id = rule.rule_id;
++    encoded->scope = *scope;
++    encoded->top_level_site = rule.top_level_site;
++    encoded->destination_host = rule.destination_host;
++    encoded->include_subdomains = rule.include_subdomains;
++    for (const auto scheme : rule.schemes) {
++      const auto value = Scheme(scheme);
++      if (!value) {
++        reject();
++        return;
++      }
++      encoded->schemes.push_back(*value);
++    }
++    encoded->port_scope = *ports;
++    encoded->explicit_ports = rule.ports.explicit_ports;
++    encoded->mode = *mode;
++    encoded->proxy_group_id = rule.proxy_group_id;
++    encoded->protection_override = *protection;
++    encoded->row_revision = rule.row_revision;
++    encoded->last_operation_sequence = rule.last_operation_sequence;
++    snapshot->rules.push_back(std::move(encoded));
++  }
++  for (const auto& endpoint : endpoints) {
++    const auto& registration = endpoint.registration;
++    const auto& g = registration.generations;
++    if (registration.owner != policy.owner ||
++        registration.transport != aegis_access::RegisteredProxyTransport::kHttp ||
++        g.policy_generation != common.policy_generation ||
++        g.identity_generation != common.identity_generation ||
++        g.network_epoch != common.network_epoch ||
++        g.base_proxy_config_generation != common.base_proxy_config_generation ||
++        g.selection_generation == 0) {
++      reject();
++      return;
++    }
++    auto encoded = network::mojom::AegisAccessHttpEndpoint::New();
++    encoded->proxy_group_id = registration.proxy_group_id;
++    encoded->registration_id = registration.registration_id;
++    encoded->selection_generation = g.selection_generation;
++    encoded->numeric_loopback_host = registration.host;
++    encoded->port = registration.port;
++    encoded->credentials = endpoint.local_credentials;
++    snapshot->endpoints.push_back(std::move(encoded));
++  }
++  PublishSnapshot(std::move(snapshot), std::move(completion));
++}
++
+ void AccessPrivateContextClient::BeginRestore(
+     base::OnceCallback<void(bool)> completion) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+diff --git a/chrome/browser/aegis/access/access_private_context_client.h b/chrome/browser/aegis/access/access_private_context_client.h
+index 04584817688d552dfd0362c4c9b36662d8a56a84..c52362a6eaffd64e8015e1ca719a30adac755793 100644
+--- a/chrome/browser/aegis/access/access_private_context_client.h
++++ b/chrome/browser/aegis/access/access_private_context_client.h
+@@ -3,15 +3,25 @@
+ #define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PRIVATE_CONTEXT_CLIENT_H_
+ 
+ #include <string>
++#include <optional>
++#include <vector>
+ #include "base/functional/callback.h"
+ #include "base/memory/weak_ptr.h"
+ #include "base/sequence_checker.h"
+ #include "components/aegis_access/access_route_types.h"
++#include "components/aegis_access/access_policy_evaluator.h"
++#include "components/aegis_access/access_proxy_route_adapter.h"
++#include "net/base/auth.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ #include "services/network/public/mojom/aegis_access_route_types.mojom.h"
+ 
+ namespace aegis::access {
++struct AccessPrivateEndpoint {
++  aegis_access::RegisteredProxyEndpoint registration;
++  std::optional<net::AuthCredentials> local_credentials;
++};
++
+ // Browser-owned capability for the exact terminal NetworkContext. The raw
+ // NetworkContext proxy is used only during Initialize, never retained across
+ // a deferred document commit or Network Service restart.
+@@ -23,6 +33,13 @@ class AccessPrivateContextClient {
+                   base::OnceCallback<void(bool)> completion);
+   void PublishSnapshot(network::mojom::AegisAccessSnapshotPtr snapshot,
+                        base::OnceCallback<void(bool)> completion);
++  // Encodes the whole validated Browser policy and all registered groups.
++  // Network independently evaluates/validates the resulting immutable snapshot.
++  void PublishPolicy(const aegis_access::PublishedAccessPolicySnapshot& policy,
++      const aegis_access::GenerationTuple& common_generations,
++      uint64_t publication_sequence,
++      const std::vector<AccessPrivateEndpoint>& endpoints,
++      base::OnceCallback<void(bool)> completion);
+   void BeginRestore(base::OnceCallback<void(bool)> completion);
+   void CreateFactory(network::mojom::URLLoaderFactoryParamsPtr params,
+       network::mojom::AegisAccessFactoryBindingPtr binding,
+diff --git a/components/aegis_access/access_private_context_client_unittest.cc b/components/aegis_access/access_private_context_client_unittest.cc
+index e3691397402ef8c42e30854495326aa43244c216..d2ac865716544636a7354555696625cdf8b38e98 100644
+--- a/components/aegis_access/access_private_context_client_unittest.cc
++++ b/components/aegis_access/access_private_context_client_unittest.cc
+@@ -10,6 +10,8 @@
+ #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
+ #include "base/test/test_future.h"
+ #include "chrome/browser/aegis/access/access_private_context_client.h"
++#include "components/aegis_access/access_proxy_route_adapter.h"
++#include "components/aegis_access/access_policy_evaluator.h"
+ #include "components/aegis_access/access_route_types.h"
+ #include "services/network/public/mojom/aegis_access_route.mojom.h"
+ #include "services/network/public/mojom/aegis_access_route_types.mojom.h"
+@@ -269,7 +271,7 @@ class AccessPrivateContextClientTest : public testing::Test {
+     envelope->incarnation = incarnation_;
+     envelope->target = wrong_target ? GURL("http://other.test/") : request.url;
+     envelope->method = request.method;
+-    envelope->generations = mojom::AegisAccessGenerations::New(1,1,
++    envelope->generations = mojom::AegisAccessGenerations::New(policy_generation_,1,
+         native_start ? 0 : selection_generation_,1,1);
+     envelope->registration_id = native_start ? "" : registration_id_;
+     auto routed = mojom::AegisAccessRoutedRequest::New(request, std::move(envelope));
+@@ -314,6 +316,7 @@ class AccessPrivateContextClientTest : public testing::Test {
+   std::atomic<bool> allow_cors_{true}, redirect_first_{false}, require_auth_{false};
+   std::atomic<int> auth_challenges_{0}, authenticated_{0};
+   uint64_t selection_generation_ = 1;
++  uint64_t policy_generation_ = 1;
+   std::string registration_id_ = "registration";
+   const url::Origin initiator_ = url::Origin::Create(GURL("http://127.0.0.1:1234"));
+   OwnershipKey key_{ChannelNamespace::kDev, "profile", "partition"};
+@@ -573,6 +576,42 @@ TEST_F(AccessPrivateContextClientTest, RetainedPrivateContextUsesExactOriginalCo
+   EXPECT_NE(client_->completion_status().error_code, net::OK);
+   EXPECT_EQ(actual_, 0);
+ }
++TEST_F(AccessPrivateContextClientTest, TypedPolicyPublicationIncludesCompleteRulesAndEndpoint) {
++  AccessPolicyRule rule{"rule", key_, PolicyScope::kProfile, {}, "destination.test",
++      false, {RequestScheme::kHttp}, {PortScope::kAllBrowserPermitted, {}},
++      AccessMode::kProxy, "group", ProtectionOverride::kNone, 1, 2};
++  RegisteredProxyEndpoint endpoint{"registration", "group", key_, {2,1,1,1,1},
++      RegisteredProxyTransport::kHttp, "127.0.0.1", server_.port()};
++  base::test::TestFuture<bool> published;
++  context_client_->PublishPolicy({key_, 2, {rule}}, {2,1,0,1,1}, 2,
++      {{endpoint, std::nullopt}}, published.GetCallback());
++  ASSERT_TRUE(published.Get());
++  Start();
++  client_->RunUntilComplete();
++  // Start still carries the old policy generation; the new policy must not
++  // accept that stale envelope, even though its endpoint address is unchanged.
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(actual_, 0);
++  policy_generation_ = 2;
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(actual_, 1);
++}
++TEST_F(AccessPrivateContextClientTest, TypedEmptyPolicyIsExplicitAndDoesNotInventProxySelection) {
++  base::test::TestFuture<bool> published;
++  context_client_->PublishPolicy({key_, 2, {}}, {2,1,0,1,1}, 2, {},
++                                 published.GetCallback());
++  ASSERT_TRUE(published.Get());
++  EXPECT_TRUE(context_client_->is_ready());
++  EXPECT_EQ(context_client_->published_sequence(), 2u);
++  policy_generation_ = 2;
++  Start(false, false, "native-empty", false, true);
++  client_->RunUntilComplete();
++  EXPECT_EQ(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(actual_, 1);
++  EXPECT_EQ(preflights_, 0);
++}
+ TEST_F(AccessPrivateContextClientTest, OriginalInitiatorLockStillRejectsMismatch) {
+   mojo::test::BadMessageObserver observer;
+   Start(true);
+-- 
+2.54.0 (Apple Git-157)
+

@@ -45,6 +45,11 @@ class RequestTerminationHandle {
 // Browser-owned, already-normalized identity for one in-flight request. The
 // registry does not parse URLs or trust renderer-provided Profile/partition
 // strings. RequestPolicyContext is the intended source for these fields.
+enum class RequestOwnershipRoute {
+  kProxy,
+  kNative,
+};
+
 struct RequestOwnershipRecord {
   std::string request_id;
   OwnershipKey owner;
@@ -56,6 +61,9 @@ struct RequestOwnershipRecord {
   std::string exact_host;
   RequestScheme scheme = RequestScheme::kInvalid;
   uint16_t port = 0;
+  // Native tracking has no proxy selection. This flag grants no route: the
+  // private NetworkContext independently evaluates the actual target policy.
+  RequestOwnershipRoute route = RequestOwnershipRoute::kProxy;
 
   friend bool operator==(const RequestOwnershipRecord&,
                          const RequestOwnershipRecord&) = default;
@@ -92,6 +100,9 @@ struct RequestCancellationSelector {
   std::string exact_host;
   RequestScheme scheme = RequestScheme::kInvalid;
   uint16_t port = 0;
+  // Browser-issued website toggle: match both trusted HTTP(S) top sites and
+  // all their page destinations in this owner, preserving other websites.
+  bool website_context = false;
 
   friend bool operator==(const RequestCancellationSelector&,
                          const RequestCancellationSelector&) = default;

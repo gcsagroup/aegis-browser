@@ -1,0 +1,1267 @@
+From ee026d462e87c33083ea73982c4871823b75042f Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 02:16:59 +0800
+Subject: [PATCH] feat(access): proxy trusted website resources and migrate
+ explicit scope
+
+---
+ .../access_network_context_transport.cc       |   7 +-
+ .../access/access_private_context_client.cc   |   1 +
+ .../browser/aegis/access/access_rule_store.cc | 127 +++++++++++++++---
+ .../access/access_rule_store_unittest.cc      | 122 +++++++++++++++++
+ .../access/access_service_coordinator.cc      |  14 ++
+ .../aegis/access/access_site_intent.cc        |  12 ++
+ .../browser/aegis/access/access_site_intent.h |   2 +
+ .../access/access_site_intent_unittest.cc     |   8 ++
+ .../access_site_proxy_bubble_controller.cc    |  46 +++++--
+ .../access_site_proxy_bubble_controller.h     |   3 +
+ .../access_site_proxy_product_unittest.cc     |  26 +++-
+ .../aegis/access/access_site_proxy_session.cc |   9 +-
+ .../aegis/access/access_site_proxy_session.h  |   3 +-
+ .../aegis_access/access_policy_evaluator.cc   |  15 ++-
+ .../access_policy_evaluator_unittest.cc       |  64 +++++++++
+ .../aegis_access/access_route_planner.cc      |   3 +-
+ components/aegis_access/access_route_types.h  |   3 +
+ .../access_route_wire_unittest.cc             |  27 ++++
+ .../request_ownership_registry.cc             |  10 +-
+ .../aegis_access/request_ownership_registry.h |   3 +
+ .../request_ownership_registry_unittest.cc    |  26 ++++
+ .../aegis_access/site_proxy_rule_group.cc     |   2 +
+ .../aegis_access/site_proxy_rule_group.h      |   3 +
+ services/network/aegis/access_route_wire.cc   |   1 +
+ .../mojom/aegis_access_route_types.mojom      |   2 +-
+ 25 files changed, 498 insertions(+), 41 deletions(-)
+
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index e15dbead36ec2de6434393a80730ee6a418eb582..2ddfff6c8dd342690999171cb1256d735cfe8a7b 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -565,10 +565,13 @@ bool AccessNetworkContextTransport::ReplaceSelection(
+     const aegis_access::OwnershipKey& owner,
+     const AccessTransportSelection& expected,
+     const AccessTransportSelection& replacement) {
++  const bool private_context = OwnsConfiguredPartition(owner) &&
++      !partitions_.at(owner.storage_partition_token).private_contexts.empty();
+   if (CurrentSelection(owner) != expected ||
+       (replacement.endpoint && replacement.endpoint->owner != owner) ||
+       (!replacement.exact_hosts.empty() &&
+-       (!replacement.endpoint || !AreCanonicalExactHosts(replacement.exact_hosts)))) {
++       ((!replacement.endpoint && !private_context) ||
++        !AreCanonicalExactHosts(replacement.exact_hosts)))) {
+     return false;
+   }
+   auto& state = partitions_.at(owner.storage_partition_token);
+@@ -581,7 +584,7 @@ bool AccessNetworkContextTransport::ReplaceSelection(
+       found->second.registration = *replacement.endpoint;
+   }
+   // The policy metadata is sent after this config on the same Mojo pipe.
+-  if (state.private_endpoints.empty()) Broadcast(state);
++  if (!private_context) Broadcast(state);
+   return true;
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_private_context_client.cc b/chrome/browser/aegis/access/access_private_context_client.cc
+index 4654ca1a1b899299059e7966e88acf018a8f3c38..93ad54162c78542ee631f978591f98f2ef51a18f 100644
+--- a/chrome/browser/aegis/access/access_private_context_client.cc
++++ b/chrome/browser/aegis/access/access_private_context_client.cc
+@@ -24,6 +24,7 @@ std::optional<mojom::AegisAccessRuleScope> Scope(aegis_access::PolicyScope value
+   switch (value) {
+     case aegis_access::PolicyScope::kSite: return mojom::AegisAccessRuleScope::kSite;
+     case aegis_access::PolicyScope::kProfile: return mojom::AegisAccessRuleScope::kProfile;
++    case aegis_access::PolicyScope::kWebsite: return mojom::AegisAccessRuleScope::kWebsite;
+     case aegis_access::PolicyScope::kNone:
+     case aegis_access::PolicyScope::kInvalid: return std::nullopt;
+   }
+diff --git a/chrome/browser/aegis/access/access_rule_store.cc b/chrome/browser/aegis/access/access_rule_store.cc
+index 323780b262dac8d07913cc45f0007f2fd69b825c..5b83b815723255bc3583370deebb4f171b58ad8b 100644
+--- a/chrome/browser/aegis/access/access_rule_store.cc
++++ b/chrome/browser/aegis/access/access_rule_store.cc
+@@ -20,8 +20,8 @@
+ namespace aegis::access {
+ namespace {
+ 
+-constexpr int kSchemaVersion = 1;
+-constexpr int kCompatibleVersion = 1;
++constexpr int kSchemaVersion = 2;
++constexpr int kCompatibleVersion = 2;
+ constexpr int kPrepared = 0;
+ constexpr int kCommitted = 1;
+ constexpr int kSuperseded = 2;
+@@ -60,6 +60,7 @@ constexpr char kCreateGroupsSql[] = R"sql(
+     revision INTEGER NOT NULL,
+     last_operation_sequence INTEGER NOT NULL,
+     committed_policy_generation INTEGER NOT NULL,
++    website_context INTEGER NOT NULL DEFAULT 0 CHECK(website_context IN (0,1)),
+     PRIMARY KEY(storage_partition_token, site_toggle_id),
+     UNIQUE(storage_partition_token, canonical_host)
+   ))sql";
+@@ -116,7 +117,8 @@ constexpr char kCreateJournalSql[] = R"sql(
+     created_at_micros INTEGER NOT NULL,
+     completed_at_micros INTEGER NOT NULL,
+     before_image TEXT NOT NULL,
+-    after_image TEXT NOT NULL
++    after_image TEXT NOT NULL,
++    website_context INTEGER NOT NULL DEFAULT 0 CHECK(website_context IN (0,1))
+   ))sql";
+ 
+ bool IsKnownStoreChannel(ChannelNamespace channel) {
+@@ -211,6 +213,12 @@ aegis_access::GroupValidation ValidateBoundSiteGroup(
+     validation.error = GroupValidationError::kTopLevelSiteMismatch;
+     return validation;
+   }
++  if (group->website_context &&
++      GURL(expected_sites->first).host() != group->canonical_host) {
++    validation.selection = aegis_access::GroupSelection::kUnknown;
++    validation.error = GroupValidationError::kHostMismatch;
++    return validation;
++  }
+   for (const SiteProxyRuleMember& member : members) {
+     const std::string& expected_site =
+         member.rule_id == group->member_rule_ids[0] ? expected_sites->first
+@@ -342,7 +350,7 @@ bool ValidateStoredRule(const StoredAccessRule& rule,
+       !std::ranges::is_sorted(policy.schemes)) {
+     return false;
+   }
+-  if (policy.scope == PolicyScope::kSite) {
++  if (policy.scope == PolicyScope::kSite || policy.scope == PolicyScope::kWebsite) {
+     if (!IsSchemefulSiteLike(policy.top_level_site, "http://") &&
+         !IsSchemefulSiteLike(policy.top_level_site, "https://")) {
+       return false;
+@@ -390,7 +398,7 @@ bool ValidateStoredRule(const StoredAccessRule& rule,
+     return rule.site_toggle_id.empty() && rule.site_toggle_revision == 0;
+   }
+   return Bounded(rule.site_toggle_id) && rule.site_toggle_revision != 0 &&
+-         policy.scope == PolicyScope::kSite &&
++         (policy.scope == PolicyScope::kSite || policy.scope == PolicyScope::kWebsite) &&
+          policy.row_revision == rule.site_toggle_revision &&
+          rule.lifetime == StoredRuleLifetime::kPersistent &&
+          rule.expires_at_micros == 0;
+@@ -420,9 +428,35 @@ std::string GroupImage(const StoredSiteGroup* stored) {
+         .push_back(':');
+     AppendImageField(&result, member.policy.proxy_group_id);
+   }
++  // Keep legacy journal images byte-identical across the schema migration.
++  if (group.website_context) AppendImageField(&result, "website-context-v1");
+   return result;
+ }
+ 
++bool ReplacedLegacyAlias(const SiteProxyRuleGroup& candidate,
++                         const SiteProxyRuleGroup& existing) {
++  return candidate.website_context && !existing.website_context &&
++      candidate.site_toggle_id == "bubble-site:" + candidate.canonical_host &&
++      existing.site_toggle_id == "bubble:" + existing.canonical_host &&
++      existing.owner == candidate.owner &&
++      existing.http_top_level_site == candidate.http_top_level_site &&
++      existing.https_top_level_site == candidate.https_top_level_site;
++}
++
++std::string MutationBeforeImage(const StoredPolicySnapshot* current,
++    const SiteProxyRuleGroup& candidate, const StoredSiteGroup* before) {
++  std::string image = GroupImage(before);
++  if (!candidate.website_context) return image;
++  AppendImageField(&image, "website-base-v1");
++  if (current) {
++    for (const auto& existing : current->site_groups) {
++      if (ReplacedLegacyAlias(candidate, existing.group))
++        AppendImageField(&image, GroupImage(&existing));
++    }
++  }
++  return image;
++}
++
+ StoreResult<StoredPolicySnapshot> SnapshotError(StoreStatus status,
+                                                 std::string detail) {
+   return {status, std::nullopt, std::move(detail)};
+@@ -486,6 +520,9 @@ bool IsPreparedCandidateValid(const PendingMutationRecord& expected) {
+ 
+ void ReplacePreparedSiteGroup(StoredPolicySnapshot* candidate,
+                               const PendingMutationRecord& expected) {
++  std::erase_if(candidate->site_groups, [&](const StoredSiteGroup& group) {
++    return ReplacedLegacyAlias(expected.candidate.group, group.group);
++  });
+   bool replaced = false;
+   for (StoredSiteGroup& group : candidate->site_groups) {
+     if (group.group.site_toggle_id != expected.candidate.group.site_toggle_id) {
+@@ -642,6 +679,7 @@ StoreStatus AccessRuleStore::Open() {
+   const bool complete =
+       has_identity && has_counters && has_groups && has_rules && has_journal;
+   const bool initialize_schema = !has_any;
++  int stored_version = kSchemaVersion;
+   if (has_meta) {
+     sql::Statement version(database_.GetUniqueStatement(
+         "SELECT value FROM meta WHERE key='version'"));
+@@ -651,10 +689,10 @@ StoreStatus AccessRuleStore::Open() {
+       terminal_status_ = StoreStatus::kCorrupt;
+       return terminal_status_;
+     }
+-    const int stored_version = version.ColumnInt(0);
++    stored_version = version.ColumnInt(0);
+     const int stored_compatible = compatible.ColumnInt(0);
+-    if (stored_version != kSchemaVersion ||
+-        stored_compatible > kCompatibleVersion) {
++    if ((stored_version != 1 && stored_version != kSchemaVersion) ||
++        stored_compatible != stored_version) {
+       terminal_status_ = StoreStatus::kIncompatible;
+       return terminal_status_;
+     }
+@@ -687,7 +725,7 @@ StoreStatus AccessRuleStore::Open() {
+       "SELECT schema_version,channel,durable_profile_id,profile_path FROM "
+       "access_store_identity WHERE singleton=1"));
+   if (identity.Step()) {
+-    if (identity.ColumnInt(0) != kSchemaVersion ||
++    if (identity.ColumnInt(0) != stored_version ||
+         identity.ColumnInt(1) != static_cast<int>(binding_.channel()) ||
+         identity.ColumnString(2) != binding_.durable_profile_id() ||
+         identity.ColumnString(3) != trusted_path) {
+@@ -710,6 +748,22 @@ StoreStatus AccessRuleStore::Open() {
+       return terminal_status_;
+     }
+   }
++  identity.Reset(true);
++  if (stored_version == 1) {
++    // All existing groups and journal images remain exact-host grants. Only
++    // a subsequent explicit website toggle creates the wider typed scope.
++    if (!database_.Execute("ALTER TABLE access_site_groups ADD COLUMN "
++          "website_context INTEGER NOT NULL DEFAULT 0 CHECK(website_context IN (0,1))") ||
++        !database_.Execute("ALTER TABLE access_mutation_journal ADD COLUMN "
++          "website_context INTEGER NOT NULL DEFAULT 0 CHECK(website_context IN (0,1))") ||
++        !database_.Execute("UPDATE access_store_identity SET schema_version=2 WHERE schema_version=1") ||
++        !database_.Execute("UPDATE access_mutation_journal SET schema_version=2 WHERE schema_version=1") ||
++        !meta_table_.SetVersionNumber(kSchemaVersion) ||
++        !meta_table_.SetCompatibleVersionNumber(kCompatibleVersion)) {
++      terminal_status_ = StoreStatus::kIoError;
++      return terminal_status_;
++    }
++  }
+   if (initialize_schema &&
+       !database_.Execute("INSERT INTO access_store_counters"
+                          "(singleton,operation_sequence) VALUES(1,0)")) {
+@@ -844,7 +898,7 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
+       "SELECT channel,durable_profile_id,site_toggle_id,canonical_host,"
+       "http_top_level_site,https_top_level_site,http_member_rule_id,"
+       "https_member_rule_id,revision,last_operation_sequence,"
+-      "committed_policy_generation FROM access_site_groups WHERE "
++      "committed_policy_generation,website_context FROM access_site_groups WHERE "
+       "storage_partition_token=? ORDER BY site_toggle_id"));
+   groups.BindString(0, partition);
+   while (groups.Step()) {
+@@ -863,6 +917,9 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
+     const int64_t revision = groups.ColumnInt64(8);
+     const int64_t sequence = groups.ColumnInt64(9);
+     const int64_t generation = groups.ColumnInt64(10);
++    if (groups.ColumnInt(11) != 0 && groups.ColumnInt(11) != 1)
++      return SnapshotError(StoreStatus::kCorrupt, "invalid_website_context");
++    stored.group.website_context = groups.ColumnBool(11);
+     if (revision <= 0 || sequence <= 0 || generation <= 0 ||
+         generation != sequence ||
+         !group_ids.insert(stored.group.site_toggle_id).second) {
+@@ -946,6 +1003,7 @@ AccessRuleStore::ReadCommittedSnapshotInternal(const std::string& partition,
+           rule.policy.proxy_group_id,
+           rule.policy.protection_override,
+           rule.policy.last_operation_sequence,
++          rule.policy.scope,
+       });
+     }
+     if (ValidateBoundSiteGroup(snapshot.owner, &stored.group,
+@@ -1119,6 +1177,11 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
+   const StoredSiteGroup* before = nullptr;
+   if (current.value.has_value()) {
+     for (const StoredSiteGroup& group : current.value->site_groups) {
++      if (ReplacedLegacyAlias(request.candidate_group, group.group)) continue;
++      if (!request.candidate_group.website_context && group.group.website_context &&
++          group.group.http_top_level_site == request.candidate_group.http_top_level_site &&
++          group.group.https_top_level_site == request.candidate_group.https_top_level_site)
++        return MutationError(StoreStatus::kConflict, "website_scope_requires_explicit_mutation");
+       if (group.group.canonical_host ==
+               request.candidate_group.canonical_host ||
+           group.group.site_toggle_id ==
+@@ -1141,10 +1204,14 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
+   }
+   sql::Statement pending(database_.GetUniqueStatement(
+       "SELECT 1 FROM access_mutation_journal WHERE state=? AND "
+-      "storage_partition_token=? AND site_toggle_id=? LIMIT 1"));
++      "storage_partition_token=? AND (site_toggle_id=? OR "
++      "((? OR website_context=1) AND http_top_level_site=? AND https_top_level_site=?)) LIMIT 1"));
+   pending.BindInt(0, kPrepared);
+   pending.BindString(1, expected_owner.storage_partition_token);
+   pending.BindString(2, request.candidate_group.site_toggle_id);
++  pending.BindBool(3, request.candidate_group.website_context);
++  pending.BindString(4, request.candidate_group.http_top_level_site);
++  pending.BindString(5, request.candidate_group.https_top_level_site);
+   if (pending.Step()) {
+     return MutationError(StoreStatus::kRecoveryRequired,
+                          "pending_mutation_exists");
+@@ -1211,7 +1278,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
+     stored.policy = {
+         .rule_id = member.rule_id,
+         .owner = member.owner,
+-        .scope = PolicyScope::kSite,
++        .scope = request.candidate_group.website_context ? PolicyScope::kWebsite : PolicyScope::kSite,
+         .top_level_site = member.top_level_site,
+         .destination_host = member.exact_host,
+         .include_subdomains = member.include_subdomains,
+@@ -1241,7 +1308,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
+     return MutationError(StoreStatus::kInvalidArgument,
+                          "invalid_site_group_candidate");
+   }
+-  record.before_image = GroupImage(before);
++  record.before_image = MutationBeforeImage(current.value ? &*current.value : nullptr,
++                                           record.candidate.group, before);
+   record.after_image = GroupImage(&record.candidate);
+ 
+   sql::Statement update(database_.GetUniqueStatement(
+@@ -1265,7 +1333,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
+       "https_member_rule_id,target_mode,proxy_group_id,expected_revision,"
+       "target_revision,operation_sequence,committed_policy_generation,"
+       "created_at_micros,completed_at_micros,before_image,"
+-      "after_image) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
++      "after_image,website_context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"));
+   insert.BindString(0, record.operation_id);
+   insert.BindString(1, record.request_fingerprint);
+   insert.BindInt(2, kPrepared);
+@@ -1292,6 +1360,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::PrepareSiteGroupMutation(
+   insert.BindInt64(21, 0);
+   insert.BindString(22, record.before_image);
+   insert.BindString(23, record.after_image);
++  insert.BindBool(24, record.candidate.group.website_context);
+   if (!insert.Run() ||
+       ShouldFail(FailurePointForTesting::kPrepareAfterJournalInsert) ||
+       !transaction.Commit()) {
+@@ -1314,7 +1383,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
+       "http_member_rule_id,https_member_rule_id,target_mode,proxy_group_id,"
+       "expected_revision,target_revision,operation_sequence,"
+       "committed_policy_generation,created_at_micros,completed_at_micros,"
+-      "before_image,after_image FROM access_mutation_journal WHERE "
++      "before_image,after_image,website_context FROM access_mutation_journal WHERE "
+       "operation_id=?"));
+   row.BindString(0, operation_id);
+   if (!row.Step()) {
+@@ -1376,6 +1445,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
+   record.completed_at_micros = completed_at_micros;
+   record.before_image = row.ColumnString(21);
+   record.after_image = row.ColumnString(22);
++  if (row.ColumnInt(23) != 0 && row.ColumnInt(23) != 1)
++    return MutationError(StoreStatus::kCorrupt, "invalid_website_context");
+   record.candidate.group = {
+       .site_toggle_id = row.ColumnString(7),
+       .canonical_host = row.ColumnString(8),
+@@ -1385,6 +1456,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
+       .member_rule_ids = {row.ColumnString(11), row.ColumnString(12)},
+       .revision = record.target_revision,
+       .last_operation_sequence = record.operation_sequence,
++      .website_context = row.ColumnBool(23),
+   };
+   record.candidate.policy_generation = record.operation_sequence;
+   const std::string proxy_group_id = row.ColumnString(14);
+@@ -1396,7 +1468,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::LoadMutation(
+     member.policy = {
+         .rule_id = record.candidate.group.member_rule_ids[i],
+         .owner = record.owner,
+-        .scope = PolicyScope::kSite,
++        .scope = record.candidate.group.website_context ? PolicyScope::kWebsite : PolicyScope::kSite,
+         .top_level_site = i == 0 ? record.candidate.group.http_top_level_site
+                                  : record.candidate.group.https_top_level_site,
+         .destination_host = record.candidate.group.canonical_host,
+@@ -1564,7 +1636,8 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
+     }
+   }
+   if ((before ? before->group.revision : 0) != record.expected_revision ||
+-      GroupImage(before) != record.before_image) {
++      MutationBeforeImage(current.value ? &*current.value : nullptr,
++                          record.candidate.group, before) != record.before_image) {
+     return MutationError(StoreStatus::kConflict, "committed_base_changed");
+   }
+   sql::Statement latest_generation(database_.GetUniqueStatement(
+@@ -1579,6 +1652,22 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
+     return MutationError(StoreStatus::kConflict, "generation_not_monotonic");
+   }
+ 
++  if (current.value) {
++    for (const auto& existing : current.value->site_groups) {
++      if (!ReplacedLegacyAlias(record.candidate.group, existing.group)) continue;
++      sql::Statement rules(database_.GetUniqueStatement(
++          "DELETE FROM access_rules WHERE storage_partition_token=? AND site_toggle_id=?"));
++      rules.BindString(0, record.owner.storage_partition_token);
++      rules.BindString(1, existing.group.site_toggle_id);
++      sql::Statement group(database_.GetUniqueStatement(
++          "DELETE FROM access_site_groups WHERE storage_partition_token=? AND site_toggle_id=?"));
++      group.BindString(0, record.owner.storage_partition_token);
++      group.BindString(1, existing.group.site_toggle_id);
++      if (!rules.Run() || !group.Run())
++        return MutationError(StoreStatus::kIoError, "legacy_alias_replace_failed");
++    }
++  }
++
+   sql::Statement delete_rules(database_.GetUniqueStatement(
+       "DELETE FROM access_rules WHERE storage_partition_token=? AND "
+       "site_toggle_id=?"));
+@@ -1604,7 +1693,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
+       "storage_partition_token,site_toggle_id,canonical_host,"
+       "http_top_level_site,https_top_level_site,http_member_rule_id,"
+       "https_member_rule_id,revision,last_operation_sequence,"
+-      "committed_policy_generation) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"));
++      "committed_policy_generation,website_context) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)"));
+   insert_group.BindInt(0, static_cast<int>(record.owner.channel));
+   insert_group.BindString(1, binding_.durable_profile_id());
+   insert_group.BindString(2, record.owner.storage_partition_token);
+@@ -1617,6 +1706,7 @@ StoreResult<PendingMutationRecord> AccessRuleStore::CommitPreparedMutation(
+   insert_group.BindInt64(9, group.revision);
+   insert_group.BindInt64(10, group.last_operation_sequence);
+   insert_group.BindInt64(11, committed_policy_generation);
++  insert_group.BindBool(12, group.website_context);
+   if (!insert_group.Run() ||
+       ShouldFail(FailurePointForTesting::kCommitAfterGroupInsert)) {
+     return MutationError(StoreStatus::kIoError, "group_insert_failed");
+@@ -1718,6 +1808,7 @@ StoreResult<MatcherRuleSetCandidate> AccessRuleStore::AdaptMatcherSnapshot(
+           .proxy_group_id = rule.policy.proxy_group_id,
+           .protection_override = rule.policy.protection_override,
+           .last_operation_sequence = rule.policy.last_operation_sequence,
++          .scope = rule.policy.scope,
+       });
+     }
+     const aegis_access::GroupValidation validation =
+diff --git a/chrome/browser/aegis/access/access_rule_store_unittest.cc b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+index a066e6dcbe99766d465ccf0a27adaed4ea60815a..d843bd37d2e1e48092a882e6c2e698d7e9d90c14 100644
+--- a/chrome/browser/aegis/access/access_rule_store_unittest.cc
++++ b/chrome/browser/aegis/access/access_rule_store_unittest.cc
+@@ -1515,5 +1515,127 @@ TEST(AccessRuleStoreTest, UnsupportedIndependentFixtureShapeIsRejected) {
+             StoreStatus::kInvalidArgument);
+ }
+ 
++SiteGroupMutationRequest BubbleWebsiteFixture(std::string operation,
++    std::string host, bool website, AccessMode mode = AccessMode::kProxy,
++    uint64_t revision = 0) {
++  auto request = Mutation(std::move(operation), mode, revision, Owner(), host);
++  const auto site = net::SchemefulSite(GURL("https://" + host)).GetURL().host();
++  const std::string id = (website ? "bubble-site:" : "bubble:") + host;
++  request.candidate_group.site_toggle_id = id;
++  request.candidate_group.website_context = website;
++  request.candidate_group.member_rule_ids = {id + ":http", id + ":https"};
++  SetTopLevelSites(&request, "http://" + site, "https://" + site);
++  for (size_t i = 0; i < request.candidate_members.size(); ++i) {
++    auto& member = request.candidate_members[i];
++    member.rule_id = request.candidate_group.member_rule_ids[i];
++    member.site_toggle_id = id;
++    member.scope = website ? PolicyScope::kWebsite : PolicyScope::kSite;
++  }
++  return request;
++}
++
++TEST(AccessRuleStoreTest, ExplicitWebsiteMutationAtomicallyCoalescesLegacyAliases) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto binding = AccessRuleStoreTestPeer::Persistent(directory.GetPath());
++  AccessRuleStore store(binding);
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  for (const char* host : {"example.com", "www.example.com", "help.example.com"})
++    Commit(&store, Prepare(&store, BubbleWebsiteFixture(host, host, false)));
++  const auto before = store.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(before.value);
++  ASSERT_EQ(before.value->site_groups.size(), 3u);
++  const auto pending = Prepare(&store, BubbleWebsiteFixture("website", "example.com", true));
++  const auto candidate = store.BuildPreparedCandidateSnapshot(pending);
++  ASSERT_TRUE(candidate.value);
++  ASSERT_EQ(candidate.value->site_groups.size(), 1u);
++  EXPECT_TRUE(candidate.value->site_groups[0].group.website_context);
++  EXPECT_EQ(candidate.value->site_groups[0].members[0].policy.scope, PolicyScope::kWebsite);
++  Commit(&store, pending);
++  AccessRuleStoreTestPeer::Close(&store);
++  AccessRuleStore reopened(binding);
++  ASSERT_EQ(reopened.Open(), StoreStatus::kValid);
++  const auto persisted = reopened.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(persisted.value);
++  EXPECT_EQ(persisted.value->site_groups, candidate.value->site_groups);
++  auto matcher = AccessRuleStore::AdaptMatcherSnapshot(*persisted.value);
++  ASSERT_TRUE(matcher.value);
++  const BrowserOwnedRequestMetadata page{"cdn", Owner(), RequestAttributionKind::kDocument,
++      "doc", {}, net::SchemefulSite(GURL("https://www.example.com/"))};
++  const auto context = CanonicalizeBrowserOwnedRequest(page, GURL("https://cdn.other.test/app.js"));
++  ASSERT_TRUE(context.context);
++  const PublishedAccessPolicySnapshot published{matcher.value->owner,
++      matcher.value->committed_policy_generation, matcher.value->rules};
++  EXPECT_EQ(EvaluateAccessPolicy(*context.context, published).effective_mode, AccessMode::kProxy);
++}
++
++TEST(AccessRuleStoreTest, WebsiteAliasDeletionRollsBackWithTheWholeMutation) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral());
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  for (const char* host : {"example.com", "www.example.com"})
++    Commit(&store, Prepare(&store, BubbleWebsiteFixture(host, host, false)));
++  const auto before = store.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(before.value);
++  const auto pending = Prepare(&store, BubbleWebsiteFixture("website-rollback", "example.com", true));
++  AccessRuleStoreTestPeer::FailAt(&store, AccessRuleStore::FailurePointForTesting::kCommitAfterRuleDelete);
++  EXPECT_EQ(store.CommitPreparedMutation(pending).status, StoreStatus::kIoError);
++  AccessRuleStoreTestPeer::FailAt(&store, AccessRuleStore::FailurePointForTesting::kNone);
++  ASSERT_EQ(store.SupersedePreparedMutation(pending.operation_id, pending.operation_sequence), StoreStatus::kValid);
++  const auto after = store.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(after.value);
++  EXPECT_EQ(after.value->site_groups, before.value->site_groups);
++}
++
++TEST(AccessRuleStoreTest, WebsiteAndLegacyPendingMutationsCannotCross) {
++  AccessRuleStore store(AccessRuleStoreTestPeer::Ephemeral());
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  const auto legacy = Prepare(&store, BubbleWebsiteFixture("legacy-pending", "www.example.com", false));
++  EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("website-conflict", "example.com", true)).status,
++            StoreStatus::kRecoveryRequired);
++  ASSERT_EQ(store.SupersedePreparedMutation(legacy.operation_id, legacy.operation_sequence), StoreStatus::kValid);
++  const auto website = Prepare(&store, BubbleWebsiteFixture("website-pending", "example.com", true));
++  EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("legacy-conflict", "www.example.com", false)).status,
++            StoreStatus::kRecoveryRequired);
++  Commit(&store, website);
++  EXPECT_EQ(store.PrepareSiteGroupMutation(BubbleWebsiteFixture("legacy-after-upgrade", "help.example.com", false)).status,
++            StoreStatus::kConflict);
++}
++
++TEST(AccessRuleStoreTest, LegacySchemaMigrationPreservesExactGrantAndPreparedJournal) {
++  base::ScopedTempDir directory;
++  ASSERT_TRUE(directory.CreateUniqueTempDir());
++  const auto binding = AccessRuleStoreTestPeer::Persistent(directory.GetPath());
++  AccessRuleStore store(binding);
++  ASSERT_EQ(store.Open(), StoreStatus::kValid);
++  Commit(&store, Prepare(&store, BubbleWebsiteFixture("old-enable", "www.example.com", false)));
++  const auto pending = Prepare(&store, BubbleWebsiteFixture("old-disable", "www.example.com", false,
++                                                           AccessMode::kDirect, 1));
++  AccessRuleStoreTestPeer::Close(&store);
++  {
++    sql::Database legacy("AegisAccess");
++    ASSERT_TRUE(legacy.Open(binding.database_path()));
++    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_site_groups DROP COLUMN website_context"));
++    ASSERT_TRUE(legacy.Execute("ALTER TABLE access_mutation_journal DROP COLUMN website_context"));
++    ASSERT_TRUE(legacy.Execute("UPDATE access_store_identity SET schema_version=1"));
++    ASSERT_TRUE(legacy.Execute("UPDATE access_mutation_journal SET schema_version=1"));
++    ASSERT_TRUE(legacy.Execute("UPDATE meta SET value=1 WHERE key IN ('version','last_compatible_version')"));
++  }
++  AccessRuleStore migrated(binding);
++  ASSERT_EQ(migrated.Open(), StoreStatus::kValid);
++  const auto recovery = migrated.LoadRecoveryState();
++  ASSERT_TRUE(recovery.value);
++  ASSERT_EQ(recovery.value->pending.size(), 1u);
++  EXPECT_EQ(recovery.value->pending[0].before_image, pending.before_image);
++  EXPECT_EQ(recovery.value->pending[0].after_image, pending.after_image);
++  EXPECT_FALSE(recovery.value->pending[0].candidate.group.website_context);
++  ASSERT_EQ(migrated.SupersedePreparedMutation(pending.operation_id, pending.operation_sequence), StoreStatus::kValid);
++  const auto restored = migrated.ReadCommittedSnapshot("partition-A");
++  ASSERT_TRUE(restored.value);
++  ASSERT_EQ(restored.value->site_groups.size(), 1u);
++  EXPECT_FALSE(restored.value->site_groups[0].group.website_context);
++  EXPECT_EQ(restored.value->site_groups[0].group.canonical_host, "www.example.com");
++  EXPECT_EQ(restored.value->site_groups[0].members[0].policy.scope, PolicyScope::kSite);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_service_coordinator.cc b/chrome/browser/aegis/access/access_service_coordinator.cc
+index df624ef529f20f42cae4715e4e26009c200f544f..f2561f9caccb3153dcde76d5d770f87855107b2d 100644
+--- a/chrome/browser/aegis/access/access_service_coordinator.cc
++++ b/chrome/browser/aegis/access/access_service_coordinator.cc
+@@ -30,6 +30,7 @@ bool SelectorMatchesMutation(
+     const SiteGroupMutationRequest& request) {
+   if (!aegis_access::IsValidRequestCancellationSelector(selector) ||
+       selector.owner != request.candidate_group.owner ||
++      selector.website_context != request.candidate_group.website_context ||
+       selector.exact_host != request.candidate_group.canonical_host) {
+     return false;
+   }
+@@ -281,6 +282,13 @@ void AccessServiceCoordinator::OnAsyncPrepared(
+     return;
+   }
+   transaction->candidate = std::move(*result.candidate);
++  if (transaction->pending.candidate.group.website_context) {
++    if (auto failure = ValidateTransportScope(*transaction,
++            transaction->pending.candidate.members.front().policy.mode)) {
++      FailTransaction(std::move(transaction), *failure);
++      return;
++    }
++  }
+   if (auto failure = BeginPublication(*transaction)) {
+     FailTransaction(std::move(transaction), *failure);
+     return;
+@@ -347,6 +355,12 @@ std::optional<AccessMutationTransactionResult>
+ AccessServiceCoordinator::ValidateTransportScope(
+     const MutationTransaction& transaction,
+     AccessMode mode) const {
++  if (transaction.pending.candidate.group.website_context) {
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    return transport && transport->HasReadyPrivateContext(transaction.pending.owner)
++        ? std::nullopt
++        : std::make_optional(Result(AccessMutationTransactionStatus::kUnsupportedTransportScope));
++  }
+   // CustomProxyConfig selects by destination host, not top-level-site scope.
+   const auto matcher =
+       AccessRuleStore::AdaptMatcherSnapshot(transaction.candidate);
+diff --git a/chrome/browser/aegis/access/access_site_intent.cc b/chrome/browser/aegis/access/access_site_intent.cc
+index e07b41b3070c6dcc1ca32324e443b882b545e8f5..ffd0851850011614544e3f2af7611502ab377c3f 100644
+--- a/chrome/browser/aegis/access/access_site_intent.cc
++++ b/chrome/browser/aegis/access/access_site_intent.cc
+@@ -100,6 +100,7 @@ SiteProxyRuleMember MakeMember(const AccessSiteIntentMutationInput& input,
+       mode == AccessMode::kProxy ? input.proxy_group_id : std::string();
+   member.protection_override = ProtectionOverride::kNone;
+   member.last_operation_sequence = 0;
++  member.scope = input.website_context ? PolicyScope::kWebsite : PolicyScope::kSite;
+   return member;
+ }
+ 
+@@ -159,6 +160,12 @@ AccessSiteHostResult MakeAccessSiteHost(std::string_view exact_host) {
+ AccessSiteHostResult NormalizeAccessSiteHost(std::string_view raw) {
+   return MakeAccessSiteHost(StripToHostCandidate(raw));
+ }
++AccessSiteHostResult CanonicalWebsiteHost(const AccessSiteHost& host) {
++  const auto checked = MakeAccessSiteHost(host.value);
++  if (!checked.host) return checked;
++  return MakeAccessSiteHost(net::SchemefulSite(GURL("https://" + host.value))
++                                .GetURL().host());
++}
+ 
+ std::optional<aegis_access::AccessMode> OrdinaryAccessModeForIntent(
+     AccessSiteIntent intent) {
+@@ -189,6 +196,10 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
+     result.status = AccessSiteIntentMutationStatus::kInvalidHost;
+     return result;
+   }
++  if (input.website_context && CanonicalWebsiteHost(input.host).host != input.host) {
++    result.status = AccessSiteIntentMutationStatus::kInvalidHost;
++    return result;
++  }
+ 
+   if (input.intent == AccessSiteIntent::kBlock) {
+     result.status = AccessSiteIntentMutationStatus::kBlockNotOrdinary;
+@@ -229,6 +240,7 @@ AccessSiteIntentMutationResult BuildOrdinarySiteGroupMutation(
+       .https_top_level_site = https_site,
+       .member_rule_ids = {input.site_toggle_id + ":http",
+                           input.site_toggle_id + ":https"},
++      .website_context = input.website_context,
+   };
+   request.candidate_members = {
+       MakeMember(input, "http", http_site, *mode),
+diff --git a/chrome/browser/aegis/access/access_site_intent.h b/chrome/browser/aegis/access/access_site_intent.h
+index 1ee76a07dd2b89de9e77efc034e87741fe4ce84a..c88d404c32ff9f448036f4052bfb0ad42e6c8227 100644
+--- a/chrome/browser/aegis/access/access_site_intent.h
++++ b/chrome/browser/aegis/access/access_site_intent.h
+@@ -75,6 +75,7 @@ struct AccessSiteIntentMutationInput {
+   // Required for kAllow; must be empty for kOff.
+   std::string proxy_group_id;
+   uint64_t expected_revision = 0;
++  bool website_context = false;
+ };
+ 
+ struct AccessSiteIntentMutationResult {
+@@ -92,6 +93,7 @@ std::string_view AccessSiteIntentToString(AccessSiteIntent intent);
+ 
+ // Accepts only an already-canonical exact host.
+ AccessSiteHostResult MakeAccessSiteHost(std::string_view exact_host);
++AccessSiteHostResult CanonicalWebsiteHost(const AccessSiteHost& host);
+ // Strips scheme/userinfo/path/port and lowercases into an exact-host key.
+ AccessSiteHostResult NormalizeAccessSiteHost(std::string_view raw);
+ 
+diff --git a/chrome/browser/aegis/access/access_site_intent_unittest.cc b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+index 08bc186ea78bbacdec96b43b706991012b002606..9cf6bfc0da1ed81daf252a02a6c0985f5abc46f5 100644
+--- a/chrome/browser/aegis/access/access_site_intent_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+@@ -159,5 +159,13 @@ TEST(AccessSiteIntentTest, SubdomainRulesUseCanonicalSitesButKeepExactHostScope)
+   }
+ }
+ 
++TEST(AccessSiteIntentTest, WebsiteAnchorUsesPrivateSuffixAndIpBoundaries) {
++  EXPECT_EQ(CanonicalWebsiteHost({"www.example.com"}).host, (AccessSiteHost{"example.com"}));
++  EXPECT_EQ(CanonicalWebsiteHost({"sub.tenant.github.io"}).host,
++            (AccessSiteHost{"tenant.github.io"}));
++  EXPECT_EQ(CanonicalWebsiteHost({"127.0.0.1"}).host, (AccessSiteHost{"127.0.0.1"}));
++  EXPECT_FALSE(CanonicalWebsiteHost({"https://example.com/path"}).host);
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index 1707e2016af41378b3087d6268e8715d025a1c8c..edba8bd08d75b5fb6839a3441e727f1b423bac4c 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -113,9 +113,18 @@ AccessSiteProxyBubbleSnapshot
+ AccessSiteProxyBubbleController::SnapshotForCommittedUrl(
+     const GURL& committed_url) const {
+   const auto host = ResolveTrustedNavigationHost(committed_url);
+-  const auto found = host.host ? host_states_.find(*host.host) : host_states_.end();
++  const auto website = host.host ? CanonicalWebsiteHost(*host.host).host : std::nullopt;
++  const auto key = website && website_hosts_.contains(*website) ? website : host.host;
++  auto found = key ? host_states_.find(*key) : host_states_.end();
++  if (publication_in_flight_ && website) {
++    const auto pending = host_states_.find(*website);
++    if (pending != host_states_.end() &&
++        pending->second.connection == AccessSiteConnectionState::kConnecting) found = pending;
++  }
+   const HostState state = found == host_states_.end() ? HostState() : found->second;
+-  return BuildSiteProxyBubbleSnapshot(committed_url, intent_store_,
++  AccessSiteIntentStore presentation;
++  if (host.host && key) presentation.Set(*host.host, intent_store_.Get(*key));
++  return BuildSiteProxyBubbleSnapshot(committed_url, presentation,
+                                       state.connection, state.failure_reason);
+ }
+ 
+@@ -161,9 +170,12 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
+ }
+ 
+ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+-    const AccessSiteHost& host,
++    const AccessSiteHost& requested_host,
+     bool enabled) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
++  const auto website = CanonicalWebsiteHost(requested_host);
++  if (!website.host) return false;
++  const auto host = *website.host;
+   ++state_revision_;
+   if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
+     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
+@@ -225,17 +237,33 @@ void AccessSiteProxyBubbleController::RestoreSavedIntents(OwnershipKey owner,
+   if (!snapshot.value) return;
+   for (const auto& group : snapshot.value->site_groups) {
+     if (group.members.empty() ||
+-        group.group.site_toggle_id != "bubble:" + group.group.canonical_host) continue;
++        group.group.site_toggle_id !=
++            (group.group.website_context ? "bubble-site:" : "bubble:") +
++                group.group.canonical_host) continue;
+     const auto host = MakeAccessSiteHost(group.group.canonical_host);
+     if (host.host) {
+       intent_store_.Set(*host.host,
+           group.members.front().policy.mode == AccessMode::kProxy
+               ? AccessSiteIntent::kAllow : AccessSiteIntent::kOff);
+       host_states_.try_emplace(*host.host);
++      if (group.group.website_context) website_hosts_.insert(*host.host);
+     }
+   }
+   ++state_revision_;
+ }
++void AccessSiteProxyBubbleController::AdoptWebsiteIntent(
++    const AccessSiteHost& host, bool enabled) {
++  std::vector<AccessSiteHost> aliases;
++  for (const auto& [key, intent] : intent_store_.All()) {
++    if (key != host && CanonicalWebsiteHost(key).host == host) aliases.push_back(key);
++  }
++  for (const auto& alias : aliases) {
++    intent_store_.Set(alias, AccessSiteIntent::kOff);
++    host_states_.erase(alias);
++  }
++  website_hosts_.insert(host);
++  ApplySiteProxyToggle(&intent_store_, host, enabled);
++}
+ void AccessSiteProxyBubbleController::FailCorePreparation(
+     const AccessSiteHost& host, std::string error) {
+   publication_in_flight_ = false;
+@@ -673,7 +701,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
+   uint64_t expected_revision = 0;
+   if (committed.value) {
+     for (const auto& group : committed.value->site_groups) {
+-      if (group.group.site_toggle_id == "bubble:" + host.value) {
++      if (group.group.site_toggle_id == "bubble-site:" + host.value) {
+         expected_revision = group.group.revision;
+         break;
+       }
+@@ -683,7 +711,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
+       BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kAllow,
+                                         ready.owner, ready.proxy_group_id,
+                                         base::Uuid::GenerateRandomV4().AsLowercaseString(),
+-                                        expected_revision);
++                                        expected_revision, /*website_context=*/true);
+   if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
+       !plan.mutation.request) {
+     host_states_[host].connection = AccessSiteConnectionState::kUnavailable;
+@@ -739,7 +767,7 @@ void AccessSiteProxyBubbleController::BeginDisablePublication(
+   uint64_t expected_revision = 0;
+   if (committed.value) {
+     for (const auto& group : committed.value->site_groups) {
+-      if (group.group.site_toggle_id == "bubble:" + host.value) {
++      if (group.group.site_toggle_id == "bubble-site:" + host.value) {
+         expected_revision = group.group.revision;
+         break;
+       }
+@@ -749,7 +777,7 @@ void AccessSiteProxyBubbleController::BeginDisablePublication(
+       BuildSiteProxySessionMutationPlan(host, AccessSiteIntent::kOff,
+                                         ready.owner, /*proxy_group_id=*/"",
+                                         base::Uuid::GenerateRandomV4().AsLowercaseString(),
+-                                        expected_revision);
++                                        expected_revision, /*website_context=*/true);
+   if (plan.mutation.status != AccessSiteIntentMutationStatus::kReady ||
+       !plan.mutation.request) {
+     return;
+@@ -771,7 +799,7 @@ void AccessSiteProxyBubbleController::OnPublicationComplete(
+   ++state_revision_;
+   if (result.status == AccessMutationTransactionStatus::kCommitted ||
+       result.status == AccessMutationTransactionStatus::kCommittedUnavailable) {
+-    ApplySiteProxyToggle(&intent_store_, host, enabling);
++    AdoptWebsiteIntent(host, enabling);
+   }
+ 
+   if (enabling) {
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index b4e8faec6e84f184fc0989438a6c47f801e4c966..893dadf774e6ccd05878c3b40c39ece52b6bee4e 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -5,6 +5,7 @@
+ 
+ #include <map>
+ #include <memory>
++#include <set>
+ #include <string>
+ #include <string_view>
+ #include <vector>
+@@ -92,6 +93,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   explicit AccessSiteProxyBubbleController(Profile* profile);
+   void PrepareLocalCore(const AccessSiteHost& host);
+   void RestoreSavedIntents(OwnershipKey owner, bool restored);
++  void AdoptWebsiteIntent(const AccessSiteHost& host, bool enabled);
+   void OnProfileRestoredForCore(AccessSiteHost host, OwnershipKey owner,
+                                bool restored);
+   void OnLocalCorePrepared(AccessSiteHost host, OwnershipKey owner,
+@@ -126,6 +128,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+ 
+   const raw_ptr<Profile> profile_;
+   AccessSiteIntentStore intent_store_;
++  std::set<AccessSiteHost> website_hosts_;
+   struct HostState {
+     AccessSiteConnectionState connection = AccessSiteConnectionState::kIdle;
+     std::string failure_reason;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 3078ed442c5c5c099ff537fba38c795e46f9455f..7ec2ba43c3be10b25c5a97671f425e89883c5cf9 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -288,12 +288,14 @@ TEST_F(AccessSiteProxyProductTest, SubdomainEnablePersistsCanonicalSites) {
+   ASSERT_TRUE(stored.value);
+   ASSERT_EQ(stored.value->site_groups.size(), 1u);
+   const auto& group = stored.value->site_groups[0];
+-  EXPECT_EQ(group.group.canonical_host, "www.example.com");
++  EXPECT_EQ(group.group.canonical_host, "example.com");
++  EXPECT_TRUE(group.group.website_context);
+   EXPECT_EQ(group.group.http_top_level_site, "http://example.com");
+   EXPECT_EQ(group.group.https_top_level_site, "https://example.com");
+   ASSERT_EQ(group.members.size(), 2u);
+   for (const auto& member : group.members) {
+-    EXPECT_EQ(member.policy.destination_host, "www.example.com");
++    EXPECT_EQ(member.policy.destination_host, "example.com");
++    EXPECT_EQ(member.policy.scope, PolicyScope::kWebsite);
+     EXPECT_FALSE(member.policy.include_subdomains);
+   }
+ }
+@@ -373,5 +375,25 @@ TEST_F(AccessSiteProxyProductTest, RequestReadinessRejectsForeignOwnerOrGroup) {
+   EXPECT_FALSE(AccessSiteProxyProductTestPeer::HasCore(bubble_));
+ }
+ 
++TEST_F(AccessSiteProxyProductTest, CanDisableOneWebsiteWhileOtherSavedProxyHasNoCore) {
++  Enable();
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"second.example"}, true));
++  WaitFor(AccessSiteConnectionState::kReady, "second.example");
++  const auto endpoint = transport_->CurrentEndpoint(owner_);
++  ASSERT_TRUE(endpoint);
++  AccessSiteProxyProductTestPeer::LoseRuntime(bubble_, endpoint->registration_id);
++  environment_.RunUntilIdle();
++  ASSERT_FALSE(transport_->CurrentEndpoint(owner_));
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, false));
++  WaitFor(AccessSiteConnectionState::kIdle);
++  EXPECT_EQ(Snapshot().intent, AccessSiteIntent::kOff);
++  EXPECT_EQ(Snapshot("second.example").intent, AccessSiteIntent::kAllow);
++  EXPECT_EQ(Snapshot("second.example").connection, AccessSiteConnectionState::kUnavailable);
++  const auto stored = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
++  ASSERT_TRUE(stored.value);
++  ASSERT_EQ(stored.value->site_groups.size(), 2u);
++  EXPECT_FALSE(transport_->CurrentEndpoint(owner_));
++}
++
+ }  // namespace
+ }  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
+index 1890fdfe194d66dc2fbf9931669ebf6cdacd3941..5ed9f151627df9b1a3b6d471a600624537210ca4 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
+@@ -163,13 +163,15 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
+     const OwnershipKey& owner,
+     std::string_view proxy_group_id,
+     std::string_view operation_id,
+-    uint64_t expected_revision) {
++    uint64_t expected_revision,
++    bool website_context) {
+   AccessSiteProxySessionMutationPlan plan;
+   AccessSiteIntentMutationInput input;
+   input.intent = intent;
+   input.host = host;
+   input.owner = owner;
+-  input.site_toggle_id = AppendMessage("bubble:", host.value);
++  input.website_context = website_context;
++  input.site_toggle_id = AppendMessage(website_context ? "bubble-site:" : "bubble:", host.value);
+   input.operation_id = std::string(operation_id);
+   input.expected_revision = expected_revision;
+   // Length-prefixed fields make the fingerprint unambiguous even when owner
+@@ -179,7 +181,7 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
+     input.request_fingerprint += std::to_string(value.size()) + ":";
+     input.request_fingerprint.append(value);
+   };
+-  append_field("bubble-session-v1");
++  append_field(website_context ? "bubble-website-session-v1" : "bubble-session-v1");
+   append_field(host.value);
+   append_field(std::to_string(static_cast<int>(intent)));
+   append_field(std::to_string(static_cast<int>(owner.channel)));
+@@ -201,6 +203,7 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
+   plan.selector.exact_host = host.value;
+   plan.selector.scheme = RequestScheme::kHttps;
+   plan.selector.port = 443;
++  plan.selector.website_context = website_context;
+   return plan;
+ }
+ 
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.h b/chrome/browser/aegis/access/access_site_proxy_session.h
+index e074017ca51f9da4755aa97ef073df5bb6f49a0c..06bab40849dcc3569a81742933f3356acf8fa424 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session.h
++++ b/chrome/browser/aegis/access/access_site_proxy_session.h
+@@ -201,7 +201,8 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
+     const OwnershipKey& owner,
+     std::string_view proxy_group_id,
+     std::string_view operation_id,
+-    uint64_t expected_revision);
++    uint64_t expected_revision,
++    bool website_context = false);
+ 
+ }  // namespace aegis::access
+ 
+diff --git a/components/aegis_access/access_policy_evaluator.cc b/components/aegis_access/access_policy_evaluator.cc
+index 9195cd2dceaef67270534a42e1760a058dfcce26..c8d752bb22b3070646c3ecc25255f1efc00f8c45 100644
+--- a/components/aegis_access/access_policy_evaluator.cc
++++ b/components/aegis_access/access_policy_evaluator.cc
+@@ -112,10 +112,14 @@ bool IsValidRule(const AccessPolicyRule& rule,
+     return false;
+   }
+ 
+-  if (rule.scope == PolicyScope::kSite) {
++  if (rule.scope == PolicyScope::kSite || rule.scope == PolicyScope::kWebsite) {
+     if (!IsCanonicalTopLevelSite(rule.top_level_site)) {
+       return false;
+     }
++    if (rule.scope == PolicyScope::kWebsite &&
++        (rule.include_subdomains ||
++         net::SchemefulSite::Deserialize(rule.top_level_site).GetURL().host() !=
++             rule.destination_host)) return false;
+   } else if (rule.scope == PolicyScope::kProfile) {
+     if (!rule.top_level_site.empty()) {
+       return false;
+@@ -270,10 +274,11 @@ std::vector<Candidate> MatchingCandidates(
+   std::vector<Candidate> result;
+   for (const AccessPolicyRule& rule : snapshot.rules) {
+     if (rule.scope != scope ||
+-        (scope == PolicyScope::kSite &&
++        ((scope == PolicyScope::kSite || scope == PolicyScope::kWebsite) &&
+          (!request.site_ownership_reliable() ||
+           rule.top_level_site != request.top_level_site())) ||
+-        !HostMatches(request, rule) || !Contains(rule.schemes, request.scheme()) ||
++        (scope != PolicyScope::kWebsite && !HostMatches(request, rule)) ||
++        !Contains(rule.schemes, request.scheme()) ||
+         !Contains(rule.ports, request.port())) {
+       continue;
+     }
+@@ -372,6 +377,10 @@ PolicyMatchResult EvaluateAccessPolicy(
+   std::vector<Candidate> candidates =
+       MatchingCandidates(request, snapshot, PolicyScope::kSite);
+   PolicyScope selected_scope = PolicyScope::kSite;
++  if (candidates.empty()) {
++    candidates = MatchingCandidates(request, snapshot, PolicyScope::kWebsite);
++    selected_scope = PolicyScope::kWebsite;
++  }
+   if (candidates.empty()) {
+     candidates = MatchingCandidates(request, snapshot, PolicyScope::kProfile);
+     selected_scope = PolicyScope::kProfile;
+diff --git a/components/aegis_access/access_policy_evaluator_unittest.cc b/components/aegis_access/access_policy_evaluator_unittest.cc
+index 298a9d31b11c108552abe593c8e5cba6b6ad6c27..e772d9fc819b0033ac5c0c9d0547bd5eaf505abc 100644
+--- a/components/aegis_access/access_policy_evaluator_unittest.cc
++++ b/components/aegis_access/access_policy_evaluator_unittest.cc
+@@ -349,5 +349,69 @@ TEST(AccessPolicyEvaluatorTest, ProxyCarriesLimitedProtectionOverride) {
+   EXPECT_EQ(result.protection_override, ProtectionOverride::kTracker);
+ }
+ 
++TEST(AccessPolicyEvaluatorTest, WebsiteResourcesRequireTrustedTopLevelContext) {
++  auto website = Rule("website", PolicyScope::kWebsite, "pinterest.com", AccessMode::kProxy);
++  website.top_level_site = "https://pinterest.com";
++  const auto snapshot = Snapshot({website});
++  ExpectMatch(EvaluateAccessPolicy(DocumentContext("https://s.pinimg.com/app.js",
++      "https://www.pinterest.com/"), snapshot), "website", PolicyScope::kWebsite, AccessMode::kProxy);
++  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext("https://s.pinimg.com/app.js",
++      "https://unrelated.test/"), snapshot).policy_state, PolicyState::kAbsent);
++  EXPECT_EQ(EvaluateAccessPolicy(ProfileOnlyContext("https://s.pinimg.com/app.js"),
++      snapshot).policy_state, PolicyState::kAbsent);
++  auto foreign = snapshot;
++  foreign.owner.profile_token += "-other";
++  foreign.rules[0].owner = foreign.owner;
++  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext("https://s.pinimg.com/app.js",
++      "https://www.pinterest.com/"), foreign).reason, PolicyMatchReason::kOwnershipMismatch);
++}
++
++TEST(AccessPolicyEvaluatorTest, WebsiteMainNavigationReevaluatesEachTrustedHop) {
++  auto website = Rule("website", PolicyScope::kWebsite, "pinterest.com", AccessMode::kProxy);
++  website.top_level_site = "https://pinterest.com";
++  const auto snapshot = Snapshot({website});
++  BrowserOwnedRequestMetadata pending{"main", TestOwner(),
++      RequestAttributionKind::kPendingNavigation, {}, "navigation", std::nullopt};
++  for (const char* target : {"https://pinterest.com/", "https://www.pinterest.com/",
++                             "https://help.pinterest.com/page"}) {
++    const auto context = CanonicalizeBrowserOwnedRequest(pending, GURL(target));
++    ASSERT_TRUE(context.context);
++    ExpectMatch(EvaluateAccessPolicy(*context.context, snapshot), "website",
++                PolicyScope::kWebsite, AccessMode::kProxy);
++  }
++  const auto cross_site = CanonicalizeBrowserOwnedRequest(pending, GURL("https://unrelated.test/"));
++  ASSERT_TRUE(cross_site.context);
++  EXPECT_EQ(EvaluateAccessPolicy(*cross_site.context, snapshot).policy_state, PolicyState::kAbsent);
++}
++
++TEST(AccessPolicyEvaluatorTest, WebsiteTenantBoundaryAndExplicitSiteRestriction) {
++  auto website = Rule("website", PolicyScope::kWebsite, "tenant.github.io", AccessMode::kProxy);
++  website.top_level_site = "https://tenant.github.io";
++  auto snapshot = Snapshot({website});
++  ExpectMatch(EvaluateAccessPolicy(DocumentContext("https://cdn.test/app.js",
++      "https://sub.tenant.github.io/"), snapshot), "website", PolicyScope::kWebsite, AccessMode::kProxy);
++  EXPECT_EQ(EvaluateAccessPolicy(DocumentContext("https://cdn.test/app.js",
++      "https://other.github.io/"), snapshot).policy_state, PolicyState::kAbsent);
++  auto reject = Rule("explicit-reject", PolicyScope::kSite, "cdn.test", AccessMode::kReject);
++  reject.top_level_site = website.top_level_site;
++  snapshot.rules.push_back(reject);
++  ExpectMatch(EvaluateAccessPolicy(DocumentContext("https://cdn.test/app.js",
++      "https://tenant.github.io/"), snapshot), "explicit-reject", PolicyScope::kSite, AccessMode::kReject);
++}
++
++TEST(AccessPolicyEvaluatorTest, WebsiteCannotEncodeDestinationWildcardOrNoncanonicalAnchor) {
++  auto website = Rule("website", PolicyScope::kWebsite, "example.test", AccessMode::kProxy);
++  website.top_level_site = "https://example.test";
++  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kNone);
++  website.include_subdomains = true;
++  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kInvalidRule);
++  website.include_subdomains = false;
++  website.destination_host = "www.example.test";
++  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kInvalidRule);
++  website.destination_host = "example.test";
++  website.scope = static_cast<PolicyScope>(3);  // Persisted invalid ordinal stays invalid.
++  EXPECT_EQ(ValidateAccessPolicySnapshot(Snapshot({website})), PolicyMatchReason::kInvalidRule);
++}
++
+ }  // namespace
+ }  // namespace aegis_access
+diff --git a/components/aegis_access/access_route_planner.cc b/components/aegis_access/access_route_planner.cc
+index 177577694ba1ddb7885da983d0b87fa6a288eaeb..87b52aef91e0e731c49115d4a5863bcce109869c 100644
+--- a/components/aegis_access/access_route_planner.cc
++++ b/components/aegis_access/access_route_planner.cc
+@@ -75,6 +75,7 @@ bool IsValidPolicyShape(const RouteInput& input) {
+              input.effective_proxy_group_id.empty();
+     case PolicyState::kValid:
+       if (input.policy_scope != PolicyScope::kSite &&
++          input.policy_scope != PolicyScope::kWebsite &&
+           input.policy_scope != PolicyScope::kProfile) {
+         return false;
+       }
+@@ -118,7 +119,7 @@ RoutePlan PlanAccessRoute(const RouteInput& input) {
+                     RouteReason::kOwnershipMismatch);
+   }
+   if (input.policy_state == PolicyState::kValid &&
+-      input.policy_scope == PolicyScope::kSite &&
++      (input.policy_scope == PolicyScope::kSite || input.policy_scope == PolicyScope::kWebsite) &&
+       !input.site_ownership_reliable) {
+     return MakePlan(input, RouteAction::kFail,
+                     RouteReason::kSiteOwnershipUnavailable);
+diff --git a/components/aegis_access/access_route_types.h b/components/aegis_access/access_route_types.h
+index ce0f9addcffaa3596d306e256bfb6709fae32246..0e71819e153e8cdc8671bf6e2a4328173df41865 100644
+--- a/components/aegis_access/access_route_types.h
++++ b/components/aegis_access/access_route_types.h
+@@ -86,6 +86,9 @@ enum class PolicyScope {
+   kSite,
+   kProfile,
+   kInvalid,
++  // Stored ordinals above are stable. This is a Browser-trusted website
++  // context, including destinations used by its page, not a host wildcard.
++  kWebsite = 4,
+ };
+ 
+ enum class SnapshotState {
+diff --git a/components/aegis_access/access_route_wire_unittest.cc b/components/aegis_access/access_route_wire_unittest.cc
+index e944aaaf0728bdc00940aea79d6cdf62f8c426a0..03c73a34261cf0936e7a086269bad86d5caeaa3b 100644
+--- a/components/aegis_access/access_route_wire_unittest.cc
++++ b/components/aegis_access/access_route_wire_unittest.cc
+@@ -137,5 +137,32 @@ TEST(AccessRouteWireTest, UnavailableGroupMustBeExplicitUniqueAndNotReady) {
+       mojom::AegisAccessUnavailableGroup::New("", 0));
+   EXPECT_FALSE(DecodeAccessRouteSnapshot(*wire));
+ }
++TEST(AccessRouteWireTest, WebsiteCdnIsIndependentlyMatchedAgainstBoundTopSite) {
++  auto wire = WireSnapshot();
++  wire->rules[0]->scope = mojom::AegisAccessRuleScope::kWebsite;
++  wire->rules[0]->destination_host = "pinterest.com";
++  wire->rules[0]->top_level_site = "https://pinterest.com";
++  auto decoded = DecodeAccessRouteSnapshot(*wire);
++  ASSERT_TRUE(decoded);
++  const auto owner = decoded->owner;
++  AccessRouteRegistry registry(owner, decoded->incarnation);
++  ASSERT_TRUE(registry.Install(decoded->sequence, std::move(decoded->snapshot)));
++  aegis_access::BrowserOwnedRequestMetadata metadata{"resource", owner,
++      aegis_access::RequestAttributionKind::kDocument, "document", {},
++      net::SchemefulSite(GURL("https://www.pinterest.com/"))};
++  const GURL resource("http://s.pinimg.com/app.js");
++  auto result = registry.Resolve(metadata, resource,
++      {"incarnation", {1,1,1,1,1}, "registration"});
++  EXPECT_EQ(result.net_error, net::OK);
++  EXPECT_TRUE(result.route);
++  metadata.top_frame_site = net::SchemefulSite(GURL("https://unrelated.test/"));
++  result = registry.Resolve(metadata, resource,
++      {"incarnation", {1,1,0,1,1}, {}});
++  EXPECT_EQ(result.net_error, net::OK);
++  EXPECT_FALSE(result.route);
++  EXPECT_NE(registry.Resolve(metadata, resource,
++      {"incarnation", {1,1,1,1,1}, "registration"}).net_error, net::OK);
++}
++
+ }  // namespace
+ }  // namespace network
+diff --git a/components/aegis_access/request_ownership_registry.cc b/components/aegis_access/request_ownership_registry.cc
+index a19599eab3159cbf920a39d8ce45e17cab90cf72..9abc3517be8b66ca0801674dd9e639ef1718cb4b 100644
+--- a/components/aegis_access/request_ownership_registry.cc
++++ b/components/aegis_access/request_ownership_registry.cc
+@@ -64,6 +64,9 @@ bool IsValidRecord(const RequestOwnershipRecord& record) {
+ }
+ 
+ bool IsValidSelector(const RequestCancellationSelector& selector) {
++  if (selector.website_context &&
++      selector.top_level_site != "http://" + selector.exact_host &&
++      selector.top_level_site != "https://" + selector.exact_host) return false;
+   return IsCompleteOwner(selector.owner) &&
+          HasExactlyOneAttributionToken(selector) &&
+          !selector.top_level_site.empty() && !selector.exact_host.empty() &&
+@@ -72,6 +75,11 @@ bool IsValidSelector(const RequestCancellationSelector& selector) {
+ 
+ bool MatchesSelector(const RequestOwnershipRecord& record,
+                      const RequestCancellationSelector& selector) {
++  if (selector.website_context) {
++    return record.site_ownership_reliable && record.owner == selector.owner &&
++        (record.top_level_site == "http://" + selector.exact_host ||
++         record.top_level_site == "https://" + selector.exact_host);
++  }
+   if (!record.site_ownership_reliable || record.owner != selector.owner ||
+       record.top_level_site != selector.top_level_site ||
+       record.exact_host != selector.exact_host ||
+@@ -93,7 +101,7 @@ bool SameSelector(const RequestCancellationSelector& left,
+          left.pending_navigation_token == right.pending_navigation_token &&
+          left.top_level_site == right.top_level_site &&
+          left.exact_host == right.exact_host && left.scheme == right.scheme &&
+-         left.port == right.port;
++         left.port == right.port && left.website_context == right.website_context;
+ }
+ 
+ bool IsValidBarrier(const RequestDispatchBarrier& barrier) {
+diff --git a/components/aegis_access/request_ownership_registry.h b/components/aegis_access/request_ownership_registry.h
+index 726f3ba6b12e3c4c302f7dcb3a1dd405aff1109a..49f1b106d0f9902ab429d5947248261e65d35e30 100644
+--- a/components/aegis_access/request_ownership_registry.h
++++ b/components/aegis_access/request_ownership_registry.h
+@@ -100,6 +100,9 @@ struct RequestCancellationSelector {
+   std::string exact_host;
+   RequestScheme scheme = RequestScheme::kInvalid;
+   uint16_t port = 0;
++  // Browser-issued website toggle: match both trusted HTTP(S) top sites and
++  // all their page destinations in this owner, preserving other websites.
++  bool website_context = false;
+ 
+   friend bool operator==(const RequestCancellationSelector&,
+                          const RequestCancellationSelector&) = default;
+diff --git a/components/aegis_access/request_ownership_registry_unittest.cc b/components/aegis_access/request_ownership_registry_unittest.cc
+index 712779f92788c049cf177cca27ff94dca4094e64..7444814dc64aea6783e0233f6dc54d0bca368162 100644
+--- a/components/aegis_access/request_ownership_registry_unittest.cc
++++ b/components/aegis_access/request_ownership_registry_unittest.cc
+@@ -90,5 +90,31 @@ TEST(RequestDispatchBarrierTest, NativeTrackingStillHonorsBlockAndCancellation)
+   EXPECT_EQ(terminated, 1);
+ }
+ 
++TEST(RequestDispatchBarrierTest, WebsiteScopeCoversResourcesWithoutCrossSiteOrOwnerLeak) {
++  auto selector = DocumentCancellationSelector();
++  selector.website_context = true;
++  selector.exact_host = "example.test";
++  selector.top_level_site = "https://example.test";
++  RequestDispatchBarrierRegistry barriers(2);
++  ASSERT_EQ(barriers.InstallBlockBarrier({"website-off", 2, selector}),
++            RequestDispatchBarrierStatus::kOk);
++  auto resource = DocumentOwnershipRecord();
++  resource.owner = selector.owner;
++  resource.document_token = "another-tab-document";
++  resource.top_level_site = "http://example.test";
++  resource.exact_host = "cdn.other.test";
++  resource.scheme = RequestScheme::kHttp;
++  resource.port = 8080;
++  EXPECT_EQ(barriers.EvaluateRequest(resource).decision, RequestDispatchDecision::kBlock);
++  resource.top_level_site = "https://another.test";
++  EXPECT_EQ(barriers.EvaluateRequest(resource).decision, RequestDispatchDecision::kAllow);
++  resource.top_level_site = "https://example.test";
++  resource.owner.profile_token += "-other";
++  EXPECT_EQ(barriers.EvaluateRequest(resource).decision, RequestDispatchDecision::kAllow);
++  auto legacy = selector;
++  legacy.website_context = false;
++  EXPECT_FALSE(SameRequestCancellationSelector(legacy, selector));
++}
++
+ }  // namespace
+ }  // namespace aegis_access::test
+diff --git a/components/aegis_access/site_proxy_rule_group.cc b/components/aegis_access/site_proxy_rule_group.cc
+index dfaad9e6f8ae377aaec852676036f0b25dd9da06..dc2c0577c6a062262185686ec5e7a92eedb55e82 100644
+--- a/components/aegis_access/site_proxy_rule_group.cc
++++ b/components/aegis_access/site_proxy_rule_group.cc
+@@ -87,6 +87,8 @@ GroupValidation ValidateSiteProxyRuleGroup(
+   }
+ 
+   for (const SiteProxyRuleMember& member : members) {
++    if (member.scope != (group->website_context ? PolicyScope::kWebsite : PolicyScope::kSite))
++      return Unknown(GroupValidationError::kScopeMismatch);
+     if (!IsCompleteOwner(member.owner) || member.owner != group->owner ||
+         member.site_toggle_id != group->site_toggle_id) {
+       return Unknown(GroupValidationError::kOwnershipMismatch);
+diff --git a/components/aegis_access/site_proxy_rule_group.h b/components/aegis_access/site_proxy_rule_group.h
+index 3a13ec2ed6f65b16bca1f67e6bf0fe6d766d93ce..e7bf2e828f84fafab5d67a33ed92622cdc418d24 100644
+--- a/components/aegis_access/site_proxy_rule_group.h
++++ b/components/aegis_access/site_proxy_rule_group.h
+@@ -35,6 +35,7 @@ struct SiteProxyRuleGroup {
+   std::vector<std::string> member_rule_ids;
+   uint64_t revision = 0;
+   uint64_t last_operation_sequence = 0;
++  bool website_context = false;
+ 
+   friend bool operator==(const SiteProxyRuleGroup&,
+                          const SiteProxyRuleGroup&) = default;
+@@ -54,6 +55,7 @@ struct SiteProxyRuleMember {
+   std::string proxy_group_id;
+   ProtectionOverride protection_override = ProtectionOverride::kInvalid;
+   uint64_t last_operation_sequence = 0;
++  PolicyScope scope = PolicyScope::kSite;
+ 
+   friend bool operator==(const SiteProxyRuleMember&,
+                          const SiteProxyRuleMember&) = default;
+@@ -89,6 +91,7 @@ enum class GroupValidationError {
+   kUnsupportedMode,
+   kModeMismatch,
+   kProxyGroupMismatch,
++  kScopeMismatch,
+ };
+ 
+ struct GroupValidation {
+diff --git a/services/network/aegis/access_route_wire.cc b/services/network/aegis/access_route_wire.cc
+index 420dc3fb904850ed05469672550cdd062e517d3a..a50a1bd3618c64d712d2cd13d42ce499f38a107b 100644
+--- a/services/network/aegis/access_route_wire.cc
++++ b/services/network/aegis/access_route_wire.cc
+@@ -19,6 +19,7 @@ PolicyScope Scope(mojom::AegisAccessRuleScope value) {
+   switch (value) {
+     case mojom::AegisAccessRuleScope::kSite: return PolicyScope::kSite;
+     case mojom::AegisAccessRuleScope::kProfile: return PolicyScope::kProfile;
++    case mojom::AegisAccessRuleScope::kWebsite: return PolicyScope::kWebsite;
+   }
+   return PolicyScope::kInvalid;
+ }
+diff --git a/services/network/public/mojom/aegis_access_route_types.mojom b/services/network/public/mojom/aegis_access_route_types.mojom
+index d9ffbb65b46ea241d32b92842a89c11fd58bb45a..6188b3a5bd37e3becad0b8c71085e3216b16ac04 100644
+--- a/services/network/public/mojom/aegis_access_route_types.mojom
++++ b/services/network/public/mojom/aegis_access_route_types.mojom
+@@ -9,7 +9,7 @@ import "services/network/public/mojom/url_request.mojom";
+ // They must never be exposed to a renderer or embedded in ResourceRequest.
+ enum AegisAccessChannel { kDev, kAlpha, kBeta, kRelease };
+ enum AegisAccessAttribution { kDocument, kPendingNavigation, kProfileOnly };
+-enum AegisAccessRuleScope { kSite, kProfile };
++enum AegisAccessRuleScope { kSite, kProfile, kWebsite };
+ enum AegisAccessMode { kNone, kDirect, kProxy, kReject };
+ enum AegisAccessScheme { kHttp, kHttps, kWs, kWss };
+ enum AegisAccessPortScope { kAllBrowserPermitted, kExplicitSubset };
+-- 
+2.54.0 (Apple Git-157)
+

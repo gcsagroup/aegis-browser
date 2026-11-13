@@ -1,0 +1,555 @@
+From 375b88e6211aa3a30bf149c6d2ca07b01d3e1229 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 11:43:06 +0800
+Subject: [PATCH] feat(access): validate immutable Network route registry and
+ restoration fence
+
+---
+ components/aegis_access/BUILD.gn              |  15 ++
+ .../access_network_route_registry_unittest.cc | 168 ++++++++++++++++++
+ .../aegis_access/access_policy_evaluator.cc   |  42 +++--
+ .../aegis_access/access_policy_evaluator.h    |   5 +
+ services/network/aegis/BUILD.gn               |  12 ++
+ .../network/aegis/access_route_registry.cc    | 162 +++++++++++++++++
+ .../network/aegis/access_route_registry.h     |  65 +++++++
+ 7 files changed, 451 insertions(+), 18 deletions(-)
+ create mode 100644 components/aegis_access/access_network_route_registry_unittest.cc
+ create mode 100644 services/network/aegis/BUILD.gn
+ create mode 100644 services/network/aegis/access_route_registry.cc
+ create mode 100644 services/network/aegis/access_route_registry.h
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 47c0d18cd757b959d55bf4fab7b6407da4cbdc84..904d48464c8c48228147b7c2cc80021485de7357 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -373,3 +373,18 @@ test("access_terminal_factory_unittests") {
+     "//url",
+   ]
+ }
++
++test("access_network_route_registry_unittests") {
++  sources = [
++    "access_network_route_registry_unittest.cc",
++    "access_policy_evaluator_unittest.cc",
++  ]
++  include_dirs = [ "$target_gen_dir" ]
++  deps = [
++    ":generate_policy_matcher_vectors",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//services/network/aegis:access_route_registry",
++    "//testing/gtest",
++  ]
++}
+diff --git a/components/aegis_access/access_network_route_registry_unittest.cc b/components/aegis_access/access_network_route_registry_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d4d9a76d1aeff3020fb36d2d829e180dba1eff87
+--- /dev/null
++++ b/components/aegis_access/access_network_route_registry_unittest.cc
+@@ -0,0 +1,168 @@
++// Copyright 2026 GCSA
++#include "services/network/aegis/access_route_registry.h"
++#include "net/base/net_errors.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace network {
++namespace {
++using namespace aegis_access;
++OwnershipKey Owner() { return {ChannelNamespace::kDev, "profile", "partition"}; }
++BrowserOwnedRequestMetadata Metadata(std::string site = "https://a.test") {
++  return {"request", Owner(), RequestAttributionKind::kDocument, "document", {},
++          net::SchemefulSite(GURL(site))};
++}
++GenerationTuple Common() { return {7, 3, 0, 4, 5}; }
++scoped_refptr<net::AccessProxyRoute> Route(std::string group, uint64_t selection) {
++  net::AccessRouteIsolationKey key{0, "profile", "partition", group,
++                                 "registration-" + group, "incarnation", 7, 3,
++                                 selection, 4, 5};
++  return net::AccessProxyRoute::Create(std::move(key), net::ProxyChain(
++      net::ProxyServer::FromSchemeHostAndPort(net::ProxyServer::SCHEME_HTTP,
++                                             "127.0.0.1", 12345)));
++}
++AccessPolicyRule Rule(std::string site, std::string group) {
++  return {site, Owner(), PolicyScope::kSite, site, "cdn.test", false,
++          {RequestScheme::kHttps}, {PortScope::kAllBrowserPermitted, {}},
++          AccessMode::kProxy, group, ProtectionOverride::kNone, 1, 1};
++}
++AccessRouteRegistry::Snapshot Snapshot() {
++  return {{Owner(), 7, {Rule("https://a.test", "x"), Rule("https://b.test", "y")}},
++          Common(), {{"x", Route("x", 8)}, {"y", Route("y", 11)}}};
++}
++AccessRouteRegistry::Expectation Expected(std::string group = "x",
++                                        uint64_t selection = 8) {
++  auto generations = Common();
++  generations.selection_generation = selection;
++  return {"incarnation", generations, "registration-" + group};
++}
++GURL Target() { return GURL("https://cdn.test/resource"); }
++
++TEST(AccessNetworkRouteRegistryTest, RestoringRequiresExplicitInstalledSnapshot) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  AccessRouteRegistry::Expectation native{"incarnation", Common(), {}};
++  EXPECT_NE(registry.Resolve(Metadata(), Target(), native).net_error, net::OK);
++  AccessRouteRegistry::Snapshot empty{{Owner(), 7, {}}, Common(), {}};
++  ASSERT_TRUE(registry.Install(1, std::move(empty)));
++  auto result = registry.Resolve(Metadata(), Target(), native);
++  EXPECT_EQ(result.net_error, net::OK);
++  EXPECT_FALSE(result.route);
++  registry.EnterRestoring();
++  EXPECT_NE(registry.Resolve(Metadata(), Target(), native).net_error, net::OK);
++}
++TEST(AccessNetworkRouteRegistryTest, SameDestinationResolvesPerTrustedTopSite) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  auto x = registry.Resolve(Metadata(), Target(), Expected());
++  auto y = registry.Resolve(Metadata("https://b.test"), Target(), Expected("y", 11));
++  ASSERT_EQ(x.net_error, net::OK);
++  ASSERT_EQ(y.net_error, net::OK);
++  ASSERT_TRUE(x.route);
++  ASSERT_TRUE(y.route);
++  EXPECT_NE(x.route->isolation_key(), y.route->isolation_key());
++  EXPECT_NE(x.route->proxy_auth_cache(), y.route->proxy_auth_cache());
++  EXPECT_EQ(registry.Resolve(Metadata("https://b.test"), Target(), Expected()).net_error,
++            net::ERR_BLOCKED_BY_CLIENT);
++}
++TEST(AccessNetworkRouteRegistryTest, RejectsForeignOwnerAndStaleIncarnation) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  auto metadata = Metadata();
++  metadata.owner.profile_token = "other";
++  EXPECT_NE(registry.Resolve(metadata, Target(), Expected()).net_error, net::OK);
++  auto expected = Expected();
++  expected.incarnation = "old";
++  EXPECT_NE(registry.Resolve(Metadata(), Target(), expected).net_error, net::OK);
++}
++TEST(AccessNetworkRouteRegistryTest, EveryGenerationAndRegistrationIsBound) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  for (int i = 0; i < 5; ++i) {
++    auto expected = Expected();
++    uint64_t* fields[] = {&expected.generations.policy_generation,
++                         &expected.generations.identity_generation,
++                         &expected.generations.selection_generation,
++                         &expected.generations.network_epoch,
++                         &expected.generations.base_proxy_config_generation};
++    ++*fields[i];
++    EXPECT_NE(registry.Resolve(Metadata(), Target(), expected).net_error, net::OK);
++  }
++  auto expected = Expected();
++  expected.registration_id = "unknown";
++  EXPECT_NE(registry.Resolve(Metadata(), Target(), expected).net_error, net::OK);
++}
++TEST(AccessNetworkRouteRegistryTest, InvalidReplacementIsAtomicAndCannotReplay) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(2, Snapshot()));
++  auto invalid = Snapshot();
++  invalid.routes.erase("y");
++  EXPECT_FALSE(registry.Install(3, std::move(invalid)));
++  EXPECT_EQ(registry.Resolve(Metadata(), Target(), Expected()).net_error, net::OK);
++  EXPECT_FALSE(registry.Install(1, Snapshot()));
++  EXPECT_FALSE(registry.Install(2, Snapshot()));
++}
++TEST(AccessNetworkRouteRegistryTest, RestoringInvalidatesDispatchButNotInflightReference) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  auto inflight = registry.Resolve(Metadata(), Target(), Expected()).route;
++  ASSERT_TRUE(inflight);
++  registry.EnterRestoring();
++  EXPECT_NE(registry.Resolve(Metadata(), Target(), Expected()).net_error, net::OK);
++  EXPECT_EQ(inflight->isolation_key().registration, "registration-x");
++  EXPECT_FALSE(registry.Install(1, Snapshot()));
++  ASSERT_TRUE(registry.Install(2, Snapshot()));
++  EXPECT_EQ(registry.Resolve(Metadata(), Target(), Expected()).net_error, net::OK);
++}
++TEST(AccessNetworkRouteRegistryTest, RejectAndNativeCannotUseProxyExpectation) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  auto snapshot = Snapshot();
++  snapshot.policy.rules[0].mode = AccessMode::kReject;
++  snapshot.policy.rules[0].proxy_group_id.clear();
++  ASSERT_TRUE(registry.Install(1, std::move(snapshot)));
++  EXPECT_EQ(registry.Resolve(Metadata(), Target(), Expected()).net_error,
++            net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_NE(registry.Resolve(Metadata("https://unknown.test"), Target(),
++                            Expected()).net_error, net::OK);
++  AccessRouteRegistry::Expectation native{"incarnation", Common(), {}};
++  EXPECT_EQ(registry.Resolve(Metadata("https://unknown.test"), Target(),
++                            native).net_error, net::OK);
++}
++TEST(AccessNetworkRouteRegistryTest, RejectsMalformedPolicyAndCrossGroupRoute) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  auto invalid = Snapshot();
++  invalid.policy.rules[0].destination_host = "cdn.test.";
++  EXPECT_FALSE(registry.Install(1, std::move(invalid)));
++  invalid = Snapshot();
++  invalid.routes["x"] = Route("y", 8);
++  EXPECT_FALSE(registry.Install(2, std::move(invalid)));
++}
++TEST(AccessNetworkRouteRegistryTest, PolicyCannotChangeUnderSameGeneration) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  auto replacement = Snapshot();
++  replacement.policy.rules.clear();
++  EXPECT_FALSE(registry.Install(2, std::move(replacement)));
++  registry.EnterRestoring();
++  replacement = Snapshot();
++  replacement.policy.rules.clear();
++  EXPECT_FALSE(registry.Install(3, std::move(replacement)));
++}
++TEST(AccessNetworkRouteRegistryTest, SelectionCannotRollBackAfterRestore) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  registry.EnterRestoring();
++  auto replacement = Snapshot();
++  replacement.routes["y"] = Route("y", 10);
++  EXPECT_FALSE(registry.Install(2, std::move(replacement)));
++}
++TEST(AccessNetworkRouteRegistryTest, RegistrationCannotChangeEndpoint) {
++  AccessRouteRegistry registry(Owner(), "incarnation");
++  ASSERT_TRUE(registry.Install(1, Snapshot()));
++  auto replacement = Snapshot();
++  auto key = replacement.routes["x"]->isolation_key();
++  replacement.routes["x"] = net::AccessProxyRoute::Create(key, net::ProxyChain(
++      net::ProxyServer::FromSchemeHostAndPort(net::ProxyServer::SCHEME_HTTP,
++                                             "127.0.0.1", 23456)));
++  EXPECT_FALSE(registry.Install(2, std::move(replacement)));
++}
++}  // namespace
++}  // namespace network
+diff --git a/components/aegis_access/access_policy_evaluator.cc b/components/aegis_access/access_policy_evaluator.cc
+index 5bc5803fbbf09a049bdd126ef002a7d89739f62f..9195cd2dceaef67270534a42e1760a058dfcce26 100644
+--- a/components/aegis_access/access_policy_evaluator.cc
++++ b/components/aegis_access/access_policy_evaluator.cc
+@@ -334,33 +334,39 @@ PolicyMatchResult Error(PolicyState state, PolicyMatchReason reason,
+ 
+ }  // namespace
+ 
++PolicyMatchReason ValidateAccessPolicySnapshot(
++    const PublishedAccessPolicySnapshot& snapshot) {
++  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
++    return PolicyMatchReason::kInvalidSnapshot;
++  }
++  for (const AccessPolicyRule& rule : snapshot.rules) {
++    if (!IsValidRule(rule, snapshot.owner)) {
++      return rule.owner != snapshot.owner
++                 ? PolicyMatchReason::kOwnershipMismatch
++                 : PolicyMatchReason::kInvalidRule;
++    }
++  }
++  return HasDuplicateRuleKey(snapshot.rules)
++             ? PolicyMatchReason::kPolicyConflict
++             : PolicyMatchReason::kNone;
++}
++
+ PolicyMatchResult EvaluateAccessPolicy(
+     const RequestPolicyContext& request,
+     const PublishedAccessPolicySnapshot& snapshot) {
+-  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
+-    return Error(PolicyState::kInvalid,
+-                 PolicyMatchReason::kInvalidSnapshot,
+-                 snapshot.policy_generation);
++  const auto validation = ValidateAccessPolicySnapshot(snapshot);
++  if (validation == PolicyMatchReason::kInvalidSnapshot) {
++    return Error(PolicyState::kInvalid, validation, snapshot.policy_generation);
+   }
+   if (request.owner() != snapshot.owner) {
+     return Error(PolicyState::kInvalid,
+                  PolicyMatchReason::kOwnershipMismatch,
+                  snapshot.policy_generation);
+   }
+-  for (const AccessPolicyRule& rule : snapshot.rules) {
+-    if (!IsValidRule(rule, snapshot.owner)) {
+-      const PolicyMatchReason reason =
+-          rule.owner != snapshot.owner
+-              ? PolicyMatchReason::kOwnershipMismatch
+-              : PolicyMatchReason::kInvalidRule;
+-      return Error(PolicyState::kInvalid, reason,
+-                   snapshot.policy_generation);
+-    }
+-  }
+-  if (HasDuplicateRuleKey(snapshot.rules)) {
+-    return Error(PolicyState::kConflict,
+-                 PolicyMatchReason::kPolicyConflict,
+-                 snapshot.policy_generation);
++  if (validation != PolicyMatchReason::kNone) {
++    return Error(validation == PolicyMatchReason::kPolicyConflict
++                     ? PolicyState::kConflict : PolicyState::kInvalid,
++                 validation, snapshot.policy_generation);
+   }
+ 
+   std::vector<Candidate> candidates =
+diff --git a/components/aegis_access/access_policy_evaluator.h b/components/aegis_access/access_policy_evaluator.h
+index 7e4197d8b6332f6e928aac96a918dea2e708eeb9..0cb7236d346acc5806a2123f82b29f004acb9cf6 100644
+--- a/components/aegis_access/access_policy_evaluator.h
++++ b/components/aegis_access/access_policy_evaluator.h
+@@ -71,6 +71,11 @@ struct PolicyMatchResult {
+                          const PolicyMatchResult&) = default;
+ };
+ 
++// Validates the entire candidate before atomic NetworkContext installation.
++// kNone means valid; no request attribution or network authorization is granted.
++PolicyMatchReason ValidateAccessPolicySnapshot(
++    const PublishedAccessPolicySnapshot& snapshot);
++
+ // Evaluates an immutable, already-published rule snapshot without I/O. It
+ // validates normalized rule shapes before matching and fails closed when the
+ // winning rule is ambiguous. Site rules are ignored when the browser-owned
+diff --git a/services/network/aegis/BUILD.gn b/services/network/aegis/BUILD.gn
+new file mode 100644
+index 0000000000000000000000000000000000000000..d29b7afcd0894258a53b5af7a06626981a3236e2
+--- /dev/null
++++ b/services/network/aegis/BUILD.gn
+@@ -0,0 +1,12 @@
++# Copyright 2026 GCSA
++source_set("access_route_registry") {
++  sources = [
++    "access_route_registry.cc",
++    "access_route_registry.h",
++  ]
++  public_deps = [
++    "//base",
++    "//components/aegis_access:aegis_access",
++    "//net",
++  ]
++}
+diff --git a/services/network/aegis/access_route_registry.cc b/services/network/aegis/access_route_registry.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d5c5328c8b42e156d8d0594f41947e98503139a7
+--- /dev/null
++++ b/services/network/aegis/access_route_registry.cc
+@@ -0,0 +1,162 @@
++// Copyright 2026 GCSA
++#include "services/network/aegis/access_route_registry.h"
++
++#include "base/check.h"
++
++namespace network {
++namespace {
++using aegis_access::GenerationTuple;
++bool SameCommon(const GenerationTuple& a, const GenerationTuple& b) {
++  return a.policy_generation == b.policy_generation &&
++         a.identity_generation == b.identity_generation &&
++         a.network_epoch == b.network_epoch &&
++         a.base_proxy_config_generation == b.base_proxy_config_generation;
++}
++GenerationTuple Generations(const net::AccessRouteIsolationKey& key) {
++  return {key.policy_generation, key.identity_generation,
++          key.selection_generation, key.network_epoch,
++          key.base_proxy_config_generation};
++}
++bool IsLiveCommon(const GenerationTuple& common) {
++  return common.policy_generation && common.identity_generation &&
++         common.network_epoch && common.base_proxy_config_generation &&
++         common.selection_generation == 0;
++}
++bool IsNondecreasing(const GenerationTuple& next, const GenerationTuple& old) {
++  return next.policy_generation >= old.policy_generation &&
++         next.identity_generation >= old.identity_generation &&
++         next.network_epoch >= old.network_epoch &&
++         next.base_proxy_config_generation >= old.base_proxy_config_generation;
++}
++}  // namespace
++
++AccessRouteRegistry::AccessRouteRegistry(aegis_access::OwnershipKey owner,
++                                         std::string incarnation)
++    : owner_(std::move(owner)), incarnation_(std::move(incarnation)) {
++  CHECK(aegis_access::IsCompleteOwner(owner_));
++  CHECK(!incarnation_.empty());
++}
++AccessRouteRegistry::~AccessRouteRegistry() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++}
++
++bool AccessRouteRegistry::Install(uint64_t sequence, Snapshot snapshot) {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  const auto& common = snapshot.common_generations;
++  if (sequence <= installed_sequence_ || snapshot.policy.owner != owner_ ||
++      !IsLiveCommon(common) ||
++      (last_policy_ &&
++       snapshot.policy.policy_generation == last_policy_->policy_generation &&
++       snapshot.policy != *last_policy_) ||
++      snapshot.policy.policy_generation != common.policy_generation ||
++      (high_water_generations_ &&
++       !IsNondecreasing(common, *high_water_generations_)) ||
++      aegis_access::ValidateAccessPolicySnapshot(snapshot.policy) !=
++          aegis_access::PolicyMatchReason::kNone) {
++    return false;
++  }
++  for (const auto& [group, route] : snapshot.routes) {
++    if (!route || group.empty()) {
++      return false;
++    }
++    const auto& key = route->isolation_key();
++    if (!key.IsComplete() || key.group != group ||
++        key.channel != static_cast<uint8_t>(owner_.channel) ||
++        key.profile != owner_.profile_token ||
++        key.partition != owner_.storage_partition_token ||
++        key.incarnation != incarnation_ ||
++        !SameCommon(Generations(key), common) ||
++        !route->proxy_chain().is_single_proxy() ||
++        !route->proxy_chain().GetProxyServer(0).is_http()) {
++      return false;
++    }
++  }
++  std::map<std::string, std::string> candidate_registrations;
++  for (const auto& [group, route] : snapshot.routes) {
++    const auto& key = route->isolation_key();
++    auto high_water = selection_high_water_.find(group);
++    if (high_water != selection_high_water_.end() &&
++        key.selection_generation < high_water->second) {
++      return false;
++    }
++    if (!candidate_registrations.emplace(key.registration, group).second) {
++      return false;
++    }
++    auto old = registrations_.find(key.registration);
++    if (old != registrations_.end() &&
++        (old->second.group != group ||
++         old->second.proxy_chain != route->proxy_chain())) {
++      return false;
++    }
++  }
++  for (const auto& rule : snapshot.policy.rules) {
++    if (rule.mode == aegis_access::AccessMode::kProxy &&
++        !snapshot.routes.contains(rule.proxy_group_id)) {
++      return false;
++    }
++  }
++  // All validation completes before any live state or high-water mark changes.
++  for (const auto& [group, route] : snapshot.routes) {
++    const auto& key = route->isolation_key();
++    selection_high_water_[group] = key.selection_generation;
++    registrations_.insert_or_assign(
++        key.registration, RegistrationBinding{group, route->proxy_chain()});
++  }
++  last_policy_ = snapshot.policy;
++  installed_sequence_ = sequence;
++  high_water_generations_ = common;
++  snapshot_ = std::move(snapshot);
++  return true;
++}
++
++void AccessRouteRegistry::EnterRestoring() {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  snapshot_.reset();
++}
++
++AccessRouteRegistry::Result AccessRouteRegistry::Resolve(
++    const aegis_access::BrowserOwnedRequestMetadata& metadata,
++    const GURL& target, const Expectation& expected) const {
++  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
++  if (!snapshot_ || metadata.owner != owner_ ||
++      expected.incarnation != incarnation_ ||
++      !SameCommon(expected.generations, snapshot_->common_generations)) {
++    return {};
++  }
++  auto canonical = aegis_access::CanonicalizeBrowserOwnedRequest(metadata, target);
++  if (!canonical.context) {
++    return {};
++  }
++  const auto match = aegis_access::EvaluateAccessPolicy(*canonical.context,
++                                                       snapshot_->policy);
++  if (match.policy_state != aegis_access::PolicyState::kValid &&
++      match.policy_state != aegis_access::PolicyState::kAbsent) {
++    return {};
++  }
++  switch (match.effective_mode) {
++    case aegis_access::AccessMode::kNone:
++    case aegis_access::AccessMode::kDirect:
++      if (expected.registration_id.empty() &&
++          expected.generations.selection_generation == 0) {
++        return {net::OK, nullptr};
++      }
++      return {};
++    case aegis_access::AccessMode::kProxy: {
++      auto found = snapshot_->routes.find(match.effective_proxy_group_id);
++      if (found == snapshot_->routes.end()) {
++        return {};
++      }
++      const auto& key = found->second->isolation_key();
++      if (expected.generations != Generations(key) ||
++          expected.registration_id != key.registration) {
++        return {};
++      }
++      return {net::OK, found->second};
++    }
++    case aegis_access::AccessMode::kReject:
++    case aegis_access::AccessMode::kInvalid:
++      return {};
++  }
++  return {};
++}
++}  // namespace network
+diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..2cb485558b005cba562e87f66325a9cf3a840ea5
+--- /dev/null
++++ b/services/network/aegis/access_route_registry.h
+@@ -0,0 +1,65 @@
++// Copyright 2026 GCSA
++#ifndef SERVICES_NETWORK_AEGIS_ACCESS_ROUTE_REGISTRY_H_
++#define SERVICES_NETWORK_AEGIS_ACCESS_ROUTE_REGISTRY_H_
++
++#include <map>
++#include <optional>
++#include <string>
++#include "base/sequence_checker.h"
++#include "components/aegis_access/access_policy_evaluator.h"
++#include "net/base/net_errors.h"
++#include "net/http/access_proxy_route.h"
++
++namespace network {
++// Owned by one NetworkContext and called only on its network sequence. Inputs
++// come from the Browser-only factory/publication channel, never ResourceRequest
++// fields. This registry does not confer Browser provenance on arbitrary values:
++// the private factory must also enforce its process/document binding.
++class AccessRouteRegistry {
++ public:
++  struct Snapshot {
++    aegis_access::PublishedAccessPolicySnapshot policy;
++    // Selection is per group and must be zero here. Other counters are live.
++    aegis_access::GenerationTuple common_generations;
++    std::map<std::string, scoped_refptr<net::AccessProxyRoute>> routes;
++  };
++  struct Expectation {
++    std::string incarnation;
++    aegis_access::GenerationTuple generations;
++    // Empty only for a native decision; never interpreted as an endpoint.
++    std::string registration_id;
++  };
++  struct Result {
++    int net_error = net::ERR_BLOCKED_BY_CLIENT;
++    scoped_refptr<net::AccessProxyRoute> route;
++  };
++  AccessRouteRegistry(aegis_access::OwnershipKey owner, std::string incarnation);
++  ~AccessRouteRegistry();
++  AccessRouteRegistry(const AccessRouteRegistry&) = delete;
++  AccessRouteRegistry& operator=(const AccessRouteRegistry&) = delete;
++
++  // Atomically installs a complete candidate. Failed installs leave the prior
++  // snapshot intact; Browser publication barriers remain independently active.
++  // Even an empty policy must be explicitly installed before native dispatch.
++  bool Install(uint64_t sequence, Snapshot snapshot);
++  void EnterRestoring();
++  Result Resolve(const aegis_access::BrowserOwnedRequestMetadata& metadata,
++                 const GURL& target, const Expectation& expected) const;
++
++ private:
++  const aegis_access::OwnershipKey owner_;
++  const std::string incarnation_;
++  uint64_t installed_sequence_ = 0;
++  std::optional<aegis_access::GenerationTuple> high_water_generations_;
++  std::optional<aegis_access::PublishedAccessPolicySnapshot> last_policy_;
++  std::map<std::string, uint64_t> selection_high_water_;
++  struct RegistrationBinding {
++    std::string group;
++    net::ProxyChain proxy_chain;
++  };
++  std::map<std::string, RegistrationBinding> registrations_;
++  std::optional<Snapshot> snapshot_;
++  SEQUENCE_CHECKER(sequence_checker_);
++};
++}  // namespace network
++#endif  // SERVICES_NETWORK_AEGIS_ACCESS_ROUTE_REGISTRY_H_
+-- 
+2.54.0 (Apple Git-157)
+

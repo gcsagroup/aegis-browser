@@ -1,0 +1,383 @@
+From 0bc54814b6f0c302cb3ec4eb809eb35b4aacb268 Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 12:06:54 +0800
+Subject: [PATCH] feat(access): gate Network URLLoader sends and redirect hops
+
+---
+ components/aegis_access/BUILD.gn              |  18 ++
+ .../access_network_url_loader_unittest.cc     | 168 ++++++++++++++++++
+ services/network/BUILD.gn                     |   5 +-
+ services/network/url_loader.cc                |  51 +++++-
+ services/network/url_loader.h                 |  11 +-
+ 5 files changed, 247 insertions(+), 6 deletions(-)
+ create mode 100644 components/aegis_access/access_network_url_loader_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index c0765f839518427cc01bc6e3e2b8f12031ff07f8..5218b06f7bb02c33b3c387d462865e65684ca8e1 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -389,3 +389,21 @@ test("access_network_route_registry_unittests") {
+     "//testing/gtest",
+   ]
+ }
++
++// Real Network Service URLLoader requests through a registered local proxy.
++test("access_network_url_loader_unittests") {
++  sources = [
++    "access_network_test_main.cc",
++    "access_network_url_loader_unittest.cc",
++  ]
++  deps = [
++    "//base",
++    "//base/test:test_support",
++    "//mojo/core/embedder",
++    "//net:test_support",
++    "//services/network:network_service",
++    "//services/network:test_support",
++    "//services/network/aegis:access_route_registry",
++    "//testing/gtest",
++  ]
++}
+diff --git a/components/aegis_access/access_network_url_loader_unittest.cc b/components/aegis_access/access_network_url_loader_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f86bd685b130141677bc0328432c5029de80e11
+--- /dev/null
++++ b/components/aegis_access/access_network_url_loader_unittest.cc
+@@ -0,0 +1,168 @@
++// Copyright 2026 GCSA
++#include <atomic>
++#include "base/functional/bind.h"
++#include "base/test/bind.h"
++#include "base/test/task_environment.h"
++#include "mojo/core/embedder/embedder.h"
++#include "net/test/embedded_test_server/embedded_test_server.h"
++#include "net/test/embedded_test_server/http_response.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "net/url_request/url_request_context.h"
++#include "net/url_request/url_request_context_builder.h"
++#include "services/network/aegis/access_request_route_state.h"
++#include "services/network/cookie_settings.h"
++#include "services/network/devtools_durable_msg_writer.h"
++#include "services/network/shared_dictionary/shared_dictionary_access_checker.h"
++#include "services/network/pervasive_resources/shared_resource_checker.h"
++#include "services/network/test/test_url_loader_client.h"
++#include "services/network/test/url_loader_context_for_tests.h"
++#include "services/network/trust_tokens/trust_token_request_helper_factory.h"
++#include "services/network/url_loader.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace network {
++namespace {
++using namespace aegis_access;
++class AccessNetworkURLLoaderTest : public testing::Test {
++ protected:
++  void SetUp() override {
++    mojo::core::Init();
++    proxy_.RegisterRequestHandler(base::BindRepeating(
++        &AccessNetworkURLLoaderTest::ProxyResponse, base::Unretained(this)));
++    origin_.RegisterRequestHandler(base::BindRepeating(
++        &AccessNetworkURLLoaderTest::OriginResponse, base::Unretained(this)));
++    ASSERT_TRUE(proxy_.Start());
++    ASSERT_TRUE(origin_.Start());
++    net_context_ = net::URLRequestContextBuilder().Build();
++    context_.set_url_request_context(net_context_.get());
++    context_.mutable_factory_params().is_orb_enabled = false;
++    context_.mutable_factory_params().process_id = OriginatingProcessId::browser();
++  }
++  void TearDown() override {
++    loader_.reset();
++    context_.Detach();
++    net_context_.reset();
++  }
++  std::unique_ptr<net::test_server::HttpResponse> ProxyResponse(
++      const net::test_server::HttpRequest&) {
++    ++proxy_hits_;
++    auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++    response->set_code(net::HTTP_NO_CONTENT);
++    return response;
++  }
++  std::unique_ptr<net::test_server::HttpResponse> OriginResponse(
++      const net::test_server::HttpRequest& request) {
++    ++origin_hits_;
++    auto response = std::make_unique<net::test_server::BasicHttpResponse>();
++    if (request.relative_url == "/redirect") {
++      response->set_code(net::HTTP_FOUND);
++      response->AddCustomHeader("Location", origin_.GetURL("/final").spec());
++    } else {
++      response->set_code(net::HTTP_NO_CONTENT);
++    }
++    return response;
++  }
++  void Install(bool with_proxy) {
++    AccessRouteRegistry::Snapshot snapshot{{owner_, 1, {}}, common_, {}};
++    if (with_proxy) {
++      snapshot.policy.rules.push_back({"rule", owner_, PolicyScope::kProfile, {},
++          "127.0.0.1", false, {RequestScheme::kHttp},
++          {PortScope::kAllBrowserPermitted, {}}, AccessMode::kProxy, "group",
++          ProtectionOverride::kNone, 1, 1});
++      net::AccessRouteIsolationKey key{0, "profile", "partition", "group",
++                                     "registration", "incarnation", 1, 1, 1, 1, 1};
++      snapshot.routes["group"] = net::AccessProxyRoute::Create(key,
++          net::ProxyChain(net::ProxyServer::FromSchemeHostAndPort(
++              net::ProxyServer::SCHEME_HTTP, "127.0.0.1", proxy_.port())));
++    }
++    ASSERT_TRUE(registry_.Install(1, std::move(snapshot)));
++  }
++  AccessRouteRegistry::Expectation Expected(bool proxy) {
++    auto generations = common_;
++    generations.selection_generation = proxy ? 1 : 0;
++    return {"incarnation", generations, proxy ? "registration" : ""};
++  }
++  scoped_refptr<AccessRequestRouteState> State(const GURL& url, bool proxy) {
++    BrowserOwnedRequestMetadata metadata{"request", owner_,
++        RequestAttributionKind::kProfileOnly, {}, {}, std::nullopt};
++    return AccessRequestRouteState::Create(registry_.GetWeakPtr(), metadata,
++                                           url, "GET", Expected(proxy));
++  }
++  void Start(const GURL& url, scoped_refptr<AccessRequestRouteState> state) {
++    ResourceRequest request;
++    request.url = url;
++    request.method = "GET";
++    loader_.reset(new URLLoader(context_, base::BindLambdaForTesting(
++        [&](URLLoader*) { loader_.reset(); }), remote_.BindNewPipeAndPassReceiver(),
++        0, request, client_.CreateRemote(), {}, TRAFFIC_ANNOTATION_FOR_TESTS,
++        0, 0, {}, nullptr, nullptr, nullptr, {}, {}, {}, {}, {}, {}, checker_,
++        nullptr, {}, std::move(state)));
++  }
++  base::test::TaskEnvironment environment_{
++      base::test::TaskEnvironment::MainThreadType::IO};
++  net::EmbeddedTestServer proxy_, origin_;
++  std::atomic<int> proxy_hits_{0}, origin_hits_{0};
++  OwnershipKey owner_{ChannelNamespace::kDev, "profile", "partition"};
++  GenerationTuple common_{1, 1, 0, 1, 1};
++  AccessRouteRegistry registry_{owner_, "incarnation"};
++  CookieSettings cookies_;
++  SharedResourceChecker checker_{cookies_};
++  std::unique_ptr<net::URLRequestContext> net_context_;
++  URLLoaderContextForTests context_;
++  TestURLLoaderClient client_;
++  mojo::Remote<mojom::URLLoader> remote_;
++  std::unique_ptr<URLLoader> loader_;
++};
++TEST_F(AccessNetworkURLLoaderTest, ManagedRequestUsesPrivateRoute) {
++  Install(true);
++  const auto url = origin_.GetURL("/final");
++  auto state = State(url, true);
++  ASSERT_TRUE(state);
++  Start(url, std::move(state));
++  client_.RunUntilComplete();
++  EXPECT_EQ(client_.completion_status().error_code, net::OK);
++  EXPECT_EQ(proxy_hits_, 1);
++  EXPECT_EQ(origin_hits_, 0);
++}
++TEST_F(AccessNetworkURLLoaderTest, RestoringBeforeStartSendsNothing) {
++  Install(true);
++  const auto url = origin_.GetURL("/final");
++  auto state = State(url, true);
++  ASSERT_TRUE(state);
++  registry_.EnterRestoring();
++  Start(url, std::move(state));
++  client_.RunUntilComplete();
++  EXPECT_EQ(client_.completion_status().error_code, net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_EQ(proxy_hits_, 0);
++  EXPECT_EQ(origin_hits_, 0);
++}
++TEST_F(AccessNetworkURLLoaderTest, PublicNativeRedirectCannotBypassRouteApproval) {
++  Install(false);
++  const auto url = origin_.GetURL("localhost", "/redirect");
++  auto state = State(url, false);
++  ASSERT_TRUE(state);
++  Start(url, state);
++  client_.RunUntilRedirectReceived();
++  remote_->FollowRedirect({}, std::nullopt);
++  client_.RunUntilComplete();
++  EXPECT_EQ(client_.completion_status().error_code, net::ERR_BLOCKED_BY_CLIENT);
++  EXPECT_EQ(origin_hits_, 1);
++  EXPECT_EQ(proxy_hits_, 0);
++}
++TEST_F(AccessNetworkURLLoaderTest, ApprovedNativeRedirectSwitchesToManagedProxy) {
++  Install(true);
++  const auto url = origin_.GetURL("localhost", "/redirect");
++  auto state = State(url, false);
++  ASSERT_TRUE(state);
++  Start(url, state);
++  client_.RunUntilRedirectReceived();
++  ASSERT_TRUE(state->ApproveRedirect(1, client_.redirect_info().new_url,
++                                     "GET", Expected(true)));
++  remote_->FollowRedirect({}, std::nullopt);
++  client_.RunUntilComplete();
++  EXPECT_EQ(client_.completion_status().error_code, net::OK);
++  EXPECT_EQ(origin_hits_, 1);
++  EXPECT_EQ(proxy_hits_, 1);
++}
++}  // namespace
++}  // namespace network
+diff --git a/services/network/BUILD.gn b/services/network/BUILD.gn
+index a029e50ac98ef9e0307dadc206ad169a7a081d41..b93ebab26ee243805009253b052fd6080d69cfd1 100644
+--- a/services/network/BUILD.gn
++++ b/services/network/BUILD.gn
+@@ -399,7 +399,10 @@ component("network_service") {
+     ]
+   }
+ 
+-  public_deps = [ "//services/network/public/cpp:buildflags" ]
++  public_deps = [
++    "//services/network/public/cpp:buildflags",
++    "//services/network/aegis:access_route_registry",
++  ]
+ 
+   if (is_ct_supported) {
+     sources += [
+diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
+index 729337bbde095d2be4ec50b479306054b372076c..0568bfc920023608f4dec26c50bc49e877c3ee11 100644
+--- a/services/network/url_loader.cc
++++ b/services/network/url_loader.cc
+@@ -3,6 +3,7 @@
+ // found in the LICENSE file.
+ 
+ #include "services/network/url_loader.h"
++#include "services/network/aegis/access_request_route_state.h"
+ 
+ #include <algorithm>
+ #include <limits>
+@@ -343,8 +344,10 @@ URLLoader::URLLoader(
+     mojo::PendingRemote<mojom::AcceptCHFrameObserver> accept_ch_frame_observer,
+     SharedResourceChecker& shared_resource_checker,
+     std::unique_ptr<DevtoolsDurableMessageWriter> maybe_durable_message_writer,
+-    mojo::ScopedDataPipeProducerHandle response_body_stream)
+-    : url_request_context_(context.GetUrlRequestContext()),
++    mojo::ScopedDataPipeProducerHandle response_body_stream,
++    scoped_refptr<AccessRequestRouteState> access_route_state)
++    : access_route_state_(std::move(access_route_state)),
++      url_request_context_(context.GetUrlRequestContext()),
+       network_context_client_(context.GetNetworkContextClient()),
+       delete_callback_(std::move(delete_callback)),
+       resource_type_(request.resource_type),
+@@ -751,10 +754,30 @@ void URLLoader::ScheduleStart() {
+   }
+   if (defer)
+     url_request_->LogBlockedBy("ResourceScheduler");
+-  else
++  else if (PrepareAccessRouteForSend(url_request_->url(), url_request_->method()))
+     url_request_->Start();
+ }
+ 
++bool URLLoader::PrepareAccessRouteForSend(const GURL& target,
++                                         const std::string& method) {
++  if (!access_route_state_) {
++    return true;
++  }
++  auto decision = access_route_state_->BeginSend(
++      target, method, options_ & mojom::kURLLoadOptionAsCorsPreflight);
++  if (decision.net_error != net::OK) {
++    // ScheduleStart can run during construction, before the owner registers
++    // this URLLoader. Never delete it synchronously on a failed route gate.
++    TaskRunner(url_request_->priority())->PostTask(
++        FROM_HERE, base::BindOnce(&URLLoader::NotifyCompleted,
++                                 weak_ptr_factory_.GetWeakPtr(),
++                                 decision.net_error));
++    return false;
++  }
++  url_request_->SetAccessProxyRoute(std::move(decision.route));
++  return true;
++}
++
+ URLLoader::~URLLoader() {
+   TRACE_EVENT("loading", "URLLoader::~URLLoader",
+               net::NetLogWithSourceToFlow(url_request_->net_log()));
+@@ -781,6 +804,12 @@ void URLLoader::FollowRedirect(
+     NOTREACHED();
+   }
+ 
++  if (access_route_state_ &&
++      !PrepareAccessRouteForSend(new_url.value_or(*deferred_redirect_url_),
++                                access_redirect_method_)) {
++    return;
++  }
++
+   // Note: There are some ordering dependencies here.
+   // `CalculateStorageAccessStatus` depends on
+   // `url_request->cookie_setting_overrides()`. `SetFetchMetadataHeaders`
+@@ -975,6 +1004,18 @@ void URLLoader::OnReceivedRedirect(net::URLRequest* url_request,
+   // Send the redirect response to the client, allowing them to inspect it and
+   // optionally follow the redirect.
+   *defer_redirect = true;
++  if (access_route_state_) {
++    if ((options_ & mojom::kURLLoadOptionAsCorsPreflight) ||
++        !access_route_state_->ObserveRedirect(redirect_info.new_url,
++                                             redirect_info.new_method)) {
++      TaskRunner(url_request_->priority())->PostTask(
++          FROM_HERE, base::BindOnce(&URLLoader::NotifyCompleted,
++                                   weak_ptr_factory_.GetWeakPtr(),
++                                   net::ERR_BLOCKED_BY_CLIENT));
++      return;
++    }
++    access_redirect_method_ = redirect_info.new_method;
++  }
+ 
+   mojom::URLResponseHeadPtr response = BuildResponseHead();
+   DispatchOnRawResponse();
+@@ -2359,7 +2400,9 @@ bool URLLoader::HasDataPipe() const {
+ 
+ void URLLoader::ResumeStart() {
+   url_request_->LogUnblocked();
+-  url_request_->Start();
++  if (PrepareAccessRouteForSend(url_request_->url(), url_request_->method())) {
++    url_request_->Start();
++  }
+ }
+ 
+ void URLLoader::OnBeforeSendHeadersComplete(
+diff --git a/services/network/url_loader.h b/services/network/url_loader.h
+index bf23e0501ab27d51e00c6f30b917088d86e7f6af..a3a1e7eb85c72b7086f503439fca7597953fda16 100644
+--- a/services/network/url_loader.h
++++ b/services/network/url_loader.h
+@@ -5,6 +5,8 @@
+ #ifndef SERVICES_NETWORK_URL_LOADER_H_
+ #define SERVICES_NETWORK_URL_LOADER_H_
+ 
++#include "services/network/aegis/access_request_route_state.h"
++
+ #include <stdint.h>
+ 
+ #include <map>
+@@ -79,6 +81,7 @@ struct RedirectInfo;
+ 
+ namespace network {
+ 
++
+ namespace cors {
+ class OriginAccessList;
+ }
+@@ -185,7 +188,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
+       SharedResourceChecker& shared_resource_checker,
+       std::unique_ptr<DevtoolsDurableMessageWriter>
+           maybe_durable_message_writer,
+-      mojo::ScopedDataPipeProducerHandle response_body_stream = {});
++      mojo::ScopedDataPipeProducerHandle response_body_stream = {},
++      scoped_refptr<AccessRequestRouteState> access_route_state = nullptr);
+ 
+   URLLoader(const URLLoader&) = delete;
+   URLLoader& operator=(const URLLoader&) = delete;
+@@ -375,6 +379,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
+   void ContinueOnResponseStarted();
+ 
+   void ScheduleStart();
++  bool PrepareAccessRouteForSend(const GURL& target,
++                                 const std::string& method);
+   void ReadMore();
+   void ReadMoreAsync();
+   void DidRead(int num_bytes,
+@@ -481,6 +487,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
+   // message as complete.
+   void MaybeCollectDurableMessage(size_t new_data_offset, int num_bytes);
+ 
++  // Browser-private context; never deserialized from ResourceRequest.
++  scoped_refptr<AccessRequestRouteState> access_route_state_;
++  std::string access_redirect_method_;
+   const raw_ptr<net::URLRequestContext> url_request_context_;
+ 
+   const raw_ptr<mojom::NetworkContextClient> network_context_client_;
+-- 
+2.54.0 (Apple Git-157)
+

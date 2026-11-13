@@ -1,0 +1,26 @@
+From fd1e1cf9d9f727fa78be311860a2a54943dc6593 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 05:04:35 +0800
+Subject: [PATCH] test(access): compare stored independent rules after failed
+ commit
+
+---
+ .../browser/aegis/access/access_site_proxy_product_unittest.cc  | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 39de8526bb7e34576a124c1ee90cda8f7451ee23..315222dc9c5848ff478d201fe40692bb4b180181 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -563,7 +563,7 @@ TEST_F(AccessRetryNavigationProductTest,
+   const auto after = coordinator_->ReadCommittedSnapshot(owner_.storage_partition_token);
+   ASSERT_TRUE(after.value);
+   EXPECT_EQ(after.value->site_groups, before.value->site_groups);
+-  EXPECT_EQ(after.value->rules, before.value->rules);
++  EXPECT_EQ(after.value->independent_rules, before.value->independent_rules);
+ 
+   AccessServiceCoordinatorTestPeer::SetFailure(coordinator_,
+       AccessRuleStore::FailurePointForTesting::kNone);
+-- 
+2.54.0 (Apple Git-157)
+

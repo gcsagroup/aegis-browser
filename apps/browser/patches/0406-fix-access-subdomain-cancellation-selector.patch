@@ -1,0 +1,55 @@
+From 450278a7adc085809c372b9e158aaf3f3ffa1bf9 Mon Sep 17 00:00:00 2001
+From: Codex <codex@localhost>
+Date: Tue, 10 Nov 2026 22:13:00 +0800
+Subject: [PATCH] fix(access): derive cancellation site from validated mutation
+
+---
+ .../aegis/access/access_site_proxy_session.cc     |  5 ++++-
+ .../access/access_site_proxy_session_unittest.cc  | 15 +++++++++++++++
+ 2 files changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session.cc b/chrome/browser/aegis/access/access_site_proxy_session.cc
+index 3eb9064ca93434bdc1856bf7485c18bab1513a69..1890fdfe194d66dc2fbf9931669ebf6cdacd3941 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_session.cc
+@@ -194,7 +194,10 @@ AccessSiteProxySessionMutationPlan BuildSiteProxySessionMutationPlan(
+ 
+   plan.selector.owner = owner;
+   plan.selector.document_token = AppendMessage("bubble-session-doc:", host.value);
+-  plan.selector.top_level_site = AppendMessage("https://", host.value);
++  if (plan.mutation.request) {
++    plan.selector.top_level_site =
++        plan.mutation.request->candidate_group.https_top_level_site;
++  }
+   plan.selector.exact_host = host.value;
+   plan.selector.scheme = RequestScheme::kHttps;
+   plan.selector.port = 443;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+index f38f750bb830a7e4720250c32b67a1de643690a2..2865510081745f5365061fc3861e824a68b0f043 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_session_unittest.cc
+@@ -95,6 +95,21 @@ class FakeOrchestrator : public AccessSiteProxySessionOrchestrating {
+   }
+ };
+ 
++TEST(AccessSiteProxySessionTest, SubdomainSelectorMatchesCanonicalMemberSite) {
++  for (const auto intent : {AccessSiteIntent::kAllow, AccessSiteIntent::kOff}) {
++    const auto plan = BuildSiteProxySessionMutationPlan(
++        Host("www.example.co.uk"), intent, TestOwner(), "proxy-group",
++        "new-operation", 0);
++    ASSERT_TRUE(plan.mutation.request);
++    EXPECT_EQ(plan.selector.top_level_site, "https://example.co.uk");
++    EXPECT_EQ(plan.selector.top_level_site,
++              plan.mutation.request->candidate_group.https_top_level_site);
++    EXPECT_EQ(plan.selector.exact_host, "www.example.co.uk");
++    EXPECT_EQ(plan.selector.top_level_site,
++              plan.mutation.request->candidate_members[1].top_level_site);
++  }
++}
++
+ TEST(AccessSiteProxySessionTest, EnableRunsPreparePublishAckReady) {
+   FakeOrchestrator orchestrator;
+   AccessSiteProxySessionController controller(&orchestrator);
+-- 
+2.54.0 (Apple Git-157)
+

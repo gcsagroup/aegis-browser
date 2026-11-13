@@ -86,6 +86,9 @@ enum class PolicyScope {
   kSite,
   kProfile,
   kInvalid,
+  // Stored ordinals above are stable. This is a Browser-trusted website
+  // context, including destinations used by its page, not a host wildcard.
+  kWebsite = 4,
 };
 
 enum class SnapshotState {

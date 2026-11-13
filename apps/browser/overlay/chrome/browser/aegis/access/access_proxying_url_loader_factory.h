@@ -12,6 +12,7 @@
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/aegis/access/access_browser_request_adapter.h"
 #include "components/aegis_access/request_policy_context.h"
 #include "content/public/browser/frame_tree_node_id.h"
@@ -20,6 +21,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/url_loader_factory_builder.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
+#include "services/network/public/mojom/aegis_access_route.mojom.h"
 
 class GURL;
 class Profile;
@@ -27,11 +29,13 @@ class Profile;
 namespace content {
 class RenderFrameHost;
 class StoragePartition;
+class WebContents;
 }
 
 namespace aegis::access {
 
 class AccessPublishedRequestRuntime;
+class AccessPrivateContextClient;
 class AccessProxyingURLTrackedRequest;
 
 // UI-thread browser-process URLLoaderFactory wrapper for real Access request
@@ -71,7 +75,9 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       mojo::PendingReceiver<network::mojom::URLLoaderFactory> loader_receiver,
       mojo::PendingRemote<network::mojom::URLLoaderFactory> target_factory,
       std::optional<content::WeakDocumentPtr> document,
-      DisconnectCallback on_disconnect);
+      DisconnectCallback on_disconnect,
+      mojo::PendingRemote<network::mojom::AegisAccessURLLoaderFactory> private_target = {},
+      std::shared_ptr<AccessPrivateContextClient> private_context = nullptr);
   AccessProxyingURLLoaderFactory(const AccessProxyingURLLoaderFactory&) =
       delete;
   AccessProxyingURLLoaderFactory& operator=(
@@ -108,6 +114,7 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       Profile* profile,
       content::StoragePartition* partition,
       network::URLLoaderFactoryBuilder& factory_builder);
+  static bool CanOfferProxyRetry(content::WebContents* contents);
   static void MaybeProxyNavigation(
       Profile* profile,
       content::RenderFrameHost* frame,
@@ -131,9 +138,37 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
 
   enum class RequestDisposition {
     kPreserveNative,
-    kDispatchProxy,
+    kDispatchControlled,
     kBlock,
   };
+  struct PendingStart;
+
+  void OnRequestPolicyReady(
+      base::WeakPtr<PendingStart> pending,
+      aegis_access::GenerationTuple expected, bool accepted);
+  std::optional<std::string> SelectedLocalCoreGroup(const GURL& target);
+  void OnRequestCoreReady(
+      base::WeakPtr<PendingStart> pending,
+      uint64_t expected_policy_generation, std::string expected_group, bool ready);
+  void PublishRequestPolicy(base::WeakPtr<PendingStart> pending);
+  void FinishPendingStart(PendingStart* pending);
+  void PrepareRedirectPolicy(
+      const GURL& redirect_url, aegis_access::GenerationTuple expected,
+      base::OnceCallback<void(bool)> completion);
+  void OnRedirectCoreReady(
+      GURL redirect_url, aegis_access::GenerationTuple expected,
+      std::string expected_group, base::OnceCallback<void(bool)> completion,
+      bool ready);
+  void OnRedirectPolicyReady(
+      GURL redirect_url, aegis_access::GenerationTuple expected,
+      std::string expected_group, base::OnceCallback<void(bool)> completion,
+      bool accepted);
+  void StartEvaluatedRequest(
+      mojo::PendingReceiver<network::mojom::URLLoader> loader_receiver,
+      int32_t request_id, uint32_t options,
+      const network::ResourceRequest& request,
+      mojo::PendingRemote<network::mojom::URLLoaderClient> client,
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
 
   RequestDisposition EvaluateRequest(
       const network::ResourceRequest& request,
@@ -173,7 +208,12 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
       uint32_t options,
       const network::ResourceRequest& request,
       mojo::PendingRemote<network::mojom::URLLoaderClient> client,
-      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation);
+      const net::MutableNetworkTrafficAnnotationTag& traffic_annotation,
+      const aegis_access::RequestOwnershipRecord& ownership,
+      mojo::PendingReceiver<network::mojom::AegisAccessURLLoaderControl> control);
+  network::mojom::AegisAccessRequestEnvelopePtr BuildEnvelope(
+      const aegis_access::RequestOwnershipRecord& ownership,
+      const GURL& target, const std::string& method, uint32_t hop);
   void RemoveRequest(AccessProxyingURLTrackedRequest* request);
   void OnTargetFactoryError();
   void OnProxyBindingError();
@@ -188,13 +228,21 @@ class AccessProxyingURLLoaderFactory : public network::mojom::URLLoaderFactory {
   const std::optional<aegis_access::BrowserOwnedRequestMetadata>
       factory_metadata_;
   const std::optional<content::WeakDocumentPtr> document_;
+  // Factory admission may close while existing private request/control pipes
+  // remain live. Their redirect policy must keep the original routing mode.
+  const bool is_private_factory_;
 
   mojo::ReceiverSet<network::mojom::URLLoaderFactory> proxy_receivers_;
   std::set<std::unique_ptr<AccessProxyingURLTrackedRequest>,
            base::UniquePtrComparator>
       requests_;
   mojo::Remote<network::mojom::URLLoaderFactory> target_factory_;
+  mojo::Remote<network::mojom::AegisAccessURLLoaderFactory> private_target_factory_;
+  std::shared_ptr<AccessPrivateContextClient> private_context_;
   DisconnectCallback on_disconnect_;
+  std::set<std::unique_ptr<PendingStart>, base::UniquePtrComparator>
+      pending_starts_;
+  base::WeakPtrFactory<AccessProxyingURLLoaderFactory> weak_factory_{this};
 };
 
 }  // namespace aegis::access
