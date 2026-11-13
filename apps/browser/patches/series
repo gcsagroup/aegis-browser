@@ -465,3 +465,4 @@
 0463-macos-current-access-account-query.patch
 0464-fix-macos-entitlement-delivery.patch
 0465-fix-macos-entitlement-expiry-anchor.patch
+0466-fix-access-gn-dependencies.patch
