@@ -265,6 +265,14 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     const uint64_t access_revision = access ? access->state_revision() : 0;
     const auto access_snapshot = access
         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
+#if BUILDFLAG(IS_MAC)
+    if (expanded_.contains("core-logs") && access && access->CanViewCoreLogs() &&
+        (log_disk_status_ != access->core_logs()->disk_status() ||
+         log_view_version_ != access->core_logs()->view_version())) {
+      Build();
+      return;
+    }
+#endif
     if (revision != revision_ || snapshot != snapshot_ ||
         access_revision != access_revision_ || access_snapshot != access_snapshot_) Build();
   }
@@ -283,6 +291,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   }
   void Expand(const std::string& key) {
     if (!expanded_.erase(key)) expanded_.insert(key);
+#if BUILDFLAG(IS_MAC)
+    if (key == "core-logs")
+      log_share_confirmation_.reset();
+#endif
     RefreshSoon();
   }
   void Mutate(base::DictValue request) {
@@ -390,6 +402,109 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     controller->RequestHostProxySession(snap.host, !snap.toggle_on);
     RefreshSoon();
   }
+#if BUILDFLAG(IS_MAC)
+  void AppendCoreLogs(views::View* parent,
+                      aegis::access::AccessSiteProxyBubbleController* controller) {
+    if (!controller->CanViewCoreLogs()) return;
+    Button(parent, Copy(u"代理诊断日志", u"Proxy diagnostic logs", u"代理診斷日誌"),
+           base::BindRepeating(&AegisPageBubble::Expand, base::Unretained(this),
+                               std::string("core-logs")));
+    if (!expanded_.contains("core-logs")) return;
+    AddLabel(parent, Copy(u"普通和隐私浏览日志分开保存在本机磁盘，退出后仍保留最近 128 条，可能包含隐私浏览的目标地址。清除日志或选择 none 可删除当前模式的历史。分享前请检查内容，接收者可保留副本。",
+        u"Regular and private logs are saved separately on this Mac. The latest 128 entries survive quitting and may contain private browsing destinations. Clear logs or choose none to delete this mode’s history. Review before sharing; recipients can keep a copy.",
+        u"一般和私密瀏覽日誌分開儲存在本機磁碟，結束後仍保留最近 128 筆，可能包含私密瀏覽的目標位址。清除日誌或選擇 none 可刪除目前模式的歷史。分享前請檢查內容，接收者可保留副本。"));
+    AddLabel(parent, Copy(u"当前级别：", u"Level: ", u"目前層級：") +
+                     base::UTF8ToUTF16(controller->core_logs()->Level()));
+    AddLabel(parent, Copy(u"提高详细程度需重新启动代理核心；降低级别立即过滤。",
+        u"More detail starts with the next proxy core launch. Lower detail filters immediately.",
+        u"提高詳細程度需重新啟動代理核心；降低層級會立即篩選。"));
+    for (auto level : aegis::access::kCoreLogLevels) {
+      Button(parent, base::UTF8ToUTF16(level),
+          base::BindRepeating([](AegisPageBubble* self, std::string level) {
+            if (!self->Valid()) return;
+            if (auto* controller = self->AccessBubble()) controller->SetCoreLogLevel(level);
+            self->RefreshSoon();
+          }, base::Unretained(this), std::string(level)));
+    }
+    using DiskStatus = aegis::access::AccessCoreLogStore::DiskStatus;
+    log_disk_status_ = controller->core_logs()->disk_status();
+    if (log_disk_status_ == DiskStatus::kError) {
+      AddLabel(parent, Copy(u"磁盘操作失败，历史记录可能仍在磁盘上。请检查磁盘空间和权限，再次清除可重试。",
+          u"A disk operation failed. History may still be on disk. Check space and permissions. Clear logs again to retry deletion.",
+          u"磁碟操作失敗，歷史記錄可能仍在磁碟上。請檢查磁碟空間和權限，再次清除可重試。"));
+    } else if (log_disk_status_ == DiskStatus::kLoading) {
+      AddLabel(parent, Copy(u"正在读取日志…", u"Loading saved logs…", u"正在讀取日誌…"));
+    } else if (log_disk_status_ == DiskStatus::kClearing) {
+      AddLabel(parent, Copy(u"正在删除磁盘记录…", u"Deleting saved logs…", u"正在刪除磁碟記錄…"));
+    }
+      Button(parent, Copy(u"清除日志", u"Clear logs", u"清除日誌"),
+          base::BindRepeating([](AegisPageBubble* self) {
+            if (!self->Valid()) return;
+            if (auto* c = self->AccessBubble(); c && c->CanViewCoreLogs()) c->core_logs()->Clear();
+            self->RefreshSoon();
+          }, base::Unretained(this)));
+    const auto [text, version] = controller->core_logs()->ViewSnapshot();
+    log_view_version_ = version;
+    if (log_share_confirmation_ &&
+        (text.empty() || log_share_confirmation_->second != version)) {
+      log_share_confirmation_.reset();
+    }
+    if (text.empty()) {
+      AddLabel(parent, Copy(u"暂无日志", u"No log entries", u"目前沒有日誌"));
+    } else {
+      AddLabel(parent, base::UTF8ToUTF16(text))->SetSelectable(true);
+      if (!log_share_confirmation_) {
+        Button(parent, Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…"),
+            base::BindRepeating([](AegisPageBubble* self, std::string preview, uint64_t version) {
+              if (!self->Valid()) return;
+              self->log_notice_.clear();
+              self->log_share_confirmation_.emplace(std::move(preview), version);
+              self->RefreshSoon();
+            }, base::Unretained(this), text, version));
+      } else {
+        AddLabel(parent, Copy(u"此压缩包可能包含普通或隐私浏览的目标地址。确认分享给可信的接收方？",
+            u"This archive may contain regular or private browsing destinations. Share it with a trusted recipient?",
+            u"此壓縮檔可能包含一般或私密瀏覽的目標位址。確認分享給可信的接收方？"));
+        Button(parent, Copy(u"确认分享", u"Confirm share", u"確認分享"),
+               base::BindRepeating(&AegisPageBubble::ConfirmCoreLogShare,
+                                   base::Unretained(this)));
+        Button(parent, Copy(u"取消", u"Cancel", u"取消"),
+               base::BindRepeating([](AegisPageBubble* self) {
+                 self->log_share_confirmation_.reset();
+                 self->RefreshSoon();
+               }, base::Unretained(this)));
+      }
+    }
+    Button(parent, Copy(u"刷新日志", u"Refresh logs", u"重新整理日誌"),
+           base::BindRepeating(&AegisPageBubble::RefreshSoon, base::Unretained(this)));
+    if (!log_notice_.empty()) AddLabel(parent, log_notice_);
+  }
+  void ConfirmCoreLogShare() {
+    auto confirmation = std::exchange(log_share_confirmation_, std::nullopt);
+    if (!Valid() || !confirmation)
+      return;
+    RefreshSoon();
+    if (auto* controller = AccessBubble()) {
+      auto [preview, version] = std::move(*confirmation);
+      using ShareResult = aegis::access::AccessSiteProxyBubbleController::CoreLogShareResult;
+      controller->ShareCoreLogs(source_.get(), std::move(preview), version,
+          base::BindOnce([](base::WeakPtr<AegisPageBubble> self, ShareResult result) {
+            if (!self || result == ShareResult::kCompleted)
+              return;
+            if (result == ShareResult::kCleanupFailed) {
+              self->log_notice_ = Copy(u"临时压缩日志未能删除。下次分享前会重试清理。",
+                  u"The temporary archive could not be deleted. Cleanup will be retried before the next share.",
+                  u"暫存壓縮日誌未能刪除。下次分享前會重試清理。");
+            } else {
+              self->log_notice_ = Copy(u"未能分享日志，请重试。",
+                  u"Could not share the logs. Try again.",
+                  u"未能分享日誌，請重試。");
+            }
+            self->RefreshSoon();
+          }, weak_.GetWeakPtr()));
+    }
+  }
+#endif
   void AppendSiteProxySection(views::View* parent) {
     AddLabel(parent, Copy(u"本站代理", u"Site proxy", u"本站代理"),
              views::style::CONTEXT_DIALOG_TITLE);
@@ -400,6 +515,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
                             u"目前使用者資料不可用"));
       return;
     }
+#if BUILDFLAG(IS_MAC)
+    AppendCoreLogs(parent, controller);
+#endif
     const auto snap = controller->SnapshotForCommittedUrl(address_);
     if (!snap.has_trusted_site) {
       AddLabel(parent, IntentStatusCopy(snap.intent_status));
@@ -620,6 +738,12 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   std::optional<aegis::access::AccessSiteProxyBubbleSnapshot> access_snapshot_;
   std::set<std::string> expanded_;
   std::u16string notice_;
+#if BUILDFLAG(IS_MAC)
+  std::u16string log_notice_;
+  std::optional<std::pair<std::string, uint64_t>> log_share_confirmation_;
+  uint64_t log_view_version_ = 0;
+  std::optional<aegis::access::AccessCoreLogStore::DiskStatus> log_disk_status_;
+#endif
   base::RepeatingTimer timer_;
   base::WeakPtrFactory<AegisPageBubble> weak_{this};
 };

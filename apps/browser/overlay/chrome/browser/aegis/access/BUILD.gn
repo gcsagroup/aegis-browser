@@ -75,13 +75,30 @@ source_set("access_build_channel") {
   deps = [
     ":access_buildflags",
     "//chrome/common:channel_info",
-    "//components/aegis_access:browser_request_metadata_seed",
     "//components/version_info:channel",
   ]
+  public_deps = [ "//components/aegis_access:browser_request_metadata_seed" ]
+}
+
+source_set("access_core_log") {
+  sources = [
+    "access_core_log.cc",
+    "access_core_log.h",
+    "access_core_log_store.cc",
+    "access_core_log_store.h",
+  ]
+  if (is_mac) {
+    sources += [
+      "access_core_log_disk.cc",
+      "access_core_log_disk.h",
+    ]
+  }
+  public_deps = [ "//base" ]
 }
 
 source_set("access_local_core_manager") {
   sources = [ "access_local_core_manager.h" ]
+  public_deps = [ ":access_core_log" ]
   if (is_mac) {
     sources += [ "access_local_core_manager.cc" ]
   } else {
@@ -95,6 +112,9 @@ source_set("access_local_core_manager") {
     "//net",
     "//url",
   ]
+  if (is_mac) {
+    deps += [ ":access_core_log_archive" ]
+  }
   if (aegis_private_test_node_enabled) {
     data_deps = [ ":alpha_access_resource_files" ]
   } else {
@@ -109,6 +129,7 @@ test("access_local_core_unavailable_unittests") {
     "access_local_core_manager_unavailable_unittest.cc",
   ]
   deps = [
+    ":access_core_log",
     "//base",
     "//base/test:run_all_unittests",
     "//base/test:test_support",
@@ -119,7 +140,11 @@ test("access_local_core_unavailable_unittests") {
 
 test("access_local_core_manager_unittests") {
   if (is_mac) {
-    sources = [ "access_local_core_manager_unittest.cc" ]
+    sources = [
+      "access_core_log_disk_unittest.cc",
+      "access_core_log_unittest.cc",
+      "access_local_core_manager_unittest.cc",
+    ]
   } else {
     sources = [ "access_local_core_manager_unavailable_unittest.cc" ]
   }
@@ -135,11 +160,26 @@ test("access_local_core_manager_unittests") {
     "//testing/gtest",
   ]
   if (is_mac) {
+    deps += [
+      ":access_core_log_archive",
+      "//third_party/zlib/google:compression_utils",
+    ]
     data_deps = [ ":access_local_core_test_child" ]
   }
 }
 
 if (is_mac) {
+  source_set("access_core_log_archive") {
+    sources = [
+      "access_core_log_share.cc",
+      "access_core_log_share.h",
+    ]
+    deps = [
+      "//base",
+      "//third_party/zlib/google:compression_utils",
+    ]
+  }
+
   executable("access_local_core_test_child") {
     testonly = true
     sources = [ "access_local_core_test_child.cc" ]
@@ -463,10 +503,19 @@ source_set("access_site_proxy_bubble") {
     "//chrome/browser/profiles:profile",
     "//chrome/common:channel_info",
     "//components/aegis_access",
+    "//components/prefs",
+    "//chrome/browser/aegis:prefs",
     "//components/version_info:channel",
     "//content/public/browser",
     "//url",
   ]
+  if (is_mac) {
+    deps += [
+      ":access_core_log_archive",
+      "//chrome/browser/lifetime:termination_notification",
+      "//third_party/blink/public/mojom:android_mojo_bindings",
+    ]
+  }
 }
 
 test("access_site_proxy_bubble_unittests") {

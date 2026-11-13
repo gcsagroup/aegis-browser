@@ -142,6 +142,7 @@ source_set("prefs") {
   ]
   deps = [
     ":gesture_core",
+    "//chrome/browser/aegis/access:access_build_channel",
     "//chrome/common/aegis",
     "//components/pref_registry",
   ]
@@ -284,6 +285,7 @@ source_set("aegis") {
       "aegis_torrent_client.h",
     ]
     deps += [
+      "//chrome/browser/aegis/access:access_core_log_archive",
       "//chrome/services/aegis_torrent/public/mojom",
       "//sandbox/mac:seatbelt_extension",
     ]

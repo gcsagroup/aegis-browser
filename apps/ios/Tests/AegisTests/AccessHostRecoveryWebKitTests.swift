@@ -141,8 +141,8 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         XCTAssertFalse(opener.transcript.contains("other.invalid"))
     }
 
-    func testFailedEndpointKeepsTheProxyAndDoesNotAddADirectRequest() async throws {
-        let opener = AnsweringOpener()
+    func testFailedEndpointKeepsTheProxyAndDisallowsDirectFailover() async throws {
+        let opener = AnsweringOpener(body: "<html><body>proxy ready</body></html>")
         let listener = try await makeListener(port: 18_242, tunnels: opener)
         try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
         defer { try? listener.stop() }
@@ -167,7 +167,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
                 window.addSubview(tab.webView)
                 window.makeKeyAndVisible()
             }
-            return opener.transcript.contains("example.invalid")
+            return opener.transcript.contains("GET /kept") && !tab.isLoading
         }, message: "proxy=\(opener.transcript) loads=\(tab.recoveryLoadCount) loading=\(tab.isLoading) failure=\(coordinator.lastRecoveryFailure ?? "") error=\(tab.loadingError ?? "")")
         let host = try AccessSiteHost("example.invalid")
         let store = try XCTUnwrap(coordinator.registry.storeForTab(
@@ -179,7 +179,6 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
             intent: .on
         ))
         let before = store.proxyConfigurations.count
-        let seen = opener.transcript
         coordinator.registry.setEndpoint(
             AccessManagedProxyEndpoint(
                 identity: "entry-failed",
@@ -192,11 +191,22 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
             host: host,
             isPrivate: false
         )
-        tab.load(URLRequest(url: URL(string: "http://example.invalid/again")!))
-        try await Task.sleep(for: .milliseconds(700))
+        let nonce = UUID().uuidString
+        let nextURL = URL(string: "http://example.invalid/again?n=\(nonce)")!
+        tab.load(URLRequest(url: nextURL))
+        // A failed health state retains the existing proxy route. WebKit may
+        // still send through that proxy or report its failure; neither result
+        // may replace this store or enable DIRECT fallback.
+        XCTAssertEqual(tab.requestedURL, nextURL)
+        XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertEqual(store.proxyConfigurations.count, before)
         XCTAssertFalse(store.proxyConfigurations.isEmpty)
-        XCTAssertEqual(opener.transcript, seen)
+        XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
+        try await waitUntil({
+            opener.transcript.contains("GET /again?n=\(nonce)") || !tab.isLoading
+        }, message: opener.transcript)
+        XCTAssertTrue(tab.websiteDataStore === store)
+        XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
     }
 
     func testAutoRecoverySendsTheMemberThroughTheProxyAndTheOutsideHostToOrigin() async throws {
