@@ -26,10 +26,10 @@ class PrivateNodePackagingTests(unittest.TestCase):
         return result.returncode
 
     def test_channel_transitions_in_reused_product(self):
-        for channel in ('dev', 'alpha'):
+        for channel in ('dev', 'alpha', 'beta'):
             self.assertEqual(self.stage(channel), 0)
             self.assertEqual(self.output.read_bytes(), URI)
-        for channel in ('beta', 'release', 'stable', '', 'unknown'):
+        for channel in ('release', 'stable', '', 'unknown'):
             self.output.write_bytes(URI)
             self.assertEqual(self.stage(channel, self.source.with_name('missing')), 0)
             self.assertFalse(self.output.exists())
@@ -83,7 +83,7 @@ sys.exit(int(os.environ['SIMULATED_EXIT']))
         marker = root / 'called'
         wrapper = SCRIPT.parents[3] / 'scripts/release/ios-private-test-node-archive.sh'
         cases = [
-                ('release', 'release', 0, 2), ('beta', 'beta', 0, 2), ('dev', 'dev', 0, 0),
+                ('release', 'release', 0, 2), ('beta', 'beta', 0, 0), ('dev', 'dev', 0, 0),
                 ('alpha', 'release', 0, 1), ('alpha', 'alpha', 7, 7), ('alpha', 'alpha', 0, 0)]
         cases = [(*case, '', '') for case in cases]
         cases.extend(('alpha', 'alpha', 0, 1, target, value)
@@ -97,7 +97,7 @@ sys.exit(int(os.environ['SIMULATED_EXIT']))
             result = subprocess.run(['bash', str(wrapper), channel], env=env, capture_output=True)
             self.assertEqual(result.returncode, expected, result.stderr)
             self.assertNotIn(URI, result.stdout + result.stderr)
-            if channel in ('release', 'beta'):
+            if channel == 'release':
                 self.assertFalse(marker.exists())
             else:
                 input_path = Path(marker.read_text())

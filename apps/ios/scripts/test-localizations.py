@@ -51,6 +51,8 @@ def validate_catalog(contract, catalog, probes):
     additions = set(contract.get("languageSelectorAddedKeys", []))
     require(additions == {"语言", "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"}, 'Guard failed: additions == {"语言", "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"}')
     additions.update(contract["paidAccessAddedKeys"])
+    additions.update(contract["addressProxyAddedKeys"])
+    additions.update(contract["subscriptionQuotaAddedKeys"])
     require(additions <= set(strings), 'Guard failed: additions <= set(strings)')
     require(len(strings) == contract["catalogKeyCount"] + len(additions), 'Guard failed: len(strings) == contract["catalogKeyCount"] + len(additions)')
     require(digest(sorted(set(strings) - additions)) == contract["catalogInventorySHA256"], "Catalog key inventory changed")

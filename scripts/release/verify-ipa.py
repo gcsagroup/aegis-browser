@@ -18,6 +18,13 @@ def verify(path, version, build, release_profile=None):
         if len(roots) != 1 or len(names) != len(set(names)):
             raise ValueError("IPA must contain one unambiguous application")
         root = roots[0].removesuffix("Info.plist")
+        if archive.getinfo(root + "Info.plist").file_size > 1024 * 1024:
+            raise ValueError("Unexpectedly large Info.plist")
+        main_info = plistlib.loads(archive.read(root + "Info.plist"))
+        if (main_info.get("AegisAccessReleaseChannel") not in ("dev", "alpha", "beta")
+                or main_info.get("AegisReleaseProfile") not in ("dev", "alpha", "beta")):
+            if any(name.rsplit('/', 1)[-1] in ("AegisPrivateTestNode.vless", "AegisPrivateTestSubscription.json") for name in names):
+                raise ValueError("Private test resources are forbidden outside Dev/Alpha/Beta")
         expected = {root + "Info.plist": APP_ID,
                     root + "PlugIns/SafariWebExtension.appex/Info.plist": APP_ID + ".safari",
                     root + "PlugIns/ShareExtension.appex/Info.plist": APP_ID + ".share"}

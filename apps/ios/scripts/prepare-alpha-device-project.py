@@ -159,6 +159,7 @@ def prepare(source_root, output_dir, products, team_id, node_file=None):
         target["sources"].extend(extra)
         for script in target.get("postBuildScripts", []):
             allowed_scripts = {"Select private Access test node", "Select Aegis Firebase registration",
+                               "Select private Access subscription",
                                "Install verified EmbeddedCore manifest"}
             if script.get("name") not in allowed_scripts:
                 raise ValueError("unrecognized build script; review source-root conversion")

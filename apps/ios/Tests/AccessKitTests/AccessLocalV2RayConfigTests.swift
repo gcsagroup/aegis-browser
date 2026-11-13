@@ -28,7 +28,7 @@ final class AccessLocalV2RayConfigTests: XCTestCase {
             let bundle = try XCTUnwrap(Bundle(url: dir))
             let path = AccessLocalV2RayConfigLoader.productPath(bundle: bundle, environment: environment)
             switch channel {
-            case "alpha":
+            case "alpha", "beta":
                 let config = try AccessLocalV2RayConfigLoader.load(path: XCTUnwrap(path))
                 XCTAssertEqual(config.parameters.address, "198.51.100.10")
             case "dev":

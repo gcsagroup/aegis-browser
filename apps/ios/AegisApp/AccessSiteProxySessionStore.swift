@@ -78,6 +78,11 @@ final class AccessSiteProxySessionStore: ObservableObject {
         revision &+= 1
     }
 
+    func setSiteProxyEnabled(_ enabled: Bool, for tab: BrowserTab, displayedHost: AccessSiteHost) {
+        hostRouting?.setSiteProxyEnabled(enabled, for: tab, displayedHost: displayedHost)
+        revision &+= 1
+    }
+
     @discardableResult
     func setAutoRecoveryEnabled(
         _ enabled: Bool,

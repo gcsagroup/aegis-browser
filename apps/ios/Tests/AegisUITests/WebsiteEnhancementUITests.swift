@@ -128,7 +128,7 @@ final class WebsiteEnhancementUITests: XCTestCase {
     navigate(app, "http://127.0.0.1:8768/enhancements/page")
     XCTAssertTrue(app.webViews.staticTexts["网站增强验收文章"].firstMatch.waitForExistence(timeout: 12))
     app.buttons["page-protection"].tap()
-    let recovery = app.switches["access-site-proxy-toggle"]
+    let recovery = app.switches["access-site-auto-recovery-toggle"]
     let download = app.switches["access-account-site-download-toggle"]
     XCTAssertTrue(download.waitForExistence(timeout: 5))
     XCTAssertEqual(recovery.value as? String, "0")
