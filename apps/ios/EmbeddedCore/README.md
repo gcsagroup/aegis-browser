@@ -47,12 +47,12 @@ The receipt records the binary hashes for the loader and carrier. A missing, fai
 skipped required leaf cannot produce PASS. Use a new output directory for each run;
 node credentials never belong in the receipt or repository.
 
-## Internal Alpha and Beta test node
+## Internal Dev, Alpha, and Beta test node
 
 The private signing repository owns the GitHub Environment secret
 `AEGIS_ACCESS_TEST_NODE_URI` (one complete VLESS Reality Vision share URI).
 Expose it only in the private internal archive step. With the locked framework
-prepared, call the wrapper from that step, selecting `alpha` or `beta`:
+prepared, call the wrapper from that step, selecting `dev`, `alpha`, or `beta`:
 
 ```bash
 bash scripts/release/ios-private-test-node-archive.sh beta \
@@ -65,11 +65,11 @@ from Xcode's environment, and prints the private archive path. The input file
 and DerivedData are removed on exit. Anyone with the resulting app can extract
 the URI. Keep the archive, exported apps, and access to them private.
 
-The shared node's 1 GB daily allowance covers upload and download combined.
-It is separate from commercial account entitlements. Public PR, signing, and
-release workflows do not need this secret. Ordinary builds omit the node.
-Dev, release, and unrecognized channels remove the resource on a reused build
-directory and ignore it at runtime.
+The shared node's 10 GB daily allowance covers upload and download combined.
+The 3X-UI panel applies the reset schedule. For the TestFlight build that queries
+the node's quota, use the [private Beta delivery operation](../../../docs/development/ios-delivery-actions.md#private-testflight-beta--私有测试包).
+Ordinary builds omit the node. Release and unrecognized channels remove the
+resource on a reused build directory and ignore it at runtime.
 
 ## Toolchain (historical verified local attempt)
 

@@ -50,6 +50,9 @@ def validate_catalog(contract, catalog, probes):
     require(catalog["sourceLanguage"] == "zh-Hans", 'Guard failed: catalog["sourceLanguage"] == "zh-Hans"')
     additions = set(contract.get("languageSelectorAddedKeys", []))
     require(additions == {"语言", "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"}, 'Guard failed: additions == {"语言", "地区版本自动匹配系统语言偏好，地区格式保持系统设置。"}')
+    additions.update(contract["paidAccessAddedKeys"])
+    additions.update(contract["addressProxyAddedKeys"])
+    additions.update(contract["subscriptionQuotaAddedKeys"])
     require(additions <= set(strings), 'Guard failed: additions <= set(strings)')
     require(len(strings) == contract["catalogKeyCount"] + len(additions), 'Guard failed: len(strings) == contract["catalogKeyCount"] + len(additions)')
     require(digest(sorted(set(strings) - additions)) == contract["catalogInventorySHA256"], "Catalog key inventory changed")
@@ -149,10 +152,45 @@ def validate_agent_errors(contract):
                 require(value != translations["en"]["stringUnit"]["value"], (key, language))
 
 
+def validate_project_regions(project, locales):
+    # Project regions cover every target, not just the main App's fallback catalog.
+    # AgentKit owns explicit regional translations, independently validated against
+    # requestedLocales; do not admit arbitrary locales by merely unioning raw input.
+    contract = json.loads((FIXTURES / "coverage.json").read_text())
+    require(set(locales) == set(contract["resourceLocales"]), "Unexpected main resource locale contract")
+    validate_agent_errors(contract)
+    agent = json.loads((ROOT / "AgentKit/AgentErrors.xcstrings").read_text())
+    agent_locales = {locale for entry in agent["strings"].values() for locale in entry["localizations"]}
+    require(agent_locales == set(contract["requestedLocales"]), "Unexpected AgentKit resource locales")
+    objects = project["objects"]
+    target = next(value for value in objects.values()
+                  if value.get("isa") == "PBXNativeTarget" and value.get("name") == "AgentKit")
+    phases = [objects[key] for key in target["buildPhases"]
+              if objects[key]["isa"] == "PBXResourcesBuildPhase"]
+    require(any(objects[objects[key]["fileRef"]].get("path") == "AgentErrors.xcstrings"
+                for phase in phases for key in phase["files"]), "Unbundled AgentErrors.xcstrings: AgentKit")
+    target_locales = {"Aegis": set(locales), "ShareExtension": set(locales),
+                      "SafariWebExtension": set(locales), "AgentKit": agent_locales}
+    expected = {"Base"}.union(*target_locales.values())
+    require(set(objects[project["rootObject"]]["knownRegions"]) == expected,
+            "Project knownRegions must equal the approved target resource locale union")
+
+
+def is_web_extension_locale_folder(reference):
+    if reference.get("isa") != "PBXFileReference" or reference.get("lastKnownFileType") != "folder":
+        return False
+    # Preserve the original group-relative reference and accept only XcodeGen's
+    # exact project-root form, never an arbitrary path with a matching basename.
+    return (reference.get("path"), reference.get("sourceTree")) in {
+        ("_locales", "<group>"),
+        ("SharedWebExtension/_locales", "SOURCE_ROOT"),
+    }
+
+
 def validate_project(locales):
     project = plist(ROOT / "Aegis.xcodeproj/project.pbxproj")
     objects = project["objects"]
-    require(set(objects[project["rootObject"]]["knownRegions"]) == set(locales) | {"Base"}, 'Guard failed: set(objects[project["rootObject"]]["knownRegions"]) == set(locales) | {"Base"}')
+    validate_project_regions(project, locales)
     require(objects[project["rootObject"]]["developmentRegion"] == "zh-Hans", 'Guard failed: objects[project["rootObject"]]["developmentRegion"] == "zh-Hans"')
     for target, folder in [("Aegis", "AegisApp"), ("ShareExtension", "ShareExtension"), ("SafariWebExtension", "SafariWebExtension")]:
         target_object = next(v for v in objects.values() if v["isa"] == "PBXNativeTarget" and v["name"] == target)
@@ -172,7 +210,8 @@ def validate_project(locales):
             sources = next(objects[key] for key in target_object["buildPhases"] if objects[key]["isa"] == "PBXSourcesBuildPhase")
             require(any(objects[objects[key]["fileRef"]].get("path") == "ThirdPartyNoticesView.swift" for key in sources["files"]), 'Guard failed: any(objects[objects[key]["fileRef"]].get("path") == "ThirdPartyNoticesView.swift" for key in sources["files"])')
         if target in {"Aegis", "SafariWebExtension"}:
-            require(any(objects[key].get("path") == "_locales" and objects[key].get("lastKnownFileType") == "folder" for key in refs), 'Guard failed: any(objects[key].get("path") == "_locales" and objects[key].get("lastKnownFileType") == "folder" for key in refs)')
+            require(any(is_web_extension_locale_folder(objects[key]) for key in refs),
+                    f"Missing exact WebExtension locale folder reference: {target}")
     helper_targets = set()
     for value in objects.values():
         if value["isa"] != "PBXNativeTarget":

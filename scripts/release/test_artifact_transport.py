@@ -2,6 +2,8 @@ import importlib.util
 import hashlib
 import json
 import pathlib
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -10,6 +12,30 @@ FILE = pathlib.Path(__file__).with_name('artifact-transport.py')
 
 
 class ArtifactTransportTests(unittest.TestCase):
+    def test_public_export_rejects_either_private_resource_even_without_manifest_flags(self):
+        for resource in (None, 'AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json'):
+            with self.subTest(resource=resource), tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                package = root/'package'
+                package.mkdir()
+                ipa = package/'app.ipa'
+                with zipfile.ZipFile(ipa, 'w') as binary:
+                    binary.writestr('Payload/Aegis.app/Info.plist', 'fixture')
+                    if resource:
+                        binary.writestr('Payload/Aegis.app/'+resource, 'private fixture')
+                manifest = package/'ios-manifest.json'
+                manifest.write_text(json.dumps(dict(source=dict(sha='a'*40, tree='b'*40, dirty=False),
+                    repository='gcsagroup/aegis-browser', platform='ios', assets=[dict(name=ipa.name,
+                    size=ipa.stat().st_size, sha256=hashlib.sha256(ipa.read_bytes()).hexdigest())])))
+                digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+                (package/'ios-manifest.json.sha256').write_text(f'{digest}  ios-manifest.json\n')
+                target = root/'package.zip'
+                result = subprocess.run([sys.executable, str(FILE), 'export', '--directory', str(package),
+                    '--zip', str(target), '--sha', 'a'*40, '--tree', 'b'*40, '--manifest-sha256', digest], capture_output=True)
+                self.assertEqual(result.returncode == 0, resource is None)
+                self.assertEqual(target.exists(), resource is None)
+                self.assertNotIn(b'private fixture', result.stderr)
+
     def test_cloud_evidence_is_complete_and_cannot_enter_a_manual_manifest(self):
         m = self.module()
         with tempfile.TemporaryDirectory() as tmp:

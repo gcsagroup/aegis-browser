@@ -32,6 +32,8 @@ struct AegisApp: App {
     @StateObject private var settings: BrowserSettings
     @StateObject private var downloads: DownloadManager
     @StateObject private var assistantTasks: AssistantTaskStore
+    @StateObject private var accountSession = AccessAccountSession.product()
+    @StateObject private var subscriptionUsage = AccessSubscriptionUsageSession.product()
     @StateObject private var readingLibrary: ReadingLibrary
     @StateObject private var accessSiteProxyRegistry: AccessSiteProxyStoreRegistry
     @StateObject private var hostStores: AccessHostStoreCoordinator
@@ -123,8 +125,13 @@ struct AegisApp: App {
                 .environmentObject(downloads)
                 .environmentObject(assistantTasks)
                 .environmentObject(readingLibrary)
+                .environmentObject(accountSession)
+                .environmentObject(subscriptionUsage)
                 .environmentObject(accessSiteProxyRegistry)
                 .environmentObject(hostStores)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    hostStores.releaseIdleResources()
+                }
                 .preferredColorScheme(settings.colorScheme)
                 .tint(Color(red: 0.09, green: 0.47, blue: 0.37))
         } defaultValue: {
@@ -133,7 +140,15 @@ struct AegisApp: App {
         .commands { BrowserKeyboardCommands(language: language) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { language.refresh(); AegisFirebase.shared.refreshOnForeground() }
-            if phase == .background { Task { try? await AccessDiagnosticLog.shared.flush() } }
+            if phase == .background {
+                hostStores.releaseIdleResources()
+                Task { try? await AccessDiagnosticLog.shared.flush() }
+            }
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            subscriptionUsage.setActive(phase == .active)
+            accountSession.usageRefresh.setActive(phase == .active)
+            if phase != .active { accountSession.suspend() }
         }
     }
 

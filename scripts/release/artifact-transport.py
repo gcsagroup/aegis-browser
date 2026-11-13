@@ -125,7 +125,12 @@ def main():
             for path in args.directory.iterdir():
                 if allowed_name(path.name) and path.is_file() and not path.is_symlink():
                     shutil.copyfile(path, staged/path.name)
-            verify_package(staged, args.sha, args.tree, args.manifest_sha256)
+            manifest = verify_package(staged, args.sha, args.tree, args.manifest_sha256)
+            ipa = next(asset['name'] for asset in manifest['assets'] if asset['name'].endswith('.ipa'))
+            with zipfile.ZipFile(staged/ipa) as binary:
+                if any(Path(name.rstrip('/')).name in {'AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json'}
+                       for name in binary.namelist()):
+                    raise ValueError('Private iOS test resources cannot be exported to Actions artifacts')
             with zipfile.ZipFile(args.zip, 'x', compression=zipfile.ZIP_DEFLATED) as archive:
                 for path in sorted(staged.iterdir()):
                     archive.write(path, path.name)

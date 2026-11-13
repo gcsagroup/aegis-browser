@@ -16,6 +16,24 @@ const load = async () => {
   return {iosReleasePreflight: (source, options) => preflight(source, {authorize: async () => true, ...options})};
 };
 
+test('private Beta inputs stay in the protected manual package step', () => {
+  const workflow = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const job = workflow.jobs['ios-package'];
+  assert.equal(job.environment, 'aegis-ios-signing');
+  const step = job.steps.find(item => item.id === 'package');
+  for (const name of ['AEGIS_IOS_TEST_NODE_BASE64', 'AEGIS_IOS_TEST_SUBSCRIPTION_BASE64']) {
+    const expression = step.env[name];
+    assert(expression.includes("outputs.profile == 'beta'"));
+    assert(expression.includes("outputs.signing_mode == 'manual'"));
+    assert(expression.includes("outputs.private_beta == 'true'"));
+    assert(expression.endsWith("|| '' }}"));
+    assert(!JSON.stringify({...job, steps: job.steps.filter(item => item !== step)}).includes(name));
+    for (const [id, other] of Object.entries(workflow.jobs)) {
+      if (id !== 'ios-package') assert(!JSON.stringify(other).includes(name));
+    }
+  }
+});
+
 test('archive gets only non-secret settings from the existing environment', () => {
   const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const archive = jobs['ios-archive'];
@@ -173,7 +191,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   const simple = workflow('ios-delivery');
   const full = workflow('ios-delivery-full');
   const inputs = simple.on.workflow_dispatch.inputs;
-  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode']);
+  assert.deepEqual(Object.keys(inputs), ['operation', 'version', 'build', 'product', 'signing_mode', 'private_beta']);
   assert.equal(inputs.signing_mode.default, 'cloud');
   assert.deepEqual(inputs.signing_mode.options, ['cloud', 'manual']);
   assert.equal(simple.name, 'iOS Delivery · Simple');
@@ -193,7 +211,7 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   assert.equal(inputs.version.required, true);
   assert.equal(inputs.build.required, true);
   assert(!inputs.source && !inputs.advanced);
-  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'package_entrypoint', 'groups', 'stage_input']);
+  assert.deepEqual(Object.keys(full.on.workflow_dispatch.inputs), ['operation', 'version', 'build', 'product', 'source', 'signing_mode', 'private_beta', 'package_entrypoint', 'groups', 'stage_input']);
   assert.deepEqual(Object.keys(full.jobs), ['delivery']);
   assert.equal(full.jobs.delivery.uses, './.github/workflows/ios-delivery.yml');
   assert.equal(full.jobs.delivery.with.delivery_mode, 'full');
@@ -209,7 +227,9 @@ test('Simple and Full expose bounded English forms and share the same exact-sour
   for (const id of ['ios-package', 'store']) {
     const steps = simple.jobs[id].steps;
     const emit = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py receipt');
-    assert(emit > 0 && !steps[emit].if);
+    assert(emit > 0);
+    assert.equal(steps[emit].if, id === 'ios-package'
+      ? "${{ steps.package.outputs.private_beta == 'false' }}" : undefined);
   }
 });
 
@@ -275,7 +295,7 @@ test('candidate admission bounds version components and rejects trailing data be
   }
 });
 
-test('new-package upload is bound to the successful same-run producer and never loads ASC secrets while signing', () => {
+test('public package upload is bound to the successful same-run producer', () => {
   const doc = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const packageJob = doc.jobs['ios-package'];
   assert(packageJob.needs.includes('check-unused'));
@@ -288,7 +308,7 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert.equal(fresh.environment, 'aegis-ios-store');
   const upload = doc.jobs['upload-new'];
   assert.deepEqual(upload.needs, ['admission', 'ios-package', 'seal-package']);
-  assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' }}");
+  assert.equal(upload.if, "${{ needs.admission.outputs.operation == 'package-upload' && needs.ios-package.outputs.private_beta == 'false' }}");
   assert.equal(upload.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
   assert.equal(upload.env.PACKAGE_RUN_ID, '${{ github.run_id }}');
   assert.equal(upload.env.IMPORT_KIND, 'new-upload');
@@ -298,13 +318,33 @@ test('new-package upload is bound to the successful same-run producer and never 
   assert.equal(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py receipt').if, undefined);
 });
 
+test('private Beta uploads only after signing cleanup and publishes only a sanitized receipt', () => {
+  const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
+  const steps = jobs['ios-package'].steps;
+  const pack = steps.findIndex(s => s.id === 'package');
+  const cleanup = steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
+  const direct = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-upload');
+  assert(pack >= 0 && pack < cleanup && cleanup < direct);
+  assert.equal(steps[direct].if, "${{ steps.package.outputs.private_beta == 'true' }}");
+  assert.equal(steps[direct].env.RELEASE_MANIFEST_SHA256, '${{ steps.package.outputs.manifest_sha256 }}');
+  assert(!Object.keys(steps[direct].env).some(key => key.includes('TEST_NODE') || key.includes('DISTRIBUTION')));
+  const archive = steps.find(s => s.with?.path === '.artifacts/ios-delivery/package.zip');
+  assert.equal(archive.if, "${{ steps.package.outputs.private_beta == 'false' }}");
+  assert(steps.some(s => s.with?.path === '${{ steps.private-evidence.outputs.receipt_path }}'));
+  for (const job of ['seal-package', 'upload-new', 'ios-draft']) {
+    assert(jobs[job].if.includes("needs.ios-package.outputs.private_beta == 'false'"));
+  }
+});
+
 test('Full explicitly forwards named secrets while protected jobs resolve environment values', () => {
   const simple = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const full = parse(readFileSync('.github/workflows/ios-delivery-full.yml', 'utf8'));
   const expected = ['AEGIS_ASC_KEY_ID', 'AEGIS_ASC_ISSUER_ID', 'AEGIS_ASC_KEY_BASE64'];
   const signing = ['AEGIS_IOS_DISTRIBUTION_P12_BASE64', 'AEGIS_IOS_DISTRIBUTION_P12_PASSWORD',
     'AEGIS_IOS_APP_PROFILE_BASE64', 'AEGIS_IOS_SAFARI_PROFILE_BASE64', 'AEGIS_IOS_SHARE_PROFILE_BASE64'];
-  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), [...expected, ...signing]);
+  const privateBeta = ['AEGIS_IOS_TEST_NODE_BASE64', 'AEGIS_IOS_TEST_SUBSCRIPTION_BASE64'];
+  assert.deepEqual(Object.keys(simple.on.workflow_call.secrets), [...privateBeta, ...expected, ...signing]);
+  for (const name of privateBeta) assert.equal(simple.on.workflow_call.secrets[name].required, false);
   assert.deepEqual(Object.keys(full.jobs.delivery.secrets), [...expected, ...signing]);
   for (const name of expected) {
     assert.equal(simple.on.workflow_call.secrets[name].required, true);

@@ -1,11 +1,267 @@
 import AccessKit
 @testable import BrowserKit
+import UIKit
 import WebKit
 import XCTest
 @testable import Aegis
 
 @MainActor
 final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
+    func testSiteToggleDoesNotCancelANewerForeignHostNavigation() throws {
+        for enabled in [false, true] {
+            for held in [false, true] {
+                let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_291) }
+                let coordinator = AccessHostStoreCoordinator(publisher: publisher)
+                let host = try AccessSiteHost("192.0.2.1")
+                let primary = try committedTab(coordinator: coordinator, url: "https://192.0.2.1/primary")
+                let sibling = try committedTab(coordinator: coordinator, url: "https://192.0.2.1/old")
+                let target = URL(string: "https://192.0.2.2/new")!
+                sibling.loadFromAddressBar(target)
+                if held { XCTAssertNotNil(sibling.holdForProxy(try XCTUnwrap(sibling.safeRouteReloadRequest))) }
+                let pending = try XCTUnwrap(sibling.pendingAddressNavigation)
+                coordinator.setSiteProxyEnabled(enabled, for: primary, displayedHost: host)
+                XCTAssertTrue(sibling.isLoading)
+                XCTAssertNil(sibling.loadingError)
+                XCTAssertEqual(sibling.addressBarURL, target)
+                XCTAssertTrue(sibling.matchesPendingAddressNavigation(pending))
+            }
+        }
+    }
+
+    func testRevokingAutoRecoverySettlesAnEarlyManualAddressHold() async throws {
+        let clock = AccessManualPreparationClock()
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            try await clock.sleep(until: .seconds(10))
+            return ready(generation, port: 18_291)
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: clock)
+        let tab = try committedTab(coordinator: coordinator, url: "https://192.0.2.1/old")
+        guard case .armed = coordinator.setAutoRecoveryEnabled(true, for: tab) else {
+            return XCTFail("Expected an armed group")
+        }
+        let target = URL(string: "https://192.0.2.1/new")!
+        tab.loadFromAddressBar(target)
+        let pending = try XCTUnwrap(tab.pendingAddressNavigation)
+        XCTAssertNotNil(coordinator.openPendingAddressViaProxy(tab: tab, pending: pending))
+        await settle { publisher.provisionCount == 1 }
+        XCTAssertTrue(coordinator.isPreparingAddressProxy(tab: tab))
+        _ = coordinator.setAutoRecoveryEnabled(false, for: tab)
+        XCTAssertFalse(coordinator.isPreparingAddressProxy(tab: tab))
+        XCTAssertFalse(tab.isLoading)
+        XCTAssertNil(tab.pendingAddressNavigation)
+        XCTAssertEqual(tab.lastMainFrameFailure?.url, target)
+        XCTAssertTrue(tab.loadingErrorAllowsProxyRetry)
+        clock.advance(to: .seconds(20))
+        await settle(seconds: 0.1) { false }
+        XCTAssertEqual(tab.recoveryLoadCount, 0)
+        XCTAssertNil(publisher.currentEndpoint)
+    }
+
+    func testDisablingOldProxyBindingPreservesNewHostPreparation() async throws {
+        let clock = AccessManualPreparationClock()
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            try await clock.sleep(until: .seconds(5))
+            return ready(generation, port: 18_291)
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: clock)
+        let host = try AccessSiteHost("192.0.2.1")
+        let primary = try committedTab(coordinator: coordinator, url: "https://192.0.2.1/primary")
+        let sibling = try committedTab(coordinator: coordinator, url: "https://192.0.2.1/old")
+        let scope = sibling.browsingScopeID
+        coordinator.setProxyEnabled(true, host: host, scopeID: scope, isPrivate: false)
+        coordinator.registry.setEndpoint(ready(1, port: 18_291).endpoint, scopeID: scope, host: host, isPrivate: false)
+        let store = try XCTUnwrap(coordinator.dataStoreForMainFrame(tab: sibling, url: URL(string: "https://192.0.2.1/old")!))
+        sibling.rebindWebsiteDataStore(store, host: host.rawValue)
+        var oldViewStopped = false
+        sibling.afterCurrentDocumentBecomesInert { oldViewStopped = true }
+        await settle(seconds: 4) { oldViewStopped }
+        XCTAssertTrue(oldViewStopped)
+        _ = sibling.webView
+        let target = URL(string: "https://192.0.2.2/new")!
+        coordinator.setProxyEnabled(true, host: try AccessSiteHost("192.0.2.2"), scopeID: scope, isPrivate: false)
+        sibling.load(URLRequest(url: target))
+        let pending = try XCTUnwrap(sibling.pendingAddressNavigation)
+        XCTAssertEqual(sibling.boundHostName, host.rawValue)
+        XCTAssertTrue(coordinator.isPreparingAddressProxy(tab: sibling))
+        coordinator.setSiteProxyEnabled(false, for: primary, displayedHost: host)
+        XCTAssertNil(sibling.boundHostName)
+        XCTAssertTrue(sibling.websiteDataStore === sibling.originalWebsiteDataStore)
+        XCTAssertTrue(sibling.matchesPendingAddressNavigation(pending))
+        XCTAssertFalse(store.proxyConfigurations.isEmpty, "The retiring document still needs its mandatory route")
+        await settle(seconds: 4) { publisher.provisionCount == 1 }
+        XCTAssertEqual(publisher.provisionCount, 1)
+        clock.advance(to: .seconds(5))
+        await settle(seconds: 4) { sibling.recoveryLoadCount == 1 }
+        XCTAssertEqual(sibling.recoveryLoadCount, 1)
+        XCTAssertEqual(sibling.addressBarURL, target)
+        XCTAssertTrue(store.proxyConfigurations.isEmpty)
+    }
+
+    func testDisablingParentKeepsInheritedLandingProxyUntilItsDocumentIsInert() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_291) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher)
+        let parent = try AccessSiteHost("example.invalid")
+        let landing = try AccessSiteHost("www.example.invalid")
+        let tab = try committedTab(coordinator: coordinator, url: "https://example.invalid/start")
+        try await tab.prepareContentRulesForTests()
+        let scope = tab.browsingScopeID
+        let key = AccessHostStoreKey(scopeID: scope, host: parent, isPrivate: false)
+        let operation = UUID()
+        let prepared = try await publisher.prepare(.init(operationID: operation, deadline: .seconds(15)))
+        XCTAssertTrue(publisher.retain(prepared.endpoint, for: key))
+        publisher.cancel(operationID: operation)
+        coordinator.setProxyEnabled(true, host: parent, scopeID: scope, isPrivate: false)
+        coordinator.registry.setEndpoint(prepared.endpoint, scopeID: scope, host: parent, isPrivate: false)
+        let parentStore = try XCTUnwrap(coordinator.dataStoreForMainFrame(tab: tab, url: URL(string: "https://example.invalid/start")!))
+        tab.rebindWebsiteDataStore(parentStore, host: parent.rawValue)
+        var initialViewInert = false
+        tab.afterCurrentDocumentBecomesInert { initialViewInert = true }
+        await settle(seconds: 5) { initialViewInert }
+        XCTAssertTrue(initialViewInert)
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let parentView = tab.webView
+        parentView.frame = window.bounds
+        window.addSubview(parentView)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        let target = URL(string: "https://www.example.invalid/landing")!
+        var parentViewInert = false
+        tab.afterCurrentDocumentBecomesInert { parentViewInert = true }
+        XCTAssertNotNil(parentView.load(URLRequest(url: target)))
+        await settle(seconds: 8) { tab.boundHostName == landing.rawValue && parentViewInert }
+        XCTAssertTrue(parentViewInert)
+        XCTAssertEqual(tab.proxyLandingParent, parent.rawValue)
+        XCTAssertEqual(tab.boundHostName, landing.rawValue)
+        let childStore = tab.websiteDataStore
+        XCTAssertFalse(childStore === parentStore)
+        let childView = tab.webView
+        childView.frame = window.bounds
+        window.addSubview(childView)
+
+        var childViewInert = false
+        tab.afterCurrentDocumentBecomesInert { childViewInert = true }
+        coordinator.setProxyEnabled(false, host: parent, scopeID: scope, isPrivate: false)
+        coordinator.releaseIdleResources()
+        XCTAssertFalse(childViewInert)
+        XCTAssertEqual(childStore.proxyConfigurations.count, 1)
+        XCTAssertFalse(childStore.proxyConfigurations.first?.allowFailover ?? true)
+        XCTAssertNil(tab.proxyLandingParent)
+        XCTAssertNil(tab.boundHostName)
+        XCTAssertTrue(tab.websiteDataStore === tab.originalWebsiteDataStore)
+        XCTAssertNil(childView.load(URLRequest(url: target)))
+
+        await settle(seconds: 8) { childViewInert }
+        XCTAssertTrue(childViewInert)
+        coordinator.releaseIdleResources()
+        XCTAssertTrue(childStore.proxyConfigurations.isEmpty)
+        XCTAssertNil(publisher.currentEndpoint)
+    }
+
+    func testLandingConsumerSurvivesParentEvictionAndReleasesAfterClose() async throws {
+        var shutdowns = 0
+        let publisher = AccessProxyEntryPublisher(provision: { generation, _ in
+            ready(generation, port: 18_291)
+        }, shutdown: { _ in shutdowns += 1 })
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher)
+        let parent = try AccessSiteHost("example.com"), child = try AccessSiteHost("www.example.com")
+        let parentKey = AccessHostStoreKey(scopeID: "ordinary", host: parent, isPrivate: false)
+        let childKey = AccessHostStoreKey(scopeID: "ordinary", host: child, isPrivate: false)
+        let operation = UUID()
+        let prepared = try await publisher.prepare(.init(operationID: operation, deadline: .seconds(15)))
+        XCTAssertTrue(publisher.retain(prepared.endpoint, for: parentKey))
+        publisher.cancel(operationID: operation)
+        coordinator.registry.setEndpoint(prepared.endpoint, scopeID: "ordinary", host: parent, isPrivate: false)
+        let now = Date()
+        XCTAssertNotNil(coordinator.registry.storeForTab(tabID: "landing", scopeID: "ordinary", isPrivate: false,
+            targetHost: parent, boundHost: nil, intent: .on, now: now))
+        XCTAssertTrue(coordinator.retainLandingEndpoint(prepared.endpoint, for: childKey))
+        XCTAssertNotNil(coordinator.registry.storeForTab(tabID: "landing", scopeID: "ordinary", isPrivate: false,
+            targetHost: child, boundHost: parent, intent: .on, now: now))
+        coordinator.registry.sweep(now: now.addingTimeInterval(61))
+        XCTAssertNil(coordinator.registry.store(scopeID: "ordinary", host: parent, isPrivate: false))
+        XCTAssertNotNil(coordinator.registry.store(scopeID: "ordinary", host: child, isPrivate: false))
+        XCTAssertEqual(publisher.currentEndpoint, prepared.endpoint)
+        XCTAssertEqual(shutdowns, 0)
+        coordinator.registry.unbind("landing", now: now.addingTimeInterval(61))
+        coordinator.registry.releaseIdleStores()
+        XCTAssertNil(publisher.currentEndpoint)
+        XCTAssertEqual(shutdowns, 1)
+    }
+
+    func testLandingCannotRetainAnUnownedEndpoint() throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_291) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher)
+        let key = AccessHostStoreKey(scopeID: "ordinary", host: try AccessSiteHost("www.example.com"), isPrivate: false)
+        XCTAssertFalse(coordinator.retainLandingEndpoint(ready(1, port: 18_291).endpoint, for: key))
+        XCTAssertNil(coordinator.registry.endpoint(scopeID: key.scopeID, host: key.host, isPrivate: key.isPrivate))
+    }
+
+    func testOffResumesPendingSiblingAndLatePreparationCannotReattachIt() async throws {
+        let clock = AccessManualPreparationClock()
+        let publisher = AccessProxyEntryPublisher { generation, _ in
+            try await clock.sleep(until: .seconds(10))
+            return ready(generation, port: 18_291)
+        }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: clock)
+        let target = URL(string: "https://pending-sibling.invalid/page")!
+        let host = try AccessSiteHost("pending-sibling.invalid")
+        let primary = try failedTab(coordinator: coordinator, url: target.absoluteString)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        retainedSessions.append(browser)
+        let sibling = try XCTUnwrap(browser.activeTab)
+        sibling.hostCoordinator = coordinator
+        coordinator.setProxyEnabled(true, host: host, scopeID: sibling.browsingScopeID, isPrivate: false)
+        sibling.load(URLRequest(url: target))
+        await settle { publisher.provisionCount == 1 }
+        XCTAssertNotNil(sibling.pendingAddressNavigation)
+        XCTAssertNil(sibling.committedMainFrameURL)
+        coordinator.setSiteProxyEnabled(false, for: primary, displayedHost: host)
+        await settle { sibling.currentNavigationForTests != nil || sibling.lastMainFrameFailure != nil }
+        XCTAssertNil(sibling.pendingAddressNavigation)
+        XCTAssertTrue(sibling.currentNavigationForTests != nil || sibling.lastMainFrameFailure != nil)
+        XCTAssertFalse(coordinator.requiresProxy(tab: sibling, url: target))
+        clock.advance(to: .seconds(10))
+        await settle(seconds: 0.2) { false }
+        XCTAssertEqual(sibling.recoveryLoadCount, 0)
+        XCTAssertNil(sibling.boundHostName)
+        XCTAssertNil(publisher.currentEndpoint)
+    }
+
+    func testImmediateOffBeforePreparationTaskStartsDoesNotRetainEntry() async throws {
+        let publisher = AccessProxyEntryPublisher { generation, _ in ready(generation, port: 18_198) }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())
+        let tab = try failedTab(coordinator: coordinator, url: "https://cancel-before-start.invalid/")
+        let host = try AccessSiteHost("cancel-before-start.invalid")
+        XCTAssertNotNil(coordinator.retryViaProxy(tab: tab))
+        coordinator.setProxyEnabled(false, host: host, scopeID: tab.browsingScopeID, isPrivate: false)
+        await settle(seconds: 0.1) { false }
+        XCTAssertEqual(publisher.provisionCount, 0)
+        XCTAssertNil(publisher.currentEndpoint)
+        XCTAssertEqual(tab.recoveryLoadCount, 0)
+    }
+
+    func testRepeatedFailedPreparationsDoNotRetainNavigationHistoryAfterClose() async throws {
+        let publisher = AccessProxyEntryPublisher { _, _ in throw AccessSiteSessionError.nodeUnavailable }
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: AccessManualPreparationClock())
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        browser.hostCoordinator = coordinator
+        let tab = try XCTUnwrap(browser.activeTab)
+        coordinator.setProxyEnabled(true, host: try AccessSiteHost("churn.invalid"),
+                                    scopeID: tab.browsingScopeID, isPrivate: false)
+        for index in 0..<60 {
+            tab.load(URL(string: "https://churn.invalid/\(index)")!)
+            await settle { tab.loadingError != nil }
+            XCTAssertNotNil(tab.loadingError)
+            XCTAssertLessThanOrEqual(coordinator.retainedOperationCount, 1)
+        }
+        browser.closeWindow()
+        await settle { coordinator.retainedOperationCount == 0 }
+        XCTAssertEqual(coordinator.retainedOperationCount, 0)
+        XCTAssertNil(publisher.currentEndpoint)
+    }
+
     private var retainedSessions: [BrowserSession] = []
 
     override func tearDown() async throws {
@@ -189,6 +445,36 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         ))
     }
 
+    func testCancelledStalePrivateRetryReleasesEndpointWithoutAStore() async throws {
+        let clock = AccessManualPreparationClock()
+        var shutdowns = 0
+        let publisher = AccessProxyEntryPublisher(provision: { generation, _ in
+            try await clock.sleep(until: .seconds(5))
+            return ready(generation, port: 18_086)
+        }, shutdown: { _ in shutdowns += 1 })
+        let coordinator = AccessHostStoreCoordinator(publisher: publisher, clock: clock)
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        retainedSessions.append(browser)
+        browser.hostCoordinator = coordinator
+        browser.switchProfile(to: .privateMode)
+        let tab = try XCTUnwrap(browser.activeTab)
+        fail(tab, url: "https://private-stale.invalid/old")
+        XCTAssertNotNil(coordinator.retryViaProxy(tab: tab))
+        coordinator.setProxyEnabled(true, host: try AccessSiteHost("other.invalid"), scopeID: "ordinary", isPrivate: false)
+        clock.advance(to: .seconds(5))
+        let host = try AccessSiteHost("private-stale.invalid")
+        await settle { coordinator.registry.endpoint(scopeID: tab.browsingScopeID, host: host, isPrivate: true)?.state == .ready }
+        XCTAssertNotNil(publisher.currentEndpoint)
+        XCTAssertEqual(coordinator.registry.endpoint(scopeID: tab.browsingScopeID, host: host, isPrivate: true)?.state, .ready)
+        XCTAssertEqual(tab.recoveryLoadCount, 0)
+        XCTAssertNil(coordinator.registry.store(scopeID: tab.browsingScopeID, host: host, isPrivate: true))
+        tab.stop()
+        browser.discardPrivateSession()
+        await settle { publisher.currentEndpoint == nil }
+        XCTAssertNil(publisher.currentEndpoint)
+        XCTAssertEqual(shutdowns, 1)
+    }
+
     func testAnotherToggleRejectsThePreparingTicket() async throws {
         let clock = AccessManualPreparationClock()
         let publisher = AccessProxyEntryPublisher { generation, _ in
@@ -207,6 +493,10 @@ final class AccessProxyRecoveryCoordinatorTests: XCTestCase {
         clock.advance(to: .seconds(5))
         await settle(seconds: 0.4) { false }
         XCTAssertEqual(tab.recoveryLoadCount, 0)
+        clock.advance(to: .seconds(16))
+        await settle { coordinator.lastRecoveryFailure == "代理在 15 秒内没有就绪" }
+        XCTAssertEqual(coordinator.lastRecoveryFailure, "代理在 15 秒内没有就绪")
+        XCTAssertNotNil(coordinator.retryViaProxy(tab: tab))
     }
 
     func testOldFailureDoesNotReplaceANewerReadyEntry() async throws {
