@@ -111,8 +111,8 @@ def require_private_beta_upload():
         raise ValueError('Private Beta requires a first-attempt manual Package and upload to TestFlight')
 
 
-def private_beta_manifest(digest):
-    root = directory()
+def private_beta_manifest(digest, root=None):
+    root = directory() if root is None else root
     sha, tree = source()
     path = root/'ios-manifest.json'
     manifest = json.loads(path.read_text())
@@ -127,12 +127,93 @@ def private_beta_manifest(digest):
     return manifest
 
 
+def private_beta_handoff(digest):
+    require_private_beta_upload()
+    if (os.environ.get('RUNNER_ENVIRONMENT') != 'self-hosted' or os.environ.get('RUNNER_OS') != 'macOS'
+            or not os.environ.get('RUNNER_NAME') or re.fullmatch(r'[0-9a-f]{64}', digest) is None):
+        raise ValueError('Private Beta handoff requires the admitted macOS runner')
+    base = Path.home() / '.local/share/aegis-private-beta'
+    if base.resolve() != base:
+        raise ValueError('Aliased private Beta handoff root')
+    base.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if base.stat().st_uid != os.getuid() or base.stat().st_mode & 0o077:
+        raise ValueError('Private Beta handoff root must be owner-only')
+    sha, tree = source()
+    identity = dict(repository=durable.REPOSITORY, runId=os.environ['GITHUB_RUN_ID'], attempt='1',
+                    runner=os.environ['RUNNER_NAME'], sourceSha=sha, sourceTree=tree,
+                    manifestSha256=digest)
+    return base / os.environ['RELEASE_RUN_ID'], identity
+
+
+def retain_private_beta():
+    digest = os.environ['RELEASE_MANIFEST_SHA256']
+    manifest = private_beta_manifest(digest)
+    retained, identity = private_beta_handoff(digest)
+    retained.mkdir(mode=0o700)
+    try:
+        package = retained / 'package'
+        package.mkdir(mode=0o700)
+        names = [asset['name'] for asset in manifest['assets']]
+        names += ['ios-manifest.json', 'ios-manifest.json.sha256', 'package-origin.json']
+        for name in names:
+            original = directory() / name
+            if not transport.allowed_name(name) or original.is_symlink() or not original.is_file():
+                raise ValueError('Invalid private Beta inventory')
+            shutil.copyfile(original, package / name)
+            (package / name).chmod(0o600)
+        transport.verify_package(package, identity['sourceSha'], identity['sourceTree'], digest)
+        with (retained / 'handoff.json').open('x') as output_file:
+            json.dump(identity, output_file)
+        (retained / 'handoff.json').chmod(0o600)
+    except Exception:
+        shutil.rmtree(retained)
+        raise
+
+
+def checked_private_beta_handoff():
+    digest = os.environ['RELEASE_MANIFEST_SHA256']
+    retained, expected = private_beta_handoff(digest)
+    if (retained.is_symlink() or retained.resolve() != retained or not retained.is_dir()
+            or retained.stat().st_uid != os.getuid() or retained.stat().st_mode & 0o077):
+        raise ValueError('Invalid retained private Beta directory')
+    for entry in retained.rglob('*'):
+        if entry.is_symlink() or entry.stat().st_uid != os.getuid() or entry.stat().st_mode & 0o077:
+            raise ValueError('Invalid retained private Beta member')
+    if json.loads((retained / 'handoff.json').read_text()) != expected:
+        raise ValueError('Private Beta producer or runner differs')
+    package = retained / 'package'
+    private_beta_manifest(digest, root=package)
+    transport.verify_package(package, expected['sourceSha'], expected['sourceTree'], digest)
+    return retained
+
+
+def restore_private_beta():
+    retained = checked_private_beta_handoff()
+    root = directory()
+    if root.exists() or root.is_symlink():
+        raise ValueError('Refuse to overwrite a private Beta workspace')
+    root.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(retained / 'package', root)
+    private_beta_manifest(os.environ['RELEASE_MANIFEST_SHA256'])
+
+
+def cleanup_private_beta_handoff():
+    retained, _ = private_beta_handoff(os.environ['RELEASE_MANIFEST_SHA256'])
+    if retained.exists() or retained.is_symlink():
+        shutil.rmtree(checked_private_beta_handoff())
+
+
 def private_beta_upload():
     require_private_beta_upload()
-    private_beta_manifest(os.environ['RELEASE_MANIFEST_SHA256'])
+    digest = os.environ['RELEASE_MANIFEST_SHA256']
+    manifest = private_beta_manifest(digest)
+    sha, tree = source()
+    transport.verify_package(directory(), sha, tree, digest)
     check_new_upload_runs()
     if os.environ.get('RELEASE_STAGE') != 'upload':
         raise ValueError('Private Beta can only run the Apple upload stage')
+    ipa = next(asset['name'] for asset in manifest['assets'] if asset['name'].endswith('.ipa'))
+    run('python3', Path(__file__).with_name('private-beta-inputs.py'), 'verify-live', '--ipa', directory() / ipa)
     stage()
 
 
@@ -301,7 +382,7 @@ def unstarted_store_run(row):
             if job.get('run_id') != record['id'] or job.get('run_attempt') != attempt or job.get('head_sha') != record['head_sha']:
                 return False
             name = str(job.get('name', '')).rsplit(' / ', 1)[-1]
-            if name in {'store', 'upload-new'} and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
+            if name in {'store', 'upload-new', 'private-beta-store'} and not (job.get('status') == 'completed' and job.get('conclusion') == 'skipped' and job.get('steps') == []):
                 return False
             if name == 'ios-package' and any(step.get('name') == 'Upload private Beta directly to TestFlight'
                     and step.get('conclusion') != 'skipped' for step in job.get('steps', [])):
@@ -426,4 +507,6 @@ def stage():
 if __name__ == '__main__':
     {'package': package, 'export': export, 'import': import_package, 'stage': stage, 'receipt': receipt,
      'check-new-upload': check_new_upload_runs, 'private-beta-upload': private_beta_upload,
-     'private-beta-evidence': private_beta_evidence, 'cleanup-private-beta': cleanup_private_beta}[sys.argv[1]]()
+     'private-beta-evidence': private_beta_evidence, 'cleanup-private-beta': cleanup_private_beta,
+     'retain-private-beta': retain_private_beta, 'restore-private-beta': restore_private_beta,
+     'cleanup-private-beta-handoff': cleanup_private_beta_handoff}[sys.argv[1]]()

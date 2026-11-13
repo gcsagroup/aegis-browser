@@ -311,32 +311,14 @@ jobs:
             .artifacts/cloud-signing-poc/*/*.log
           if-no-files-found: warn
           retention-days: 14
-      - name: Upload private Beta directly to TestFlight
+      - name: Retain private Beta on the admitted runner for the store gate
         if: ${{ steps.package.outputs.private_beta == 'true' }}
         env:
-          RELEASE_STAGE: upload
           RELEASE_MANIFEST_SHA256: ${{ steps.package.outputs.manifest_sha256 }}
-          AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
-          AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
-          AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
-        run: python3 scripts/release/ios-action.py private-beta-upload
-      - name: Read permanent upload state for private Beta
-        id: private-evidence
-        if: ${{ always() && steps.package.outputs.private_beta == 'true' }}
-        env:
-          RELEASE_MANIFEST_SHA256: ${{ steps.package.outputs.manifest_sha256 }}
-        run: python3 scripts/release/ios-action.py private-beta-evidence
+        run: python3 scripts/release/ios-action.py retain-private-beta
       - name: Clean private Beta workspace
         if: ${{ always() && env.AEGIS_IOS_BETA_TEST_NODE_ENABLED == 'true' && env.RELEASE_OPERATION == 'package-upload' && env.RELEASE_SIGNING_MODE == 'manual' && github.run_attempt == 1 }}
         run: python3 scripts/release/ios-action.py cleanup-private-beta
-      - name: Preserve private Beta upload receipt
-        if: ${{ always() && steps.private-evidence.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: ios-private-beta-receipt-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ steps.private-evidence.outputs.receipt_path }}
-          if-no-files-found: error
-          retention-days: 30
       - name: Copy the delivery receipt for the next operation
         if: ${{ steps.package.outputs.private_beta == 'false' }}
         run: python3 scripts/release/ios-action.py receipt
@@ -348,6 +330,66 @@ jobs:
           if-no-files-found: error
           retention-days: 30
     if: ${{ !cancelled() && needs.admission.result == 'success' && (needs.admission.outputs.signing_mode != 'cloud' || needs.ios-archive.result == 'success') && (needs.admission.outputs.operation == 'package' || (needs.admission.outputs.operation == 'package-upload' && needs.check-unused.result == 'success')) }}
+  private-beta-store:
+    needs: [admission, ios-package]
+    if: ${{ !cancelled() && needs.ios-package.result == 'success' && needs.ios-package.outputs.private_beta == 'true' }}
+    permissions:
+      contents: write
+      actions: read
+    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.AEGIS_IOS_RUNNER_LABEL)) }}
+    environment: aegis-ios-store
+    timeout-minutes: 45
+    env:
+      RELEASE_STAGE: upload
+      RELEASE_OPERATION: ${{ needs.admission.outputs.operation }}
+      RELEASE_SIGNING_MODE: manual
+      RELEASE_PROFILE: beta
+      RELEASE_VERSION: ${{ needs.admission.outputs.version }}
+      RELEASE_BUILD: ${{ needs.admission.outputs.build }}
+      RELEASE_DESTINATION: testflight
+      RELEASE_MANIFEST_SHA256: ${{ needs.ios-package.outputs.manifest_sha256 }}
+      PACKAGE_RUN_ID: ${{ github.run_id }}
+      UPLOAD_RUN_ID: ${{ github.run_id }}
+      SOURCE_ATTEMPT: ${{ github.run_attempt }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.23.1
+      - name: Ensure Ruby 3.3.6 and gems
+        uses: ./.github/actions/ensure-ios-ruby
+      - name: Revalidate current source before accessing the private package
+        run: node scripts/ci/ios-release-preflight.mjs --sha "$GITHUB_SHA"
+      - id: restore
+        name: Verify the private package and the original runner identity
+        run: python3 scripts/release/ios-action.py restore-private-beta
+      - name: Upload private Beta inside the store environment
+        env:
+          AEGIS_ASC_KEY_ID: ${{ secrets.AEGIS_ASC_KEY_ID }}
+          AEGIS_ASC_ISSUER_ID: ${{ secrets.AEGIS_ASC_ISSUER_ID }}
+          AEGIS_ASC_KEY_BASE64: ${{ secrets.AEGIS_ASC_KEY_BASE64 }}
+        run: python3 scripts/release/ios-action.py private-beta-upload
+      - id: private-evidence
+        name: Read permanent upload state for private Beta
+        if: ${{ always() && steps.restore.outcome == 'success' }}
+        run: python3 scripts/release/ios-action.py private-beta-evidence
+      - name: Clean restored private Beta workspace
+        if: ${{ always() && steps.restore.outcome == 'success' }}
+        run: python3 scripts/release/ios-action.py cleanup-private-beta
+      - name: Clean verified private handoff
+        if: ${{ always() && steps.restore.outcome == 'success' }}
+        run: python3 scripts/release/ios-action.py cleanup-private-beta-handoff
+      - name: Preserve private Beta upload receipt
+        if: ${{ always() && steps.private-evidence.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ios-private-beta-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.private-evidence.outputs.receipt_path }}
+          if-no-files-found: error
+          retention-days: 30
   seal-package:
     needs: [admission, ios-package]
     if: ${{ !cancelled() && needs.ios-package.result == 'success' && needs.ios-package.outputs.private_beta == 'false' }}

@@ -107,6 +107,10 @@ TEST(PaidSiteMac, BrowserDispatchWaitsForCurrentConfigOnEveryPipe) {
   second.receiver.reset();
   task.RunUntilIdle();
   EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, dispatch(selected));
+  ASSERT_EQ(first.replies.size(), 5u);
+  std::move(first.replies.back()).Run();
+  task.RunUntilIdle();
+  EXPECT_EQ(net::OK, dispatch(selected));
 }
 
 TEST(PaidSiteMac, PaidWebsiteRejectsLocalErrorPageRetryForAliases) {

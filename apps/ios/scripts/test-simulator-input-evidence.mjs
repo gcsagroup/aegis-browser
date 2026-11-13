@@ -45,7 +45,10 @@ function createFixture(t) {
   write(root, 'apps/ios/scripts/simulator-fixture-server.py', '# Fixture self-test.\n');
   // Upstream Access packaging calls this before xcodegen; keep the fixture self-contained.
   write(root, 'scripts/release/prepare-ios-package-core.sh',
-    '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p "${2:?missing EmbeddedCore products}"\n');
+    '#!/usr/bin/env bash\nset -euo pipefail\nmkdir -p "${2:?missing EmbeddedCore products}/AegisEmbeddedCore.xcframework"\n' +
+    'for file in build-manifest.json embedded-core-lock.json build-inputs.xcfilelist; do printf fixture > "$2/$file"; done\n' +
+    'printf binary > "$2/AegisEmbeddedCore.xcframework/AegisEmbeddedCore"\n');
+  write(root, 'scripts/release/ios_embedded_core.py', '# Fixture verifier.\n');
   git(root, ['init', '-q']);
   git(root, ['add', '.']);
   git(root, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
@@ -91,6 +94,12 @@ if (tool === 'python3') {
     }
     if (process.env.EVIDENCE_MUTATE_RESOURCE === '1') {
       fs.appendFileSync(path.join(root, '${resourcePath}'), ' ');
+    }
+    if (process.env.EVIDENCE_MUTATE_EMBEDDED === '1') {
+      fs.appendFileSync(path.join(option('-derivedDataPath'), 'EmbeddedCore/AegisEmbeddedCore.xcframework/AegisEmbeddedCore'), 'drift');
+    }
+    if (process.env.EVIDENCE_MUTATE_CORE_VERIFIER === '1') {
+      fs.appendFileSync(path.join(root, 'scripts/release/ios_embedded_core.py'), '# drift');
     }
   } else {
     throw new Error('Unexpected xcodebuild call');
@@ -221,6 +230,16 @@ test('runner rejects drift in browser resources referenced by the iOS project', 
   assert.match(fs.readFileSync(path.join(result.report, 'run-metadata.txt'), 'utf8'), /^input_stability_exit=1$/m);  // nosemgrep: javascript_pathtraversal_rule-non-literal-fs-filename
   assert.notEqual(digest(path.join(result.report, 'ios-input-sha256-before.txt')),
     digest(path.join(result.report, 'ios-input-sha256-after.txt')));
+});
+
+test('runner rejects drift in the linked EmbeddedCore and its verifier', t => {
+  for (const flag of ['EVIDENCE_MUTATE_EMBEDDED', 'EVIDENCE_MUTATE_CORE_VERIFIER']) {
+    const result = runFixture(createFixture(t), {[flag]: '1'});
+    assert.equal(result.status, 1, result.stderr + result.stdout);
+    assert.match(result.stderr, /iOS\/Core 输入发生变化/);
+    assert.notEqual(digest(path.join(result.report, 'ios-input-sha256-before.txt')),
+      digest(path.join(result.report, 'ios-input-sha256-after.txt')));
+  }
 });
 
 test('runner rejects a stale app build number before running tests', t => {

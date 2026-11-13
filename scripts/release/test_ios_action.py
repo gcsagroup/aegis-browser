@@ -1,9 +1,11 @@
+import hashlib
 import importlib.util
 import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('ios_action', Path(__file__).with_name('ios-action.py'))
@@ -42,6 +44,55 @@ class IosActionTests(unittest.TestCase):
                 return dict(total_count=1, jobs=[job]) if '/jobs?' in path else row
             with patch.object(action, 'api', side_effect=lookup):
                 self.assertEqual(action.unstarted_store_run(row), conclusion == 'skipped')
+
+    def test_private_handoff_binds_runner_source_and_bytes_outside_the_cleaned_workspace(self):
+        env = dict(GITHUB_REPOSITORY=action.durable.REPOSITORY, GITHUB_RUN_ID='12', GITHUB_RUN_ATTEMPT='1',
+                   RELEASE_RUN_ID='ios-gh-12-1', RELEASE_OPERATION='package-upload', RELEASE_DESTINATION='testflight',
+                   RELEASE_PROFILE='beta', RELEASE_SIGNING_MODE='manual', RELEASE_VERSION='1.0.3', RELEASE_BUILD='13',
+                   RUNNER_ENVIRONMENT='self-hosted', RUNNER_OS='macOS', RUNNER_NAME='fixture-mac')
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary).resolve()
+            workspace = home / 'workspace'
+            workspace.mkdir()
+            ipa = workspace / 'fixture.ipa'
+            with zipfile.ZipFile(ipa, 'w') as archive:
+                archive.writestr('Payload/Aegis.app/AegisPrivateTestNode.vless', 'synthetic private node')
+            raw_ipa = ipa.read_bytes()
+            manifest = dict(repository=action.durable.REPOSITORY, platform='ios', profile='beta', version='1.0.3', build='13',
+                source=dict(sha='a'*40, tree='b'*40, dirty=False),
+                details=dict(privateBetaTestNode=True, privateBetaQuota=True, testFlightInternalTestingOnly=True),
+                assets=[dict(name=ipa.name, size=len(raw_ipa), sha256=hashlib.sha256(raw_ipa).hexdigest())])
+            raw = json.dumps(manifest).encode()
+            digest = hashlib.sha256(raw).hexdigest()
+            (workspace / 'ios-manifest.json').write_bytes(raw)
+            (workspace / 'ios-manifest.json.sha256').write_text(digest + '  ios-manifest.json\n')
+            (workspace / 'package-origin.json').write_text('{}')
+            env['RELEASE_MANIFEST_SHA256'] = digest
+            with (patch.dict(os.environ, env, clear=True), patch.object(action.Path, 'home', return_value=home),
+                  patch.object(action, 'directory', return_value=workspace),
+                  patch.object(action, 'source', return_value=('a'*40, 'b'*40))):
+                action.retain_private_beta()
+                retained = action.checked_private_beta_handoff()
+                self.assertNotIn(workspace, retained.parents)
+                for item in retained.rglob('*'):
+                    self.assertEqual(item.stat().st_mode & 0o077, 0)
+                action.cleanup_private_beta()
+                with patch.dict(os.environ, {'RUNNER_NAME': 'different-runner'}), self.assertRaises(ValueError):
+                    action.restore_private_beta()
+                payload = retained / 'package/fixture.ipa'
+                payload.write_bytes(b'tampered')
+                with self.assertRaises(ValueError):
+                    action.restore_private_beta()
+                self.assertFalse(workspace.exists())
+                payload.write_bytes(raw_ipa)
+                action.restore_private_beta()
+                self.assertEqual((workspace / 'fixture.ipa').read_bytes(), raw_ipa)
+                with self.assertRaises(ValueError):
+                    action.restore_private_beta()
+                action.cleanup_private_beta()
+                action.cleanup_private_beta_handoff()
+                self.assertFalse(workspace.exists())
+                self.assertFalse(retained.exists())
 
     def test_private_beta_manifest_requires_internal_testflight_audience(self):
         sha, tree = 'a' * 40, 'b' * 40
@@ -261,7 +312,10 @@ class IosActionTests(unittest.TestCase):
         def api(path):
             return dict(total_count=1, jobs=[job]) if path.endswith('/jobs?per_page=100') else row
         with patch.object(action, 'api', api):
-            self.assertFalse(action.unstarted_store_run(row))
+            for name in ('delivery / store', 'delivery / private-beta-store'):
+                job['name'] = name
+                with self.subTest(name=name):
+                    self.assertFalse(action.unstarted_store_run(row))
 
     def test_replay_inventory_checks_both_entrypoints_before_allowing_a_mutation(self):
         calls = []

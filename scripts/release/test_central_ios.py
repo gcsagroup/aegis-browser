@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -35,6 +36,27 @@ def request():
 
 
 class ContractTests(unittest.TestCase):
+    def test_development_archive_rejects_non_alpha_app_or_extension_before_transfer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = Path(temporary)
+            app = archive / 'Products/Applications/Aegis.app'
+            bundles = [app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex']
+            for bundle in bundles:
+                bundle.mkdir(parents=True, exist_ok=True)
+                (bundle / 'Info.plist').write_bytes(plistlib.dumps({
+                    'AegisReleaseProfile': 'alpha', 'AegisAccessReleaseChannel': 'alpha'}))
+            engine = SimpleNamespace(run=lambda *args: None)
+            signed_identity = SimpleNamespace(returncode=0, stderr=b'Authority=Apple Development: Fixture\nTeamIdentifier=R3JK7R29AC')
+            with patch.object(central.subprocess, 'run', return_value=signed_identity):
+                central.verify_development(archive, 'R3JK7R29AC', engine)
+                for bundle in bundles:
+                    path = bundle / 'Info.plist'
+                    original = path.read_bytes()
+                    path.write_bytes(plistlib.dumps({'AegisReleaseProfile': 'release', 'AegisAccessReleaseChannel': 'alpha'}))
+                    with self.assertRaisesRegex(ValueError, 'must be Alpha'):
+                        central.verify_development(archive, 'R3JK7R29AC', engine)
+                    path.write_bytes(original)
+
     def test_canonical_request_roundtrip_and_allocation_survives_provider_change(self):
         value = request()
         self.assertEqual(p.validate(p.parse(p.canonical(value))), value)

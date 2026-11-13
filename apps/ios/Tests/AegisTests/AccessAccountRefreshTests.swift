@@ -4,6 +4,20 @@ import XCTest
 
 @MainActor
 final class AccessAccountRefreshTests: XCTestCase {
+    func testSuspensionClearsPrivateSelectionBeforeQueuedAuthorizationCanResume() async throws {
+        let session = AccessAccountSession(client: try AccessAccountClient(origin: "https://account.example.test"),
+                                           keychain: store())
+        let tab = UUID()
+        let selection = session.selectProxy(for: tab, host: "site.example", privateMode: true,
+                                            privateAccount: "fixture", privateToken: "fixture")
+        XCTAssertTrue(session.hasSelectedProxy(for: tab, host: "site.example"))
+        session.suspend()
+        XCTAssertFalse(session.hasSelectedProxy(for: tab, host: "site.example"))
+        let authorized = await selection.value
+        XCTAssertFalse(authorized)
+        XCTAssertFalse(session.hasSelectedProxy(for: tab, host: "site.example"))
+    }
+
     private func store() -> AccessAccountKeychain {
         let store = AccessAccountKeychain(service: "test.access.refresh." + UUID().uuidString)
         addTeardownBlock { try store.save(nil) }

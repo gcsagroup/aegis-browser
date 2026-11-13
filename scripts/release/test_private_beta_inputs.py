@@ -98,9 +98,16 @@ class PrivateBetaTests(unittest.TestCase):
                     with patch.object(beta, 'run_live_quota') as query:
                         beta.verify(directory, ipa, live_quota=True)
                         query.assert_called_once_with(json.loads((directory / 'expected-subscription').read_bytes()))
+                        query.reset_mock()
+                        beta.verify_live_ipa(ipa)
+                        query.assert_called_once_with(json.loads((directory / 'expected-subscription').read_bytes()))
                 else:
                     with self.assertRaises((ValueError, KeyError)):
                         beta.verify(directory, ipa)
+                    with patch.object(beta, 'run_live_quota') as query:
+                        with self.assertRaises((ValueError, KeyError)):
+                            beta.verify_live_ipa(ipa)
+                        query.assert_not_called()
 
     def test_missing_partial_malformed_and_invalid_quota_fail_before_build(self):
         cases = [{}, {'AEGIS_IOS_TEST_NODE_BASE64': base64.b64encode(NODE).decode()},

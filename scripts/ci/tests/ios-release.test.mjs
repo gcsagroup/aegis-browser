@@ -318,19 +318,31 @@ test('public package upload is bound to the successful same-run producer', () =>
   assert.equal(upload.steps.find(s => s.run === 'python3 scripts/release/ios-action.py receipt').if, undefined);
 });
 
-test('private Beta uploads only after signing cleanup and publishes only a sanitized receipt', () => {
+test('private Beta crosses the store gate without publishing its package', () => {
   const {jobs} = parse(readFileSync('.github/workflows/ios-delivery.yml', 'utf8'));
   const steps = jobs['ios-package'].steps;
   const pack = steps.findIndex(s => s.id === 'package');
   const cleanup = steps.findIndex(s => s.run === 'python3 scripts/release/hosted-signing.py cleanup');
-  const direct = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-upload');
-  assert(pack >= 0 && pack < cleanup && cleanup < direct);
-  assert.equal(steps[direct].if, "${{ steps.package.outputs.private_beta == 'true' }}");
-  assert.equal(steps[direct].env.RELEASE_MANIFEST_SHA256, '${{ steps.package.outputs.manifest_sha256 }}');
-  assert(!Object.keys(steps[direct].env).some(key => key.includes('TEST_NODE') || key.includes('DISTRIBUTION')));
+  const retain = steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py retain-private-beta');
+  assert(pack >= 0 && pack < cleanup && cleanup < retain);
+  assert(!steps.some(s => s.run === 'python3 scripts/release/ios-action.py private-beta-upload'));
+  const store = jobs['private-beta-store'];
+  assert.equal(store.environment, 'aegis-ios-store');
+  assert(store.needs.includes('ios-package'));
+  assert(store.if.includes("needs.ios-package.result == 'success'"));
+  assert(store.if.includes("needs.ios-package.outputs.private_beta == 'true'"));
+  assert.equal(store.env.RELEASE_MANIFEST_SHA256, '${{ needs.ios-package.outputs.manifest_sha256 }}');
+  const restore = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py restore-private-beta');
+  const upload = store.steps.findIndex(s => s.run === 'python3 scripts/release/ios-action.py private-beta-upload');
+  assert(restore >= 0 && restore < upload);
+  assert.equal(store.steps[upload].env.AEGIS_ASC_KEY_BASE64, '${{ secrets.AEGIS_ASC_KEY_BASE64 }}');
+  assert(!Object.keys(store.steps[upload].env).some(key => key.includes('TEST_NODE') || key.includes('DISTRIBUTION')));
   const archive = steps.find(s => s.with?.path === '.artifacts/ios-delivery/package.zip');
   assert.equal(archive.if, "${{ steps.package.outputs.private_beta == 'false' }}");
-  assert(steps.some(s => s.with?.path === '${{ steps.private-evidence.outputs.receipt_path }}'));
+  const uploads = store.steps.filter(s => s.uses?.startsWith('actions/upload-artifact@'));
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].with.path, '${{ steps.private-evidence.outputs.receipt_path }}');
+  assert(store.steps.some(s => s.run === 'python3 scripts/release/ios-action.py cleanup-private-beta-handoff'));
   for (const job of ['seal-package', 'upload-new', 'ios-draft']) {
     assert(jobs[job].if.includes("needs.ios-package.outputs.private_beta == 'false'"));
   }

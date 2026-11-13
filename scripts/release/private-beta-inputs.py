@@ -1,6 +1,7 @@
 """Stage protected Beta inputs and require their exact presence in the exported IPA."""
 import argparse
 import base64
+import hashlib
 import http.client
 import importlib.util
 import json
@@ -26,7 +27,7 @@ def run_live_quota(configuration):
         subprocess.run(  # nosec B603
             [sys.executable, str(Path(__file__).resolve()), 'quota'],
             input=json.dumps(configuration).encode(), stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=QUOTA_TIMEOUT_SECONDS, check=True)
+            stderr=subprocess.DEVNULL, timeout=QUOTA_TIMEOUT_SECONDS, check=True, env={})
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
         raise ValueError('Live quota verification failed') from None
 
@@ -144,15 +145,36 @@ def verify(directory, ipa, live_quota=False):
             run_live_quota(json.loads(archive.read(root + 'AegisPrivateTestSubscription.json')))
 
 
+def verify_live_ipa(ipa):
+    root = 'Payload/Aegis.app/'
+    with zipfile.ZipFile(ipa) as archive:
+        names = archive.namelist()
+        if len(names) != len(set(names)):
+            raise ValueError('Duplicate IPA members')
+        info = plistlib.loads(archive.read(root + 'Info.plist'))
+        if (info.get('AegisAccessReleaseChannel') != 'beta' or info.get('AegisReleaseProfile') != 'beta'
+                or info.get('TFInternalTestingOnly') is not True):
+            raise ValueError('Expected internal Beta IPA')
+        resources = []
+        for name in ('AegisPrivateTestNode.vless', 'AegisPrivateTestSubscription.json'):
+            if archive.getinfo(root + name).file_size > 8192:
+                raise ValueError('Oversized private resource')
+            resources.append(archive.read(root + name))
+        configuration = json.loads(resources[1])
+        if configuration['nodeSHA256'] != hashlib.sha256(resources[0]).hexdigest():
+            raise ValueError('Quota binding differs from the packaged node')
+    run_live_quota(configuration)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation', choices=('stage', 'verify', 'quota'))
+    parser.add_argument('operation', choices=('stage', 'verify', 'quota', 'verify-live'))
     parser.add_argument('--directory', type=Path)
     parser.add_argument('--ipa', type=Path)
     parser.add_argument('--live-quota', action='store_true')
     args = parser.parse_args()
     try:
-        if args.operation != 'quota' and args.directory is None:
+        if args.operation in ('stage', 'verify') and args.directory is None:
             raise ValueError('Directory required')
         if args.operation == 'quota':
             raw = sys.stdin.buffer.read(8193)
@@ -164,8 +186,11 @@ if __name__ == '__main__':
         else:
             if args.ipa is None:
                 raise ValueError('IPA required')
-            verify(args.directory, args.ipa, live_quota=args.live_quota)
-            if args.live_quota:
+            if args.operation == 'verify-live':
+                verify_live_ipa(args.ipa)
+            else:
+                verify(args.directory, args.ipa, live_quota=args.live_quota)
+            if args.live_quota or args.operation == 'verify-live':
                 print('Private Beta IPA resources and live quota verified.')
     except (OSError, ValueError, KeyError, TypeError, zipfile.BadZipFile,
             urllib.error.URLError, http.client.HTTPException):
