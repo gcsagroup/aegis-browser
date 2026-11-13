@@ -1,0 +1,399 @@
+From 28d8c3a9bcf53c194c811d1882c263b764bcb0e4 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 13:00:35 +0800
+Subject: [PATCH] feat(access): decode full route snapshots and bind local
+ credentials
+
+---
+ components/aegis_access/BUILD.gn              |  16 +++
+ .../access_route_wire_unittest.cc             | 105 ++++++++++++++++
+ services/network/aegis/BUILD.gn               |   3 +
+ .../network/aegis/access_route_registry.cc    |  21 +++-
+ .../network/aegis/access_route_registry.h     |   3 +
+ services/network/aegis/access_route_wire.cc   | 119 ++++++++++++++++++
+ services/network/aegis/access_route_wire.h    |  20 +++
+ 7 files changed, 285 insertions(+), 2 deletions(-)
+ create mode 100644 components/aegis_access/access_route_wire_unittest.cc
+ create mode 100644 services/network/aegis/access_route_wire.cc
+ create mode 100644 services/network/aegis/access_route_wire.h
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 1173bc68623a30f20a6f1cc54d4bea17dff320f3..a5d20272adc2b4091b4817ae7cae28c67e81a2c4 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -445,3 +445,19 @@ test("access_private_factory_unittests") {
+     "//testing/gtest",
+   ]
+ }
++
++# Decode the full Browser snapshot before changing live Network authority.
++test("access_route_wire_unittests") {
++  sources = [
++    "access_network_test_main.cc",
++    "access_route_wire_unittest.cc",
++  ]
++  deps = [
++    "//base",
++    "//base/test:test_support",
++    "//mojo/core/embedder",
++    "//net",
++    "//services/network/aegis:access_route_registry",
++    "//testing/gtest",
++  ]
++}
+diff --git a/components/aegis_access/access_route_wire_unittest.cc b/components/aegis_access/access_route_wire_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..e708ec82c016aacfde8b12fb6341a7de95824bbb
+--- /dev/null
++++ b/components/aegis_access/access_route_wire_unittest.cc
+@@ -0,0 +1,105 @@
++// Copyright 2026 GCSA
++#include "services/network/aegis/access_route_wire.h"
++#include "net/http/http_auth_cache.h"
++#include "services/network/public/mojom/aegis_access_route_types.mojom.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++namespace network {
++namespace {
++mojom::AegisAccessSnapshotPtr WireSnapshot() {
++  auto s = mojom::AegisAccessSnapshot::New();
++  s->owner = mojom::AegisAccessOwner::New(mojom::AegisAccessChannel::kDev,
++                                        "profile", "partition");
++  s->incarnation = "incarnation";
++  s->sequence = 1;
++  s->common_generations = mojom::AegisAccessGenerations::New(1,1,0,1,1);
++  auto rule = mojom::AegisAccessRule::New();
++  rule->rule_id = "rule";
++  rule->scope = mojom::AegisAccessRuleScope::kProfile;
++  rule->destination_host = "destination.test";
++  rule->schemes = {mojom::AegisAccessScheme::kHttp};
++  rule->port_scope = mojom::AegisAccessPortScope::kAllBrowserPermitted;
++  rule->mode = mojom::AegisAccessMode::kProxy;
++  rule->proxy_group_id = "group";
++  rule->protection_override = mojom::AegisAccessProtection::kNone;
++  rule->row_revision = 1;
++  rule->last_operation_sequence = 1;
++  s->rules.push_back(std::move(rule));
++  auto endpoint = mojom::AegisAccessHttpEndpoint::New();
++  endpoint->proxy_group_id = "group";
++  endpoint->registration_id = "registration";
++  endpoint->selection_generation = 1;
++  endpoint->numeric_loopback_host = "127.0.0.1";
++  endpoint->port = 12345;
++  endpoint->credentials = net::AuthCredentials(u"local-user", u"local-secret");
++  s->endpoints.push_back(std::move(endpoint));
++  return s;
++}
++TEST(AccessRouteWireTest, CompleteSnapshotInstallsWithPrivateLocalCredentials) {
++  auto decoded = DecodeAccessRouteSnapshot(*WireSnapshot());
++  ASSERT_TRUE(decoded);
++  auto route = decoded->snapshot.routes.at("group");
++  const url::SchemeHostPort proxy(GURL("http://127.0.0.1:12345"));
++  auto* entry = route->proxy_auth_cache()->Lookup(proxy, net::HttpAuth::AUTH_PROXY,
++      "proxy", net::HttpAuth::AUTH_SCHEME_BASIC, net::NetworkAnonymizationKey());
++  ASSERT_TRUE(entry);
++  EXPECT_TRUE(entry->credentials().Equals(
++      net::AuthCredentials(u"local-user", u"local-secret")));
++  AccessRouteRegistry registry(decoded->owner, decoded->incarnation);
++  ASSERT_TRUE(registry.Install(decoded->sequence, std::move(decoded->snapshot)));
++  aegis_access::BrowserOwnedRequestMetadata metadata{"request", decoded->owner,
++      aegis_access::RequestAttributionKind::kProfileOnly, {}, {}, std::nullopt};
++  EXPECT_EQ(registry.Resolve(metadata, GURL("http://destination.test/"),
++      {"incarnation", {1,1,1,1,1}, "registration"}).net_error, net::OK);
++}
++TEST(AccessRouteWireTest, RejectsNonLoopbackAndDuplicateGroups) {
++  auto s = WireSnapshot();
++  for (const auto* host : {"example.test", "127.1", "8.8.8.8"}) {
++    s->endpoints[0]->numeric_loopback_host = host;
++    EXPECT_FALSE(DecodeAccessRouteSnapshot(*s));
++  }
++  s = WireSnapshot();
++  s->endpoints.push_back(s->endpoints[0].Clone());
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*s));
++}
++TEST(AccessRouteWireTest, RejectsMalformedPolicyAndIncompleteGenerations) {
++  auto s = WireSnapshot();
++  s->rules[0]->destination_host = "DESTINATION.test";
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*s));
++  s = WireSnapshot();
++  s->common_generations->selection_generation = 1;
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*s));
++  s = WireSnapshot();
++  s->owner->profile_token.clear();
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*s));
++}
++TEST(AccessRouteWireTest, RegistrationCannotReplaceLocalCredentials) {
++  auto wire = WireSnapshot();
++  auto first = DecodeAccessRouteSnapshot(*wire);
++  ASSERT_TRUE(first);
++  AccessRouteRegistry registry(first->owner, first->incarnation);
++  ASSERT_TRUE(registry.Install(first->sequence, std::move(first->snapshot)));
++  wire->sequence = 2;
++  wire->endpoints[0]->credentials = net::AuthCredentials(u"other", u"changed");
++  auto changed = DecodeAccessRouteSnapshot(*wire);
++  ASSERT_TRUE(changed);
++  EXPECT_FALSE(registry.Install(changed->sequence, std::move(changed->snapshot)));
++  wire->endpoints[0]->registration_id = "new-registration";
++  wire->endpoints[0]->selection_generation = 2;
++  auto replacement = DecodeAccessRouteSnapshot(*wire);
++  ASSERT_TRUE(replacement);
++  EXPECT_TRUE(registry.Install(replacement->sequence, std::move(replacement->snapshot)));
++}
++TEST(AccessRouteWireTest, EmptyPolicyRequiresExplicitValidSnapshot) {
++  auto s = WireSnapshot();
++  s->rules.clear();
++  s->endpoints.clear();
++  auto decoded = DecodeAccessRouteSnapshot(*s);
++  ASSERT_TRUE(decoded);
++  AccessRouteRegistry registry(decoded->owner, decoded->incarnation);
++  ASSERT_TRUE(registry.Install(decoded->sequence, std::move(decoded->snapshot)));
++  s->sequence = 0;
++  EXPECT_FALSE(DecodeAccessRouteSnapshot(*s));
++}
++}  // namespace
++}  // namespace network
+diff --git a/services/network/aegis/BUILD.gn b/services/network/aegis/BUILD.gn
+index f5287d36c70671f0ad0ff747879092b84c1b4256..f6fc3dcaa33b80da246d1177975057dd9fe040b7 100644
+--- a/services/network/aegis/BUILD.gn
++++ b/services/network/aegis/BUILD.gn
+@@ -1,6 +1,8 @@
+ # Copyright 2026 GCSA
+ source_set("access_route_registry") {
+   sources = [
++    "access_route_wire.cc",
++    "access_route_wire.h",
+     "access_route_registry.cc",
+     "access_route_registry.h",
+     "access_request_route_state.cc",
+@@ -10,5 +12,6 @@ source_set("access_route_registry") {
+     "//base",
+     "//components/aegis_access:aegis_access",
+     "//net",
++    "//services/network/public/mojom:url_loader_base",
+   ]
+ }
+diff --git a/services/network/aegis/access_route_registry.cc b/services/network/aegis/access_route_registry.cc
+index d5c5328c8b42e156d8d0594f41947e98503139a7..9a1d8060213b7371e02933e0ba47b87c5465a06f 100644
+--- a/services/network/aegis/access_route_registry.cc
++++ b/services/network/aegis/access_route_registry.cc
+@@ -2,10 +2,25 @@
+ #include "services/network/aegis/access_route_registry.h"
+ 
+ #include "base/check.h"
++#include "net/http/http_auth_cache.h"
+ 
+ namespace network {
+ namespace {
+ using aegis_access::GenerationTuple;
++std::optional<net::AuthCredentials> LocalCredentials(
++    const scoped_refptr<net::AccessProxyRoute>& route) {
++  const auto& proxy = route->proxy_chain().GetProxyServer(0);
++  auto* entry = route->proxy_auth_cache()->Lookup(
++      url::SchemeHostPort(url::kHttpScheme, proxy.host_port_pair().host(),
++                          proxy.host_port_pair().port()),
++      net::HttpAuth::AUTH_PROXY, "proxy", net::HttpAuth::AUTH_SCHEME_BASIC,
++      net::NetworkAnonymizationKey());
++  return entry ? std::make_optional(entry->credentials()) : std::nullopt;
++}
++bool SameCredentials(const std::optional<net::AuthCredentials>& a,
++                     const std::optional<net::AuthCredentials>& b) {
++  return a.has_value() == b.has_value() && (!a || a->Equals(*b));
++}
+ bool SameCommon(const GenerationTuple& a, const GenerationTuple& b) {
+   return a.policy_generation == b.policy_generation &&
+          a.identity_generation == b.identity_generation &&
+@@ -85,7 +100,8 @@ bool AccessRouteRegistry::Install(uint64_t sequence, Snapshot snapshot) {
+     auto old = registrations_.find(key.registration);
+     if (old != registrations_.end() &&
+         (old->second.group != group ||
+-         old->second.proxy_chain != route->proxy_chain())) {
++         old->second.proxy_chain != route->proxy_chain() ||
++         !SameCredentials(old->second.local_credentials, LocalCredentials(route)))) {
+       return false;
+     }
+   }
+@@ -100,7 +116,8 @@ bool AccessRouteRegistry::Install(uint64_t sequence, Snapshot snapshot) {
+     const auto& key = route->isolation_key();
+     selection_high_water_[group] = key.selection_generation;
+     registrations_.insert_or_assign(
+-        key.registration, RegistrationBinding{group, route->proxy_chain()});
++        key.registration, RegistrationBinding{group, route->proxy_chain(),
++                                               LocalCredentials(route)});
+   }
+   last_policy_ = snapshot.policy;
+   installed_sequence_ = sequence;
+diff --git a/services/network/aegis/access_route_registry.h b/services/network/aegis/access_route_registry.h
+index f1a7ebf6a1b2858ba92f84c1c3e9edc1110d627d..8a6008a388fc2578ddbf0aa31c888e07d2334fc7 100644
+--- a/services/network/aegis/access_route_registry.h
++++ b/services/network/aegis/access_route_registry.h
+@@ -9,6 +9,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "components/aegis_access/access_policy_evaluator.h"
+ #include "net/base/net_errors.h"
++#include "net/base/auth.h"
+ #include "net/http/access_proxy_route.h"
+ 
+ namespace network {
+@@ -61,6 +62,8 @@ class AccessRouteRegistry {
+   struct RegistrationBinding {
+     std::string group;
+     net::ProxyChain proxy_chain;
++    // Process-local inbound secret binding; never serialized or logged.
++    std::optional<net::AuthCredentials> local_credentials;
+   };
+   std::map<std::string, RegistrationBinding> registrations_;
+   std::optional<Snapshot> snapshot_;
+diff --git a/services/network/aegis/access_route_wire.cc b/services/network/aegis/access_route_wire.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..039be40b0d729ea18fa43ea80ff59edff3f8e65d
+--- /dev/null
++++ b/services/network/aegis/access_route_wire.cc
+@@ -0,0 +1,119 @@
++// Copyright 2026 GCSA
++#include "services/network/aegis/access_route_wire.h"
++#include "net/http/http_auth_cache.h"
++#include "net/base/ip_address.h"
++
++namespace network {
++namespace {
++using namespace aegis_access;
++ChannelNamespace Channel(mojom::AegisAccessChannel value) {
++  switch (value) {
++    case mojom::AegisAccessChannel::kDev: return ChannelNamespace::kDev;
++    case mojom::AegisAccessChannel::kAlpha: return ChannelNamespace::kAlpha;
++    case mojom::AegisAccessChannel::kBeta: return ChannelNamespace::kBeta;
++    case mojom::AegisAccessChannel::kRelease: return ChannelNamespace::kRelease;
++  }
++  return ChannelNamespace::kInvalid;
++}
++PolicyScope Scope(mojom::AegisAccessRuleScope value) {
++  switch (value) {
++    case mojom::AegisAccessRuleScope::kSite: return PolicyScope::kSite;
++    case mojom::AegisAccessRuleScope::kProfile: return PolicyScope::kProfile;
++  }
++  return PolicyScope::kInvalid;
++}
++RequestScheme Scheme(mojom::AegisAccessScheme value) {
++  switch (value) {
++    case mojom::AegisAccessScheme::kHttp: return RequestScheme::kHttp;
++    case mojom::AegisAccessScheme::kHttps: return RequestScheme::kHttps;
++    case mojom::AegisAccessScheme::kWs: return RequestScheme::kWs;
++    case mojom::AegisAccessScheme::kWss: return RequestScheme::kWss;
++  }
++  return RequestScheme::kInvalid;
++}
++PortScope Ports(mojom::AegisAccessPortScope value) {
++  switch (value) {
++    case mojom::AegisAccessPortScope::kAllBrowserPermitted:
++      return PortScope::kAllBrowserPermitted;
++    case mojom::AegisAccessPortScope::kExplicitSubset:
++      return PortScope::kExplicitSubset;
++  }
++  return PortScope::kInvalid;
++}
++AccessMode Mode(mojom::AegisAccessMode value) {
++  switch (value) {
++    case mojom::AegisAccessMode::kNone: return AccessMode::kNone;
++    case mojom::AegisAccessMode::kDirect: return AccessMode::kDirect;
++    case mojom::AegisAccessMode::kProxy: return AccessMode::kProxy;
++    case mojom::AegisAccessMode::kReject: return AccessMode::kReject;
++  }
++  return AccessMode::kInvalid;
++}
++ProtectionOverride Protection(mojom::AegisAccessProtection value) {
++  switch (value) {
++    case mojom::AegisAccessProtection::kNone: return ProtectionOverride::kNone;
++    case mojom::AegisAccessProtection::kTracker: return ProtectionOverride::kTracker;
++    case mojom::AegisAccessProtection::kEasyList: return ProtectionOverride::kEasyList;
++    case mojom::AegisAccessProtection::kCname: return ProtectionOverride::kCname;
++  }
++  return ProtectionOverride::kInvalid;
++}
++}  // namespace
++std::optional<DecodedAccessRouteSnapshot> DecodeAccessRouteSnapshot(
++    const mojom::AegisAccessSnapshot& wire) {
++  if (!wire.owner || !wire.common_generations || wire.incarnation.empty() ||
++      wire.sequence == 0) return std::nullopt;
++  OwnershipKey owner{Channel(wire.owner->channel), wire.owner->profile_token,
++                     wire.owner->storage_partition_token};
++  if (!IsCompleteOwner(owner)) return std::nullopt;
++  const auto& g = *wire.common_generations;
++  AccessRouteRegistry::Snapshot snapshot{
++      {owner, g.policy_generation, {}},
++      {g.policy_generation, g.identity_generation, g.selection_generation,
++       g.network_epoch, g.base_proxy_config_generation}, {}};
++  for (const auto& rule : wire.rules) {
++    if (!rule) return std::nullopt;
++    AccessPolicyRule decoded{rule->rule_id, owner, Scope(rule->scope),
++        rule->top_level_site, rule->destination_host, rule->include_subdomains, {},
++        {Ports(rule->port_scope), rule->explicit_ports}, Mode(rule->mode),
++        rule->proxy_group_id, Protection(rule->protection_override),
++        rule->row_revision, rule->last_operation_sequence};
++    for (const auto scheme : rule->schemes) decoded.schemes.push_back(Scheme(scheme));
++    snapshot.policy.rules.push_back(std::move(decoded));
++  }
++  for (const auto& endpoint : wire.endpoints) {
++    if (!endpoint) return std::nullopt;
++    net::IPAddress address;
++    if (!address.AssignFromIPLiteral(endpoint->numeric_loopback_host) ||
++        !address.IsLoopback() || address.ToString() != endpoint->numeric_loopback_host ||
++        endpoint->port == 0) return std::nullopt;
++    net::AccessRouteIsolationKey key{static_cast<uint8_t>(owner.channel),
++        owner.profile_token, owner.storage_partition_token, endpoint->proxy_group_id,
++        endpoint->registration_id, wire.incarnation, g.policy_generation,
++        g.identity_generation, endpoint->selection_generation, g.network_epoch,
++        g.base_proxy_config_generation};
++    auto proxy = net::ProxyServer::FromSchemeHostAndPort(
++        net::ProxyServer::SCHEME_HTTP, endpoint->numeric_loopback_host, endpoint->port);
++    auto route = net::AccessProxyRoute::Create(std::move(key), net::ProxyChain(proxy));
++    if (!route) return std::nullopt;
++    if (endpoint->credentials) {
++      if (endpoint->credentials->username().empty() ||
++          endpoint->credentials->password().empty()) return std::nullopt;
++      // Xray's authenticated local HTTP inbound uses this fixed Basic realm.
++      // The credentials are local inbound secrets, never upstream node values.
++      route->proxy_auth_cache()->Add(
++          url::SchemeHostPort(url::kHttpScheme, proxy.host_port_pair().host(),
++                              proxy.host_port_pair().port()),
++          net::HttpAuth::AUTH_PROXY, "proxy", net::HttpAuth::AUTH_SCHEME_BASIC,
++          net::NetworkAnonymizationKey(), "Basic realm=\"proxy\"",
++          *endpoint->credentials, "/");
++    }
++    if (!snapshot.routes.emplace(endpoint->proxy_group_id, std::move(route)).second)
++      return std::nullopt;
++  }
++  AccessRouteRegistry validator(owner, wire.incarnation);
++  if (!validator.Install(wire.sequence, snapshot)) return std::nullopt;
++  return DecodedAccessRouteSnapshot{std::move(owner), wire.incarnation,
++                                    wire.sequence, std::move(snapshot)};
++}
++}  // namespace network
+diff --git a/services/network/aegis/access_route_wire.h b/services/network/aegis/access_route_wire.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..a137a2951017a64ea87d81084b2c69f4c72cce3c
+--- /dev/null
++++ b/services/network/aegis/access_route_wire.h
+@@ -0,0 +1,20 @@
++// Copyright 2026 GCSA
++#ifndef SERVICES_NETWORK_AEGIS_ACCESS_ROUTE_WIRE_H_
++#define SERVICES_NETWORK_AEGIS_ACCESS_ROUTE_WIRE_H_
++#include <optional>
++#include "services/network/aegis/access_route_registry.h"
++#include "services/network/public/mojom/aegis_access_route_types.mojom.h"
++
++namespace network {
++struct DecodedAccessRouteSnapshot {
++  aegis_access::OwnershipKey owner;
++  std::string incarnation;
++  uint64_t sequence;
++  AccessRouteRegistry::Snapshot snapshot;
++};
++// Strict decode before touching the live registry. The caller must still apply
++// Install on that registry to enforce its owner/incarnation and high-water.
++std::optional<DecodedAccessRouteSnapshot> DecodeAccessRouteSnapshot(
++    const mojom::AegisAccessSnapshot& wire);
++}  // namespace network
++#endif  // SERVICES_NETWORK_AEGIS_ACCESS_ROUTE_WIRE_H_
+-- 
+2.54.0 (Apple Git-157)
+

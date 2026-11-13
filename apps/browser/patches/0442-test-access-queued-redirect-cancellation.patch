@@ -1,0 +1,104 @@
+From f51ce4f9d3b58c6f898a5013a56bff3e7851944d Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 13:21:42 +0800
+Subject: [PATCH] test(access): cover cancellation at queued redirect readiness
+
+---
+ .../access_site_proxy_product_unittest.cc     | 64 +++++++++++++++++++
+ 1 file changed, 64 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index 0da729a0f067f60d1a47827da999fcd1be820870..70de30cd2cfadb55bd9a932782c30f1dbd6e6633 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -8,9 +8,14 @@
+ #include "chrome/browser/aegis/access/access_navigation_retry_tab_helper.h"
+ #include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
+ 
++#include <string_view>
++
+ #include "base/command_line.h"
+ #include "base/files/scoped_temp_dir.h"
+ #include "base/functional/bind.h"
++#include "base/pending_task.h"
++#include "base/task/current_thread.h"
++#include "base/task/task_observer.h"
+ #include "base/test/run_until.h"
+ #include "base/test/scoped_run_loop_timeout.h"
+ #include "base/test/test_future.h"
+@@ -70,6 +75,33 @@ class AccessNetworkContextTransportTestPeer {
+ };
+ namespace {
+ 
++// Cancel after the real transport has queued its ready callback, immediately
++// before it is delivered. The Mojo disconnect notification cannot run between
++// closing the caller and resuming that callback on this sequence.
++class CancelAtQueuedPolicyCompletion final : public base::TaskObserver {
++ public:
++  explicit CancelAtQueuedPolicyCompletion(base::OnceClosure cancel)
++      : cancel_(std::move(cancel)) {
++    base::CurrentThread::Get()->AddTaskObserver(this);
++  }
++  ~CancelAtQueuedPolicyCompletion() override {
++    base::CurrentThread::Get()->RemoveTaskObserver(this);
++  }
++  void WillProcessTask(const base::PendingTask& task, bool) override {
++    if (cancel_ && std::string_view(task.posted_from.function_name()).find(
++                       "SettlePrivatePublication") != std::string_view::npos) {
++      cancelled_ = true;
++      std::move(cancel_).Run();
++    }
++  }
++  void DidProcessTask(const base::PendingTask&) override {}
++  bool cancelled() const { return cancelled_; }
++
++ private:
++  base::OnceClosure cancel_;
++  bool cancelled_ = false;
++};
++
+ class CountingPrivateFactory final
+     : public network::mojom::AegisAccessURLLoaderFactory {
+  public:
+@@ -1001,6 +1033,38 @@ TEST_F(AccessRetryNavigationProductTest,
+   EXPECT_EQ(request->target.public_follows, 0);
+ }
+ 
++TEST_F(AccessRetryNavigationProductTest,
++       RedirectLoaderCancelledAtQueuedReadyIsNotFollowed) {
++  auto request = StartHeldRedirect(true);
++  ASSERT_TRUE(request->client.has_received_redirect());
++  ASSERT_TRUE(request->target.initial);
++  ASSERT_FALSE(request->target.initial->registration_id.empty());
++  CancelAtQueuedPolicyCompletion cancel(base::BindOnce(
++      [](HeldRedirectBrowserRequest* request) { request->loader.reset(); },
++      base::Unretained(request.get())));
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] { return cancel.cancelled(); }));
++  task_environment()->RunUntilIdle();
++  EXPECT_FALSE(request->target.followed);
++  EXPECT_EQ(request->target.public_follows, 0);
++}
++
++TEST_F(AccessRetryNavigationProductTest,
++       RedirectClientCancelledAtQueuedReadyIsNotFollowed) {
++  auto request = StartHeldRedirect(true);
++  ASSERT_TRUE(request->client.has_received_redirect());
++  ASSERT_TRUE(request->target.initial);
++  ASSERT_FALSE(request->target.initial->registration_id.empty());
++  CancelAtQueuedPolicyCompletion cancel(base::BindOnce(
++      [](HeldRedirectBrowserRequest* request) { request->client.Unbind(); },
++      base::Unretained(request.get())));
++  request->loader->FollowRedirect({}, std::nullopt);
++  ASSERT_TRUE(base::test::RunUntil([&] { return cancel.cancelled(); }));
++  task_environment()->RunUntilIdle();
++  EXPECT_FALSE(request->target.followed);
++  EXPECT_EQ(request->target.public_follows, 0);
++}
++
+ TEST_F(AccessRetryNavigationProductTest,
+        NativeRedirectSurvivesPrivateFactoryAdmissionReset) {
+   auto request = StartHeldRedirect(false);
+-- 
+2.54.0 (Apple Git-157)
+

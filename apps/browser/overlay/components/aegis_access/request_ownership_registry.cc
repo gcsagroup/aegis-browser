@@ -7,12 +7,18 @@
 namespace aegis_access {
 namespace {
 
-bool IsComplete(const GenerationTuple& generations) {
-  return generations.policy_generation != 0 &&
-         generations.identity_generation != 0 &&
-         generations.selection_generation != 0 &&
-         generations.network_epoch != 0 &&
-         generations.base_proxy_config_generation != 0;
+bool IsComplete(const RequestOwnershipRecord& record) {
+  const auto& generations = record.generations;
+  if (!generations.policy_generation || !generations.identity_generation ||
+      !generations.network_epoch || !generations.base_proxy_config_generation)
+    return false;
+  switch (record.route) {
+    case RequestOwnershipRoute::kProxy:
+      return generations.selection_generation != 0;
+    case RequestOwnershipRoute::kNative:
+      return generations.selection_generation == 0;
+  }
+  return false;
 }
 
 bool IsKnown(RequestScheme scheme) {
@@ -40,7 +46,7 @@ bool HasExactlyOneAttributionToken(const RequestCancellationSelector& selector) 
 
 bool HasValidRequestMetadata(const RequestOwnershipRecord& record) {
   return !record.request_id.empty() && IsCompleteOwner(record.owner) &&
-         IsComplete(record.generations) && !record.exact_host.empty() &&
+         IsComplete(record) && !record.exact_host.empty() &&
          IsKnown(record.scheme) && record.port != 0;
 }
 
@@ -58,6 +64,9 @@ bool IsValidRecord(const RequestOwnershipRecord& record) {
 }
 
 bool IsValidSelector(const RequestCancellationSelector& selector) {
+  if (selector.website_context &&
+      selector.top_level_site != "http://" + selector.exact_host &&
+      selector.top_level_site != "https://" + selector.exact_host) return false;
   return IsCompleteOwner(selector.owner) &&
          HasExactlyOneAttributionToken(selector) &&
          !selector.top_level_site.empty() && !selector.exact_host.empty() &&
@@ -66,6 +75,11 @@ bool IsValidSelector(const RequestCancellationSelector& selector) {
 
 bool MatchesSelector(const RequestOwnershipRecord& record,
                      const RequestCancellationSelector& selector) {
+  if (selector.website_context) {
+    return record.site_ownership_reliable && record.owner == selector.owner &&
+        (record.top_level_site == "http://" + selector.exact_host ||
+         record.top_level_site == "https://" + selector.exact_host);
+  }
   if (!record.site_ownership_reliable || record.owner != selector.owner ||
       record.top_level_site != selector.top_level_site ||
       record.exact_host != selector.exact_host ||
@@ -87,7 +101,7 @@ bool SameSelector(const RequestCancellationSelector& left,
          left.pending_navigation_token == right.pending_navigation_token &&
          left.top_level_site == right.top_level_site &&
          left.exact_host == right.exact_host && left.scheme == right.scheme &&
-         left.port == right.port;
+         left.port == right.port && left.website_context == right.website_context;
 }
 
 bool IsValidBarrier(const RequestDispatchBarrier& barrier) {

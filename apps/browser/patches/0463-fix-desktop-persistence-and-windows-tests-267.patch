@@ -1,12 +1,8 @@
-From d0c8287fdfdb5ead5d0d91b05b3f1c44b77d0fb8 Mon Sep 17 00:00:00 2001
-From: GCSA-ToolsTeam <316909304+GCSA-ToolsTeam@users.noreply.github.com>
-Date: Sun, 25 Oct 2026 01:13:49 +0800
-Subject: [PATCH] =?UTF-8?q?=E4=BF=AE=E5=A4=8D=E6=A1=8C=E9=9D=A2=E9=85=8D?=
- =?UTF-8?q?=E7=BD=AE=E8=90=BD=E7=9B=98=E4=B8=8E=20Windows=20=E5=8E=9F?=
- =?UTF-8?q?=E7=94=9F=E6=B5=8B=E8=AF=95?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+From 586c4e770b69ec9755392181d74bfc500e695dd6 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 15:14:02 +0800
+Subject: [PATCH] fix(desktop): preserve persisted configuration and Windows
+ test resources
 
 ---
  chrome/browser/aegis/BUILD.gn                               | 4 ++++
@@ -17,10 +13,10 @@ Content-Transfer-Encoding: 8bit
  5 files changed, 19 insertions(+), 3 deletions(-)
 
 diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
-index fb8233cbc2ed31036f4d001239678ea8dd94fdd8..0746f08ea0d9ebeb297d27051c3cb631a1258863 100644
+index 033549f3840498426df0f8e6b3e5b5a1cb143b86..5d66274edeb57f75afd254d465d0abcc227a34e7 100644
 --- a/chrome/browser/aegis/BUILD.gn
 +++ b/chrome/browser/aegis/BUILD.gn
-@@ -523,6 +523,10 @@ test("aegis_browser_unittests") {
+@@ -532,6 +532,10 @@ test("aegis_browser_unittests") {
        "//content/test:test_support",
      ]
    }
@@ -32,10 +28,10 @@ index fb8233cbc2ed31036f4d001239678ea8dd94fdd8..0746f08ea0d9ebeb297d27051c3cb631
      sources += [
        "aegis_torrent_client_unittest.cc",
 diff --git a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
-index 4d3aa2342e310c53f048c200f412a1c4e02bd00a..286cd358ff28c3637726ed530f2f6c0b7b58d040 100644
+index f54fb3fb337d7adb3680ddb43e90a6697e63266f..1bcd6c56d0668a4cb939aecb4b598787255af08b 100644
 --- a/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
 +++ b/chrome/browser/aegis/enhancements/enhancement_browsertest.cc
-@@ -62,6 +62,11 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
+@@ -75,6 +75,11 @@ class EnhancementBrowserTest : public InProcessBrowserTest {
      store_ = EnhancementStore::Get(browser()->GetProfile());
      ASSERT_TRUE(base::test::RunUntil([&] { return store_->ready(); }));
    }
@@ -94,5 +90,5 @@ index 95ff7d16da5a2a015107d59386156bc7b91462d8..844f40c8a0494680ec92f9511c33bdf9
      "https://api.github.com/repos/gcsagroup/aegis-browser/releases/latest";
  inline constexpr char kReleasePage[] =
 -- 
-2.52.0
+2.54.0 (Apple Git-157)
 

@@ -1,0 +1,326 @@
+From b028510f1c83c2a381dcf8eef0a6c25db336020d Mon Sep 17 00:00:00 2001
+From: Aegis Development <dev@gcsa.local>
+Date: Tue, 10 Nov 2026 05:42:54 +0800
+Subject: [PATCH] feat(access): isolate socket and HTTP2 session pool keys
+
+---
+ components/aegis_access/BUILD.gn              |  12 ++
+ .../access_route_pool_isolation_unittest.cc   | 115 ++++++++++++++++++
+ net/socket/client_socket_pool.cc              |   6 +-
+ net/socket/client_socket_pool.h               |   9 +-
+ net/spdy/spdy_session_key.cc                  |  15 ++-
+ net/spdy/spdy_session_key.h                   |   9 +-
+ 6 files changed, 157 insertions(+), 9 deletions(-)
+ create mode 100644 components/aegis_access/access_route_pool_isolation_unittest.cc
+
+diff --git a/components/aegis_access/BUILD.gn b/components/aegis_access/BUILD.gn
+index 9e759fb88702bc6cb978cf34f31197baf9130d36..3b6d17f03179264051a44f81738559c02693c4a0 100644
+--- a/components/aegis_access/BUILD.gn
++++ b/components/aegis_access/BUILD.gn
+@@ -242,6 +242,18 @@ test("request_dispatch_gate_unittests") {
+   deps += [ ":request_ownership_registry_test_support" ]
+ }
+ 
++test("access_route_pool_isolation_unittests") {
++  sources = [ "access_route_pool_isolation_unittest.cc" ]
++  deps = [
++    "//base",
++    "//base/test:run_all_unittests",
++    "//base/test:test_support",
++    "//net",
++    "//testing/gtest",
++    "//url",
++  ]
++}
++
+ test("aegis_access_unittests") {
+   sources = [
+     "access_local_proxy_acceptance_unittest.cc",
+diff --git a/components/aegis_access/access_route_pool_isolation_unittest.cc b/components/aegis_access/access_route_pool_isolation_unittest.cc
+new file mode 100644
+index 0000000000000000000000000000000000000000..d466aaa838f576a047a5d14667fe74e9cd7ffa78
+--- /dev/null
++++ b/components/aegis_access/access_route_pool_isolation_unittest.cc
+@@ -0,0 +1,115 @@
++// Copyright 2026 GCSA
++
++#include <optional>
++#include <set>
++#include <utility>
++
++#include "net/base/access_route_isolation_key.h"
++#include "net/base/host_port_pair.h"
++#include "net/base/network_anonymization_key.h"
++#include "net/base/privacy_mode.h"
++#include "net/base/proxy_chain.h"
++#include "net/base/session_usage.h"
++#include "net/socket/client_socket_pool.h"
++#include "net/socket/socket_tag.h"
++#include "net/spdy/spdy_session_key.h"
++#include "testing/gtest/include/gtest/gtest.h"
++#include "url/scheme_host_port.h"
++
++namespace aegis_access {
++namespace {
++
++net::AccessRouteIsolationKey Key() {
++  return {.channel = 0,
++          .profile = "profile-a",
++          .partition = "partition-a",
++          .group = "group-a",
++          .registration = "registration-a",
++          .incarnation = "context-a",
++          .policy_generation = 1,
++          .identity_generation = 2,
++          .selection_generation = 3,
++          .network_epoch = 4,
++          .base_proxy_config_generation = 5};
++}
++
++net::ClientSocketPool::GroupId SocketKey(
++    std::optional<net::AccessRouteIsolationKey> access = std::nullopt) {
++  return {url::SchemeHostPort("https", "cdn.example", 443),
++          net::PRIVACY_MODE_DISABLED, net::NetworkAnonymizationKey(),
++          net::SecureDnsPolicy::kAllow, false,
++          net::handles::kInvalidNetworkHandle, std::move(access)};
++}
++
++net::SpdySessionKey SpdyKey(
++    std::optional<net::AccessRouteIsolationKey> access = std::nullopt,
++    const char* host = "cdn.example") {
++  return {net::HostPortPair(host, 443), net::PRIVACY_MODE_DISABLED,
++          net::ProxyChain::Direct(), net::SessionUsage::kDestination,
++          net::SocketTag(), net::NetworkAnonymizationKey(),
++          net::SecureDnsPolicy::kAllow, false,
++          net::handles::kInvalidNetworkHandle, std::move(access)};
++}
++
++TEST(AccessRoutePoolIsolationTest, NativeAndEqualRouteKeepTheirPoolIdentity) {
++  EXPECT_EQ(SocketKey(), SocketKey());
++  EXPECT_EQ(SocketKey(Key()), SocketKey(Key()));
++  EXPECT_NE(SocketKey(), SocketKey(Key()));
++  EXPECT_EQ(SpdyKey(), SpdyKey());
++  EXPECT_EQ(SpdyKey(Key()), SpdyKey(Key()));
++  EXPECT_NE(SpdyKey(), SpdyKey(Key()));
++}
++
++TEST(AccessRoutePoolIsolationTest, AllIdentityChangesSeparateBothPools) {
++  const auto key = Key();
++  std::set<net::ClientSocketPool::GroupId> sockets{SocketKey(), SocketKey(key)};
++  std::set<net::SpdySessionKey> sessions{SpdyKey(), SpdyKey(key)};
++  const auto verify = [&](const net::AccessRouteIsolationKey& changed) {
++    EXPECT_NE(SocketKey(key), SocketKey(changed));
++    EXPECT_TRUE(sockets.insert(SocketKey(changed)).second);
++    EXPECT_NE(SpdyKey(key), SpdyKey(changed));
++    EXPECT_TRUE(sessions.insert(SpdyKey(changed)).second);
++    EXPECT_FALSE(SpdyKey(key).CompareForAliasing(SpdyKey(changed))
++                     .is_potentially_aliasable);
++  };
++  auto changed = key;
++  changed.channel = 1;
++  verify(changed);
++  for (auto member : {&net::AccessRouteIsolationKey::profile,
++                      &net::AccessRouteIsolationKey::partition,
++                      &net::AccessRouteIsolationKey::group,
++                      &net::AccessRouteIsolationKey::registration,
++                      &net::AccessRouteIsolationKey::incarnation}) {
++    changed = key;
++    changed.*member += "-new";
++    verify(changed);
++  }
++  for (auto member : {&net::AccessRouteIsolationKey::policy_generation,
++                      &net::AccessRouteIsolationKey::identity_generation,
++                      &net::AccessRouteIsolationKey::selection_generation,
++                      &net::AccessRouteIsolationKey::network_epoch,
++                      &net::AccessRouteIsolationKey::base_proxy_config_generation}) {
++    changed = key;
++    ++(changed.*member);
++    verify(changed);
++  }
++  EXPECT_EQ(sockets.size(), 13u);
++  EXPECT_EQ(sessions.size(), 13u);
++}
++
++TEST(AccessRoutePoolIsolationTest, CoalescingCannotCrossRouteIdentity) {
++  const auto key = Key();
++  EXPECT_TRUE(SpdyKey(key).CompareForAliasing(SpdyKey(key, "other.example"))
++                  .is_potentially_aliasable);
++  EXPECT_FALSE(SpdyKey(key).CompareForAliasing(SpdyKey())
++                   .is_potentially_aliasable);
++  EXPECT_FALSE(SpdyKey().CompareForAliasing(SpdyKey(key))
++                   .is_potentially_aliasable);
++  auto changed = key;
++  changed.registration = "same-listener-new-registration";
++  EXPECT_FALSE(SpdyKey(key).CompareForAliasing(SpdyKey(changed, "other.example"))
++                   .is_potentially_aliasable);
++}
++
++}  // namespace
++}  // namespace aegis_access
+diff --git a/net/socket/client_socket_pool.cc b/net/socket/client_socket_pool.cc
+index 43431cba1d7346cf7e4676c5ed1698c9bc6bca70..341c7ee7e588df36d001b3f52dcaac191254552a 100644
+--- a/net/socket/client_socket_pool.cc
++++ b/net/socket/client_socket_pool.cc
+@@ -125,7 +125,8 @@ ClientSocketPool::GroupId::GroupId(
+     NetworkAnonymizationKey network_anonymization_key,
+     SecureDnsPolicy secure_dns_policy,
+     bool disable_cert_network_fetches,
+-    handles::NetworkHandle target_network)
++    handles::NetworkHandle target_network,
++    std::optional<AccessRouteIsolationKey> access_route_key)
+     : destination_(std::move(destination)),
+       privacy_mode_(privacy_mode),
+       network_anonymization_key_(
+@@ -134,7 +135,8 @@ ClientSocketPool::GroupId::GroupId(
+               : NetworkAnonymizationKey()),
+       secure_dns_policy_(secure_dns_policy),
+       disable_cert_network_fetches_(disable_cert_network_fetches),
+-      target_network_(target_network) {
++      target_network_(target_network),
++      access_route_key_(std::move(access_route_key)) {
+   DCHECK(destination_.IsValid());
+ 
+   // ClientSocketPool only expected to be used for HTTP/HTTPS/WS/WSS cases, and
+diff --git a/net/socket/client_socket_pool.h b/net/socket/client_socket_pool.h
+index 5db1b533d3c1cb995a98de856d31ccd786d1a12c..ca67cf0679176887577d9d33ccfb195a0ebcd7f8 100644
+--- a/net/socket/client_socket_pool.h
++++ b/net/socket/client_socket_pool.h
+@@ -14,6 +14,7 @@
+ #include "base/memory/ref_counted.h"
+ #include "base/time/time.h"
+ #include "base/values.h"
++#include "net/base/access_route_isolation_key.h"
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/load_states.h"
+ #include "net/base/net_export.h"
+@@ -132,7 +133,8 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+             NetworkAnonymizationKey network_anonymization_key,
+             SecureDnsPolicy secure_dns_policy,
+             bool disable_cert_network_fetches,
+-            handles::NetworkHandle target_network);
++            handles::NetworkHandle target_network,
++            std::optional<AccessRouteIsolationKey> access_route_key = std::nullopt);
+     GroupId(const GroupId& group_id);
+ 
+     ~GroupId();
+@@ -156,6 +158,10 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+ 
+     handles::NetworkHandle target_network() const { return target_network_; }
+ 
++    const std::optional<AccessRouteIsolationKey>& access_route_key() const {
++      return access_route_key_;
++    }
++
+     // Returns the group ID as a string, for logging.
+     std::string ToString() const;
+ 
+@@ -182,6 +188,7 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
+     bool disable_cert_network_fetches_;
+ 
+     handles::NetworkHandle target_network_ = handles::kInvalidNetworkHandle;
++    std::optional<AccessRouteIsolationKey> access_route_key_;
+   };
+ 
+   // Parameters that, in combination with GroupId, proxy, websocket information,
+diff --git a/net/spdy/spdy_session_key.cc b/net/spdy/spdy_session_key.cc
+index 9f86d0193fbf682c445f8595d7d429feff9749d1..49465afac943dd42185af6e6088b8c6fc618a39c 100644
+--- a/net/spdy/spdy_session_key.cc
++++ b/net/spdy/spdy_session_key.cc
+@@ -7,6 +7,7 @@
+ #include <iostream>
+ #include <optional>
+ #include <tuple>
++#include <utility>
+ 
+ #include "base/feature_list.h"
+ #include "base/logging.h"
+@@ -32,7 +33,8 @@ SpdySessionKey::SpdySessionKey(
+     const NetworkAnonymizationKey& network_anonymization_key,
+     SecureDnsPolicy secure_dns_policy,
+     bool disable_cert_verification_network_fetches,
+-    handles::NetworkHandle target_network)
++    handles::NetworkHandle target_network,
++    std::optional<AccessRouteIsolationKey> access_route_key)
+     : host_port_pair_(host_port_pair),
+       privacy_mode_(privacy_mode),
+       proxy_chain_(proxy_chain),
+@@ -45,7 +47,8 @@ SpdySessionKey::SpdySessionKey(
+       secure_dns_policy_(secure_dns_policy),
+       disable_cert_verification_network_fetches_(
+           disable_cert_verification_network_fetches),
+-      target_network_(target_network) {
++      target_network_(target_network),
++      access_route_key_(std::move(access_route_key)) {
+   DCHECK(disable_cert_verification_network_fetches_ ||
+          session_usage_ != SessionUsage::kProxy);
+   DCHECK(privacy_mode_ == PRIVACY_MODE_DISABLED ||
+@@ -60,12 +63,13 @@ bool SpdySessionKey::operator<(const SpdySessionKey& other) const {
+   return std::tie(host_port_pair_, privacy_mode_, proxy_chain_, session_usage_,
+                   network_anonymization_key_, secure_dns_policy_,
+                   disable_cert_verification_network_fetches_, socket_tag_,
+-                  target_network_) <
++                  target_network_, access_route_key_) <
+          std::tie(other.host_port_pair_, other.privacy_mode_,
+                   other.proxy_chain_, other.session_usage_,
+                   other.network_anonymization_key_, other.secure_dns_policy_,
+                   other.disable_cert_verification_network_fetches_,
+-                  other.socket_tag_, other.target_network_);
++                  other.socket_tag_, other.target_network_,
++                  other.access_route_key_);
+ }
+ 
+ SpdySessionKey::CompareForAliasingResult SpdySessionKey::CompareForAliasing(
+@@ -79,7 +83,8 @@ SpdySessionKey::CompareForAliasingResult SpdySessionKey::CompareForAliasing(
+        secure_dns_policy_ == other.secure_dns_policy_ &&
+        disable_cert_verification_network_fetches_ ==
+            other.disable_cert_verification_network_fetches_ &&
+-       target_network_ == other.target_network_);
++       target_network_ == other.target_network_ &&
++       access_route_key_ == other.access_route_key_);
+   result.is_socket_tag_match = (socket_tag_ == other.socket_tag_);
+   return result;
+ }
+diff --git a/net/spdy/spdy_session_key.h b/net/spdy/spdy_session_key.h
+index 1592b2dea164770d3d51fb0052cd0922b01cbc6e..d0f512618330c947261a5d95dcd41afd862039cb 100644
+--- a/net/spdy/spdy_session_key.h
++++ b/net/spdy/spdy_session_key.h
+@@ -8,6 +8,7 @@
+ #include <iosfwd>
+ #include <optional>
+ 
++#include "net/base/access_route_isolation_key.h"
+ #include "net/base/net_export.h"
+ #include "net/base/network_anonymization_key.h"
+ #include "net/base/network_handle.h"
+@@ -38,7 +39,8 @@ class NET_EXPORT_PRIVATE SpdySessionKey {
+                  const NetworkAnonymizationKey& network_anonymization_key,
+                  SecureDnsPolicy secure_dns_policy,
+                  bool disable_cert_verification_network_fetches,
+-                 handles::NetworkHandle target_network);
++                 handles::NetworkHandle target_network,
++                 std::optional<AccessRouteIsolationKey> access_route_key = std::nullopt);
+ 
+   SpdySessionKey(const SpdySessionKey& other);
+ 
+@@ -95,6 +97,10 @@ class NET_EXPORT_PRIVATE SpdySessionKey {
+ 
+   handles::NetworkHandle target_network() const { return target_network_; }
+ 
++  const std::optional<AccessRouteIsolationKey>& access_route_key() const {
++    return access_route_key_;
++  }
++
+  private:
+   HostPortPair host_port_pair_;
+   // If enabled, then session cannot be tracked by the server.
+@@ -108,6 +114,7 @@ class NET_EXPORT_PRIVATE SpdySessionKey {
+   SecureDnsPolicy secure_dns_policy_ = SecureDnsPolicy::kAllow;
+   bool disable_cert_verification_network_fetches_ = false;
+   handles::NetworkHandle target_network_ = handles::kInvalidNetworkHandle;
++  std::optional<AccessRouteIsolationKey> access_route_key_;
+ };
+ 
+ NET_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
+-- 
+2.54.0 (Apple Git-157)
+

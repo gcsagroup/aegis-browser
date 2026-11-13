@@ -112,10 +112,14 @@ bool IsValidRule(const AccessPolicyRule& rule,
     return false;
   }
 
-  if (rule.scope == PolicyScope::kSite) {
+  if (rule.scope == PolicyScope::kSite || rule.scope == PolicyScope::kWebsite) {
     if (!IsCanonicalTopLevelSite(rule.top_level_site)) {
       return false;
     }
+    if (rule.scope == PolicyScope::kWebsite &&
+        (rule.include_subdomains ||
+         net::SchemefulSite::Deserialize(rule.top_level_site).GetURL().host() !=
+             rule.destination_host)) return false;
   } else if (rule.scope == PolicyScope::kProfile) {
     if (!rule.top_level_site.empty()) {
       return false;
@@ -270,10 +274,11 @@ std::vector<Candidate> MatchingCandidates(
   std::vector<Candidate> result;
   for (const AccessPolicyRule& rule : snapshot.rules) {
     if (rule.scope != scope ||
-        (scope == PolicyScope::kSite &&
+        ((scope == PolicyScope::kSite || scope == PolicyScope::kWebsite) &&
          (!request.site_ownership_reliable() ||
           rule.top_level_site != request.top_level_site())) ||
-        !HostMatches(request, rule) || !Contains(rule.schemes, request.scheme()) ||
+        (scope != PolicyScope::kWebsite && !HostMatches(request, rule)) ||
+        !Contains(rule.schemes, request.scheme()) ||
         !Contains(rule.ports, request.port())) {
       continue;
     }
@@ -334,38 +339,48 @@ PolicyMatchResult Error(PolicyState state, PolicyMatchReason reason,
 
 }  // namespace
 
+PolicyMatchReason ValidateAccessPolicySnapshot(
+    const PublishedAccessPolicySnapshot& snapshot) {
+  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
+    return PolicyMatchReason::kInvalidSnapshot;
+  }
+  for (const AccessPolicyRule& rule : snapshot.rules) {
+    if (!IsValidRule(rule, snapshot.owner)) {
+      return rule.owner != snapshot.owner
+                 ? PolicyMatchReason::kOwnershipMismatch
+                 : PolicyMatchReason::kInvalidRule;
+    }
+  }
+  return HasDuplicateRuleKey(snapshot.rules)
+             ? PolicyMatchReason::kPolicyConflict
+             : PolicyMatchReason::kNone;
+}
+
 PolicyMatchResult EvaluateAccessPolicy(
     const RequestPolicyContext& request,
     const PublishedAccessPolicySnapshot& snapshot) {
-  if (!IsCompleteOwner(snapshot.owner) || snapshot.policy_generation == 0) {
-    return Error(PolicyState::kInvalid,
-                 PolicyMatchReason::kInvalidSnapshot,
-                 snapshot.policy_generation);
+  const auto validation = ValidateAccessPolicySnapshot(snapshot);
+  if (validation == PolicyMatchReason::kInvalidSnapshot) {
+    return Error(PolicyState::kInvalid, validation, snapshot.policy_generation);
   }
   if (request.owner() != snapshot.owner) {
     return Error(PolicyState::kInvalid,
                  PolicyMatchReason::kOwnershipMismatch,
                  snapshot.policy_generation);
   }
-  for (const AccessPolicyRule& rule : snapshot.rules) {
-    if (!IsValidRule(rule, snapshot.owner)) {
-      const PolicyMatchReason reason =
-          rule.owner != snapshot.owner
-              ? PolicyMatchReason::kOwnershipMismatch
-              : PolicyMatchReason::kInvalidRule;
-      return Error(PolicyState::kInvalid, reason,
-                   snapshot.policy_generation);
-    }
-  }
-  if (HasDuplicateRuleKey(snapshot.rules)) {
-    return Error(PolicyState::kConflict,
-                 PolicyMatchReason::kPolicyConflict,
-                 snapshot.policy_generation);
+  if (validation != PolicyMatchReason::kNone) {
+    return Error(validation == PolicyMatchReason::kPolicyConflict
+                     ? PolicyState::kConflict : PolicyState::kInvalid,
+                 validation, snapshot.policy_generation);
   }
 
   std::vector<Candidate> candidates =
       MatchingCandidates(request, snapshot, PolicyScope::kSite);
   PolicyScope selected_scope = PolicyScope::kSite;
+  if (candidates.empty()) {
+    candidates = MatchingCandidates(request, snapshot, PolicyScope::kWebsite);
+    selected_scope = PolicyScope::kWebsite;
+  }
   if (candidates.empty()) {
     candidates = MatchingCandidates(request, snapshot, PolicyScope::kProfile);
     selected_scope = PolicyScope::kProfile;

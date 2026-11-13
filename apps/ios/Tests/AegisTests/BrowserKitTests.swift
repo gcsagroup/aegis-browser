@@ -8,6 +8,28 @@ final class BrowserKitTests: XCTestCase {
     private let bookmarkZID = UUID(uuidString: "00000000-0000-4000-8000-000000000003")!
     private let bookmarkAlphaID = UUID(uuidString: "00000000-0000-4000-8000-000000000004")!
 
+    func testClosingStandardWindowReleasesSessionAndRemovesOpenTab() async throws {
+        weak var releasedSession: BrowserSession?
+        weak var releasedTab: BrowserTab?
+        let id: UUID
+        do {
+            let session = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+            let tab = try XCTUnwrap(session.activeTab)
+            id = tab.id
+            releasedSession = session
+            releasedTab = tab
+            XCTAssertTrue(BrowserSession.openTabs().contains { $0.id == id })
+        }
+        // Initialization can still be loading the window's WebExtensions.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while releasedSession != nil && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(releasedSession)
+        XCTAssertNil(releasedTab)
+        XCTAssertFalse(BrowserSession.openTabs().contains { $0.id == id })
+    }
+
     func testAddressNormalization() {
         XCTAssertEqual(BrowserSession.normalizedURL(from: "aegis://research")?.absoluteString, "aegis://research")
         XCTAssertEqual(BrowserSession.normalizedURL(from: "example.com")?.absoluteString, "https://example.com")

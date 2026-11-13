@@ -1,0 +1,39 @@
+From 357e3d6810465c3b0f58db35f3c0006ac6727551 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 07:33:27 +0800
+Subject: [PATCH] test(access): cover canonical IPv6 site normalization
+
+---
+ .../aegis/access/access_site_intent_unittest.cc  | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/chrome/browser/aegis/access/access_site_intent_unittest.cc b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+index 9cf6bfc0da1ed81daf252a02a6c0985f5abc46f5..ef7bd2496ab25b7226766808545283f9592c9f89 100644
+--- a/chrome/browser/aegis/access/access_site_intent_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_intent_unittest.cc
+@@ -51,6 +51,22 @@ TEST(AccessSiteIntentTest, NormalizesExactHostLikeSiteGroup) {
+   EXPECT_EQ(MakeAccessSiteHost("").status, AccessSiteHostStatus::kEmpty);
+ }
+ 
++TEST(AccessSiteIntentTest, KeepsCanonicalIpv6BracketsForTrustedSites) {
++  const auto url = NormalizeAccessSiteHost("https://[2001:db8::1]:8443/path?q=1");
++  ASSERT_EQ(url.status, AccessSiteHostStatus::kOk);
++  EXPECT_EQ(url.host->value, "[2001:db8::1]");
++  const auto local = NormalizeAccessSiteHost("[::1]:443");
++  ASSERT_EQ(local.status, AccessSiteHostStatus::kOk);
++  EXPECT_EQ(local.host->value, "[::1]");
++}
++
++TEST(AccessSiteIntentTest, DoesNotDiscardInvalidIpv6SuffixOrMissingBracket) {
++  for (const auto* host : {"[::1]junk", "[::1]:wrong", "[::1", "2001:db8::1"}) {
++    SCOPED_TRACE(host);
++    EXPECT_NE(NormalizeAccessSiteHost(host).status, AccessSiteHostStatus::kOk);
++  }
++}
++
+ TEST(AccessSiteIntentTest, MapsIntentOntoOrdinaryCoordinatorModes) {
+   EXPECT_EQ(OrdinaryAccessModeForIntent(AccessSiteIntent::kAllow),
+             AccessMode::kProxy);
+-- 
+2.54.0 (Apple Git-157)
+

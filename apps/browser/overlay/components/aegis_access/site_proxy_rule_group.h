@@ -35,6 +35,7 @@ struct SiteProxyRuleGroup {
   std::vector<std::string> member_rule_ids;
   uint64_t revision = 0;
   uint64_t last_operation_sequence = 0;
+  bool website_context = false;
 
   friend bool operator==(const SiteProxyRuleGroup&,
                          const SiteProxyRuleGroup&) = default;
@@ -54,6 +55,7 @@ struct SiteProxyRuleMember {
   std::string proxy_group_id;
   ProtectionOverride protection_override = ProtectionOverride::kInvalid;
   uint64_t last_operation_sequence = 0;
+  PolicyScope scope = PolicyScope::kSite;
 
   friend bool operator==(const SiteProxyRuleMember&,
                          const SiteProxyRuleMember&) = default;
@@ -89,6 +91,7 @@ enum class GroupValidationError {
   kUnsupportedMode,
   kModeMismatch,
   kProxyGroupMismatch,
+  kScopeMismatch,
 };
 
 struct GroupValidation {

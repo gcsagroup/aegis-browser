@@ -1,0 +1,302 @@
+From 5e330af6bb3a7f897aa0c45c0acebe57853e8dd9 Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Tue, 10 Nov 2026 17:04:38 +0800
+Subject: [PATCH] feat(access): retain exact Context capability and native
+ incarnation
+
+---
+ .../access_network_context_ipc_unittest.cc    | 40 +++++++++++++++----
+ services/network/network_context.cc           | 26 +++++++++++-
+ services/network/network_context.h            | 18 ++++++++-
+ .../public/mojom/network_context.mojom        | 15 +++++++
+ services/network/test/test_network_context.cc |  6 +++
+ services/network/test/test_network_context.h  |  3 ++
+ 6 files changed, 98 insertions(+), 10 deletions(-)
+
+diff --git a/components/aegis_access/access_network_context_ipc_unittest.cc b/components/aegis_access/access_network_context_ipc_unittest.cc
+index 23a46f6bfbfb80d2f31f9065abcd0735ac47ac6d..56304f53d0c350a973474f19f679c73c6f6cb685 100644
+--- a/components/aegis_access/access_network_context_ipc_unittest.cc
++++ b/components/aegis_access/access_network_context_ipc_unittest.cc
+@@ -29,7 +29,7 @@ mojom::AegisAccessSnapshotPtr WireSnapshot() {
+   auto s = mojom::AegisAccessSnapshot::New();
+   s->owner = mojom::AegisAccessOwner::New(mojom::AegisAccessChannel::kDev,
+                                         "profile", "partition");
+-  s->incarnation = "incarnation";
++  s->incarnation = "template-incarnation";
+   s->sequence = 1;
+   s->common_generations = mojom::AegisAccessGenerations::New(1,1,0,1,1);
+   auto rule = mojom::AegisAccessRule::New();
+@@ -67,6 +67,11 @@ class AccessNetworkContextIPCTest : public testing::Test {
+     params->initial_proxy_config = net::ProxyConfigWithAnnotation::CreateDirect();
+     context_ = std::make_unique<NetworkContext>(service_.get(),
+         context_remote_.BindNewPipeAndPassReceiver(), std::move(params));
++    base::test::TestFuture<std::string> bind_future;
++    context_remote_->BindAegisAccessContext(
++        capability_.BindNewPipeAndPassReceiver(), bind_future.GetCallback());
++    incarnation_ = bind_future.Get();
++    ASSERT_FALSE(incarnation_.empty());
+     auto factory_params = mojom::URLLoaderFactoryParams::New();
+     factory_params->process_id = OriginatingProcessId::FromUnsafeValue(42);
+     factory_params->is_trusted = false;
+@@ -76,7 +81,7 @@ class AccessNetworkContextIPCTest : public testing::Test {
+     ASSERT_TRUE(Install(*snapshot));
+     auto binding = mojom::AegisAccessFactoryBinding::New();
+     binding->owner = snapshot->owner.Clone();
+-    binding->incarnation = "incarnation";
++    binding->incarnation = incarnation_;
+     binding->attribution = mojom::AegisAccessAttribution::kProfileOnly;
+     ASSERT_TRUE(CreateFactory(std::move(factory_params), nullptr,
+         std::move(binding), factory_remote_.BindNewPipeAndPassReceiver()));
+@@ -139,7 +144,7 @@ class AccessNetworkContextIPCTest : public testing::Test {
+     if (token.empty()) token = std::to_string(++request_sequence_);
+     auto envelope = mojom::AegisAccessRequestEnvelope::New();
+     envelope->request_token = token;
+-    envelope->incarnation = "incarnation";
++    envelope->incarnation = incarnation_;
+     envelope->target = wrong_target ? GURL("http://other.test/") : request.url;
+     envelope->method = request.method;
+     envelope->generations = mojom::AegisAccessGenerations::New(1,1,
+@@ -177,6 +182,7 @@ class AccessNetworkContextIPCTest : public testing::Test {
+   mojom::AegisAccessSnapshotAckPtr last_ack_;
+   mojom::AegisAccessSnapshotPtr Snapshot() {
+     auto snapshot = WireSnapshot();
++    snapshot->incarnation = incarnation_;
+     snapshot->endpoints[0]->port = server_.port();
+     snapshot->endpoints[0]->credentials.reset();
+     return snapshot;
+@@ -193,6 +199,8 @@ class AccessNetworkContextIPCTest : public testing::Test {
+   OwnershipKey key_{ChannelNamespace::kDev, "profile", "partition"};
+   std::unique_ptr<NetworkService> service_;
+   mojo::Remote<mojom::NetworkContext> context_remote_;
++  mojo::Remote<mojom::AegisAccessContext> capability_;
++  std::string incarnation_;
+   std::unique_ptr<NetworkContext> context_;
+   cors::OriginAccessList origin_access_list_;
+   mojo::Remote<mojom::AegisAccessURLLoaderFactory> factory_remote_;
+@@ -246,7 +254,7 @@ TEST_F(AccessNetworkContextIPCTest, RequestTokenCannotReplayAfterCompletion) {
+   EXPECT_EQ(actual_, 1);
+ }
+ TEST_F(AccessNetworkContextIPCTest, RestoringBlocksPrivateIPCRequestBeforeSend) {
+-  ASSERT_TRUE(EnterRestoring(key_, "incarnation"));
++  ASSERT_TRUE(EnterRestoring(key_, incarnation_));
+   Start();
+   client_->RunUntilComplete();
+   EXPECT_NE(client_->completion_status().error_code, net::OK);
+@@ -268,7 +276,7 @@ TEST_F(AccessNetworkContextIPCTest, PrivateRedirectApprovalRetainsCorsAndProxy)
+   client_->RunUntilRedirectReceived();
+   auto envelope = mojom::AegisAccessRequestEnvelope::New();
+   envelope->request_token = "redirect-token";
+-  envelope->incarnation = "incarnation";
++  envelope->incarnation = incarnation_;
+   envelope->hop = 1;
+   envelope->target = client_->redirect_info().new_url;
+   envelope->method = client_->redirect_info().new_method;
+@@ -287,7 +295,7 @@ TEST_F(AccessNetworkContextIPCTest, SameOriginEnvelopeCannotOverrideUnchangedUrl
+   client_->RunUntilRedirectReceived();
+   auto envelope = mojom::AegisAccessRequestEnvelope::New();
+   envelope->request_token = "redirect-token";
+-  envelope->incarnation = "incarnation";
++  envelope->incarnation = incarnation_;
+   envelope->hop = 1;
+   envelope->target = GURL("http://destination.test/forged");
+   envelope->method = client_->redirect_info().new_method;
+@@ -314,7 +322,7 @@ TEST_F(AccessNetworkContextIPCTest, ApprovedNativeRedirectAcquiresManagedRoute)
+   client_->RunUntilRedirectReceived();
+   auto envelope = mojom::AegisAccessRequestEnvelope::New();
+   envelope->request_token = "native-token";
+-  envelope->incarnation = "incarnation";
++  envelope->incarnation = incarnation_;
+   envelope->hop = 1;
+   envelope->target = client_->redirect_info().new_url;
+   envelope->method = client_->redirect_info().new_method;
+@@ -412,7 +420,7 @@ TEST_F(AccessNetworkContextIPCTest, AckBindsCompleteInstalledIdentityWithoutSecr
+   EXPECT_TRUE(last_ack_->accepted);
+   EXPECT_EQ(last_ack_->owner->profile_token, "profile");
+   EXPECT_EQ(last_ack_->owner->storage_partition_token, "partition");
+-  EXPECT_EQ(last_ack_->incarnation, "incarnation");
++  EXPECT_EQ(last_ack_->incarnation, incarnation_);
+   EXPECT_EQ(last_ack_->sequence, 1u);
+   EXPECT_EQ(last_ack_->common_generations->policy_generation, 1u);
+   ASSERT_EQ(last_ack_->registrations.size(), 1u);
+@@ -430,6 +438,22 @@ TEST_F(AccessNetworkContextIPCTest, ResetFactoriesRevokesAlreadyIssuedPrivateRec
+   factory_remote_.FlushForTesting();
+   EXPECT_FALSE(factory_remote_.is_connected());
+ }
++TEST_F(AccessNetworkContextIPCTest, RetainedPrivateContextUsesExactOriginalContext) {
++  mojo::Remote<mojom::AegisAccessContext> capability;
++  base::test::TestFuture<std::string> future;
++  context_remote_->BindAegisAccessContext(
++      capability.BindNewPipeAndPassReceiver(), future.GetCallback());
++  const auto incarnation = future.Get();
++  EXPECT_FALSE(incarnation.empty());
++  base::test::TestFuture<bool> restored;
++  capability->BeginRestore(Snapshot()->owner.Clone(), incarnation,
++                           restored.GetCallback());
++  EXPECT_TRUE(restored.Get());
++  Start();
++  client_->RunUntilComplete();
++  EXPECT_NE(client_->completion_status().error_code, net::OK);
++  EXPECT_EQ(actual_, 0);
++}
+ TEST_F(AccessNetworkContextIPCTest, OriginalInitiatorLockStillRejectsMismatch) {
+   mojo::test::BadMessageObserver observer;
+   Start(true);
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+index 4796dd4a748ab39734a8db7568e73912cb80a06c..c3d3cc13367f9b9c5ef4c643bd52266b8c37d697 100644
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -993,6 +993,7 @@ void NetworkContext::CreateNetLogEntriesForActiveWebSockets(
+ 
+ NetworkContext::~NetworkContext() {
+   is_destructing_ = true;
++  aegis_access_context_receivers_.Clear();
+   aegis_access_state_.reset();
+ 
+   // Clear pending HttpCacheDataRemovers and counters explicitly to cancel
+@@ -1150,6 +1151,28 @@ void NetworkContext::CreateURLLoaderFactory(
+                          std::move(resource_scheduler_client));
+ }
+ 
++void NetworkContext::BindAegisAccessContext(
++    mojo::PendingReceiver<mojom::AegisAccessContext> receiver,
++    BindAegisAccessContextCallback callback) {
++  aegis_access_context_receivers_.Add(this, std::move(receiver));
++  std::move(callback).Run(aegis_access_incarnation_);
++}
++void NetworkContext::InstallSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
++                                    InstallSnapshotCallback callback) {
++  InstallAegisAccessSnapshot(std::move(snapshot), std::move(callback));
++}
++void NetworkContext::BeginRestore(mojom::AegisAccessOwnerPtr owner,
++    const std::string& incarnation, BeginRestoreCallback callback) {
++  BeginAegisAccessRestore(std::move(owner), incarnation, std::move(callback));
++}
++void NetworkContext::CreateFactory(
++    mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory> receiver,
++    mojom::URLLoaderFactoryParamsPtr params,
++    mojom::AegisAccessFactoryBindingPtr binding, CreateFactoryCallback callback) {
++  CreateAegisAccessURLLoaderFactory(std::move(receiver), std::move(params),
++                                   std::move(binding), std::move(callback));
++}
++
+ void NetworkContext::InstallAegisAccessSnapshot(
+     mojom::AegisAccessSnapshotPtr snapshot,
+     InstallAegisAccessSnapshotCallback callback) {
+@@ -1162,7 +1185,8 @@ void NetworkContext::InstallAegisAccessSnapshot(
+     aegis_access_state_ = std::make_unique<AccessNetworkContextState>(
+         this, &cors_origin_access_list_);
+   }
+-  ack->accepted = aegis_access_state_->Install(*snapshot);
++  ack->accepted = snapshot->incarnation == aegis_access_incarnation_ &&
++                  aegis_access_state_->Install(*snapshot);
+   for (const auto& endpoint : snapshot->endpoints) {
+     ack->registrations.push_back(mojom::AegisAccessRegistrationAck::New(
+         endpoint->proxy_group_id, endpoint->registration_id,
+diff --git a/services/network/network_context.h b/services/network/network_context.h
+index 25bcc4bdd33df80201cfc23619f19ef8a49a7528..a0cb66ade3397b81bee25a68744c5d2627322154 100644
+--- a/services/network/network_context.h
++++ b/services/network/network_context.h
+@@ -21,6 +21,7 @@
+ #include "base/containers/flat_map.h"
+ #include "base/containers/flat_set.h"
+ #include "base/containers/unique_ptr_adapters.h"
++#include "base/unguessable_token.h"
+ #include "base/functional/callback.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/sequence_checker.h"
+@@ -167,7 +168,7 @@ struct ResourceRequest;
+ // and the mojo::Remote<NetworkContext> used to talk to them, and the
+ // NetworkContext is destroyed when either one is torn down.
+ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+-    : public mojom::NetworkContext
++    : public mojom::NetworkContext, public mojom::AegisAccessContext
+ #if BUILDFLAG(ENABLE_REPORTING)
+     ,
+       public net::ReportingCacheObserver
+@@ -274,6 +275,18 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+   void CreateURLLoaderFactory(
+       mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
+       mojom::URLLoaderFactoryParamsPtr params) override;
++  void BindAegisAccessContext(
++      mojo::PendingReceiver<mojom::AegisAccessContext> receiver,
++      BindAegisAccessContextCallback callback) override;
++  void InstallSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
++      InstallSnapshotCallback callback) override;
++  void BeginRestore(mojom::AegisAccessOwnerPtr owner,
++      const std::string& incarnation, BeginRestoreCallback callback) override;
++  void CreateFactory(
++      mojo::PendingReceiver<mojom::AegisAccessURLLoaderFactory> receiver,
++      mojom::URLLoaderFactoryParamsPtr params,
++      mojom::AegisAccessFactoryBindingPtr binding,
++      CreateFactoryCallback callback) override;
+   void InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
+       InstallAegisAccessSnapshotCallback callback) override;
+   void BeginAegisAccessRestore(mojom::AegisAccessOwnerPtr owner,
+@@ -1178,6 +1191,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkContext
+ 
+   // Explicitly destroyed at the start of ~NetworkContext, before its loaders'
+   // dependent Context services. Null until the first complete installation.
++  const std::string aegis_access_incarnation_ =
++      base::UnguessableToken::Create().ToString();
++  mojo::ReceiverSet<mojom::AegisAccessContext> aegis_access_context_receivers_;
+   std::unique_ptr<AccessNetworkContextState> aegis_access_state_;
+ 
+   // Keep track of the existing `ConnectionChangeNotifiers`. These will be later
+diff --git a/services/network/public/mojom/network_context.mojom b/services/network/public/mojom/network_context.mojom
+index 711d7f50384fa5e7ba1eb6fcce9f366835bb8530..605177b8fe7a33bc5aab587fbe545e43252e9d36 100644
+--- a/services/network/public/mojom/network_context.mojom
++++ b/services/network/public/mojom/network_context.mojom
+@@ -1971,4 +1971,19 @@ interface NetworkContext {
+       URLLoaderFactoryParams params, AegisAccessFactoryBinding binding)
+       => (bool created);
+ 
++  // Retains this exact Context for delayed Browser document binding, without
++  // retaining a raw client-side NetworkContext proxy across service resets.
++  [AllowedContext=sandbox.mojom.Context.kBrowser]
++  BindAegisAccessContext(pending_receiver<AegisAccessContext> receiver)
++      => (string incarnation);
++
++};
++
++// Browser retains this private capability; a Context reset closes every pipe.
++interface AegisAccessContext {
++  InstallSnapshot(AegisAccessSnapshot snapshot) => (AegisAccessSnapshotAck ack);
++  BeginRestore(AegisAccessOwner owner, string incarnation) => (bool restoring);
++  CreateFactory(pending_receiver<AegisAccessURLLoaderFactory> receiver,
++                URLLoaderFactoryParams params, AegisAccessFactoryBinding binding)
++      => (bool created);
+ };
+diff --git a/services/network/test/test_network_context.cc b/services/network/test/test_network_context.cc
+index 92d7d59007c27baff7985404c0c592561fd8f0ac..60fa0fa83bccf70e49874d28d8c5388eff105b55 100644
+--- a/services/network/test/test_network_context.cc
++++ b/services/network/test/test_network_context.cc
+@@ -2,6 +2,12 @@
+ #include "services/network/test/test_network_context.h"
+ 
+ namespace network {
++void TestNetworkContext::BindAegisAccessContext(
++    mojo::PendingReceiver<mojom::AegisAccessContext>,
++    BindAegisAccessContextCallback callback) {
++  std::move(callback).Run(std::string());
++}
++
+ void TestNetworkContext::InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
+       InstallAegisAccessSnapshotCallback callback) {
+     auto ack = mojom::AegisAccessSnapshotAck::New();
+diff --git a/services/network/test/test_network_context.h b/services/network/test/test_network_context.h
+index e87cc1b88b2617816e24b503d46940b02c69bcbb..d72ea957e77a6fb7097cff973917ace8688dc5de 100644
+--- a/services/network/test/test_network_context.h
++++ b/services/network/test/test_network_context.h
+@@ -332,6 +332,9 @@ class TestNetworkContext : public mojom::NetworkContext {
+   void CreateMdnsResponder(
+       mojo::PendingReceiver<mojom::MdnsResponder> responder_receiver) override {
+   }
++  void BindAegisAccessContext(
++      mojo::PendingReceiver<mojom::AegisAccessContext>,
++      BindAegisAccessContextCallback callback) override;
+   void InstallAegisAccessSnapshot(mojom::AegisAccessSnapshotPtr snapshot,
+       InstallAegisAccessSnapshotCallback callback) override;
+   void BeginAegisAccessRestore(mojom::AegisAccessOwnerPtr,
+-- 
+2.54.0 (Apple Git-157)
+

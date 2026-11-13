@@ -114,3 +114,65 @@ ac2f61daccdf4e514a69b1d39e6fc588c343d228:apps/ios/BrowserKit/Resources/easylist.
 
 # prototypes/access-metering/sm00_synthetic_manifest.json (rebased commit fingerprints)
 6c81e0320cbe6024b372948cc84d2ecbe2da2531:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32
+
+# Additional rewritten-history fingerprints (2026-11-09 follow-up)
+
+# apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc:generic-api-key:244
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/browser/overlay/chrome/browser/aegis/agent/agent_observation_unittest.cc:generic-api-key:244
+
+# apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch
+099236dfbe976743c430a74957366ef1ca78ab86:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1414
+099236dfbe976743c430a74957366ef1ca78ab86:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1432
+800138b978a518927ad47c9eee91b488146de73a:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1414
+800138b978a518927ad47c9eee91b488146de73a:apps/browser/patches-android/0052-feat-aegis-harden-fingerprint-protection.patch:generic-api-key:1432
+
+# apps/browser/patches-android/0142-feat-task-scoped-observation-2-0-002.patch
+099236dfbe976743c430a74957366ef1ca78ab86:apps/browser/patches-android/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+800138b978a518927ad47c9eee91b488146de73a:apps/browser/patches-android/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+
+# apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/browser/patches/0142-feat-task-scoped-observation-2-0-002.patch:generic-api-key:633
+
+# apps/browser/patches/archive/main-151/manifest.json
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:28
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:58
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:66
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:90
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:28
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:58
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:66
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/browser/patches/archive/main-151/manifest.json:generic-api-key:90
+
+# apps/ios/BrowserKit/Resources/easylist.txt
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+12b6ae2320a9cd11e7d58d657411faa19f31aa29:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+62f271dfeea24215766bb8f4852407551a3fc89d:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+62f271dfeea24215766bb8f4852407551a3fc89d:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+62f271dfeea24215766bb8f4852407551a3fc89d:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+74cca28699a48b9dbab752532d7c2ea4d318991f:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+74cca28699a48b9dbab752532d7c2ea4d318991f:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+74cca28699a48b9dbab752532d7c2ea4d318991f:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:14618
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:6
+d60fdd5c45fc48c097fc1eaf93c0fc82d343a045:apps/ios/BrowserKit/Resources/easylist.txt:sourcegraph-access-token:832
+
+# apps/ios/BrowserKit/Resources/security-rules.json
+4cd86b2400972068ad2fbddc059a8fb818b8b376:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+7ff9f2969bd162f996aa2c1b58816386b35c1a6c:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+c693b512734a2841e5a977dba4ddfe7ba3d813e3:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+def722d19ac021d22d5847a3b935201b5b8f6546:apps/ios/BrowserKit/Resources/security-rules.json:generic-api-key:1
+
+# apps/ios/Tests/Fixtures/Localization/coverage.json
+13d76df49b86db51c3305e7b68d2db206fc0630b:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+2ca0b7b2f0e7c100a23720e70c8137aaef17779b:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+5c03049ff894e62f23a1970c62e74c5e68e5b638:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+66e66375349fb179e7495e109bd4510d46ed6f89:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+b3f12d0db2f0b39a0efea89f8bc7fd00ed85787b:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+fa9cbfd205337086fe9b557b4e51dd40d68ba7b9:apps/ios/Tests/Fixtures/Localization/coverage.json:generic-api-key:1979
+
+# prototypes/access-metering/sm00_synthetic_manifest.json
+0c429600d7c4ae02eee86a964a0e16baa64b7ddd:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32
+6d1c58937b1adb4258fb01bb9a6d9bb962ad091d:prototypes/access-metering/sm00_synthetic_manifest.json:jfrog-identity-token:32

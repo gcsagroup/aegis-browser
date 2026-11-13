@@ -4,10 +4,38 @@ import UIKit
 @testable import BrowserKit
 
 @MainActor final class TabLifecycleTests: XCTestCase {
-    private func waitUntil(_ condition: () -> Bool) async throws {
+    private weak var displayedBrowser: BrowserSession?
+    private var displayWindow: UIWindow?
+
+    override func tearDown() async throws {
+        await MainActor.run {
+            self.displayWindow?.isHidden = true
+            self.displayWindow = nil
+            self.displayedBrowser = nil
+        }
+        try await super.tearDown()
+    }
+
+    private func attachActiveTab() {
+        guard let tab = displayedBrowser?.activeTab, !tab.isDisposed else { return }
+        let view = tab.webView
+        guard view.window == nil,
+              let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        let window = displayWindow ?? UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        window.subviews.forEach { $0.removeFromSuperview() }
+        view.frame = window.bounds; window.addSubview(view); window.makeKeyAndVisible()
+        displayWindow = window
+    }
+
+    private func waitUntil(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
         let limit = Date().addingTimeInterval(20)
-        while !condition(), Date() < limit { try await Task.sleep(for: .milliseconds(50)) }
-        XCTAssertTrue(condition(), "页面状态等待超时")
+        attachActiveTab()
+        while !condition(), Date() < limit {
+            attachActiveTab()
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(condition(), "页面状态等待超时", file: file, line: line)
     }
 
     func testRestore10And30And50TabsLoadsOnlySelectedPage() async throws {
@@ -22,6 +50,7 @@ import UIKit
             try store.save(BrowserWindowSnapshot(id: id, tabs: tabs, activeTabID: tabs[0].id))
             let start = Date()
             let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil), windowID: id, windowStore: store)
+            displayedBrowser = browser
             try await waitUntil { browser.activeTab?.url?.path == "/article" && browser.activeTab?.isLoading == false }
             XCTAssertEqual(browser.residentTabCount, 1)
             XCTAssertEqual(browser.standardTabs.count, count)
@@ -45,6 +74,7 @@ import UIKit
 
     func testIdlePageReleasesAndRestoresScrollWhileEditedPageStaysResident() async throws {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        displayedBrowser = browser
         let tab = try XCTUnwrap(browser.activeTab)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
         let window = UIWindow(windowScene: scene)
@@ -85,6 +115,7 @@ import UIKit
 
     func testMemoryWarningKeepsFramesAndReleasesSafeIdlePage() async throws {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        displayedBrowser = browser
         let framed = try XCTUnwrap(browser.activeTab)
         framed.load(URL(string: "http://127.0.0.1:8768/article")!)
         try await waitUntil { !framed.isLoading && framed.url?.path == "/article" }
@@ -102,6 +133,7 @@ import UIKit
 
     func testAssistantPinsAndHistoryProtectPagesAndCrashLoopStops() async throws {
         let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        displayedBrowser = browser
         let tab = try XCTUnwrap(browser.activeTab)
         tab.load(URL(string: "http://127.0.0.1:8768/article")!)
         try await waitUntil { !tab.isLoading && tab.url?.path == "/article" }

@@ -105,7 +105,7 @@ class LocalizationGuardTests(unittest.TestCase):
 
     def test_all_existing_policy_names_are_safe_basenames(self):
         cases = json.loads((self.checks.FIXTURES / "language-policy.json").read_text())
-        self.assertEqual(len(cases), 45)
+        self.assertEqual(len(cases), 51)
         self.assertIn("None-en-en_GB17", [case["name"] for case in cases])
         self.assertIn("alias-zh_HK", [case["name"] for case in cases])
         for case in cases:
@@ -146,6 +146,35 @@ class LocalizationGuardTests(unittest.TestCase):
                 result = json.loads((work / "results.json").read_text())
                 self.assertEqual(result["status"], "passed")
                 self.assertEqual(result["runs"][0]["evidence"][0]["requested"], ["en"])
+
+    def test_native_runner_uses_persisted_manual_default_expectations(self):
+        import plistlib
+        from unittest.mock import Mock
+        for name, resource, family, preferences, region in [
+            ("en-en-GB-en_US23", "en", "en", ["en-GB"], "US"),
+            ("manual-traditional-region", "zh-Hant", "zh-Hant", ["de"], "HK"),
+        ]:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                base = root / "base.xctestrun"
+                base.write_bytes(plistlib.dumps({"__xctestrun_metadata__": {"FormatVersion": 1},
+                                                "AegisTests": {}, "AegisUITests": {}}))
+                work = root / "run"
+
+                def native_fixture(argv, **kwargs):
+                    kwargs["stdout"].write((self.runner.MARKER + json.dumps({
+                        "expected": resource, "selected": resource, "expectedSource": "environment",
+                        "requested": preferences, "expectedFamily": family, "selectedFamily": family, "region": region,
+                    }) + "\n").encode())
+                    return Mock(wait=Mock(return_value=0))
+
+                with patch("sys.argv", ["runner", "--device", "d5367c00-914d-4ed9-89f1-746c5ed9277a",
+                                        "--xctestrun", str(base), "--work-dir", str(work), "--policy-case", name]), \
+                        patch.object(self.runner.subprocess, "Popen", side_effect=native_fixture):
+                    self.assertEqual(self.runner.main(), 0)
+                settings = plistlib.loads((work / f"{name}.xctestrun").read_bytes())["AegisTests"]
+                self.assertEqual(settings["EnvironmentVariables"]["AEGIS_EXPECTED_LANGUAGE"], resource)
+                self.assertEqual(json.loads((work / "results.json").read_text())["runs"][0]["expected"], resource)
 
     def test_native_runner_rejects_non_uuid_destination_before_execution(self):
         with tempfile.TemporaryDirectory() as temp:

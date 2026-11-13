@@ -263,6 +263,9 @@ source_set("aegis") {
       "summary_session.cc",
       "summary_session.h",
     ]
+    # Toolbar site-proxy bubble reads Access product intent (P-mac-2).
+    public_deps +=
+        [ "//chrome/browser/aegis/access:access_site_proxy_bubble" ]
     deps += [
       "//chrome/browser/resources/aegis:resources",
       "//chrome/browser/ui/tabs:tab_strip",

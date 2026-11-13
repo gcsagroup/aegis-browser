@@ -1,0 +1,65 @@
+From 3e78012b6ecf8cb6baf52491aef8123ae43b7f2e Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Wed, 11 Nov 2026 23:03:44 +0800
+Subject: [PATCH] fix(access): interrupt owned child waits within
+ session-ending rundown
+
+---
+ .../aegis/access/access_local_core_manager.cc | 30 ++++++++++++++++++-
+ 1 file changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/chrome/browser/aegis/access/access_local_core_manager.cc b/chrome/browser/aegis/access/access_local_core_manager.cc
+index c522b2920c102dda228c333e86eb2789450f2e42..0b80b2bea40abb99a8818e28f50f3304941adca6 100644
+--- a/chrome/browser/aegis/access/access_local_core_manager.cc
++++ b/chrome/browser/aegis/access/access_local_core_manager.cc
+@@ -1,6 +1,9 @@
+ // Copyright 2026 GCSA
+ #include "chrome/browser/aegis/access/access_local_core_manager.h"
+ 
++#include <signal.h>
++
++#include <algorithm>
+ #include <atomic>
+ #include <vector>
+ 
+@@ -381,6 +384,25 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     StopChild();
+     if (stopped_callback_) stopped_callback_.Run(registration);
+   }
++  bool WaitForChildExit(base::TimeDelta maximum_wait) {
++    auto deadline = maximum_wait.is_max()
++        ? base::TimeTicks::Max() : base::TimeTicks::Now() + maximum_wait;
++    bool session_bounded = false;
++    for (;;) {
++      // A session-ending request must also interrupt a Stop or destructor
++      // already waiting on this thread. Retain the ordinary SIGTERM grace,
++      // but bound each graceful/forced wait to one second during EndSession.
++      if (!session_bounded && shutdown_->stop_requested()) {
++        deadline = std::min(deadline, base::TimeTicks::Now() + base::Seconds(1));
++        session_bounded = true;
++      }
++      const auto remaining = deadline - base::TimeTicks::Now();
++      if (process_.WaitForExitWithTimeout(
++              std::clamp(remaining, base::TimeDelta(), base::Milliseconds(100)),
++              nullptr)) return true;
++      if (remaining <= base::TimeDelta()) return false;
++    }
++  }
+   void StopChild() {
+     health_.Stop();
+     timeout_.Stop();
+@@ -388,7 +410,13 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
+     request_.reset();
+     context_.reset();
+     if (process_.IsValid()) {
+-      if (Running()) process_.Terminate(0, true);
++      if (Running()) {
++        process_.Terminate(0, false);
++        if (!WaitForChildExit(base::Seconds(60)) &&
++            kill(process_.Pid(), SIGKILL) == 0) {
++          WaitForChildExit(base::TimeDelta::Max());
++        }
++      }
+       process_.Close();
+     }
+     credentials_.reset();

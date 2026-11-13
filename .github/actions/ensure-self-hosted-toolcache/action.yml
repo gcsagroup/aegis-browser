@@ -1,0 +1,29 @@
+name: Ensure self-hosted toolcache
+description: Point RUNNER_TOOL_CACHE at the runner _work/_tool tree so setup-ruby/node do not mkdir /Users/runner.
+outputs:
+  tool_cache:
+    description: Absolute toolcache directory for subsequent setup-* steps
+    value: ${{ steps.set.outputs.tool_cache }}
+runs:
+  using: composite
+  steps:
+    - id: set
+      name: Point toolcache at the runner work tree
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ] || [ "${{ runner.environment }}" = "self-hosted" ]; then
+          tool_cache="$(cd "${GITHUB_WORKSPACE}/../.." && pwd -P)/_tool"
+        else
+          tool_cache="${RUNNER_TOOL_CACHE:-}"
+        fi
+        if [ -n "$tool_cache" ]; then
+          mkdir -p "$tool_cache"
+          echo "tool_cache=$tool_cache" >> "$GITHUB_OUTPUT"
+          echo "RUNNER_TOOL_CACHE=$tool_cache" >> "$GITHUB_ENV"
+          echo "AGENT_TOOLSDIRECTORY=$tool_cache" >> "$GITHUB_ENV"
+          echo "Using toolcache at $tool_cache"
+        else
+          echo "tool_cache=" >> "$GITHUB_OUTPUT"
+          echo "No toolcache override on this runner"
+        fi
