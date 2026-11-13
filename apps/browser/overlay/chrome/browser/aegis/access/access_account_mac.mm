@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -86,7 +87,7 @@ std::optional<uint64_t> Bytes(id value) {
   std::string_view text(utf8, [string lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
   if (text.size() > 1 && text.front() == '0') return std::nullopt;
   uint64_t result;
-  const char* end = text.data() + text.size();
+  const char* end = std::to_address(text.end());
   auto parsed = std::from_chars(text.data(), end, result);
   if (parsed.ec != std::errc{} || parsed.ptr != end) return std::nullopt;
   return result;
