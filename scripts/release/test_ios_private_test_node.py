@@ -26,10 +26,10 @@ class PrivateNodePackagingTests(unittest.TestCase):
         return result.returncode
 
     def test_channel_transitions_in_reused_product(self):
-        for channel in ('alpha', 'beta'):
+        for channel in ('dev', 'alpha'):
             self.assertEqual(self.stage(channel), 0)
             self.assertEqual(self.output.read_bytes(), URI)
-        for channel in ('release', 'stable', 'dev', '', 'unknown'):
+        for channel in ('beta', 'release', 'stable', '', 'unknown'):
             self.output.write_bytes(URI)
             self.assertEqual(self.stage(channel, self.source.with_name('missing')), 0)
             self.assertFalse(self.output.exists())
@@ -44,7 +44,7 @@ class PrivateNodePackagingTests(unittest.TestCase):
                 self.source.unlink()
             else:
                 self.source.write_bytes(data)
-            self.assertNotEqual(self.stage('beta'), 0)
+            self.assertNotEqual(self.stage('alpha'), 0)
             self.assertFalse(self.output.exists())
 
     def test_private_signing_wrapper_keeps_uri_out_of_xcode_and_cleans_up(self):
@@ -83,20 +83,21 @@ sys.exit(int(os.environ['SIMULATED_EXIT']))
         marker = root / 'called'
         wrapper = SCRIPT.parents[3] / 'scripts/release/ios-private-test-node-archive.sh'
         cases = [
-                ('release', 'release', 0, 2), ('beta', 'beta', 0, 0),
-                ('beta', 'release', 0, 1), ('beta', 'beta', 7, 7), ('alpha', 'alpha', 0, 0)]
+                ('release', 'release', 0, 2), ('beta', 'beta', 0, 2), ('dev', 'dev', 0, 0),
+                ('alpha', 'release', 0, 1), ('alpha', 'alpha', 7, 7), ('alpha', 'alpha', 0, 0)]
         cases = [(*case, '', '') for case in cases]
-        cases.extend(('beta', 'beta', 0, 1, target, value)
+        cases.extend(('alpha', 'alpha', 0, 1, target, value)
                      for target in ('app', 'SafariWebExtension.appex', 'ShareExtension.appex')
-                     for value in ('', 'alpha'))
+                     for value in ('', 'beta'))
         for channel, stamp, upstream_exit, expected, target, value in cases:
+            marker.unlink(missing_ok=True)
             env = dict(os.environ, PATH=str(root) + os.pathsep + os.environ['PATH'], RUNNER_TEMP=str(root),
                        EXPECTED_INPUT=str(self.source), MARKER=str(marker), STAMP=stamp, BAD_TARGET=target, BAD_PROFILE=value, SIMULATED_EXIT=str(upstream_exit),
                        AEGIS_ACCESS_TEST_NODE_URI=URI.decode())
             result = subprocess.run(['bash', str(wrapper), channel], env=env, capture_output=True)
             self.assertEqual(result.returncode, expected, result.stderr)
             self.assertNotIn(URI, result.stdout + result.stderr)
-            if channel == 'release':
+            if channel in ('release', 'beta'):
                 self.assertFalse(marker.exists())
             else:
                 input_path = Path(marker.read_text())

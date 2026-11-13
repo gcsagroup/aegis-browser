@@ -11,6 +11,7 @@ public struct AccessRealityVisionParameters: Sendable, Equatable {
     public let serverName: String
     public let publicKey: String
     public let shortID: String
+    public let spiderX: String
     public let fingerprint: String
 
     public static let admittedFlow = "xtls-rprx-vision"
@@ -26,7 +27,8 @@ public struct AccessRealityVisionParameters: Sendable, Equatable {
         serverName: String,
         publicKey: String,
         shortID: String,
-        fingerprint: String = AccessRealityVisionParameters.defaultFingerprint
+        fingerprint: String = AccessRealityVisionParameters.defaultFingerprint,
+        spiderX: String = ""
     ) throws {
         self.address = try Self.canonicalNonEmpty(address, field: "address")
         guard port > 0 else {
@@ -36,6 +38,7 @@ public struct AccessRealityVisionParameters: Sendable, Equatable {
         self.userID = try Self.canonicalUserID(userID)
         self.serverName = try Self.canonicalNonEmpty(serverName, field: "serverName")
         self.publicKey = try Self.canonicalNonEmpty(publicKey, field: "publicKey")
+        self.spiderX = spiderX
         self.shortID = try Self.canonicalShortID(shortID)
         self.fingerprint = try Self.canonicalNonEmpty(fingerprint, field: "fingerprint")
     }
@@ -62,6 +65,7 @@ public struct AccessRealityVisionParameters: Sendable, Equatable {
     }
 
     private static func canonicalShortID(_ value: String) throws -> String {
+        if value.isEmpty { return "" }
         let trimmed = try canonicalNonEmpty(value, field: "shortID")
         let allowed = CharacterSet(charactersIn: "0123456789abcdefABCDEF")
         guard trimmed.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {

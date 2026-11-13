@@ -474,3 +474,5 @@
 0472-fix-diagnostic-clear-and-share-confirmation.patch
 0473-fix-diagnostic-archive-cleanup-retry.patch
 0474-fix-diagnostic-pipe-read-bounds.patch
+0475-macos-account-node-scoped-connect.patch
+0476-fix-paid-site-test-transport-dependency.patch

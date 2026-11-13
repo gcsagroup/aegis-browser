@@ -69,6 +69,8 @@ bash apps/ios/scripts/run-simulator-tests.sh \
 
 The runner increments the build number in `project.yml`, regenerates the project, builds once and tests the same product on both named QA simulators. Build output stays in the sibling directory `GCSA-aegis-build/ios/DerivedData`; the app is always `Build/Products/Debug-iphonesimulator/Aegis.app`. Evidence gets a new directory for each run. Existing simulators and evidence are not erased.
 
+Evidence includes input hashes for `apps/ios`, `packages/core` and the browser’s `enhancements_shared` resources referenced by the iOS project, with separate source, generated build-input and post-test manifests. Metadata records the original Git state and the state after project generation. The runner verifies the app's `CFBundleVersion` against the incremented build number before testing and includes that number in the Swift coverage reports.
+
 Tests use a loopback-only service at `127.0.0.1:8768`. Pages, downloads and model responses are synthetic; actual HTTP, WebKit and file operations test the integration. Synthetic responses do not establish external model quality. The runner starts and stops only its own fixture process, or reuses an existing matching service.
 
 For a manual demonstration, run `python3 apps/ios/scripts/simulator-fixture-server.py --port 8768`, browse to `http://127.0.0.1:8768/article`, and configure the compatible API at `http://127.0.0.1:8768/v1` with model `aegis-simulator-fixture`.
@@ -99,3 +101,11 @@ See the [tab groups, windows and iPad layout report](../../docs/audit/ios-window
 ## Release
 
 The [iOS 2.2.0 prerelease](https://github.com/gcsagroup/aegis-browser/releases/tag/ios-v2.2.0-preview.1) provides source and a validation summary. No signed IPA is available for installation or App Store submission. See the [changelog](../../CHANGELOG.md). Set `AEGIS_IOS_DERIVED_DATA` to reuse the fixed build directory from an isolated worktree. Tests also export Swift coverage and input stability records.
+
+### Current-account entitlement
+
+The app's foreground scene queries `GET /v1/me/entitlement` when an Access account session is bound. Set the signed build setting `AEGIS_ACCOUNT_SERVICE_ORIGIN` to the controlled HTTPS service origin. The app-owned session binds an operator-issued account ID and bearer to that exact endpoint in a device-only Keychain item. The ID verifies the reply. The HTTP request carries only the bearer. Call `bind(accountID:token:)` on a trusted native session change and `signOut()` on removal.
+
+For an isolated Debug simulator, use `simctl launch` child environment variables to provision the same app entry. Set `SIMCTL_CHILD_AEGIS_ACCOUNT_SIM_ORIGIN` to a numeric loopback service origin, `SIMCTL_CHILD_AEGIS_ACCOUNT_SIM_ACTION=bind`, and `SIMCTL_CHILD_AEGIS_ACCOUNT_SIM_ID` and `SIMCTL_CHILD_AEGIS_ACCOUNT_SIM_TOKEN` from the controlled operator session. Use `clear` to remove it. Keep the bearer out of launch arguments and logs. The loopback override is compiled only for Debug simulators.
+
+To run the native integration test, prefix the usual simulator `xcodebuild test -only-testing:AegisTests/AccessAccountSessionTests` invocation with `python3 apps/ios/scripts/account-entitlement-fixture.py`. It starts the real service with temporary A/B sessions and a separate redirect fixture.

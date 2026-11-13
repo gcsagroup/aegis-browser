@@ -4,6 +4,23 @@ import Foundation
 import UIKit
 import WebKit
 
+/// Captured when WebKit hands a native download to the browser. Each event
+/// keeps its own identity even when a tab requests the same URL again.
+public struct BrowserAccessDownload: Equatable {
+    fileprivate let requestID = UUID()
+    fileprivate let selectionID: UUID
+    public let tab: UUID
+    public let privateMode: Bool
+    public let target: URL
+    public let host: String
+
+    public static func canonicalHost(of url: URL?) -> String? {
+        guard let url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host, !host.isEmpty else { return nil }
+        return RegisteredDomain.normalizedHost(host)
+    }
+}
+
 /// App-owned exact-host stores. Nil keeps every tab on the store it was created with.
 public enum BrowserNavigationFailure {
     /// Main-frame failures that may receive one Access retry.
@@ -61,6 +78,7 @@ public struct BrowserMainFrameFailure: Equatable, Sendable {
 
 @MainActor
 public protocol BrowserHostStoreCoordinating: AnyObject {
+    func wouldSwitchStore(tab: BrowserTab, url: URL) -> Bool
     func dataStoreForMainFrame(tab: BrowserTab, url: URL) -> WKWebsiteDataStore?
     func mainFrameFailed(tab: BrowserTab, failure: BrowserMainFrameFailure, error: NSError)
     func pendingRecoveryInvalidated(tab: BrowserTab)
@@ -81,12 +99,28 @@ public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     public let id: UUID
+    public var onAccessContextClosed: (() -> Void)?
+    fileprivate var accessSelectionID = UUID()
+    public var selectedAccessHost: String? { didSet { accessSelectionID = UUID() } }
     /// Live ownership is never reused when a saved tab UUID is restored.
     public let instanceID = UUID()
     private var configuration: WKWebViewConfiguration
     /// Store captured when the tab was created. Returning to the original connection uses this object.
     public let originalWebsiteDataStore: WKWebsiteDataStore
     public var websiteDataStore: WKWebsiteDataStore { configuration.websiteDataStore }
+    /// Tab-local parent of a canonical HTTPS landing page. The landing host has its own store.
+    public private(set) var proxyLandingParent: String?
+    private var proxyLandingTarget: String?
+    public func clearProxyLanding() {
+        proxyLandingParent = nil
+        proxyLandingTarget = nil
+    }
+
+    public func parentForProxyLanding(_ url: URL) -> String? {
+        guard url.scheme == "https", url.port == nil || url.port == 443,
+              url.host?.lowercased() == proxyLandingTarget else { return nil }
+        return proxyLandingParent
+    }
     public var boundHostName: String?
     public var browsingScopeID = "ordinary"
     var configurationFactory: ((WKWebsiteDataStore) -> WKWebViewConfiguration)?
@@ -124,6 +158,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     private var unboundAttempts: [MainFrameAttempt] = []
     /// Only app-issued loads waiting for content rules / a window / the next turn.
     /// Policy-approved page actions already belong to WebKit and must survive cancellation here.
+    private weak var provisionalNavigation: WKNavigation?
+    private var provisionalDeadlineExpired = false
+    private var provisionalDeadline: Task<Void, Never>?
     private var deferredDocumentNavigationID: String?
     private var programmaticPolicyNavigationID: String?
     private var confirmedRedirectPolicy: (navigationID: String, url: URL)?
@@ -344,6 +381,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func retireAllNavigationIdentities() {
+        provisionalNavigation = nil
+        provisionalDeadline?.cancel()
         attemptsByNavigation.removeAll()
         unboundAttempts.removeAll()
         pendingNavigation = nil
@@ -467,20 +506,39 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         deferredDocumentNavigationID = nil
     }
 
-    func alignStore(for url: URL, previous: URL?, method: String, body: Data?) {
-        guard !isDisposed else { return }
+    private func rejectUnavailableLanding(_ url: URL, store: WKWebsiteDataStore?) -> Bool {
+        guard parentForProxyLanding(url) != nil, store == nil else { return false }
+        loadingErrorPresentation = .resource("代理入口还不能使用")
+        loadingErrorAllowsProxyRetry = false
+        isLoading = false
+        return true
+    }
+
+    func alignStore(for url: URL, previous: URL?, method: String, body: Data?) -> Bool {
+        guard !isDisposed else { return false }
         let hostChanged = previous?.host?.lowercased() != nil
             && url.host?.lowercased() != nil
             && previous?.host?.lowercased() != url.host?.lowercased()
-        let routed = hostCoordinator?.dataStoreForMainFrame(tab: self, url: url)
-        let desired = routed ?? originalWebsiteDataStore
-        guard hostChanged || desired !== configuration.websiteDataStore else { return }
-        if ["POST", "PATCH"].contains(method.uppercased()), body == nil, hostChanged {
+        if ["POST", "PATCH"].contains(method.uppercased()), body == nil,
+           hostCoordinator?.wouldSwitchStore(tab: self, url: url) == true {
             loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
             loadingErrorAllowsProxyRetry = false
-            return
+            return false
+        }
+        if url.scheme != "https" || (url.port != nil && url.port != 443) || url.host?.lowercased() != proxyLandingTarget {
+            clearProxyLanding()
+        }
+        let routed = hostCoordinator?.dataStoreForMainFrame(tab: self, url: url)
+        guard !rejectUnavailableLanding(url, store: routed) else { return false }
+        let desired = routed ?? originalWebsiteDataStore
+        guard hostChanged || desired !== configuration.websiteDataStore else { return true }
+        if ["POST", "PATCH"].contains(method.uppercased()), body == nil, desired !== configuration.websiteDataStore {
+            loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
+            loadingErrorAllowsProxyRetry = false
+            return false
         }
         rebindWebsiteDataStore(desired, host: routed == nil ? nil : url.host?.lowercased())
+        return true
     }
 
     func commitPreservingMethod(_ request: URLRequest, continuesAttempt: Bool = false) {
@@ -507,7 +565,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         }
         deferredDocumentNavigationID = attempt.navigationID
         committedRequestMethod = method
-        alignStore(for: url, previous: requestedURL, method: method, body: request.httpBody)
+        guard alignStore(for: url, previous: requestedURL, method: method, body: request.httpBody) else { return }
         requestedURL = url
         isLoading = true
         var outgoing = request
@@ -621,9 +679,34 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if let navigation {
             // A synchronous policy acknowledgment can add request details before load returns.
             bindNavigation(navigation, to: attempt.navigationID == recorded.navigationID ? attempt : recorded)
+            if ["http", "https"].contains(request.url?.scheme ?? ""), request.timeoutInterval > 0 {
+                armProvisionalDeadline(for: navigation, seconds: request.timeoutInterval)
+            }
         } else {
             retireUnboundAttempt(navigationID: recorded.navigationID)
         }
+    }
+
+    /// Some WebKit failures end the network load without delivering a terminal
+    /// delegate callback. Bound the provisional phase of this exact request.
+    private func armProvisionalDeadline(for navigation: WKNavigation, seconds: TimeInterval) {
+        provisionalDeadline?.cancel()
+        provisionalNavigation = navigation
+        provisionalDeadlineExpired = false
+        provisionalDeadline = Task { @MainActor [weak self, weak navigation] in
+            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
+            guard !Task.isCancelled, let self, let navigation, navigation === provisionalNavigation else { return }
+            provisionalDeadlineExpired = true
+            failExpiredProvisionalNavigation(navigation)
+        }
+    }
+
+    private func failExpiredProvisionalNavigation(_ navigation: WKNavigation) {
+        guard provisionalDeadlineExpired, navigation === provisionalNavigation, navigation === pendingNavigation,
+              isCurrent(navigation), isLoading, let view = loadedWebView else { return }
+        provisionalDeadlineExpired = false
+        view.stopLoading()
+        webView(view, didFailProvisionalNavigation: navigation, withError: URLError(.timedOut))
     }
 
     private func flushPendingAttachedLoad() {
@@ -666,6 +749,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func rebindWebsiteDataStore(_ store: WKWebsiteDataStore, host: String?) {
         guard !isDisposed else { return }
+        if host == nil {
+            clearProxyLanding()
+        }
         guard store !== configuration.websiteDataStore else {
             boundHostName = host
             return
@@ -738,6 +824,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             savedScrollOffset = view.scrollView.contentOffset
         }
         isDisposed = true
+        onAccessContextClosed?()
+        onAccessContextClosed = nil
+        selectedAccessHost = nil
         stop()
         if let view = loadedWebView as? BrowserContentWebView {
             view.terminateDocument(completion: completion)
@@ -751,6 +840,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
     }
 
     private func releaseWebView(keepTerminalDelegate: Bool = false) {
+        provisionalDeadline?.cancel()
         userScripts?.navigated()
         inspectionEnabled = false
         navigationEpoch &+= 1
@@ -803,7 +893,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         attempt.url = url
         attempt.method = "GET"
         committedRequestMethod = "GET"
-        alignStore(for: url, previous: previous, method: "GET", body: nil)
+        guard alignStore(for: url, previous: previous, method: "GET", body: nil) else { return }
         // Store replacement releases the old WebView and changes loadGeneration.
         let generation = loadGeneration
         isLoading = true
@@ -980,21 +1070,48 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         webPreferences.preferredContentMode = (site.desktop ?? preferences.values.desktop) ? .desktop : .recommended
         webPreferences.allowsContentJavaScript = site.javaScript ?? preferences.values.javaScript
         let decision = navigationDecision(requestURL, method: navigationAction.request.httpMethod ?? "GET")
-        let storeMismatch = hostCoordinator?.dataStoreForMainFrame(tab: self, url: requestURL)
-            .map { $0 !== websiteDataStore } == true
+        // A blocked action never commits a navigation or changes registry membership.
+        if decision.kind == .blocked {
+            blockNavigation(decision)
+            lastPolicyIntervention = decision
+            pendingNavigation = nil
+            isLoading = false
+            finish(.cancel)
+            return
+        }
+        let previousLanding = (proxyLandingParent, proxyLandingTarget)
+        if decision.kind != .blocked, navigationAction.navigationType == .other,
+           boundHostName != nil, let parent = proxyLandingParent ?? boundHostName, let target = requestURL.host?.lowercased(),
+           requestedURL?.scheme == "https", requestURL.scheme == "https",
+           requestURL.port == nil || requestURL.port == 443,
+           (navigationAction.request.httpMethod ?? "GET") == "GET",
+           !BrowserMainFrameFailure.requestHasUnsafeReplaySurface(navigationAction.request),
+           RegisteredDomain.isCanonicalLandingHost(target, for: parent) {
+            proxyLandingParent = parent
+            proxyLandingTarget = target
+        }
+        let method = navigationAction.request.httpMethod ?? "GET"
+        let body = navigationAction.request.httpBody
         let hostMismatch = requestedURL.map { $0.host?.lowercased() != requestURL.host?.lowercased() } ?? false
+        if ["POST", "PATCH"].contains(method.uppercased()), body == nil,
+           hostCoordinator?.wouldSwitchStore(tab: self, url: requestURL) == true {
+            (proxyLandingParent, proxyLandingTarget) = previousLanding
+            loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
+            loadingErrorAllowsProxyRetry = false
+            finish(.cancel)
+            return
+        }
+        let routedStore = hostCoordinator?.dataStoreForMainFrame(tab: self, url: requestURL)
+        if decision.kind != .blocked, rejectUnavailableLanding(requestURL, store: routedStore) {
+            (proxyLandingParent, proxyLandingTarget) = previousLanding
+            finish(.cancel)
+            return
+        }
+        let storeMismatch = (routedStore ?? originalWebsiteDataStore) !== websiteDataStore
         if decision.kind != .blocked,
            navigationAction.targetFrame?.isMainFrame != false,
-           hostMismatch || storeMismatch,
+           storeMismatch || (hostMismatch && !["POST", "PATCH"].contains(method.uppercased())),
            realignedNavigationURL != requestURL {
-            let method = navigationAction.request.httpMethod ?? "GET"
-            let body = navigationAction.request.httpBody
-            if ["POST", "PATCH"].contains(method.uppercased()), body == nil {
-                loadingErrorPresentation = .resource("无法在切换连接时保留这次提交，请返回后重新提交。")
-                loadingErrorAllowsProxyRetry = false
-                finish(.cancel)
-                return
-            }
             realignedNavigationURL = requestURL
             finish(.cancel)
             var request = navigationAction.request
@@ -1143,6 +1260,7 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
         if isLatestAttempt(recorded) {
             attempt = recorded
             requestedURL = redirected
+            failExpiredProvisionalNavigation(navigation)
         }
     }
 
@@ -1174,6 +1292,8 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
 
     public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         guard webView === loadedWebView, isCurrent(navigation) else { return }
+        provisionalNavigation = nil
+        provisionalDeadline?.cancel()
         confirmedRedirectPolicy = nil
         if let navigation, let recorded = attemptsByNavigation[ObjectIdentifier(navigation)] {
             let scheme = recorded.url.scheme?.lowercased() ?? ""
@@ -1606,7 +1726,16 @@ public final class BrowserSession: ObservableObject {
         get { sessionErrorPresentation?.text }
         set { sessionErrorPresentation = newValue.map(AegisLocalizedMessage.verbatim) }
     }
-    @Published public var pendingDownloadURL: URL?
+    public private(set) var pendingAccessDownload: BrowserAccessDownload?
+    public func ownsAccessDownload(_ request: BrowserAccessDownload) -> Bool {
+        guard pendingAccessDownload == request, let tab = activeTab, tab.id == request.tab,
+              tab.profile.isPrivate == request.privateMode, tab.accessSelectionID == request.selectionID,
+              tab.selectedAccessHost == request.host else { return false }
+        return BrowserAccessDownload.canonicalHost(of: tab.url) == request.host
+    }
+    @Published public var pendingDownloadURL: URL? {
+        didSet { if pendingDownloadURL == nil { pendingAccessDownload = nil } }
+    }
     @Published public var pendingMarkdown: MarkdownDocument?
     @Published public private(set) var standardGroups: [BrowserTabGroup] = []
     @Published public private(set) var privateGroups: [BrowserTabGroup] = []
@@ -1921,7 +2050,7 @@ public final class BrowserSession: ObservableObject {
         guard !profile.isPrivate else { return }
         // WebKit 的普通网站存储由各窗口共享，清除前同时停止所有普通页面。
         for session in Self.sessions.compactMap(\.value) {
-            session.standardTabs.forEach { $0.stop() }
+            session.standardTabs.forEach { $0.onAccessContextClosed?(); $0.stop() }
             session.standardGroups = []; session.standardGroupID = nil
             session.standardTabs = [session.makeTab(profile: .standard)]
             session.standardActiveID = session.standardTabs.first?.id
@@ -2034,8 +2163,16 @@ public final class BrowserSession: ObservableObject {
             child.inheritedHardenedSecurity = hardened
             child.load(url)
         }
-        tab.onDownload = { [weak self] url in
-            guard let self, self.profile == profile else { return }
+        tab.onDownload = { [weak self, weak tab] url in
+            guard let self, let tab, self.profile == profile else { return }
+            let pageHost = BrowserAccessDownload.canonicalHost(of: tab.url)
+            let targetHost = BrowserAccessDownload.canonicalHost(of: url)
+            self.pendingAccessDownload = nil
+            if let host = tab.selectedAccessHost,
+               (pageHost == nil || pageHost == host), (targetHost == nil || targetHost == host) {
+                self.pendingAccessDownload = BrowserAccessDownload(selectionID: tab.accessSelectionID, tab: tab.id,
+                    privateMode: profile.isPrivate, target: url, host: host)
+            }
             self.pendingDownloadURL = url
         }
         return tab

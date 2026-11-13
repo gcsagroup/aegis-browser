@@ -87,6 +87,7 @@ class PanelEntitlementTest(unittest.TestCase):
         self.mock.paths, self.mock.status, self.mock.body, self.mock.during_read = [], 200, None, None
         panel = Panel(f"http://127.0.0.1:{self.mock.server_port}/tenant/", "fixture-panel-key")
         server = self.start(create_server(self.path, clock_ms=lambda: NOW, panel=panel))
+        self.server = server
         self.http = http.client.HTTPConnection(*server.server_address, timeout=4)
         self.addCleanup(self.http.close)
 
@@ -163,3 +164,118 @@ class PanelEntitlementTest(unittest.TestCase):
                         db.commit()
                 self.mock.during_read = mutate
                 self.assertEqual(self.read(), expected)
+
+    def alpha(self):
+        self.server.panel = Panel(
+            f"http://127.0.0.1:{self.mock.server_port}/tenant/", "fixture-panel-key",
+            alpha_panel_client=A)
+        self.a.update(up=123, down=456)
+        self.mock.settings[SETTINGS + "client%2Ba"].update(totalGB=1000000000, expiryTime=0)
+
+    def test_alpha_no_panel_expiry_keeps_finite_local_period_and_unknown_measurement(self):
+        self.alpha()
+        status, data = self.read()
+        self.assertEqual(status, 200)
+        self.assertEqual((data["quotaSource"], data["panelExpiryMode"], data["panelExpiresAt"]),
+                         ("3xui_alpha", "none", None))
+        self.assertEqual((data["expiresAt"], data["periodEnd"]), (NOW + 2000, NOW + 2000))
+        self.assertEqual((data["quotaBytes"], data["usedBytes"], data["remainingBytes"]),
+                         ("1000000000", "579", "999999421"))
+        self.assertEqual((data["measuredAt"], data["snapshotAgeMs"], data["freshness"]),
+                         (None, None, "unavailable"))
+        self.assertEqual(data["status"], "active")
+        self.assertEqual(data["evaluatedAt"], NOW)
+
+    def test_alpha_absolute_expiry_is_bounded_by_local_period(self):
+        self.alpha()
+        for expiry, effective, status in [(NOW + 1000, NOW + 1000, "active"),
+                                          (NOW + 3000, NOW + 2000, "active"),
+                                          (NOW, NOW, "expired")]:
+            with self.subTest(expiry=expiry):
+                self.mock.settings[SETTINGS + "client%2Ba"]["expiryTime"] = expiry
+                code, data = self.read()
+                self.assertEqual(code, 200)
+                self.assertEqual((data["panelExpiryMode"], data["panelExpiresAt"],
+                                  data["expiresAt"], data["status"]),
+                                 ("absolute", expiry, effective, status))
+
+    def test_alpha_expired_local_period_wins_over_exhaustion(self):
+        self.alpha()
+        self.a["up"] = 1000000000
+        with closing(sqlite3.connect(self.path)) as db:
+            db.execute("UPDATE plans SET period_end=? WHERE account_id=?", (NOW, "A"))
+            db.commit()
+        code, data = self.read()
+        self.assertEqual(code, 200)
+        self.assertEqual((data["status"], data["expiresAt"], data["remainingBytes"]),
+                         ("expired", NOW, "0"))
+
+    def test_alpha_disabled_without_expiry_is_not_mistaken_for_expired(self):
+        self.alpha()
+        settings = self.mock.settings[SETTINGS + "client%2Ba"]
+        for row in (settings, self.a):
+            row["enable"] = False
+            self.assertEqual(self.read(), FAILURE)
+            row["enable"] = True
+        settings["enable"] = False
+        self.a.update(up=999999544, down=456)
+        code, data = self.read()
+        self.assertEqual(code, 200)
+        self.assertEqual((data["status"], data["usedBytes"], data["remainingBytes"]),
+                         ("exhausted", "1000000000", "0"))
+
+    def test_alpha_scope_auth_and_unsubscribed_make_zero_panel_requests(self):
+        self.alpha()
+        self.assertEqual(self.read("B"), FAILURE)
+        self.assertEqual(self.read("unknown"), (401, {"error": "unauthorized"}))
+        code, data = self.read("empty")
+        self.assertEqual((code, data["status"]), (200, "not_subscribed"))
+        self.assertTrue(all(key not in data for key in
+                            ("quotaSource", "panelExpiryMode", "panelExpiresAt")))
+        self.assertEqual(self.mock.paths, [])
+
+    def test_alpha_daily_reads_current_panel_counters_across_reset(self):
+        self.alpha()
+        self.mock.settings[SETTINGS + "client%2Ba"]["trafficReset"] = "daily"
+        self.mock.settings[SETTINGS + "client%2Ba"]["totalGB"] = 10000000000
+        for up, down in [(85356101, 920205026), (0, 0), (17, 39)]:
+            with self.subTest(up=up, down=down):
+                self.a.update(up=up, down=down)
+                code, data = self.read()
+                self.assertEqual(code, 200)
+                self.assertEqual(data["quotaSource"], "3xui_alpha")
+                self.assertEqual((data["quotaBytes"], data["uploadedBytes"], data["downloadedBytes"]),
+                                 ("10000000000", str(up), str(down)))
+                self.assertEqual(data["remainingBytes"], str(10000000000-up-down))
+                self.assertEqual((data["measuredAt"], data["snapshotAgeMs"], data["freshness"]),
+                                 (None, None, "unavailable"))
+
+    def test_alpha_rejects_invalid_limits_resets_and_panel_failures(self):
+        self.alpha()
+        settings = self.mock.settings[SETTINGS + "client%2Ba"]
+        for field, value in [("expiryTime", -1), ("expiryTime", True),
+                              ("expiryTime", 2**53), ("totalGB", 0), ("totalGB", -1),
+                              ("trafficReset", "hourly"), ("reset", 1),
+                              ("resetDay", 1), ("resetWeekday", 1)]:
+            with self.subTest(field=field, value=value):
+                self.mock.settings[SETTINGS + "client%2Ba"] = dict(settings, **{field: value})
+                self.assertEqual(self.read(), FAILURE)
+        self.mock.settings[SETTINGS + "client%2Ba"] = settings
+        self.assertEqual(self.read()[0], 200)
+        self.mock.status = 503
+        self.assertEqual(self.read(), FAILURE)
+        self.mock.status = 200
+        self.server.panel.token = "wrong-fixture-token"
+        self.assertEqual(self.read(), FAILURE)
+
+    def test_alpha_preserves_session_and_plan_recheck(self):
+        self.alpha()
+        self.test_rechecks_session_and_plan_after_upstream_response()
+
+    def test_default_response_has_no_alpha_metadata_and_still_rejects_zero_expiry(self):
+        code, data = self.read()
+        self.assertEqual(code, 200)
+        self.assertTrue(all(key not in data for key in
+                            ("quotaSource", "panelExpiryMode", "panelExpiresAt")))
+        self.mock.settings[SETTINGS + "client%2Ba"]["expiryTime"] = 0
+        self.assertEqual(self.read(), FAILURE)
