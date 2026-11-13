@@ -1,5 +1,10 @@
 import Foundation
 
+/// Severity threshold understood by the pinned Xray core.
+public enum AccessLogLevel: String, CaseIterable, Sendable {
+    case debug, info, warning, error, none
+}
+
 /// Generated Xray client config document for the admitted `reality_vision` path.
 ///
 /// The document always contains a single VLESS outbound with RAW TCP + REALITY +
@@ -34,14 +39,28 @@ public struct AccessRealityVisionOutboundConfig: @unchecked Sendable {
         return text
     }
 
-    /// Document passed to the in-process bridge `Start`. Adds empty inbounds and
-    /// quiet logging; never injects freedom / DIRECT.
-    public func embeddedInstanceJSONObject() throws -> [String: Any] {
+    /// Document passed to the in-process bridge `Start`. Never injects
+    /// freedom / DIRECT. Logging stays quiet without an explicit sink.
+    public func embeddedInstanceJSONObject(
+        logLevel: AccessLogLevel = .none,
+        errorLogPath: String? = nil,
+        includeAccessLog: Bool = false
+    ) throws -> [String: Any] {
         guard let outbounds = jsonObject["outbounds"] else {
             throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("outbounds")
         }
+        // An enabled log must have a controlled sink: Xray otherwise writes
+        // to process stdout.
+        guard logLevel == .none || (errorLogPath?.hasPrefix("/") == true && errorLogPath != "/") else {
+            throw AccessRealityVisionOutboundConfigError.fieldNotCanonical("errorLogPath")
+        }
+        let log: [String: Any] = [
+            "loglevel": logLevel.rawValue,
+            "access": logLevel == .none || !includeAccessLog ? "none" : errorLogPath!,
+            "error": logLevel == .none ? "none" : errorLogPath!,
+        ]
         let root: [String: Any] = [
-            "log": ["loglevel": "none"],
+            "log": log,
             "inbounds": [Any](),
             "outbounds": outbounds,
         ]
@@ -49,13 +68,18 @@ public struct AccessRealityVisionOutboundConfig: @unchecked Sendable {
         return root
     }
 
-    public func embeddedInstanceJSONData(prettyPrinted: Bool = false) throws -> Data {
+    public func embeddedInstanceJSONData(
+        prettyPrinted: Bool = false,
+        logLevel: AccessLogLevel = .none,
+        errorLogPath: String? = nil,
+        includeAccessLog: Bool = false
+    ) throws -> Data {
         var options: JSONSerialization.WritingOptions = [.sortedKeys]
         if prettyPrinted {
             options.insert(.prettyPrinted)
         }
         return try JSONSerialization.data(
-            withJSONObject: try embeddedInstanceJSONObject(),
+            withJSONObject: try embeddedInstanceJSONObject(logLevel: logLevel, errorLogPath: errorLogPath, includeAccessLog: includeAccessLog),
             options: options
         )
     }

@@ -345,6 +345,9 @@
 		A10CCE55ACC002000000000D /* AccessProxyConfigurationBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */; };
 		A10CCE55ACC002000000000E /* AccessProxyConfigurationApplicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */; };
 		A10CCE55ACC002000000000F /* AccessProxyConfigurationApplicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */; };
+		A95B25CD525E6F022509942F /* AccessDiagnosticArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A5DB2AAE6BBEAC5556F7FD /* AccessDiagnosticArchive.swift */; };
+		94E486D821FCDABEFC587B2E /* AccessDiagnosticLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8756C4E777C08AF7D26AF3F0 /* AccessDiagnosticLog.swift */; };
+		15E3622E2DBBE73D2D534790 /* AccessDiagnosticLogStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E15216C715019288D968C9 /* AccessDiagnosticLogStorage.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -844,6 +847,9 @@
 		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
 		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
+		F1A5DB2AAE6BBEAC5556F7FD /* AccessDiagnosticArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDiagnosticArchive.swift; sourceTree = "<group>"; };
+		8756C4E777C08AF7D26AF3F0 /* AccessDiagnosticLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDiagnosticLog.swift; sourceTree = "<group>"; };
+		39E15216C715019288D968C9 /* AccessDiagnosticLogStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDiagnosticLogStorage.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1337,6 +1343,9 @@
 		A10CCE55ACC0030000000001 /* AccessKit */ = {
 			isa = PBXGroup;
 			children = (
+				F1A5DB2AAE6BBEAC5556F7FD /* AccessDiagnosticArchive.swift */,
+				8756C4E777C08AF7D26AF3F0 /* AccessDiagnosticLog.swift */,
+				39E15216C715019288D968C9 /* AccessDiagnosticLogStorage.swift */,
 				A10CCE55ACC0010000000002 /* AccessContractError.swift */,
 				A10CCE55ACC0010000000010 /* AccessCredentialSlot.swift */,
 				A10CCE55ACC0010000000011 /* AccessEndpoint.swift */,
@@ -2128,6 +2137,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A95B25CD525E6F022509942F /* AccessDiagnosticArchive.swift in Sources */,
+				94E486D821FCDABEFC587B2E /* AccessDiagnosticLog.swift in Sources */,
+				15E3622E2DBBE73D2D534790 /* AccessDiagnosticLogStorage.swift in Sources */,
 				A10CCE55ACC0020000000001 /* AccessContractError.swift in Sources */,
 				A10CCE55ACC0020000000010 /* AccessCredentialSlot.swift in Sources */,
 				A10CCE55ACC0020000000011 /* AccessEndpoint.swift in Sources */,

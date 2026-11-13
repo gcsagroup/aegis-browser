@@ -5,6 +5,7 @@ import SwiftUI
 
 final class AegisAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        _ = AccessDiagnosticArchive.recoveredTemporaryArchives
         AegisFirebase.shared.start()
         return true
     }
@@ -132,6 +133,7 @@ struct AegisApp: App {
         .commands { BrowserKeyboardCommands(language: language) }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { language.refresh(); AegisFirebase.shared.refreshOnForeground() }
+            if phase == .background { Task { try? await AccessDiagnosticLog.shared.flush() } }
         }
     }
 
