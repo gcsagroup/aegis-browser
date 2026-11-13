@@ -132,6 +132,8 @@ def verify(directory, ipa, live_quota=False):
         info = plistlib.loads(archive.read(root + 'Info.plist'))
         if info.get('AegisAccessReleaseChannel') != 'beta' or info.get('AegisReleaseProfile') != 'beta':
             raise ValueError('Expected Beta IPA')
+        if info.get('TFInternalTestingOnly') is not True:
+            raise ValueError('Private Beta requires an internal-only TestFlight IPA')
         for member, expected in (('AegisPrivateTestNode.vless', 'expected-node'),
                                  ('AegisPrivateTestSubscription.json', 'expected-subscription')):
             if archive.getinfo(root + member).file_size > 8192:

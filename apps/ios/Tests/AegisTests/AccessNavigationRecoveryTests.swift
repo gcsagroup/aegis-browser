@@ -144,13 +144,18 @@ final class AccessNavigationRecoveryTests: XCTestCase {
 
     func testAddressPresentationKeepsFailedTargetUntilANewNavigationSupersedesIt() async throws {
         let tab = makeTab()
+        try await tab.prepareContentRulesForTests()
         tab.load(URL(string: "aegis://start")!)
-        await waitUntil { tab.url?.absoluteString == "aegis://start" && !tab.isLoading }
+        await waitUntil({ tab.url?.absoluteString == "aegis://start" && !tab.isLoading }, timeout: 10)
         XCTAssertEqual(tab.url?.absoluteString, "aegis://start")
+        let previousNavigation = tab.currentNavigationForTests
         let target = URL(string: "https://192.0.2.1/failed-page")!
         tab.loadFromAddressBar(target)
         XCTAssertEqual(tab.addressBarURL, target)
-        await waitUntil { tab.currentNavigationForTests != nil }
+        await waitUntil({
+            guard let navigation = tab.currentNavigationForTests else { return false }
+            return navigation !== previousNavigation
+        }, timeout: 10)
         let navigation = try XCTUnwrap(tab.currentNavigationForTests)
         tab.webView(tab.webView, didFailProvisionalNavigation: navigation, withError: URLError(.timedOut))
         XCTAssertFalse(tab.isLoading)
