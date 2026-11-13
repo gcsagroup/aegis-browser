@@ -147,6 +147,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         self._credential_request(deleting=True)
 
+    # Keep the stdlib keyword signature for callers of the request handler.
     def log_message(self, format, *args):
         # BaseHTTPRequestHandler logs untrusted request targets, including query strings.
         pass
@@ -247,7 +248,7 @@ def main():
         parser.error("--sandbox-orders requires --stored-snapshots")
     try:
         panel = (Panel(args.panel_url, os.environ.get("AEGIS_3XUI_TOKEN"),
-                       alpha_panel_client=args.alpha_panel_client) if args.panel_url else None)
+                       alpha_panel_client=args.alpha_panel_client) if not args.stored_snapshots else None)
         node = None
         if any(value is not None for value in (args.node_config, args.node_host, args.node_port)):
             if args.node_config is None:

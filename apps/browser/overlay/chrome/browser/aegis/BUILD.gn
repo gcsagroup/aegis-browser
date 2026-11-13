@@ -287,6 +287,7 @@ source_set("aegis") {
       "aegis_torrent_client.h",
     ]
     deps += [
+      "//chrome/browser/aegis/access:access_core_log_archive",
       "//chrome/browser/aegis/access:access_network_context_transport",
       "//services/network/public/mojom",
       "//chrome/services/aegis_torrent/public/mojom",
@@ -543,6 +544,7 @@ test("aegis_browser_unittests") {
   }
   if (is_mac) {
     deps += [
+      "//chrome/browser/aegis/access:access_network_context_transport",
       "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
       "//chrome/browser/aegis/access:access_site_proxy_bubble",
       "//net:test_support",

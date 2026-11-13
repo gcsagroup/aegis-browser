@@ -106,7 +106,7 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
     func testArchiveContainsCompressedSnapshotAndCanBeRemoved() throws {
         let input = "access diagnostic event\n"
         let file = try AccessDiagnosticArchive.createTemporary(snapshot: input)
-        defer { AccessDiagnosticArchive.removeTemporary(file) }
+        defer { try? AccessDiagnosticArchive.removeTemporary(file) }
         let zip = try Data(contentsOf: file)
         XCTAssertEqual(Array(zip.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
         let compressedLength = zip[18..<22].enumerated().reduce(0) { $0 | Int($1.element) << ($1.offset * 8) }
@@ -115,8 +115,30 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         let deflate = zip.subdata(in: offset..<(offset + compressedLength))
         let decoded = try (deflate as NSData).decompressed(using: .zlib) as Data
         XCTAssertEqual(String(data: decoded, encoding: .utf8), input)
-        AccessDiagnosticArchive.removeTemporary(file)
+        try AccessDiagnosticArchive.removeTemporary(file)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    func testFailedArchiveDeletionBlocksSharingUntilCleanupCanBeRetried() throws {
+        let file = try AccessDiagnosticArchive.createTemporary(snapshot: "private destination")
+        defer { try? AccessDiagnosticArchive.retryTemporaryCleanup() }
+        XCTAssertThrowsError(try AccessDiagnosticArchive.removeTemporary(file) { _ in
+            throw CocoaError(.fileWriteNoPermission)
+        })
+        XCTAssertTrue(AccessDiagnosticArchive.hasPendingCleanup)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        XCTAssertThrowsError(try AccessDiagnosticArchive.createTemporary(snapshot: "another snapshot")) {
+            guard case AccessDiagnosticArchive.ArchiveError.cleanupRequired = $0 else {
+                return XCTFail("Expected pending archive cleanup")
+            }
+        }
+        try AccessDiagnosticArchive.retryTemporaryCleanup()
+        XCTAssertFalse(AccessDiagnosticArchive.hasPendingCleanup)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        let next = try AccessDiagnosticArchive.createTemporary(snapshot: "another snapshot")
+        try FileManager.default.removeItem(at: next.deletingLastPathComponent())
+        try AccessDiagnosticArchive.removeTemporary(next)
+        XCTAssertFalse(AccessDiagnosticArchive.hasPendingCleanup)
     }
 
     func testStopDrainsFinalCompleteRecordsBeforeTheFirstPollAndPersistsThem() async throws {
@@ -428,6 +450,52 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         XCTAssertEqual(restarted.snapshot(), log.snapshot())
     }
 
+    func testClearAtTheReadLimitKeepsTheFirstCompleteNewEvent() throws {
+        let log = AccessDiagnosticLog(pollInterval: .seconds(60), readsPerPoll: 1)
+        let capture = try XCTUnwrap(log.start(level: .info, secrets: []))
+        defer { log.stop() }
+        let writer = try FileHandle(forWritingTo: URL(fileURLWithPath: capture.path))
+        let old = "2026/11/11 00:00:00 from local accepted //old.invalid:443\n"
+        let new = "2026/11/11 00:00:00 from local accepted //new.invalid:443\n"
+        let prefix = old + String(repeating: "x", count: 4096 - old.utf8.count)
+        try writer.write(contentsOf: Data(prefix.utf8))
+        log.clear()
+        try writer.write(contentsOf: Data(("\n" + new).utf8))
+        try writer.close()
+        XCTAssertTrue(log.stop(capture: capture))
+        XCTAssertTrue(log.snapshot().contains("new.invalid:443"))
+        XCTAssertFalse(log.snapshot().contains("old.invalid"))
+    }
+
+    func testClearPersistsFreshRecordsReadWhileDrainingOldBytes() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("access-clear-drain-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let new = Data("2026/11/11 00:00:00 from local accepted //during-clear.invalid:443\n".utf8)
+        let writer = Mutex<FileHandle?>(nil)
+        let log = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info,
+                                      pollInterval: .seconds(60), afterClearPipeSnapshot: {
+            writer.withLock { try? $0?.write(contentsOf: new) }
+        })
+        let capture = try XCTUnwrap(log.start(level: .info, secrets: []))
+        defer { log.stop() }
+        let pipe = try FileHandle(forWritingTo: URL(fileURLWithPath: capture.path))
+        defer { try? pipe.close() }
+        writer.withLock { $0 = pipe }
+        try await log.flush()
+        try pipe.write(contentsOf: Data("2026/11/11 00:00:00 from local accepted //old.invalid:443\n".utf8))
+        try await log.clearStoredLogs()
+        XCTAssertTrue(log.snapshot().contains("during-clear.invalid:443"))
+        let history = directory.appendingPathComponent("history.json")
+        let deadline = Date().addingTimeInterval(5)
+        while !FileManager.default.fileExists(atPath: history.path) && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        let persisted = try String(contentsOf: history, encoding: .utf8)
+        XCTAssertTrue(persisted.contains("during-clear.invalid:443"))
+        XCTAssertFalse(persisted.contains("old.invalid"))
+    }
+
     func testShortRedactedRecordsRespectTheDiskRecordLimit() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("access-record-limit-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -482,6 +550,32 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
             XCTAssertEqual(restarted.snapshot(), redacted)
             XCTAssertFalse(restarted.persistenceUnavailable)
         }
+    }
+
+    func testDelayedRestoreRedactsCredentialsAfterCaptureStops() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("access-stop-before-restore-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let line = "2026/11/11 00:00:00 [Access] accepted private.example:443"
+        try JSONSerialization.data(withJSONObject: ["version": 1, "lines": [line]])
+            .write(to: directory.appendingPathComponent("history.json"))
+        let storageQueue = DispatchQueue(label: "access.stop.before.restore.test")
+        storageQueue.suspend()
+        let log = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info, storageQueue: storageQueue)
+        do {
+            let capture = try XCTUnwrap(log.start(level: .info, secrets: ["private"]))
+            XCTAssertTrue(log.stop(capture: capture))
+        } catch {
+            storageQueue.resume()
+            throw error
+        }
+        storageQueue.resume()
+        try await log.flush()
+        let sanitized = "2026/11/11 00:00:00 [Access] accepted [redacted]"
+        XCTAssertEqual(log.snapshot(), sanitized)
+        let reopened = AccessDiagnosticLog(storageDirectory: directory, initialLevel: .info)
+        try await reopened.flush()
+        XCTAssertEqual(reopened.snapshot(), sanitized)
     }
 
     func testChangingCredentialsResanitizesHistoryThatAlreadyRestored() async throws {

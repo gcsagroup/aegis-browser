@@ -43,7 +43,8 @@ class AccessCoreLog {
     return result;
   }
   bool Add(std::string_view line,
-           const std::vector<std::string>& protected_values = {}) {
+           const std::vector<std::string>& protected_values = {},
+           const std::vector<std::string>& history_values = {}) {
     if (rank_ == 4)
       return false;
     // Go's stdlib timestamp, with optional microseconds.
@@ -97,10 +98,12 @@ class AccessCoreLog {
           normalized += https ? ":443" : ":80";
         target = normalized;
       }
-      safe += SafeTarget(target, protected_values) ? target : "[redacted]";
+      safe += SafeTarget(target) && !ContainsProtectedValue(target, protected_values) &&
+                      !ContainsProtectedValue(target, history_values)
+                  ? target : "[redacted]";
     } else {
-      constexpr std::string_view tags[] = {"[Debug] ", "[Info] ", "[Warning] ",
-                                           "[Error] "};
+      constexpr std::array<std::string_view, 4> tags = {
+          "[Debug] ", "[Info] ", "[Warning] ", "[Error] "};
       for (severity = 0; severity < 4 && !line.starts_with(tags[severity]);
            ++severity) {
       }
@@ -172,7 +175,8 @@ class AccessCoreLog {
         safe += "[redacted]";
       }
     }
-    if (severity < rank_)
+    if (severity < rank_ || ContainsProtectedValue(safe, protected_values) ||
+        ContainsProtectedValue(safe, history_values))
       return false;
     if (lines_.size() == 128)
       lines_.pop_front();
@@ -183,8 +187,7 @@ class AccessCoreLog {
  private:
   // Only expose a narrow host:port token. No URL/userinfo, paths, queries,
   // HTTP headers, access email, tags or node parameters can pass this grammar.
-  static bool SafeTarget(std::string_view target,
-                         const std::vector<std::string>& secrets) {
+  static bool SafeTarget(std::string_view target) {
     auto endpoint = target;
     if (endpoint.starts_with("tcp:") || endpoint.starts_with("udp:"))
       endpoint.remove_prefix(4);
@@ -200,9 +203,6 @@ class AccessCoreLog {
       n = n * 10 + c - '0';
     if (n == 0 || n > 65535)
       return false;
-    auto ascii_lower = [](char c) {
-      return static_cast<char>(c >= 'A' && c <= 'Z' ? c + 32 : c);
-    };
     if (host.front() == '[' && host.back() == ']') {
       host = host.substr(1, host.size() - 2);
       if (host.find(':') == host.npos ||
@@ -215,14 +215,18 @@ class AccessCoreLog {
                                  "TUVWXYZ0123456789-.") != host.npos)
         return false;
     }
-    std::string normalized(endpoint);
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                   ascii_lower);
-    for (const auto& secret : secrets) {
-      if (normalized.find(secret) != normalized.npos)
-        return false;
-    }
     return true;
+  }
+  static bool ContainsProtectedValue(std::string_view text,
+                                     const std::vector<std::string>& secrets) {
+    if (secrets.empty())
+      return false;
+    std::string normalized(text);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](char c) { return c >= 'A' && c <= 'Z' ? c + 32 : c; });
+    return std::any_of(secrets.begin(), secrets.end(), [&](const auto& secret) {
+      return normalized.find(secret) != normalized.npos;
+    });
   }
   static bool Digit(char c) { return c >= '0' && c <= '9'; }
   static bool Digits(std::string_view s) {
@@ -239,6 +243,15 @@ class AccessCoreLog {
 // Never interpret the tail of a truncated or split record as a fresh message.
 class CoreLogFramer {
  public:
+  void DiscardPartial() {
+    dropping_ = dropping_ || !line_.empty();
+    line_.clear();
+  }
+  void Discard(std::string_view bytes) {
+    if (!bytes.empty())
+      dropping_ = bytes.back() != '\n';
+  }
+
   template <typename Sink>
   void Feed(std::string_view bytes, Sink sink) {
     for (char c : bytes) {

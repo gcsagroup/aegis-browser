@@ -4,10 +4,12 @@
 
 #import <Foundation/Foundation.h>
 
-// A non-nil state supersedes the prepared reply. Run this check immediately
-// before delivering it on the consumer sequence. It reads only file metadata.
+// A non-nil state invalidates a node lease at delivery on the consumer sequence.
 typedef NSString* (^AegisAccountBindingChange)(void);
-typedef void (^AegisAccountCompletion)(NSDictionary*, AegisAccountBindingChange);
+
+// Resolve on the consumer sequence immediately before presenting the reply.
+typedef NSDictionary* (^AegisAccountReply)(void);
+typedef void (^AegisAccountCompletion)(AegisAccountReply);
 
 // The caller supplies its own regular Profile directory, never a renderer path.
 // Completion runs off the UI sequence. No response or session is cached.

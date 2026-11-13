@@ -1,4 +1,4 @@
-From 876a3eba857847da917900d91f41c8d61a008a4f Mon Sep 17 00:00:00 2001
+From 1b62d5997c5cdab24da95737b728b7a03690dd33 Mon Sep 17 00:00:00 2001
 From: Aegis Browser <devnull@localhost>
 Date: Thu, 12 Nov 2026 13:00:00 +0800
 Subject: [PATCH] fix(access): recognize ordinary unbranded DEV diagnostic
@@ -101,3 +101,6 @@ index 6dd0b660b42f23c030c87a08e1ecdb244ea5fe62..398065bbcf4fb600ddb295efc4f9db10
  }
  
  TEST(AccessCoreLogTest, ChannelDefaultsRetainThresholdRedactionAndManualOff) {
+-- 
+2.54.0 (Apple Git-157)
+

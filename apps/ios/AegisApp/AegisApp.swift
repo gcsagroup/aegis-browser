@@ -5,7 +5,7 @@ import SwiftUI
 
 final class AegisAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        _ = AccessDiagnosticArchive.recoveredTemporaryArchives
+        _ = AccessDiagnosticArchive.hasPendingCleanup
         AegisFirebase.shared.start()
         return true
     }

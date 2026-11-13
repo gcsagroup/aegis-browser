@@ -1,6 +1,11 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_core_log_store.h"
 
+#include <unistd.h>
+
+#include <array>
+#include <cerrno>
+
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/callback_helpers.h"
@@ -43,8 +48,8 @@ TEST_F(AccessCoreLogDiskTest,
   auto regular = Open();
   auto priv = Open(Scope::kPrivate);
   for (int i = 0; i < 160; ++i)
-    regular->Add(0, Entry(std::to_string(i) + ".example"), {});
-  priv->Add(0, Entry("private.example"), {});
+    regular->Add(0, 0, Entry(std::to_string(i) + ".example"), {});
+  priv->Add(0, 0, Entry("private.example"), {});
   environment_.RunUntilIdle();
   EXPECT_EQ(regular->disk_status(), Status::kReady);
   EXPECT_EQ(priv->disk_status(), Status::kReady);
@@ -68,7 +73,7 @@ TEST_F(AccessCoreLogDiskTest,
   priv.reset();
   auto restored = Open();
   auto restored_private = Open(Scope::kPrivate);
-  restored_private->Add(0, Entry("new.example"), {});
+  restored_private->Add(0, 0, Entry("new.example"), {});
   environment_.RunUntilIdle();
   EXPECT_EQ(restored->Snapshot(), history);
   EXPECT_TRUE(restored_private->Snapshot().starts_with(private_text + "\n"));
@@ -77,26 +82,28 @@ TEST_F(AccessCoreLogDiskTest,
 TEST_F(AccessCoreLogDiskTest, ClearAndNoneDefeatOlderRestoreAndQueuedWrites) {
   auto regular = Open();
   auto priv = Open(Scope::kPrivate);
-  regular->Add(0, Entry("old.example"), {});
-  priv->Add(0, Entry("private.example"), {});
+  regular->Add(0, 0, Entry("old.example"), {});
+  priv->Add(0, 0, Entry("private.example"), {});
   environment_.RunUntilIdle();
   regular.reset();
   regular = Open();
-  regular->Add(0, Entry("queued.example"), {});
+  regular->Add(0, 0, Entry("queued.example"), {});
   regular->Clear();
-  regular->Add(0, Entry("after.example"), {});
+  regular->Add(0, 0, Entry("buffered.example"), {});
+  regular->Add(0, regular->clear_epoch(), Entry("after.example"), {});
   environment_.RunUntilIdle();
   std::string contents;
   ASSERT_TRUE(base::ReadFileToString(Regular(), &contents));
   EXPECT_NE(contents.find("after.example"), contents.npos);
   EXPECT_EQ(contents.find("old.example"), contents.npos);
   EXPECT_EQ(contents.find("queued.example"), contents.npos);
+  EXPECT_EQ(contents.find("buffered.example"), contents.npos);
   regular->Clear();
   environment_.RunUntilIdle();
   EXPECT_FALSE(base::PathExists(Regular()));
   EXPECT_TRUE(base::PathExists(Private()));
   priv->SetLevel("none");
-  priv->Add(0, Entry("stale.example"), {});
+  priv->Add(0, 0, Entry("stale.example"), {});
   environment_.RunUntilIdle();
   EXPECT_TRUE(priv->Snapshot().empty());
   EXPECT_FALSE(base::PathExists(Private()));
@@ -104,15 +111,79 @@ TEST_F(AccessCoreLogDiskTest, ClearAndNoneDefeatOlderRestoreAndQueuedWrites) {
   environment_.RunUntilIdle();
   EXPECT_TRUE(reopened->Snapshot().empty());
 }
+TEST_F(AccessCoreLogDiskTest, ClearSnapshotsThePipeBeforeTheNextRead) {
+  auto store = Open();
+  base::ScopedFD reader, writer;
+  ASSERT_TRUE(base::CreatePipe(&reader, &writer, /*non_blocking=*/true));
+  base::File file(std::move(reader));
+  const auto original_epoch = store->RegisterPipe(file.GetPlatformFile());
+  std::array<char, 64> buffer;
+  auto write_record = [&](std::string_view text) {
+    ASSERT_EQ(::write(writer.get(), text.data(), text.size()),
+              static_cast<ssize_t>(text.size()));
+  };
+  store->Clear();
+  write_record("fresh\n");
+  const auto idle = store->ReadPipe(file, buffer);
+  ASSERT_EQ(idle.count, 6u);
+  EXPECT_EQ(idle.clear_epoch, original_epoch + 1);
+  EXPECT_EQ(idle.clear_prefix, 0u);
+  EXPECT_EQ(std::string_view(buffer.data(), *idle.count), "fresh\n");
+
+  write_record("stale\n");
+  store->Clear();
+  write_record("first after clear\n");
+  const auto buffered = store->ReadPipe(file, buffer);
+  EXPECT_EQ(buffered.clear_epoch, original_epoch + 2);
+  EXPECT_EQ(buffered.clear_prefix, 6u);
+  ASSERT_EQ(buffered.count, 24u);
+  EXPECT_EQ(std::string_view(buffer.data(), *buffered.count),
+            "stale\nfirst after clear\n");
+  const auto empty = store->ReadPipe(file, buffer);
+  EXPECT_FALSE(empty.count);
+  EXPECT_EQ(empty.error, EAGAIN);
+  writer.reset();
+  const auto eof = store->ReadPipe(file, buffer);
+  EXPECT_EQ(eof.count, 0u);
+  EXPECT_EQ(eof.error, 0);
+  store->UnregisterPipe(file.GetPlatformFile());
+}
+
+TEST_F(AccessCoreLogDiskTest, RefiltersQueuedAndLoadedHistoryForNewCredentials) {
+  auto store = Open();
+  store->Add(0, 0, Entry("abcdef12.example"), {});
+  store->Add(0, 0, Entry("new-secret.example"), {});
+  store->Add(0, 0, std::string(kTime) + "[Warning] core: Xray 12345678.1 started", {});
+  environment_.RunUntilIdle();
+  store.reset();
+
+  store = Open();
+  store->SetProtectedValues({"abcdef12", "12345678"});
+  environment_.RunUntilIdle();
+  EXPECT_EQ(store->Snapshot().find("abcdef12"), std::string::npos);
+  EXPECT_EQ(store->Snapshot().find("12345678"), std::string::npos);
+  ASSERT_NE(store->Snapshot().find("new-secret"), std::string::npos);
+  const auto version = store->view_version();
+  store->SetProtectedValues({"new-secret"});
+  EXPECT_FALSE(store->CanShare(version));
+  EXPECT_EQ(store->Snapshot().find("new-secret"), std::string::npos);
+  environment_.RunUntilIdle();
+  std::string persisted;
+  ASSERT_TRUE(base::ReadFileToString(Regular(), &persisted));
+  EXPECT_EQ(persisted, store->Snapshot());
+  EXPECT_EQ(persisted.find("abcdef12"), std::string::npos);
+  EXPECT_EQ(persisted.find("12345678"), std::string::npos);
+}
+
 TEST_F(AccessCoreLogDiskTest, UnsafeFilesShowFailureWithoutFollowingLinks) {
   auto store = Open();
-  store->Add(0, Entry("seed.example"), {});
+  store->Add(0, 0, Entry("seed.example"), {});
   environment_.RunUntilIdle();
   ASSERT_TRUE(base::DeleteFile(Regular()));
   auto unrelated = profile_.GetPath().AppendASCII("other");
   ASSERT_TRUE(base::WriteFile(unrelated, "do not touch"));
   ASSERT_TRUE(base::CreateSymbolicLink(unrelated, Regular()));
-  store->Add(0, Entry("still-in-memory.example"), {});
+  store->Add(0, 0, Entry("still-in-memory.example"), {});
   environment_.RunUntilIdle();
   EXPECT_EQ(store->disk_status(), Status::kError);
   EXPECT_NE(store->Snapshot().find("still-in-memory.example"),
@@ -141,8 +212,8 @@ void CheckPendingDeletionAtSessionEnding(bool disable) {
   ASSERT_TRUE(profile.CreateUniqueTempDir());
   auto regular = AccessCoreLogStore::Open(profile.GetPath(), Scope::kRegular, "info");
   auto priv = AccessCoreLogStore::Open(profile.GetPath(), Scope::kPrivate, "info");
-  regular->Add(0, Entry("regular.example"), {});
-  priv->Add(0, Entry("private.example"), {});
+  regular->Add(0, 0, Entry("regular.example"), {});
+  priv->Add(0, 0, Entry("private.example"), {});
   environment.RunUntilIdle();
   const auto directory = profile.GetPath().AppendASCII(kCoreLogDirectory);
   const auto regular_file = directory.AppendASCII("regular.log");
@@ -165,7 +236,7 @@ void CheckPendingDeletionAtSessionEnding(bool disable) {
     ASSERT_TRUE(entered->TimedWait(base::Seconds(5)));
   }
   for (auto store : {regular, priv}) {
-    store->Add(0, Entry("queued.example"), {});
+    store->Add(0, 0, Entry("queued.example"), {});
     if (disable) store->SetLevel("none");
     else store->Clear();
   }

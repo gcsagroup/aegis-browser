@@ -17,13 +17,16 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     private let queue = DispatchQueue(label: "aegis.access.diagnostics")
     private let limit: Int
     private let pollInterval: DispatchTimeInterval
+    private let readsPerPoll: Int
+    private let afterClearPipeSnapshot: (() -> Void)?
     private var lines: [String] = []
     private var byteCount = 0
     private var pending = Data()
     private var discardingLine = false
-    private var discardingBuffered = false
+    private var discardPrefix: Int? = 0
     private var enabled = false
     private var failed = false
+    // History can finish restoring after the current FIFO is retired.
     private var secrets: [String] = []
     private var reader: DispatchSourceTimer?
     private var readerFD: Int32?
@@ -44,9 +47,13 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     init(capacity: Int = 256 * 1024, storageDirectory: URL? = nil,
          initialLevel: AccessLogLevel = .warning,
          pollInterval: DispatchTimeInterval = .milliseconds(100),
+         readsPerPoll: Int = 4,
+         afterClearPipeSnapshot: (() -> Void)? = nil,
          storageQueue: DispatchQueue? = nil) {
         limit = max(256, capacity)
         self.pollInterval = pollInterval
+        self.readsPerPoll = readsPerPoll
+        self.afterClearPipeSnapshot = afterClearPipeSnapshot
         storage = storageDirectory.map {
             if let storageQueue { return AccessDiagnosticLogStorage(directory: $0, queue: storageQueue) }
             return AccessDiagnosticLogStorage(directory: $0)
@@ -107,7 +114,18 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     /// Creates the reader before Xray opens the FIFO, preventing an open from
     /// blocking. A failure leaves logging disabled; the proxy can still work.
     func start(level: AccessLogLevel, secrets: [String]) throws -> Capture? {
-        guard stop() else { throw POSIXError(.EIO) }
+        let stopped = stop()
+        queue.sync {
+            self.secrets = secrets.filter { !$0.isEmpty }
+            let sanitized = lines.compactMap(restoredLine)
+            if sanitized != lines {
+                lines = sanitized
+                trimLocked()
+                dirty = true
+                scheduleSaveLocked()
+            }
+        }
+        guard stopped else { throw POSIXError(.EIO) }
         guard level != .none else { clear(); return nil }
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("aegis-access-log-\(UUID().uuidString)", isDirectory: true)
@@ -118,21 +136,22 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             try? FileManager.default.removeItem(at: dir)
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
-        let fd = open(fifo.path, O_RDWR | O_NONBLOCK)
+        let fd = open(fifo.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
         guard fd >= 0 else {
             try? FileManager.default.removeItem(at: dir)
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
+        // Keep a writer open so idle reads behave as before. On Darwin,
+        // FIONREAD on an O_RDWR FIFO reports the write side's byte count.
+        let keepAlive = open(fifo.path, O_WRONLY | O_NONBLOCK | O_CLOEXEC)
+        guard keepAlive >= 0 else {
+            let failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            close(fd)
+            try? FileManager.default.removeItem(at: dir)
+            throw failure
+        }
         let capture = Capture(id: UUID(), path: fifo.path)
         queue.sync {
-            self.secrets = secrets.filter { !$0.isEmpty }
-            let sanitized = lines.compactMap(restoredLine)
-            if sanitized != lines {
-                lines = sanitized
-                trimLocked()
-                dirty = true
-                scheduleSaveLocked()
-            }
             enabled = true
             failed = false
             directory = dir
@@ -140,13 +159,19 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             minimumRank = Self.rank(level)
             pending.removeAll()
             discardingLine = false
-            discardingBuffered = false
+            discardPrefix = 0
             let source = DispatchSource.makeTimerSource(queue: queue)
             // A bounded poll also handles Darwin FIFO writers whose large
             // write does not trigger another readability edge.
             source.schedule(deadline: .now() + pollInterval, repeating: pollInterval, leeway: .milliseconds(20))
-            source.setEventHandler { [weak self] in self?.drain(fd: fd) }
-            source.setCancelHandler { close(fd) }
+            source.setEventHandler { [weak self] in
+                guard let self else { return }
+                self.drain(fd: fd, maximumReads: self.readsPerPoll)
+            }
+            source.setCancelHandler {
+                close(keepAlive)
+                close(fd)
+            }
             reader = source
             readerFD = fd
             source.resume()
@@ -189,7 +214,6 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             reader?.cancel()
             reader = nil
             readerFD = nil
-            secrets.removeAll()
             pending.removeAll()
             directory = nil
             captureID = nil
@@ -244,7 +268,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
 
     func markUnavailable() { queue.sync { failed = true } }
 
-    private func drain(fd: Int32, maximumReads: Int = 4) {
+    private func drain(fd: Int32, maximumReads: Int) {
         var bytes = [UInt8](repeating: 0, count: 4096)
         for _ in 0..<maximumReads {
             let count = read(fd, &bytes, bytes.count)
@@ -253,15 +277,16 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
                 if count < 0 && errno != EAGAIN && errno != EWOULDBLOCK {
                     enabled = false; failed = true
                 } else {
-                    discardingBuffered = false
+                    discardPrefix = 0
                 }
                 return
             }
-            if discardingBuffered {
-                discardingLine = bytes[count - 1] != 10
-                continue
+            let discard = min(discardPrefix ?? count, count)
+            if discard > 0 {
+                discardingLine = bytes[discard - 1] != 10
+                if let remaining = discardPrefix { discardPrefix = remaining - discard }
             }
-            for byte in bytes.prefix(count) {
+            for byte in bytes[discard..<count] {
                 if byte == 10 {
                     if enabled && !discardingLine && !pending.isEmpty {
                         append(String(decoding: pending, as: UTF8.self))
@@ -406,29 +431,37 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         lines.removeAll(); byteCount = 0
         discardingLine = discardingLine || !pending.isEmpty
         pending.removeAll()
-        if let fd = readerFD {
-            // Discard through the first nonblocking empty read. The bounded
-            // drain can finish on later ticks under sustained output; until
-            // then none of the pre-clear pipe contents can be admitted.
-            discardingBuffered = true
-            drain(fd: fd)
-        }
         storageGeneration &+= 1
         let generation = storageGeneration
         dirty = false
         saveWork?.cancel(); saveWork = nil; saveWorkID = nil
-        guard let storage else { completion?(.success(())); return }
-        clearingStorage = true
-        storage.clear { [weak self] result in
-            guard let self else { completion?(result); return }
-            self.queue.async {
-                if self.storageGeneration == generation {
-                    self.clearingStorage = false
-                    self.storageFailed = result.isFailure
+        if let storage {
+            clearingStorage = true
+            storage.clear { [weak self] result in
+                guard let self else { completion?(result); return }
+                self.queue.async {
+                    if self.storageGeneration == generation {
+                        self.clearingStorage = false
+                        self.storageFailed = result.isFailure
+                    }
+                    completion?(result)
                 }
-                completion?(result)
             }
         }
+        if let fd = readerFD, !disable {
+            // Darwin FIONREAD = _IOR('f', 127, int). Swift cannot import
+            // this SDK macro. A failed snapshot discards until an empty read.
+            let fionread: UInt = 0x4004_667f
+            var pendingBytes: Int32 = 0
+            var result: Int32
+            repeat {
+                result = withUnsafeMutablePointer(to: &pendingBytes) { ioctl(fd, fionread, $0) }
+            } while result < 0 && errno == EINTR
+            discardPrefix = result == 0 ? max(0, Int(pendingBytes)) : nil
+            afterClearPipeSnapshot?()
+            drain(fd: fd, maximumReads: readsPerPoll)
+        }
+        if storage == nil { completion?(.success(())) }
     }
 
     private func flushLocked(completion: @escaping @Sendable (Result<Void, Error>) -> Void) {

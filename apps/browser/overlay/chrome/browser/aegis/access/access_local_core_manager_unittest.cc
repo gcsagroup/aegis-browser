@@ -321,6 +321,32 @@ TEST(AccessCoreLogArchiveTest, PrivateCompressedCopyWithoutOverwrite) {
   EXPECT_EQ(decoded, "unchanged");
 }
 
+TEST(AccessCoreLogArchiveTest, StartupRecoversOnlyOwnedPrivateArchives) {
+  base::ScopedTempDir profile;
+  base::ScopedTempDir unrelated;
+  ASSERT_TRUE(profile.CreateUniqueTempDir());
+  ASSERT_TRUE(unrelated.CreateUniqueTempDir());
+  base::ScopedTempDir abandoned;
+  ASSERT_TRUE(abandoned.CreateUniqueTempDirUnderPath(profile.GetPath(),
+                                                     kCoreLogSharePrefix));
+  ASSERT_TRUE(WriteCoreLogArchive(abandoned.GetPath(), "private destination"));
+  const auto abandoned_path = abandoned.Take();
+  const auto keep = unrelated.GetPath().AppendASCII("keep");
+  ASSERT_TRUE(base::WriteFile(keep, "unrelated"));
+  const auto link = profile.GetPath().AppendASCII("aegis-access-share-ABC123");
+  ASSERT_TRUE(base::CreateSymbolicLink(unrelated.GetPath(), link));
+  const auto other = profile.GetPath().AppendASCII("unrelated-folder");
+  ASSERT_TRUE(base::CreateDirectory(other));
+
+  EXPECT_FALSE(RecoverCoreLogArchives(profile.GetPath()));
+  EXPECT_FALSE(base::PathExists(abandoned_path));
+  EXPECT_TRUE(base::IsLink(link));
+  EXPECT_TRUE(base::PathExists(keep));
+  EXPECT_TRUE(base::PathExists(other));
+  ASSERT_TRUE(base::DeleteFile(link));
+  EXPECT_TRUE(RecoverCoreLogArchives(profile.GetPath()));
+}
+
 TEST(AccessCoreLogArchiveTest, QuitWhileWriteIsQueuedCleansWithoutUiReply) {
   base::test::TaskEnvironment environment(
       base::test::TaskEnvironment::ThreadPoolExecutionMode::QUEUED);
@@ -369,6 +395,56 @@ TEST(AccessCoreLogArchiveTest, ClosingPickerReleasesFileAndAllowsNextShare) {
 bool WaitWithoutUiReplies(const std::shared_ptr<base::WaitableEvent>& event) {
   base::ScopedAllowBaseSyncPrimitivesForTesting allow_wait;
   return event->TimedWait(base::Seconds(5));
+}
+
+TEST(AccessCoreLogArchiveTest, FailedCleanupBlocksNewArchiveUntilRecovery) {
+  base::test::TaskEnvironment environment;
+  base::ScopedTempDir parent;
+  ASSERT_TRUE(parent.CreateUniqueTempDir());
+  CoreLogShareSession session;
+  base::FilePath folder;
+  base::ScopedClosureRunner release;
+  std::optional<bool> cleaned;
+  session.Start(parent.GetPath(), "private destination",
+                base::BindLambdaForTesting(
+                    [&](base::FilePath file, base::ScopedClosureRunner cleanup) {
+                      folder = file.DirName();
+                      release = std::move(cleanup);
+                    }),
+                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
+  environment.RunUntilIdle();
+  ASSERT_FALSE(folder.empty());
+  // Make the parent non-writable. This prevents removing the archive
+  // directory while keeping its identity intact for the retry.
+  ASSERT_TRUE(base::SetPosixFilePermissions(parent.GetPath(), 0500));
+  release.RunAndReset();
+  environment.RunUntilIdle();
+  EXPECT_EQ(cleaned, false);
+  EXPECT_TRUE(base::PathExists(folder));
+  bool blocked = false;
+  session.Start(parent.GetPath(), "another destination",
+                base::BindLambdaForTesting(
+                    [&](base::FilePath file, base::ScopedClosureRunner) {
+                      blocked = file.empty();
+                    }),
+                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
+  environment.RunUntilIdle();
+  EXPECT_TRUE(blocked);
+  EXPECT_EQ(cleaned, false);
+  EXPECT_TRUE(base::PathExists(folder));
+  ASSERT_TRUE(base::SetPosixFilePermissions(parent.GetPath(), 0700));
+
+  bool written = false;
+  session.Start(parent.GetPath(), "new destination",
+                base::BindLambdaForTesting(
+                    [&](base::FilePath file, base::ScopedClosureRunner) {
+                      written = !file.empty() && base::PathExists(file);
+                    }),
+                base::BindLambdaForTesting([&](bool ok) { cleaned = ok; }));
+  environment.RunUntilIdle();
+  EXPECT_TRUE(written);
+  EXPECT_EQ(cleaned, true);
+  EXPECT_TRUE(base::IsDirectoryEmpty(parent.GetPath()));
 }
 
 TEST(AccessCoreLogArchiveTest, SessionEndingCleansAnOpenPickerWithoutUiReplies) {
@@ -493,7 +569,19 @@ TEST_F(AccessLocalCoreFaultTest, CapturesDiagnosticWithoutAdmittingFailedChild) 
   auto [level, generation] = log->LaunchConfig();
   log->SetLevel("none");
   log->SetLevel("debug");
-  log->Add(generation, "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started", {});
+  log->Add(generation, log->clear_epoch(), "2026/11/11 12:10:09 [Warning] core: Xray 1.2.3 started", {});
+  EXPECT_TRUE(log->Snapshot().empty());
+}
+
+TEST_F(AccessLocalCoreFaultTest, RejectsMultilineNodeBeforeStartingChild) {
+  auto input = Input("exit-with-diagnostic\n2026/11/11 12:10:09 [Warning] core: Xray 12345678.1 started");
+  auto log = base::MakeRefCounted<AccessCoreLogStore>();
+  input.log_store = log;
+  AccessLocalCoreManager manager(std::move(input));
+  base::test::TestFuture<AccessLocalCoreReady> prepared;
+  manager.Prepare(prepared.GetCallback());
+  ExpectUnavailable(prepared.Get());
+  EXPECT_FALSE(State());
   EXPECT_TRUE(log->Snapshot().empty());
 }
 

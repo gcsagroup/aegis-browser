@@ -164,6 +164,18 @@ class EntitlementHTTPTest(unittest.TestCase):
 
 
 class AlphaConfigurationTest(unittest.TestCase):
+    def test_explicit_empty_panel_url_is_rejected_before_binding(self):
+        from services.access_account import server
+        args = ["access-server", "--database", "unused.db", "--port", "0",
+                "--panel-url", ""]
+        with patch.object(sys, "argv", args), \
+                patch.object(server, "create_server") as create, \
+                contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                server.main()
+        self.assertEqual(error.exception.code, 2)
+        create.assert_not_called()
+
     def test_invalid_flag_combinations_fail_before_binding_or_reading_panel(self):
         from services.access_account import server
         common = ["access-server", "--database", "unused.db", "--port", "0",

@@ -28,7 +28,7 @@ class NativeQuery(unittest.TestCase):
         scratch = tempfile.TemporaryDirectory()
         cls.addClassCleanup(scratch.cleanup)
         cls.driver = Path(scratch.name) / "query"
-        subprocess.run(["xcrun", "clang++", "-std=c++20", "-fobjc-arc", "-Wall", "-Werror",
+        subprocess.run(["/usr/bin/xcrun", "clang++", "-std=c++20", "-fobjc-arc", "-Wall", "-Werror",
                         "-I", str(OVERLAY), "-framework", "Foundation", "-o", str(cls.driver),
                         str(Path(__file__).with_name("query_mac.mm")),
                         str(OVERLAY / "chrome/browser/aegis/access/access_account_mac.mm")], check=True)
@@ -113,7 +113,8 @@ class NativeQuery(unittest.TestCase):
         self.bind(self.b, "B")
         a = self.query(self.a)["entitlement"]
         self.assertEqual((a["entitlementAccountId"], a["quotaBytes"], a["remainingBytes"],
-                          a["freshness"], a["snapshotAgeMs"]), ("A", str(QUOTA), str(QUOTA - 24), "delayed", 6000))
+                          a["freshness"]), ("A", str(QUOTA), str(QUOTA - 24), "delayed"))
+        self.assertGreaterEqual(a["snapshotAgeMs"], 6000)
         b = self.query(self.b)["entitlement"]
         self.assertEqual((b["entitlementAccountId"], b["status"], b["quotaBytes"]), ("B", "not_subscribed", None))
         self.bind(self.a, "B")
@@ -173,6 +174,49 @@ class NativeQuery(unittest.TestCase):
                     state = "signed_out" if action == "sign_out" else "superseded"
                     self.assertEqual(json.loads(output), {"state": state})
 
+    def test_sign_in_after_missing_binding_before_delivery(self):
+        with subprocess.Popen([self.driver, self.a, "--hold-delivery"],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE) as job:
+            self.assertEqual(job.stdout.readline(), b"queued\n")
+            self.bind(self.a)
+            output, _ = job.communicate(b"deliver\n", timeout=10)
+        self.assertEqual(json.loads(output), {"state": "superseded"})
+
+    def test_queued_reply_advances_age_and_freshness(self):
+        self.bind(self.a)
+        for age, expected in ((5000, "delayed"), (15000, "unavailable")):
+            measured = NOW - age
+            self.db.execute("UPDATE plans SET period_start=? WHERE account_id='A'", (NOW - 20000,))
+            self.db.execute("UPDATE snapshots SET measured_at=? WHERE account_id='A'", (measured,))
+            self.db.commit()
+            with subprocess.Popen([self.driver, self.a, "--hold-delivery"],
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE) as job:
+                self.assertEqual(job.stdout.readline(), b"queued\n")
+                time.sleep(.05)
+                output, _ = job.communicate(b"deliver\n", timeout=10)
+            reply = json.loads(output)["entitlement"]
+            self.assertEqual(reply["measuredAt"], measured)
+            self.assertGreater(reply["snapshotAgeMs"], age)
+            self.assertEqual(reply["freshness"], expected)
+
+    def test_expiry_during_delivery_with_unknown_measurement_time(self):
+        self.bind(self.a)
+        self.db.execute("UPDATE plans SET period_end=? WHERE account_id='A'", (NOW + 25,))
+        self.db.execute("UPDATE snapshots SET measured_at=NULL, received_at=? WHERE account_id='A'",
+                        (NOW - 9000,))
+        self.db.commit()
+        with subprocess.Popen([self.driver, self.a, "--hold-delivery"],
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE) as job:
+            self.assertEqual(job.stdout.readline(), b"queued\n")
+            time.sleep(.08)
+            output, _ = job.communicate(b"deliver\n", timeout=10)
+        reply = json.loads(output)["entitlement"]
+        self.assertEqual(reply["status"], "expired")
+        self.assertEqual(reply["receivedAt"], NOW - 9000)
+        self.assertIsNone(reply["measuredAt"])
+        self.assertIsNone(reply["snapshotAgeMs"])
+        self.assertEqual(reply["freshness"], "unavailable")
+
     def test_redirect_modes_and_untrusted_binding(self):
         captured = []
 
@@ -225,15 +269,27 @@ class NativeQuery(unittest.TestCase):
             wire[1] = {**response, **change}
             self.assertEqual(self.query(self.a), {"state": "unavailable"}, change)
         wire[1] = {**response, "transportSecret": "fixture-must-not-be-exposed"}
-        self.assertEqual(self.query(self.a)["entitlement"], response)
+        delivered = self.query(self.a)["entitlement"]
+        self.assertGreaterEqual(delivered.pop("snapshotAgeMs"), response["snapshotAgeMs"])
+        self.assertEqual(delivered, {k: v for k, v in response.items() if k != "snapshotAgeMs"})
         for age, freshness in ((0, "current"), (5000, "current"), (15000, "delayed"),
                                (15001, "unavailable"), (None, "unavailable")):
             measured = NOW if age is not None else None
             wire[1] = {**response, "receivedAt": NOW, "measuredAt": measured,
                        "snapshotAgeMs": age, "freshness": freshness}
+            if age is None:
+                wire[1]["evaluatedAt"] = NOW
             if age is not None and NOW + age >= wire[1]["periodEnd"]:
                 wire[1]["status"] = "expired"
-            self.assertEqual(self.query(self.a)["entitlement"], wire[1])
+            delivered = self.query(self.a)["entitlement"]
+            if age is None:
+                self.assertEqual(delivered, {k: v for k, v in wire[1].items() if k != "evaluatedAt"})
+            else:
+                actual_age = delivered["snapshotAgeMs"]
+                self.assertGreaterEqual(actual_age, age)
+                expected_freshness = "current" if actual_age <= 5000 else "delayed" if actual_age <= 15000 else "unavailable"
+                self.assertEqual(delivered, {**wire[1], "snapshotAgeMs": actual_age,
+                                             "freshness": expected_freshness})
         wire[1] = {**response, "ignored": "x" * 65536}
         self.assertEqual(self.query(self.a), {"state": "unavailable"})
         wire[0] = 503

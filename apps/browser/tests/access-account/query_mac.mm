@@ -26,14 +26,13 @@ int main(int argc, char** argv) {
     }
     if (argc != 2 && !hold) return 1;
     dispatch_semaphore_t done = dispatch_semaphore_create(0);
-    AegisQueryAccessAccount([NSString stringWithUTF8String:argv[1]], ^(NSDictionary* result, AegisAccountBindingChange change) {
+    AegisQueryAccessAccount([NSString stringWithUTF8String:argv[1]], ^(AegisAccountReply resolve) {
       if (hold) {
         puts("queued");
         fflush(stdout);
         (void)getchar();
       }
-      NSString* state = change ? change() : nil;
-      if (state) result = @{@"state" : state};
+      NSDictionary* result = resolve();
       NSData* json = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
       fwrite(json.bytes, 1, json.length, stdout);
       dispatch_semaphore_signal(done);

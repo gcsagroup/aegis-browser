@@ -316,7 +316,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
     }
 
     func testFailedEndpointKeepsTheProxyAndDisallowsDirectFailover() async throws {
-        let opener = AnsweringOpener()
+        let opener = AnsweringOpener(body: "<html><body>proxy ready</body></html>")
         let listener = try await makeListener(port: 18_242, tunnels: opener)
         try await listener.start(at: Date(timeIntervalSince1970: 1_700_000_000))
         defer { try? listener.stop() }
@@ -341,7 +341,7 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
                 window.addSubview(tab.webView)
                 window.makeKeyAndVisible()
             }
-            return opener.transcript.contains("GET /kept")
+            return opener.transcript.contains("GET /kept") && !tab.isLoading
         }, message: "proxy=\(opener.transcript) loads=\(tab.recoveryLoadCount) loading=\(tab.isLoading) failure=\(coordinator.lastRecoveryFailure ?? "") error=\(tab.loadingError ?? "")")
         let host = try AccessSiteHost("example.invalid")
         let store = try XCTUnwrap(coordinator.registry.storeForTab(
@@ -353,14 +353,11 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
             intent: .on
         ))
         let before = store.proxyConfigurations.count
+        // A health failure belongs to the published entry's generation.
+        var failed = try XCTUnwrap(publisher.currentEndpoint)
+        failed.state = .failed
         coordinator.registry.setEndpoint(
-            AccessManagedProxyEndpoint(
-                identity: "entry-failed",
-                generation: 9,
-                loopbackHost: "127.0.0.1",
-                port: 18_242,
-                state: .failed
-            ),
+            failed,
             scopeID: "ordinary",
             host: host,
             isPrivate: false
@@ -368,14 +365,19 @@ final class AccessHostRecoveryWebKitTests: XCTestCase {
         let nonce = UUID().uuidString
         let nextURL = URL(string: "http://example.invalid/again?n=\(nonce)")!
         tab.load(URLRequest(url: nextURL))
-        // A failed health state retains the existing proxy route. WebKit may
-        // still send through that proxy or report its failure; neither result
-        // may replace this store or enable DIRECT fallback.
-        try await waitUntil({ !tab.isLoading }, message: opener.transcript)
+        // A failed health state retains the existing proxy route while the
+        // still-healthy publisher restores readiness for the same entry.
         XCTAssertEqual(tab.requestedURL, nextURL)
         XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertEqual(store.proxyConfigurations.count, before)
         XCTAssertFalse(store.proxyConfigurations.isEmpty)
+        XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
+        try await waitUntil(seconds: 10, {
+            // A new WebView needs a window before the deferred load can run.
+            attach(tab.webView, to: window)
+            return opener.transcript.contains("GET /again?n=\(nonce)")
+        }, message: "proxy=\(opener.transcript) loading=\(tab.isLoading) error=\(tab.loadingError ?? "none")")
+        XCTAssertTrue(tab.websiteDataStore === store)
         XCTAssertFalse(try XCTUnwrap(store.proxyConfigurations.first).allowFailover)
     }
 

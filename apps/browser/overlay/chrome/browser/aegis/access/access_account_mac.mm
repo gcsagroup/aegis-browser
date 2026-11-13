@@ -3,11 +3,13 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <memory>
 #include <optional>
 #include <string_view>
 
@@ -37,6 +39,13 @@ NSDictionary* ReadBinding(NSString* path, bool* missing, AegisAccountBindingChan
   int fd = open(path.fileSystemRepresentation, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
   if (fd < 0) {
     *missing = errno == ENOENT;
+    if (*missing) {
+      *change = ^NSString* {
+        struct stat current;
+        if (lstat(path.fileSystemRepresentation, &current) == 0) return @"superseded";
+        return errno == ENOENT ? nil : @"unavailable";
+      };
+    }
     return nil;
   }
   NSFileHandle* file = [[NSFileHandle alloc] initWithFileDescriptor:fd closeOnDealloc:YES];
@@ -77,7 +86,7 @@ std::optional<uint64_t> Bytes(id value) {
   std::string_view text(utf8, [string lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
   if (text.size() > 1 && text.front() == '0') return std::nullopt;
   uint64_t result;
-  const char* end = text.data() + text.size();
+  const char* end = std::to_address(text.end());
   auto parsed = std::from_chars(text.data(), end, result);
   if (parsed.ec != std::errc{} || parsed.ptr != end) return std::nullopt;
   return result;
@@ -91,7 +100,13 @@ std::optional<int64_t> Time(id value) {
   return static_cast<int64_t>(t);
 }
 
-NSDictionary* Entitlement(NSData* data, NSString* account) {
+NSString* Freshness(int64_t age) {
+  if (age <= 5000) return @"current";
+  if (age <= 15000) return @"delayed";
+  return @"unavailable";
+}
+
+NSDictionary* Entitlement(NSData* data, NSString* account, int64_t* evaluatedAt) {
   id body = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
   if (![body isKindOfClass:NSDictionary.class] ||
       ![body[@"entitlementAccountId"] isEqual:account]) return nil;
@@ -118,29 +133,56 @@ NSDictionary* Entitlement(NSData* data, NSString* account) {
         *up > INT64_MAX || *down > INT64_MAX || *quota > INT64_MAX ||
         *up + *down != *used || *remaining != (*used < *quota ? *quota - *used : 0)) return nil;
     auto now = *received;
-    bool known_now = false;
     NSString* freshness = @"unavailable";
     if (out[@"measuredAt"] == NSNull.null) {
-      if (out[@"snapshotAgeMs"] != NSNull.null) return nil;
+      auto evaluated = Time(body[@"evaluatedAt"]);
+      if (out[@"snapshotAgeMs"] != NSNull.null || !evaluated || *evaluated < *received) return nil;
+      now = *evaluated;
     } else {
       auto measured = Time(out[@"measuredAt"]), age = Time(out[@"snapshotAgeMs"]);
       if (!measured || !age || *measured < *start || *measured > *received ||
           *age < *received - *measured || *age > 9007199254740991LL - *measured) return nil;
       now = *measured + *age;
-      known_now = true;
-      if (*age <= 5000) freshness = @"current";
-      else if (*age <= 15000) freshness = @"delayed";
+      freshness = Freshness(*age);
     }
     if (![freshness isEqual:out[@"freshness"]]) return nil;
+    *evaluatedAt = now;
     bool expired = now >= std::min(*end, *expiry);
     if ([status isEqual:@"expired"]) {
-      if (known_now && !expired) return nil;
+      if (!expired) return nil;
     } else if (expired || ![status isEqual:(*used >= *quota ? @"exhausted" : @"active")]) {
       return nil;
     }
   }
   out[@"status"] = status;
   return @{@"state": @"available", @"entitlement": out};
+}
+
+AegisAccountReply PrepareReply(NSDictionary* result, AegisAccountBindingChange change,
+                               uint64_t receiptNanos, int64_t evaluatedAt) {
+  return ^NSDictionary* {
+    NSString* state = change ? change() : nil;
+    if (state) return State(state);
+    NSDictionary* entitlement = result[@"entitlement"];
+    if (!entitlement || [entitlement[@"status"] isEqual:@"not_subscribed"]) return result;
+
+    int64_t elapsed = (clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) - receiptNanos) / NSEC_PER_MSEC;
+    if (!elapsed) return result;
+    NSMutableDictionary* updated = [entitlement mutableCopy];
+    int64_t now = evaluatedAt + elapsed;
+    if (entitlement[@"snapshotAgeMs"] != NSNull.null) {
+      int64_t measured = [entitlement[@"measuredAt"] longLongValue];
+      int64_t age = std::min<int64_t>(9007199254740991LL - measured,
+                                     [entitlement[@"snapshotAgeMs"] longLongValue] + elapsed);
+      updated[@"snapshotAgeMs"] = @(age);
+      updated[@"freshness"] = Freshness(age);
+    }
+    if (now >= std::min([entitlement[@"periodEnd"] longLongValue],
+                        [entitlement[@"expiresAt"] longLongValue])) {
+      updated[@"status"] = @"expired";
+    }
+    return @{@"state": @"available", @"entitlement": updated};
+  };
 }
 }  // namespace
 
@@ -180,6 +222,7 @@ NSDictionary* Entitlement(NSData* data, NSString* account) {
 }
 - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
     didCompleteWithError:(NSError*)error {
+  uint64_t received = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW);
   [session finishTasksAndInvalidate];
   if (self.rawCompletion) {
     NSInteger status = !error && [task.response isKindOfClass:NSHTTPURLResponse.class]
@@ -188,12 +231,13 @@ NSDictionary* Entitlement(NSData* data, NSString* account) {
     return;
   }
   NSDictionary* result = nil;
+  int64_t evaluatedAt = 0;
   if (!error && [task.response isKindOfClass:NSHTTPURLResponse.class]) {
     NSInteger status = ((NSHTTPURLResponse*)task.response).statusCode;
     if (status == 401) result = State(@"signed_out");
-    if (status == 200) result = Entitlement(self.body, self.binding[@"accountId"]);
+    if (status == 200) result = Entitlement(self.body, self.binding[@"accountId"], &evaluatedAt);
   }
-  self.completion(result ?: State(@"unavailable"), self.bindingChange);
+  self.completion(PrepareReply(result ?: State(@"unavailable"), self.bindingChange, received, evaluatedAt));
 }
 @end
 
@@ -204,7 +248,7 @@ void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion 
     AegisAccountBindingChange change = nil;
     NSDictionary* binding = ReadBinding(path, &missing, &change);
     if (!binding) {
-      completion(State(missing ? @"signed_out" : @"unavailable"), nil);
+      completion(PrepareReply(State(missing ? @"signed_out" : @"unavailable"), change, 0, 0));
       return;
     }
     AegisAccountTransfer* transfer = [[AegisAccountTransfer alloc] init];

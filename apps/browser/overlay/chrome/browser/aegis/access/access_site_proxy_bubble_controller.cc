@@ -441,33 +441,47 @@ void AccessSiteProxyBubbleController::SetCoreLogLevel(std::string_view level) {
   ++state_revision_;
 }
 #if BUILDFLAG(IS_MAC)
-void AccessSiteProxyBubbleController::ShareCoreLogs(content::WebContents* tab, std::string preview, uint64_t version,
-    base::OnceCallback<void(bool)> done) {
+void AccessSiteProxyBubbleController::ShareCoreLogs(
+    content::WebContents* tab,
+    std::string preview,
+    uint64_t version,
+    base::OnceCallback<void(CoreLogShareResult)> done) {
   if (!CanViewCoreLogs() || !tab ||
       tab->GetBrowserContext() != profile_ || preview.empty() || !core_logs_->CanShare(version)) {
-    std::move(done).Run(false);
+    std::move(done).Run(CoreLogShareResult::kFailed);
     return;
   }
-  log_share_.Start(std::move(preview), base::BindOnce(
+  auto picker_succeeded = std::make_shared<bool>(false);
+  log_share_.Start(profile_->GetOriginalProfile()->GetPath(), std::move(preview), base::BindOnce(
       [](base::WeakPtr<content::WebContents> tab, content::GlobalRenderFrameHostId frame,
          scoped_refptr<AccessCoreLogStore> store, uint64_t version,
-         base::OnceCallback<void(bool)> done, base::FilePath path,
+         std::shared_ptr<bool> picker_succeeded, base::FilePath path,
          base::ScopedClosureRunner release) {
         if (!tab || path.empty() || !store->CanShare(version) ||
             tab->GetPrimaryMainFrame()->GetGlobalId() != frame ||
             tab->GetVisibility() != content::Visibility::VISIBLE ||
             !tab->GetRenderWidgetHostView()) {
-          std::move(done).Run(false);
           return;
         }
         tab->GetRenderWidgetHostView()->ShowSharePicker("", "", GURL(), {path.value()},
-            base::BindOnce([](base::ScopedClosureRunner release, base::OnceCallback<void(bool)> done,
+            base::BindOnce([](base::ScopedClosureRunner release, std::shared_ptr<bool> picker_succeeded,
                               blink::mojom::ShareError result) {
+              *picker_succeeded = result != blink::mojom::ShareError::INTERNAL_ERROR;
               release.RunAndReset();
-              std::move(done).Run(result != blink::mojom::ShareError::INTERNAL_ERROR);
-            }, std::move(release), std::move(done)));
+            }, std::move(release), std::move(picker_succeeded)));
       }, tab->GetWeakPtr(), tab->GetPrimaryMainFrame()->GetGlobalId(), core_logs_,
-      version, std::move(done)));
+      version, picker_succeeded),
+      base::BindOnce([](std::shared_ptr<bool> picker_succeeded,
+                        base::OnceCallback<void(CoreLogShareResult)> done,
+                        bool cleaned) {
+        auto result = CoreLogShareResult::kFailed;
+        if (!cleaned) {
+          result = CoreLogShareResult::kCleanupFailed;
+        } else if (*picker_succeeded) {
+          result = CoreLogShareResult::kCompleted;
+        }
+        std::move(done).Run(result);
+      }, picker_succeeded, std::move(done)));
 }
 #endif
 void AccessSiteProxyBubbleController::CreateLocalCore() {

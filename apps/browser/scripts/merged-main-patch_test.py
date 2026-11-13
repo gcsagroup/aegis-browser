@@ -32,10 +32,13 @@ def git_blob_hash(data):
 
 
 class MergedMainPatchTests(unittest.TestCase):
-    def test_active_controller_patches_replay_to_overlay(self):
+    def test_active_access_patches_replay_to_overlay(self):
         targets = [
             'chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc',
             'chrome/browser/aegis/access/access_site_proxy_bubble_controller.h',
+            'chrome/browser/aegis/access/access_account_mac.h',
+            'chrome/browser/aegis/access/access_account_mac.mm',
+            'chrome/browser/aegis/aegis_service_access_account_mac.mm',
         ]
         with tempfile.TemporaryDirectory(prefix='aegis-controller-patches-') as root:
             subprocess.run(['git', 'init', '--quiet', root], check=True,
