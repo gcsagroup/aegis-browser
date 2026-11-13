@@ -136,7 +136,9 @@ final class AccessRealityVisionOutboundConfigTests: XCTestCase {
         XCTAssertFalse(AccessDiagnosticArchive.hasPendingCleanup)
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
         let next = try AccessDiagnosticArchive.createTemporary(snapshot: "another snapshot")
+        try FileManager.default.removeItem(at: next.deletingLastPathComponent())
         try AccessDiagnosticArchive.removeTemporary(next)
+        XCTAssertFalse(AccessDiagnosticArchive.hasPendingCleanup)
     }
 
     func testStopDrainsFinalCompleteRecordsBeforeTheFirstPollAndPersistsThem() async throws {

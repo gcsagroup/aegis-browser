@@ -143,7 +143,10 @@ public enum AccessDiagnosticArchive {
     private static func removeFolder(_ folder: URL, remove: (URL) throws -> Void) throws {
         do {
             try remove(folder)
-        } catch let error as CocoaError where error.code == .fileNoSuchFile {
+        } catch {
+            let failure = error as NSError
+            guard failure.domain == NSCocoaErrorDomain,
+                  failure.code == CocoaError.Code.fileNoSuchFile.rawValue else { throw error }
             // The activity or the system may already have removed it.
         }
     }
