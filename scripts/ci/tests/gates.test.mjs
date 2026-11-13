@@ -375,20 +375,21 @@ test('CI identity binds a pull request to the exact B/H/M graph', () => {
   }
 });
 
-test('push and dispatch identity allow main and develop while rejecting other refs and SHA drift', () => {
+test('push and dispatch identity admit configured maintenance lines while rejecting other refs and SHA drift', () => {
   const cwd = initRepo();
   writeFileSync(join(cwd, 'file.txt'), 'base\n');
   const base = commitAll(cwd, 'base');
   writeFileSync(join(cwd, 'file.txt'), 'head\n');
   const head = commitAll(cwd, 'head');
   git(cwd, 'branch', 'develop');
+  git(cwd, 'branch', 'releases/ios/1.0');
   git(cwd, 'tag', 'diagnostic-target');
   const verify = (event, ref, b = base, h = head, tested = head) => run(process.execPath, [
     join(scripts, 'verify-ci-identity.mjs'), '--event', event, '--base', b,
     '--head', h, '--tested', tested, '--ref', ref, '--repo', cwd,
   ]);
   for (const event of ['push', 'workflow_dispatch']) {
-    for (const branch of ['main', 'develop']) {
+    for (const branch of ['main', 'develop', 'releases/ios/1.0']) {
       git(cwd, 'checkout', branch);
       const result = verify(event, `refs/heads/${branch}`);
       assert.equal(result.status, 0, result.stderr);
@@ -400,7 +401,9 @@ test('push and dispatch identity allow main and develop while rejecting other re
       assert.notEqual(verify(event, 'refs/heads/develop', base, mutable).status, 0, 'head must be a full SHA');
       assert.notEqual(verify(event, 'refs/heads/develop', base, head, mutable).status, 0, 'tested must be a full SHA');
     }
-    for (const ref of ['refs/heads/feature', 'refs/tags/main', 'refs/heads/develop-extra', '']) {
+    for (const ref of ['refs/heads/feature', 'refs/tags/main', 'refs/heads/develop-extra',
+      'refs/heads/releases/ios/1.1', 'refs/heads/releases/ios/1.0-extra',
+      'refs/tags/releases/ios/1.0', 'refs/heads/patch/ios/1.0.2', '']) {
       assert.notEqual(verify(event, ref).status, 0, `${event} accepted ${ref}`);
     }
   }
@@ -464,6 +467,9 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [0, (w) => { w.on[event].branches.push('feature'); }],
       [0, (w) => { w.on[event]['branches-ignore'] = ['develop']; }],
     ]),
+    [0, (w) => { w.on.push.branches = ['main', 'develop']; }, 'maintenance push is missing'],
+    [0, (w) => { w.on.push.branches.push('releases/ios/*'); }, 'wildcard maintenance admission'],
+    [0, (w) => { w.on.pull_request.branches.push('releases/ios/1.0'); }, 'maintenance PR admission'],
     [0, (w) => { w.concurrency.group = 'main'; }],
     [0, (w) => { w.concurrency['cancel-in-progress'] = true; }],
     [0, (w) => { w.jobs.quality.steps[0].uses = 'actions/checkout@v7'; }],
@@ -477,6 +483,9 @@ test('workflow validator enforces Mac-only automatic gates and safe manual workf
       [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace("github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY", 'true'); }],
       [index, (w) => { w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace('aegis-test', 'aegis-upstream'); }],
     ]),
+    ...['quality', 'quality-summary'].map(job => [0, (w) => {
+      w.jobs[job]['runs-on'] = w.jobs[job]['runs-on'].replace(" && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')", '');
+    }, 'maintenance branch may not enter the private test runner']),
     ...[[0, 'quality'], [5, 'cpp-unit-tests']].flatMap(([index, job]) => [
       [index, (w) => { delete w.jobs[job].steps.find((step) => step.uses?.startsWith('actions/setup-python@')).if; }],
       [index, (w) => { w.jobs[job].steps.find((step) => step.name === 'Verify preinstalled Python on self-hosted runner').run = 'python3 --version'; }],

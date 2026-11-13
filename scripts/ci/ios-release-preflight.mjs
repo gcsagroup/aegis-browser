@@ -1,29 +1,13 @@
-import {readFileSync} from 'node:fs';
-import {dirname, join} from 'node:path';
-import {fileURLToPath, pathToFileURL} from 'node:url';
+import {pathToFileURL} from 'node:url';
 import {githubApi} from './promotion-github.mjs';
 import {requireGreenQuality} from './promotion-quality.mjs';
 import {requireIosAdministrator} from './ios-operator.mjs';
+import {releaseLines} from './ios-release-lines.mjs';
+
+export {releaseLines};
 
 export const IOS_REPOSITORY = 'gcsagroup/aegis-browser';
 export const IOS_REPOSITORY_ID = '1348409663';
-const RELEASE_LINE_NAME = /^(?:main|releases\/ios\/[0-9]{1,10}\.[0-9]{1,10})$/u;
-
-export function releaseLines(read = () => readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ios-release-lines.json'), 'utf8')) {
-  const parsed = JSON.parse(read());
-  const lines = parsed?.lines;
-  if (!Array.isArray(lines) || lines.length < 1 || lines.length > 20) throw new Error('iOS release lines are invalid');
-  const names = new Set();
-  for (const line of lines) {
-    if (!line || typeof line.name !== 'string' || line.ref !== `refs/heads/${line.name}` || !RELEASE_LINE_NAME.test(line.name) || names.has(line.name)) {
-      throw new Error('iOS release lines are invalid');
-    }
-    names.add(line.name);
-  }
-  if (!names.has('main')) throw new Error('iOS release lines are invalid');
-  return lines;
-}
-
 function exactCandidateTag(tag) {
   if (typeof tag !== 'string' || tag.length > 100) return false;
   const parts = tag.split('/');
