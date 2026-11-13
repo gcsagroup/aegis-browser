@@ -276,15 +276,19 @@ source_set("aegis") {
     deps += [ "//chrome/android:chrome_jni_headers" ]
   }
   if (is_mac) {
-    frameworks = [ "Foundation.framework" ]
+    frameworks = [ "AppKit.framework", "Foundation.framework" ]
     sources += [
       "access/access_account_mac.h",
       "access/access_account_mac.mm",
+      "access/access_paid_site_mac.h",
+      "access/access_paid_site_mac.mm",
       "aegis_service_access_account_mac.mm",
       "aegis_torrent_client.cc",
       "aegis_torrent_client.h",
     ]
     deps += [
+      "//chrome/browser/aegis/access:access_network_context_transport",
+      "//services/network/public/mojom",
       "//chrome/services/aegis_torrent/public/mojom",
       "//sandbox/mac:seatbelt_extension",
     ]
@@ -538,8 +542,14 @@ test("aegis_browser_unittests") {
     ]
   }
   if (is_mac) {
-    deps += [ "//net:test_support" ]
+    deps += [
+      "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
+      "//chrome/browser/aegis/access:access_site_proxy_bubble",
+      "//net:test_support",
+      "//services/network:network_service",
+    ]
     sources += [
+      "access/access_paid_site_mac_unittest.mm",
       "aegis_torrent_client_unittest.cc",
       "aegis_mac_signing_unittest.cc",
     ]

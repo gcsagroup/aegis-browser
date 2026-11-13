@@ -72,6 +72,14 @@ struct AccessAccountClient: Sendable {
     }
 
     func read(_ credential: AccessAccountCredential) async throws -> AccessAccountEntitlement {
+        let data = try await request(credential, url: endpoint, method: "GET", accepted: [200])
+        let result = try JSONDecoder().decode(AccessAccountEntitlement.self, from: data)
+        try result.validate(for: credential.accountID)
+        return result
+    }
+
+    private func request(_ credential: AccessAccountCredential, url: URL, method: String,
+                         body: Data? = nil, accepted: Set<Int>) async throws -> Data {
         guard credential.endpoint == endpoint.absoluteString, credential.valid else { throw AccountQueryError.invalid }
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
@@ -80,20 +88,85 @@ struct AccessAccountClient: Sendable {
         config.timeoutIntervalForRequest = 10
         let session = URLSession(configuration: config, delegate: AccountRedirectGuard(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
-        var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData)
+        request.httpMethod = method
+        request.httpBody = body
+        if body != nil { request.setValue("application/json", forHTTPHeaderField: "Content-Type") }
         request.setValue("Bearer " + credential.token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (stream, response) = try await session.bytes(for: request)
-        guard let response = response as? HTTPURLResponse, response.url == endpoint else { throw AccountQueryError.invalid }
+        guard let response = response as? HTTPURLResponse, response.url == url else { throw AccountQueryError.invalid }
         if response.statusCode == 401 { throw AccountQueryError.unauthorized }
-        guard response.statusCode == 200 else { throw AccountQueryError.invalid }
+        guard accepted.contains(response.statusCode) else { throw AccountQueryError.invalid }
         var data = Data()
         for try await byte in stream {
             guard data.count < 65536 else { throw AccountQueryError.invalid }
             data.append(byte)
         }
-        let result = try JSONDecoder().decode(AccessAccountEntitlement.self, from: data)
-        try result.validate(for: credential.accountID)
-        return result
+        return data
+    }
+
+    func issue(_ credential: AccessAccountCredential, contextID: UUID, mode: AccessNodeMode,
+               periodID: String) async throws -> AccessNodeLease {
+        let url = endpoint.deletingLastPathComponent().appendingPathComponent("node-credentials")
+        let context = contextID.uuidString.lowercased()
+        let body = try JSONEncoder().encode(["contextId": context, "mode": mode.rawValue])
+        let data = try await request(credential, url: url, method: "POST", body: body, accepted: [200, 201])
+        let lease = try JSONDecoder().decode(AccessNodeLease.self, from: data)
+        try lease.validate(account: credential.accountID, period: periodID, context: context, mode: mode)
+        return lease
+    }
+
+    func renew(_ credential: AccessAccountCredential, lease: AccessNodeLease) async throws -> AccessNodeLease {
+        let url = endpoint.deletingLastPathComponent().appendingPathComponent("node-credentials")
+            .appendingPathComponent(lease.credentialId).appendingPathComponent("renew")
+        let body = try JSONEncoder().encode(["contextId": lease.contextId, "mode": lease.mode.rawValue])
+        let data = try await request(credential, url: url, method: "POST", body: body, accepted: [200])
+        return try lease.renewed(with: data)
+    }
+
+    func revoke(_ credential: AccessAccountCredential, lease: AccessNodeLease) async throws {
+        let url = endpoint.deletingLastPathComponent().appendingPathComponent("node-credentials")
+            .appendingPathComponent(lease.credentialId)
+        _ = try await request(credential, url: url, method: "DELETE", accepted: [200, 204, 404])
+    }
+}
+
+enum AccessNodeMode: String, Decodable, Sendable { case regular, `private` }
+
+/// Native-only lease. Never serialize it into a rule, diagnostic or website-facing value.
+struct AccessNodeLease: Decodable, Sendable {
+    let accountId, periodId, credentialId, contextId, host, username, password: String
+    let mode: AccessNodeMode
+    let port: UInt16
+    private(set) var expiresAt: Int64
+
+    func renewed(with data: Data, now: Date = Date()) throws -> Self {
+        struct Renewal: Decodable {
+            let accountId, periodId, credentialId, contextId: String
+            let mode: AccessNodeMode
+            let expiresAt: Int64
+        }
+        let reply = try JSONDecoder().decode(Renewal.self, from: data)
+        let nowMs = Int64(now.timeIntervalSince1970 * 1000)
+        guard reply.accountId == accountId, reply.periodId == periodId, reply.credentialId == credentialId,
+              reply.contextId == contextId, reply.mode == mode, reply.expiresAt > expiresAt,
+              expiresAt > nowMs else { throw AccountQueryError.invalid }
+        var renewed = self
+        renewed.expiresAt = reply.expiresAt
+        return renewed
+    }
+
+    func validate(account: String, period: String, context: String, mode expectedMode: AccessNodeMode,
+                  now: Date = Date()) throws {
+        let safe = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+        guard accountId == account, periodId == period, contextId == context, mode == expectedMode,
+              !credentialId.isEmpty, credentialId.utf8.count <= 256, credentialId == username,
+              credentialId.unicodeScalars.allSatisfy(safe.contains),
+              !password.isEmpty, password.utf8.count <= 512, password.utf8.allSatisfy({ (33...126).contains($0) }),
+              port > 0, !host.isEmpty, host.utf8.count <= 253,
+              host.utf8.allSatisfy({ (65...90).contains($0) || (97...122).contains($0) ||
+                  (48...57).contains($0) || [45, 46, 58].contains($0) }),
+              expiresAt > Int64(now.timeIntervalSince1970 * 1000) else { throw AccountQueryError.invalid }
     }
 }

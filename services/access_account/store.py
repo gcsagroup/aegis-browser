@@ -10,8 +10,8 @@ class Unavailable(Exception):
     """No trustworthy current entitlement can be read."""
 
 
-_LOOKUP = """
-    SELECT a.id, p.plan_id, p.period_id, p.period_start, p.period_end, p.panel_client,
+CURRENT_ACCOUNT_SQL = """
+    SELECT a.id, t.expires_at AS session_expiry, p.plan_id, p.period_id, p.period_start, p.period_end, p.panel_client,
            s.quota_bytes, s.uploaded_bytes, s.downloaded_bytes,
            s.expires_at, s.measured_at, s.received_at
     FROM sessions AS t
@@ -66,14 +66,14 @@ def read_current(database_path, token, clock_ms, *, panel=None):
         with closing(sqlite3.connect(uri, uri=True)) as db:
             db.row_factory = sqlite3.Row
             now = clock_ms()
-            account = db.execute(_LOOKUP, (digest, now)).fetchone()
+            account = db.execute(CURRENT_ACCOUNT_SQL, (digest, now)).fetchone()
             if account is None:
                 return None
             if panel is None or account["plan_id"] is None:
                 return _response(account, account, now)
             observed = panel.read(account["panel_client"], clock_ms)
             now = clock_ms()
-            current = db.execute(_LOOKUP, (digest, now)).fetchone()
+            current = db.execute(CURRENT_ACCOUNT_SQL, (digest, now)).fetchone()
             if current is None:
                 return None
             if any(current[k] != account[k] for k in

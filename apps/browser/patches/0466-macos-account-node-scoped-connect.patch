@@ -1,0 +1,2163 @@
+From bb62f8f6c362a2277a6b652d544f662bd79e311f Mon Sep 17 00:00:00 2001
+From: Quinn <coderquinn@gmail.com>
+Date: Fri, 13 Nov 2026 09:13:07 +0800
+Subject: [PATCH] feat(access): fence account-bound site dispatch through
+ authenticated TLS nodes
+
+---
+ chrome/browser/aegis/BUILD.gn                 |  14 +-
+ .../browser/aegis/access/access_account_mac.h |  10 +
+ .../aegis/access/access_account_mac.mm        | 101 +++++
+ .../access_network_context_transport.cc       | 100 +++++
+ .../access/access_network_context_transport.h |  20 +
+ .../aegis/access/access_paid_site_mac.h       |  15 +
+ .../aegis/access/access_paid_site_mac.mm      | 215 ++++++++++
+ .../access/access_paid_site_mac_unittest.mm   | 376 ++++++++++++++++++
+ .../access_private_publication_unittest.cc    |  20 +
+ .../access_proxying_url_loader_factory.cc     |   4 +
+ .../access_site_proxy_bubble_controller.cc    |  30 +-
+ .../access_site_proxy_bubble_controller.h     |   4 +-
+ .../access_site_proxy_product_unittest.cc     |  21 +
+ .../ui/views/toolbar/aegis_toolbar_button.cc  |  54 ++-
+ content/browser/browser_context.cc            |  21 +
+ .../websockets/websocket_connector_impl.cc    |  14 +
+ .../web_transport_connector_impl.cc           |  15 +-
+ content/public/browser/browser_context.h      |   7 +
+ net/base/proxy_chain.h                        |   3 +
+ .../http_stream_factory_job_controller.cc     |  14 +
+ .../proxy_host_matching_rules.cc              |  33 ++
+ .../proxy_host_matching_rules.h               |   4 +
+ net/socket/connect_job_params_factory.cc      |   6 +-
+ net/socket/ssl_client_socket_impl.cc          |   8 +-
+ services/network/network_context.cc           |  42 +-
+ .../network/network_service_proxy_delegate.cc |  67 +++-
+ .../network/network_service_proxy_delegate.h  |  16 +-
+ ...network_service_proxy_delegate_unittest.cc |  76 ++++
+ services/network/url_loader.cc                |   5 +
+ services/network/url_loader.h                 |   3 +
+ services/network/web_transport.h              |   1 +
+ services/network/web_transport_unittest.cc    |  88 +++-
+ services/network/websocket.h                  |   1 +
+ services/network/websocket_factory.cc         |   7 +
+ services/network/websocket_factory.h          |   2 +
+ 35 files changed, 1397 insertions(+), 20 deletions(-)
+ create mode 100644 chrome/browser/aegis/access/access_paid_site_mac.h
+ create mode 100644 chrome/browser/aegis/access/access_paid_site_mac.mm
+ create mode 100644 chrome/browser/aegis/access/access_paid_site_mac_unittest.mm
+
+diff --git a/chrome/browser/aegis/BUILD.gn b/chrome/browser/aegis/BUILD.gn
+index 012a42d07bf4124f1205bd4e3e34161018a72672..439eda0e1efdb78295fbde0a3364c1fdfebc989f 100644
+--- a/chrome/browser/aegis/BUILD.gn
++++ b/chrome/browser/aegis/BUILD.gn
+@@ -276,15 +276,19 @@ source_set("aegis") {
+     deps += [ "//chrome/android:chrome_jni_headers" ]
+   }
+   if (is_mac) {
+-    frameworks = [ "Foundation.framework" ]
++    frameworks = [ "AppKit.framework", "Foundation.framework" ]
+     sources += [
+       "access/access_account_mac.h",
+       "access/access_account_mac.mm",
++      "access/access_paid_site_mac.h",
++      "access/access_paid_site_mac.mm",
+       "aegis_service_access_account_mac.mm",
+       "aegis_torrent_client.cc",
+       "aegis_torrent_client.h",
+     ]
+     deps += [
++      "//chrome/browser/aegis/access:access_network_context_transport",
++      "//services/network/public/mojom",
+       "//chrome/services/aegis_torrent/public/mojom",
+       "//sandbox/mac:seatbelt_extension",
+     ]
+@@ -538,8 +542,14 @@ test("aegis_browser_unittests") {
+     ]
+   }
+   if (is_mac) {
+-    deps += [ "//net:test_support" ]
++    deps += [
++      "//chrome/browser/aegis/access:access_proxying_url_loader_factory",
++      "//chrome/browser/aegis/access:access_site_proxy_bubble",
++      "//net:test_support",
++      "//services/network:network_service",
++    ]
+     sources += [
++      "access/access_paid_site_mac_unittest.mm",
+       "aegis_torrent_client_unittest.cc",
+       "aegis_mac_signing_unittest.cc",
+     ]
+diff --git a/chrome/browser/aegis/access/access_account_mac.h b/chrome/browser/aegis/access/access_account_mac.h
+index 680874088e8ce3e4fe56a4b1fcdf8005245e3576..2f74c682751f68b0462156ede58c93fc7ff4716d 100644
+--- a/chrome/browser/aegis/access/access_account_mac.h
++++ b/chrome/browser/aegis/access/access_account_mac.h
+@@ -14,4 +14,14 @@ typedef void (^AegisAccountCompletion)(NSDictionary*, AegisAccountBindingChange)
+ void AegisQueryAccessAccount(NSString* profileDirectory,
+                              AegisAccountCompletion completion);
+ 
++// Browser-process only. The private binding is independently authorized in
++// memory; private mode never looks up the regular profile binding. The lease
++// and revoke block must never be serialized to WebUI, prefs, or diagnostics.
++typedef void (^AegisNodeRevoke)(void);
++typedef void (^AegisNodeRenew)(void (^done)(int64_t expiresAt));
++typedef void (^AegisNodeCompletion)(NSDictionary* lease, AegisAccountBindingChange change,
++                                    AegisNodeRevoke revoke, AegisNodeRenew renew);
++void AegisIssueNode(NSString* directory, NSString* context, bool isPrivate,
++                    NSDictionary* privateBinding, AegisNodeCompletion completion);
++
+ #endif
+diff --git a/chrome/browser/aegis/access/access_account_mac.mm b/chrome/browser/aegis/access/access_account_mac.mm
+index 3e670b2be381ee16cd954fc3a5fa47814847285c..bbd9373b3e5c88d6b71642d16f2b3f36c5673c24 100644
+--- a/chrome/browser/aegis/access/access_account_mac.mm
++++ b/chrome/browser/aegis/access/access_account_mac.mm
+@@ -149,6 +149,7 @@ @interface AegisAccountTransfer : NSObject <NSURLSessionDataDelegate>
+ @property(nonatomic, copy) NSDictionary* binding;
+ @property(nonatomic, copy) AegisAccountCompletion completion;
+ @property(nonatomic, strong) NSMutableData* body;
++@property(nonatomic, copy) void (^rawCompletion)(NSInteger, NSData*);
+ @end
+ 
+ @implementation AegisAccountTransfer
+@@ -156,6 +157,7 @@ @implementation AegisAccountTransfer
+ @synthesize binding = _binding;
+ @synthesize completion = _completion;
+ @synthesize body = _body;
++@synthesize rawCompletion = _rawCompletion;
+ - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
+     willPerformHTTPRedirection:(NSHTTPURLResponse*)response newRequest:(NSURLRequest*)request
+     completionHandler:(void (^)(NSURLRequest*))completion {
+@@ -179,6 +181,12 @@ - (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task
+ - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
+     didCompleteWithError:(NSError*)error {
+   [session finishTasksAndInvalidate];
++  if (self.rawCompletion) {
++    NSInteger status = !error && [task.response isKindOfClass:NSHTTPURLResponse.class]
++        ? ((NSHTTPURLResponse*)task.response).statusCode : 0;
++    self.rawCompletion(status, self.body);
++    return;
++  }
+   NSDictionary* result = nil;
+   if (!error && [task.response isKindOfClass:NSHTTPURLResponse.class]) {
+     NSInteger status = ((NSHTTPURLResponse*)task.response).statusCode;
+@@ -220,3 +228,96 @@ void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion
+     [[session dataTaskWithRequest:request] resume];
+   });
+ }
++
++namespace {
++bool Token(id value) {
++  static NSCharacterSet* allowed = [NSCharacterSet characterSetWithCharactersInString:
++      @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"].invertedSet;
++  return Nonempty(value) && [value length] <= 256 &&
++      [value rangeOfCharacterFromSet:allowed].location == NSNotFound;
++}
++bool UUIDValue(id value) {
++  return Nonempty(value) && [[[[NSUUID alloc] initWithUUIDString:value]
++      UUIDString].lowercaseString isEqual:value];
++}
++void NodeRequest(NSDictionary* binding, NSString* path, NSString* method, NSDictionary* body,
++                 void (^done)(NSInteger, NSData*)) {
++  NSURLComponents* url = [NSURLComponents componentsWithURL:Endpoint(binding[@"origin"])
++                                   resolvingAgainstBaseURL:NO];
++  url.path = path;
++  NSMutableURLRequest* req = [NSMutableURLRequest requestWithURL:url.URL];
++  req.HTTPMethod = method;
++  [req setValue:[@"Bearer " stringByAppendingString:binding[@"token"]] forHTTPHeaderField:@"Authorization"];
++  if (body) {
++    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
++    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
++  }
++  NSURLSessionConfiguration* cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
++  cfg.HTTPCookieStorage = nil;
++  cfg.HTTPShouldSetCookies = NO;
++  cfg.URLCredentialStorage = nil;
++  cfg.URLCache = nil;
++  cfg.timeoutIntervalForRequest = 5;
++  cfg.timeoutIntervalForResource = 8;
++  AegisAccountTransfer* delegate = [AegisAccountTransfer new];
++  delegate.body = [NSMutableData data];
++  delegate.rawCompletion = done;
++  NSURLSession* session = [NSURLSession sessionWithConfiguration:cfg delegate:delegate delegateQueue:nil];
++  [[session dataTaskWithRequest:req] resume];
++}
++}
++void AegisIssueNode(NSString* directory, NSString* context, bool isPrivate,
++                    NSDictionary* privateBinding, AegisNodeCompletion completion) {
++  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
++    AegisAccountBindingChange change = nil;
++    NSDictionary* binding = privateBinding;
++    if (!isPrivate) {
++      bool missing;
++      binding = ReadBinding([directory stringByAppendingPathComponent:@"AegisAccessAccount.json"],
++                            &missing, &change);
++    }
++    if (!UUIDValue(context) || !Nonempty(binding[@"accountId"]) || !Token(binding[@"token"]) ||
++        !Endpoint(binding[@"origin"])) { completion(nil, nil, nil, nil); return; }
++    NSString* mode = isPrivate ? @"private" : @"regular";
++    NodeRequest(binding, @"/v1/me/node-credentials", @"POST", @{@"mode":mode, @"contextId":context},
++                ^(NSInteger code, NSData* data) {
++      if (code != 200 && code != 201) { completion(nil, nil, nil, nil); return; }
++      id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
++      if (![obj isKindOfClass:NSDictionary.class] || !UUIDValue(obj[@"credentialId"])) {
++        completion(nil, nil, nil, nil); return;
++      }
++      NSString* revokePath = [@"/v1/me/node-credentials/" stringByAppendingString:obj[@"credentialId"]];
++      AegisNodeRevoke revoke = ^{ NodeRequest(binding, revokePath, @"DELETE", nil, ^(NSInteger, NSData*){}); };
++      auto expiry = Time(obj[@"expiresAt"]), port = Time(obj[@"port"]);
++      NSString* host = obj[@"host"];
++      NSCharacterSet* bad = [NSCharacterSet characterSetWithCharactersInString:
++          @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.:"].invertedSet;
++      if (![obj[@"accountId"] isEqual:binding[@"accountId"]] || !Nonempty(obj[@"periodId"]) ||
++          ![obj[@"mode"] isEqual:mode] || ![obj[@"contextId"] isEqual:context] ||
++          ![obj[@"username"] isEqual:obj[@"credentialId"]] || !Token(obj[@"password"]) ||
++          !Nonempty(host) || host.length > 253 || [host rangeOfCharacterFromSet:bad].location != NSNotFound ||
++          !port || *port < 1 || *port > 65535 || !expiry ||
++          *expiry <= NSDate.date.timeIntervalSince1970 * 1000 || (change && change())) {
++        revoke(); completion(nil, nil, nil, nil); return;
++      }
++      NSString* period = obj[@"periodId"];
++      NSString* credential = obj[@"credentialId"];
++      AegisNodeRenew renew = ^(void (^done)(int64_t)) {
++        if (change && change()) { done(0); return; }
++        NodeRequest(binding, [revokePath stringByAppendingString:@"/renew"], @"POST",
++                    @{@"mode":mode, @"contextId":context}, ^(NSInteger status, NSData* bytes) {
++          id reply = status == 200 && bytes.length
++              ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
++          if (![reply isKindOfClass:NSDictionary.class] ||
++              ![reply[@"accountId"] isEqual:binding[@"accountId"]] ||
++              ![reply[@"periodId"] isEqual:period] || ![reply[@"credentialId"] isEqual:credential] ||
++              ![reply[@"contextId"] isEqual:context] || ![reply[@"mode"] isEqual:mode]) {
++            done(0); return;
++          }
++          done(Time(reply[@"expiresAt"]).value_or(0));
++        });
++      };
++      completion(obj, change, revoke, renew);
++    });
++  });
++}
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.cc b/chrome/browser/aegis/access/access_network_context_transport.cc
+index c5deb87bc16b22d6be1dffb2b6a2f96ef31f48c1..108980e411ba2c2fa1c54d265d50c2ed8e2422e8 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.cc
++++ b/chrome/browser/aegis/access/access_network_context_transport.cc
+@@ -10,12 +10,14 @@
+ 
+ #include "base/barrier_closure.h"
+ #include "base/functional/bind.h"
++#include "base/no_destructor.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/uuid.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "chrome/browser/aegis/aegis_profile_support.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "mojo/public/cpp/bindings/callback_helpers.h"
++#include "net/base/proxy_server.h"
+ #include "net/proxy_resolution/proxy_config.h"
+ #include "net/proxy_resolution/proxy_info.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+@@ -93,6 +95,12 @@ AccessNetworkContextTransport* AccessNetworkContextTransport::GetOrCreate(
+   auto transport = std::unique_ptr<AccessNetworkContextTransport>(
+       new AccessNetworkContextTransport());
+   auto* result = transport.get();
++#if BUILDFLAG(IS_MAC)
++  profile->SetAccountProxyDispatchGate(base::BindRepeating(
++      [](base::WeakPtr<AccessNetworkContextTransport> self, const GURL& url) {
++        return !self || self->AccountDispatchBlocked(url);
++      }, result->weak_factory_.GetWeakPtr()));
++#endif
+   profile->SetUserData(kTransportUserDataKey, std::move(transport));
+   return result;
+ }
+@@ -157,6 +165,10 @@ bool AccessNetworkContextTransport::ConfigureNetworkContext(
+   }
+   ++state.clients_generation;
+   state.clients.Add(std::move(client));
++#if BUILDFLAG(IS_MAC)
++  if (!state.account_fenced.empty() || !state.account_sites.empty())
++    transport->PublishAccountConfig(state);
++#endif
+   return true;
+ }
+ 
+@@ -210,12 +222,97 @@ bool AccessNetworkContextTransport::PublishProxySelection(
+   }
+ 
+   PartitionState& state = partitions_[*key];
++#if BUILDFLAG(IS_MAC)
++  if (state.account_config) return false;
++#endif
+   state.endpoint = std::move(candidate.endpoint);
+   state.exact_hosts = std::move(candidate.exact_hosts);
+   Broadcast(state);
+   return true;
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++const std::vector<std::string>& AccessNetworkContextTransport::AccountSites() const {
++  static const base::NoDestructor<std::vector<std::string>> empty;
++  const auto it = partitions_.find("<default>");
++  return it == partitions_.end() ? *empty : it->second.account_sites;
++}
++
++bool AccessNetworkContextTransport::AccountDispatchBlocked(const GURL& url) const {
++  auto it = partitions_.find("<default>");
++  if (it == partitions_.end()) return false;
++  std::string host(url.host());
++  while (!host.empty() && host.back() == '.') host.pop_back();
++  return it->second.account_fenced.contains(host);
++}
++
++void AccessNetworkContextTransport::PublishAccountConfig(PartitionState& state) {
++  const auto revision = ++state.account_publication;
++  if (state.clients.empty()) return;
++  auto config = BuildConfig(state);
++  if (!config) return;
++  UpdateClientConfigs(state, config, base::BindOnce(
++      [](base::WeakPtr<AccessNetworkContextTransport> self, uint64_t revision, bool accepted) {
++        if (!self || !accepted) return;
++        auto& current = self->partitions_.at("<default>");
++        if (current.account_publication == revision) current.account_fenced.clear();
++      }, weak_factory_.GetWeakPtr(), revision));
++}
++
++bool AccessNetworkContextTransport::SetAccountNodeSites(
++    const std::vector<std::string>& sites, const std::string& host, uint16_t port,
++    const std::string& authorization) {
++  auto& state = partitions_["<default>"];
++  if (sites.empty()) {
++    state.account_fenced.insert(state.account_sites.begin(), state.account_sites.end());
++    state.account_sites.clear();
++    state.account_config.reset();
++    PublishAccountConfig(state);
++    return true;
++  }
++  // Private request routes carry their own per-request endpoint. Only the
++  // legacy partition-wide custom proxy competes for this configuration.
++  if (!AreCanonicalExactHosts(sites) || (state.endpoint && !state.private_routing))
++    return false;
++  auto config = network::mojom::CustomProxyConfig::New();
++  auto blocked = net::ProxyServer::FromSchemeHostAndPort(
++      net::ProxyServer::SCHEME_HTTPS, "blocked.invalid", 443);
++  auto proxy = host.empty() ? blocked : net::ProxyServer::FromSchemeHostAndPort(
++      net::ProxyServer::SCHEME_HTTPS, host, port);
++  if (!proxy.is_valid() || (!host.empty() && authorization.empty())) return false;
++  config->rules.type = net::ProxyConfig::ProxyRules::Type::PROXY_LIST_PER_SCHEME;
++  for (const auto& site : sites)
++    config->rules.bypass_rules.AddAegisExactSite(site);
++  // Keep this single endpoint exclusive to the config. The CONNECT-only node
++  // rejects ordinary HTTP and no tunnel header accompanies those requests.
++  config->rules.proxies_for_http.SetSingleProxyServer(proxy);
++  config->rules.proxies_for_https.SetSingleProxyServer(proxy);
++  config->rules.reverse_bypass = true;
++  config->should_override_existing_config = true;
++  config->allow_non_idempotent_methods = true;
++  // An empty value marks a blocked account route during acquisition/logout.
++  // The delegate never sends that placeholder on the wire.
++  config->connect_tunnel_headers.SetHeader(net::HttpRequestHeaders::kProxyAuthorization,
++                                           authorization);
++  // The Browser dispatch path and all NetworkContexts have separate pipes.
++  // Fence changed exact hosts before publishing, until every recipient ACKs.
++  if (!state.account_config ||
++      state.account_config->connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization) !=
++          config->connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization) ||
++      state.account_config->rules.proxies_for_https.AllChains() != config->rules.proxies_for_https.AllChains()) {
++    state.account_fenced.insert(state.account_sites.begin(), state.account_sites.end());
++    state.account_fenced.insert(sites.begin(), sites.end());
++  } else {
++    std::set_symmetric_difference(state.account_sites.begin(), state.account_sites.end(),
++        sites.begin(), sites.end(), std::inserter(state.account_fenced, state.account_fenced.end()));
++  }
++  state.account_sites = sites;
++  state.account_config = std::move(config);
++  PublishAccountConfig(state);
++  return true;
++}
++#endif
++
+ bool AccessNetworkContextTransport::ClearProxySelection(
+     const base::FilePath& relative_partition_path) {
+   const std::optional<std::string> key = PartitionKey(relative_partition_path);
+@@ -766,6 +863,9 @@ bool AccessNetworkContextTransport::IsEndpointCurrentForPartition(
+ 
+ network::mojom::CustomProxyConfigPtr AccessNetworkContextTransport::BuildConfig(
+     const PartitionState& state) const {
++#if BUILDFLAG(IS_MAC)
++  if (state.account_config) return state.account_config->Clone();
++#endif
+   auto config = network::mojom::CustomProxyConfig::New();
+   if (state.private_routing || !state.endpoint.has_value() ||
+       state.exact_hosts.empty()) {
+diff --git a/chrome/browser/aegis/access/access_network_context_transport.h b/chrome/browser/aegis/access/access_network_context_transport.h
+index 02fe9f1073af93775a9f8844671131bb7765131c..e888a760f6c963c69241ce896935a668e48389ec 100644
+--- a/chrome/browser/aegis/access/access_network_context_transport.h
++++ b/chrome/browser/aegis/access/access_network_context_transport.h
+@@ -8,10 +8,13 @@
+ #include <map>
+ #include <memory>
+ #include <optional>
++#include <set>
+ #include <string>
+ #include <vector>
+ 
+ #include "base/files/file_path.h"
++#include "build/build_config.h"
++#include "mojo/public/cpp/bindings/struct_ptr.h"
+ #include "base/functional/callback_forward.h"
+ #include "base/supports_user_data.h"
+ #include "base/memory/weak_ptr.h"
+@@ -122,6 +125,14 @@ class AccessNetworkContextTransport
+       const aegis_access::GenerationTuple& common,
+       base::OnceCallback<void(bool)> completion);
+ 
++#if BUILDFLAG(IS_MAC)
++  bool AccountDispatchBlocked(const GURL& url) const;
++  const std::vector<std::string>& AccountSites() const;
++  // Default partition only. A selected site with no credential stays blocked.
++  bool SetAccountNodeSites(const std::vector<std::string>& sites, const std::string& host,
++                          uint16_t port, const std::string& authorization);
++#endif
++
+   // Clears the custom selection while keeping the update channel installed.
+   // New requests then use Chromium's native proxy result again.
+   bool ClearProxySelection(const base::FilePath& relative_partition_path);
+@@ -191,6 +202,12 @@ class AccessNetworkContextTransport
+     std::vector<base::OnceCallback<void(bool)>> private_publication_waiters;
+     std::optional<aegis_access::RegisteredProxyEndpoint> endpoint;
+     std::vector<std::string> exact_hosts;
++#if BUILDFLAG(IS_MAC)
++    network::mojom::CustomProxyConfigPtr account_config;
++    std::vector<std::string> account_sites;
++    std::set<std::string> account_fenced;
++    uint64_t account_publication = 0;
++#endif
+     mojo::RemoteSet<network::mojom::CustomProxyConfigClient> clients;
+     uint64_t clients_generation = 0;
+   };
+@@ -225,6 +242,9 @@ class AccessNetworkContextTransport
+       const aegis_access::PolicyPublicationIdentity& identity,
+       const aegis_access::OwnershipKey& owner,
+       base::OnceCallback<void(bool)> all_clients_settled);
++#if BUILDFLAG(IS_MAC)
++  void PublishAccountConfig(PartitionState& state);
++#endif
+   void Broadcast(PartitionState& state);
+   void PublishPrivateContext(const aegis_access::OwnershipKey& owner,
+                              const std::string& incarnation);
+diff --git a/chrome/browser/aegis/access/access_paid_site_mac.h b/chrome/browser/aegis/access/access_paid_site_mac.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..821894a0191accaced105ffe921f01c2c98b6008
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_paid_site_mac.h
+@@ -0,0 +1,15 @@
++// Copyright 2026 GCSA
++#ifndef CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PAID_SITE_MAC_H_
++#define CHROME_BROWSER_AEGIS_ACCESS_ACCESS_PAID_SITE_MAC_H_
++
++#include <string>
++class Profile;
++namespace aegis::access {
++// Called only from trusted browser chrome for the active committed HTTPS site.
++enum class AccountNodeStatus { kOff, kAcquiring, kAssigned, kUnavailable };
++bool UsesAccountNode(Profile* profile, bool local_node_available = false);
++AccountNodeStatus AccountNodeForSite(Profile* profile, const std::string& site);
++void DisableAccountNodeSite(Profile* profile, const std::string& site);
++void ToggleAccountNodeSite(Profile* profile, const std::string& site);
++}  // namespace aegis::access
++#endif
+diff --git a/chrome/browser/aegis/access/access_paid_site_mac.mm b/chrome/browser/aegis/access/access_paid_site_mac.mm
+new file mode 100644
+index 0000000000000000000000000000000000000000..f69ed9715bca40122aa532fb2f0a632f09d04cef
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_paid_site_mac.mm
+@@ -0,0 +1,215 @@
++// Copyright 2026 GCSA
++#import <AppKit/AppKit.h>
++#import "chrome/browser/aegis/access/access_account_mac.h"
++#include "chrome/browser/aegis/access/access_paid_site_mac.h"
++
++#include <sys/stat.h>
++#include <algorithm>
++#include <set>
++#include <vector>
++
++#include "base/functional/bind.h"
++#include "base/functional/callback_helpers.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/weak_ptr.h"
++#include "base/strings/sys_string_conversions.h"
++#include "base/supports_user_data.h"
++#include "base/task/bind_post_task.h"
++#include "base/timer/timer.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/browser/aegis/aegis_profile_support.h"
++#include "chrome/browser/profiles/profile.h"
++#include "content/public/browser/storage_partition.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++
++namespace aegis::access {
++namespace {
++const char kLeaseKey[] = "aegis-account-node";
++
++// Private authorization is independent, temporary, and entered only into
++// native browser chrome. No regular profile binding is opened for OTR.
++NSDictionary* AuthorizePrivate() {
++  NSAlert* alert = [NSAlert new];
++  alert.messageText = @"Authorize private Access session";
++  alert.informativeText = @"Use the account service and session issued for this private window.";
++  [alert addButtonWithTitle:@"Authorize"];
++  [alert addButtonWithTitle:@"Cancel"];
++  NSTextField* origin = [NSTextField textFieldWithString:@""];
++  NSTextField* account = [NSTextField textFieldWithString:@""];
++  NSSecureTextField* token = [[NSSecureTextField alloc] initWithFrame:NSZeroRect];
++  origin.placeholderString = @"Account service origin";
++  account.placeholderString = @"Account ID";
++  token.placeholderString = @"Private account session";
++  NSStackView* fields = [NSStackView stackViewWithViews:@[origin, account, token]];
++  fields.orientation = NSUserInterfaceLayoutOrientationVertical;
++  fields.alignment = NSLayoutAttributeLeading;
++  fields.frame = NSMakeRect(0, 0, 320, 90);
++  for (NSView* view in fields.arrangedSubviews)
++    [view.widthAnchor constraintEqualToConstant:320].active = YES;
++  alert.accessoryView = fields;
++  if ([alert runModal] != NSAlertFirstButtonReturn) return nil;
++  return @{@"origin":origin.stringValue, @"accountId":account.stringValue,
++           @"token":token.stringValue};
++}
++class SiteLease final : public base::SupportsUserData::Data {
++ public:
++  explicit SiteLease(Profile* profile) : profile_(profile) {}
++  ~SiteLease() override { if (revoke_) revoke_(); }
++  AccountNodeStatus Status(const std::string& site) const {
++    if (!sites_.contains(site)) return AccountNodeStatus::kOff;
++    if (!auth_.empty()) {
++      auto* transport = AccessNetworkContextTransport::Get(profile_);
++      return transport && !transport->AccountDispatchBlocked(GURL("https://" + site + "/"))
++          ? AccountNodeStatus::kAssigned : AccountNodeStatus::kAcquiring;
++    }
++    return in_flight_ ? AccountNodeStatus::kAcquiring : AccountNodeStatus::kUnavailable;
++  }
++  bool HasSites() const { return !sites_.empty(); }
++  void Toggle(const std::string& site) {
++    if (sites_.erase(site)) {
++      Publish();
++      if (sites_.empty()) Reset();
++      return;
++    }
++    // A remaining selection does not imply a live grant after an issue or
++    // renewal failure. Revalidate the current grant before publishing it.
++    if (!auth_.empty() && (NSDate.date.timeIntervalSince1970 * 1000 >= expires_ ||
++                           (change_ && change_()))) Reset();
++    sites_.insert(site);
++    if (!Publish()) { sites_.erase(site); return; }
++    if (!auth_.empty() || in_flight_) return;
++    // An abandoned in-flight POST may arrive after a later off/on cycle. Give
++    // the new authorization its own context so the old POST cannot rotate it.
++    context_ = NSUUID.UUID.UUIDString.lowercaseString;
++    const bool otr = profile_->IsOffTheRecord();
++    auto weak = weak_.GetWeakPtr();
++    if (otr) {
++      NSDictionary* binding = AuthorizePrivate();
++      if (!weak) return;
++      private_binding_ = binding;
++      if (!binding) { sites_.erase(site); Publish(); Reset(); return; }
++    }
++    Issue();
++  }
++ private:
++  bool Publish() {
++    auto* route = AccessNetworkContextTransport::Get(profile_);
++    return route && route->SetAccountNodeSites(
++        std::vector<std::string>(sites_.begin(), sites_.end()), host_, port_, auth_);
++  }
++  void Issue() {
++    in_flight_ = true;
++    const bool otr = profile_->IsOffTheRecord();
++    __block auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
++        [](base::WeakPtr<SiteLease> self, NSDictionary* lease,
++           AegisAccountBindingChange change, AegisNodeRevoke revoke, AegisNodeRenew renew) {
++          if (!self) { if (revoke) revoke(); return; }
++          self->Accept(lease, change, revoke, renew);
++        }, weak_.GetWeakPtr()));
++    AegisIssueNode(otr ? nil : base::SysUTF8ToNSString(profile_->GetPath().value()),
++                   context_, otr, private_binding_,
++                   ^(NSDictionary* lease, AegisAccountBindingChange change, AegisNodeRevoke revoke, AegisNodeRenew renew) {
++                     std::move(reply).Run(lease, change, revoke, renew);
++                   });
++  }
++  void Accept(NSDictionary* lease, AegisAccountBindingChange change, AegisNodeRevoke revoke, AegisNodeRenew renew) {
++    in_flight_ = false;
++    if (!lease || (change_ && change_()) || (change && change())) {
++      if (revoke) revoke();
++      Reset(); Publish(); return;
++    }
++    if (revoke_) revoke_();
++    revoke_ = revoke;
++    extend_ = renew;
++    change_ = change;
++    expires_ = [lease[@"expiresAt"] doubleValue];
++    double now = NSDate.date.timeIntervalSince1970 * 1000;
++    if (now >= expires_) { Reset(); Publish(); return; }
++    renew_ = RenewalTime(now, expires_);
++    NSString* pair = [NSString stringWithFormat:@"%@:%@", lease[@"username"], lease[@"password"]];
++    NSString* auth = [@"Basic " stringByAppendingString:
++        [[pair dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0]];
++    host_ = base::SysNSStringToUTF8(lease[@"host"]);
++    port_ = [lease[@"port"] unsignedShortValue];
++    auth_ = base::SysNSStringToUTF8(auth);
++    if (!Publish()) { Reset(); Publish(); return; }
++    guard_.Start(FROM_HERE, base::Milliseconds(200), base::BindRepeating(
++        &SiteLease::Check, weak_.GetWeakPtr()));
++  }
++  static double RenewalTime(double now, double expires) {
++    return expires - std::min(5000.0, (expires - now) / 2);
++  }
++  void Check() {
++    double now = NSDate.date.timeIntervalSince1970 * 1000;
++    if (now >= expires_ || (change_ && change_())) { Reset(); Publish(); return; }
++    if (now < renew_ || in_flight_) return;
++    in_flight_ = true;
++    __block auto reply = base::BindPostTaskToCurrentDefault(base::BindOnce(
++        &SiteLease::Renewed, weak_.GetWeakPtr()));
++    extend_(^(int64_t expiry) { std::move(reply).Run(expiry); });
++  }
++  void Renewed(int64_t expiry) {
++    in_flight_ = false;
++    double now = NSDate.date.timeIntervalSince1970 * 1000;
++    if (now >= expires_ || now >= expiry || (change_ && change_())) {
++      Reset(); Publish(); return;
++    }
++    // At the session/period boundary the service may return the same final
++    // deadline. Wait for it instead of repeatedly renewing a capped grant.
++    renew_ = expiry > expires_ ? RenewalTime(now, expiry) : expiry;
++    expires_ = expiry;
++  }
++  void Reset() {
++    weak_.InvalidateWeakPtrs();
++    guard_.Stop();
++    if (revoke_) revoke_();
++    revoke_ = nil;
++    extend_ = nil;
++    change_ = nil;
++    private_binding_ = nil;
++    auth_.clear(); host_.clear(); port_ = 0;
++    in_flight_ = false;
++  }
++  raw_ptr<Profile> profile_;
++  std::set<std::string> sites_;
++  std::string host_, auth_;
++  uint16_t port_ = 0;
++  bool in_flight_ = false;
++  double renew_ = 0;
++  NSDictionary* private_binding_ = nil;
++  NSString* context_ = nil;
++  AegisAccountBindingChange change_ = nil;
++  AegisNodeRevoke revoke_ = nil;
++  AegisNodeRenew extend_ = nil;
++  double expires_ = 0;
++  base::RepeatingTimer guard_;
++  base::WeakPtrFactory<SiteLease> weak_{this};
++};
++}  // namespace
++bool UsesAccountNode(Profile* profile, bool local_node_available) {
++  if (!aegis::IsAegisProfileSupported(profile)) return false;
++  auto* lease = static_cast<SiteLease*>(profile->GetUserData(kLeaseKey));
++  if (lease && lease->HasSites()) return true;
++  // A configured local test node remains available in an unbound private
++  // window. Only check for the regular binding's existence to select the UI.
++  // Private authorization always prompts and never reads that binding.
++  if (profile->IsOffTheRecord() && !local_node_available) return true;
++  struct stat binding;
++  return lstat(profile->GetOriginalProfile()->GetPath().AppendASCII("AegisAccessAccount.json").value().c_str(),
++               &binding) == 0 || errno != ENOENT;
++}
++AccountNodeStatus AccountNodeForSite(Profile* profile, const std::string& site) {
++  auto* lease = static_cast<SiteLease*>(profile->GetUserData(kLeaseKey));
++  return lease ? lease->Status(site) : AccountNodeStatus::kOff;
++}
++void DisableAccountNodeSite(Profile* profile, const std::string& site) {
++  auto* lease = static_cast<SiteLease*>(profile->GetUserData(kLeaseKey));
++  if (lease && lease->Status(site) != AccountNodeStatus::kOff) lease->Toggle(site);
++}
++void ToggleAccountNodeSite(Profile* profile, const std::string& site) {
++  if (!aegis::IsAegisProfileSupported(profile) || site.empty()) return;
++  if (!profile->GetUserData(kLeaseKey))
++    profile->SetUserData(kLeaseKey, std::make_unique<SiteLease>(profile));
++  static_cast<SiteLease*>(profile->GetUserData(kLeaseKey))->Toggle(site);
++}
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_paid_site_mac_unittest.mm b/chrome/browser/aegis/access/access_paid_site_mac_unittest.mm
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f0afe4465ce9a140f972743ae612973a9ba2ef5
+--- /dev/null
++++ b/chrome/browser/aegis/access/access_paid_site_mac_unittest.mm
+@@ -0,0 +1,376 @@
++// Copyright 2026 GCSA
++#import <Foundation/Foundation.h>
++
++#include "chrome/browser/aegis/access/access_paid_site_mac.h"
++#include "base/base64.h"
++#include "base/json/json_writer.h"
++#include "base/files/file_util.h"
++#include "net/base/load_flags.h"
++#include "net/http/access_proxy_route.h"
++#include "net/log/test_net_log.h"
++#include "net/proxy_resolution/proxy_info.h"
++#include "base/files/scoped_temp_dir.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/sys_string_conversions.h"
++#include "base/test/run_until.h"
++#include "base/test/scoped_run_loop_timeout.h"
++#include "chrome/browser/aegis/access/access_network_context_transport.h"
++#include "chrome/test/base/testing_profile.h"
++#include "content/public/test/browser_task_environment.h"
++#include "crypto/hash.h"
++#include "net/cert/test_root_certs.h"
++#include "net/test/cert_test_util.h"
++#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
++#include "net/url_request/url_request.h"
++#include "net/url_request/url_request_context.h"
++#include "net/url_request/url_request_context_builder.h"
++#include "net/url_request/url_request_test_util.h"
++#include "services/network/network_service_proxy_delegate.h"
++#include "services/network/public/mojom/network_context.mojom.h"
++#include "testing/gtest/include/gtest/gtest.h"
++
++#include "chrome/browser/aegis/access/access_proxying_url_loader_factory.h"
++#include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
++#include "services/network/test/test_url_loader_client.h"
++#include "services/network/test/test_url_loader_factory.h"
++#include "base/test/test_future.h"
++
++namespace aegis::access {
++namespace {
++class HeldAccountConfig : public network::mojom::CustomProxyConfigClient {
++ public:
++  explicit HeldAccountConfig(network::mojom::NetworkContextParams& params)
++      : receiver(this, std::move(params.custom_proxy_config_client_receiver)) {}
++  void OnCustomProxyConfigUpdated(network::mojom::CustomProxyConfigPtr,
++                                  OnCustomProxyConfigUpdatedCallback callback) override {
++    replies.push_back(std::move(callback));
++  }
++  void OnAegisAccessPolicyPublished(network::mojom::AegisAccessPolicyPublicationMetadataPtr,
++                                    OnAegisAccessPolicyPublishedCallback callback) override {
++    std::move(callback).Run(true);
++  }
++  std::vector<OnCustomProxyConfigUpdatedCallback> replies;
++  mojo::Receiver<network::mojom::CustomProxyConfigClient> receiver;
++};
++
++TEST(PaidSiteMac, BrowserDispatchWaitsForCurrentConfigOnEveryPipe) {
++  content::BrowserTaskEnvironment task;
++  auto profile = TestingProfile::Builder().Build();
++  network::mojom::NetworkContextParams params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
++  HeldAccountConfig first(params);
++  auto* transport = AccessNetworkContextTransport::Get(profile.get());
++  const auto owner = *transport->OwnerForPartition(aegis_access::ChannelNamespace::kDev, {});
++  network::TestURLLoaderFactory origin;
++  mojo::PendingRemote<network::mojom::URLLoaderFactory> target;
++  origin.Clone(target.InitWithNewPipeAndPassReceiver());
++  mojo::Remote<network::mojom::URLLoaderFactory> requests;
++  AccessProxyingURLLoaderFactory wrapper(profile.get(), content::FrameTreeNodeId(1), {}, {}, nullptr, owner, {},
++      requests.BindNewPipeAndPassReceiver(), std::move(target), {}, base::DoNothing());
++  auto dispatch = [&](const char* address) {
++    network::ResourceRequest request;
++    request.url = GURL(address);
++    origin.AddResponse(address, "origin received request");
++    mojo::Remote<network::mojom::URLLoader> loader;
++    network::TestURLLoaderClient client;
++    requests->CreateLoaderAndStart(loader.BindNewPipeAndPassReceiver(), 1, 0, request,
++        client.CreateRemote(), net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));
++    client.RunUntilComplete();
++    return client.completion_status().error_code;
++  };
++  const char* selected = "https://paid.example./";
++  ASSERT_TRUE(transport->SetAccountNodeSites({"paid.example"}, "", 0, ""));
++  EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, dispatch(selected));
++  EXPECT_EQ(net::OK, dispatch("https://sub.paid.example./"));
++  ASSERT_EQ(first.replies.size(), 1u);
++  ASSERT_TRUE(transport->SetAccountNodeSites({"paid.example"}, "node.test", 443, "Basic test"));
++  std::move(first.replies[0]).Run();
++  task.RunUntilIdle();
++  EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, dispatch(selected));
++  network::mojom::NetworkContextParams next;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &next));
++  HeldAccountConfig second(next);
++  task.RunUntilIdle();
++  ASSERT_EQ(first.replies.size(), 3u);
++  ASSERT_EQ(second.replies.size(), 1u);
++  std::move(first.replies[1]).Run();
++  std::move(first.replies[2]).Run();
++  task.RunUntilIdle();
++  EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, dispatch(selected));
++  std::move(second.replies[0]).Run();
++  task.RunUntilIdle();
++  EXPECT_EQ(net::OK, dispatch(selected));
++  ASSERT_TRUE(transport->SetAccountNodeSites({}, "", 0, ""));
++  task.RunUntilIdle();
++  ASSERT_EQ(first.replies.size(), 4u);
++  std::move(first.replies.back()).Run();
++  second.receiver.reset();
++  task.RunUntilIdle();
++  EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, dispatch(selected));
++}
++
++TEST(PaidSiteMac, PaidWebsiteRejectsLocalErrorPageRetryForAliases) {
++  content::BrowserTaskEnvironment task;
++  auto profile = TestingProfile::Builder().Build();
++  auto* transport = AccessNetworkContextTransport::GetOrCreate(profile.get());
++  ASSERT_TRUE(transport->SetAccountNodeSites({"news.example.com"}, "", 0, ""));
++  auto* controller = AccessSiteProxyBubbleController::GetOrCreate(profile.get());
++  for (const char* url : {"https://news.example.com./", "https://cdn.example.com/"}) {
++    base::test::TestFuture<bool> result;
++    controller->RequestFailedNavigationProxy(GURL(url), result.GetCallback());
++    EXPECT_FALSE(result.Get());
++    EXPECT_EQ(AccessSiteConnectionState::kIdle,
++              controller->SnapshotForCommittedUrl(GURL(url)).connection);
++  }
++}
++
++TEST(PaidSiteMac, UnboundPrivateWindowPreservesConfiguredLocalNode) {
++  content::BrowserTaskEnvironment task;
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  TestingProfile::Builder builder;
++  builder.SetPath(temp.GetPath());
++  auto profile = builder.Build();
++  Profile* otr = profile->GetPrimaryOTRProfile(true);
++  ASSERT_TRUE(otr);
++  EXPECT_FALSE(UsesAccountNode(profile.get(), true));
++  EXPECT_FALSE(UsesAccountNode(otr, true));
++  EXPECT_TRUE(UsesAccountNode(otr, false));
++  ASSERT_TRUE(base::WriteFile(temp.GetPath().AppendASCII("AegisAccessAccount.json"), "{}"));
++  EXPECT_TRUE(UsesAccountNode(otr, true));
++}
++
++TEST(PaidSiteMac, CanonicalDnsHostIsExactWithOrWithoutRootDots) {
++  content::BrowserTaskEnvironment task;
++  auto profile = TestingProfile::Builder().Build();
++  network::mojom::NetworkContextParams params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
++  auto* transport = AccessNetworkContextTransport::Get(profile.get());
++  for (bool assigned : {true, false}) {
++    ASSERT_TRUE(transport->SetAccountNodeSites({"example.com"}, assigned ? "node.test" : "",
++                                               assigned ? 443 : 0, assigned ? "Basic fixture" : ""));
++    const auto config = transport->BuildConfigForTesting({});
++    for (const char* url : {"https://example.com", "https://example.com.",
++                            "http://EXAMPLE.COM.:8080/path", "https://example.com..",
++                            "wss://example.com%2E./socket"}) {
++      SCOPED_TRACE(url);
++      net::ProxyInfo result;
++      config->rules.Apply(GURL(url), &result);
++      EXPECT_FALSE(result.is_direct());
++      if (!result.is_direct())
++        EXPECT_EQ(result.proxy_chain().First().host_port_pair().host(),
++                  assigned ? "node.test" : "blocked.invalid");
++    }
++    for (const char* url : {"https://sub.example.com.", "https://example.com.other.",
++                            "http://notexample.com..", "wss://localhost/socket"}) {
++      SCOPED_TRACE(url);
++      net::ProxyInfo result;
++      config->rules.Apply(GURL(url), &result);
++      EXPECT_TRUE(result.is_direct());
++    }
++  }
++}
++
++TEST(PaidSiteMac, ExplicitLocalRouteAndBypassCannotReplaceSelectedAccountSite) {
++  content::BrowserTaskEnvironment task(base::test::TaskEnvironment::MainThreadType::IO);
++  auto profile = TestingProfile::Builder().Build();
++  network::mojom::NetworkContextParams params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
++  auto* transport = AccessNetworkContextTransport::Get(profile.get());
++  auto builder = net::CreateTestURLRequestContextBuilder();
++  builder->set_proxy_delegate(std::make_unique<network::NetworkServiceProxyDelegate>(
++      std::move(params.initial_custom_proxy_config), std::move(params.custom_proxy_config_client_receiver),
++      mojo::PendingRemote<network::mojom::CustomProxyConnectionObserver>()));
++  auto network = builder->Build();
++  auto local = net::AccessProxyRoute::Create(
++      {0, "profile", "partition", "group", "registration", "context", 1, 1, 1, 1, 1},
++      net::ProxyChain(net::ProxyServer::FromSchemeHostAndPort(
++          net::ProxyServer::SCHEME_HTTP, "127.0.0.1", 1)));
++  ASSERT_TRUE(local);
++  auto send = [&](const char* url, bool explicit_route) {
++    net::TestDelegate result;
++    auto request = network->CreateRequest(GURL(url), net::DEFAULT_PRIORITY, &result,
++        TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle);
++    if (explicit_route) request->SetAccessProxyRoute(local);
++    else request->SetLoadFlags(net::LOAD_BYPASS_PROXY);
++    request->Start();
++    result.RunUntilComplete();
++    return result.request_status();
++  };
++  for (bool assigned : {true, false}) {
++    ASSERT_TRUE(transport->SetAccountNodeSites({"paid.example"}, assigned ? "node.test" : "",
++                                               assigned ? 443 : 0, assigned ? "Basic fixture" : ""));
++    task.RunUntilIdle();
++    EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, send("https://paid.example./", true));
++    EXPECT_EQ(net::ERR_BLOCKED_BY_CLIENT, send("https://paid.example./", false));
++    EXPECT_EQ(net::ERR_PROXY_CONNECTION_FAILED, send("https://local.example/", true));
++  }
++}
++
++// Optional wire fixture: the target accepts only traffic owned by its Xray
++// peer and returns a known payload. No process-global trust changes.
++enum class WireScenario { kShortRequest, kSlow, kDenyRenewal, kSignOut };
++
++void RunAccountWire(WireScenario scenario) {
++  NSDictionary* env = NSProcessInfo.processInfo.environment;
++  if (!env[@"AEGIS_S3_HTTPS_URL"]) GTEST_SKIP() << "requires controlled node fixture";
++  content::BrowserTaskEnvironment task(base::test::TaskEnvironment::MainThreadType::IO);
++  const bool slow = scenario != WireScenario::kShortRequest;
++  if (slow && !env[@"AEGIS_S3_LEASE_TTL_SECONDS"]) GTEST_SKIP() << "requires short lease fixture";
++  base::test::ScopedRunLoopTimeout timeout(FROM_HERE, base::Minutes(1));
++  base::ScopedTempDir temp;
++  ASSERT_TRUE(temp.CreateUniqueTempDir());
++  TestingProfile::Builder profile_builder;
++  profile_builder.SetPath(temp.GetPath());
++  auto profile = profile_builder.Build();
++  auto path = temp.GetPath().AppendASCII("AegisAccessAccount.json");
++  NSData* binding = [NSJSONSerialization dataWithJSONObject:@{
++      @"origin":env[scenario == WireScenario::kDenyRenewal ? @"AEGIS_S3_RENEW_DENIED_ORIGIN" : @"AEGIS_S3_ORIGIN"], @"token":env[@"AEGIS_S3_TOKEN"],
++      @"accountId":env[@"AEGIS_S3_ID"], @"generation":NSUUID.UUID.UUIDString }
++      options:0 error:nil];
++  ASSERT_TRUE(base::WriteFile(path, base::SysNSStringToUTF8([[NSString alloc] initWithData:binding encoding:NSUTF8StringEncoding])));
++  ASSERT_TRUE(base::SetPosixFilePermissions(path, 0600));
++  net::ScopedTestRoot root(net::ImportCertFromFile(
++      base::FilePath(base::SysNSStringToUTF8(env[@"AEGIS_S3_CA_PEM"]))).get());
++  network::mojom::NetworkContextParams params;
++  ASSERT_TRUE(AccessNetworkContextTransport::ConfigureNetworkContext(profile.get(), {}, &params));
++  auto builder = net::CreateTestURLRequestContextBuilder();
++  builder->set_proxy_delegate(std::make_unique<network::NetworkServiceProxyDelegate>(
++      std::move(params.initial_custom_proxy_config), std::move(params.custom_proxy_config_client_receiver),
++      mojo::PendingRemote<network::mojom::CustomProxyConnectionObserver>()));
++  auto network = builder->Build();
++  GURL configured_url(base::SysNSStringToUTF8(env[slow ? @"AEGIS_S3_SLOW_URL" : @"AEGIS_S3_HTTPS_URL"]));
++  const std::string site(configured_url.host());
++  const std::string rooted_host = site + ".";
++  GURL::Replacements rooted;
++  rooted.SetHostStr(rooted_host);
++  const GURL url = configured_url.ReplaceComponents(rooted);
++  ASSERT_TRUE(UsesAccountNode(profile.get()));
++  // Same entry point invoked by the sole trusted toolbar toggle.
++  ToggleAccountNodeSite(profile.get(), site);
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return AccountNodeForSite(profile.get(), site) == AccountNodeStatus::kAssigned;
++  }));
++  task.RunUntilIdle();
++  net::RecordingNetLogObserver diagnostics(net::NetLogCaptureMode::kEverything);
++  const auto authorization = AccessNetworkContextTransport::Get(profile.get())
++      ->BuildConfigForTesting({})->connect_tunnel_headers.GetHeader("Proxy-Authorization");
++  ASSERT_TRUE(authorization.has_value());
++  net::TestDelegate result;
++  auto request = network->CreateRequest(url, net::DEFAULT_PRIORITY, &result,
++                                        TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle);
++  const auto start = base::TimeTicks::Now();
++  request->Start();
++  if (scenario == WireScenario::kSignOut) {
++    base::RunLoop finished;
++    result.set_on_complete(finished.QuitClosure());
++    ASSERT_TRUE(base::test::RunUntil([&] { return !result.data_received().empty(); }));
++    ASSERT_TRUE(base::DeleteFile(path));
++    finished.Run();
++  } else {
++    result.RunUntilComplete();
++  }
++  if (slow) {
++    const auto elapsed = base::TimeTicks::Now() - start;
++    const auto ttl = base::Seconds([env[@"AEGIS_S3_LEASE_TTL_SECONDS"] intValue]);
++    ASSERT_EQ(200, request->GetResponseCode());
++    if (scenario == WireScenario::kSlow) {
++      EXPECT_GT(elapsed, ttl * 2);
++      EXPECT_EQ(net::OK, result.request_status());
++      EXPECT_EQ(base::HexEncodeLower(crypto::hash::Sha256(result.data_received())),
++                base::SysNSStringToUTF8(env[@"AEGIS_S3_SLOW_SHA256"]));
++      EXPECT_EQ(AccountNodeStatus::kAssigned, AccountNodeForSite(profile.get(), site));
++    } else {
++      EXPECT_NE(net::OK, result.request_status());
++      EXPECT_GT(result.data_received().size(), 0u);
++      EXPECT_LT(result.data_received().size(), 409600u);
++      EXPECT_LT(elapsed, ttl * 2);
++      EXPECT_EQ(AccountNodeStatus::kUnavailable, AccountNodeForSite(profile.get(), site));
++    }
++    ToggleAccountNodeSite(profile.get(), site);
++    return;
++  }
++  ASSERT_EQ(net::OK, result.request_status());
++  ASSERT_EQ(200, request->GetResponseCode());
++  EXPECT_EQ(base::HexEncodeLower(crypto::hash::Sha256(result.data_received())),
++            base::SysNSStringToUTF8(env[@"AEGIS_S3_EXPECTED_SHA256"]));
++  std::map<uint32_t, std::string> socket_bytes;
++  for (const auto& entry : diagnostics.GetEntries()) {
++    const std::string json = base::WriteJson(entry.params).value_or("");
++    EXPECT_FALSE(json.contains(*authorization));
++    if (const auto* bytes = entry.params.FindString("bytes")) {
++      std::string decoded;
++      if (base::Base64Decode(*bytes, &decoded)) socket_bytes[entry.source.id] += decoded;
++    }
++  }
++  for (const auto& [id, bytes] : socket_bytes) EXPECT_FALSE(bytes.contains(*authorization));
++  ToggleAccountNodeSite(profile.get(), "second.example");
++  EXPECT_EQ(AccountNodeStatus::kAcquiring, AccountNodeForSite(profile.get(), "second.example"));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return AccountNodeForSite(profile.get(), "second.example") == AccountNodeStatus::kAssigned;
++  }));
++  ASSERT_TRUE(base::DeleteFile(path));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return AccountNodeForSite(profile.get(), site) == AccountNodeStatus::kUnavailable;
++  }));
++  task.RunUntilIdle();
++  net::TestDelegate denied;
++  auto retry = network->CreateRequest(url, net::DEFAULT_PRIORITY, &denied, TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle);
++  retry->Start();
++  denied.RunUntilComplete();
++  EXPECT_NE(net::OK, denied.request_status());
++  ASSERT_EQ(AccountNodeStatus::kUnavailable, AccountNodeForSite(profile.get(), "second.example"));
++  ToggleAccountNodeSite(profile.get(), "second.example");
++  ToggleAccountNodeSite(profile.get(), "second.example");
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return AccountNodeForSite(profile.get(), "second.example") == AccountNodeStatus::kUnavailable;
++  }));
++  auto blocked = AccessNetworkContextTransport::Get(profile.get())->BuildConfigForTesting({});
++  for (const auto& host : {site, std::string("second.example")}) {
++    net::ProxyInfo info;
++    blocked->rules.Apply(GURL("https://" + host), &info);
++    ASSERT_FALSE(info.is_direct());
++    EXPECT_EQ("blocked.invalid", info.proxy_chain().First().GetHost());
++  }
++  ASSERT_TRUE(base::WriteFile(path, base::SysNSStringToUTF8(
++      [[NSString alloc] initWithData:binding encoding:NSUTF8StringEncoding])));
++  ASSERT_TRUE(base::SetPosixFilePermissions(path, 0600));
++  // Only re-enable the second site. Both share the newly issued grant.
++  ToggleAccountNodeSite(profile.get(), "second.example");
++  ToggleAccountNodeSite(profile.get(), "second.example");
++  ASSERT_EQ(AccountNodeStatus::kAcquiring, AccountNodeForSite(profile.get(), site));
++  ASSERT_TRUE(base::test::RunUntil([&] {
++    return AccountNodeForSite(profile.get(), site) == AccountNodeStatus::kAssigned &&
++        AccountNodeForSite(profile.get(), "second.example") == AccountNodeStatus::kAssigned;
++  }));
++  const auto replacement = AccessNetworkContextTransport::Get(profile.get())
++      ->BuildConfigForTesting({})->connect_tunnel_headers.GetHeader("Proxy-Authorization");
++  ASSERT_TRUE(replacement.has_value());
++  EXPECT_FALSE(*replacement == *authorization);
++  net::TestDelegate recovered;
++  auto restored = network->CreateRequest(url, net::DEFAULT_PRIORITY, &recovered,
++      TRAFFIC_ANNOTATION_FOR_TESTS, net::handles::kInvalidNetworkHandle);
++  // A second wire receipt must come from the node, independent of the first
++  // URLRequest's still-live HTTP cache entry.
++  restored->SetLoadFlags(net::LOAD_DISABLE_CACHE);
++  restored->Start();
++  recovered.RunUntilComplete();
++  EXPECT_EQ(net::OK, recovered.request_status());
++  EXPECT_EQ(200, restored->GetResponseCode());
++  ToggleAccountNodeSite(profile.get(), "second.example");
++  ToggleAccountNodeSite(profile.get(), site);
++}
++TEST(PaidSiteMac, ChromiumConnectThroughAssignedNode) {
++  RunAccountWire(WireScenario::kShortRequest);
++}
++TEST(PaidSiteMac, ActiveDownloadSurvivesLeaseRenewals) {
++  RunAccountWire(WireScenario::kSlow);
++}
++TEST(PaidSiteMac, DeniedRenewalStopsActiveDownload) {
++  RunAccountWire(WireScenario::kDenyRenewal);
++}
++TEST(PaidSiteMac, SignOutRevokesActiveDownload) {
++  RunAccountWire(WireScenario::kSignOut);
++}
++}  // namespace
++}  // namespace aegis::access
+diff --git a/chrome/browser/aegis/access/access_private_publication_unittest.cc b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+index dbd0046ee058daa26be75f03ae50c0ec0fdb8866..4dcb8d87356215c31657d30f43f57d7253fa6a36 100644
+--- a/chrome/browser/aegis/access/access_private_publication_unittest.cc
++++ b/chrome/browser/aegis/access/access_private_publication_unittest.cc
+@@ -169,6 +169,26 @@ TEST_F(AccessPrivatePublicationTest,
+   ExpectOriginalConnection(*recreated);
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++TEST_F(AccessPrivatePublicationTest, AccountSitesCoexistWithPrivateLocalSelection) {
++  HeldPrivateContext context;
++  ASSERT_TRUE(Bind(context));
++  const auto before = transport_->CurrentSelection(owner_);
++  ASSERT_TRUE(before);
++  const AccessTransportSelection local{Endpoint(), {"anchor.example"}};
++  ASSERT_TRUE(transport_->ReplaceSelection(owner_, *before, local));
++  ASSERT_TRUE(transport_->SetAccountNodeSites({"paid.example"}, "account.example", 443, "Basic test"));
++  auto delegate = CreateLegacyDelegate();
++  ExpectOriginalConnection(*delegate);
++  net::ProxyInfo paid;
++  paid.UseDirect();
++  delegate->OnResolveProxy(GURL("https://paid.example./"), {}, "GET", {}, &paid);
++  ASSERT_TRUE(paid.proxy_chain().is_aegis_account_node());
++  ASSERT_TRUE(transport_->SetAccountNodeSites({}, "", 0, ""));
++  EXPECT_EQ(transport_->CurrentSelection(owner_), local);
++}
++#endif
++
+ TEST_F(AccessPrivatePublicationTest, ChangedCommonTupleRequiresFreshPrivateAck) {
+   auto notifier = net::NetworkChangeNotifier::CreateMockIfNeeded();
+   HeldPrivateContext context;
+diff --git a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+index ea463b2c1c42f03a1484596d92c34a192d3f000b..47312661d45023dda69bc40555bb99a8a4f74ecc 100644
+--- a/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
++++ b/chrome/browser/aegis/access/access_proxying_url_loader_factory.cc
+@@ -943,6 +943,10 @@ AccessProxyingURLLoaderFactory::EvaluateUrl(
+   CHECK(ownership_record);
+   *net_error = net::ERR_BLOCKED_BY_CLIENT;
+ 
++#if BUILDFLAG(IS_MAC)
++  if (factory_owner_.storage_partition_token == "<default>" &&
++      profile_->IsAccountProxyDispatchBlocked(request_url)) return RequestDisposition::kBlock;
++#endif
+   if (auto* coordinator = AccessServiceCoordinator::Get(profile_);
+       coordinator && !coordinator->CanDispatch(factory_owner_)) {
+     *net_error = net::ERR_NETWORK_CHANGED;
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+index f5c2a90551825cacee9f5cc3e9d871e38368b46d..0abd5de8b510e2c735049e30931303fd7de99a6b 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.cc
+@@ -3,6 +3,7 @@
+ #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
+ #include "chrome/browser/aegis/access/access_build_channel.h"
+ 
++#include <algorithm>
+ #include <utility>
+ #include "base/command_line.h"
+ #include "chrome/browser/aegis/access/access_identity_generation_source.h"
+@@ -221,13 +222,26 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
+   return result;
+ }
+ 
++bool AccessSiteProxyBubbleController::RequestHostProxySession(
++    const AccessSiteHost& host, bool enabled) {
++  return RequestHostProxySession(host, enabled, {});
++}
++
+ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     const AccessSiteHost& requested_host,
+-    bool enabled) {
++    bool enabled, base::OnceClosure on_disabled) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+   const auto website = CanonicalWebsiteHost(requested_host);
+   if (!website.host) return false;
+   const auto host = *website.host;
++#if BUILDFLAG(IS_MAC)
++  if (enabled) {
++    auto* transport = AccessNetworkContextTransport::Get(profile_);
++    if (transport && std::ranges::any_of(transport->AccountSites(), [&](const auto& paid) {
++          return CanonicalWebsiteHost(AccessSiteHost{paid}).host == host;
++        })) return false;
++  }
++#endif
+   ++state_revision_;
+   if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
+     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
+@@ -258,7 +272,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
+     // committed choice until the local transaction actually succeeds.
+     host_states_[host].connection = AccessSiteConnectionState::kConnecting;
+     host_states_[host].failure_reason.clear();
+-    BeginDisablePublication(host);
++    BeginDisablePublication(host, std::move(on_disabled));
+     if (superseded_retry) std::move(superseded_retry).Run(false);
+     if (superseded_queue) std::move(superseded_queue).Run(false);
+     return true;
+@@ -868,7 +882,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
+ }
+ 
+ void AccessSiteProxyBubbleController::BeginDisablePublication(
+-    const AccessSiteHost& host) {
++    const AccessSiteHost& host, base::OnceClosure on_disabled) {
+   auto* transport = AccessNetworkContextTransport::Get(profile_);
+   const auto owner = transport
+       ? transport->OwnerForPartition(AccessChannelForCurrentBuild(), base::FilePath())
+@@ -922,8 +936,14 @@ void AccessSiteProxyBubbleController::BeginDisablePublication(
+   publication_in_flight_ = true;
+   coordinator->CommitSiteGroupMutation(
+       std::move(store), std::move(*plan.mutation.request), plan.selector,
+-      base::BindOnce(&AccessSiteProxyBubbleController::OnPublicationComplete,
+-                     weak_factory_.GetWeakPtr(), host, /*enabling=*/false));
++      base::BindOnce([](base::WeakPtr<AccessSiteProxyBubbleController> self,
++                        AccessSiteHost host, base::OnceClosure on_disabled,
++                        AccessMutationTransactionResult result) {
++        if (!self) return;
++        const bool committed = result.status == AccessMutationTransactionStatus::kCommitted;
++        self->OnPublicationComplete(host, false, std::move(result));
++        if (self && committed && on_disabled) std::move(on_disabled).Run();
++      }, weak_factory_.GetWeakPtr(), host, std::move(on_disabled)));
+ }
+ 
+ void AccessSiteProxyBubbleController::OnPublicationComplete(
+diff --git a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+index c915f3aa344ee73c7a7acee83b352d82206c1164..f2f6eb4806581a0921742187a990168c8143b66c 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
++++ b/chrome/browser/aegis/access/access_site_proxy_bubble_controller.h
+@@ -68,6 +68,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+   // Disable does not require a live proxy; publication failures remain visible.
+   // Returns false only when the host/toggle cannot be accepted.
+   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
++  bool RequestHostProxySession(const AccessSiteHost& host, bool enabled,
++                               base::OnceClosure on_disabled);
+   void RequestFailedNavigationProxy(const GURL& original_url,
+       base::OnceCallback<void(bool)> completion);
+   base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
+@@ -134,7 +136,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
+       AccessSiteProxyLocalProxyReadyInfo* out) const;
+   void BeginEnablePublication(const AccessSiteHost& host,
+                               AccessSiteProxyLocalProxyReadyInfo ready);
+-  void BeginDisablePublication(const AccessSiteHost& host);
++  void BeginDisablePublication(const AccessSiteHost& host, base::OnceClosure on_disabled);
+   void OnPublicationComplete(AccessSiteHost host,
+                              bool enabling,
+                              AccessMutationTransactionResult result);
+diff --git a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+index ea643929765a40a7aa4ef0c7dcc315d2dd6b37ae..50cac4460844022792433d17eaee0c12901fa8c8 100644
+--- a/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
++++ b/chrome/browser/aegis/access/access_site_proxy_product_unittest.cc
+@@ -425,6 +425,27 @@ class AccessSiteProxyProductTest : public testing::Test {
+   OwnershipKey owner_;
+ };
+ 
++#if BUILDFLAG(IS_MAC)
++TEST_F(AccessSiteProxyProductTest, DualSelectionReleasesPaidOnlyAfterCommittedLocalOff) {
++  Enable();
++  ASSERT_TRUE(transport_->SetAccountNodeSites({"news.example"}, "", 0, ""));
++  base::test::TestFuture<bool> retry;
++  bubble_->RequestFailedNavigationProxy(GURL("https://news.example./"), retry.GetCallback());
++  ASSERT_FALSE(retry.Get());
++  EXPECT_TRUE(Snapshot().toggle_on);
++  bool disabled = false;
++  ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, false, base::BindLambdaForTesting([&] {
++    EXPECT_FALSE(Snapshot().toggle_on);
++    EXPECT_TRUE(transport_->SetAccountNodeSites({}, "", 0, ""));
++    disabled = true;
++  })));
++  EXPECT_FALSE(disabled);
++  ASSERT_TRUE(base::test::RunUntil([&] { return disabled; }));
++  EXPECT_TRUE(transport_->AccountSites().empty());
++  EXPECT_FALSE(Snapshot().toggle_on);
++}
++#endif
++
+ TEST_F(AccessSiteProxyProductTest, RecoveryTimesOutWhileCandidateAckIsStillHeld) {
+   context_.hold_next = true;
+   ASSERT_TRUE(bubble_->RequestHostProxySession({"news.example"}, true));
+diff --git a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+index 6bf90ecfbfc4d4f7932595020501f4f0b197dfd6..9a05b4d96c0cfebb92e10b48e63492dc6268e464 100644
+--- a/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
++++ b/chrome/browser/ui/views/toolbar/aegis_toolbar_button.cc
+@@ -24,6 +24,9 @@
+ #include "ui/views/controls/button/checkbox.h"
+ #include "url/origin.h"
+ #include "chrome/browser/browser_process.h"
++#if BUILDFLAG(IS_MAC)
++#include "chrome/browser/aegis/access/access_paid_site_mac.h"
++#endif
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/ui/browser_commands.h"
+ #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
+@@ -266,6 +269,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     const auto access_snapshot = access
+         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
+ #if BUILDFLAG(IS_MAC)
++    const auto paid_state = access_snapshot && access_snapshot->has_trusted_site
++        ? aegis::access::AccountNodeForSite(browser_->GetProfile(), access_snapshot->host.value)
++        : aegis::access::AccountNodeStatus::kOff;
++    if (paid_state != paid_status_) { Build(); return; }
+     if (expanded_.contains("core-logs") && access && access->CanViewCoreLogs() &&
+         (log_disk_status_ != access->core_logs()->disk_status() ||
+          log_view_version_ != access->core_logs()->view_version())) {
+@@ -380,6 +387,16 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     return aegis::access::AccessSiteProxyBubbleController::GetOrCreate(
+         browser_->GetProfile());
+   }
++#if BUILDFLAG(IS_MAC)
++  bool UseAccountNode(aegis::access::AccessSiteProxyBubbleController* controller,
++                      const aegis::access::AccessSiteProxyBubbleSnapshot& snap,
++                      aegis::access::AccountNodeStatus state) const {
++    auto* profile = browser_->GetProfile();
++    return state != aegis::access::AccountNodeStatus::kOff ||
++        (!snap.toggle_on && aegis::access::UsesAccountNode(profile,
++            profile->IsOffTheRecord() && !controller->GetFailedNavigationRetryHandler().is_null()));
++  }
++#endif
+   // Trusted URL for Access is the committed navigation only (address_).
+   void ToggleSiteProxy() {
+     if (!Valid()) {
+@@ -393,6 +410,20 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+     if (!snap.has_trusted_site || !snap.toggle_enabled) {
+       return;
+     }
++#if BUILDFLAG(IS_MAC)
++    if (UseAccountNode(controller, snap, aegis::access::AccountNodeForSite(
++            browser_->GetProfile(), snap.host.value))) {
++      auto weak = weak_.GetWeakPtr();
++      if (snap.toggle_on) {
++        controller->RequestHostProxySession(snap.host, false, base::BindOnce(
++            &aegis::access::DisableAccountNodeSite, browser_->GetProfile(), snap.host.value));
++      } else if (snap.connection != aegis::access::AccessSiteConnectionState::kConnecting) {
++        aegis::access::ToggleAccountNodeSite(browser_->GetProfile(), snap.host.value);
++      }
++      if (weak) weak->RefreshSoon();
++      return;
++    }
++#endif
+     // Publication path: enable → Prepare/Publish/ACK; disable commits locally
+     // even when the service is unavailable. Switch state ≠ connectivity.
+     controller->RequestHostProxySession(snap.host, !snap.toggle_on);
+@@ -481,12 +512,30 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+       AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
+       return;
+     }
++    bool toggle_on = snap.toggle_on;
++#if BUILDFLAG(IS_MAC)
++    auto* profile = browser_->GetProfile();
++    using Paid = aegis::access::AccountNodeStatus;
++    const auto state = paid_status_ = aegis::access::AccountNodeForSite(profile, snap.host.value);
++    const bool paid = UseAccountNode(controller, snap, state);
++    if (paid) toggle_on = state != Paid::kOff;
++#endif
+     Toggle(parent,
+            Copy(u"当前网站使用代理", u"Use Access proxy for this site",
+                 u"目前網站使用代理"),
+-           snap.toggle_on,
++           toggle_on,
+            base::BindRepeating(&AegisPageBubble::ToggleSiteProxy,
+                                base::Unretained(this)));
++#if BUILDFLAG(IS_MAC)
++    if (paid && state != Paid::kOff) {
++      AddLabel(parent, state == Paid::kAssigned
++          ? Copy(u"账户节点已分配", u"Account node assigned", u"帳戶節點已分配")
++          : ConnectionStatusCopy(state == Paid::kAcquiring
++                ? aegis::access::AccessSiteProxyConnectionStatusId::kConnecting
++                : aegis::access::AccessSiteProxyConnectionStatusId::kUnavailable));
++      return;
++    }
++#endif
+     AddLabel(parent, IntentStatusCopy(snap.intent_status));
+     AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
+     if (!snap.failure_reason.empty()) {
+@@ -690,6 +739,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
+   std::string document_, tab_;
+   raw_ptr<views::View> panel_ = nullptr;
+   base::DictValue snapshot_;
++#if BUILDFLAG(IS_MAC)
++  aegis::access::AccountNodeStatus paid_status_ = aegis::access::AccountNodeStatus::kOff;
++#endif
+   int revision_ = -1;
+   uint64_t access_revision_ = 0;
+   std::optional<aegis::access::AccessSiteProxyBubbleSnapshot> access_snapshot_;
+diff --git a/content/browser/browser_context.cc b/content/browser/browser_context.cc
+index a934630c6ef0de75dd175ec0cbedb4bfb12f797d..6fa36fc9e58ec269f48fee6b8097ed8f1d97eb4f 100644
+--- a/content/browser/browser_context.cc
++++ b/content/browser/browser_context.cc
+@@ -191,6 +191,27 @@ void BrowserContext::GarbageCollectStoragePartitions(
+       std::move(active_paths), std::move(done));
+ }
+ 
++#if BUILDFLAG(IS_MAC)
++namespace {
++const char kAccountProxyDispatchGate[] = "account-proxy-dispatch-gate";
++struct AccountProxyGate : base::SupportsUserData::Data {
++  explicit AccountProxyGate(base::RepeatingCallback<bool(const GURL&)> check)
++      : check(std::move(check)) {}
++  base::RepeatingCallback<bool(const GURL&)> check;
++};
++}  // namespace
++
++void BrowserContext::SetAccountProxyDispatchGate(
++    base::RepeatingCallback<bool(const GURL&)> gate) {
++  SetUserData(kAccountProxyDispatchGate, std::make_unique<AccountProxyGate>(std::move(gate)));
++}
++
++bool BrowserContext::IsAccountProxyDispatchBlocked(const GURL& url) const {
++  const auto* gate = static_cast<const AccountProxyGate*>(GetUserData(kAccountProxyDispatchGate));
++  return gate && gate->check.Run(url);
++}
++#endif
++
+ StoragePartition* BrowserContext::GetDefaultStoragePartition() {
+   return GetStoragePartition(StoragePartitionConfig::CreateDefault(this));
+ }
+diff --git a/content/browser/websockets/websocket_connector_impl.cc b/content/browser/websockets/websocket_connector_impl.cc
+index bbd6c7c3b28fcd48aada02ecdc0a6afc23d0a96d..85f5606e6d86909c3978a3153e0aa81257276c62 100644
+--- a/content/browser/websockets/websocket_connector_impl.cc
++++ b/content/browser/websockets/websocket_connector_impl.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "content/browser/websockets/websocket_connector_impl.h"
+ 
++#include "content/public/browser/browser_context.h"
++#include "content/public/browser/storage_partition_config.h"
++#include "net/base/net_errors.h"
++
+ #include <algorithm>
+ 
+ #include "base/command_line.h"
+@@ -198,6 +202,16 @@ void WebSocketConnectorImpl::ConnectCalledByContentBrowserClient(
+   }
+ 
+   content::StoragePartition* storage_partition = process->GetStoragePartition();
++#if BUILDFLAG(IS_MAC)
++  // Check after extension interception, immediately before handing the final
++  // URL to the NetworkContext. Worker sockets may have no RenderFrameHost.
++  if (storage_partition->GetConfig().is_default() &&
++      process->GetBrowserContext()->IsAccountProxyDispatchBlocked(url)) {
++    mojo::Remote<network::mojom::WebSocketHandshakeClient>(std::move(handshake_client))
++        ->OnFailure("Account proxy configuration is pending", net::ERR_BLOCKED_BY_CLIENT, -1);
++    return;
++  }
++#endif
+ 
+   mojo::PendingRemote<network::mojom::URLLoaderNetworkServiceObserver>
+       url_loader_network_service_observer =
+diff --git a/content/browser/webtransport/web_transport_connector_impl.cc b/content/browser/webtransport/web_transport_connector_impl.cc
+index 91b2cc9864b48b63a04eed3f1159dfefe1f08b24..0370e84e9e0334e6d21d74104c0b74c908d6db72 100644
+--- a/content/browser/webtransport/web_transport_connector_impl.cc
++++ b/content/browser/webtransport/web_transport_connector_impl.cc
+@@ -4,6 +4,9 @@
+ 
+ #include "content/browser/webtransport/web_transport_connector_impl.h"
+ 
++#include "content/public/browser/browser_context.h"
++#include "content/public/browser/storage_partition_config.h"
++
+ #include "base/not_fatal_until.h"
+ #include "base/strings/stringprintf.h"
+ #include "content/browser/devtools/devtools_instrumentation.h"
+@@ -342,7 +345,17 @@ void WebTransportConnectorImpl::OnWillCreateWebTransportCompleted(
+     return;
+   }
+ 
+-  process->GetStoragePartition()->GetNetworkContext()->CreateWebTransport(
++  auto* partition = process->GetStoragePartition();
++#if BUILDFLAG(IS_MAC)
++  if (partition->GetConfig().is_default() &&
++      process->GetBrowserContext()->IsAccountProxyDispatchBlocked(url)) {
++    mojo::Remote<WebTransportHandshakeClient>(std::move(handshake_client))->OnHandshakeFailed(
++        net::WebTransportError(net::ERR_BLOCKED_BY_CLIENT, quic::QUIC_NO_ERROR,
++                               "Account proxy configuration is pending", false));
++    return;
++  }
++#endif
++  partition->GetNetworkContext()->CreateWebTransport(
+       url, origin_, network_anonymization_key_, std::move(fingerprints),
+       application_protocols, congestion_control,
+       anticipated_concurrent_incoming_unidirectional_streams,
+diff --git a/content/public/browser/browser_context.h b/content/public/browser/browser_context.h
+index 60b8c2a8f0c73160b1efb3826e4717fdcabf7bd1..2f35b78943c84431719866570afbd468eecfcd2e 100644
+--- a/content/public/browser/browser_context.h
++++ b/content/public/browser/browser_context.h
+@@ -208,6 +208,13 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
+ 
+   StoragePartition* GetDefaultStoragePartition();
+ 
++#if BUILDFLAG(IS_MAC)
++  // UI-sequence gate for requests using the default partition while a scoped
++  // account proxy configuration is moving across an independent Mojo pipe.
++  void SetAccountProxyDispatchGate(base::RepeatingCallback<bool(const GURL&)> gate);
++  bool IsAccountProxyDispatchBlocked(const GURL& url) const;
++#endif
++
+   // Returns the main URLLoaderFactory.
+   virtual scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory();
+ 
+diff --git a/net/base/proxy_chain.h b/net/base/proxy_chain.h
+index 3f3d20a68fb7bdf4f071a5f8889a16f5a756fda7..6c65779998a6f106fbc03fa404033b8a3fc7a54f 100644
+--- a/net/base/proxy_chain.h
++++ b/net/base/proxy_chain.h
+@@ -198,6 +198,9 @@ class NET_EXPORT ProxyChain {
+   }
+   int ip_protection_chain_id() const { return ip_protection_chain_id_; }
+ 
++  // A negative opaque id is reserved for a credentialed account-node route.
++  bool is_aegis_account_node() const { return opaque_data_.value_or(0) < 0; }
++
+   std::optional<int> opaque_data() const { return opaque_data_; }
+ 
+   friend bool operator==(const ProxyChain&, const ProxyChain&) = default;
+diff --git a/net/http/http_stream_factory_job_controller.cc b/net/http/http_stream_factory_job_controller.cc
+index 94935d9c0af8166d73fa7e129e7a1e24c2691b89..2e5d3c259067d3560a08b75bcc8ef69c058a4bdd 100644
+--- a/net/http/http_stream_factory_job_controller.cc
++++ b/net/http/http_stream_factory_job_controller.cc
+@@ -840,6 +840,20 @@ int HttpStreamFactory::JobController::DoResolveProxy() {
+ 
+   next_state_ = STATE_RESOLVE_PROXY_COMPLETE;
+ 
++  if ((request_info_.access_proxy_route ||
++       (request_info_.load_flags & LOAD_BYPASS_PROXY)) &&
++      session_->context().proxy_delegate) {
++    // An explicit local-core route and a bypass request both skip normal
++    // proxy resolution. Neither can supersede a selected account site.
++    ProxyInfo required;
++    required.UseDirect();
++    session_->context().proxy_delegate->OnResolveProxy(
++        request_info_.url, request_info_.network_anonymization_key,
++        request_info_.method, {}, &required);
++    if (!required.is_empty() && required.proxy_chain().is_aegis_account_node())
++      return ERR_BLOCKED_BY_CLIENT;
++  }
++
+   if (request_info_.access_proxy_route) {
+     const auto& chain = request_info_.access_proxy_route->proxy_chain();
+     if (!chain.GetProxyServer(0).is_http()) {
+diff --git a/net/proxy_resolution/proxy_host_matching_rules.cc b/net/proxy_resolution/proxy_host_matching_rules.cc
+index 512b249860803957d2b5e6885a07213e85c0e142..ffb0c3082ac3be479d24610b0d156e43f8378a4e 100644
+--- a/net/proxy_resolution/proxy_host_matching_rules.cc
++++ b/net/proxy_resolution/proxy_host_matching_rules.cc
+@@ -69,6 +69,29 @@ bool IsIPv4MappedLoopback(const GURL& url) {
+   return ip_address.bytes()[12] == 127;
+ }
+ 
++// Proxy rules are copied across Mojo by serializing each rule to a string.
++constexpr std::string_view kAegisExactSitePrefix = "<aegis-exact-site:";
++
++class AegisExactSiteRule final : public SchemeHostPortMatcherRule {
++ public:
++  explicit AegisExactSiteRule(std::string_view host) : host_(host) {}
++
++  SchemeHostPortMatcherResult Evaluate(const GURL& url) const override {
++    // GURL has already applied URL host canonicalization, including IDNA.
++    // The toolbar additionally strips trailing dots from the committed host.
++    return base::TrimString(url.host(), ".", base::TRIM_TRAILING) == host_
++               ? SchemeHostPortMatcherResult::kInclude
++               : SchemeHostPortMatcherResult::kNoMatch;
++  }
++
++  std::string ToString() const override {
++    return std::string(kAegisExactSitePrefix) + host_ + ">";
++  }
++
++ private:
++  const std::string host_;
++};
++
+ class BypassSimpleHostnamesRule : public SchemeHostPortMatcherRule {
+  public:
+   BypassSimpleHostnamesRule() = default;
+@@ -118,6 +141,12 @@ std::unique_ptr<SchemeHostPortMatcherRule> ParseRule(
+     return std::make_unique<SubtractImplicitBypassesRule>();
+   }
+ 
++  if (raw.starts_with(kAegisExactSitePrefix)) {
++    raw.remove_prefix(kAegisExactSitePrefix.size());
++    if (!raw.ends_with('>') || raw.size() <= 1) return nullptr;
++    raw.remove_suffix(1);
++    return std::make_unique<AegisExactSiteRule>(raw);
++  }
+   return SchemeHostPortMatcherRule::FromUntrimmedRawString(raw_untrimmed);
+ }
+ 
+@@ -214,6 +243,10 @@ bool ProxyHostMatchingRules::AddRuleFromString(std::string_view raw_untrimmed) {
+   return false;
+ }
+ 
++void ProxyHostMatchingRules::AddAegisExactSite(std::string_view canonical_host) {
++  matcher_.AddAsLastRule(std::make_unique<AegisExactSiteRule>(canonical_host));
++}
++
+ void ProxyHostMatchingRules::AddRulesToSubtractImplicit() {
+   matcher_.AddAsLastRule(std::make_unique<SubtractImplicitBypassesRule>());
+ }
+diff --git a/net/proxy_resolution/proxy_host_matching_rules.h b/net/proxy_resolution/proxy_host_matching_rules.h
+index 1d7f3339c7df3ec68383fb40891f83febea84cea..dfa015c4a08e7e54caf69c5c6935c1f5f29db26e 100644
+--- a/net/proxy_resolution/proxy_host_matching_rules.h
++++ b/net/proxy_resolution/proxy_host_matching_rules.h
+@@ -87,6 +87,10 @@ class NET_EXPORT ProxyHostMatchingRules {
+   // For the supported format of bypass rules see //net/docs/proxy.md.
+   bool AddRuleFromString(std::string_view raw);
+ 
++  // Matches exactly the canonical host used by the account-site selector,
++  // including navigation URLs whose DNS names end in root dots.
++  void AddAegisExactSite(std::string_view canonical_host);
++
+   // Appends rules that "cancels out" the implicit bypass rules. See
+   // GetRulesToSubtractImplicit() for details.
+   void AddRulesToSubtractImplicit();
+diff --git a/net/socket/connect_job_params_factory.cc b/net/socket/connect_job_params_factory.cc
+index 7a82ebb711263c95b58ff2052a4567031cfa7e08..58dfa0b4d9e58db47ee1d39014dfb4da7e5e5afb 100644
+--- a/net/socket/connect_job_params_factory.cc
++++ b/net/socket/connect_job_params_factory.cc
+@@ -199,8 +199,10 @@ ConnectJobParams CreateProxyParams(
+     ConfigureAlpn(url::SchemeHostPort(url::kHttpsScheme,
+                                       proxy_server.host_port_pair().host(),
+                                       proxy_server.host_port_pair().port()),
+-                  // Always enable ALPN for proxies.
+-                  ConnectJobFactory::AlpnMode::kHttpAll,
++                  // The account node speaks HTTP/1.1 CONNECT. Keep its private
++                  // authorization out of separate multiplexed session logs.
++                  proxy_chain.is_aegis_account_node() ? ConnectJobFactory::AlpnMode::kHttp11Only
++                                                     : ConnectJobFactory::AlpnMode::kHttpAll,
+                   network_anonymization_key, *common_connect_job_params,
+                   proxy_server_ssl_config,
+                   /*renego_allowed=*/false);
+diff --git a/net/socket/ssl_client_socket_impl.cc b/net/socket/ssl_client_socket_impl.cc
+index f586acfe0f086bda8db1244fb5c054d8d90b732e..5e8d8c71aca3fd1d3bfaf6beafdc3c55b6254723 100644
+--- a/net/socket/ssl_client_socket_impl.cc
++++ b/net/socket/ssl_client_socket_impl.cc
+@@ -302,7 +302,13 @@ SSLClientSocketImpl::SSLClientSocketImpl(
+       host_and_port_(host_and_port),
+       ssl_config_(ssl_config),
+       signature_result_(kSSLClientSocketNoPendingResult),
+-      net_log_(stream_socket_->NetLog()) {
++      // The outer TLS layer sees the cleartext CONNECT and Basic header.
++      // Its HTTP proxy socket inherits this non-recording source, even for
++      // explicit raw-byte capture. The underlying TCP socket sees ciphertext.
++      net_log_(ssl_config.session_usage == SessionUsage::kProxy &&
++                       ssl_config.proxy_chain.is_aegis_account_node()
++                   ? NetLogWithSource()
++                   : stream_socket_->NetLog()) {
+   CHECK(context_);
+ }
+ 
+diff --git a/services/network/network_context.cc b/services/network/network_context.cc
+index 9d7e611a5e595770676e437d0b50659050f83402..f9ec433efa0699857f4b6e79d212589cf04a9a4c 100644
+--- a/services/network/network_context.cc
++++ b/services/network/network_context.cc
+@@ -115,6 +115,7 @@
+ #include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "net/url_request/static_http_user_agent_settings.h"
+ #include "net/url_request/url_request.h"
++#include "net/proxy_resolution/proxy_info.h"
+ #include "net/url_request/url_request_context.h"
+ #include "net/url_request/url_request_context_builder.h"
+ #include "services/network/brokered_client_socket_factory.h"
+@@ -2287,6 +2288,18 @@ void NetworkContext::CreateWebTransport(
+         net::WebTransportError(net::ERR_NETWORK_ACCESS_REVOKED));
+     return;
+   }
++  // HTTP/3 WebTransport cannot use the account's CONNECT node. Check the
++  // live exact-site configuration at admission as well as on config changes.
++  if (auto* delegate = url_request_context()->proxy_delegate()) {
++    net::ProxyInfo selection;
++    selection.UseDirect();
++    delegate->OnResolveProxy(url, key, "CONNECT", {}, &selection);
++    if (!selection.is_empty() && selection.proxy_chain().is_aegis_account_node()) {
++      mojo::Remote<mojom::WebTransportHandshakeClient>(std::move(pending_handshake_client))
++          ->OnHandshakeFailed(net::WebTransportError(net::ERR_BLOCKED_BY_CLIENT));
++      return;
++    }
++  }
+   web_transports_.insert(std::make_unique<WebTransport>(
+       url, origin, key, fingerprints, application_protocols, congestion_control,
+       anticipated_concurrent_incoming_unidirectional_streams,
+@@ -3011,7 +3024,34 @@ URLRequestContextOwner NetworkContext::MakeURLRequestContext(
+     builder.set_proxy_delegate(std::make_unique<NetworkServiceProxyDelegate>(
+         std::move(params_->initial_custom_proxy_config),
+         std::move(params_->custom_proxy_config_client_receiver),
+-        std::move(params_->custom_proxy_connection_observer_remote)));
++        std::move(params_->custom_proxy_connection_observer_remote),
++        base::BindRepeating([](NetworkContext* context, const mojom::CustomProxyConfig& before,
++                               const mojom::CustomProxyConfig& after) {
++          const bool credentials_changed =
++              before.connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization) !=
++              after.connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization);
++          auto changed = [&](const GURL& url) {
++            auto old_proxy = NetworkServiceProxyDelegate::AccountProxyForUrl(before, url);
++            auto new_proxy = NetworkServiceProxyDelegate::AccountProxyForUrl(after, url);
++            return old_proxy != new_proxy || (credentials_changed && new_proxy.has_value());
++          };
++          std::vector<base::OnceClosure> aborts;
++          if (!context->url_request_context()) return;
++          for (const auto& req : *context->url_request_context()->url_requests()) {
++            if (auto* loader = URLLoader::ForRequest(*req); loader && changed(req->url()))
++              aborts.push_back(loader->AbortAccountRoute());
++          }
++          // WebTransport has its own QUIC client and can be waiting for DNS
++          // or local-network permission after its one-time proxy check.
++          // Destroy pending and established clients before the config ACK.
++          std::erase_if(context->web_transports_, [&](const auto& transport) {
++            return changed(transport->url());
++          });
++          for (auto& abort : aborts) std::move(abort).Run();
++#if BUILDFLAG(ENABLE_WEBSOCKETS)
++          if (context->websocket_factory_) context->websocket_factory_->AbortAccountRoutes(changed);
++#endif
++        }, base::Unretained(this))));
+   }
+ 
+   net::NetLog* net_log = nullptr;
+diff --git a/services/network/network_service_proxy_delegate.cc b/services/network/network_service_proxy_delegate.cc
+index 1b0db936c8705879f37c19a5813cd3e16b2527b6..dfb3fd1a6ce7bd9d9ca2aa105ddf29adce79c06e 100644
+--- a/services/network/network_service_proxy_delegate.cc
++++ b/services/network/network_service_proxy_delegate.cc
+@@ -4,10 +4,14 @@
+ 
+ #include "services/network/network_service_proxy_delegate.h"
+ 
++#include <algorithm>
++#include <limits>
++
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/strings/strcat.h"
++#include "base/strings/string_util.h"
+ #include "base/types/expected.h"
+ #include "net/base/completion_once_callback.h"
+ #include "net/base/features.h"
+@@ -108,8 +112,9 @@ NetworkServiceProxyDelegate::NetworkServiceProxyDelegate(
+     mojom::CustomProxyConfigPtr initial_config,
+     mojo::PendingReceiver<mojom::CustomProxyConfigClient>
+         config_client_receiver,
+-    mojo::PendingRemote<mojom::CustomProxyConnectionObserver> observer_remote)
+-    : proxy_config_(std::move(initial_config)),
++    mojo::PendingRemote<mojom::CustomProxyConnectionObserver> observer_remote, AccountRouteChange route_change)
++    : account_route_change_(std::move(route_change)),
++      proxy_config_(std::move(initial_config)),
+       receiver_(this, std::move(config_client_receiver)) {
+   // Make sure there is always a valid proxy config so we don't need to null
+   // check it.
+@@ -129,6 +134,17 @@ NetworkServiceProxyDelegate::NetworkServiceProxyDelegate(
+ 
+ NetworkServiceProxyDelegate::~NetworkServiceProxyDelegate() = default;
+ 
++std::optional<net::ProxyServer> NetworkServiceProxyDelegate::AccountProxyForUrl(
++    const mojom::CustomProxyConfig& config, const GURL& url) {
++  if (!config.connect_tunnel_headers.HasHeader(net::HttpRequestHeaders::kProxyAuthorization))
++    return std::nullopt;
++  net::ProxyInfo route;
++  config.rules.Apply(url, &route);
++  if (route.is_empty() || !route.proxy_chain().is_single_proxy() ||
++      !route.proxy_chain().First().is_https()) return std::nullopt;
++  return route.proxy_chain().First();
++}
++
+ void NetworkServiceProxyDelegate::OnResolveProxy(
+     const GURL& url,
+     const net::NetworkAnonymizationKey& network_anonymization_key,
+@@ -143,7 +159,26 @@ void NetworkServiceProxyDelegate::OnResolveProxy(
+   if (ApplyProxyConfigToProxyInfo(proxy_config_->rules, proxy_retry_info, url,
+                                   &proxy_info)) {
+     DCHECK(!proxy_info.is_empty() && !proxy_info.is_direct());
+-    result->OverrideProxyList(proxy_info.proxy_list());
++    // Mark the selected route inside this NetworkContext. A native proxy at
++    // the same address, or a chain resolved under an older account, must never
++    // inherit the paid node's CONNECT authorization or reuse its socket pool.
++    if (proxy_config_->connect_tunnel_headers.HasHeader(
++            net::HttpRequestHeaders::kProxyAuthorization) &&
++        proxy_info.proxy_chain().is_single_proxy() &&
++        proxy_info.proxy_chain().First().is_https()) {
++      std::string site(base::TrimString(url.host(), ".", base::TRIM_TRAILING));
++      const auto& proxy = proxy_info.proxy_chain().First();
++      auto found = account_tunnels_.find(site);
++      if (found == account_tunnels_.end() || found->second.proxy != proxy) {
++        // Reserve INT_MIN as a permanently unauthorized chain on exhaustion.
++        const int id = last_account_tunnel_id_ == std::numeric_limits<int>::max()
++            ? std::numeric_limits<int>::min() : -(++last_account_tunnel_id_);
++        found = account_tunnels_.insert_or_assign(site, AccountTunnel{id, proxy}).first;
++      }
++      result->UseProxyChain(net::ProxyChain::WithOpaqueData({proxy}, found->second.id));
++    } else {
++      result->OverrideProxyList(proxy_info.proxy_list());
++    }
+   }
+ }
+ 
+@@ -166,6 +201,16 @@ NetworkServiceProxyDelegate::OnBeforeTunnelRequest(
+   if (IsInProxyConfig(proxy_chain)) {
+     MergeRequestHeaders(&extra_headers, proxy_config_->connect_tunnel_headers);
+   }
++  if (!proxy_chain.is_single_proxy() || !proxy_chain.First().is_https() ||
++      !proxy_chain.is_aegis_account_node() ||
++      proxy_chain.opaque_data() == std::numeric_limits<int>::min() ||
++      !std::ranges::any_of(account_tunnels_, [&](const auto& entry) {
++        return proxy_chain.opaque_data() == entry.second.id &&
++               proxy_chain.First() == entry.second.proxy;
++      }) ||
++      extra_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization)
++          .value_or("").empty())
++    extra_headers.RemoveHeader(net::HttpRequestHeaders::kProxyAuthorization);
+   return extra_headers;
+ }
+ 
+@@ -193,7 +238,23 @@ void NetworkServiceProxyDelegate::OnCustomProxyConfigUpdated(
+     mojom::CustomProxyConfigPtr proxy_config,
+     OnCustomProxyConfigUpdatedCallback callback) {
+   DCHECK(IsValidCustomProxyConfig(*proxy_config));
++  auto previous = std::move(proxy_config_);
+   proxy_config_ = std::move(proxy_config);
++  if (previous->connect_tunnel_headers.HasHeader(net::HttpRequestHeaders::kProxyAuthorization) ||
++      proxy_config_->connect_tunnel_headers.HasHeader(net::HttpRequestHeaders::kProxyAuthorization)) {
++    if (previous->connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization) !=
++        proxy_config_->connect_tunnel_headers.GetHeader(net::HttpRequestHeaders::kProxyAuthorization)) {
++      account_tunnels_.clear();
++    } else {
++      // Paid rules select canonical hosts on both HTTP and HTTPS. Retain
++      // their pool IDs only while this exact site still selects its TLS node.
++      std::erase_if(account_tunnels_, [&](const auto& entry) {
++        return AccountProxyForUrl(*proxy_config_, GURL("https://" + entry.first + "/")) !=
++               entry.second.proxy;
++      });
++    }
++    if (account_route_change_) account_route_change_.Run(*previous, *proxy_config_);
++  }
+   std::move(callback).Run();
+ }
+ 
+diff --git a/services/network/network_service_proxy_delegate.h b/services/network/network_service_proxy_delegate.h
+index 39b4f143180050ef9fb749e4577325e2acc06de3..5350ce1d83465a8f46bc599defe838884b40eefb 100644
+--- a/services/network/network_service_proxy_delegate.h
++++ b/services/network/network_service_proxy_delegate.h
+@@ -7,6 +7,7 @@
+ 
+ #include <cstdint>
+ #include <map>
++#include <optional>
+ #include <string>
+ 
+ #include "base/component_export.h"
+@@ -34,12 +35,14 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
+     : public net::ProxyDelegate,
+       public mojom::CustomProxyConfigClient {
+  public:
++  using AccountRouteChange = base::RepeatingCallback<void(
++      const mojom::CustomProxyConfig&, const mojom::CustomProxyConfig&)>;
+   NetworkServiceProxyDelegate(
+       mojom::CustomProxyConfigPtr initial_config,
+       mojo::PendingReceiver<mojom::CustomProxyConfigClient>
+           config_client_receiver,
+       mojo::PendingRemote<mojom::CustomProxyConnectionObserver>
+-          observer_remote);
++          observer_remote, AccountRouteChange route_change = {});
+ 
+   NetworkServiceProxyDelegate(const NetworkServiceProxyDelegate&) = delete;
+   NetworkServiceProxyDelegate& operator=(const NetworkServiceProxyDelegate&) =
+@@ -47,6 +50,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
+ 
+   ~NetworkServiceProxyDelegate() override;
+ 
++  static std::optional<net::ProxyServer> AccountProxyForUrl(
++      const mojom::CustomProxyConfig& config, const GURL& url);
++
+   // net::ProxyDelegate implementation:
+   void OnResolveProxy(
+       const GURL& url,
+@@ -93,6 +99,14 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkServiceProxyDelegate
+   mojom::AegisAccessPolicyPublicationMetadataPtr aegis_policy_publication_;
+   std::map<std::string, uint64_t>
+       aegis_selection_generation_by_proxy_group_;
++  const AccountRouteChange account_route_change_;
++  struct AccountTunnel {
++    int id;
++    net::ProxyServer proxy;
++  };
++  // IDs are never recycled, including when a host is deselected/reselected.
++  std::map<std::string, AccountTunnel> account_tunnels_;
++  int last_account_tunnel_id_ = 0;
+   mojom::CustomProxyConfigPtr proxy_config_;
+   mojo::Receiver<mojom::CustomProxyConfigClient> receiver_;
+   mojo::Remote<mojom::CustomProxyConnectionObserver> observer_;
+diff --git a/services/network/network_service_proxy_delegate_unittest.cc b/services/network/network_service_proxy_delegate_unittest.cc
+index b9567323881c927e652c1c1fa88112321f595465..bc1301aa71e7a75be786eacb089ab2cc16753aa7 100644
+--- a/services/network/network_service_proxy_delegate_unittest.cc
++++ b/services/network/network_service_proxy_delegate_unittest.cc
+@@ -257,6 +257,82 @@ void DoNotCallCallback(
+   NOTREACHED();
+ }
+ 
++TEST_F(NetworkServiceProxyDelegateTest, AccountTunnelRequiresSelectedTlsChainAndCurrentLease) {
++  auto config = mojom::CustomProxyConfig::New();
++  config->rules.ParseFromString("https://proxy");
++  config->connect_tunnel_headers.SetHeader("Proxy-Authorization", "Basic fixture");
++  auto next = config->Clone();
++  auto delegate = CreateDelegate(std::move(config));
++  net::ProxyInfo selected;
++  selected.UseDirect();
++  delegate->OnResolveProxy(GURL(kHttpsUrl), net::NetworkAnonymizationKey(),
++                           "GET", net::ProxyRetryInfoMap(), &selected);
++  auto auth = [&](const net::ProxyChain& chain) {
++    return delegate->OnBeforeTunnelRequest(chain, 0, base::BindOnce(DoNotCallCallback))
++        .value().HasHeader("Proxy-Authorization");
++  };
++  EXPECT_TRUE(auth(selected.proxy_chain()));
++  EXPECT_FALSE(auth(net::ProxyChain(net::PacResultElementToProxyServer("HTTPS proxy"))));
++  EXPECT_FALSE(auth(net::ProxyChain(net::PacResultElementToProxyServer("PROXY proxy:443"))));
++  next->connect_tunnel_headers.SetHeader("Proxy-Authorization", "");
++  SetConfig(std::move(next));
++  EXPECT_FALSE(auth(selected.proxy_chain()));
++  selected.UseDirect();
++  delegate->OnResolveProxy(GURL(kHttpsUrl), net::NetworkAnonymizationKey(),
++                           "GET", {}, &selected);
++  EXPECT_TRUE(selected.proxy_chain().is_aegis_account_node());
++  EXPECT_FALSE(auth(selected.proxy_chain()));
++}
++
++TEST_F(NetworkServiceProxyDelegateTest, PendingAccountTunnelTracksItsSelectedSiteAndLease) {
++  auto config = [](std::initializer_list<const char*> sites, const char* credential = "lease-1",
++                   const char* proxy = "https://node.test") {
++    auto c = mojom::CustomProxyConfig::New();
++    c->rules.ParseFromString(proxy);
++    for (const char* site : sites) c->rules.bypass_rules.AddAegisExactSite(site);
++    c->rules.reverse_bypass = true;
++    c->connect_tunnel_headers.SetHeader(net::HttpRequestHeaders::kProxyAuthorization, credential);
++    return c;
++  };
++  auto delegate = CreateDelegate(config({"a.example"}));
++  auto resolve = [&](const char* target) {
++    net::ProxyInfo route;
++    route.UseDirect();
++    delegate->OnResolveProxy(GURL(target), {}, "GET", {}, &route);
++    return route.proxy_chain();
++  };
++  auto header = [&](const net::ProxyChain& chain) {
++    return delegate->OnBeforeTunnelRequest(chain, 0, base::BindOnce(DoNotCallCallback))
++        .value().GetHeader(net::HttpRequestHeaders::kProxyAuthorization);
++  };
++  // Hold the resolved chain across config ACKs before invoking the next
++  // stage, which constructs the CONNECT request after proxy TLS setup.
++  const auto a = resolve("https://a.example./");
++  SetConfig(config({"a.example"}));
++  EXPECT_EQ(header(a), "lease-1");
++  SetConfig(config({"a.example", "b.example"}));
++  const auto b = resolve("https://b.example/");
++  EXPECT_NE(a, b);
++  EXPECT_EQ(a, resolve("https://a.example/"));
++  EXPECT_EQ(header(a), "lease-1");
++  SetConfig(config({"a.example"}));
++  EXPECT_FALSE(header(b));
++  EXPECT_EQ(header(a), "lease-1");
++  SetConfig(config({"a.example", "b.example"}));
++  EXPECT_FALSE(header(b));
++  EXPECT_NE(b, resolve("https://b.example/"));
++  SetConfig(config({"a.example", "b.example"}, "lease-2"));
++  EXPECT_FALSE(header(a));
++  const auto renewed = resolve("https://a.example/");
++  EXPECT_EQ(header(renewed), "lease-2");
++  SetConfig(config({"a.example", "b.example"}, "lease-2", "https://node2.test"));
++  EXPECT_FALSE(header(renewed));
++  const auto moved = resolve("https://a.example/");
++  EXPECT_EQ(header(moved), "lease-2");
++  SetConfig(config({}));
++  EXPECT_FALSE(header(moved));
++}
++
+ TEST_F(NetworkServiceProxyDelegateTest, AddsHeadersToTunnelRequest) {
+   auto config = mojom::CustomProxyConfig::New();
+   config->rules.ParseFromString("https://proxy");
+diff --git a/services/network/url_loader.cc b/services/network/url_loader.cc
+index 68d7b6632088a4afcd7a16ea27be73d99b98e8df..c805442a4ebf2e8096682ae0456157086d97120e 100644
+--- a/services/network/url_loader.cc
++++ b/services/network/url_loader.cc
+@@ -2005,6 +2005,11 @@ void URLLoader::ContinueWithoutCertificate() {
+   url_request_->ContinueWithCertificate(nullptr, nullptr);
+ }
+ 
++base::OnceClosure URLLoader::AbortAccountRoute() {
++  return base::BindOnce(&URLLoader::NotifyCompleted, weak_ptr_factory_.GetWeakPtr(),
++                        net::ERR_ABORTED);
++}
++
+ void URLLoader::CancelRequest() {
+   client_cert_responder_receiver_.reset();
+   url_request_->CancelWithError(net::ERR_SSL_CLIENT_AUTH_CERT_NEEDED);
+diff --git a/services/network/url_loader.h b/services/network/url_loader.h
+index a3a1e7eb85c72b7086f503439fca7597953fda16..b4af937f5b487d70072b436233a234555c0b3db4 100644
+--- a/services/network/url_loader.h
++++ b/services/network/url_loader.h
+@@ -300,6 +300,9 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) URLLoader
+   }
+ 
+   // Gets the URLLoader associated with this request.
++  // Capturing a weak callback allows cancellation after the request inventory
++  // has been collected, even if one completion destroys another loader.
++  base::OnceClosure AbortAccountRoute();
+   static URLLoader* ForRequest(const net::URLRequest& request);
+ 
+   static const void* const kUserDataKey;
+diff --git a/services/network/web_transport.h b/services/network/web_transport.h
+index 1ab671cac609603f3517aee761c7818e4be372d6..8422d85724ed168d912ddf38026f7071e40bc911 100644
+--- a/services/network/web_transport.h
++++ b/services/network/web_transport.h
+@@ -79,6 +79,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebTransport final
+           url_loader_network_observer,
+       mojom::ClientSecurityStatePtr client_security_state);
+   ~WebTransport() override;
++  const GURL& url() const { return url_; }
+ 
+   // mojom::WebTransport implementation:
+   void SendDatagram(base::span<const uint8_t> data,
+diff --git a/services/network/web_transport_unittest.cc b/services/network/web_transport_unittest.cc
+index 1f25484cb8520b5ba0d50880571ed489fcc4e166..f7d7fa76670217dfe0957266e32e44c85d75bc3b 100644
+--- a/services/network/web_transport_unittest.cc
++++ b/services/network/web_transport_unittest.cc
+@@ -466,7 +466,8 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+   WebTransportTest()
+       : WebTransportTest(
+             quic::test::crypto_test_utils::ProofSourceForTesting()) {}
+-  explicit WebTransportTest(std::unique_ptr<quic::ProofSource> proof_source)
++  explicit WebTransportTest(std::unique_ptr<quic::ProofSource> proof_source,
++                            bool account_config = false)
+       : version_(GetTestVersion()),
+         origin_(url::Origin::Create(GURL("https://example.org/"))),
+         task_environment_(base::test::TaskEnvironment::MainThreadType::IO),
+@@ -474,12 +475,19 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+         network_context_remote_(mojo::NullRemote()) {
+     auto host_resolver = std::make_unique<net::MockHostResolver>();
+     host_resolver->rules()->AddRule("test.example.com", "127.0.0.1");
++    auto params = CreateNetworkContextParams();
++    if (account_config) {
++      host_resolver->rules()->AddRule("test.example.com.", "127.0.0.1");
++      host_resolver->rules()->AddRule("other.example.com", "127.0.0.1");
++      params->initial_custom_proxy_config = mojom::CustomProxyConfig::New();
++      params->custom_proxy_config_client_receiver = account_config_.BindNewPipeAndPassReceiver();
++    }
+     network_service_->set_host_resolver_factory_for_testing(
+         std::make_unique<HostResolverFactory>(std::move(host_resolver)));
+     network_context_ = NetworkContext::CreateForTesting(
+         network_service_.get(),
+         network_context_remote_.BindNewPipeAndPassReceiver(),
+-        CreateNetworkContextParams(),
++        std::move(params),
+         base::BindOnce([](net::URLRequestContextBuilder* builder) {
+           auto cert_verifier = std::make_unique<net::MockCertVerifier>();
+           cert_verifier->set_default_result(net::OK);
+@@ -589,6 +597,19 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+         {"https://test.example.com:", base::NumberToString(port), suffix}));
+   }
+ 
++  void InstallAccountBlock() {
++    auto config = mojom::CustomProxyConfig::New();
++    config->rules.ParseFromString("https://blocked.invalid:443");
++    config->rules.bypass_rules.AddAegisExactSite("test.example.com");
++    config->rules.reverse_bypass = true;
++    config->should_override_existing_config = true;
++    config->allow_non_idempotent_methods = true;
++    config->connect_tunnel_headers.SetHeader(net::HttpRequestHeaders::kProxyAuthorization, "");
++    base::test::TestFuture<void> ack;
++    account_config_->OnCustomProxyConfigUpdated(std::move(config), ack.GetCallback());
++    ASSERT_TRUE(ack.Wait());
++  }
++
+   const url::Origin& origin() const { return origin_; }
+   const NetworkContext& network_context() const { return *network_context_; }
+   NetworkContext& mutable_network_context() { return *network_context_; }
+@@ -645,6 +666,7 @@ class WebTransportTest : public testing::TestWithParam<std::string_view> {
+   net::RecordingNetLogObserver net_log_observer_;
+ 
+   std::unique_ptr<NetworkContext> network_context_;
++  mojo::Remote<mojom::CustomProxyConfigClient> account_config_;
+ 
+   quic::test::QuicTestBackend backend_;
+   std::unique_ptr<net::QuicSimpleServer> http_server_;
+@@ -750,6 +772,68 @@ class LNAPermissionURLLoaderNetworkObserver
+   bool lna_permission_granted = false;
+ };
+ 
++class AccountWebTransportTest : public WebTransportTest {
++ public:
++  AccountWebTransportTest()
++      : WebTransportTest(quic::test::crypto_test_utils::ProofSourceForTesting(), true) {}
++};
++
++TEST_F(AccountWebTransportTest, ConfigAckDropsOnlySelectedPendingAndLiveQuicSessions) {
++  base::test::ScopedFeatureList features(features::kLocalNetworkAccessChecksWebTransport);
++  class HeldPermission : public TestURLLoaderNetworkObserver {
++   public:
++    void OnLocalNetworkAccessPermissionRequired(mojom::TransportType,
++        mojom::IPAddressSpace, OnLocalNetworkAccessPermissionRequiredCallback reply) override {
++      pending.SetValue(std::move(reply));
++    }
++    base::test::TestFuture<OnLocalNetworkAccessPermissionRequiredCallback> pending;
++  } permission;
++  GURL active = GetURL("/echo");
++  GURL::Replacements host;
++  host.SetHostStr("other.example.com");
++  GURL other = active.ReplaceComponents(host);
++  host.SetHostStr("test.example.com.");
++  GURL dotted = active.ReplaceComponents(host);
++  auto connect = [&](const GURL& url) {
++    base::test::TestFuture<void> ready;
++    mojo::PendingRemote<mojom::WebTransportHandshakeClient> remote;
++    TestHandshakeClient client(remote.InitWithNewPipeAndPassReceiver(), ready.GetCallback());
++    CreateWebTransport(url, origin(), std::move(remote));
++    EXPECT_TRUE(ready.Wait());
++    EXPECT_TRUE(client.has_seen_connection_establishment());
++    return mojo::Remote<mojom::WebTransport>(client.PassTransport());
++  };
++  auto selected_session = connect(active);
++  auto other_session = connect(other);
++  ASSERT_TRUE(selected_session && other_session);
++  base::test::TestFuture<void> pending_done;
++  mojo::PendingRemote<mojom::WebTransportHandshakeClient> remote;
++  TestHandshakeClient pending(remote.InitWithNewPipeAndPassReceiver(), pending_done.GetCallback());
++  CreateWebTransport(dotted, origin(), net::NetworkAnonymizationKey(), {}, {},
++      std::move(remote), permission.Bind(), ClientSecurityStateBuilder().WithIsSecureContext(true)
++          .WithLocalNetworkAccessRequestPolicy(mojom::LocalNetworkAccessRequestPolicy::kPermissionBlock)
++          .WithIPAddressSpace(mojom::IPAddressSpace::kPublic).Build());
++  auto grant = permission.pending.Take();
++  ASSERT_EQ(3u, network_context().NumOpenWebTransports());
++  InstallAccountBlock();
++  EXPECT_EQ(1u, network_context().NumOpenWebTransports());
++  std::move(grant).Run(mojom::LocalNetworkAccessResult::kGranted);
++  ASSERT_TRUE(pending_done.Wait());
++  EXPECT_FALSE(pending.has_seen_connection_establishment());
++  selected_session.FlushForTesting();
++  EXPECT_FALSE(selected_session.is_connected());
++  base::test::TestFuture<mojom::WebTransportStatsPtr> stats;
++  other_session->GetStats(stats.GetCallback());
++  EXPECT_TRUE(stats.Get());
++  base::test::TestFuture<void> denied;
++  mojo::PendingRemote<mojom::WebTransportHandshakeClient> late;
++  TestHandshakeClient late_client(late.InitWithNewPipeAndPassReceiver(), denied.GetCallback());
++  CreateWebTransport(active, origin(), std::move(late));
++  ASSERT_TRUE(denied.Wait());
++  EXPECT_TRUE(late_client.has_seen_handshake_failure());
++  EXPECT_EQ(1u, network_context().NumOpenWebTransports());
++}
++
+ TEST_F(WebTransportTest, ConnectLNAPermissionDenied) {
+   base::test::ScopedFeatureList scoped_features(
+       features::kLocalNetworkAccessChecksWebTransport);
+diff --git a/services/network/websocket.h b/services/network/websocket.h
+index 850c54a80b882881a948429ebed6d910e17526c5..dba9b1a0e513bd571195c8d15ab67211ee838937 100644
+--- a/services/network/websocket.h
++++ b/services/network/websocket.h
+@@ -98,6 +98,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket : public mojom::WebSocket {
+   // Whether to allow sending/setting cookies during WebSocket handshakes for
+   // |url|. This decision is based on the |options_| and |origin_| this
+   // WebSocket was created with.
++  const GURL& account_route_url() const { return url_; }
+   bool AllowCookies(const GURL& url) const;
+ 
+   // These methods are called by the network delegate to forward these events to
+diff --git a/services/network/websocket_factory.cc b/services/network/websocket_factory.cc
+index 809ce4f3299160e0c3180df538e1a06c9c468e0e..5e7eeba6da21a453ea86353e0219ed064adc2aa9 100644
+--- a/services/network/websocket_factory.cc
++++ b/services/network/websocket_factory.cc
+@@ -104,6 +104,13 @@ net::URLRequestContext* WebSocketFactory::GetURLRequestContext() {
+   return context_->url_request_context();
+ }
+ 
++void WebSocketFactory::AbortAccountRoutes(base::FunctionRef<bool(const GURL&)> matches) {
++  for (auto it = connections_.begin(); it != connections_.end();) {
++    if (matches((*it)->account_route_url())) it = connections_.erase(it);
++    else ++it;
++  }
++}
++
+ void WebSocketFactory::Remove(WebSocket* impl) {
+   auto it = connections_.find(impl);
+   if (it == connections_.end()) {
+diff --git a/services/network/websocket_factory.h b/services/network/websocket_factory.h
+index d19fd72521c8a1d22d1f2483cde57fb43049cca0..8cbc6816c9260402d3aef3b875903861c0c29158 100644
+--- a/services/network/websocket_factory.h
++++ b/services/network/websocket_factory.h
+@@ -8,6 +8,7 @@
+ #include <set>
+ #include <vector>
+ 
++#include "base/functional/function_ref.h"
+ #include "base/component_export.h"
+ #include "base/containers/unique_ptr_adapters.h"
+ #include "base/functional/callback_forward.h"
+@@ -73,6 +74,7 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocketFactory final {
+ 
+   // Removes and deletes |impl|.
+   void Remove(WebSocket* impl);
++  void AbortAccountRoutes(base::FunctionRef<bool(const GURL&)> matches);
+ 
+   // Creates synthetic WEBSOCKET_ALIVE NetLog entries for pre-existing
+   // WebSocket connections. Called when NetLog capture starts to provide
+-- 
+2.54.0 (Apple Git-157)
+

@@ -149,6 +149,7 @@ NSDictionary* Entitlement(NSData* data, NSString* account) {
 @property(nonatomic, copy) NSDictionary* binding;
 @property(nonatomic, copy) AegisAccountCompletion completion;
 @property(nonatomic, strong) NSMutableData* body;
+@property(nonatomic, copy) void (^rawCompletion)(NSInteger, NSData*);
 @end
 
 @implementation AegisAccountTransfer
@@ -156,6 +157,7 @@ NSDictionary* Entitlement(NSData* data, NSString* account) {
 @synthesize binding = _binding;
 @synthesize completion = _completion;
 @synthesize body = _body;
+@synthesize rawCompletion = _rawCompletion;
 - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
     willPerformHTTPRedirection:(NSHTTPURLResponse*)response newRequest:(NSURLRequest*)request
     completionHandler:(void (^)(NSURLRequest*))completion {
@@ -179,6 +181,12 @@ NSDictionary* Entitlement(NSData* data, NSString* account) {
 - (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task
     didCompleteWithError:(NSError*)error {
   [session finishTasksAndInvalidate];
+  if (self.rawCompletion) {
+    NSInteger status = !error && [task.response isKindOfClass:NSHTTPURLResponse.class]
+        ? ((NSHTTPURLResponse*)task.response).statusCode : 0;
+    self.rawCompletion(status, self.body);
+    return;
+  }
   NSDictionary* result = nil;
   if (!error && [task.response isKindOfClass:NSHTTPURLResponse.class]) {
     NSInteger status = ((NSHTTPURLResponse*)task.response).statusCode;
@@ -218,5 +226,98 @@ void AegisQueryAccessAccount(NSString* profileDirectory, AegisAccountCompletion 
     [request setValue:[@"Bearer " stringByAppendingString:binding[@"token"]]
         forHTTPHeaderField:@"Authorization"];
     [[session dataTaskWithRequest:request] resume];
+  });
+}
+
+namespace {
+bool Token(id value) {
+  static NSCharacterSet* allowed = [NSCharacterSet characterSetWithCharactersInString:
+      @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"].invertedSet;
+  return Nonempty(value) && [value length] <= 256 &&
+      [value rangeOfCharacterFromSet:allowed].location == NSNotFound;
+}
+bool UUIDValue(id value) {
+  return Nonempty(value) && [[[[NSUUID alloc] initWithUUIDString:value]
+      UUIDString].lowercaseString isEqual:value];
+}
+void NodeRequest(NSDictionary* binding, NSString* path, NSString* method, NSDictionary* body,
+                 void (^done)(NSInteger, NSData*)) {
+  NSURLComponents* url = [NSURLComponents componentsWithURL:Endpoint(binding[@"origin"])
+                                   resolvingAgainstBaseURL:NO];
+  url.path = path;
+  NSMutableURLRequest* req = [NSMutableURLRequest requestWithURL:url.URL];
+  req.HTTPMethod = method;
+  [req setValue:[@"Bearer " stringByAppendingString:binding[@"token"]] forHTTPHeaderField:@"Authorization"];
+  if (body) {
+    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+  }
+  NSURLSessionConfiguration* cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+  cfg.HTTPCookieStorage = nil;
+  cfg.HTTPShouldSetCookies = NO;
+  cfg.URLCredentialStorage = nil;
+  cfg.URLCache = nil;
+  cfg.timeoutIntervalForRequest = 5;
+  cfg.timeoutIntervalForResource = 8;
+  AegisAccountTransfer* delegate = [AegisAccountTransfer new];
+  delegate.body = [NSMutableData data];
+  delegate.rawCompletion = done;
+  NSURLSession* session = [NSURLSession sessionWithConfiguration:cfg delegate:delegate delegateQueue:nil];
+  [[session dataTaskWithRequest:req] resume];
+}
+}
+void AegisIssueNode(NSString* directory, NSString* context, bool isPrivate,
+                    NSDictionary* privateBinding, AegisNodeCompletion completion) {
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    AegisAccountBindingChange change = nil;
+    NSDictionary* binding = privateBinding;
+    if (!isPrivate) {
+      bool missing;
+      binding = ReadBinding([directory stringByAppendingPathComponent:@"AegisAccessAccount.json"],
+                            &missing, &change);
+    }
+    if (!UUIDValue(context) || !Nonempty(binding[@"accountId"]) || !Token(binding[@"token"]) ||
+        !Endpoint(binding[@"origin"])) { completion(nil, nil, nil, nil); return; }
+    NSString* mode = isPrivate ? @"private" : @"regular";
+    NodeRequest(binding, @"/v1/me/node-credentials", @"POST", @{@"mode":mode, @"contextId":context},
+                ^(NSInteger code, NSData* data) {
+      if (code != 200 && code != 201) { completion(nil, nil, nil, nil); return; }
+      id obj = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+      if (![obj isKindOfClass:NSDictionary.class] || !UUIDValue(obj[@"credentialId"])) {
+        completion(nil, nil, nil, nil); return;
+      }
+      NSString* revokePath = [@"/v1/me/node-credentials/" stringByAppendingString:obj[@"credentialId"]];
+      AegisNodeRevoke revoke = ^{ NodeRequest(binding, revokePath, @"DELETE", nil, ^(NSInteger, NSData*){}); };
+      auto expiry = Time(obj[@"expiresAt"]), port = Time(obj[@"port"]);
+      NSString* host = obj[@"host"];
+      NSCharacterSet* bad = [NSCharacterSet characterSetWithCharactersInString:
+          @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.:"].invertedSet;
+      if (![obj[@"accountId"] isEqual:binding[@"accountId"]] || !Nonempty(obj[@"periodId"]) ||
+          ![obj[@"mode"] isEqual:mode] || ![obj[@"contextId"] isEqual:context] ||
+          ![obj[@"username"] isEqual:obj[@"credentialId"]] || !Token(obj[@"password"]) ||
+          !Nonempty(host) || host.length > 253 || [host rangeOfCharacterFromSet:bad].location != NSNotFound ||
+          !port || *port < 1 || *port > 65535 || !expiry ||
+          *expiry <= NSDate.date.timeIntervalSince1970 * 1000 || (change && change())) {
+        revoke(); completion(nil, nil, nil, nil); return;
+      }
+      NSString* period = obj[@"periodId"];
+      NSString* credential = obj[@"credentialId"];
+      AegisNodeRenew renew = ^(void (^done)(int64_t)) {
+        if (change && change()) { done(0); return; }
+        NodeRequest(binding, [revokePath stringByAppendingString:@"/renew"], @"POST",
+                    @{@"mode":mode, @"contextId":context}, ^(NSInteger status, NSData* bytes) {
+          id reply = status == 200 && bytes.length
+              ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
+          if (![reply isKindOfClass:NSDictionary.class] ||
+              ![reply[@"accountId"] isEqual:binding[@"accountId"]] ||
+              ![reply[@"periodId"] isEqual:period] || ![reply[@"credentialId"] isEqual:credential] ||
+              ![reply[@"contextId"] isEqual:context] || ![reply[@"mode"] isEqual:mode]) {
+            done(0); return;
+          }
+          done(Time(reply[@"expiresAt"]).value_or(0));
+        });
+      };
+      completion(obj, change, revoke, renew);
+    });
   });
 }

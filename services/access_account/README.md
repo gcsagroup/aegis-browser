@@ -158,3 +158,71 @@ loopback HTTP authentication, rejection, response-loss and entitlement reads.
 Targeted regressions cover monotonic operator confirmation, immutable terms,
 stale unpaid notifications, both S1 expiry orderings, incomplete HTTP bodies,
 JSON recursion and non-SQLite-encodable order IDs.
+
+## Managed node credentials (S3)
+
+The account service issues temporary HTTPS CONNECT credentials to a browser-owned
+context. The issuer and node share the same private SQLite authority and the
+same usage source. A node credential belongs to one authenticated session,
+account, plan period, node and regular/private context. Its default lifetime
+is 60 seconds (configurable up to five minutes), capped by the earliest
+session or plan expiry. The authority stores a password digest.
+
+Before expiry, the owning session can POST the original JSON scope
+(`contextId`, `mode`) with its Bearer token to
+`/v1/me/node-credentials/{credentialId}/renew`. A successful response contains
+`accountId`, `periodId`, `contextId`, `mode`, `credentialId` and the new
+`expiresAt` in UTC milliseconds. The credential ID and password remain usable
+on the existing connection. Renewal checks current entitlement, usage freshness,
+the session, node and original scope. Expiry or revocation requires fresh issuance.
+
+Configure a dedicated Xray SOCKS5 listener on numeric loopback for each
+enabled panel client. Each listener must use the outbound for that client's
+own 3X-UI identity. Use a distinct port per identity. Keep the node's private
+configuration, backend listeners and account database on the trusted service
+host. For example, a controlled deployment can admit one destination:
+
+```json
+{
+  "nodeId": "test-node",
+  "upstreams": { "test-account-panel-client": 10811 },
+  "targets": { "site.example:443": "192.0.2.10" }
+}
+```
+
+The target IP is the operator's pin. The node selects the account's local
+SOCKS5 port from verified server state and passes that numeric destination to
+Xray. Configure the Xray outbound, controlled target and port mapping before
+adding the account to this node. Certificates must cover the advertised node
+hostname. Start both processes with the same panel URL and panel credential:
+
+```sh
+python3 -m services.access_account.server --database accounts.sqlite --port 8787 \
+  --panel-url https://panel.example.test/private-prefix \
+  --node-config node.json --node-host proxy.example.test --node-port 9443
+
+python3 -m services.access_account.node --database accounts.sqlite --port 9443 \
+  --host 0.0.0.0 --config node.json --cert tls-chain.pem --key tls-key.pem \
+  --panel-url https://panel.example.test/private-prefix
+```
+
+Expose the loopback account service to native callers through HTTPS. The node
+serves TLS itself. Controlled offline integration can run both processes with
+`--stored-snapshots` and matching, recently measured snapshots. Live panel
+mode keeps reading the associated client's counters and finite limits.
+
+Using the current Aegis bearer, the native client sends
+`POST /v1/me/node-credentials` with a canonical lowercase UUID in `contextId`
+and a `mode` of `regular` or `private`. After validating the account, context
+and expiry in the response, the client uses the returned credentials only for
+CONNECT over TLS to the advertised proxy. Keep the password in process memory
+and out of website rules, diagnostics, history and page APIs.
+`DELETE /v1/me/node-credentials/<credentialId>` revokes the session's grant.
+Closing a browser context also requires closing its local transport. A lost
+revocation request leaves the server-side expiry in effect.
+
+The node checks authorization on connection setup and while relaying. It
+schedules a fresh check after two seconds and allows one second for the
+authority to respond. Revocation, exhaustion, expiry, or failure to obtain
+a current authorization closes the stream. This periodic check has bounded
+latency. Byte-exact transfer cutoff and settlement are tracked separately.

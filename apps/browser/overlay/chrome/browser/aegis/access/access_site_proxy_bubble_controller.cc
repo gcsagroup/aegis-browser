@@ -3,6 +3,7 @@
 #include "chrome/browser/aegis/access/access_site_proxy_bubble_controller.h"
 #include "chrome/browser/aegis/access/access_build_channel.h"
 
+#include <algorithm>
 #include <utility>
 #include "base/command_line.h"
 #include "chrome/browser/aegis/access/access_identity_generation_source.h"
@@ -222,12 +223,25 @@ AccessSiteProxyBubbleController::ApplyDevAllowBlock(
 }
 
 bool AccessSiteProxyBubbleController::RequestHostProxySession(
+    const AccessSiteHost& host, bool enabled) {
+  return RequestHostProxySession(host, enabled, {});
+}
+
+bool AccessSiteProxyBubbleController::RequestHostProxySession(
     const AccessSiteHost& requested_host,
-    bool enabled) {
+    bool enabled, base::OnceClosure on_disabled) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const auto website = CanonicalWebsiteHost(requested_host);
   if (!website.host) return false;
   const auto host = *website.host;
+#if BUILDFLAG(IS_MAC)
+  if (enabled) {
+    auto* transport = AccessNetworkContextTransport::Get(profile_);
+    if (transport && std::ranges::any_of(transport->AccountSites(), [&](const auto& paid) {
+          return CanonicalWebsiteHost(AccessSiteHost{paid}).host == host;
+        })) return false;
+  }
+#endif
   ++state_revision_;
   if (MakeAccessSiteHost(host.value).status != AccessSiteHostStatus::kOk) {
     host_states_[host].failure_reason = AccessSiteProxySessionErrorReadableMessage(
@@ -258,7 +272,7 @@ bool AccessSiteProxyBubbleController::RequestHostProxySession(
     // committed choice until the local transaction actually succeeds.
     host_states_[host].connection = AccessSiteConnectionState::kConnecting;
     host_states_[host].failure_reason.clear();
-    BeginDisablePublication(host);
+    BeginDisablePublication(host, std::move(on_disabled));
     if (superseded_retry) std::move(superseded_retry).Run(false);
     if (superseded_queue) std::move(superseded_queue).Run(false);
     return true;
@@ -868,7 +882,7 @@ void AccessSiteProxyBubbleController::BeginEnablePublication(
 }
 
 void AccessSiteProxyBubbleController::BeginDisablePublication(
-    const AccessSiteHost& host) {
+    const AccessSiteHost& host, base::OnceClosure on_disabled) {
   auto* transport = AccessNetworkContextTransport::Get(profile_);
   const auto owner = transport
       ? transport->OwnerForPartition(AccessChannelForCurrentBuild(), base::FilePath())
@@ -922,8 +936,14 @@ void AccessSiteProxyBubbleController::BeginDisablePublication(
   publication_in_flight_ = true;
   coordinator->CommitSiteGroupMutation(
       std::move(store), std::move(*plan.mutation.request), plan.selector,
-      base::BindOnce(&AccessSiteProxyBubbleController::OnPublicationComplete,
-                     weak_factory_.GetWeakPtr(), host, /*enabling=*/false));
+      base::BindOnce([](base::WeakPtr<AccessSiteProxyBubbleController> self,
+                        AccessSiteHost host, base::OnceClosure on_disabled,
+                        AccessMutationTransactionResult result) {
+        if (!self) return;
+        const bool committed = result.status == AccessMutationTransactionStatus::kCommitted;
+        self->OnPublicationComplete(host, false, std::move(result));
+        if (self && committed && on_disabled) std::move(on_disabled).Run();
+      }, weak_factory_.GetWeakPtr(), host, std::move(on_disabled)));
 }
 
 void AccessSiteProxyBubbleController::OnPublicationComplete(

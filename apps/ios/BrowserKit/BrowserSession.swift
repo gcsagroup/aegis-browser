@@ -4,6 +4,23 @@ import Foundation
 import UIKit
 import WebKit
 
+/// Captured when WebKit hands a native download to the browser. Each event
+/// keeps its own identity even when a tab requests the same URL again.
+public struct BrowserAccessDownload: Equatable {
+    fileprivate let requestID = UUID()
+    fileprivate let selectionID: UUID
+    public let tab: UUID
+    public let privateMode: Bool
+    public let target: URL
+    public let host: String
+
+    public static func canonicalHost(of url: URL?) -> String? {
+        guard let url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host, !host.isEmpty else { return nil }
+        return RegisteredDomain.normalizedHost(host)
+    }
+}
+
 /// App-owned exact-host stores. Nil keeps every tab on the store it was created with.
 public enum BrowserNavigationFailure {
     /// Main-frame failures that may receive one Access retry.
@@ -81,6 +98,9 @@ public enum BrowserProfile: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     public let id: UUID
+    public var onAccessContextClosed: (() -> Void)?
+    fileprivate var accessSelectionID = UUID()
+    public var selectedAccessHost: String? { didSet { accessSelectionID = UUID() } }
     /// Live ownership is never reused when a saved tab UUID is restored.
     public let instanceID = UUID()
     private var configuration: WKWebViewConfiguration
@@ -738,6 +758,9 @@ public final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavig
             savedScrollOffset = view.scrollView.contentOffset
         }
         isDisposed = true
+        onAccessContextClosed?()
+        onAccessContextClosed = nil
+        selectedAccessHost = nil
         stop()
         if let view = loadedWebView as? BrowserContentWebView {
             view.terminateDocument(completion: completion)
@@ -1606,7 +1629,16 @@ public final class BrowserSession: ObservableObject {
         get { sessionErrorPresentation?.text }
         set { sessionErrorPresentation = newValue.map(AegisLocalizedMessage.verbatim) }
     }
-    @Published public var pendingDownloadURL: URL?
+    public private(set) var pendingAccessDownload: BrowserAccessDownload?
+    public func ownsAccessDownload(_ request: BrowserAccessDownload) -> Bool {
+        guard pendingAccessDownload == request, let tab = activeTab, tab.id == request.tab,
+              tab.profile.isPrivate == request.privateMode, tab.accessSelectionID == request.selectionID,
+              tab.selectedAccessHost == request.host else { return false }
+        return BrowserAccessDownload.canonicalHost(of: tab.url) == request.host
+    }
+    @Published public var pendingDownloadURL: URL? {
+        didSet { if pendingDownloadURL == nil { pendingAccessDownload = nil } }
+    }
     @Published public var pendingMarkdown: MarkdownDocument?
     @Published public private(set) var standardGroups: [BrowserTabGroup] = []
     @Published public private(set) var privateGroups: [BrowserTabGroup] = []
@@ -1921,7 +1953,7 @@ public final class BrowserSession: ObservableObject {
         guard !profile.isPrivate else { return }
         // WebKit 的普通网站存储由各窗口共享，清除前同时停止所有普通页面。
         for session in Self.sessions.compactMap(\.value) {
-            session.standardTabs.forEach { $0.stop() }
+            session.standardTabs.forEach { $0.onAccessContextClosed?(); $0.stop() }
             session.standardGroups = []; session.standardGroupID = nil
             session.standardTabs = [session.makeTab(profile: .standard)]
             session.standardActiveID = session.standardTabs.first?.id
@@ -2034,8 +2066,16 @@ public final class BrowserSession: ObservableObject {
             child.inheritedHardenedSecurity = hardened
             child.load(url)
         }
-        tab.onDownload = { [weak self] url in
-            guard let self, self.profile == profile else { return }
+        tab.onDownload = { [weak self, weak tab] url in
+            guard let self, let tab, self.profile == profile else { return }
+            let pageHost = BrowserAccessDownload.canonicalHost(of: tab.url)
+            let targetHost = BrowserAccessDownload.canonicalHost(of: url)
+            self.pendingAccessDownload = nil
+            if let host = tab.selectedAccessHost,
+               (pageHost == nil || pageHost == host), (targetHost == nil || targetHost == host) {
+                self.pendingAccessDownload = BrowserAccessDownload(selectionID: tab.accessSelectionID, tab: tab.id,
+                    privateMode: profile.isPrivate, target: url, host: host)
+            }
             self.pendingDownloadURL = url
         }
         return tab

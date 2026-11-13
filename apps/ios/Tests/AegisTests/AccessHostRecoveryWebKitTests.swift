@@ -10,6 +10,46 @@ import XCTest
 /// Failed page reloads through the app HTTP CONNECT listener, not a test-only proxy socket.
 @MainActor
 final class AccessHostRecoveryWebKitTests: XCTestCase {
+    func testPaidDownloadSelectionFollowsDisplayedSiteAfterFailedCrossHostNavigation() async throws {
+        let first = OriginReceipt(port: 18_267)
+        let second = OriginReceipt(port: 18_268)
+        try await first.start()
+        defer { first.stop() }
+        let browser = BrowserSession(dataStore: BrowserDataStore(persistenceURL: nil))
+        defer { browser.closeWindow() }
+        let coordinator = AccessHostStoreCoordinator()
+        browser.hostCoordinator = coordinator
+        let panel = AccessSiteProxySessionStore()
+        panel.hostRouting = coordinator
+        let account = AccessAccountSession(client: nil, keychain: .init(service: UUID().uuidString))
+        let tab = try XCTUnwrap(browser.activeTab)
+        let window = show(tab.webView)
+        defer { window.isHidden = true }
+        let a = URL(string: "http://127.0.0.1:\(first.port)/first")!
+        let b = URL(string: "http://localhost:\(second.port)/second")!
+        tab.load(a)
+        try await waitUntil({ tab.committedMainFrameURL == a && !tab.isLoading }, message: "A must commit")
+        tab.load(b)
+        try await waitUntil({ tab.lastMainFrameFailure?.url == b }, message: "B must fail before its origin starts")
+        XCTAssertEqual(tab.committedMainFrameURL, a)
+        XCTAssertEqual(panel.snapshot(for: tab).host?.rawValue, b.host)
+        XCTAssertNil(panel.paidDownloadHost(for: tab))
+        XCTAssertNil(panel.setProxyEnabled(true, for: tab, account: account))
+        XCTAssertNil(tab.selectedAccessHost)
+
+        try await second.start()
+        defer { second.stop() }
+        tab.load(b)
+        try await waitUntil({ tab.committedMainFrameURL == b && !tab.isLoading }, message: "B must commit after retry")
+        XCTAssertEqual(panel.snapshot(for: tab).host?.rawValue, b.host)
+        let activeHost = try XCTUnwrap(panel.paidDownloadHost(for: tab))
+        XCTAssertNil(panel.setProxyEnabled(true, for: tab, account: account, displayedHost: try AccessSiteHost("127.0.0.1")))
+        XCTAssertNotNil(panel.setProxyEnabled(true, for: tab, account: account, displayedHost: activeHost))
+        XCTAssertEqual(tab.selectedAccessHost, b.host)
+        tab.onDownload?(b.appendingPathComponent("file"))
+        XCTAssertEqual(browser.pendingAccessDownload?.host, b.host)
+    }
+
     func testFailedPageReloadsOnceThroughTheListener() async throws {
         let nonce = UUID().uuidString
         let opener = AnsweringOpener()

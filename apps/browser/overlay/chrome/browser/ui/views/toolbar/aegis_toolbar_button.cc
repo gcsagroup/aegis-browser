@@ -24,6 +24,9 @@
 #include "ui/views/controls/button/checkbox.h"
 #include "url/origin.h"
 #include "chrome/browser/browser_process.h"
+#if BUILDFLAG(IS_MAC)
+#include "chrome/browser/aegis/access/access_paid_site_mac.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -266,6 +269,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     const auto access_snapshot = access
         ? std::make_optional(access->SnapshotForCommittedUrl(address_)) : std::nullopt;
 #if BUILDFLAG(IS_MAC)
+    const auto paid_state = access_snapshot && access_snapshot->has_trusted_site
+        ? aegis::access::AccountNodeForSite(browser_->GetProfile(), access_snapshot->host.value)
+        : aegis::access::AccountNodeStatus::kOff;
+    if (paid_state != paid_status_) { Build(); return; }
     if (expanded_.contains("core-logs") && access && access->CanViewCoreLogs() &&
         (log_disk_status_ != access->core_logs()->disk_status() ||
          log_view_version_ != access->core_logs()->view_version())) {
@@ -380,6 +387,16 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     return aegis::access::AccessSiteProxyBubbleController::GetOrCreate(
         browser_->GetProfile());
   }
+#if BUILDFLAG(IS_MAC)
+  bool UseAccountNode(aegis::access::AccessSiteProxyBubbleController* controller,
+                      const aegis::access::AccessSiteProxyBubbleSnapshot& snap,
+                      aegis::access::AccountNodeStatus state) const {
+    auto* profile = browser_->GetProfile();
+    return state != aegis::access::AccountNodeStatus::kOff ||
+        (!snap.toggle_on && aegis::access::UsesAccountNode(profile,
+            profile->IsOffTheRecord() && !controller->GetFailedNavigationRetryHandler().is_null()));
+  }
+#endif
   // Trusted URL for Access is the committed navigation only (address_).
   void ToggleSiteProxy() {
     if (!Valid()) {
@@ -393,6 +410,20 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
     if (!snap.has_trusted_site || !snap.toggle_enabled) {
       return;
     }
+#if BUILDFLAG(IS_MAC)
+    if (UseAccountNode(controller, snap, aegis::access::AccountNodeForSite(
+            browser_->GetProfile(), snap.host.value))) {
+      auto weak = weak_.GetWeakPtr();
+      if (snap.toggle_on) {
+        controller->RequestHostProxySession(snap.host, false, base::BindOnce(
+            &aegis::access::DisableAccountNodeSite, browser_->GetProfile(), snap.host.value));
+      } else if (snap.connection != aegis::access::AccessSiteConnectionState::kConnecting) {
+        aegis::access::ToggleAccountNodeSite(browser_->GetProfile(), snap.host.value);
+      }
+      if (weak) weak->RefreshSoon();
+      return;
+    }
+#endif
     // Publication path: enable → Prepare/Publish/ACK; disable commits locally
     // even when the service is unavailable. Switch state ≠ connectivity.
     controller->RequestHostProxySession(snap.host, !snap.toggle_on);
@@ -481,12 +512,30 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
       AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
       return;
     }
+    bool toggle_on = snap.toggle_on;
+#if BUILDFLAG(IS_MAC)
+    auto* profile = browser_->GetProfile();
+    using Paid = aegis::access::AccountNodeStatus;
+    const auto state = paid_status_ = aegis::access::AccountNodeForSite(profile, snap.host.value);
+    const bool paid = UseAccountNode(controller, snap, state);
+    if (paid) toggle_on = state != Paid::kOff;
+#endif
     Toggle(parent,
            Copy(u"当前网站使用代理", u"Use Access proxy for this site",
                 u"目前網站使用代理"),
-           snap.toggle_on,
+           toggle_on,
            base::BindRepeating(&AegisPageBubble::ToggleSiteProxy,
                                base::Unretained(this)));
+#if BUILDFLAG(IS_MAC)
+    if (paid && state != Paid::kOff) {
+      AddLabel(parent, state == Paid::kAssigned
+          ? Copy(u"账户节点已分配", u"Account node assigned", u"帳戶節點已分配")
+          : ConnectionStatusCopy(state == Paid::kAcquiring
+                ? aegis::access::AccessSiteProxyConnectionStatusId::kConnecting
+                : aegis::access::AccessSiteProxyConnectionStatusId::kUnavailable));
+      return;
+    }
+#endif
     AddLabel(parent, IntentStatusCopy(snap.intent_status));
     AddLabel(parent, ConnectionStatusCopy(snap.connection_status));
     if (!snap.failure_reason.empty()) {
@@ -690,6 +739,9 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   std::string document_, tab_;
   raw_ptr<views::View> panel_ = nullptr;
   base::DictValue snapshot_;
+#if BUILDFLAG(IS_MAC)
+  aegis::access::AccountNodeStatus paid_status_ = aegis::access::AccountNodeStatus::kOff;
+#endif
   int revision_ = -1;
   uint64_t access_revision_ = 0;
   std::optional<aegis::access::AccessSiteProxyBubbleSnapshot> access_snapshot_;

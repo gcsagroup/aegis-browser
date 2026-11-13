@@ -68,6 +68,8 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
   // Disable does not require a live proxy; publication failures remain visible.
   // Returns false only when the host/toggle cannot be accepted.
   bool RequestHostProxySession(const AccessSiteHost& host, bool enabled);
+  bool RequestHostProxySession(const AccessSiteHost& host, bool enabled,
+                               base::OnceClosure on_disabled);
   void RequestFailedNavigationProxy(const GURL& original_url,
       base::OnceCallback<void(bool)> completion);
   base::RepeatingCallback<void(const GURL&, base::OnceCallback<void(bool)>)>
@@ -134,7 +136,7 @@ class AccessSiteProxyBubbleController : public base::SupportsUserData::Data {
       AccessSiteProxyLocalProxyReadyInfo* out) const;
   void BeginEnablePublication(const AccessSiteHost& host,
                               AccessSiteProxyLocalProxyReadyInfo ready);
-  void BeginDisablePublication(const AccessSiteHost& host);
+  void BeginDisablePublication(const AccessSiteHost& host, base::OnceClosure on_disabled);
   void OnPublicationComplete(AccessSiteHost host,
                              bool enabling,
                              AccessMutationTransactionResult result);

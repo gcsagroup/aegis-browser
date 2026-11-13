@@ -14,4 +14,14 @@ typedef void (^AegisAccountCompletion)(NSDictionary*, AegisAccountBindingChange)
 void AegisQueryAccessAccount(NSString* profileDirectory,
                              AegisAccountCompletion completion);
 
+// Browser-process only. The private binding is independently authorized in
+// memory; private mode never looks up the regular profile binding. The lease
+// and revoke block must never be serialized to WebUI, prefs, or diagnostics.
+typedef void (^AegisNodeRevoke)(void);
+typedef void (^AegisNodeRenew)(void (^done)(int64_t expiresAt));
+typedef void (^AegisNodeCompletion)(NSDictionary* lease, AegisAccountBindingChange change,
+                                    AegisNodeRevoke revoke, AegisNodeRenew renew);
+void AegisIssueNode(NSString* directory, NSString* context, bool isPrivate,
+                    NSDictionary* privateBinding, AegisNodeCompletion completion);
+
 #endif
