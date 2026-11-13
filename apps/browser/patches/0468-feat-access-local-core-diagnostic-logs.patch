@@ -1,4 +1,4 @@
-From 8461606f750e1b53c3d2df33cbaf4d14602bbf2d Mon Sep 17 00:00:00 2001
+From 3443de5eafe7dcfc6ca0475586d93412a9bbcdd9 Mon Sep 17 00:00:00 2001
 From: Aegis Browser <devnull@localhost>
 Date: Thu, 12 Nov 2026 13:00:00 +0800
 Subject: [PATCH] feat(access): persist scoped diagnostics with channel
@@ -2289,3 +2289,6 @@ index eb81acfae16042030ba1a25c6c54e5cace7e41fb..6bf90ecfbfc4d4f7932595020501f4f0
    base::RepeatingTimer timer_;
    base::WeakPtrFactory<AegisPageBubble> weak_{this};
  };
+-- 
+2.54.0 (Apple Git-157)
+
