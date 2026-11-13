@@ -166,6 +166,16 @@ bool AccessNetworkContextTransport::ConfigureNetworkContext(
   ++state.clients_generation;
   state.clients.Add(std::move(client));
 #if BUILDFLAG(IS_MAC)
+  state.clients.set_disconnect_handler(base::BindRepeating(
+      [](base::WeakPtr<AccessNetworkContextTransport> self,
+         std::string partition, mojo::RemoteSetElementId) {
+        if (!self) return;
+        auto found = self->partitions_.find(partition);
+        if (found == self->partitions_.end()) return;
+        auto& current = found->second;
+        if (!current.account_fenced.empty() || !current.account_sites.empty())
+          self->PublishAccountConfig(current);
+      }, transport->weak_factory_.GetWeakPtr(), *key));
   if (!state.account_fenced.empty() || !state.account_sites.empty())
     transport->PublishAccountConfig(state);
 #endif

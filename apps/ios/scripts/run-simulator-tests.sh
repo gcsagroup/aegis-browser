@@ -342,7 +342,11 @@ XCODE_VERSION="$(xcodebuild -version | tr '\n' ' ')"
 
 write_input_manifest() {
   local destination="$1"
-  node "${SCRIPT_DIR}/simulator-input-manifest.mjs" "$REPO_ROOT" "$destination"
+  if [[ $# -gt 1 ]]; then
+    node "${SCRIPT_DIR}/simulator-input-manifest.mjs" "$REPO_ROOT" "$destination" "$2"
+  else
+    node "${SCRIPT_DIR}/simulator-input-manifest.mjs" "$REPO_ROOT" "$destination"
+  fi
 }
 
 write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-source.txt"
@@ -494,7 +498,7 @@ PYTHON
 bash "$REPO_ROOT/scripts/release/prepare-ios-package-core.sh" "$REPO_ROOT" "$DERIVED_DATA/EmbeddedCore"
 xcodegen generate --spec "${IOS_ROOT}/project.yml"
 capture_git_state
-write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-before.txt"
+write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-before.txt" "$DERIVED_DATA/EmbeddedCore"
 INPUT_MANIFEST_SHA256="$(shasum -a 256 "${OUTPUT_DIR}/ios-input-sha256-before.txt" | awk '{print $1}')"
 {
   # Legacy coverage fields describe the actual inputs after project generation.
@@ -524,7 +528,7 @@ run_test "iPhone" "${OUTPUT_DIR}/iPhone.xcresult" "${OUTPUT_DIR}/iPhone-xcodebui
 run_test "iPad" "${OUTPUT_DIR}/iPad.xcresult" "${OUTPUT_DIR}/iPad-xcodebuild.log" \
   "${TABLET_COMMAND[@]}" || tablet_status=$?
 
-write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-after.txt"
+write_input_manifest "${OUTPUT_DIR}/ios-input-sha256-after.txt" "$DERIVED_DATA/EmbeddedCore"
 if ! cmp -s \
   "${OUTPUT_DIR}/ios-input-sha256-before.txt" \
   "${OUTPUT_DIR}/ios-input-sha256-after.txt"; then

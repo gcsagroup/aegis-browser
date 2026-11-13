@@ -476,3 +476,4 @@
 0474-fix-diagnostic-pipe-read-bounds.patch
 0475-macos-account-node-scoped-connect.patch
 0476-fix-paid-site-test-transport-dependency.patch
+0477-fix-account-fence-client-disconnect.patch

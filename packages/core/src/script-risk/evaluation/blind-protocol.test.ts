@@ -637,6 +637,7 @@ exports.analyzeScriptAst = function analyzeScriptAst(sourceText) {
     const coordinationProtocolPath = resolve(
       repo, "packages/core/src/script-risk/evaluation/protocols/blind-v1.json",
     );
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Paths belong to this test’s temporary fixtures and fixed repository resources.
     const coordinationProtocol = JSON.parse(readFileSync(coordinationProtocolPath, "utf8"));
     coordinationProtocol.limits.sampleWorkerTimeoutMs = 30_000;
     writeJson(coordinationProtocolPath, coordinationProtocol);

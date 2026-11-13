@@ -13,7 +13,8 @@ from pathlib import Path
 import plistlib
 import re
 import stat
-import subprocess
+# Local tooling uses argument arrays with the shell disabled.
+import subprocess  # nosec B404
 import sys
 
 APP = "com.gcsa.aegis.alpha.internal"
@@ -41,7 +42,8 @@ def load_spec(path):
         import yaml
     except ImportError:
         code = 'require "yaml"; require "json"; puts JSON.generate(YAML.safe_load(File.read(ARGV[0]), [], [], false))'
-        result = subprocess.run(["/usr/bin/ruby", "-e", code, str(path)],
+        # Fixed Ruby executable and YAML parser source; the project path is a separate argument.
+        result = subprocess.run(["/usr/bin/ruby", "-e", code, str(path)],  # nosec B603
                                 capture_output=True, text=True, check=False)
         if result.returncode:
             raise ValueError("installed safe YAML parser could not read project spec")

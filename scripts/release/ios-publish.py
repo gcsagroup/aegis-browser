@@ -35,6 +35,7 @@ def collect(directory, expected_manifest, root=None, draft=False):
             os.link(directory / name, staged / name)
         transport.verify_package(staged, manifest['source']['sha'], manifest['source']['tree'],
                                  manifest_digest)
+        transport.reject_private_resources(staged, manifest)
     return publish([(directory / name, expected[name]) for name in names],
                    'aegis', manifest['version'], manifest['build'], 'draft' if draft else manifest['profile'], root)
 

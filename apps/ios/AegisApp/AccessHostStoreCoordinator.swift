@@ -675,8 +675,7 @@ final class AccessHostStoreCoordinator: ObservableObject, BrowserHostStoreCoordi
             $0.tabID == tab.instanceID.uuidString && $0.addressNavigation == pending && $0.state == .preparing
         }) { return existing.id }
         let key = AccessHostStoreKey(scopeID: tab.browsingScopeID, host: host, isPrivate: tab.profile.isPrivate)
-        guard let request = tab.safeRouteReloadRequest,
-              tab.holdForProxy(request) == pending else { return nil }
+        guard tab.ensureProxyHold(pending) else { return nil }
         return beginPrepare(for: tab, key: key, failure: nil, trigger: .userRetry, addressNavigation: pending)
     }
 

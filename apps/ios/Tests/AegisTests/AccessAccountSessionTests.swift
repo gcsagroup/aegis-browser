@@ -393,7 +393,7 @@ final class AccessAccountSessionTests: XCTestCase {
         do {
             _ = try await account.downloadSession(for: privateTab, privateMode: true, target: target, downloadDelegate: downloads)
             XCTFail("Private bearer survived sign-out")
-        } catch AccountQueryError.unauthorized { }
+        } catch AccountQueryError.invalid { }
     }
 
     func testSignedOutQuotaPollingPreservesIndependentPrivateDownload() async throws {

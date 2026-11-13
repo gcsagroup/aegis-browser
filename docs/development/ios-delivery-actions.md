@@ -39,6 +39,18 @@ Enter **Version** and **Build** separately. For a new package, choose **Product*
 
 **Status** 和不使用凭据的 **Wait** 均为只读查询，只需填写准确的版本和构建号。
 
+For an authorized internal test-node Beta, select **Beta**, **manual**, **Package and upload**
+and **private_beta → yes**. The signing environment supplies the private node and subscription
+descriptor. Before uploading, the exported IPA must contain the exact validated resources,
+and its HTTPS quota endpoint must return the matching client, expected allowance, enabled
+state, unexpired access and positive remaining traffic. Redirects and invalid responses stop
+delivery. Private inputs and the IPA are not published as Actions artifacts.
+
+已授权的内置测试节点 Beta 使用 **Beta / manual / Package and upload / private_beta → yes**。
+节点及额度描述由签名环境注入。上传前核对 IPA 内资源与输入完全一致，并通过包内 HTTPS
+入口验证客户端身份、额度、启用状态、有效期和剩余流量。重定向或无效响应会停止交付；
+私密配置及 IPA 不作为 Actions artifact 公开。
+
 If **Wait** times out, the run fails and retains the last observed Apple state in its Summary and status artifact. Use **Status** or **Wait** again to check that same build; do not upload it again.
 
 **Wait** 超时仍会失败，并在 Summary 和状态 artifact 中保留最后一次 Apple 状态。使用 **Status** 或 **Wait** 再次查询同一构建，不要重新上传。
@@ -49,14 +61,32 @@ For a Beta that embeds the shared test node and reads its 3X-UI quota, choose
 **Package and upload**, **Beta**, **manual**, and **Private Beta: yes**. Store
 `AEGIS_IOS_TEST_NODE_BASE64` and `AEGIS_IOS_TEST_SUBSCRIPTION_BASE64` in the
 upstream `aegis-ios-signing` Environment. The signing job checks both resources
-in the signed IPA and uploads that IPA directly to TestFlight for internal
-testing. Actions retains a redacted receipt. If the result is uncertain, query
+in the signed IPA, removes signing materials and retains an owner-only copy outside
+the runner workspace. The separate `private-beta-store` job requires the protected
+`aegis-ios-store` Environment and the same runner. It verifies the source, manifest,
+IPA hashes and live quota again before uploading to TestFlight for internal testing.
+Only that store job receives ASC upload credentials. Actions retains a redacted receipt. If the result is uncertain, query
 **Status** with the original version and build before scheduling another attempt.
 
 内置共享测试节点并查询 3X-UI 实际额度时，选择 **Package and upload**、**Beta**、
 **manual** 和 **Private Beta: yes**。两项输入只存入上游的
-`aegis-ios-signing` 环境。签名作业检查 IPA 中的两份资源后直接上传 TestFlight 内测，
-Actions 保留脱敏回执。结果不明时先用原版本和构建号执行 **Status** 查询。
+`aegis-ios-signing` 环境。签名作业检查 IPA 中的两份资源，清除签名材料，将包保留在
+runner 工作区之外的当前用户私有目录。独立的 `private-beta-store` 作业经过
+`aegis-ios-store` 受保护环境，在同一 runner 上重新校验源码身份、清单、包哈希及实时
+额度，随后加载 ASC 凭据并上传 TestFlight 内测。Actions 只保留脱敏回执。结果不明时
+先用原版本和构建号执行 **Status** 查询。
+
+The private handoff is bound to the repository, run, first attempt, runner, source
+and manifest. It is removed after upload processing. If the store job never starts,
+the owner-only copy remains for reconciliation. A cancelled restore cleans its
+run-bound staging or restored workspace copy and retains that original copy. Cleanup
+checks the directory identity recorded before copying and keeps its ownership marker
+until the private copy is removed, including after an interrupted cleanup. It is not a public artifact or a
+reusable upload token. Runner admission must explicitly allow `private-beta-store`.
+
+私有交接绑定仓库、run、首次 attempt、runner、源码与清单，上传处理后清除。若商店
+作业未能启动，私有副本保留用于核对，不作为公开工件或可复用上传令牌。runner 准入
+须明确允许 `private-beta-store`。
 
 ## Full / 分阶段交付
 

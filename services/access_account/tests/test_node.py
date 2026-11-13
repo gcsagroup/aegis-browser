@@ -4,7 +4,8 @@ import hashlib
 import ipaddress
 import sqlite3
 import ssl
-import subprocess
+# Local tooling uses argument arrays with the shell disabled.
+import subprocess  # nosec B404
 import tempfile
 import threading
 import unittest
@@ -22,7 +23,8 @@ class ControlledNodeTest(unittest.IsolatedAsyncioTestCase):
         cls.addClassCleanup(directory.cleanup)
         cls.cert = Path(directory.name) / "cert.pem"
         cls.key = Path(directory.name) / "key.pem"
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+        # Fixed local test program and fixture arguments; shell execution is disabled.
+        subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",  # nosec B607, B603
                         "-subj", "/CN=localhost", "-days", "1", "-keyout", cls.key,
                         "-out", cls.cert], check=True, stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL)

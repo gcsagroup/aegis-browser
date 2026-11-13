@@ -39,15 +39,18 @@ function sha256(buffer) {
 }
 
 async function loadJsonFile(path) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
   return JSON.parse(await readFile(path, 'utf8'));
 }
 
 async function pathExists(path) {
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
     await stat(path);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
   }
 }
 
@@ -64,6 +67,7 @@ function stepNameAt(index) {
 }
 
 export async function validatePhase1EvidencePack(packDirectory, options = {}) {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Canonicalize the operator-selected pack or artifact before enforcing pack containment.
   const root = await realpath(packDirectory);
   const statusPath = join(root, 'status.json');
   const templatePath = join(root, 'manifest.template.json');
@@ -72,9 +76,11 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   const artifactsDir = join(root, 'artifacts');
 
   for (const path of [statusPath, templatePath, readmePath, correlationDocPath]) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
     const info = await stat(path);
     requireValue(info.isFile() && info.size > 0, `missing pack file: ${path}`);
   }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
   requireValue((await stat(artifactsDir)).isDirectory(), 'artifacts/ required');
 
   const status = await loadJsonFile(statusPath);
@@ -126,6 +132,7 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
   let manifest = null;
   let manifestPresent = false;
   if (await pathExists(manifestPath)) {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
     const info = await stat(manifestPath);
     manifestPresent = info.isFile();
   }
@@ -162,13 +169,16 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
             !artifact.path.split(/[\\/]/u).includes('..') &&
             /^[a-f0-9]{64}$/u.test(artifact.sha256),
         `artifact for ${step.id} path/sha256 invalid`);
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- Canonicalize the operator-selected pack or artifact before enforcing pack containment.
         const absolute = await realpath(resolve(root, artifact.path));
         const child = relative(root, absolute);
         requireValue(child && child !== '..' && !child.startsWith(`..${sep}`) &&
             !isAbsolute(child),
         `artifact path escapes pack for ${step.id}`);
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- The artifact realpath was checked to remain inside the selected evidence pack.
         const info = await stat(absolute);
         requireValue(info.isFile() && info.size > 0, `artifact missing for ${step.id}`);
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- The artifact realpath was checked to remain inside the selected evidence pack.
         requireValue(sha256(await readFile(absolute)) === artifact.sha256,
             `artifact digest mismatch for ${step.id}`);
       }
@@ -241,6 +251,7 @@ export async function validatePhase1EvidencePack(packDirectory, options = {}) {
 export async function assertCorrelationFixturePresent(repoRoot) {
   const source = join(repoRoot,
       'apps/ios/AccessKit/AccessSitePhase1Evidence.swift');
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
   const text = await readFile(source, 'utf8');
   requireValue(text.includes('AccessSitePhase1EvidenceStep'),
       'AccessKit fixture must expose AccessSitePhase1EvidenceStep');
@@ -261,6 +272,7 @@ export async function inspectFaultFixturePresent(repoRoot) {
     if (!(await pathExists(path))) {
       continue;
     }
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- Read-only evidence check uses fixed filenames under the operator-selected local roots.
     const text = await readFile(path, 'utf8');
     const hit = FAULT_FIXTURE_MARKERS.some(marker => text.includes(marker));
     if (hit && (path.endsWith('Fault.swift') ||

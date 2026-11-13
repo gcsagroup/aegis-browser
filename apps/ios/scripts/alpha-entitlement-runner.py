@@ -15,7 +15,8 @@ import secrets
 import signal
 import sqlite3
 import stat
-import subprocess
+# Local tooling uses argument arrays with the shell disabled.
+import subprocess  # nosec B404
 import sys
 from tempfile import TemporaryDirectory
 import threading
@@ -69,7 +70,9 @@ def child_environment(origin, account, token):
 
 
 def run_child(command, env, seconds):
-    with subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
+    # Operator-selected xcodebuild argv; shell disabled and child environment allowlisted.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    with subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,  # nosec B603
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                           start_new_session=True) as child:
         try:

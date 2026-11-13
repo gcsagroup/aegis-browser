@@ -9,7 +9,8 @@ import json
 import os
 from pathlib import Path
 import sqlite3
-import subprocess
+# Local tooling uses argument arrays with the shell disabled.
+import subprocess  # nosec B404
 from tempfile import TemporaryDirectory
 import threading
 import unittest
@@ -29,6 +30,8 @@ class AlphaRunnerTest(unittest.TestCase):
         temp = TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
+        # 0700 grants access only to the current owner of the temporary directory.
+        # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         os.chmod(self.root, 0o700)
         self.token = self.root / "panel-token"
         self.token.write_text("fixture-panel-key\n")
@@ -115,8 +118,10 @@ class AlphaRunnerTest(unittest.TestCase):
             return 7
 
         with patch.object(runner, "create_server", side_effect=capture), patch.dict(os.environ, {
-                "AEGIS_3XUI_TOKEN": "fixture-panel-key", "PANEL_TOKEN": "fixture-panel-key",
-                "OTHER_PASSWORD": "secret", "BASH_ENV": "unsafe"}):
+                # Synthetic credentials used only by the local test fixture.
+                "AEGIS_3XUI_TOKEN": "fixture-panel-key", "PANEL_TOKEN": "fixture-panel-key",  # nosec B105
+                # Synthetic credentials used only by the local test fixture.
+                "OTHER_PASSWORD": "secret", "BASH_ENV": "unsafe"}):  # nosec B105
             code, _ = self.run_runner(child=child)
         self.assertEqual(code, 7)
         self.assertTrue(all(not p.parent.exists() for p in databases))

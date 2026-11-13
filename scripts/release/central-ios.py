@@ -5,6 +5,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,10 @@ def bundle(archive, output, request, expected=p.PROD):
 def verify_development(archive, team, engine):
     app = archive / 'Products/Applications/Aegis.app'
     for target in [app, app / 'PlugIns/SafariWebExtension.appex', app / 'PlugIns/ShareExtension.appex']:
+        info = plistlib.loads((target / 'Info.plist').read_bytes())
+        p.require(info.get('AegisReleaseProfile') == 'alpha', 'Development archive must be Alpha')
+        if target == app:
+            p.require(info.get('AegisAccessReleaseChannel') == 'alpha', 'Archive Access channel must be Alpha')
         engine.run('codesign', '--verify', '--deep', '--strict', str(target))
         result = subprocess.run(['codesign', '-d', '--verbose=4', str(target)], capture_output=True)
         p.require(result.returncode == 0 and b'Authority=Apple Development:' in result.stderr
@@ -74,7 +79,8 @@ def archive(options, environment):
                '-disableAutomaticPackageResolution', 'archive', 'CODE_SIGN_STYLE=Automatic',
                'CODE_SIGN_IDENTITY=Apple Development', 'DEVELOPMENT_TEAM=' + options.team,
                'MARKETING_VERSION=' + options.version, 'CURRENT_PROJECT_VERSION=' + options.build,
-               'AEGIS_FIREBASE_CHANNEL=alpha', env=environment, log=options.work / 'archive.log', timeout=2400)
+               'AEGIS_FIREBASE_CHANNEL=alpha', 'AEGIS_ACCESS_RELEASE_CHANNEL=alpha',
+               env=environment, log=options.work / 'archive.log', timeout=2400)
     verify_development(target, options.team, engine)
     module('archive_structure', 'verify-ios-archive.py').verify(target, options.version, options.build)
     request = {'schema': expected.schema, 'product': 'aegis',

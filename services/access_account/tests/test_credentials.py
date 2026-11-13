@@ -6,7 +6,8 @@ import http.client
 import json
 from pathlib import Path
 import sqlite3
-import subprocess
+# Local tooling uses argument arrays with the shell disabled.
+import subprocess  # nosec B404
 import sys
 import tempfile
 import threading
@@ -43,7 +44,8 @@ class CredentialFixture:
     def clock(self):
         return self.now
 
-    def issue(self, token='token-A', context=None, mode='regular', panel=None):
+    # Synthetic credentials used only by the local test fixture.
+    def issue(self, token='token-A', context=None, mode='regular', panel=None):  # nosec B107
         return c.issue(self.path, token, context or self.context, mode, self.clock,
                        node=self.node, panel=panel)
 
@@ -99,7 +101,8 @@ class CredentialTest(CredentialFixture, unittest.TestCase):
                          .fetchone()[0], 1)
 
     def test_same_account_sessions_replace_only_their_own_scope(self):
-        other_token = 'second-session-A'
+        # Synthetic credentials used only by the local test fixture.
+        other_token = 'second-session-A'  # nosec B105
         self.db.execute('INSERT INTO sessions VALUES (?, ?, 100000, NULL)',
                         (hashlib.sha256(other_token.encode()).digest(), 'A'))
         a = self.issue()
@@ -182,13 +185,17 @@ class CredentialTest(CredentialFixture, unittest.TestCase):
                                      ('period_end', 'plans', 12000),
                                      ('expires_at', 'snapshots', 13000)]:
             with self.subTest(table=table):
-                self.db.execute(f'UPDATE {table} SET {column}=? WHERE account_id=?', (limit, 'A'))
+                # Table and column names come from the fixed fixture matrix; values are bound parameters.
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query, python_sql_rule-hardcoded-sql-expression
+                self.db.execute(f'UPDATE {table} SET {column}=? WHERE account_id=?', (limit, 'A'))  # nosec B608
                 grant = self.issue()
                 self.assertEqual(grant['expiresAt'], limit)
                 self.now = limit
                 self.assertIsNone(self.verify(grant))
                 self.now = 10000
-                self.db.execute(f'UPDATE {table} SET {column}=80000 WHERE account_id=?', ('A',))
+                # Table and column names come from the fixed fixture matrix; values are bound parameters.
+                # nosemgrep: python_sql_rule-hardcoded-sql-expression, python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+                self.db.execute(f'UPDATE {table} SET {column}=80000 WHERE account_id=?', ('A',))  # nosec B608
         self.node = c.ManagedNode('node-one', 'node.example.test', 443, 1,
                                   admitted_clients={'client-A', 'client-B'})
         grant = self.issue()
@@ -379,7 +386,8 @@ class CredentialHTTPTest(CredentialFixture, unittest.TestCase):
         self.addCleanup(thread.join)
         self.addCleanup(self.server.shutdown)
 
-    def request(self, method='POST', path='/v1/me/node-credentials', body=None, token='token-A',
+    # Synthetic credentials used only by the local test fixture.
+    def request(self, method='POST', path='/v1/me/node-credentials', body=None, token='token-A',  # nosec B107
                 headers=None):
         client = http.client.HTTPConnection(*self.server.server_address, timeout=3)
         self.addCleanup(client.close)
@@ -454,7 +462,8 @@ class CredentialHTTPTest(CredentialFixture, unittest.TestCase):
                       duration_ms=1000, paid=True)
         old = self.request()[1]
         route, body = '/v1/me/orders/redeem', '{"orderId":"fixture-order"}'
-        self.assertEqual(self.request(path=route, body=body, token='token-B'),
+        # Synthetic credentials used only by the local test fixture.
+        self.assertEqual(self.request(path=route, body=body, token='token-B'),  # nosec B106
                          (409, {'error': 'order_unavailable'}))
         self.assertEqual(self.request(path=route, body=body, token=None),
                          (401, {'error': 'unauthorized'}))
@@ -493,7 +502,9 @@ class CredentialHTTPTest(CredentialFixture, unittest.TestCase):
             self.assertEqual(json.loads(response.read()), {'error': 'unauthorized'})
 
     def test_cli_keeps_entitlement_options_and_adds_opt_in_node(self):
-        result = subprocess.run([sys.executable, '-B', '-m', 'services.access_account.server', '--help'],
+        # Fixed local test program and fixture arguments; shell execution is disabled.
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        result = subprocess.run([sys.executable, '-B', '-m', 'services.access_account.server', '--help'],  # nosec B603
                                 capture_output=True, text=True, check=True)
         for flag in ('--stored-snapshots', '--panel-url', '--database', '--port', '--node-config', '--sandbox-orders',
                      '--node-host', '--node-port', '--node-ttl-ms'):

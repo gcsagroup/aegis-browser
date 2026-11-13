@@ -119,6 +119,7 @@ final class AccessAccountSession: ObservableObject {
     func suspend() {
         usageRefresh.identityDidChange()
         for grant in grants.values { grant.invalidate(client: client) }
+        grants = grants.filter { $0.value.mode != .private }
         generation = UUID()
         task?.cancel()
         task = nil
