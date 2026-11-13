@@ -312,6 +312,15 @@ def seal(root, environment):
         for name in directories + files:
             path = Path(directory) / name
             require(not path.is_symlink() or path.resolve().is_relative_to(archive), "archive symlink escapes its root")
+    embedded_core = None
+    workspace = Path(environment["GITHUB_WORKSPACE"])
+    source_lock = workspace / "apps/ios/EmbeddedCore/embedded-core-lock.json"
+    if source_lock.is_file():
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "release"))
+        import ios_embedded_core as verifier
+        embedded_core = verifier.verify(workspace, source_lock, root / "EmbeddedCore")
+        embedded_core.update(verifier.verify_bundle(archive / "Products/Applications/Aegis.app", root / "EmbeddedCore",
+                                                    root / "DerivedData", "device"))
     target = root / "Aegis.xcarchive.zip"
     require(not target.exists() and not target.is_symlink(), "archive evidence already exists")
     # Fixed archiver operation; both operands are absolute paths inside the revalidated job root.
@@ -322,7 +331,7 @@ def seal(root, environment):
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     write_json(root / "unsigned-artifact.json", dict(schema_version=1, **metadata, archive="Aegis.xcarchive.zip",
-               archive_sha256=digest.hexdigest(), archive_bytes=target.stat().st_size, signed=False,
+               archive_sha256=digest.hexdigest(), archive_bytes=target.stat().st_size, signed=False, embedded_core=embedded_core,
                acceptance="unsigned archive verification only; no device, signing or release acceptance"))
 
 

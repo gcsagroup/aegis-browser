@@ -9,30 +9,32 @@ struct LanguageSettingsView: View {
         List {
             Section {
                 choice(nil, title: AegisLocalization.string("跟随系统"))
-                ForEach(AegisLanguageFamily.allCases, id: \.rawValue) { family in
-                    choice(family, title: family.autonym)
+                ForEach(AegisLanguageChoice.displayOrder) { option in
+                    choice(option, title: option.autonym)
                 }
             } footer: {
-                Text("地区版本自动匹配系统语言偏好，地区格式保持系统设置。")
+                if language.choice?.regionOverride == nil {
+                    Text("地区版本自动匹配系统语言偏好，地区格式保持系统设置。")
+                }
             }
         }
         .localizedNavigationTitle("语言")
         .accessibilityIdentifier("language-settings")
     }
 
-    private func choice(_ family: AegisLanguageFamily?, title: String) -> some View {
-        Button { language.select(family) } label: {
+    private func choice(_ option: AegisLanguageChoice?, title: String) -> some View {
+        Button { language.selectChoice(option) } label: {
             HStack {
                 Text(verbatim: title).foregroundStyle(Color.primary)
                 Spacer()
-                if language.family == family {
+                if language.choice == option {
                     Image(systemName: "checkmark").foregroundStyle(.tint).accessibilityHidden(true)
                 }
             }
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .accessibilityIdentifier("language-choice-\(family?.rawValue ?? "system")")
-        .accessibilityAddTraits(language.family == family ? .isSelected : [])
+        .accessibilityIdentifier("language-choice-\(option?.rawValue ?? "system")")
+        .accessibilityAddTraits(language.choice == option ? .isSelected : [])
     }
 }

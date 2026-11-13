@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "status": "verified_build",
+  "note": "Thin StartInstance/Dial bridge with asynchronous Go-goroutine completion callbacks. Source pins are unchanged. Digests record the local Xcode 27 / Go 1.27.3 callback-ABI rebuild for the PR146 saturation fix. Clean hosted rebuilds continue to verify pinned inputs with ci-rebuild provenance.",
+  "xrayCore": {
+    "repository": "https://github.com/XTLS/Xray-core",
+    "tag": "v26.11.9",
+    "commit": "676eaf66f8f05d4d558ee7a74b4736623d3feeb9",
+    "tree": "717e944e218f098a8448f1f2f925bb7a8fa02559",
+    "license": "MPL-2.0",
+    "module": "github.com/xtls/xray-core",
+    "go": "1.27",
+    "stableAPI": [
+      "StartInstance",
+      "Dial"
+    ],
+    "functionsGo": "https://github.com/XTLS/Xray-core/blob/v26.11.9/core/functions.go"
+  },
+  "libXray": {
+    "repository": "https://github.com/XTLS/libXray",
+    "tag": "v26.11.9",
+    "commit": "5a0f7d8d1c28b34afb5727b04b26a10f6dbac7e3",
+    "tree": "1698bc59f045fbceaedc9dafa297802b393dd3ba",
+    "license": "MIT",
+    "module": "github.com/xtls/libxray",
+    "appleBuild": "python3 build/main.py apple gomobile",
+    "pinsXrayCore": "v26.11.9",
+    "role": "license/source reference only; product ABI is the thin bridge"
+  },
+  "bridge": {
+    "module": "aegis.browser/ios/embeddedcore",
+    "path": "apps/ios/EmbeddedCore/bridge",
+    "build": "gomobile bind -target ios,iossimulator -iosversion 15.0 -o Products/AegisEmbeddedCore.xcframework ."
+  },
+  "toolchain": {
+    "go": "1.27.3",
+    "gomobile": "golang.org/x/mobile@v0.0.0-20261011034528-197770444867",
+    "xcode": "27A266a",
+    "iosVersion": "15.0"
+  },
+  "rejected": {
+    "previousSourceCommit": "db72a9c96f3c3ea1b6f592d66b7bb396d1cb1ed4",
+    "reason": "XTLS/Xray-core Contents/Commits API returns no such ref (2026-11-10). Do not invent a digest."
+  },
+  "artifacts": {
+    "iosArm64Sha256": "b478fcf73ce919fd4494ac96e6035e4e2879ab5847db4276a142b5259b4f9bdf",
+    "iosArm64SimulatorSha256": "7aa12ce96111a8910cc3eb17692b9de0a025f31f41ebce8a18a4ec7f032f5887",
+    "xcframework": "AegisEmbeddedCore.xcframework"
+  }
+}

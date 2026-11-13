@@ -21,6 +21,19 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def admitted_line_refs():
+    path = Path(__file__).resolve().parents[1] / 'ci' / 'ios-release-lines.json'
+    lines = json.loads(path.read_text())['lines']
+    refs = [line['ref'] for line in lines]
+    require(refs and len(refs) == len(set(refs)) and 'refs/heads/main' in refs, 'iOS release lines are invalid')
+    return set(refs)
+
+
+def require_admitted_dispatch(event, ref):
+    require(event == 'workflow_dispatch' and ref in admitted_line_refs(),
+            'Delivery requires an admitted release line or exact candidate tag')
+
+
 def unique_object(pairs):
     value = {}
     for key, item in pairs:
@@ -43,7 +56,7 @@ def normalize(event, ref, inputs, mode='simple'):
     if event == 'push':
         require(mode == 'simple', 'Only the canonical entrypoint accepts candidate tags')
         return _normalize_stage(event, ref, inputs)
-    require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
+    require_admitted_dispatch(event, ref)
     operation = receipt.canonical(inputs.get('operation') or 'status', receipt.OPERATION_LABELS)
     new_package = operation in {'package', 'package-upload', 'draft'}
     signing_mode = inputs.get('signing_mode') or 'cloud'
@@ -105,7 +118,7 @@ def _normalize_stage(event, ref, inputs):
         values['signing_mode'] = 'cloud'
         values['package_entrypoint'] = 'actions'
     else:
-        require(event == 'workflow_dispatch' and ref == 'refs/heads/main', 'Delivery requires main dispatch or exact candidate tag')
+        require_admitted_dispatch(event, ref)
         operation = receipt.canonical(values['operation'] or 'package', receipt.OPERATION_LABELS)
         profile = receipt.canonical(inputs.get('product') or 'auto', receipt.PRODUCT_LABELS)
         identity = values['version']

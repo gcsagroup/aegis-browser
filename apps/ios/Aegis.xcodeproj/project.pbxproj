@@ -202,6 +202,149 @@
 		7E626F0EFBE241CFF8D425BD /* LanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CA6E3E9955B58A183D8D9F8 /* LanguageSettingsView.swift */; };
 		3099E14F9B134196E9917201 /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 374551B1E8C7E3FC054806AB /* AppLanguageTests.swift */; };
 		263D129E4575F094B8CA2113 /* AppLanguageUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8944ABC4656FAF452A28FAE /* AppLanguageUITests.swift */; };
+		A10CCE55ACC0020000000001 /* AccessContractError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000002 /* AccessContractError.swift */; };
+		A10CCE55ACC0020000000002 /* AccessInboundTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000003 /* AccessInboundTransport.swift */; };
+		A10CCE55ACC0020000000003 /* AccessOutboundProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000004 /* AccessOutboundProfile.swift */; };
+		A10CCE55ACC0020000000004 /* AccessOwner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000005 /* AccessOwner.swift */; };
+		A10CCE55ACC0020000000020 /* AccessXrayArchitecture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000020 /* AccessXrayArchitecture.swift */; };
+		A10CCE55ACC0020000000021 /* AccessXrayAssetDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000021 /* AccessXrayAssetDigest.swift */; };
+		A10CCE55ACC0020000000022 /* AccessXrayAssetKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000022 /* AccessXrayAssetKind.swift */; };
+		A10CCE55ACC0020000000023 /* AccessXrayAssetPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */; };
+		A10CCE55ACC0020000000024 /* AccessXrayAssetPins.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */; };
+		A10CCE55ACC0020000000025 /* AccessXrayAssetPinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */; };
+		A10CCE55ACC002000000000040 /* AccessRealityVisionOutboundConfigError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000040 /* AccessRealityVisionOutboundConfigError.swift */; };
+		A10CCE55ACC002000000000041 /* AccessRealityVisionParameters.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000041 /* AccessRealityVisionParameters.swift */; };
+		A10CCE55ACC002000000000042 /* AccessRealityVisionOutboundConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000042 /* AccessRealityVisionOutboundConfig.swift */; };
+		A10CCE55ACC002000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift */; };
+		A10CCE55ACC002000000000044 /* AccessRealityVisionOutboundConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000044 /* AccessRealityVisionOutboundConfigTests.swift */; };
+		A10CCE55ACC002000000000050 /* AccessHTTPConnectError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000050 /* AccessHTTPConnectError.swift */; };
+		A10CCE55ACC002000000000051 /* AccessHTTPConnectRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000051 /* AccessHTTPConnectRequest.swift */; };
+		A10CCE55ACC002000000000052 /* AccessHTTPConnectParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000052 /* AccessHTTPConnectParser.swift */; };
+		A10CCE55ACC002000000000053 /* AccessHTTPConnectSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000053 /* AccessHTTPConnectSession.swift */; };
+		A10CCE55ACC002000000000054 /* AccessHTTPConnectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000054 /* AccessHTTPConnectTests.swift */; };
+		A10CCE55ACC002000000000060 /* AccessXrayRuntimeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000060 /* AccessXrayRuntimeError.swift */; };
+		A10CCE55ACC002000000000061 /* AccessXrayProcessControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000061 /* AccessXrayProcessControlling.swift */; };
+		A10CCE55ACC002000000000062 /* AccessXrayDigestVerifying.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000062 /* AccessXrayDigestVerifying.swift */; };
+		A10CCE55ACC002000000000063 /* AccessXrayRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000063 /* AccessXrayRuntime.swift */; };
+		A10CCE55ACC002000000000064 /* AccessXrayRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000064 /* AccessXrayRuntimeTests.swift */; };
+		A10CCE55ACC002000000000070 /* AccessHTTPSInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000070 /* AccessHTTPSInboundError.swift */; };
+		A10CCE55ACC002000000000071 /* AccessHTTPSInboundTLSProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000071 /* AccessHTTPSInboundTLSProviding.swift */; };
+		A10CCE55ACC002000000000072 /* AccessHTTPSInboundFrontPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000072 /* AccessHTTPSInboundFrontPlan.swift */; };
+		A10CCE55ACC002000000000073 /* AccessHTTPSInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000073 /* AccessHTTPSInboundListener.swift */; };
+		A10CCE55ACC002000000000074 /* AccessHTTPSInboundFrontTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000074 /* AccessHTTPSInboundFrontTests.swift */; };
+		A10CCE55ACC002000000000080 /* AccessRealityProbeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000080 /* AccessRealityProbeError.swift */; };
+		A10CCE55ACC002000000000081 /* AccessRealityProbeTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000081 /* AccessRealityProbeTarget.swift */; };
+		A10CCE55ACC002000000000082 /* AccessRealityProbeResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000082 /* AccessRealityProbeResult.swift */; };
+		A10CCE55ACC002000000000083 /* AccessRealityProbeExecuting.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000083 /* AccessRealityProbeExecuting.swift */; };
+		A10CCE55ACC002000000000084 /* AccessRealityProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000084 /* AccessRealityProbe.swift */; };
+		A10CCE55ACC002000000000085 /* AccessRealityProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000085 /* AccessRealityProbeTests.swift */; };
+		A10CCE55ACC0020000000000A0 /* AccessHTTPRealityPathError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A0 /* AccessHTTPRealityPathError.swift */; };
+		A10CCE55ACC0020000000000A1 /* AccessRealityPathDialing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A1 /* AccessRealityPathDialing.swift */; };
+		A10CCE55ACC0020000000000A2 /* AccessHTTPRealityPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A2 /* AccessHTTPRealityPath.swift */; };
+		A10CCE55ACC0020000000000A3 /* AccessHTTPRealityPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A3 /* AccessHTTPRealityPathTests.swift */; };
+		A10CCE55ACC0020000000000A4 /* AccessHTTPSRealityPathError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A4 /* AccessHTTPSRealityPathError.swift */; };
+		A10CCE55ACC0020000000000A5 /* AccessHTTPSRealityPath.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A5 /* AccessHTTPSRealityPath.swift */; };
+		A10CCE55ACC0020000000000A6 /* AccessHTTPSRealityPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000A6 /* AccessHTTPSRealityPathTests.swift */; };
+		A10CCE55ACC002000000000090 /* AccessSOCKS5InboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000090 /* AccessSOCKS5InboundError.swift */; };
+		A10CCE55ACC002000000000091 /* AccessSOCKS5ConnectRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000091 /* AccessSOCKS5ConnectRequest.swift */; };
+		A10CCE55ACC002000000000092 /* AccessSOCKS5InboundParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000092 /* AccessSOCKS5InboundParser.swift */; };
+		A10CCE55ACC002000000000093 /* AccessSOCKS5InboundSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000093 /* AccessSOCKS5InboundSession.swift */; };
+		A10CCE55ACC002000000000094 /* AccessSOCKS5InboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000094 /* AccessSOCKS5InboundListener.swift */; };
+		A10CCE55ACC002000000000095 /* AccessSOCKS5InboundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000095 /* AccessSOCKS5InboundTests.swift */; };
+		A10CCE55ACC0020000000000B0 /* AccessLocalV2RayConfigError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000B0 /* AccessLocalV2RayConfigError.swift */; };
+		A10CCE55ACC0020000000000B1 /* AccessLocalV2RayConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000B1 /* AccessLocalV2RayConfig.swift */; };
+		A10CCE55ACC0020000000000B2 /* AccessLocalV2RayConfigLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000B2 /* AccessLocalV2RayConfigLoader.swift */; };
+		A10CCE55ACC0020000000000B3 /* AccessLocalV2RayConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000B3 /* AccessLocalV2RayConfigTests.swift */; };
+		A10CCE55ACC0020000000000C0 /* AccessSiteIntentError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C0 /* AccessSiteIntentError.swift */; };
+		A10CCE55ACC0020000000000E0 /* AccessInboundStartErrorBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000E0 /* AccessInboundStartErrorBox.swift */; };
+		A10CCE55ACC0020000000000C1 /* AccessSiteIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */; };
+		A10HOST000000000000000011 /* AccessHostRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10HOST000000000000000001 /* AccessHostRoutingPolicy.swift */; };
+		A10HOST000000000000000012 /* AccessHostStoreEvictionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10HOST000000000000000002 /* AccessHostStoreEvictionPolicy.swift */; };
+		A10HOST000000000000000013 /* AccessNavigationRetryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10HOST000000000000000003 /* AccessNavigationRetryPolicy.swift */; };
+		A10HOST000000000000000015 /* AccessHostDataStoreRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10HOST000000000000000005 /* AccessHostDataStoreRegistry.swift */; };
+		A10HOST000000000000000014 /* AccessHostStorePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10HOST000000000000000004 /* AccessHostStorePolicyTests.swift */; };
+		A10RECV000000000000000011 /* AccessPreparationClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000001 /* AccessPreparationClock.swift */; };
+		A10RECV000000000000000012 /* AccessProxyEntryPublishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000002 /* AccessProxyEntryPublishing.swift */; };
+		A10RECV000000000000000013 /* AccessProxyEntryPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000003 /* AccessProxyEntryPublisher.swift */; };
+		A10RECV000000000000000014 /* AccessFailClosedProxyEntryPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000004 /* AccessFailClosedProxyEntryPublisher.swift */; };
+		A10TUNN000000000000000011 /* AccessHTTPTunnelBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10TUNN000000000000000001 /* AccessHTTPTunnelBridge.swift */; };
+		A10CORE000000000000000011 /* AccessEmbeddedCoreManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000001 /* AccessEmbeddedCoreManifest.swift */; };
+		A10CORE000000000000000012 /* AccessEmbeddedCoreManifestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */; };
+		A10CORE000000000000000013 /* AccessEmbeddedCoreControlling.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */; };
+		A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */; };
+		A10GROUP000000000000000011 /* AccessSiteRuleGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */; };
+		A10GROUP000000000000000012 /* AccessSiteRuleGroupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */; };
+		A10PROBE000000000000000011 /* AccessSiteProbeRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10PROBE000000000000000001 /* AccessSiteProbeRunner.swift */; };
+		A10PROBE000000000000000012 /* AccessSiteProbeRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10PROBE000000000000000002 /* AccessSiteProbeRunnerTests.swift */; };
+		A10PROBE000000000000000013 /* AccessHostSelectiveProxyCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10PROBE000000000000000003 /* AccessHostSelectiveProxyCapabilityTests.swift */; };
+		A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */; };
+		A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */; };
+		A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */; };
+		A10CORE000000000000000021 /* AccessNWListenerBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */; };
+		A10CORE00000000000000000D1 /* AccessMutexGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000D /* AccessMutexGate.swift */; };
+		A10CORE000000000000000018 /* AccessEmbeddedProxyEntryFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000008 /* AccessEmbeddedProxyEntryFactory.swift */; };
+		A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */; };
+		A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */; };
+		A10CORE00000000000000001B /* AegisEmbeddedCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; };
+		A10CORE00000000000000001E /* AegisEmbeddedCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10CORE00000000000000001F /* AegisEmbeddedCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10TUNN000000000000000012 /* AccessHTTPTunnelBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */; };
+		A10TUNN000000000000000013 /* AccessHostRecoveryWebKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10TUNN000000000000000003 /* AccessHostRecoveryWebKitTests.swift */; };
+		A10RECV000000000000000015 /* AccessProxyEntryPublisherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */; };
+		A10RECV000000000000000016 /* AccessNavigationRecoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000006 /* AccessNavigationRecoveryTests.swift */; };
+		A10RECV000000000000000017 /* AccessProxyRecoveryViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000007 /* AccessProxyRecoveryViewTests.swift */; };
+		A10RECV000000000000000018 /* AccessProxyRecoveryCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10RECV000000000000000008 /* AccessProxyRecoveryCoordinatorTests.swift */; };
+		A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */; };
+		A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */; };
+		A10CCE55ACC0020000000000C5 /* AccessSiteSessionError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */; };
+		A10CCE55ACC0020000000000C6 /* AccessSiteSessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */; };
+		A10CCE55ACC0020000000000C7 /* AccessSiteSessionOrchestrating.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */; };
+		A10CCE55ACC0020000000000C8 /* AccessSiteSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */; };
+		A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */; };
+		A10CCE55ACC0020000000000CA /* AccessSiteProxyToggleModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CA /* AccessSiteProxyToggleModel.swift */; };
+		A10CCE55ACC0020000000000CB /* AccessSiteProxyToggleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */; };
+		A10CCE55ACC0020000000000CC /* AccessSiteProxySessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */; };
+		A10HOST000000000000000016 /* AccessHostStoreCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10HOST000000000000000006 /* AccessHostStoreCoordinator.swift */; };
+		A10CCE55ACC0020000000000CE /* AccessSiteProxyStoreRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CE /* AccessSiteProxyStoreRegistry.swift */; };
+		A10CCE55ACC0020000000000CF /* AccessWebKitRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CF /* AccessWebKitRoutingCapabilityTests.swift */; };
+		A10HOST000000000000000017 /* AccessHostWebKitRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10HOST000000000000000007 /* AccessHostWebKitRouteTests.swift */; };
+		A10CCE55ACC0020000000000CD /* AccessSiteProxyToggleModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */; };
+		A10CCE55ACC0020000000000D0 /* AccessBrowsingBucket.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D0 /* AccessBrowsingBucket.swift */; };
+		A10CCE55ACC0020000000000D1 /* AccessBrowsingIsolationError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D1 /* AccessBrowsingIsolationError.swift */; };
+		A10CCE55ACC0020000000000D2 /* AccessBrowsingAccessState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */; };
+		A10CCE55ACC0020000000000D3 /* AccessBrowsingIsolationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D3 /* AccessBrowsingIsolationController.swift */; };
+		A10CCE55ACC0020000000000D4 /* AccessBrowsingIsolationControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */; };
+		A10CCE55ACC0020000000000F0 /* AccessDevAllowBlockPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */; };
+		A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */; };
+		A10CCE55ACC0020000000000F2 /* AccessDevAllowBlockSectionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */; };
+		A10CCE55ACC0020000000000F3 /* AccessDevAllowBlockSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */; };
+		A10CCE55ACC0020000000000F8 /* AccessSitePhase1Evidence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */; };
+		A10CCE55ACC0020000000000F9 /* AccessSitePhase1EvidenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */; };
+		A10CCE55ACC0020000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */; };
+		A10CCE55ACC0020000000000FB /* AccessSitePhase1EvidencePack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */; };
+		A10CCE55ACC0020000000000F4 /* AccessSiteSessionFault.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F4 /* AccessSiteSessionFault.swift */; };
+		A10CCE55ACC0020000000000F5 /* AccessSiteSessionRequestRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F5 /* AccessSiteSessionRequestRoute.swift */; };
+		A10CCE55ACC0020000000000F6 /* AccessSiteSessionFaultFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F6 /* AccessSiteSessionFaultFixture.swift */; };
+		A10CCE55ACC0020000000000F7 /* AccessSiteSessionFaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000000F7 /* AccessSiteSessionFaultTests.swift */; };
+		A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */; };
+		A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */; };
+		A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */; };
+		A10CCE55ACC0020000000005 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */; };
+		A10CCE55ACC0020000000006 /* AccessContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000008 /* AccessContractTests.swift */; };
+		A10CCE55ACC0020000000010 /* AccessCredentialSlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000010 /* AccessCredentialSlot.swift */; };
+		A10CCE55ACC0020000000011 /* AccessEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000011 /* AccessEndpoint.swift */; };
+		A10CCE55ACC0020000000012 /* AccessLease.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000012 /* AccessLease.swift */; };
+		A10CCE55ACC0020000000013 /* AccessRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000013 /* AccessRegistration.swift */; };
+		A10CCE55ACC0020000000014 /* AccessRegistrationLeaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000014 /* AccessRegistrationLeaseTests.swift */; };
+		A10CCE55ACC0020000000007 /* AccessKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001 /* AccessKit.framework */; };
+		A10CCE55ACC0020000000008 /* AccessKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001 /* AccessKit.framework */; };
+		A10CCE55ACC0020000000009 /* AccessKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001 /* AccessKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10CCE55ACC002000000000A /* AccessKit.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000001 /* AccessKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A10CCE55ACC002000000000B /* AccessProxyConfigurationError.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC0010000000009 /* AccessProxyConfigurationError.swift */; };
+		A10CCE55ACC002000000000C /* AccessProxyRegistrationFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000A /* AccessProxyRegistrationFixture.swift */; };
+		A10CCE55ACC002000000000D /* AccessProxyConfigurationBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */; };
+		A10CCE55ACC002000000000E /* AccessProxyConfigurationApplicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */; };
+		A10CCE55ACC002000000000F /* AccessProxyConfigurationApplicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -296,6 +439,20 @@
 			remoteGlobalIDString = DFF18AEBD4B5D2EEC1A75488;
 			remoteInfo = BrowserKit;
 		};
+		A10CCE55ACC0040000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10CCE55ACC0030000000005;
+			remoteInfo = AccessKit;
+		};
+		A10CCE55ACC0040000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 070B476F714B6395707EF14A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A10CCE55ACC0030000000005;
+			remoteInfo = AccessKit;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -319,6 +476,8 @@
 			files = (
 				A75E140D24416D324155FAD6 /* BrowserKit.framework in Embed Frameworks */,
 				D7EA6BB87737CBDE5B5C1617 /* AegisPolicyKit.framework in Embed Frameworks */,
+				A10CCE55ACC002000000000A /* AccessKit.framework in Embed Frameworks */,
+				A10CORE00000000000000001F /* AegisEmbeddedCore.xcframework in Embed Frameworks */,
 				24D8A94B087B3826B8E7D306 /* AgentKit.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
@@ -332,6 +491,8 @@
 			files = (
 				72CB4B4D2A1DF9D731512DB3 /* BrowserKit.framework in Embed Frameworks */,
 				08AB738ECED584ACD8EEFD90 /* AegisPolicyKit.framework in Embed Frameworks */,
+				A10CCE55ACC0020000000009 /* AccessKit.framework in Embed Frameworks */,
+				A10CORE00000000000000001E /* AegisEmbeddedCore.xcframework in Embed Frameworks */,
 				EC82CA3264103EABFC665167 /* AgentKit.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
@@ -543,6 +704,146 @@
 		5CA6E3E9955B58A183D8D9F8 /* LanguageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSettingsView.swift; sourceTree = "<group>"; };
 		374551B1E8C7E3FC054806AB /* AppLanguageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageTests.swift; sourceTree = "<group>"; };
 		D8944ABC4656FAF452A28FAE /* AppLanguageUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageUITests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000001 /* AccessKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = AccessKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10CCE55ACC0010000000002 /* AccessContractError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessContractError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000003 /* AccessInboundTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessInboundTransport.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000004 /* AccessOutboundProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessOutboundProfile.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000005 /* AccessOwner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessOwner.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000008 /* AccessContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessContractTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000009 /* AccessProxyConfigurationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000A /* AccessProxyRegistrationFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyRegistrationFixture.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationBuilder.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationApplicator.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyConfigurationApplicatorTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000010 /* AccessCredentialSlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessCredentialSlot.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000011 /* AccessEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEndpoint.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000012 /* AccessLease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLease.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000013 /* AccessRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRegistration.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000014 /* AccessRegistrationLeaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRegistrationLeaseTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000020 /* AccessXrayArchitecture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayArchitecture.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000021 /* AccessXrayAssetDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetDigest.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000022 /* AccessXrayAssetKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetKind.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPin.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPins.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayAssetPinTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000040 /* AccessRealityVisionOutboundConfigError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfigError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000041 /* AccessRealityVisionParameters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionParameters.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000042 /* AccessRealityVisionOutboundConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfig.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfigBuilder.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000044 /* AccessRealityVisionOutboundConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityVisionOutboundConfigTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000050 /* AccessHTTPConnectError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000051 /* AccessHTTPConnectRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectRequest.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000052 /* AccessHTTPConnectParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectParser.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000053 /* AccessHTTPConnectSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectSession.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000054 /* AccessHTTPConnectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPConnectTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000060 /* AccessXrayRuntimeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntimeError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000061 /* AccessXrayProcessControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayProcessControlling.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000062 /* AccessXrayDigestVerifying.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayDigestVerifying.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000063 /* AccessXrayRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntime.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000064 /* AccessXrayRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessXrayRuntimeTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000070 /* AccessHTTPSInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000071 /* AccessHTTPSInboundTLSProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundTLSProviding.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000072 /* AccessHTTPSInboundFrontPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundFrontPlan.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000073 /* AccessHTTPSInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundListener.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000074 /* AccessHTTPSInboundFrontTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSInboundFrontTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000080 /* AccessRealityProbeError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000081 /* AccessRealityProbeTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeTarget.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000082 /* AccessRealityProbeResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeResult.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000083 /* AccessRealityProbeExecuting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeExecuting.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000084 /* AccessRealityProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbe.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000085 /* AccessRealityProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityProbeTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000A0 /* AccessHTTPRealityPathError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPRealityPathError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000A1 /* AccessRealityPathDialing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessRealityPathDialing.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000A2 /* AccessHTTPRealityPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPRealityPath.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000A3 /* AccessHTTPRealityPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPRealityPathTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000A4 /* AccessHTTPSRealityPathError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSRealityPathError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000A5 /* AccessHTTPSRealityPath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSRealityPath.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000A6 /* AccessHTTPSRealityPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPSRealityPathTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000090 /* AccessSOCKS5InboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000091 /* AccessSOCKS5ConnectRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5ConnectRequest.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000092 /* AccessSOCKS5InboundParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundParser.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000093 /* AccessSOCKS5InboundSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundSession.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000094 /* AccessSOCKS5InboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundListener.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000095 /* AccessSOCKS5InboundTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSOCKS5InboundTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000B0 /* AccessLocalV2RayConfigError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLocalV2RayConfigError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000B1 /* AccessLocalV2RayConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLocalV2RayConfig.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000B2 /* AccessLocalV2RayConfigLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLocalV2RayConfigLoader.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000B3 /* AccessLocalV2RayConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessLocalV2RayConfigTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C0 /* AccessSiteIntentError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000E0 /* AccessInboundStartErrorBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessInboundStartErrorBox.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntent.swift; sourceTree = "<group>"; };
+		A10HOST000000000000000001 /* AccessHostRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostRoutingPolicy.swift; sourceTree = "<group>"; };
+		A10HOST000000000000000002 /* AccessHostStoreEvictionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostStoreEvictionPolicy.swift; sourceTree = "<group>"; };
+		A10HOST000000000000000003 /* AccessNavigationRetryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessNavigationRetryPolicy.swift; sourceTree = "<group>"; };
+		A10HOST000000000000000005 /* AccessHostDataStoreRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostDataStoreRegistry.swift; sourceTree = "<group>"; };
+		A10HOST000000000000000004 /* AccessHostStorePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostStorePolicyTests.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000001 /* AccessPreparationClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessPreparationClock.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000002 /* AccessProxyEntryPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyEntryPublishing.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000003 /* AccessProxyEntryPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyEntryPublisher.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000004 /* AccessFailClosedProxyEntryPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessFailClosedProxyEntryPublisher.swift; sourceTree = "<group>"; };
+		A10TUNN000000000000000001 /* AccessHTTPTunnelBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPTunnelBridge.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000001 /* AccessEmbeddedCoreManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreManifest.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreManifestTests.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreControlling.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapter.swift; sourceTree = "<group>"; };
+		A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteRuleGroup.swift; sourceTree = "<group>"; };
+		A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteRuleGroupTests.swift; sourceTree = "<group>"; };
+		A10PROBE000000000000000001 /* AccessSiteProbeRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProbeRunner.swift; sourceTree = "<group>"; };
+		A10PROBE000000000000000002 /* AccessSiteProbeRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProbeRunnerTests.swift; sourceTree = "<group>"; };
+		A10PROBE000000000000000003 /* AccessHostSelectiveProxyCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostSelectiveProxyCapabilityTests.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedRealityDialer.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreAdapterTests.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessGoEmbeddedCore.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessNWListenerBootstrap.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000D /* AccessMutexGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessMutexGate.swift; sourceTree = "<group>"; };
+		A10CORE000000000000000008 /* AccessEmbeddedProxyEntryFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedProxyEntryFactory.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedProxyEntryFactoryTests.swift; sourceTree = "<group>"; };
+		A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessEmbeddedCoreLiveTests.swift; sourceTree = "<group>"; };
+		A10CORE00000000000000000B /* embedded-core-lock.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "embedded-core-lock.json"; path = EmbeddedCore/embedded-core-lock.json; sourceTree = SOURCE_ROOT; };
+		A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = AegisEmbeddedCore.xcframework; path = "$(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework"; sourceTree = "<absolute>"; };
+		A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPTunnelBridgeTests.swift; sourceTree = "<group>"; };
+		A10TUNN000000000000000003 /* AccessHostRecoveryWebKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostRecoveryWebKitTests.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyEntryPublisherTests.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000006 /* AccessNavigationRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessNavigationRecoveryTests.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000007 /* AccessProxyRecoveryViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyRecoveryViewTests.swift; sourceTree = "<group>"; };
+		A10RECV000000000000000008 /* AccessProxyRecoveryCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessProxyRecoveryCoordinatorTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentStore.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteIntentTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionState.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionOrchestrating.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionController.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionControllerTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CA /* AccessSiteProxyToggleModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleModel.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleView.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxySessionStore.swift; sourceTree = "<group>"; };
+		A10HOST000000000000000006 /* AccessHostStoreCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostStoreCoordinator.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CE /* AccessSiteProxyStoreRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyStoreRegistry.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CF /* AccessWebKitRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessWebKitRoutingCapabilityTests.swift; sourceTree = "<group>"; };
+		A10HOST000000000000000007 /* AccessHostWebKitRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHostWebKitRouteTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteProxyToggleModelTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000D0 /* AccessBrowsingBucket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingBucket.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000D1 /* AccessBrowsingIsolationError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingIsolationError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingAccessState.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000D3 /* AccessBrowsingIsolationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingIsolationController.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessBrowsingIsolationControllerTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanel.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockPanelTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionModel.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessDevAllowBlockSectionView.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1Evidence.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidenceFaultRequirement.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSitePhase1EvidencePack.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F4 /* AccessSiteSessionFault.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionFault.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F5 /* AccessSiteSessionRequestRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionRequestRoute.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F6 /* AccessSiteSessionFaultFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionFaultFixture.swift; sourceTree = "<group>"; };
+		A10CCE55ACC0010000000000F7 /* AccessSiteSessionFaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessSiteSessionFaultTests.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundError.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListener.swift; sourceTree = "<group>"; };
+		A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessHTTPInboundListenerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -560,6 +861,7 @@
 			files = (
 				7EEA86B8BEC84C02471EFF1A /* BrowserKit.framework in Frameworks */,
 				8E51BF62C4BB22B94BA6EB87 /* AegisPolicyKit.framework in Frameworks */,
+				A10CCE55ACC0020000000008 /* AccessKit.framework in Frameworks */,
 				D7A101D820C862EBB3972680 /* AgentKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -575,6 +877,7 @@
 				228686737287987D33357995 /* FirebaseRemoteConfig in Frameworks */,
 				6839DB2DB6046A431BA96024 /* BrowserKit.framework in Frameworks */,
 				E9D9727EEFB4A51552E29209 /* AegisPolicyKit.framework in Frameworks */,
+				A10CCE55ACC0020000000007 /* AccessKit.framework in Frameworks */,
 				A1774B0BEA41E54381DA0432 /* AgentKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -585,6 +888,14 @@
 			files = (
 				FB00BBEBB93684B899A3C380 /* AegisPolicyKit.framework in Frameworks */,
 				D3C0C38220BB297F3A973AC3 /* BrowserKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10CORE000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10CORE00000000000000001B /* AegisEmbeddedCore.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -698,6 +1009,14 @@
 				7755D203721E0D35AD0E28DC /* BrowserKitTests.swift */,
 				BB1984028F943ED514E4B2BF /* BrowserWindowTests.swift */,
 				7DA26E91B481872DFF7904C7 /* ContentFilterTests.swift */,
+				A10CCE55ACC0010000000000CD /* AccessSiteProxyToggleModelTests.swift */,
+				A10CCE55ACC0010000000000CF /* AccessWebKitRoutingCapabilityTests.swift */,
+				A10HOST000000000000000007 /* AccessHostWebKitRouteTests.swift */,
+				A10RECV000000000000000006 /* AccessNavigationRecoveryTests.swift */,
+				A10TUNN000000000000000003 /* AccessHostRecoveryWebKitTests.swift */,
+				A10RECV000000000000000007 /* AccessProxyRecoveryViewTests.swift */,
+				A10RECV000000000000000008 /* AccessProxyRecoveryCoordinatorTests.swift */,
+				A10PROBE000000000000000003 /* AccessHostSelectiveProxyCapabilityTests.swift */,
 				C08F2957E0B8AC09DB27F60C /* DownloadPlanTests.swift */,
 				E78AD7FE77FEE4C89CF1E90D /* ExternalPageLinkTests.swift */,
 				F7FDA58879685EA0D940C579 /* FirebaseInstallPreferencesTests.swift */,
@@ -736,6 +1055,7 @@
 			children = (
 				8062DAFB759A5F4F2DEA7F6B /* Aegis.app */,
 				EE4466047F4DE5652792C4C0 /* AegisPolicyKit.framework */,
+				A10CCE55ACC0010000000001 /* AccessKit.framework */,
 				B4A8633750111F2B4CD82ABA /* AegisTests.xctest */,
 				39572A60EB59172506D03265 /* AegisUITests.xctest */,
 				0958879001F2F7DF98B0CBEA /* AgentKit.framework */,
@@ -785,6 +1105,7 @@
 			children = (
 				C7CD882477A02565A54EFBC2 /* AegisApp */,
 				43D1A9D34D50FF36A08B1CBD /* AegisPolicyKit */,
+				A10CCE55ACC0030000000001 /* AccessKit */,
 				0FF79D64C7991219D854E117 /* AgentKit */,
 				781D743A48E43EEE2EED5DB4 /* apps */,
 				9757AE58F18E890CD0DBC09B /* BrowserKit */,
@@ -904,6 +1225,13 @@
 				5CA6E3E9955B58A183D8D9F8 /* LanguageSettingsView.swift */,
 				D7C7BE9E5466679251262011 /* AppLanguageSettings.swift */,
 				397CB2F7CB8A372260242996 /* AegisApp.swift */,
+				A10CCE55ACC0010000000000CA /* AccessSiteProxyToggleModel.swift */,
+				A10CCE55ACC0010000000000CB /* AccessSiteProxyToggleView.swift */,
+				A10CCE55ACC0010000000000CC /* AccessSiteProxySessionStore.swift */,
+				A10HOST000000000000000006 /* AccessHostStoreCoordinator.swift */,
+				A10CCE55ACC0010000000000CE /* AccessSiteProxyStoreRegistry.swift */,
+				A10CCE55ACC0010000000000F2 /* AccessDevAllowBlockSectionModel.swift */,
+				A10CCE55ACC0010000000000F3 /* AccessDevAllowBlockSectionView.swift */,
 				C485534B4976D4BE952AF1A6 /* AegisFirebase.swift */,
 				9C2BA0D23FB70DBA9A9909FF /* FirebaseControlsView.swift */,
 				510DA8D712A38313B1242AA9 /* FirebaseRemoteDiagnosticsSource.swift */,
@@ -990,6 +1318,7 @@
 			children = (
 				C1007077C6F4B017DC7EE5E3 /* Fixtures */,
 				3E290F3990C330CC3F94E4C6 /* AegisPolicyKitTests */,
+				A10CCE55ACC0030000000002 /* AccessKitTests */,
 				4D618B5CFF324A152FFFD5FC /* AegisTests */,
 				4FDE9874F5B0ECC431D490BA /* AegisUITests */,
 				4757EE6B2FA4F6F21DA9EF32 /* AgentKitTests */,
@@ -1003,6 +1332,143 @@
 				131519A5AB470B3D0670586A /* public_suffix_list.dat */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A10CCE55ACC0030000000001 /* AccessKit */ = {
+			isa = PBXGroup;
+			children = (
+				A10CCE55ACC0010000000002 /* AccessContractError.swift */,
+				A10CCE55ACC0010000000010 /* AccessCredentialSlot.swift */,
+				A10CCE55ACC0010000000011 /* AccessEndpoint.swift */,
+				A10CCE55ACC0010000000003 /* AccessInboundTransport.swift */,
+				A10CCE55ACC0010000000012 /* AccessLease.swift */,
+				A10CCE55ACC0010000000004 /* AccessOutboundProfile.swift */,
+				A10CCE55ACC0010000000005 /* AccessOwner.swift */,
+				A10CCE55ACC0010000000009 /* AccessProxyConfigurationError.swift */,
+				A10CCE55ACC001000000000A /* AccessProxyRegistrationFixture.swift */,
+				A10CCE55ACC001000000000B /* AccessProxyConfigurationBuilder.swift */,
+				A10CCE55ACC001000000000C /* AccessProxyConfigurationApplicator.swift */,
+				A10CCE55ACC0010000000013 /* AccessRegistration.swift */,
+				A10CCE55ACC0010000000020 /* AccessXrayArchitecture.swift */,
+				A10CCE55ACC0010000000021 /* AccessXrayAssetDigest.swift */,
+				A10CCE55ACC0010000000022 /* AccessXrayAssetKind.swift */,
+				A10CCE55ACC0010000000023 /* AccessXrayAssetPin.swift */,
+				A10CCE55ACC0010000000024 /* AccessXrayAssetPins.swift */,
+				A10CCE55ACC001000000000040 /* AccessRealityVisionOutboundConfigError.swift */,
+				A10CCE55ACC001000000000041 /* AccessRealityVisionParameters.swift */,
+				A10CCE55ACC001000000000042 /* AccessRealityVisionOutboundConfig.swift */,
+				A10CCE55ACC001000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift */,
+				A10CCE55ACC001000000000050 /* AccessHTTPConnectError.swift */,
+				A10CCE55ACC001000000000051 /* AccessHTTPConnectRequest.swift */,
+				A10CCE55ACC001000000000052 /* AccessHTTPConnectParser.swift */,
+				A10CCE55ACC001000000000053 /* AccessHTTPConnectSession.swift */,
+				A10CCE55ACC001000000000060 /* AccessXrayRuntimeError.swift */,
+				A10CCE55ACC001000000000061 /* AccessXrayProcessControlling.swift */,
+				A10CCE55ACC001000000000062 /* AccessXrayDigestVerifying.swift */,
+				A10CCE55ACC001000000000063 /* AccessXrayRuntime.swift */,
+				A10CCE55ACC001000000000070 /* AccessHTTPSInboundError.swift */,
+				A10CCE55ACC001000000000071 /* AccessHTTPSInboundTLSProviding.swift */,
+				A10CCE55ACC001000000000072 /* AccessHTTPSInboundFrontPlan.swift */,
+				A10CCE55ACC001000000000073 /* AccessHTTPSInboundListener.swift */,
+				A10CCE55ACC001000000000080 /* AccessRealityProbeError.swift */,
+				A10CCE55ACC001000000000081 /* AccessRealityProbeTarget.swift */,
+				A10CCE55ACC001000000000082 /* AccessRealityProbeResult.swift */,
+				A10CCE55ACC001000000000083 /* AccessRealityProbeExecuting.swift */,
+				A10CCE55ACC001000000000084 /* AccessRealityProbe.swift */,
+				A10CCE55ACC0010000000000A0 /* AccessHTTPRealityPathError.swift */,
+				A10CCE55ACC0010000000000A1 /* AccessRealityPathDialing.swift */,
+				A10CCE55ACC0010000000000A2 /* AccessHTTPRealityPath.swift */,
+				A10CCE55ACC0010000000000A4 /* AccessHTTPSRealityPathError.swift */,
+				A10CCE55ACC0010000000000A5 /* AccessHTTPSRealityPath.swift */,
+				A10CCE55ACC001000000000090 /* AccessSOCKS5InboundError.swift */,
+				A10CCE55ACC001000000000091 /* AccessSOCKS5ConnectRequest.swift */,
+				A10CCE55ACC001000000000092 /* AccessSOCKS5InboundParser.swift */,
+				A10CCE55ACC001000000000093 /* AccessSOCKS5InboundSession.swift */,
+				A10CCE55ACC001000000000094 /* AccessSOCKS5InboundListener.swift */,
+				A10CCE55ACC0010000000000B0 /* AccessLocalV2RayConfigError.swift */,
+				A10CCE55ACC0010000000000B1 /* AccessLocalV2RayConfig.swift */,
+				A10CCE55ACC0010000000000B2 /* AccessLocalV2RayConfigLoader.swift */,
+				A10CCE55ACC0010000000000C0 /* AccessSiteIntentError.swift */,
+				A10CCE55ACC0010000000000E0 /* AccessInboundStartErrorBox.swift */,
+				A10CCE55ACC0010000000000C1 /* AccessSiteIntent.swift */,
+				A10HOST000000000000000001 /* AccessHostRoutingPolicy.swift */,
+				A10HOST000000000000000002 /* AccessHostStoreEvictionPolicy.swift */,
+				A10HOST000000000000000003 /* AccessNavigationRetryPolicy.swift */,
+				A10HOST000000000000000005 /* AccessHostDataStoreRegistry.swift */,
+				A10RECV000000000000000001 /* AccessPreparationClock.swift */,
+				A10RECV000000000000000002 /* AccessProxyEntryPublishing.swift */,
+				A10RECV000000000000000003 /* AccessProxyEntryPublisher.swift */,
+				A10RECV000000000000000004 /* AccessFailClosedProxyEntryPublisher.swift */,
+				A10TUNN000000000000000001 /* AccessHTTPTunnelBridge.swift */,
+				A10CORE000000000000000001 /* AccessEmbeddedCoreManifest.swift */,
+				A10CORE000000000000000003 /* AccessEmbeddedCoreControlling.swift */,
+				A10CORE000000000000000004 /* AccessEmbeddedCoreAdapter.swift */,
+				A10GROUP000000000000000001 /* AccessSiteRuleGroup.swift */,
+				A10PROBE000000000000000001 /* AccessSiteProbeRunner.swift */,
+				A10CORE000000000000000005 /* AccessEmbeddedRealityDialer.swift */,
+				A10CORE000000000000000007 /* AccessGoEmbeddedCore.swift */,
+				A10CORE00000000000000000C /* AccessNWListenerBootstrap.swift */,
+				A10CORE00000000000000000D /* AccessMutexGate.swift */,
+				A10CORE000000000000000008 /* AccessEmbeddedProxyEntryFactory.swift */,
+				A10CORE00000000000000000B /* embedded-core-lock.json */,
+				A10CORE000000000000000009 /* AegisEmbeddedCore.xcframework */,
+				A10CCE55ACC0010000000000C2 /* AccessSiteIntentStore.swift */,
+				A10CCE55ACC0010000000000F0 /* AccessDevAllowBlockPanel.swift */,
+				A10CCE55ACC0010000000000C5 /* AccessSiteSessionError.swift */,
+				A10CCE55ACC0010000000000C6 /* AccessSiteSessionState.swift */,
+				A10CCE55ACC0010000000000C7 /* AccessSiteSessionOrchestrating.swift */,
+				A10CCE55ACC0010000000000C8 /* AccessSiteSessionController.swift */,
+				A10CCE55ACC0010000000000F4 /* AccessSiteSessionFault.swift */,
+				A10CCE55ACC0010000000000F5 /* AccessSiteSessionRequestRoute.swift */,
+				A10CCE55ACC0010000000000F6 /* AccessSiteSessionFaultFixture.swift */,
+				A10CCE55ACC0010000000000D0 /* AccessBrowsingBucket.swift */,
+				A10CCE55ACC0010000000000D1 /* AccessBrowsingIsolationError.swift */,
+				A10CCE55ACC0010000000000D2 /* AccessBrowsingAccessState.swift */,
+				A10CCE55ACC0010000000000D3 /* AccessBrowsingIsolationController.swift */,
+				A10CCE55ACC0010000000000F8 /* AccessSitePhase1Evidence.swift */,
+				A10CCE55ACC0010000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift */,
+				A10CCE55ACC0010000000000FB /* AccessSitePhase1EvidencePack.swift */,
+				A10CCE55ACC001000000000030 /* AccessHTTPInboundError.swift */,
+				A10CCE55ACC001000000000031 /* AccessHTTPInboundListener.swift */,
+				A10CCE55ACC0010000000007 /* PrivacyInfo.xcprivacy */,
+			);
+			path = AccessKit;
+			sourceTree = "<group>";
+		};
+		A10CCE55ACC0030000000002 /* AccessKitTests */ = {
+			isa = PBXGroup;
+			children = (
+				A10CCE55ACC0010000000008 /* AccessContractTests.swift */,
+				A10CCE55ACC001000000000D /* AccessProxyConfigurationApplicatorTests.swift */,
+				A10CCE55ACC0010000000014 /* AccessRegistrationLeaseTests.swift */,
+				A10CCE55ACC0010000000025 /* AccessXrayAssetPinTests.swift */,
+				A10CCE55ACC001000000000044 /* AccessRealityVisionOutboundConfigTests.swift */,
+				A10CCE55ACC001000000000054 /* AccessHTTPConnectTests.swift */,
+				A10CCE55ACC001000000000064 /* AccessXrayRuntimeTests.swift */,
+				A10CCE55ACC001000000000074 /* AccessHTTPSInboundFrontTests.swift */,
+				A10CCE55ACC001000000000085 /* AccessRealityProbeTests.swift */,
+				A10CCE55ACC0010000000000A3 /* AccessHTTPRealityPathTests.swift */,
+				A10CCE55ACC0010000000000A6 /* AccessHTTPSRealityPathTests.swift */,
+				A10CCE55ACC001000000000095 /* AccessSOCKS5InboundTests.swift */,
+				A10CCE55ACC0010000000000B3 /* AccessLocalV2RayConfigTests.swift */,
+				A10CCE55ACC0010000000000C3 /* AccessSiteIntentTests.swift */,
+				A10HOST000000000000000004 /* AccessHostStorePolicyTests.swift */,
+				A10RECV000000000000000005 /* AccessProxyEntryPublisherTests.swift */,
+				A10CORE000000000000000002 /* AccessEmbeddedCoreManifestTests.swift */,
+				A10CORE000000000000000006 /* AccessEmbeddedCoreAdapterTests.swift */,
+				A10GROUP000000000000000002 /* AccessSiteRuleGroupTests.swift */,
+				A10PROBE000000000000000002 /* AccessSiteProbeRunnerTests.swift */,
+				A10CORE00000000000000000A /* AccessEmbeddedProxyEntryFactoryTests.swift */,
+				A10LIVE000000000000000001 /* AccessEmbeddedCoreLiveTests.swift */,
+				A10TUNN000000000000000002 /* AccessHTTPTunnelBridgeTests.swift */,
+				A10CCE55ACC0010000000000C9 /* AccessSiteSessionControllerTests.swift */,
+				A10CCE55ACC0010000000000F7 /* AccessSiteSessionFaultTests.swift */,
+				A10CCE55ACC0010000000000D4 /* AccessBrowsingIsolationControllerTests.swift */,
+				A10CCE55ACC0010000000000F1 /* AccessDevAllowBlockPanelTests.swift */,
+				A10CCE55ACC0010000000000F9 /* AccessSitePhase1EvidenceTests.swift */,
+				A10CCE55ACC001000000000032 /* AccessHTTPInboundListenerTests.swift */,
+			);
+			path = AccessKitTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1023,6 +1489,7 @@
 				6FFA3263A68821B9004191F4 /* PBXTargetDependency */,
 				A0068FE7656406742A030CD2 /* PBXTargetDependency */,
 				6109E0291FBDF1B4DB98BF20 /* PBXTargetDependency */,
+				A10CCE55ACC0040000000004 /* PBXTargetDependency */,
 				36AE83FB92B468ED17D93055 /* PBXTargetDependency */,
 			);
 			name = AegisTests;
@@ -1041,6 +1508,7 @@
 				DECD2D07A291A4A02847F866 /* Frameworks */,
 				651F0D4DBE487052A2BAA841 /* Embed Foundation Extensions */,
 				7CFE6D1BEF3420D6A2B7DEAC /* Embed Frameworks */,
+				A10A11BE7A00000000000001 /* Select private Access test node */,
 				410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */,
 			);
 			buildRules = (
@@ -1048,6 +1516,7 @@
 			dependencies = (
 				3BBDC0C9A9F787B68354919F /* PBXTargetDependency */,
 				8A574919ED5A88A8C6E5DB92 /* PBXTargetDependency */,
+				A10CCE55ACC0040000000002 /* PBXTargetDependency */,
 				4AA58F79C0603CA547598B04 /* PBXTargetDependency */,
 				D58803929CAC5928A1A20B7D /* PBXTargetDependency */,
 				2E6DECC6F8760AC38CB691B0 /* PBXTargetDependency */,
@@ -1063,6 +1532,26 @@
 			productName = Aegis;
 			productReference = 8062DAFB759A5F4F2DEA7F6B /* Aegis.app */;
 			productType = "com.apple.product-type.application";
+		};
+				A10CCE55ACC0030000000005 /* AccessKit */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10CCE55ACC0030000000006 /* Build configuration list for PBXNativeTarget "AccessKit" */;
+			buildPhases = (
+				A10CCE55ACC0030000000003 /* Sources */,
+				A10CORE000000000000000020 /* Frameworks */,
+				A10CCE55ACC0030000000004 /* Resources */,
+				A14600000000000000000001 /* Install verified EmbeddedCore manifest */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AccessKit;
+			packageProductDependencies = (
+			);
+			productName = AccessKit;
+			productReference = A10CCE55ACC0010000000001 /* AccessKit.framework */;
+			productType = "com.apple.product-type.framework";
 		};
 		A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */ = {
 			isa = PBXNativeTarget;
@@ -1224,6 +1713,7 @@
 				7B29AD1496FC1D1ADFB7B324 /* Aegis */,
 				DFF18AEBD4B5D2EEC1A75488 /* BrowserKit */,
 				A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */,
+				A10CCE55ACC0030000000005 /* AccessKit */,
 				C26DC3379C8C26982F712172 /* AgentKit */,
 				CD34907A19AF607084DBAABB /* SafariWebExtension */,
 				D86361CF20F53AFE75B05C96 /* ShareExtension */,
@@ -1330,9 +1820,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A10CCE55ACC0030000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10CCE55ACC0020000000005 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A10A11BE7A00000000000001 /* Select private Access test node */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(SRCROOT)/scripts/private_test_node.py",
+				"$(AEGIS_PRIVATE_TEST_NODE_FILE)",
+			);
+			name = "Select private Access test node";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/AegisPrivateTestNode.vless",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/scripts/private_test_node.py\"\n";
+		};
 		410C3AD95B8493D80F8C5CB5 /* Select Aegis Firebase registration */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -1356,6 +1871,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/scripts/firebase_config.py\" install \\\n  --root \"${SRCROOT}/Firebase\" --channel \"${AEGIS_FIREBASE_CHANNEL}\" \\\n  --artifact \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/AegisFirebase.plist\"\n";
+		};
+		A14600000000000000000001 /* Install verified EmbeddedCore manifest */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputFileListPaths = ("$(AEGIS_EMBEDDED_CORE_PRODUCTS)/build-inputs.xcfilelist",);
+			inputPaths = (
+				"$(SRCROOT)/../../scripts/release/ios_embedded_core.py",
+				"$(SRCROOT)/EmbeddedCore/embedded-core-lock.json",
+				"$(SRCROOT)/EmbeddedCore/bridge",
+				"$(AEGIS_EMBEDDED_CORE_PRODUCTS)/AegisEmbeddedCore.xcframework",
+				"$(AEGIS_EMBEDDED_CORE_PRODUCTS)/embedded-core-lock.json",
+				"$(AEGIS_EMBEDDED_CORE_PRODUCTS)/build-manifest.json",
+			);
+			name = "Install verified EmbeddedCore manifest";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/embedded-core-lock.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/embedded-core-build.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/usr/bin/python3 -B \"${SRCROOT}/../../scripts/release/ios_embedded_core.py\" install --root \"${SRCROOT}/../..\" --source-lock \"${SRCROOT}/EmbeddedCore/embedded-core-lock.json\" --products \"${AEGIS_EMBEDDED_CORE_PRODUCTS}\" --bundle \"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1463,6 +2001,13 @@
 				8543F5FF0715D0DFCD954170 /* AppLanguageSettings.swift in Sources */,
 				3CBB58CBFB7DA0AF1F8A1CBA /* AppLocalization.swift in Sources */,
 				61797526B136E555C3ABCC83 /* AegisApp.swift in Sources */,
+				A10CCE55ACC0020000000000CA /* AccessSiteProxyToggleModel.swift in Sources */,
+				A10CCE55ACC0020000000000CB /* AccessSiteProxyToggleView.swift in Sources */,
+				A10CCE55ACC0020000000000CC /* AccessSiteProxySessionStore.swift in Sources */,
+				A10HOST000000000000000016 /* AccessHostStoreCoordinator.swift in Sources */,
+				A10CCE55ACC0020000000000CE /* AccessSiteProxyStoreRegistry.swift in Sources */,
+				A10CCE55ACC0020000000000F2 /* AccessDevAllowBlockSectionModel.swift in Sources */,
+				A10CCE55ACC0020000000000F3 /* AccessDevAllowBlockSectionView.swift in Sources */,
 				8C62DE4513C296C37692E06F /* AegisFirebase.swift in Sources */,
 				EA17336CE13C643EFF37AD29 /* FirebaseControlsView.swift in Sources */,
 				3BB026E7DD1A640C185C5BEC /* FirebaseRemoteDiagnosticsSource.swift in Sources */,
@@ -1515,6 +2060,9 @@
 				B18325DA69ACDF40FD945543 /* BrowserWindowTests.swift in Sources */,
 				A81B549D1197E1C4752D1B75 /* CapabilitySecurityTests.swift in Sources */,
 				8FD86E55938A81B726515530 /* ContentFilterTests.swift in Sources */,
+				A10CCE55ACC0020000000000CD /* AccessSiteProxyToggleModelTests.swift in Sources */,
+				A10CCE55ACC0020000000000CF /* AccessWebKitRoutingCapabilityTests.swift in Sources */,
+				A10HOST000000000000000017 /* AccessHostWebKitRouteTests.swift in Sources */,
 				F1DB30017933EE43C6660F04 /* DownloadPlanTests.swift in Sources */,
 				FC29A4E60162F5F98F194385 /* ExternalPageLinkTests.swift in Sources */,
 				A3D7B09E532CEACA66A14C52 /* FirebaseInstallPreferencesTests.swift in Sources */,
@@ -1526,6 +2074,40 @@
 				DB735A2B973B5D649871E3EC /* NavigationPolicyIntegrationTests.swift in Sources */,
 				0C658D1B64536667B12FFB4A /* PIIScannerTests.swift in Sources */,
 				51A012093196ED6DBBDC7C07 /* PhishingScorerTests.swift in Sources */,
+				A10CCE55ACC0020000000006 /* AccessContractTests.swift in Sources */,
+				A10CCE55ACC002000000000F /* AccessProxyConfigurationApplicatorTests.swift in Sources */,
+				A10CCE55ACC0020000000014 /* AccessRegistrationLeaseTests.swift in Sources */,
+				A10CCE55ACC0020000000025 /* AccessXrayAssetPinTests.swift in Sources */,
+				A10CCE55ACC002000000000044 /* AccessRealityVisionOutboundConfigTests.swift in Sources */,
+				A10CCE55ACC002000000000054 /* AccessHTTPConnectTests.swift in Sources */,
+				A10CCE55ACC002000000000064 /* AccessXrayRuntimeTests.swift in Sources */,
+				A10CCE55ACC002000000000074 /* AccessHTTPSInboundFrontTests.swift in Sources */,
+				A10CCE55ACC002000000000085 /* AccessRealityProbeTests.swift in Sources */,
+				A10CCE55ACC0020000000000A3 /* AccessHTTPRealityPathTests.swift in Sources */,
+				A10CCE55ACC0020000000000A6 /* AccessHTTPSRealityPathTests.swift in Sources */,
+				A10CCE55ACC002000000000095 /* AccessSOCKS5InboundTests.swift in Sources */,
+				A10CCE55ACC0020000000000B3 /* AccessLocalV2RayConfigTests.swift in Sources */,
+				A10CCE55ACC0020000000000C3 /* AccessSiteIntentTests.swift in Sources */,
+				A10HOST000000000000000014 /* AccessHostStorePolicyTests.swift in Sources */,
+				A10RECV000000000000000015 /* AccessProxyEntryPublisherTests.swift in Sources */,
+				A10CORE000000000000000012 /* AccessEmbeddedCoreManifestTests.swift in Sources */,
+				A10CORE000000000000000016 /* AccessEmbeddedCoreAdapterTests.swift in Sources */,
+				A10GROUP000000000000000012 /* AccessSiteRuleGroupTests.swift in Sources */,
+				A10PROBE000000000000000012 /* AccessSiteProbeRunnerTests.swift in Sources */,
+				A10PROBE000000000000000013 /* AccessHostSelectiveProxyCapabilityTests.swift in Sources */,
+				A10CORE000000000000000019 /* AccessEmbeddedProxyEntryFactoryTests.swift in Sources */,
+				A10LIVE000000000000000011 /* AccessEmbeddedCoreLiveTests.swift in Sources */,
+				A10TUNN000000000000000012 /* AccessHTTPTunnelBridgeTests.swift in Sources */,
+				A10TUNN000000000000000013 /* AccessHostRecoveryWebKitTests.swift in Sources */,
+				A10RECV000000000000000016 /* AccessNavigationRecoveryTests.swift in Sources */,
+				A10RECV000000000000000017 /* AccessProxyRecoveryViewTests.swift in Sources */,
+				A10RECV000000000000000018 /* AccessProxyRecoveryCoordinatorTests.swift in Sources */,
+				A10CCE55ACC0020000000000C9 /* AccessSiteSessionControllerTests.swift in Sources */,
+				A10CCE55ACC0020000000000F7 /* AccessSiteSessionFaultTests.swift in Sources */,
+				A10CCE55ACC0020000000000D4 /* AccessBrowsingIsolationControllerTests.swift in Sources */,
+				A10CCE55ACC0020000000000F1 /* AccessDevAllowBlockPanelTests.swift in Sources */,
+				A10CCE55ACC0020000000000F9 /* AccessSitePhase1EvidenceTests.swift in Sources */,
+				A10CCE55ACC002000000000032 /* AccessHTTPInboundListenerTests.swift in Sources */,
 				62CA3CADA340FAC635AAF455 /* PolicySnapshotTests.swift in Sources */,
 				4930A83B87096E1931FF9249 /* PortableFeatureTests.swift in Sources */,
 				3F56151172419CCB1A2F301F /* RecordRecoveryTests.swift in Sources */,
@@ -1539,6 +2121,104 @@
 				083247805FAA0E8A1E91E650 /* WebsiteEnhancementTests.swift in Sources */,
 				D35B3481239DE8C4774C0956 /* WorkflowTests.swift in Sources */,
 				2CBDEF478A8BAA95ED4EA628 /* WorkspaceAndDownloadTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10CCE55ACC0030000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10CCE55ACC0020000000001 /* AccessContractError.swift in Sources */,
+				A10CCE55ACC0020000000010 /* AccessCredentialSlot.swift in Sources */,
+				A10CCE55ACC0020000000011 /* AccessEndpoint.swift in Sources */,
+				A10CCE55ACC0020000000002 /* AccessInboundTransport.swift in Sources */,
+				A10CCE55ACC0020000000012 /* AccessLease.swift in Sources */,
+				A10CCE55ACC0020000000003 /* AccessOutboundProfile.swift in Sources */,
+				A10CCE55ACC0020000000004 /* AccessOwner.swift in Sources */,
+				A10CCE55ACC002000000000B /* AccessProxyConfigurationError.swift in Sources */,
+				A10CCE55ACC002000000000C /* AccessProxyRegistrationFixture.swift in Sources */,
+				A10CCE55ACC002000000000D /* AccessProxyConfigurationBuilder.swift in Sources */,
+				A10CCE55ACC002000000000E /* AccessProxyConfigurationApplicator.swift in Sources */,
+				A10CCE55ACC0020000000013 /* AccessRegistration.swift in Sources */,
+				A10CCE55ACC0020000000020 /* AccessXrayArchitecture.swift in Sources */,
+				A10CCE55ACC0020000000021 /* AccessXrayAssetDigest.swift in Sources */,
+				A10CCE55ACC0020000000022 /* AccessXrayAssetKind.swift in Sources */,
+				A10CCE55ACC0020000000023 /* AccessXrayAssetPin.swift in Sources */,
+				A10CCE55ACC0020000000024 /* AccessXrayAssetPins.swift in Sources */,
+				A10CCE55ACC002000000000040 /* AccessRealityVisionOutboundConfigError.swift in Sources */,
+				A10CCE55ACC002000000000041 /* AccessRealityVisionParameters.swift in Sources */,
+				A10CCE55ACC002000000000042 /* AccessRealityVisionOutboundConfig.swift in Sources */,
+				A10CCE55ACC002000000000043 /* AccessRealityVisionOutboundConfigBuilder.swift in Sources */,
+				A10CCE55ACC002000000000050 /* AccessHTTPConnectError.swift in Sources */,
+				A10CCE55ACC002000000000051 /* AccessHTTPConnectRequest.swift in Sources */,
+				A10CCE55ACC002000000000052 /* AccessHTTPConnectParser.swift in Sources */,
+				A10CCE55ACC002000000000053 /* AccessHTTPConnectSession.swift in Sources */,
+				A10CCE55ACC002000000000060 /* AccessXrayRuntimeError.swift in Sources */,
+				A10CCE55ACC002000000000061 /* AccessXrayProcessControlling.swift in Sources */,
+				A10CCE55ACC002000000000062 /* AccessXrayDigestVerifying.swift in Sources */,
+				A10CCE55ACC002000000000063 /* AccessXrayRuntime.swift in Sources */,
+				A10CCE55ACC002000000000070 /* AccessHTTPSInboundError.swift in Sources */,
+				A10CCE55ACC002000000000071 /* AccessHTTPSInboundTLSProviding.swift in Sources */,
+				A10CCE55ACC002000000000072 /* AccessHTTPSInboundFrontPlan.swift in Sources */,
+				A10CCE55ACC002000000000073 /* AccessHTTPSInboundListener.swift in Sources */,
+				A10CCE55ACC002000000000080 /* AccessRealityProbeError.swift in Sources */,
+				A10CCE55ACC002000000000081 /* AccessRealityProbeTarget.swift in Sources */,
+				A10CCE55ACC002000000000082 /* AccessRealityProbeResult.swift in Sources */,
+				A10CCE55ACC002000000000083 /* AccessRealityProbeExecuting.swift in Sources */,
+				A10CCE55ACC002000000000084 /* AccessRealityProbe.swift in Sources */,
+				A10CCE55ACC0020000000000A0 /* AccessHTTPRealityPathError.swift in Sources */,
+				A10CCE55ACC0020000000000A1 /* AccessRealityPathDialing.swift in Sources */,
+				A10CCE55ACC0020000000000A2 /* AccessHTTPRealityPath.swift in Sources */,
+				A10CCE55ACC0020000000000A4 /* AccessHTTPSRealityPathError.swift in Sources */,
+				A10CCE55ACC0020000000000A5 /* AccessHTTPSRealityPath.swift in Sources */,
+				A10CCE55ACC002000000000090 /* AccessSOCKS5InboundError.swift in Sources */,
+				A10CCE55ACC002000000000091 /* AccessSOCKS5ConnectRequest.swift in Sources */,
+				A10CCE55ACC002000000000092 /* AccessSOCKS5InboundParser.swift in Sources */,
+				A10CCE55ACC002000000000093 /* AccessSOCKS5InboundSession.swift in Sources */,
+				A10CCE55ACC002000000000094 /* AccessSOCKS5InboundListener.swift in Sources */,
+				A10CCE55ACC0020000000000B0 /* AccessLocalV2RayConfigError.swift in Sources */,
+				A10CCE55ACC0020000000000B1 /* AccessLocalV2RayConfig.swift in Sources */,
+				A10CCE55ACC0020000000000B2 /* AccessLocalV2RayConfigLoader.swift in Sources */,
+				A10CCE55ACC0020000000000C0 /* AccessSiteIntentError.swift in Sources */,
+				A10CCE55ACC0020000000000E0 /* AccessInboundStartErrorBox.swift in Sources */,
+				A10CCE55ACC0020000000000C1 /* AccessSiteIntent.swift in Sources */,
+				A10HOST000000000000000011 /* AccessHostRoutingPolicy.swift in Sources */,
+				A10HOST000000000000000012 /* AccessHostStoreEvictionPolicy.swift in Sources */,
+				A10HOST000000000000000013 /* AccessNavigationRetryPolicy.swift in Sources */,
+				A10HOST000000000000000015 /* AccessHostDataStoreRegistry.swift in Sources */,
+				A10RECV000000000000000011 /* AccessPreparationClock.swift in Sources */,
+				A10RECV000000000000000012 /* AccessProxyEntryPublishing.swift in Sources */,
+				A10RECV000000000000000013 /* AccessProxyEntryPublisher.swift in Sources */,
+				A10RECV000000000000000014 /* AccessFailClosedProxyEntryPublisher.swift in Sources */,
+				A10TUNN000000000000000011 /* AccessHTTPTunnelBridge.swift in Sources */,
+				A10CORE000000000000000011 /* AccessEmbeddedCoreManifest.swift in Sources */,
+				A10CORE000000000000000013 /* AccessEmbeddedCoreControlling.swift in Sources */,
+				A10CORE000000000000000014 /* AccessEmbeddedCoreAdapter.swift in Sources */,
+				A10GROUP000000000000000011 /* AccessSiteRuleGroup.swift in Sources */,
+				A10PROBE000000000000000011 /* AccessSiteProbeRunner.swift in Sources */,
+				A10CORE000000000000000015 /* AccessEmbeddedRealityDialer.swift in Sources */,
+				A10CORE000000000000000017 /* AccessGoEmbeddedCore.swift in Sources */,
+				A10CORE000000000000000021 /* AccessNWListenerBootstrap.swift in Sources */,
+				A10CORE00000000000000000D1 /* AccessMutexGate.swift in Sources */,
+				A10CORE000000000000000018 /* AccessEmbeddedProxyEntryFactory.swift in Sources */,
+				A10CCE55ACC0020000000000C2 /* AccessSiteIntentStore.swift in Sources */,
+				A10CCE55ACC0020000000000F0 /* AccessDevAllowBlockPanel.swift in Sources */,
+				A10CCE55ACC0020000000000C5 /* AccessSiteSessionError.swift in Sources */,
+				A10CCE55ACC0020000000000C6 /* AccessSiteSessionState.swift in Sources */,
+				A10CCE55ACC0020000000000C7 /* AccessSiteSessionOrchestrating.swift in Sources */,
+				A10CCE55ACC0020000000000C8 /* AccessSiteSessionController.swift in Sources */,
+				A10CCE55ACC0020000000000F4 /* AccessSiteSessionFault.swift in Sources */,
+				A10CCE55ACC0020000000000F5 /* AccessSiteSessionRequestRoute.swift in Sources */,
+				A10CCE55ACC0020000000000F6 /* AccessSiteSessionFaultFixture.swift in Sources */,
+				A10CCE55ACC0020000000000D0 /* AccessBrowsingBucket.swift in Sources */,
+				A10CCE55ACC0020000000000D1 /* AccessBrowsingIsolationError.swift in Sources */,
+				A10CCE55ACC0020000000000D2 /* AccessBrowsingAccessState.swift in Sources */,
+				A10CCE55ACC0020000000000D3 /* AccessBrowsingIsolationController.swift in Sources */,
+				A10CCE55ACC0020000000000F8 /* AccessSitePhase1Evidence.swift in Sources */,
+				A10CCE55ACC0020000000000FA /* AccessSitePhase1EvidenceFaultRequirement.swift in Sources */,
+				A10CCE55ACC0020000000000FB /* AccessSitePhase1EvidencePack.swift in Sources */,
+				A10CCE55ACC002000000000030 /* AccessHTTPInboundError.swift in Sources */,
+				A10CCE55ACC002000000000031 /* AccessHTTPInboundListener.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1609,6 +2289,16 @@
 			isa = PBXTargetDependency;
 			target = A79F0FC08A942DD42F3FFB96 /* AegisPolicyKit */;
 			targetProxy = BF6B941904E00BA50DFAE640 /* PBXContainerItemProxy */;
+		};
+		A10CCE55ACC0040000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10CCE55ACC0030000000005 /* AccessKit */;
+			targetProxy = A10CCE55ACC0040000000001 /* PBXContainerItemProxy */;
+		};
+		A10CCE55ACC0040000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A10CCE55ACC0030000000005 /* AccessKit */;
+			targetProxy = A10CCE55ACC0040000000003 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1731,6 +2421,7 @@
 		4C690ABEB5A9286A91E7B6AD /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AEGIS_PRIVATE_TEST_NODE_FILE = /dev/null;
 				AEGIS_FIREBASE_CHANNEL = dev;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
@@ -1758,6 +2449,8 @@
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
 				CLANG_CXX_LIBRARY = "libc++";
+				AEGIS_ACCESS_RELEASE_CHANNEL = release;
+				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -1820,6 +2513,8 @@
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
 				CLANG_CXX_LIBRARY = "libc++";
+				AEGIS_ACCESS_RELEASE_CHANNEL = dev;
+				AEGIS_EMBEDDED_CORE_PRODUCTS = "$(PROJECT_DIR)/../../.artifacts/ios-embedded-core";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -1946,6 +2641,7 @@
 		67F8921229C0A0B1FBF8DBAA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AEGIS_PRIVATE_TEST_NODE_FILE = /dev/null;
 				AEGIS_FIREBASE_CHANNEL = disabled;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = AegisApp/Aegis.entitlements;
@@ -2147,6 +2843,74 @@
 			};
 			name = Debug;
 		};
+		A10CCE55ACC0030000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(AEGIS_EMBEDDED_CORE_PRODUCTS)",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lresolv",
+				);
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AccessKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.accesskit;
+				PRODUCT_NAME = AccessKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		A10CCE55ACC0030000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(AEGIS_EMBEDDED_CORE_PRODUCTS)",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lresolv",
+				);
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = AccessKit/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.gcsa.aegis.accesskit;
+				PRODUCT_NAME = AccessKit;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -2173,6 +2937,15 @@
 			buildConfigurations = (
 				28FED745977D8A0001BB1402 /* Debug */,
 				D14D4020DBE8BC5EC62157AE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+				A10CCE55ACC0030000000006 /* Build configuration list for PBXNativeTarget "AccessKit" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A10CCE55ACC0030000000007 /* Debug */,
+				A10CCE55ACC0030000000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

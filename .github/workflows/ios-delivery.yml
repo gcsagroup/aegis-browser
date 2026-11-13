@@ -169,6 +169,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Install Go for the staged EmbeddedCore build
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
       - name: Build Development archive without cloud or upload credentials
         id: archive
         env:
@@ -253,6 +258,12 @@ jobs:
         with:
           name: ios-development-archive-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/aegis-development-input
+      - name: Install Go for the staged EmbeddedCore build
+        if: ${{ needs.admission.outputs.signing_mode == 'manual' }}
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.27.3'
+          cache: false
       - name: Install signing material on the ephemeral runner
         if: ${{ needs.admission.outputs.signing_mode == 'manual' }}
         env:

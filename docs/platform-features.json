@@ -1400,15 +1400,22 @@
         "iOS": {
           "status": "partial",
           "reason": {
-            "zh-CN": "按来源的网站显示、脚本、相机和麦克风设置；未移植 Aegis Access 代理路由。",
-            "en": "Per-origin display, script, camera and microphone settings; no Aegis Access proxy routing.",
-            "zh-TW": "按來源的網站顯示、腳本、相機和麥克風設置；未移植 Aegis Access 代理路由。"
+            "zh-CN": "保留按来源的显示/脚本/相机麦克风设置；另有 AccessKit loopback HTTP/HTTPS 入站、reality_vision 出站合同与 ProxyConfiguration 接线。本轮仅登记模拟器单元/UI 覆盖（见 I1–I9 与 REALITY 正反）；真机与 TestFlight 为 NOT_RUN。不等于桌面 Chromium Access 全路由移植，也不把单测绿升为产品五步 PASS。",
+            "en": "Keeps per-origin display, script, camera and microphone settings; AccessKit also covers loopback HTTP/HTTPS inbound, reality_vision outbound contracts, and ProxyConfiguration wiring. This round records Simulator unit/UI coverage only (I1–I9 and REALITY ±); physical device and TestFlight remain NOT_RUN. Not a full Chromium Access routing port, and unit green is not a product five-step PASS.",
+            "zh-TW": "保留按來源的顯示/腳本/相機麥克風設置；另有 AccessKit loopback HTTP/HTTPS 入站、reality_vision 出站合同與 ProxyConfiguration 接線。本輪僅登記模擬器單元/UI 覆蓋（見 I1–I9 與 REALITY 正反）；實機與 TestFlight 為 NOT_RUN。不等於桌面 Chromium Access 全路由移植，也不把單測綠升為產品五步 PASS。"
           },
           "source": [
-            "apps/ios/BrowserKit/BrowserPreferences.swift"
+            "apps/ios/BrowserKit/BrowserPreferences.swift",
+            "apps/ios/AccessKit/AccessInboundTransport.swift",
+            "apps/ios/AccessKit/AccessHTTPRealityPath.swift",
+            "apps/ios/AccessKit/AccessHTTPSRealityPath.swift",
+            "apps/ios/AccessKit/AccessProxyConfigurationApplicator.swift",
+            "apps/ios/AccessKit/AccessRealityVisionOutboundConfigBuilder.swift"
           ],
-          "validation": "not-run",
-          "evidence": []
+          "validation": "simulator",
+          "evidence": [
+            "docs/audit/ios-access-simulator-evidence-2026-11-08.md"
+          ]
         }
       }
     },

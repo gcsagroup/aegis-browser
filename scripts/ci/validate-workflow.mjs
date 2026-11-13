@@ -2,11 +2,13 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import YAML from 'yaml';
+import {qualityBranchNames} from './ios-release-lines.mjs';
 
 const expectedActions = new Set([
   'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
   'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
   'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
+  'actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff',
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
   'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903',
   'actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a',
@@ -79,7 +81,8 @@ try {
   }
   for (const event of ['pull_request', 'push']) {
     const config = triggers[event] ?? {};
-    if (JSON.stringify(array(config.branches).sort()) !== JSON.stringify(['develop', 'main'])) fail(`${event} must target exactly main and develop`);
+    const expectedBranches = event === 'push' ? qualityBranchNames().sort() : ['develop', 'main'];
+    if (JSON.stringify(array(config.branches).sort()) !== JSON.stringify(expectedBranches)) fail(`${event} must target exactly its admitted quality branches`);
     if ('branches-ignore' in config) fail(`${event} may not exclude branches`);
     if ('paths' in config || 'paths-ignore' in config) fail(`${event} may not filter paths`);
   }
@@ -185,7 +188,8 @@ try {
   }
   if (quality.name !== 'quality') fail('Quality job check name must be quality');
   const testRunner = "${{ vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY != '' && github.repository == vars.AEGIS_SELF_HOSTED_TEST_REPOSITORY && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('[\"self-hosted\", \"macOS\", \"ARM64\", \"aegis-test\"]') || 'macos-15' }}";
-  if (quality['runs-on'] !== testRunner) fail('Quality job must use the trusted macOS test route');
+  const qualityRunner = testRunner.replace(" && fromJSON", " && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && fromJSON");
+  if (quality['runs-on'] !== qualityRunner) fail('Quality job must use the trusted macOS test route with hosted maintenance branches');
   const pnpmSetup = array(quality.steps).find((step) => String(step.uses ?? '').startsWith('pnpm/action-setup@'));
   if (pnpmSetup?.with?.dest !== '${{ runner.temp }}/setup-pnpm') {
     fail('pnpm setup must use the per-job runner temporary directory');
@@ -212,7 +216,7 @@ try {
   }
   if (gate['timeout-minutes'] !== 5) fail('quality-gate timeout must be 5 minutes');
 
-  if (gate['runs-on'] !== testRunner) fail('quality-gate must use the trusted macOS test route');
+  if (gate['runs-on'] !== qualityRunner) fail('quality-gate must use the trusted macOS test route with hosted maintenance branches');
   if (JSON.stringify(Object.keys(cppWorkflow?.jobs ?? {})) !== JSON.stringify(['cpp-unit-tests'])) {
     fail('C++ workflow job set must be exactly cpp-unit-tests');
   }
@@ -264,6 +268,23 @@ try {
   if (!qualityRun) fail('Quality job must call the shared run-quality entrypoint');
   for (const name of ['CI_BASE_SHA', 'CI_HEAD_SHA', 'CI_TESTED_SHA', 'CI_EVENT', 'CI_REF', 'REPORT_DIR']) {
     if (!qualityRun.env?.[name]) fail(`Quality entrypoint environment is missing ${name}`);
+  }
+  const mergeBase = array(quality.steps).find((step) => step.id === 'merge_base');
+  if (
+    mergeBase?.if !== "${{ github.event_name == 'pull_request' }}" ||
+    !String(mergeBase?.run ?? '').includes('git rev-list --parents -n 1 HEAD') ||
+    !String(qualityRun.env.CI_BASE_SHA).includes('steps.merge_base.outputs.sha')
+  ) {
+    fail('Quality PR base must resolve from the merge commit first parent, not a possibly stale pull_request.base.sha');
+  }
+  const iosArchiveGo = array(iosValidationWorkflow.jobs?.['ios-archive']?.steps).find((step) =>
+    String(step.uses ?? '').startsWith('actions/setup-go@'));
+  if (
+    !expectedActions.has(iosArchiveGo?.uses) ||
+    String(iosArchiveGo?.with?.['go-version']) !== '1.27.3' ||
+    iosArchiveGo?.with?.cache !== false
+  ) {
+    fail('ios-archive must install approved pinned Go 1.27.3 before EmbeddedCore prepare');
   }
   const ripgrepInstall = array(quality.steps).find((step) => String(step.run ?? '') === 'bash scripts/ci/install-ripgrep.sh');
   if (!ripgrepInstall || ripgrepInstall['timeout-minutes'] !== 5) {
