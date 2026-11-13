@@ -48,7 +48,11 @@ function apiFixture({moved = false, parent = repository, pending = false} = {}) 
   let reads = 0;
   return async (repo, path) => {
     if (path === '') return repo === repository ? {id: 1348409663, default_branch: 'main'} : {id: 1363949860, fork: true, parent: {full_name: parent}};
-    if (path === '/git/ref/heads/main') return {object: {sha: moved && ++reads > 1 ? 'b'.repeat(40) : sha}};
+    if (path.startsWith('/git/ref/heads/')) {
+      const name = path.slice('/git/ref/heads/'.length);
+      if (name === 'main') return {object: {sha: moved && ++reads > 1 ? 'b'.repeat(40) : sha}};
+      return {object: {sha: 'c'.repeat(40)}};
+    }
     if (path.startsWith('/commits/')) return {sha: moved ? 'b'.repeat(40) : sha};
     const run = {id: 12, run_attempt: 2, head_sha: sha, head_branch: 'codex/ios-release-upstream-20261030',
       repository: {full_name: repo}, event: 'push', path: '.github/workflows/ios-release-validation.yml', status: pending ? 'in_progress' : 'completed', conclusion: pending ? null : 'success'};
@@ -61,7 +65,7 @@ function apiFixture({moved = false, parent = repository, pending = false} = {}) 
 test('upstream admission rechecks main after quality and rejects moving main or tag', async () => {
   const {iosReleasePreflight} = await load();
   assert.equal((await iosReleasePreflight(sha, {environment, api: apiFixture(), quality: async () => true})).admission, 'upstream_quality_verified');
-  await assert.rejects(iosReleasePreflight(sha, {environment, api: apiFixture({moved: true}), quality: async () => true}), /main|changed/u);
+  await assert.rejects(iosReleasePreflight(sha, {environment, api: apiFixture({moved: true}), quality: async () => true}), /release line|changed/u);
   await assert.rejects(iosReleasePreflight(sha, {environment: {...environment, RELEASE_DESTINATION: 'github-draft', RELEASE_TAG: 'candidate/ios/1.0.0-alpha.6'}, api: apiFixture({moved: true}), quality: async () => true}), /tag|main/u);
 });
 test('disabled path and wrong repository identity cannot reach quality', async () => {
@@ -228,6 +232,36 @@ test('version/build-only status has no artifact, signing or mutation route', () 
   assert.equal(report.with.path, '.artifacts/ios-status/status.json');
   assert.equal(report.with['if-no-files-found'], 'error');
   for (const id of ['import', 'store']) assert(doc.jobs[id].if.includes("!= 'status-query'"));
+});
+
+test('maintenance release lines package from their own tip, not current main', async () => {
+  const lines = JSON.parse(readFileSync('scripts/ci/ios-release-lines.json', 'utf8')).lines;
+  const pushed = parse(readFileSync('.github/workflows/quality.yml', 'utf8')).on.push.branches;
+  assert.deepEqual(lines.map(line => line.name), ['main', 'releases/ios/1.0']);
+  for (const line of lines) assert.ok(pushed.includes(line.name));
+  const patchSha = 'd'.repeat(40);
+  const {iosReleasePreflight} = await load();
+  let qualityBranch;
+  const api = async (repo, path) => {
+    if (path === '') return {id: 1348409663, default_branch: 'main'};
+    if (path === '/git/ref/heads/main') return {object: {sha}};
+    if (path === '/git/ref/heads/releases/ios/1.0') return {object: {sha: patchSha}};
+    throw new Error(`Unexpected fixture endpoint ${path}`);
+  };
+  const admitted = await iosReleasePreflight(patchSha, {
+    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
+    api, quality: async (_repo, branch) => { qualityBranch = branch; return true; },
+  });
+  assert.equal(admitted.line, 'releases/ios/1.0');
+  assert.equal(qualityBranch, 'releases/ios/1.0');
+  await assert.rejects(iosReleasePreflight(sha, {
+    environment: {...environment, GITHUB_REF: 'refs/heads/releases/ios/1.0'},
+    api, quality: async () => true,
+  }), /release line/u);
+  await assert.rejects(iosReleasePreflight(patchSha, {
+    environment: {...environment, GITHUB_SHA: patchSha, GITHUB_REF: 'refs/heads/foreign'},
+    api, quality: async () => { throw new Error('credential boundary crossed'); },
+  }), /dispatch/u);
 });
 
 test('candidate admission bounds version components and rejects trailing data before tag lookup', async () => {
