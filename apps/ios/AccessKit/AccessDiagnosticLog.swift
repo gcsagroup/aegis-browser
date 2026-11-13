@@ -17,11 +17,12 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     private let queue = DispatchQueue(label: "aegis.access.diagnostics")
     private let limit: Int
     private let pollInterval: DispatchTimeInterval
+    private let readsPerPoll: Int
     private var lines: [String] = []
     private var byteCount = 0
     private var pending = Data()
     private var discardingLine = false
-    private var discardingBuffered = false
+    private var discardPrefix: Int? = 0
     private var enabled = false
     private var failed = false
     // History can finish restoring after the current FIFO is retired.
@@ -45,9 +46,11 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
     init(capacity: Int = 256 * 1024, storageDirectory: URL? = nil,
          initialLevel: AccessLogLevel = .warning,
          pollInterval: DispatchTimeInterval = .milliseconds(100),
+         readsPerPoll: Int = 4,
          storageQueue: DispatchQueue? = nil) {
         limit = max(256, capacity)
         self.pollInterval = pollInterval
+        self.readsPerPoll = readsPerPoll
         storage = storageDirectory.map {
             if let storageQueue { return AccessDiagnosticLogStorage(directory: $0, queue: storageQueue) }
             return AccessDiagnosticLogStorage(directory: $0)
@@ -144,12 +147,15 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
             minimumRank = Self.rank(level)
             pending.removeAll()
             discardingLine = false
-            discardingBuffered = false
+            discardPrefix = 0
             let source = DispatchSource.makeTimerSource(queue: queue)
             // A bounded poll also handles Darwin FIFO writers whose large
             // write does not trigger another readability edge.
             source.schedule(deadline: .now() + pollInterval, repeating: pollInterval, leeway: .milliseconds(20))
-            source.setEventHandler { [weak self] in self?.drain(fd: fd) }
+            source.setEventHandler { [weak self] in
+                guard let self else { return }
+                self.drain(fd: fd, maximumReads: self.readsPerPoll)
+            }
             source.setCancelHandler { close(fd) }
             reader = source
             readerFD = fd
@@ -247,7 +253,7 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
 
     func markUnavailable() { queue.sync { failed = true } }
 
-    private func drain(fd: Int32, maximumReads: Int = 4) {
+    private func drain(fd: Int32, maximumReads: Int) {
         var bytes = [UInt8](repeating: 0, count: 4096)
         for _ in 0..<maximumReads {
             let count = read(fd, &bytes, bytes.count)
@@ -256,15 +262,16 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
                 if count < 0 && errno != EAGAIN && errno != EWOULDBLOCK {
                     enabled = false; failed = true
                 } else {
-                    discardingBuffered = false
+                    discardPrefix = 0
                 }
                 return
             }
-            if discardingBuffered {
-                discardingLine = bytes[count - 1] != 10
-                continue
+            let discard = min(discardPrefix ?? count, count)
+            if discard > 0 {
+                discardingLine = bytes[discard - 1] != 10
+                if let remaining = discardPrefix { discardPrefix = remaining - discard }
             }
-            for byte in bytes.prefix(count) {
+            for byte in bytes[discard..<count] {
                 if byte == 10 {
                     if enabled && !discardingLine && !pending.isEmpty {
                         append(String(decoding: pending, as: UTF8.self))
@@ -409,12 +416,17 @@ public final class AccessDiagnosticLog: @unchecked Sendable {
         lines.removeAll(); byteCount = 0
         discardingLine = discardingLine || !pending.isEmpty
         pending.removeAll()
-        if let fd = readerFD {
-            // Discard through the first nonblocking empty read. The bounded
-            // drain can finish on later ticks under sustained output; until
-            // then none of the pre-clear pipe contents can be admitted.
-            discardingBuffered = true
-            drain(fd: fd)
+        if let fd = readerFD, !disable {
+            // Darwin FIONREAD = _IOR('f', 127, int). Swift cannot import
+            // this SDK macro. A failed snapshot discards until an empty read.
+            let fionread: UInt = 0x4004_667f
+            var pendingBytes: Int32 = 0
+            var result: Int32
+            repeat {
+                result = withUnsafeMutablePointer(to: &pendingBytes) { ioctl(fd, fionread, $0) }
+            } while result < 0 && errno == EINTR
+            discardPrefix = result == 0 ? max(0, Int(pendingBytes)) : nil
+            drain(fd: fd, maximumReads: readsPerPoll)
         }
         storageGeneration &+= 1
         let generation = storageGeneration

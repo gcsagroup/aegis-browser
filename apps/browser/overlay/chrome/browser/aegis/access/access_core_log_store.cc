@@ -4,7 +4,14 @@
 #include "base/strings/string_split.h"
 
 #if BUILDFLAG(IS_MAC)
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+#include <cerrno>
+
+#include "base/check.h"
 #include "base/functional/bind.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/task/lazy_thread_pool_task_runner.h"
 #endif
 
@@ -68,11 +75,43 @@ void AccessCoreLogStore::Clear() {
   ++clear_epoch_;
   log_.Clear();
 #if BUILDFLAG(IS_MAC)
+  // Reads share this lock. Only bytes already in each pipe at Clear belong
+  // to the old history, even if the worker has no pending readability event.
+  for (auto& [fd, prefix] : pipes_) {
+    int pending = 0;
+    if (HANDLE_EINTR(ioctl(fd, FIONREAD, &pending)) == 0) {
+      prefix = static_cast<size_t>(std::max(pending, 0));
+    } else {
+      prefix.reset();
+    }
+  }
   ScheduleClearLocked();
 #endif
 }
 
 #if BUILDFLAG(IS_MAC)
+uint64_t AccessCoreLogStore::RegisterPipe(int fd) {
+  base::AutoLock guard(lock_);
+  CHECK(pipes_.try_emplace(fd, 0).second);
+  return clear_epoch_;
+}
+
+void AccessCoreLogStore::UnregisterPipe(int fd) {
+  base::AutoLock guard(lock_);
+  const size_t erased = pipes_.erase(fd);
+  CHECK(erased == 1);
+}
+
+AccessCoreLogStore::PipeRead AccessCoreLogStore::ReadPipe(
+    int fd,
+    base::span<char> buffer) {
+  base::AutoLock guard(lock_);
+  auto pipe = pipes_.find(fd);
+  CHECK(pipe != pipes_.end());
+  const auto count = HANDLE_EINTR(read(fd, buffer.data(), buffer.size()));
+  return {count, count < 0 ? errno : 0, clear_epoch_, pipe->second};
+}
+
 namespace {
 // A shared sequence also orders disk access across closing and reopened
 // profile windows at the same path.

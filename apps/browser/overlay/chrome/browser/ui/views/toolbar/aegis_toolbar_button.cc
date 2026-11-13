@@ -291,6 +291,10 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   }
   void Expand(const std::string& key) {
     if (!expanded_.erase(key)) expanded_.insert(key);
+#if BUILDFLAG(IS_MAC)
+    if (key == "core-logs")
+      log_share_confirmation_.reset();
+#endif
     RefreshSoon();
   }
   void Mutate(base::DictValue request) {
@@ -441,25 +445,57 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
           }, base::Unretained(this)));
     const auto [text, version] = controller->core_logs()->ViewSnapshot();
     log_view_version_ = version;
+    if (log_share_confirmation_ &&
+        (text.empty() || log_share_confirmation_->second != version)) {
+      log_share_confirmation_.reset();
+    }
     if (text.empty()) {
       AddLabel(parent, Copy(u"暂无日志", u"No log entries", u"目前沒有日誌"));
     } else {
       AddLabel(parent, base::UTF8ToUTF16(text))->SetSelectable(true);
-      Button(parent, Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…"),
-          base::BindRepeating([](AegisPageBubble* self, std::string preview, uint64_t version) {
-            if (!self->Valid()) return;
-            if (auto* c = self->AccessBubble()) c->ShareCoreLogs(self->source_.get(), std::move(preview), version,
-                base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
-                  if (self && !ok) {
-                    self->log_notice_ = Copy(u"未能分享日志。请检查磁盘权限，重启可重试清理上次的临时文件。", u"Could not share the logs. Check disk permissions and restart to retry temporary file cleanup.", u"未能分享日誌。請檢查磁碟權限，重啟可重試清理上次的暫存檔。");
-                    self->RefreshSoon();
-                  }
-                }, self->weak_.GetWeakPtr()));
-          }, base::Unretained(this), text, version));
+      if (!log_share_confirmation_) {
+        Button(parent, Copy(u"分享压缩日志…", u"Share compressed logs…", u"分享壓縮日誌…"),
+            base::BindRepeating([](AegisPageBubble* self, std::string preview, uint64_t version) {
+              if (!self->Valid()) return;
+              self->log_notice_.clear();
+              self->log_share_confirmation_.emplace(std::move(preview), version);
+              self->RefreshSoon();
+            }, base::Unretained(this), text, version));
+      } else {
+        AddLabel(parent, Copy(u"此压缩包可能包含普通或隐私浏览的目标地址。确认分享给可信的接收方？",
+            u"This archive may contain regular or private browsing destinations. Share it with a trusted recipient?",
+            u"此壓縮檔可能包含一般或私密瀏覽的目標位址。確認分享給可信的接收方？"));
+        Button(parent, Copy(u"确认分享", u"Confirm share", u"確認分享"),
+               base::BindRepeating(&AegisPageBubble::ConfirmCoreLogShare,
+                                   base::Unretained(this)));
+        Button(parent, Copy(u"取消", u"Cancel", u"取消"),
+               base::BindRepeating([](AegisPageBubble* self) {
+                 self->log_share_confirmation_.reset();
+                 self->RefreshSoon();
+               }, base::Unretained(this)));
+      }
     }
     Button(parent, Copy(u"刷新日志", u"Refresh logs", u"重新整理日誌"),
            base::BindRepeating(&AegisPageBubble::RefreshSoon, base::Unretained(this)));
     if (!log_notice_.empty()) AddLabel(parent, log_notice_);
+  }
+  void ConfirmCoreLogShare() {
+    auto confirmation = std::exchange(log_share_confirmation_, std::nullopt);
+    if (!Valid() || !confirmation)
+      return;
+    RefreshSoon();
+    if (auto* controller = AccessBubble()) {
+      auto [preview, version] = std::move(*confirmation);
+      controller->ShareCoreLogs(source_.get(), std::move(preview), version,
+          base::BindOnce([](base::WeakPtr<AegisPageBubble> self, bool ok) {
+            if (self && !ok) {
+              self->log_notice_ = Copy(u"未能分享日志。请检查磁盘权限，重启可重试清理上次的临时文件。",
+                  u"Could not share the logs. Check disk permissions and restart to retry temporary file cleanup.",
+                  u"未能分享日誌。請檢查磁碟權限，重啟可重試清理上次的暫存檔。");
+              self->RefreshSoon();
+            }
+          }, weak_.GetWeakPtr()));
+    }
   }
 #endif
   void AppendSiteProxySection(views::View* parent) {
@@ -697,6 +733,7 @@ class AegisPageBubble : public LocationBarBubbleDelegateView {
   std::u16string notice_;
 #if BUILDFLAG(IS_MAC)
   std::u16string log_notice_;
+  std::optional<std::pair<std::string, uint64_t>> log_share_confirmation_;
   uint64_t log_view_version_ = 0;
   std::optional<aegis::access::AccessCoreLogStore::DiskStatus> log_disk_status_;
 #endif

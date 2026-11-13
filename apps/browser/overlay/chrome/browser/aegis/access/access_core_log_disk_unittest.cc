@@ -1,6 +1,10 @@
 // Copyright 2026 GCSA
 #include "chrome/browser/aegis/access/access_core_log_store.h"
 
+#include <unistd.h>
+
+#include <array>
+
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/callback_helpers.h"
@@ -106,6 +110,36 @@ TEST_F(AccessCoreLogDiskTest, ClearAndNoneDefeatOlderRestoreAndQueuedWrites) {
   environment_.RunUntilIdle();
   EXPECT_TRUE(reopened->Snapshot().empty());
 }
+TEST_F(AccessCoreLogDiskTest, ClearSnapshotsThePipeBeforeTheNextRead) {
+  auto store = Open();
+  base::ScopedFD reader, writer;
+  ASSERT_TRUE(base::CreatePipe(&reader, &writer, /*non_blocking=*/true));
+  const auto original_epoch = store->RegisterPipe(reader.get());
+  std::array<char, 64> buffer;
+  auto write_record = [&](std::string_view text) {
+    ASSERT_EQ(::write(writer.get(), text.data(), text.size()),
+              static_cast<ssize_t>(text.size()));
+  };
+  store->Clear();
+  write_record("fresh\n");
+  const auto idle = store->ReadPipe(reader.get(), buffer);
+  ASSERT_EQ(idle.count, 6);
+  EXPECT_EQ(idle.clear_epoch, original_epoch + 1);
+  EXPECT_EQ(idle.clear_prefix, 0u);
+  EXPECT_EQ(std::string_view(buffer.data(), idle.count), "fresh\n");
+
+  write_record("stale\n");
+  store->Clear();
+  write_record("first after clear\n");
+  const auto buffered = store->ReadPipe(reader.get(), buffer);
+  EXPECT_EQ(buffered.clear_epoch, original_epoch + 2);
+  EXPECT_EQ(buffered.clear_prefix, 6u);
+  ASSERT_EQ(buffered.count, 24);
+  EXPECT_EQ(std::string_view(buffer.data(), buffered.count),
+            "stale\nfirst after clear\n");
+  store->UnregisterPipe(reader.get());
+}
+
 TEST_F(AccessCoreLogDiskTest, RefiltersQueuedAndLoadedHistoryForNewCredentials) {
   auto store = Open();
   store->Add(0, 0, Entry("abcdef12.example"), {});

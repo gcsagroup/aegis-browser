@@ -2,10 +2,10 @@
 #include "chrome/browser/aegis/access/access_local_core_manager.h"
 
 #include <signal.h>
-#include <sys/ioctl.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <vector>
@@ -14,7 +14,6 @@
 #include "base/strings/string_util.h"
 
 #include "base/files/file_descriptor_watcher_posix.h"
-#include "base/posix/eintr_wrapper.h"
 #include "base/base64.h"
 #include "chrome/browser/aegis/access/access_core_log_share.h"
 #include "base/command_line.h"
@@ -330,7 +329,6 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     if (input_.log_store) {
       input_.log_store->SetProtectedValues(protected_values_);
       std::tie(level, log_generation_) = input_.log_store->LaunchConfig();
-      log_clear_epoch_ = input_.log_store->clear_epoch();
     }
     auto log = base::DictValue().Set("loglevel", level);
     if (CoreLogRank(level) >= 2) log.Set("access", "none");
@@ -369,6 +367,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     if (level != "none" && create_log_pipe(&log_read_, &write_end, /*non_blocking=*/true)) {
       // Diagnostic capture is optional; a failed pipe keeps /dev/null.
       output = write_end.get();
+      log_clear_epoch_ = input_.log_store->RegisterPipe(log_read_.get());
       log_watch_ = base::FileDescriptorWatcher::WatchReadable(
           log_read_.get(), base::BindRepeating(&Worker::DrainLog, base::Unretained(this)));
     }
@@ -377,32 +376,26 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     return process_.IsValid();
   }
   void DrainLog() {
-    if (!log_read_.is_valid())
-      return;
-    // A clear invalidates any batch already in flight. On this sequence,
-    // discard the unread prefix and any partial line at that boundary.
-    const uint64_t epoch = input_.log_store->clear_epoch();
-    if (epoch != log_clear_epoch_) {
-      log_clear_epoch_ = epoch;
-      framer_.DiscardPartial();
-      int pending = 0;
-      discard_until_empty_ = HANDLE_EINTR(ioctl(log_read_.get(), FIONREAD, &pending)) < 0;
-      discard_bytes_ = discard_until_empty_ ? 0 : std::max(pending, 0);
-    }
-    char chunk[4096];
+    std::array<char, 4096> chunk;
     for (int i = 0; i < 16 && log_read_.is_valid(); ++i) {
-      auto count = HANDLE_EINTR(read(log_read_.get(), chunk, sizeof(chunk)));
-      if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+      const auto [count, error, epoch, prefix] =
+          input_.log_store->ReadPipe(log_read_.get(), chunk);
+      if (epoch != log_clear_epoch_) {
+        log_clear_epoch_ = epoch;
+        framer_.DiscardPartial();
+        discard_until_empty_ = !prefix.has_value();
+        discard_bytes_ = prefix.value_or(0);
+      }
+      if (error == EAGAIN || error == EWOULDBLOCK) {
         discard_until_empty_ = false;
         discard_bytes_ = 0;
         return;
       }
       if (count <= 0) {
-        log_watch_.reset();
-        log_read_.reset();
+        CloseLogPipe();
         break;
       }
-      std::string_view bytes(chunk, count);
+      std::string_view bytes(chunk.data(), count);
       const size_t discard = discard_until_empty_
                                  ? bytes.size() : std::min(discard_bytes_, bytes.size());
       if (discard) {
@@ -414,6 +407,13 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
       framer_.Feed(bytes, [this, epoch](std::string_view line) {
         input_.log_store->Add(log_generation_, epoch, line, protected_values_);
       });
+    }
+  }
+  void CloseLogPipe() {
+    log_watch_.reset();
+    if (log_read_.is_valid()) {
+      input_.log_store->UnregisterPipe(log_read_.get());
+      log_read_.reset();
     }
   }
   void StartProbe() {
@@ -531,8 +531,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
       process_.Close();
     }
     DrainLog();
-    log_watch_.reset();
-    log_read_.reset();
+    CloseLogPipe();
     framer_ = CoreLogFramer();
     discard_bytes_ = 0;
     discard_until_empty_ = false;

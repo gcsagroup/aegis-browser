@@ -342,6 +342,8 @@ private struct AccessDiagnosticsView: View {
     @State private var storageClearing = false
     @State private var clearMessage: String?
     @State private var share: AccessDiagnosticShare?
+    @State private var presentedShareURL: URL?
+    @State private var archiveCleanupPending = AccessDiagnosticArchive.hasPendingCleanup
     @State private var showShareConfirmation = false
     @State private var errorMessage: String?
 
@@ -365,9 +367,10 @@ private struct AccessDiagnosticsView: View {
                     Text("磁盘日志读取或保存失败；当前内存日志仍可查看。清理后可重试。")
                         .foregroundStyle(.secondary)
                 }
-                if !AccessDiagnosticArchive.recoveredTemporaryArchives {
-                    Text("上次分享的临时文件清理失败，压缩分享暂不可用。请重启后重试。")
+                if archiveCleanupPending {
+                    Text("压缩日志的临时文件清理失败。清理成功后可再次分享。")
                         .foregroundStyle(.secondary)
+                    Button("重试清理压缩日志", action: retryArchiveCleanup)
                 }
                 if unavailable {
                     Text("日志接收器不可用；代理仍可使用。请重新启动代理后重试。")
@@ -384,8 +387,12 @@ private struct AccessDiagnosticsView: View {
                     .accessibilityIdentifier("access-diagnostics-clear")
                 if let clearMessage { Text(clearMessage).font(.footnote).foregroundStyle(.secondary) }
                 Button("压缩并分享") { showShareConfirmation = true }
-                    .disabled(log.isEmpty)
+                    .disabled(log.isEmpty || archiveCleanupPending || presentedShareURL != nil)
                     .accessibilityIdentifier("access-diagnostics-share")
+                    .confirmationDialog("日志可能包含普通和私密会话的访问目标，确认压缩并分享？", isPresented: $showShareConfirmation, titleVisibility: .visible) {
+                        Button("继续分享", action: prepareShare)
+                        Button("取消", role: .cancel) { }
+                    }
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
             }
         }
@@ -399,15 +406,14 @@ private struct AccessDiagnosticsView: View {
                 unavailable = AccessDiagnosticLog.shared.unavailable
                 persistenceProblem = AccessDiagnosticLog.shared.persistenceUnavailable
                 storageClearing = AccessDiagnosticLog.shared.isClearingStorage
+                archiveCleanupPending = AccessDiagnosticArchive.hasPendingCleanup
                 try? await Task.sleep(for: .seconds(1))
             }
         }
-        .confirmationDialog("日志可能包含普通和私密会话的访问目标，确认压缩并分享？", isPresented: $showShareConfirmation, titleVisibility: .visible) {
-            Button("继续分享") { prepareShare() }
-            Button("取消", role: .cancel) { }
-        }
-        .sheet(item: $share) { item in
-            AccessDiagnosticShareSheet(url: item.url)
+        .sheet(item: $share, onDismiss: {
+            if let url = presentedShareURL { finishShare(url) }
+        }) { item in
+            AccessDiagnosticShareSheet(url: item.url) { finishShare(item.url) }
         }
     }
 
@@ -415,10 +421,35 @@ private struct AccessDiagnosticsView: View {
         do {
             let url = try AccessDiagnosticArchive.createTemporary(snapshot: AccessDiagnosticLog.shared.snapshot())
             errorMessage = nil
+            presentedShareURL = url
             share = AccessDiagnosticShare(url: url)
+        } catch AccessDiagnosticArchive.ArchiveError.cleanupRequired {
+            archiveCleanupPending = true
+        } catch AccessDiagnosticArchive.ArchiveError.shareInProgress {
+            errorMessage = "请先结束另一个窗口中的日志分享。"
         } catch {
             errorMessage = "无法生成压缩日志，请重试。"
         }
+    }
+
+    private func finishShare(_ url: URL) {
+        guard presentedShareURL == url else { return }
+        presentedShareURL = nil
+        do {
+            try AccessDiagnosticArchive.removeTemporary(url)
+        } catch {
+            archiveCleanupPending = true
+        }
+    }
+
+    private func retryArchiveCleanup() {
+        do {
+            try AccessDiagnosticArchive.retryTemporaryCleanup()
+        } catch {
+            archiveCleanupPending = true
+            return
+        }
+        archiveCleanupPending = AccessDiagnosticArchive.hasPendingCleanup
     }
 
     private func clearLogs() {
@@ -429,7 +460,10 @@ private struct AccessDiagnosticsView: View {
             do {
                 try await AccessDiagnosticLog.shared.clearStoredLogs()
                 log = AccessDiagnosticLog.shared.snapshot()
-                clearMessage = "已清理历史日志；新日志仍会继续记录。"
+                retryArchiveCleanup()
+                if !archiveCleanupPending {
+                    clearMessage = "已清理历史日志；新日志仍会继续记录。"
+                }
             } catch {
                 errorMessage = "未能删除磁盘日志，请重试。"
             }
@@ -445,10 +479,11 @@ private struct AccessDiagnosticShare: Identifiable {
 
 private struct AccessDiagnosticShareSheet: UIViewControllerRepresentable {
     let url: URL
+    let finished: @MainActor @Sendable () -> Void
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         controller.completionWithItemsHandler = { _, _, _, _ in
-            AccessDiagnosticArchive.removeTemporary(url)
+            Task { @MainActor in finished() }
         }
         return controller
     }
