@@ -4,12 +4,11 @@
 
 #include "build/build_config.h"
 #if BUILDFLAG(IS_MAC)
-#include <sys/types.h>
-
 #include <map>
 #include <optional>
 
 #include "base/containers/span.h"
+#include "base/files/file.h"
 #include "base/functional/callback.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/aegis/access/access_core_log_disk.h"
@@ -34,14 +33,14 @@ class AccessCoreLogStore
   static void FlushAllForSessionEnding(base::OnceClosure completion);
   DiskStatus disk_status();
   struct PipeRead {
-    ssize_t count;
+    std::optional<size_t> count;
     int error;
     uint64_t clear_epoch;
     std::optional<size_t> clear_prefix;
   };
   uint64_t RegisterPipe(int fd);
   void UnregisterPipe(int fd);
-  PipeRead ReadPipe(int fd, base::span<char> buffer);
+  PipeRead ReadPipe(base::File& file, base::span<char> buffer);
 #endif
   void SetLevel(std::string_view level);
   std::string Level() {

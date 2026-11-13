@@ -473,3 +473,4 @@
 0471-fix-diagnostic-history-privacy-boundaries.patch
 0472-fix-diagnostic-clear-and-share-confirmation.patch
 0473-fix-diagnostic-archive-cleanup-retry.patch
+0474-fix-diagnostic-pipe-read-bounds.patch

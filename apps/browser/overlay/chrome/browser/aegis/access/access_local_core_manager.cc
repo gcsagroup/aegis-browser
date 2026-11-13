@@ -360,16 +360,18 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
     base::File null_output(base::FilePath("/dev/null"),
                            base::File::FLAG_OPEN | base::File::FLAG_WRITE);
     if (!null_output.IsValid()) return false;
-    base::ScopedFD write_end;
+    base::ScopedFD read_end, write_end;
     int output = null_output.GetPlatformFile();
     auto create_log_pipe = input_.create_log_pipe_for_testing
                                ? input_.create_log_pipe_for_testing : &base::CreatePipe;
-    if (level != "none" && create_log_pipe(&log_read_, &write_end, /*non_blocking=*/true)) {
+    if (level != "none" && create_log_pipe(&read_end, &write_end, /*non_blocking=*/true)) {
       // Diagnostic capture is optional; a failed pipe keeps /dev/null.
+      log_read_ = base::File(std::move(read_end));
       output = write_end.get();
-      log_clear_epoch_ = input_.log_store->RegisterPipe(log_read_.get());
+      log_clear_epoch_ = input_.log_store->RegisterPipe(log_read_.GetPlatformFile());
       log_watch_ = base::FileDescriptorWatcher::WatchReadable(
-          log_read_.get(), base::BindRepeating(&Worker::DrainLog, base::Unretained(this)));
+          log_read_.GetPlatformFile(),
+          base::BindRepeating(&Worker::DrainLog, base::Unretained(this)));
     }
     options.fds_to_remap = {{output, STDOUT_FILENO}, {output, STDERR_FILENO}};
     process_ = base::LaunchProcess(command, options);
@@ -377,9 +379,9 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
   }
   void DrainLog() {
     std::array<char, 4096> chunk;
-    for (int i = 0; i < 16 && log_read_.is_valid(); ++i) {
+    for (int i = 0; i < 16 && log_read_.IsValid(); ++i) {
       const auto [count, error, epoch, prefix] =
-          input_.log_store->ReadPipe(log_read_.get(), chunk);
+          input_.log_store->ReadPipe(log_read_, chunk);
       if (epoch != log_clear_epoch_) {
         log_clear_epoch_ = epoch;
         framer_.DiscardPartial();
@@ -391,11 +393,11 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
         discard_bytes_ = 0;
         return;
       }
-      if (count <= 0) {
+      if (!count || *count == 0) {
         CloseLogPipe();
         break;
       }
-      std::string_view bytes(chunk.data(), count);
+      std::string_view bytes(chunk.data(), *count);
       const size_t discard = discard_until_empty_
                                  ? bytes.size() : std::min(discard_bytes_, bytes.size());
       if (discard) {
@@ -411,9 +413,9 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
   }
   void CloseLogPipe() {
     log_watch_.reset();
-    if (log_read_.is_valid()) {
-      input_.log_store->UnregisterPipe(log_read_.get());
-      log_read_.reset();
+    if (log_read_.IsValid()) {
+      input_.log_store->UnregisterPipe(log_read_.GetPlatformFile());
+      log_read_.Close();
     }
   }
   void StartProbe() {
@@ -544,7 +546,7 @@ class AccessLocalCoreManager::Worker : public net::URLRequest::Delegate {
 
   AccessLocalCoreInput input_;
   std::shared_ptr<ShutdownHandle> shutdown_;
-  base::ScopedFD log_read_;
+  base::File log_read_;
   std::unique_ptr<base::FileDescriptorWatcher::Controller> log_watch_;
   CoreLogFramer framer_;
   uint64_t log_generation_ = 0;

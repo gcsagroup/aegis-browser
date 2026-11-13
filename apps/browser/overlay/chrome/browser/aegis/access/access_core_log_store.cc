@@ -103,13 +103,15 @@ void AccessCoreLogStore::UnregisterPipe(int fd) {
 }
 
 AccessCoreLogStore::PipeRead AccessCoreLogStore::ReadPipe(
-    int fd,
+    base::File& file,
     base::span<char> buffer) {
   base::AutoLock guard(lock_);
-  auto pipe = pipes_.find(fd);
+  auto pipe = pipes_.find(file.GetPlatformFile());
   CHECK(pipe != pipes_.end());
-  const auto count = HANDLE_EINTR(read(fd, buffer.data(), buffer.size()));
-  return {count, count < 0 ? errno : 0, clear_epoch_, pipe->second};
+  // One bounded, nonblocking read. The same lock protects the Clear snapshot.
+  const auto count =
+      file.ReadAtCurrentPosNoBestEffort(base::as_writable_byte_span(buffer));
+  return {count, count ? 0 : errno, clear_epoch_, pipe->second};
 }
 
 namespace {

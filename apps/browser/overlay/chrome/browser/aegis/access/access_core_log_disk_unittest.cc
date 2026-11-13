@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <cerrno>
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -114,7 +115,8 @@ TEST_F(AccessCoreLogDiskTest, ClearSnapshotsThePipeBeforeTheNextRead) {
   auto store = Open();
   base::ScopedFD reader, writer;
   ASSERT_TRUE(base::CreatePipe(&reader, &writer, /*non_blocking=*/true));
-  const auto original_epoch = store->RegisterPipe(reader.get());
+  base::File file(std::move(reader));
+  const auto original_epoch = store->RegisterPipe(file.GetPlatformFile());
   std::array<char, 64> buffer;
   auto write_record = [&](std::string_view text) {
     ASSERT_EQ(::write(writer.get(), text.data(), text.size()),
@@ -122,22 +124,29 @@ TEST_F(AccessCoreLogDiskTest, ClearSnapshotsThePipeBeforeTheNextRead) {
   };
   store->Clear();
   write_record("fresh\n");
-  const auto idle = store->ReadPipe(reader.get(), buffer);
-  ASSERT_EQ(idle.count, 6);
+  const auto idle = store->ReadPipe(file, buffer);
+  ASSERT_EQ(idle.count, 6u);
   EXPECT_EQ(idle.clear_epoch, original_epoch + 1);
   EXPECT_EQ(idle.clear_prefix, 0u);
-  EXPECT_EQ(std::string_view(buffer.data(), idle.count), "fresh\n");
+  EXPECT_EQ(std::string_view(buffer.data(), *idle.count), "fresh\n");
 
   write_record("stale\n");
   store->Clear();
   write_record("first after clear\n");
-  const auto buffered = store->ReadPipe(reader.get(), buffer);
+  const auto buffered = store->ReadPipe(file, buffer);
   EXPECT_EQ(buffered.clear_epoch, original_epoch + 2);
   EXPECT_EQ(buffered.clear_prefix, 6u);
-  ASSERT_EQ(buffered.count, 24);
-  EXPECT_EQ(std::string_view(buffer.data(), buffered.count),
+  ASSERT_EQ(buffered.count, 24u);
+  EXPECT_EQ(std::string_view(buffer.data(), *buffered.count),
             "stale\nfirst after clear\n");
-  store->UnregisterPipe(reader.get());
+  const auto empty = store->ReadPipe(file, buffer);
+  EXPECT_FALSE(empty.count);
+  EXPECT_EQ(empty.error, EAGAIN);
+  writer.reset();
+  const auto eof = store->ReadPipe(file, buffer);
+  EXPECT_EQ(eof.count, 0u);
+  EXPECT_EQ(eof.error, 0);
+  store->UnregisterPipe(file.GetPlatformFile());
 }
 
 TEST_F(AccessCoreLogDiskTest, RefiltersQueuedAndLoadedHistoryForNewCredentials) {
