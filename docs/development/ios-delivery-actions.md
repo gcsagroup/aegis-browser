@@ -49,13 +49,13 @@ For a Beta that embeds the shared test node and reads its 3X-UI quota, choose
 **Package and upload**, **Beta**, **manual**, and **Private Beta: yes**. Store
 `AEGIS_IOS_TEST_NODE_BASE64` and `AEGIS_IOS_TEST_SUBSCRIPTION_BASE64` in the
 upstream `aegis-ios-signing` Environment. The signing job checks both resources
-in the signed IPA and uploads that IPA directly to TestFlight. Actions retains a
-redacted receipt. If the result is uncertain, query **Status** with the original
-version and build before scheduling another attempt.
+in the signed IPA and uploads that IPA directly to TestFlight for internal
+testing. Actions retains a redacted receipt. If the result is uncertain, query
+**Status** with the original version and build before scheduling another attempt.
 
 内置共享测试节点并查询 3X-UI 实际额度时，选择 **Package and upload**、**Beta**、
 **manual** 和 **Private Beta: yes**。两项输入只存入上游的
-`aegis-ios-signing` 环境。签名作业检查 IPA 中的两份资源后直接上传 TestFlight，
+`aegis-ios-signing` 环境。签名作业检查 IPA 中的两份资源后直接上传 TestFlight 内测，
 Actions 保留脱敏回执。结果不明时先用原版本和构建号执行 **Status** 查询。
 
 ## Full / 分阶段交付

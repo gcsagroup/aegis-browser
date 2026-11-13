@@ -331,6 +331,7 @@ module AegisRelease
       end
       AegisRelease.require!(request.profile == 'beta' && request.signing_mode == 'manual',
                             'Private Beta inputs require Beta with explicit manual signing')
+      AegisRelease.require!(request.destination == 'testflight', 'Private Beta inputs require TestFlight upload')
       FileUtils.mkdir_p(request.directory)
       Dir.mktmpdir('private-beta-', request.directory) do |private_dir|
         helper = File.join(request.root, 'scripts/release/private-beta-inputs.py')
@@ -362,6 +363,8 @@ module AegisRelease
                                               targets: [target], build_configurations: ['Release'], profile_name: profiles.fetch(app_id))
       end
       name = "Aegis-#{request.profile}-#{request.version}-#{request.build}-ios.ipa"
+      private_beta = !@private_beta_xcargs.nil?
+      internal_testing_only = request.profile == 'alpha' || private_beta
       admit_source!
       @fastlane.build_app(project: project, scheme: 'Aegis-Release', configuration: 'Release', clean: true,
                          destination: 'generic/platform=iOS', output_directory: request.directory, output_name: name,
@@ -371,17 +374,19 @@ module AegisRelease
                          xcargs: "MARKETING_VERSION=#{request.version} CURRENT_PROJECT_VERSION=#{request.build} AEGIS_FIREBASE_CHANNEL=#{request.profile} AEGIS_ACCESS_RELEASE_CHANNEL=#{request.profile} #{@private_beta_xcargs}",
                          export_options: { method: 'app-store-connect', teamID: team, signingStyle: 'manual',
                                            provisioningProfiles: profiles, manageAppVersionAndBuildNumber: false,
-                                           testFlightInternalTestingOnly: request.profile == 'alpha' })
+                                           testFlightInternalTestingOnly: internal_testing_only })
       ipa = File.join(request.directory, name)
       run('python3', firebase_script, 'verify-ipa', *firebase_args, '--artifact', ipa)
       run('python3', File.join(request.root, 'scripts/release/verify-ipa.py'), ipa, request.version, request.build, request.profile)
       certificate = required('AEGIS_IOS_CERT_SHA1')
+      audience_args = private_beta ? ['--private-beta'] : []
       run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), ipa, request.version, request.build, request.profile,
-          '--team', team, '--certificate-sha1', certificate, '--profiles-json', JSON.generate(profiles), '--source-root', request.root)
+          '--team', team, '--certificate-sha1', certificate, '--profiles-json', JSON.generate(profiles),
+          '--source-root', request.root, *audience_args)
       paths = [ipa] + Dir.glob(File.join(request.directory, '*.dSYM.zip'))
       [paths, { 'signing' => 'app-store-export', 'signingMode' => 'manual', 'appleTeamId' => team, 'certificateSha1' => certificate.upcase,
                 'provisioningProfiles' => profiles, 'testflight' => 'not_uploaded', 'deviceAcceptance' => 'not_verified',
-                'testFlightInternalTestingOnly' => request.profile == 'alpha' }]
+                'testFlightInternalTestingOnly' => internal_testing_only }]
     end
 
     def stage_ios_package(work, firebase_script, firebase_args)
@@ -504,6 +509,7 @@ module AegisRelease
           verification_args += ['--signing-mode', 'cloud', '--expected-verification', File.join(request.directory, details.fetch('cloudVerification'))]
         else
           verification_args += ['--certificate-sha1', details.fetch('certificateSha1'), '--profiles-json', JSON.generate(details.fetch('provisioningProfiles'))]
+          verification_args << '--private-beta' if details['privateBetaTestNode']
         end
         run('python3', File.join(request.root, 'scripts/release/verify-signed-ios.py'), path, request.version, request.build, request.profile, *verification_args)
         client = store

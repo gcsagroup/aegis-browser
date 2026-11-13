@@ -43,6 +43,28 @@ class IosActionTests(unittest.TestCase):
             with patch.object(action, 'api', side_effect=lookup):
                 self.assertEqual(action.unstarted_store_run(row), conclusion == 'skipped')
 
+    def test_private_beta_manifest_requires_internal_testflight_audience(self):
+        sha, tree = 'a' * 40, 'b' * 40
+        env = dict(RELEASE_PROFILE='beta', RELEASE_VERSION='1.0.3', RELEASE_BUILD='13')
+        manifest = dict(source=dict(sha=sha, tree=tree, dirty=False), repository=action.durable.REPOSITORY,
+                        platform='ios', profile='beta', version='1.0.3', build='13',
+                        details=dict(privateBetaTestNode=True, privateBetaQuota=True))
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, env, clear=True), \
+                patch.object(action, 'directory', return_value=Path(tmp)), \
+                patch.object(action, 'source', return_value=(sha, tree)):
+            path = Path(tmp) / 'ios-manifest.json'
+            for audience in (None, False, True):
+                with self.subTest(audience=audience):
+                    if audience is not None:
+                        manifest['details']['testFlightInternalTestingOnly'] = audience
+                    path.write_text(json.dumps(manifest))
+                    digest = action.transport.digest(path)
+                    if audience is True:
+                        self.assertEqual(action.private_beta_manifest(digest), manifest)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'manifest identity'):
+                            action.private_beta_manifest(digest)
+
     def test_private_beta_evidence_exposes_only_confirmed_status_and_allowlisted_identity(self):
         digest = 'c'*64
         manifest = dict(source=dict(sha='a'*40, tree='b'*40, dirty=False), platform='ios',
